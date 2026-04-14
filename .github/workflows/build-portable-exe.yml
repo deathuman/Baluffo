@@ -140,6 +140,7 @@ jobs:
           npm run test:frontend:unit
           npm run test:py:extended
           npm run test:frontend:packaged
+          npm run test:frontend:packaged:update-rehearsal
           npm run test:frontend:packaged:jobs-pipeline
 
       - name: Upload smoke test artifacts on failure

@@ -32,6 +32,7 @@ if os.name == "nt":
 from src.app_version import get_app_version
 from src.baluffo_config import get_desktop_defaults
 from src.ship.desktop_update import DesktopUpdatePaths
+from src.ship.desktop_update import launch_staged_update_helper
 from src.ship.desktop_update import updater_install_requested
 from src.ship.desktop_update import write_success_marker
 from src.ship.runtime_launcher import wait_for_url
@@ -62,6 +63,8 @@ CHROMIUM_BROWSER_CANDIDATES = (
     ("brave", "brave.exe"),
     ("msedge", "msedge.exe"),
 )
+PREFERRED_BROWSER_PATH_ENV = "BALUFFO_DESKTOP_BROWSER_PATH"
+NO_BROWSER_ENV = "BALUFFO_DESKTOP_NO_BROWSER"
 
 
 @dataclass(frozen=True)
@@ -74,6 +77,7 @@ class DesktopRuntimeConfig:
     open_path: str
     title: str
     startup_probe: bool
+    no_browser: bool = False
     site_port_explicit: bool = False
     bridge_port_explicit: bool = False
 
@@ -297,6 +301,7 @@ def create_runtime_config(args: argparse.Namespace) -> DesktopRuntimeConfig:
         startup_probe=bool(
             args.startup_probe or _truthy_env(os.environ.get("BALUFFO_STARTUP_PROBE"))
         ),
+        no_browser=_truthy_env(os.environ.get(NO_BROWSER_ENV)),
         site_port_explicit=site_port_explicit,
         bridge_port_explicit=bridge_port_explicit,
     )
@@ -646,6 +651,7 @@ if os.name == "nt":
         },
     )
     _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+    _JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK = 0x1000
     _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
     _PROCESS_SET_QUOTA = 0x0100
 
@@ -658,7 +664,9 @@ def _windows_create_kill_on_close_job() -> int | None:
     if not job:
         return None
     info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-    info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    info.BasicLimitInformation.LimitFlags = (
+        _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | _JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK
+    )
     ok = ctypes.windll.kernel32.SetInformationJobObject(
         job,
         _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
@@ -1187,6 +1195,7 @@ def watch_browser_session(
     bridge_port: int,
     browser_process: subprocess.Popen[str] | None = None,
     heartbeat_idle_timeout_s: float = HEARTBEAT_IDLE_TIMEOUT_S,
+    require_window: bool = True,
 ) -> str:
     def _watch_heartbeat_loop() -> str:
         if not wait_for_browser_heartbeat(data_dir):
@@ -1261,13 +1270,7 @@ def watch_browser_session(
     while True:
         if updater_install_requested(data_dir):
             return "update_install_requested"
-        if not _is_baluffo_browser_window_open():
-            _append_startup_trace(
-                data_dir,
-                "desktop_browser_window_closed",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            )
-            return "window_closed"
+        window_open = True if not require_window else _is_baluffo_browser_window_open()
         last_heartbeat = max(
             latest_browser_heartbeat_ts(data_dir), bridge_last_activity_ts(bridge_port)
         )
@@ -1281,6 +1284,18 @@ def watch_browser_session(
                     idleSeconds=int(idle_for),
                 )
                 return "heartbeat_timeout"
+            time.sleep(2.0)
+            continue
+        if not require_window:
+            time.sleep(2.0)
+            continue
+        if not window_open:
+            _append_startup_trace(
+                data_dir,
+                "desktop_browser_window_closed",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            )
+            return "window_closed"
         time.sleep(2.0)
 
 
@@ -1336,6 +1351,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
     bridge_process: subprocess.Popen[str] | None = None
     browser_process: subprocess.Popen[str] | None = None
     desktop_job: int | None = None
+    stop_reason = ""
     started_mono = time.perf_counter()
     session_state_written = False
     _append_startup_trace(
@@ -1425,7 +1441,27 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             "desktop_window_create_started",
             elapsedMs=int((time.perf_counter() - started_mono) * 1000),
         )
-        launch_result = launch_browser_for_url(open_url)
+        if config.no_browser:
+            launch_result = {
+                "mode": "no-browser",
+                "browserName": "",
+                "browserPath": "",
+                "process": None,
+                "windowShownAtMonotonic": time.perf_counter(),
+            }
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_browser_launch_selected",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                mode="no-browser",
+                browser="",
+                browserPath="",
+            )
+        else:
+            launch_result = launch_browser_for_url(
+                open_url,
+                preferred_browser_path=str(os.environ.get(PREFERRED_BROWSER_PATH_ENV) or "").strip(),
+            )
         launch_mode = str(launch_result.get("mode") or "default-browser")
         browser_process = (
             launch_result.get("process")
@@ -1442,14 +1478,15 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             shell_window_shown_elapsed_ms = max(
                 0, int((float(window_shown_at_mono) - started_mono) * 1000)
             )
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_browser_launch_selected",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            mode=launch_mode,
-            browser=str(launch_result.get("browserName") or ""),
-            browserPath=str(launch_result.get("browserPath") or ""),
-        )
+        if not config.no_browser:
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_browser_launch_selected",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                mode=launch_mode,
+                browser=str(launch_result.get("browserName") or ""),
+                browserPath=str(launch_result.get("browserPath") or ""),
+            )
         save_session_state(
             {
                 "appVersion": get_app_version(),
@@ -1497,6 +1534,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             started_mono,
             bridge_port=config.bridge_port,
             browser_process=browser_process,
+            require_window=not config.no_browser,
         )
         if stop_reason == "process_exit" and browser_process is not None:
             _append_startup_trace(
@@ -1517,6 +1555,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                     started_mono,
                     bridge_port=config.bridge_port,
                     browser_process=None,
+                    require_window=True,
                 )
             else:
                 _append_startup_trace(
@@ -1531,6 +1570,8 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             elapsedMs=int((time.perf_counter() - started_mono) * 1000),
             reason=stop_reason,
         )
+        if stop_reason == "update_install_requested":
+            launch_staged_update_helper(DesktopUpdatePaths.from_data_dir(config.data_dir))
         if config.startup_probe:
             summary = summarize_startup_metrics(
                 read_startup_metrics(config.data_dir),

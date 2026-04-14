@@ -30,6 +30,44 @@ def _write_install_plan(plan_path: Path, install_root: Path, rollback_root: Path
     return plan
 
 
+def test_launch_executable_uses_install_root_as_cwd_and_can_clear_version_override(monkeypatch) -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        install_root = Path(tmp) / "portable"
+        runtime_exe = install_root / "Baluffo.exe"
+        runtime_exe.parent.mkdir(parents=True, exist_ok=True)
+        runtime_exe.write_text("exe", encoding="utf-8")
+        popen_mock = mock.Mock()
+        monkeypatch.setenv("BALUFFO_APP_VERSION_OVERRIDE", "0.0.9")
+        monkeypatch.setattr(updater.subprocess, "Popen", popen_mock)
+
+        updater._launch_executable(runtime_exe, clear_app_version_override=True)
+
+        _, kwargs = popen_mock.call_args
+        assert kwargs["cwd"] == str(install_root)
+        assert isinstance(kwargs["env"], dict)
+        assert "BALUFFO_APP_VERSION_OVERRIDE" not in kwargs["env"]
+
+
+def test_helper_diagnostics_path_prefers_plan_field() -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        root = Path(tmp)
+        plan_path = root / "install-plan.json"
+        diag_path = root / "logs" / "helper.diagnostics.jsonl"
+        plan_path.write_text(
+            json.dumps(
+                {
+                    "helperDiagnosticsPath": str(diag_path),
+                    "updaterWorkingDir": str(root / "updater"),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        resolved = updater._helper_diagnostics_path_for_plan(plan_path)
+
+        assert resolved == diag_path.resolve()
+
+
 def test_recover_interrupted_install_restores_runtime_snapshot_and_backup(monkeypatch) -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
         install_root = Path(tmp) / "portable"

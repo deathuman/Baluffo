@@ -36,10 +36,15 @@ DESKTOP_UPDATER_VERSION = "2.0.0"
 DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS = 6 * 60 * 60
 DOWNLOAD_CHUNK_SIZE = 1024 * 256
 GITHUB_API_BASE = "https://api.github.com"
+GITHUB_API_BASE_ENV = "BALUFFO_DESKTOP_UPDATE_GITHUB_API_BASE"
 INSTALL_STATE_FILE = "install-state.json"
 INSTALL_PLAN_FILE = "install-plan.json"
 MANIFEST_CACHE_FILE = "manifest-cache.json"
 SUCCESS_MARKER_FILE = "post-install-success.json"
+HANDOFF_REQUEST_FILE = "handoff-requested.json"
+HELPER_STDOUT_LOG_FILE = "desktop-updater-helper.stdout.log"
+HELPER_STDERR_LOG_FILE = "desktop-updater-helper.stderr.log"
+HELPER_DIAGNOSTICS_LOG_FILE = "desktop-updater-helper.diagnostics.jsonl"
 PUBLIC_KEYS_FILE = "desktop-update-public-keys.json"
 USER_AGENT = f"BaluffoDesktopUpdater/{DESKTOP_UPDATER_VERSION}"
 INSTALL_STATE_STAGE_DEFAULTS = {
@@ -70,6 +75,11 @@ INSTALL_STAGE_LABELS = {
 
 def iso_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def resolve_github_api_base() -> str:
+    value = str(os.environ.get(GITHUB_API_BASE_ENV) or "").strip()
+    return value.rstrip("/") if value else GITHUB_API_BASE
 
 
 def normalize_install_stage(
@@ -300,6 +310,10 @@ def resolve_desktop_session_root(env: dict[str, str] | None = None) -> Path:
     for candidate in candidates:
         try:
             candidate.mkdir(parents=True, exist_ok=True)
+            probe_path = candidate / ".baluffo-write-probe"
+            probe_path.write_text("ok", encoding="utf-8")
+            with contextlib.suppress(OSError):
+                probe_path.unlink()
             return candidate
         except OSError:
             continue
@@ -383,6 +397,10 @@ class DesktopUpdatePaths:
     install_state_path: Path
     rollback_root: Path
     success_marker_path: Path
+    handoff_request_path: Path
+    helper_stdout_log_path: Path
+    helper_stderr_log_path: Path
+    helper_diagnostics_log_path: Path
 
     @staticmethod
     def from_data_dir(data_dir: Path) -> "DesktopUpdatePaths":
@@ -401,6 +419,10 @@ class DesktopUpdatePaths:
             install_state_path=updater_dir / INSTALL_STATE_FILE,
             rollback_root=updater_dir / "rollback",
             success_marker_path=updater_dir / SUCCESS_MARKER_FILE,
+            handoff_request_path=updater_dir / HANDOFF_REQUEST_FILE,
+            helper_stdout_log_path=updater_dir / HELPER_STDOUT_LOG_FILE,
+            helper_stderr_log_path=updater_dir / HELPER_STDERR_LOG_FILE,
+            helper_diagnostics_log_path=updater_dir / HELPER_DIAGNOSTICS_LOG_FILE,
         )
 
 
@@ -455,6 +477,8 @@ def save_status(paths: DesktopUpdatePaths, payload: dict[str, Any]) -> dict[str,
 
 def updater_install_requested(data_dir: Path) -> bool:
     paths = DesktopUpdatePaths.from_data_dir(Path(data_dir))
+    if paths.handoff_request_path.exists():
+        return True
     state = load_status(paths)
     return str(state.get("installState") or "").strip().lower() in {
         "handoff_requested",
@@ -467,6 +491,39 @@ def updater_install_requested(data_dir: Path) -> bool:
 def clear_success_marker(paths: DesktopUpdatePaths) -> None:
     with contextlib.suppress(OSError):
         paths.success_marker_path.unlink()
+
+
+def clear_handoff_request(paths: DesktopUpdatePaths) -> None:
+    with contextlib.suppress(OSError):
+        paths.handoff_request_path.unlink()
+
+
+def launch_staged_update_helper(paths: DesktopUpdatePaths) -> None:
+    plan = validate_install_plan(read_json(paths.install_plan_path, {}))
+    helper_path = Path(str(plan.get("tempHelperPath") or "")).expanduser().resolve()
+    if not helper_path.is_file():
+        raise RuntimeError(f"Staged desktop updater helper not found: {helper_path}")
+    paths.updater_dir.mkdir(parents=True, exist_ok=True)
+    runtime_tmpdir = (paths.updater_dir / "runtime-tmp").resolve()
+    runtime_tmpdir.mkdir(parents=True, exist_ok=True)
+    creationflags = 0
+    env = os.environ.copy()
+    env["TEMP"] = str(runtime_tmpdir)
+    env["TMP"] = str(runtime_tmpdir)
+    if os.name == "nt":
+        creationflags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    with (
+        paths.helper_stdout_log_path.open("ab") as helper_stdout,
+        paths.helper_stderr_log_path.open("ab") as helper_stderr,
+    ):
+        subprocess.Popen(  # noqa: S603
+            [str(helper_path), "--install-plan", str(paths.install_plan_path)],
+            cwd=str(paths.updater_dir),
+            stdout=helper_stdout,
+            stderr=helper_stderr,
+            creationflags=creationflags,
+            env=env,
+        )
 
 
 def write_success_marker(
@@ -575,7 +632,7 @@ class DesktopUpdateService:
         )
         if not repo:
             raise RuntimeError("Desktop update repository is not configured.")
-        url = f"{GITHUB_API_BASE}/repos/{repo}/releases?per_page=10"
+        url = f"{resolve_github_api_base()}/repos/{repo}/releases?per_page=10"
         payload = fetch_json(url)
         if not isinstance(payload, list):
             raise RuntimeError("GitHub releases payload was not a list.")
@@ -778,7 +835,7 @@ class DesktopUpdateService:
             raise RuntimeError(f"Installed desktop updater helper not found: {helper_path}")
         self.paths.updater_dir.mkdir(parents=True, exist_ok=True)
         self.paths.rollback_root.mkdir(parents=True, exist_ok=True)
-        usage = shutil.disk_usage(Path(tempfile.gettempdir()).resolve())
+        usage = shutil.disk_usage(self.paths.updater_dir)
         required_free = max(int(zip_path.stat().st_size) * 3, 128 * 1024 * 1024)
         if int(usage.free) < required_free:
             raise RuntimeError("Not enough free disk space for desktop update staging and rollback.")
@@ -824,12 +881,24 @@ class DesktopUpdateService:
                 "manifestKeyId": str(manifest.get("key_id") or "").strip(),
                 "rollbackPath": str(rollback_path),
                 "updaterWorkingDir": str(self.paths.updater_dir),
+                "helperStdoutPath": str(self.paths.helper_stdout_log_path),
+                "helperStderrPath": str(self.paths.helper_stderr_log_path),
+                "helperDiagnosticsPath": str(self.paths.helper_diagnostics_log_path),
                 "createdAt": iso_now(),
                 "launcherPid": launcher_pid,
                 "launcherToken": launcher_token,
                 "desktopSessionRoot": str(session_root),
             }
             write_json_atomic(self.paths.install_plan_path, plan)
+            write_json_atomic(
+                self.paths.handoff_request_path,
+                {
+                    "requestedAt": iso_now(),
+                    "targetVersion": str(manifest.get("version") or "").strip(),
+                    "launcherPid": launcher_pid,
+                    "launcherToken": launcher_token,
+                },
+            )
             save_status(
                 self.paths,
                 {
@@ -843,13 +912,6 @@ class DesktopUpdateService:
                     "downloadedZipPath": str(zip_path),
                     "rollbackPath": str(rollback_path),
                 },
-            )
-            creationflags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
-            subprocess.Popen(  # noqa: S603
-                [str(temp_helper), "--install-plan", str(self.paths.install_plan_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=creationflags,
             )
             return {
                 "started": True,
@@ -899,12 +961,14 @@ __all__ = [
     "fetch_json",
     "install_stage_label",
     "iso_now",
+    "launch_staged_update_helper",
     "load_desktop_update_public_keys",
     "load_status",
     "normalize_install_stage",
     "read_cached_manifest",
     "read_desktop_session_state",
     "resolve_desktop_session_root",
+    "resolve_github_api_base",
     "resolve_release_repo",
     "save_status",
     "sign_manifest",

@@ -58,6 +58,32 @@ def test_read_startup_metrics_file_reads_jsonl_rows() -> None:
         assert [row["event"] for row in rows] == ["desktop_launch_start", "desktop_window_shown"]
 
 
+def test_inject_desktop_update_public_keys_writes_packaged_trust_files(tmp_path: Path) -> None:
+    portable_root = tmp_path / "portable"
+    version_dir = portable_root / "ship" / "app" / "versions" / "0.1.0" / "packaging"
+    version_dir.mkdir(parents=True, exist_ok=True)
+    (portable_root / "ship" / "app" / "current.txt").write_text("0.1.0\n", encoding="utf-8")
+
+    smoke._inject_desktop_update_public_keys(
+        portable_root,
+        {"desktop-ed25519-rehearsal": "ZmFrZS1rZXk="},
+    )
+
+    expected = json.dumps({"desktop-ed25519-rehearsal": "ZmFrZS1rZXk="}, indent=2, sort_keys=True)
+    assert (
+        portable_root / "ship" / "app" / "desktop-update-public-keys.json"
+    ).read_text(encoding="utf-8") == expected
+    assert (
+        portable_root
+        / "ship"
+        / "app"
+        / "versions"
+        / "0.1.0"
+        / "packaging"
+        / "desktop-update-public-keys.json"
+    ).read_text(encoding="utf-8") == expected
+
+
 def test_startup_profile_required_events_include_window_and_page_ready_markers() -> None:
     assert smoke.startup_profile_required_events("jobs") == (
         "desktop_launch_start",
@@ -696,6 +722,61 @@ def test_run_packaged_smoke_writes_success_report_and_artifacts() -> None:
         terminate_mock.assert_called_once_with(process)
         stdout_handle.close.assert_called_once()
         stderr_handle.close.assert_called_once()
+
+
+def test_run_packaged_smoke_can_run_desktop_update_rehearsal_mode() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--desktop-update-rehearsal",
+            ]
+        )
+        with (
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(
+                smoke,
+                "collect_packaged_smoke_env_diagnostics",
+                return_value={"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False},
+            ),
+            mock.patch.object(
+                smoke,
+                "run_desktop_update_rehearsal",
+                return_value={
+                    "name": "Packaged desktop updater rehearsal",
+                    "slug": "desktop-update-rehearsal",
+                    "status": "passed",
+                    "durationMs": 1500,
+                    "error": "",
+                    "details": {
+                        "helperStdoutLog": str(artifacts_dir / "helper.stdout.log"),
+                        "helperStderrLog": str(artifacts_dir / "helper.stderr.log"),
+                        "helperDiagnosticsLog": str(artifacts_dir / "helper.diagnostics.jsonl"),
+                    },
+                },
+            ) as rehearsal_mock,
+        ):
+            payload = smoke.run_packaged_smoke(args)
+        assert payload["ok"] is True
+        assert payload["scenarios"][0]["slug"] == "desktop-update-rehearsal"
+        assert payload["artifacts"]["helperStdout"] == str(artifacts_dir / "helper.stdout.log")
+        assert payload["artifacts"]["helperStderr"] == str(artifacts_dir / "helper.stderr.log")
+        assert payload["artifacts"]["helperDiagnostics"] == str(
+            artifacts_dir / "helper.diagnostics.jsonl"
+        )
+        rehearsal_mock.assert_called_once()
+        saved = json.loads(report_path.read_text(encoding="utf-8"))
+        assert saved["ok"] is True
 
 
 def test_run_packaged_smoke_classifies_spawn_failure_from_node_runner() -> None:

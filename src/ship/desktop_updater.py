@@ -11,9 +11,10 @@ import queue
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 import time
+import traceback
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ if str(ROOT) not in sys.path:
 from src.ship import update_manager
 from src.ship.desktop_update import (
     DesktopUpdatePaths,
+    clear_handoff_request,
     clear_success_marker,
     compute_sha256,
     desktop_update_public_key_candidate_paths,
@@ -57,36 +59,28 @@ class HelperProgressWindow:
     """Best-effort native progress window for the one-shot updater helper."""
 
     def __init__(self) -> None:
-        self._thread: threading.Thread | None = None
         self._queue: queue.SimpleQueue[tuple[str, str]] = queue.SimpleQueue()
-        self._started = threading.Event()
+        self._closed = threading.Event()
 
     def start(self, message: str) -> None:
-        if os.name != "nt":
-            return
-        self._thread = threading.Thread(
-            target=self._run,
-            args=(str(message or "").strip() or "Preparing update",),
-            daemon=True,
-            name="baluffo-updater-progress-ui",
-        )
-        self._thread.start()
-        self._started.wait(timeout=2.0)
+        self.update(str(message or "").strip() or "Preparing update")
 
     def update(self, message: str) -> None:
         self._queue.put(("message", str(message or "").strip()))
 
     def close(self) -> None:
         self._queue.put(("close", ""))
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
+        self._closed.wait(timeout=2.0)
 
-    def _run(self, message: str) -> None:
+    def run(self, initial_message: str = "Preparing update") -> None:
+        if os.name != "nt":
+            self._closed.wait()
+            return
         try:
             import tkinter as tk
             from tkinter import ttk
         except Exception:  # noqa: BLE001
-            self._started.set()
+            self._closed.wait()
             return
 
         root = tk.Tk()
@@ -98,7 +92,7 @@ class HelperProgressWindow:
         frame.pack(fill="both", expand=True)
         title = ttk.Label(frame, text="Installing update", font=("", 11, "bold"))
         title.pack(anchor="w")
-        message_var = tk.StringVar(value=message)
+        message_var = tk.StringVar(value=str(initial_message or "").strip() or "Preparing update")
         detail = ttk.Label(frame, textvariable=message_var, padding=(0, 10, 0, 0))
         detail.pack(anchor="w")
         bar = ttk.Progressbar(frame, mode="indeterminate", length=260)
@@ -112,7 +106,6 @@ class HelperProgressWindow:
         offset_x = max(0, int((screen_width - width) / 2))
         offset_y = max(0, int((screen_height - height) / 3))
         root.geometry(f"{width}x{height}+{offset_x}+{offset_y}")
-        self._started.set()
 
         def drain() -> None:
             while True:
@@ -123,6 +116,7 @@ class HelperProgressWindow:
                 if kind == "close":
                     with contextlib.suppress(Exception):
                         bar.stop()
+                    self._closed.set()
                     root.destroy()
                     return
                 if kind == "message" and payload:
@@ -132,17 +126,63 @@ class HelperProgressWindow:
         root.after(120, drain)
         with contextlib.suppress(Exception):
             root.mainloop()
+        self._closed.set()
 
 
-def _launch_executable(executable_path: Path) -> None:
+class NullProgressWindow:
+    def start(self, message: str) -> None:
+        return None
+
+    def update(self, message: str) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+def _append_helper_diagnostics(log_path: Path, event: str, **fields: Any) -> None:
+    row = {
+        "ts": iso_now(),
+        "event": str(event or "").strip() or "unknown",
+        "fields": {key: value for key, value in fields.items()},
+    }
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except OSError:
+        return
+
+
+def _helper_diagnostics_path_for_plan(plan_path: Path) -> Path:
+    try:
+        raw = json.loads(plan_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return plan_path.parent / "desktop-updater-helper.diagnostics.jsonl"
+    helper_path = Path(str(raw.get("helperDiagnosticsPath") or "")).expanduser()
+    if str(helper_path).strip():
+        return helper_path.resolve()
+    updater_dir = Path(str(raw.get("updaterWorkingDir") or "")).expanduser()
+    if str(updater_dir).strip():
+        return updater_dir.resolve() / "desktop-updater-helper.diagnostics.jsonl"
+    return plan_path.parent / "desktop-updater-helper.diagnostics.jsonl"
+
+
+def _launch_executable(executable_path: Path, *, clear_app_version_override: bool = False) -> None:
     if not executable_path.is_file():
         raise RuntimeError(f"Desktop executable not found: {executable_path}")
     creationflags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
+    env = None
+    if clear_app_version_override:
+        env = os.environ.copy()
+        env.pop("BALUFFO_APP_VERSION_OVERRIDE", None)
     subprocess.Popen(  # noqa: S603
         [str(executable_path)],
+        cwd=str(executable_path.parent),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         creationflags=creationflags,
+        env=env,
     )
 
 
@@ -367,7 +407,7 @@ def _recover_interrupted_install(
     return False
 
 
-def run_install(plan_path: Path) -> dict[str, Any]:
+def run_install(plan_path: Path, progress: HelperProgressWindow | NullProgressWindow | None = None) -> dict[str, Any]:
     plan = validate_install_plan(json.loads(plan_path.read_text(encoding="utf-8")))
     install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()
     ship_root = install_root / "ship"
@@ -390,12 +430,17 @@ def run_install(plan_path: Path) -> dict[str, Any]:
     if expected_hash and compute_sha256(zip_path).lower() != expected_hash:
         raise RuntimeError("Downloaded desktop ZIP failed re-verification.")
     existing_status = load_status(paths)
-    progress = HelperProgressWindow()
+    progress = progress if progress is not None else NullProgressWindow()
     progress.start(
         str(existing_status.get("installStageLabel") or "").strip()
         or install_stage_label("handoff_requested", "preparing")
     )
-    temp_extract = Path(tempfile.mkdtemp(prefix="baluffo-desktop-update-"))
+    staging_root = paths.updater_dir / "staging"
+    staging_root.mkdir(parents=True, exist_ok=True)
+    temp_extract = (staging_root / f"baluffo-desktop-update-{uuid.uuid4().hex}").resolve()
+    if temp_extract.exists():
+        shutil.rmtree(temp_extract)
+    temp_extract.mkdir(parents=True, exist_ok=True)
     backup_ref: Path | None = None
     try:
         recovered_as_complete = _recover_interrupted_install(
@@ -423,6 +468,7 @@ def run_install(plan_path: Path) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
         )
         _wait_for_launcher_exit(plan)
+        clear_handoff_request(paths)
 
         progress.update(install_stage_label("installing", "extracting"))
         _status_for_stage(
@@ -486,7 +532,7 @@ def run_install(plan_path: Path) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
-        _launch_executable(install_root / "Baluffo.exe")
+        _launch_executable(install_root / "Baluffo.exe", clear_app_version_override=True)
         _status_for_stage(
             paths,
             install_state="verifying",
@@ -498,6 +544,7 @@ def run_install(plan_path: Path) -> dict[str, Any]:
         _finalize_success(paths, plan, rollback_root)
         return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
     except Exception:
+        clear_handoff_request(paths)
         progress.update(install_stage_label("installing", "rolling_back"))
         if backup_ref is not None:
             with contextlib.suppress(Exception):
@@ -527,6 +574,7 @@ def run_install(plan_path: Path) -> dict[str, Any]:
         )
         raise
     finally:
+        clear_handoff_request(paths)
         progress.close()
         with contextlib.suppress(OSError):
             shutil.rmtree(temp_extract)
@@ -540,14 +588,69 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    plan_path = Path(args.install_plan).expanduser().resolve()
+    diagnostics_path = _helper_diagnostics_path_for_plan(plan_path)
+    _append_helper_diagnostics(
+        diagnostics_path,
+        "helper_main_started",
+        pid=os.getpid(),
+        planPath=str(plan_path),
+    )
+    progress = HelperProgressWindow()
+    result_holder: dict[str, Any] = {}
+    error_holder: dict[str, Any] = {}
+
+    def worker() -> None:
+        _append_helper_diagnostics(diagnostics_path, "helper_worker_started", pid=os.getpid())
+        try:
+            result_holder["result"] = run_install(plan_path, progress=progress)
+            result = (
+                result_holder.get("result") if isinstance(result_holder.get("result"), dict) else {}
+            )
+            _append_helper_diagnostics(
+                diagnostics_path,
+                "helper_worker_succeeded",
+                installedVersion=str(result.get("installedVersion") or ""),
+            )
+        except Exception as exc:  # noqa: BLE001
+            error_holder["error"] = str(exc)
+            error_holder["traceback"] = traceback.format_exc()
+            _append_helper_diagnostics(
+                diagnostics_path,
+                "helper_worker_failed",
+                error=str(exc),
+                traceback=str(error_holder.get("traceback") or ""),
+            )
+            progress.close()
+
+    thread = threading.Thread(target=worker, daemon=True, name="baluffo-updater-install")
     try:
-        result = run_install(Path(args.install_plan).expanduser().resolve())
+        thread.start()
+        _append_helper_diagnostics(diagnostics_path, "helper_progress_loop_started")
+        progress.run("Preparing update")
+        thread.join()
+        if error_holder:
+            raise RuntimeError(str(error_holder.get("error") or "Baluffo desktop update failed."))
+        result = result_holder.get("result") if isinstance(result_holder.get("result"), dict) else {}
+        _append_helper_diagnostics(
+            diagnostics_path,
+            "helper_main_succeeded",
+            installedVersion=str(result.get("installedVersion") or ""),
+        )
         print(json.dumps(result, indent=2))
         return 0
     except Exception as exc:  # noqa: BLE001
+        _append_helper_diagnostics(
+            diagnostics_path,
+            "helper_main_failed",
+            error=str(exc),
+            traceback=traceback.format_exc(),
+        )
         _show_message("Baluffo Update Failed", str(exc))
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
         return 1
+    finally:
+        _append_helper_diagnostics(diagnostics_path, "helper_main_finished")
 
 
 if __name__ == "__main__":

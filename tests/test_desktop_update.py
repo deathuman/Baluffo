@@ -5,6 +5,7 @@ from unittest import mock
 
 import pytest
 
+from src import app_version
 from src.ship import desktop_update as du
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -90,6 +91,15 @@ def test_updater_install_requested_reads_persisted_state() -> None:
         assert du.updater_install_requested(data_dir) is True
 
 
+def test_updater_install_requested_reads_handoff_marker() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        du.write_json_atomic(paths.handoff_request_path, {"requestedAt": "2026-04-14T12:00:00Z"})
+
+        assert du.updater_install_requested(data_dir) is True
+
+
 def test_load_status_derives_install_stage_label_from_install_state() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"
@@ -125,6 +135,49 @@ def test_load_desktop_update_public_keys_reads_packaged_fallback() -> None:
         )
 
         assert keys["desktop-ed25519-2026-01"] == b"p" * 32
+
+
+def test_get_app_version_honors_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(app_version.APP_VERSION_OVERRIDE_ENV, "0.0.9")
+
+    assert app_version.get_app_version() == "0.0.9"
+
+
+def test_resolve_github_api_base_honors_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(du.GITHUB_API_BASE_ENV, "http://127.0.0.1:9000/api/")
+
+    assert du.resolve_github_api_base() == "http://127.0.0.1:9000/api"
+
+
+def test_resolve_desktop_session_root_falls_back_to_temp_when_primary_is_not_writable() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        local_app_data = Path(tmp) / "local-app-data"
+        temp_root = Path(tmp) / "temp-root"
+        original_write_text = Path.write_text
+
+        def flaky_write_text(self: Path, data: str, encoding: str | None = None, errors: str | None = None, newline: str | None = None) -> int:
+            path_text = str(self)
+            if ".baluffo-write-probe" in path_text and "local-app-data" in path_text:
+                raise OSError("read-only")
+            return original_write_text(self, data, encoding=encoding, errors=errors, newline=newline)
+
+        with (
+            mock.patch.dict(
+                du.os.environ,
+                {
+                    "LOCALAPPDATA": str(local_app_data),
+                    "USERNAME": "tester",
+                    "TEMP": str(temp_root),
+                    "TMP": str(temp_root),
+                },
+                clear=False,
+            ),
+            mock.patch.object(du.tempfile, "gettempdir", return_value=str(temp_root)),
+            mock.patch.object(Path, "write_text", new=flaky_write_text),
+        ):
+            session_root = du.resolve_desktop_session_root()
+
+        assert session_root == (temp_root / "Baluffo-tester").resolve()
 
 
 def test_request_install_writes_plan_and_launches_helper() -> None:
@@ -185,7 +238,6 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
             mock.patch.object(du, "resolve_desktop_session_root", return_value=session_root),
             mock.patch.object(du.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
             mock.patch.object(du, "verify_manifest_signature"),
-            mock.patch.object(du.subprocess, "Popen") as popen_mock,
         ):
             result = service.request_install()
 
@@ -194,7 +246,58 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
         assert plan["launcherPid"] == 1234
         assert plan["launcherToken"] == "token-1"
         assert plan["targetVersion"] == "1.4.0"
+        assert plan["helperStdoutPath"] == str(paths.helper_stdout_log_path)
+        assert plan["helperStderrPath"] == str(paths.helper_stderr_log_path)
+        assert plan["helperDiagnosticsPath"] == str(paths.helper_diagnostics_log_path)
         assert result["status"]["installStage"] == "preparing"
         assert result["status"]["installStageLabel"] == "Preparing update"
         assert result["status"]["rollbackPath"]
+        assert paths.handoff_request_path.is_file()
+
+
+def test_launch_staged_update_helper_uses_logged_spawn_contract() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        install_root = Path(tmp) / "portable"
+        data_dir = install_root / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        temp_helper = Path(tmp) / "BaluffoUpdater-temp.exe"
+        temp_helper.write_text("helper", encoding="utf-8")
+        du.write_json_atomic(
+            paths.install_plan_path,
+            {
+                "planVersion": 1,
+                "installRoot": str(install_root),
+                "tempHelperPath": str(temp_helper),
+                "targetVersion": "1.4.0",
+                "currentVersion": "0.1.0",
+                "manifestPath": str(paths.manifest_cache_path),
+                "downloadedZipPath": str(paths.downloads_dir / "baluffo-portable-1.4.0.zip"),
+                "expectedZipSha256": "abc",
+                "manifestKeyId": "desktop-ed25519-test",
+                "rollbackPath": str(paths.rollback_root / "1.4.0-20260414-120000"),
+                "updaterWorkingDir": str(paths.updater_dir),
+                "helperStdoutPath": str(paths.helper_stdout_log_path),
+                "helperStderrPath": str(paths.helper_stderr_log_path),
+                "helperDiagnosticsPath": str(paths.helper_diagnostics_log_path),
+                "createdAt": "2026-04-14T12:00:00Z",
+                "launcherPid": 1234,
+                "launcherToken": "token-1",
+                "desktopSessionRoot": str(Path(tmp) / "session"),
+            },
+        )
+
+        with mock.patch.object(du.subprocess, "Popen") as popen_mock:
+            du.launch_staged_update_helper(paths)
+
         popen_mock.assert_called_once()
+        _, kwargs = popen_mock.call_args
+        expected_flags = 0
+        if du.os.name == "nt":
+            expected_flags = int(getattr(du.subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        assert int(kwargs.get("creationflags") or 0) == expected_flags
+        assert kwargs["cwd"] == str(paths.updater_dir)
+        assert isinstance(kwargs["env"], dict)
+        assert kwargs["env"]["TEMP"] == str((paths.updater_dir / "runtime-tmp").resolve())
+        assert kwargs["env"]["TMP"] == str((paths.updater_dir / "runtime-tmp").resolve())
+        assert Path(str(kwargs["stdout"].name)).resolve() == paths.helper_stdout_log_path.resolve()
+        assert Path(str(kwargs["stderr"].name)).resolve() == paths.helper_stderr_log_path.resolve()

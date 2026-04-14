@@ -36,6 +36,7 @@ def test_create_runtime_config_defaults_to_fixed_desktop_ports() -> None:
     assert config.bridge_port == desktop_app.DEFAULT_BRIDGE_PORT
     assert not config.site_port_explicit
     assert not config.bridge_port_explicit
+    assert config.no_browser is False
     assert config.data_dir == root / "data"
     assert config.open_path == "admin.html"
     assert config.title == desktop_app.WINDOW_TITLE
@@ -61,6 +62,31 @@ def test_create_runtime_config_defaults_to_jobs_entry() -> None:
         config = desktop_app.create_runtime_config(args)
 
     assert config.open_path == "jobs.html"
+
+
+def test_create_runtime_config_can_enable_test_no_browser_mode_from_env() -> None:
+    root = Path("C:/tmp/baluffo-ship")
+    args = argparse.Namespace(
+        root=str(root),
+        site_port=0,
+        bridge_port=0,
+        bridge_host="127.0.0.1",
+        data_dir="",
+        open_path="jobs.html",
+        title="",
+        port=0,
+        bind_host="127.0.0.1",
+        child_mode="",
+        desktop_runtime=False,
+        startup_probe=False,
+    )
+    with (
+        mock.patch.object(desktop_app, "resolve_ship_root", return_value=root),
+        mock.patch.dict(desktop_app.os.environ, {desktop_app.NO_BROWSER_ENV: "1"}, clear=False),
+    ):
+        config = desktop_app.create_runtime_config(args)
+
+    assert config.no_browser is True
 
 
 def test_build_open_url_marks_desktop_mode() -> None:
@@ -538,9 +564,7 @@ def test_watch_browser_session_uses_heartbeat_when_no_browser_process() -> None:
 
 def test_watch_browser_session_detects_window_close_in_detached_mode() -> None:
     with (
-        mock.patch.object(
-            desktop_app, "_is_baluffo_browser_window_open", side_effect=[True, True, False]
-        ),
+        mock.patch.object(desktop_app, "_is_baluffo_browser_window_open", return_value=False),
         mock.patch.object(desktop_app, "latest_browser_heartbeat_ts", return_value=0.0),
         mock.patch.object(desktop_app, "bridge_last_activity_ts", return_value=0.0),
         mock.patch.object(desktop_app.time, "sleep"),
@@ -554,6 +578,50 @@ def test_watch_browser_session_detects_window_close_in_detached_mode() -> None:
         )
 
     assert result == "window_closed"
+
+
+def test_watch_browser_session_keeps_detached_launcher_alive_when_heartbeat_exists() -> None:
+    with (
+        mock.patch.object(desktop_app, "_is_baluffo_browser_window_open", return_value=False),
+        mock.patch.object(
+            desktop_app, "latest_browser_heartbeat_ts", side_effect=[100.0, 100.0, 100.0]
+        ),
+        mock.patch.object(desktop_app, "bridge_last_activity_ts", return_value=0.0),
+        mock.patch.object(desktop_app.time, "time", side_effect=[110.0, 120.0, 140.5]),
+        mock.patch.object(desktop_app.time, "sleep"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+    ):
+        result = desktop_app.watch_browser_session(
+            Path("C:/tmp"),
+            5.0,
+            bridge_port=8877,
+            browser_process=None,
+            heartbeat_idle_timeout_s=30.0,
+        )
+
+    assert result == "heartbeat_timeout"
+
+
+def test_watch_browser_session_ignores_missing_window_in_no_browser_mode() -> None:
+    with (
+        mock.patch.object(desktop_app, "latest_browser_heartbeat_ts", side_effect=[100.0, 100.0, 100.0]),
+        mock.patch.object(desktop_app, "bridge_last_activity_ts", return_value=0.0),
+        mock.patch.object(desktop_app.time, "time", side_effect=[110.0, 120.0, 140.5]),
+        mock.patch.object(desktop_app.time, "sleep"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(desktop_app, "_is_baluffo_browser_window_open") as window_mock,
+    ):
+        result = desktop_app.watch_browser_session(
+            Path("C:/tmp"),
+            5.0,
+            bridge_port=8877,
+            browser_process=None,
+            heartbeat_idle_timeout_s=30.0,
+            require_window=False,
+        )
+
+    assert result == "heartbeat_timeout"
+    window_mock.assert_not_called()
 
 
 def test_main_surfaces_native_error_without_installer_prompt() -> None:
@@ -690,9 +758,123 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
     assert save_payload["browserPath"] == "C:/Edge/msedge.exe"
     assert save_payload["bridgePort"] == 8877
     watch_mock.assert_called_once_with(
-        data_dir, mock.ANY, bridge_port=8877, browser_process=fake_browser_process
+        data_dir,
+        mock.ANY,
+        bridge_port=8877,
+        browser_process=fake_browser_process,
+        require_window=True,
     )
     clear_mock.assert_called_once()
+
+
+def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=data_dir,
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+        no_browser=True,
+    )
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(
+            desktop_app,
+            "start_child_process",
+            side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
+        ),
+        mock.patch.object(desktop_app, "wait_for_url"),
+        mock.patch.object(desktop_app, "wait_for_baluffo_bridge"),
+        mock.patch.object(desktop_app, "launch_browser_for_url") as launch_browser_mock,
+        mock.patch.object(desktop_app, "save_session_state") as save_mock,
+        mock.patch.object(
+            desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
+        ) as watch_mock,
+        mock.patch.object(desktop_app, "clear_session_state"),
+        mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+    ):
+        desktop_app.launch_desktop_app(config)
+
+    launch_browser_mock.assert_not_called()
+    save_payload = save_mock.call_args.args[0]
+    assert save_payload["launchMode"] == "no-browser"
+    watch_mock.assert_called_once_with(
+        data_dir,
+        mock.ANY,
+        bridge_port=8877,
+        browser_process=None,
+        require_window=False,
+    )
+
+
+def test_launch_desktop_app_spawns_update_helper_from_launcher_on_install_request() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=data_dir,
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+    )
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(
+            desktop_app,
+            "start_child_process",
+            side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
+        ),
+        mock.patch.object(desktop_app, "wait_for_url"),
+        mock.patch.object(desktop_app, "wait_for_baluffo_bridge"),
+        mock.patch.object(
+            desktop_app,
+            "launch_browser_for_url",
+            return_value={
+                "mode": "chromium-app",
+                "browserName": "msedge",
+                "browserPath": "C:/Edge/msedge.exe",
+                "process": None,
+            },
+        ),
+        mock.patch.object(desktop_app, "save_session_state"),
+        mock.patch.object(
+            desktop_app, "watch_browser_session", return_value="update_install_requested"
+        ),
+        mock.patch.object(desktop_app, "launch_staged_update_helper") as launch_helper_mock,
+        mock.patch.object(desktop_app, "clear_session_state"),
+        mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+    ):
+        desktop_app.launch_desktop_app(config)
+
+    launch_helper_mock.assert_called_once()
+    helper_paths = launch_helper_mock.call_args.args[0]
+    assert helper_paths.install_root == config.ship_root
 
 
 def test_launch_desktop_app_recovers_to_default_browser_after_process_exit() -> None:
@@ -749,9 +931,19 @@ def test_launch_desktop_app_recovers_to_default_browser_after_process_exit() -> 
 
     assert watch_mock.call_count == 2
     watch_mock.assert_any_call(
-        data_dir, mock.ANY, bridge_port=8877, browser_process=fake_browser_process
+        data_dir,
+        mock.ANY,
+        bridge_port=8877,
+        browser_process=fake_browser_process,
+        require_window=True,
     )
-    watch_mock.assert_any_call(data_dir, mock.ANY, bridge_port=8877, browser_process=None)
+    watch_mock.assert_any_call(
+        data_dir,
+        mock.ANY,
+        bridge_port=8877,
+        browser_process=None,
+        require_window=True,
+    )
     recover_mock.assert_called_once()
 
 

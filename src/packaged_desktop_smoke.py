@@ -4,14 +4,18 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import contextlib
 import ctypes
 import errno
+import http.server
 import json
 import os
 import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -23,8 +27,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.local_data_store import LocalDataPaths, LocalDataStore
 from src.python_version_guard import ensure_required_python
 from src.shared.utils import utc_now_iso
+from src.ship import desktop_update as desktop_update_mod
 from src.ship.startup_profile import (
     render_startup_summary,
     summarize_startup_metrics,
@@ -134,6 +140,42 @@ def fetch_json(url: str, timeout_s: float = 2.5) -> dict[str, Any]:
 def fetch_text(url: str, timeout_s: float = 2.5) -> str:
     with urllib.request.urlopen(url, timeout=timeout_s) as response:
         return response.read().decode("utf-8", errors="replace")
+
+
+def request_json(
+    url: str,
+    *,
+    method: str = "GET",
+    payload: dict[str, Any] | None = None,
+    timeout_s: float = 10.0,
+) -> tuple[int, dict[str, Any]]:
+    body = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(
+        str(url),
+        data=body,
+        headers=headers,
+        method=str(method or "GET").upper(),
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            parsed = json.loads(raw or "{}")
+            return int(getattr(response, "status", 200) or 200), parsed if isinstance(parsed, dict) else {}
+    except urllib.error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(raw or "{}")
+        except json.JSONDecodeError:
+            parsed = {"error": raw or str(exc)}
+        return int(getattr(exc, "code", 500) or 500), parsed if isinstance(parsed, dict) else {}
+
+
+def post_json(url: str, payload: dict[str, Any] | None = None, *, timeout_s: float = 10.0) -> tuple[int, dict[str, Any]]:
+    return request_json(url, method="POST", payload=payload or {}, timeout_s=timeout_s)
 
 
 def fetch_startup_metrics(bridge_base_url: str, limit: int = 1000) -> list[dict[str, Any]]:
@@ -867,6 +909,449 @@ def run_warmup_launch(
             stderr_handle.close()
 
 
+def _archive_portable_dir(portable_dir: Path, target_zip: Path) -> Path:
+    if target_zip.exists():
+        target_zip.unlink()
+    built = shutil.make_archive(str(target_zip.with_suffix("")), "zip", root_dir=str(portable_dir))
+    return Path(built).expanduser().resolve()
+
+
+def _inject_desktop_update_public_keys(portable_root: Path, public_keys: dict[str, str]) -> None:
+    root = portable_root.expanduser().resolve()
+    app_dir = root / "ship" / "app"
+    current_version_path = app_dir / "current.txt"
+    current_version = str(current_version_path.read_text(encoding="utf-8").strip())
+    if not current_version:
+        raise RuntimeError(f"Portable build is missing current version metadata: {current_version_path}")
+    payload = json.dumps(public_keys, indent=2, sort_keys=True)
+    targets = [
+        app_dir / desktop_update_mod.PUBLIC_KEYS_FILE,
+        app_dir / "versions" / current_version / "packaging" / desktop_update_mod.PUBLIC_KEYS_FILE,
+    ]
+    for target in targets:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(payload, encoding="utf-8")
+
+
+def _seed_rehearsal_local_data(data_dir: Path) -> dict[str, Any]:
+    store = LocalDataStore(LocalDataPaths.from_data_dir(data_dir))
+    user = store.sign_in("Packaged Update Rehearsal")
+    uid = str(user.get("uid") or "")
+    job_key = store.save_job_for_user(
+        uid,
+        {
+            "title": "Packaged Update QA",
+            "company": "Baluffo QA",
+            "city": "Amsterdam",
+            "country": "Netherlands",
+            "jobLink": "https://example.com/packaged-update-qa",
+            "isCustom": True,
+            "customSourceLabel": "Rehearsal",
+            "applicationStatus": "bookmark",
+        },
+    )
+    notes = "Preserve this saved job across the packaged updater rehearsal."
+    store.update_job_notes(uid, job_key, notes)
+    attachment_payload = b"desktop update rehearsal attachment"
+    attachment_id = store.add_attachment_for_job(
+        uid,
+        job_key,
+        {
+            "name": "desktop-update-rehearsal.txt",
+            "type": "text/plain",
+            "size": len(attachment_payload),
+        },
+        "data:text/plain;base64," + base64.b64encode(attachment_payload).decode("ascii"),
+    )
+    return {
+        "uid": uid,
+        "jobKey": job_key,
+        "notes": notes,
+        "attachmentId": attachment_id,
+        "attachmentName": "desktop-update-rehearsal.txt",
+    }
+
+
+class _DesktopUpdateReleaseHandler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def __init__(self, *args: Any, release_payload: list[dict[str, Any]], manifest: dict[str, Any], portable_zip: Path, **kwargs: Any) -> None:
+        self._release_payload = release_payload
+        self._manifest = manifest
+        self._portable_zip = portable_zip
+        super().__init__(*args, **kwargs)
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+        return
+
+    def _send_json(self, payload: Any, *, status: int = 200) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(int(status))
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_file(self, path: Path, *, content_type: str) -> None:
+        body = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", str(content_type))
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:  # noqa: N802
+        if self.path.startswith("/repos/local/baluffo-smoke/releases"):
+            self._send_json(self._release_payload)
+            return
+        if self.path == "/assets/baluffo-desktop-update-manifest.json":
+            self._send_json(self._manifest)
+            return
+        if self.path == "/assets/baluffo-portable-update.zip":
+            self._send_file(self._portable_zip, content_type="application/zip")
+            return
+        if self.path == "/release-notes":
+            body = b"Packaged desktop update rehearsal"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_error(404)
+
+
+def _start_desktop_update_release_server(
+    *,
+    manifest: dict[str, Any],
+    portable_zip: Path,
+) -> tuple[str, http.server.ThreadingHTTPServer, threading.Thread]:
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), lambda *args, **kwargs: _DesktopUpdateReleaseHandler(*args, release_payload=[], manifest=manifest, portable_zip=portable_zip, **kwargs))
+    base_url = f"http://127.0.0.1:{int(server.server_port)}"
+    release_payload = [
+        {
+            "id": 1,
+            "tag_name": f"v{manifest.get('version')}",
+            "draft": False,
+            "prerelease": False,
+            "html_url": f"{base_url}/release-notes",
+            "assets": [
+                {
+                    "name": desktop_update_mod.DESKTOP_UPDATE_MANIFEST_ASSET,
+                    "browser_download_url": f"{base_url}/assets/{desktop_update_mod.DESKTOP_UPDATE_MANIFEST_ASSET}",
+                }
+            ],
+        }
+    ]
+    server.RequestHandlerClass = lambda *args, **kwargs: _DesktopUpdateReleaseHandler(  # type: ignore[assignment]
+        *args,
+        release_payload=release_payload,
+        manifest=manifest,
+        portable_zip=portable_zip,
+        **kwargs,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True, name="desktop-update-release-server")
+    thread.start()
+    return base_url, server, thread
+
+
+def _wait_for_update_status(
+    bridge_base_url: str,
+    predicate: Any,
+    *,
+    timeout_s: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + max(5.0, float(timeout_s))
+    last_payload: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        try:
+            last_payload = fetch_json(f"{bridge_base_url}/app/update-status", timeout_s=5.0)
+        except Exception:  # noqa: BLE001
+            last_payload = {}
+        if predicate(last_payload):
+            return last_payload
+        time.sleep(0.5)
+    raise TimeoutError(f"Timed out waiting for updater status transition: {last_payload}")
+
+
+def _wait_for_process_exit(process: subprocess.Popen[Any], *, timeout_s: float) -> None:
+    deadline = time.monotonic() + max(5.0, float(timeout_s))
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            return
+        time.sleep(0.5)
+    raise TimeoutError("Packaged runtime did not exit for helper handoff in time.")
+
+
+def _wait_for_relaunched_runtime(
+    *,
+    expected_data_dir: Path,
+    expected_version: str,
+    timeout_s: float,
+) -> dict[str, Any]:
+    session_root = desktop_update_mod.resolve_desktop_session_root()
+    session_path = session_root / "desktop-session.json"
+    deadline = time.monotonic() + max(10.0, float(timeout_s))
+    last_health: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        if not session_path.exists():
+            time.sleep(0.75)
+            continue
+        session = desktop_update_mod.read_desktop_session_state(session_root)
+        if Path(str(session.get("dataDir") or "")).expanduser().resolve() != expected_data_dir.resolve():
+            time.sleep(0.75)
+            continue
+        bridge_port = int(session.get("bridgePort") or 0)
+        if bridge_port <= 0:
+            time.sleep(0.75)
+            continue
+        try:
+            last_health = fetch_json(f"http://127.0.0.1:{bridge_port}/ops/health", timeout_s=5.0)
+        except Exception:  # noqa: BLE001
+            last_health = {}
+            time.sleep(0.75)
+            continue
+        if (
+            isinstance(last_health, dict)
+            and bool(last_health.get("desktopMode"))
+            and bool(last_health.get("startupReady"))
+            and str(last_health.get("appVersion") or "").strip() == str(expected_version or "").strip()
+        ):
+            return {"session": session, "health": last_health}
+        time.sleep(0.75)
+    raise TimeoutError(f"Updated packaged runtime did not relaunch successfully: {last_health}")
+
+
+def _verify_rehearsal_local_data(data_dir: Path, expected: dict[str, Any]) -> None:
+    store = LocalDataStore(LocalDataPaths.from_data_dir(data_dir))
+    uid = str(expected.get("uid") or "")
+    current_user = store.get_current_user() or {}
+    if str(current_user.get("uid") or "") != uid:
+        raise RuntimeError("Desktop update rehearsal did not preserve the signed-in local profile.")
+    rows = store.list_saved_jobs(uid)
+    target = next((row for row in rows if str(row.get("jobKey") or "") == str(expected.get("jobKey") or "")), None)
+    if not target:
+        raise RuntimeError("Desktop update rehearsal did not preserve the saved custom job.")
+    if str(target.get("notes") or "") != str(expected.get("notes") or ""):
+        raise RuntimeError("Desktop update rehearsal did not preserve saved job notes.")
+    attachments = store.list_attachments_for_job(uid, str(expected.get("jobKey") or ""))
+    if not any(str(row.get("id") or "") == str(expected.get("attachmentId") or "") for row in attachments):
+        raise RuntimeError("Desktop update rehearsal did not preserve job attachments.")
+
+
+def _preferred_desktop_browser_env() -> dict[str, str]:
+    try:
+        from src.ship.desktop_app.__init__ import resolve_chromium_browser_candidates
+    except Exception:  # noqa: BLE001
+        return {}
+    candidates = resolve_chromium_browser_candidates()
+    browser_path = str((candidates[0] or {}).get("path") or "").strip() if candidates else ""
+    return {"BALUFFO_DESKTOP_BROWSER_PATH": browser_path} if browser_path else {}
+
+
+def run_desktop_update_rehearsal(
+    *,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    portable_root = exe_path.parent.resolve()
+    if desktop_update_mod.Ed25519PrivateKey is None:
+        raise RuntimeError("Desktop update rehearsal requires Ed25519 signing support.")
+    private_key = desktop_update_mod.Ed25519PrivateKey.generate()
+    public_key_b64 = base64.b64encode(private_key.public_key().public_bytes_raw()).decode("ascii")
+    key_id = "desktop-ed25519-rehearsal"
+    _inject_desktop_update_public_keys(portable_root, {key_id: public_key_b64})
+    install_root = artifacts_dir / "portable-install"
+    if install_root.exists():
+        shutil.rmtree(install_root)
+    shutil.copytree(portable_root, install_root)
+    install_exe = install_root / "Baluffo.exe"
+    data_dir = install_root / "ship" / "data"
+    seeded = _seed_rehearsal_local_data(data_dir)
+    target_zip = _archive_portable_dir(portable_root, artifacts_dir / "baluffo-portable-update.zip")
+    manifest = {
+        "schema_version": desktop_update_mod.DESKTOP_UPDATE_SCHEMA_VERSION,
+        "key_id": key_id,
+        "channel": desktop_update_mod.DESKTOP_UPDATE_CHANNEL,
+        "version": desktop_update_mod.get_app_version(),
+        "published_at": utc_now_iso(),
+        "release_notes_url": "",
+        "min_desktop_updater_version": desktop_update_mod.DESKTOP_UPDATER_VERSION,
+        "min_supported_current_version": "0.0.0",
+        "data_schema_version": "1",
+        "rollback_allowed": True,
+        "portable_artifact": {
+            "url": "",
+            "sha256": desktop_update_mod.compute_sha256(target_zip),
+            "size_bytes": int(target_zip.stat().st_size),
+        },
+        "migration_plan": [],
+    }
+
+    server = None
+    server_thread = None
+    process = None
+    stdout_handle = None
+    stderr_handle = None
+    relaunch_launcher_pid = 0
+    relaunch_site_port = 0
+    relaunch_bridge_port = 0
+    try:
+        base_url, server, server_thread = _start_desktop_update_release_server(
+            manifest=manifest,
+            portable_zip=target_zip,
+        )
+        manifest["release_notes_url"] = f"{base_url}/release-notes"
+        manifest["portable_artifact"]["url"] = f"{base_url}/assets/baluffo-portable-update.zip"
+        manifest["signature"] = desktop_update_mod.sign_manifest(
+            manifest,
+            private_key.private_bytes_raw(),
+        )
+
+        runtime_env = os.environ.copy()
+        runtime_env.update(
+            {
+                "BALUFFO_APP_VERSION_OVERRIDE": "0.0.9",
+                "BALUFFO_DESKTOP_NO_BROWSER": "1",
+                "BALUFFO_DESKTOP_UPDATE_REPO": "local/baluffo-smoke",
+                "BALUFFO_DESKTOP_UPDATE_GITHUB_API_BASE": base_url,
+                "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON": json.dumps({key_id: public_key_b64}),
+            }
+        )
+        runtime_env.update(_preferred_desktop_browser_env())
+        initial_site_port = choose_free_port()
+        initial_bridge_port = choose_free_port()
+        stdout_path = artifacts_dir / "desktop-update-rehearsal.stdout.log"
+        stderr_path = artifacts_dir / "desktop-update-rehearsal.stderr.log"
+        process, stdout_handle, stderr_handle = launch_packaged_exe(
+            install_exe,
+            site_port=initial_site_port,
+            bridge_port=initial_bridge_port,
+            data_dir=data_dir,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            open_path="jobs.html",
+            startup_probe=False,
+            env=runtime_env,
+        )
+        wait_for_packaged_runtime(
+            process,
+            site_base_url=f"http://127.0.0.1:{initial_site_port}",
+            bridge_base_url=f"http://127.0.0.1:{initial_bridge_port}",
+            timeout_s=runtime_timeout_s,
+            open_path="jobs.html",
+        )
+
+        status_code, check_payload = post_json(
+            f"http://127.0.0.1:{initial_bridge_port}/app/check-for-update",
+            {"force": True},
+            timeout_s=10.0,
+        )
+        if status_code != 200:
+            raise RuntimeError(f"Update check failed: {check_payload}")
+        check_status = (
+            dict(check_payload.get("status") or {})
+            if isinstance(check_payload.get("status"), dict)
+            else dict(check_payload)
+            if isinstance(check_payload, dict)
+            else {}
+        )
+        if not bool(check_status.get("updateAvailable")) or str(check_status.get("availability") or "") != "available":
+            raise RuntimeError(f"Update check did not surface an available release: {check_status}")
+        paths = desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
+        staged_zip = paths.downloads_dir / target_zip.name
+        staged_zip.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(target_zip, staged_zip)
+        staged_status = desktop_update_mod.load_status(paths, current_version="0.0.9")
+        staged_status.update(
+            {
+                "downloadState": "downloaded",
+                "downloadedBytes": int(target_zip.stat().st_size),
+                "totalBytes": int(target_zip.stat().st_size),
+                "downloadPercent": 100,
+                "installState": "ready",
+                "downloadedZipPath": str(staged_zip),
+                "lastError": "",
+            }
+        )
+        desktop_update_mod.save_status(paths, staged_status)
+        status_code, install_payload = post_json(
+            f"http://127.0.0.1:{initial_bridge_port}/app/install-update",
+            {},
+            timeout_s=10.0,
+        )
+        if status_code != 200:
+            raise RuntimeError(f"Update install handoff could not start: {install_payload}")
+        session_root = desktop_update_mod.resolve_desktop_session_root()
+        session_state_path = session_root / "desktop-session.json"
+        with contextlib.suppress(OSError):
+            session_state_path.unlink()
+        _wait_for_process_exit(process, timeout_s=max(20.0, runtime_timeout_s))
+        relaunched = _wait_for_relaunched_runtime(
+            expected_data_dir=data_dir,
+            expected_version=desktop_update_mod.get_app_version(),
+            timeout_s=max(45.0, runtime_timeout_s),
+        )
+        _verify_rehearsal_local_data(data_dir, seeded)
+        relaunch_session = relaunched.get("session") if isinstance(relaunched.get("session"), dict) else {}
+        relaunch_launcher_pid = int(relaunch_session.get("launcherPid") or 0)
+        relaunch_bridge_port = int(relaunch_session.get("bridgePort") or 0)
+        relaunch_site_port = int(relaunch_session.get("sitePort") or 0)
+        return {
+            "name": "Packaged desktop updater rehearsal",
+            "slug": "desktop-update-rehearsal",
+            "status": "passed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": "",
+            "details": {
+                "installRoot": str(install_root),
+                "targetZip": str(target_zip),
+                "releaseBaseUrl": str(base_url),
+                "relaunchBridgePort": relaunch_bridge_port,
+                "helperStdoutLog": str(paths.helper_stdout_log_path),
+                "helperStderrLog": str(paths.helper_stderr_log_path),
+                "helperDiagnosticsLog": str(paths.helper_diagnostics_log_path),
+            },
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "name": "Packaged desktop updater rehearsal",
+            "slug": "desktop-update-rehearsal",
+            "status": "failed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": str(exc),
+        }
+    finally:
+        terminate_process_tree(process)
+        if stdout_handle is not None:
+            stdout_handle.close()
+        if stderr_handle is not None:
+            stderr_handle.close()
+        if relaunch_launcher_pid > 0:
+            with contextlib.suppress(Exception):
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/PID", str(relaunch_launcher_pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                        timeout=15,
+                    )
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+        if server_thread is not None:
+            server_thread.join(timeout=2.0)
+        cleanup_orphaned_desktop_ports_nt(
+            initial_site_port if "initial_site_port" in locals() else 0,
+            initial_bridge_port if "initial_bridge_port" in locals() else 0,
+            relaunch_site_port,
+            relaunch_bridge_port,
+        )
+
+
 def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     started_at = utc_now_iso()
     run_token = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
@@ -942,6 +1427,30 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             node_smoke_script=node_smoke_script,
             rebuilt_portable_dir=rebuild_output_dir,
         )
+        if bool(args.desktop_update_rehearsal):
+            rehearsal = run_desktop_update_rehearsal(
+                exe_path=exe_path,
+                artifacts_dir=artifacts_dir,
+                runtime_timeout_s=float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S),
+            )
+            report["scenarios"].append(rehearsal)
+            if isinstance(rehearsal.get("details"), dict):
+                details = rehearsal.get("details") or {}
+                for src_key, artifact_key in (
+                    ("helperStdoutLog", "helperStdout"),
+                    ("helperStderrLog", "helperStderr"),
+                    ("helperDiagnosticsLog", "helperDiagnostics"),
+                ):
+                    value = str(details.get(src_key) or "").strip()
+                    if value:
+                        report["artifacts"][artifact_key] = value
+            report["ok"] = str(rehearsal.get("status")) == "passed"
+            if not report["ok"]:
+                report["failure"] = build_failure_payload(
+                    "desktop-update-rehearsal",
+                    str(rehearsal.get("error") or "Packaged desktop update rehearsal failed."),
+                )
+            return report
         if profile_mode == "warm":
             run_warmup_launch(
                 exe_path,
@@ -1156,6 +1665,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--pause-on-failure", action="store_true")
     parser.add_argument("--startup-probe", action="store_true")
     parser.add_argument("--embedded-probes", action="store_true")
+    parser.add_argument("--desktop-update-rehearsal", action="store_true")
     parser.add_argument("--profile-only", action="store_true")
     parser.add_argument("--profile-mode", choices=("cold", "warm"), default="cold")
     parser.add_argument("--open-path", default="jobs.html")

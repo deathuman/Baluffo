@@ -23,6 +23,7 @@
     "test:unit": "npm run test:frontend:unit",
     "test:smoke": "npm run test:frontend",
     "test:frontend:packaged": "npm run check:python-version && python src/packaged_desktop_smoke.py",
+    "test:frontend:packaged:update-rehearsal": "npm run check:python-version && python src/packaged_desktop_smoke.py --desktop-update-rehearsal --rebuild --runtime-timeout 60",
     "test:frontend:packaged:jobs-pipeline": "npm run check:python-version && python src/packaged_desktop_smoke.py --node-smoke-script tests/frontend/packaged-desktop-smoke.jobs-pipeline.mjs --playwright-timeout 300",
     "test:frontend:packaged:orchestrated": "npm run check:python-version && python src/packaged_desktop_smoke.py --exe-path _out/latest/build/portable/Baluffo.exe",
     "test:frontend:packaged:headed": "npm run check:python-version && python src/packaged_desktop_smoke.py --headed --pause-on-failure",
