@@ -49,7 +49,9 @@ def load_packaged_sync_config(module: Any, *, env: dict[str, str] | None = None)
     if callable(normalize_payload):
         normalized = normalize_payload(payload if isinstance(payload, dict) else {})
     else:
-        normalized = normalize_packaged_payload(module, payload if isinstance(payload, dict) else {})
+        normalized = normalize_packaged_payload(
+            module, payload if isinstance(payload, dict) else {}
+        )
     private_key_pem = normalized["privateKeyPem"]
     key_derivation = normalized["keyDerivation"]
     decryption_error = ""
@@ -277,7 +279,9 @@ def request_raw_json(
         if opener is None:
             build_ssl_context = getattr(module, "_build_sync_ssl_context", None)
             ssl_context = (
-                build_ssl_context() if callable(build_ssl_context) else build_sync_ssl_context(module)
+                build_ssl_context()
+                if callable(build_ssl_context)
+                else build_sync_ssl_context(module)
             )
             response_ctx = active_opener(
                 request,

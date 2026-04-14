@@ -164,7 +164,9 @@ def request_json(
         with urllib.request.urlopen(request, timeout=timeout_s) as response:
             raw = response.read().decode("utf-8", errors="replace")
             parsed = json.loads(raw or "{}")
-            return int(getattr(response, "status", 200) or 200), parsed if isinstance(parsed, dict) else {}
+            return int(getattr(response, "status", 200) or 200), parsed if isinstance(
+                parsed, dict
+            ) else {}
     except urllib.error.HTTPError as exc:
         raw = exc.read().decode("utf-8", errors="replace")
         try:
@@ -174,7 +176,9 @@ def request_json(
         return int(getattr(exc, "code", 500) or 500), parsed if isinstance(parsed, dict) else {}
 
 
-def post_json(url: str, payload: dict[str, Any] | None = None, *, timeout_s: float = 10.0) -> tuple[int, dict[str, Any]]:
+def post_json(
+    url: str, payload: dict[str, Any] | None = None, *, timeout_s: float = 10.0
+) -> tuple[int, dict[str, Any]]:
     return request_json(url, method="POST", payload=payload or {}, timeout_s=timeout_s)
 
 
@@ -922,7 +926,9 @@ def _inject_desktop_update_public_keys(portable_root: Path, public_keys: dict[st
     current_version_path = app_dir / "current.txt"
     current_version = str(current_version_path.read_text(encoding="utf-8").strip())
     if not current_version:
-        raise RuntimeError(f"Portable build is missing current version metadata: {current_version_path}")
+        raise RuntimeError(
+            f"Portable build is missing current version metadata: {current_version_path}"
+        )
     payload = json.dumps(public_keys, indent=2, sort_keys=True)
     targets = [
         app_dir / desktop_update_mod.PUBLIC_KEYS_FILE,
@@ -973,9 +979,14 @@ def _seed_rehearsal_local_data(data_dir: Path) -> dict[str, Any]:
 
 
 class _DesktopUpdateReleaseHandler(http.server.BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-
-    def __init__(self, *args: Any, release_payload: list[dict[str, Any]], manifest: dict[str, Any], portable_zip: Path, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        release_payload: list[dict[str, Any]],
+        manifest: dict[str, Any],
+        portable_zip: Path,
+        **kwargs: Any,
+    ) -> None:
         self._release_payload = release_payload
         self._manifest = manifest
         self._portable_zip = portable_zip
@@ -1021,12 +1032,29 @@ class _DesktopUpdateReleaseHandler(http.server.BaseHTTPRequestHandler):
         self.send_error(404)
 
 
+_DesktopUpdateReleaseHandler.protocol_version = "HTTP/1.1"
+
+
 def _start_desktop_update_release_server(
     *,
     manifest: dict[str, Any],
     portable_zip: Path,
 ) -> tuple[str, http.server.ThreadingHTTPServer, threading.Thread]:
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), lambda *args, **kwargs: _DesktopUpdateReleaseHandler(*args, release_payload=[], manifest=manifest, portable_zip=portable_zip, **kwargs))
+    release_payload_holder: dict[str, list[dict[str, Any]]] = {"value": []}
+
+    def _handler_factory(*args: Any, **kwargs: Any) -> _DesktopUpdateReleaseHandler:
+        return _DesktopUpdateReleaseHandler(
+            *args,
+            release_payload=release_payload_holder["value"],
+            manifest=manifest,
+            portable_zip=portable_zip,
+            **kwargs,
+        )
+
+    server = http.server.ThreadingHTTPServer(
+        ("127.0.0.1", 0),
+        _handler_factory,
+    )
     base_url = f"http://127.0.0.1:{int(server.server_port)}"
     release_payload = [
         {
@@ -1043,35 +1071,12 @@ def _start_desktop_update_release_server(
             ],
         }
     ]
-    server.RequestHandlerClass = lambda *args, **kwargs: _DesktopUpdateReleaseHandler(  # type: ignore[assignment]
-        *args,
-        release_payload=release_payload,
-        manifest=manifest,
-        portable_zip=portable_zip,
-        **kwargs,
+    release_payload_holder["value"] = release_payload
+    thread = threading.Thread(
+        target=server.serve_forever, daemon=True, name="desktop-update-release-server"
     )
-    thread = threading.Thread(target=server.serve_forever, daemon=True, name="desktop-update-release-server")
     thread.start()
     return base_url, server, thread
-
-
-def _wait_for_update_status(
-    bridge_base_url: str,
-    predicate: Any,
-    *,
-    timeout_s: float,
-) -> dict[str, Any]:
-    deadline = time.monotonic() + max(5.0, float(timeout_s))
-    last_payload: dict[str, Any] = {}
-    while time.monotonic() < deadline:
-        try:
-            last_payload = fetch_json(f"{bridge_base_url}/app/update-status", timeout_s=5.0)
-        except Exception:  # noqa: BLE001
-            last_payload = {}
-        if predicate(last_payload):
-            return last_payload
-        time.sleep(0.5)
-    raise TimeoutError(f"Timed out waiting for updater status transition: {last_payload}")
 
 
 def _wait_for_process_exit(process: subprocess.Popen[Any], *, timeout_s: float) -> None:
@@ -1098,7 +1103,10 @@ def _wait_for_relaunched_runtime(
             time.sleep(0.75)
             continue
         session = desktop_update_mod.read_desktop_session_state(session_root)
-        if Path(str(session.get("dataDir") or "")).expanduser().resolve() != expected_data_dir.resolve():
+        if (
+            Path(str(session.get("dataDir") or "")).expanduser().resolve()
+            != expected_data_dir.resolve()
+        ):
             time.sleep(0.75)
             continue
         bridge_port = int(session.get("bridgePort") or 0)
@@ -1115,7 +1123,8 @@ def _wait_for_relaunched_runtime(
             isinstance(last_health, dict)
             and bool(last_health.get("desktopMode"))
             and bool(last_health.get("startupReady"))
-            and str(last_health.get("appVersion") or "").strip() == str(expected_version or "").strip()
+            and str(last_health.get("appVersion") or "").strip()
+            == str(expected_version or "").strip()
         ):
             return {"session": session, "health": last_health}
         time.sleep(0.75)
@@ -1129,13 +1138,18 @@ def _verify_rehearsal_local_data(data_dir: Path, expected: dict[str, Any]) -> No
     if str(current_user.get("uid") or "") != uid:
         raise RuntimeError("Desktop update rehearsal did not preserve the signed-in local profile.")
     rows = store.list_saved_jobs(uid)
-    target = next((row for row in rows if str(row.get("jobKey") or "") == str(expected.get("jobKey") or "")), None)
+    target = next(
+        (row for row in rows if str(row.get("jobKey") or "") == str(expected.get("jobKey") or "")),
+        None,
+    )
     if not target:
         raise RuntimeError("Desktop update rehearsal did not preserve the saved custom job.")
     if str(target.get("notes") or "") != str(expected.get("notes") or ""):
         raise RuntimeError("Desktop update rehearsal did not preserve saved job notes.")
     attachments = store.list_attachments_for_job(uid, str(expected.get("jobKey") or ""))
-    if not any(str(row.get("id") or "") == str(expected.get("attachmentId") or "") for row in attachments):
+    if not any(
+        str(row.get("id") or "") == str(expected.get("attachmentId") or "") for row in attachments
+    ):
         raise RuntimeError("Desktop update rehearsal did not preserve job attachments.")
 
 
@@ -1258,7 +1272,10 @@ def run_desktop_update_rehearsal(
             if isinstance(check_payload, dict)
             else {}
         )
-        if not bool(check_status.get("updateAvailable")) or str(check_status.get("availability") or "") != "available":
+        if (
+            not bool(check_status.get("updateAvailable"))
+            or str(check_status.get("availability") or "") != "available"
+        ):
             raise RuntimeError(f"Update check did not surface an available release: {check_status}")
         paths = desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
         staged_zip = paths.downloads_dir / target_zip.name
@@ -1295,7 +1312,9 @@ def run_desktop_update_rehearsal(
             timeout_s=max(45.0, runtime_timeout_s),
         )
         _verify_rehearsal_local_data(data_dir, seeded)
-        relaunch_session = relaunched.get("session") if isinstance(relaunched.get("session"), dict) else {}
+        relaunch_session = (
+            relaunched.get("session") if isinstance(relaunched.get("session"), dict) else {}
+        )
         relaunch_launcher_pid = int(relaunch_session.get("launcherPid") or 0)
         relaunch_bridge_port = int(relaunch_session.get("bridgePort") or 0)
         relaunch_site_port = int(relaunch_session.get("sitePort") or 0)

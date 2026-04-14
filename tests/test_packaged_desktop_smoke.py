@@ -70,9 +70,9 @@ def test_inject_desktop_update_public_keys_writes_packaged_trust_files(tmp_path:
     )
 
     expected = json.dumps({"desktop-ed25519-rehearsal": "ZmFrZS1rZXk="}, indent=2, sort_keys=True)
-    assert (
-        portable_root / "ship" / "app" / "desktop-update-public-keys.json"
-    ).read_text(encoding="utf-8") == expected
+    assert (portable_root / "ship" / "app" / "desktop-update-public-keys.json").read_text(
+        encoding="utf-8"
+    ) == expected
     assert (
         portable_root
         / "ship"

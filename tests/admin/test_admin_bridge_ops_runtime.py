@@ -313,7 +313,9 @@ def test_compute_ops_health_reports_alerts(admin_bridge_entrypoint_root):
     assert "kpis" in health
     assert "alerts" in health
     assert "updater" in health
-    assert str((health["updater"] or {}).get("currentVersion") or "") == admin_bridge.get_app_version()
+    assert (
+        str((health["updater"] or {}).get("currentVersion") or "") == admin_bridge.get_app_version()
+    )
     assert len(health["alerts"]) >= 1
     assert any(alert["id"] == "degraded_reliability" for alert in health["alerts"])
 

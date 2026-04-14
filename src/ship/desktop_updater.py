@@ -171,7 +171,9 @@ def _helper_diagnostics_path_for_plan(plan_path: Path) -> Path:
 def _launch_executable(executable_path: Path, *, clear_app_version_override: bool = False) -> None:
     if not executable_path.is_file():
         raise RuntimeError(f"Desktop executable not found: {executable_path}")
-    creationflags = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
+    creationflags = (
+        int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
+    )
     env = None
     if clear_app_version_override:
         env = os.environ.copy()
@@ -344,7 +346,9 @@ def _restore_data_backup_if_needed(ship_root: Path, status: dict[str, Any]) -> N
     )
 
 
-def _finalize_success(paths: DesktopUpdatePaths, plan: dict[str, Any], rollback_root: Path) -> dict[str, Any]:
+def _finalize_success(
+    paths: DesktopUpdatePaths, plan: dict[str, Any], rollback_root: Path
+) -> dict[str, Any]:
     with contextlib.suppress(OSError):
         shutil.rmtree(rollback_root)
     clear_success_marker(paths)
@@ -374,7 +378,14 @@ def _recover_interrupted_install(
 ) -> bool:
     status = load_status(paths)
     stage = str(status.get("installStage") or "").strip().lower()
-    if not stage or stage in {"idle", "preparing", "waiting_for_exit", "extracting", "snapshotting", "backup"}:
+    if not stage or stage in {
+        "idle",
+        "preparing",
+        "waiting_for_exit",
+        "extracting",
+        "snapshotting",
+        "backup",
+    }:
         return False
     if stage in SUCCESS_RECOVERY_STAGES:
         try:
@@ -407,7 +418,9 @@ def _recover_interrupted_install(
     return False
 
 
-def run_install(plan_path: Path, progress: HelperProgressWindow | NullProgressWindow | None = None) -> dict[str, Any]:
+def run_install(
+    plan_path: Path, progress: HelperProgressWindow | NullProgressWindow | None = None
+) -> dict[str, Any]:
     plan = validate_install_plan(json.loads(plan_path.read_text(encoding="utf-8")))
     install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()
     ship_root = install_root / "ship"
@@ -415,7 +428,9 @@ def run_install(plan_path: Path, progress: HelperProgressWindow | NullProgressWi
     paths = DesktopUpdatePaths.from_data_dir(data_dir)
     rollback_root = Path(str(plan.get("rollbackPath") or "")).expanduser().resolve()
     manifest_cache = read_cached_manifest(paths)
-    manifest = manifest_cache.get("manifest") if isinstance(manifest_cache.get("manifest"), dict) else {}
+    manifest = (
+        manifest_cache.get("manifest") if isinstance(manifest_cache.get("manifest"), dict) else {}
+    )
     if not manifest:
         raise RuntimeError("Verified manifest cache is unavailable for desktop install.")
     validate_desktop_manifest(manifest)
@@ -495,7 +510,9 @@ def run_install(plan_path: Path, progress: HelperProgressWindow | NullProgressWi
                 install_stage="backup",
                 rollbackPath=str(rollback_root),
             )
-            backup_ref = update_manager.create_data_backup(update_manager.ShipPaths.from_root(ship_root))
+            backup_ref = update_manager.create_data_backup(
+                update_manager.ShipPaths.from_root(ship_root)
+            )
             _status_for_stage(
                 paths,
                 install_state="installing",
@@ -631,7 +648,9 @@ def main(argv: list[str] | None = None) -> int:
         thread.join()
         if error_holder:
             raise RuntimeError(str(error_holder.get("error") or "Baluffo desktop update failed."))
-        result = result_holder.get("result") if isinstance(result_holder.get("result"), dict) else {}
+        result = (
+            result_holder.get("result") if isinstance(result_holder.get("result"), dict) else {}
+        )
         _append_helper_diagnostics(
             diagnostics_path,
             "helper_main_succeeded",

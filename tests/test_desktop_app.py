@@ -604,7 +604,9 @@ def test_watch_browser_session_keeps_detached_launcher_alive_when_heartbeat_exis
 
 def test_watch_browser_session_ignores_missing_window_in_no_browser_mode() -> None:
     with (
-        mock.patch.object(desktop_app, "latest_browser_heartbeat_ts", side_effect=[100.0, 100.0, 100.0]),
+        mock.patch.object(
+            desktop_app, "latest_browser_heartbeat_ts", side_effect=[100.0, 100.0, 100.0]
+        ),
         mock.patch.object(desktop_app, "bridge_last_activity_ts", return_value=0.0),
         mock.patch.object(desktop_app.time, "time", side_effect=[110.0, 120.0, 140.5]),
         mock.patch.object(desktop_app.time, "sleep"),

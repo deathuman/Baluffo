@@ -179,6 +179,7 @@ def run_scrapy_static_source(*args, **kwargs):
         if previous is not None:
             _static_scrapy.registry_entries = previous  # type: ignore[assignment]
 
+
 SOURCE_DIAGNOSTICS = _common_diagnostics.SOURCE_DIAGNOSTICS
 STUDIO_SOURCE_REGISTRY = _registry.STUDIO_SOURCE_REGISTRY
 REMOTE_OK_URLS = _common_config.REMOTE_OK_URLS

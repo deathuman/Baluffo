@@ -7,7 +7,9 @@ from src.ship import desktop_updater as updater
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
-def _write_install_plan(plan_path: Path, install_root: Path, rollback_root: Path, zip_path: Path) -> dict[str, object]:
+def _write_install_plan(
+    plan_path: Path, install_root: Path, rollback_root: Path, zip_path: Path
+) -> dict[str, object]:
     plan = {
         "planVersion": 1,
         "installRoot": str(install_root),
@@ -30,7 +32,9 @@ def _write_install_plan(plan_path: Path, install_root: Path, rollback_root: Path
     return plan
 
 
-def test_launch_executable_uses_install_root_as_cwd_and_can_clear_version_override(monkeypatch) -> None:
+def test_launch_executable_uses_install_root_as_cwd_and_can_clear_version_override(
+    monkeypatch,
+) -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
         install_root = Path(tmp) / "portable"
         runtime_exe = install_root / "Baluffo.exe"
@@ -114,7 +118,9 @@ def test_recover_interrupted_install_restores_runtime_snapshot_and_backup(monkey
         assert status["migrationBackupPath"] == ""
 
 
-def test_run_install_finishes_stale_verifying_state_when_target_is_already_healthy(monkeypatch) -> None:
+def test_run_install_finishes_stale_verifying_state_when_target_is_already_healthy(
+    monkeypatch,
+) -> None:
     with workspace_tmpdir("desktop-updater") as tmp:
         install_root = Path(tmp) / "portable"
         ship_root = install_root / "ship"
@@ -150,10 +156,14 @@ def test_run_install_finishes_stale_verifying_state_when_target_is_already_healt
         )
         wait_for_exit = mock.Mock()
         progress_cls = mock.Mock()
-        progress_cls.return_value = mock.Mock(start=mock.Mock(), update=mock.Mock(), close=mock.Mock())
+        progress_cls.return_value = mock.Mock(
+            start=mock.Mock(), update=mock.Mock(), close=mock.Mock()
+        )
         monkeypatch.setattr(updater, "HelperProgressWindow", progress_cls)
         monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
-        monkeypatch.setattr(updater, "verify_manifest_signature", lambda manifest, public_keys=None: None)
+        monkeypatch.setattr(
+            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
+        )
         monkeypatch.setattr(updater, "compute_sha256", lambda path: "expected-zip-sha")
         monkeypatch.setattr(updater, "_verify_target_startup", lambda plan, timeout_s=90.0: None)
         monkeypatch.setattr(updater, "_wait_for_launcher_exit", wait_for_exit)

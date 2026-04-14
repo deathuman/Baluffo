@@ -202,7 +202,9 @@ class OpsApi:
             now_utc=self._deps.now_utc,
             get_updater_status_payload=self._deps.get_updater_status_payload,
             app_version=str(self._deps.app_version or ""),
-            startup_ready=True if not bool(self._deps.desktop_mode) else bool(self._deps.get_owner_state().get("startedAt")),
+            startup_ready=True
+            if not bool(self._deps.desktop_mode)
+            else bool(self._deps.get_owner_state().get("startedAt")),
         )
 
     def compute_ops_health(self) -> dict[str, Any]:

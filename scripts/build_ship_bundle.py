@@ -157,9 +157,7 @@ def _resolve_desktop_update_public_keys_payload() -> dict[str, str]:
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                f"Invalid {DESKTOP_UPDATE_PUBLIC_KEYS_ENV} payload: {exc}."
-            ) from exc
+            raise RuntimeError(f"Invalid {DESKTOP_UPDATE_PUBLIC_KEYS_ENV} payload: {exc}.") from exc
         if not isinstance(payload, dict):
             raise RuntimeError(f"{DESKTOP_UPDATE_PUBLIC_KEYS_ENV} must be a JSON object.")
         return {
@@ -168,15 +166,21 @@ def _resolve_desktop_update_public_keys_payload() -> dict[str, str]:
             if str(key).strip() and str(value).strip()
         }
     path_token = str(os.environ.get(DESKTOP_UPDATE_PUBLIC_KEYS_PATH_ENV) or "").strip()
-    candidate_path = Path(path_token).expanduser().resolve() if path_token else DESKTOP_UPDATE_PUBLIC_KEYS_PATH
+    candidate_path = (
+        Path(path_token).expanduser().resolve() if path_token else DESKTOP_UPDATE_PUBLIC_KEYS_PATH
+    )
     if not candidate_path.is_file():
         return {}
     try:
         payload = json.loads(candidate_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Invalid desktop update public keys file {candidate_path}: {exc}.") from exc
+        raise RuntimeError(
+            f"Invalid desktop update public keys file {candidate_path}: {exc}."
+        ) from exc
     if not isinstance(payload, dict):
-        raise RuntimeError(f"Desktop update public keys file {candidate_path} must contain a JSON object.")
+        raise RuntimeError(
+            f"Desktop update public keys file {candidate_path} must contain a JSON object."
+        )
     return {
         str(key): str(value)
         for key, value in payload.items()

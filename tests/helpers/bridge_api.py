@@ -246,8 +246,12 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         desktop_local_data_store=admin_bridge.desktop_local_data_store,
         append_startup_metric=admin_bridge.append_startup_metric,
         read_startup_metrics=admin_bridge.read_startup_metrics,
-        get_update_status_payload=lambda: admin_bridge._get_desktop_update_service().get_status_payload(),
-        check_for_update=lambda **kw: admin_bridge._get_desktop_update_service().check_for_update(**kw),
+        get_update_status_payload=lambda: (
+            admin_bridge._get_desktop_update_service().get_status_payload()
+        ),
+        check_for_update=lambda **kw: admin_bridge._get_desktop_update_service().check_for_update(
+            **kw
+        ),
         download_update=lambda: admin_bridge._get_desktop_update_service().download_update(),
         install_update=lambda: admin_bridge._get_desktop_update_service().request_install(),
         persist_state_and_auto_sync=admin_bridge.persist_state_and_auto_sync,

@@ -63,7 +63,7 @@ from src.jobs.pipeline import default_source_loaders
 from src.jobs.registry import DEFAULT_STUDIO_SOURCE_REGISTRY
 from src.jobs.transport import normalize_url as normalize_job_url
 from src.local_data_store import LocalDataPaths, LocalDataStore
-from src.ship.desktop_update import DesktopUpdateService, DesktopUpdatePaths
+from src.ship.desktop_update import DesktopUpdateService
 from src.source_registry import (
     ACTIVE_PATH,
     APPROVAL_STATE_PATH,
