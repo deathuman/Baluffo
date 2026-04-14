@@ -67,6 +67,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Portable EXE leaf builder | `python scripts/build_portable_exe.py --bundle-version <version>` |
 | Packaged desktop smoke gate | `npm run test:frontend:packaged` |
 | Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
+| Packaged desktop updater rehearsal | `npm run test:frontend:packaged:update-rehearsal` |
 | Orchestrated packaged smoke gate | `npm run test:frontend:packaged:orchestrated` |
 | Rebuild-backed packaged diagnostic | `npm run probe:desktop:startup:cold` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
@@ -93,6 +94,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
   - `npm run build:portable-exe`
   - `python scripts/build_portable_exe.py`
   - `npm run test:frontend:packaged*`
+  - `npm run test:frontend:packaged:update-rehearsal`
 - Orchestrated build and verify commands own `_out/runs/...` and `_out/latest/...`:
   - `npm run build`
   - `npm run verify`
@@ -117,11 +119,22 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
   - no backend `error` payload is surfaced after startup.
 - This lane uses a smoke-only stub-success pipeline mode so it stays deterministic and bounded while still exercising the real `PipelineService` worker path.
 
+## Desktop Updater Rehearsal Contract
+
+- `npm run test:frontend:packaged:update-rehearsal` is the packaged `N -> N+1` updater gate for the portable desktop runtime.
+- It must prove all of the following:
+  - the packaged app can surface an available update and hand off install to `BaluffoUpdater.exe`,
+  - the helper installs the target portable ZIP and relaunches the target runtime successfully,
+  - the target runtime reaches desktop startup readiness and writes the post-install success marker,
+  - seeded local profile data, saved jobs, notes, and attachments remain intact across the update.
+- Use this lane for updater-helper, desktop session/handoff, release-manifest, and portable runtime mutation changes.
+
 ## Release/build regression picks
 
 Use the narrowest check that matches the risky path:
 
 - Packaging or portable EXE changes: `python scripts/build_portable_exe.py`
+- Packaged updater, desktop handoff, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
 - Bridge route wiring or task-launch signature changes: focused `tests/bridge/...` plus `tests/test_pipeline_execution.py` for worker-path coverage
 - Admin task buttons, presets, or busy-state changes: focused frontend unit tests plus the nearest admin bridge payload test
 - Contamination or location-quality regressions: targeted fetcher/unit checks around sanitization, canonicalization, or audit helpers

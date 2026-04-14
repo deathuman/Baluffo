@@ -64,10 +64,14 @@ def _derive_release_notes_url(repo: str, tag: str) -> str:
 def load_private_key_bytes(args: argparse.Namespace) -> bytes:
     private_key_b64 = str(args.private_key_b64 or "").strip()
     if not private_key_b64:
-        env_name = str(args.private_key_env or DEFAULT_PRIVATE_KEY_ENV).strip() or DEFAULT_PRIVATE_KEY_ENV
+        env_name = (
+            str(args.private_key_env or DEFAULT_PRIVATE_KEY_ENV).strip() or DEFAULT_PRIVATE_KEY_ENV
+        )
         private_key_b64 = str(__import__("os").environ.get(env_name) or "").strip()
     if not private_key_b64 and args.private_key_file:
-        private_key_b64 = Path(args.private_key_file).expanduser().resolve().read_text(encoding="utf-8").strip()
+        private_key_b64 = (
+            Path(args.private_key_file).expanduser().resolve().read_text(encoding="utf-8").strip()
+        )
     if not private_key_b64:
         raise RuntimeError(
             "Desktop update private key is required. Provide --private-key-b64, --private-key-file, "
@@ -76,7 +80,9 @@ def load_private_key_bytes(args: argparse.Namespace) -> bytes:
     try:
         return base64.b64decode(private_key_b64)
     except Exception as exc:  # noqa: BLE001
-        raise RuntimeError("Desktop update private key must be base64-encoded raw Ed25519 bytes.") from exc
+        raise RuntimeError(
+            "Desktop update private key must be base64-encoded raw Ed25519 bytes."
+        ) from exc
 
 
 def build_manifest(args: argparse.Namespace) -> dict[str, object]:
@@ -90,10 +96,16 @@ def build_manifest(args: argparse.Namespace) -> dict[str, object]:
     if not key_id:
         raise RuntimeError("Desktop update manifest key id is required.")
 
-    portable_zip = Path(args.portable_zip).expanduser().resolve()
+    portable_zip_arg = str(args.portable_zip or "").strip()
+    portable_zip = (
+        Path(portable_zip_arg).expanduser().resolve()
+        if portable_zip_arg
+        else (ROOT / "dist" / f"baluffo-portable-{version}.zip").resolve()
+    )
     if not portable_zip.is_file():
         raise RuntimeError(f"Portable ZIP not found: {portable_zip}")
-    ship_zip = Path(args.ship_zip).expanduser().resolve() if args.ship_zip else None
+    ship_zip_arg = str(args.ship_zip or "").strip()
+    ship_zip = Path(ship_zip_arg).expanduser().resolve() if ship_zip_arg else None
     if ship_zip is not None and not ship_zip.is_file():
         raise RuntimeError(f"Ship ZIP not found: {ship_zip}")
 
@@ -120,9 +132,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, object]:
         "min_desktop_updater_version": str(
             args.min_desktop_updater_version or DESKTOP_UPDATER_VERSION
         ).strip(),
-        "min_supported_current_version": str(
-            args.min_supported_current_version or "0.0.0"
-        ).strip(),
+        "min_supported_current_version": str(args.min_supported_current_version or "0.0.0").strip(),
         "data_schema_version": str(args.data_schema_version or DEFAULT_DATA_SCHEMA_VERSION).strip(),
         "rollback_allowed": bool(args.rollback_allowed),
         "portable_artifact": _artifact_payload(portable_zip, portable_url),
@@ -139,11 +149,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Build dist/baluffo-desktop-update-manifest.json for a GitHub release."
     )
     parser.add_argument("--version", default=APP_VERSION)
-    parser.add_argument("--portable-zip", default=str(ROOT / "dist" / f"baluffo-portable-{APP_VERSION}.zip"))
-    parser.add_argument("--ship-zip", default=str(ROOT / "dist" / f"baluffo-ship-{APP_VERSION}.zip"))
+    parser.add_argument("--portable-zip", default="")
+    parser.add_argument("--ship-zip", default="")
     parser.add_argument("--output", default=str(ROOT / "dist" / DESKTOP_UPDATE_MANIFEST_ASSET))
     parser.add_argument("--release-tag", default="")
-    parser.add_argument("--github-repo", default=__import__("os").environ.get(DEFAULT_GITHUB_REPO_ENV, ""))
+    parser.add_argument(
+        "--github-repo", default=__import__("os").environ.get(DEFAULT_GITHUB_REPO_ENV, "")
+    )
     parser.add_argument("--portable-url", default="")
     parser.add_argument("--ship-url", default="")
     parser.add_argument("--release-notes-url", default="")
@@ -167,7 +179,9 @@ def main(argv: list[str] | None = None) -> int:
     manifest = build_manifest(args)
     output_path = Path(args.output).expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    output_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     print(str(output_path))
     return 0
 

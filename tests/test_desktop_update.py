@@ -206,6 +206,61 @@ def test_resolve_desktop_session_root_falls_back_to_temp_when_primary_is_not_wri
         assert session_root == (temp_root / "Baluffo-tester").resolve()
 
 
+def test_check_for_update_clears_stale_downloaded_state_for_newer_manifest() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        stale_zip = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
+        stale_zip.parent.mkdir(parents=True, exist_ok=True)
+        stale_zip.write_text("stale-zip", encoding="utf-8")
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "availability": "available",
+                "updateAvailable": True,
+                "latestVersion": "1.4.0",
+                "targetVersion": "1.4.0",
+                "downloadState": "downloaded",
+                "installState": "ready",
+                "downloadedZipPath": str(stale_zip),
+            },
+        )
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        manifest = {
+            "schema_version": 2,
+            "key_id": "desktop-ed25519-test",
+            "channel": "stable",
+            "version": "1.5.0",
+            "published_at": "2026-04-15T12:00:00Z",
+            "release_notes_url": "https://example.com/release",
+            "min_desktop_updater_version": "2.0.0",
+            "min_supported_current_version": "0.1.0",
+            "data_schema_version": "2",
+            "rollback_allowed": True,
+            "portable_artifact": {
+                "url": "https://example.com/baluffo-portable-1.5.0.zip",
+                "sha256": "a" * 64,
+                "size_bytes": 123,
+            },
+            "migration_plan": [],
+            "signature": "ignored-for-test",
+        }
+
+        with (
+            mock.patch.object(
+                service, "_resolve_latest_release", return_value={"id": 123, "tag_name": "v1.5.0"}
+            ),
+            mock.patch.object(service, "_resolve_manifest_from_release", return_value=manifest),
+        ):
+            status = service.check_for_update(force=True)
+
+        assert status["targetVersion"] == "1.5.0"
+        assert status["downloadState"] == "idle"
+        assert status["installState"] == "idle"
+        assert status["downloadedZipPath"] == ""
+
+
 def test_request_install_writes_plan_and_launches_helper() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         install_root = Path(tmp) / "portable"

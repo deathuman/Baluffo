@@ -610,8 +610,41 @@ def _manifest_to_status(
         return next_status
     next_status["availability"] = "available"
     next_status["updateAvailable"] = True
-    if str(existing.get("downloadState") or "").strip().lower() == "downloaded":
-        next_status["installState"] = "ready"
+    return next_status
+
+
+def _reconcile_downloaded_artifact_status(
+    *,
+    paths: DesktopUpdatePaths,
+    manifest: dict[str, Any],
+    status: dict[str, Any],
+) -> dict[str, Any]:
+    next_status = dict(status)
+    artifact = (
+        manifest.get("portable_artifact")
+        if isinstance(manifest.get("portable_artifact"), dict)
+        else {}
+    )
+    artifact_path = paths.downloads_dir / _portable_artifact_name(manifest)
+    expected_hash = str(artifact.get("sha256") or "").strip().lower()
+    if artifact_path.is_file() and expected_hash:
+        if compute_sha256(artifact_path).lower() == expected_hash:
+            size_bytes = int(artifact_path.stat().st_size)
+            next_status["downloadState"] = "downloaded"
+            next_status["installState"] = "ready"
+            next_status["downloadedBytes"] = size_bytes
+            next_status["totalBytes"] = size_bytes
+            next_status["downloadPercent"] = 100
+            next_status["downloadedZipPath"] = str(artifact_path)
+            return next_status
+    if str(next_status.get("downloadState") or "").strip().lower() == "downloaded":
+        next_status["downloadState"] = "idle"
+        next_status["downloadedBytes"] = 0
+        next_status["totalBytes"] = 0
+        next_status["downloadPercent"] = 0
+        next_status["downloadedZipPath"] = ""
+    if str(next_status.get("installState") or "").strip().lower() == "ready":
+        next_status["installState"] = "idle"
     return next_status
 
 
@@ -706,10 +739,14 @@ class DesktopUpdateService:
                         if manifest:
                             return save_status(
                                 self.paths,
-                                _manifest_to_status(
-                                    current_version=self.current_version(),
+                                _reconcile_downloaded_artifact_status(
+                                    paths=self.paths,
                                     manifest=manifest,
-                                    existing=status,
+                                    status=_manifest_to_status(
+                                        current_version=self.current_version(),
+                                        manifest=manifest,
+                                        existing=status,
+                                    ),
                                 ),
                             )
             save_status(self.paths, {**status, "availability": "checking", "lastError": ""})
@@ -730,21 +767,14 @@ class DesktopUpdateService:
                 manifest=manifest,
                 existing=load_status(self.paths, current_version=self.current_version()),
             )
-            artifact_path = self.paths.downloads_dir / _portable_artifact_name(manifest)
-            if artifact_path.is_file():
-                expected_hash = str(
-                    (
-                        (manifest.get("portable_artifact") or {})
-                        if isinstance(manifest.get("portable_artifact"), dict)
-                        else {}
-                    ).get("sha256")
-                    or ""
-                ).strip()
-                if expected_hash and compute_sha256(artifact_path).lower() == expected_hash.lower():
-                    next_status["downloadState"] = "downloaded"
-                    next_status["installState"] = "ready"
-                    next_status["downloadedZipPath"] = str(artifact_path)
-            return save_status(self.paths, next_status)
+            return save_status(
+                self.paths,
+                _reconcile_downloaded_artifact_status(
+                    paths=self.paths,
+                    manifest=manifest,
+                    status=next_status,
+                ),
+            )
         except Exception as exc:  # noqa: BLE001
             return save_status(
                 self.paths,

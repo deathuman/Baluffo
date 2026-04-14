@@ -212,5 +212,13 @@ See [`testing.md`](testing.md) for verification commands and [`AI_ASSISTANT_GUID
   - `npm run test:frontend:packaged:jobs-pipeline`
   - validates terminal pipeline success in the packaged desktop runtime, not just button startup state
   - uses a smoke-only stub-success mode so the packaged gate stays deterministic and does not run the full real pipeline
+- Packaged desktop updater rehearsal:
+  - `npm run test:frontend:packaged:update-rehearsal`
+  - exercises the real helper-driven `N -> N+1` install flow for the portable desktop build
+  - verifies relaunch success and preservation of local desktop data under `ship\data\local-user-data`
+- Manual updater UX smoke:
+  - launch `dist\baluffo-portable\Baluffo.exe`
+  - use the Jobs page desktop update panel to `Check for updates`, `Download`, and `Install and restart`
+  - if you need to simulate an older installed version against a newer release, set `BALUFFO_APP_VERSION_OVERRIDE` before launching the packaged app
 - Runbook:
   - `docs/RELEASE.md`
