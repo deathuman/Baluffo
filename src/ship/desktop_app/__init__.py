@@ -17,6 +17,7 @@ import traceback
 import urllib.error
 import urllib.request
 import uuid
+import webbrowser
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timezone
