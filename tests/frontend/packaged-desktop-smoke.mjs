@@ -95,6 +95,13 @@ async function fetchStartupMetricRows(apiRequest, limit = 400) {
   return Array.isArray(payload?.rows) ? payload.rows : [];
 }
 
+async function fetchDesktopSession(apiRequest) {
+  const response = await apiRequest.get(`${BRIDGE_BASE}/desktop-local-data/session`);
+  assert.equal(response.ok(), true, "desktop session request should succeed");
+  const payload = await response.json();
+  return payload && typeof payload === "object" ? payload : {};
+}
+
 function firstEventIndex(rows, eventName) {
   return rows.findIndex(row => String(row?.event || "") === String(eventName || ""));
 }
@@ -109,12 +116,21 @@ function eventElapsedMs(row) {
 
 async function assertFacadeStartupOrdering(apiRequest) {
   const rows = await fetchStartupMetricRows(apiRequest, 600);
+  const sessionPayload = await fetchDesktopSession(apiRequest);
+  const desktopSession = sessionPayload?.desktopSession && typeof sessionPayload.desktopSession === "object"
+    ? sessionPayload.desktopSession
+    : {};
   const hasEvent = eventName => firstEventIndex(rows, eventName) >= 0;
   assert.equal(hasEvent("desktop_browser_launch_selected"), true, "desktop browser launch event missing");
   assert.equal(hasEvent("desktop_shell_window_shown"), true, "desktop shell shown event missing");
-  assert.equal(hasEvent("desktop_browser_heartbeat"), true, "desktop browser heartbeat missing");
   assert.equal(hasEvent("jobs_first_render"), true, "jobs first render missing");
   assert.equal(hasEvent("jobs_first_interactive"), true, "jobs first interactive missing");
+  assert.ok(String(desktopSession.sessionId || "").trim(), "desktop session id missing");
+  assert.ok(String(desktopSession.ownerToken || "").trim(), "desktop owner token missing");
+  assert.ok(
+    String(desktopSession.lastActivityAt || sessionPayload.lastActivityAt || "").trim(),
+    "desktop session activity timestamp missing"
+  );
   const browserLaunchRow = rows.find(row => String(row?.event || "") === "desktop_browser_launch_selected");
   const shellLoadedRow = rows.find(row => String(row?.event || "") === "desktop_shell_window_shown");
   const firstRenderRow = rows.find(row => String(row?.event || "") === "jobs_first_render");

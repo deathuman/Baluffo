@@ -92,6 +92,26 @@ async function waitForPipelineRunTerminal(apiRequest, runId, timeoutMs = 120_000
   throw new Error("Jobs pipeline did not reach a terminal non-error state within the allotted time.");
 }
 
+async function waitForPipelineButtonBusyState(pipelineButton, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const buttonState = await pipelineButton.evaluate(el => ({
+      mode: String(el.dataset.progressMode || ""),
+      fill: String(el.dataset.progressFill || ""),
+      fillWidth: String(el.querySelector(".jobs-pipeline-btn-fill")?.style.width || ""),
+      fillOpacity: String(el.querySelector(".jobs-pipeline-btn-fill")?.style.opacity || ""),
+      fillMode: String(el.querySelector(".jobs-pipeline-btn-fill")?.dataset.progressMode || ""),
+      label: String(el.textContent || ""),
+      ariaBusy: String(el.getAttribute("aria-busy") || "")
+    }));
+    if (buttonState.ariaBusy === "true" && buttonState.mode && buttonState.fillOpacity !== "0") {
+      return buttonState;
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  throw new Error("Jobs pipeline button never entered a visible busy/progress state.");
+}
+
 async function main() {
   const scenarios = [];
   const errors = [];
@@ -152,30 +172,11 @@ async function main() {
         null,
         { timeout: 30_000 }
       );
-      await pipelineButton.dispatchEvent("click");
-      await page.waitForFunction(
-        () => {
-          const button = document.querySelector("#jobs-pipeline-run-btn");
-          return Boolean(button)
-            && button.getAttribute("aria-busy") === "true"
-            && Boolean(button.dataset.progressMode)
-            && Boolean(button.querySelector(".jobs-pipeline-btn-fill"));
-        },
-        null,
-        { timeout: 30_000 }
-      );
+      await pipelineButton.click();
       const startedPayload = await waitForPipelineRunStart(apiRequest);
       const runId = String(startedPayload?.runId || "");
       assert.match(runId, /^pipeline_[a-f0-9]{10}$/i, "jobs pipeline run id should look like a pipeline run");
-      const buttonState = await pipelineButton.evaluate(el => ({
-        mode: String(el.dataset.progressMode || ""),
-        fill: String(el.dataset.progressFill || ""),
-        fillWidth: String(el.querySelector(".jobs-pipeline-btn-fill")?.style.width || ""),
-        fillOpacity: String(el.querySelector(".jobs-pipeline-btn-fill")?.style.opacity || ""),
-        fillMode: String(el.querySelector(".jobs-pipeline-btn-fill")?.dataset.progressMode || ""),
-        label: String(el.textContent || ""),
-        ariaBusy: String(el.getAttribute("aria-busy") || "")
-      }));
+      const buttonState = await waitForPipelineButtonBusyState(pipelineButton);
       assert.ok(buttonState.mode === "determinate" || buttonState.mode === "indeterminate", "pipeline button should show a progress mode");
       assert.match(buttonState.label, /running/i);
       assert.equal(buttonState.ariaBusy, "true");

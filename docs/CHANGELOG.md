@@ -7,24 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.1] - Unreleased
+## [0.1.1] - 2026-04-15
 
 ### Added
-- Shared city-noise and country-acceptance contracts, plus regression coverage for the exact junk tokens and country-promotion cases.
-- Location normalization coverage for Google Sheets, rendered-card extraction, canonical parsers, and frontend jobs-domain parity.
-- Jobs filter popup regression coverage for country picker outside-click and `Escape` dismissal.
-- Pipeline run button progress bar coverage and UI state reporting.
-- Explicit packaged-smoke artifact ownership split between direct `dist\` builds and orchestrator-owned `_out\latest\` artifacts.
-- Terminal-success packaged Jobs-page pipeline smoke coverage, including a deterministic smoke-only stub-success pipeline mode.
-- Backend regression coverage for the pipeline worker path and `admin_bridge` pipeline-service dependency wiring.
+- Desktop in-app update flow in the Jobs desktop UI, backed by a signed GitHub release-manifest pipeline for portable releases.
+- Packaged updater rehearsal coverage and release diagnostics for the helper-driven `N -> N+1` install path.
+- Shared city-noise and country-acceptance contracts, plus regression coverage for exact junk tokens, country promotion, and backend/frontend location parity.
+- Jobs-page pipeline progress reporting, terminal-success packaged smoke coverage, and backend regression coverage for the worker path and bridge wiring.
 
 ### Changed
 - City parsing now normalizes multi-location strings, dedupes bilingual variants, and rebuilds location summaries from the surviving normalized locations.
 - Country-like city values such as `EU & NA` and `UK` are now promoted into the country field instead of being dropped, while valid cities remain untouched.
 - Location normalization was consolidated into the canonical parsers path and mirrored in the frontend jobs domain so backend and UI stay aligned.
-- Packaged smoke commands now default to the direct `dist\baluffo-portable\Baluffo.exe` artifact, while `_out\latest\build\portable\Baluffo.exe` is reserved for the explicit orchestrated smoke lane.
-- Packaged smoke diagnostics now report whether the EXE came from the default `dist\` path, an explicit caller-supplied path, or a rebuilt direct-build artifact.
-- Release tooling, source-sync helpers, and developer docs were refreshed alongside the current pending job pipeline changes.
+- Packaged smoke and release flows now distinguish direct `dist\baluffo-portable\Baluffo.exe` artifacts from orchestrator-owned `_out\latest\build\portable\Baluffo.exe` outputs.
+- Desktop updater install handoff, helper progress tracking, and packaged recovery behavior were hardened so portable releases update more reliably.
+- Release tooling and packaged verification docs now reflect the current desktop build, smoke, and update pipeline.
 
 ### Fixed
 - Exact city garbage, prose bleed, and chrome-like location fragments are now rejected consistently across the audit, canonicalization, and frontend normalization paths.
@@ -33,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Source sync can now be pointed at a custom PEM CA bundle via `BALUFFO_SYNC_CA_BUNDLE` for machines with a nonstandard trust store or TLS-inspecting proxy.
 - Jobs-page pipeline runs no longer fail at runtime with `'PipelineService' object has no attribute '_load_json_object'`.
 - The packaged Jobs-page pipeline smoke now fails on backend worker errors after startup instead of passing once the button briefly enters a busy state.
+- Packaged desktop update checks now resolve the correct release repo, avoid relaunch loops, and handle cross-platform release paths correctly.
+- Closing the packaged desktop window now tears down the desktop session cleanly instead of leaving stray `Baluffo.exe` processes behind.
+- Pre-submit parity and CI gate regressions that blocked the packaged release flow were corrected for the `0.1.1` release line.
 
 ## [0.1.0] - 2026-04-10
 
