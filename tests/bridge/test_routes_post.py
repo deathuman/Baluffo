@@ -273,6 +273,10 @@ def test_check_for_update(tmp_path: Path) -> None:
         "latestVersion": "0.2.0",
         "updateAvailable": True,
         "availability": "available",
+        "releaseNotesUrl": "https://example.com/releases/v0.2.0",
+        "releaseNotesTitle": "Baluffo v0.2.0",
+        "releaseNotesBody": "### Fixed\n- Notes",
+        "releaseNotesPublishedAt": "2026-04-15T10:00:00Z",
     }
 
     handler = _FakeHandler()
@@ -281,6 +285,7 @@ def test_check_for_update(tmp_path: Path) -> None:
     assert result is True
     assert handler.sent[-1]["status"] == 200
     assert handler.sent[-1]["payload"]["updateAvailable"] is True
+    assert handler.sent[-1]["payload"]["releaseNotesBody"] == "### Fixed\n- Notes"
 
 
 def test_download_update(tmp_path: Path) -> None:
@@ -296,16 +301,42 @@ def test_download_update(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["started"] is True
 
 
+def test_download_update_failure_returns_structured_payload(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    api.download_update = lambda: {
+        "started": False,
+        "status": {"downloadState": "downloaded", "installState": "ready"},
+        "error": "The update ZIP is already downloaded and ready to install.",
+        "errorCode": "update_ready_to_install",
+    }
+
+    handler = _FakeHandler()
+    result = handle_post(handler, api=api, path="/app/download-update", payload={})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["started"] is False
+    assert handler.sent[-1]["payload"]["errorCode"] == "update_ready_to_install"
+    assert handler.sent[-1]["payload"]["status"]["installState"] == "ready"
+
+
 def test_install_update_conflict(tmp_path: Path) -> None:
     store = _FakeDesktopLocalDataStore()
     api = _make_api(tmp_path, store)
-    api.install_update = lambda: {"started": False, "error": "Update ZIP is not ready to install."}
+    api.install_update = lambda: {
+        "started": False,
+        "status": {"downloadState": "idle", "installState": "idle"},
+        "error": "Update ZIP is not ready to install.",
+        "errorCode": "install_not_ready",
+    }
 
     handler = _FakeHandler()
     result = handle_post(handler, api=api, path="/app/install-update", payload={})
 
     assert result is True
-    assert handler.sent[-1]["status"] == 409
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["errorCode"] == "install_not_ready"
 
 
 def test_desktop_session_lifecycle_accepts_valid_payload(tmp_path: Path) -> None:

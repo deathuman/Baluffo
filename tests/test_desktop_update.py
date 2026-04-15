@@ -284,6 +284,405 @@ def test_check_for_update_clears_stale_downloaded_state_for_newer_manifest() -> 
         assert status["downloadedZipPath"] == ""
 
 
+def test_get_status_payload_promotes_completed_stale_download_to_ready() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        zip_path = paths.downloads_dir / "baluffo-portable-1.5.0.zip"
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        zip_path.write_text("portable-zip", encoding="utf-8")
+        manifest = {
+            "schema_version": 2,
+            "key_id": "desktop-ed25519-test",
+            "channel": "stable",
+            "version": "1.5.0",
+            "published_at": "2026-04-15T12:00:00Z",
+            "release_notes_url": "https://example.com/release",
+            "min_desktop_updater_version": "2.0.0",
+            "min_supported_current_version": "0.1.0",
+            "data_schema_version": "2",
+            "rollback_allowed": True,
+            "portable_artifact": {
+                "url": "https://example.com/baluffo-portable-1.5.0.zip",
+                "sha256": du.compute_sha256(zip_path),
+                "size_bytes": int(zip_path.stat().st_size),
+            },
+            "migration_plan": [],
+            "signature": "ignored-for-test",
+        }
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {"cachedAt": du.iso_now(), "manifest": manifest},
+        )
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "availability": "available",
+                "updateAvailable": True,
+                "latestVersion": "1.5.0",
+                "targetVersion": "1.5.0",
+                "downloadState": "downloading",
+                "downloadedBytes": 12,
+                "totalBytes": 100,
+                "downloadPercent": 12,
+            },
+        )
+
+        status = service.get_status_payload()
+
+        assert status["downloadState"] == "downloaded"
+        assert status["installState"] == "ready"
+        assert status["downloadPercent"] == 100
+        assert status["downloadedZipPath"] == str(zip_path)
+
+
+def test_get_status_payload_marks_interrupted_download_as_failed() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        manifest = {
+            "schema_version": 2,
+            "key_id": "desktop-ed25519-test",
+            "channel": "stable",
+            "version": "1.5.0",
+            "published_at": "2026-04-15T12:00:00Z",
+            "release_notes_url": "https://example.com/release",
+            "min_desktop_updater_version": "2.0.0",
+            "min_supported_current_version": "0.1.0",
+            "data_schema_version": "2",
+            "rollback_allowed": True,
+            "portable_artifact": {
+                "url": "https://example.com/baluffo-portable-1.5.0.zip",
+                "sha256": "a" * 64,
+                "size_bytes": 123,
+            },
+            "migration_plan": [],
+            "signature": "ignored-for-test",
+        }
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {"cachedAt": du.iso_now(), "manifest": manifest},
+        )
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "availability": "available",
+                "updateAvailable": True,
+                "latestVersion": "1.5.0",
+                "targetVersion": "1.5.0",
+                "downloadState": "downloading",
+                "downloadedBytes": 23,
+                "totalBytes": 137,
+                "downloadPercent": 16,
+            },
+        )
+
+        status = service.get_status_payload()
+
+        assert status["downloadState"] == "failed"
+        assert status["installState"] == "idle"
+        assert status["downloadPercent"] == 0
+        assert "stopped before it finished" in status["lastError"]
+
+
+def test_get_status_payload_normalizes_installed_target_to_up_to_date() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "1.5.0")
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "availability": "available",
+                "updateAvailable": True,
+                "latestVersion": "1.5.0",
+                "targetVersion": "1.5.0",
+                "installState": "installed",
+                "installStage": "installed",
+                "downloadState": "idle",
+            },
+        )
+
+        status = service.get_status_payload()
+
+        assert status["currentVersion"] == "1.5.0"
+        assert status["availability"] == "up_to_date"
+        assert status["updateAvailable"] is False
+        assert status["installState"] == "idle"
+        assert status["installStage"] == "idle"
+
+
+def test_download_update_returns_structured_ready_failure() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        zip_path = paths.downloads_dir / "baluffo-portable-1.5.0.zip"
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        zip_path.write_text("portable-zip", encoding="utf-8")
+        manifest = {
+            "schema_version": 2,
+            "key_id": "desktop-ed25519-test",
+            "channel": "stable",
+            "version": "1.5.0",
+            "published_at": "2026-04-15T12:00:00Z",
+            "release_notes_url": "https://example.com/release",
+            "min_desktop_updater_version": "2.0.0",
+            "min_supported_current_version": "0.1.0",
+            "data_schema_version": "2",
+            "rollback_allowed": True,
+            "portable_artifact": {
+                "url": "https://example.com/baluffo-portable-1.5.0.zip",
+                "sha256": du.compute_sha256(zip_path),
+                "size_bytes": int(zip_path.stat().st_size),
+            },
+            "migration_plan": [],
+            "signature": "ignored-for-test",
+        }
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {"cachedAt": du.iso_now(), "manifest": manifest},
+        )
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "availability": "available",
+                "updateAvailable": True,
+                "latestVersion": "1.5.0",
+                "targetVersion": "1.5.0",
+                "lastCheckedAt": du.iso_now(),
+                "downloadState": "downloaded",
+                "installState": "ready",
+                "downloadedZipPath": str(zip_path),
+            },
+        )
+
+        result = service.download_update()
+
+        assert result["started"] is False
+        assert result["errorCode"] == "update_ready_to_install"
+        assert result["status"]["installState"] == "ready"
+
+
+def test_download_update_returns_structured_start_failure() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        manifest = {
+            "schema_version": 2,
+            "key_id": "desktop-ed25519-test",
+            "channel": "stable",
+            "version": "1.5.0",
+            "published_at": "2026-04-15T12:00:00Z",
+            "release_notes_url": "https://example.com/release",
+            "min_desktop_updater_version": "2.0.0",
+            "min_supported_current_version": "0.1.0",
+            "data_schema_version": "2",
+            "rollback_allowed": True,
+            "portable_artifact": {
+                "url": "https://example.com/baluffo-portable-1.5.0.zip",
+                "sha256": "a" * 64,
+                "size_bytes": 123,
+            },
+            "migration_plan": [],
+            "signature": "ignored-for-test",
+        }
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {"cachedAt": du.iso_now(), "manifest": manifest},
+        )
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "availability": "available",
+                "updateAvailable": True,
+                "latestVersion": "1.5.0",
+                "targetVersion": "1.5.0",
+                "lastCheckedAt": du.iso_now(),
+            },
+        )
+
+        with mock.patch.object(du.threading.Thread, "start", side_effect=RuntimeError("boom")):
+            result = service.download_update()
+
+        status = du.load_status(paths, current_version="0.1.0")
+        assert result["started"] is False
+        assert result["errorCode"] == "download_start_failed"
+        assert status["downloadState"] == "failed"
+        assert "Could not start the desktop update download" in status["lastError"]
+
+
+def test_check_for_update_persists_release_notes_metadata_from_release_payload() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        release = {
+            "id": 123,
+            "tag_name": "v1.5.0",
+            "name": "Baluffo v1.5.0",
+            "body": "### Fixed\n- Release notes modal",
+            "published_at": "2026-04-15T12:00:00Z",
+            "html_url": "https://example.com/releases/v1.5.0",
+        }
+        manifest = {
+            "schema_version": 2,
+            "key_id": "desktop-ed25519-test",
+            "channel": "stable",
+            "version": "1.5.0",
+            "published_at": "2026-04-15T12:00:00Z",
+            "release_notes_url": "https://example.com/releases/v1.5.0",
+            "min_desktop_updater_version": "2.0.0",
+            "min_supported_current_version": "0.1.0",
+            "data_schema_version": "2",
+            "rollback_allowed": True,
+            "portable_artifact": {
+                "url": "https://example.com/baluffo-portable-1.5.0.zip",
+                "sha256": "a" * 64,
+                "size_bytes": 123,
+            },
+            "migration_plan": [],
+            "signature": "ignored-for-test",
+        }
+
+        with (
+            mock.patch.object(service, "_resolve_latest_release", return_value=release),
+            mock.patch.object(service, "_resolve_manifest_from_release", return_value=manifest),
+        ):
+            status = service.check_for_update(force=True)
+
+        cached = du.read_json(paths.manifest_cache_path, {})
+
+        assert status["releaseNotesUrl"] == "https://example.com/releases/v1.5.0"
+        assert status["releaseNotesTitle"] == "Baluffo v1.5.0"
+        assert status["releaseNotesBody"] == "### Fixed\n- Release notes modal"
+        assert status["releaseNotesPublishedAt"] == "2026-04-15T12:00:00Z"
+        assert cached["manifest"] == manifest
+        assert cached["releaseNotes"] == {
+            "releaseNotesUrl": "https://example.com/releases/v1.5.0",
+            "releaseNotesTitle": "Baluffo v1.5.0",
+            "releaseNotesBody": "### Fixed\n- Release notes modal",
+            "releaseNotesPublishedAt": "2026-04-15T12:00:00Z",
+        }
+        assert "releaseNotesBody" not in cached["manifest"]
+
+
+def test_check_for_update_throttle_reuses_cached_release_notes() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        manifest = {
+            "schema_version": 2,
+            "key_id": "desktop-ed25519-test",
+            "channel": "stable",
+            "version": "1.5.0",
+            "published_at": "2026-04-15T12:00:00Z",
+            "release_notes_url": "https://example.com/releases/v1.5.0",
+            "min_desktop_updater_version": "2.0.0",
+            "min_supported_current_version": "0.1.0",
+            "data_schema_version": "2",
+            "rollback_allowed": True,
+            "portable_artifact": {
+                "url": "https://example.com/baluffo-portable-1.5.0.zip",
+                "sha256": "a" * 64,
+                "size_bytes": 123,
+            },
+            "migration_plan": [],
+            "signature": "ignored-for-test",
+        }
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {
+                "cachedAt": du.iso_now(),
+                "releaseId": 123,
+                "releaseTag": "v1.5.0",
+                "manifest": manifest,
+                "releaseNotes": {
+                    "releaseNotesUrl": "https://example.com/releases/v1.5.0",
+                    "releaseNotesTitle": "Baluffo v1.5.0",
+                    "releaseNotesBody": "### Fixed\n- Cached notes",
+                    "releaseNotesPublishedAt": "2026-04-15T12:00:00Z",
+                },
+            },
+        )
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "lastCheckedAt": du.iso_now(),
+            },
+        )
+
+        with (
+            mock.patch.object(service, "_resolve_latest_release") as latest_release_mock,
+            mock.patch.object(service, "_resolve_manifest_from_release") as manifest_mock,
+        ):
+            status = service.check_for_update(force=False)
+
+        latest_release_mock.assert_not_called()
+        manifest_mock.assert_not_called()
+        assert status["releaseNotesTitle"] == "Baluffo v1.5.0"
+        assert status["releaseNotesBody"] == "### Fixed\n- Cached notes"
+        assert status["releaseNotesPublishedAt"] == "2026-04-15T12:00:00Z"
+
+
+def test_get_status_payload_backfills_release_notes_from_cache() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        manifest = {
+            "schema_version": 2,
+            "key_id": "desktop-ed25519-test",
+            "channel": "stable",
+            "version": "1.5.0",
+            "published_at": "2026-04-15T12:00:00Z",
+            "release_notes_url": "https://example.com/releases/v1.5.0",
+            "min_desktop_updater_version": "2.0.0",
+            "min_supported_current_version": "0.1.0",
+            "data_schema_version": "2",
+            "rollback_allowed": True,
+            "portable_artifact": {
+                "url": "https://example.com/baluffo-portable-1.5.0.zip",
+                "sha256": "a" * 64,
+                "size_bytes": 123,
+            },
+            "migration_plan": [],
+            "signature": "ignored-for-test",
+        }
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {
+                "cachedAt": du.iso_now(),
+                "releaseId": 123,
+                "releaseTag": "v1.5.0",
+                "manifest": manifest,
+                "releaseNotes": {
+                    "releaseNotesUrl": "https://example.com/releases/v1.5.0",
+                    "releaseNotesTitle": "",
+                    "releaseNotesBody": "### Fixed\n- Cached after restart",
+                    "releaseNotesPublishedAt": "2026-04-15T12:00:00Z",
+                },
+            },
+        )
+
+        status = service.get_status_payload()
+
+        assert status["releaseNotesUrl"] == "https://example.com/releases/v1.5.0"
+        assert status["releaseNotesTitle"] == "1.5.0"
+        assert status["releaseNotesBody"] == "### Fixed\n- Cached after restart"
+        assert status["releaseNotesPublishedAt"] == "2026-04-15T12:00:00Z"
+
+
 def test_request_install_writes_plan_and_launches_helper() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         install_root = Path(tmp) / "portable"

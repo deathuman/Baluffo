@@ -1004,12 +1004,16 @@ class _DesktopUpdateReleaseHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _send_file(self, path: Path, *, content_type: str) -> None:
-        body = path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", str(content_type))
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Length", str(int(path.stat().st_size)))
         self.end_headers()
-        self.wfile.write(body)
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path.startswith("/repos/local/baluffo-smoke/releases"):
@@ -1163,6 +1167,59 @@ def _preferred_desktop_browser_env() -> dict[str, str]:
     return {"BALUFFO_DESKTOP_BROWSER_PATH": browser_path} if browser_path else {}
 
 
+def _assert_desktop_update_helper_succeeded(
+    *,
+    paths: desktop_update_mod.DesktopUpdatePaths,
+    relaunch_bridge_port: int,
+) -> None:
+    if paths.helper_stdout_log_path.is_file():
+        helper_stdout = paths.helper_stdout_log_path.read_text(
+            encoding="utf-8", errors="replace"
+        ).strip()
+        if helper_stdout:
+            payload = json.loads(helper_stdout)
+            if isinstance(payload, dict) and payload.get("ok") is False:
+                raise RuntimeError(f"Update helper reported failure: {payload}")
+    if paths.helper_diagnostics_log_path.is_file():
+        for raw_line in paths.helper_diagnostics_log_path.read_text(
+            encoding="utf-8", errors="replace"
+        ).splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            event = str(row.get("event") or "").strip().lower()
+            if event in {"helper_worker_failed", "helper_main_failed"}:
+                raise RuntimeError(f"Update helper diagnostics reported failure: {row}")
+    if relaunch_bridge_port <= 0:
+        return
+    status_code, status_payload = request_json(
+        f"http://127.0.0.1:{relaunch_bridge_port}/app/update-status?t={time.time_ns()}",
+        timeout_s=10.0,
+    )
+    if status_code != 200:
+        raise RuntimeError(
+            f"Updated desktop app did not expose updater status after relaunch: {status_payload}"
+        )
+    status = (
+        dict(status_payload.get("status") or {})
+        if isinstance(status_payload.get("status"), dict)
+        else dict(status_payload)
+        if isinstance(status_payload, dict)
+        else {}
+    )
+    install_state = str(status.get("installState") or "").strip().lower()
+    install_stage = str(status.get("installStage") or "").strip().lower()
+    download_state = str(status.get("downloadState") or "").strip().lower()
+    if install_state == "failed" or install_stage == "failed" or download_state == "failed":
+        raise RuntimeError(f"Updated desktop app reported a failed updater state: {status}")
+
+
 def run_desktop_update_rehearsal(
     *,
     exe_path: Path,
@@ -1278,26 +1335,43 @@ def run_desktop_update_rehearsal(
         ):
             raise RuntimeError(f"Update check did not surface an available release: {check_status}")
         paths = desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
-        staged_zip = paths.downloads_dir / target_zip.name
-        staged_zip.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(target_zip, staged_zip)
-        staged_status = desktop_update_mod.load_status(paths, current_version="0.0.9")
-        staged_status.update(
-            {
-                "downloadState": "downloaded",
-                "downloadedBytes": int(target_zip.stat().st_size),
-                "totalBytes": int(target_zip.stat().st_size),
-                "downloadPercent": 100,
-                "installState": "ready",
-                "downloadedZipPath": str(staged_zip),
-                "lastError": "",
-            }
+        status_code, download_payload = post_json(
+            f"http://127.0.0.1:{initial_bridge_port}/app/download-update",
+            {},
+            timeout_s=10.0,
         )
-        desktop_update_mod.save_status(paths, staged_status)
+        if status_code != 200:
+            raise RuntimeError(f"Update download could not start: {download_payload}")
+        if not bool(download_payload.get("started")):
+            raise RuntimeError(f"Update download did not start: {download_payload}")
+        download_status = (
+            dict(download_payload.get("status") or {})
+            if isinstance(download_payload.get("status"), dict)
+            else {}
+        )
+        download_deadline = time.monotonic() + max(20.0, runtime_timeout_s)
+        while True:
+            download_state = str(download_status.get("downloadState") or "").strip().lower()
+            install_state = str(download_status.get("installState") or "").strip().lower()
+            if download_state == "downloaded" or install_state == "ready":
+                break
+            if download_state == "failed":
+                raise RuntimeError(f"Update download failed during rehearsal: {download_status}")
+            if time.monotonic() >= download_deadline:
+                raise RuntimeError(f"Update download did not finish in time: {download_status}")
+            time.sleep(0.2)
+            status_code, download_status = request_json(
+                f"http://127.0.0.1:{initial_bridge_port}/app/update-status?t={time.time_ns()}",
+                timeout_s=10.0,
+            )
+            if status_code != 200:
+                raise RuntimeError(
+                    f"Update status poll failed during rehearsal: {download_status or {'status': status_code}}"
+                )
         status_code, install_payload = post_json(
             f"http://127.0.0.1:{initial_bridge_port}/app/install-update",
             {},
-            timeout_s=10.0,
+            timeout_s=max(30.0, runtime_timeout_s),
         )
         if status_code != 200:
             raise RuntimeError(f"Update install handoff could not start: {install_payload}")
@@ -1318,6 +1392,10 @@ def run_desktop_update_rehearsal(
         relaunch_launcher_pid = int(relaunch_session.get("launcherPid") or 0)
         relaunch_bridge_port = int(relaunch_session.get("bridgePort") or 0)
         relaunch_site_port = int(relaunch_session.get("sitePort") or 0)
+        _assert_desktop_update_helper_succeeded(
+            paths=paths,
+            relaunch_bridge_port=relaunch_bridge_port,
+        )
         return {
             "name": "Packaged desktop updater rehearsal",
             "slug": "desktop-update-rehearsal",

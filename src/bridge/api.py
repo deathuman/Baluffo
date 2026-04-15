@@ -115,6 +115,9 @@ class BridgeApi:
         "downloadState": "idle",
         "installState": "idle",
         "releaseNotesUrl": "",
+        "releaseNotesTitle": "",
+        "releaseNotesBody": "",
+        "releaseNotesPublishedAt": "",
         "lastCheckedAt": "",
         "lastError": "",
     }

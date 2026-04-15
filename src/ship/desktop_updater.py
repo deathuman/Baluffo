@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 import traceback
+import urllib.error
 import uuid
 import zipfile
 from pathlib import Path
@@ -319,7 +320,12 @@ def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> 
         if bridge_port <= 0:
             time.sleep(1.0)
             continue
-        health = fetch_json(f"http://127.0.0.1:{bridge_port}/ops/health", timeout_s=5.0)
+        try:
+            health = fetch_json(f"http://127.0.0.1:{bridge_port}/ops/health", timeout_s=5.0)
+        except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
+            # The relaunched bridge can briefly refuse connections before startup settles.
+            time.sleep(1.0)
+            continue
         if (
             isinstance(health, dict)
             and str(health.get("service") or "") == "baluffo-bridge"

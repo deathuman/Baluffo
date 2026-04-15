@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from unittest import mock
+from urllib import error as urllib_error
 
 from src.ship import desktop_update as du
 from src.ship import desktop_updater as updater
@@ -176,3 +177,48 @@ def test_run_install_finishes_stale_verifying_state_when_target_is_already_healt
         assert status["installState"] == "installed"
         assert status["installStage"] == "installed"
         assert status["targetVersion"] == str(plan["targetVersion"])
+
+
+def test_verify_target_startup_retries_after_transient_bridge_refusal(monkeypatch) -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        install_root = Path(tmp) / "portable"
+        data_dir = install_root / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
+        plan = _write_install_plan(
+            paths.install_plan_path,
+            install_root,
+            rollback_root,
+            paths.downloads_dir / "baluffo-portable-1.4.0.zip",
+        )
+        session_root = Path(str(plan["desktopSessionRoot"]))
+        session_root.mkdir(parents=True, exist_ok=True)
+        (session_root / "desktop-session.json").write_text(
+            json.dumps({"bridgePort": 8877}),
+            encoding="utf-8",
+        )
+        du.write_success_marker(
+            paths,
+            app_version="1.4.0",
+            bridge_port=8877,
+            launcher_token="token-1",
+        )
+        health_calls = mock.Mock(
+            side_effect=[
+                urllib_error.URLError("connection refused"),
+                {
+                    "service": "baluffo-bridge",
+                    "desktopMode": True,
+                    "startupReady": True,
+                    "appVersion": "1.4.0",
+                },
+            ]
+        )
+        monotonic_values = iter((0.0, 0.0, 1.0))
+        monkeypatch.setattr(updater, "fetch_json", health_calls)
+        monkeypatch.setattr(updater.time, "monotonic", lambda: next(monotonic_values))
+        monkeypatch.setattr(updater.time, "sleep", lambda _seconds: None)
+
+        updater._verify_target_startup(plan, timeout_s=10.0)
+
+        assert health_calls.call_count == 2

@@ -48,6 +48,7 @@ import { createAuthReadyPoller } from "../../shared/auth-ready-poll.js";
 import { normalizeToken } from "../../shared/text-utils.js";
 import { cacheJobsDom } from "./dom.js";
 import { createJobsDesktopUpdateController } from "./desktop-update.js";
+import { openReleaseNotesDialog } from "../../shared/ui/release-notes-dialog.js";
 import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js";
 import {
   buildSeenRowKey,
@@ -387,6 +388,7 @@ function bootJobsPage() {
     showToast,
     requestConfirmationDialog,
     isDesktopRuntimeMode,
+    showReleaseNotesDialog: options => openReleaseNotesDialog(options),
     openExternalUrl: url => openJobLinkInDefaultBrowser(url),
   });
   runtimeState.adminBridgeWatcher.setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");

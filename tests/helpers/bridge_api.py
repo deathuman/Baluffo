@@ -212,6 +212,9 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
         "downloadPercent": 0,
         "installState": "idle",
         "releaseNotesUrl": "",
+        "releaseNotesTitle": "",
+        "releaseNotesBody": "",
+        "releaseNotesPublishedAt": "",
         "lastCheckedAt": "",
         "lastError": "",
     }

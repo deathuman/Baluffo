@@ -283,8 +283,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
     if path == "/app/download-update":
         try:
             result = api.download_update()
-            status_code = 200 if bool(result.get("started")) else 409
-            handler._send_json(result, status=status_code)  # noqa: SLF001
+            handler._send_json(result, status=200)  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"started": False, "error": str(exc)}, status=500)  # noqa: SLF001
         return True
@@ -292,8 +291,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
     if path == "/app/install-update":
         try:
             result = api.install_update()
-            status_code = 200 if bool(result.get("started")) else 409
-            handler._send_json(result, status=status_code)  # noqa: SLF001
+            handler._send_json(result, status=200)  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json({"started": False, "error": str(exc)}, status=500)  # noqa: SLF001
         return True

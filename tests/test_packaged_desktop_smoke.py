@@ -779,6 +779,45 @@ def test_run_packaged_smoke_can_run_desktop_update_rehearsal_mode() -> None:
         assert saved["ok"] is True
 
 
+def test_assert_desktop_update_helper_succeeded_rejects_failed_helper_stdout() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = smoke.desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths.helper_stdout_log_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.helper_stdout_log_path.write_text(
+            json.dumps({"ok": False, "error": "boom"}),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match="Update helper reported failure"):
+            smoke._assert_desktop_update_helper_succeeded(
+                paths=paths,
+                relaunch_bridge_port=0,
+            )
+
+
+def test_assert_desktop_update_helper_succeeded_ignores_malformed_diagnostics_lines() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = smoke.desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
+        paths.helper_diagnostics_log_path.parent.mkdir(parents=True, exist_ok=True)
+        paths.helper_diagnostics_log_path.write_text(
+            "\n".join(
+                [
+                    '{"event": "helper_main_started"}',
+                    "}}",
+                    '{"event": "helper_main_succeeded"}',
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        smoke._assert_desktop_update_helper_succeeded(
+            paths=paths,
+            relaunch_bridge_port=0,
+        )
+
+
 def test_run_packaged_smoke_classifies_spawn_failure_from_node_runner() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)

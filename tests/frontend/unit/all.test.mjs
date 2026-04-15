@@ -26,6 +26,7 @@ import "./local-data-domains.test.mjs";
 import "./local-data-runtime-contract.test.mjs";
 import "./local-data-services.test.mjs";
 import "./manifest-contract.test.mjs";
+import "./release-notes-dialog.test.mjs";
 import "./saved-data-source.test.mjs";
 import "./saved-domain.test.mjs";
 import "./saved-notes-editing.test.mjs";

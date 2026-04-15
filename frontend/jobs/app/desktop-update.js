@@ -51,6 +51,9 @@ export function normalizeDesktopUpdateStatus(status = {}) {
     installStage: String(payload.installStage || "").toLowerCase(),
     installStageLabel: String(payload.installStageLabel || ""),
     releaseNotesUrl: String(payload.releaseNotesUrl || ""),
+    releaseNotesTitle: String(payload.releaseNotesTitle || ""),
+    releaseNotesBody: String(payload.releaseNotesBody || ""),
+    releaseNotesPublishedAt: String(payload.releaseNotesPublishedAt || ""),
     lastCheckedAt: String(payload.lastCheckedAt || ""),
     lastError: String(payload.lastError || ""),
     blockedReason: String(payload.blockedReason || ""),
@@ -76,6 +79,46 @@ function blockedReasonMessage(blockedReason) {
   return "This update is available but cannot be installed automatically from the current build.";
 }
 
+function downloadResultMessage(errorCode, fallbackMessage) {
+  const code = String(errorCode || "").trim().toLowerCase();
+  if (code === "download_in_progress") {
+    return { message: "Desktop update download is already in progress.", level: "info" };
+  }
+  if (code === "update_ready_to_install") {
+    return { message: "The update ZIP is already downloaded. Install it when you're ready.", level: "info" };
+  }
+  if (code === "helper_too_old" || code === "current_version_too_old") {
+    return { message: blockedReasonMessage(code), level: "error" };
+  }
+  if (code === "manifest_cache_missing") {
+    return { message: "Update metadata is missing. Check for updates again.", level: "error" };
+  }
+  if (code === "no_update_available") {
+    return { message: fallbackMessage || "No desktop update is available right now.", level: "error" };
+  }
+  return {
+    message: fallbackMessage || "Could not start the desktop update download.",
+    level: "error"
+  };
+}
+
+function installResultMessage(errorCode, fallbackMessage) {
+  const code = String(errorCode || "").trim().toLowerCase();
+  if (code === "manifest_cache_missing") {
+    return { message: "Update metadata is missing. Check for updates again.", level: "error" };
+  }
+  if (code === "install_not_ready") {
+    return { message: "Download the update before trying to install it.", level: "error" };
+  }
+  if (code === "install_session_unavailable") {
+    return { message: "The desktop launcher session is unavailable. Restart Baluffo and try again.", level: "error" };
+  }
+  return {
+    message: fallbackMessage || "Could not start the desktop update install.",
+    level: "error"
+  };
+}
+
 function buildMetaLine(status) {
   const current = String(status.currentVersion || "").trim();
   const latest = String(status.latestVersion || status.targetVersion || "").trim();
@@ -87,6 +130,12 @@ function buildMetaLine(status) {
   return parts.join(" | ");
 }
 
+function buildReleaseNotesTitle(status) {
+  return String(
+    status.releaseNotesTitle || status.targetVersion || status.latestVersion || "Release notes"
+  ).trim();
+}
+
 function inFlightInstallState(installState) {
   return new Set(["handoff_requested", "waiting_for_exit", "installing", "verifying"]).has(
     String(installState || "").toLowerCase()
@@ -96,11 +145,15 @@ function inFlightInstallState(installState) {
 export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
   const normalized = normalizeDesktopUpdateStatus(status);
   const installProgress = normalized.installStageLabel || "Waiting for the updater helper to finish install and startup verification.";
-  const stateToken = inFlightInstallState(normalized.installState)
-    ? normalized.installState
-    : normalized.downloadState === "downloading"
-      ? "downloading"
-      : normalized.availability;
+  const stateToken = normalized.installState === "failed"
+    ? "install_failed"
+    : normalized.downloadState === "failed"
+      ? "download_failed"
+      : inFlightInstallState(normalized.installState)
+        ? normalized.installState
+        : normalized.downloadState === "downloading"
+          ? "downloading"
+          : normalized.availability;
   const view = {
     stateToken: stateToken || "unknown",
     buttonLabel: "Check updates",
@@ -110,6 +163,10 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
     meta: buildMetaLine(normalized),
     progress: "",
     releaseNotesUrl: normalized.releaseNotesUrl,
+    releaseNotesTitle: buildReleaseNotesTitle(normalized),
+    releaseNotesBody: normalized.releaseNotesBody,
+    releaseNotesPublishedAt: normalized.releaseNotesPublishedAt,
+    releaseNotesVisible: Boolean(normalized.releaseNotesBody || normalized.releaseNotesUrl),
     primaryAction: "check",
     primaryLabel: "Check for updates",
     primaryDisabled: false,
@@ -154,6 +211,25 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
         : "Download started.";
     view.primaryVisible = false;
     view.secondaryVisible = false;
+    return view;
+  }
+
+  if (normalized.downloadState === "failed") {
+    view.buttonLabel = "Download failed";
+    view.title = normalized.targetVersion
+      ? `Could not download ${normalized.targetVersion}`
+      : "Desktop update download failed";
+    view.body = normalized.lastError || "Baluffo could not finish downloading the update.";
+    view.progress = normalized.downloadedBytes > 0
+      ? normalized.totalBytes > 0
+        ? `${formatDesktopUpdateBytes(normalized.downloadedBytes)} of ${formatDesktopUpdateBytes(normalized.totalBytes)} downloaded before the failure`
+        : `${formatDesktopUpdateBytes(normalized.downloadedBytes)} downloaded before the failure`
+      : "";
+    view.primaryAction = "download";
+    view.primaryLabel = "Download again";
+    view.secondaryAction = "close";
+    view.secondaryLabel = "Close";
+    view.secondaryVisible = true;
     return view;
   }
 
@@ -251,6 +327,7 @@ export function createJobsDesktopUpdateController({
   showToast,
   requestConfirmationDialog,
   isDesktopRuntimeMode,
+  showReleaseNotesDialog,
   openExternalUrl,
   setTimeoutFn = setTimeout,
   clearTimeoutFn = clearTimeout,
@@ -260,6 +337,7 @@ export function createJobsDesktopUpdateController({
     mounted: false,
     autoCheckStarted: false,
     panelOpen: false,
+    pendingAction: "",
     pollTimer: null,
     status: normalizeDesktopUpdateStatus(),
     dismissedTargetVersion: "",
@@ -324,12 +402,12 @@ export function createJobsDesktopUpdateController({
     toggleHidden(refs.desktopUpdateProgress, !view.progress);
     if (refs.desktopUpdateReleaseNotes) {
       refs.desktopUpdateReleaseNotes.href = view.releaseNotesUrl || "#";
-      toggleHidden(refs.desktopUpdateReleaseNotes, !view.releaseNotesUrl);
+      toggleHidden(refs.desktopUpdateReleaseNotes, !view.releaseNotesVisible);
     }
     if (refs.desktopUpdatePrimaryBtn) {
       refs.desktopUpdatePrimaryBtn.dataset.action = view.primaryAction;
       refs.desktopUpdatePrimaryBtn.textContent = view.primaryLabel;
-      setDisabled(refs.desktopUpdatePrimaryBtn, view.primaryDisabled);
+      setDisabled(refs.desktopUpdatePrimaryBtn, view.primaryDisabled || Boolean(state.pendingAction));
       toggleHidden(refs.desktopUpdatePrimaryBtn, !view.primaryVisible);
     }
     if (refs.desktopUpdateSecondaryBtn) {
@@ -404,13 +482,30 @@ export function createJobsDesktopUpdateController({
   async function downloadUpdate() {
     try {
       const payload = await postJson(baseUrl, "/app/download-update", {});
-      if (payload?.error) {
-        throw new Error(String(payload.error));
+      const nextStatus = payload?.status || state.status;
+      applyStatus(nextStatus, { openPanel: true });
+      if (payload?.started === false || payload?.error) {
+        const feedback = downloadResultMessage(payload?.errorCode, payload?.error);
+        showToast?.(feedback.message, feedback.level);
+        return payload;
       }
-      applyStatus(payload?.status || state.status, { openPanel: true });
       showToast?.("Desktop update download started.", "info");
       return payload;
     } catch (error) {
+      const refreshed = await refreshStatus({ silent: true, openPanel: true });
+      const recoveredStatus = normalizeDesktopUpdateStatus(refreshed || {});
+      if (refreshed && recoveredStatus.downloadState === "downloading") {
+        showToast?.("Desktop update download started.", "info");
+        return { started: true, status: refreshed, recovered: true };
+      }
+      if (refreshed && (recoveredStatus.downloadState === "downloaded" || recoveredStatus.installState === "ready")) {
+        showToast?.("Desktop update is ready to install.", "info");
+        return { started: false, status: refreshed, recovered: true };
+      }
+      if (refreshed && recoveredStatus.downloadState === "failed" && recoveredStatus.lastError) {
+        showToast?.(recoveredStatus.lastError, "error");
+        return { started: false, status: refreshed, recovered: true };
+      }
       applyStatus({ ...state.status, availability: "error", lastError: errorMessage(error) }, { openPanel: true });
       showToast?.(`Could not download the update: ${errorMessage(error)}`, "error");
       return null;
@@ -427,10 +522,13 @@ export function createJobsDesktopUpdateController({
     if (!confirmed) return null;
     try {
       const payload = await postJson(baseUrl, "/app/install-update", {});
-      if (payload?.error) {
-        throw new Error(String(payload.error));
+      const nextStatus = payload?.status || { ...state.status, installState: "handoff_requested" };
+      applyStatus(nextStatus, { openPanel: true });
+      if (payload?.started === false || payload?.error) {
+        const feedback = installResultMessage(payload?.errorCode, payload?.error);
+        showToast?.(feedback.message, feedback.level);
+        return payload;
       }
-      applyStatus(payload?.status || { ...state.status, installState: "handoff_requested" }, { openPanel: true });
       showToast?.("Closing Baluffo to install the update...", "info");
       return payload;
     } catch (error) {
@@ -440,17 +538,50 @@ export function createJobsDesktopUpdateController({
     }
   }
 
+  function openReleaseNotes() {
+    const title = buildReleaseNotesTitle(state.status);
+    const markdown = String(state.status.releaseNotesBody || "").trim();
+    const releaseNotesUrl = String(state.status.releaseNotesUrl || "").trim();
+    const fallbackMessage = releaseNotesUrl
+      ? "Release notes are unavailable in-app for this build. You can open the release on GitHub instead."
+      : "Release notes are unavailable for this build.";
+    if (typeof showReleaseNotesDialog === "function") {
+      return showReleaseNotesDialog({
+        title,
+        markdown,
+        publishedAt: state.status.releaseNotesPublishedAt,
+        releaseNotesUrl,
+        openExternalUrl,
+        fallbackMessage,
+      });
+    }
+    if (releaseNotesUrl) {
+      openExternalUrl?.(releaseNotesUrl);
+      return null;
+    }
+    showToast?.("Release notes are unavailable for this build.", "info");
+    return null;
+  }
+
   async function handlePrimaryAction() {
     const action = String(refs.desktopUpdatePrimaryBtn?.dataset?.action || "check");
-    if (action === "download") {
-      await downloadUpdate();
-      return;
+    if (state.pendingAction) return;
+    state.pendingAction = action;
+    render();
+    try {
+      if (action === "download") {
+        await downloadUpdate();
+        return;
+      }
+      if (action === "install") {
+        await installUpdate();
+        return;
+      }
+      await checkForUpdates({ force: true, silent: false, openPanel: true });
+    } finally {
+      state.pendingAction = "";
+      render();
     }
-    if (action === "install") {
-      await installUpdate();
-      return;
-    }
-    await checkForUpdates({ force: true, silent: false, openPanel: true });
   }
 
   async function handleSecondaryAction() {
@@ -463,6 +594,11 @@ export function createJobsDesktopUpdateController({
     }
     state.panelOpen = false;
     render();
+  }
+
+  function handleReleaseNotesClick(event) {
+    event?.preventDefault?.();
+    openReleaseNotes();
   }
 
   async function handleToggleClick() {
@@ -488,12 +624,7 @@ export function createJobsDesktopUpdateController({
     bindAsyncClick?.(refs.desktopUpdateToggleBtn, handleToggleClick);
     bindAsyncClick?.(refs.desktopUpdatePrimaryBtn, handlePrimaryAction);
     bindAsyncClick?.(refs.desktopUpdateSecondaryBtn, handleSecondaryAction);
-    refs.desktopUpdateReleaseNotes?.addEventListener?.("click", event => {
-      const href = String(refs.desktopUpdateReleaseNotes?.href || "").trim();
-      if (!href || href === "#") return;
-      event.preventDefault();
-      openExternalUrl?.(href);
-    });
+    refs.desktopUpdateReleaseNotes?.addEventListener?.("click", handleReleaseNotesClick);
   }
 
   async function mount() {
@@ -518,6 +649,7 @@ export function createJobsDesktopUpdateController({
     startAutoCheck,
     handlePrimaryAction,
     handleSecondaryAction,
+    handleReleaseNotesClick,
     stopPolling,
     _getState() {
       return { ...state };

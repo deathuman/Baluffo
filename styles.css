@@ -403,6 +403,80 @@ h1 {
   margin-top: 0.2rem;
 }
 
+.release-notes-dialog-overlay {
+  z-index: 1450;
+}
+
+.release-notes-dialog {
+  width: min(92vw, 760px);
+  max-height: min(82vh, 760px);
+  display: grid;
+  gap: 0.9rem;
+  text-align: left;
+  overflow: hidden;
+}
+
+.release-notes-dialog-title {
+  margin: 0;
+  font-size: 1.35rem;
+  color: var(--text-primary);
+}
+
+.release-notes-dialog-published-at {
+  margin: -0.25rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.release-notes-dialog-body {
+  overflow: auto;
+  padding-right: 0.25rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.release-notes-dialog-heading {
+  margin: 0 0 0.55rem;
+  color: var(--text-primary);
+}
+
+.release-notes-dialog-paragraph,
+.release-notes-dialog-empty {
+  margin: 0 0 0.8rem;
+}
+
+.release-notes-dialog-list {
+  margin: 0 0 0.9rem;
+  padding-left: 1.35rem;
+}
+
+.release-notes-dialog-list-item + .release-notes-dialog-list-item {
+  margin-top: 0.35rem;
+}
+
+.release-notes-dialog-body code {
+  padding: 0.12rem 0.35rem;
+  border-radius: 6px;
+  background: var(--surface-3);
+  color: var(--text-primary);
+  font-size: 0.95em;
+}
+
+.release-notes-dialog-link {
+  color: var(--text-link);
+  font-weight: 600;
+}
+
+.release-notes-dialog-link:hover {
+  text-decoration: underline;
+}
+
+.release-notes-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
 .popup-description {
   font-size: 1.1rem;
   line-height: 1.6;

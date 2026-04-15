@@ -65,6 +65,10 @@ def test_app_update_status(tmp_path: Path) -> None:
         "availability": "available",
         "downloadState": "idle",
         "installState": "idle",
+        "releaseNotesUrl": "https://example.com/releases/v0.2.0",
+        "releaseNotesTitle": "Baluffo v0.2.0",
+        "releaseNotesBody": "### Fixed\n- Notes",
+        "releaseNotesPublishedAt": "2026-04-15T10:00:00Z",
     }
 
     handler = _FakeHandler()
@@ -73,6 +77,7 @@ def test_app_update_status(tmp_path: Path) -> None:
     assert result is True
     assert handler.sent[-1]["status"] == 200
     assert handler.sent[-1]["payload"]["latestVersion"] == "0.2.0"
+    assert handler.sent[-1]["payload"]["releaseNotesTitle"] == "Baluffo v0.2.0"
 
 
 @pytest.mark.parametrize(

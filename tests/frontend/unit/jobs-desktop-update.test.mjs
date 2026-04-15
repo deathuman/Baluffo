@@ -91,12 +91,16 @@ test("deriveDesktopUpdateView maps available and ready states to clear CTAs", ()
     availability: "available",
     totalBytes: 10 * 1024 * 1024,
     updateAvailable: true,
-    releaseNotesUrl: "https://example.com/release"
+    releaseNotesUrl: "https://example.com/release",
+    releaseNotesTitle: "Baluffo v0.0.16",
+    releaseNotesBody: "### Fixed\n- Notes",
+    releaseNotesPublishedAt: "2026-04-15T10:00:00Z"
   }, { panelOpen: true });
   assert.equal(available.buttonLabel, "Update 0.0.16");
   assert.equal(available.primaryAction, "download");
   assert.equal(available.secondaryLabel, "Later");
   assert.equal(available.releaseNotesUrl, "https://example.com/release");
+  assert.equal(available.releaseNotesVisible, true);
 
   const ready = deriveDesktopUpdateView({
     currentVersion: "0.0.15",
@@ -136,6 +140,18 @@ test("deriveDesktopUpdateView surfaces staged helper progress and failure retry 
   assert.equal(failed.buttonLabel, "Update failed");
   assert.equal(failed.primaryAction, "install");
   assert.equal(failed.primaryLabel, "Try install again");
+
+  const downloadFailed = deriveDesktopUpdateView({
+    targetVersion: "0.0.16",
+    downloadState: "failed",
+    downloadedBytes: 5 * 1024 * 1024,
+    totalBytes: 10 * 1024 * 1024,
+    lastError: "manifest cache missing"
+  }, { panelOpen: true });
+  assert.equal(downloadFailed.buttonLabel, "Download failed");
+  assert.equal(downloadFailed.primaryAction, "download");
+  assert.equal(downloadFailed.primaryLabel, "Download again");
+  assert.equal(downloadFailed.body, "manifest cache missing");
 });
 
 test("desktop update controller mounts, auto-checks, and starts a download from jobs UI", async () => {
@@ -144,6 +160,8 @@ test("desktop update controller mounts, auto-checks, and starts a download from 
   const postCalls = [];
   const toasts = [];
   const scheduled = [];
+  const dialogs = [];
+  const externalUrls = [];
   let fetchStatus = {
     currentVersion: "0.0.15",
     availability: "unknown",
@@ -172,7 +190,10 @@ test("desktop update controller mounts, auto-checks, and starts a download from 
           installState: "idle",
           totalBytes: 10 * 1024 * 1024,
           lastCheckedAt: "2026-04-14T12:00:00Z",
-          releaseNotesUrl: "https://example.com/release"
+          releaseNotesUrl: "https://example.com/release",
+          releaseNotesTitle: "Baluffo v0.0.16",
+          releaseNotesBody: "### Fixed\n- Modal notes",
+          releaseNotesPublishedAt: "2026-04-15T10:00:00Z"
         };
         return { status: fetchStatus };
       }
@@ -195,7 +216,13 @@ test("desktop update controller mounts, auto-checks, and starts a download from 
     },
     requestConfirmationDialog: async () => true,
     isDesktopRuntimeMode: () => true,
-    openExternalUrl() {},
+    showReleaseNotesDialog: options => {
+      dialogs.push(options);
+      return { close() {} };
+    },
+    openExternalUrl: url => {
+      externalUrls.push(url);
+    },
     setTimeoutFn: handler => {
       scheduled.push(handler);
       return { unref() {} };
@@ -215,11 +242,165 @@ test("desktop update controller mounts, auto-checks, and starts a download from 
   assert.equal(refs.desktopUpdatePrimaryBtn.textContent, "Download");
   assert.equal(refs.desktopUpdateReleaseNotes.classList.contains("hidden"), false);
 
+  refs.desktopUpdateReleaseNotes.clickEvent();
+  assert.equal(dialogs.length, 1);
+  assert.equal(dialogs[0].title, "Baluffo v0.0.16");
+  assert.equal(dialogs[0].markdown, "### Fixed\n- Modal notes");
+  assert.equal(dialogs[0].publishedAt, "2026-04-15T10:00:00Z");
+  assert.equal(dialogs[0].releaseNotesUrl, "https://example.com/release");
+  assert.deepEqual(externalUrls, []);
+
   await controller.handlePrimaryAction();
   assert.deepEqual(postCalls, ["/app/check-for-update", "/app/download-update"]);
   assert.equal(refs.desktopUpdateToggleBtn.textContent, "Downloading update");
   assert.equal(refs.desktopUpdatePrimaryBtn.classList.contains("hidden"), true);
   assert.equal(scheduled.length >= 1, true);
+  assert.ok(
+    toasts.some(item => item.message === "Desktop update download started." && item.level === "info")
+  );
+});
+
+test("desktop update controller refreshes status after a transport failure during download", async () => {
+  const refs = buildRefs();
+  const fetchCalls = [];
+  const postCalls = [];
+  const toasts = [];
+  let refreshAfterFailure = false;
+  let fetchStatus = {
+    currentVersion: "0.0.15",
+    latestVersion: "0.0.16",
+    targetVersion: "0.0.16",
+    availability: "available",
+    updateAvailable: true,
+    downloadState: "idle",
+    installState: "idle",
+    downloadedBytes: 0,
+    totalBytes: 137_800_000,
+    downloadPercent: 0,
+    lastCheckedAt: "2026-04-15T10:00:00Z"
+  };
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async (_baseUrl, path) => {
+      fetchCalls.push(path);
+      if (refreshAfterFailure) {
+        refreshAfterFailure = false;
+        fetchStatus = {
+          ...fetchStatus,
+          downloadState: "downloading",
+          downloadedBytes: 23_300_000,
+          downloadPercent: 16
+        };
+      }
+      return fetchStatus;
+    },
+    postJson: async (_baseUrl, path) => {
+      postCalls.push(path);
+      if (path === "/app/download-update") {
+        refreshAfterFailure = true;
+        throw new Error("Bridge POST /app/download-update failed: Internal Server Error (HTTP 500)");
+      }
+      throw new Error(`Unexpected path ${path}`);
+    },
+    bindAsyncClick: (element, handler) => {
+      element._handler = handler;
+    },
+    showToast: (message, level) => {
+      toasts.push({ message, level });
+    },
+    requestConfirmationDialog: async () => true,
+    isDesktopRuntimeMode: () => true,
+    showReleaseNotesDialog() {
+      return { close() {} };
+    },
+    openExternalUrl() {},
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  await controller.handlePrimaryAction();
+
+  assert.deepEqual(postCalls, ["/app/download-update"]);
+  assert.deepEqual(fetchCalls, ["/app/update-status", "/app/update-status"]);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Downloading 16%");
+  assert.ok(
+    toasts.some(item => item.message === "Desktop update download started." && item.level === "info")
+  );
+  assert.equal(
+    toasts.some(item => item.message.startsWith("Could not download the update:") && item.level === "error"),
+    false
+  );
+});
+
+test("desktop update controller ignores repeated primary actions while a request is pending", async () => {
+  const refs = buildRefs();
+  const toasts = [];
+  let downloadCalls = 0;
+  let resolveDownload;
+  let fetchStatus = {
+    currentVersion: "0.0.15",
+    latestVersion: "0.0.16",
+    targetVersion: "0.0.16",
+    availability: "available",
+    updateAvailable: true,
+    downloadState: "idle",
+    installState: "idle",
+    downloadedBytes: 0,
+    totalBytes: 137_800_000,
+    downloadPercent: 0,
+    lastCheckedAt: "2026-04-15T10:00:00Z"
+  };
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async () => fetchStatus,
+    postJson: async (_baseUrl, path) => {
+      if (path !== "/app/download-update") {
+        throw new Error(`Unexpected path ${path}`);
+      }
+      downloadCalls += 1;
+      return await new Promise(resolve => {
+        resolveDownload = () => {
+          fetchStatus = {
+            ...fetchStatus,
+            downloadState: "downloading",
+            downloadedBytes: 0,
+            downloadPercent: 0
+          };
+          resolve({ started: true, status: fetchStatus });
+        };
+      });
+    },
+    bindAsyncClick: (element, handler) => {
+      element._handler = handler;
+    },
+    showToast: (message, level) => {
+      toasts.push({ message, level });
+    },
+    requestConfirmationDialog: async () => true,
+    isDesktopRuntimeMode: () => true,
+    showReleaseNotesDialog() {
+      return { close() {} };
+    },
+    openExternalUrl() {},
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  const first = controller.handlePrimaryAction();
+  const second = controller.handlePrimaryAction();
+
+  assert.equal(downloadCalls, 1);
+  assert.equal(refs.desktopUpdatePrimaryBtn.disabled, true);
+
+  resolveDownload();
+  await first;
+  await second;
+
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Downloading update");
   assert.ok(
     toasts.some(item => item.message === "Desktop update download started." && item.level === "info")
   );
