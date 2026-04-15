@@ -332,6 +332,19 @@ def resolve_desktop_session_root(env: dict[str, str] | None = None) -> Path:
     raise RuntimeError("Baluffo could not resolve a writable desktop session directory.")
 
 
+def _looks_like_windows_absolute_path(value: str) -> bool:
+    text = str(value or "").strip().replace("\\", "/")
+    return len(text) >= 3 and text[0].isalpha() and text[1] == ":" and text[2] == "/"
+
+
+def _resolve_runtime_path(value: Path | str) -> Path:
+    raw = str(value or "").strip()
+    expanded = str(Path(raw).expanduser()) if raw else raw
+    if os.name != "nt" and _looks_like_windows_absolute_path(expanded):
+        return Path(expanded.replace("\\", "/"))
+    return Path(expanded).resolve()
+
+
 def read_desktop_session_state(session_root: Path) -> dict[str, Any]:
     return read_json(Path(session_root) / "desktop-session.json", {})
 
@@ -416,7 +429,7 @@ class DesktopUpdatePaths:
 
     @staticmethod
     def from_data_dir(data_dir: Path) -> DesktopUpdatePaths:
-        resolved_data = Path(data_dir).expanduser().resolve()
+        resolved_data = _resolve_runtime_path(data_dir)
         ship_root = resolved_data.parent
         install_root = ship_root.parent if ship_root.name.lower() == "ship" else ship_root
         updater_dir = resolved_data / "updater"

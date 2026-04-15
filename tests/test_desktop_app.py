@@ -748,6 +748,7 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
         mock.patch.object(
             desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
         ) as watch_mock,
+        mock.patch.object(desktop_app, "write_success_marker"),
         mock.patch.object(desktop_app, "clear_session_state") as clear_mock,
         mock.patch.object(desktop_app, "terminate_process"),
         mock.patch.object(desktop_app, "_append_startup_trace"),
@@ -805,6 +806,7 @@ def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> 
         mock.patch.object(
             desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
         ) as watch_mock,
+        mock.patch.object(desktop_app, "write_success_marker"),
         mock.patch.object(desktop_app, "clear_session_state"),
         mock.patch.object(desktop_app, "terminate_process"),
         mock.patch.object(desktop_app, "_append_startup_trace"),
@@ -868,6 +870,7 @@ def test_launch_desktop_app_spawns_update_helper_from_launcher_on_install_reques
             desktop_app, "watch_browser_session", return_value="update_install_requested"
         ),
         mock.patch.object(desktop_app, "launch_staged_update_helper") as launch_helper_mock,
+        mock.patch.object(desktop_app, "write_success_marker"),
         mock.patch.object(desktop_app, "clear_session_state"),
         mock.patch.object(desktop_app, "terminate_process"),
         mock.patch.object(desktop_app, "_append_startup_trace"),
@@ -925,6 +928,7 @@ def test_launch_desktop_app_recovers_to_default_browser_after_process_exit() -> 
             desktop_app, "watch_browser_session", side_effect=["process_exit", "heartbeat_timeout"]
         ) as watch_mock,
         mock.patch.object(desktop_app, "reopen_default_browser", return_value=True) as recover_mock,
+        mock.patch.object(desktop_app, "write_success_marker"),
         mock.patch.object(desktop_app, "clear_session_state"),
         mock.patch.object(desktop_app, "terminate_process"),
         mock.patch.object(desktop_app, "_append_startup_trace"),
