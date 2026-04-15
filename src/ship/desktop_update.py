@@ -376,7 +376,7 @@ def download_file(
     target: Path,
     *,
     on_progress: callable | None = None,
-    timeout_s: float = 60.0,
+    timeout_s: float = 300.0,
 ) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     temp_target = target.with_name(f"{target.name}.{uuid.uuid4().hex}.download")
@@ -628,6 +628,14 @@ def _manifest_to_status(
 ) -> dict[str, Any]:
     next_status = dict(existing)
     target_version = str(manifest.get("version") or "").strip()
+    preserve_last_error = (
+        str(existing.get("lastError") or "").strip()
+        if (
+            str(existing.get("downloadState") or "").strip().lower() == "failed"
+            or str(existing.get("installState") or "").strip().lower() == "failed"
+        )
+        else ""
+    )
     release_notes_payload = _normalize_release_notes_payload(
         release_notes,
         fallback_url=str(manifest.get("release_notes_url") or "").strip(),
@@ -641,7 +649,7 @@ def _manifest_to_status(
             "channel": str(manifest.get("channel") or DESKTOP_UPDATE_CHANNEL),
             **release_notes_payload,
             "lastCheckedAt": iso_now(),
-            "lastError": "",
+            "lastError": preserve_last_error,
             "blockedReason": "",
         }
     )
@@ -1038,21 +1046,30 @@ class DesktopUpdateService:
             else {}
         )
         target = self.paths.downloads_dir / _portable_artifact_name(manifest)
+        last_reported_percent = -1
 
         def on_progress(downloaded: int, total: int) -> None:
+            nonlocal last_reported_percent
             total_bytes = total or int(artifact.get("size_bytes") or 0)
             percent = int((downloaded / total_bytes) * 100) if total_bytes > 0 else 0
-            save_status(
-                self.paths,
-                {
-                    **load_status(self.paths, current_version=self.current_version()),
-                    "downloadState": "downloading",
-                    "downloadedBytes": int(downloaded),
-                    "totalBytes": int(total_bytes),
-                    "downloadPercent": max(0, min(100, percent)),
-                    "lastError": "",
-                },
-            )
+            clamped_percent = max(0, min(100, percent))
+            if clamped_percent == last_reported_percent:
+                return
+            last_reported_percent = clamped_percent
+            try:
+                save_status(
+                    self.paths,
+                    {
+                        **load_status(self.paths, current_version=self.current_version()),
+                        "downloadState": "downloading",
+                        "downloadedBytes": int(downloaded),
+                        "totalBytes": int(total_bytes),
+                        "downloadPercent": clamped_percent,
+                        "lastError": "",
+                    },
+                )
+            except Exception:  # noqa: BLE001
+                return
 
         try:
             download_file(str(artifact.get("url") or ""), target, on_progress=on_progress)
