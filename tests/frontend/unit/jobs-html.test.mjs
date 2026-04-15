@@ -24,3 +24,11 @@ test("jobs html exposes desktop update controls in the header shell", () => {
   assert.match(html, /id="desktop-update-primary-btn"/);
   assert.match(html, /id="desktop-update-release-notes"/);
 });
+
+test("desktop page titles keep the Baluffo window identity token", () => {
+  const adminHtml = fs.readFileSync(path.join(repoRoot, "admin.html"), "utf8");
+  const savedHtml = fs.readFileSync(path.join(repoRoot, "saved.html"), "utf8");
+
+  assert.match(adminHtml, /<title>Baluffo Admin<\/title>/);
+  assert.match(savedHtml, /<title>Baluffo Saved Jobs<\/title>/);
+});

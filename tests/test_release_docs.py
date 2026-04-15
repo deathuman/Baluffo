@@ -20,12 +20,13 @@ def test_release_guide_is_canonical_single_source(repo_root: Path) -> None:
     assert len(text.splitlines()) > 0, "docs/RELEASE.md should not be empty."
 
 
-def test_release_docs_cover_the_public_0_1_1_line(repo_root: Path) -> None:
+def test_release_docs_cover_the_public_release_line(repo_root: Path) -> None:
     docs_dir = repo_root / "docs"
     changelog_text = (docs_dir / "CHANGELOG.md").read_text(encoding="utf-8")
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
     app_version = get_app_version()
     top_release = _section(changelog_text, f"## [{app_version}]")
+    previous_release = _section(changelog_text, "## [0.1.1]")
     legacy_notes = _section(changelog_text, "## Legacy notes")
 
     assert "src/app_version.py" in release_text
@@ -35,11 +36,16 @@ def test_release_docs_cover_the_public_0_1_1_line(repo_root: Path) -> None:
     assert "npm run test:py:extended" in release_text
     assert "python scripts/extract_release_notes.py" in release_text
     assert f"## [{app_version}]" in changelog_text
-    assert "Desktop in-app update flow in the Jobs desktop UI" in top_release
-    assert "Location normalization was consolidated into the canonical parsers path" in top_release
+    assert "Desktop navigation to Admin and Saved no longer prompts to save" in top_release
+    assert "Baluffo window identity token during in-app page switches" in top_release
+    assert "Desktop in-app update flow in the Jobs desktop UI" in previous_release
+    assert (
+        "Location normalization was consolidated into the canonical parsers path"
+        in previous_release
+    )
     assert (
         "Closing the packaged desktop window now tears down the desktop session cleanly"
-        in top_release
+        in previous_release
     )
     assert "Desktop portable EXE with PyInstaller" not in legacy_notes
     assert "Ship bundle (zip-first) release channel" not in legacy_notes
