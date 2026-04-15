@@ -72,7 +72,7 @@ class OpsHealthDeps:
     parse_iso: Callable[[Any], Any]
     now_utc: Callable[[], Any]
     get_updater_status_payload: Callable[[], dict[str, Any]] = field(
-        default_factory=lambda: (lambda: {})
+        default_factory=lambda: lambda: {}
     )
     app_version: str = ""
     startup_ready: bool = False
