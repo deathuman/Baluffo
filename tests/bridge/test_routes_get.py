@@ -23,6 +23,7 @@ def test_session_with_user(tmp_path: Path) -> None:
     assert handler.sent[-1]["status"] == 200
     assert handler.sent[-1]["payload"]["ok"] is True
     assert handler.sent[-1]["payload"]["user"]["name"] == "Test User"
+    assert handler.sent[-1]["payload"]["desktopSession"]["sessionId"] == "desktop-session-1"
 
 
 def test_session_no_user(tmp_path: Path) -> None:
@@ -35,6 +36,7 @@ def test_session_no_user(tmp_path: Path) -> None:
 
     assert result is True
     assert handler.sent[-1]["payload"]["user"] is None
+    assert handler.sent[-1]["payload"]["desktopSession"]["ownerToken"] == "desktop-owner-1"
 
 
 def test_saved_jobs_endpoint_exists(tmp_path: Path) -> None:

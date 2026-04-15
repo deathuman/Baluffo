@@ -232,3 +232,39 @@ def test_heal_active_ship_version_restores_from_meipass_when_frozen() -> None:
         ):
             rl.heal_active_ship_version(layout)
         assert (vdir / "src" / "admin_bridge.py").is_file()
+
+
+def test_run_bridge_server_forwards_desktop_owner_arguments() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_ship_root(root, version="3.1.4")
+
+        captured_argv = []
+
+        def _capture_run_path(_script: str, run_name: str) -> None:
+            captured_argv.extend(sys.argv)
+            raise RuntimeError("stop-after-argv")
+
+        with pytest.raises(RuntimeError, match="stop-after-argv"):
+            with mock.patch.object(rl.runpy, "run_path", side_effect=_capture_run_path):
+                rl.run_bridge_server(
+                    root,
+                    bind_host="127.0.0.1",
+                    port=8877,
+                    data_dir=root / "data",
+                    desktop_mode=True,
+                    owner_mode="desktop-window",
+                    owner_token="owner-token-1",
+                    desktop_session_id="desktop-session-1",
+                    started_by="launcher-1",
+                    owner_idle_timeout_s=15.0,
+                )
+
+        assert "--owner-mode" in captured_argv
+        assert "desktop-window" in captured_argv
+        assert "--owner-token" in captured_argv
+        assert "owner-token-1" in captured_argv
+        assert "--desktop-session-id" in captured_argv
+        assert "desktop-session-1" in captured_argv
+        assert "--started-by" in captured_argv
+        assert "launcher-1" in captured_argv

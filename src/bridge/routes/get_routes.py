@@ -89,11 +89,13 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
 
     if path == "/desktop-local-data/session":
         try:
+            desktop_session = api.get_desktop_session_payload()
             handler._send_json(  # noqa: SLF001
                 {
                     "ok": True,
                     "user": api.desktop_local_data_store().get_current_user(),
                     "lastActivityAt": str(api.DESKTOP_SESSION_ACTIVITY_AT or ""),
+                    "desktopSession": desktop_session,
                 }
             )
         except Exception as exc:  # noqa: BLE001

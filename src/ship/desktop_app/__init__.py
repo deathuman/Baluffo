@@ -166,6 +166,11 @@ def build_child_command(
     bridge_host: str = "127.0.0.1",
     data_dir: Path | None = None,
     desktop_runtime: bool = False,
+    owner_mode: str = "",
+    owner_token: str = "",
+    desktop_session_id: str = "",
+    started_by: str = "",
+    owner_idle_timeout_s: float = 0.0,
 ) -> list[str]:
     normalized = str(mode or "").strip().lower()
     if normalized not in {"site", "bridge"}:
@@ -189,6 +194,16 @@ def build_child_command(
     ]
     if desktop_runtime:
         child_command.append("--desktop-runtime")
+    if str(owner_mode or "").strip():
+        child_command.extend(["--owner-mode", str(owner_mode)])
+    if str(owner_token or "").strip():
+        child_command.extend(["--owner-token", str(owner_token)])
+    if str(desktop_session_id or "").strip():
+        child_command.extend(["--desktop-session-id", str(desktop_session_id)])
+    if str(started_by or "").strip():
+        child_command.extend(["--started-by", str(started_by)])
+    if float(owner_idle_timeout_s or 0.0) > 0.0:
+        child_command.extend(["--owner-idle-timeout-s", str(float(owner_idle_timeout_s))])
     return child_command
 
 
@@ -1196,10 +1211,50 @@ def watch_browser_session(
     started_mono: float,
     *,
     bridge_port: int,
+    bridge_process: subprocess.Popen[str] | None = None,
     browser_process: subprocess.Popen[str] | None = None,
     heartbeat_idle_timeout_s: float = HEARTBEAT_IDLE_TIMEOUT_S,
     require_window: bool = True,
 ) -> str:
+    if bridge_process is not None:
+        browser_exit_logged = False
+        window_missing_logged = False
+        _append_startup_trace(
+            data_dir,
+            "desktop_browser_watchdog_started",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            mode="bridge_authoritative",
+        )
+        while True:
+            if updater_install_requested(data_dir):
+                return "update_install_requested"
+            if bridge_process.poll() is not None:
+                return "bridge_exit"
+            if (
+                browser_process is not None
+                and browser_process.poll() is not None
+                and not browser_exit_logged
+            ):
+                browser_exit_logged = True
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_browser_process_exited_waiting_for_bridge",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                )
+            if (
+                require_window
+                and browser_process is None
+                and not window_missing_logged
+                and not _is_baluffo_browser_window_open()
+            ):
+                window_missing_logged = True
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_browser_window_missing_waiting_for_bridge",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                )
+            time.sleep(0.5)
+
     def _watch_heartbeat_loop() -> str:
         if not wait_for_browser_heartbeat(data_dir):
             while True:
@@ -1318,6 +1373,8 @@ def ensure_desktop_prerequisites() -> None:
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
     config = resolve_runtime_ports(config)
     launcher_token = uuid.uuid4().hex
+    desktop_session_id = uuid.uuid4().hex
+    owner_token = uuid.uuid4().hex
     instance_lock = acquire_instance_lock(
         launcher_token=launcher_token,
         on_reclaim=lambda reason: _append_startup_trace(
@@ -1406,6 +1463,11 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 bridge_host=config.bridge_host,
                 data_dir=config.data_dir,
                 desktop_runtime=True,
+                owner_mode="desktop-window",
+                owner_token=owner_token,
+                desktop_session_id=desktop_session_id,
+                started_by=str(os.getpid()),
+                owner_idle_timeout_s=15.0,
             ),
             extra_env=child_env,
             job_handle=desktop_job,
@@ -1497,6 +1559,8 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 "appVersion": get_app_version(),
                 "launcherPid": os.getpid(),
                 "launcherToken": str(instance_lock.launcher_token or launcher_token),
+                "desktopSessionId": desktop_session_id,
+                "desktopOwnerToken": owner_token,
                 "launcherStartedAt": str(instance_lock.created_at or datetime.now(UTC).isoformat()),
                 "sitePort": int(config.site_port),
                 "bridgePort": int(config.bridge_port),
@@ -1538,37 +1602,10 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             config.data_dir,
             started_mono,
             bridge_port=config.bridge_port,
+            bridge_process=bridge_process,
             browser_process=browser_process,
             require_window=not config.no_browser,
         )
-        if stop_reason == "process_exit" and browser_process is not None:
-            _append_startup_trace(
-                config.data_dir,
-                "desktop_browser_recovery_started",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                mode="default-browser",
-            )
-            if reopen_default_browser(open_url):
-                _append_startup_trace(
-                    config.data_dir,
-                    "desktop_browser_recovery_opened",
-                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                    mode="default-browser",
-                )
-                stop_reason = watch_browser_session(
-                    config.data_dir,
-                    started_mono,
-                    bridge_port=config.bridge_port,
-                    browser_process=None,
-                    require_window=True,
-                )
-            else:
-                _append_startup_trace(
-                    config.data_dir,
-                    "desktop_browser_recovery_failed",
-                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                    mode="default-browser",
-                )
         _append_startup_trace(
             config.data_dir,
             "desktop_window_closed",
@@ -1618,6 +1655,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--title", default=WINDOW_TITLE)
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--bind-host", default="127.0.0.1")
+    parser.add_argument("--owner-mode", default="")
+    parser.add_argument("--owner-token", default="")
+    parser.add_argument("--desktop-session-id", default="")
+    parser.add_argument("--started-by", default="")
+    parser.add_argument("--owner-idle-timeout-s", type=float, default=0.0)
     parser.add_argument("--script", default="")
     parser.add_argument("--desktop-runtime", action="store_true")
     parser.add_argument("--startup-probe", action="store_true")
@@ -1653,6 +1695,11 @@ def main(argv: list[str] | None = None) -> int:
             port=int(args.port),
             data_dir=args.data_dir or None,
             desktop_mode=desktop_mode,
+            owner_mode=str(args.owner_mode or ""),
+            owner_token=str(args.owner_token or ""),
+            desktop_session_id=str(args.desktop_session_id or ""),
+            started_by=str(args.started_by or ""),
+            owner_idle_timeout_s=float(args.owner_idle_timeout_s or 0.0),
         )
         return 0
     if args.child_mode == "__child_script__":

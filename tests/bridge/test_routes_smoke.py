@@ -18,6 +18,11 @@ class _RuntimeConfig:
     port: int = 0
     quiet_requests: bool = True
     desktop_mode: bool = True
+    owner_mode: str = ""
+    owner_token: str = ""
+    desktop_session_id: str = ""
+    started_by: str = ""
+    owner_idle_timeout_s: float = 0.0
     root: Any = None
     data_dir: Any = None
 
@@ -74,6 +79,11 @@ def _make_api(tmp_path: Path) -> BridgeApi:
         STARTUP_METRICS_PATH=tmp_path / "startup-metrics.jsonl",
     )
     api.desktop_local_data_store = lambda: store  # type: ignore[assignment]
+    api.get_desktop_session_payload = lambda: {  # type: ignore[assignment]
+        "sessionId": "desktop-session-1",
+        "ownerToken": "desktop-owner-1",
+        "lastActivityAt": "2024-01-01T00:00:00Z",
+    }
     api.load_state = load_state  # type: ignore[assignment]
     api.summarize_state = summarize_state  # type: ignore[assignment]
     api.compute_ops_health = lambda: {"ok": True, "detail": "unit-test"}  # type: ignore[assignment]

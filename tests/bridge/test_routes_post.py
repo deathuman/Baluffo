@@ -308,6 +308,54 @@ def test_install_update_conflict(tmp_path: Path) -> None:
     assert handler.sent[-1]["status"] == 409
 
 
+def test_desktop_session_lifecycle_accepts_valid_payload(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+
+    handler = _FakeHandler()
+    result = handle_post(
+        handler,
+        api=api,
+        path="/app/desktop-session-lifecycle",
+        payload={
+            "ownerToken": "desktop-owner-1",
+            "sessionId": "desktop-session-1",
+            "pageId": "page-1",
+            "state": "alive",
+        },
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["state"] == "alive"
+
+
+def test_desktop_session_lifecycle_rejects_invalid_payload(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    api.update_desktop_session_lifecycle = lambda **_kw: (
+        403,
+        {"ok": False, "error": "Desktop session lifecycle token mismatch."},
+    )
+
+    handler = _FakeHandler()
+    result = handle_post(
+        handler,
+        api=api,
+        path="/app/desktop-session-lifecycle",
+        payload={
+            "ownerToken": "wrong",
+            "sessionId": "desktop-session-1",
+            "pageId": "page-1",
+            "state": "alive",
+        },
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 403
+    assert handler.sent[-1]["payload"]["ok"] is False
+
+
 def test_run_discovery_response_write_failure_is_logged_and_returns_error_json(
     tmp_path: Path,
 ) -> None:

@@ -43,21 +43,70 @@ function setupBrowserGlobals() {
 function setupDesktopGlobals() {
   const localStorage = createStorageMock();
   const sessionStorage = createStorageMock();
+  const eventListeners = new Map();
+  const intervalHandlers = [];
   global.window = {
     localStorage,
     sessionStorage,
-    setInterval: () => 1,
+    setInterval(handler) {
+      intervalHandlers.push(handler);
+      return intervalHandlers.length;
+    },
+    clearInterval: () => {},
+    addEventListener(name, handler) {
+      eventListeners.set(name, handler);
+    },
     prompt: () => "Desktop User"
+  };
+  Object.defineProperty(globalThis, "navigator", {
+    value: {
+      sendBeacon: () => true
+    },
+    configurable: true,
+    writable: true
+  });
+  global.Blob = class Blob {
+    constructor(parts, options = {}) {
+      this.parts = parts;
+      this.type = options.type || "";
+    }
   };
   global.fetch = async url => {
     if (String(url).includes("/desktop-local-data/session")) {
       return {
         ok: true,
-        json: async () => ({ ok: true, user: null })
+        json: async () => ({
+          ok: true,
+          user: null,
+          desktopSession: {
+            sessionId: "desktop-session-1",
+            ownerToken: "desktop-owner-1",
+            lastActivityAt: "2026-04-15T10:00:00Z"
+          }
+        })
+      };
+    }
+    if (String(url).includes("/app/desktop-session-lifecycle")) {
+      return {
+        ok: true,
+        json: async () => ({ ok: true })
+      };
+    }
+    if (String(url).includes("/ops/task-state")) {
+      return {
+        ok: true,
+        json: async () => ({ tasks: [], count: 0 })
+      };
+    }
+    if (String(url).includes("/app/update-status")) {
+      return {
+        ok: true,
+        json: async () => ({ availability: "unknown", downloadState: "idle", installState: "idle" })
       };
     }
     throw new Error(`unexpected fetch: ${url}`);
   };
+  return { eventListeners, intervalHandlers };
 }
 
 test("assertLocalDataRuntime rejects missing required methods", () => {
@@ -87,6 +136,8 @@ test("desktop local-data client conforms to shared runtime contract", async () =
   setupDesktopGlobals();
   const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
   const api = initDesktopLocalDataClient();
+  await Promise.resolve();
+  await Promise.resolve();
 
   assert.equal(assertLocalDataRuntime(api, "desktop runtime"), api);
   for (const methodName of LOCAL_DATA_RUNTIME_METHODS) {

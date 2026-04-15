@@ -28,6 +28,7 @@ class RuntimeConfig:
     desktop_mode: bool = False
     owner_mode: str = ""
     owner_token: str = ""
+    desktop_session_id: str = ""
     started_by: str = ""
     owner_idle_timeout_s: float = 0.0
 
@@ -67,6 +68,7 @@ def resolve_runtime_config(
     parser.add_argument("--desktop-mode", action="store_true", default=False)
     parser.add_argument("--owner-mode", default=None)
     parser.add_argument("--owner-token", default=None)
+    parser.add_argument("--desktop-session-id", default=None)
     parser.add_argument("--started-by", default=None)
     parser.add_argument("--owner-idle-timeout-s", type=float, default=None)
     parser.add_argument("--log-format", choices=("human", "jsonl"), default=None)
@@ -108,6 +110,9 @@ def resolve_runtime_config(
     )
     owner_mode = str(args.owner_mode or env_map.get("BALUFFO_BRIDGE_OWNER_MODE") or "").strip()
     owner_token = str(args.owner_token or env_map.get("BALUFFO_BRIDGE_OWNER_TOKEN") or "").strip()
+    desktop_session_id = str(
+        args.desktop_session_id or env_map.get("BALUFFO_BRIDGE_SESSION_ID") or ""
+    ).strip()
     started_by = str(args.started_by or env_map.get("BALUFFO_BRIDGE_STARTED_BY") or "").strip()
     try:
         owner_idle_timeout_s = float(
@@ -128,6 +133,7 @@ def resolve_runtime_config(
         desktop_mode=desktop_mode,
         owner_mode=owner_mode,
         owner_token=owner_token,
+        desktop_session_id=desktop_session_id,
         started_by=started_by,
         owner_idle_timeout_s=max(0.0, owner_idle_timeout_s),
     )
@@ -144,6 +150,7 @@ def startup_banner(*, config: RuntimeConfig, bridge_log: Any) -> None:
         log_level=config.log_level,
         owner_mode=config.owner_mode,
         owner_token=config.owner_token,
+        desktop_session_id=config.desktop_session_id,
         started_by=config.started_by,
         owner_idle_timeout_s=config.owner_idle_timeout_s,
         pid=os.getpid(),

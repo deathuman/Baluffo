@@ -311,6 +311,11 @@ def run_bridge_server(
     port: int = int(BRIDGE_DEFAULTS["port"]),
     data_dir: str | Path | None = None,
     desktop_mode: bool = False,
+    owner_mode: str = "",
+    owner_token: str = "",
+    desktop_session_id: str = "",
+    started_by: str = "",
+    owner_idle_timeout_s: float = 0.0,
 ) -> None:
     layout = resolve_runtime_layout(root, data_dir=data_dir)
     heal_active_ship_version(layout)
@@ -323,6 +328,10 @@ def run_bridge_server(
         os.environ["BALUFFO_DESKTOP_MODE"] = "1"
     else:
         os.environ.pop("BALUFFO_DESKTOP_MODE", None)
+    if str(desktop_session_id or "").strip():
+        os.environ["BALUFFO_BRIDGE_SESSION_ID"] = str(desktop_session_id)
+    else:
+        os.environ.pop("BALUFFO_BRIDGE_SESSION_ID", None)
     argv = [
         str(bridge_script),
         "--host",
@@ -337,6 +346,16 @@ def run_bridge_server(
         "--log-level",
         "info",
     ]
+    if str(owner_mode or "").strip():
+        argv.extend(["--owner-mode", str(owner_mode)])
+    if str(owner_token or "").strip():
+        argv.extend(["--owner-token", str(owner_token)])
+    if str(desktop_session_id or "").strip():
+        argv.extend(["--desktop-session-id", str(desktop_session_id)])
+    if str(started_by or "").strip():
+        argv.extend(["--started-by", str(started_by)])
+    if float(owner_idle_timeout_s or 0.0) > 0.0:
+        argv.extend(["--owner-idle-timeout-s", str(float(owner_idle_timeout_s))])
     argv = [item for item in argv if str(item).strip()]
     with (
         _pushd(layout.active_root),
@@ -362,6 +381,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     bridge_parser.add_argument("--bind-host", default=str(BRIDGE_DEFAULTS["host"]))
     bridge_parser.add_argument("--port", type=int, default=int(BRIDGE_DEFAULTS["port"]))
     bridge_parser.add_argument("--data-dir", default="")
+    bridge_parser.add_argument("--owner-mode", default="")
+    bridge_parser.add_argument("--owner-token", default="")
+    bridge_parser.add_argument("--desktop-session-id", default="")
+    bridge_parser.add_argument("--started-by", default="")
+    bridge_parser.add_argument("--owner-idle-timeout-s", type=float, default=0.0)
 
     return parser.parse_args(argv)
 
@@ -380,6 +404,11 @@ def main(argv: list[str] | None = None) -> int:
                 data_dir=args.data_dir or None,
                 desktop_mode=str(os.environ.get("BALUFFO_DESKTOP_MODE") or "").strip().lower()
                 in {"1", "true", "yes", "on"},
+                owner_mode=str(args.owner_mode or ""),
+                owner_token=str(args.owner_token or ""),
+                desktop_session_id=str(args.desktop_session_id or ""),
+                started_by=str(args.started_by or ""),
+                owner_idle_timeout_s=float(args.owner_idle_timeout_s or 0.0),
             )
         return 0
     except KeyboardInterrupt:

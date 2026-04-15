@@ -26,6 +26,7 @@ class _RuntimeConfigCase:
     expected_log_level: str | None = None
     expected_owner_mode: str | None = None
     expected_owner_token: str | None = None
+    expected_desktop_session_id: str | None = None
     expected_started_by: str | None = None
     expected_owner_idle_timeout_s: float | None = None
     expected_quiet_requests: bool | None = None
@@ -85,6 +86,8 @@ def _run_runtime_config_case(case: _RuntimeConfigCase, admin_bridge_entrypoint_r
         assert cfg.owner_mode == case.expected_owner_mode
     if case.expected_owner_token is not None:
         assert cfg.owner_token == case.expected_owner_token
+    if case.expected_desktop_session_id is not None:
+        assert cfg.desktop_session_id == case.expected_desktop_session_id
     if case.expected_started_by is not None:
         assert cfg.started_by == case.expected_started_by
     if case.expected_owner_idle_timeout_s is not None:
@@ -138,6 +141,7 @@ RESOLVE_RUNTIME_CONFIG_CASES = [
                 "BALUFFO_BRIDGE_LOG_LEVEL": "debug",
                 "BALUFFO_BRIDGE_OWNER_MODE": "dev-supervisor",
                 "BALUFFO_BRIDGE_OWNER_TOKEN": "token-123",
+                "BALUFFO_BRIDGE_SESSION_ID": "session-123",
                 "BALUFFO_BRIDGE_STARTED_BY": "unit-test",
                 "BALUFFO_BRIDGE_OWNER_IDLE_TIMEOUT_S": "45",
             },
@@ -156,6 +160,7 @@ RESOLVE_RUNTIME_CONFIG_CASES = [
             expected_log_level="debug",
             expected_owner_mode="dev-supervisor",
             expected_owner_token="token-123",
+            expected_desktop_session_id="session-123",
             expected_started_by="unit-test",
             expected_owner_idle_timeout_s=45.0,
         ),
@@ -342,6 +347,60 @@ def test_owner_session_should_exit_when_supervised_bridge_is_idle(admin_bridge_e
         admin_bridge,
         "now_utc",
         return_value=admin_bridge.parse_iso("2026-03-01T00:00:15+00:00"),
+    ):
+        assert admin_bridge.owner_session_should_exit() is True
+
+
+def test_owner_session_should_exit_after_last_desktop_page_closing_grace(
+    admin_bridge_entrypoint_root,
+):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+        desktop_mode=True,
+        owner_mode="desktop-window",
+        owner_token="owner-1",
+        desktop_session_id="session-1",
+        started_by="test",
+        owner_idle_timeout_s=15.0,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    with mock.patch.object(
+        admin_bridge,
+        "now_iso",
+        side_effect=["2026-03-01T00:00:00+00:00", "2026-03-01T00:00:01+00:00"],
+    ):
+        status_code, payload = admin_bridge.update_desktop_session_lifecycle(
+            owner_token="owner-1",
+            session_id="session-1",
+            page_id="page-1",
+            state="alive",
+        )
+        admin_bridge.update_desktop_session_lifecycle(
+            owner_token="owner-1",
+            session_id="session-1",
+            page_id="page-1",
+            state="closing",
+        )
+    assert status_code == 200
+    assert payload["ok"] is True
+
+    with mock.patch.object(
+        admin_bridge,
+        "now_utc",
+        return_value=admin_bridge.parse_iso("2026-03-01T00:00:05+00:00"),
+    ):
+        assert admin_bridge.owner_session_should_exit() is False
+
+    with mock.patch.object(
+        admin_bridge,
+        "now_utc",
+        return_value=admin_bridge.parse_iso("2026-03-01T00:00:20+00:00"),
     ):
         assert admin_bridge.owner_session_should_exit() is True
 

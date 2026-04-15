@@ -242,6 +242,41 @@ def test_bundle_embeds_desktop_update_public_keys_from_build_env() -> None:
         assert version_payload == bundled_payload
 
 
+def test_bundle_writes_desktop_update_repo_config_from_build_env() -> None:
+    with workspace_tmpdir("build-ship-bundle") as tmp:
+        config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "appId": "123456",
+                    "installationId": "999999",
+                    "repo": "owner/repo",
+                    "branch": "main",
+                    "path": "baluffo/source-sync.json",
+                    "privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----",
+                }
+            ),
+            encoding="utf-8",
+        )
+        output = _build_with_temp_packaged_config(
+            tmp,
+            env={"BALUFFO_DESKTOP_UPDATE_REPO": "owner/app-release"},
+        )
+        bundled_payload = json.loads(
+            (
+                output
+                / "app"
+                / "versions"
+                / "1.2.3"
+                / "packaging"
+                / "desktop-update-config.json"
+            ).read_text(encoding="utf-8")
+        )
+        assert bundled_payload == {"repo": "owner/app-release"}
+
+
 def test_bundle_rejects_invalid_private_key_from_build_env() -> None:
     with workspace_tmpdir("build-ship-bundle") as tmp:
         private_key_path = Path(tmp) / "packaging" / "github-app-private-key.pem"
@@ -296,3 +331,39 @@ def test_bundle_restores_packaged_sync_config_from_local_env_path() -> None:
         bundled_config = json.loads(bundled_config_path.read_text(encoding="utf-8"))
         assert bundled_config["appId"] == source_payload["appId"]
         assert bundled_config["installationId"] == source_payload["installationId"]
+
+
+def test_bundle_derives_desktop_update_repo_from_git_remote() -> None:
+    with workspace_tmpdir("build-ship-bundle") as tmp:
+        config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "appId": "123456",
+                    "installationId": "999999",
+                    "repo": "owner/repo",
+                    "branch": "main",
+                    "path": "baluffo/source-sync.json",
+                    "privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----",
+                }
+            ),
+            encoding="utf-8",
+        )
+        with mock.patch(
+            "scripts.build_ship_bundle.subprocess.run",
+            return_value=mock.Mock(returncode=0, stdout="https://github.com/example/Baluffo.git\n"),
+        ):
+            output = _build_with_temp_packaged_config(tmp)
+        bundled_payload = json.loads(
+            (
+                output
+                / "app"
+                / "versions"
+                / "1.2.3"
+                / "packaging"
+                / "desktop-update-config.json"
+            ).read_text(encoding="utf-8")
+        )
+        assert bundled_payload == {"repo": "example/Baluffo"}

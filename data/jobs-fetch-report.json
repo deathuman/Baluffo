@@ -1,29 +1,28 @@
 {
-  "schemaVersion": 1,
-  "runId": "",
-  "startedAt": "",
+  "startedAt": "2026-04-15T15:15:37.622759+00:00",
   "finishedAt": "",
+  "summary": {
+    "outputCount": 10,
+    "failedSources": 1,
+    "sourceCount": 10
+  },
+  "sources": [],
+  "runId": "fetch_live_1",
   "runtime": {
     "lifecycle": {
       "owner": "fetch_report",
-      "heartbeatAt": ""
+      "heartbeatAt": "2026-04-15T15:15:37.622759+00:00"
     }
   },
-  "summary": {
-    "outputCount": 0,
-    "failedSources": 0,
-    "sourceCount": 0
-  },
   "taskProgress": {
-    "active": false,
-    "phaseKey": "",
-    "phaseLabel": "",
-    "mode": "indeterminate",
-    "ratio": 0.0,
-    "counts": {}
-  },
-  "sources": [],
-  "outputs": {
-    "report": "C:\\Users\\Andrea\\Documents\\GitHubRepository\\Baluffo\\data\\jobs-fetch-report.json"
+    "active": true,
+    "phaseKey": "executing_sources",
+    "phaseLabel": "Executing sources",
+    "mode": "determinate",
+    "ratio": 0.5,
+    "counts": {
+      "resolvedSources": 5,
+      "sourceCount": 10
+    }
   }
 }

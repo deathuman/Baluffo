@@ -48,6 +48,7 @@ HELPER_STDOUT_LOG_FILE = "desktop-updater-helper.stdout.log"
 HELPER_STDERR_LOG_FILE = "desktop-updater-helper.stderr.log"
 HELPER_DIAGNOSTICS_LOG_FILE = "desktop-updater-helper.diagnostics.jsonl"
 PUBLIC_KEYS_FILE = "desktop-update-public-keys.json"
+DESKTOP_UPDATE_CONFIG_FILE = "desktop-update-config.json"
 USER_AGENT = f"BaluffoDesktopUpdater/{DESKTOP_UPDATER_VERSION}"
 INSTALL_STATE_STAGE_DEFAULTS = {
     "handoff_requested": "preparing",
@@ -294,15 +295,18 @@ def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
         str(current_path.read_text(encoding="utf-8").strip()) if current_path.exists() else ""
     )
     if current_version:
-        packaged_sync = (
+        packaging_dir = (
             ship_root
             / "app"
             / "versions"
             / current_version
             / "packaging"
-            / "github-app-sync-config.json"
         )
-        payload = read_json(packaged_sync, {})
+        payload = read_json(packaging_dir / DESKTOP_UPDATE_CONFIG_FILE, {})
+        repo = str(payload.get("repo") or "").strip()
+        if repo:
+            return repo
+        payload = read_json(packaging_dir / "github-app-sync-config.json", {})
         repo = str(payload.get("repo") or "").strip()
         if repo:
             return repo

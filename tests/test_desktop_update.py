@@ -167,6 +167,29 @@ def test_resolve_github_api_base_honors_env_override(monkeypatch: pytest.MonkeyP
     assert du.resolve_github_api_base() == "http://127.0.0.1:9000/api"
 
 
+def test_resolve_release_repo_prefers_packaged_desktop_update_config() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        ship_root = Path(tmp) / "portable" / "ship"
+        packaging_dir = ship_root / "app" / "versions" / "0.1.0" / "packaging"
+        packaging_dir.mkdir(parents=True, exist_ok=True)
+        (ship_root / "app" / "current.txt").write_text("0.1.0\n", encoding="utf-8")
+        (packaging_dir / "desktop-update-config.json").write_text(
+            json.dumps({"repo": "owner/app-release"}),
+            encoding="utf-8",
+        )
+        (packaging_dir / "github-app-sync-config.json").write_text(
+            json.dumps({"repo": "owner/sync-backup"}),
+            encoding="utf-8",
+        )
+
+        repo = du.resolve_release_repo(
+            install_root=ship_root.parent,
+            ship_root=ship_root,
+        )
+
+        assert repo == "owner/app-release"
+
+
 def test_resolve_desktop_session_root_falls_back_to_temp_when_primary_is_not_writable() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         local_app_data = Path(tmp) / "local-app-data"

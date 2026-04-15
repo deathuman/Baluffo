@@ -229,6 +229,17 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True
 
+    if path == "/app/desktop-session-lifecycle":
+        payload_dict = payload if isinstance(payload, dict) else {}
+        status_code, result = api.update_desktop_session_lifecycle(
+            owner_token=str(payload_dict.get("ownerToken") or ""),
+            session_id=str(payload_dict.get("sessionId") or ""),
+            page_id=str(payload_dict.get("pageId") or ""),
+            state=str(payload_dict.get("state") or ""),
+        )
+        handler._send_json(result, status=status_code)  # noqa: SLF001
+        return True
+
     if path == "/desktop-local-data/startup-metric":
         try:
             event = str((payload or {}).get("event") or "").strip() or "unknown"

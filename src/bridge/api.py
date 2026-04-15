@@ -30,6 +30,7 @@ class RuntimeConfigLike(Protocol):
     desktop_mode: bool
     owner_mode: str
     owner_token: str
+    desktop_session_id: str
     started_by: str
     owner_idle_timeout_s: float
     root: Any
@@ -91,6 +92,14 @@ class BridgeApi:
     bridge_log: Callable[..., None] = lambda *args, **kwargs: None  # type: ignore[assignment]
     now_iso: Callable[[], str] = lambda: ""  # type: ignore[assignment]
     _mark_desktop_session_activity: Callable[[str], None] = lambda _path: None  # type: ignore[assignment]
+    get_desktop_session_payload: Callable[[], dict[str, Any]] = lambda: {  # type: ignore[assignment]
+        "sessionId": "",
+        "ownerToken": "",
+        "lastActivityAt": "",
+    }
+    update_desktop_session_lifecycle: Callable[..., tuple[int, dict[str, Any]]] = (  # type: ignore[assignment]
+        lambda **_kw: (409, {"ok": False, "error": "not_implemented"})
+    )
 
     desktop_local_data_store: DesktopLocalDataStoreFactory = lambda: None  # type: ignore[assignment]
     append_startup_metric: Callable[[str, dict[str, Any] | None], None] = (

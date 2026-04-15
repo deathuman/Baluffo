@@ -6,16 +6,217 @@ import { buildAttachmentPath, generateJobKey } from "../../local-data/job-utils.
 import { canTransitionPhase, normalizeApplicationStatus } from "../../local-data/phase.js";
 
 const BASE_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/desktop-local-data`;
+const TASKS_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/ops/task-state`;
+const UPDATE_STATUS_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/app/update-status`;
+const DESKTOP_SESSION_LIFECYCLE_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/app/desktop-session-lifecycle`;
 const AUTH_LISTENERS = new Set();
 const SAVED_SUBSCRIPTIONS = new Set();
 const SESSION_KEY = "baluffo_current_profile_id";
+const DESKTOP_LIFECYCLE_HEARTBEAT_MS = 5000;
 let currentUser = null;
 let pollingStarted = false;
 let authStateRevision = 0;
 let desktopApiInitialized = false;
+let desktopSession = null;
+let desktopPageId = "";
+let desktopLifecycleHeartbeatTimer = 0;
+let desktopActiveWorkTimer = 0;
+let desktopClosingSignaled = false;
+let desktopCloseAttemptPending = false;
+let desktopActiveWorkSnapshot = {
+  hasActiveTask: false,
+  hasActiveUpdate: false
+};
 
 function toErrorMessage(error, fallback) {
   return error?.message || String(error || "") || fallback;
+}
+
+function normalizeDesktopSession(payload) {
+  const session = payload && typeof payload === "object" ? payload : {};
+  const sessionId = String(session.sessionId || "").trim();
+  const ownerToken = String(session.ownerToken || "").trim();
+  if (!sessionId || !ownerToken) {
+    return null;
+  }
+  return {
+    sessionId,
+    ownerToken,
+    lastActivityAt: String(session.lastActivityAt || "")
+  };
+}
+
+function generateDesktopPageId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `desktop-page-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function hasActiveDesktopWork() {
+  return Boolean(desktopActiveWorkSnapshot.hasActiveTask || desktopActiveWorkSnapshot.hasActiveUpdate);
+}
+
+function isActiveTaskPayload(payload) {
+  const tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
+  return tasks.some(task => Boolean(task?.active));
+}
+
+function isActiveUpdatePayload(payload) {
+  const status = payload && typeof payload === "object" ? payload : {};
+  const downloadState = String(status.downloadState || "").toLowerCase();
+  const installState = String(status.installState || "").toLowerCase();
+  if (downloadState === "downloading") {
+    return true;
+  }
+  return new Set(["handoff_requested", "waiting_for_exit", "installing", "verifying"]).has(installState);
+}
+
+async function fetchJsonWithOk(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(String(payload?.error || response.statusText || "Request failed."));
+  }
+  return payload;
+}
+
+async function refreshDesktopActiveWorkSnapshot() {
+  const [taskState, updateState] = await Promise.allSettled([
+    fetchJsonWithOk(TASKS_URL),
+    fetchJsonWithOk(UPDATE_STATUS_URL)
+  ]);
+  if (taskState.status === "fulfilled") {
+    desktopActiveWorkSnapshot.hasActiveTask = isActiveTaskPayload(taskState.value);
+  }
+  if (updateState.status === "fulfilled") {
+    desktopActiveWorkSnapshot.hasActiveUpdate = isActiveUpdatePayload(updateState.value);
+  }
+}
+
+function stopDesktopLifecycle() {
+  if (desktopLifecycleHeartbeatTimer) {
+    window.clearInterval?.(desktopLifecycleHeartbeatTimer);
+    desktopLifecycleHeartbeatTimer = 0;
+  }
+  if (desktopActiveWorkTimer) {
+    window.clearInterval?.(desktopActiveWorkTimer);
+    desktopActiveWorkTimer = 0;
+  }
+}
+
+async function postDesktopLifecycle(state, { keepalive = false } = {}) {
+  if (!desktopSession || !desktopPageId) {
+    return null;
+  }
+  const response = await fetch(DESKTOP_SESSION_LIFECYCLE_URL, {
+    method: "POST",
+    cache: "no-store",
+    keepalive,
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      ownerToken: desktopSession.ownerToken,
+      sessionId: desktopSession.sessionId,
+      pageId: desktopPageId,
+      state
+    })
+  });
+  return response;
+}
+
+function sendDesktopClosingSignal(reason) {
+  if (desktopClosingSignaled || !desktopSession || !desktopPageId) {
+    return false;
+  }
+  desktopClosingSignaled = true;
+  stopDesktopLifecycle();
+  const body = JSON.stringify({
+    ownerToken: desktopSession.ownerToken,
+    sessionId: desktopSession.sessionId,
+    pageId: desktopPageId,
+    state: "closing",
+    reason: String(reason || "")
+  });
+  try {
+    if (globalThis.navigator?.sendBeacon) {
+      const blob = new Blob([body], { type: "application/json" });
+      if (globalThis.navigator.sendBeacon(DESKTOP_SESSION_LIFECYCLE_URL, blob)) {
+        return true;
+      }
+    }
+  } catch {
+    // Ignore beacon errors and fall back to fetch keepalive.
+  }
+  fetch(DESKTOP_SESSION_LIFECYCLE_URL, {
+    method: "POST",
+    cache: "no-store",
+    keepalive: true,
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body
+  }).catch(() => {});
+  return true;
+}
+
+function bindDesktopLifecycleEvents() {
+  if (window.__baluffoDesktopLifecycleBound) {
+    return;
+  }
+  window.__baluffoDesktopLifecycleBound = true;
+  window.addEventListener?.("beforeunload", event => {
+    desktopCloseAttemptPending = true;
+    if (hasActiveDesktopWork()) {
+      event.preventDefault();
+      event.returnValue = "";
+      return "";
+    }
+    sendDesktopClosingSignal("beforeunload");
+    return undefined;
+  });
+  window.addEventListener?.("pagehide", () => {
+    if (!desktopCloseAttemptPending && !desktopClosingSignaled) {
+      desktopCloseAttemptPending = true;
+    }
+    sendDesktopClosingSignal("pagehide");
+  });
+  window.addEventListener?.("unload", () => {
+    sendDesktopClosingSignal("unload");
+  });
+  window.addEventListener?.("focus", () => {
+    desktopCloseAttemptPending = false;
+    if (!desktopClosingSignaled && desktopSession && !desktopLifecycleHeartbeatTimer) {
+      startDesktopLifecycle();
+    }
+  });
+}
+
+function startDesktopLifecycle() {
+  if (!desktopSession) {
+    return;
+  }
+  if (!desktopPageId) {
+    desktopPageId = generateDesktopPageId();
+  }
+  bindDesktopLifecycleEvents();
+  const sendAlive = () => {
+    if (desktopClosingSignaled) {
+      return;
+    }
+    postDesktopLifecycle("alive", { keepalive: true }).catch(() => {});
+  };
+  sendAlive();
+  if (!desktopLifecycleHeartbeatTimer) {
+    desktopLifecycleHeartbeatTimer = window.setInterval(sendAlive, DESKTOP_LIFECYCLE_HEARTBEAT_MS);
+  }
+  refreshDesktopActiveWorkSnapshot().catch(() => {});
+  if (!desktopActiveWorkTimer) {
+    desktopActiveWorkTimer = window.setInterval(() => {
+      refreshDesktopActiveWorkSnapshot().catch(() => {});
+    }, DESKTOP_LIFECYCLE_HEARTBEAT_MS);
+  }
 }
 
 function buildAttachmentContentUrl(uid, jobKey, attachmentId, options = {}) {
@@ -108,8 +309,16 @@ function notifyAuthChanged() {
   });
 }
 
+async function fetchDesktopSessionPayload() {
+  return requestJson("/session");
+}
+
 async function fetchCurrentUser() {
-  const payload = await requestJson("/session");
+  const payload = await fetchDesktopSessionPayload();
+  desktopSession = normalizeDesktopSession(payload.desktopSession);
+  if (!desktopSession) {
+    stopDesktopLifecycle();
+  }
   return payload.user || null;
 }
 
@@ -358,6 +567,9 @@ async function bootstrapDesktopApi() {
   const bootstrapRevision = authStateRevision;
   try {
     await refreshCurrentUser({ revision: bootstrapRevision });
+    desktopClosingSignaled = false;
+    desktopCloseAttemptPending = false;
+    startDesktopLifecycle();
   } catch (error) {
     console.error("[desktop-local-data] bootstrap failed:", toErrorMessage(error, "bootstrap failed"));
     commitAuthState(null, bootstrapRevision);

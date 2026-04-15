@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -106,6 +107,8 @@ PACKAGED_SYNC_LOCAL_CANDIDATE_PATHS = (ROOT / "packaging" / "github-app-sync-con
 DESKTOP_UPDATE_PUBLIC_KEYS_PATH = ROOT / "packaging" / "desktop-update-public-keys.json"
 DESKTOP_UPDATE_PUBLIC_KEYS_ENV = "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON"
 DESKTOP_UPDATE_PUBLIC_KEYS_PATH_ENV = "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_PATH"
+DESKTOP_UPDATE_REPO_ENV = "BALUFFO_DESKTOP_UPDATE_REPO"
+DESKTOP_UPDATE_CONFIG_FILE = "desktop-update-config.json"
 PACKAGED_SYNC_BUILD_ENV = {
     "app_id": "BALUFFO_SYNC_BUILD_APP_ID",
     "installation_id": "BALUFFO_SYNC_BUILD_INSTALLATION_ID",
@@ -186,6 +189,47 @@ def _resolve_desktop_update_public_keys_payload() -> dict[str, str]:
         for key, value in payload.items()
         if str(key).strip() and str(value).strip()
     }
+
+
+def _normalize_github_repo(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = text.rstrip("/")
+    if normalized.endswith(".git"):
+        normalized = normalized[:-4]
+    for prefix in (
+        "https://github.com/",
+        "http://github.com/",
+        "ssh://git@github.com/",
+        "git@github.com:",
+    ):
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix) :]
+            break
+    parts = [part for part in normalized.split("/") if part]
+    if len(parts) < 2:
+        return ""
+    return f"{parts[0]}/{parts[1]}"
+
+
+def _resolve_desktop_update_repo() -> str:
+    env_repo = _normalize_github_repo(os.environ.get(DESKTOP_UPDATE_REPO_ENV) or "")
+    if env_repo:
+        return env_repo
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return ""
+    if result.returncode != 0:
+        return ""
+    return _normalize_github_repo(result.stdout)
 
 
 def _iso_now() -> str:
@@ -453,6 +497,7 @@ def _maybe_generate_packaged_sync_config() -> Path | None:
 
 def _copy_app_version(version_dir: Path) -> None:
     packaged_sync_config = _resolve_packaged_sync_config()
+    desktop_update_repo = _resolve_desktop_update_repo()
     _write_text(
         version_dir / "frontend-runtime-config.js",
         render_frontend_runtime_config_js(build_frontend_runtime_config_payload()),
@@ -474,6 +519,11 @@ def _copy_app_version(version_dir: Path) -> None:
         _copy_file(ROOT / "packaging" / rel, version_dir / "packaging" / rel)
     if packaged_sync_config is not None:
         _copy_file(packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json")
+    if desktop_update_repo:
+        _write_text(
+            version_dir / "packaging" / DESKTOP_UPDATE_CONFIG_FILE,
+            json.dumps({"repo": desktop_update_repo}, indent=2, ensure_ascii=False),
+        )
 
     for rel in APP_RUNTIME_DATA_FILES:
         src = ROOT / "data" / rel

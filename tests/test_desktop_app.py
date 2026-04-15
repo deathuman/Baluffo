@@ -562,6 +562,29 @@ def test_watch_browser_session_uses_heartbeat_when_no_browser_process() -> None:
     assert result == "heartbeat_timeout"
 
 
+def test_watch_browser_session_prefers_bridge_exit_when_authoritative_process_is_available() -> (
+    None
+):
+    bridge_process = mock.Mock(spec=subprocess.Popen)
+    bridge_process.poll.side_effect = [None, 0]
+    browser_process = mock.Mock(spec=subprocess.Popen)
+    browser_process.poll.return_value = None
+
+    with (
+        mock.patch.object(desktop_app.time, "sleep"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+    ):
+        result = desktop_app.watch_browser_session(
+            Path("C:/tmp"),
+            5.0,
+            bridge_port=8877,
+            bridge_process=bridge_process,
+            browser_process=browser_process,
+        )
+
+    assert result == "bridge_exit"
+
+
 def test_watch_browser_session_detects_window_close_in_detached_mode() -> None:
     with (
         mock.patch.object(desktop_app, "_is_baluffo_browser_window_open", return_value=False),
@@ -760,10 +783,13 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
     assert save_payload["launchMode"] == "chromium-app"
     assert save_payload["browserPath"] == "C:/Edge/msedge.exe"
     assert save_payload["bridgePort"] == 8877
+    assert save_payload["desktopSessionId"]
+    assert save_payload["desktopOwnerToken"]
     watch_mock.assert_called_once_with(
         data_dir,
         mock.ANY,
         bridge_port=8877,
+        bridge_process=mock.ANY,
         browser_process=fake_browser_process,
         require_window=True,
     )
@@ -820,6 +846,7 @@ def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> 
         data_dir,
         mock.ANY,
         bridge_port=8877,
+        bridge_process=mock.ANY,
         browser_process=None,
         require_window=False,
     )
@@ -882,7 +909,7 @@ def test_launch_desktop_app_spawns_update_helper_from_launcher_on_install_reques
     assert helper_paths.install_root == config.ship_root
 
 
-def test_launch_desktop_app_recovers_to_default_browser_after_process_exit() -> None:
+def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_exit() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_app.DesktopRuntimeConfig(
         ship_root=Path("C:/tmp/baluffo-ship"),
@@ -925,9 +952,8 @@ def test_launch_desktop_app_recovers_to_default_browser_after_process_exit() -> 
         ),
         mock.patch.object(desktop_app, "save_session_state"),
         mock.patch.object(
-            desktop_app, "watch_browser_session", side_effect=["process_exit", "heartbeat_timeout"]
+            desktop_app, "watch_browser_session", return_value="process_exit"
         ) as watch_mock,
-        mock.patch.object(desktop_app, "reopen_default_browser", return_value=True) as recover_mock,
         mock.patch.object(desktop_app, "write_success_marker"),
         mock.patch.object(desktop_app, "clear_session_state"),
         mock.patch.object(desktop_app, "terminate_process"),
@@ -935,22 +961,14 @@ def test_launch_desktop_app_recovers_to_default_browser_after_process_exit() -> 
     ):
         desktop_app.launch_desktop_app(config)
 
-    assert watch_mock.call_count == 2
-    watch_mock.assert_any_call(
+    watch_mock.assert_called_once_with(
         data_dir,
         mock.ANY,
         bridge_port=8877,
+        bridge_process=mock.ANY,
         browser_process=fake_browser_process,
         require_window=True,
     )
-    watch_mock.assert_any_call(
-        data_dir,
-        mock.ANY,
-        bridge_port=8877,
-        browser_process=None,
-        require_window=True,
-    )
-    recover_mock.assert_called_once()
 
 
 def test_launch_desktop_app_fails_when_instance_lock_is_contended_and_session_exists() -> None:

@@ -134,7 +134,6 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
             try:
                 path = self._route_path()
                 query = self._route_query()
-                api.mark_desktop_session_activity(path)
                 try:
                     api.bridge_log(
                         "info", "http_get_route", rawPath=getattr(self, "path", ""), routePath=path
@@ -165,7 +164,6 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:  # noqa: N802
             path = self._route_path()
             payload = read_json_from_request(self)
-            api.mark_desktop_session_activity(path)
             from src.bridge.routes.post_routes import handle_post
 
             try:

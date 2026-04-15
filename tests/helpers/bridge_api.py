@@ -13,6 +13,11 @@ class BridgeRuntimeConfigStub:
     port: int = 0
     quiet_requests: bool = True
     desktop_mode: bool = True
+    owner_mode: str = ""
+    owner_token: str = ""
+    desktop_session_id: str = ""
+    started_by: str = ""
+    owner_idle_timeout_s: float = 0.0
     root: Any = None
     data_dir: Any = None
 
@@ -213,6 +218,20 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
     api.check_for_update = lambda **kw: {"started": True, "status": api.get_update_status_payload()}
     api.download_update = lambda: {"started": True, "status": api.get_update_status_payload()}
     api.install_update = lambda: {"started": True, "status": api.get_update_status_payload()}
+    api.get_desktop_session_payload = lambda: {
+        "sessionId": "desktop-session-1",
+        "ownerToken": "desktop-owner-1",
+        "lastActivityAt": "2024-01-01T00:00:00Z",
+    }
+    api.update_desktop_session_lifecycle = lambda **kw: (
+        200,
+        {
+            "ok": True,
+            "sessionId": str(kw.get("session_id") or ""),
+            "pageId": str(kw.get("page_id") or ""),
+            "state": str(kw.get("state") or ""),
+        },
+    )
 
     return api
 
@@ -243,6 +262,8 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         bridge_log=admin_bridge.bridge_log,
         now_iso=admin_bridge.now_iso,
         mark_desktop_session_activity=admin_bridge.mark_desktop_session_activity,
+        get_desktop_session_payload=admin_bridge.get_desktop_session_payload,
+        update_desktop_session_lifecycle=admin_bridge.update_desktop_session_lifecycle,
         desktop_local_data_store=admin_bridge.desktop_local_data_store,
         append_startup_metric=admin_bridge.append_startup_metric,
         read_startup_metrics=admin_bridge.read_startup_metrics,

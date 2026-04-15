@@ -577,6 +577,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
         now_iso=now_iso,
         owner_mode=config.owner_mode,
         owner_token=config.owner_token,
+        desktop_session_id=config.desktop_session_id,
         started_by=config.started_by,
         owner_idle_timeout_s=config.owner_idle_timeout_s,
     )
@@ -618,6 +619,8 @@ def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
         bridge_log=bridge_log,
         now_iso=now_iso,
         mark_desktop_session_activity=mark_desktop_session_activity,
+        get_desktop_session_payload=get_desktop_session_payload,
+        update_desktop_session_lifecycle=update_desktop_session_lifecycle,
         desktop_local_data_store=desktop_local_data_store,
         append_startup_metric=append_startup_metric,
         read_startup_metrics=read_startup_metrics,
@@ -948,23 +951,35 @@ def build_fetcher_args_from_payload(payload: dict[str, Any]) -> tuple[list[str],
 
 
 def mark_desktop_session_activity(path: str) -> None:
-    bridge_runtime_state.mark_desktop_session_activity(
-        path,
+    return None
+
+
+def get_desktop_session_payload() -> dict[str, Any]:
+    return bridge_runtime_state.get_desktop_session_payload()
+
+
+def update_desktop_session_lifecycle(
+    *, owner_token: str, session_id: str, page_id: str, state: str
+) -> tuple[int, dict[str, Any]]:
+    return bridge_runtime_state.update_desktop_session_lifecycle(
+        owner_token=owner_token,
+        session_id=session_id,
+        page_id=page_id,
+        state=state,
         now_iso=now_iso,
-        desktop_mode=RUNTIME_CONFIG.desktop_mode,
-        owner_mode=RUNTIME_CONFIG.owner_mode,
     )
 
 
 def owner_session_should_exit() -> bool:
-    expired = bridge_runtime_state.owner_session_expired(parse_iso=parse_iso, now_utc=now_utc)
+    expired = bridge_runtime_state.owner_session_should_exit(parse_iso=parse_iso, now_utc=now_utc)
     if expired:
         owner_state = bridge_runtime_state.get_owner_state()
         bridge_log(
             "info",
-            "admin_bridge_owner_session_expired",
+            "admin_bridge_owner_session_exit_requested",
             owner_mode=str(owner_state.get("ownerMode") or ""),
             owner_token=str(owner_state.get("ownerToken") or ""),
+            session_id=str(owner_state.get("sessionId") or ""),
             started_by=str(owner_state.get("startedBy") or ""),
             last_activity_at=str(owner_state.get("lastActivityAt") or ""),
             idle_timeout_seconds=float(owner_state.get("idleTimeoutSeconds") or 0.0),
