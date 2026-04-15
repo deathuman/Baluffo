@@ -31,7 +31,7 @@ jobs:
       BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM: ${{ secrets.BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM }}
       BALUFFO_DESKTOP_UPDATE_KEY_ID: ${{ secrets.BALUFFO_DESKTOP_UPDATE_KEY_ID }}
       BALUFFO_DESKTOP_UPDATE_PRIVATE_KEY_B64: ${{ secrets.BALUFFO_DESKTOP_UPDATE_PRIVATE_KEY_B64 }}
-      BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON: ${{ secrets.BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON }}
+      BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON_SECRET: ${{ secrets.BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON }}
     steps:
       - uses: actions/checkout@v6
 
@@ -89,7 +89,7 @@ jobs:
         run: |
           $keyId = "$env:BALUFFO_DESKTOP_UPDATE_KEY_ID"
           $privateKeyB64 = "$env:BALUFFO_DESKTOP_UPDATE_PRIVATE_KEY_B64"
-          $publicKeysJson = "$env:BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON"
+          $publicKeysJson = "$env:BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON_SECRET"
           $releaseTag = "${{ inputs.release_tag }}"
           $isReleaseBuild = ("${{ github.ref_type }}" -eq "tag") -or -not [string]::IsNullOrWhiteSpace($releaseTag)
 
@@ -107,10 +107,9 @@ jobs:
 
           "BALUFFO_DESKTOP_UPDATE_KEY_ID=$keyId" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "BALUFFO_DESKTOP_UPDATE_PRIVATE_KEY_B64=$privateKeyB64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          $publicKeysDelimiter = "BALUFFO_PUBLIC_KEYS_JSON_" + [guid]::NewGuid().ToString("N")
-          "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON<<$publicKeysDelimiter" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          $publicKeysJson | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          $publicKeysDelimiter | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $publicKeysPath = Join-Path $env:RUNNER_TEMP "baluffo-desktop-update-public-keys.json"
+          $publicKeysJson | Set-Content -Path $publicKeysPath -Encoding utf8
+          "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_PATH=$publicKeysPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Prepare packaged sync config build inputs
         shell: pwsh
