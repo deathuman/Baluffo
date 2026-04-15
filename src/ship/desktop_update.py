@@ -295,13 +295,7 @@ def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
         str(current_path.read_text(encoding="utf-8").strip()) if current_path.exists() else ""
     )
     if current_version:
-        packaging_dir = (
-            ship_root
-            / "app"
-            / "versions"
-            / current_version
-            / "packaging"
-        )
+        packaging_dir = ship_root / "app" / "versions" / current_version / "packaging"
         payload = read_json(packaging_dir / DESKTOP_UPDATE_CONFIG_FILE, {})
         repo = str(payload.get("repo") or "").strip()
         if repo:

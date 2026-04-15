@@ -37,7 +37,10 @@ def test_release_docs_cover_the_public_0_1_1_line(repo_root: Path) -> None:
     assert f"## [{app_version}]" in changelog_text
     assert "Desktop in-app update flow in the Jobs desktop UI" in top_release
     assert "Location normalization was consolidated into the canonical parsers path" in top_release
-    assert "Closing the packaged desktop window now tears down the desktop session cleanly" in top_release
+    assert (
+        "Closing the packaged desktop window now tears down the desktop session cleanly"
+        in top_release
+    )
     assert "Desktop portable EXE with PyInstaller" not in legacy_notes
     assert "Ship bundle (zip-first) release channel" not in legacy_notes
     assert "## [Unreleased]" not in changelog_text

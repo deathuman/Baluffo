@@ -17,7 +17,6 @@ import traceback
 import urllib.error
 import urllib.request
 import uuid
-import webbrowser
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timezone
@@ -1165,10 +1164,6 @@ def launch_browser_for_url(
         "process": None,
         "windowShownAtMonotonic": launch_started_mono,
     }
-
-
-def reopen_default_browser(url: str) -> bool:
-    return bool(webbrowser.open(url))
 
 
 def _parse_metric_ts(value: object) -> float:

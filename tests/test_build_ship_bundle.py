@@ -266,12 +266,7 @@ def test_bundle_writes_desktop_update_repo_config_from_build_env() -> None:
         )
         bundled_payload = json.loads(
             (
-                output
-                / "app"
-                / "versions"
-                / "1.2.3"
-                / "packaging"
-                / "desktop-update-config.json"
+                output / "app" / "versions" / "1.2.3" / "packaging" / "desktop-update-config.json"
             ).read_text(encoding="utf-8")
         )
         assert bundled_payload == {"repo": "owner/app-release"}
@@ -358,12 +353,7 @@ def test_bundle_derives_desktop_update_repo_from_git_remote() -> None:
             output = _build_with_temp_packaged_config(tmp)
         bundled_payload = json.loads(
             (
-                output
-                / "app"
-                / "versions"
-                / "1.2.3"
-                / "packaging"
-                / "desktop-update-config.json"
+                output / "app" / "versions" / "1.2.3" / "packaging" / "desktop-update-config.json"
             ).read_text(encoding="utf-8")
         )
         assert bundled_payload == {"repo": "example/Baluffo"}
