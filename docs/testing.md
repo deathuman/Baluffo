@@ -58,6 +58,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 |------|---------|
 | Developer lane | `npm run test:py` |
 | Full suite / release lane | `npm run test:py:extended` |
+| Release preflight | `npm run release:preflight` |
 | Local pre-commit gate | `npm run lint:precommit:changed` |
 | Full pre-commit sweep | `npm run lint:precommit:all` |
 | CI pre-commit sweep | `npm run lint:precommit:ci` |
@@ -73,6 +74,8 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
 | Match developer lane directly | `python -m pytest tests -q -m "not slow and not packaging and not release" --color=no` |
+
+Use `npm run release:preflight` when you are about to push a release commit, move a release tag, or publish release artifacts. It runs the pre-commit gate, the full Python lane, frontend unit tests, and the packaged desktop release lanes in canonical order.
 
 **Shared fixtures (where they are defined):**
 

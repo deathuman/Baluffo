@@ -194,11 +194,17 @@ Portable desktop in-app update flow:
 Before any release:
 
 1. Record `app_version`, `updater_version`, `data_schema_version`, and `manifest_schema_version`.
-2. Run required validation at minimum:
+2. Run the canonical release preflight on the exact commit you plan to push or tag:
+   - `npm run release:preflight`
+3. If you need to debug a failing lane individually, rerun the underlying command directly:
+   - `npm run lint:precommit`
    - `npm run test:py:extended`
    - `npm run test:frontend:unit`
-3. Validate any declared migrations and rollback behavior.
-4. Rehearse the release on a staging machine before publish.
+   - `npm run test:frontend:packaged`
+   - `npm run test:frontend:packaged:update-rehearsal`
+   - `npm run test:frontend:packaged:jobs-pipeline`
+4. Validate any declared migrations and rollback behavior.
+5. Rehearse the release on a staging machine before publish.
 
 ### Ship Bundle Verification
 

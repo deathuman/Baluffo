@@ -179,6 +179,9 @@ def test_package_json_build_aliases_use_leaf_builders(repo_root: Path) -> None:
     assert scripts["test:frontend:packaged"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py"
     )
+    assert scripts["release:preflight"] == (
+        "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run test:frontend:packaged && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:jobs-pipeline"
+    )
     assert (
         "_out/latest/build/portable/Baluffo.exe"
         not in scripts["test:frontend:packaged:jobs-pipeline"]
@@ -202,6 +205,7 @@ def test_testing_doc_owns_verification_matrix(repo_root: Path) -> None:
     for command in (
         "npm run test:py",
         "npm run test:py:extended",
+        "npm run release:preflight",
         "npm run build:ship-bundle",
         "npm run build:portable-exe",
         "python scripts/build_ship_bundle.py --bundle-version <version>",
@@ -218,6 +222,15 @@ def test_testing_doc_owns_verification_matrix(repo_root: Path) -> None:
     assert "admin_bridge_entrypoint_root" in testing_text
     assert "admin_bridge_ops_root" not in testing_text
     assert "tests/source_discovery/" in testing_text
+
+
+def test_release_guide_uses_canonical_release_preflight(repo_root: Path) -> None:
+    release_text = (repo_root / "docs" / "RELEASE.md").read_text(encoding="utf-8")
+
+    assert "npm run release:preflight" in release_text
+    assert "exact commit you plan to push or tag" in release_text
+    assert "npm run lint:precommit" in release_text
+    assert "npm run test:frontend:packaged:jobs-pipeline" in release_text
 
 
 def test_active_docs_avoid_stale_runtime_and_test_guidance(repo_root: Path) -> None:

@@ -294,7 +294,9 @@ def write_text(path: Path, text: str) -> None:
     path.write_text(str(text or ""), encoding="utf-8")
 
 
-def packaged_desktop_local_appdata_root(artifacts_dir: Path, *, session_scope: str = "runtime") -> Path:
+def packaged_desktop_local_appdata_root(
+    artifacts_dir: Path, *, session_scope: str = "runtime"
+) -> Path:
     base = Path(artifacts_dir).expanduser().resolve() / "desktop-localappdata"
     return base / slugify_token(session_scope)
 

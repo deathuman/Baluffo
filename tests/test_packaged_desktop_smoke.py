@@ -741,7 +741,9 @@ def test_run_packaged_smoke_writes_success_report_and_artifacts() -> None:
         stderr_handle.close.assert_called_once()
 
 
-def test_run_packaged_smoke_uses_artifact_local_session_root_even_when_global_session_exists() -> None:
+def test_run_packaged_smoke_uses_artifact_local_session_root_even_when_global_session_exists() -> (
+    None
+):
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
         report_path = root / "data" / "latest.json"
