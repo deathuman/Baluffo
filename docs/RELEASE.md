@@ -180,6 +180,7 @@ Portable desktop in-app update flow:
 - Baluffo checks for desktop updates on startup with throttling and when the user clicks `Check for updates`.
 - Update state lives under `ship\data\updater\`.
 - The jobs-page desktop UI must surface `Check for updates`, `Download`, `Install and restart`, install-progress, and failure/retry states.
+- Background download failures must remain visible in the Jobs-page updater panel, using the persisted updater `lastError` and a retry download action instead of reverting to the generic available-update CTA.
 - The updater downloads the portable ZIP from the selected GitHub release and never overwrites `ship\data\` from the downloaded artifact.
 - Install handoff writes `install-plan.json`, copies `BaluffoUpdater.exe` to a temp path outside the install root, and closes the running app before the helper mutates the runtime.
 - The helper owns extraction, rollback snapshotting, optional migrations, target relaunch, and rollback-on-failure.

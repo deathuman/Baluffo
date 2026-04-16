@@ -150,7 +150,7 @@ test("deriveDesktopUpdateView surfaces staged helper progress and failure retry 
   }, { panelOpen: true });
   assert.equal(downloadFailed.buttonLabel, "Download failed");
   assert.equal(downloadFailed.primaryAction, "download");
-  assert.equal(downloadFailed.primaryLabel, "Download again");
+  assert.equal(downloadFailed.primaryLabel, "Try download again");
   assert.equal(downloadFailed.body, "manifest cache missing");
 });
 
@@ -401,6 +401,104 @@ test("desktop update controller ignores repeated primary actions while a request
   await second;
 
   assert.equal(refs.desktopUpdateToggleBtn.textContent, "Downloading update");
+  assert.ok(
+    toasts.some(item => item.message === "Desktop update download started." && item.level === "info")
+  );
+});
+
+test("desktop update controller surfaces background download failure once and allows retry", async () => {
+  const refs = buildRefs();
+  const fetchCalls = [];
+  const postCalls = [];
+  const toasts = [];
+  let fetchStatus = {
+    currentVersion: "0.1.2",
+    latestVersion: "0.1.22",
+    targetVersion: "0.1.22",
+    availability: "available",
+    updateAvailable: true,
+    downloadState: "downloading",
+    installState: "idle",
+    downloadedBytes: 12,
+    totalBytes: 100,
+    downloadPercent: 12,
+    lastCheckedAt: "2026-04-16T09:00:00Z"
+  };
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async (_baseUrl, path) => {
+      fetchCalls.push(path);
+      return fetchStatus;
+    },
+    postJson: async (_baseUrl, path) => {
+      postCalls.push(path);
+      if (path === "/app/download-update") {
+        fetchStatus = {
+          ...fetchStatus,
+          downloadState: "downloading",
+          downloadedBytes: 0,
+          downloadPercent: 0,
+          lastError: ""
+        };
+        return { started: true, status: fetchStatus };
+      }
+      throw new Error(`Unexpected path ${path}`);
+    },
+    bindAsyncClick: (element, handler) => {
+      element._handler = handler;
+    },
+    showToast: (message, level) => {
+      toasts.push({ message, level });
+    },
+    requestConfirmationDialog: async () => true,
+    isDesktopRuntimeMode: () => true,
+    showReleaseNotesDialog() {
+      return { close() {} };
+    },
+    openExternalUrl() {},
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Downloading 12%");
+
+  fetchStatus = {
+    ...fetchStatus,
+    downloadState: "failed",
+    installState: "idle",
+    downloadedBytes: 0,
+    downloadPercent: 0,
+    lastError: "Downloaded portable ZIP checksum mismatch."
+  };
+
+  await controller.refreshStatus({ silent: true, openPanel: true });
+
+  assert.deepEqual(fetchCalls, ["/app/update-status", "/app/update-status"]);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Download failed");
+  assert.equal(refs.desktopUpdatePrimaryBtn.dataset.action, "download");
+  assert.equal(refs.desktopUpdatePrimaryBtn.textContent, "Try download again");
+  assert.equal(refs.desktopUpdateBody.textContent, "Downloaded portable ZIP checksum mismatch.");
+  assert.equal(
+    toasts.filter(
+      item =>
+        item.message === "Downloaded portable ZIP checksum mismatch." && item.level === "error"
+    ).length,
+    1
+  );
+
+  await controller.handlePrimaryAction();
+
+  assert.deepEqual(postCalls, ["/app/download-update"]);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Downloading update");
+  assert.equal(
+    toasts.filter(
+      item =>
+        item.message === "Downloaded portable ZIP checksum mismatch." && item.level === "error"
+    ).length,
+    1
+  );
   assert.ok(
     toasts.some(item => item.message === "Desktop update download started." && item.level === "info")
   );

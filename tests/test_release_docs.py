@@ -20,7 +20,7 @@ def test_release_guide_is_canonical_single_source(repo_root: Path) -> None:
     assert len(text.splitlines()) > 0, "docs/RELEASE.md should not be empty."
 
 
-def test_release_docs_cover_the_public_release_line(repo_root: Path) -> None:
+def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> None:
     docs_dir = repo_root / "docs"
     changelog_text = (docs_dir / "CHANGELOG.md").read_text(encoding="utf-8")
     release_text = (docs_dir / "RELEASE.md").read_text(encoding="utf-8")
@@ -41,6 +41,9 @@ def test_release_docs_cover_the_public_release_line(repo_root: Path) -> None:
         heading in top_release for heading in ("### Added", "### Changed", "### Fixed", "### Notes")
     )
     assert "\n- " in top_release
+    assert "background download failures" in top_release
+    assert "Try download again" in top_release
+    assert "clear stale install-ready state" in top_release
     assert "Desktop in-app update flow in the Jobs desktop UI" in previous_release
     assert (
         "Location normalization was consolidated into the canonical parsers path"

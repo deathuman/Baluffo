@@ -142,6 +142,18 @@ function inFlightInstallState(installState) {
   );
 }
 
+function failureToastForStatus(previousStatus, nextStatus) {
+  const previous = normalizeDesktopUpdateStatus(previousStatus);
+  const next = normalizeDesktopUpdateStatus(nextStatus);
+  if (previous.downloadState !== "failed" && next.downloadState === "failed") {
+    return next.lastError || "Baluffo could not finish downloading the portable update ZIP.";
+  }
+  if (previous.installState !== "failed" && next.installState === "failed") {
+    return next.lastError || "Baluffo could not install the downloaded update.";
+  }
+  return "";
+}
+
 export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
   const normalized = normalizeDesktopUpdateStatus(status);
   const installProgress = normalized.installStageLabel || "Waiting for the updater helper to finish install and startup verification.";
@@ -219,16 +231,16 @@ export function deriveDesktopUpdateView(status, { panelOpen = false } = {}) {
     view.title = normalized.targetVersion
       ? `Could not download ${normalized.targetVersion}`
       : "Desktop update download failed";
-    view.body = normalized.lastError || "Baluffo could not finish downloading the update.";
+    view.body = normalized.lastError || "Baluffo could not finish downloading the portable update ZIP.";
     view.progress = normalized.downloadedBytes > 0
       ? normalized.totalBytes > 0
         ? `${formatDesktopUpdateBytes(normalized.downloadedBytes)} of ${formatDesktopUpdateBytes(normalized.totalBytes)} downloaded before the failure`
         : `${formatDesktopUpdateBytes(normalized.downloadedBytes)} downloaded before the failure`
       : "";
     view.primaryAction = "download";
-    view.primaryLabel = "Download again";
-    view.secondaryAction = "close";
-    view.secondaryLabel = "Close";
+    view.primaryLabel = "Try download again";
+    view.secondaryAction = "later";
+    view.secondaryLabel = "Later";
     view.secondaryVisible = true;
     return view;
   }
@@ -419,6 +431,7 @@ export function createJobsDesktopUpdateController({
   }
 
   function applyStatus(status, { openPanel = false, autoOpenImportant = false } = {}) {
+    const previousStatus = state.status;
     const nextStatus = normalizeDesktopUpdateStatus(status);
     const targetVersion = String(nextStatus.targetVersion || nextStatus.latestVersion || "").trim();
     if (!nextStatus.updateAvailable || nextStatus.availability === "up_to_date") {
@@ -438,6 +451,10 @@ export function createJobsDesktopUpdateController({
       }
     }
     state.status = nextStatus;
+    const failureToast = failureToastForStatus(previousStatus, nextStatus);
+    if (failureToast) {
+      showToast?.(failureToast, "error");
+    }
     syncPolling(nextStatus);
     render();
   }

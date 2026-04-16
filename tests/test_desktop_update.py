@@ -865,6 +865,57 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
         assert paths.handoff_request_path.is_file()
 
 
+def test_run_download_worker_failure_clears_install_ready_state_and_bad_zip() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        target = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("bad-zip", encoding="utf-8")
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "availability": "available",
+                "updateAvailable": True,
+                "latestVersion": "1.4.0",
+                "targetVersion": "1.4.0",
+                "downloadState": "downloading",
+                "downloadedBytes": int(target.stat().st_size),
+                "totalBytes": 123,
+                "downloadPercent": 100,
+                "installState": "ready",
+                "installStage": "idle",
+                "downloadedZipPath": str(target),
+            },
+        )
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        manifest = {
+            "version": "1.4.0",
+            "portable_artifact": {
+                "url": "https://example.com/baluffo-portable-1.4.0.zip",
+                "sha256": "a" * 64,
+                "size_bytes": 123,
+            },
+        }
+
+        with mock.patch.object(du, "download_file", return_value=target):
+            service._run_download_worker(manifest)
+
+        status = du.load_status(paths, current_version="0.1.0")
+        assert status["availability"] == "available"
+        assert status["updateAvailable"] is True
+        assert status["targetVersion"] == "1.4.0"
+        assert status["downloadState"] == "failed"
+        assert status["installState"] == "idle"
+        assert status["installStage"] == "idle"
+        assert status["downloadedBytes"] == 0
+        assert status["downloadPercent"] == 0
+        assert status["downloadedZipPath"] == ""
+        assert "checksum mismatch" in str(status["lastError"]).lower()
+        assert not target.exists()
+
+
 def test_launch_staged_update_helper_uses_logged_spawn_contract() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         install_root = Path(tmp) / "portable"

@@ -180,6 +180,15 @@ python -c "from src.bridge.source_check_api import trigger_source_check; print(t
 | Port conflict | Check if another Baluffo instance is running |
 | Log files | Check `data/` for startup logs |
 
+### Desktop updater goes back to `Download` after starting or finishing a download
+
+| Check | Action |
+|-------|--------|
+| Failed background download | Open the updater panel again and confirm whether it now shows the persisted error with `Try download again` |
+| Persisted updater state | Inspect `ship\data\updater\install-state.json` for `downloadState`, `installState`, and `lastError` |
+| Helper diagnostics | If install handoff starts, inspect `ship\data\updater\desktop-updater-helper.*.log` and `desktop-updater-helper.diagnostics.jsonl` |
+| Bad staged ZIP | Delete only the failed file under `ship\data\updater\downloads\` if it remains after a failed attempt, then retry the download |
+
 ### Ship bundle launcher fails
 
 | Check | Action |

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.22] - 2026-04-16
+
+### Changed
+- The desktop Jobs-page updater now surfaces persisted background download failures directly in the update panel instead of falling back to the generic available-update state.
+- Release and troubleshooting documentation now describe the explicit failed-download retry path for the portable desktop updater.
+
+### Fixed
+- Desktop update downloads that fail in the background now keep the panel open, show the persisted updater error, and offer a direct `Try download again` action.
+- Failed portable ZIP downloads now clear stale install-ready state and best-effort delete bad staged artifacts so retry starts from a clean updater state.
+
 ## [0.1.21] - 2026-04-16
 
 ### Fixed
@@ -103,7 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Notes
 - The public app release line is `v0.0.x`.
-- Git tags follow `v<app_version>` and the current tagged release is `v0.0.10`.
+- Git tags follow `v<app_version>` and, for this historical release entry, the tagged release was `v0.0.10`.
 
 ---
 

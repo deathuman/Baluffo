@@ -1090,12 +1090,19 @@ class DesktopUpdateService:
                 },
             )
         except Exception as exc:  # noqa: BLE001
+            with contextlib.suppress(OSError):
+                target.unlink()
+            current_status = load_status(self.paths, current_version=self.current_version())
             save_status(
                 self.paths,
                 {
-                    **load_status(self.paths, current_version=self.current_version()),
+                    **current_status,
                     "downloadState": "failed",
                     "installState": "idle",
+                    "installStage": "idle",
+                    "downloadedBytes": 0,
+                    "downloadPercent": 0,
+                    "downloadedZipPath": "",
                     "lastError": str(exc),
                 },
             )
