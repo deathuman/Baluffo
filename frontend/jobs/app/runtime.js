@@ -337,15 +337,12 @@ export async function openJobLinkInDefaultBrowser(url, deps = {}) {
   const logError = typeof deps.logJobsError === "function"
     ? deps.logJobsError
     : logJobsError;
-  const bridgeBaseUrl = typeof deps.bridgeBaseUrl === "string" && deps.bridgeBaseUrl
-    ? deps.bridgeBaseUrl
-    : ADMIN_BRIDGE_BASE;
   if (!isDesktop()) {
     openWindow(url);
     return;
   }
   try {
-    await callBridge(bridgeBaseUrl, "/desktop-local-data/open-url", {
+    await callBridge("/desktop-local-data/open-url", {
       method: "POST",
       body: { url }
     });

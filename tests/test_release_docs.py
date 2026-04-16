@@ -36,8 +36,11 @@ def test_release_docs_cover_the_public_release_line(repo_root: Path) -> None:
     assert "npm run test:py:extended" in release_text
     assert "python scripts/extract_release_notes.py" in release_text
     assert f"## [{app_version}]" in changelog_text
-    assert "Desktop navigation to Admin and Saved no longer prompts to save" in top_release
-    assert "Baluffo window identity token during in-app page switches" in top_release
+    assert top_release.startswith(f"## [{app_version}] - ")
+    assert any(
+        heading in top_release for heading in ("### Added", "### Changed", "### Fixed", "### Notes")
+    )
+    assert "\n- " in top_release
     assert "Desktop in-app update flow in the Jobs desktop UI" in previous_release
     assert (
         "Location normalization was consolidated into the canonical parsers path"

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.21] - 2026-04-16
+
+### Fixed
+- Jobs-page desktop job links now open in the default browser again instead of failing when the bridge request path duplicated the local bridge base URL.
+
 ## [0.1.2] - 2026-04-15
 
 ### Fixed

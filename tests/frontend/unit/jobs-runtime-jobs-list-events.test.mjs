@@ -161,3 +161,27 @@ test("desktop job link open does not fall back to the shell on bridge failure", 
   assert.deepEqual(opens, []);
   assert.deepEqual(logs, [["Failed to open job link in the default browser", "bridge unavailable"]]);
 });
+
+test("desktop job link open posts the URL through the jobs bridge", async () => {
+  const opens = [];
+  const bridgeCalls = [];
+
+  await openJobLinkInDefaultBrowser("https://example.com/job", {
+    isDesktopRuntimeMode: () => true,
+    callJobsBridge: async (...args) => {
+      bridgeCalls.push(args);
+    },
+    openWindow: url => {
+      opens.push(url);
+    }
+  });
+
+  assert.deepEqual(opens, []);
+  assert.deepEqual(bridgeCalls, [[
+    "/desktop-local-data/open-url",
+    {
+      method: "POST",
+      body: { url: "https://example.com/job" }
+    }
+  ]]);
+});
