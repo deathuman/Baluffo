@@ -56,6 +56,62 @@ MUTATING_INSTALL_STAGES = frozenset(
 SUCCESS_RECOVERY_STAGES = frozenset({"relaunching", "verifying"})
 
 
+HELPER_WINDOW_TOKENS = {
+    "window_bg": "#17141f",
+    "shell_bg": "#1f1a29",
+    "panel_bg": "#24202f",
+    "panel_border": "#3d3550",
+    "title_fg": "#f4edff",
+    "text_fg": "#d9d2e8",
+    "muted_fg": "#b6accd",
+    "accent": "#bb86fc",
+    "accent_active": "#9f6dfd",
+    "track": "#312a3f",
+}
+HELPER_WINDOW_SIZE = {"width": 420, "height": 188}
+HELPER_BRAND_TEXT = "Baluffo Update"
+HELPER_TITLE_TEXT = "Installing the latest portable build"
+HELPER_SUPPORT_TEXT = "Baluffo can stay closed while the update finishes."
+
+
+def _normalize_helper_message(message: str) -> str:
+    return str(message or "").strip() or "Preparing update"
+
+
+def _helper_window_theme_tokens() -> dict[str, str]:
+    return dict(HELPER_WINDOW_TOKENS)
+
+
+def _helper_window_layout(initial_message: str) -> dict[str, Any]:
+    return {
+        "size": dict(HELPER_WINDOW_SIZE),
+        "brandText": HELPER_BRAND_TEXT,
+        "titleText": HELPER_TITLE_TEXT,
+        "supportText": HELPER_SUPPORT_TEXT,
+        "initialMessage": _normalize_helper_message(initial_message),
+        "tokens": _helper_window_theme_tokens(),
+    }
+
+
+def _drain_helper_queue(
+    progress: HelperProgressWindow,
+    *,
+    on_message,
+    on_close,
+) -> bool:
+    while True:
+        try:
+            kind, payload = progress._queue.get_nowait()
+        except queue.Empty:
+            return False
+        if kind == "close":
+            on_close()
+            progress._closed.set()
+            return True
+        if kind == "message" and payload:
+            on_message(payload)
+
+
 class HelperProgressWindow:
     """Best-effort native progress window for the one-shot updater helper."""
 
@@ -64,10 +120,10 @@ class HelperProgressWindow:
         self._closed = threading.Event()
 
     def start(self, message: str) -> None:
-        self.update(str(message or "").strip() or "Preparing update")
+        self.update(_normalize_helper_message(message))
 
     def update(self, message: str) -> None:
-        self._queue.put(("message", str(message or "").strip()))
+        self._queue.put(("message", _normalize_helper_message(message)))
 
     def close(self) -> None:
         self._queue.put(("close", ""))
@@ -84,24 +140,102 @@ class HelperProgressWindow:
             self._closed.wait()
             return
 
+        layout = _helper_window_layout(initial_message)
+        tokens = layout["tokens"]
         root = tk.Tk()
-        root.title("Baluffo Update")
+        root.title(HELPER_BRAND_TEXT)
         root.resizable(False, False)
         root.attributes("-topmost", True)
         root.protocol("WM_DELETE_WINDOW", lambda: None)
-        frame = ttk.Frame(root, padding=18)
-        frame.pack(fill="both", expand=True)
-        title = ttk.Label(frame, text="Installing update", font=("", 11, "bold"))
-        title.pack(anchor="w")
-        message_var = tk.StringVar(value=str(initial_message or "").strip() or "Preparing update")
-        detail = ttk.Label(frame, textvariable=message_var, padding=(0, 10, 0, 0))
-        detail.pack(anchor="w")
-        bar = ttk.Progressbar(frame, mode="indeterminate", length=260)
+        root.configure(bg=tokens["window_bg"])
+
+        style = ttk.Style(root)
+        with contextlib.suppress(Exception):
+            style.theme_use("clam")
+        style.configure(
+            "Baluffo.Helper.Horizontal.TProgressbar",
+            troughcolor=tokens["track"],
+            background=tokens["accent"],
+            bordercolor=tokens["panel_border"],
+            lightcolor=tokens["accent"],
+            darkcolor=tokens["accent_active"],
+            thickness=10,
+        )
+
+        shell = tk.Frame(
+            root,
+            bg=tokens["shell_bg"],
+            highlightthickness=1,
+            highlightbackground=tokens["panel_border"],
+            bd=0,
+            padx=18,
+            pady=16,
+        )
+        shell.pack(fill="both", expand=True, padx=12, pady=12)
+        brand = tk.Label(
+            shell,
+            text=layout["brandText"],
+            bg=tokens["shell_bg"],
+            fg=tokens["accent"],
+            font=("Segoe UI", 9, "bold"),
+            anchor="w",
+        )
+        brand.pack(fill="x")
+        panel = tk.Frame(
+            shell,
+            bg=tokens["panel_bg"],
+            highlightthickness=1,
+            highlightbackground=tokens["panel_border"],
+            bd=0,
+            padx=16,
+            pady=14,
+        )
+        panel.pack(fill="both", expand=True, pady=(10, 0))
+        title = tk.Label(
+            panel,
+            text=layout["titleText"],
+            bg=tokens["panel_bg"],
+            fg=tokens["title_fg"],
+            font=("Segoe UI Semibold", 12),
+            anchor="w",
+            justify="left",
+        )
+        title.pack(fill="x")
+        message_var = tk.StringVar(value=layout["initialMessage"])
+        detail = tk.Label(
+            panel,
+            textvariable=message_var,
+            bg=tokens["panel_bg"],
+            fg=tokens["text_fg"],
+            font=("Segoe UI", 10),
+            anchor="w",
+            justify="left",
+            wraplength=340,
+            pady=0,
+        )
+        detail.pack(fill="x", pady=(10, 0))
+        support = tk.Label(
+            panel,
+            text=layout["supportText"],
+            bg=tokens["panel_bg"],
+            fg=tokens["muted_fg"],
+            font=("Segoe UI", 9),
+            anchor="w",
+            justify="left",
+            wraplength=340,
+        )
+        support.pack(fill="x", pady=(8, 0))
+        bar = ttk.Progressbar(
+            panel,
+            mode="indeterminate",
+            length=320,
+            style="Baluffo.Helper.Horizontal.TProgressbar",
+        )
         bar.pack(fill="x", expand=True, pady=(14, 0))
         bar.start(12)
         root.update_idletasks()
-        width = root.winfo_width() or 320
-        height = root.winfo_height() or 110
+        width = max(root.winfo_width() or 0, int(layout["size"]["width"]))
+        height = max(root.winfo_height() or 0, int(layout["size"]["height"]))
         screen_width = root.winfo_screenwidth()
         screen_height = root.winfo_screenheight()
         offset_x = max(0, int((screen_width - width) / 2))
@@ -109,19 +243,18 @@ class HelperProgressWindow:
         root.geometry(f"{width}x{height}+{offset_x}+{offset_y}")
 
         def drain() -> None:
-            while True:
-                try:
-                    kind, payload = self._queue.get_nowait()
-                except queue.Empty:
-                    break
-                if kind == "close":
-                    with contextlib.suppress(Exception):
-                        bar.stop()
-                    self._closed.set()
-                    root.destroy()
-                    return
-                if kind == "message" and payload:
-                    message_var.set(payload)
+            def stop_bar() -> None:
+                with contextlib.suppress(Exception):
+                    bar.stop()
+
+            should_close = _drain_helper_queue(
+                self,
+                on_message=message_var.set,
+                on_close=stop_bar,
+            )
+            if should_close:
+                root.destroy()
+                return
             root.after(120, drain)
 
         root.after(120, drain)

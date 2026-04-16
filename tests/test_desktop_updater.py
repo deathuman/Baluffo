@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 from urllib import error as urllib_error
 
@@ -71,6 +72,82 @@ def test_helper_diagnostics_path_prefers_plan_field() -> None:
         resolved = updater._helper_diagnostics_path_for_plan(plan_path)
 
         assert resolved == diag_path.resolve()
+
+
+def test_helper_window_layout_uses_baluffo_dark_tokens() -> None:
+    layout = updater._helper_window_layout("  ")
+
+    assert layout["brandText"] == "Baluffo Update"
+    assert layout["titleText"] == "Installing the latest portable build"
+    assert layout["supportText"] == "Baluffo can stay closed while the update finishes."
+    assert layout["initialMessage"] == "Preparing update"
+    assert layout["size"] == {"width": 420, "height": 188}
+    assert layout["tokens"]["window_bg"] == "#17141f"
+    assert layout["tokens"]["accent"] == "#bb86fc"
+    assert layout["tokens"]["panel_border"] == "#3d3550"
+
+
+def test_drain_helper_queue_forwards_messages_and_close() -> None:
+    progress = updater.HelperProgressWindow()
+    progress._closed = mock.Mock(wait=mock.Mock(return_value=True), set=mock.Mock())
+    close_window = mock.Mock()
+    messages: list[str] = []
+
+    progress.start(" ")
+    progress.update("Extracting portable build")
+    progress.close()
+
+    should_close = updater._drain_helper_queue(
+        progress,
+        on_message=messages.append,
+        on_close=close_window,
+    )
+
+    assert should_close is True
+    assert messages == ["Preparing update", "Extracting portable build"]
+    close_window.assert_called_once_with()
+    progress._closed.wait.assert_called_once_with(timeout=2.0)
+    progress._closed.set.assert_called_once_with()
+
+
+def test_main_failure_path_still_uses_native_error_message(monkeypatch) -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        plan_path = Path(tmp) / "install-plan.json"
+        plan_path.write_text("{}", encoding="utf-8")
+        show_message = mock.Mock()
+
+        class ImmediateThread:
+            def __init__(self, *, target, daemon, name) -> None:
+                self._target = target
+
+            def start(self) -> None:
+                self._target()
+
+            def join(self) -> None:
+                return None
+
+        monkeypatch.setattr(
+            updater,
+            "parse_args",
+            lambda argv=None: SimpleNamespace(install_plan=str(plan_path)),
+        )
+        monkeypatch.setattr(updater, "_show_message", show_message)
+        monkeypatch.setattr(
+            updater,
+            "HelperProgressWindow",
+            mock.Mock(return_value=mock.Mock(run=mock.Mock(), close=mock.Mock())),
+        )
+        monkeypatch.setattr(
+            updater,
+            "run_install",
+            mock.Mock(side_effect=RuntimeError("boom during install")),
+        )
+        monkeypatch.setattr(updater.threading, "Thread", ImmediateThread)
+
+        result = updater.main([])
+
+        assert result == 1
+        show_message.assert_called_once_with("Baluffo Update Failed", "boom during install")
 
 
 def test_recover_interrupted_install_restores_runtime_snapshot_and_backup(monkeypatch) -> None:
