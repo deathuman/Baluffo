@@ -162,6 +162,25 @@ def test_get_app_version_honors_env_override(monkeypatch: pytest.MonkeyPatch) ->
     assert app_version.get_app_version() == "0.0.9"
 
 
+def test_write_json_atomic_retries_transient_permission_error() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        target = Path(tmp) / "portable" / "ship" / "data" / "updater" / "install-state.json"
+        calls = {"count": 0}
+        original_replace = du.os.replace
+
+        def flaky_replace(src, dst):  # noqa: ANN001
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise PermissionError(32, "sharing violation")
+            return original_replace(src, dst)
+
+        with mock.patch.object(du.os, "replace", side_effect=flaky_replace):
+            du.write_json_atomic(target, {"ok": True})
+
+        assert json.loads(target.read_text(encoding="utf-8"))["ok"] is True
+        assert calls["count"] == 2
+
+
 def test_resolve_github_api_base_honors_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(du.GITHUB_API_BASE_ENV, "http://127.0.0.1:9000/api/")
 

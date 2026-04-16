@@ -549,6 +549,23 @@ def test_packaged_pipeline_smoke_mode_is_enabled_only_for_jobs_pipeline_script()
     assert smoke.packaged_runtime_env_overrides(smoke.DEFAULT_NODE_SMOKE_SCRIPT) == {}
 
 
+def test_packaged_runtime_env_overrides_can_isolate_local_appdata_per_run() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        artifacts_dir = Path(tmp) / "artifacts"
+        overrides = smoke.packaged_runtime_env_overrides(
+            smoke.JOBS_PIPELINE_NODE_SMOKE_SCRIPT,
+            artifacts_dir=artifacts_dir,
+            session_scope="jobs-pipeline",
+        )
+
+        assert overrides["BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE"] == "stub-success"
+        assert Path(overrides["LOCALAPPDATA"]).resolve() == (
+            smoke.packaged_desktop_local_appdata_root(
+                artifacts_dir, session_scope="jobs-pipeline"
+            ).resolve()
+        )
+
+
 def test_classify_subprocess_error_marks_spawn_eperm() -> None:
     error = PermissionError("spawn EPERM")
     assert smoke.classify_subprocess_error(error) == "node_process_spawn_blocked"
@@ -724,6 +741,85 @@ def test_run_packaged_smoke_writes_success_report_and_artifacts() -> None:
         stderr_handle.close.assert_called_once()
 
 
+def test_run_packaged_smoke_uses_artifact_local_session_root_even_when_global_session_exists() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        process = mock.Mock()
+        process.pid = 999
+        process.poll.return_value = None
+        stdout_handle = mock.Mock()
+        stderr_handle = mock.Mock()
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--node-smoke-script",
+                str(smoke.JOBS_PIPELINE_NODE_SMOKE_SCRIPT),
+            ]
+        )
+        global_local_app_data = root / "global-localappdata"
+        global_session_root = smoke.desktop_update_mod.resolve_desktop_session_root(
+            {"LOCALAPPDATA": str(global_local_app_data)}
+        )
+        (global_session_root / smoke.DESKTOP_SESSION_STATE_FILE).write_text(
+            json.dumps({"bridgePort": 8877, "dataDir": str(root / "stale-data")}),
+            encoding="utf-8",
+        )
+        captured_env: dict[str, str] = {}
+
+        def fake_launch_packaged_exe(*args, **kwargs):  # noqa: ANN002, ANN003
+            captured_env.update(kwargs.get("env") or {})
+            return process, stdout_handle, stderr_handle
+
+        with (
+            mock.patch.dict(os.environ, {"LOCALAPPDATA": str(global_local_app_data)}, clear=False),
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(smoke, "launch_packaged_exe", side_effect=fake_launch_packaged_exe),
+            mock.patch.object(
+                smoke,
+                "wait_for_packaged_runtime",
+                return_value={
+                    "health": {"ok": True},
+                    "session": {"ok": True},
+                    "startupMetrics": [],
+                },
+            ),
+            mock.patch.object(smoke, "capture_runtime_snapshot", return_value={}),
+            mock.patch.object(
+                smoke,
+                "run_packaged_node_smoke",
+                return_value={
+                    "exitCode": 0,
+                    "reportPath": str(artifacts_dir / "smoke-report.json"),
+                    "outputDir": str(artifacts_dir / "smoke-output"),
+                    "scenarios": [],
+                    "failureCategory": "",
+                    "runnerError": "",
+                    "environment": {"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False},
+                },
+            ),
+            mock.patch.object(smoke, "terminate_process_tree"),
+        ):
+            payload = smoke.run_packaged_smoke(args)
+
+        assert payload["ok"] is True
+        assert Path(captured_env["LOCALAPPDATA"]).resolve() == (
+            smoke.packaged_desktop_local_appdata_root(
+                artifacts_dir, session_scope="runtime"
+            ).resolve()
+        )
+        assert Path(captured_env["LOCALAPPDATA"]).resolve() != global_local_app_data.resolve()
+        assert captured_env["BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE"] == "stub-success"
+
+
 def test_run_packaged_smoke_can_run_desktop_update_rehearsal_mode() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -777,6 +873,47 @@ def test_run_packaged_smoke_can_run_desktop_update_rehearsal_mode() -> None:
         rehearsal_mock.assert_called_once()
         saved = json.loads(report_path.read_text(encoding="utf-8"))
         assert saved["ok"] is True
+
+
+def test_wait_for_relaunched_runtime_prefers_explicit_session_env_over_global_state() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        expected_data_dir = root / "portable" / "ship" / "data"
+        expected_data_dir.mkdir(parents=True, exist_ok=True)
+        global_env = {"LOCALAPPDATA": str(root / "global-localappdata")}
+        global_session_root = smoke.desktop_update_mod.resolve_desktop_session_root(global_env)
+        (global_session_root / smoke.DESKTOP_SESSION_STATE_FILE).write_text(
+            json.dumps({"bridgePort": 8877, "dataDir": str(root / "wrong-data")}),
+            encoding="utf-8",
+        )
+        run_env = {"LOCALAPPDATA": str(root / "run-localappdata")}
+        run_session_root = smoke.desktop_update_mod.resolve_desktop_session_root(run_env)
+        (run_session_root / smoke.DESKTOP_SESSION_STATE_FILE).write_text(
+            json.dumps({"bridgePort": 4567, "dataDir": str(expected_data_dir)}),
+            encoding="utf-8",
+        )
+
+        with (
+            mock.patch.dict(os.environ, global_env, clear=False),
+            mock.patch.object(
+                smoke,
+                "fetch_json",
+                return_value={
+                    "desktopMode": True,
+                    "startupReady": True,
+                    "appVersion": "0.1.22",
+                },
+            ) as fetch_mock,
+        ):
+            relaunched = smoke._wait_for_relaunched_runtime(
+                expected_data_dir=expected_data_dir,
+                expected_version="0.1.22",
+                timeout_s=0.1,
+                env=run_env,
+            )
+
+        assert relaunched["session"]["bridgePort"] == 4567
+        fetch_mock.assert_called_once_with("http://127.0.0.1:4567/ops/health", timeout_s=5.0)
 
 
 def test_assert_desktop_update_helper_succeeded_rejects_failed_helper_stdout() -> None:

@@ -87,6 +87,9 @@ EMBEDDED_PAGE_PROBES = (
     },
     {"name": "Embedded Admin Ready", "openPath": "admin.html", "requiredEvents": ("admin_ready",)},
 )
+DESKTOP_SESSION_STATE_FILE = "desktop-session.json"
+DESKTOP_INSTANCE_LOCK_FILE = "desktop-instance.lock"
+DESKTOP_BROWSER_PROFILE_DIR = "desktop-browser-profile"
 
 
 def startup_profile_required_events(page: str) -> tuple[str, ...]:
@@ -291,6 +294,36 @@ def write_text(path: Path, text: str) -> None:
     path.write_text(str(text or ""), encoding="utf-8")
 
 
+def packaged_desktop_local_appdata_root(artifacts_dir: Path, *, session_scope: str = "runtime") -> Path:
+    base = Path(artifacts_dir).expanduser().resolve() / "desktop-localappdata"
+    return base / slugify_token(session_scope)
+
+
+def packaged_desktop_session_paths(env: dict[str, str] | None = None) -> dict[str, Path]:
+    env_map = env if env is not None else os.environ
+    session_root = desktop_update_mod.resolve_desktop_session_root(env_map)
+    return {
+        "localAppData": Path(str(env_map.get("LOCALAPPDATA") or "")).expanduser().resolve(),
+        "sessionRoot": session_root,
+        "sessionState": session_root / DESKTOP_SESSION_STATE_FILE,
+        "instanceLock": session_root / DESKTOP_INSTANCE_LOCK_FILE,
+        "browserProfile": session_root / DESKTOP_BROWSER_PROFILE_DIR,
+    }
+
+
+def clear_packaged_desktop_session_state(env: dict[str, str] | None = None) -> None:
+    env_map = env if env is not None else {}
+    local_app_data = str(env_map.get("LOCALAPPDATA") or "").strip()
+    if not local_app_data:
+        return
+    paths = packaged_desktop_session_paths(env_map)
+    with contextlib.suppress(OSError):
+        paths["sessionState"].unlink()
+    with contextlib.suppress(OSError):
+        paths["instanceLock"].unlink()
+    shutil.rmtree(paths["browserProfile"], ignore_errors=True)
+
+
 def is_windows_process_elevated() -> bool:
     if os.name != "nt":
         return False
@@ -366,6 +399,7 @@ def collect_packaged_smoke_env_diagnostics(
         "nodeCommand": node_cmd,
         "nodePath": str(node_cmd[0]) if node_cmd else "",
         "nodeSmokeScript": str(node_smoke_script),
+        "localAppData": str(env_map.get("LOCALAPPDATA") or ""),
         "tmp": str(env_map.get("TMP") or ""),
         "temp": str(env_map.get("TEMP") or ""),
         "isElevated": is_windows_process_elevated(),
@@ -409,11 +443,24 @@ def packaged_pipeline_smoke_mode(node_smoke_script: Path) -> str:
     return ""
 
 
-def packaged_runtime_env_overrides(node_smoke_script: Path) -> dict[str, str]:
-    mode = packaged_pipeline_smoke_mode(node_smoke_script)
-    if not mode:
-        return {}
-    return {"BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE": mode}
+def packaged_runtime_env_overrides(
+    node_smoke_script: Path | None = None,
+    *,
+    artifacts_dir: Path | None = None,
+    session_scope: str = "runtime",
+) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    if node_smoke_script is not None:
+        mode = packaged_pipeline_smoke_mode(node_smoke_script)
+        if mode:
+            overrides["BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE"] = mode
+    if artifacts_dir is not None:
+        local_app_data = packaged_desktop_local_appdata_root(
+            artifacts_dir, session_scope=session_scope
+        )
+        local_app_data.mkdir(parents=True, exist_ok=True)
+        overrides["LOCALAPPDATA"] = str(local_app_data)
+    return overrides
 
 
 def ensure_portable_exe(
@@ -683,6 +730,11 @@ def run_embedded_runtime_probe(
     stdout_handle = None
     stderr_handle = None
     started = time.perf_counter()
+    runtime_env = dict(env or os.environ)
+    runtime_env.update(
+        packaged_runtime_env_overrides(artifacts_dir=probe_dir, session_scope="runtime")
+    )
+    clear_packaged_desktop_session_state(runtime_env)
     try:
         process, stdout_handle, stderr_handle = launch_packaged_exe(
             exe_path,
@@ -693,7 +745,7 @@ def run_embedded_runtime_probe(
             stderr_path=stderr_path,
             open_path=str(probe.get("openPath") or "jobs.html"),
             startup_probe=startup_probe,
-            env=env,
+            env=runtime_env,
         )
         wait_for_packaged_runtime(
             process,
@@ -867,13 +919,19 @@ def build_failure_payload(
 def run_warmup_launch(
     exe_path: Path,
     *,
+    artifacts_root: Path,
     open_path: str,
     runtime_timeout_s: float,
     startup_probe: bool,
     env: dict[str, str] | None = None,
 ) -> None:
-    warmup_root = DEFAULT_ARTIFACT_ROOT / "warmup"
+    warmup_root = Path(artifacts_root).expanduser().resolve() / "warmup"
     warmup_root.mkdir(parents=True, exist_ok=True)
+    runtime_env = dict(env or os.environ)
+    runtime_env.update(
+        packaged_runtime_env_overrides(artifacts_dir=warmup_root, session_scope="runtime")
+    )
+    clear_packaged_desktop_session_state(runtime_env)
     process = None
     stdout_handle = None
     stderr_handle = None
@@ -891,7 +949,7 @@ def run_warmup_launch(
             stderr_path=warmup_root / "desktop-exe.stderr.log",
             open_path=open_path,
             startup_probe=startup_probe,
-            env=env,
+            env=runtime_env,
         )
         wait_for_packaged_runtime(
             process,
@@ -1097,8 +1155,9 @@ def _wait_for_relaunched_runtime(
     expected_data_dir: Path,
     expected_version: str,
     timeout_s: float,
+    env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    session_root = desktop_update_mod.resolve_desktop_session_root()
+    session_root = desktop_update_mod.resolve_desktop_session_root(env)
     session_path = session_root / "desktop-session.json"
     deadline = time.monotonic() + max(10.0, float(timeout_s))
     last_health: dict[str, Any] = {}
@@ -1291,7 +1350,13 @@ def run_desktop_update_rehearsal(
                 "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON": json.dumps({key_id: public_key_b64}),
             }
         )
+        runtime_env.update(
+            packaged_runtime_env_overrides(
+                artifacts_dir=artifacts_dir, session_scope="desktop-update-rehearsal"
+            )
+        )
         runtime_env.update(_preferred_desktop_browser_env())
+        clear_packaged_desktop_session_state(runtime_env)
         initial_site_port = choose_free_port()
         initial_bridge_port = choose_free_port()
         stdout_path = artifacts_dir / "desktop-update-rehearsal.stdout.log"
@@ -1375,8 +1440,8 @@ def run_desktop_update_rehearsal(
         )
         if status_code != 200:
             raise RuntimeError(f"Update install handoff could not start: {install_payload}")
-        session_root = desktop_update_mod.resolve_desktop_session_root()
-        session_state_path = session_root / "desktop-session.json"
+        session_root = desktop_update_mod.resolve_desktop_session_root(runtime_env)
+        session_state_path = session_root / DESKTOP_SESSION_STATE_FILE
         with contextlib.suppress(OSError):
             session_state_path.unlink()
         _wait_for_process_exit(process, timeout_s=max(20.0, runtime_timeout_s))
@@ -1384,6 +1449,7 @@ def run_desktop_update_rehearsal(
             expected_data_dir=data_dir,
             expected_version=desktop_update_mod.get_app_version(),
             timeout_s=max(45.0, runtime_timeout_s),
+            env=runtime_env,
         )
         _verify_rehearsal_local_data(data_dir, seeded)
         relaunch_session = (
@@ -1472,13 +1538,17 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     node_smoke_script = (
         Path(args.node_smoke_script or DEFAULT_NODE_SMOKE_SCRIPT).expanduser().resolve()
     )
-    runtime_env = os.environ.copy()
-    runtime_env.update(packaged_runtime_env_overrides(node_smoke_script))
-    startup_page = Path(open_path).stem or "jobs"
-
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     runtime_data_dir.mkdir(parents=True, exist_ok=True)
     embedded_artifacts_dir.mkdir(parents=True, exist_ok=True)
+    runtime_env = os.environ.copy()
+    runtime_env.update(
+        packaged_runtime_env_overrides(
+            node_smoke_script, artifacts_dir=artifacts_dir, session_scope="runtime"
+        )
+    )
+    clear_packaged_desktop_session_state(runtime_env)
+    startup_page = Path(open_path).stem or "jobs"
     requested_exe_path = Path(args.exe_path or DEFAULT_EXE_PATH).expanduser().resolve()
     rebuild_output_dir = (
         artifacts_dir / "portable-build"
@@ -1523,6 +1593,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             exe_path=exe_path,
             node_smoke_script=node_smoke_script,
             rebuilt_portable_dir=rebuild_output_dir,
+            env=runtime_env,
         )
         if bool(args.desktop_update_rehearsal):
             rehearsal = run_desktop_update_rehearsal(
@@ -1551,6 +1622,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
         if profile_mode == "warm":
             run_warmup_launch(
                 exe_path,
+                artifacts_root=artifacts_dir,
                 open_path=open_path,
                 runtime_timeout_s=float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S),
                 startup_probe=startup_probe,
