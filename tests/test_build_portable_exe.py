@@ -22,11 +22,32 @@ pytestmark = pytest.mark.packaging
 
 def test_portable_layout_wraps_ship_bundle_in_ship_folder() -> None:
     with workspace_tmpdir("build-portable-exe") as tmp:
+        def fake_build_bundle(output_dir: Path, version: str) -> Path:
+            ship_root = Path(output_dir)
+            version_root = ship_root / "app" / "versions" / version
+            tooling_root = ship_root / "src" / "ship"
+            (version_root / "src" / "ship").mkdir(parents=True, exist_ok=True)
+            tooling_root.mkdir(parents=True, exist_ok=True)
+            (ship_root / "app").mkdir(parents=True, exist_ok=True)
+            (ship_root / "run-site.ps1").write_text("", encoding="utf-8")
+            (ship_root / "app" / "current.txt").write_text(f"{version}\n", encoding="utf-8")
+            (version_root / "src" / "ship" / "runtime_launcher.py").write_text(
+                "# runtime launcher\n",
+                encoding="utf-8",
+            )
+            (version_root / "src" / "ship" / "desktop_update.py").write_text(
+                "# desktop update\n",
+                encoding="utf-8",
+            )
+            (tooling_root / "runtime_launcher.py").write_text("# runtime launcher\n", encoding="utf-8")
+            (tooling_root / "desktop_update.py").write_text("# desktop update\n", encoding="utf-8")
+            return ship_root
+
         with mock.patch.object(
             build_ship_bundle,
             "_resolve_packaged_sync_config",
             return_value=build_ship_bundle.PACKAGED_SYNC_CONFIG_TEMPLATE_PATH,
-        ):
+        ), mock.patch("scripts.build_portable_exe.build_bundle", side_effect=fake_build_bundle):
             output = build_portable_layout(Path(tmp) / "dist" / "baluffo-portable", "9.9.9")
         assert (output / "ship" / "app" / "current.txt").exists()
         assert (output / "ship" / "run-site.ps1").exists()

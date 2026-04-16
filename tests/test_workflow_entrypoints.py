@@ -105,6 +105,17 @@ def test_package_json_packaged_smoke_scripts_use_direct_dist_by_default(repo_roo
     )
 
 
+def test_package_json_perf_scripts_reuse_existing_perf_entrypoints(repo_root: Path) -> None:
+    package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
+    scripts = package["scripts"]
+    assert scripts["perf:py:timing"] == "npm run test:py:timing"
+    assert scripts["perf:discovery:benchmark"] == (
+        "npm run check:python-version && python src/discovery_sanity_benchmark.py"
+    )
+    assert scripts["perf:startup:cold"] == "npm run probe:desktop:startup:cold"
+    assert scripts["perf:startup:warm"] == "npm run probe:desktop:startup:warm"
+
+
 def test_dev_pipeline_targeted_npm_entrypoint_starts_without_relative_import_failure(
     repo_root: Path, tmp_path: Path
 ) -> None:

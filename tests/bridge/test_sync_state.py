@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from src.bridge.sync_state import SYNC_STATUS, SyncState
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 def test_sync_state_persists_runtime_status_fields() -> None:
-    with TemporaryDirectory() as tmp:
-        data_dir = Path(tmp)
+    with workspace_tmpdir("sync-state") as data_dir:
         state = SyncState(data_dir=data_dir)
 
         before = state.load_sync_runtime_state()

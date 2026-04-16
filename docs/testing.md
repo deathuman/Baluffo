@@ -38,6 +38,8 @@ Run a quick timing sanity check (prints the slowest tests at the end):
 npm run test:py:timing
 ```
 
+This timing lane also uses the repo-local pytest temp root under `.tmp/pytest`, so Windows temp-root ACL issues do not push perf triage into `%LOCALAPPDATA%\\Temp`.
+
 Notes:
 - `--durations=25` prints the 25 slowest tests.
 - `--durations-min=0.2` only prints tests slower than 0.2s (adjust as needed).
@@ -47,6 +49,22 @@ If you want a full per-test breakdown once (noisy):
 ```bash
 python -m pytest tests -q --durations=0 --color=no
 ```
+
+## Performance checks
+
+Use the repo-native perf entrypoints before adding new benchmark tooling:
+
+| Goal | Command | Output location |
+|------|---------|-----------------|
+| Slowest Python tests | `npm run perf:py:timing` | Console output only |
+| Isolated discovery sanity benchmark | `npm run perf:discovery:benchmark` | `_out/perf-sanity-discovery/` |
+| Packaged desktop cold startup probe | `npm run perf:startup:cold` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
+| Packaged desktop warm startup probe | `npm run perf:startup:warm` | `.tmp/packaged-desktop-smoke/` and `data/packaged-desktop-smoke-report.json` |
+
+Notes:
+- Prefer repo-local artifact roots such as `.tmp/` and `_out/` for new perf workflows; avoid `%LOCALAPPDATA%\\Temp` for benchmark or runtime-state outputs in this Windows-first repo.
+- `npm run perf:discovery:benchmark` is the default discovery perf entrypoint because it keeps artifacts under `_out/`; use `python scripts/benchmark_discovery_probe.py` separately when tuning discovery probe concurrency.
+- Do not add `pytest-benchmark` or `py-spy` by default here. If dependency approval happens later, benchmark deterministic Python leaf logic first and keep desktop startup analysis on the existing startup-trace pipeline.
 
 ## Test layout and fixtures
 
@@ -66,6 +84,9 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Build portable EXE | `npm run build:portable-exe` |
 | Ship bundle leaf builder | `python scripts/build_ship_bundle.py --bundle-version <version>` |
 | Portable EXE leaf builder | `python scripts/build_portable_exe.py --bundle-version <version>` |
+| Python perf timing | `npm run perf:py:timing` |
+| Discovery perf sanity | `npm run perf:discovery:benchmark` |
+| Packaged startup perf probe (cold/warm) | `npm run perf:startup:cold` / `npm run perf:startup:warm` |
 | Packaged desktop smoke gate | `npm run test:frontend:packaged` |
 | Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
 | Packaged desktop updater rehearsal | `npm run test:frontend:packaged:update-rehearsal` |
@@ -190,6 +211,7 @@ python -m pytest tests -q -m "not slow" --cov=src --cov-report=term-missing --co
 ## Which command should I run?
 
 - Small Python logic change: `npm run test:py`
+- Perf-sensitive backend or packaging change: `npm run perf:py:timing`, then the nearest discovery/startup perf lane if relevant
 - Before pushing to `main` or preparing a release: `npm run test:py:extended`
 - Before merging a broad or risky backend change: `npm run test:py:extended` or `npm run verify`
 - JavaScript/frontend unit change: `npm run test:unit`

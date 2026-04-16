@@ -1,9 +1,11 @@
 import json
+import shutil
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
+from scripts import build_ship_bundle
 from scripts.build_ship_bundle import STARTUP_PREVIEW_LIMIT, build_bundle
 from src.app_version import APP_VERSION
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -29,6 +31,29 @@ def _build_with_temp_packaged_config(
         mock.patch.dict("os.environ", env or {}, clear=False),
     ):
         return build_bundle(temp_root / "dist" / "baluffo-ship", "1.2.3")
+
+
+def _copy_minimal_app_version(version_dir: Path) -> None:
+    packaged_sync_config = build_ship_bundle._resolve_packaged_sync_config()
+    desktop_update_repo = build_ship_bundle._resolve_desktop_update_repo()
+    rows = [{"title": f"Role {index}", "company": "Studio"} for index in range(300)]
+
+    (version_dir / "src").mkdir(parents=True, exist_ok=True)
+    (version_dir / "packaging").mkdir(parents=True, exist_ok=True)
+    (version_dir / "data").mkdir(parents=True, exist_ok=True)
+    (version_dir / "src" / "admin_bridge.py").write_text("# test stub\n", encoding="utf-8")
+    (version_dir / "data" / "jobs-unified-light.json").write_text(
+        json.dumps(rows, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    build_ship_bundle._generate_startup_preview(version_dir / "data")
+    if packaged_sync_config is not None:
+        shutil.copy2(packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json")
+    if desktop_update_repo:
+        (version_dir / "packaging" / build_ship_bundle.DESKTOP_UPDATE_CONFIG_FILE).write_text(
+            json.dumps({"repo": desktop_update_repo}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
 
 def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
@@ -150,7 +175,11 @@ def test_bundle_generates_capped_startup_preview() -> None:
             ),
             encoding="utf-8",
         )
-        output = _build_with_temp_packaged_config(tmp)
+        with (
+            mock.patch("scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version),
+            mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
+        ):
+            output = _build_with_temp_packaged_config(tmp)
         startup_rows = json.loads(
             (
                 output / "app" / "versions" / "1.2.3" / "data" / "jobs-unified-startup.json"
@@ -175,6 +204,8 @@ def test_bundle_generates_packaged_sync_config_from_build_env() -> None:
                 return_value=[],
             ),
             mock.patch("scripts.build_ship_bundle._validate_private_key_pem"),
+            mock.patch("scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version),
+            mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
         ):
             output = _build_with_temp_packaged_config(
                 tmp,
@@ -217,14 +248,18 @@ def test_bundle_embeds_desktop_update_public_keys_from_build_env() -> None:
             ),
             encoding="utf-8",
         )
-        output = _build_with_temp_packaged_config(
-            tmp,
-            env={
-                "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON": json.dumps(
-                    {"desktop-ed25519-2026-01": "cHVibGljLWtleS1iYXNlNjQ="}
-                )
-            },
-        )
+        with (
+            mock.patch("scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version),
+            mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
+        ):
+            output = _build_with_temp_packaged_config(
+                tmp,
+                env={
+                    "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON": json.dumps(
+                        {"desktop-ed25519-2026-01": "cHVibGljLWtleS1iYXNlNjQ="}
+                    )
+                },
+            )
         bundled_payload = json.loads(
             (output / "app" / "desktop-update-public-keys.json").read_text(encoding="utf-8")
         )
@@ -260,10 +295,14 @@ def test_bundle_writes_desktop_update_repo_config_from_build_env() -> None:
             ),
             encoding="utf-8",
         )
-        output = _build_with_temp_packaged_config(
-            tmp,
-            env={"BALUFFO_DESKTOP_UPDATE_REPO": "owner/app-release"},
-        )
+        with (
+            mock.patch("scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version),
+            mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
+        ):
+            output = _build_with_temp_packaged_config(
+                tmp,
+                env={"BALUFFO_DESKTOP_UPDATE_REPO": "owner/app-release"},
+            )
         bundled_payload = json.loads(
             (
                 output / "app" / "versions" / "1.2.3" / "packaging" / "desktop-update-config.json"
@@ -316,10 +355,14 @@ def test_bundle_restores_packaged_sync_config_from_local_env_path() -> None:
             "privateKeyPemEnc": "ciphertext",
         }
         source_config_path.write_text(json.dumps(source_payload), encoding="utf-8")
-        output = _build_with_temp_packaged_config(
-            tmp,
-            env={"BALUFFO_SYNC_BUILD_CONFIG_PATH": str(source_config_path)},
-        )
+        with (
+            mock.patch("scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version),
+            mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
+        ):
+            output = _build_with_temp_packaged_config(
+                tmp,
+                env={"BALUFFO_SYNC_BUILD_CONFIG_PATH": str(source_config_path)},
+            )
         bundled_config_path = (
             output / "app" / "versions" / "1.2.3" / "packaging" / "github-app-sync-config.json"
         )
@@ -346,9 +389,15 @@ def test_bundle_derives_desktop_update_repo_from_git_remote() -> None:
             ),
             encoding="utf-8",
         )
-        with mock.patch(
-            "scripts.build_ship_bundle.subprocess.run",
-            return_value=mock.Mock(returncode=0, stdout="https://github.com/example/Baluffo.git\n"),
+        with (
+            mock.patch(
+                "scripts.build_ship_bundle.subprocess.run",
+                return_value=mock.Mock(
+                    returncode=0, stdout="https://github.com/example/Baluffo.git\n"
+                ),
+            ),
+            mock.patch("scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version),
+            mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
         ):
             output = _build_with_temp_packaged_config(tmp)
         bundled_payload = json.loads(

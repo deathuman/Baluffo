@@ -759,6 +759,11 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
         mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
         mock.patch.object(
             desktop_app,
+            "wait_for_desktop_startup_ready",
+            return_value={"appVersion": APP_VERSION},
+        ),
+        mock.patch.object(
+            desktop_app,
             "launch_browser_for_url",
             return_value={
                 "mode": "chromium-app",
@@ -827,6 +832,11 @@ def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> 
         ),
         mock.patch.object(desktop_app, "wait_for_url"),
         mock.patch.object(desktop_app, "wait_for_baluffo_bridge"),
+        mock.patch.object(
+            desktop_app,
+            "wait_for_desktop_startup_ready",
+            return_value={"appVersion": APP_VERSION},
+        ),
         mock.patch.object(desktop_app, "launch_browser_for_url") as launch_browser_mock,
         mock.patch.object(desktop_app, "save_session_state") as save_mock,
         mock.patch.object(
@@ -882,6 +892,11 @@ def test_launch_desktop_app_spawns_update_helper_from_launcher_on_install_reques
         ),
         mock.patch.object(desktop_app, "wait_for_url"),
         mock.patch.object(desktop_app, "wait_for_baluffo_bridge"),
+        mock.patch.object(
+            desktop_app,
+            "wait_for_desktop_startup_ready",
+            return_value={"appVersion": APP_VERSION},
+        ),
         mock.patch.object(
             desktop_app,
             "launch_browser_for_url",
@@ -940,6 +955,11 @@ def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_ex
         ),
         mock.patch.object(desktop_app, "wait_for_url"),
         mock.patch.object(desktop_app, "wait_for_baluffo_bridge"),
+        mock.patch.object(
+            desktop_app,
+            "wait_for_desktop_startup_ready",
+            return_value={"appVersion": APP_VERSION},
+        ),
         mock.patch.object(
             desktop_app,
             "launch_browser_for_url",

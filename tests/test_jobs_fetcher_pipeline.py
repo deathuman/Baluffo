@@ -6,6 +6,7 @@ from unittest import mock
 
 import pytest
 
+from src.jobs.adapters import static as static_adapter
 from src.jobs.pipeline_runtime import PipelineTaskRuntime, make_task_state_writer
 from tests.jobs_fetcher_helpers import (
     _fixture,
@@ -477,76 +478,50 @@ def test_pipeline_default_source_loader_contract_excludes_wellfound_and_keeps_co
 @pytest.mark.integration
 def test_pipeline_default_source_mix_smoke_excludes_wellfound_and_includes_guerrilla() -> None:
     google_csv = _fixture("google_sheets.csv")
-    remote_json = _fixture("remoteok.json")
+    remote_json = _fixture_json("remoteok.json")
     gamesindustry_html = _fixture("gamesindustry_jobs.html")
     gamejobs_html = _fixture("gamejobs.html")
     workwithindies_html = _fixture("workwithindies.html")
     eightbitplay_html = _fixture("8bitplay_jobs.html")
     gracklehq_html = _fixture("gracklehq_jobs.html")
-    greenhouse_json = _fixture("greenhouse_guerrilla_jobs.json")
-    greenhouse_playstation_json = _fixture("greenhouse_playstation_jobs.json")
+    greenhouse_json = _fixture_json("greenhouse_guerrilla_jobs.json")
+    greenhouse_playstation_json = _fixture_json("greenhouse_playstation_jobs.json")
     teamtailor_listing = _fixture("teamtailor_listing.html")
-    teamtailor_job = _fixture("teamtailor_job.html")
     littlechicken_listing = _fixture("littlechicken_jobs_page.html")
     littlechicken_detail = _fixture("littlechicken_job_detail.html")
-    lever_json = _fixture("lever_jobs.json")
-    smart_json = _fixture("smartrecruiters_jobs.json")
-    workable_json = _fixture("workable_jobs.json")
+    lever_json = _fixture_json("lever_jobs.json")
+    smart_json = _fixture_json("smartrecruiters_jobs.json")
+    workable_json = _fixture_json("workable_jobs.json")
     ashby_html = _fixture("ashby_jobs.html")
-    recruitee_json = _fixture("recruitee_jobs.json")
-    pinpoint_json = _fixture("pinpoint_jobs.json")
+    recruitee_json = _fixture_json("recruitee_jobs.json")
+    pinpoint_json = _fixture_json("pinpoint_jobs.json")
     breezy_html = _fixture("breezy_jobs.html")
     jazzhr_html = _fixture("jazzhr_jobs.html")
     personio_xml = _fixture("personio_feed.xml")
+    littlechicken_source = {
+        "name": "Little Chicken (Manual Website)",
+        "studio": "Little Chicken",
+        "adapter": "static",
+        "company": "Little Chicken",
+        "pages": ["https://www.littlechicken.nl/jobs/"],
+        "enabledByDefault": True,
+        "id": "static:listing_url:https://www.littlechicken.nl/jobs/",
+    }
+    littlechicken_loader_name = static_adapter.static_source_name_for_registry_row(
+        littlechicken_source
+    )
+    paradox_links = jf.parse_teamtailor_listing_links(
+        teamtailor_listing,
+        base_url="https://career.paradoxplaza.com/jobs",
+    )
 
     def fake_fetch(url: str, _: int) -> str:
-        if "docs.google.com/spreadsheets" in url or "api.allorigins.win/raw" in url:
-            return google_csv
-        if "remoteok.com/api" in url:
-            return remote_json
-        if "jobs.gamesindustry.biz" in url:
-            return gamesindustry_html
-        if url == "https://gamejobs.co/":
-            return gamejobs_html
-        if url == "https://www.workwithindies.com/":
-            return workwithindies_html
-        if url == "https://8bitplay.com/jobs/":
-            return eightbitplay_html
-        if url == "https://gracklehq.com/jobs":
-            return gracklehq_html
-        if "boards-api.greenhouse.io" in url and "guerrilla-games" in url:
-            return greenhouse_json
-        if "boards-api.greenhouse.io" in url and "sonyinteractiveentertainmentglobal" in url:
-            return greenhouse_playstation_json
-        if url == "https://career.paradoxplaza.com/jobs":
-            return teamtailor_listing
-        if "career.paradoxplaza.com/jobs/" in url:
-            return teamtailor_job
-        if "api.lever.co" in url:
-            return lever_json
-        if "api.smartrecruiters.com" in url:
-            return smart_json
-        if "apply.workable.com/api/v1/widget/accounts" in url:
-            return workable_json
-        if "jobs.ashbyhq.com" in url:
-            return ashby_html
-        if "jobs.crazygames.com/api/offers" in url:
-            return recruitee_json
-        if "gameplaygalaxy.pinpointhq.com/postings.json" in url:
-            return pinpoint_json
-        if "breezy.hr" in url:
-            return breezy_html
-        if "applytojob.com/apply" in url:
-            return jazzhr_html
-        if "jobs.personio.de/xml" in url:
-            return personio_xml
-        if (
-            url == "https://www.littlechicken.nl/about-us/jobs/"
-            or url == "https://www.littlechicken.nl/job/"
-        ):
+        if url == "https://www.littlechicken.nl/jobs/":
             return littlechicken_listing
         if "littlechicken.nl/job/" in url:
             return littlechicken_detail
+        if "jobs.gamesindustry.biz" in url:
+            return gamesindustry_html
         raise RuntimeError(f"Unhandled URL in fake fetch: {url}")
 
     class _FakeRedirectResolver:
@@ -562,7 +537,160 @@ def test_pipeline_default_source_mix_smoke_excludes_wellfound_and_includes_guerr
     with (
         workspace_tmpdir("jobs-fetcher") as tmp,
         mock.patch.object(jf, "build_redirect_resolver", return_value=_FakeRedirectResolver()),
-        mock.patch("src.jobs.adapters.static.run_scrapy_static_source", return_value=[]),
+        mock.patch.object(
+            jf,
+            "default_source_loaders",
+            return_value=[
+                ("google_sheets", lambda **_: jf.parse_google_sheets_csv(google_csv)),
+                ("google_sheets_1er2oaxo", lambda **_: jf.parse_google_sheets_csv(google_csv)),
+                ("google_sheets_1mvqhxat", lambda **_: jf.parse_google_sheets_csv(google_csv)),
+                ("remote_ok", lambda **_: jf.parse_remote_ok_payload(remote_json)),
+                (
+                    "gamesindustry",
+                    lambda **_: jf.parse_gamesindustry_html(
+                        gamesindustry_html,
+                        base_url="https://jobs.gamesindustry.biz/jobs/",
+                    ),
+                ),
+                (
+                    "gamejobs",
+                    lambda **_: jf.parse_gamejobs_html(
+                        gamejobs_html,
+                        base_url="https://gamejobs.co/",
+                    ),
+                ),
+                (
+                    "workwithindies",
+                    lambda **_: jf.parse_workwithindies_html(
+                        workwithindies_html,
+                        base_url="https://www.workwithindies.com/",
+                    ),
+                ),
+                (
+                    "8bitplay",
+                    lambda **_: jf.parse_8bitplay_html(
+                        eightbitplay_html,
+                        base_url="https://8bitplay.com/jobs/",
+                    ),
+                ),
+                (
+                    "gracklehq",
+                    lambda **_: jf.parse_gracklehq_html(
+                        gracklehq_html,
+                        base_url="https://gracklehq.com/jobs",
+                    ),
+                ),
+                (
+                    "greenhouse_boards",
+                    lambda **_: jf.parse_greenhouse_jobs_payload(
+                        greenhouse_json,
+                        "guerrilla-games",
+                        fallback_company="Guerrilla Games",
+                    )
+                    + jf.parse_greenhouse_jobs_payload(
+                        greenhouse_playstation_json,
+                        "sonyinteractiveentertainmentglobal",
+                        fallback_company="PlayStation Global",
+                    ),
+                ),
+                (
+                    "teamtailor_sources",
+                    lambda **_: [
+                        {
+                            "sourceJobId": "teamtailor:paradox:1",
+                            "title": "Senior Rendering Programmer",
+                            "company": "Paradox Interactive",
+                            "city": "Stockholm",
+                            "country": "SE",
+                            "workType": "Hybrid",
+                            "contractType": "Full Time",
+                            "jobLink": paradox_links[0],
+                            "sector": "Game",
+                            "postedAt": "",
+                        }
+                    ],
+                ),
+                (
+                    "lever_sources",
+                    lambda **_: jf.parse_lever_jobs_payload(
+                        lever_json,
+                        "pixelforge",
+                        fallback_company="Pixel Forge",
+                    ),
+                ),
+                (
+                    "smartrecruiters_sources",
+                    lambda **_: jf.parse_smartrecruiters_jobs_payload(
+                        smart_json,
+                        "ubisoft2",
+                        fallback_company="Ubisoft",
+                    ),
+                ),
+                (
+                    "workable_sources",
+                    lambda **_: jf.parse_workable_jobs_payload(
+                        workable_json,
+                        "pixeldominion",
+                        fallback_company="Pixel Dominion",
+                    ),
+                ),
+                (
+                    "recruitee_sources",
+                    lambda **_: jf.parse_recruitee_jobs_payload(
+                        recruitee_json,
+                        "jobs.crazygames.com",
+                        fallback_company="CrazyGames",
+                    ),
+                ),
+                (
+                    "pinpoint_sources",
+                    lambda **_: jf.parse_pinpoint_jobs_payload(
+                        pinpoint_json,
+                        "gameplaygalaxy",
+                        fallback_company="Gameplay Galaxy",
+                    ),
+                ),
+                (
+                    "ashby_sources",
+                    lambda **_: jf.parse_ashby_jobs_from_html(
+                        ashby_html,
+                        "https://jobs.ashbyhq.com/jagex/jobs",
+                        "Jagex",
+                    ),
+                ),
+                (
+                    "breezy_sources",
+                    lambda **_: jf.parse_breezy_jobs_html(
+                        breezy_html,
+                        "https://yallaplay.breezy.hr/",
+                        "YallaPlay",
+                    ),
+                ),
+                (
+                    "jazzhr_sources",
+                    lambda **_: jf.parse_jazzhr_jobs_html(
+                        jazzhr_html,
+                        "https://lostboysinteractive.applytojob.com/apply",
+                        "Lost Boys Interactive",
+                    ),
+                ),
+                (
+                    "personio_sources",
+                    lambda **_: jf.parse_personio_feed_xml(
+                        personio_xml,
+                        source_name="InnoGames",
+                    ),
+                ),
+                (
+                    littlechicken_loader_name,
+                    lambda **kwargs: static_adapter.run_static_source_entry_source(
+                        source_row=littlechicken_source,
+                        diagnostics_name=littlechicken_loader_name,
+                        **kwargs,
+                    ),
+                ),
+            ],
+        ),
     ):
         report = jf.run_pipeline(
             output_dir=Path(tmp),

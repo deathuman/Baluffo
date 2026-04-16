@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 
 from src.bridge.sync_service import SyncService
 from src.bridge.sync_state import ACTIVE_SYNC_RUNS, ACTIVE_SYNC_THREADS, SYNC_STATE_LOCK
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 class _FakeSourceSync:
@@ -64,8 +64,7 @@ class _RunHistory:
 
 
 def test_sync_service_pull_delegates_and_persists() -> None:
-    with TemporaryDirectory() as tmp:
-        data_dir = Path(tmp)
+    with workspace_tmpdir("sync-service") as data_dir:
         with SYNC_STATE_LOCK:
             ACTIVE_SYNC_RUNS.clear()
             ACTIVE_SYNC_THREADS.clear()
@@ -127,8 +126,7 @@ def test_sync_service_pull_delegates_and_persists() -> None:
 
 
 def test_sync_service_start_task_runs_and_finishes() -> None:
-    with TemporaryDirectory() as tmp:
-        data_dir = Path(tmp)
+    with workspace_tmpdir("sync-service") as data_dir:
         with SYNC_STATE_LOCK:
             ACTIVE_SYNC_RUNS.clear()
             ACTIVE_SYNC_THREADS.clear()
