@@ -614,6 +614,9 @@ def test_run_packaged_smoke_writes_failure_report_on_runtime_timeout() -> None:
                 side_effect=TimeoutError("timed out waiting for bridge"),
             ),
             mock.patch.object(smoke, "terminate_process_tree") as terminate_mock,
+            mock.patch.object(smoke, "cleanup_orphaned_desktop_ports_nt"),
+            mock.patch.object(smoke, "fetch_startup_metrics", return_value=[]),
+            mock.patch.object(smoke, "read_startup_metrics_file", return_value=[]),
             mock.patch.object(
                 smoke,
                 "collect_packaged_smoke_env_diagnostics",
