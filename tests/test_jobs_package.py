@@ -1,5 +1,7 @@
 import ast
 import importlib
+import subprocess
+import sys
 from pathlib import Path
 from unittest import mock
 
@@ -182,6 +184,24 @@ def test_static_scrapy_adapter_uses_direct_registry_and_diagnostics_surface() ->
         )
     assert rows == []
     diag.assert_called_once()
+
+
+def test_generic_careers_import_is_clean_under_python_314(repo_root: Path) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-W",
+            "error::UserWarning",
+            "-c",
+            "import src.scrapers.spiders.generic_careers",
+        ],
+        capture_output=True,
+        cwd=repo_root,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_jobs_common_root_package_is_minimal_and_leaf_modules_remain_importable() -> None:

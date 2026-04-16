@@ -8,7 +8,6 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import scrapy
-from scrapy.loader import ItemLoader
 
 from src.jobs.page_gating import classify_job_page
 from src.scrapers import domain_profiles
@@ -98,21 +97,7 @@ class GenericCareersSpider(scrapy.Spider):
                     self._append_job(job)
                     return
 
-        loader = ItemLoader(item=JobItem(), response=response)
-        loader.add_css("title", "h1::text")
-        loader.add_css("title", "[class*='title']::text")
-        selectors = self.profile.get("title_selectors") if isinstance(self.profile, dict) else []
-        if isinstance(selectors, list):
-            for selector in selectors:
-                if clean_text(selector):
-                    loader.add_css("title", selector)
-        loader.add_value("jobLink", response.url)
-        loader.add_value("company", self.studio_name)
-        loader.add_value("source", self.source_name_value)
-        loader.add_value("studio", self.studio_name)
-        loader.add_value("adapter", "scrapy_static")
-        loader.add_value("sourceBundle", [])
-        loaded = loader.load_item()
+        loaded = self._build_detail_item(response)
         title = clean_text(loaded.get("title"))
         if not title:
             self._container["reject_reasons"]["missing_title"] += 1
@@ -194,6 +179,32 @@ class GenericCareersSpider(scrapy.Spider):
             source_job_id=source_job_id,
             posted_at=clean_text(item.get("datePosted")),
         )
+
+    def _build_detail_item(self, response: scrapy.http.Response) -> JobItem:
+        selectors = ["h1::text", "[class*='title']::text"]
+        profile_selectors = self.profile.get("title_selectors") if isinstance(self.profile, dict) else []
+        if isinstance(profile_selectors, list):
+            selectors.extend(clean_text(selector) for selector in profile_selectors if clean_text(selector))
+
+        item = JobItem()
+        title = self._first_css_text(response, selectors)
+        if title:
+            item["title"] = title
+        item["jobLink"] = response.url
+        item["company"] = self.studio_name
+        item["source"] = self.source_name_value
+        item["studio"] = self.studio_name
+        item["adapter"] = "scrapy_static"
+        item["sourceBundle"] = []
+        return item
+
+    def _first_css_text(self, response: scrapy.http.Response, selectors: list[str]) -> str:
+        for selector in selectors:
+            for value in response.css(selector).getall():
+                candidate = clean_text(value)
+                if candidate:
+                    return candidate
+        return ""
 
     def _extract_job_links(self, response: scrapy.http.Response) -> list[str]:
         patterns = [
