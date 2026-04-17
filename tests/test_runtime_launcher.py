@@ -262,7 +262,9 @@ def test_wait_for_url_emits_timeout_diagnostics_for_startup_probe(
 
         rows = [
             json.loads(line)
-            for line in (data_dir / "desktop-startup-metrics.jsonl").read_text(encoding="utf-8").splitlines()
+            for line in (data_dir / "desktop-startup-metrics.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
             if line.strip()
         ]
         events = [row["event"] for row in rows]

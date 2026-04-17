@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import threading
-from pathlib import Path
 from typing import Any
 
 from src.bridge.sync_service import SyncService

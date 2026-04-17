@@ -14,8 +14,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -23,17 +22,21 @@ if str(ROOT) not in sys.path:
 
 from src.app_version import get_app_version
 from src.baluffo_config import get_bridge_defaults, get_desktop_defaults
+from src.ship import update_manager
 from src.ship.startup_telemetry import (
     append_runtime_startup_trace as _append_runtime_startup_trace,
-    append_startup_trace as _append_startup_trace,
-    startup_probe_enabled,
-    startup_trace_target as _startup_trace_target,
-    wait_for_url,
 )
-from src.ship import update_manager
+from src.ship.startup_telemetry import (
+    append_startup_trace as _append_startup_trace,
+)
+from src.ship.startup_telemetry import (
+    startup_probe_enabled,
+    wait_for_url,  # noqa: F401
+)
 
 BRIDGE_DEFAULTS = get_bridge_defaults()
 DESKTOP_DEFAULTS = get_desktop_defaults()
+
 
 def _is_expected_client_disconnect(exc: BaseException) -> bool:
     current: BaseException | None = exc
@@ -71,6 +74,7 @@ class QuietSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
                 return
             raise
 
+
 def build_site_request_handler(
     directory: Path,
     *,
@@ -95,9 +99,7 @@ def build_site_request_handler(
             ):
                 rel = normalized[5:] if normalized.startswith("data/") else ""
                 safe_parts = [
-                    token
-                    for token in PurePosixPath(rel).parts
-                    if token not in {"", ".", ".."}
+                    token for token in PurePosixPath(rel).parts if token not in {"", ".", ".."}
                 ]
                 return str((self._static_data_dir.joinpath(*safe_parts)).resolve())
             return super().translate_path(path)
@@ -214,6 +216,7 @@ def heal_active_ship_version(layout: RuntimeLayout) -> None:
     )
     _try_heal_required_files_from_repo(layout)
     _try_heal_required_files_from_meipass(layout)
+
 
 @contextlib.contextmanager
 def _pushd(path: Path) -> Iterator[None]:

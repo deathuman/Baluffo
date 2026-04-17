@@ -270,7 +270,9 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
     assert "startup-probe-architecture.md" in index_text
 
 
-def test_contributing_points_startup_perf_changes_to_canonical_architecture_doc(repo_root: Path) -> None:
+def test_contributing_points_startup_perf_changes_to_canonical_architecture_doc(
+    repo_root: Path,
+) -> None:
     contributing_text = (repo_root / "CONTRIBUTING.md").read_text(encoding="utf-8")
 
     assert "docs/startup-probe-architecture.md" in contributing_text

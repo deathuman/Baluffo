@@ -524,6 +524,7 @@ def _copy_app_version(version_dir: Path) -> None:
             json.dumps({"repo": desktop_update_repo}, indent=2, ensure_ascii=False),
         )
 
+
 def _generate_startup_preview(data_dir: Path) -> None:
     light_path = data_dir / "jobs-unified-light.json"
     startup_path = data_dir / "jobs-unified-startup.json"

@@ -100,9 +100,7 @@ def append_startup_metric(event: str, payload: dict[str, Any] | None, *, now_iso
     details = payload if isinstance(payload, dict) else {}
     browser_created_at_ms = details.get("browserCreatedAtMs")
     normalized_browser_created_at_ms = (
-        int(browser_created_at_ms)
-        if isinstance(browser_created_at_ms, (int, float))
-        else None
+        int(browser_created_at_ms) if isinstance(browser_created_at_ms, (int, float)) else None
     )
     row = {
         "ts": str(now_iso() or ""),

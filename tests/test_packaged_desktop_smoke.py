@@ -452,9 +452,14 @@ def test_startup_profile_summary_uses_inferred_shell_window_fallback_when_visibi
     stages = {stage["key"]: stage for stage in summary["stages"]}
 
     assert summary["missingEvents"] == []
-    assert stages["window_created_to_window_shown"]["endEvent"] == "desktop_shell_window_shown_inferred"
+    assert (
+        stages["window_created_to_window_shown"]["endEvent"]
+        == "desktop_shell_window_shown_inferred"
+    )
     assert stages["window_created_to_window_shown"]["durationMs"] == 600
-    assert stages["window_shown_to_page_loaded"]["startEvent"] == "desktop_shell_window_shown_inferred"
+    assert (
+        stages["window_shown_to_page_loaded"]["startEvent"] == "desktop_shell_window_shown_inferred"
+    )
 
 
 def test_startup_profile_summary_does_not_report_inferred_reveal_after_page_boot() -> None:
@@ -509,7 +514,10 @@ def test_startup_profile_summary_does_not_report_inferred_reveal_after_page_boot
     summary = summarize_startup_metrics(rows, page="jobs", profile_mode="warm")
     stages = {stage["key"]: stage for stage in summary["stages"]}
 
-    assert stages["window_shown_to_page_loaded"]["startMs"] <= stages["window_shown_to_page_loaded"]["endMs"]
+    assert (
+        stages["window_shown_to_page_loaded"]["startMs"]
+        <= stages["window_shown_to_page_loaded"]["endMs"]
+    )
     assert stages["window_shown_to_page_loaded"]["durationMs"] == 0
 
 
@@ -759,9 +767,7 @@ def test_select_startup_probe_browser_uses_edge_only_when_other_candidates_unava
             side_effect=fake_supported,
         ),
     ):
-        selected = smoke.select_startup_probe_browser(
-            {"BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE": "1"}
-        )
+        selected = smoke.select_startup_probe_browser({"BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE": "1"})
 
     assert selected == {
         "browserName": "msedge",
@@ -778,7 +784,9 @@ def test_select_startup_probe_browser_fails_when_no_supported_candidate_exists()
         ),
         mock.patch.object(smoke.desktop_app_mod, "chromium_app_mode_supported", return_value=False),
     ):
-        with pytest.raises(RuntimeError, match="No supported managed Chromium probe browser available"):
+        with pytest.raises(
+            RuntimeError, match="No supported managed Chromium probe browser available"
+        ):
             smoke.select_startup_probe_browser({})
 
 
@@ -1222,7 +1230,9 @@ def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None
         assert payload["startupMetrics"] == startup_metrics
         assert captured_env["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] == "1"
         assert captured_env[smoke.desktop_app_mod.STARTUP_PROFILE_MODE_ENV] == "cold"
-        assert captured_env[smoke.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV] == "C:/Chrome/chrome.exe"
+        assert (
+            captured_env[smoke.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV] == "C:/Chrome/chrome.exe"
+        )
         assert payload["probeBrowser"]["preferredBrowserName"] == "chrome"
         assert payload["probeBrowser"]["preferredBrowserPath"] == "C:/Chrome/chrome.exe"
         runtime_mock.assert_called_once()
@@ -1429,7 +1439,9 @@ def test_run_packaged_smoke_fails_startup_probe_when_no_managed_browser_is_avail
 
         assert payload["ok"] is False
         assert payload["failure"]["category"] == "probe_browser_unavailable"
-        assert "No supported managed Chromium probe browser available" in payload["failure"]["message"]
+        assert (
+            "No supported managed Chromium probe browser available" in payload["failure"]["message"]
+        )
         assert payload["probeBrowser"]["preferredBrowserName"] == ""
         terminate_mock.assert_called_once_with(None)
 
@@ -1919,7 +1931,11 @@ def test_classify_startup_probe_failure_uses_explicit_handoff_failure_category()
     rows = [
         {
             "event": "desktop_browser_launch_selected",
-            "fields": {"browser": "chrome", "browserPath": "C:/Chrome/chrome.exe", "mode": "chromium-app"},
+            "fields": {
+                "browser": "chrome",
+                "browserPath": "C:/Chrome/chrome.exe",
+                "mode": "chromium-app",
+            },
         },
         {"event": "desktop_browser_watchdog_handoff_failed", "fields": {}},
     ]
@@ -1940,9 +1956,16 @@ def test_classify_startup_probe_failure_treats_confirmed_handoff_then_bridge_los
     rows = [
         {
             "event": "desktop_browser_launch_selected",
-            "fields": {"browser": "chrome", "browserPath": "C:/Chrome/chrome.exe", "mode": "chromium-app"},
+            "fields": {
+                "browser": "chrome",
+                "browserPath": "C:/Chrome/chrome.exe",
+                "mode": "chromium-app",
+            },
         },
-        {"event": "desktop_browser_watchdog_handoff_confirmed", "fields": {"evidence": "startup_metric"}},
+        {
+            "event": "desktop_browser_watchdog_handoff_confirmed",
+            "fields": {"evidence": "startup_metric"},
+        },
         {"event": "desktop_window_closed", "fields": {"reason": "bridge_exit"}},
     ]
 

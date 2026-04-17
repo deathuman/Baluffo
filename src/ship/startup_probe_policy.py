@@ -145,7 +145,9 @@ def classify_startup_probe_failure(
         return "browser handoff/runtime startup failed", "browser_handoff_runtime_startup_failed"
     if (
         details["launchMode"] == REQUIRED_STARTUP_PROBE_LAUNCH_MODE
-        and missing_events.intersection({"jobs_module_boot_start", "jobs_first_render", "jobs_first_interactive"})
+        and missing_events.intersection(
+            {"jobs_module_boot_start", "jobs_first_render", "jobs_first_interactive"}
+        )
         and (
             details["windowClosedReason"] == "browser_handoff_failed"
             or bool(details["handoffEvidence"])

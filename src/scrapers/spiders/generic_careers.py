@@ -182,9 +182,13 @@ class GenericCareersSpider(scrapy.Spider):
 
     def _build_detail_item(self, response: scrapy.http.Response) -> JobItem:
         selectors = ["h1::text", "[class*='title']::text"]
-        profile_selectors = self.profile.get("title_selectors") if isinstance(self.profile, dict) else []
+        profile_selectors = (
+            self.profile.get("title_selectors") if isinstance(self.profile, dict) else []
+        )
         if isinstance(profile_selectors, list):
-            selectors.extend(clean_text(selector) for selector in profile_selectors if clean_text(selector))
+            selectors.extend(
+                clean_text(selector) for selector in profile_selectors if clean_text(selector)
+            )
 
         item = JobItem()
         title = self._first_css_text(response, selectors)

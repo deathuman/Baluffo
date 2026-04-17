@@ -582,15 +582,17 @@ def test_pipeline_default_source_mix_smoke_excludes_wellfound_and_includes_guerr
                 ),
                 (
                     "greenhouse_boards",
-                    lambda **_: jf.parse_greenhouse_jobs_payload(
-                        greenhouse_json,
-                        "guerrilla-games",
-                        fallback_company="Guerrilla Games",
-                    )
-                    + jf.parse_greenhouse_jobs_payload(
-                        greenhouse_playstation_json,
-                        "sonyinteractiveentertainmentglobal",
-                        fallback_company="PlayStation Global",
+                    lambda **_: (
+                        jf.parse_greenhouse_jobs_payload(
+                            greenhouse_json,
+                            "guerrilla-games",
+                            fallback_company="Guerrilla Games",
+                        )
+                        + jf.parse_greenhouse_jobs_payload(
+                            greenhouse_playstation_json,
+                            "sonyinteractiveentertainmentglobal",
+                            fallback_company="PlayStation Global",
+                        )
                     ),
                 ),
                 (

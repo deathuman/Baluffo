@@ -12,9 +12,7 @@ startup_probe_pair = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(startup_probe_pair)
 
 
-def test_run_startup_probe_pair_reuses_cold_build_for_warm(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_run_startup_probe_pair_reuses_cold_build_for_warm(tmp_path: Path, monkeypatch) -> None:
     pair_root = tmp_path / "packaged-desktop-smoke-pair"
     cold_report_paths: list[Path] = []
     commands: list[list[str]] = []
@@ -60,10 +58,12 @@ def test_run_startup_probe_pair_reuses_cold_build_for_warm(
     assert first_command[1] == str(startup_probe_pair.PACKAGED_SMOKE_SCRIPT)
     assert first_command[first_command.index("--profile-mode") + 1] == "cold"
     assert second_command[second_command.index("--profile-mode") + 1] == "warm"
-    assert Path(first_command[first_command.index("--artifacts-dir") + 1]) == pair_root / (
-        "20260417-080000-123456"
-    ) / "cold"
-    assert Path(second_command[second_command.index("--artifacts-dir") + 1]) == pair_root / (
-        "20260417-080000-123456"
-    ) / "warm"
+    assert (
+        Path(first_command[first_command.index("--artifacts-dir") + 1])
+        == pair_root / ("20260417-080000-123456") / "cold"
+    )
+    assert (
+        Path(second_command[second_command.index("--artifacts-dir") + 1])
+        == pair_root / ("20260417-080000-123456") / "warm"
+    )
     assert cold_report_paths == [pair_root / "20260417-080000-123456" / "cold-report.json"]

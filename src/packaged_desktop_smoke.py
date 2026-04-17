@@ -38,11 +38,15 @@ from src.ship.startup_probe_policy import (
     STARTUP_REQUIRED_EVENTS,
     classify_startup_probe_failure,
     refine_startup_probe_summary,
-    required_startup_event_present as _required_startup_event_present,
-    select_startup_probe_browser as select_startup_probe_browser_policy,
     startup_metric_fields,
     startup_probe_browser_details,
     startup_profile_required_events,
+)
+from src.ship.startup_probe_policy import (
+    required_startup_event_present as _required_startup_event_present,
+)
+from src.ship.startup_probe_policy import (
+    select_startup_probe_browser as select_startup_probe_browser_policy,
 )
 from src.ship.startup_profile import (
     render_startup_summary,
@@ -93,6 +97,8 @@ PORTABLE_BUILD_SCRATCH_NAMES = (
     ".pyinstaller-helper-work",
     ".pyinstaller-helper-spec",
 )
+
+
 def slugify_token(value: str) -> str:
     lowered = "".join(ch.lower() if ch.isalnum() else "-" for ch in str(value or ""))
     compact = "-".join(part for part in lowered.split("-") if part)
@@ -720,7 +726,10 @@ def wait_for_packaged_runtime(
                     page_ready = "admin" in page_text.lower()
                 elif page_name == "desktop-probe.html":
                     page_ready = "Desktop Probe" in page_text
-            if all(_required_startup_event_present(events, event) for event in normalized) and page_ready:
+            if (
+                all(_required_startup_event_present(events, event) for event in normalized)
+                and page_ready
+            ):
                 return {
                     "health": health,
                     "session": session,
@@ -848,9 +857,7 @@ def run_embedded_runtime_probe(
         required_runtime_events = tuple(probe.get("requiredEvents") or ())
         if startup_probe:
             required_runtime_events = tuple(
-                dict.fromkeys(
-                    startup_profile_required_events(page_name) + required_runtime_events
-                )
+                dict.fromkeys(startup_profile_required_events(page_name) + required_runtime_events)
             )
         metrics_rows = wait_for_runtime_events(
             bridge_base_url,

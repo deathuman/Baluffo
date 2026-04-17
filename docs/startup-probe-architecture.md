@@ -94,4 +94,3 @@ When changing startup measurement code:
   - `startup_telemetry`
   - `desktop launcher runtime`
   - `startup probe policy`
-

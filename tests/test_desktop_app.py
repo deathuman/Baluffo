@@ -260,9 +260,7 @@ def test_launch_chromium_app_preserves_cache_dirs_by_default(tmp_path: Path) -> 
     (cache_dir / "data.bin").write_text("cached", encoding="utf-8")
 
     fake_process = mock.Mock(spec=subprocess.Popen)
-    with mock.patch.object(
-        desktop_app.subprocess, "Popen", return_value=fake_process
-    ):
+    with mock.patch.object(desktop_app.subprocess, "Popen", return_value=fake_process):
         result = desktop_app.launch_chromium_app(
             "http://127.0.0.1:8080/jobs.html?desktop=1",
             "C:/Edge/msedge.exe",
@@ -787,25 +785,32 @@ def test_launch_browser_for_url_emits_trace_events_at_spawn_accept_and_reveal() 
         "desktop_browser_launch_selected",
         "desktop_shell_window_shown",
     ]
-    selected_event = next(item for item in trace_events if item[0] == "desktop_browser_launch_selected")
+    selected_event = next(
+        item for item in trace_events if item[0] == "desktop_browser_launch_selected"
+    )
     shell_event = next(item for item in trace_events if item[0] == "desktop_shell_window_shown")
     assert selected_event[1] == shell_event[1]
 
 
-def test_find_baluffo_visible_window_accepts_same_pid_chromium_window_without_baluffo_title() -> None:
-    with mock.patch.object(
-        desktop_app,
-        "_enumerate_visible_desktop_windows",
-        return_value=[
-            {
-                "hwnd": 100,
-                "pid": 777,
-                "title": "Jobs",
-                "className": "Chrome_WidgetWin_1",
-                "matchesTitle": False,
-                "isChromiumClass": True,
-            }
-        ],
+def test_find_baluffo_visible_window_accepts_same_pid_chromium_window_without_baluffo_title() -> (
+    None
+):
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(
+            desktop_app,
+            "_enumerate_visible_desktop_windows",
+            return_value=[
+                {
+                    "hwnd": 100,
+                    "pid": 777,
+                    "title": "Jobs",
+                    "className": "Chrome_WidgetWin_1",
+                    "matchesTitle": False,
+                    "isChromiumClass": True,
+                }
+            ],
+        ),
     ):
         result = desktop_app._find_baluffo_visible_window(
             browser_pid=777,
@@ -1340,9 +1345,7 @@ def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
             },
         ),
         mock.patch.object(desktop_app, "save_session_state"),
-        mock.patch.object(
-            desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
-        ),
+        mock.patch.object(desktop_app, "watch_browser_session", return_value="heartbeat_timeout"),
         mock.patch.object(desktop_app, "write_success_marker"),
         mock.patch.object(desktop_app, "clear_session_state"),
         mock.patch.object(desktop_app, "terminate_process"),
@@ -1407,9 +1410,7 @@ def test_launch_desktop_app_emits_window_created_before_shell_window_shown() -> 
             },
         ),
         mock.patch.object(desktop_app, "save_session_state"),
-        mock.patch.object(
-            desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
-        ),
+        mock.patch.object(desktop_app, "watch_browser_session", return_value="heartbeat_timeout"),
         mock.patch.object(desktop_app, "write_success_marker"),
         mock.patch.object(desktop_app, "clear_session_state"),
         mock.patch.object(desktop_app, "terminate_process"),
@@ -1421,7 +1422,9 @@ def test_launch_desktop_app_emits_window_created_before_shell_window_shown() -> 
     window_created_index = event_names.index("desktop_window_created")
     shell_shown_index = event_names.index("desktop_shell_window_shown")
     selected_call = next(
-        call for call in trace_mock.call_args_list if call.args[1] == "desktop_browser_launch_selected"
+        call
+        for call in trace_mock.call_args_list
+        if call.args[1] == "desktop_browser_launch_selected"
     )
     shell_shown_call = next(
         call for call in trace_mock.call_args_list if call.args[1] == "desktop_shell_window_shown"
@@ -1431,7 +1434,9 @@ def test_launch_desktop_app_emits_window_created_before_shell_window_shown() -> 
     assert "desktop_browser_launch_phase_diagnostics" in event_names
 
 
-def test_launch_desktop_app_emits_inferred_shell_window_event_when_visibility_not_observed() -> None:
+def test_launch_desktop_app_emits_inferred_shell_window_event_when_visibility_not_observed() -> (
+    None
+):
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_app.DesktopRuntimeConfig(
         ship_root=Path("C:/tmp/baluffo-ship"),
@@ -1482,9 +1487,7 @@ def test_launch_desktop_app_emits_inferred_shell_window_event_when_visibility_no
             },
         ),
         mock.patch.object(desktop_app, "save_session_state"),
-        mock.patch.object(
-            desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
-        ),
+        mock.patch.object(desktop_app, "watch_browser_session", return_value="heartbeat_timeout"),
         mock.patch.object(desktop_app, "write_success_marker"),
         mock.patch.object(desktop_app, "clear_session_state"),
         mock.patch.object(desktop_app, "terminate_process"),
@@ -1545,9 +1548,7 @@ def test_launch_desktop_app_launches_browser_before_bridge_ready_diagnostic() ->
             },
         ) as launch_browser_mock,
         mock.patch.object(desktop_app, "save_session_state"),
-        mock.patch.object(
-            desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
-        ),
+        mock.patch.object(desktop_app, "watch_browser_session", return_value="heartbeat_timeout"),
         mock.patch.object(desktop_app, "write_success_marker"),
         mock.patch.object(desktop_app, "clear_session_state"),
         mock.patch.object(desktop_app, "terminate_process"),
@@ -1609,9 +1610,7 @@ def test_launch_desktop_app_uses_tighter_site_ready_polling_for_startup_probe() 
             },
         ),
         mock.patch.object(desktop_app, "save_session_state"),
-        mock.patch.object(
-            desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
-        ),
+        mock.patch.object(desktop_app, "watch_browser_session", return_value="heartbeat_timeout"),
         mock.patch.object(desktop_app, "write_success_marker"),
         mock.patch.object(desktop_app, "write_startup_summary"),
         mock.patch.object(desktop_app, "clear_session_state"),
@@ -1658,7 +1657,6 @@ def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> 
             side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
         ),
         mock.patch.object(desktop_app, "wait_for_url"),
-        mock.patch.object(desktop_app, "wait_for_baluffo_bridge"),
         mock.patch.object(
             desktop_app,
             "wait_for_desktop_startup_ready",
@@ -1720,7 +1718,6 @@ def test_launch_desktop_app_spawns_update_helper_from_launcher_on_install_reques
             side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
         ),
         mock.patch.object(desktop_app, "wait_for_url"),
-        mock.patch.object(desktop_app, "wait_for_baluffo_bridge"),
         mock.patch.object(
             desktop_app,
             "wait_for_desktop_startup_ready",
@@ -1783,7 +1780,6 @@ def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_ex
             side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
         ),
         mock.patch.object(desktop_app, "wait_for_url"),
-        mock.patch.object(desktop_app, "wait_for_baluffo_bridge"),
         mock.patch.object(
             desktop_app,
             "wait_for_desktop_startup_ready",
