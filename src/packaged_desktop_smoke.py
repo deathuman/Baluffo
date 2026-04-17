@@ -664,6 +664,7 @@ def packaged_runtime_env_overrides(
     artifacts_dir: Path | None = None,
     session_scope: str = "runtime",
     startup_probe: bool = False,
+    profile_mode: str = "cold",
 ) -> dict[str, str]:
     overrides: dict[str, str] = {}
     if node_smoke_script is not None:
@@ -678,6 +679,9 @@ def packaged_runtime_env_overrides(
         overrides["LOCALAPPDATA"] = str(local_app_data)
     if startup_probe:
         overrides["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] = "1"
+        overrides[desktop_app_mod.STARTUP_PROFILE_MODE_ENV] = (
+            "warm" if str(profile_mode or "").strip().lower() == "warm" else "cold"
+        )
     return overrides
 
 
@@ -978,6 +982,7 @@ def run_embedded_runtime_probe(
             artifacts_dir=probe_dir,
             session_scope="runtime",
             startup_probe=startup_probe,
+            profile_mode=profile_mode,
         )
     )
     clear_packaged_desktop_session_state(runtime_env)
@@ -1185,6 +1190,7 @@ def run_warmup_launch(
             artifacts_dir=warmup_root,
             session_scope="runtime",
             startup_probe=startup_probe,
+            profile_mode="warm",
         )
     )
     clear_packaged_desktop_session_state(runtime_env)
@@ -1811,6 +1817,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             artifacts_dir=artifacts_dir,
             session_scope="runtime",
             startup_probe=startup_probe,
+            profile_mode=profile_mode,
         )
     )
     clear_packaged_desktop_session_state(runtime_env)

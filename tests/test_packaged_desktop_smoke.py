@@ -813,6 +813,18 @@ def test_packaged_runtime_env_overrides_can_isolate_local_appdata_per_run() -> N
         )
 
 
+def test_packaged_runtime_env_overrides_sets_startup_profile_mode_for_probes() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        overrides = smoke.packaged_runtime_env_overrides(
+            artifacts_dir=Path(tmp) / "artifacts",
+            startup_probe=True,
+            profile_mode="warm",
+        )
+
+        assert overrides["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] == "1"
+        assert overrides[smoke.desktop_app_mod.STARTUP_PROFILE_MODE_ENV] == "warm"
+
+
 def test_classify_subprocess_error_marks_spawn_eperm() -> None:
     error = PermissionError("spawn EPERM")
     assert smoke.classify_subprocess_error(error) == "node_process_spawn_blocked"
@@ -1026,6 +1038,7 @@ def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None
         assert payload["ok"] is True
         assert payload["startupMetrics"] == startup_metrics
         assert captured_env["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] == "1"
+        assert captured_env[smoke.desktop_app_mod.STARTUP_PROFILE_MODE_ENV] == "cold"
         assert captured_env[smoke.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV] == "C:/Chrome/chrome.exe"
         assert payload["probeBrowser"]["preferredBrowserName"] == "chrome"
         assert payload["probeBrowser"]["preferredBrowserPath"] == "C:/Chrome/chrome.exe"
@@ -1038,6 +1051,46 @@ def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None
             timeout_s=mock.ANY,
         )
         assert "smokeReport" not in payload["artifacts"]
+
+
+def test_run_warmup_launch_uses_warm_startup_profile_mode() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        captured_env: dict[str, str] = {}
+        process = mock.Mock()
+        process.pid = 777
+        process.poll.return_value = None
+        stdout_handle = mock.Mock()
+        stderr_handle = mock.Mock()
+
+        def fake_launch_packaged_exe(*args, **kwargs):  # noqa: ANN002, ANN003
+            captured_env.update(kwargs.get("env") or {})
+            return process, stdout_handle, stderr_handle
+
+        with (
+            mock.patch.object(smoke, "choose_free_port", side_effect=[51001, 51002]),
+            mock.patch.object(smoke, "launch_packaged_exe", side_effect=fake_launch_packaged_exe),
+            mock.patch.object(
+                smoke,
+                "wait_for_packaged_runtime",
+                return_value={"health": {"ok": True}, "session": {"ok": True}},
+            ),
+            mock.patch.object(smoke.time, "sleep"),
+            mock.patch.object(smoke, "terminate_process_tree"),
+            mock.patch.object(smoke, "cleanup_orphaned_desktop_ports_nt"),
+        ):
+            smoke.run_warmup_launch(
+                exe_path,
+                artifacts_root=root / "artifacts",
+                open_path="jobs.html",
+                runtime_timeout_s=5.0,
+                startup_probe=True,
+            )
+
+        assert captured_env["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] == "1"
+        assert captured_env[smoke.desktop_app_mod.STARTUP_PROFILE_MODE_ENV] == "warm"
 
 
 def test_run_packaged_smoke_writes_success_report_and_artifacts() -> None:

@@ -227,7 +227,7 @@ def test_build_browser_launch_command_uses_app_mode_profile_and_new_window() -> 
     assert any(part.startswith("--user-data-dir=") for part in command)
 
 
-def test_launch_chromium_app_clears_cache_dirs_before_launch(tmp_path: Path) -> None:
+def test_launch_chromium_app_clears_cache_dirs_before_launch_when_requested(tmp_path: Path) -> None:
     profile_dir = tmp_path / "desktop-browser-profile"
     cache_dir = profile_dir / "Default" / "Cache"
     code_cache_dir = profile_dir / "Default" / "Code Cache"
@@ -244,12 +244,64 @@ def test_launch_chromium_app_clears_cache_dirs_before_launch(tmp_path: Path) -> 
             "http://127.0.0.1:8080/jobs.html?desktop=1",
             "C:/Edge/msedge.exe",
             profile_dir,
+            clear_profile_caches=True,
         )
 
     assert result is fake_process
     assert not cache_dir.exists()
     assert not code_cache_dir.exists()
     popen_mock.assert_called_once()
+
+
+def test_launch_chromium_app_preserves_cache_dirs_by_default(tmp_path: Path) -> None:
+    profile_dir = tmp_path / "desktop-browser-profile"
+    cache_dir = profile_dir / "Default" / "Cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "data.bin").write_text("cached", encoding="utf-8")
+
+    fake_process = mock.Mock(spec=subprocess.Popen)
+    with mock.patch.object(
+        desktop_app.subprocess, "Popen", return_value=fake_process
+    ):
+        result = desktop_app.launch_chromium_app(
+            "http://127.0.0.1:8080/jobs.html?desktop=1",
+            "C:/Edge/msedge.exe",
+            profile_dir,
+        )
+
+    assert result is fake_process
+    assert cache_dir.exists()
+
+
+def test_should_clear_browser_profile_caches_only_for_cold_startup_probe() -> None:
+    assert (
+        desktop_app.should_clear_browser_profile_caches(
+            {
+                "BALUFFO_STARTUP_PROBE": "1",
+                desktop_app.STARTUP_PROFILE_MODE_ENV: "cold",
+            }
+        )
+        is True
+    )
+    assert (
+        desktop_app.should_clear_browser_profile_caches(
+            {
+                "BALUFFO_STARTUP_PROBE": "1",
+                desktop_app.STARTUP_PROFILE_MODE_ENV: "warm",
+            }
+        )
+        is False
+    )
+    assert desktop_app.should_clear_browser_profile_caches({}) is False
+
+
+def test_chromium_process_ready_timeout_prefers_shorter_wait_for_chrome_and_edge() -> None:
+    assert desktop_app.chromium_process_ready_timeout_s({"name": "chrome"}) == pytest.approx(0.35)
+    assert desktop_app.chromium_process_ready_timeout_s({"name": "msedge"}) == pytest.approx(0.35)
+    assert desktop_app.chromium_process_ready_timeout_s({"name": "brave"}) == pytest.approx(0.75)
+    assert desktop_app.chromium_process_ready_timeout_s({"name": "unknown"}) == pytest.approx(
+        desktop_app.CHROMIUM_PROCESS_READY_TIMEOUT_S
+    )
 
 
 def test_latest_browser_heartbeat_ts_parses_iso_timestamps() -> None:
@@ -461,7 +513,9 @@ def test_launch_browser_for_url_can_opt_in_to_edge_app_mode() -> None:
             return_value=[{"name": "msedge", "path": "C:/Edge/msedge.exe"}],
         ),
         mock.patch.object(desktop_app, "launch_chromium_app", return_value=fake_process),
-        mock.patch.object(desktop_app, "wait_for_browser_process_ready", return_value=True),
+        mock.patch.object(
+            desktop_app, "wait_for_browser_process_ready", return_value=True
+        ) as wait_mock,
         mock.patch.object(desktop_app.webbrowser, "open", return_value=True) as open_mock,
     ):
         result = desktop_app.launch_browser_for_url(
@@ -472,7 +526,68 @@ def test_launch_browser_for_url_can_opt_in_to_edge_app_mode() -> None:
     assert result["mode"] == "chromium-app"
     assert result["browserName"] == "msedge"
     assert isinstance(result["windowShownAtMonotonic"], float)
+    wait_mock.assert_called_once_with(fake_process, timeout_s=0.35)
     open_mock.assert_not_called()
+
+
+def test_launch_browser_for_url_uses_cold_probe_cache_policy_for_chrome() -> None:
+    fake_process = mock.Mock(spec=subprocess.Popen)
+    with (
+        mock.patch.object(
+            desktop_app,
+            "resolve_chromium_browser_candidates",
+            return_value=[{"name": "chrome", "path": "C:/Chrome/chrome.exe"}],
+        ),
+        mock.patch.object(
+            desktop_app, "launch_chromium_app", return_value=fake_process
+        ) as launch_mock,
+        mock.patch.object(desktop_app, "wait_for_browser_process_ready", return_value=True),
+    ):
+        result = desktop_app.launch_browser_for_url(
+            "http://127.0.0.1:8080/jobs.html",
+            env={
+                "BALUFFO_STARTUP_PROBE": "1",
+                desktop_app.STARTUP_PROFILE_MODE_ENV: "cold",
+            },
+        )
+
+    assert result["mode"] == "chromium-app"
+    launch_mock.assert_called_once_with(
+        "http://127.0.0.1:8080/jobs.html",
+        "C:/Chrome/chrome.exe",
+        mock.ANY,
+        clear_profile_caches=True,
+    )
+
+
+def test_launch_browser_for_url_uses_warm_probe_cache_policy_for_chrome() -> None:
+    fake_process = mock.Mock(spec=subprocess.Popen)
+    with (
+        mock.patch.object(
+            desktop_app,
+            "resolve_chromium_browser_candidates",
+            return_value=[{"name": "chrome", "path": "C:/Chrome/chrome.exe"}],
+        ),
+        mock.patch.object(
+            desktop_app, "launch_chromium_app", return_value=fake_process
+        ) as launch_mock,
+        mock.patch.object(desktop_app, "wait_for_browser_process_ready", return_value=True),
+    ):
+        result = desktop_app.launch_browser_for_url(
+            "http://127.0.0.1:8080/jobs.html",
+            env={
+                "BALUFFO_STARTUP_PROBE": "1",
+                desktop_app.STARTUP_PROFILE_MODE_ENV: "warm",
+            },
+        )
+
+    assert result["mode"] == "chromium-app"
+    launch_mock.assert_called_once_with(
+        "http://127.0.0.1:8080/jobs.html",
+        "C:/Chrome/chrome.exe",
+        mock.ANY,
+        clear_profile_caches=False,
+    )
 
 
 def test_terminate_process_uses_taskkill_tree_on_windows() -> None:

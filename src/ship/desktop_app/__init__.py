@@ -51,6 +51,11 @@ HEARTBEAT_STARTUP_TIMEOUT_S = 90.0
 # and intermittent heartbeat gaps without tearing down site/bridge.
 HEARTBEAT_IDLE_TIMEOUT_S = 600.0
 CHROMIUM_PROCESS_READY_TIMEOUT_S = 2.0
+CHROMIUM_PROCESS_READY_TIMEOUTS_S = {
+    "chrome": 0.35,
+    "msedge": 0.35,
+    "brave": 0.75,
+}
 DETACHED_BROWSER_GRACE_TIMEOUT_S = 35.0
 INSTANCE_LOCK_WAIT_S = 3.0
 INSTANCE_CONFLICT_RETRY_S = 6.0
@@ -67,6 +72,7 @@ CHROMIUM_BROWSER_CANDIDATES = (
 )
 PREFERRED_BROWSER_PATH_ENV = "BALUFFO_DESKTOP_BROWSER_PATH"
 NO_BROWSER_ENV = "BALUFFO_DESKTOP_NO_BROWSER"
+STARTUP_PROFILE_MODE_ENV = "BALUFFO_STARTUP_PROFILE_MODE"
 
 
 @dataclass(frozen=True)
@@ -1088,9 +1094,33 @@ def clear_browser_profile_caches(profile_dir: Path) -> None:
             continue
 
 
-def launch_chromium_app(url: str, browser_path: str, profile_dir: Path) -> subprocess.Popen[str]:
+def should_clear_browser_profile_caches(env: dict[str, str] | None = None) -> bool:
+    env_map = env if env is not None else os.environ
+    if not _truthy_env(env_map.get("BALUFFO_STARTUP_PROBE")):
+        return False
+    profile_mode = str(env_map.get(STARTUP_PROFILE_MODE_ENV) or "").strip().lower()
+    return profile_mode != "warm"
+
+
+def chromium_process_ready_timeout_s(
+    candidate: dict[str, str] | None = None,
+) -> float:
+    browser_name = str((candidate or {}).get("name") or "").strip().lower()
+    return float(
+        CHROMIUM_PROCESS_READY_TIMEOUTS_S.get(browser_name, CHROMIUM_PROCESS_READY_TIMEOUT_S)
+    )
+
+
+def launch_chromium_app(
+    url: str,
+    browser_path: str,
+    profile_dir: Path,
+    *,
+    clear_profile_caches: bool = False,
+) -> subprocess.Popen[str]:
     profile_dir.mkdir(parents=True, exist_ok=True)
-    clear_browser_profile_caches(profile_dir)
+    if clear_profile_caches:
+        clear_browser_profile_caches(profile_dir)
     popen_kwargs: dict[str, object] = {"text": True}
     if os.name == "nt":
         popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
@@ -1114,6 +1144,7 @@ def launch_browser_for_url(
     url: str, *, preferred_browser_path: str = "", env: dict[str, str] | None = None
 ) -> dict[str, object]:
     profile_dir = resolve_browser_profile_dir(env)
+    clear_profile_caches = should_clear_browser_profile_caches(env)
     candidates = resolve_chromium_browser_candidates()
     if preferred_browser_path:
         preferred = str(preferred_browser_path).strip().lower()
@@ -1128,18 +1159,29 @@ def launch_browser_for_url(
         browser_path = str(candidate.get("path") or "").strip()
         if not browser_path:
             continue
+        spawn_started_mono = time.perf_counter()
         try:
-            process = launch_chromium_app(url, browser_path, profile_dir)
+            process = launch_chromium_app(
+                url,
+                browser_path,
+                profile_dir,
+                clear_profile_caches=clear_profile_caches,
+            )
         except OSError:
             continue
-        launch_started_mono = time.perf_counter()
-        if wait_for_browser_process_ready(process):
+        if wait_for_browser_process_ready(
+            process,
+            timeout_s=chromium_process_ready_timeout_s(candidate),
+        ):
+            launch_accepted_mono = time.perf_counter()
             return {
                 "mode": "chromium-app",
                 "browserName": str(candidate.get("name") or ""),
                 "browserPath": browser_path,
                 "process": process,
-                "windowShownAtMonotonic": launch_started_mono,
+                "spawnStartedAtMonotonic": spawn_started_mono,
+                "launchAcceptedAtMonotonic": launch_accepted_mono,
+                "windowShownAtMonotonic": launch_accepted_mono,
             }
         # Some Chromium builds (notably Brave) can exit the launcher process
         # immediately after handing off the app window to another process.
@@ -1147,12 +1189,15 @@ def launch_browser_for_url(
         # fallback opening in the default browser.
         return_code = process.poll()
         if int(return_code or 0) == 0:
+            launch_accepted_mono = time.perf_counter()
             return {
                 "mode": "chromium-app",
                 "browserName": str(candidate.get("name") or ""),
                 "browserPath": browser_path,
                 "process": None,
-                "windowShownAtMonotonic": launch_started_mono,
+                "spawnStartedAtMonotonic": spawn_started_mono,
+                "launchAcceptedAtMonotonic": launch_accepted_mono,
+                "windowShownAtMonotonic": launch_accepted_mono,
             }
         terminate_process(process)
     launch_started_mono = time.perf_counter()
@@ -1163,6 +1208,8 @@ def launch_browser_for_url(
         "browserName": "",
         "browserPath": "",
         "process": None,
+        "spawnStartedAtMonotonic": launch_started_mono,
+        "launchAcceptedAtMonotonic": launch_started_mono,
         "windowShownAtMonotonic": launch_started_mono,
     }
 
@@ -1511,6 +1558,16 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 ).strip(),
             )
         launch_mode = str(launch_result.get("mode") or "default-browser")
+        spawn_started_at_mono = launch_result.get("spawnStartedAtMonotonic")
+        if isinstance(spawn_started_at_mono, (int, float)):
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_browser_process_spawn_started",
+                elapsedMs=max(0, int((float(spawn_started_at_mono) - started_mono) * 1000)),
+                mode=launch_mode,
+                browser=str(launch_result.get("browserName") or ""),
+                browserPath=str(launch_result.get("browserPath") or ""),
+            )
         browser_process = (
             launch_result.get("process")
             if isinstance(launch_result.get("process"), subprocess.Popen)
@@ -1526,10 +1583,24 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             shell_window_shown_elapsed_ms = max(
                 0, int((float(window_shown_at_mono) - started_mono) * 1000)
             )
+        launch_accepted_at_mono = launch_result.get("launchAcceptedAtMonotonic")
+        accepted_elapsed_ms = int((time.perf_counter() - started_mono) * 1000)
+        if isinstance(launch_accepted_at_mono, (int, float)):
+            accepted_elapsed_ms = max(
+                0, int((float(launch_accepted_at_mono) - started_mono) * 1000)
+            )
         _append_startup_trace(
             config.data_dir,
             "desktop_window_created",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            elapsedMs=accepted_elapsed_ms,
+        )
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_browser_launch_accepted",
+            elapsedMs=accepted_elapsed_ms,
+            mode=launch_mode,
+            browser=str(launch_result.get("browserName") or ""),
+            browserPath=str(launch_result.get("browserPath") or ""),
         )
         if not config.no_browser:
             _append_startup_trace(
