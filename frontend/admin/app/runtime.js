@@ -49,6 +49,7 @@ import {
   writeJobsAutoRefreshSignal
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
+import { navigateDesktopPage } from "../../shared/local-data/desktop-client.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { cacheAdminDom } from "./dom.js";
 import {
@@ -494,8 +495,8 @@ function bindEvents() {
   ].forEach(([eventName, handler, target]) => target.addEventListener(eventName, handler));
 
   [
-    [refs.adminJobsBtnEl, () => { window.location.href = getLastJobsUrl(); }],
-    [refs.adminSavedBtnEl, () => { window.location.href = "saved.html"; }],
+    [refs.adminJobsBtnEl, () => { navigateDesktopPage(getLastJobsUrl()); }],
+    [refs.adminSavedBtnEl, () => { navigateDesktopPage("saved.html"); }],
     [refs.adminClearLogBtnEl, () => { fetcherController.setFetcherLogPlaceholder("Output log cleared."); }],
     [refs.adminClearDiscoveryLogBtnEl, event => {
       event.preventDefault();

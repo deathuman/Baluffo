@@ -44,6 +44,7 @@ import {
   rememberJobsUrl
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
+import { navigateDesktopPage } from "../../shared/local-data/desktop-client.js";
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { fetchJson, postJson } from "../../shared/api-client.js";
 import { createAdminBridgeButtonWatcher } from "../../shared/admin-bridge-button.js";
@@ -464,7 +465,7 @@ async function openAdminPageFromJobs() {
     return;
   }
   rememberCurrentJobsUrl();
-  window.location.href = "admin.html";
+  navigateDesktopPage("admin.html");
 }
 
 function bindCoreEvents() {
@@ -473,7 +474,7 @@ function bindCoreEvents() {
   const clickHandlers = new Map([
     [dom.savedJobsBtn, () => {
       rememberCurrentJobsUrl();
-      window.location.href = "saved.html";
+      navigateDesktopPage("saved.html");
     }],
     [dom.countryPickerClearBtn, () => {
       state.filters.countries = [];

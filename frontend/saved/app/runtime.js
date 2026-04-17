@@ -52,6 +52,7 @@ import { normalizeToken } from "../../shared/text-utils.js";
 import { cacheSavedDom } from "./dom.js";
 import { setSavedAuthControlsReady, setSavedAuthStatus, toggleSavedAuthButtons } from "./auth.js";
 import { requestConfirmationDialog, requestTextInputDialog } from "../../local-data/profile-name-dialog.js";
+import { navigateDesktopPage } from "../../shared/local-data/desktop-client.js";
 import { updateCustomJobWarning as updateCustomJobWarningUi } from "./custom-job.js";
 import { runExportBackup as runExportBackupFromModule, runImportBackup as runImportBackupFromModule } from "./backup.js";
 import {
@@ -359,14 +360,14 @@ function bindEvents() {
 
   bindUi(jobsPageBtnEl, "click", () => {
     const target = getLastJobsUrl();
-    window.location.href = target;
+    navigateDesktopPage(target);
   });
   bindUi(adminPageBtnEl, "click", () => {
     if (adminBridgeButtonState !== "online") {
       showToast("Admin bridge is offline.", "info");
       return;
     }
-    window.location.href = "admin.html";
+    navigateDesktopPage("admin.html");
   });
   bindUi(addCustomJobBtnEl, "click", () => {
     if (!currentUser) {

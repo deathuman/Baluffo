@@ -13,6 +13,8 @@ const AUTH_LISTENERS = new Set();
 const SAVED_SUBSCRIPTIONS = new Set();
 const SESSION_KEY = "baluffo_current_profile_id";
 const DESKTOP_LIFECYCLE_HEARTBEAT_MS = 5000;
+const DESKTOP_NAVIGATION_BYPASS_WINDOW_MS = 2000;
+const APPROVED_DESKTOP_PAGE_PATHS = new Set(["/", "/index.html", "/jobs.html", "/saved.html", "/admin.html"]);
 let currentUser = null;
 let pollingStarted = false;
 let authStateRevision = 0;
@@ -27,6 +29,7 @@ let desktopActiveWorkSnapshot = {
   hasActiveTask: false,
   hasActiveUpdate: false
 };
+let desktopNavigationBypassExpiresAt = 0;
 
 function toErrorMessage(error, fallback) {
   return error?.message || String(error || "") || fallback;
@@ -55,6 +58,64 @@ function generateDesktopPageId() {
 
 function hasActiveDesktopWork() {
   return Boolean(desktopActiveWorkSnapshot.hasActiveTask || desktopActiveWorkSnapshot.hasActiveUpdate);
+}
+
+function clearDesktopNavigationBypass() {
+  desktopNavigationBypassExpiresAt = 0;
+}
+
+function resolveDesktopNavigationUrl(target, baseHref = window.location?.href || "") {
+  const rawTarget = String(target || "").trim();
+  if (!rawTarget) {
+    return null;
+  }
+  try {
+    return new URL(rawTarget, baseHref || undefined);
+  } catch {
+    return null;
+  }
+}
+
+function isApprovedDesktopPageNavigation(url, currentHref = window.location?.href || "") {
+  const targetUrl = url instanceof URL ? url : resolveDesktopNavigationUrl(url, currentHref);
+  const currentUrl = resolveDesktopNavigationUrl(currentHref, currentHref);
+  if (!targetUrl || !currentUrl) {
+    return false;
+  }
+  if (targetUrl.origin !== currentUrl.origin) {
+    return false;
+  }
+  const normalizedPath = String(targetUrl.pathname || "/").toLowerCase();
+  return APPROVED_DESKTOP_PAGE_PATHS.has(normalizedPath);
+}
+
+function armDesktopNavigationBypass(targetUrl) {
+  if (!isApprovedDesktopPageNavigation(targetUrl)) {
+    clearDesktopNavigationBypass();
+    return false;
+  }
+  desktopNavigationBypassExpiresAt = Date.now() + DESKTOP_NAVIGATION_BYPASS_WINDOW_MS;
+  return true;
+}
+
+function consumeDesktopNavigationBypass() {
+  const hasBypass = desktopNavigationBypassExpiresAt > 0 && Date.now() <= desktopNavigationBypassExpiresAt;
+  clearDesktopNavigationBypass();
+  return hasBypass;
+}
+
+export function navigateDesktopPage(target, { locationObject = window.location, baseHref = window.location?.href || "" } = {}) {
+  const resolvedTarget = resolveDesktopNavigationUrl(target, baseHref);
+  const nextHref = resolvedTarget ? resolvedTarget.href : String(target || "");
+  armDesktopNavigationBypass(resolvedTarget);
+  if (locationObject && typeof locationObject.assign === "function") {
+    locationObject.assign(nextHref);
+    return nextHref;
+  }
+  if (locationObject && "href" in locationObject) {
+    locationObject.href = nextHref;
+  }
+  return nextHref;
 }
 
 function isActiveTaskPayload(payload) {
@@ -168,7 +229,7 @@ function bindDesktopLifecycleEvents() {
   window.__baluffoDesktopLifecycleBound = true;
   window.addEventListener?.("beforeunload", event => {
     desktopCloseAttemptPending = true;
-    if (hasActiveDesktopWork()) {
+    if (hasActiveDesktopWork() && !consumeDesktopNavigationBypass()) {
       event.preventDefault();
       event.returnValue = "";
       return "";
@@ -187,6 +248,7 @@ function bindDesktopLifecycleEvents() {
   });
   window.addEventListener?.("focus", () => {
     desktopCloseAttemptPending = false;
+    clearDesktopNavigationBypass();
     if (!desktopClosingSignaled && desktopSession && !desktopLifecycleHeartbeatTimer) {
       startDesktopLifecycle();
     }
@@ -569,6 +631,7 @@ async function bootstrapDesktopApi() {
     await refreshCurrentUser({ revision: bootstrapRevision });
     desktopClosingSignaled = false;
     desktopCloseAttemptPending = false;
+    clearDesktopNavigationBypass();
     startDesktopLifecycle();
   } catch (error) {
     console.error("[desktop-local-data] bootstrap failed:", toErrorMessage(error, "bootstrap failed"));
