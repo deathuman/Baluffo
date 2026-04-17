@@ -181,6 +181,50 @@ def test_write_json_atomic_retries_transient_permission_error() -> None:
         assert calls["count"] == 2
 
 
+def test_download_file_retries_transient_permission_error_on_finalize() -> None:
+    class FakeResponse:
+        def __init__(self, content: bytes) -> None:
+            self._content = content
+            self._offset = 0
+            self.headers = {"Content-Length": str(len(content))}
+
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+        def read(self, size: int) -> bytes:
+            if self._offset >= len(self._content):
+                return b""
+            chunk = self._content[self._offset : self._offset + size]
+            self._offset += len(chunk)
+            return chunk
+
+    with workspace_tmpdir("desktop-update") as tmp:
+        target = Path(tmp) / "portable" / "ship" / "data" / "updater" / "downloads" / "app.zip"
+        content = b"portable-zip"
+        calls = {"count": 0}
+        original_replace = du.os.replace
+
+        def flaky_replace(src, dst):  # noqa: ANN001
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise PermissionError(32, "sharing violation")
+            return original_replace(src, dst)
+
+        with (
+            mock.patch.object(du, "urlopen", return_value=FakeResponse(content)),
+            mock.patch.object(du.os, "replace", side_effect=flaky_replace),
+        ):
+            result = du.download_file("https://example.com/app.zip", target)
+
+        assert result == target
+        assert target.read_bytes() == content
+        assert calls["count"] == 2
+        assert list(target.parent.glob("*.download")) == []
+
+
 def test_resolve_github_api_base_honors_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(du.GITHUB_API_BASE_ENV, "http://127.0.0.1:9000/api/")
 

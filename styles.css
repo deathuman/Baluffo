@@ -408,7 +408,7 @@ h1 {
 }
 
 .release-notes-dialog {
-  width: min(92vw, 760px);
+  width: min(94vw, 920px);
   max-height: min(82vh, 760px);
   display: flex;
   flex-direction: column;
@@ -433,9 +433,30 @@ h1 {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding-right: 0.25rem;
+  padding-right: 0.45rem;
   color: var(--text-secondary);
   line-height: 1.6;
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-18) var(--surface-1);
+}
+
+.release-notes-dialog-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.release-notes-dialog-body::-webkit-scrollbar-track {
+  background: var(--surface-1);
+  border-radius: 999px;
+}
+
+.release-notes-dialog-body::-webkit-scrollbar-thumb {
+  background: var(--surface-18);
+  border-radius: 999px;
+  border: 2px solid var(--surface-1);
+}
+
+.release-notes-dialog-body::-webkit-scrollbar-thumb:hover {
+  background: var(--surface-20);
 }
 
 .release-notes-dialog-heading {

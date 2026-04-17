@@ -109,24 +109,28 @@ def install_stage_label(
     return str(INSTALL_STAGE_LABELS.get(stage) or "")
 
 
+def _replace_with_retry(source: Path, target: Path) -> None:
+    for attempt in range(ATOMIC_WRITE_RETRY_ATTEMPTS):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt >= (ATOMIC_WRITE_RETRY_ATTEMPTS - 1):
+                raise
+            time.sleep(
+                min(
+                    ATOMIC_WRITE_RETRY_MAX_DELAY_S,
+                    ATOMIC_WRITE_RETRY_BASE_DELAY_S * (attempt + 1),
+                )
+            )
+
+
 def _write_atomic(path: Path, payload: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(payload, encoding="utf-8")
     try:
-        for attempt in range(ATOMIC_WRITE_RETRY_ATTEMPTS):
-            try:
-                os.replace(tmp, path)
-                return
-            except PermissionError:
-                if attempt >= (ATOMIC_WRITE_RETRY_ATTEMPTS - 1):
-                    raise
-                time.sleep(
-                    min(
-                        ATOMIC_WRITE_RETRY_MAX_DELAY_S,
-                        ATOMIC_WRITE_RETRY_BASE_DELAY_S * (attempt + 1),
-                    )
-                )
+        _replace_with_retry(tmp, path)
     finally:
         if tmp.exists():
             with contextlib.suppress(OSError):
@@ -417,7 +421,7 @@ def download_file(
                 downloaded += len(chunk)
                 if callable(on_progress):
                     on_progress(downloaded, total)
-        os.replace(temp_target, target)
+        _replace_with_retry(temp_target, target)
         return target
     finally:
         if temp_target.exists():
