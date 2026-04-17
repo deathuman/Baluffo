@@ -246,6 +246,7 @@ npm run probe:desktop:startup:cold
 ```
 
 For a warmer startup path, use `npm run probe:desktop:startup:warm`.
+For the canonical startup measurement architecture and the preferred `perf:startup:*` command surface, see [`startup-probe-architecture.md`](startup-probe-architecture.md).
 
 4. Confirm desktop startup, bridge readiness, the full packaged smoke, and the Jobs-page no-Admin pipeline smoke all pass in the smoke output.
    - The Jobs-page smoke should not be considered passed if the backend pipeline enters `stage=error` or reports a non-empty `error` after startup.

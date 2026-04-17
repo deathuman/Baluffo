@@ -216,6 +216,7 @@ def test_testing_doc_owns_verification_matrix(repo_root: Path) -> None:
         assert command in testing_text
 
     assert "This document owns the verification matrix for Baluffo." in testing_text
+    assert "startup-probe-architecture.md" in testing_text
     assert "Real shard files must own real tests." in testing_text
     assert "delete or merge any older test that already protects the same invariant" in testing_text
     assert "For the AI bootstrap and task-routing summary" in testing_text
@@ -231,6 +232,7 @@ def test_release_guide_uses_canonical_release_preflight(repo_root: Path) -> None
     assert "exact commit you plan to push or tag" in release_text
     assert "npm run lint:precommit" in release_text
     assert "npm run test:frontend:packaged:jobs-pipeline" in release_text
+    assert "startup-probe-architecture.md" in release_text
 
 
 def test_active_docs_avoid_stale_runtime_and_test_guidance(repo_root: Path) -> None:
@@ -265,3 +267,10 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
     assert "historical-debt-roadmap.md" not in index_text
     assert "quality-improvement-roadmap.md" not in index_text
     assert "quality-follow-up.md" in index_text
+    assert "startup-probe-architecture.md" in index_text
+
+
+def test_contributing_points_startup_perf_changes_to_canonical_architecture_doc(repo_root: Path) -> None:
+    contributing_text = (repo_root / "CONTRIBUTING.md").read_text(encoding="utf-8")
+
+    assert "docs/startup-probe-architecture.md" in contributing_text

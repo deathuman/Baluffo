@@ -50,6 +50,7 @@ Load these only when your task touches that subsystem.
 | Document | Scope | Use it when |
 |----------|-------|-------------|
 | [`testing.md`](testing.md) | Verification strategy | You need the narrowest relevant tests, fixture layout, or test-to-source map |
+| [`startup-probe-architecture.md`](startup-probe-architecture.md) | Startup perf architecture | You are changing packaged startup timing, launcher startup traces, or startup probe policy |
 | [`scraping-pipeline.md`](scraping-pipeline.md) | Scraping/browser fallback flow | You are working on adapters, browser queue, Scrapy-Playwright, or extraction flow |
 | [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) | Source adapter inventory | You are adding/changing a source family, plugin, or loader path |
 | [`LOCAL_SETUP.md`](LOCAL_SETUP.md) | Local runtime/setup | You need local-first development setup, storage model, backup/restore, or packaging setup details |

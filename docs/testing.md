@@ -52,6 +52,8 @@ python -m pytest tests -q --durations=0 --color=no
 
 ## Performance checks
 
+For packaged startup timing architecture, ownership boundaries, and report semantics, see [startup-probe-architecture.md](startup-probe-architecture.md). Keep command guidance here and the internal startup-measurement design there.
+
 Use the repo-native perf entrypoints before adding new benchmark tooling:
 
 | Goal | Command | Output location |

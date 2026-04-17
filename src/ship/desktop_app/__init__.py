@@ -37,7 +37,11 @@ from src.ship.desktop_update import (
     updater_install_requested,
     write_success_marker,
 )
-from src.ship.runtime_launcher import wait_for_url
+from src.ship.startup_telemetry import (
+    append_startup_trace as _append_startup_trace,
+    read_startup_metrics,
+    wait_for_url,
+)
 from src.ship.startup_profile import summarize_startup_metrics, write_startup_summary
 
 DESKTOP_DEFAULTS = get_desktop_defaults()
@@ -109,23 +113,6 @@ class InstanceLock:
     handle: int
     launcher_token: str = ""
     created_at: str = ""
-
-
-def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
-    row = {
-        "ts": datetime.now(UTC).isoformat(),
-        "event": str(event or "").strip() or "unknown",
-        "fields": {key: value for key, value in fields.items()},
-    }
-    path = Path(data_dir) / "desktop-startup-metrics.jsonl"
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-    except OSError:
-        return
-
-
 def _write_launch_diagnostics(data_dir: Path, filename: str, content: str) -> None:
     try:
         path = Path(data_dir) / str(filename or "desktop-launch-diagnostics.txt")
@@ -133,27 +120,6 @@ def _write_launch_diagnostics(data_dir: Path, filename: str, content: str) -> No
         path.write_text(str(content or ""), encoding="utf-8")
     except OSError:
         return
-
-
-def read_startup_metrics(data_dir: Path, limit: int = 500) -> list[dict[str, object]]:
-    path = Path(data_dir) / "desktop-startup-metrics.jsonl"
-    rows: list[dict[str, object]] = []
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(row, dict):
-                    rows.append(row)
-    except OSError:
-        return []
-    if limit > 0:
-        return rows[-limit:]
-    return rows
-
-
 def _truthy_env(value: object) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 

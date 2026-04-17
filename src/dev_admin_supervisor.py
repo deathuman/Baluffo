@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 
 from src.contracts import SCHEMA_VERSION
 from src.ship.desktop_app import launch_browser_for_url, terminate_process, watch_browser_session
-from src.ship.runtime_launcher import wait_for_url
+from src.ship.startup_telemetry import wait_for_url
 
 DEFAULT_SITE_PORT = 8080
 DEFAULT_BRIDGE_PORT = 8877

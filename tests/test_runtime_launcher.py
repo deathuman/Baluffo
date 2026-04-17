@@ -11,6 +11,7 @@ import pytest
 
 from src.app_version import APP_VERSION
 from src.ship import runtime_launcher as rl
+from src.ship import startup_telemetry as telemetry
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -138,7 +139,7 @@ def test_wait_for_url_uses_direct_http_connection_for_loopback() -> None:
         def close(self) -> None:
             return
 
-    with mock.patch.object(rl.http.client, "HTTPConnection", _FakeConnection):
+    with mock.patch.object(telemetry.http.client, "HTTPConnection", _FakeConnection):
         rl.wait_for_url("http://127.0.0.1:8123/jobs.html?desktop=1", timeout_s=1.0, interval_s=0.05)
 
     assert calls == [("127.0.0.1", 8123, 1.0, "GET", "/jobs.html?desktop=1")]
@@ -161,7 +162,7 @@ def test_wait_for_url_uses_opener_for_non_loopback() -> None:
             opened.append((request.full_url, timeout))
             return _FakeResponse()
 
-    with mock.patch.object(rl, "build_opener", return_value=_FakeOpener()):
+    with mock.patch.object(telemetry, "build_opener", return_value=_FakeOpener()):
         rl.wait_for_url("http://example.com/health", timeout_s=1.0, interval_s=0.05)
 
     assert opened == [("http://example.com/health", 1.0)]

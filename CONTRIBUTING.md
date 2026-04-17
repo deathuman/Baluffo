@@ -11,6 +11,7 @@
    - `npm run verify` - Full verification for risky or broad changes
    - `npm run perf:py:timing` - Perf timing lane for slow-test visibility
    - `npm run perf:discovery:benchmark` / `npm run perf:startup:cold` - Discovery or packaged-startup perf checks when you touch those paths
+   - For packaged startup architecture and command ownership, use [`docs/startup-probe-architecture.md`](docs/startup-probe-architecture.md)
 5. **Lint:** `npm run lint:precommit:changed` before committing or pushing
 
 ## Process notes
