@@ -1454,7 +1454,6 @@ def launch_browser_for_url(
                 spawnToAcceptMs=spawn_to_accept_ms,
                 **trace_common,
             )
-            _trace("desktop_browser_launch_selected", launch_accepted_mono, **trace_common)
             launch_accepted_elapsed_ms = 0
             if isinstance(started_mono, (int, float)):
                 launch_accepted_elapsed_ms = max(
@@ -1473,6 +1472,7 @@ def launch_browser_for_url(
                 reveal_result.get("event") or "desktop_shell_window_shown_inferred"
             )
             shell_window_event_emitted = observed_window is not None
+            _trace("desktop_browser_launch_selected", window_shown_mono, **trace_common)
             if shell_window_event_emitted:
                 _trace(
                     shell_window_event,
@@ -1526,7 +1526,6 @@ def launch_browser_for_url(
                 detached=True,
                 **trace_common,
             )
-            _trace("desktop_browser_launch_selected", launch_accepted_mono, **trace_common)
             launch_accepted_elapsed_ms = 0
             if isinstance(started_mono, (int, float)):
                 launch_accepted_elapsed_ms = max(
@@ -1546,6 +1545,7 @@ def launch_browser_for_url(
                 reveal_result.get("event") or "desktop_shell_window_shown_inferred"
             )
             shell_window_event_emitted = observed_window is not None
+            _trace("desktop_browser_launch_selected", window_shown_mono, **trace_common)
             if shell_window_event_emitted:
                 _trace(
                     shell_window_event,
@@ -2166,11 +2166,17 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 browser=str(launch_result.get("browserName") or ""),
                 browserPath=str(launch_result.get("browserPath") or ""),
             )
+        browser_launch_selected_elapsed_ms = accepted_elapsed_ms
+        if not config.no_browser:
+            browser_launch_selected_elapsed_ms = max(
+                int(accepted_elapsed_ms),
+                int(shell_window_shown_elapsed_ms),
+            )
         if not config.no_browser and not launch_trace_events_emitted:
             _append_startup_trace(
                 config.data_dir,
                 "desktop_browser_launch_selected",
-                elapsedMs=accepted_elapsed_ms,
+                elapsedMs=browser_launch_selected_elapsed_ms,
                 mode=launch_mode,
                 browser=str(launch_result.get("browserName") or ""),
                 browserPath=str(launch_result.get("browserPath") or ""),

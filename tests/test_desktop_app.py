@@ -747,10 +747,10 @@ def test_launch_browser_for_url_marks_reveal_inferred_when_visible_window_not_ob
 def test_launch_browser_for_url_emits_trace_events_at_spawn_accept_and_reveal() -> None:
     fake_process = mock.Mock(spec=subprocess.Popen)
     fake_process.pid = 700
-    trace_events: list[tuple[str, dict[str, object]]] = []
+    trace_events: list[tuple[str, float, dict[str, object]]] = []
 
     def _trace(event: str, _mono: float, fields: dict[str, object]) -> None:
-        trace_events.append((event, fields))
+        trace_events.append((event, _mono, fields))
 
     with (
         mock.patch.object(
@@ -780,13 +780,16 @@ def test_launch_browser_for_url_emits_trace_events_at_spawn_accept_and_reveal() 
 
     assert result["launchTraceEventsEmitted"] is True
     assert result["shellWindowEventEmitted"] is True
-    assert [event for event, _fields in trace_events] == [
+    assert [event for event, _mono, _fields in trace_events] == [
         "desktop_browser_process_spawn_started",
         "desktop_window_created",
         "desktop_browser_launch_accepted",
         "desktop_browser_launch_selected",
         "desktop_shell_window_shown",
     ]
+    selected_event = next(item for item in trace_events if item[0] == "desktop_browser_launch_selected")
+    shell_event = next(item for item in trace_events if item[0] == "desktop_shell_window_shown")
+    assert selected_event[1] == shell_event[1]
 
 
 def test_find_baluffo_visible_window_accepts_same_pid_chromium_window_without_baluffo_title() -> None:
@@ -1417,7 +1420,14 @@ def test_launch_desktop_app_emits_window_created_before_shell_window_shown() -> 
     event_names = [call.args[1] for call in trace_mock.call_args_list]
     window_created_index = event_names.index("desktop_window_created")
     shell_shown_index = event_names.index("desktop_shell_window_shown")
+    selected_call = next(
+        call for call in trace_mock.call_args_list if call.args[1] == "desktop_browser_launch_selected"
+    )
+    shell_shown_call = next(
+        call for call in trace_mock.call_args_list if call.args[1] == "desktop_shell_window_shown"
+    )
     assert window_created_index < shell_shown_index
+    assert int(selected_call.kwargs["elapsedMs"]) >= int(shell_shown_call.kwargs["elapsedMs"])
     assert "desktop_browser_launch_phase_diagnostics" in event_names
 
 
