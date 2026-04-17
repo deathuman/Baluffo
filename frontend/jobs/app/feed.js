@@ -1,5 +1,23 @@
 import { set as stateHubSet } from "../../shared/state-hub.js";
 
+function cloneFilterState(filters = {}) {
+  return {
+    ...filters,
+    countries: Array.from(filters?.countries || [])
+  };
+}
+
+function filtersMatchDefault(filters = {}, defaultFilters = {}) {
+  const current = cloneFilterState(filters);
+  const defaults = cloneFilterState(defaultFilters);
+  return JSON.stringify(current) === JSON.stringify(defaults);
+}
+
+export function canUseStartupPreviewFastPath(pageState = {}, defaultFilters = {}) {
+  return Number(pageState?.currentPage || 1) === 1
+    && filtersMatchDefault(pageState?.filters || {}, defaultFilters);
+}
+
 export async function initJobsFeed(deps) {
   const {
     hasJobsList,
@@ -219,8 +237,14 @@ export async function loadStartupPreviewJobsFeed(deps) {
     normalizeRows,
     updateLastUpdatedText,
     recalculateItemsPerPage,
+    pageState,
+    defaultFilters,
+    buildStartupPreviewFastPathPlan,
+    applyFilterOptionsSnapshot,
     updateFilterOptions,
     applyStateToFilters,
+    renderStartupPreviewFastPath,
+    scheduleStartupPreviewMaterialization,
     applyFiltersAndRender,
     markStartupRendered,
     markJobsFirstInteractive,
@@ -242,18 +266,35 @@ export async function loadStartupPreviewJobsFeed(deps) {
     });
     if (!Array.isArray(rows) || rows.length === 0) return false;
     emitMetric("jobs_startup_preview_normalize_start");
-    normalizeRows(rows);
+    const normalizedJobs = normalizeRows(rows);
     emitMetric("jobs_startup_preview_normalize_complete", {
       rowCount: getAllJobs().length
     });
     updateLastUpdatedText(Date.now());
     recalculateItemsPerPage();
-    updateFilterOptions();
-    applyStateToFilters();
     emitMetric("jobs_startup_preview_render_start", {
       rowCount: getAllJobs().length
     });
-    applyFiltersAndRender({ resetPage: false });
+    const useFastPath = canUseStartupPreviewFastPath(pageState, defaultFilters)
+      && typeof buildStartupPreviewFastPathPlan === "function"
+      && typeof renderStartupPreviewFastPath === "function";
+    if (useFastPath) {
+      const startupPreviewPlan = buildStartupPreviewFastPathPlan(normalizedJobs);
+      if (startupPreviewPlan?.filterOptions && typeof applyFilterOptionsSnapshot === "function") {
+        applyFilterOptionsSnapshot(startupPreviewPlan.filterOptions);
+      } else {
+        updateFilterOptions();
+      }
+      applyStateToFilters();
+      renderStartupPreviewFastPath(startupPreviewPlan);
+      if (typeof scheduleStartupPreviewMaterialization === "function") {
+        scheduleStartupPreviewMaterialization(startupPreviewPlan?.materializeFilteredJobs);
+      }
+    } else {
+      updateFilterOptions();
+      applyStateToFilters();
+      applyFiltersAndRender({ resetPage: false });
+    }
     emitMetric("jobs_startup_preview_render_returned", {
       rowCount: getAllJobs().length
     });

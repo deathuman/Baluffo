@@ -1,5 +1,10 @@
 const STARTUP_PROBE_KEY = "baluffo_startup_probe_enabled";
 const RUNTIME_BRIDGE_BASE_KEY = "baluffo_runtime_bridge_base";
+const STARTUP_PROBE_RETRY_MS = 200;
+
+let startupProbeRetryHandle = null;
+let startupProbeFlushPromise = null;
+const pendingStartupProbeMetrics = [];
 
 export function resolveStartupProbeEnabled() {
   try {
@@ -31,6 +36,80 @@ function resolveBridgeBase() {
   }
 }
 
+function normalizeStartupMetricPayload(payload = {}) {
+  return payload && typeof payload === "object" ? payload : {};
+}
+
+function clearStartupProbeRetry() {
+  if (startupProbeRetryHandle === null) return;
+  clearTimeout(startupProbeRetryHandle);
+  startupProbeRetryHandle = null;
+}
+
+function scheduleStartupProbeRetry() {
+  if (startupProbeRetryHandle !== null) return;
+  startupProbeRetryHandle = setTimeout(() => {
+    startupProbeRetryHandle = null;
+    void flushStartupProbeMetricQueue();
+  }, STARTUP_PROBE_RETRY_MS);
+}
+
+async function postStartupProbeMetric(bridgeBase, entry) {
+  const response = await fetch(`${bridgeBase}/desktop-local-data/startup-metric?t=${Date.now()}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event: entry.event,
+      payload: entry.payload
+    })
+  });
+  if (response && Object.prototype.hasOwnProperty.call(response, "ok") && response.ok === false) {
+    throw new Error(`startup metric post failed: ${response.status || "request failed"}`);
+  }
+}
+
+export async function flushStartupProbeMetricQueue() {
+  if (pendingStartupProbeMetrics.length === 0) {
+    clearStartupProbeRetry();
+    return true;
+  }
+  const bridgeBase = resolveBridgeBase();
+  if (!bridgeBase) {
+    scheduleStartupProbeRetry();
+    return false;
+  }
+  if (startupProbeFlushPromise) {
+    return startupProbeFlushPromise;
+  }
+  startupProbeFlushPromise = (async () => {
+    while (pendingStartupProbeMetrics.length > 0) {
+      const entry = pendingStartupProbeMetrics[0];
+      try {
+        await postStartupProbeMetric(bridgeBase, entry);
+        pendingStartupProbeMetrics.shift();
+      } catch {
+        scheduleStartupProbeRetry();
+        return false;
+      }
+    }
+    clearStartupProbeRetry();
+    return true;
+  })().finally(() => {
+    startupProbeFlushPromise = null;
+  });
+  return startupProbeFlushPromise;
+}
+
+export function postStartupMetricToBridge(event, payload = {}) {
+  const normalizedEvent = String(event || "").trim();
+  if (!normalizedEvent) return;
+  pendingStartupProbeMetrics.push({
+    event: normalizedEvent,
+    payload: normalizeStartupMetricPayload(payload)
+  });
+  void flushStartupProbeMetricQueue();
+}
+
 export function resolveStartupProbePage() {
   try {
     const path = String(new URL(window.location.href).pathname || "").split("/").pop() || "";
@@ -43,16 +122,7 @@ export function resolveStartupProbePage() {
 
 export function emitStartupProbeMetric(event, payload = {}) {
   if (!resolveStartupProbeEnabled()) return;
-  const bridgeBase = resolveBridgeBase();
-  if (!bridgeBase) return;
-  fetch(`${bridgeBase}/desktop-local-data/startup-metric?t=${Date.now()}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      event,
-      payload
-    })
-  }).catch(() => {});
+  postStartupMetricToBridge(event, payload);
 }
 
 let startupProbeErrorBindingDone = false;

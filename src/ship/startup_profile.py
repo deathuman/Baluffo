@@ -34,13 +34,7 @@ PROFILE_THRESHOLDS_MS = {
 }
 
 
-def _parse_row_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int | None:
-    fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
-    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
-    for source in (fields, payload):
-        value = source.get("elapsedMs")
-        if isinstance(value, (int, float)):
-            return int(value)
+def _parse_ts_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int | None:
     ts_value = str(row.get("ts") or "").strip()
     if not ts_value or launch_ts_ms is None:
         return None
@@ -48,6 +42,23 @@ def _parse_row_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int | None:
         return max(0, int(datetime.fromisoformat(ts_value).timestamp() * 1000) - int(launch_ts_ms))
     except ValueError:
         return None
+
+
+def _parse_payload_elapsed_ms(row: dict[str, Any]) -> int | None:
+    fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    for source in (fields, payload):
+        value = source.get("elapsedMs")
+        if isinstance(value, (int, float)):
+            return int(value)
+    return None
+
+
+def _parse_row_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int | None:
+    ts_elapsed_ms = _parse_ts_ms(row, launch_ts_ms)
+    if ts_elapsed_ms is not None:
+        return ts_elapsed_ms
+    return _parse_payload_elapsed_ms(row)
 
 
 def _launch_ts_ms(rows: list[dict[str, Any]]) -> int | None:
@@ -100,6 +111,28 @@ def _resolve_stage_event(
     if not name:
         return None, None
     return (name, events.get(name)) if name in events else (name, None)
+
+
+def _classify_stages(
+    *,
+    stages: list[dict[str, Any]],
+    missing_events: list[str],
+    classification_map: dict[str, str],
+) -> str:
+    if missing_events:
+        return "metrics incomplete"
+    ranked = [
+        stage
+        for stage in stages
+        if stage["key"] != "total_launch_to_first_usable_ui" and stage["durationMs"] is not None
+    ]
+    if not ranked:
+        return "insufficient data"
+    slow_ranked = [stage for stage in ranked if stage.get("status") == "slow"]
+    selected = slow_ranked if slow_ranked else ranked
+    selected.sort(key=lambda item: int(item["durationMs"] or 0), reverse=True)
+    top = str(selected[0]["key"] or "").strip()
+    return classification_map.get(top, "ok" if not slow_ranked else "startup bottleneck unclear")
 
 
 def summarize_startup_metrics(
@@ -195,21 +228,16 @@ def summarize_startup_metrics(
                     "status": status,
                 }
             )
-        ranked = [
-            stage
-            for stage in stages
-            if stage["key"] != "total_launch_to_first_usable_ui" and stage["durationMs"] is not None
-        ]
-        ranked.sort(key=lambda item: int(item["durationMs"] or 0), reverse=True)
-        if missing_events:
-            classification = "metrics incomplete"
-        elif not ranked:
-            classification = "insufficient data"
-        else:
-            classification = {
+        classification = _classify_stages(
+            stages=stages,
+            missing_events=missing_events,
+            classification_map={
+                "launch_to_site_ready": "bridge/site bootstrap delayed",
+                "site_ready_to_window_created": "browser launch / app-window creation delayed",
                 "window_created_to_window_shown": "native reveal delayed",
                 "window_shown_to_page_loaded": "desktop page load delayed",
-            }.get(ranked[0]["key"], "startup bottleneck unclear")
+            },
+        )
         stage_statuses = [stage["status"] for stage in stages]
         return {
             "page": safe_page,
@@ -339,27 +367,20 @@ def summarize_startup_metrics(
             }
         )
 
-    ranked = [
-        stage
-        for stage in stages
-        if stage["key"] != "total_launch_to_first_usable_ui" and stage["durationMs"] is not None
-    ]
-    ranked.sort(key=lambda item: int(item["durationMs"] or 0), reverse=True)
-    if missing_events:
-        classification = "metrics incomplete"
-    elif not ranked:
-        classification = "insufficient data"
-    else:
-        top = ranked[0]["key"]
-        classification_map = {
+    classification = _classify_stages(
+        stages=stages,
+        missing_events=missing_events,
+        classification_map={
+            "launch_to_site_ready": "bridge/site bootstrap delayed",
+            "site_ready_to_window_created": "browser launch / app-window creation delayed",
             "window_created_to_window_shown": "native reveal delayed",
-            "window_shown_to_page_loaded": "desktop page load delayed",
+            "window_shown_to_page_loaded": "page boot delayed",
             "page_loaded_to_local_data_ready": "local data init delayed",
             "local_data_ready_to_auth_ready": "local auth bootstrap delayed",
             "auth_ready_to_first_render": f"{safe_page} render delayed",
             "first_render_to_first_interactive": f"{safe_page} interactive readiness delayed",
-        }
-        classification = classification_map.get(top, "startup bottleneck unclear")
+        },
+    )
 
     stage_statuses = [stage["status"] for stage in stages]
     summary_status = (

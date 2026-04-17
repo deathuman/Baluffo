@@ -1476,21 +1476,6 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         )
         open_url = build_open_url(config)
         wait_for_url(open_url, timeout_s=READY_TIMEOUT_S)
-        try:
-            wait_for_baluffo_bridge(config.bridge_port, timeout_s=5.0, require_desktop_mode=True)
-            _append_startup_trace(
-                config.data_dir,
-                "desktop_bridge_ready",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                bridgePort=int(config.bridge_port),
-            )
-        except RuntimeError:
-            _append_startup_trace(
-                config.data_dir,
-                "desktop_bridge_ready_deferred",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                bridgePort=int(config.bridge_port),
-            )
         _append_startup_trace(
             config.data_dir,
             "desktop_site_ready",
@@ -1541,6 +1526,11 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             shell_window_shown_elapsed_ms = max(
                 0, int((float(window_shown_at_mono) - started_mono) * 1000)
             )
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_window_created",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+        )
         if not config.no_browser:
             _append_startup_trace(
                 config.data_dir,
@@ -1571,6 +1561,17 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         )
         update_instance_lock_state(instance_lock, "running")
         session_state_written = True
+        bridge_ready = is_baluffo_bridge_healthy(
+            config.bridge_port,
+            timeout_s=0.5,
+            require_desktop_mode=True,
+        )
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_bridge_ready" if bridge_ready else "desktop_bridge_ready_deferred",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            bridgePort=int(config.bridge_port),
+        )
         with contextlib.suppress(RuntimeError):
             ready_payload = wait_for_desktop_startup_ready(
                 config.bridge_port,
@@ -1583,11 +1584,6 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 bridge_port=int(config.bridge_port),
                 launcher_token=str(instance_lock.launcher_token or launcher_token),
             )
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_window_created",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-        )
         _append_startup_trace(
             config.data_dir,
             "desktop_shell_window_shown",

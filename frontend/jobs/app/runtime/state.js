@@ -54,7 +54,10 @@ export function createJobsRuntimeState(defaultFilters = {}, { lastHandledAutoRef
       adminBridgeButtonState: "checking",
       adminBridgeWatcher: null,
       desktopUpdateController: null,
-      lastFilterOptionsSignature: ""
+      lastFilterOptionsSignature: "",
+      startupPreviewMaterialize: null,
+      startupPreviewMaterializeTimer: null,
+      startupPreviewFilteredCount: 0
     }
   };
 }

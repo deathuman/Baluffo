@@ -30,6 +30,7 @@ if str(ROOT) not in sys.path:
 from src.local_data_store import LocalDataPaths, LocalDataStore
 from src.python_version_guard import ensure_required_python
 from src.shared.utils import utc_now_iso
+from src.ship import desktop_app as desktop_app_mod
 from src.ship import desktop_update as desktop_update_mod
 from src.ship.startup_profile import (
     render_startup_summary,
@@ -40,6 +41,8 @@ from src.ship.startup_profile import (
 DEFAULT_EXE_PATH = ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
 DEFAULT_REPORT_PATH = ROOT / "data" / "packaged-desktop-smoke-report.json"
 DEFAULT_ARTIFACT_ROOT = ROOT / ".tmp" / "packaged-desktop-smoke"
+DEFAULT_ARTIFACT_RETENTION_RUNS = 2
+DEFAULT_ARTIFACT_FILE_RETENTION_S = 24 * 60 * 60
 DEFAULT_RUNTIME_TIMEOUT_S = 35.0
 DEFAULT_SMOKE_RUNNER_TIMEOUT_S = 180.0
 DEFAULT_NODE_SMOKE_SCRIPT = ROOT / "tests" / "frontend" / "packaged-desktop-smoke.mjs"
@@ -74,6 +77,7 @@ STARTUP_REQUIRED_EVENTS = (
     "desktop_window_created",
     "desktop_shell_window_shown",
 )
+REQUIRED_STARTUP_PROBE_LAUNCH_MODE = "chromium-app"
 EMBEDDED_PAGE_PROBES = (
     {
         "name": "Embedded Jobs Ready",
@@ -90,6 +94,15 @@ EMBEDDED_PAGE_PROBES = (
 DESKTOP_SESSION_STATE_FILE = "desktop-session.json"
 DESKTOP_INSTANCE_LOCK_FILE = "desktop-instance.lock"
 DESKTOP_BROWSER_PROFILE_DIR = "desktop-browser-profile"
+PORTABLE_BUILD_SCRATCH_NAMES = (
+    ".pyinstaller-assets",
+    ".pyinstaller-dist",
+    ".pyinstaller-work",
+    ".pyinstaller-spec",
+    ".pyinstaller-helper-dist",
+    ".pyinstaller-helper-work",
+    ".pyinstaller-helper-spec",
+)
 
 
 def startup_profile_required_events(page: str) -> tuple[str, ...]:
@@ -131,6 +144,28 @@ def slugify_token(value: str) -> str:
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def remove_tree_or_file(path: Path) -> bool:
+    candidate = Path(path).expanduser().resolve()
+    if not candidate.exists():
+        return False
+    try:
+        if candidate.is_dir():
+            shutil.rmtree(candidate, ignore_errors=True)
+        else:
+            candidate.unlink()
+    except OSError:
+        return False
+    return not candidate.exists()
+
+
+def generate_packaged_smoke_run_token(
+    *, now: datetime | None = None, entropy_ns: int | None = None
+) -> str:
+    resolved_now = now if isinstance(now, datetime) else datetime.now(UTC)
+    resolved_entropy = int(entropy_ns if entropy_ns is not None else time.time_ns())
+    return f"{resolved_now.strftime('%Y%m%d-%H%M%S-%f')}-{resolved_entropy % 1_000_000_000:09d}"
 
 
 def fetch_json(url: str, timeout_s: float = 2.5) -> dict[str, Any]:
@@ -211,6 +246,111 @@ def read_startup_metrics_file(data_dir: Path, limit: int = 1000) -> list[dict[st
     return rows[-max(1, int(limit)) :]
 
 
+def startup_metric_fields(row: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    payload = row.get("payload")
+    if isinstance(payload, dict):
+        merged.update(payload)
+    fields = row.get("fields")
+    if isinstance(fields, dict):
+        merged.update(fields)
+    return merged
+
+
+def startup_metric_launch_mode(rows: list[dict[str, Any]]) -> str:
+    for row in rows:
+        if str(row.get("event") or "").strip() != "desktop_browser_launch_selected":
+            continue
+        fields = startup_metric_fields(row)
+        return str(fields.get("mode") or "").strip().lower()
+    return ""
+
+
+def startup_probe_browser_details(
+    rows: list[dict[str, Any]],
+    *,
+    preferred_browser_name: str = "",
+    preferred_browser_path: str = "",
+) -> dict[str, str]:
+    details = {
+        "preferredBrowserName": str(preferred_browser_name or "").strip().lower(),
+        "preferredBrowserPath": str(preferred_browser_path or "").strip(),
+        "selectedBrowserName": "",
+        "selectedBrowserPath": "",
+        "launchMode": "",
+        "launchError": "",
+        "launchErrorType": "",
+        "windowClosedReason": "",
+    }
+    for row in rows:
+        event = str(row.get("event") or "").strip()
+        fields = startup_metric_fields(row)
+        if event == "desktop_browser_launch_selected":
+            details["selectedBrowserName"] = str(fields.get("browser") or "").strip().lower()
+            details["selectedBrowserPath"] = str(fields.get("browserPath") or "").strip()
+            details["launchMode"] = str(fields.get("mode") or "").strip().lower()
+        elif event == "desktop_launch_error":
+            details["launchError"] = str(fields.get("error") or "").strip()
+            details["launchErrorType"] = str(fields.get("errorType") or "").strip()
+        elif event == "desktop_window_closed":
+            details["windowClosedReason"] = str(fields.get("reason") or "").strip().lower()
+    return details
+
+
+def classify_startup_probe_failure(
+    rows: list[dict[str, Any]], *, error_message: str = "", summary: dict[str, Any] | None = None
+) -> tuple[str, str]:
+    details = startup_probe_browser_details(rows)
+    missing_events = {
+        str(event or "").strip() for event in ((summary or {}).get("missingEvents") or []) if event
+    }
+    error_text = str(error_message or "").strip()
+    lowered = error_text.lower()
+    if "no supported managed chromium probe browser available" in lowered:
+        return "no managed chromium probe browser available", "probe_browser_unavailable"
+    if details["launchMode"] == "default-browser":
+        return "non-authoritative browser launch", "non_authoritative_browser_launch"
+    if details["launchError"] and details["launchMode"] == REQUIRED_STARTUP_PROBE_LAUNCH_MODE:
+        return "browser runtime startup failed", "browser_runtime_startup_failed"
+    if (
+        details["launchMode"] == REQUIRED_STARTUP_PROBE_LAUNCH_MODE
+        and missing_events.intersection({"jobs_module_boot_start", "jobs_first_render", "jobs_first_interactive"})
+        and (
+            details["windowClosedReason"] == "bridge_exit"
+            or "actively refused" in lowered
+            or "10061" in lowered
+            or "10054" in lowered
+            or "connection was forcibly closed" in lowered
+        )
+    ):
+        return "browser runtime startup failed", "browser_runtime_startup_failed"
+    return "", ""
+
+
+def refine_startup_probe_summary(
+    summary: dict[str, Any],
+    rows: list[dict[str, Any]],
+    *,
+    error_message: str = "",
+    preferred_browser_name: str = "",
+    preferred_browser_path: str = "",
+) -> dict[str, Any]:
+    refined = dict(summary or {})
+    details = startup_probe_browser_details(
+        rows,
+        preferred_browser_name=preferred_browser_name,
+        preferred_browser_path=preferred_browser_path,
+    )
+    refined.update(details)
+    classification, _category = classify_startup_probe_failure(
+        rows, error_message=error_message, summary=refined
+    )
+    if classification:
+        refined["classification"] = classification
+        refined["status"] = "failed"
+    return refined
+
+
 def choose_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as handle:
         handle.bind(("127.0.0.1", 0))
@@ -277,8 +417,78 @@ def run_portable_build(output_dir: Path | None = None) -> Path:
         command.extend(["--output-dir", str(target_dir), "--skip-zip"])
     subprocess.run(command, cwd=ROOT, check=True)
     if target_dir is not None:
+        cleanup_portable_build_scratch(target_dir)
+    if target_dir is not None:
         return target_dir / "Baluffo.exe"
     return DEFAULT_EXE_PATH
+
+
+def cleanup_portable_build_scratch(output_dir: Path) -> list[Path]:
+    base_dir = Path(output_dir).expanduser().resolve().parent
+    removed: list[Path] = []
+    for name in PORTABLE_BUILD_SCRATCH_NAMES:
+        candidate = base_dir / name
+        if remove_tree_or_file(candidate):
+            removed.append(candidate)
+    return removed
+
+
+def select_startup_probe_browser(env: dict[str, str] | None = None) -> dict[str, str]:
+    env_map = env if env is not None else os.environ
+    candidates = desktop_app_mod.resolve_chromium_browser_candidates()
+    for candidate in candidates:
+        if not desktop_app_mod.chromium_app_mode_supported(candidate, env=env_map):
+            continue
+        browser_name = str(candidate.get("name") or "").strip().lower()
+        browser_path = str(candidate.get("path") or "").strip()
+        if browser_name and browser_path:
+            return {
+                "browserName": browser_name,
+                "browserPath": browser_path,
+            }
+    raise RuntimeError(
+        "No supported managed Chromium probe browser available. "
+        "Install Chrome, Brave, or an Edge build that can launch in app mode."
+    )
+
+
+def prune_packaged_smoke_artifacts(
+    artifacts_root: Path,
+    *,
+    keep_recent_runs: int = DEFAULT_ARTIFACT_RETENTION_RUNS,
+    file_retention_s: int = DEFAULT_ARTIFACT_FILE_RETENTION_S,
+    current_artifacts_dir: Path | None = None,
+) -> list[Path]:
+    root = Path(artifacts_root).expanduser().resolve()
+    if not root.exists():
+        return []
+    current = Path(current_artifacts_dir).expanduser().resolve() if current_artifacts_dir else None
+    removed: list[Path] = []
+    keep_count = max(1, int(keep_recent_runs or 1))
+    keep_other_dirs = max(0, keep_count - (1 if current is not None else 0))
+    child_dirs: list[Path] = []
+    now = time.time()
+    for entry in root.iterdir():
+        resolved = entry.expanduser().resolve()
+        if current is not None and resolved == current:
+            continue
+        if resolved.is_dir():
+            child_dirs.append(resolved)
+            continue
+        try:
+            age_s = max(0.0, now - float(resolved.stat().st_mtime))
+        except OSError:
+            continue
+        if age_s >= max(0, int(file_retention_s or 0)) and remove_tree_or_file(resolved):
+            removed.append(resolved)
+    child_dirs.sort(
+        key=lambda candidate: candidate.stat().st_mtime if candidate.exists() else 0.0,
+        reverse=True,
+    )
+    for stale_dir in child_dirs[keep_other_dirs:]:
+        if remove_tree_or_file(stale_dir):
+            removed.append(stale_dir)
+    return removed
 
 
 def resolve_node_command() -> list[str]:
@@ -405,6 +615,9 @@ def collect_packaged_smoke_env_diagnostics(
         "tmp": str(env_map.get("TMP") or ""),
         "temp": str(env_map.get("TEMP") or ""),
         "isElevated": is_windows_process_elevated(),
+        "preferredProbeBrowserPath": str(
+            env_map.get(desktop_app_mod.PREFERRED_BROWSER_PATH_ENV) or ""
+        ),
     }
     return diagnostics
 
@@ -450,6 +663,7 @@ def packaged_runtime_env_overrides(
     *,
     artifacts_dir: Path | None = None,
     session_scope: str = "runtime",
+    startup_probe: bool = False,
 ) -> dict[str, str]:
     overrides: dict[str, str] = {}
     if node_smoke_script is not None:
@@ -462,6 +676,8 @@ def packaged_runtime_env_overrides(
         )
         local_app_data.mkdir(parents=True, exist_ok=True)
         overrides["LOCALAPPDATA"] = str(local_app_data)
+    if startup_probe:
+        overrides["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] = "1"
     return overrides
 
 
@@ -628,6 +844,8 @@ def wait_for_packaged_runtime(
     timeout_s: float,
     open_path: str = "jobs.html",
     required_events: list[str] | tuple[str, ...] = STARTUP_REQUIRED_EVENTS,
+    require_managed_window: bool = False,
+    require_page_ready: bool = True,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + max(1.0, float(timeout_s))
     last_error = ""
@@ -644,18 +862,26 @@ def wait_for_packaged_runtime(
             health = fetch_json(f"{bridge_base_url}/ops/health")
             session = fetch_json(f"{bridge_base_url}/desktop-local-data/session")
             metrics_rows = fetch_startup_metrics(bridge_base_url, limit=1000)
+            launch_mode = startup_metric_launch_mode(metrics_rows)
+            if require_managed_window and launch_mode:
+                if launch_mode != REQUIRED_STARTUP_PROBE_LAUNCH_MODE:
+                    raise RuntimeError(
+                        "Startup probe requires a managed Chromium app window; "
+                        f"desktop launch mode was '{launch_mode}'."
+                    )
             events = {str(row.get("event") or "") for row in metrics_rows if isinstance(row, dict)}
-            page_name = str(Path(str(open_path or "jobs.html")).name or "jobs.html")
-            page_text = fetch_text(f"{site_base_url}/{page_name}?desktop=1", timeout_s=2.5)
             page_ready = True
-            if page_name == "jobs.html":
-                page_ready = "jobs-list" in page_text
-            elif page_name == "saved.html":
-                page_ready = "saved" in page_text.lower()
-            elif page_name == "admin.html":
-                page_ready = "admin" in page_text.lower()
-            elif page_name == "desktop-probe.html":
-                page_ready = "Desktop Probe" in page_text
+            if require_page_ready:
+                page_name = str(Path(str(open_path or "jobs.html")).name or "jobs.html")
+                page_text = fetch_text(f"{site_base_url}/{page_name}?desktop=1", timeout_s=2.5)
+                if page_name == "jobs.html":
+                    page_ready = "jobs-list" in page_text
+                elif page_name == "saved.html":
+                    page_ready = "saved" in page_text.lower()
+                elif page_name == "admin.html":
+                    page_ready = "admin" in page_text.lower()
+                elif page_name == "desktop-probe.html":
+                    page_ready = "Desktop Probe" in page_text
             if all(event in events for event in normalized) and page_ready:
                 return {
                     "health": health,
@@ -698,14 +924,28 @@ def wait_for_runtime_events(
     deadline = time.monotonic() + max(1.0, float(timeout_s))
     normalized = [str(event or "").strip() for event in required_events if str(event or "").strip()]
     last_events: set[str] = set()
+    last_error = ""
     while time.monotonic() < deadline:
-        rows = fetch_startup_metrics(bridge_base_url, limit=1000)
-        last_events = {str(row.get("event") or "") for row in rows}
-        if all(event in last_events for event in normalized):
-            return rows
+        try:
+            rows = fetch_startup_metrics(bridge_base_url, limit=1000)
+            last_events = {str(row.get("event") or "") for row in rows}
+            if all(event in last_events for event in normalized):
+                return rows
+        except (
+            TimeoutError,
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            json.JSONDecodeError,
+            ValueError,
+            OSError,
+        ) as exc:
+            last_error = str(exc)
         time.sleep(0.35)
     missing = ", ".join(event for event in normalized if event not in last_events)
-    raise TimeoutError(f"Missing embedded runtime events: {missing or 'unknown'}")
+    raise TimeoutError(
+        f"Missing embedded runtime events: {missing or 'unknown'}"
+        + (f" Last error: {last_error}" if last_error else "")
+    )
 
 
 def run_embedded_runtime_probe(
@@ -734,7 +974,11 @@ def run_embedded_runtime_probe(
     started = time.perf_counter()
     runtime_env = dict(env or os.environ)
     runtime_env.update(
-        packaged_runtime_env_overrides(artifacts_dir=probe_dir, session_scope="runtime")
+        packaged_runtime_env_overrides(
+            artifacts_dir=probe_dir,
+            session_scope="runtime",
+            startup_probe=startup_probe,
+        )
     )
     clear_packaged_desktop_session_state(runtime_env)
     try:
@@ -755,15 +999,21 @@ def run_embedded_runtime_probe(
             bridge_base_url=bridge_base_url,
             timeout_s=runtime_timeout_s,
             open_path=str(probe.get("openPath") or "jobs.html"),
-            required_events=startup_profile_required_events(
-                Path(str(probe.get("openPath") or "jobs.html")).stem or "jobs"
-            )
-            if startup_probe
-            else STARTUP_REQUIRED_EVENTS,
+            required_events=STARTUP_REQUIRED_EVENTS,
+            require_managed_window=startup_probe,
+            require_page_ready=not startup_probe,
         )
+        page_name = Path(str(probe.get("openPath") or "jobs.html")).stem or "jobs"
+        required_runtime_events = tuple(probe.get("requiredEvents") or ())
+        if startup_probe:
+            required_runtime_events = tuple(
+                dict.fromkeys(
+                    startup_profile_required_events(page_name) + required_runtime_events
+                )
+            )
         metrics_rows = wait_for_runtime_events(
             bridge_base_url,
-            tuple(probe.get("requiredEvents") or ()),
+            required_runtime_events,
             timeout_s=max(5.0, runtime_timeout_s),
         )
         write_json(probe_dir / "startup-metrics.json", {"rows": metrics_rows})
@@ -773,7 +1023,7 @@ def run_embedded_runtime_probe(
         if startup_probe:
             summary = summarize_startup_metrics(
                 metrics_rows,
-                page=Path(str(probe.get("openPath") or "jobs.html")).stem or "jobs",
+                page=page_name,
                 profile_mode=profile_mode,
             )
             write_startup_summary(probe_dir / "startup-profile-summary.json", summary)
@@ -931,7 +1181,11 @@ def run_warmup_launch(
     warmup_root.mkdir(parents=True, exist_ok=True)
     runtime_env = dict(env or os.environ)
     runtime_env.update(
-        packaged_runtime_env_overrides(artifacts_dir=warmup_root, session_scope="runtime")
+        packaged_runtime_env_overrides(
+            artifacts_dir=warmup_root,
+            session_scope="runtime",
+            startup_probe=startup_probe,
+        )
     )
     clear_packaged_desktop_session_state(runtime_env)
     process = None
@@ -959,6 +1213,8 @@ def run_warmup_launch(
             bridge_base_url=f"http://127.0.0.1:{bridge_port}",
             timeout_s=runtime_timeout_s,
             open_path=open_path,
+            require_managed_window=startup_probe,
+            require_page_ready=not startup_probe,
         )
         time.sleep(1.0)
     finally:
@@ -1519,7 +1775,7 @@ def run_desktop_update_rehearsal(
 
 def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     started_at = utc_now_iso()
-    run_token = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    run_token = generate_packaged_smoke_run_token()
     artifacts_dir = (
         Path(args.artifacts_dir or (DEFAULT_ARTIFACT_ROOT / run_token)).expanduser().resolve()
     )
@@ -1533,23 +1789,33 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     bridge_port = int(args.bridge_port or choose_free_port())
     site_base_url = f"http://127.0.0.1:{site_port}"
     bridge_base_url = f"http://127.0.0.1:{bridge_port}"
-    startup_probe = bool(args.startup_probe)
+    startup_probe = bool(args.startup_probe or args.profile_only)
     embedded_probes = bool(args.embedded_probes)
     profile_mode = "warm" if str(args.profile_mode or "").strip().lower() == "warm" else "cold"
     open_path = str(args.open_path or "jobs.html").strip() or "jobs.html"
     node_smoke_script = (
         Path(args.node_smoke_script or DEFAULT_NODE_SMOKE_SCRIPT).expanduser().resolve()
     )
+    if artifacts_dir.parent == DEFAULT_ARTIFACT_ROOT.resolve():
+        prune_packaged_smoke_artifacts(
+            DEFAULT_ARTIFACT_ROOT,
+            current_artifacts_dir=artifacts_dir,
+        )
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     runtime_data_dir.mkdir(parents=True, exist_ok=True)
     embedded_artifacts_dir.mkdir(parents=True, exist_ok=True)
     runtime_env = os.environ.copy()
     runtime_env.update(
         packaged_runtime_env_overrides(
-            node_smoke_script, artifacts_dir=artifacts_dir, session_scope="runtime"
+            node_smoke_script,
+            artifacts_dir=artifacts_dir,
+            session_scope="runtime",
+            startup_probe=startup_probe,
         )
     )
     clear_packaged_desktop_session_state(runtime_env)
+    preferred_probe_browser_name = ""
+    preferred_probe_browser_path = ""
     startup_page = Path(open_path).stem or "jobs"
     requested_exe_path = Path(args.exe_path or DEFAULT_EXE_PATH).expanduser().resolve()
     rebuild_output_dir = (
@@ -1557,9 +1823,7 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
         if bool(args.rebuild) and requested_exe_path == DEFAULT_EXE_PATH.resolve()
         else None
     )
-    exe_path = ensure_portable_exe(
-        requested_exe_path, rebuild=bool(args.rebuild), rebuild_output_dir=rebuild_output_dir
-    )
+    exe_path = requested_exe_path
 
     report: dict[str, Any] = {
         "ok": False,
@@ -1580,6 +1844,17 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             "exeStderr": str(stderr_path),
         },
         "environment": {},
+        "probeBrowser": {
+            "requiredManagedWindow": bool(startup_probe),
+            "preferredBrowserName": preferred_probe_browser_name,
+            "preferredBrowserPath": preferred_probe_browser_path,
+            "selectedBrowserName": "",
+            "selectedBrowserPath": "",
+            "launchMode": "",
+            "launchError": "",
+            "launchErrorType": "",
+            "windowClosedReason": "",
+        },
         "failure": None,
     }
     if rebuild_output_dir is not None:
@@ -1589,6 +1864,21 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     stdout_handle = None
     stderr_handle = None
     try:
+        if startup_probe:
+            preferred_probe_browser = select_startup_probe_browser(runtime_env)
+            preferred_probe_browser_name = str(
+                preferred_probe_browser.get("browserName") or ""
+            ).strip()
+            preferred_probe_browser_path = str(
+                preferred_probe_browser.get("browserPath") or ""
+            ).strip()
+            runtime_env[desktop_app_mod.PREFERRED_BROWSER_PATH_ENV] = preferred_probe_browser_path
+            report["probeBrowser"]["preferredBrowserName"] = preferred_probe_browser_name
+            report["probeBrowser"]["preferredBrowserPath"] = preferred_probe_browser_path
+        exe_path = ensure_portable_exe(
+            requested_exe_path, rebuild=bool(args.rebuild), rebuild_output_dir=rebuild_output_dir
+        )
+        report["exePath"] = str(exe_path)
         report["environment"] = collect_packaged_smoke_env_diagnostics(
             artifacts_dir=artifacts_dir,
             requested_exe_path=requested_exe_path,
@@ -1673,17 +1963,33 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             bridge_base_url=bridge_base_url,
             timeout_s=float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S),
             open_path=open_path,
-            required_events=startup_profile_required_events(startup_page)
-            if startup_probe
-            else STARTUP_REQUIRED_EVENTS,
+            required_events=STARTUP_REQUIRED_EVENTS,
+            require_managed_window=startup_probe,
+            require_page_ready=not startup_probe,
         )
         report["bridgeReady"] = True
         report["startupMetrics"] = runtime_state.get("startupMetrics") or []
         if startup_probe:
+            report["startupMetrics"] = wait_for_runtime_events(
+                bridge_base_url,
+                startup_profile_required_events(startup_page),
+                timeout_s=max(5.0, float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S)),
+            )
             startup_profile = summarize_startup_metrics(
                 report["startupMetrics"], page=startup_page, profile_mode=profile_mode
             )
+            startup_profile = refine_startup_probe_summary(
+                startup_profile,
+                report["startupMetrics"],
+                preferred_browser_name=preferred_probe_browser_name,
+                preferred_browser_path=preferred_probe_browser_path,
+            )
             report["startupProfile"] = startup_profile
+            report["probeBrowser"] = startup_probe_browser_details(
+                report["startupMetrics"],
+                preferred_browser_name=preferred_probe_browser_name,
+                preferred_browser_path=preferred_probe_browser_path,
+            )
             report["artifacts"]["startupProfileSummary"] = str(
                 artifacts_dir / "startup-profile-summary.json"
             )
@@ -1709,6 +2015,20 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
 
         if bool(args.profile_only):
             report["ok"] = all(str(row.get("status")) == "passed" for row in report["scenarios"])
+            if not report["ok"] and not report["failure"]:
+                report["failure"] = build_failure_payload(
+                    "startup-profile",
+                    str(
+                        report["startupProfile"].get("classification")
+                        or "startup profile threshold exceeded"
+                    ),
+                    category=classify_startup_probe_failure(
+                        report.get("startupMetrics") or [],
+                        summary=report.get("startupProfile")
+                        if isinstance(report.get("startupProfile"), dict)
+                        else None,
+                    )[1],
+                )
             return report
 
         smoke_runner_result = run_packaged_node_smoke(
@@ -1770,9 +2090,21 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             if partial_metrics:
                 report["startupMetrics"] = partial_metrics
                 startup_profile = summarize_startup_metrics(
-                    partial_metrics, page="jobs", profile_mode=profile_mode
+                    partial_metrics, page=startup_page, profile_mode=profile_mode
+                )
+                startup_profile = refine_startup_probe_summary(
+                    startup_profile,
+                    partial_metrics,
+                    error_message=str(exc),
+                    preferred_browser_name=preferred_probe_browser_name,
+                    preferred_browser_path=preferred_probe_browser_path,
                 )
                 report["startupProfile"] = startup_profile
+                report["probeBrowser"] = startup_probe_browser_details(
+                    partial_metrics,
+                    preferred_browser_name=preferred_probe_browser_name,
+                    preferred_browser_path=preferred_probe_browser_path,
+                )
                 report["artifacts"]["startupProfileSummary"] = str(
                     artifacts_dir / "startup-profile-summary.json"
                 )
@@ -1803,7 +2135,16 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                     )
         if not report["failure"]:
             report["failure"] = build_failure_payload(
-                "runner", exc, category=classify_subprocess_error(exc)
+                "runner",
+                exc,
+                category=classify_startup_probe_failure(
+                    report.get("startupMetrics") or [],
+                    error_message=str(exc),
+                    summary=report.get("startupProfile")
+                    if isinstance(report.get("startupProfile"), dict)
+                    else None,
+                )[1]
+                or classify_subprocess_error(exc),
             )
     finally:
         terminate_process_tree(process)

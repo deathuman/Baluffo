@@ -1,6 +1,9 @@
 import { JobsStateModule as jobsStateModule } from "../state.js";
 import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
-import { resolveStartupProbeEnabled } from "../../../probes/startup-probe.js";
+import {
+  postStartupMetricToBridge,
+  resolveStartupProbeEnabled
+} from "../../../probes/startup-probe.js";
 import {
   escapeHtml,
   showToast,
@@ -72,7 +75,11 @@ import {
   getAutoRefreshStatusText
 } from "./startup.js";
 import {
+  addJobToFilterOptions,
   buildFilterOptions,
+  compareJobsForSort,
+  createFilterOptionsAccumulator,
+  finalizeFilterOptions,
   filterJobs,
   sortJobs as sortJobsFromQuery
 } from "./runtime/query.js";
@@ -101,6 +108,7 @@ import { createJobsPipelineController } from "./runtime/pipeline-controller.js";
 import { createJobsFiltersController } from "./runtime/filters-ui.js";
 import {
   fullCountryName as fullCountryNameForJobs,
+  getAvailableRegionOptions as getAvailableRegionOptionsForJobs,
   matchesCountrySelection as matchesCountrySelectionForJobs
 } from "./countries.js";
 import {
@@ -217,10 +225,7 @@ const filtersController = createJobsFiltersController({
 const startupMetrics = createJobsStartupMetrics({
   emitMetric: (event, payload) => {
     if (!isDesktopRuntimeMode()) return;
-    postJson(ADMIN_BRIDGE_BASE, "/desktop-local-data/startup-metric", {
-      event: String(event || "").trim() || "unknown",
-      payload: payload && typeof payload === "object" ? payload : {}
-    }).catch(() => {});
+    postStartupMetricToBridge(String(event || "").trim() || "unknown", payload);
   }
 });
 const callJobsBridge = createJobsBridgeRequest({
@@ -814,6 +819,94 @@ async function writeCachedJobs(jobs) {
   });
 }
 
+function clearPendingStartupPreviewMaterialization() {
+  if (runtimeState.startupPreviewMaterializeTimer) {
+    window.clearTimeout(runtimeState.startupPreviewMaterializeTimer);
+  }
+  runtimeState.startupPreviewMaterialize = null;
+  runtimeState.startupPreviewMaterializeTimer = null;
+  runtimeState.startupPreviewFilteredCount = 0;
+}
+
+function materializePendingStartupPreview({ render = false } = {}) {
+  if (typeof runtimeState.startupPreviewMaterialize !== "function") return runtimeState.filteredJobs;
+  const materialize = runtimeState.startupPreviewMaterialize;
+  clearPendingStartupPreviewMaterialization();
+  runtimeState.filteredJobs = materialize();
+  if (render) {
+    displayJobs(runtimeState.filteredJobs);
+  }
+  return runtimeState.filteredJobs;
+}
+
+function scheduleStartupPreviewMaterialization(materializeFilteredJobs) {
+  if (typeof materializeFilteredJobs !== "function") return;
+  clearPendingStartupPreviewMaterialization();
+  runtimeState.startupPreviewMaterialize = materializeFilteredJobs;
+  runtimeState.startupPreviewMaterializeTimer = window.setTimeout(() => {
+    materializePendingStartupPreview();
+  }, 0);
+}
+
+function insertTopStartupPreviewJob(topJobs, job, limit) {
+  if (!Number.isFinite(limit) || limit <= 0) return;
+  let insertIndex = topJobs.findIndex(existing =>
+    compareJobsForSort(job, existing, "relevance", {
+      fullCountryName: fullCountryNameForJobs
+    }) < 0
+  );
+  if (insertIndex < 0) insertIndex = topJobs.length;
+  if (insertIndex >= limit && topJobs.length >= limit) return;
+  topJobs.splice(insertIndex, 0, job);
+  if (topJobs.length > limit) {
+    topJobs.pop();
+  }
+}
+
+function buildStartupPreviewFastPathPlan(allJobs) {
+  const filterOptionsAccumulator = createFilterOptionsAccumulator();
+  const activeJobs = [];
+  const firstPageJobs = [];
+  const firstPageLimit = Math.max(1, Number(state.itemsPerPage) || 1);
+
+  (allJobs || []).forEach(job => {
+    addJobToFilterOptions(filterOptionsAccumulator, job, {
+      getJobLocationCities,
+      getJobLocationCountries,
+      isSemanticallyValidLocationValue,
+      isValidCountry
+    });
+    if (String(job?.status || "active").toLowerCase() !== "active") return;
+    activeJobs.push(job);
+    insertTopStartupPreviewJob(firstPageJobs, job, firstPageLimit);
+  });
+
+  return {
+    filterOptions: finalizeFilterOptions(filterOptionsAccumulator, {
+      getAvailableRegionOptions: getAvailableRegionOptionsForJobs,
+      fullCountryName: fullCountryNameForJobs
+    }),
+    filteredCount: activeJobs.length,
+    pageJobs: firstPageJobs,
+    materializeFilteredJobs: () => sortJobsFromQuery(activeJobs, "relevance", {
+      fullCountryName: fullCountryNameForJobs
+    })
+  };
+}
+
+function renderStartupPreviewFastPath(plan = {}) {
+  const pageJobs = Array.isArray(plan?.pageJobs) ? plan.pageJobs : [];
+  const filteredCount = Number.isFinite(Number(plan?.filteredCount))
+    ? Number(plan.filteredCount)
+    : pageJobs.length;
+  runtimeState.filteredJobs = pageJobs;
+  runtimeState.startupPreviewFilteredCount = filteredCount;
+  displayJobs(runtimeState.filteredJobs, {
+    pageJobsOverride: pageJobs,
+    totalCountOverride: filteredCount
+  });
+}
+
 async function loadStartupPreviewJobs() {
   return loadStartupPreviewJobsFeed({
     emitMetric: emitDesktopStartupMetric,
@@ -829,8 +922,17 @@ async function loadStartupPreviewJobs() {
     },
     updateLastUpdatedText,
     recalculateItemsPerPage,
+    pageState: state,
+    defaultFilters,
+    buildStartupPreviewFastPathPlan,
+    applyFilterOptionsSnapshot: filterOptions =>
+      filtersController.updateFilterOptions(runtimeState.allJobs, {
+        precomputed: filterOptions
+      }),
     updateFilterOptions: () => filtersController.updateFilterOptions(runtimeState.allJobs),
     applyStateToFilters: () => filtersController.applyStateToFilters(),
+    renderStartupPreviewFastPath,
+    scheduleStartupPreviewMaterialization,
     applyFiltersAndRender,
     markStartupRendered,
     markJobsFirstInteractive,
@@ -850,6 +952,7 @@ function setRefreshJobsNeedsAttention(needsRefresh) {
 }
 
 function applyFiltersAndRender({ resetPage }) {
+  clearPendingStartupPreviewMaterialization();
   if (resetPage) {
     state.currentPage = 1;
   }
@@ -885,7 +988,7 @@ function applyFiltersAndRender({ resetPage }) {
   emitDesktopStartupMetric("jobs_write_state_complete");
 }
 
-function displayJobs(jobs) {
+function displayJobs(jobs, options = {}) {
   return displayJobsFromView(jobs, {
     jobsList: dom.jobsList,
     pagination: dom.pagination,
@@ -901,10 +1004,13 @@ function displayJobs(jobs) {
     goToPage,
     emitDesktopStartupMetric,
     renderJobRowHtml
-  });
+  }, options);
 }
 
 function goToPage(page) {
+  if (page !== state.currentPage) {
+    materializePendingStartupPreview();
+  }
   return goToPageFromView(page, {
     filteredJobs: runtimeState.filteredJobs,
     state,

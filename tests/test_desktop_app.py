@@ -801,6 +801,133 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
     clear_mock.assert_called_once()
 
 
+def test_launch_desktop_app_emits_window_created_before_shell_window_shown() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=data_dir,
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+    )
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(
+            desktop_app,
+            "start_child_process",
+            side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
+        ),
+        mock.patch.object(desktop_app, "wait_for_url"),
+        mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "wait_for_desktop_startup_ready",
+            return_value={"appVersion": APP_VERSION},
+        ),
+        mock.patch.object(
+            desktop_app,
+            "launch_browser_for_url",
+            return_value={
+                "mode": "chromium-app",
+                "browserName": "chrome",
+                "browserPath": "C:/Chrome/chrome.exe",
+                "process": None,
+                "windowShownAtMonotonic": 101.0,
+            },
+        ),
+        mock.patch.object(desktop_app, "save_session_state"),
+        mock.patch.object(
+            desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
+        ),
+        mock.patch.object(desktop_app, "write_success_marker"),
+        mock.patch.object(desktop_app, "clear_session_state"),
+        mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock,
+    ):
+        desktop_app.launch_desktop_app(config)
+
+    event_names = [call.args[1] for call in trace_mock.call_args_list]
+    window_created_index = event_names.index("desktop_window_created")
+    shell_shown_index = event_names.index("desktop_shell_window_shown")
+    assert window_created_index < shell_shown_index
+
+
+def test_launch_desktop_app_launches_browser_before_bridge_ready_diagnostic() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=data_dir,
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+    )
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(
+            desktop_app,
+            "start_child_process",
+            side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
+        ),
+        mock.patch.object(desktop_app, "wait_for_url"),
+        mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=False),
+        mock.patch.object(
+            desktop_app,
+            "wait_for_desktop_startup_ready",
+            return_value={"appVersion": APP_VERSION},
+        ),
+        mock.patch.object(
+            desktop_app,
+            "launch_browser_for_url",
+            return_value={
+                "mode": "chromium-app",
+                "browserName": "chrome",
+                "browserPath": "C:/Chrome/chrome.exe",
+                "process": None,
+                "windowShownAtMonotonic": 101.0,
+            },
+        ) as launch_browser_mock,
+        mock.patch.object(desktop_app, "save_session_state"),
+        mock.patch.object(
+            desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
+        ),
+        mock.patch.object(desktop_app, "write_success_marker"),
+        mock.patch.object(desktop_app, "clear_session_state"),
+        mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock,
+    ):
+        desktop_app.launch_desktop_app(config)
+
+    launch_browser_mock.assert_called_once()
+    event_names = [call.args[1] for call in trace_mock.call_args_list]
+    window_launch_index = event_names.index("desktop_window_create_started")
+    bridge_ready_index = event_names.index("desktop_bridge_ready_deferred")
+    assert window_launch_index < bridge_ready_index
+
+
 def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_app.DesktopRuntimeConfig(

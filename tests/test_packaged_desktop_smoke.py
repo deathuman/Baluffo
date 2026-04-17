@@ -334,6 +334,123 @@ def test_startup_profile_summary_classifies_local_auth_delay() -> None:
     assert summary["status"] == "failed"
 
 
+def test_startup_profile_summary_prefers_timestamps_over_mixed_elapsed_ms_clocks() -> None:
+    rows = [
+        {
+            "ts": "2026-03-10T12:00:00+00:00",
+            "event": "desktop_launch_start",
+            "fields": {"elapsedMs": 0},
+        },
+        {
+            "ts": "2026-03-10T12:00:02+00:00",
+            "event": "desktop_site_ready",
+            "fields": {"elapsedMs": 2000},
+        },
+        {
+            "ts": "2026-03-10T12:00:05+00:00",
+            "event": "desktop_window_created",
+            "fields": {"elapsedMs": 5000},
+        },
+        {
+            "ts": "2026-03-10T12:00:05.200000+00:00",
+            "event": "desktop_shell_window_shown",
+            "fields": {"elapsedMs": 3000},
+        },
+        {
+            "ts": "2026-03-10T12:00:05.500000+00:00",
+            "event": "jobs_page_boot_start",
+            "payload": {"elapsedMs": 100},
+        },
+        {
+            "ts": "2026-03-10T12:00:05.600000+00:00",
+            "event": "jobs_local_data_init_ready",
+            "payload": {"elapsedMs": 120},
+        },
+        {
+            "ts": "2026-03-10T12:00:05.700000+00:00",
+            "event": "jobs_auth_ready",
+            "payload": {"elapsedMs": 4},
+        },
+        {
+            "ts": "2026-03-10T12:00:05.800000+00:00",
+            "event": "jobs_first_render",
+            "payload": {"elapsedMs": 1500},
+        },
+        {
+            "ts": "2026-03-10T12:00:05.900000+00:00",
+            "event": "jobs_first_interactive",
+            "payload": {"elapsedMs": 1600},
+        },
+    ]
+
+    summary = summarize_startup_metrics(rows, page="jobs", profile_mode="cold")
+    stages = {stage["key"]: stage for stage in summary["stages"]}
+
+    assert summary["classification"] == "browser launch / app-window creation delayed"
+    assert summary["missingEvents"] == []
+    assert stages["window_created_to_window_shown"]["durationMs"] == 200
+    assert stages["page_loaded_to_local_data_ready"]["durationMs"] == 100
+    assert stages["local_data_ready_to_auth_ready"]["durationMs"] == 100
+    assert stages["auth_ready_to_first_render"]["durationMs"] == 100
+    assert summary["firstUsableEvent"] == "jobs_first_interactive"
+    assert summary["firstUsableMs"] == 5900
+
+
+def test_startup_profile_summary_classifies_bridge_site_bootstrap_delay() -> None:
+    rows = [
+        {
+            "ts": "2026-03-10T12:00:00+00:00",
+            "event": "desktop_launch_start",
+            "fields": {"elapsedMs": 0},
+        },
+        {
+            "ts": "2026-03-10T12:00:03+00:00",
+            "event": "desktop_site_ready",
+            "fields": {"elapsedMs": 3000},
+        },
+        {
+            "ts": "2026-03-10T12:00:03.500000+00:00",
+            "event": "desktop_window_created",
+            "fields": {"elapsedMs": 3500},
+        },
+        {
+            "ts": "2026-03-10T12:00:03.700000+00:00",
+            "event": "desktop_shell_window_shown",
+            "fields": {"elapsedMs": 3700},
+        },
+        {
+            "ts": "2026-03-10T12:00:03.900000+00:00",
+            "event": "jobs_page_boot_start",
+            "payload": {"elapsedMs": 3900},
+        },
+        {
+            "ts": "2026-03-10T12:00:04+00:00",
+            "event": "jobs_local_data_init_ready",
+            "payload": {"elapsedMs": 4000},
+        },
+        {
+            "ts": "2026-03-10T12:00:04.100000+00:00",
+            "event": "jobs_auth_ready",
+            "payload": {"elapsedMs": 4100},
+        },
+        {
+            "ts": "2026-03-10T12:00:04.300000+00:00",
+            "event": "jobs_first_render",
+            "payload": {"elapsedMs": 4300},
+        },
+        {
+            "ts": "2026-03-10T12:00:04.400000+00:00",
+            "event": "jobs_first_interactive",
+            "payload": {"elapsedMs": 4400},
+        },
+    ]
+
+    summary = summarize_startup_metrics(rows, page="jobs", profile_mode="cold")
+
+    assert summary["classification"] == "bridge/site bootstrap delayed"
+    assert summary["status"] == "failed"
+
+
 def test_ensure_portable_exe_raises_when_missing_and_build_still_missing() -> None:
     with (
         workspace_tmpdir("packaged-smoke") as tmp,
@@ -365,6 +482,136 @@ def test_ensure_portable_exe_uses_rebuild_output_dir_when_requested() -> None:
             )
         assert resolved == rebuilt_exe.resolve()
         build_mock.assert_called_once_with(rebuilt_dir)
+
+
+def test_run_portable_build_cleans_pyinstaller_scratch_dirs_for_explicit_output_dir() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        output_dir = root / "artifacts" / "portable-build"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for name in smoke.PORTABLE_BUILD_SCRATCH_NAMES:
+            candidate = output_dir.parent / name
+            candidate.mkdir(parents=True, exist_ok=True)
+            (candidate / "marker.txt").write_text("x", encoding="utf-8")
+        with mock.patch.object(smoke.subprocess, "run") as run_mock:
+            exe_path = smoke.run_portable_build(output_dir)
+        assert exe_path == output_dir / "Baluffo.exe"
+        run_mock.assert_called_once()
+        for name in smoke.PORTABLE_BUILD_SCRATCH_NAMES:
+            assert not (output_dir.parent / name).exists()
+
+
+def test_prune_packaged_smoke_artifacts_keeps_recent_runs_and_current_dir() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp) / "packaged-desktop-smoke"
+        root.mkdir(parents=True, exist_ok=True)
+        current_dir = root / "20260416-120003"
+        retained_dir = root / "20260416-120002"
+        stale_dir_a = root / "20260416-120001"
+        stale_dir_b = root / "20260416-120000"
+        old_file = root / "jobs-pipeline-report.json"
+        for path in (current_dir, retained_dir, stale_dir_a, stale_dir_b):
+            path.mkdir(parents=True, exist_ok=True)
+            (path / "marker.txt").write_text(path.name, encoding="utf-8")
+        old_file.write_text("{}", encoding="utf-8")
+        os.utime(retained_dir, (200.0, 200.0))
+        os.utime(stale_dir_a, (100.0, 100.0))
+        os.utime(stale_dir_b, (50.0, 50.0))
+        os.utime(old_file, (10.0, 10.0))
+        with mock.patch.object(smoke.time, "time", return_value=10_000.0):
+            removed = smoke.prune_packaged_smoke_artifacts(
+                root,
+                keep_recent_runs=2,
+                file_retention_s=60,
+                current_artifacts_dir=current_dir,
+            )
+        assert current_dir.exists()
+        assert retained_dir.exists()
+        assert not stale_dir_a.exists()
+        assert not stale_dir_b.exists()
+        assert not old_file.exists()
+        assert {path.name for path in removed} == {
+            stale_dir_a.name,
+            stale_dir_b.name,
+            old_file.name,
+        }
+
+
+def test_generate_packaged_smoke_run_token_is_collision_safe_with_entropy() -> None:
+    now = smoke.datetime(2026, 4, 16, 12, 0, 0, 123456, tzinfo=smoke.UTC)
+    first = smoke.generate_packaged_smoke_run_token(now=now, entropy_ns=101)
+    second = smoke.generate_packaged_smoke_run_token(now=now, entropy_ns=202)
+
+    assert first != second
+    assert first.startswith("20260416-120000-123456-")
+    assert second.startswith("20260416-120000-123456-")
+
+
+def test_select_startup_probe_browser_prefers_chrome_then_brave_then_edge() -> None:
+    candidates = [
+        {"name": "chrome", "path": "C:/Chrome/chrome.exe"},
+        {"name": "brave", "path": "C:/Brave/brave.exe"},
+        {"name": "msedge", "path": "C:/Edge/msedge.exe"},
+    ]
+    with (
+        mock.patch.object(
+            smoke.desktop_app_mod,
+            "resolve_chromium_browser_candidates",
+            return_value=candidates,
+        ),
+        mock.patch.object(smoke.desktop_app_mod, "chromium_app_mode_supported", return_value=True),
+    ):
+        selected = smoke.select_startup_probe_browser({})
+
+    assert selected == {
+        "browserName": "chrome",
+        "browserPath": "C:/Chrome/chrome.exe",
+    }
+
+
+def test_select_startup_probe_browser_uses_edge_only_when_other_candidates_unavailable() -> None:
+    candidates = [
+        {"name": "chrome", "path": "C:/Chrome/chrome.exe"},
+        {"name": "brave", "path": "C:/Brave/brave.exe"},
+        {"name": "msedge", "path": "C:/Edge/msedge.exe"},
+    ]
+
+    def fake_supported(candidate, env=None):  # noqa: ANN001, ANN202
+        return str(candidate.get("name")) == "msedge"
+
+    with (
+        mock.patch.object(
+            smoke.desktop_app_mod,
+            "resolve_chromium_browser_candidates",
+            return_value=candidates,
+        ),
+        mock.patch.object(
+            smoke.desktop_app_mod,
+            "chromium_app_mode_supported",
+            side_effect=fake_supported,
+        ),
+    ):
+        selected = smoke.select_startup_probe_browser(
+            {"BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE": "1"}
+        )
+
+    assert selected == {
+        "browserName": "msedge",
+        "browserPath": "C:/Edge/msedge.exe",
+    }
+
+
+def test_select_startup_probe_browser_fails_when_no_supported_candidate_exists() -> None:
+    with (
+        mock.patch.object(
+            smoke.desktop_app_mod,
+            "resolve_chromium_browser_candidates",
+            return_value=[{"name": "msedge", "path": "C:/Edge/msedge.exe"}],
+        ),
+        mock.patch.object(smoke.desktop_app_mod, "chromium_app_mode_supported", return_value=False),
+    ):
+        with pytest.raises(RuntimeError, match="No supported managed Chromium probe browser available"):
+            smoke.select_startup_probe_browser({})
 
 
 def test_ensure_portable_exe_rebuilds_default_dist_when_exe_older_than_sources() -> None:
@@ -638,6 +885,161 @@ def test_run_packaged_smoke_writes_failure_report_on_runtime_timeout() -> None:
         assert stderr_handle.close.call_count >= 1
 
 
+def test_wait_for_packaged_runtime_rejects_default_browser_launch_for_startup_probe() -> None:
+    process = mock.Mock()
+    process.poll.return_value = None
+    with (
+        mock.patch.object(smoke, "fetch_json", side_effect=[{"ok": True}, {"ok": True}]),
+        mock.patch.object(
+            smoke,
+            "fetch_startup_metrics",
+            return_value=[
+                {
+                    "event": "desktop_browser_launch_selected",
+                    "fields": {"mode": "default-browser"},
+                }
+            ],
+        ),
+        mock.patch.object(smoke.time, "monotonic", side_effect=[0.0, 0.0]),
+    ):
+        with pytest.raises(RuntimeError, match="managed Chromium app window"):
+            smoke.wait_for_packaged_runtime(
+                process,
+                site_base_url="http://127.0.0.1:8080",
+                bridge_base_url="http://127.0.0.1:8877",
+                timeout_s=5.0,
+                require_managed_window=True,
+                require_page_ready=False,
+            )
+
+
+def test_wait_for_runtime_events_retries_transient_bridge_reset() -> None:
+    rows = [
+        {"event": "jobs_first_render", "payload": {"elapsedMs": 1200}},
+        {"event": "jobs_first_interactive", "payload": {"elapsedMs": 1400}},
+    ]
+    with (
+        mock.patch.object(
+            smoke,
+            "fetch_startup_metrics",
+            side_effect=[OSError("[WinError 10054] reset"), rows],
+        ),
+        mock.patch.object(smoke.time, "monotonic", side_effect=[0.0, 0.0, 1.0]),
+        mock.patch.object(smoke.time, "sleep"),
+    ):
+        result = smoke.wait_for_runtime_events(
+            "http://127.0.0.1:8877",
+            ("jobs_first_render", "jobs_first_interactive"),
+            timeout_s=5.0,
+        )
+    assert result == rows
+
+
+def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        process = mock.Mock()
+        process.pid = 999
+        process.poll.return_value = None
+        stdout_handle = mock.Mock()
+        stderr_handle = mock.Mock()
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--startup-probe",
+                "--profile-only",
+            ]
+        )
+        captured_env: dict[str, str] = {}
+        startup_metrics = [
+            {"event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
+            {"event": "desktop_site_ready", "fields": {"elapsedMs": 400}},
+            {"event": "desktop_window_created", "fields": {"elapsedMs": 700}},
+            {"event": "desktop_shell_window_shown", "fields": {"elapsedMs": 900}},
+            {"event": "jobs_module_boot_start", "payload": {"elapsedMs": 1100}},
+            {"event": "jobs_local_data_init_ready", "payload": {"elapsedMs": 1300}},
+            {"event": "jobs_auth_ready", "payload": {"elapsedMs": 1500}},
+            {"event": "jobs_first_render", "payload": {"elapsedMs": 1800}},
+            {"event": "jobs_first_interactive", "payload": {"elapsedMs": 2100}},
+        ]
+
+        def fake_launch_packaged_exe(*args, **kwargs):  # noqa: ANN002, ANN003
+            captured_env.update(kwargs.get("env") or {})
+            return process, stdout_handle, stderr_handle
+
+        with (
+            mock.patch.object(
+                smoke,
+                "select_startup_probe_browser",
+                return_value={
+                    "browserName": "chrome",
+                    "browserPath": "C:/Chrome/chrome.exe",
+                },
+            ),
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(smoke, "launch_packaged_exe", side_effect=fake_launch_packaged_exe),
+            mock.patch.object(
+                smoke,
+                "wait_for_packaged_runtime",
+                return_value={
+                    "health": {"ok": True},
+                    "session": {"ok": True},
+                    "startupMetrics": [{"event": "desktop_shell_window_shown"}],
+                },
+            ) as runtime_mock,
+            mock.patch.object(
+                smoke,
+                "wait_for_runtime_events",
+                return_value=startup_metrics,
+            ) as runtime_events_mock,
+            mock.patch.object(smoke, "capture_runtime_snapshot", return_value={}),
+            mock.patch.object(
+                smoke,
+                "collect_packaged_smoke_env_diagnostics",
+                return_value={"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False},
+            ),
+            mock.patch.object(
+                smoke,
+                "summarize_startup_metrics",
+                return_value={
+                    "status": "passed",
+                    "classification": "ok",
+                    "firstUsableEvent": "jobs_first_interactive",
+                    "firstUsableMs": 2100,
+                    "stages": [],
+                },
+            ),
+            mock.patch.object(smoke, "write_startup_summary"),
+            mock.patch.object(smoke, "terminate_process_tree"),
+        ):
+            payload = smoke.run_packaged_smoke(args)
+
+        assert payload["ok"] is True
+        assert payload["startupMetrics"] == startup_metrics
+        assert captured_env["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] == "1"
+        assert captured_env[smoke.desktop_app_mod.PREFERRED_BROWSER_PATH_ENV] == "C:/Chrome/chrome.exe"
+        assert payload["probeBrowser"]["preferredBrowserName"] == "chrome"
+        assert payload["probeBrowser"]["preferredBrowserPath"] == "C:/Chrome/chrome.exe"
+        runtime_mock.assert_called_once()
+        assert runtime_mock.call_args.kwargs["require_managed_window"] is True
+        assert runtime_mock.call_args.kwargs["require_page_ready"] is False
+        runtime_events_mock.assert_called_once_with(
+            payload["bridgeBaseUrl"],
+            smoke.startup_profile_required_events("jobs"),
+            timeout_s=mock.ANY,
+        )
+        assert "smokeReport" not in payload["artifacts"]
+
+
 def test_run_packaged_smoke_writes_success_report_and_artifacts() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)
@@ -667,6 +1069,14 @@ def test_run_packaged_smoke_writes_success_report_and_artifacts() -> None:
             {"name": "Auth continuity", "status": "passed", "durationMs": 300, "error": ""},
         ]
         with (
+            mock.patch.object(
+                smoke,
+                "select_startup_probe_browser",
+                return_value={
+                    "browserName": "chrome",
+                    "browserPath": "C:/Chrome/chrome.exe",
+                },
+            ),
             mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
             mock.patch.object(
                 smoke, "launch_packaged_exe", return_value=(process, stdout_handle, stderr_handle)
@@ -679,6 +1089,11 @@ def test_run_packaged_smoke_writes_success_report_and_artifacts() -> None:
                     "session": {"ok": True, "user": None},
                     "startupMetrics": startup_metrics,
                 },
+            ),
+            mock.patch.object(
+                smoke,
+                "wait_for_runtime_events",
+                return_value=startup_metrics,
             ),
             mock.patch.object(
                 smoke,
@@ -742,6 +1157,208 @@ def test_run_packaged_smoke_writes_success_report_and_artifacts() -> None:
         terminate_mock.assert_called_once_with(process)
         stdout_handle.close.assert_called_once()
         stderr_handle.close.assert_called_once()
+
+
+def test_run_packaged_smoke_fails_startup_probe_when_no_managed_browser_is_available() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--startup-probe",
+                "--profile-only",
+            ]
+        )
+        with (
+            mock.patch.object(
+                smoke,
+                "select_startup_probe_browser",
+                side_effect=RuntimeError(
+                    "No supported managed Chromium probe browser available. "
+                    "Install Chrome, Brave, or an Edge build that can launch in app mode."
+                ),
+            ),
+            mock.patch.object(smoke, "terminate_process_tree") as terminate_mock,
+        ):
+            payload = smoke.run_packaged_smoke(args)
+
+        assert payload["ok"] is False
+        assert payload["failure"]["category"] == "probe_browser_unavailable"
+        assert "No supported managed Chromium probe browser available" in payload["failure"]["message"]
+        assert payload["probeBrowser"]["preferredBrowserName"] == ""
+        terminate_mock.assert_called_once_with(None)
+
+
+def test_run_packaged_smoke_classifies_default_browser_launch_as_non_authoritative() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        process = mock.Mock()
+        process.pid = 999
+        process.poll.return_value = None
+        stdout_handle = mock.Mock()
+        stderr_handle = mock.Mock()
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--startup-probe",
+                "--profile-only",
+            ]
+        )
+        partial_metrics = [
+            {
+                "event": "desktop_browser_launch_selected",
+                "fields": {
+                    "browser": "msedge",
+                    "browserPath": "C:/Edge/msedge.exe",
+                    "mode": "default-browser",
+                },
+            }
+        ]
+        with (
+            mock.patch.object(
+                smoke,
+                "select_startup_probe_browser",
+                return_value={
+                    "browserName": "msedge",
+                    "browserPath": "C:/Edge/msedge.exe",
+                },
+            ),
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(
+                smoke, "launch_packaged_exe", return_value=(process, stdout_handle, stderr_handle)
+            ),
+            mock.patch.object(
+                smoke,
+                "wait_for_packaged_runtime",
+                side_effect=RuntimeError(
+                    "Startup probe requires a managed Chromium app window; "
+                    "desktop launch mode was 'default-browser'."
+                ),
+            ),
+            mock.patch.object(smoke, "fetch_startup_metrics", return_value=partial_metrics),
+            mock.patch.object(smoke, "read_startup_metrics_file", return_value=[]),
+            mock.patch.object(
+                smoke,
+                "summarize_startup_metrics",
+                return_value={
+                    "status": "failed",
+                    "classification": "metrics incomplete",
+                    "missingEvents": ["jobs_first_render", "jobs_first_interactive"],
+                    "stages": [],
+                },
+            ),
+            mock.patch.object(smoke, "write_startup_summary"),
+            mock.patch.object(smoke, "terminate_process_tree"),
+            mock.patch.object(smoke, "cleanup_orphaned_desktop_ports_nt"),
+        ):
+            payload = smoke.run_packaged_smoke(args)
+
+        assert payload["ok"] is False
+        assert payload["failure"]["category"] == "non_authoritative_browser_launch"
+        assert payload["startupProfile"]["classification"] == "non-authoritative browser launch"
+        assert payload["probeBrowser"]["launchMode"] == "default-browser"
+        assert payload["probeBrowser"]["selectedBrowserName"] == "msedge"
+
+
+def test_run_packaged_smoke_classifies_chromium_app_crash_before_jobs_markers() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        process = mock.Mock()
+        process.pid = 999
+        process.poll.return_value = None
+        stdout_handle = mock.Mock()
+        stderr_handle = mock.Mock()
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--startup-probe",
+                "--profile-only",
+            ]
+        )
+        partial_metrics = [
+            {"event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
+            {"event": "desktop_site_ready", "fields": {"elapsedMs": 300}},
+            {"event": "desktop_window_created", "fields": {"elapsedMs": 550}},
+            {"event": "desktop_shell_window_shown", "fields": {"elapsedMs": 800}},
+            {
+                "event": "desktop_browser_launch_selected",
+                "fields": {
+                    "browser": "chrome",
+                    "browserPath": "C:/Chrome/chrome.exe",
+                    "mode": "chromium-app",
+                },
+            },
+            {"event": "jobs_module_boot_start", "payload": {"elapsedMs": 900}},
+            {"event": "desktop_window_closed", "fields": {"reason": "bridge_exit"}},
+        ]
+        with (
+            mock.patch.object(
+                smoke,
+                "select_startup_probe_browser",
+                return_value={
+                    "browserName": "chrome",
+                    "browserPath": "C:/Chrome/chrome.exe",
+                },
+            ),
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(
+                smoke, "launch_packaged_exe", return_value=(process, stdout_handle, stderr_handle)
+            ),
+            mock.patch.object(
+                smoke,
+                "wait_for_packaged_runtime",
+                side_effect=OSError("[WinError 10054] An existing connection was forcibly closed"),
+            ),
+            mock.patch.object(smoke, "fetch_startup_metrics", return_value=partial_metrics),
+            mock.patch.object(smoke, "read_startup_metrics_file", return_value=[]),
+            mock.patch.object(
+                smoke,
+                "summarize_startup_metrics",
+                return_value={
+                    "status": "failed",
+                    "classification": "metrics incomplete",
+                    "missingEvents": ["jobs_first_render", "jobs_first_interactive"],
+                    "stages": [],
+                },
+            ),
+            mock.patch.object(smoke, "write_startup_summary"),
+            mock.patch.object(smoke, "terminate_process_tree"),
+            mock.patch.object(smoke, "cleanup_orphaned_desktop_ports_nt"),
+        ):
+            payload = smoke.run_packaged_smoke(args)
+
+        assert payload["ok"] is False
+        assert payload["failure"]["category"] == "browser_runtime_startup_failed"
+        assert payload["startupProfile"]["classification"] == "browser runtime startup failed"
+        assert payload["probeBrowser"]["launchMode"] == "chromium-app"
+        assert payload["probeBrowser"]["windowClosedReason"] == "bridge_exit"
 
 
 def test_run_packaged_smoke_uses_artifact_local_session_root_even_when_global_session_exists() -> (

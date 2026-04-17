@@ -7,33 +7,38 @@ export function isCleanFilterOptionValue(value, {
   return Boolean(isSemanticallyValidLocationValue(text, "city"));
 }
 
-export function buildFilterOptions(allJobs, {
+export function createFilterOptionsAccumulator() {
+  return {
+    countries: new Set(),
+    professions: new Set(),
+    cities: new Set(),
+    sectors: new Set()
+  };
+}
+
+export function addJobToFilterOptions(accumulator, job, {
   getJobLocationCities = () => [],
   getJobLocationCountries = () => [],
   isSemanticallyValidLocationValue = () => true,
-  isValidCountry = () => true,
+  isValidCountry = () => true
+} = {}) {
+  getJobLocationCountries(job).forEach(country => {
+    if (isValidCountry(country)) accumulator.countries.add(country);
+  });
+  if (job.profession) accumulator.professions.add(job.profession);
+  getJobLocationCities(job).forEach(city => {
+    if (city && isCleanFilterOptionValue(city, { isSemanticallyValidLocationValue })) {
+      accumulator.cities.add(city);
+    }
+  });
+  if (job.sector) accumulator.sectors.add(job.sector);
+}
+
+export function finalizeFilterOptions(accumulator, {
   getAvailableRegionOptions = () => [],
   fullCountryName = value => String(value || "")
 } = {}) {
-  const countries = new Set();
-  const professions = new Set();
-  const cities = new Set();
-  const sectors = new Set();
-
-  (allJobs || []).forEach(job => {
-    getJobLocationCountries(job).forEach(country => {
-      if (isValidCountry(country)) countries.add(country);
-    });
-    if (job.profession) professions.add(job.profession);
-    getJobLocationCities(job).forEach(city => {
-      if (city && isCleanFilterOptionValue(city, { isSemanticallyValidLocationValue })) {
-        cities.add(city);
-      }
-    });
-    if (job.sector) sectors.add(job.sector);
-  });
-
-  const availableCountries = Array.from(countries).sort((a, b) =>
+  const availableCountries = Array.from(accumulator?.countries || []).sort((a, b) =>
     fullCountryName(a).localeCompare(fullCountryName(b))
   );
   const availableRegions = getAvailableRegionOptions(availableCountries);
@@ -46,10 +51,33 @@ export function buildFilterOptions(allJobs, {
     availableCountries,
     availableRegions,
     availableCountryFilterValues,
-    availableProfessions: Array.from(professions).sort(),
-    availableCities: Array.from(cities).sort(),
-    availableSectors: Array.from(sectors).sort((a, b) => a.localeCompare(b))
+    availableProfessions: Array.from(accumulator?.professions || []).sort(),
+    availableCities: Array.from(accumulator?.cities || []).sort(),
+    availableSectors: Array.from(accumulator?.sectors || []).sort((a, b) => a.localeCompare(b))
   };
+}
+
+export function buildFilterOptions(allJobs, {
+  getJobLocationCities = () => [],
+  getJobLocationCountries = () => [],
+  isSemanticallyValidLocationValue = () => true,
+  isValidCountry = () => true,
+  getAvailableRegionOptions = () => [],
+  fullCountryName = value => String(value || "")
+} = {}) {
+  const accumulator = createFilterOptionsAccumulator();
+  (allJobs || []).forEach(job => {
+    addJobToFilterOptions(accumulator, job, {
+      getJobLocationCities,
+      getJobLocationCountries,
+      isSemanticallyValidLocationValue,
+      isValidCountry
+    });
+  });
+  return finalizeFilterOptions(accumulator, {
+    getAvailableRegionOptions,
+    fullCountryName
+  });
 }
 
 export function filterJobs(allJobs, filters, {
@@ -104,34 +132,33 @@ export function sortJobs(jobs, sortMode, {
   fullCountryName = value => String(value || "")
 } = {}) {
   const sorted = Array.from(jobs || []);
+  sorted.sort((a, b) => compareJobsForSort(a, b, sortMode, { fullCountryName }));
+  return sorted;
+}
+
+export function compareJobsForSort(a, b, sortMode, {
+  fullCountryName = value => String(value || "")
+} = {}) {
   if (sortMode === "relevance") {
-    sorted.sort((a, b) => {
-      const aScore = a.freshnessScore ?? 101;
-      const bScore = b.freshnessScore ?? 101;
-      if (aScore !== bScore) return aScore - bScore;
-      return String(a.title || "").localeCompare(String(b.title || ""));
-    });
-    return sorted;
+    const aScore = a.freshnessScore ?? 101;
+    const bScore = b.freshnessScore ?? 101;
+    if (aScore !== bScore) return aScore - bScore;
+    return String(a.title || "").localeCompare(String(b.title || ""));
   }
   if (sortMode === "title-asc") {
-    sorted.sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
-    return sorted;
+    return String(a.title || "").localeCompare(String(b.title || ""));
   }
   if (sortMode === "company-asc") {
-    sorted.sort((a, b) => String(a.company || "").localeCompare(String(b.company || "")));
-    return sorted;
+    return String(a.company || "").localeCompare(String(b.company || ""));
   }
   if (sortMode === "country-asc") {
-    sorted.sort((a, b) => fullCountryName(a.country).localeCompare(fullCountryName(b.country)));
-    return sorted;
+    return fullCountryName(a.country).localeCompare(fullCountryName(b.country));
   }
   if (sortMode === "remote-first") {
     const order = { Remote: 0, Hybrid: 1, Onsite: 2 };
-    sorted.sort((a, b) => {
-      const diff = (order[a.workType] ?? 99) - (order[b.workType] ?? 99);
-      if (diff !== 0) return diff;
-      return String(a.title || "").localeCompare(String(b.title || ""));
-    });
+    const diff = (order[a.workType] ?? 99) - (order[b.workType] ?? 99);
+    if (diff !== 0) return diff;
+    return String(a.title || "").localeCompare(String(b.title || ""));
   }
-  return sorted;
+  return 0;
 }

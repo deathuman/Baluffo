@@ -212,7 +212,7 @@ export function createJobsFiltersController({
     applyStateToFilters();
   }
 
-  function updateFilterOptions(allJobs) {
+  function updateFilterOptions(allJobs, { precomputed = null } = {}) {
     if (!refs.workTypeFilter || !refs.countryFilter || !refs.professionFilter || !refs.cityFilter || !refs.sectorFilter) return;
     const {
       availableCountries: nextAvailableCountries,
@@ -220,7 +220,7 @@ export function createJobsFiltersController({
       availableProfessions: nextAvailableProfessions,
       availableCities,
       availableSectors
-    } = buildFilterOptions(allJobs, {
+    } = precomputed || buildFilterOptions(allJobs, {
       getJobLocationCities,
       getJobLocationCountries,
       isValidCountry,

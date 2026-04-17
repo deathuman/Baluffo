@@ -110,14 +110,19 @@ export function displayJobs(jobs, {
   goToPage,
   emitDesktopStartupMetric,
   renderJobRowHtml
-}) {
+}, {
+  pageJobsOverride = null,
+  totalCountOverride = null
+} = {}) {
   if (!jobsList || !pagination) return;
+  const hasTotalCountOverride = totalCountOverride !== null && totalCountOverride !== undefined;
+  const totalCount = hasTotalCountOverride ? Number(totalCountOverride) : jobs.length;
   emitDesktopStartupMetric("jobs_display_start", {
-    totalCount: jobs.length,
+    totalCount,
     currentPage: state.currentPage
   });
 
-  if (jobs.length === 0) {
+  if (totalCount === 0) {
     jobsList.innerHTML = '<div class="no-results">No jobs found matching your filters.</div>';
     pagination.innerHTML = "";
     updateResultsSummary(resultsSummary, 0, 0, 0, allJobs.length);
@@ -125,11 +130,13 @@ export function displayJobs(jobs, {
     return;
   }
 
-  const totalPages = Math.ceil(jobs.length / state.itemsPerPage);
+  const totalPages = Math.ceil(totalCount / state.itemsPerPage);
   if (state.currentPage > totalPages) state.currentPage = totalPages;
 
   const startIndex = (state.currentPage - 1) * state.itemsPerPage;
-  const pageJobs = jobs.slice(startIndex, startIndex + state.itemsPerPage);
+  const pageJobs = Array.isArray(pageJobsOverride)
+    ? pageJobsOverride
+    : jobs.slice(startIndex, startIndex + state.itemsPerPage);
   emitDesktopStartupMetric("jobs_display_markup_start", {
     pageJobs: pageJobs.length,
     totalPages
@@ -168,11 +175,11 @@ export function displayJobs(jobs, {
   emitDesktopStartupMetric("jobs_display_pagination_complete", {
     totalPages
   });
-  updateResultsSummary(resultsSummary, jobs.length, startIndex + 1, startIndex + pageJobs.length, allJobs.length);
+  updateResultsSummary(resultsSummary, totalCount, startIndex + 1, startIndex + pageJobs.length, allJobs.length);
   emitDesktopStartupMetric("jobs_display_complete", {
     startIndex: startIndex + 1,
     endIndex: startIndex + pageJobs.length,
-    totalCount: jobs.length
+    totalCount
   });
   window.requestAnimationFrame(() => {
     emitDesktopStartupMetric("jobs_display_frame_presented", {
