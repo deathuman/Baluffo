@@ -50,12 +50,23 @@ HEARTBEAT_STARTUP_TIMEOUT_S = 90.0
 # Keep runtime alive long enough to tolerate Chromium app-window handoff
 # and intermittent heartbeat gaps without tearing down site/bridge.
 HEARTBEAT_IDLE_TIMEOUT_S = 600.0
+STARTUP_HANDOFF_GRACE_TIMEOUT_S = 20.0
+STARTUP_HANDOFF_POLL_INTERVAL_S = 0.25
+STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S = 45.0
 CHROMIUM_PROCESS_READY_TIMEOUT_S = 2.0
 CHROMIUM_PROCESS_READY_TIMEOUTS_S = {
     "chrome": 0.35,
     "msedge": 0.35,
     "brave": 0.75,
 }
+CHROMIUM_PROCESS_READY_POLL_INTERVAL_S = 0.05
+CHROMIUM_PROCESS_READY_POLL_INTERVALS_S = {
+    "chrome": 0.01,
+    "msedge": 0.01,
+    "brave": 0.04,
+}
+CHROMIUM_WINDOW_REVEAL_TIMEOUT_S = 1.5
+CHROMIUM_WINDOW_REVEAL_POLL_INTERVAL_S = 0.05
 DETACHED_BROWSER_GRACE_TIMEOUT_S = 35.0
 INSTANCE_LOCK_WAIT_S = 3.0
 INSTANCE_CONFLICT_RETRY_S = 6.0
@@ -721,27 +732,74 @@ def _windows_close_desktop_job(job_handle: int | None) -> None:
     ctypes.windll.kernel32.CloseHandle(ctypes.wintypes.HANDLE(job_handle))
 
 
-def _is_baluffo_browser_window_open() -> bool:
-    """Return True if any top-level window contains 'Baluffo' in its title."""
+def _find_baluffo_visible_window(
+    *, browser_pid: int | None = None, allow_title_fallback: bool = True
+) -> dict[str, object] | None:
+    """Return metadata for a visible Baluffo top-level window on Windows."""
     if os.name != "nt":
-        return True
-    found = False
+        return {"pid": int(browser_pid or 0), "title": WINDOW_TITLE}
+    matches: list[dict[str, object]] = []
 
     def _enum_callback(hwnd: int, _lparam: int) -> bool:
-        nonlocal found
+        if not ctypes.windll.user32.IsWindowVisible(hwnd):
+            return True
         title = ctypes.create_unicode_buffer(512)
         length = ctypes.windll.user32.GetWindowTextW(hwnd, title, 512)
-        if length > 0 and "Baluffo" in title.value:
-            found = True
-            return False
+        if length <= 0:
+            return True
+        title_text = str(title.value or "").strip()
+        if WINDOW_TITLE.lower() not in title_text.lower():
+            return True
+        pid = ctypes.wintypes.DWORD()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        matches.append({"hwnd": int(hwnd), "pid": int(pid.value), "title": title_text})
         return True
 
-    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    callback = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)(_enum_callback)
     try:
-        ctypes.windll.user32.EnumWindows(WNDENUMPROC(_enum_callback), 0)
+        ctypes.windll.user32.EnumWindows(callback, 0)
     except Exception:
-        return True
-    return found
+        return {"pid": int(browser_pid or 0), "title": WINDOW_TITLE}
+    expected_pid = int(browser_pid or 0)
+    if expected_pid > 0:
+        for match in matches:
+            if int(match.get("pid") or 0) == expected_pid:
+                return match
+        if not allow_title_fallback:
+            return None
+    return matches[0] if matches else None
+
+
+def _wait_for_baluffo_browser_window_visible(
+    *,
+    browser_pid: int | None = None,
+    timeout_s: float = CHROMIUM_WINDOW_REVEAL_TIMEOUT_S,
+    allow_title_fallback: bool = False,
+) -> dict[str, object] | None:
+    deadline = time.monotonic() + max(0.1, float(timeout_s))
+    while time.monotonic() < deadline:
+        match = _find_baluffo_visible_window(
+            browser_pid=browser_pid,
+            allow_title_fallback=allow_title_fallback,
+        )
+        if match is not None:
+            observed = dict(match)
+            observed["observedAtMonotonic"] = time.perf_counter()
+            return observed
+        time.sleep(CHROMIUM_WINDOW_REVEAL_POLL_INTERVAL_S)
+    return None
+
+
+def _is_baluffo_browser_window_open(
+    *, browser_pid: int | None = None, allow_title_fallback: bool = True
+) -> bool:
+    return (
+        _find_baluffo_visible_window(
+            browser_pid=browser_pid,
+            allow_title_fallback=allow_title_fallback,
+        )
+        is not None
+    )
 
 
 def _process_identity_matches(lock_payload: dict[str, object]) -> bool:
@@ -1111,6 +1169,17 @@ def chromium_process_ready_timeout_s(
     )
 
 
+def chromium_process_ready_poll_interval_s(
+    candidate: dict[str, str] | None = None,
+) -> float:
+    browser_name = str((candidate or {}).get("name") or "").strip().lower()
+    return float(
+        CHROMIUM_PROCESS_READY_POLL_INTERVALS_S.get(
+            browser_name, CHROMIUM_PROCESS_READY_POLL_INTERVAL_S
+        )
+    )
+
+
 def launch_chromium_app(
     url: str,
     browser_path: str,
@@ -1130,28 +1199,42 @@ def launch_chromium_app(
 
 
 def wait_for_browser_process_ready(
-    process: subprocess.Popen[str], *, timeout_s: float = CHROMIUM_PROCESS_READY_TIMEOUT_S
+    process: subprocess.Popen[str],
+    *,
+    timeout_s: float = CHROMIUM_PROCESS_READY_TIMEOUT_S,
+    poll_interval_s: float = CHROMIUM_PROCESS_READY_POLL_INTERVAL_S,
 ) -> bool:
     deadline = time.monotonic() + max(0.2, float(timeout_s))
+    poll_interval = max(0.005, float(poll_interval_s))
     while time.monotonic() < deadline:
         if process.poll() is not None:
             return False
-        time.sleep(0.1)
+        time.sleep(poll_interval)
     return process.poll() is None
 
 
 def launch_browser_for_url(
-    url: str, *, preferred_browser_path: str = "", env: dict[str, str] | None = None
+    url: str,
+    *,
+    preferred_browser_path: str = "",
+    env: dict[str, str] | None = None,
+    trace_hook: Callable[[str, float, dict[str, object]], None] | None = None,
 ) -> dict[str, object]:
     profile_dir = resolve_browser_profile_dir(env)
     clear_profile_caches = should_clear_browser_profile_caches(env)
     candidates = resolve_chromium_browser_candidates()
+    preferred = str(preferred_browser_path).strip().lower()
     if preferred_browser_path:
-        preferred = str(preferred_browser_path).strip().lower()
         candidates = sorted(
             candidates,
             key=lambda item: 0 if str(item.get("path") or "").lower() == preferred else 1,
         )
+
+    def _trace(event: str, event_mono: float, **fields: object) -> None:
+        if not callable(trace_hook):
+            return
+        trace_hook(str(event or "").strip() or "unknown", float(event_mono), dict(fields))
+
     app_mode_candidates = [
         candidate for candidate in candidates if chromium_app_mode_supported(candidate, env=env)
     ]
@@ -1160,6 +1243,11 @@ def launch_browser_for_url(
         if not browser_path:
             continue
         spawn_started_mono = time.perf_counter()
+        trace_common = {
+            "mode": "chromium-app",
+            "browser": str(candidate.get("name") or ""),
+            "browserPath": browser_path,
+        }
         try:
             process = launch_chromium_app(
                 url,
@@ -1169,19 +1257,71 @@ def launch_browser_for_url(
             )
         except OSError:
             continue
+        browser_pid = int(getattr(process, "pid", 0) or 0)
+        _trace(
+            "desktop_browser_process_spawn_started",
+            spawn_started_mono,
+            pid=browser_pid,
+            clearProfileCaches=bool(clear_profile_caches),
+            **trace_common,
+        )
+        ready_timeout_s = chromium_process_ready_timeout_s(candidate)
+        poll_interval_s = chromium_process_ready_poll_interval_s(candidate)
         if wait_for_browser_process_ready(
             process,
-            timeout_s=chromium_process_ready_timeout_s(candidate),
+            timeout_s=ready_timeout_s,
+            poll_interval_s=poll_interval_s,
         ):
             launch_accepted_mono = time.perf_counter()
+            spawn_to_accept_ms = max(
+                0, int((float(launch_accepted_mono) - float(spawn_started_mono)) * 1000)
+            )
+            _trace("desktop_window_created", launch_accepted_mono)
+            _trace(
+                "desktop_browser_launch_accepted",
+                launch_accepted_mono,
+                processReadyTimeoutMs=int(float(ready_timeout_s) * 1000),
+                processReadyPollIntervalMs=int(float(poll_interval_s) * 1000),
+                spawnToAcceptMs=spawn_to_accept_ms,
+                **trace_common,
+            )
+            _trace("desktop_browser_launch_selected", launch_accepted_mono, **trace_common)
+            observed_window = _wait_for_baluffo_browser_window_visible(browser_pid=browser_pid)
+            window_shown_mono = launch_accepted_mono
+            if observed_window is not None:
+                window_shown_mono = float(
+                    observed_window.get("observedAtMonotonic") or launch_accepted_mono
+                )
+            shell_window_event = (
+                "desktop_shell_window_shown"
+                if observed_window is not None
+                else "desktop_shell_window_shown_inferred"
+            )
+            _trace(
+                shell_window_event,
+                window_shown_mono,
+                observed=observed_window is not None,
+                windowPid=int(observed_window.get("pid") or 0) if observed_window else 0,
+                windowTitle=str(observed_window.get("title") or "") if observed_window else "",
+                **trace_common,
+            )
             return {
                 "mode": "chromium-app",
                 "browserName": str(candidate.get("name") or ""),
                 "browserPath": browser_path,
                 "process": process,
+                "browserPid": browser_pid,
                 "spawnStartedAtMonotonic": spawn_started_mono,
                 "launchAcceptedAtMonotonic": launch_accepted_mono,
-                "windowShownAtMonotonic": launch_accepted_mono,
+                "windowShownAtMonotonic": window_shown_mono,
+                "windowShownObserved": observed_window is not None,
+                "windowPid": int(observed_window.get("pid") or 0) if observed_window else 0,
+                "windowTitle": str(observed_window.get("title") or "") if observed_window else "",
+                "launchTraceEventsEmitted": True,
+                "shellWindowEventEmitted": True,
+                "processReadyTimeoutMs": int(float(ready_timeout_s) * 1000),
+                "processReadyPollIntervalMs": int(float(poll_interval_s) * 1000),
+                "spawnToAcceptMs": spawn_to_accept_ms,
             }
         # Some Chromium builds (notably Brave) can exit the launcher process
         # immediately after handing off the app window to another process.
@@ -1190,27 +1330,87 @@ def launch_browser_for_url(
         return_code = process.poll()
         if int(return_code or 0) == 0:
             launch_accepted_mono = time.perf_counter()
+            spawn_to_accept_ms = max(
+                0, int((float(launch_accepted_mono) - float(spawn_started_mono)) * 1000)
+            )
+            _trace("desktop_window_created", launch_accepted_mono)
+            _trace(
+                "desktop_browser_launch_accepted",
+                launch_accepted_mono,
+                processReadyTimeoutMs=int(float(ready_timeout_s) * 1000),
+                processReadyPollIntervalMs=int(float(poll_interval_s) * 1000),
+                spawnToAcceptMs=spawn_to_accept_ms,
+                detached=True,
+                **trace_common,
+            )
+            _trace("desktop_browser_launch_selected", launch_accepted_mono, **trace_common)
+            observed_window = _wait_for_baluffo_browser_window_visible(
+                browser_pid=browser_pid,
+                allow_title_fallback=True,
+            )
+            window_shown_mono = launch_accepted_mono
+            if observed_window is not None:
+                window_shown_mono = float(
+                    observed_window.get("observedAtMonotonic") or launch_accepted_mono
+                )
+            shell_window_event = (
+                "desktop_shell_window_shown"
+                if observed_window is not None
+                else "desktop_shell_window_shown_inferred"
+            )
+            _trace(
+                shell_window_event,
+                window_shown_mono,
+                observed=observed_window is not None,
+                windowPid=int(observed_window.get("pid") or 0) if observed_window else 0,
+                windowTitle=str(observed_window.get("title") or "") if observed_window else "",
+                detached=True,
+                **trace_common,
+            )
             return {
                 "mode": "chromium-app",
                 "browserName": str(candidate.get("name") or ""),
                 "browserPath": browser_path,
                 "process": None,
+                "browserPid": browser_pid,
                 "spawnStartedAtMonotonic": spawn_started_mono,
                 "launchAcceptedAtMonotonic": launch_accepted_mono,
-                "windowShownAtMonotonic": launch_accepted_mono,
+                "windowShownAtMonotonic": window_shown_mono,
+                "windowShownObserved": observed_window is not None,
+                "windowPid": int(observed_window.get("pid") or 0) if observed_window else 0,
+                "windowTitle": str(observed_window.get("title") or "") if observed_window else "",
+                "launchTraceEventsEmitted": True,
+                "shellWindowEventEmitted": True,
+                "processReadyTimeoutMs": int(float(ready_timeout_s) * 1000),
+                "processReadyPollIntervalMs": int(float(poll_interval_s) * 1000),
+                "spawnToAcceptMs": spawn_to_accept_ms,
             }
         terminate_process(process)
     launch_started_mono = time.perf_counter()
     if not webbrowser.open(url):
         raise RuntimeError("Baluffo could not launch a browser window for the desktop session.")
+    _trace("desktop_browser_process_spawn_started", launch_started_mono, mode="default-browser")
+    _trace("desktop_window_created", launch_started_mono)
+    _trace("desktop_browser_launch_accepted", launch_started_mono, mode="default-browser")
+    _trace("desktop_browser_launch_selected", launch_started_mono, mode="default-browser")
+    _trace("desktop_shell_window_shown", launch_started_mono, mode="default-browser", observed=False)
     return {
         "mode": "default-browser",
         "browserName": "",
         "browserPath": "",
         "process": None,
+        "browserPid": 0,
         "spawnStartedAtMonotonic": launch_started_mono,
         "launchAcceptedAtMonotonic": launch_started_mono,
         "windowShownAtMonotonic": launch_started_mono,
+        "windowShownObserved": False,
+        "windowPid": 0,
+        "windowTitle": "",
+        "launchTraceEventsEmitted": True,
+        "shellWindowEventEmitted": True,
+        "processReadyTimeoutMs": 0,
+        "processReadyPollIntervalMs": 0,
+        "spawnToAcceptMs": 0,
     }
 
 
@@ -1238,6 +1438,74 @@ def latest_browser_heartbeat_ts(data_dir: Path) -> float:
     return latest
 
 
+def latest_startup_handoff_signal(
+    data_dir: Path, *, browser_pid: int = 0, min_elapsed_ms: int = 0
+) -> tuple[str, int] | tuple[None, None]:
+    if require_window := _is_baluffo_browser_window_open(
+        browser_pid=browser_pid,
+        allow_title_fallback=True,
+    ):
+        return "visible_window", int(min_elapsed_ms)
+    signal_events = {
+        "desktop_browser_heartbeat": "browser_heartbeat",
+        "desktop_site_request_start": "post_launch_page_request",
+        "desktop_site_request_complete": "post_launch_page_request",
+        "jobs_page_boot_start": "startup_metric",
+        "jobs_module_boot_start": "startup_metric",
+        "jobs_local_data_init_start": "startup_metric",
+        "jobs_local_data_init_ready": "startup_metric",
+        "jobs_auth_ready": "startup_metric",
+        "jobs_first_render": "startup_metric",
+        "jobs_first_interactive": "startup_metric",
+        "saved_auth_ready": "startup_metric",
+        "saved_first_interactive": "startup_metric",
+        "admin_ready": "startup_metric",
+    }
+    latest_reason = ""
+    latest_elapsed_ms: int | None = None
+    for row in read_startup_metrics(data_dir, limit=400):
+        event = str(row.get("event") or "").strip()
+        reason = signal_events.get(event, "")
+        if not reason:
+            continue
+        fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        raw_elapsed_ms = fields.get("elapsedMs")
+        if not isinstance(raw_elapsed_ms, (int, float)):
+            raw_elapsed_ms = payload.get("elapsedMs")
+        if not isinstance(raw_elapsed_ms, (int, float)):
+            continue
+        elapsed_ms = int(raw_elapsed_ms)
+        if elapsed_ms <= int(min_elapsed_ms):
+            continue
+        if latest_elapsed_ms is None or elapsed_ms >= latest_elapsed_ms:
+            latest_reason = reason
+            latest_elapsed_ms = elapsed_ms
+    if latest_elapsed_ms is None:
+        return None, None
+    return latest_reason, latest_elapsed_ms
+
+
+def wait_for_startup_handoff_signal(
+    data_dir: Path,
+    *,
+    browser_pid: int = 0,
+    min_elapsed_ms: int = 0,
+    timeout_s: float = STARTUP_HANDOFF_GRACE_TIMEOUT_S,
+) -> tuple[str, int] | tuple[None, None]:
+    deadline = time.monotonic() + max(1.0, float(timeout_s))
+    while time.monotonic() < deadline:
+        reason, elapsed_ms = latest_startup_handoff_signal(
+            data_dir,
+            browser_pid=browser_pid,
+            min_elapsed_ms=min_elapsed_ms,
+        )
+        if reason:
+            return reason, elapsed_ms
+        time.sleep(STARTUP_HANDOFF_POLL_INTERVAL_S)
+    return None, None
+
+
 def wait_for_browser_heartbeat(
     data_dir: Path, *, timeout_s: float = HEARTBEAT_STARTUP_TIMEOUT_S
 ) -> bool:
@@ -1256,48 +1524,11 @@ def watch_browser_session(
     bridge_port: int,
     bridge_process: subprocess.Popen[str] | None = None,
     browser_process: subprocess.Popen[str] | None = None,
+    browser_pid: int = 0,
+    launch_accepted_elapsed_ms: int = 0,
     heartbeat_idle_timeout_s: float = HEARTBEAT_IDLE_TIMEOUT_S,
     require_window: bool = True,
 ) -> str:
-    if bridge_process is not None:
-        browser_exit_logged = False
-        window_missing_logged = False
-        _append_startup_trace(
-            data_dir,
-            "desktop_browser_watchdog_started",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            mode="bridge_authoritative",
-        )
-        while True:
-            if updater_install_requested(data_dir):
-                return "update_install_requested"
-            if bridge_process.poll() is not None:
-                return "bridge_exit"
-            if (
-                browser_process is not None
-                and browser_process.poll() is not None
-                and not browser_exit_logged
-            ):
-                browser_exit_logged = True
-                _append_startup_trace(
-                    data_dir,
-                    "desktop_browser_process_exited_waiting_for_bridge",
-                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                )
-            if (
-                require_window
-                and browser_process is None
-                and not window_missing_logged
-                and not _is_baluffo_browser_window_open()
-            ):
-                window_missing_logged = True
-                _append_startup_trace(
-                    data_dir,
-                    "desktop_browser_window_missing_waiting_for_bridge",
-                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                )
-            time.sleep(0.5)
-
     def _watch_heartbeat_loop() -> str:
         if not wait_for_browser_heartbeat(data_dir):
             while True:
@@ -1322,6 +1553,87 @@ def watch_browser_session(
             if idle_for > float(heartbeat_idle_timeout_s):
                 return "heartbeat_timeout"
             time.sleep(1.0)
+
+    if bridge_process is not None:
+        browser_exit_logged = False
+        window_missing_logged = False
+        handoff_confirmed = False
+        _append_startup_trace(
+            data_dir,
+            "desktop_browser_watchdog_started",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            mode="bridge_authoritative",
+        )
+        while True:
+            if updater_install_requested(data_dir):
+                return "update_install_requested"
+            if bridge_process.poll() is not None:
+                return "bridge_exit"
+            if (
+                browser_process is not None
+                and browser_process.poll() is not None
+                and not browser_exit_logged
+            ):
+                browser_exit_logged = True
+                return_code = browser_process.poll()
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_browser_process_exited_waiting_for_bridge",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    returnCode=int(return_code or 0),
+                )
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_browser_watchdog_handoff_candidate",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    timeoutSeconds=int(STARTUP_HANDOFF_GRACE_TIMEOUT_S),
+                )
+                handoff_reason, handoff_elapsed_ms = wait_for_startup_handoff_signal(
+                    data_dir,
+                    browser_pid=browser_pid,
+                    min_elapsed_ms=int(launch_accepted_elapsed_ms or 0),
+                    timeout_s=STARTUP_HANDOFF_GRACE_TIMEOUT_S,
+                )
+                if handoff_reason:
+                    handoff_confirmed = True
+                    browser_process = None
+                    _append_startup_trace(
+                        data_dir,
+                        "desktop_browser_watchdog_handoff_confirmed",
+                        elapsedMs=int(handoff_elapsed_ms or 0),
+                        evidence=str(handoff_reason or ""),
+                    )
+                else:
+                    _append_startup_trace(
+                        data_dir,
+                        "desktop_browser_watchdog_handoff_failed",
+                        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    )
+                    return "browser_handoff_failed"
+            if handoff_confirmed and latest_browser_heartbeat_ts(data_dir) > 0.0:
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_browser_watchdog_handoff",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    mode="heartbeat_after_handoff",
+                )
+                return _watch_heartbeat_loop()
+            if (
+                require_window
+                and browser_process is None
+                and not window_missing_logged
+                and not _is_baluffo_browser_window_open(
+                    browser_pid=browser_pid,
+                    allow_title_fallback=True,
+                )
+            ):
+                window_missing_logged = True
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_browser_window_missing_waiting_for_bridge",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                )
+            time.sleep(0.5)
 
     if browser_process is not None:
         _append_startup_trace(
@@ -1350,18 +1662,33 @@ def watch_browser_session(
                 mode="heartbeat_after_exit",
             )
             return _watch_heartbeat_loop()
-        detached_deadline = time.monotonic() + DETACHED_BROWSER_GRACE_TIMEOUT_S
         _append_startup_trace(
             data_dir,
-            "desktop_browser_watchdog_grace",
+            "desktop_browser_watchdog_handoff_candidate",
             elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            timeoutSeconds=int(DETACHED_BROWSER_GRACE_TIMEOUT_S),
+            timeoutSeconds=int(STARTUP_HANDOFF_GRACE_TIMEOUT_S),
         )
-        while time.monotonic() < detached_deadline:
-            if latest_browser_heartbeat_ts(data_dir) > 0.0:
-                return _watch_heartbeat_loop()
-            time.sleep(1.0)
-        return "process_exit"
+        handoff_reason, handoff_elapsed_ms = wait_for_startup_handoff_signal(
+            data_dir,
+            browser_pid=browser_pid,
+            min_elapsed_ms=int(launch_accepted_elapsed_ms or 0),
+            timeout_s=STARTUP_HANDOFF_GRACE_TIMEOUT_S,
+        )
+        if handoff_reason:
+            _append_startup_trace(
+                data_dir,
+                "desktop_browser_watchdog_handoff_confirmed",
+                elapsedMs=int(handoff_elapsed_ms or 0),
+                evidence=str(handoff_reason or ""),
+            )
+            browser_process = None
+        else:
+            _append_startup_trace(
+                data_dir,
+                "desktop_browser_watchdog_handoff_failed",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            )
+            return "browser_handoff_failed"
     _append_startup_trace(
         data_dir,
         "desktop_browser_watchdog_started",
@@ -1371,7 +1698,14 @@ def watch_browser_session(
     while True:
         if updater_install_requested(data_dir):
             return "update_install_requested"
-        window_open = True if not require_window else _is_baluffo_browser_window_open()
+        window_open = (
+            True
+            if not require_window
+            else _is_baluffo_browser_window_open(
+                browser_pid=browser_pid,
+                allow_title_fallback=True,
+            )
+        )
         last_heartbeat = max(
             latest_browser_heartbeat_ts(data_dir), bridge_last_activity_ts(bridge_port)
         )
@@ -1510,7 +1844,9 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 owner_token=owner_token,
                 desktop_session_id=desktop_session_id,
                 started_by=str(os.getpid()),
-                owner_idle_timeout_s=15.0,
+                owner_idle_timeout_s=(
+                    STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S if config.startup_probe else 15.0
+                ),
             ),
             extra_env=child_env,
             job_handle=desktop_job,
@@ -1523,24 +1859,39 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         )
         open_url = build_open_url(config)
         wait_for_url(open_url, timeout_s=READY_TIMEOUT_S)
+        site_ready_elapsed_ms = int((time.perf_counter() - started_mono) * 1000)
         _append_startup_trace(
             config.data_dir,
             "desktop_site_ready",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            elapsedMs=site_ready_elapsed_ms,
             url=str(open_url),
         )
         _append_startup_trace(
             config.data_dir,
             "desktop_window_create_started",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            elapsedMs=site_ready_elapsed_ms,
         )
+        def _record_browser_launch_trace(
+            event: str, event_mono: float, fields: dict[str, object]
+        ) -> None:
+            _append_startup_trace(
+                config.data_dir,
+                event,
+                elapsedMs=max(0, int((float(event_mono) - started_mono) * 1000)),
+                **fields,
+            )
+
         if config.no_browser:
             launch_result = {
                 "mode": "no-browser",
                 "browserName": "",
                 "browserPath": "",
+                "browserPid": 0,
                 "process": None,
                 "windowShownAtMonotonic": time.perf_counter(),
+                "windowShownObserved": False,
+                "windowPid": 0,
+                "windowTitle": "",
             }
             _append_startup_trace(
                 config.data_dir,
@@ -1556,14 +1907,20 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 preferred_browser_path=str(
                     os.environ.get(PREFERRED_BROWSER_PATH_ENV) or ""
                 ).strip(),
+                trace_hook=_record_browser_launch_trace,
             )
         launch_mode = str(launch_result.get("mode") or "default-browser")
+        launch_trace_events_emitted = bool(launch_result.get("launchTraceEventsEmitted"))
+        shell_window_event_emitted = bool(launch_result.get("shellWindowEventEmitted"))
         spawn_started_at_mono = launch_result.get("spawnStartedAtMonotonic")
+        spawn_elapsed_ms = int((time.perf_counter() - started_mono) * 1000)
         if isinstance(spawn_started_at_mono, (int, float)):
+            spawn_elapsed_ms = max(0, int((float(spawn_started_at_mono) - started_mono) * 1000))
+        if isinstance(spawn_started_at_mono, (int, float)) and not launch_trace_events_emitted:
             _append_startup_trace(
                 config.data_dir,
                 "desktop_browser_process_spawn_started",
-                elapsedMs=max(0, int((float(spawn_started_at_mono) - started_mono) * 1000)),
+                elapsedMs=spawn_elapsed_ms,
                 mode=launch_mode,
                 browser=str(launch_result.get("browserName") or ""),
                 browserPath=str(launch_result.get("browserPath") or ""),
@@ -1572,6 +1929,11 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             launch_result.get("process")
             if isinstance(launch_result.get("process"), subprocess.Popen)
             else None
+        )
+        browser_pid = int(
+            launch_result.get("browserPid")
+            or getattr(browser_process, "pid", 0)
+            or 0
         )
         if desktop_job and browser_process is not None:
             browser_pid = getattr(browser_process, "pid", None)
@@ -1589,28 +1951,43 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             accepted_elapsed_ms = max(
                 0, int((float(launch_accepted_at_mono) - started_mono) * 1000)
             )
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_window_created",
-            elapsedMs=accepted_elapsed_ms,
-        )
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_browser_launch_accepted",
-            elapsedMs=accepted_elapsed_ms,
-            mode=launch_mode,
-            browser=str(launch_result.get("browserName") or ""),
-            browserPath=str(launch_result.get("browserPath") or ""),
-        )
-        if not config.no_browser:
+        if not launch_trace_events_emitted:
             _append_startup_trace(
                 config.data_dir,
-                "desktop_browser_launch_selected",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                "desktop_window_created",
+                elapsedMs=accepted_elapsed_ms,
+            )
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_browser_launch_accepted",
+                elapsedMs=accepted_elapsed_ms,
                 mode=launch_mode,
                 browser=str(launch_result.get("browserName") or ""),
                 browserPath=str(launch_result.get("browserPath") or ""),
             )
+        if not config.no_browser and not launch_trace_events_emitted:
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_browser_launch_selected",
+                elapsedMs=accepted_elapsed_ms,
+                mode=launch_mode,
+                browser=str(launch_result.get("browserName") or ""),
+                browserPath=str(launch_result.get("browserPath") or ""),
+            )
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_browser_launch_phase_diagnostics",
+            elapsedMs=shell_window_shown_elapsed_ms,
+            mode=launch_mode,
+            browser=str(launch_result.get("browserName") or ""),
+            browserPath=str(launch_result.get("browserPath") or ""),
+            siteReadyToSpawnMs=max(0, int(spawn_elapsed_ms) - int(site_ready_elapsed_ms)),
+            spawnToAcceptMs=int(launch_result.get("spawnToAcceptMs") or 0),
+            acceptToRevealMs=max(0, int(shell_window_shown_elapsed_ms) - int(accepted_elapsed_ms)),
+            processReadyTimeoutMs=int(launch_result.get("processReadyTimeoutMs") or 0),
+            processReadyPollIntervalMs=int(launch_result.get("processReadyPollIntervalMs") or 0),
+            revealObserved=bool(launch_result.get("windowShownObserved")),
+        )
         save_session_state(
             {
                 "appVersion": get_app_version(),
@@ -1655,18 +2032,29 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 bridge_port=int(config.bridge_port),
                 launcher_token=str(instance_lock.launcher_token or launcher_token),
             )
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_shell_window_shown",
-            elapsedMs=shell_window_shown_elapsed_ms,
-            mode=launch_mode,
-        )
+        shell_window_event = "desktop_shell_window_shown"
+        if launch_mode == "chromium-app" and not bool(launch_result.get("windowShownObserved")):
+            shell_window_event = "desktop_shell_window_shown_inferred"
+        if not shell_window_event_emitted:
+            _append_startup_trace(
+                config.data_dir,
+                shell_window_event,
+                elapsedMs=shell_window_shown_elapsed_ms,
+                mode=launch_mode,
+                browser=str(launch_result.get("browserName") or ""),
+                browserPath=str(launch_result.get("browserPath") or ""),
+                observed=bool(launch_result.get("windowShownObserved")),
+                windowPid=int(launch_result.get("windowPid") or 0),
+                windowTitle=str(launch_result.get("windowTitle") or ""),
+            )
         stop_reason = watch_browser_session(
             config.data_dir,
             started_mono,
             bridge_port=config.bridge_port,
             bridge_process=bridge_process,
             browser_process=browser_process,
+            browser_pid=int(browser_pid or 0),
+            launch_accepted_elapsed_ms=int(accepted_elapsed_ms or 0),
             require_window=not config.no_browser,
         )
         _append_startup_trace(

@@ -77,6 +77,12 @@ STARTUP_REQUIRED_EVENTS = (
     "desktop_window_created",
     "desktop_shell_window_shown",
 )
+STARTUP_EVENT_ALIASES = {
+    "desktop_shell_window_shown": (
+        "desktop_shell_window_shown",
+        "desktop_shell_window_shown_inferred",
+    ),
+}
 REQUIRED_STARTUP_PROBE_LAUNCH_MODE = "chromium-app"
 EMBEDDED_PAGE_PROBES = (
     {
@@ -133,6 +139,11 @@ def startup_profile_required_events(page: str) -> tuple[str, ...]:
         "jobs": ("jobs_first_render", "jobs_first_interactive"),
     }.get(normalized, ("jobs_first_render", "jobs_first_interactive"))
     return STARTUP_REQUIRED_EVENTS + (f"{normalized}_module_boot_start",) + tuple(page_events)
+
+
+def _required_startup_event_present(events: set[str], required_event: str) -> bool:
+    aliases = STARTUP_EVENT_ALIASES.get(str(required_event or "").strip(), (required_event,))
+    return any(str(alias or "").strip() in events for alias in aliases)
 
 
 def slugify_token(value: str) -> str:
@@ -281,6 +292,8 @@ def startup_probe_browser_details(
         "launchError": "",
         "launchErrorType": "",
         "windowClosedReason": "",
+        "handoffEvidence": "",
+        "handoffFailed": False,
     }
     for row in rows:
         event = str(row.get("event") or "").strip()
@@ -294,6 +307,10 @@ def startup_probe_browser_details(
             details["launchErrorType"] = str(fields.get("errorType") or "").strip()
         elif event == "desktop_window_closed":
             details["windowClosedReason"] = str(fields.get("reason") or "").strip().lower()
+        elif event == "desktop_browser_watchdog_handoff_confirmed":
+            details["handoffEvidence"] = str(fields.get("evidence") or "").strip().lower()
+        elif event == "desktop_browser_watchdog_handoff_failed":
+            details["handoffFailed"] = True
     return details
 
 
@@ -312,11 +329,15 @@ def classify_startup_probe_failure(
         return "non-authoritative browser launch", "non_authoritative_browser_launch"
     if details["launchError"] and details["launchMode"] == REQUIRED_STARTUP_PROBE_LAUNCH_MODE:
         return "browser runtime startup failed", "browser_runtime_startup_failed"
+    if details["handoffFailed"]:
+        return "browser handoff/runtime startup failed", "browser_handoff_runtime_startup_failed"
     if (
         details["launchMode"] == REQUIRED_STARTUP_PROBE_LAUNCH_MODE
         and missing_events.intersection({"jobs_module_boot_start", "jobs_first_render", "jobs_first_interactive"})
         and (
-            details["windowClosedReason"] == "bridge_exit"
+            details["windowClosedReason"] == "browser_handoff_failed"
+            or bool(details["handoffEvidence"])
+            or details["windowClosedReason"] == "bridge_exit"
             or "actively refused" in lowered
             or "10061" in lowered
             or "10054" in lowered
@@ -886,7 +907,7 @@ def wait_for_packaged_runtime(
                     page_ready = "admin" in page_text.lower()
                 elif page_name == "desktop-probe.html":
                     page_ready = "Desktop Probe" in page_text
-            if all(event in events for event in normalized) and page_ready:
+            if all(_required_startup_event_present(events, event) for event in normalized) and page_ready:
                 return {
                     "health": health,
                     "session": session,
@@ -933,7 +954,7 @@ def wait_for_runtime_events(
         try:
             rows = fetch_startup_metrics(bridge_base_url, limit=1000)
             last_events = {str(row.get("event") or "") for row in rows}
-            if all(event in last_events for event in normalized):
+            if all(_required_startup_event_present(last_events, event) for event in normalized):
                 return rows
         except (
             TimeoutError,
@@ -945,7 +966,9 @@ def wait_for_runtime_events(
         ) as exc:
             last_error = str(exc)
         time.sleep(0.35)
-    missing = ", ".join(event for event in normalized if event not in last_events)
+    missing = ", ".join(
+        event for event in normalized if not _required_startup_event_present(last_events, event)
+    )
     raise TimeoutError(
         f"Missing embedded runtime events: {missing or 'unknown'}"
         + (f" Last error: {last_error}" if last_error else "")

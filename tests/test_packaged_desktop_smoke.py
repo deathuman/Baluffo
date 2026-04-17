@@ -397,6 +397,66 @@ def test_startup_profile_summary_prefers_timestamps_over_mixed_elapsed_ms_clocks
     assert summary["firstUsableMs"] == 5900
 
 
+def test_startup_profile_summary_uses_inferred_shell_window_fallback_when_visibility_not_observed() -> (
+    None
+):
+    rows = [
+        {
+            "ts": "2026-03-10T12:00:00+00:00",
+            "event": "desktop_launch_start",
+            "fields": {"elapsedMs": 0},
+        },
+        {
+            "ts": "2026-03-10T12:00:01+00:00",
+            "event": "desktop_site_ready",
+            "fields": {"elapsedMs": 1000},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.100000+00:00",
+            "event": "desktop_window_created",
+            "fields": {"elapsedMs": 1100},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.700000+00:00",
+            "event": "desktop_shell_window_shown_inferred",
+            "fields": {"elapsedMs": 1700},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.900000+00:00",
+            "event": "jobs_page_boot_start",
+            "payload": {"elapsedMs": 1900},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.100000+00:00",
+            "event": "jobs_local_data_init_ready",
+            "payload": {"elapsedMs": 2100},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.200000+00:00",
+            "event": "jobs_auth_ready",
+            "payload": {"elapsedMs": 2200},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.400000+00:00",
+            "event": "jobs_first_render",
+            "payload": {"elapsedMs": 2400},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.500000+00:00",
+            "event": "jobs_first_interactive",
+            "payload": {"elapsedMs": 2500},
+        },
+    ]
+
+    summary = summarize_startup_metrics(rows, page="jobs", profile_mode="warm")
+    stages = {stage["key"]: stage for stage in summary["stages"]}
+
+    assert summary["missingEvents"] == []
+    assert stages["window_created_to_window_shown"]["endEvent"] == "desktop_shell_window_shown_inferred"
+    assert stages["window_created_to_window_shown"]["durationMs"] == 600
+    assert stages["window_shown_to_page_loaded"]["startEvent"] == "desktop_shell_window_shown_inferred"
+
+
 def test_startup_profile_summary_prefers_browser_created_timestamps_for_page_events() -> None:
     launch_ts_ms = int(datetime.fromisoformat("2026-03-10T12:00:00+00:00").timestamp() * 1000)
     rows = [
@@ -996,6 +1056,21 @@ def test_wait_for_runtime_events_retries_transient_bridge_reset() -> None:
             ("jobs_first_render", "jobs_first_interactive"),
             timeout_s=5.0,
         )
+    assert result == rows
+
+
+def test_wait_for_runtime_events_accepts_inferred_shell_window_event_alias() -> None:
+    rows = [{"event": "desktop_shell_window_shown_inferred", "fields": {"elapsedMs": 900}}]
+    with (
+        mock.patch.object(smoke, "fetch_startup_metrics", return_value=rows),
+        mock.patch.object(smoke.time, "monotonic", side_effect=[0.0, 0.0]),
+    ):
+        result = smoke.wait_for_runtime_events(
+            "http://127.0.0.1:8877",
+            ("desktop_shell_window_shown",),
+            timeout_s=5.0,
+        )
+
     assert result == rows
 
 
@@ -1782,3 +1857,44 @@ def test_run_packaged_smoke_fails_when_embedded_probe_fails() -> None:
         assert payload["failure"]["step"] == "runner"
         assert "Embedded Jobs Ready failed" in payload["failure"]["message"]
         terminate_mock.assert_called_once_with(None)
+
+
+def test_classify_startup_probe_failure_uses_explicit_handoff_failure_category() -> None:
+    rows = [
+        {
+            "event": "desktop_browser_launch_selected",
+            "fields": {"browser": "chrome", "browserPath": "C:/Chrome/chrome.exe", "mode": "chromium-app"},
+        },
+        {"event": "desktop_browser_watchdog_handoff_failed", "fields": {}},
+    ]
+
+    classification, category = smoke.classify_startup_probe_failure(
+        rows,
+        error_message="startup markers never arrived",
+        summary={"missingEvents": ["jobs_first_render", "jobs_first_interactive"]},
+    )
+
+    assert classification == "browser handoff/runtime startup failed"
+    assert category == "browser_handoff_runtime_startup_failed"
+
+
+def test_classify_startup_probe_failure_treats_confirmed_handoff_then_bridge_loss_as_runtime_failure() -> (
+    None
+):
+    rows = [
+        {
+            "event": "desktop_browser_launch_selected",
+            "fields": {"browser": "chrome", "browserPath": "C:/Chrome/chrome.exe", "mode": "chromium-app"},
+        },
+        {"event": "desktop_browser_watchdog_handoff_confirmed", "fields": {"evidence": "startup_metric"}},
+        {"event": "desktop_window_closed", "fields": {"reason": "bridge_exit"}},
+    ]
+
+    classification, category = smoke.classify_startup_probe_failure(
+        rows,
+        error_message="[WinError 10054] An existing connection was forcibly closed",
+        summary={"missingEvents": ["jobs_first_render", "jobs_first_interactive"]},
+    )
+
+    assert classification == "browser runtime startup failed"
+    assert category == "browser_runtime_startup_failed"

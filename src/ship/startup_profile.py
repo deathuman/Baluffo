@@ -32,6 +32,11 @@ PROFILE_THRESHOLDS_MS = {
         "total_launch_to_first_usable_ui": 12000,
     },
 }
+WINDOW_SHOWN_EVENT_REFS = (
+    "desktop_window_shown",
+    "desktop_shell_window_shown",
+    "desktop_shell_window_shown_inferred",
+)
 
 
 def _parse_ts_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int | None:
@@ -193,12 +198,12 @@ def summarize_startup_metrics(
                 "window_created_to_window_shown",
                 "Window Created -> Window Shown",
                 "desktop_window_created",
-                ("desktop_window_shown", "desktop_shell_window_shown"),
+                WINDOW_SHOWN_EVENT_REFS,
             ),
             (
                 "window_shown_to_page_loaded",
                 "Window Shown -> Page Loaded",
-                ("desktop_window_shown", "desktop_shell_window_shown"),
+                WINDOW_SHOWN_EVENT_REFS,
                 ("desktop_page_loaded", parse_event),
             ),
             (
@@ -306,12 +311,12 @@ def summarize_startup_metrics(
             "window_created_to_window_shown",
             "Window Created -> Window Shown",
             "desktop_window_created",
-            ("desktop_window_shown", "desktop_shell_window_shown"),
+            WINDOW_SHOWN_EVENT_REFS,
         ),
         (
             "window_shown_to_page_loaded",
             "Window Shown -> Page Loaded",
-            ("desktop_window_shown", "desktop_shell_window_shown"),
+            WINDOW_SHOWN_EVENT_REFS,
             page_loaded_ref,
         ),
         (
