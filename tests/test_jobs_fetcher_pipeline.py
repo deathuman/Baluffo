@@ -6,6 +6,7 @@ from unittest import mock
 
 import pytest
 
+import src.jobs.text_utils as jobs_text_utils
 from src.jobs.adapters import static as static_adapter
 from src.jobs.pipeline_runtime import PipelineTaskRuntime, make_task_state_writer
 from tests.jobs_fetcher_helpers import (
@@ -304,6 +305,87 @@ def test_pipeline_preserves_previous_output_when_current_is_empty() -> None:
 
         output = json.loads((out / "jobs-unified.json").read_text(encoding="utf-8"))
         assert len(output) == 1
+        assert int(report["summary"].get("outputCount") or 0) == 1
+
+
+def test_pipeline_reads_previous_output_in_packaged_layout_with_shared_contract_fallback(
+    monkeypatch,
+) -> None:
+    existing = [
+        {
+            "id": 1,
+            "title": "Engine Programmer",
+            "company": "Archive Studio",
+            "city": "",
+            "country": "",
+            "locationSummary": "Content & Editorial",
+            "locations": ["Content & Editorial"],
+            "workType": "Remote",
+            "contractType": "Full-time",
+            "jobLink": "https://archive.example/jobs/1",
+            "sector": "Game",
+            "profession": "engine",
+            "companyType": "Game",
+            "description": "Engine Programmer at Archive Studio",
+            "source": "archive",
+            "sourceJobId": "archive-1",
+            "fetchedAt": "2026-02-01T00:00:00+00:00",
+            "postedAt": "2026-01-30T00:00:00+00:00",
+            "dedupKey": "url:archive",
+            "qualityScore": 100,
+        }
+    ]
+
+    def empty_loader(**_: object):
+        return []
+
+    with workspace_tmpdir("jobs-fetcher") as tmp:
+        ship_root = Path(tmp) / "ship"
+        output_dir = ship_root / "data"
+        shared_contract_dir = output_dir / "contracts"
+        shared_contract_dir.mkdir(parents=True, exist_ok=True)
+        (shared_contract_dir / jobs_text_utils.CITY_NOISE_CONTRACT_NAME).write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "knownJunkTokens": ["Content & Editorial"],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (shared_contract_dir / jobs_text_utils.COUNTRY_ACCEPTANCE_CONTRACT_NAME).write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "acceptedExactLabels": [],
+                    "normalizeAliasesToValue": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        versioned_module_path = (
+            ship_root / "app" / "versions" / "1.2.3" / "src" / "jobs" / "text_utils.py"
+        )
+        versioned_module_path.parent.mkdir(parents=True, exist_ok=True)
+        versioned_module_path.write_text("# test stub\n", encoding="utf-8")
+        (output_dir / "jobs-unified.json").write_text(json.dumps(existing), encoding="utf-8")
+
+        monkeypatch.setattr(jobs_text_utils, "__file__", str(versioned_module_path))
+        jobs_text_utils.load_city_noise_contract.cache_clear()
+        jobs_text_utils.load_country_acceptance_contract.cache_clear()
+        try:
+            report = jf.run_pipeline(
+                output_dir=output_dir, source_loaders=[("empty", empty_loader)]
+            )
+        finally:
+            jobs_text_utils.load_city_noise_contract.cache_clear()
+            jobs_text_utils.load_country_acceptance_contract.cache_clear()
+
+        output = json.loads((output_dir / "jobs-unified.json").read_text(encoding="utf-8"))
+        assert len(output) == 1
+        assert output[0]["city"] == ""
+        assert output[0]["country"] == ""
+        assert output[0]["locations"] == []
         assert int(report["summary"].get("outputCount") or 0) == 1
 
 

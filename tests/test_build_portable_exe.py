@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest import mock
 from zipfile import ZipFile
@@ -29,6 +30,7 @@ def test_portable_layout_wraps_ship_bundle_in_ship_folder() -> None:
             version_root = ship_root / "app" / "versions" / version
             tooling_root = ship_root / "src" / "ship"
             (version_root / "src" / "ship").mkdir(parents=True, exist_ok=True)
+            (version_root / "data" / "contracts").mkdir(parents=True, exist_ok=True)
             tooling_root.mkdir(parents=True, exist_ok=True)
             (ship_root / "app").mkdir(parents=True, exist_ok=True)
             (ship_root / "run-site.ps1").write_text("", encoding="utf-8")
@@ -45,6 +47,11 @@ def test_portable_layout_wraps_ship_bundle_in_ship_folder() -> None:
                 "# runtime launcher\n", encoding="utf-8"
             )
             (tooling_root / "desktop_update.py").write_text("# desktop update\n", encoding="utf-8")
+            for rel_path in build_ship_bundle.APP_VERSION_CONTRACT_FILES:
+                (version_root / "data" / rel_path).write_text(
+                    json.dumps({"fixture": rel_path}),
+                    encoding="utf-8",
+                )
             return ship_root
 
         with (
@@ -60,6 +67,8 @@ def test_portable_layout_wraps_ship_bundle_in_ship_folder() -> None:
         assert (output / "ship" / "run-site.ps1").exists()
         assert (output / "ship" / "src" / "ship" / "runtime_launcher.py").exists()
         assert (output / "ship" / "src" / "ship" / "desktop_update.py").exists()
+        for rel_path in build_ship_bundle.APP_VERSION_CONTRACT_FILES:
+            assert (output / "ship" / "app" / "versions" / "9.9.9" / "data" / rel_path).exists()
 
 
 def test_create_zip_packages_portable_folder() -> None:

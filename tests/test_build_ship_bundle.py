@@ -107,8 +107,15 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
         assert (version_root / "startup-probe.js").exists()
         assert (version_root / "packaging" / "README.md").exists()
         assert (version_root / "packaging" / "github-app-sync-config.template.json").exists()
-        assert (version_root / "data" / "contracts" / "country_acceptance.json").exists()
-        assert (version_root / "data" / "contracts" / "city_noise_contract.json").exists()
+        version_contract_dir = version_root / "data"
+        expected_version_contract_files = {
+            version_contract_dir / rel_path
+            for rel_path in build_ship_bundle.APP_VERSION_CONTRACT_FILES
+        }
+        actual_version_contract_files = {
+            path for path in version_contract_dir.rglob("*") if path.is_file()
+        }
+        assert actual_version_contract_files == expected_version_contract_files
         assert not (version_root / "data" / "jobs-fetch-report.json").exists()
         assert not (version_root / "package-lock.json").exists()
         assert not (version_root / "LOCAL_SETUP.md").exists()
