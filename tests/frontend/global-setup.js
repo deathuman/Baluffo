@@ -1,3 +1,5 @@
+import { cpSync, mkdirSync, readdirSync, rmSync } from "fs";
+import path from "path";
 import { spawn } from "child_process";
 
 function resolvePlaywrightPythonCommand() {
@@ -11,10 +13,32 @@ function resolvePlaywrightPythonCommand() {
 }
 
 const playwrightPython = resolvePlaywrightPythonCommand();
+const repoDataDir = path.resolve("data");
+const playwrightTmpDir = path.resolve(".tmp", "playwright");
+const bridgeDataDir = path.join(playwrightTmpDir, "admin-bridge-data");
+const bridgeDataExcludes = new Set(["local-user-data", "updater"]);
 
 let bridgeProcess = null;
 
-async function startBridge() {
+function prepareBridgeDataDir() {
+  mkdirSync(playwrightTmpDir, { recursive: true });
+  rmSync(bridgeDataDir, { recursive: true, force: true });
+  mkdirSync(bridgeDataDir, { recursive: true });
+
+  for (const entry of readdirSync(repoDataDir)) {
+    if (bridgeDataExcludes.has(entry)) {
+      continue;
+    }
+    cpSync(path.join(repoDataDir, entry), path.join(bridgeDataDir, entry), {
+      recursive: true,
+      force: true
+    });
+  }
+
+  return bridgeDataDir;
+}
+
+async function startBridge(dataDir) {
   console.log("[bridge] Starting admin bridge...");
 
   return new Promise((resolve) => {
@@ -22,7 +46,7 @@ async function startBridge() {
       "src/admin_bridge.py",
       "--port", "8877",
       "--host", "127.0.0.1",
-      "--data-dir", "data"
+      "--data-dir", dataDir
     ];
 
     bridgeProcess = spawn(playwrightPython, args, {
@@ -73,7 +97,9 @@ function stopBridge() {
 
 export default async function globalSetup() {
   console.log("[setup] Starting admin bridge for smoke tests...");
-  await startBridge();
+  const dataDir = prepareBridgeDataDir();
+  console.log(`[setup] Using isolated bridge data dir: ${dataDir}`);
+  await startBridge(dataDir);
   console.log("[setup] Admin bridge started");
 }
 
