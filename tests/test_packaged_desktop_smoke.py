@@ -457,6 +457,62 @@ def test_startup_profile_summary_uses_inferred_shell_window_fallback_when_visibi
     assert stages["window_shown_to_page_loaded"]["startEvent"] == "desktop_shell_window_shown_inferred"
 
 
+def test_startup_profile_summary_does_not_report_inferred_reveal_after_page_boot() -> None:
+    rows = [
+        {
+            "ts": "2026-03-10T12:00:00+00:00",
+            "event": "desktop_launch_start",
+            "fields": {"elapsedMs": 0},
+        },
+        {
+            "ts": "2026-03-10T12:00:01+00:00",
+            "event": "desktop_site_ready",
+            "fields": {"elapsedMs": 1000},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.100000+00:00",
+            "event": "desktop_window_created",
+            "fields": {"elapsedMs": 1100},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.900000+00:00",
+            "event": "desktop_shell_window_shown_inferred",
+            "fields": {"elapsedMs": 1900},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.900000+00:00",
+            "event": "jobs_page_boot_start",
+            "payload": {"elapsedMs": 1900},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.000000+00:00",
+            "event": "jobs_local_data_init_ready",
+            "payload": {"elapsedMs": 2000},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.100000+00:00",
+            "event": "jobs_auth_ready",
+            "payload": {"elapsedMs": 2100},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.300000+00:00",
+            "event": "jobs_first_render",
+            "payload": {"elapsedMs": 2300},
+        },
+        {
+            "ts": "2026-03-10T12:00:02.400000+00:00",
+            "event": "jobs_first_interactive",
+            "payload": {"elapsedMs": 2400},
+        },
+    ]
+
+    summary = summarize_startup_metrics(rows, page="jobs", profile_mode="warm")
+    stages = {stage["key"]: stage for stage in summary["stages"]}
+
+    assert stages["window_shown_to_page_loaded"]["startMs"] <= stages["window_shown_to_page_loaded"]["endMs"]
+    assert stages["window_shown_to_page_loaded"]["durationMs"] == 0
+
+
 def test_startup_profile_summary_prefers_browser_created_timestamps_for_page_events() -> None:
     launch_ts_ms = int(datetime.fromisoformat("2026-03-10T12:00:00+00:00").timestamp() * 1000)
     rows = [

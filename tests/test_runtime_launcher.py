@@ -51,6 +51,16 @@ class _ReadyHandler(BaseHTTPRequestHandler):
         return
 
 
+class _NotFoundHandler(BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802
+        self.send_response(404)
+        self.end_headers()
+        self.wfile.write(b"missing")
+
+    def log_message(self, format, *args):  # noqa: A003
+        return
+
+
 class _DisconnectingWriter:
     def write(self, _body: bytes) -> int:
         raise ConnectionResetError(
@@ -91,6 +101,72 @@ def test_wait_for_url_returns_when_service_becomes_ready() -> None:
         thread.join(timeout=2)
 
 
+def test_wait_for_url_treats_loopback_404_as_ready() -> None:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _NotFoundHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/missing"
+        rl.wait_for_url(url, timeout_s=2.0, interval_s=0.05)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_wait_for_url_uses_direct_http_connection_for_loopback() -> None:
+    calls: list[tuple[str, int, float, str, str]] = []
+
+    class _FakeResponse:
+        status = 204
+
+        def read(self) -> bytes:
+            return b""
+
+    class _FakeConnection:
+        def __init__(self, host: str, port: int, timeout: float):
+            calls.append((host, port, timeout, "", ""))
+            self._index = len(calls) - 1
+
+        def request(self, method: str, path: str) -> None:
+            host, port, timeout, _, _ = calls[self._index]
+            calls[self._index] = (host, port, timeout, method, path)
+
+        def getresponse(self) -> _FakeResponse:
+            return _FakeResponse()
+
+        def close(self) -> None:
+            return
+
+    with mock.patch.object(rl.http.client, "HTTPConnection", _FakeConnection):
+        rl.wait_for_url("http://127.0.0.1:8123/jobs.html?desktop=1", timeout_s=1.0, interval_s=0.05)
+
+    assert calls == [("127.0.0.1", 8123, 1.0, "GET", "/jobs.html?desktop=1")]
+
+
+def test_wait_for_url_uses_opener_for_non_loopback() -> None:
+    opened: list[tuple[str, float]] = []
+
+    class _FakeResponse:
+        status = 204
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeOpener:
+        def open(self, request, timeout: float):
+            opened.append((request.full_url, timeout))
+            return _FakeResponse()
+
+    with mock.patch.object(rl, "build_opener", return_value=_FakeOpener()):
+        rl.wait_for_url("http://example.com/health", timeout_s=1.0, interval_s=0.05)
+
+    assert opened == [("http://example.com/health", 1.0)]
+
+
 @pytest.mark.slow
 def test_wait_for_url_raises_timeout() -> None:
     start = time.monotonic()
@@ -99,12 +175,14 @@ def test_wait_for_url_raises_timeout() -> None:
     assert time.monotonic() - start < 2.0
 
 
-def test_build_site_request_handler_traces_probe_requests() -> None:
+def test_build_site_request_handler_traces_probe_requests(monkeypatch: pytest.MonkeyPatch) -> None:
     with workspace_tmpdir("runtime-launcher") as tmp:
         root = Path(tmp) / "site"
         root.mkdir(parents=True, exist_ok=True)
         _write(root / "jobs.html", "<html>jobs</html>\n")
         data_dir = Path(tmp) / "data"
+        monkeypatch.setenv("BALUFFO_DATA_DIR", str(data_dir))
+        monkeypatch.setenv("BALUFFO_STARTUP_PROBE", "1")
         handler = rl.build_site_request_handler(root, data_dir=data_dir, startup_probe=True)
         server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -127,8 +205,32 @@ def test_build_site_request_handler_traces_probe_requests() -> None:
             for line in metrics_path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
+        assert "desktop_url_probe_started" in events
+        assert "desktop_url_probe_succeeded" in events
         assert "desktop_site_request_start" in events
         assert "desktop_site_request_complete" in events
+
+
+def test_wait_for_url_emits_timeout_diagnostics_for_startup_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        data_dir = Path(tmp) / "data"
+        monkeypatch.setenv("BALUFFO_DATA_DIR", str(data_dir))
+        monkeypatch.setenv("BALUFFO_STARTUP_PROBE", "1")
+
+        with pytest.raises(TimeoutError):
+            rl.wait_for_url("http://127.0.0.1:9/nope", timeout_s=0.2, interval_s=0.05)
+
+        rows = [
+            json.loads(line)
+            for line in (data_dir / "desktop-startup-metrics.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        events = [row["event"] for row in rows]
+        assert "desktop_url_probe_started" in events
+        assert "desktop_url_probe_attempt_failed" in events
+        assert "desktop_url_probe_timeout" in events
 
 
 def test_quiet_site_handler_swallows_expected_client_disconnects() -> None:
@@ -180,6 +282,92 @@ def test_run_site_server_reports_app_version() -> None:
         payload = json.loads(print_mock.call_args.args[0])
         assert payload["appVersion"] == APP_VERSION
         assert payload["currentVersion"] == "2.4.6"
+
+
+def test_run_site_server_skips_heal_when_active_version_is_healthy() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_ship_root(root, version="2.4.6")
+
+        class _StopServer(Exception):
+            pass
+
+        with (
+            mock.patch.object(
+                rl.update_manager, "health_check_version", return_value=(True, "")
+            ) as health_mock,
+            mock.patch.object(rl, "heal_active_ship_version") as heal_mock,
+            mock.patch.object(rl, "ThreadingHTTPServer", side_effect=_StopServer),
+        ):
+            with pytest.raises(_StopServer):
+                rl.run_site_server(root, port=8123)
+
+        health_mock.assert_called_once()
+        heal_mock.assert_not_called()
+
+
+def test_run_site_server_heals_when_active_version_is_unhealthy() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_ship_root(root, version="2.4.6")
+
+        class _StopServer(Exception):
+            pass
+
+        with (
+            mock.patch.object(
+                rl.update_manager,
+                "health_check_version",
+                return_value=(False, "missing_required_file:index.html"),
+            ) as health_mock,
+            mock.patch.object(rl, "heal_active_ship_version") as heal_mock,
+            mock.patch.object(rl, "ThreadingHTTPServer", side_effect=_StopServer),
+        ):
+            with pytest.raises(_StopServer):
+                rl.run_site_server(root, port=8123)
+
+        health_mock.assert_called_once()
+        heal_mock.assert_called_once()
+
+
+def test_run_site_server_emits_bootstrap_trace_events_for_startup_probe() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_ship_root(root, version="2.4.6")
+        data_dir = root / "data"
+
+        class _StopServer(Exception):
+            pass
+
+        server = mock.MagicMock()
+        server.__enter__.return_value = server
+        server.__exit__.return_value = False
+        server.serve_forever.side_effect = _StopServer
+
+        with (
+            mock.patch.dict(
+                rl.os.environ,
+                {
+                    "BALUFFO_STARTUP_PROBE": "1",
+                    "BALUFFO_DATA_DIR": str(data_dir),
+                },
+                clear=False,
+            ),
+            mock.patch.object(rl, "ThreadingHTTPServer", return_value=server),
+        ):
+            with pytest.raises(_StopServer):
+                rl.run_site_server(root, port=8123)
+
+        metrics_path = data_dir / "desktop-startup-metrics.jsonl"
+        events = [
+            json.loads(line)["event"]
+            for line in metrics_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert "desktop_site_layout_resolved" in events
+        assert "desktop_site_health_check_started" in events
+        assert "desktop_site_health_check_completed" in events
+        assert "desktop_site_server_listening" in events
 
 
 def test_heal_active_ship_version_restores_missing_admin_bridge_from_repo() -> None:
@@ -268,3 +456,50 @@ def test_run_bridge_server_forwards_desktop_owner_arguments() -> None:
         assert "desktop-session-1" in captured_argv
         assert "--started-by" in captured_argv
         assert "launcher-1" in captured_argv
+
+
+def test_run_bridge_server_emits_bootstrap_trace_events_for_startup_probe() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_ship_root(root, version="3.1.4")
+        data_dir = root / "data"
+
+        def _capture_run_path(_script: str, run_name: str) -> None:
+            raise RuntimeError("stop-after-argv")
+
+        with pytest.raises(RuntimeError, match="stop-after-argv"):
+            with (
+                mock.patch.dict(
+                    rl.os.environ,
+                    {
+                        "BALUFFO_STARTUP_PROBE": "1",
+                        "BALUFFO_DATA_DIR": str(data_dir),
+                    },
+                    clear=False,
+                ),
+                mock.patch.object(rl.runpy, "run_path", side_effect=_capture_run_path),
+            ):
+                rl.run_bridge_server(
+                    root,
+                    bind_host="127.0.0.1",
+                    port=8877,
+                    data_dir=data_dir,
+                    desktop_mode=True,
+                    owner_mode="desktop-window",
+                    owner_token="owner-token-1",
+                    desktop_session_id="desktop-session-1",
+                    started_by="launcher-1",
+                    owner_idle_timeout_s=15.0,
+                )
+
+        metrics_path = data_dir / "desktop-startup-metrics.jsonl"
+        events = [
+            json.loads(line)["event"]
+            for line in metrics_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert "desktop_bridge_layout_resolved" in events
+        assert "desktop_bridge_repair_started" in events
+        assert "desktop_bridge_repair_completed" in events
+        assert "desktop_bridge_startup_check_started" in events
+        assert "desktop_bridge_startup_check_completed" in events

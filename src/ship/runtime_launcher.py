@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import http.client
 import json
 import os
 import runpy
@@ -15,8 +16,9 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import ProxyHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -28,6 +30,19 @@ from src.ship import update_manager
 
 BRIDGE_DEFAULTS = get_bridge_defaults()
 DESKTOP_DEFAULTS = get_desktop_defaults()
+
+
+def _startup_trace_target() -> tuple[Path | None, bool]:
+    data_dir = str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
+    startup_probe = str(os.environ.get("BALUFFO_STARTUP_PROBE") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if not startup_probe or not data_dir:
+        return None, False
+    return Path(data_dir).expanduser().resolve(), True
 
 
 def _is_expected_client_disconnect(exc: BaseException) -> bool:
@@ -81,6 +96,25 @@ def _append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     except OSError:
         return
+
+
+def _append_runtime_startup_trace(event: str, **fields: object) -> None:
+    data_dir, enabled = _startup_trace_target()
+    if not enabled or data_dir is None:
+        return
+    _append_startup_trace(data_dir, event, **fields)
+
+
+def _append_wait_for_url_trace(
+    event: str,
+    *,
+    trace_data_dir: Path | None = None,
+    **fields: object,
+) -> None:
+    if trace_data_dir is not None:
+        _append_startup_trace(Path(trace_data_dir), event, **fields)
+        return
+    _append_runtime_startup_trace(event, **fields)
 
 
 def build_site_request_handler(
@@ -204,20 +238,119 @@ def heal_active_ship_version(layout: RuntimeLayout) -> None:
     _try_heal_required_files_from_meipass(layout)
 
 
-def wait_for_url(url: str, *, timeout_s: float = 20.0, interval_s: float = 0.25) -> None:
-    deadline = time.monotonic() + max(0.1, timeout_s)
-    last_error = ""
-    while time.monotonic() < deadline:
+def _is_loopback_probe_target(url: str) -> bool:
+    hostname = str(urlsplit(url).hostname or "").strip().lower()
+    return hostname in {"127.0.0.1", "localhost"}
+
+
+def _build_readiness_probe(url: str, *, request_timeout_s: float):
+    parsed = urlsplit(url)
+    is_loopback = _is_loopback_probe_target(url)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    if is_loopback:
+        connection_type = (
+            http.client.HTTPSConnection
+            if str(parsed.scheme or "").strip().lower() == "https"
+            else http.client.HTTPConnection
+        )
+        host = str(parsed.hostname or "").strip() or "127.0.0.1"
+        port = int(parsed.port or (443 if connection_type is http.client.HTTPSConnection else 80))
+
+        def _probe_once() -> int:
+            connection = connection_type(host, port, timeout=request_timeout_s)
+            try:
+                connection.request("GET", path)
+                response = connection.getresponse()
+                response.read()
+                return int(response.status or 200)
+            finally:
+                with contextlib.suppress(OSError, http.client.HTTPException):
+                    connection.close()
+
+        return is_loopback, _probe_once
+
+    opener = build_opener(ProxyHandler())
+    request = Request(url, method="GET")
+
+    def _probe_once() -> int:
         try:
-            with urlopen(url, timeout=max(1.0, interval_s * 4)) as response:  # noqa: S310
-                status = int(getattr(response, "status", 200) or 200)
-                if 200 <= status < 500:
-                    return
+            with opener.open(request, timeout=request_timeout_s) as response:  # noqa: S310
+                return int(getattr(response, "status", 200) or 200)
+        except HTTPError as exc:
+            return int(getattr(exc, "code", 0) or 0)
+
+    return is_loopback, _probe_once
+
+
+def wait_for_url(
+    url: str,
+    *,
+    timeout_s: float = 20.0,
+    interval_s: float = 0.25,
+    trace_data_dir: Path | None = None,
+) -> None:
+    deadline = time.monotonic() + max(0.1, timeout_s)
+    request_timeout_s = max(1.0, interval_s * 4)
+    is_loopback, probe_once = _build_readiness_probe(url, request_timeout_s=request_timeout_s)
+    last_error = ""
+    attempt = 0
+    _append_wait_for_url_trace(
+        "desktop_url_probe_started",
+        trace_data_dir=trace_data_dir,
+        url=str(url),
+        loopback=bool(is_loopback),
+        timeoutMs=int(max(0.1, timeout_s) * 1000),
+        intervalMs=int(max(0.0, interval_s) * 1000),
+        requestTimeoutMs=int(request_timeout_s * 1000),
+    )
+    while time.monotonic() < deadline:
+        attempt += 1
+        try:
+            status = int(probe_once() or 0)
+            if 200 <= status < 500:
+                _append_wait_for_url_trace(
+                    "desktop_url_probe_succeeded",
+                    trace_data_dir=trace_data_dir,
+                    url=str(url),
+                    loopback=bool(is_loopback),
+                    status=int(status),
+                    attempt=int(attempt),
+                )
+                return
+            last_error = f"HTTP {status}"
         except URLError as exc:
             last_error = str(exc)
+            if attempt == 1:
+                _append_wait_for_url_trace(
+                    "desktop_url_probe_attempt_failed",
+                    trace_data_dir=trace_data_dir,
+                    url=str(url),
+                    loopback=bool(is_loopback),
+                    attempt=int(attempt),
+                    error=last_error,
+                )
         except OSError as exc:
             last_error = str(exc)
+            if attempt == 1:
+                _append_wait_for_url_trace(
+                    "desktop_url_probe_attempt_failed",
+                    trace_data_dir=trace_data_dir,
+                    url=str(url),
+                    loopback=bool(is_loopback),
+                    attempt=int(attempt),
+                    error=last_error,
+                )
         time.sleep(interval_s)
+    _append_wait_for_url_trace(
+        "desktop_url_probe_timeout",
+        trace_data_dir=trace_data_dir,
+        url=str(url),
+        loopback=bool(is_loopback),
+        attempt=int(attempt),
+        error=last_error or "no response",
+    )
     raise TimeoutError(f"Timed out waiting for {url}. Last error: {last_error or 'no response'}")
 
 
@@ -276,8 +409,34 @@ def _isolated_src_package() -> Iterator[None]:
 def run_site_server(
     root: str | Path | None = None, *, port: int = int(DESKTOP_DEFAULTS["site_port"])
 ) -> None:
+    _append_runtime_startup_trace("desktop_site_layout_resolve_started")
     layout = resolve_runtime_layout(root)
-    heal_active_ship_version(layout)
+    _append_runtime_startup_trace(
+        "desktop_site_layout_resolved",
+        activeRoot=str(layout.active_root),
+        currentVersion=str(layout.current_version),
+    )
+    _append_runtime_startup_trace(
+        "desktop_site_health_check_started",
+        activeRoot=str(layout.active_root),
+    )
+    healthy_version, health_error = update_manager.health_check_version(layout.active_root)
+    _append_runtime_startup_trace(
+        "desktop_site_health_check_completed",
+        activeRoot=str(layout.active_root),
+        ok=bool(healthy_version),
+        error=str(health_error or ""),
+    )
+    if not healthy_version:
+        _append_runtime_startup_trace(
+            "desktop_site_repair_started",
+            activeRoot=str(layout.active_root),
+        )
+        heal_active_ship_version(layout)
+        _append_runtime_startup_trace(
+            "desktop_site_repair_completed",
+            activeRoot=str(layout.active_root),
+        )
     print(
         json.dumps(
             {
@@ -300,6 +459,11 @@ def run_site_server(
         in {"1", "true", "yes", "on"},
     )
     server = ThreadingHTTPServer(("127.0.0.1", int(port)), handler)
+    _append_runtime_startup_trace(
+        "desktop_site_server_listening",
+        bindHost="127.0.0.1",
+        port=int(port),
+    )
     with server:
         server.serve_forever()
 
@@ -317,9 +481,38 @@ def run_bridge_server(
     started_by: str = "",
     owner_idle_timeout_s: float = 0.0,
 ) -> None:
+    _append_runtime_startup_trace("desktop_bridge_layout_resolve_started")
     layout = resolve_runtime_layout(root, data_dir=data_dir)
+    _append_runtime_startup_trace(
+        "desktop_bridge_layout_resolved",
+        activeRoot=str(layout.active_root),
+        currentVersion=str(layout.current_version),
+        dataDir=str(layout.data_dir),
+    )
+    _append_runtime_startup_trace(
+        "desktop_bridge_repair_started",
+        activeRoot=str(layout.active_root),
+    )
     heal_active_ship_version(layout)
-    update_manager.startup_check(layout.root, layout.data_dir)
+    _append_runtime_startup_trace(
+        "desktop_bridge_repair_completed",
+        activeRoot=str(layout.active_root),
+    )
+    _append_runtime_startup_trace(
+        "desktop_bridge_startup_check_started",
+        activeRoot=str(layout.active_root),
+        dataDir=str(layout.data_dir),
+    )
+    startup_check_result = update_manager.startup_check(layout.root, layout.data_dir)
+    _append_runtime_startup_trace(
+        "desktop_bridge_startup_check_completed",
+        activeRoot=str(layout.active_root),
+        dataDir=str(layout.data_dir),
+        currentVersion=str(startup_check_result.get("current_version") or ""),
+        rolledBack=bool(startup_check_result.get("rolled_back")),
+        repairedPointer=bool(startup_check_result.get("repaired_pointer")),
+        bootstrapRepair=int(startup_check_result.get("bootstrap_repair") or 0),
+    )
     bridge_script = layout.active_root / "src" / "admin_bridge.py"
     if not bridge_script.exists():
         raise RuntimeError(f"Admin bridge entrypoint not found: {bridge_script}")
