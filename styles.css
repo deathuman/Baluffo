@@ -410,7 +410,8 @@ h1 {
 .release-notes-dialog {
   width: min(92vw, 760px);
   max-height: min(82vh, 760px);
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.9rem;
   text-align: left;
   overflow: hidden;
@@ -429,6 +430,8 @@ h1 {
 }
 
 .release-notes-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   padding-right: 0.25rem;
   color: var(--text-secondary);
