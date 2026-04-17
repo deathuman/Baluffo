@@ -5,6 +5,7 @@ import {
   createJobsDesktopUpdateController,
   deriveDesktopUpdateView,
   formatDesktopUpdateBytes,
+  shouldExposeJobsDesktopUpdateStatus,
   shouldPollDesktopUpdateStatus
 } from "../../../frontend/jobs/app/desktop-update.js";
 
@@ -124,6 +125,33 @@ test("shouldPollDesktopUpdateStatus tracks checking, downloading, and install ha
   assert.equal(shouldPollDesktopUpdateStatus({ availability: "up_to_date" }), false);
 });
 
+test("jobs desktop update toggle stays hidden until a fresh non-critical status is known", () => {
+  assert.equal(
+    shouldExposeJobsDesktopUpdateStatus({ availability: "error", lastError: "socket timeout" }),
+    false
+  );
+  assert.equal(
+    shouldExposeJobsDesktopUpdateStatus({ availability: "unknown", downloadState: "idle" }),
+    false
+  );
+  assert.equal(
+    shouldExposeJobsDesktopUpdateStatus({ availability: "up_to_date" }, { hasFreshStatus: true }),
+    true
+  );
+  assert.equal(
+    shouldExposeJobsDesktopUpdateStatus({ downloadState: "downloading" }),
+    true
+  );
+  assert.equal(
+    shouldExposeJobsDesktopUpdateStatus({ installState: "installing" }),
+    true
+  );
+  assert.equal(
+    shouldExposeJobsDesktopUpdateStatus({ installState: "ready" }),
+    true
+  );
+});
+
 test("deriveDesktopUpdateView surfaces staged helper progress and failure retry state", () => {
   const installing = deriveDesktopUpdateView({
     installState: "installing",
@@ -232,12 +260,13 @@ test("desktop update controller mounts, auto-checks, and starts a download from 
 
   await controller.mount();
   assert.deepEqual(fetchCalls, ["/app/update-status"]);
-  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), false);
-  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Check updates");
+  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), true);
 
   await controller.startAutoCheck();
   assert.deepEqual(postCalls, ["/app/check-for-update"]);
   assert.equal(refs.desktopUpdatePanel.classList.contains("hidden"), false);
+  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), false);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Update 0.0.16");
   assert.equal(refs.desktopUpdatePrimaryBtn.dataset.action, "download");
   assert.equal(refs.desktopUpdatePrimaryBtn.textContent, "Download");
   assert.equal(refs.desktopUpdateReleaseNotes.classList.contains("hidden"), false);
@@ -258,6 +287,80 @@ test("desktop update controller mounts, auto-checks, and starts a download from 
   assert.ok(
     toasts.some(item => item.message === "Desktop update download started." && item.level === "info")
   );
+});
+
+test("desktop update controller keeps cached update errors hidden until a fresh check finishes", async () => {
+  const refs = buildRefs();
+  let fetchStatus = {
+    currentVersion: "0.0.15",
+    availability: "error",
+    downloadState: "idle",
+    installState: "idle",
+    lastError: "socket timeout",
+  };
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async () => fetchStatus,
+    postJson: async () => {
+      fetchStatus = {
+        ...fetchStatus,
+        availability: "up_to_date",
+        lastCheckedAt: "2026-04-16T10:00:00Z",
+        lastError: "",
+      };
+      return { status: fetchStatus };
+    },
+    bindAsyncClick: () => {},
+    showToast: () => {},
+    requestConfirmationDialog: async () => true,
+    isDesktopRuntimeMode: () => true,
+    setTimeoutFn: handler => ({ unref() {}, handler }),
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), true);
+
+  await controller.startAutoCheck();
+  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), false);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Up to date");
+  assert.equal(refs.desktopUpdatePanel.classList.contains("hidden"), true);
+});
+
+test("desktop update controller renders active cached update work immediately", async () => {
+  const refs = buildRefs();
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async () => ({
+      currentVersion: "0.0.15",
+      targetVersion: "0.0.16",
+      availability: "available",
+      downloadState: "downloading",
+      downloadPercent: 42,
+      downloadedBytes: 42,
+      totalBytes: 100,
+      installState: "idle",
+      lastCheckedAt: "2026-04-16T10:00:00Z",
+    }),
+    postJson: async () => {
+      throw new Error("unexpected");
+    },
+    bindAsyncClick: () => {},
+    showToast: () => {},
+    requestConfirmationDialog: async () => true,
+    isDesktopRuntimeMode: () => true,
+    setTimeoutFn: handler => ({ unref() {}, handler }),
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), false);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Downloading 42%");
+  assert.equal(refs.desktopUpdatePanel.classList.contains("hidden"), false);
 });
 
 test("desktop update controller refreshes status after a transport failure during download", async () => {
@@ -298,6 +401,9 @@ test("desktop update controller refreshes status after a transport failure durin
     },
     postJson: async (_baseUrl, path) => {
       postCalls.push(path);
+      if (path === "/app/check-for-update") {
+        return { status: fetchStatus };
+      }
       if (path === "/app/download-update") {
         refreshAfterFailure = true;
         throw new Error("Bridge POST /app/download-update failed: Internal Server Error (HTTP 500)");
@@ -320,9 +426,10 @@ test("desktop update controller refreshes status after a transport failure durin
   });
 
   await controller.mount();
+  await controller.startAutoCheck();
   await controller.handlePrimaryAction();
 
-  assert.deepEqual(postCalls, ["/app/download-update"]);
+  assert.deepEqual(postCalls, ["/app/check-for-update", "/app/download-update"]);
   assert.deepEqual(fetchCalls, ["/app/update-status", "/app/update-status"]);
   assert.equal(refs.desktopUpdateToggleBtn.textContent, "Downloading 16%");
   assert.ok(
@@ -358,6 +465,9 @@ test("desktop update controller ignores repeated primary actions while a request
     baseUrl: "http://127.0.0.1:8877",
     fetchJson: async () => fetchStatus,
     postJson: async (_baseUrl, path) => {
+      if (path === "/app/check-for-update") {
+        return { status: fetchStatus };
+      }
       if (path !== "/app/download-update") {
         throw new Error(`Unexpected path ${path}`);
       }
@@ -390,6 +500,7 @@ test("desktop update controller ignores repeated primary actions while a request
   });
 
   await controller.mount();
+  await controller.startAutoCheck();
   const first = controller.handlePrimaryAction();
   const second = controller.handlePrimaryAction();
 

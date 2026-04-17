@@ -54,6 +54,7 @@ import { cacheJobsDom } from "./dom.js";
 import { createJobsDesktopUpdateController } from "./desktop-update.js";
 import { openReleaseNotesDialog } from "../../shared/ui/release-notes-dialog.js";
 import { callJobsBridge as callJobsBridgeFromModule } from "./pipeline.js";
+import { applyJobsAdminBridgeState as applyJobsAdminBridgeStateFromModule } from "./admin-bridge-state.js";
 import {
   buildSeenRowKey,
   openJobsCacheDb as openJobsCacheDbFromModule,
@@ -323,14 +324,13 @@ function logJobsError(message, err) {
  * @param {number} params.activeAlerts
  */
 function applyJobsAdminBridgeState({ buttonEl, state, label, title }) {
-  if (!buttonEl) return;
-  const enabled = state === "online";
-  runtimeState.adminBridgeButtonState = state;
-  buttonEl.dataset.bridgeState = state;
-  buttonEl.textContent = label || "Admin Checking...";
-  buttonEl.title = title || label || "Checking admin bridge status";
-  buttonEl.disabled = !enabled;
-  buttonEl.setAttribute("aria-disabled", enabled ? "false" : "true");
+  applyJobsAdminBridgeStateFromModule({
+    buttonEl,
+    state,
+    label,
+    title,
+    runtimeState
+  });
 }
 
 export async function openJobLinkInDefaultBrowser(url, deps = {}) {
@@ -398,10 +398,20 @@ function bootJobsPage() {
     showReleaseNotesDialog: options => openReleaseNotesDialog(options),
     openExternalUrl: url => openJobLinkInDefaultBrowser(url),
   });
-  runtimeState.adminBridgeWatcher.setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
-  runtimeState.desktopUpdateController.mount().catch(err => {
-    logJobsError("Failed to initialize desktop update UI", err);
-  });
+  startAdminBridgeButtonWatch();
+  (async () => {
+    try {
+      await runtimeState.desktopUpdateController.mount();
+    } catch (err) {
+      logJobsError("Failed to initialize desktop update UI", err);
+      return;
+    }
+    try {
+      await runtimeState.desktopUpdateController.startAutoCheck();
+    } catch (err) {
+      logJobsError("Failed to auto-check desktop updates", err);
+    }
+  })();
   setupJobsListDelegation();
   setJobsStartupState("loading", "booting");
   bindCoreEvents();
@@ -423,10 +433,6 @@ function scheduleNonCriticalStartupWork() {
   scheduleNonCriticalStartup(window, () => {
     renderDataSources().catch(() => {});
     ensureJobsPipelineStatusWatch();
-    startAdminBridgeButtonWatch();
-    runtimeState.desktopUpdateController?.startAutoCheck().catch(err => {
-      logJobsError("Failed to auto-check desktop updates", err);
-    });
   });
 }
 

@@ -142,6 +142,15 @@ function inFlightInstallState(installState) {
   );
 }
 
+export function shouldExposeJobsDesktopUpdateStatus(status = {}, { hasFreshStatus = false } = {}) {
+  if (hasFreshStatus) return true;
+  const normalized = normalizeDesktopUpdateStatus(status);
+  if (normalized.downloadState === "downloading") return true;
+  if (normalized.downloadState === "downloaded") return true;
+  if (normalized.installState === "ready") return true;
+  return inFlightInstallState(normalized.installState);
+}
+
 function failureToastForStatus(previousStatus, nextStatus) {
   const previous = normalizeDesktopUpdateStatus(previousStatus);
   const next = normalizeDesktopUpdateStatus(nextStatus);
@@ -348,6 +357,7 @@ export function createJobsDesktopUpdateController({
     bound: false,
     mounted: false,
     autoCheckStarted: false,
+    hasFreshStatus: false,
     panelOpen: false,
     pendingAction: "",
     pollTimer: null,
@@ -390,8 +400,11 @@ export function createJobsDesktopUpdateController({
 
   function render() {
     const desktopMode = Boolean(isDesktopRuntimeMode?.());
-    toggleHidden(refs.desktopUpdateToggleBtn, !desktopMode);
-    if (!desktopMode) {
+    const shouldExposeStatus = shouldExposeJobsDesktopUpdateStatus(state.status, {
+      hasFreshStatus: state.hasFreshStatus
+    });
+    toggleHidden(refs.desktopUpdateToggleBtn, !desktopMode || !shouldExposeStatus);
+    if (!desktopMode || !shouldExposeStatus) {
       toggleHidden(refs.desktopUpdatePanel, true);
       return;
     }
@@ -430,10 +443,17 @@ export function createJobsDesktopUpdateController({
     }
   }
 
-  function applyStatus(status, { openPanel = false, autoOpenImportant = false } = {}) {
+  function applyStatus(status, {
+    openPanel = false,
+    autoOpenImportant = false,
+    isFresh = false
+  } = {}) {
     const previousStatus = state.status;
     const nextStatus = normalizeDesktopUpdateStatus(status);
     const targetVersion = String(nextStatus.targetVersion || nextStatus.latestVersion || "").trim();
+    if (isFresh) {
+      state.hasFreshStatus = true;
+    }
     if (!nextStatus.updateAvailable || nextStatus.availability === "up_to_date") {
       state.dismissedTargetVersion = "";
     }
@@ -459,10 +479,15 @@ export function createJobsDesktopUpdateController({
     render();
   }
 
-  async function refreshStatus({ silent = false, openPanel = false, autoOpenImportant = false } = {}) {
+  async function refreshStatus({
+    silent = false,
+    openPanel = false,
+    autoOpenImportant = false,
+    isFresh = true
+  } = {}) {
     try {
       const payload = await fetchJson(baseUrl, "/app/update-status");
-      applyStatus(payload, { openPanel, autoOpenImportant });
+      applyStatus(payload, { openPanel, autoOpenImportant, isFresh });
       return payload;
     } catch (error) {
       if (!silent) {
@@ -477,7 +502,7 @@ export function createJobsDesktopUpdateController({
     try {
       const payload = await postJson(baseUrl, "/app/check-for-update", { force: Boolean(force) });
       const nextStatus = payload?.status || payload || {};
-      applyStatus(nextStatus, { openPanel, autoOpenImportant });
+      applyStatus(nextStatus, { openPanel, autoOpenImportant, isFresh: true });
       if (!silent && String(nextStatus?.availability || "") === "up_to_date") {
         showToast?.("Baluffo is already up to date.", "success");
       }
@@ -488,7 +513,7 @@ export function createJobsDesktopUpdateController({
         availability: "error",
         lastError: errorMessage(error),
       };
-      applyStatus(failedStatus, { openPanel });
+      applyStatus(failedStatus, { openPanel, isFresh: true });
       if (!silent) {
         showToast?.(`Could not check for updates: ${errorMessage(error)}`, "error");
       }
@@ -649,7 +674,7 @@ export function createJobsDesktopUpdateController({
     state.mounted = true;
     render();
     if (!isDesktopRuntimeMode?.()) return;
-    await refreshStatus({ silent: true, autoOpenImportant: true });
+    await refreshStatus({ silent: true, autoOpenImportant: true, isFresh: false });
   }
 
   async function startAutoCheck() {

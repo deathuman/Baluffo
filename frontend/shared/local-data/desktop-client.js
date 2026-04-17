@@ -4,6 +4,7 @@ import { requestProfileName } from "../../local-data/profile-name-dialog.js";
 import { createLocalDataRuntime } from "../../local-data/runtime-contract.js";
 import { buildAttachmentPath, generateJobKey } from "../../local-data/job-utils.js";
 import { canTransitionPhase, normalizeApplicationStatus } from "../../local-data/phase.js";
+import { appendDesktopRuntimeQueryParams } from "./runtime-context.js";
 
 const BASE_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/desktop-local-data`;
 const TASKS_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/ops/task-state`;
@@ -104,8 +105,21 @@ function consumeDesktopNavigationBypass() {
   return hasBypass;
 }
 
-export function navigateDesktopPage(target, { locationObject = window.location, baseHref = window.location?.href || "" } = {}) {
-  const resolvedTarget = resolveDesktopNavigationUrl(target, baseHref);
+export function navigateDesktopPage(
+  target,
+  {
+    locationObject = window.location,
+    baseHref = window.location?.href || "",
+    sessionStorageObject = window.sessionStorage
+  } = {}
+) {
+  let resolvedTarget = resolveDesktopNavigationUrl(target, baseHref);
+  if (resolvedTarget && isApprovedDesktopPageNavigation(resolvedTarget, baseHref)) {
+    resolvedTarget = appendDesktopRuntimeQueryParams(resolvedTarget, {
+      currentHref: baseHref,
+      sessionStorageObject
+    });
+  }
   const nextHref = resolvedTarget ? resolvedTarget.href : String(target || "");
   armDesktopNavigationBypass(resolvedTarget);
   if (locationObject && typeof locationObject.assign === "function") {

@@ -2,6 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createJobsUrlPersistence } from "../../../frontend/jobs/app/runtime/url-persistence.js";
+import { isDesktopRuntimeMode } from "../../../frontend/jobs/app/startup.js";
+
+function createStorageMock(seed = {}) {
+  const map = new Map(Object.entries(seed).map(([key, value]) => [String(key), String(value)]));
+  return {
+    getItem(key) {
+      return map.has(key) ? map.get(key) : null;
+    },
+    setItem(key, value) {
+      map.set(String(key), String(value));
+    },
+    removeItem(key) {
+      map.delete(String(key));
+    }
+  };
+}
 
 function createHarness({ desktop = true, ready = false, probe = false } = {}) {
   const calls = {
@@ -174,4 +190,23 @@ test("jobs URL persistence skips writes in startup probe mode", () => {
     harness.calls.metrics.some(entry => entry.event === "jobs_write_state_probe_skip"),
     true
   );
+});
+
+test("jobs desktop mode stays enabled from sticky session storage without a desktop query", () => {
+  const originalWindow = global.window;
+  global.window = {
+    location: {
+      href: "http://127.0.0.1:4173/jobs.html?page=2"
+    },
+    sessionStorage: createStorageMock({
+      baluffo_runtime_mode: "desktop"
+    })
+  };
+
+  try {
+    assert.equal(isDesktopRuntimeMode(), true);
+    assert.equal(isDesktopRuntimeMode("http://127.0.0.1:4173/jobs.html?page=3"), true);
+  } finally {
+    global.window = originalWindow;
+  }
 });

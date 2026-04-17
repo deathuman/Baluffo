@@ -48,6 +48,7 @@ async function flushMicrotasks(count = 5) {
 }
 
 function setupDesktopGlobals({
+  locationHref = "http://127.0.0.1:4173/jobs.html?desktop=1",
   taskPayload = { tasks: [], count: 0 },
   updatePayload = { availability: "unknown", downloadState: "idle", installState: "idle" }
 } = {}) {
@@ -58,7 +59,7 @@ function setupDesktopGlobals({
   const beaconCalls = [];
   const fetchCalls = [];
   const locationState = {
-    href: "http://127.0.0.1:4173/jobs.html?desktop=1",
+    href: String(locationHref || "http://127.0.0.1:4173/jobs.html?desktop=1"),
     assignCalls: [],
     assign(url) {
       const nextUrl = String(url || "");
@@ -191,7 +192,7 @@ test("approved desktop page navigation bypasses the unload prompt and still sign
   navigateDesktopPage("saved.html", { locationObject: locationState, baseHref: locationState.href });
 
   assert.equal(locationState.assignCalls.length, 1);
-  assert.match(locationState.assignCalls[0], /saved\.html$/);
+  assert.equal(new URL(locationState.assignCalls[0]).pathname, "/saved.html");
 
   const beforeUnload = eventListeners.get("beforeunload");
   const event = createBeforeUnloadEvent();
@@ -201,6 +202,47 @@ test("approved desktop page navigation bypasses the unload prompt and still sign
   assert.equal(event.defaultPrevented, false);
   assert.equal(event.returnValue, undefined);
   assert.equal(beaconCalls.length, 1);
+});
+
+test("approved desktop page navigation preserves desktop runtime query params", async () => {
+  const { locationState } = setupDesktopGlobals({
+    locationHref: "http://127.0.0.1:4173/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1&startupProbe=1"
+  });
+  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  initDesktopLocalDataClient();
+  await flushMicrotasks();
+
+  navigateDesktopPage("saved.html", { locationObject: locationState, baseHref: locationState.href });
+
+  assert.equal(locationState.assignCalls.length, 1);
+  const nextUrl = new URL(locationState.assignCalls[0]);
+  assert.equal(nextUrl.pathname, "/saved.html");
+  assert.equal(nextUrl.searchParams.get("desktop"), "1");
+  assert.equal(nextUrl.searchParams.get("bridgePort"), "8877");
+  assert.equal(nextUrl.searchParams.get("bridgeHost"), "127.0.0.1");
+  assert.equal(nextUrl.searchParams.get("startupProbe"), "1");
+});
+
+test("approved desktop page navigation preserves target query params while appending runtime params", async () => {
+  const { locationState } = setupDesktopGlobals({
+    locationHref: "http://127.0.0.1:4173/admin.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1"
+  });
+  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  initDesktopLocalDataClient();
+  await flushMicrotasks();
+
+  navigateDesktopPage("jobs.html?page=3&search=engineer", {
+    locationObject: locationState,
+    baseHref: locationState.href
+  });
+
+  const nextUrl = new URL(locationState.assignCalls[0]);
+  assert.equal(nextUrl.pathname, "/jobs.html");
+  assert.equal(nextUrl.searchParams.get("page"), "3");
+  assert.equal(nextUrl.searchParams.get("search"), "engineer");
+  assert.equal(nextUrl.searchParams.get("desktop"), "1");
+  assert.equal(nextUrl.searchParams.get("bridgePort"), "8877");
+  assert.equal(nextUrl.searchParams.get("bridgeHost"), "127.0.0.1");
 });
 
 test("external navigation does not bypass the unload prompt", async () => {
@@ -215,6 +257,9 @@ test("external navigation does not bypass the unload prompt", async () => {
   await flushMicrotasks();
 
   navigateDesktopPage("https://example.com/outside", { locationObject: locationState, baseHref: locationState.href });
+
+  assert.equal(locationState.assignCalls.length, 1);
+  assert.equal(locationState.assignCalls[0], "https://example.com/outside");
 
   const beforeUnload = eventListeners.get("beforeunload");
   const event = createBeforeUnloadEvent();

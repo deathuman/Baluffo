@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 
+const DESKTOP_RUNTIME_QUERY = "?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1";
+
 async function expectJobsPageReady(page, timeout = 90000) {
   await page.waitForFunction(() => {
     const state = document.body?.getAttribute("data-jobs-startup-state") || "loading";
@@ -10,6 +12,14 @@ async function expectJobsPageReady(page, timeout = 90000) {
   await expect(page.locator("#auth-sign-in-btn")).toBeEnabled();
   await expect(page.locator("#jobs-list")).not.toContainText(/Loading jobs/i);
   await expect(page.locator("#source-status")).toContainText(/^Loaded \d[\d,]* jobs/i, { timeout });
+}
+
+async function expectDesktopUpdateToggleUsable(page, timeout = 15000) {
+  const updateToggle = page.locator("#desktop-update-toggle-btn");
+  await expect(updateToggle).toBeVisible({ timeout });
+  await expect(updateToggle).toBeEnabled({ timeout });
+  await updateToggle.click();
+  await expect(page.locator("#desktop-update-panel")).toBeVisible({ timeout });
 }
 
 async function signInWithProfile(page, buttonSelector, profileName, expectedFocusSelector) {
@@ -94,6 +104,7 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
   const adminBtn = page.locator("#admin-page-btn");
   await expect(adminBtn).toHaveAttribute("data-bridge-state", "online", { timeout: 10000 });
   await expect(adminBtn).not.toBeDisabled();
+  await expect(adminBtn).not.toContainText("Admin Checking...");
 
   await expect(pageErrors).toEqual([]);
   await page.selectOption("#work-type-filter", "Remote");
@@ -177,6 +188,53 @@ test("saved smoke: export stays available for signed-in browser users and guest 
 
   await page.click("#saved-auth-sign-out-btn");
   await expect(page.locator("#saved-source-status")).toContainText("Sign in to view your saved jobs");
+});
+
+test("jobs admin badge reaches online state after navigating back from saved", async ({ page }) => {
+  await page.goto("/saved.html");
+  await expect(page.locator("#jobs-page-btn")).toBeVisible();
+
+  await page.click("#jobs-page-btn");
+  await page.waitForURL("**/jobs.html");
+  await expectJobsPageReady(page);
+
+  const adminBtn = page.locator("#admin-page-btn");
+  await expect(adminBtn).toHaveAttribute("data-bridge-state", "online", { timeout: 10000 });
+  await expect(adminBtn).not.toBeDisabled();
+  await expect(adminBtn).not.toContainText("Admin Checking...");
+});
+
+test("desktop jobs update toggle stays usable after Jobs to Saved to Jobs navigation", async ({ page }) => {
+  await page.goto(`/jobs.html${DESKTOP_RUNTIME_QUERY}`);
+  await expectJobsPageReady(page);
+  await expectDesktopUpdateToggleUsable(page);
+
+  await signInWithProfile(page, "#auth-sign-in-btn", "Desktop Smoke User", "#saved-jobs-btn");
+  await page.click("#saved-jobs-btn");
+  await page.waitForURL("**/saved.html**");
+  await expect(page.locator("#jobs-page-btn")).toBeVisible();
+
+  await page.click("#jobs-page-btn");
+  await page.waitForURL("**/jobs.html**");
+  await expectJobsPageReady(page);
+  await expectDesktopUpdateToggleUsable(page);
+});
+
+test("desktop jobs update toggle stays usable after Jobs to Admin to Jobs navigation", async ({ page }) => {
+  await page.goto(`/jobs.html${DESKTOP_RUNTIME_QUERY}`);
+  await expectJobsPageReady(page);
+  await expectDesktopUpdateToggleUsable(page);
+
+  const adminBtn = page.locator("#admin-page-btn");
+  await expect(adminBtn).toHaveAttribute("data-bridge-state", "online", { timeout: 10000 });
+  await adminBtn.click();
+  await page.waitForURL("**/admin.html**");
+  await expect(page.locator("#admin-jobs-btn")).toBeVisible();
+
+  await page.click("#admin-jobs-btn");
+  await page.waitForURL("**/jobs.html**");
+  await expectJobsPageReady(page);
+  await expectDesktopUpdateToggleUsable(page);
 });
 
 test("admin smoke: loads directly without a PIN gate", async ({ page }) => {

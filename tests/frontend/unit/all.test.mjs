@@ -7,6 +7,7 @@ import "./admin-controllers.test.mjs";
 import "./admin-domain.test.mjs";
 import "./admin-render.test.mjs";
 import "./desktop-local-data-navigation.test.mjs";
+import "./jobs-admin-bridge-state.test.mjs";
 import "./jobs-data-source.test.mjs";
 import "./jobs-desktop-update.test.mjs";
 import "./jobs-domain.test.mjs";

@@ -1,10 +1,7 @@
+import { resolveDesktopRuntimeMode } from "../../shared/local-data/runtime-context.js";
+
 export function isDesktopRuntimeMode(href = window.location.href) {
-  try {
-    const url = new URL(href);
-    return url.searchParams.get("desktop") === "1";
-  } catch {
-    return false;
-  }
+  return resolveDesktopRuntimeMode(href);
 }
 
 export function scheduleNonCriticalStartup(windowObject, callback, {
