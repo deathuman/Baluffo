@@ -977,7 +977,7 @@ def test_launch_staged_update_helper_uses_logged_spawn_contract() -> None:
         assert int(kwargs.get("creationflags") or 0) == expected_flags
         assert kwargs["cwd"] == str(paths.updater_dir)
         assert isinstance(kwargs["env"], dict)
-        assert kwargs["env"]["TEMP"] == str((paths.updater_dir / "runtime-tmp").resolve())
-        assert kwargs["env"]["TMP"] == str((paths.updater_dir / "runtime-tmp").resolve())
+        assert kwargs["env"]["TEMP"] == str(du.helper_runtime_tmpdir())
+        assert kwargs["env"]["TMP"] == str(du.helper_runtime_tmpdir())
         assert Path(str(kwargs["stdout"].name)).resolve() == paths.helper_stdout_log_path.resolve()
         assert Path(str(kwargs["stderr"].name)).resolve() == paths.helper_stderr_log_path.resolve()

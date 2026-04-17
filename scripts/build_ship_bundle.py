@@ -87,7 +87,6 @@ PACKAGING_FILES = (
 APP_RUNTIME_DATA_FILES = (
     "contracts/country_acceptance.json",
     "contracts/city_noise_contract.json",
-    "jobs-unified-startup.json",
     "jobs-unified-light.json",
     "jobs-unified.json",
     "jobs-unified.csv",
@@ -525,14 +524,6 @@ def _copy_app_version(version_dir: Path) -> None:
             json.dumps({"repo": desktop_update_repo}, indent=2, ensure_ascii=False),
         )
 
-    for rel in APP_RUNTIME_DATA_FILES:
-        src = ROOT / "data" / rel
-        if not src.exists():
-            continue
-        _copy_file(src, version_dir / "data" / rel)
-    _generate_startup_preview(version_dir / "data")
-
-
 def _generate_startup_preview(data_dir: Path) -> None:
     light_path = data_dir / "jobs-unified-light.json"
     startup_path = data_dir / "jobs-unified-startup.json"
@@ -607,6 +598,7 @@ def build_bundle(output_dir: Path, version: str) -> Path:
 
     data_dir = output_dir / "data"
     _seed_runtime_data(data_dir)
+    _generate_startup_preview(data_dir)
     (data_dir / "backups").mkdir(parents=True, exist_ok=True)
     (data_dir / "migration-reports").mkdir(parents=True, exist_ok=True)
 

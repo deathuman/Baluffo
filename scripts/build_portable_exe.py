@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = ROOT / "dist" / "baluffo-portable"
 DEFAULT_EXE_NAME = "Baluffo"
 DEFAULT_ICON_SIZE = 256
-RUNTIME_HIDDEN_IMPORTS = (
+MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "src.admin_bridge",
     "src.app_version",
     "src.baluffo_config",
@@ -45,6 +45,10 @@ RUNTIME_HIDDEN_IMPORTS = (
     "src.source_sync_crypto",
     "src.source_sync_snapshot",
     "src.source_sync",
+    "tkinter",
+    "tkinter.ttk",
+)
+UPDATER_HELPER_HIDDEN_IMPORTS = (
     "tkinter",
     "tkinter.ttk",
 )
@@ -399,7 +403,7 @@ def run_pyinstaller(
         "--specpath",
         str(pyinstaller_spec),
     ]
-    for module_name in RUNTIME_HIDDEN_IMPORTS:
+    for module_name in MAIN_RUNTIME_HIDDEN_IMPORTS:
         command.extend(["--hidden-import", module_name])
     ship_version_dir = output_dir / "ship" / "app" / "versions" / bundle_version
     for rel in REQUIRED_VERSION_FILES:
@@ -448,7 +452,7 @@ def run_helper_pyinstaller(output_dir: Path, *, icon_path: Path) -> Path:
         "--specpath",
         str(helper_spec),
     ]
-    for module_name in RUNTIME_HIDDEN_IMPORTS:
+    for module_name in UPDATER_HELPER_HIDDEN_IMPORTS:
         command.extend(["--hidden-import", module_name])
     command.append(str(ROOT / "src" / "ship" / "desktop_updater.py"))
     subprocess.run(command, check=True, cwd=str(ROOT))

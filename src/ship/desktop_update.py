@@ -48,9 +48,13 @@ HANDOFF_REQUEST_FILE = "handoff-requested.json"
 HELPER_STDOUT_LOG_FILE = "desktop-updater-helper.stdout.log"
 HELPER_STDERR_LOG_FILE = "desktop-updater-helper.stderr.log"
 HELPER_DIAGNOSTICS_LOG_FILE = "desktop-updater-helper.diagnostics.jsonl"
+HELPER_RUNTIME_TMP_ROOT_NAME = "BaluffoUpdaterRuntime"
 PUBLIC_KEYS_FILE = "desktop-update-public-keys.json"
 DESKTOP_UPDATE_CONFIG_FILE = "desktop-update-config.json"
 USER_AGENT = f"BaluffoDesktopUpdater/{DESKTOP_UPDATER_VERSION}"
+ATOMIC_WRITE_RETRY_ATTEMPTS = 20
+ATOMIC_WRITE_RETRY_BASE_DELAY_S = 0.05
+ATOMIC_WRITE_RETRY_MAX_DELAY_S = 0.5
 INSTALL_STATE_STAGE_DEFAULTS = {
     "handoff_requested": "preparing",
     "waiting_for_exit": "waiting_for_exit",
@@ -110,14 +114,19 @@ def _write_atomic(path: Path, payload: str) -> None:
     tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(payload, encoding="utf-8")
     try:
-        for attempt in range(6):
+        for attempt in range(ATOMIC_WRITE_RETRY_ATTEMPTS):
             try:
                 os.replace(tmp, path)
                 return
             except PermissionError:
-                if attempt >= 5:
+                if attempt >= (ATOMIC_WRITE_RETRY_ATTEMPTS - 1):
                     raise
-                time.sleep(0.03 * (attempt + 1))
+                time.sleep(
+                    min(
+                        ATOMIC_WRITE_RETRY_MAX_DELAY_S,
+                        ATOMIC_WRITE_RETRY_BASE_DELAY_S * (attempt + 1),
+                    )
+                )
     finally:
         if tmp.exists():
             with contextlib.suppress(OSError):
@@ -532,13 +541,17 @@ def clear_handoff_request(paths: DesktopUpdatePaths) -> None:
         paths.handoff_request_path.unlink()
 
 
+def helper_runtime_tmpdir() -> Path:
+    return (Path(tempfile.gettempdir()).resolve() / HELPER_RUNTIME_TMP_ROOT_NAME).resolve()
+
+
 def launch_staged_update_helper(paths: DesktopUpdatePaths) -> None:
     plan = validate_install_plan(read_json(paths.install_plan_path, {}))
     helper_path = Path(str(plan.get("tempHelperPath") or "")).expanduser().resolve()
     if not helper_path.is_file():
         raise RuntimeError(f"Staged desktop updater helper not found: {helper_path}")
     paths.updater_dir.mkdir(parents=True, exist_ok=True)
-    runtime_tmpdir = (paths.updater_dir / "runtime-tmp").resolve()
+    runtime_tmpdir = helper_runtime_tmpdir()
     runtime_tmpdir.mkdir(parents=True, exist_ok=True)
     creationflags = 0
     env = os.environ.copy()

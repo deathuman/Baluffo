@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+from urllib.request import urlopen
 
 import pytest
 
@@ -184,7 +185,12 @@ def test_build_site_request_handler_traces_probe_requests(monkeypatch: pytest.Mo
         data_dir = Path(tmp) / "data"
         monkeypatch.setenv("BALUFFO_DATA_DIR", str(data_dir))
         monkeypatch.setenv("BALUFFO_STARTUP_PROBE", "1")
-        handler = rl.build_site_request_handler(root, data_dir=data_dir, startup_probe=True)
+        handler = rl.build_site_request_handler(
+            root,
+            runtime_data_dir=data_dir,
+            static_data_dir=data_dir,
+            startup_probe=True,
+        )
         server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -210,6 +216,37 @@ def test_build_site_request_handler_traces_probe_requests(monkeypatch: pytest.Mo
         assert "desktop_url_probe_succeeded" in events
         assert "desktop_site_request_start" in events
         assert "desktop_site_request_complete" in events
+
+
+def test_build_site_request_handler_serves_data_requests_from_runtime_data_dir() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "site"
+        root.mkdir(parents=True, exist_ok=True)
+        _write(root / "jobs.html", "<html>jobs</html>\n")
+        data_dir = Path(tmp) / "data"
+        _write(data_dir / "jobs-unified-startup.json", '{"ok":true}\n')
+
+        handler = rl.build_site_request_handler(
+            root,
+            runtime_data_dir=data_dir,
+            static_data_dir=data_dir,
+            startup_probe=False,
+        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urlopen(
+                f"http://127.0.0.1:{server.server_address[1]}/data/jobs-unified-startup.json",
+                timeout=2.0,
+            ) as response:
+                payload = response.read().decode("utf-8")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        assert '"ok":true' in payload
 
 
 def test_wait_for_url_emits_timeout_diagnostics_for_startup_probe(

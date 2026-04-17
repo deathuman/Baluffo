@@ -1233,6 +1233,48 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
     clear_mock.assert_called_once()
 
 
+def test_publish_success_marker_when_ready_async_writes_marker_after_startup_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=Path("C:/tmp/baluffo-ship/data"),
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+    )
+    write_marker = mock.Mock()
+
+    class ImmediateThread:
+        def __init__(self, *, target, name, daemon) -> None:
+            self._target = target
+            self.name = name
+            self.daemon = daemon
+
+        def start(self) -> None:
+            self._target()
+
+    monkeypatch.setattr(
+        desktop_app,
+        "wait_for_desktop_startup_ready",
+        lambda bridge_port, *, app_version, timeout_s: {"appVersion": APP_VERSION},
+    )
+    monkeypatch.setattr(desktop_app, "write_success_marker", write_marker)
+    monkeypatch.setattr(desktop_app.threading, "Thread", ImmediateThread)
+
+    desktop_app.publish_success_marker_when_ready_async(config, launcher_token="token-1")
+
+    write_marker.assert_called_once()
+    assert write_marker.call_args.kwargs == {
+        "app_version": APP_VERSION,
+        "bridge_port": 8877,
+        "launcher_token": "token-1",
+    }
+
+
 def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_app.DesktopRuntimeConfig(

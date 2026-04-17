@@ -36,17 +36,10 @@ def _build_with_temp_packaged_config(
 def _copy_minimal_app_version(version_dir: Path) -> None:
     packaged_sync_config = build_ship_bundle._resolve_packaged_sync_config()
     desktop_update_repo = build_ship_bundle._resolve_desktop_update_repo()
-    rows = [{"title": f"Role {index}", "company": "Studio"} for index in range(300)]
 
     (version_dir / "src").mkdir(parents=True, exist_ok=True)
     (version_dir / "packaging").mkdir(parents=True, exist_ok=True)
-    (version_dir / "data").mkdir(parents=True, exist_ok=True)
     (version_dir / "src" / "admin_bridge.py").write_text("# test stub\n", encoding="utf-8")
-    (version_dir / "data" / "jobs-unified-light.json").write_text(
-        json.dumps(rows, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    build_ship_bundle._generate_startup_preview(version_dir / "data")
     if packaged_sync_config is not None:
         shutil.copy2(packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json")
     if desktop_update_repo:
@@ -56,7 +49,7 @@ def _copy_minimal_app_version(version_dir: Path) -> None:
         )
 
 
-def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
+def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
     with workspace_tmpdir("build-ship-bundle") as tmp:
         config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -110,10 +103,9 @@ def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
         assert (version_root / "desktop-probe-head.html").exists()
         assert (version_root / "desktop-probe-inline.html").exists()
         assert (version_root / "startup-probe.js").exists()
-        assert (version_root / "data" / "contracts" / "country_acceptance.json").exists()
-        assert (version_root / "data" / "contracts" / "city_noise_contract.json").exists()
         assert (version_root / "packaging" / "README.md").exists()
         assert (version_root / "packaging" / "github-app-sync-config.template.json").exists()
+        assert not (version_root / "data").exists()
         assert not (version_root / "package-lock.json").exists()
         assert not (version_root / "LOCAL_SETUP.md").exists()
         assert not (version_root / "src" / "run_py_tests.cmd").exists()
@@ -147,6 +139,11 @@ def test_bundle_contains_runtime_assets_and_seeded_data_only() -> None:
             "outputs": {"report": str(output / "data" / "jobs-fetch-report.json")},
         }
         assert isinstance(seeded_report["sources"], list)
+        startup_rows = json.loads(
+            (output / "data" / "jobs-unified-startup.json").read_text(encoding="utf-8")
+        )
+        assert isinstance(startup_rows, list)
+        assert len(startup_rows) <= STARTUP_PREVIEW_LIMIT
 
 
 def test_parse_args_defaults_to_shared_app_version() -> None:
@@ -159,31 +156,16 @@ def test_parse_args_defaults_to_shared_app_version() -> None:
 
 def test_bundle_generates_capped_startup_preview() -> None:
     with workspace_tmpdir("build-ship-bundle") as tmp:
-        config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(
-            json.dumps(
-                {
-                    "schemaVersion": 1,
-                    "appId": "123456",
-                    "installationId": "999999",
-                    "repo": "owner/repo",
-                    "branch": "main",
-                    "path": "baluffo/source-sync.json",
-                    "privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----",
-                }
-            ),
+        rows = [{"title": f"Role {index}", "company": "Studio"} for index in range(300)]
+        data_dir = Path(tmp) / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / "jobs-unified-light.json").write_text(
+            json.dumps(rows, ensure_ascii=False),
             encoding="utf-8",
         )
-        with (
-            mock.patch("scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version),
-            mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
-        ):
-            output = _build_with_temp_packaged_config(tmp)
+        output = _build_with_temp_packaged_config(tmp)
         startup_rows = json.loads(
-            (
-                output / "app" / "versions" / "1.2.3" / "data" / "jobs-unified-startup.json"
-            ).read_text(encoding="utf-8")
+            (output / "data" / "jobs-unified-startup.json").read_text(encoding="utf-8")
         )
         assert isinstance(startup_rows, list)
         assert len(startup_rows) <= STARTUP_PREVIEW_LIMIT

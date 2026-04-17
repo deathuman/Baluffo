@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from pathlib import PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -71,11 +72,35 @@ class QuietSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
             raise
 
 def build_site_request_handler(
-    directory: Path, *, data_dir: Path | None = None, startup_probe: bool = False
+    directory: Path,
+    *,
+    runtime_data_dir: Path | None = None,
+    static_data_dir: Path | None = None,
+    startup_probe: bool = False,
 ):
     class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
+        _runtime_data_dir = (
+            Path(runtime_data_dir).expanduser().resolve() if runtime_data_dir else None
+        )
+        _static_data_dir = Path(static_data_dir).expanduser().resolve() if static_data_dir else None
+
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(directory), **kwargs)
+
+        def translate_path(self, path: str) -> str:
+            raw_path = str(path or "").split("?", 1)[0].split("#", 1)[0]
+            normalized = raw_path.lstrip("/")
+            if self._static_data_dir is not None and (
+                normalized == "data" or normalized.startswith("data/")
+            ):
+                rel = normalized[5:] if normalized.startswith("data/") else ""
+                safe_parts = [
+                    token
+                    for token in PurePosixPath(rel).parts
+                    if token not in {"", ".", ".."}
+                ]
+                return str((self._static_data_dir.joinpath(*safe_parts)).resolve())
+            return super().translate_path(path)
 
         def end_headers(self):  # noqa: N802
             # Desktop runtime should always load the latest local bundle assets.
@@ -85,13 +110,13 @@ def build_site_request_handler(
             return super().end_headers()
 
         def do_GET(self):  # noqa: N802
-            trace_enabled = bool(startup_probe and data_dir)
+            trace_enabled = bool(startup_probe and self._runtime_data_dir)
             path_only = str(getattr(self, "path", "") or "").split("?", 1)[0]
             trace_path = path_only.lstrip("/")
             request_started = time.perf_counter()
             if trace_enabled and trace_path in {"jobs.html", "saved.html", "admin.html"}:
                 _append_startup_trace(
-                    Path(data_dir),
+                    Path(self._runtime_data_dir),
                     "desktop_site_request_start",
                     path=trace_path,
                 )
@@ -100,7 +125,7 @@ def build_site_request_handler(
             finally:
                 if trace_enabled and trace_path in {"jobs.html", "saved.html", "admin.html"}:
                     _append_startup_trace(
-                        Path(data_dir),
+                        Path(self._runtime_data_dir),
                         "desktop_site_request_complete",
                         path=trace_path,
                         durationMs=int((time.perf_counter() - request_started) * 1000),
@@ -288,9 +313,10 @@ def run_site_server(
     )
     handler = build_site_request_handler(
         layout.active_root,
-        data_dir=Path(str(os.environ.get("BALUFFO_DATA_DIR") or "")).expanduser().resolve()
+        runtime_data_dir=Path(str(os.environ.get("BALUFFO_DATA_DIR") or "")).expanduser().resolve()
         if str(os.environ.get("BALUFFO_DATA_DIR") or "").strip()
         else None,
+        static_data_dir=update_manager.ShipPaths.from_root(layout.root).data,
         startup_probe=startup_probe_enabled(),
     )
     server = ThreadingHTTPServer(("127.0.0.1", int(port)), handler)

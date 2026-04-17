@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import traceback
 import urllib.error
@@ -1130,6 +1131,35 @@ def wait_for_desktop_startup_ready(
     raise RuntimeError("Baluffo bridge did not reach desktop startup readiness.")
 
 
+def publish_success_marker_when_ready_async(
+    config: DesktopRuntimeConfig,
+    *,
+    launcher_token: str,
+    timeout_s: float = HEARTBEAT_STARTUP_TIMEOUT_S,
+) -> None:
+    paths = DesktopUpdatePaths.from_data_dir(config.data_dir)
+
+    def worker() -> None:
+        with contextlib.suppress(RuntimeError):
+            ready_payload = wait_for_desktop_startup_ready(
+                config.bridge_port,
+                app_version=get_app_version(),
+                timeout_s=timeout_s,
+            )
+            write_success_marker(
+                paths,
+                app_version=str(ready_payload.get("appVersion") or get_app_version()),
+                bridge_port=int(config.bridge_port),
+                launcher_token=str(launcher_token or ""),
+            )
+
+    threading.Thread(
+        target=worker,
+        name="baluffo-success-marker",
+        daemon=True,
+    ).start()
+
+
 def validate_session_state(
     state: dict[str, object],
     *,
@@ -2191,18 +2221,10 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             elapsedMs=int((time.perf_counter() - started_mono) * 1000),
             bridgePort=int(config.bridge_port),
         )
-        with contextlib.suppress(RuntimeError):
-            ready_payload = wait_for_desktop_startup_ready(
-                config.bridge_port,
-                app_version=get_app_version(),
-                timeout_s=5.0,
-            )
-            write_success_marker(
-                DesktopUpdatePaths.from_data_dir(config.data_dir),
-                app_version=str(ready_payload.get("appVersion") or get_app_version()),
-                bridge_port=int(config.bridge_port),
-                launcher_token=str(instance_lock.launcher_token or launcher_token),
-            )
+        publish_success_marker_when_ready_async(
+            config,
+            launcher_token=str(instance_lock.launcher_token or launcher_token),
+        )
         shell_window_event = str(launch_result.get("shellWindowEvent") or "desktop_shell_window_shown")
         if launch_mode == "chromium-app" and not bool(launch_result.get("windowShownObserved")):
             shell_window_event = str(
