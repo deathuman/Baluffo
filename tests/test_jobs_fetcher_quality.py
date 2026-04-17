@@ -1,5 +1,8 @@
+import json
+
 import pytest
 
+import src.jobs.text_utils as jobs_text_utils
 from src.jobs.text_utils import load_city_noise_contract
 from tests.jobs_fetcher_helpers import (
     build_city_garbage_report,
@@ -343,6 +346,40 @@ def test_canonicalize_job_with_reason_blanks_shared_city_noise_contract_fragment
         payload = row if isinstance(row, dict) else row.to_dict()
         assert payload["city"] == ""
         assert payload["country"] == "Japan"
+
+
+def test_load_city_noise_contract_falls_back_to_packaged_ship_data(tmp_path, monkeypatch) -> None:
+    contract_path = tmp_path / "ship" / "data" / "contracts" / "city_noise_contract.json"
+    contract_path.parent.mkdir(parents=True, exist_ok=True)
+    contract_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "proseFragments": ["Bachelor's Degree"],
+                "sentencePrefixes": ["Learn"],
+                "placeholderFragments": ["%label_"],
+                "knownJunkTokens": ["????"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    versioned_module_path = (
+        tmp_path / "ship" / "app" / "versions" / "1.2.3" / "src" / "jobs" / "text_utils.py"
+    )
+    versioned_module_path.parent.mkdir(parents=True, exist_ok=True)
+    versioned_module_path.write_text("# test stub\n", encoding="utf-8")
+
+    monkeypatch.setattr(jobs_text_utils, "__file__", str(versioned_module_path))
+    jobs_text_utils.load_city_noise_contract.cache_clear()
+    try:
+        contract = jobs_text_utils.load_city_noise_contract()
+    finally:
+        jobs_text_utils.load_city_noise_contract.cache_clear()
+
+    assert contract["proseFragments"] == ["bachelor's degree"]
+    assert contract["sentencePrefixes"] == ["learn"]
+    assert contract["placeholderFragments"] == ["%label_"]
+    assert contract["knownJunkTokens"] == ["????"]
 
 
 def test_canonicalize_job_with_reason_blanks_structural_city_noise_values() -> None:

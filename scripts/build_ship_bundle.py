@@ -84,9 +84,11 @@ PACKAGING_FILES = (
     "README.md",
     "github-app-sync-config.template.json",
 )
-APP_RUNTIME_DATA_FILES = (
+APP_VERSION_CONTRACT_FILES = (
     "contracts/country_acceptance.json",
     "contracts/city_noise_contract.json",
+)
+APP_RUNTIME_DATA_FILES = APP_VERSION_CONTRACT_FILES + (
     "jobs-unified-light.json",
     "jobs-unified.json",
     "jobs-unified.csv",
@@ -319,6 +321,14 @@ def _seed_runtime_data(data_dir: Path) -> None:
             ensure_ascii=False,
         ),
     )
+
+
+def _seed_version_contract_data(data_dir: Path) -> None:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    for name in APP_VERSION_CONTRACT_FILES:
+        src = ROOT / "data" / name
+        if src.exists():
+            _copy_file(src, data_dir / name)
 
 
 def _resolve_packaged_sync_config() -> Path | None:
@@ -558,6 +568,7 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     _copy_app_version(version_dir)
+    _seed_version_contract_data(version_dir / "data")
     if not (version_dir / "src" / "admin_bridge.py").exists():
         raise RuntimeError(
             "Ship bundle build failed: admin bridge missing at "

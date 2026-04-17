@@ -116,12 +116,16 @@ LOWERCASE_CITY_NOISE_TOKENS = {
     "touch",
     "widget",
 }
-COUNTRY_ACCEPTANCE_CONTRACT_PATH = (
-    Path(__file__).resolve().parents[2] / "data/contracts/country_acceptance.json"
-)
-CITY_NOISE_CONTRACT_PATH = (
-    Path(__file__).resolve().parents[2] / "data/contracts/city_noise_contract.json"
-)
+COUNTRY_ACCEPTANCE_CONTRACT_NAME = "country_acceptance.json"
+CITY_NOISE_CONTRACT_NAME = "city_noise_contract.json"
+
+
+def _resolve_contract_path(filename: str) -> Path:
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "data" / "contracts" / filename
+        if candidate.exists():
+            return candidate
+    return Path(__file__).resolve().parents[2] / "data" / "contracts" / filename
 
 
 def clean_text(value: Any) -> str:
@@ -187,7 +191,9 @@ def normalize_city_noise_text(value: Any) -> str:
 
 @lru_cache(maxsize=1)
 def load_country_acceptance_contract() -> dict[str, Any]:
-    raw = json.loads(COUNTRY_ACCEPTANCE_CONTRACT_PATH.read_text(encoding="utf-8"))
+    raw = json.loads(
+        _resolve_contract_path(COUNTRY_ACCEPTANCE_CONTRACT_NAME).read_text(encoding="utf-8")
+    )
     exact_label_map: dict[str, str] = {}
     for label in raw.get("acceptedExactLabels", []) or []:
         token = normalize_country_acceptance_token(label)
@@ -211,7 +217,7 @@ def load_country_acceptance_contract() -> dict[str, Any]:
 
 @lru_cache(maxsize=1)
 def load_city_noise_contract() -> dict[str, Any]:
-    raw = json.loads(CITY_NOISE_CONTRACT_PATH.read_text(encoding="utf-8"))
+    raw = json.loads(_resolve_contract_path(CITY_NOISE_CONTRACT_NAME).read_text(encoding="utf-8"))
 
     def _load_fragments(values: Any) -> list[str]:
         fragments: list[str] = []
