@@ -19,6 +19,8 @@ export function createJobsAuthController({
   logJobsError,
   getAllJobs,
   applyFiltersAndRender,
+  getSkipInitialGuestAuthRerender = () => false,
+  setSkipInitialGuestAuthRerender = () => {},
   openJobsCacheDb,
   JOBS_SEEN_STORE,
   loadSeenJobKeys,
@@ -59,14 +61,22 @@ export function createJobsAuthController({
   }
 
   function handleSignedOut() {
+    const shouldSkipGuestRerender = Boolean(getSkipInitialGuestAuthRerender())
+      && getAllJobs().length > 0
+      && userState.savedJobKeys.size === 0
+      && userState.seenJobKeys.size === 0;
     userState.savedJobKeys = new Set();
     userState.seenJobKeys = new Set();
     setAuthStatus("Browsing as guest");
     toggleAuthButtons(false);
-    if (getAllJobs().length) applyFiltersAndRender({ resetPage: false });
+    setSkipInitialGuestAuthRerender(false);
+    if (!shouldSkipGuestRerender && getAllJobs().length) {
+      applyFiltersAndRender({ resetPage: false });
+    }
   }
 
   async function handleSignedIn(user) {
+    setSkipInitialGuestAuthRerender(false);
     setAuthStatus(`Signed in as ${user.displayName || user.email || "user"}`);
     toggleAuthButtons(true);
 

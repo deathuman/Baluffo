@@ -13,11 +13,12 @@ const UNIFIED_JSON_SOURCES = [
 ];
 
 export const STARTUP_PREVIEW_JSON_URLS = [
-  "data/jobs-unified.json",
-  "data/jobs-unified-light.json",
   "data/jobs-unified-startup.json",
-  "jobs-unified.json",
-  "jobs-unified-startup.json"
+  "data/jobs-unified-light.json",
+  "data/jobs-unified.json",
+  "jobs-unified-startup.json",
+  "jobs-unified-light.json",
+  "jobs-unified.json"
 ];
 
 const UNIFIED_CSV_SOURCES = [

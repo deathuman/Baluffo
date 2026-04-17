@@ -113,6 +113,7 @@ def test_package_json_perf_scripts_reuse_existing_perf_entrypoints(repo_root: Pa
         "npm run check:python-version && python src/discovery_sanity_benchmark.py"
     )
     assert scripts["perf:startup:cold"] == "npm run probe:desktop:startup:cold"
+    assert scripts["perf:startup:pair"] == "npm run probe:desktop:startup:pair"
     assert scripts["perf:startup:warm"] == "npm run probe:desktop:startup:warm"
 
 

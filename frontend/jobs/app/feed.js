@@ -248,6 +248,7 @@ export async function loadStartupPreviewJobsFeed(deps) {
     applyFiltersAndRender,
     markStartupRendered,
     markJobsFirstInteractive,
+    setSkipInitialGuestAuthRerender,
     getAllJobs
   } = deps;
 
@@ -303,6 +304,9 @@ export async function loadStartupPreviewJobsFeed(deps) {
     emitMetric("jobs_startup_preview_render_complete", {
       rowCount: getAllJobs().length
     });
+    if (typeof setSkipInitialGuestAuthRerender === "function") {
+      setSkipInitialGuestAuthRerender(true);
+    }
     emitMetric("jobs_startup_preview_loaded", {
       rowCount: getAllJobs().length,
       durationMs: Math.max(0, Date.now() - startedAt)

@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -394,6 +395,57 @@ def test_startup_profile_summary_prefers_timestamps_over_mixed_elapsed_ms_clocks
     assert stages["auth_ready_to_first_render"]["durationMs"] == 100
     assert summary["firstUsableEvent"] == "jobs_first_interactive"
     assert summary["firstUsableMs"] == 5900
+
+
+def test_startup_profile_summary_prefers_browser_created_timestamps_for_page_events() -> None:
+    launch_ts_ms = int(datetime.fromisoformat("2026-03-10T12:00:00+00:00").timestamp() * 1000)
+    rows = [
+        {
+            "ts": "2026-03-10T12:00:00+00:00",
+            "event": "desktop_launch_start",
+            "fields": {"elapsedMs": 0},
+        },
+        {
+            "ts": "2026-03-10T12:00:01+00:00",
+            "event": "desktop_site_ready",
+            "fields": {"elapsedMs": 1000},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.100000+00:00",
+            "event": "desktop_window_created",
+            "fields": {"elapsedMs": 1100},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.300000+00:00",
+            "event": "desktop_shell_window_shown",
+            "fields": {"elapsedMs": 1300},
+        },
+        {
+            "ts": "2026-03-10T12:00:04.400000+00:00",
+            "event": "jobs_auth_ready",
+            "payload": {"elapsedMs": 4100, "browserCreatedAtMs": launch_ts_ms + 2000},
+            "browserTsMs": launch_ts_ms + 2000,
+        },
+        {
+            "ts": "2026-03-10T12:00:06.800000+00:00",
+            "event": "jobs_first_render",
+            "payload": {"elapsedMs": 6500, "browserCreatedAtMs": launch_ts_ms + 2150},
+            "browserTsMs": launch_ts_ms + 2150,
+        },
+        {
+            "ts": "2026-03-10T12:00:06.900000+00:00",
+            "event": "jobs_first_interactive",
+            "payload": {"elapsedMs": 6600, "browserCreatedAtMs": launch_ts_ms + 2160},
+            "browserTsMs": launch_ts_ms + 2160,
+        },
+    ]
+
+    summary = summarize_startup_metrics(rows, page="jobs", profile_mode="warm")
+    stages = {stage["key"]: stage for stage in summary["stages"]}
+
+    assert stages["auth_ready_to_first_render"]["durationMs"] == 150
+    assert stages["first_render_to_first_interactive"]["durationMs"] == 10
+    assert summary["firstUsableMs"] == 2160
 
 
 def test_startup_profile_summary_classifies_bridge_site_bootstrap_delay() -> None:

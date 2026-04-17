@@ -55,6 +55,7 @@ export function createJobsRuntimeState(defaultFilters = {}, { lastHandledAutoRef
       adminBridgeWatcher: null,
       desktopUpdateController: null,
       lastFilterOptionsSignature: "",
+      skipInitialGuestAuthRerender: false,
       startupPreviewMaterialize: null,
       startupPreviewMaterializeTimer: null,
       startupPreviewFilteredCount: 0

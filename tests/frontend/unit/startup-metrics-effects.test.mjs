@@ -113,4 +113,5 @@ test("startup probe metric transport retries queued posts after an early bridge 
   const payload = JSON.parse(String(requests[1].init?.body || "{}"));
   assert.equal(payload.event, "jobs_module_boot_start");
   assert.equal(payload.payload.phase, "boot");
+  assert.equal(Number.isFinite(Number(payload.payload.browserCreatedAtMs)), true);
 });

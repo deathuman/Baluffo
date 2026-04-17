@@ -51,6 +51,7 @@ def test_repo_controlled_temp_roots_use_dot_tmp(repo_root: Path) -> None:
         "scripts/run_py_tests.cmd": ".tmp\\pytest",
         "scripts/run_py_tests_extended.cmd": ".tmp\\pytest",
         "scripts/run_py_tests_timing.cmd": ".tmp\\pytest",
+        "scripts/run_startup_probe_pair.py": 'PAIR_ARTIFACT_ROOT = ROOT / ".tmp" / "packaged-desktop-smoke-pair"',
         "tests/helpers/temp_paths.py": '.tmp" / "pytest',
         "src/packaged_desktop_smoke.py": '.tmp" / "packaged-desktop-smoke',
         "probes/packaged_desktop_double_launch_probe.py": '.tmp" / "probes" / "double-launch',

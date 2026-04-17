@@ -249,6 +249,10 @@ const authController = createJobsAuthController({
   logJobsError,
   getAllJobs: () => runtimeState.allJobs,
   applyFiltersAndRender,
+  getSkipInitialGuestAuthRerender: () => runtimeState.skipInitialGuestAuthRerender,
+  setSkipInitialGuestAuthRerender: value => {
+    runtimeState.skipInitialGuestAuthRerender = Boolean(value);
+  },
   loadSeenJobKeys,
   markSeenJob,
   buildSeenRowKey,
@@ -936,6 +940,9 @@ async function loadStartupPreviewJobs() {
     applyFiltersAndRender,
     markStartupRendered,
     markJobsFirstInteractive,
+    setSkipInitialGuestAuthRerender: value => {
+      runtimeState.skipInitialGuestAuthRerender = Boolean(value);
+    },
     getAllJobs: () => runtimeState.allJobs
   });
 }

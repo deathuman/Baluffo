@@ -6,6 +6,53 @@ import {
   initJobsFeed,
   loadStartupPreviewJobsFeed
 } from "../../../frontend/jobs/app/feed.js";
+import { STARTUP_PREVIEW_JSON_URLS } from "../../../frontend/jobs/app/sources.js";
+import { createJobsAuthController } from "../../../frontend/jobs/app/runtime/auth-controller.js";
+
+function createClassList(initial = []) {
+  const values = new Set(initial);
+  return {
+    add(...tokens) {
+      tokens.forEach(token => values.add(token));
+    },
+    remove(...tokens) {
+      tokens.forEach(token => values.delete(token));
+    },
+    toggle(token, force) {
+      if (force === true) {
+        values.add(token);
+        return true;
+      }
+      if (force === false) {
+        values.delete(token);
+        return false;
+      }
+      if (values.has(token)) {
+        values.delete(token);
+        return false;
+      }
+      values.add(token);
+      return true;
+    },
+    contains(token) {
+      return values.has(token);
+    }
+  };
+}
+
+function createElement(overrides = {}) {
+  return {
+    textContent: "",
+    disabled: false,
+    title: "",
+    classList: createClassList(),
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = String(value);
+    },
+    ...overrides
+  };
+}
 
 function createBaseDeps(overrides = {}) {
   const calls = {
@@ -109,6 +156,15 @@ test("canUseStartupPreviewFastPath only accepts the default first-page startup s
   );
 });
 
+test("startup preview sources prefer the packaged startup snapshot first", () => {
+  assert.deepEqual(STARTUP_PREVIEW_JSON_URLS.slice(0, 4), [
+    "data/jobs-unified-startup.json",
+    "data/jobs-unified-light.json",
+    "data/jobs-unified.json",
+    "jobs-unified-startup.json"
+  ]);
+});
+
 test("loadStartupPreviewJobsFeed uses the startup fast path for the default launch state", async () => {
   let allJobs = [];
   const calls = {
@@ -188,6 +244,71 @@ test("loadStartupPreviewJobsFeed uses the startup fast path for the default laun
   assert.deepEqual(calls.renderStartupPreviewFastPath, [plan]);
 });
 
+test("loadStartupPreviewJobsFeed still accepts the legacy array startup snapshot", async () => {
+  let allJobs = [];
+  const calls = {
+    updateFilterOptions: 0,
+    applyStateToFilters: 0,
+    applyFiltersAndRender: 0
+  };
+  const defaultFilters = {
+    workType: "",
+    lifecycleStatus: "active",
+    countries: [],
+    city: "",
+    sector: "",
+    profession: "",
+    newOnly: false,
+    excludeInternship: false,
+    search: "",
+    sort: "relevance"
+  };
+
+  const loaded = await loadStartupPreviewJobsFeed({
+    emitMetric: () => {},
+    fetchJsonFromCandidates: async () => ([{ id: "job-1" }, { id: "job-2" }]),
+    startupPreviewJsonUrls: ["http://example.test/preview.json"],
+    parseUnifiedJobsPayload: payload => Array.isArray(payload) ? payload : [],
+    normalizeRows: rows => {
+      allJobs = rows.map(row => ({ ...row, status: "active" }));
+      return allJobs;
+    },
+    updateLastUpdatedText: () => {},
+    recalculateItemsPerPage: () => {},
+    pageState: { currentPage: 1, filters: { ...defaultFilters, search: "rigging" } },
+    defaultFilters,
+    buildStartupPreviewFastPathPlan: () => {
+      throw new Error("legacy array snapshot should take the full render path here");
+    },
+    applyFilterOptionsSnapshot: () => {
+      throw new Error("legacy array snapshot should not use precomputed filter options here");
+    },
+    updateFilterOptions: () => {
+      calls.updateFilterOptions += 1;
+    },
+    applyStateToFilters: () => {
+      calls.applyStateToFilters += 1;
+    },
+    renderStartupPreviewFastPath: () => {
+      throw new Error("legacy array snapshot should not use the fast path here");
+    },
+    scheduleStartupPreviewMaterialization: () => {
+      throw new Error("legacy array snapshot should not schedule startup materialization here");
+    },
+    applyFiltersAndRender: () => {
+      calls.applyFiltersAndRender += 1;
+    },
+    markStartupRendered: () => {},
+    markJobsFirstInteractive: () => {},
+    getAllJobs: () => allJobs
+  });
+
+  assert.equal(loaded, true);
+  assert.equal(calls.updateFilterOptions, 1);
+  assert.equal(calls.applyStateToFilters, 1);
+  assert.equal(calls.applyFiltersAndRender, 1);
+});
+
 test("loadStartupPreviewJobsFeed falls back to the full render path for non-default startup state", async () => {
   let allJobs = [];
   const calls = {
@@ -253,4 +374,100 @@ test("loadStartupPreviewJobsFeed falls back to the full render path for non-defa
   assert.equal(calls.updateFilterOptions, 1);
   assert.equal(calls.renderStartupPreviewFastPath, 0);
   assert.equal(calls.applyFiltersAndRender, 1);
+});
+
+test("jobs auth controller skips the initial guest rerender after startup preview but still rerenders on later auth changes", async () => {
+  let authStateChanged = null;
+  let renderCount = 0;
+  const skipDecisions = [];
+  const userState = {
+    currentUser: null,
+    savedJobKeys: new Set(),
+    seenJobKeys: new Set(),
+    authStateListenerBound: false
+  };
+  const refs = {
+    authSignInBtn: createElement(),
+    authSignOutBtn: createElement(),
+    savedJobsBtn: createElement(),
+    authStatus: createElement(),
+    authStatusHint: createElement(),
+    authAvatar: createElement()
+  };
+  const controller = createJobsAuthController({
+    refs,
+    userState,
+    authReadyPoller: {
+      stopPoll() {},
+      schedulePoll() {}
+    },
+    jobsAuthService: {
+      onAuthStateChanged(callback) {
+        authStateChanged = callback;
+      },
+      async signIn() {
+        return { ok: true };
+      },
+      async signOut() {
+        return { ok: true };
+      }
+    },
+    jobsSavedJobsService: {
+      async getSavedJobKeys() {
+        return { data: [] };
+      },
+      async removeSavedJobForUser() {
+        return { ok: true };
+      },
+      async saveJobForUser() {
+        return { ok: true };
+      }
+    },
+    jobsPageService: {
+      isAvailable() {
+        return true;
+      }
+    },
+    jobsDispatch: {
+      dispatch() {}
+    },
+    JOBS_ACTIONS: {
+      AUTH_CHANGED: "auth_changed",
+      SAVE_TOGGLED: "save_toggled"
+    },
+    isJobsApiReady: () => true,
+    emitDesktopStartupMetric: () => {},
+    showToast: () => {},
+    logJobsError: () => {},
+    getAllJobs: () => [{ id: "job-1" }],
+    applyFiltersAndRender: () => {
+      renderCount += 1;
+    },
+    getSkipInitialGuestAuthRerender: () =>
+      skipDecisions.length === 0 || skipDecisions.at(-1) === true,
+    setSkipInitialGuestAuthRerender: value => {
+      skipDecisions.push(Boolean(value));
+    },
+    openJobsCacheDb: async () => null,
+    JOBS_SEEN_STORE: "jobs_seen",
+    loadSeenJobKeys: async () => new Set(),
+    markSeenJob: async () => {},
+    buildSeenRowKey: value => String(value || ""),
+    getJobKeyForJob: job => String(job?.id || ""),
+    toJobSnapshot: job => job,
+    sanitizeUrl: value => String(value || "")
+  });
+
+  controller.initAuth();
+  assert.equal(typeof authStateChanged, "function");
+
+  await authStateChanged(null);
+  assert.equal(renderCount, 0);
+  assert.equal(skipDecisions.at(-1), false);
+
+  await authStateChanged({ uid: "user-1", displayName: "Warm User" });
+  assert.equal(renderCount, 1);
+
+  await authStateChanged(null);
+  assert.equal(renderCount, 2);
 });

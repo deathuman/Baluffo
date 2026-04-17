@@ -44,6 +44,18 @@ def _parse_ts_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int | None:
         return None
 
 
+def _parse_browser_ts_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int | None:
+    if launch_ts_ms is None:
+        return None
+    top_level_value = row.get("browserTsMs")
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    payload_value = payload.get("browserCreatedAtMs")
+    for candidate in (top_level_value, payload_value):
+        if isinstance(candidate, (int, float)):
+            return max(0, int(candidate) - int(launch_ts_ms))
+    return None
+
+
 def _parse_payload_elapsed_ms(row: dict[str, Any]) -> int | None:
     fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
     payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
@@ -55,6 +67,9 @@ def _parse_payload_elapsed_ms(row: dict[str, Any]) -> int | None:
 
 
 def _parse_row_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int | None:
+    browser_elapsed_ms = _parse_browser_ts_ms(row, launch_ts_ms)
+    if browser_elapsed_ms is not None:
+        return browser_elapsed_ms
     ts_elapsed_ms = _parse_ts_ms(row, launch_ts_ms)
     if ts_elapsed_ms is not None:
         return ts_elapsed_ms

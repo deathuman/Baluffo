@@ -37,7 +37,23 @@ function resolveBridgeBase() {
 }
 
 function normalizeStartupMetricPayload(payload = {}) {
-  return payload && typeof payload === "object" ? payload : {};
+  const normalized = payload && typeof payload === "object" ? { ...payload } : {};
+  if (!Number.isFinite(Number(normalized.browserCreatedAtMs))) {
+    let browserCreatedAtMs = Date.now();
+    try {
+      if (
+        typeof performance !== "undefined"
+        && Number.isFinite(Number(performance.timeOrigin))
+        && typeof performance.now === "function"
+      ) {
+        browserCreatedAtMs = Number(performance.timeOrigin) + Number(performance.now());
+      }
+    } catch {
+      browserCreatedAtMs = Date.now();
+    }
+    normalized.browserCreatedAtMs = Math.max(0, Math.round(browserCreatedAtMs));
+  }
+  return normalized;
 }
 
 function clearStartupProbeRetry() {
