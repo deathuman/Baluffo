@@ -1082,6 +1082,117 @@ def test_run_worker_completes_after_long_active_fetch_wait(monkeypatch, tmp_path
     assert upserts[-1]["status"] == "ok"
 
 
+def test_run_worker_attaches_to_existing_child_tasks_on_conflict(tmp_path: Path) -> None:
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "starting",
+        "progress": {
+            "currentStep": 0,
+            "totalSteps": 3,
+            "percent": 0,
+            "label": "Starting pipeline...",
+        },
+        "startedAt": "2026-03-22T12:00:00Z",
+        "finishedAt": "",
+        "error": "",
+        "updatesFound": False,
+        "refreshRecommended": False,
+        "baselineOutputCount": 0,
+        "finalOutputCount": 0,
+        "jobsPageLoadedCount": 0,
+    }
+    bridge_events: list[tuple[str, dict[str, Any]]] = []
+    discovery_report_path = tmp_path / "discovery-report.json"
+    fetch_report_path = tmp_path / "fetch-report.json"
+
+    def bridge_log(level: str, message: str, **fields: Any) -> None:
+        bridge_events.append((message, {"level": level, **fields}))
+
+    def load_json_object(path: Path, default: Any) -> Any:
+        if path == discovery_report_path:
+            return {
+                "runId": "discovery_live_1",
+                "startedAt": "2026-03-22T12:00:00Z",
+                "finishedAt": "2026-03-22T12:00:05Z",
+            }
+        if path == fetch_report_path:
+            return {
+                "runId": "fetch_live_1",
+                "startedAt": "2026-03-22T12:00:06Z",
+                "finishedAt": "2026-03-22T12:00:10Z",
+            }
+        return default
+
+    service = PipelineService(
+        pipeline_state_lock=FakeLock(),
+        pipeline_status=status,
+        runtime=PipelineRuntime(),
+        bridge_log=bridge_log,
+        now_iso=lambda: "2026-03-22T12:00:00Z",
+        parse_iso=make_parse_iso(),
+        append_run_history=lambda x: x,
+        upsert_run_history=lambda x, **kw: x,
+        task_running_from_state=lambda x: False,
+        sync_task_running=lambda: False,
+        current_fetch_output_count=lambda: 12,
+        load_json_object=load_json_object,
+        wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+        discovery_report_path=discovery_report_path,
+        fetch_report_path=fetch_report_path,
+        trigger_discovery_task=lambda **kw: (
+            409,
+            {
+                "started": False,
+                "alreadyRunning": True,
+                "runId": "discovery_live_1",
+                "startedAt": "2026-03-22T12:00:00Z",
+                "task": "source_discovery",
+                "taskType": "discovery",
+                "pid": 111,
+                "status": "running",
+            },
+        ),
+        start_fetcher_task=lambda x: {
+            "started": False,
+            "alreadyRunning": True,
+            "runId": "fetch_live_1",
+            "startedAt": "2026-03-22T12:00:06Z",
+            "task": "jobs_fetcher",
+            "taskType": "fetch",
+            "pid": 222,
+            "status": "running",
+        },
+        start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+        get_app_version=lambda: "1.0.0",
+        get_projected_run_history=lambda: SimpleNamespace(child_tasks={}),
+    )
+
+    service._run_worker("pipeline_1")
+
+    assert status["active"] is False
+    assert status["stage"] == "completed"
+    assert status["error"] == ""
+    assert (
+        "jobs_pipeline_attached_existing_child_task",
+        {
+            "level": "info",
+            "runId": "pipeline_1",
+            "childTask": "discovery",
+            "childRunId": "discovery_live_1",
+        },
+    ) in bridge_events
+    assert (
+        "jobs_pipeline_attached_existing_child_task",
+        {
+            "level": "info",
+            "runId": "pipeline_1",
+            "childTask": "fetch",
+            "childRunId": "fetch_live_1",
+        },
+    ) in bridge_events
+
+
 def test_run_worker_errors_when_fetch_owner_goes_inactive_without_terminal_report(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -1176,7 +1287,7 @@ def test_run_worker_errors_when_fetch_owner_goes_inactive_without_terminal_repor
     assert upserts[-1]["status"] == "error"
 
 
-def test_pipeline_start_blocks_when_projected_fetch_snapshot_is_active(tmp_path: Path) -> None:
+def test_pipeline_start_allows_live_fetch_to_attach_later(tmp_path: Path) -> None:
     status: dict[str, Any] = {
         "active": False,
         "runId": "",
@@ -1192,10 +1303,12 @@ def test_pipeline_start_blocks_when_projected_fetch_snapshot_is_active(tmp_path:
         "jobsPageLoadedCount": 0,
     }
 
+    runtime = PipelineRuntime()
+
     service = PipelineService(
         pipeline_state_lock=FakeLock(),
         pipeline_status=status,
-        runtime=PipelineRuntime(),
+        runtime=runtime,
         bridge_log=lambda *a, **kw: None,
         now_iso=lambda: "2026-03-22T12:00:00Z",
         parse_iso=make_parse_iso(),
@@ -1219,6 +1332,7 @@ def test_pipeline_start_blocks_when_projected_fetch_snapshot_is_active(tmp_path:
 
     result = service.start_task({"jobsPageLoadedCount": 5})
 
-    assert result["started"] is False
-    assert str(result.get("stage") or "") == "blocked"
-    assert "already running" in str(result.get("error") or "")
+    assert result["started"] is True
+    assert str(result.get("stage") or "") == "starting"
+    assert runtime.active_thread is not None
+    runtime.active_thread.join(timeout=2.0)

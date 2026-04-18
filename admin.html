@@ -70,7 +70,7 @@
             <button id="admin-run-fetcher-incremental-btn" data-ui="admin-run-fetcher-incremental-btn" class="btn clear-filters-btn">Run Incremental</button>
             <button id="admin-run-fetcher-uncapped-btn" data-ui="admin-run-fetcher-uncapped-btn" class="btn clear-filters-btn" title="Run an aggressive fetch with freshness skips, circuit-breaker quarantine, and admin-imposed fetch caps bypassed.">Uncapped Run</button>
             <button id="admin-run-fetcher-force-btn" data-ui="admin-run-fetcher-force-btn" class="btn clear-filters-btn">Force Ignore Circuit</button>
-            <button id="admin-refresh-report-btn" data-ui="admin-refresh-report-btn" class="btn clear-filters-btn" title="Reload the latest jobs fetch report and append per-source details to this output log." aria-label="Load latest fetch report">Load Latest Report</button>
+            <button id="admin-refresh-report-btn" data-ui="admin-refresh-report-btn" class="btn clear-filters-btn" title="Reload the latest jobs fetch report and refresh this output log." aria-label="Load latest fetch report">Load Latest Report</button>
           </div>
         </div>
         <div id="admin-fetcher-progress" data-ui="admin-fetcher-progress" class="admin-task-progress hidden" role="progressbar" aria-label="Fetcher progress" aria-valuemin="0" aria-valuemax="100">
@@ -79,7 +79,6 @@
           </div>
           <div id="admin-fetcher-progress-label" data-ui="admin-fetcher-progress-label" class="admin-task-progress-label"></div>
         </div>
-        <div data-ui="admin-fetcher-live-items" class="admin-task-live-items hidden"></div>
         <div id="admin-fetcher-log" data-ui="admin-fetcher-log" class="admin-fetcher-log" role="log" aria-live="polite"></div>
       </section>
 
@@ -123,10 +122,6 @@
               </div>
               <div id="admin-manual-source-feedback" data-ui="admin-manual-source-feedback" class="results-summary admin-manual-source-feedback"></div>
             </div>
-          </div>
-
-          <div class="admin-discovery-card admin-discovery-live-card">
-            <div data-ui="admin-discovery-live-items" class="admin-task-live-items hidden"></div>
           </div>
 
           <details id="admin-discovery-log-details" data-ui="admin-discovery-log-details" class="admin-discovery-card admin-discovery-log-card" open>

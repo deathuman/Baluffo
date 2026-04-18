@@ -1,6 +1,5 @@
 import { escapeHtml } from "../shared/ui/index.js";
-import { getLiveTaskWorkItems } from "../shared/live-task.js";
-import { formatTaskProgressCounts, formatTaskProgressDetail, normalizeTaskProgressPayload } from "../shared/task-progress.js";
+import { formatTaskProgressDetail } from "../shared/task-progress.js";
 
 export function renderTotalsHtml(totals, formatBytes) {
   if (!totals) return "";
@@ -699,7 +698,12 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       .map(value => Number(value || 0))
       .map(value => value.toLocaleString())
       .join("/");
-    const currentRunDetail = formatTaskProgressDetail(type, taskProgress, summary);
+    const currentRunDetail = formatTaskProgressDetail(
+      type,
+      taskProgress,
+      summary,
+      type === "fetch" ? { includeCounts: false } : {}
+    );
     const key = [
       rowArea,
       String(row?.id || ""),
@@ -825,71 +829,4 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     const detailsEl = historyEl.querySelector(".admin-ops-history-older");
     if (detailsEl) detailsEl.open = olderOpen;
   }
-}
-
-function rankTaskItemStatus(status) {
-  const token = String(status || "").trim().toLowerCase();
-  if (token === "running") return 0;
-  if (token === "error") return 1;
-  if (token === "queued") return 2;
-  if (token === "excluded") return 4;
-  return 3;
-}
-
-function formatTaskItemTarget(progress) {
-  const normalized = normalizeTaskProgressPayload(progress);
-  if (!normalized) return "";
-  return String(normalized.targetLabel || normalized.targetUrl || "").trim();
-}
-
-export function renderAdminTaskLiveItems(containerEl, payload, { taskType = "", emptyText = "" } = {}) {
-  if (!containerEl) return;
-  const items = getLiveTaskWorkItems(payload);
-  if (!items.length) {
-    containerEl.innerHTML = emptyText ? `<div class="no-results">${escapeHtml(emptyText)}</div>` : "";
-    containerEl.classList.toggle("hidden", !emptyText);
-    return;
-  }
-  const normalizedType = String(taskType || payload?.taskType || "").trim().toLowerCase();
-  const rows = [...items].sort((a, b) => {
-    const byStatus = rankTaskItemStatus(a?.status) - rankTaskItemStatus(b?.status);
-    if (byStatus !== 0) return byStatus;
-    return String(a?.name || "").localeCompare(String(b?.name || ""));
-  });
-  containerEl.classList.remove("hidden");
-  containerEl.innerHTML = `
-    <div class="admin-task-live-table">
-      <div class="admin-task-live-head">
-        <div>Status</div>
-        <div>Work Item</div>
-        <div>Phase</div>
-        <div>Elapsed</div>
-        <div>Target</div>
-        <div>Counts</div>
-        <div>Update</div>
-      </div>
-      <div class="admin-task-live-body">
-        ${rows.map(row => {
-          const progress = normalizeTaskProgressPayload(row?.progress);
-          const countsText = progress
-            ? formatTaskProgressCounts(normalizedType, progress.counts, progress, row?.summary || {})
-            : "";
-          const phaseText = String(progress?.phaseLabel || progress?.phaseKey || "").trim() || "Idle";
-          const targetText = formatTaskItemTarget(progress);
-          const updateText = String(progress?.updatedAt || row?.heartbeatAt || row?.finishedAt || row?.startedAt || "").trim();
-          return `
-            <div class="admin-task-live-row">
-              <div class="admin-task-live-status" data-status="${escapeHtml(String(row?.status || "").trim().toLowerCase())}">${escapeHtml(String(row?.status || "unknown"))}</div>
-              <div class="admin-task-live-name">${escapeHtml(String(row?.name || row?.id || "unknown"))}</div>
-              <div class="admin-task-live-phase">${escapeHtml(phaseText)}</div>
-              <div class="admin-task-live-elapsed">${escapeHtml(formatDuration(Number(row?.durationMs || 0)))}</div>
-              <div class="admin-task-live-target" title="${escapeHtml(String(progress?.targetUrl || targetText || ""))}">${escapeHtml(targetText || "—")}</div>
-              <div class="admin-task-live-counts">${escapeHtml(countsText || "—")}</div>
-              <div class="admin-task-live-updated">${escapeHtml(formatDateTime(updateText))}</div>
-            </div>
-          `;
-        }).join("")}
-      </div>
-    </div>
-  `;
 }

@@ -167,35 +167,6 @@ def _extract_from_li_blocks(
     return jobs
 
 
-def _render_with_playwright(page_url: str, timeout_s: int) -> str:
-    try:
-        from playwright.sync_api import sync_playwright  # type: ignore
-    except Exception:
-        return ""
-    browser = None
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(
-                page_url, wait_until="domcontentloaded", timeout=max(1, int(timeout_s)) * 1000
-            )
-            page.wait_for_selector(
-                "li .c-careers-job-listing__department-list-cta a[href*='/careers/']",
-                timeout=max(1, int(timeout_s)) * 1000,
-            )
-            html = page.content() or ""
-            return html
-    except Exception:
-        return ""
-    finally:
-        if browser is not None:
-            try:
-                browser.close()
-            except Exception:
-                pass
-
-
 def _extract_jobs(html: str, *, page_url: str, company: str, source_id: str) -> list[RawJob]:
     jobs = _extract_from_li_blocks(html, page_url=page_url, company=company, source_id=source_id)
     if jobs:
@@ -278,11 +249,6 @@ def run(
     rows = _extract_jobs(html, page_url=page_url, company=company, source_id=source_id)
     if not rows and callable(try_playwright):
         browser_html, _ = try_playwright(page_url, max(3, min(timeout_s, 25)))
-        if browser_html:
-            html = browser_html
-            rows = _extract_jobs(html, page_url=page_url, company=company, source_id=source_id)
-    if not rows:
-        browser_html = _render_with_playwright(page_url, max(3, min(timeout_s, 25)))
         if browser_html:
             html = browser_html
             rows = _extract_jobs(html, page_url=page_url, company=company, source_id=source_id)

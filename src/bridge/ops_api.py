@@ -881,8 +881,27 @@ class OpsApi:
         task_state_entry: dict[str, Any],
         snapshot: _run_history_api.LifecycleChildTask | None,
     ) -> dict[str, Any]:
+        state_run_id = str(task_state_entry.get("runId") or "").strip()
+        snapshot_run_id = str((snapshot.run_id if snapshot else "") or "").strip()
+        state_started_at = str(task_state_entry.get("startedAt") or "").strip()
+        task_state_active = bool(state_run_id and self._deps.task_running_from_state(task_type))
         if task_state_entry and snapshot and (snapshot.finished_at or snapshot.explicit_dead):
-            self._deps.clear_task_state(task_type)
+            if not task_state_active and (
+                not state_run_id or not snapshot_run_id or state_run_id == snapshot_run_id
+            ):
+                self._deps.clear_task_state(task_type)
+        if task_state_active:
+            return {
+                "active": True,
+                "runId": state_run_id,
+                "startedAt": str(
+                    state_started_at
+                    or (snapshot.started_at if snapshot else "")
+                    or report_payload.get("startedAt")
+                    or ""
+                ).strip(),
+                "finishedAt": "",
+            }
         return {
             "active": bool(snapshot and snapshot.active),
             "runId": str(

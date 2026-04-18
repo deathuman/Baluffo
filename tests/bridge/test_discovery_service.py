@@ -136,6 +136,97 @@ def test_trigger_discovery_task_logs_launch_start_and_persists_shell(tmp_path: P
     assert any(message == "discovery_launch_started" for message, _fields in calls)
 
 
+def test_trigger_discovery_task_returns_conflict_for_active_discovery(tmp_path: Path) -> None:
+    task_state_path = tmp_path / "admin-task-state.json"
+    task_state_path.write_text(
+        json.dumps(
+            {
+                "discovery": {
+                    "runId": "discovery_live_1",
+                    "taskType": "discovery",
+                    "pid": 321,
+                    "startedAt": "2026-03-20T12:00:00Z",
+                    "status": "running",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    bridge_events: list[tuple[str, dict[str, object]]] = []
+    spawn_calls: list[tuple[str, list[str] | None]] = []
+    history_rows: list[dict[str, object]] = []
+
+    def bridge_log(level: str, message: str, **fields: object) -> None:
+        bridge_events.append((message, {"level": level, **fields}))
+
+    def run_background_script(
+        script_name: str, args: list[str] | None = None, **_kwargs: object
+    ) -> int:
+        spawn_calls.append((script_name, args))
+        return 123
+
+    service = DiscoveryService(
+        paths=DiscoveryPaths(
+            report=tmp_path / "source-discovery-report.json",
+            candidates=tmp_path / "source-registry-pending.json",
+            pending=tmp_path / "source-registry-pending.json",
+            log=tmp_path / "source-discovery.log",
+            settings=tmp_path / "source-discovery-config.json",
+            approval_state=tmp_path / "source-approval-state.json",
+            task_state=task_state_path,
+        ),
+        deps=DiscoveryDeps(
+            schema_version=1,
+            now_iso=lambda: "2026-03-20T12:05:00Z",
+            now_utc=lambda: None,
+            parse_iso=lambda value: None,
+            pid_is_running=lambda pid: int(pid) == 321,
+            bridge_log=bridge_log,
+            load_json_object=lambda path, default: (
+                json.loads(Path(path).read_text(encoding="utf-8"))
+                if Path(path).exists()
+                else default
+            ),
+            save_json_atomic=lambda path, payload: Path(path).write_text(
+                json.dumps(payload), encoding="utf-8"
+            ),
+            run_background_script=run_background_script,
+            append_run_history=lambda payload: history_rows.append(payload) or payload,
+            upsert_run_history=lambda payload, **_kwargs: payload,
+            prune_started_rows_for_type=lambda *_args, **_kwargs: None,
+            clear_task_state=lambda _task_type: None,
+            normalize_discovery_report_contract=lambda payload: payload,
+            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            persist_state_and_auto_sync=lambda state, **_kwargs: state,
+            load_sync_runtime_state=lambda: {},
+            maybe_trigger_auto_sync_push=lambda reason: False,
+            mark_discovery_sync_finished=lambda finished_at: None,
+        ),
+    )
+
+    status_code, result = service.trigger_discovery_task(
+        route_name="/tasks/run-discovery",
+        payload={"preset": "default"},
+        enable_auto_sync_watch=False,
+    )
+
+    assert status_code == 409
+    assert result == {
+        "started": False,
+        "alreadyRunning": True,
+        "task": "source_discovery",
+        "taskType": "discovery",
+        "runId": "discovery_live_1",
+        "startedAt": "2026-03-20T12:00:00Z",
+        "pid": 321,
+        "status": "running",
+    }
+    assert not spawn_calls
+    assert not history_rows
+    assert not (tmp_path / "source-discovery-report.json").exists()
+    assert any(message == "task_start_attached_existing" for message, _fields in bridge_events)
+
+
 def test_discovery_settings_default_to_auto_approve_enabled(tmp_path: Path) -> None:
     service = DiscoveryService(
         paths=DiscoveryPaths(

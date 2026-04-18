@@ -33,13 +33,9 @@ test("desktop page titles keep the Baluffo window identity token", () => {
   assert.match(savedHtml, /<title>Baluffo Saved Jobs<\/title>/);
 });
 
-test("admin html places the discovery live-items table below the split top row", () => {
+test("admin html no longer renders fetcher or discovery live-items markup", () => {
   const adminHtml = fs.readFileSync(path.join(repoRoot, "admin.html"), "utf8");
-  const runCardChunk = adminHtml.split('<div class="admin-discovery-card admin-discovery-manual-card">')[0] || "";
-
-  assert.doesNotMatch(runCardChunk, /data-ui="admin-discovery-live-items"/);
-  assert.match(
-    adminHtml,
-    /<\/div>\s*<\/div>\s*<div class="admin-discovery-card admin-discovery-live-card">\s*<div data-ui="admin-discovery-live-items" class="admin-task-live-items hidden"><\/div>\s*<\/div>\s*<details id="admin-discovery-log-details"/
-  );
+  assert.doesNotMatch(adminHtml, /data-ui="admin-discovery-live-items"/);
+  assert.doesNotMatch(adminHtml, /admin-discovery-live-card/);
+  assert.doesNotMatch(adminHtml, /data-ui="admin-fetcher-live-items"/);
 });

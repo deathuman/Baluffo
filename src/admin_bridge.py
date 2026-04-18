@@ -201,6 +201,7 @@ def _get_discovery_service() -> DiscoveryService:
                     log=DISCOVERY_LOG_PATH,
                     settings=DISCOVERY_CONFIG_PATH,
                     approval_state=APPROVAL_STATE_PATH,
+                    task_state=TASK_STATE_PATH,
                 ),
                 deps=DiscoveryDeps(
                     schema_version=SCHEMA_VERSION,
@@ -222,6 +223,7 @@ def _get_discovery_service() -> DiscoveryService:
                     load_sync_runtime_state=load_sync_runtime_state,
                     maybe_trigger_auto_sync_push=_maybe_trigger_auto_sync_push,
                     mark_discovery_sync_finished=_mark_discovery_sync_finished,
+                    task_state_lock=OPS_STATE_LOCK,
                 ),
             )
         return _DISCOVERY_SERVICE
@@ -252,6 +254,7 @@ def _get_task_launch_api() -> _task_launch_api.TaskLaunchApi:
                 _failed_source_names_from_latest_report(allowed_names=allowed)
             ),
             safe_int=_safe_int,
+            pid_is_running=pid_is_running,
         ),
     )
 

@@ -9,7 +9,6 @@ import sys
 import time
 from collections import Counter
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 from urllib.parse import urlparse
 
@@ -31,9 +30,10 @@ from src.jobs.adapters.static_helpers import (
     _is_one_man_studio_noise_city,
     add_detail_link,
     build_static_entry_report,
+    build_static_html_fetcher,
     build_static_source_runtime_config,
     choose_detail_traversal_mode,
-    create_fetch_html_cached,
+    process_detail_html,
     process_detail_link,
     source_detail_concurrency_for,
     source_detail_limit_for,
@@ -52,6 +52,7 @@ from src.jobs.state import (
 from src.jobs.text_utils import clean_text, normalize_url, sanitize_location_text
 from src.jobs.transport import conditional_revalidate_url
 from src.scrapers.domain_profiles import domain_profile_for_url
+from src.shared.http_batch import fetch_pages_batched
 from src.shared.regex import find_urls_in_text
 from src.shared.utils import now_iso
 
@@ -89,6 +90,36 @@ def static_source_shard(row: dict[str, Any]) -> str:
     return "s_z"
 
 
+def _record_static_fetch_failure(
+    *,
+    entry_report: dict[str, Any],
+    warnings: list[str],
+    errors: list[str],
+    source_name: str,
+    target_url: str,
+    exc: Exception | str,
+) -> None:
+    msg = str(exc)
+    linked_in_throttle = "linkedin" in f"{target_url} {msg}".lower()
+    if "HTTP 403" in msg or (
+        linked_in_throttle and ("HTTP 429" in msg or "Too Many Requests" in msg)
+    ):
+        entry_report["status"] = "error"
+        entry_report["classification"] = "blocked_or_challenge"
+        entry_report["browserFallbackRecommended"] = True
+        entry_report["error"] = msg
+        warnings.append(f"static:{source_name}:{target_url}: {msg}")
+        return
+    if "Network error" in msg or "timed out" in msg or "Timeout" in msg:
+        entry_report["status"] = "error"
+        entry_report["classification"] = "timeout"
+        entry_report["browserFallbackRecommended"] = True
+        entry_report["error"] = msg
+        warnings.append(f"static:{source_name}:{target_url}: {msg}")
+        return
+    errors.append(f"static:{source_name}:{target_url}: {exc}")
+
+
 def run_static_studio_pages_source(
     *,
     fetch_text: Callable[[str, int], str],
@@ -124,12 +155,13 @@ def run_static_studio_pages_source(
 
     static_runtime = build_static_source_runtime_config(static_detail_concurrency)
     static_detail_concurrency = static_runtime.static_detail_concurrency
-    fetch_html_cached = create_fetch_html_cached(
+    html_fetcher = build_static_html_fetcher(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
         retries=retries,
         backoff_s=backoff_s,
     )
+    fetch_html_cached = html_fetcher.fetch_html_cached
     emit_heartbeat = heartbeat_callback or (lambda: None)
 
     if isinstance(sources, list):
@@ -445,25 +477,149 @@ def run_static_studio_pages_source(
         except NoPluginFoundError:
             pass
 
-        for page in pages:
-            emit_heartbeat()
-            page_url = clean_text(page)
-            if not page_url:
-                continue
-            progress_state["listingPagesVisited"] += 1
-            domain_profile = domain_profile_for_url(page_url)
-            source_budget_s = int(
-                domain_profile.get("static_source_time_budget_s") or static_source_time_budget_s
-            )
-            if (time.perf_counter() - source_started) > float(source_budget_s):
-                entry_report["status"] = "error"
-                entry_report["classification"] = "timeout"
-                entry_report["browserFallbackRecommended"] = True
-                entry_report["error"] = f"time budget exceeded ({source_budget_s}s)"
-                warnings.append(f"static:{source_name}:{page_url}: time_budget_exceeded")
+        cleaned_pages = [clean_text(page) for page in pages if clean_text(page)]
+        listing_batch_size = max(
+            1,
+            min(static_detail_concurrency, len(cleaned_pages) if cleaned_pages else 1),
+        )
+        stop_source = False
+        for batch_start in range(0, len(cleaned_pages), listing_batch_size):
+            if stop_source:
                 break
-            try:
-                listing_fetch_started = time.perf_counter()
+            page_batch = cleaned_pages[batch_start : batch_start + listing_batch_size]
+            listing_batch_jobs: list[dict[str, Any]] = []
+            for page_url in page_batch:
+                domain_profile = domain_profile_for_url(page_url)
+                source_budget_s = int(
+                    domain_profile.get("static_source_time_budget_s") or static_source_time_budget_s
+                )
+                if (time.perf_counter() - source_started) > float(source_budget_s):
+                    entry_report["status"] = "error"
+                    entry_report["classification"] = "timeout"
+                    entry_report["browserFallbackRecommended"] = True
+                    entry_report["error"] = f"time budget exceeded ({source_budget_s}s)"
+                    warnings.append(f"static:{source_name}:{page_url}: time_budget_exceeded")
+                    stop_source = True
+                    break
+                listing_batch_jobs.append(
+                    {
+                        "url": page_url,
+                        "payload": {
+                            "domainProfile": domain_profile,
+                            "sourceBudgetS": source_budget_s,
+                        },
+                    }
+                )
+            if stop_source or not listing_batch_jobs:
+                break
+
+            listing_batch_meta: dict[str, dict[str, Any]] = {}
+
+            listing_source_started = source_started
+            listing_source_name = source_name
+
+            def _fetch_listing_job(
+                batch_job: dict[str, Any],
+                url: str,
+                _timeout_s: int,
+                *,
+                _listing_source_started: float = listing_source_started,
+                _listing_batch_meta: dict[str, dict[str, Any]] = listing_batch_meta,
+            ) -> str:
+                fetch_started = time.perf_counter()
+                payload = batch_job.get("payload") if isinstance(batch_job, dict) else {}
+                source_budget_s = int(
+                    (payload or {}).get("sourceBudgetS") or static_source_time_budget_s
+                )
+                remaining_budget_s = float(source_budget_s) - float(
+                    time.perf_counter() - _listing_source_started
+                )
+                effective_timeout_s = max(
+                    3, min(int(timeout_s or 1), int(remaining_budget_s or timeout_s))
+                )
+                html = ""
+                cache_hit = False
+                try:
+                    html, cache_hit = fetch_html_cached(url, remaining_budget_s=remaining_budget_s)
+                except Exception as exc:  # noqa: BLE001
+                    err_str = str(exc)
+                    err_lower = err_str.lower()
+                    linked_in_throttle = "linkedin" in f"{url} {err_str}".lower()
+                    if try_playwright and (
+                        "403" in err_str
+                        or (linked_in_throttle and "429" in err_str)
+                        or "timeout" in err_lower
+                        or "timed out" in err_lower
+                    ):
+                        if "403" in err_str:
+                            reason = "403"
+                        elif linked_in_throttle and "429" in err_str:
+                            reason = "429"
+                        else:
+                            reason = "timeout"
+                        html, _ = try_playwright(url, effective_timeout_s)
+                        print(
+                            f"[static] playwright_fallback_used url={url!r} reason={reason} got_html={bool(html)}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                    if not html:
+                        raise
+                _listing_batch_meta[url] = {
+                    "cacheHit": cache_hit,
+                    "durationMs": int((time.perf_counter() - fetch_started) * 1000),
+                    "timeoutS": effective_timeout_s,
+                }
+                return html
+
+            def _on_listing_batch_progress(
+                completed: int,
+                total: int,
+                *,
+                _listing_source_name: str = listing_source_name,
+            ) -> None:
+                completed_count = max(0, int(completed or 0))
+                total_count = max(1, int(total or 0))
+                emit_heartbeat()
+                emit_source_progress(
+                    phase_key="static_listing_fetch",
+                    phase_label="Fetching listing pages",
+                    counts={"listingPagesFetched": completed_count},
+                    target_label=f"Listing fetch {completed_count}/{total_count}",
+                    event_level="muted",
+                    message=(
+                        f"Fetched {completed_count}/{total_count} listing page"
+                        f"{'' if total_count == 1 else 's'} for {_listing_source_name}."
+                    ),
+                )
+
+            emit_source_progress(
+                phase_key="static_listing_fetch",
+                phase_label="Fetching listing pages",
+                counts={"listingPagesFetched": 0},
+                target_label=f"Listing fetch 0/{max(1, len(listing_batch_jobs))}",
+                target_url=clean_text((listing_batch_jobs[0] or {}).get("url")),
+                event_level="muted",
+                message=(
+                    f"Fetching {max(1, len(listing_batch_jobs))} listing page"
+                    f"{'' if len(listing_batch_jobs) == 1 else 's'} for {source_name}."
+                ),
+            )
+            listing_results = fetch_pages_batched(
+                timeout_s,
+                listing_batch_jobs,
+                sync_fetch=_fetch_listing_job,
+                total_concurrency=max(1, len(listing_batch_jobs)),
+                per_host_concurrency=max(1, len(listing_batch_jobs)),
+                progress_callback=_on_listing_batch_progress,
+            )
+
+            for result in listing_results:
+                emit_heartbeat()
+                page_url = clean_text(result.get("url"))
+                if not page_url:
+                    continue
+                progress_state["listingPagesVisited"] += 1
                 emit_source_progress(
                     phase_key="static_listing_fetch",
                     phase_label="Fetching listing pages",
@@ -477,443 +633,501 @@ def run_static_studio_pages_source(
                         f"for {source_name}."
                     ),
                 )
-                remaining_budget_s = float(source_budget_s) - float(
-                    time.perf_counter() - source_started
+                payload = result.get("payload") if isinstance(result.get("payload"), dict) else {}
+                domain_profile = (
+                    payload.get("domainProfile")
+                    if isinstance(payload.get("domainProfile"), dict)
+                    else domain_profile_for_url(page_url)
                 )
-                effective_timeout_s = max(
-                    3, min(int(timeout_s or 1), int(remaining_budget_s or timeout_s))
-                )
-                html = ""
-                cache_hit = False
+                source_budget_s = int(payload.get("sourceBudgetS") or static_source_time_budget_s)
                 try:
-                    html, cache_hit = fetch_html_cached(
-                        page_url, remaining_budget_s=remaining_budget_s
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    err_str = str(exc)
-                    err_lower = err_str.lower()
-                    linked_in_throttle = "linkedin" in f"{page_url} {err_str}".lower()
-                    if try_playwright and (
-                        "403" in err_str
-                        or (linked_in_throttle and "429" in err_str)
-                        or "timeout" in err_lower
-                        or "timed out" in err_lower
-                    ):
-                        if "403" in err_str:
-                            reason = "403"
-                        elif linked_in_throttle and "429" in err_str:
-                            reason = "429"
-                        else:
-                            reason = "timeout"
-                        html, _ = try_playwright(page_url, effective_timeout_s)
-                        print(
-                            f"[static] playwright_fallback_used url={page_url!r} reason={reason} got_html={bool(html)}",
-                            file=sys.stderr,
-                            flush=True,
+                    if not bool(result.get("ok")):
+                        _record_static_fetch_failure(
+                            entry_report=entry_report,
+                            warnings=warnings,
+                            errors=errors,
+                            source_name=source_name,
+                            target_url=page_url,
+                            exc=str(result.get("error") or ""),
                         )
-                    if not html:
-                        raise
-                stats["listing_fetch_ms"] += int(
-                    (time.perf_counter() - listing_fetch_started) * 1000
-                )
-                if cache_hit:
-                    stats["fetch_cache_hits"] += 1
-                emit_heartbeat()
-                if try_playwright and html and detect_js_shell(html):
-                    parsed_pre = parse_jobpostings_from_html(
-                        html,
-                        base_url=page_url,
-                        fallback_company=company,
-                        fallback_source_id_prefix=f"static:{source_name}",
-                    )
-                    link_count = len(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html))
-                    if not parsed_pre and link_count < 3:
-                        html2, _ = try_playwright(page_url, effective_timeout_s)
-                        print(
-                            f"[static] playwright_fallback_used url={page_url!r} reason=js_shell got_html={bool(html2)}",
-                            file=sys.stderr,
-                            flush=True,
+                        emit_heartbeat()
+                        continue
+
+                    listing_meta = listing_batch_meta.get(page_url) or {}
+                    stats["listing_fetch_ms"] += int(listing_meta.get("durationMs") or 0)
+                    if bool(listing_meta.get("cacheHit")):
+                        stats["fetch_cache_hits"] += 1
+                    effective_timeout_s = int(listing_meta.get("timeoutS") or timeout_s)
+                    html = str(result.get("text") or "")
+                    if try_playwright and html and detect_js_shell(html):
+                        parsed_pre = parse_jobpostings_from_html(
+                            html,
+                            base_url=page_url,
+                            fallback_company=company,
+                            fallback_source_id_prefix=f"static:{source_name}",
                         )
-                        if html2:
-                            html = html2
-                detail_links: list[tuple[str, str]] = []
-                detail_seen = set()
-                listing_htmls = [html]
-                try:
-                    dynamic_listing_html = maybe_fetch_kojima_job_listing_html(
-                        page_url=page_url,
-                        page_html=html,
-                        timeout_s=timeout_s,
-                        retries=retries,
-                        backoff_s=backoff_s,
-                    )
-                    if dynamic_listing_html and dynamic_listing_html not in listing_htmls:
-                        listing_htmls.append(dynamic_listing_html)
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(
-                        f"static:{source_name}:{page_url}: dynamic-listing-fetch failed: {exc}"
-                    )
-
-                extraction_started = time.perf_counter()
-                listing_jobs_found = 0
-                emit_source_progress(
-                    phase_key="static_candidate_extraction",
-                    phase_label="Extracting candidates",
-                    target_label=(
-                        f"Listing {progress_state['listingPagesVisited']}/{max(1, len(pages))}"
-                    ),
-                    target_url=page_url,
-                    event_level="muted",
-                    message=f"Extracting listing candidates for {source_name}.",
-                )
-                for listing_html in listing_htmls:
-                    emit_heartbeat()
-                    parsed = parse_jobpostings_from_html(
-                        listing_html,
-                        base_url=page_url,
-                        fallback_company=company,
-                        fallback_source_id_prefix=f"static:{source_name}",
-                    )
-                    for row in parsed:
-                        link = normalize_url(row.get("jobLink"))
-                        if not link or link in seen_links:
-                            continue
-                        seen_links.add(link)
-                        row["adapter"] = "static"
-                        row["studio"] = clean_text(source.get("studio")) or company or source_name
-                        jobs.append(row)
-                        listing_jobs_found += 1
-
-                    if listing_jobs_found == 0:
-                        rendered_rows = extract_rendered_card_jobs(
-                            listing_html,
+                        link_count = len(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html))
+                        if not parsed_pre and link_count < 3:
+                            html2, _ = try_playwright(page_url, effective_timeout_s)
+                            print(
+                                f"[static] playwright_fallback_used url={page_url!r} reason=js_shell got_html={bool(html2)}",
+                                file=sys.stderr,
+                                flush=True,
+                            )
+                            if html2:
+                                html = html2
+                    detail_links: list[tuple[str, str]] = []
+                    detail_seen = set()
+                    listing_htmls = [html]
+                    try:
+                        dynamic_listing_html = maybe_fetch_kojima_job_listing_html(
                             page_url=page_url,
-                            company=company,
-                            source_id=clean_text(source.get("id")) or source_name,
-                            allow_any_anchor=True,
+                            page_html=html,
+                            timeout_s=timeout_s,
+                            retries=retries,
+                            backoff_s=backoff_s,
                         )
-                        if rendered_rows:
-                            has_job_like_rendered_title = False
-                            for row in rendered_rows:
-                                row = dict(row)
-                                mode = clean_text(row.pop("_renderedCardMode", ""))
-                                if mode == "fallback":
-                                    continue
-                                row["adapter"] = "static"
-                                row["studio"] = (
-                                    clean_text(source.get("studio")) or company or source_name
-                                )
-                                row["source"] = (
-                                    clean_text(source.get("name")) or company or source_name
-                                )
-                                title = clean_text(row.get("title"))
-                                link = normalize_url(row.get("jobLink"))
-                                location_hint = clean_text(row.pop("_locationHint", ""))
-                                needs_detail_lookup = _needs_detail_location_resolution(
-                                    row,
-                                    link,
-                                    location_hint,
-                                )
-                                if looks_like_job_title_candidate(title):
+                        if dynamic_listing_html and dynamic_listing_html not in listing_htmls:
+                            listing_htmls.append(dynamic_listing_html)
+                    except Exception as exc:  # noqa: BLE001
+                        errors.append(
+                            f"static:{source_name}:{page_url}: dynamic-listing-fetch failed: {exc}"
+                        )
+
+                    extraction_started = time.perf_counter()
+                    listing_jobs_found = 0
+                    emit_source_progress(
+                        phase_key="static_candidate_extraction",
+                        phase_label="Extracting candidates",
+                        target_label=(
+                            f"Listing {progress_state['listingPagesVisited']}/{max(1, len(pages))}"
+                        ),
+                        target_url=page_url,
+                        event_level="muted",
+                        message=f"Extracting listing candidates for {source_name}.",
+                    )
+                    for listing_html in listing_htmls:
+                        emit_heartbeat()
+                        parsed = parse_jobpostings_from_html(
+                            listing_html,
+                            base_url=page_url,
+                            fallback_company=company,
+                            fallback_source_id_prefix=f"static:{source_name}",
+                        )
+                        for row in parsed:
+                            link = normalize_url(row.get("jobLink"))
+                            if not link or link in seen_links:
+                                continue
+                            seen_links.add(link)
+                            row["adapter"] = "static"
+                            row["studio"] = (
+                                clean_text(source.get("studio")) or company or source_name
+                            )
+                            jobs.append(row)
+                            listing_jobs_found += 1
+
+                        if listing_jobs_found == 0:
+                            rendered_rows = extract_rendered_card_jobs(
+                                listing_html,
+                                page_url=page_url,
+                                company=company,
+                                source_id=clean_text(source.get("id")) or source_name,
+                                allow_any_anchor=True,
+                            )
+                            if rendered_rows:
+                                has_job_like_rendered_title = False
+                                for row in rendered_rows:
+                                    row = dict(row)
+                                    mode = clean_text(row.pop("_renderedCardMode", ""))
+                                    if mode == "fallback":
+                                        continue
+                                    row["adapter"] = "static"
+                                    row["studio"] = (
+                                        clean_text(source.get("studio")) or company or source_name
+                                    )
+                                    row["source"] = (
+                                        clean_text(source.get("name")) or company or source_name
+                                    )
+                                    title = clean_text(row.get("title"))
+                                    link = normalize_url(row.get("jobLink"))
+                                    location_hint = clean_text(row.pop("_locationHint", ""))
+                                    needs_detail_lookup = _needs_detail_location_resolution(
+                                        row,
+                                        link,
+                                        location_hint,
+                                    )
+                                    if looks_like_job_title_candidate(title):
+                                        if not link or link in seen_links:
+                                            continue
+                                        if needs_detail_lookup:
+                                            detail_result = process_detail_link(
+                                                detail=link,
+                                                detail_title=title,
+                                                source_started=source_started,
+                                                static_source_time_budget_s=source_budget_s,
+                                                fetch_html_cached=fetch_html_cached,
+                                                timeout_s=timeout_s,
+                                                detail_retries=retries,
+                                                company=company,
+                                                source_name=source_name,
+                                                source=source,
+                                                ignored_link_titles=ignored_link_titles,
+                                            )
+                                            stats["detail_pages_visited"] += 1
+                                            emit_source_progress(
+                                                phase_key="static_detail_traversal",
+                                                phase_label="Traversing detail pages",
+                                                target_label=title or link or source_name,
+                                                target_url=link,
+                                            )
+                                            stats["detail_fetch_ms"] += int(
+                                                detail_result.get("fetchMs") or 0
+                                            )
+                                            emitted_detail_rows = detail_result.get("rows") or []
+                                            if emitted_detail_rows:
+                                                seen_links.add(link)
+                                                for emitted_row in emitted_detail_rows:
+                                                    if not isinstance(emitted_row, dict):
+                                                        continue
+                                                    emitted_row["source"] = (
+                                                        clean_text(source.get("name"))
+                                                        or company
+                                                        or source_name
+                                                    )
+                                                    emitted_row["studio"] = (
+                                                        clean_text(source.get("studio"))
+                                                        or company
+                                                        or source_name
+                                                    )
+                                                    jobs.append(emitted_row)
+                                                    listing_jobs_found += 1
+                                                has_job_like_rendered_title = True
+                                                continue
+                                        seen_links.add(link)
+                                        jobs.append(row)
+                                        listing_jobs_found += 1
+                                        has_job_like_rendered_title = True
+                                        continue
                                     if not link or link in seen_links:
                                         continue
-                                    if needs_detail_lookup:
-                                        detail_result = process_detail_link(
-                                            detail=link,
-                                            detail_title=title,
-                                            source_started=source_started,
-                                            static_source_time_budget_s=source_budget_s,
-                                            fetch_html_cached=fetch_html_cached,
-                                            timeout_s=timeout_s,
-                                            detail_retries=retries,
-                                            company=company,
-                                            source_name=source_name,
-                                            source=source,
-                                            ignored_link_titles=ignored_link_titles,
-                                        )
-                                        stats["detail_pages_visited"] += 1
-                                        emit_source_progress(
-                                            phase_key="static_detail_traversal",
-                                            phase_label="Traversing detail pages",
-                                            target_label=title or link or source_name,
-                                            target_url=link,
-                                        )
-                                        stats["detail_fetch_ms"] += int(
-                                            detail_result.get("fetchMs") or 0
-                                        )
-                                        emitted_detail_rows = detail_result.get("rows") or []
-                                        if emitted_detail_rows:
-                                            seen_links.add(link)
-                                            for emitted_row in emitted_detail_rows:
-                                                if not isinstance(emitted_row, dict):
-                                                    continue
-                                                emitted_row["source"] = (
-                                                    clean_text(source.get("name"))
-                                                    or company
-                                                    or source_name
-                                                )
-                                                emitted_row["studio"] = (
-                                                    clean_text(source.get("studio"))
-                                                    or company
-                                                    or source_name
-                                                )
-                                                jobs.append(emitted_row)
-                                                listing_jobs_found += 1
-                                            has_job_like_rendered_title = True
-                                            continue
-                                    seen_links.add(link)
-                                    jobs.append(row)
-                                    listing_jobs_found += 1
-                                    has_job_like_rendered_title = True
-                                    continue
-                                if not link or link in seen_links:
-                                    continue
-                                detail_result = process_detail_link(
-                                    detail=link,
-                                    detail_title=title,
-                                    source_started=source_started,
-                                    static_source_time_budget_s=source_budget_s,
-                                    fetch_html_cached=fetch_html_cached,
-                                    timeout_s=timeout_s,
-                                    detail_retries=retries,
-                                    company=company,
-                                    source_name=source_name,
-                                    source=source,
-                                    ignored_link_titles=ignored_link_titles,
-                                )
-                                stats["detail_pages_visited"] += 1
-                                emit_source_progress(
-                                    phase_key="static_detail_traversal",
-                                    phase_label="Traversing detail pages",
-                                    target_label=title or link or source_name,
-                                    target_url=link,
-                                )
-                                stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
-                                emitted_detail_rows = detail_result.get("rows") or []
-                                if emitted_detail_rows:
-                                    seen_links.add(link)
-                                    for emitted_row in emitted_detail_rows:
-                                        if not isinstance(emitted_row, dict):
-                                            continue
-                                        emitted_row["source"] = (
-                                            clean_text(source.get("name")) or company or source_name
-                                        )
-                                        emitted_row["studio"] = (
-                                            clean_text(source.get("studio"))
-                                            or company
-                                            or source_name
-                                        )
-                                        jobs.append(emitted_row)
+                                    detail_result = process_detail_link(
+                                        detail=link,
+                                        detail_title=title,
+                                        source_started=source_started,
+                                        static_source_time_budget_s=source_budget_s,
+                                        fetch_html_cached=fetch_html_cached,
+                                        timeout_s=timeout_s,
+                                        detail_retries=retries,
+                                        company=company,
+                                        source_name=source_name,
+                                        source=source,
+                                        ignored_link_titles=ignored_link_titles,
+                                    )
+                                    stats["detail_pages_visited"] += 1
+                                    emit_source_progress(
+                                        phase_key="static_detail_traversal",
+                                        phase_label="Traversing detail pages",
+                                        target_label=title or link or source_name,
+                                        target_url=link,
+                                    )
+                                    stats["detail_fetch_ms"] += int(
+                                        detail_result.get("fetchMs") or 0
+                                    )
+                                    emitted_detail_rows = detail_result.get("rows") or []
+                                    if emitted_detail_rows:
+                                        seen_links.add(link)
+                                        for emitted_row in emitted_detail_rows:
+                                            if not isinstance(emitted_row, dict):
+                                                continue
+                                            emitted_row["source"] = (
+                                                clean_text(source.get("name"))
+                                                or company
+                                                or source_name
+                                            )
+                                            emitted_row["studio"] = (
+                                                clean_text(source.get("studio"))
+                                                or company
+                                                or source_name
+                                            )
+                                            jobs.append(emitted_row)
+                                            listing_jobs_found += 1
+                                    elif row:
+                                        jobs.append(row)
                                         listing_jobs_found += 1
-                                elif row:
-                                    jobs.append(row)
-                                    listing_jobs_found += 1
-                            if listing_jobs_found > 0 and has_job_like_rendered_title:
-                                source["_staticPluginMeta"] = {
-                                    "detailFetchRequired": False,
-                                    "detailTraversalMode": "listing_only",
-                                }
-                                emit_heartbeat()
+                                if listing_jobs_found > 0 and has_job_like_rendered_title:
+                                    source["_staticPluginMeta"] = {
+                                        "detailFetchRequired": False,
+                                        "detailTraversalMode": "listing_only",
+                                    }
+                                    emit_heartbeat()
+                                    continue
+
+                        for row_match in re.finditer(
+                            r'(?is)<(?:div|tr)[^>]*class=["\'][^"\']*job-listing-item[^"\']*["\'][^>]*>(.*?)</(?:div|tr)>',
+                            listing_html,
+                        ):
+                            row_html = row_match.group(1) or ""
+                            link_match = re.search(
+                                r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', row_html
+                            )
+                            if not link_match:
                                 continue
+                            href = clean_text(link_match.group(1))
+                            anchor_text = strip_html_text(
+                                re.sub(r"(?is)<[^>]+>", " ", link_match.group(2) or "")
+                            )
+                            add_detail_link(
+                                detail_links,
+                                detail_seen,
+                                seen_links,
+                                link_rejections,
+                                candidate_url=href,
+                                anchor_text=anchor_text,
+                                enforce_heuristics=False,
+                                page_url=page_url,
+                                source=source,
+                                default_path_tokens=static_runtime.default_path_tokens,
+                                default_query_keys=static_runtime.default_query_keys,
+                            )
 
-                    for row_match in re.finditer(
-                        r'(?is)<(?:div|tr)[^>]*class=["\'][^"\']*job-listing-item[^"\']*["\'][^>]*>(.*?)</(?:div|tr)>',
-                        listing_html,
-                    ):
-                        row_html = row_match.group(1) or ""
-                        link_match = re.search(
-                            r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', row_html
-                        )
-                        if not link_match:
-                            continue
-                        href = clean_text(link_match.group(1))
-                        anchor_text = strip_html_text(
-                            re.sub(r"(?is)<[^>]+>", " ", link_match.group(2) or "")
-                        )
-                        add_detail_link(
-                            detail_links,
-                            detail_seen,
-                            seen_links,
-                            link_rejections,
-                            candidate_url=href,
-                            anchor_text=anchor_text,
-                            enforce_heuristics=False,
-                            page_url=page_url,
-                            source=source,
-                            default_path_tokens=static_runtime.default_path_tokens,
-                            default_query_keys=static_runtime.default_query_keys,
-                        )
-
-                    for match in re.finditer(
-                        r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', listing_html
-                    ):
-                        href = clean_text(match.group(1))
-                        anchor_inner = match.group(2) or ""
-                        anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner))
-                        add_detail_link(
-                            detail_links,
-                            detail_seen,
-                            seen_links,
-                            link_rejections,
-                            candidate_url=href,
-                            anchor_text=anchor_text,
-                            enforce_heuristics=True,
-                            page_url=page_url,
-                            source=source,
-                            default_path_tokens=static_runtime.default_path_tokens,
-                            default_query_keys=static_runtime.default_query_keys,
-                        )
-                    for raw in find_urls_in_text(listing_html):
-                        add_detail_link(
-                            detail_links,
-                            detail_seen,
-                            seen_links,
-                            link_rejections,
-                            candidate_url=clean_text(raw),
-                            anchor_text="",
-                            enforce_heuristics=True,
-                            page_url=page_url,
-                            source=source,
-                            default_path_tokens=static_runtime.default_path_tokens,
-                            default_query_keys=static_runtime.default_query_keys,
-                        )
-                stats["candidate_links_found"] += len(detail_links)
-                stats["candidate_extraction_ms"] += int(
-                    (time.perf_counter() - extraction_started) * 1000
-                )
-                emit_source_progress(
-                    phase_key="static_candidate_extraction",
-                    phase_label="Candidates extracted",
-                    counts={
-                        "detailCandidates": len(detail_links),
-                        "listingJobsFound": listing_jobs_found,
-                    },
-                    target_label=(
-                        f"Listing {progress_state['listingPagesVisited']}/{max(1, len(pages))}"
-                    ),
-                    target_url=page_url,
-                    event_level="muted",
-                    message=(
-                        f"Found {len(detail_links)} detail candidate"
-                        f"{'' if len(detail_links) == 1 else 's'} for {source_name}."
-                    ),
-                )
-                listing_fingerprint = hashlib.sha1(
-                    "\n".join(listing_htmls).encode("utf-8")
-                ).hexdigest()
-                previous_listing_fingerprint = clean_text(
-                    (state_entry or {}).get("lastListingFingerprint")
-                )
-                entry_report["listingFingerprint"] = listing_fingerprint
-                entry_report["listingCheckedAt"] = now_iso()
-                entry_report["listingChanged"] = bool(
-                    listing_fingerprint != previous_listing_fingerprint
-                )
-                if (
-                    previous_listing_fingerprint
-                    and listing_fingerprint == previous_listing_fingerprint
-                    and not force_refresh_all
-                ):
-                    entry_report["cacheDecision"] = "listing_only"
-                    entry_report["cacheDecisionReason"] = "listing_fingerprint_unchanged"
-                    entry_report["detailSkippedByListingFingerprint"] = True
-                    stats["detail_skipped_by_listing_fingerprint"] += 1
-                    detail_links = []
-
-                if not detail_links:
-                    emit_heartbeat()
-                    continue
-                source_key = diagnostics_name if len(selected_sources) == 1 else source_name
-                plugin_meta = source.get("_staticPluginMeta") if isinstance(source, dict) else None
-                detail_traversal_mode = choose_detail_traversal_mode(
-                    page_url,
-                    runtime_config=static_runtime,
-                    profile=domain_profile,
-                    plugin_meta=plugin_meta,
-                    listing_jobs_found=listing_jobs_found,
-                    discovered_links=len(detail_links),
-                    source_key=source_key,
-                    source_state_rows=source_state_rows,
-                )
-                entry_report["detailTraversalMode"] = detail_traversal_mode
-                if detail_traversal_mode == "listing_only":
-                    detail_links = []
-                    emit_heartbeat()
-                    continue
-                detail_limit = source_detail_limit_for(
-                    source_key,
-                    source_state_rows=source_state_rows,
-                    discovered_links=len(detail_links),
-                    listing_jobs_found=listing_jobs_found,
-                    low_yield_detail_cap=static_runtime.low_yield_detail_cap,
-                    very_low_yield_detail_cap=static_runtime.very_low_yield_detail_cap,
-                )
-                detail_retries = source_detail_retries_for(
-                    source_key,
-                    source_state_rows=source_state_rows,
-                    base_retries=retries,
-                )
-                profile_max_detail_links = max(0, int(domain_profile.get("max_detail_links") or 0))
-                if profile_max_detail_links > 0:
-                    detail_limit = (
-                        min(detail_limit, profile_max_detail_links)
-                        if detail_limit
-                        else profile_max_detail_links
+                        for match in re.finditer(
+                            r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', listing_html
+                        ):
+                            href = clean_text(match.group(1))
+                            anchor_inner = match.group(2) or ""
+                            anchor_text = strip_html_text(
+                                re.sub(r"(?is)<[^>]+>", " ", anchor_inner)
+                            )
+                            add_detail_link(
+                                detail_links,
+                                detail_seen,
+                                seen_links,
+                                link_rejections,
+                                candidate_url=href,
+                                anchor_text=anchor_text,
+                                enforce_heuristics=True,
+                                page_url=page_url,
+                                source=source,
+                                default_path_tokens=static_runtime.default_path_tokens,
+                                default_query_keys=static_runtime.default_query_keys,
+                            )
+                        for raw in find_urls_in_text(listing_html):
+                            add_detail_link(
+                                detail_links,
+                                detail_seen,
+                                seen_links,
+                                link_rejections,
+                                candidate_url=clean_text(raw),
+                                anchor_text="",
+                                enforce_heuristics=True,
+                                page_url=page_url,
+                                source=source,
+                                default_path_tokens=static_runtime.default_path_tokens,
+                                default_query_keys=static_runtime.default_query_keys,
+                            )
+                    stats["candidate_links_found"] += len(detail_links)
+                    stats["candidate_extraction_ms"] += int(
+                        (time.perf_counter() - extraction_started) * 1000
                     )
-                if detail_limit and detail_limit < len(detail_links):
-                    detail_links = detail_links[:detail_limit]
-                detail_fetch_started = time.perf_counter()
-                emit_source_progress(
-                    phase_key="static_detail_traversal",
-                    phase_label="Traversing detail pages",
-                    counts={"detailCandidates": len(detail_links)},
-                    target_label=f"{len(detail_links)} detail page(s)",
-                    target_url=page_url,
-                    event_level="muted",
-                    message=(
-                        f"Traversing {len(detail_links)} detail page"
-                        f"{'' if len(detail_links) == 1 else 's'} for {source_name}."
-                    ),
-                )
-                emit_heartbeat()
-                with ThreadPoolExecutor(
-                    max_workers=source_detail_concurrency_for(
+                    emit_source_progress(
+                        phase_key="static_candidate_extraction",
+                        phase_label="Candidates extracted",
+                        counts={
+                            "detailCandidates": len(detail_links),
+                            "listingJobsFound": listing_jobs_found,
+                        },
+                        target_label=(
+                            f"Listing {progress_state['listingPagesVisited']}/{max(1, len(pages))}"
+                        ),
+                        target_url=page_url,
+                        event_level="muted",
+                        message=(
+                            f"Found {len(detail_links)} detail candidate"
+                            f"{'' if len(detail_links) == 1 else 's'} for {source_name}."
+                        ),
+                    )
+                    listing_fingerprint = hashlib.sha1(
+                        "\n".join(listing_htmls).encode("utf-8")
+                    ).hexdigest()
+                    previous_listing_fingerprint = clean_text(
+                        (state_entry or {}).get("lastListingFingerprint")
+                    )
+                    entry_report["listingFingerprint"] = listing_fingerprint
+                    entry_report["listingCheckedAt"] = now_iso()
+                    entry_report["listingChanged"] = bool(
+                        listing_fingerprint != previous_listing_fingerprint
+                    )
+                    if (
+                        previous_listing_fingerprint
+                        and listing_fingerprint == previous_listing_fingerprint
+                        and not force_refresh_all
+                    ):
+                        entry_report["cacheDecision"] = "listing_only"
+                        entry_report["cacheDecisionReason"] = "listing_fingerprint_unchanged"
+                        entry_report["detailSkippedByListingFingerprint"] = True
+                        stats["detail_skipped_by_listing_fingerprint"] += 1
+                        detail_links = []
+
+                    if not detail_links:
+                        emit_heartbeat()
+                        continue
+                    source_key = diagnostics_name if len(selected_sources) == 1 else source_name
+                    plugin_meta = (
+                        source.get("_staticPluginMeta") if isinstance(source, dict) else None
+                    )
+                    detail_traversal_mode = choose_detail_traversal_mode(
+                        page_url,
+                        runtime_config=static_runtime,
+                        profile=domain_profile,
+                        plugin_meta=plugin_meta,
+                        listing_jobs_found=listing_jobs_found,
+                        discovered_links=len(detail_links),
+                        source_key=source_key,
+                        source_state_rows=source_state_rows,
+                    )
+                    entry_report["detailTraversalMode"] = detail_traversal_mode
+                    if detail_traversal_mode == "listing_only":
+                        detail_links = []
+                        emit_heartbeat()
+                        continue
+                    detail_limit = source_detail_limit_for(
+                        source_key,
+                        source_state_rows=source_state_rows,
+                        discovered_links=len(detail_links),
+                        listing_jobs_found=listing_jobs_found,
+                        low_yield_detail_cap=static_runtime.low_yield_detail_cap,
+                        very_low_yield_detail_cap=static_runtime.very_low_yield_detail_cap,
+                    )
+                    detail_retries = source_detail_retries_for(
+                        source_key,
+                        source_state_rows=source_state_rows,
+                        base_retries=retries,
+                    )
+                    profile_max_detail_links = max(
+                        0, int(domain_profile.get("max_detail_links") or 0)
+                    )
+                    if profile_max_detail_links > 0:
+                        detail_limit = (
+                            min(detail_limit, profile_max_detail_links)
+                            if detail_limit
+                            else profile_max_detail_links
+                        )
+                    if detail_limit and detail_limit < len(detail_links):
+                        detail_links = detail_links[:detail_limit]
+                    detail_fetch_started = time.perf_counter()
+                    detail_fetch_base_ms = int(stats.get("detail_fetch_ms") or 0)
+                    detail_batch_meta: dict[str, dict[str, Any]] = {}
+                    detail_concurrency = source_detail_concurrency_for(
                         source_key,
                         source_state_rows=source_state_rows,
                         static_detail_concurrency=static_detail_concurrency,
                     )
-                ) as executor:
-                    future_map = {
-                        executor.submit(
-                            process_detail_link,
-                            detail=detail,
-                            detail_title=detail_title,
-                            source_started=source_started,
-                            static_source_time_budget_s=source_budget_s,
-                            fetch_html_cached=fetch_html_cached,
-                            timeout_s=timeout_s,
-                            company=company,
-                            source_name=source_name,
-                            source=source,
-                            detail_retries=detail_retries,
-                            ignored_link_titles=ignored_link_titles,
-                        ): (detail, detail_title)
-                        for detail, detail_title in detail_links
-                    }
-                    for future in as_completed(future_map):
-                        detail, _detail_title = future_map[future]
+                    emit_source_progress(
+                        phase_key="static_detail_traversal",
+                        phase_label="Traversing detail pages",
+                        counts={"detailCandidates": len(detail_links)},
+                        target_label=f"{len(detail_links)} detail page(s)",
+                        target_url=page_url,
+                        event_level="muted",
+                        message=(
+                            f"Traversing {len(detail_links)} detail page"
+                            f"{'' if len(detail_links) == 1 else 's'} for {source_name}."
+                        ),
+                    )
+                    emit_heartbeat()
+
+                    detail_source_budget_s = source_budget_s
+                    detail_source_started = source_started
+                    detail_source_name = source_name
+                    detail_target_url = page_url
+                    detail_candidate_count = len(detail_links)
+
+                    def _fetch_detail_job(
+                        batch_job: dict[str, Any],
+                        url: str,
+                        _timeout_s: int,
+                        *,
+                        _detail_source_budget_s: int = detail_source_budget_s,
+                        _detail_source_started: float = detail_source_started,
+                        _detail_retries: int = detail_retries,
+                        _detail_batch_meta: dict[str, dict[str, Any]] = detail_batch_meta,
+                    ) -> str:
+                        fetch_started = time.perf_counter()
+                        remaining_budget_s = float(_detail_source_budget_s) - float(
+                            time.perf_counter() - _detail_source_started
+                        )
+                        html, cache_hit = fetch_html_cached(
+                            url,
+                            remaining_budget_s=remaining_budget_s,
+                            retries_override=_detail_retries,
+                        )
+                        _detail_batch_meta[url] = {
+                            "cacheHit": cache_hit,
+                            "fetchMs": int((time.perf_counter() - fetch_started) * 1000),
+                        }
+                        return html
+
+                    def _on_detail_batch_progress(
+                        completed: int,
+                        total: int,
+                        *,
+                        _detail_candidate_count: int = detail_candidate_count,
+                        _detail_target_url: str = detail_target_url,
+                        _detail_source_name: str = detail_source_name,
+                    ) -> None:
+                        completed_count = max(0, int(completed or 0))
+                        total_count = max(1, int(total or 0))
+                        emit_heartbeat()
+                        emit_source_progress(
+                            phase_key="static_detail_traversal",
+                            phase_label="Traversing detail pages",
+                            counts={
+                                "detailCandidates": _detail_candidate_count,
+                                "detailPagesFetched": completed_count,
+                            },
+                            target_label=f"Detail fetch {completed_count}/{total_count}",
+                            target_url=_detail_target_url,
+                            event_level="muted",
+                            message=(
+                                f"Fetched {completed_count}/{total_count} detail page"
+                                f"{'' if total_count == 1 else 's'} for {_detail_source_name}."
+                            ),
+                        )
+
+                    detail_results = fetch_pages_batched(
+                        timeout_s,
+                        [
+                            {
+                                "url": detail,
+                                "payload": {"detailTitle": detail_title},
+                            }
+                            for detail, detail_title in detail_links
+                        ],
+                        sync_fetch=_fetch_detail_job,
+                        total_concurrency=detail_concurrency,
+                        per_host_concurrency=detail_concurrency,
+                        progress_callback=_on_detail_batch_progress,
+                    )
+                    for detail_result_row in detail_results:
+                        detail = clean_text(detail_result_row.get("url"))
+                        if not detail:
+                            continue
+                        detail_payload = (
+                            detail_result_row.get("payload")
+                            if isinstance(detail_result_row.get("payload"), dict)
+                            else {}
+                        )
+                        detail_title = clean_text(detail_payload.get("detailTitle"))
                         stats["detail_pages_visited"] += 1
                         emit_source_progress(
                             phase_key="static_detail_traversal",
                             phase_label="Traversing detail pages",
-                            target_label=_detail_title or detail or source_name,
+                            target_label=detail_title or detail or source_name,
                             target_url=detail,
                         )
                         emit_heartbeat()
-                        try:
-                            detail_result = future.result()
-                        except Exception as exc:  # noqa: BLE001
-                            msg = str(exc)
+                        if not bool(detail_result_row.get("ok")):
+                            msg = str(detail_result_row.get("error") or "")
                             linked_in_throttle = "linkedin" in f"{page_url} {msg}".lower()
                             if "HTTP 403" in msg or (
                                 linked_in_throttle
@@ -924,8 +1138,20 @@ def run_static_studio_pages_source(
                                 entry_report["error"] = msg
                                 warnings.append(f"static:{source_name}:{detail}: {msg}")
                             else:
-                                errors.append(f"static:{source_name}:{detail}: {exc}")
+                                errors.append(f"static:{source_name}:{detail}: {msg}")
                             continue
+                        detail_meta = detail_batch_meta.get(detail) or {}
+                        detail_result = process_detail_html(
+                            detail=detail,
+                            detail_title=detail_title,
+                            detail_html=str(detail_result_row.get("text") or ""),
+                            fetch_ms=int(detail_meta.get("fetchMs") or 0),
+                            cache_hit=bool(detail_meta.get("cacheHit")),
+                            company=company,
+                            source_name=source_name,
+                            source=source,
+                            ignored_link_titles=ignored_link_titles,
+                        )
                         stats["fetch_cache_hits"] += 1 if detail_result.get("cacheHit") else 0
                         stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
                         rejected_classification = clean_text(
@@ -947,31 +1173,21 @@ def run_static_studio_pages_source(
                             seen_links.add(link)
                             jobs.append(row)
                         emit_heartbeat()
-                stats["detail_fetch_ms"] += max(
-                    0,
-                    int((time.perf_counter() - detail_fetch_started) * 1000)
-                    - int(stats["detail_fetch_ms"] or 0),
-                )
-            except Exception as exc:  # noqa: BLE001
-                msg = str(exc)
-                linked_in_throttle = "linkedin" in f"{page_url} {msg}".lower()
-                if "HTTP 403" in msg or (
-                    linked_in_throttle and ("HTTP 429" in msg or "Too Many Requests" in msg)
-                ):
-                    entry_report["status"] = "error"
-                    entry_report["classification"] = "blocked_or_challenge"
-                    entry_report["browserFallbackRecommended"] = True
-                    entry_report["error"] = msg
-                    warnings.append(f"static:{source_name}:{page_url}: {msg}")
-                elif "Network error" in msg or "timed out" in msg or "Timeout" in msg:
-                    entry_report["status"] = "error"
-                    entry_report["classification"] = "timeout"
-                    entry_report["browserFallbackRecommended"] = True
-                    entry_report["error"] = msg
-                    warnings.append(f"static:{source_name}:{page_url}: {msg}")
-                else:
-                    errors.append(f"static:{source_name}:{page_url}: {exc}")
-                emit_heartbeat()
+                    stats["detail_fetch_ms"] += max(
+                        0,
+                        int((time.perf_counter() - detail_fetch_started) * 1000)
+                        - max(0, int(stats.get("detail_fetch_ms") or 0) - detail_fetch_base_ms),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    _record_static_fetch_failure(
+                        entry_report=entry_report,
+                        warnings=warnings,
+                        errors=errors,
+                        source_name=source_name,
+                        target_url=page_url,
+                        exc=exc,
+                    )
+                    emit_heartbeat()
         entry_report["keptCount"] = max(0, len(jobs) - kept_before)
         stats["jobs_emitted"] = int(entry_report["keptCount"])
         if int(stats["detail_pages_visited"] or 0) > 0:

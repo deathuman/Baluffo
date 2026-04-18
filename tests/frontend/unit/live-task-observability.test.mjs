@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { deriveAdminRunsModel } from "../../../frontend/admin/domain.js";
-import { renderAdminOpsHistory, renderAdminTaskLiveItems } from "../../../frontend/admin/render.js";
+import { renderAdminOpsHistory } from "../../../frontend/admin/render.js";
 import { createJobsPipelineController } from "../../../frontend/jobs/app/runtime/pipeline-controller.js";
 import { createJobsPipelineUiState } from "../../../frontend/jobs/app/runtime/state.js";
 
@@ -193,12 +193,6 @@ test("long-running fetch progress stays aligned across admin detailed view, ops 
     ]
   };
 
-  const liveItemsEl = makeContainer();
-  renderAdminTaskLiveItems(liveItemsEl, livePayload, { taskType: "fetch" });
-  assert.match(liveItemsEl.innerHTML, /Source 1/);
-  assert.match(liveItemsEl.innerHTML, /Executing sources/);
-  assert.match(liveItemsEl.innerHTML, /6\/12 sources resolved/);
-
   const historyEl = makeContainer();
   const runModel = deriveAdminRunsModel(
     {
@@ -208,9 +202,9 @@ test("long-running fetch progress stays aligned across admin detailed view, ops 
     Date.parse("2026-03-12T12:07:10.000Z")
   );
   renderAdminOpsHistory(historyEl, runModel);
-  assert.match(historyEl.innerHTML, /Executing sources/);
-  assert.match(historyEl.innerHTML, /6\/12 sources resolved/);
-  assert.match(historyEl.innerHTML, /running 1/);
+  assert.match(historyEl.innerHTML, /Executing sources \(50%\)/);
+  assert.doesNotMatch(historyEl.innerHTML, /6\/12 sources resolved/);
+  assert.doesNotMatch(historyEl.innerHTML, /running 1/);
 
   const restoreTimers = installFakeTimers();
   try {

@@ -155,6 +155,10 @@ class PipelineService:
         snapshot = self._get_child_task_snapshot(task_type, run_id)
         return bool(snapshot and getattr(snapshot, "active", False))
 
+    @staticmethod
+    def _is_duplicate_task_response(result: dict[str, Any] | None) -> bool:
+        return bool(isinstance(result, dict) and result.get("alreadyRunning"))
+
     def _has_projected_blocking_child_work(self) -> bool:
         return self._child_task_is_active("fetch") or self._child_task_is_active("discovery")
 
@@ -223,10 +227,29 @@ class PipelineService:
                 route_name="/tasks/run-jobs-pipeline",
                 enable_auto_sync_watch=False,
             )
-            if int(discovery_status) >= 300 or not bool(discovery_result.get("started")):
+            discovery_attached = int(discovery_status) == 409 and self._is_duplicate_task_response(
+                discovery_result
+            )
+            if (
+                int(discovery_status) >= 300
+                and not discovery_attached
+                or (
+                    int(discovery_status) < 300
+                    and not bool((discovery_result or {}).get("started"))
+                    and not discovery_attached
+                )
+            ):
                 raise RuntimeError(str(discovery_result.get("error") or "discovery start failed"))
             discovery_started_at = str(discovery_result.get("startedAt") or self._now_iso())
             discovery_run_id = str(discovery_result.get("runId") or "").strip()
+            if discovery_attached:
+                self._bridge_log(
+                    "info",
+                    "jobs_pipeline_attached_existing_child_task",
+                    runId=run_id,
+                    childTask="discovery",
+                    childRunId=discovery_run_id,
+                )
             self.wait_for_report_completion(
                 report_path=self._discovery_report_path,
                 started_at=discovery_started_at,
@@ -240,8 +263,19 @@ class PipelineService:
 
             self._mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
             fetch_result = self._start_fetcher_task({"preset": "default"})
+            fetch_attached = self._is_duplicate_task_response(fetch_result)
+            if not bool(fetch_result.get("started")) and not fetch_attached:
+                raise RuntimeError(str(fetch_result.get("error") or "fetch start failed"))
             fetch_started_at = str(fetch_result.get("startedAt") or self._now_iso())
             fetch_run_id = str(fetch_result.get("runId") or "").strip()
+            if fetch_attached:
+                self._bridge_log(
+                    "info",
+                    "jobs_pipeline_attached_existing_child_task",
+                    runId=run_id,
+                    childTask="fetch",
+                    childRunId=fetch_run_id,
+                )
             self.wait_for_report_completion(
                 report_path=self._fetch_report_path,
                 started_at=fetch_started_at,
@@ -284,15 +318,10 @@ class PipelineService:
                     "runId": str(self._status.get("runId") or ""),
                     "stage": str(self._status.get("stage") or "running"),
                 }
-            if (
-                self._task_running_from_state("fetch")
-                or self._task_running_from_state("discovery")
-                or self._sync_task_running()
-                or self._has_projected_blocking_child_work()
-            ):
+            if self._sync_task_running():
                 return {
                     "started": False,
-                    "error": "Another fetch/discovery/sync task is already running",
+                    "error": "Another sync task is already running",
                     "runId": "",
                     "stage": "blocked",
                 }

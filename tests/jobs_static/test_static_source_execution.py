@@ -662,6 +662,49 @@ def test_run_static_studio_pages_source_emits_heartbeat_callbacks() -> None:
         jf.STUDIO_SOURCE_REGISTRY = prev
 
 
+def test_run_static_studio_pages_source_emits_incremental_detail_batch_progress() -> None:
+    listing = _fixture("littlechicken_jobs_page.html")
+    detail = _fixture("littlechicken_job_detail.html")
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    progress_events: list[dict[str, object]] = []
+    jf.STUDIO_SOURCE_REGISTRY = [
+        {
+            "name": "Fallback Progress Studio",
+            "studio": "Fallback Progress Studio",
+            "adapter": "static",
+            "company": "Fallback Progress Studio",
+            "pages": ["https://example.net/about-us/jobs/"],
+            "enabledByDefault": True,
+        }
+    ]
+
+    try:
+
+        def fake_fetch(url: str, _: int) -> str:
+            if url == "https://example.net/about-us/jobs/":
+                return listing
+            if "/job/" in url:
+                return detail
+            raise RuntimeError(f"Unexpected URL: {url}")
+
+        rows = jf.run_static_studio_pages_source(
+            fetch_text=fake_fetch,
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+            progress_callback=lambda **kwargs: progress_events.append(dict(kwargs)),
+        )
+        assert len(rows) == 2
+        assert any(
+            str(event.get("phase_key") or "") == "static_detail_traversal"
+            and int((event.get("counts") or {}).get("detailPagesFetched") or 0) == 1
+            and str(event.get("target_label") or "") == "Detail fetch 1/2"
+            for event in progress_events
+        )
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+
 def test_run_static_studio_pages_source_flattens_slow_tail_with_history() -> None:
     prev = list(jf.STUDIO_SOURCE_REGISTRY)
     source = {
@@ -774,9 +817,11 @@ def test_run_static_studio_pages_source_force_refresh_all_reprocesses_detail_lin
             return target_listing
         if url == "https://control.example/careers":
             return control_listing
+        if url == "https://target.example/job/software-engineer":
+            return "<html><body><h1>Software Engineer</h1></body></html>"
         raise RuntimeError(f"Unexpected URL: {url}")
 
-    def fake_process_detail_link(**kwargs: object) -> dict[str, object]:
+    def fake_process_detail_html(**kwargs: object) -> dict[str, object]:
         detail_calls["count"] += 1
         return {
             "rows": [
@@ -806,8 +851,8 @@ def test_run_static_studio_pages_source_force_refresh_all_reprocesses_detail_lin
     try:
         with mock.patch("src.jobs.adapters.static.extract_rendered_card_jobs", return_value=[]):
             with mock.patch(
-                "src.jobs.adapters.static.process_detail_link",
-                side_effect=fake_process_detail_link,
+                "src.jobs.adapters.static.process_detail_html",
+                side_effect=fake_process_detail_html,
             ):
                 rows_no_refresh = jf.run_static_studio_pages_source(
                     fetch_text=fake_fetch,
@@ -1100,6 +1145,132 @@ def test_run_static_studio_pages_source_parallelizes_detail_fetches() -> None:
         assert peak >= 2
     finally:
         jf.STUDIO_SOURCE_REGISTRY = prev
+
+
+def test_run_static_studio_pages_source_parallelizes_listing_fetches() -> None:
+    source_row = {
+        "name": "Parallel Listing Studio",
+        "studio": "Parallel Listing Studio",
+        "adapter": "static",
+        "company": "Parallel Listing Studio",
+        "pages": [
+            "https://example.net/jobs/page-a",
+            "https://example.net/jobs/page-b",
+            "https://example.net/jobs/page-c",
+        ],
+        "enabledByDefault": True,
+    }
+    page_html = {
+        "https://example.net/jobs/page-a": """
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"JobPosting","title":"Role A",
+            "hiringOrganization":{"name":"Parallel Listing Studio"},
+            "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
+            "url":"https://example.net/jobs/role-a"}
+            </script></head><body></body></html>
+        """,
+        "https://example.net/jobs/page-b": """
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"JobPosting","title":"Role B",
+            "hiringOrganization":{"name":"Parallel Listing Studio"},
+            "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
+            "url":"https://example.net/jobs/role-b"}
+            </script></head><body></body></html>
+        """,
+        "https://example.net/jobs/page-c": """
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"JobPosting","title":"Role C",
+            "hiringOrganization":{"name":"Parallel Listing Studio"},
+            "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
+            "url":"https://example.net/jobs/role-c"}
+            </script></head><body></body></html>
+        """,
+    }
+    active = 0
+    peak = 0
+    active_lock = threading.Lock()
+
+    def fake_fetch(url: str, _: int) -> str:
+        nonlocal active, peak
+        with active_lock:
+            active += 1
+            peak = max(peak, active)
+        try:
+            time.sleep(0.05)
+            return page_html[url]
+        finally:
+            with active_lock:
+                active -= 1
+
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=fake_fetch,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[source_row],
+    )
+
+    assert len(rows) == 3
+    assert peak >= 2
+
+
+def test_run_static_studio_pages_source_emits_incremental_listing_batch_progress() -> None:
+    source_row = {
+        "name": "Listing Progress Studio",
+        "studio": "Listing Progress Studio",
+        "adapter": "static",
+        "company": "Listing Progress Studio",
+        "pages": [
+            "https://example.net/jobs/page-a",
+            "https://example.net/jobs/page-b",
+            "https://example.net/jobs/page-c",
+        ],
+        "enabledByDefault": True,
+    }
+    page_html = {
+        "https://example.net/jobs/page-a": """
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"JobPosting","title":"Role A",
+            "hiringOrganization":{"name":"Listing Progress Studio"},
+            "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
+            "url":"https://example.net/jobs/role-a"}
+            </script></head><body></body></html>
+        """,
+        "https://example.net/jobs/page-b": """
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"JobPosting","title":"Role B",
+            "hiringOrganization":{"name":"Listing Progress Studio"},
+            "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
+            "url":"https://example.net/jobs/role-b"}
+            </script></head><body></body></html>
+        """,
+        "https://example.net/jobs/page-c": """
+            <html><head><script type="application/ld+json">
+            {"@context":"https://schema.org","@type":"JobPosting","title":"Role C",
+            "hiringOrganization":{"name":"Listing Progress Studio"},
+            "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
+            "url":"https://example.net/jobs/role-c"}
+            </script></head><body></body></html>
+        """,
+    }
+    progress_events: list[dict[str, object]] = []
+
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=lambda url, _timeout: page_html[url],
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[source_row],
+        progress_callback=lambda **kwargs: progress_events.append(dict(kwargs)),
+    )
+
+    assert len(rows) == 3
+    assert any(
+        str(event.get("phase_key") or "") == "static_listing_fetch"
+        and int((event.get("counts") or {}).get("listingPagesFetched") or 0) == 1
+        and str(event.get("target_label") or "") == "Listing fetch 1/3"
+        for event in progress_events
+    )
 
 
 def test_run_static_studio_pages_source_sheet_studios_uses_rendered_card_fallback() -> None:

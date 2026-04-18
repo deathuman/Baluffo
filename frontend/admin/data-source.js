@@ -24,6 +24,6 @@ export async function getBridge(adminBridgeBase, path) {
   return fetchJson(adminBridgeBase, path);
 }
 
-export async function postBridge(adminBridgeBase, path, payload) {
-  return postJson(adminBridgeBase, path, payload || {});
+export async function postBridge(adminBridgeBase, path, payload, options = {}) {
+  return postJson(adminBridgeBase, path, payload || {}, options);
 }

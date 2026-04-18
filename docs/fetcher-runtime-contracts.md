@@ -32,6 +32,10 @@
 
 Bridge defaults:
 
+- Bridge-started fetch runs use the same runtime defaults as direct CLI fetches:
+  - `--max-workers 12`
+  - `--max-per-domain 3`
+  - `--adapter-http-concurrency 48`
 - Bridge-started fetch runs include `--social-enabled` by default unless `socialEnabled: false` is passed.
 - Jobs page `Run Discovery + Fetch + Sync` and Admin `Run Jobs Fetcher` share this same bridge-default behavior.
 

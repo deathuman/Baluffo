@@ -54,6 +54,102 @@ class StaticSourceRuntimeConfig:
     default_query_keys: list[str]
 
 
+@dataclass(frozen=True)
+class StaticHtmlFetchRequest:
+    normalized_url: str
+    fetch_url: str
+    timeout_s: int
+    retries: int
+
+
+class StaticHtmlFetcher:
+    def __init__(
+        self,
+        *,
+        fetch_text: Callable[[str, int], str],
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+    ) -> None:
+        self._fetch_text = fetch_text
+        self._timeout_s = int(timeout_s or 1)
+        self._retries = max(0, int(retries or 0))
+        self._backoff_s = float(backoff_s)
+        self._fetch_cache: dict[str, str] = {}
+        self._fetch_cache_lock = threading.Lock()
+
+    def build_request(
+        self,
+        url: str,
+        *,
+        remaining_budget_s: float | None = None,
+        retries_override: int | None = None,
+    ) -> StaticHtmlFetchRequest | None:
+        normalized = normalize_url(url) or clean_text(url)
+        if not normalized:
+            return None
+        fetch_url = clean_text(url) or normalized
+        effective_timeout_s = self._timeout_s
+        effective_retries = max(
+            0, int(retries_override if retries_override is not None else self._retries)
+        )
+        if remaining_budget_s is not None:
+            remaining = float(max(0.0, remaining_budget_s))
+            effective_timeout_s = max(3, min(effective_timeout_s, int(remaining)))
+            if remaining <= float(effective_timeout_s) * float(max(1, effective_retries + 1)):
+                effective_retries = 0
+        return StaticHtmlFetchRequest(
+            normalized_url=normalized,
+            fetch_url=fetch_url,
+            timeout_s=effective_timeout_s,
+            retries=effective_retries,
+        )
+
+    def get_cached_html(self, url: str) -> tuple[str, str | None]:
+        normalized = normalize_url(url) or clean_text(url)
+        if not normalized:
+            return "", None
+        with self._fetch_cache_lock:
+            cached = self._fetch_cache.get(normalized)
+        return normalized, cached
+
+    def store_cached_html(self, url: str, html: str) -> None:
+        normalized = normalize_url(url) or clean_text(url)
+        if not normalized:
+            return
+        with self._fetch_cache_lock:
+            self._fetch_cache[normalized] = str(html)
+
+    def fetch_html_cached(
+        self,
+        url: str,
+        *,
+        remaining_budget_s: float | None = None,
+        retries_override: int | None = None,
+    ) -> tuple[str, bool]:
+        request = self.build_request(
+            url,
+            remaining_budget_s=remaining_budget_s,
+            retries_override=retries_override,
+        )
+        if request is None:
+            return "", False
+        with self._fetch_cache_lock:
+            cached = self._fetch_cache.get(request.normalized_url)
+        if cached is not None:
+            return cached, True
+        text = fetch_with_retries(
+            request.fetch_url,
+            self._fetch_text,
+            request.timeout_s,
+            request.retries,
+            self._backoff_s,
+        )
+        with self._fetch_cache_lock:
+            self._fetch_cache[request.normalized_url] = text
+        return text, False
+
+
 def build_static_source_runtime_config(static_detail_concurrency: int) -> StaticSourceRuntimeConfig:
     static_profile = (
         norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE"))
@@ -341,40 +437,27 @@ def create_fetch_html_cached(
     retries: int,
     backoff_s: float,
 ) -> Callable[[str], tuple[str, bool]]:
-    fetch_cache: dict[str, str] = {}
-    fetch_cache_lock = threading.Lock()
+    return StaticHtmlFetcher(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+    ).fetch_html_cached
 
-    def fetch_html_cached(
-        url: str,
-        *,
-        remaining_budget_s: float | None = None,
-        retries_override: int | None = None,
-    ) -> tuple[str, bool]:
-        normalized = normalize_url(url) or clean_text(url)
-        if not normalized:
-            return "", False
-        with fetch_cache_lock:
-            cached = fetch_cache.get(normalized)
-        if cached is not None:
-            return cached, True
-        fetch_url = clean_text(url) or normalized
-        effective_timeout_s = int(timeout_s or 1)
-        effective_retries = max(
-            0, int(retries_override if retries_override is not None else retries or 0)
-        )
-        if remaining_budget_s is not None:
-            remaining = float(max(0.0, remaining_budget_s))
-            effective_timeout_s = max(3, min(effective_timeout_s, int(remaining)))
-            if remaining <= float(effective_timeout_s) * float(max(1, effective_retries + 1)):
-                effective_retries = 0
-        text = fetch_with_retries(
-            fetch_url, fetch_text, effective_timeout_s, effective_retries, backoff_s
-        )
-        with fetch_cache_lock:
-            fetch_cache[normalized] = text
-        return text, False
 
-    return fetch_html_cached
+def build_static_html_fetcher(
+    *,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+) -> StaticHtmlFetcher:
+    return StaticHtmlFetcher(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+    )
 
 
 def is_probable_job_detail_url(
@@ -610,30 +693,18 @@ def _is_one_man_studio_noise_city(
     )
 
 
-def process_detail_link(
+def process_detail_html(
     *,
     detail: str,
     detail_title: str,
-    source_started: float,
-    static_source_time_budget_s: int,
-    fetch_html_cached: Callable[..., tuple[str, bool]],
-    timeout_s: int,
-    detail_retries: int,
+    detail_html: str,
+    fetch_ms: int,
+    cache_hit: bool,
     company: str,
     source_name: str,
     source: dict[str, Any],
     ignored_link_titles: set[str],
 ) -> dict[str, Any]:
-    fetch_started = time.perf_counter()
-    remaining_budget_s = float(static_source_time_budget_s) - float(
-        time.perf_counter() - source_started
-    )
-    detail_html, cache_hit = fetch_html_cached(
-        detail,
-        remaining_budget_s=remaining_budget_s,
-        retries_override=detail_retries,
-    )
-    fetch_ms = int((time.perf_counter() - fetch_started) * 1000)
     parse_started = time.perf_counter()
     detail_jobs = parse_jobpostings_from_html(
         detail_html,
@@ -828,9 +899,46 @@ def process_detail_link(
     return {
         "rows": rows,
         "parseEmpty": parse_empty,
-        "fetchMs": fetch_ms,
+        "fetchMs": int(fetch_ms),
         "parseMs": parse_ms,
-        "cacheHit": cache_hit,
+        "cacheHit": bool(cache_hit),
         "rejectedClassification": rejected_classification,
         "rejectedExample": rejected_example,
     }
+
+
+def process_detail_link(
+    *,
+    detail: str,
+    detail_title: str,
+    source_started: float,
+    static_source_time_budget_s: int,
+    fetch_html_cached: Callable[..., tuple[str, bool]],
+    timeout_s: int,
+    detail_retries: int,
+    company: str,
+    source_name: str,
+    source: dict[str, Any],
+    ignored_link_titles: set[str],
+) -> dict[str, Any]:
+    fetch_started = time.perf_counter()
+    remaining_budget_s = float(static_source_time_budget_s) - float(
+        time.perf_counter() - source_started
+    )
+    detail_html, cache_hit = fetch_html_cached(
+        detail,
+        remaining_budget_s=remaining_budget_s,
+        retries_override=detail_retries,
+    )
+    fetch_ms = int((time.perf_counter() - fetch_started) * 1000)
+    return process_detail_html(
+        detail=detail,
+        detail_title=detail_title,
+        detail_html=detail_html,
+        fetch_ms=fetch_ms,
+        cache_hit=cache_hit,
+        company=company,
+        source_name=source_name,
+        source=source,
+        ignored_link_titles=ignored_link_titles,
+    )

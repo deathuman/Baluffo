@@ -328,7 +328,7 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await expect(page.locator("#admin-ops-fetcher-metrics")).not.toContainText(/Loading/i, { timeout: 15000 });
 });
 
-test("admin smoke: fetch live detail stays aligned with run history and discovery live table stays full width", async ({ page }) => {
+test("admin smoke: run history trims fetch live detail and discovery omits the live table", async ({ page }) => {
   const nowIso = new Date().toISOString();
   const fetchRunId = "smoke_fetch_live_current_1";
   const discoveryRunId = "smoke_discovery_live_current_1";
@@ -468,16 +468,9 @@ test("admin smoke: fetch live detail stays aligned with run history and discover
   });
   await page.goto(`/admin.html${DESKTOP_RUNTIME_QUERY}`);
   await expect(page.locator("#admin-content")).toBeVisible();
-  await expect(page.locator(".admin-discovery-live-card")).toBeVisible({ timeout: 15000 });
-
-  const runCardBox = await page.locator(".admin-discovery-run-card").boundingBox();
-  const liveCardBox = await page.locator(".admin-discovery-live-card").boundingBox();
-  expect(runCardBox).not.toBeNull();
-  expect(liveCardBox).not.toBeNull();
-  expect(liveCardBox.width).toBeGreaterThan(runCardBox.width + 100);
+  await expect(page.locator(".admin-discovery-live-card")).toHaveCount(0);
 
   await expect(page.locator("#admin-fetcher-progress-label")).toContainText(/10\/551 sources resolved/i, { timeout: 15000 });
-  await expect(page.locator("#admin-ops-history")).toContainText(/10\/551 sources resolved/i, { timeout: 15000 });
-  await expect(page.locator("[data-ui='admin-fetcher-live-items']")).toContainText(/Studio A/i, { timeout: 15000 });
-  await expect(page.locator("[data-ui='admin-fetcher-live-items']")).not.toContainText(/Waiting for fetch source activity/i);
+  await expect(page.locator("#admin-ops-history")).toContainText(/Executing sources \(2%\)/i, { timeout: 15000 });
+  await expect(page.locator("[data-ui='admin-fetcher-live-items']")).toHaveCount(0);
 });

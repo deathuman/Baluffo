@@ -56,6 +56,7 @@ from src.jobs.pipeline_runtime import (
 )
 from src.jobs.pipeline_stage_source_execution import (
     SourceExecutionStageConfig,
+    resolve_fetch_browser_fallback_helper,
     run_source_execution_stage,
 )
 from src.jobs.registry import STUDIO_SOURCE_REGISTRY, registry_entries
@@ -87,6 +88,8 @@ DEFAULT_TIMEOUT_S = common_config.DEFAULT_TIMEOUT_S
 DEFAULT_RETRIES = common_config.DEFAULT_RETRIES
 DEFAULT_BACKOFF_S = common_config.DEFAULT_BACKOFF_S
 DEFAULT_FETCH_STRATEGY = common_config.DEFAULT_FETCH_STRATEGY
+DEFAULT_FETCH_MAX_WORKERS = common_config.DEFAULT_FETCH_MAX_WORKERS
+DEFAULT_FETCH_MAX_PER_DOMAIN = common_config.DEFAULT_FETCH_MAX_PER_DOMAIN
 DEFAULT_ADAPTER_HTTP_CONCURRENCY = common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY
 DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = (
     community_adapter.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
@@ -372,6 +375,9 @@ def run_pipeline(
         source_report_meta=SOURCE_REPORT_META,
         source_state_rows=source_state_rows,
     )
+    browser_fallback_helper = resolve_fetch_browser_fallback_helper()
+    browser_fallback_enabled = browser_fallback_helper is not None
+    browser_fallback_cap = max(1, int(max_workers or 1)) if browser_fallback_enabled else 0
     runtime_payload = build_pipeline_runtime_payload(
         selected_loaders=selected_loaders,
         max_workers=max_workers,
@@ -391,6 +397,8 @@ def run_pipeline(
         circuit_breaker_failures=circuit_breaker_failures,
         circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
         browser_fallback_cooldown_minutes=browser_fallback_cooldown_minutes,
+        browser_fallback_enabled=browser_fallback_enabled,
+        browser_fallback_cap=browser_fallback_cap,
         ignore_circuit_breaker=ignore_circuit_breaker,
         social_enabled=bool(social_enabled),
         effective_social_config_path=str(effective_social_config_path),
@@ -618,13 +626,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-workers",
         type=int,
-        default=12,
+        default=DEFAULT_FETCH_MAX_WORKERS,
         help="Max concurrent source workers. Use >1 to run source loaders in parallel.",
     )
     parser.add_argument(
         "--max-per-domain",
         type=int,
-        default=3,
+        default=DEFAULT_FETCH_MAX_PER_DOMAIN,
         help="Max concurrent in-flight requests allowed per domain across workers.",
     )
     parser.add_argument(

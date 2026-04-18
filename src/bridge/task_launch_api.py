@@ -5,9 +5,13 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from src.bridge.task_admission import build_duplicate_start_payload, get_active_task_metadata
+from src.jobs.common import config as jobs_common_config
 
 
 @dataclass(frozen=True)
@@ -36,6 +40,7 @@ class TaskLaunchDeps:
     default_source_loaders: Callable[[], list[tuple[str, Any]]]
     failed_source_names_from_latest_report: Callable[[set[str] | None], list[str]]
     safe_int: Callable[[Any, int, int, int], int]
+    pid_is_running: Callable[[int], bool] = lambda _pid: False
 
 
 class TaskLaunchApi:
@@ -162,13 +167,20 @@ class TaskLaunchApi:
         preset = str(data.get("preset") or "default").strip().lower()
         args: list[str] = []
 
-        max_workers = self._deps.safe_int(data.get("maxWorkers"), 6, 1, 16)
-        max_per_domain = self._deps.safe_int(data.get("maxPerDomain"), 2, 1, 6)
+        max_workers = self._deps.safe_int(
+            data.get("maxWorkers"), jobs_common_config.DEFAULT_FETCH_MAX_WORKERS, 1, 16
+        )
+        max_per_domain = self._deps.safe_int(
+            data.get("maxPerDomain"), jobs_common_config.DEFAULT_FETCH_MAX_PER_DOMAIN, 1, 6
+        )
         fetch_strategy = str(data.get("fetchStrategy") or "auto").strip().lower()
         if fetch_strategy not in {"auto", "http", "browser"}:
             fetch_strategy = "auto"
         adapter_http_concurrency = self._deps.safe_int(
-            data.get("adapterHttpConcurrency"), 24, 1, 128
+            data.get("adapterHttpConcurrency"),
+            jobs_common_config.DEFAULT_ADAPTER_HTTP_CONCURRENCY,
+            1,
+            128,
         )
         source_ttl = self._deps.safe_int(data.get("sourceTtlMinutes"), 360, 0, 1440)
         hot_cadence = self._deps.safe_int(data.get("hotSourceCadenceMinutes"), 15, 1, 240)
@@ -275,82 +287,104 @@ class TaskLaunchApi:
         schema_version: int,
         load_json_object: Callable[[Path, Any], Any],
     ) -> dict[str, Any]:
-        run_id = f"fetch_{uuid.uuid4().hex[:10]}"
-        started_at = self._deps.now_iso()
-        fetcher_args, preset = self.build_fetcher_args_from_payload(
-            payload if isinstance(payload, dict) else {}
+        lock_context = (
+            self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
         )
-        self._paths.fetcher_log.parent.mkdir(parents=True, exist_ok=True)
-        self._paths.fetcher_log.write_text(
-            f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8"
-        )
-        prune_started_rows_for_type("fetch", keep_started_at=started_at)
-        append_run_history(
-            {
-                "id": run_id,
-                "runId": run_id,
-                "type": "fetch",
-                "status": "started",
-                "startedAt": started_at,
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {},
-            }
-        )
-        spawn_args = list(fetcher_args)
-        if "--output-dir" not in spawn_args:
-            spawn_args.extend(["--output-dir", str(self._runtime.data_dir)])
-        pid = run_background_script(
-            "jobs_fetcher.py",
-            spawn_args,
-            extra_env={
-                "BALUFFO_FETCH_RUN_ID": run_id,
-                "BALUFFO_FETCH_STARTED_AT": started_at,
-            },
-        )
-        save_json_atomic(
-            self._paths.jobs_fetch_report,
-            normalize_fetch_report_contract(
+        with lock_context:
+            active_metadata = get_active_task_metadata(
+                "fetch",
+                load_json_object=self._deps.load_json_object,
+                task_state_path=self._paths.task_state,
+                pid_is_running=self._deps.pid_is_running,
+            )
+            if active_metadata:
+                response = build_duplicate_start_payload("jobs_fetcher", "fetch", active_metadata)
+                self._deps.bridge_log(
+                    "info",
+                    "task_start_attached_existing",
+                    task="jobs_fetcher",
+                    taskType="fetch",
+                    runId=str(response.get("runId") or ""),
+                    pid=int(response.get("pid") or 0),
+                )
+                return response
+
+            run_id = f"fetch_{uuid.uuid4().hex[:10]}"
+            started_at = self._deps.now_iso()
+            fetcher_args, preset = self.build_fetcher_args_from_payload(
+                payload if isinstance(payload, dict) else {}
+            )
+            self._paths.fetcher_log.parent.mkdir(parents=True, exist_ok=True)
+            self._paths.fetcher_log.write_text(
+                f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8"
+            )
+            prune_started_rows_for_type("fetch", keep_started_at=started_at)
+            append_run_history(
                 {
+                    "id": run_id,
                     "runId": run_id,
-                    "schemaVersion": schema_version,
+                    "type": "fetch",
+                    "status": "started",
                     "startedAt": started_at,
                     "finishedAt": "",
-                    "runtime": {
-                        "lifecycle": {
-                            "owner": "fetch_report",
-                            "heartbeatAt": started_at,
-                        }
-                    },
-                    "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
-                    "sources": [],
-                    "outputs": {"report": str(self._paths.jobs_fetch_report)},
+                    "durationMs": 0,
+                    "summary": {},
                 }
-            ),
-        )
-        approval = load_json_object(self._paths.approval_state, {"approvedSinceLastRun": 0})
-        if not isinstance(approval, dict):
-            approval = {"approvedSinceLastRun": 0}
-        approval["approvedSinceLastRun"] = 0
-        save_json_atomic(self._paths.approval_state, approval)
-        self._deps.bridge_log(
-            "info",
-            "task_started",
-            runId=run_id,
-            task="jobs_fetcher",
-            preset=preset,
-            pid=pid,
-            args=" ".join(spawn_args),
-        )
-        return {
-            "started": True,
-            "runId": run_id,
-            "task": "jobs_fetcher",
-            "preset": preset,
-            "args": spawn_args,
-            "pid": int(pid),
-            "startedAt": started_at,
-        }
+            )
+            spawn_args = list(fetcher_args)
+            if "--output-dir" not in spawn_args:
+                spawn_args.extend(["--output-dir", str(self._runtime.data_dir)])
+            pid = run_background_script(
+                "jobs_fetcher.py",
+                spawn_args,
+                extra_env={
+                    "BALUFFO_FETCH_RUN_ID": run_id,
+                    "BALUFFO_FETCH_STARTED_AT": started_at,
+                },
+            )
+            save_json_atomic(
+                self._paths.jobs_fetch_report,
+                normalize_fetch_report_contract(
+                    {
+                        "runId": run_id,
+                        "schemaVersion": schema_version,
+                        "startedAt": started_at,
+                        "finishedAt": "",
+                        "runtime": {
+                            "lifecycle": {
+                                "owner": "fetch_report",
+                                "heartbeatAt": started_at,
+                            }
+                        },
+                        "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+                        "sources": [],
+                        "outputs": {"report": str(self._paths.jobs_fetch_report)},
+                    }
+                ),
+            )
+            approval = load_json_object(self._paths.approval_state, {"approvedSinceLastRun": 0})
+            if not isinstance(approval, dict):
+                approval = {"approvedSinceLastRun": 0}
+            approval["approvedSinceLastRun"] = 0
+            save_json_atomic(self._paths.approval_state, approval)
+            self._deps.bridge_log(
+                "info",
+                "task_started",
+                runId=run_id,
+                task="jobs_fetcher",
+                preset=preset,
+                pid=pid,
+                args=" ".join(spawn_args),
+            )
+            return {
+                "started": True,
+                "runId": run_id,
+                "task": "jobs_fetcher",
+                "preset": preset,
+                "args": spawn_args,
+                "pid": int(pid),
+                "startedAt": started_at,
+            }
 
 
 __all__ = ["TaskLaunchApi", "TaskLaunchDeps", "TaskLaunchPaths", "TaskLaunchRuntime"]

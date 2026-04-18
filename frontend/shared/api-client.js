@@ -42,6 +42,9 @@ export async function fetchBridge(baseUrl, path, options = {}) {
   const pathWithQuery = path.includes("?") ? `${path}&t=${Date.now()}` : `${path}?t=${Date.now()}`;
   const url = `${base}${pathWithQuery}`;
   const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : DEFAULT_TIMEOUT_MS;
+  const allowedStatuses = new Set(
+    Array.isArray(options.allowStatuses) ? options.allowStatuses.map(status => Number(status)) : []
+  );
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -56,7 +59,7 @@ export async function fetchBridge(baseUrl, path, options = {}) {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
-    if (!response.ok) {
+    if (!response.ok && !allowedStatuses.has(response.status)) {
       const msg = getBridgeErrorMessage(response.status);
       throw new Error(`Bridge ${options.method || "GET"} ${path} failed: ${msg} (HTTP ${response.status})`);
     }
@@ -99,5 +102,13 @@ export async function postJson(baseUrl, path, payload, options = {}) {
     method: "POST",
     body: payload
   });
-  return response.json();
+  const data = await response.json();
+  if (options.returnMeta) {
+    return {
+      status: response.status,
+      ok: response.ok,
+      data
+    };
+  }
+  return data;
 }

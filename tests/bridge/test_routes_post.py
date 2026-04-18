@@ -265,6 +265,36 @@ def test_run_discovery(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["started"] is True
 
 
+def test_run_discovery_conflict_returns_409(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    api.trigger_discovery_task = lambda **_kwargs: (
+        409,
+        {
+            "started": False,
+            "alreadyRunning": True,
+            "task": "source_discovery",
+            "taskType": "discovery",
+            "runId": "discovery_live_1",
+            "startedAt": "2026-03-20T12:00:00Z",
+            "pid": 123,
+            "status": "running",
+        },
+    )
+
+    handler = _FakeHandler()
+    result = handle_post(
+        handler,
+        api=api,
+        path="/tasks/run-discovery",
+        payload={},
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 409
+    assert handler.sent[-1]["payload"]["alreadyRunning"] is True
+
+
 def test_check_for_update(tmp_path: Path) -> None:
     store = _FakeDesktopLocalDataStore()
     api = _make_api(tmp_path, store)
@@ -583,6 +613,33 @@ def test_run_fetcher(tmp_path: Path) -> None:
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
+
+
+def test_run_fetcher_conflict_returns_409(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    api.start_fetcher_task = lambda _payload: {
+        "started": False,
+        "alreadyRunning": True,
+        "task": "jobs_fetcher",
+        "taskType": "fetch",
+        "runId": "fetch_live_1",
+        "startedAt": "2026-03-20T12:00:00Z",
+        "pid": 987,
+        "status": "running",
+    }
+
+    handler = _FakeHandler()
+    result = handle_post(
+        handler,
+        api=api,
+        path="/tasks/run-fetcher",
+        payload={"sources": ["src-1"]},
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 409
+    assert handler.sent[-1]["payload"]["alreadyRunning"] is True
 
 
 def test_save_discovery_config_persists_and_returns_saved_payload(tmp_path: Path) -> None:

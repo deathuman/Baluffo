@@ -616,7 +616,8 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
     if path == "/tasks/run-fetcher":
         try:
             result = api.start_fetcher_task(payload if isinstance(payload, dict) else {})
-            handler._send_json(result)  # noqa: SLF001
+            status_code = 409 if bool((result or {}).get("alreadyRunning")) else 200
+            handler._send_json(result, status=status_code)  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json(
                 {"started": False, "task": "jobs_fetcher", "error": str(exc)}, status=500

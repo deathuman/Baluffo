@@ -70,7 +70,7 @@ export function formatTaskProgressCounts(taskType, counts, progress, summary = {
   return "";
 }
 
-export function formatTaskProgressDetail(taskType, progress, summary = {}) {
+export function formatTaskProgressDetail(taskType, progress, summary = {}, options = {}) {
   const normalized = normalizeTaskProgressPayload(progress);
   if (!normalized) return "";
   const phaseLabel = String(normalized.phaseLabel || normalized.phaseKey || "").trim();
@@ -80,6 +80,7 @@ export function formatTaskProgressDetail(taskType, progress, summary = {}) {
   const phaseText = phaseLabel
     ? `${phaseLabel}${progressPct ? ` (${progressPct})` : ""}`
     : "";
+  if (options?.includeCounts === false) return phaseText;
   const countsText = formatTaskProgressCounts(taskType, normalized.counts, normalized, summary);
   return [phaseText, countsText].filter(Boolean).join(" | ");
 }

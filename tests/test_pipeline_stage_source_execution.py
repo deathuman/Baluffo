@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import io
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 from src.jobs import pipeline_stage_source_execution as stage_mod
 from src.jobs.pipeline_stage_source_execution import (
     SourceExecutionStageConfig,
     run_source_execution_stage,
 )
+from src.jobs.state import BROWSER_FALLBACK_STATE_KEY
 
 
 class _ThreadLocal:
@@ -84,7 +87,7 @@ def test_stage_enables_browser_only_for_eligible_static_sources(monkeypatch) -> 
     monkeypatch.setattr(stage_mod, "_default_adapter_for_loader", lambda _name, _meta: "static")
     monkeypatch.setattr(
         stage_mod,
-        "_best_effort_get_try_playwright",
+        "resolve_fetch_browser_fallback_helper",
         lambda: lambda url, timeout: browser_calls.append((url, timeout)) or ("", ""),
     )
 
@@ -160,6 +163,163 @@ def test_stage_enables_browser_only_for_eligible_static_sources(monkeypatch) -> 
     assert "try_playwright" in eligible_kwargs[0]
     assert "try_playwright" not in ineligible_kwargs[0]
     assert not browser_calls
+
+
+def test_stage_caps_browser_fallback_concurrency_to_max_workers(monkeypatch) -> None:
+    observed: dict[str, int] = {"active": 0, "peak": 0}
+    observed_lock = threading.Lock()
+
+    def fake_try_playwright(_url: str, _timeout: int) -> tuple[str, str]:
+        with observed_lock:
+            observed["active"] += 1
+            observed["peak"] = max(observed["peak"], observed["active"])
+        time.sleep(0.05)
+        with observed_lock:
+            observed["active"] -= 1
+        return "", ""
+
+    monkeypatch.setattr(stage_mod, "_default_adapter_for_loader", lambda _name, _meta: "static")
+    monkeypatch.setattr(
+        stage_mod, "resolve_fetch_browser_fallback_helper", lambda: fake_try_playwright
+    )
+
+    config = SourceExecutionStageConfig(
+        max_workers=2,
+        timeout_s=1,
+        retries=0,
+        backoff_s=0.0,
+        static_detail_concurrency=1,
+        google_sheets_redirect_concurrency=1,
+        started_at="2026-03-23T00:00:00Z",
+        show_progress=False,
+        force_refresh_all=False,
+        browser_fallback_cooldown_minutes=30,
+    )
+
+    def browser_loader(**kwargs):  # noqa: ANN202
+        runner = kwargs["try_playwright"]
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [
+                executor.submit(runner, f"https://example.com/{index}", 1) for index in range(4)
+            ]
+            for future in futures:
+                future.result()
+        return []
+
+    task_rows = {
+        name: {
+            "status": "pending",
+            "startedAt": "",
+            "finishedAt": "",
+            "heartbeatAt": "",
+            "durationMs": 0,
+            "error": "",
+            "_startedMonotonic": 0.0,
+            "_slowWarned": False,
+        }
+        for name in ("eligible_a", "eligible_b")
+    }
+
+    run_source_execution_stage(
+        config=config,
+        selected_loaders=[
+            ("eligible_a", browser_loader),
+            ("eligible_b", browser_loader),
+        ],
+        fetch_text_limited=lambda _url, _timeout: "",
+        source_state_rows={
+            "eligible_a": {
+                "browserEscalationEligible": True,
+                "lastFingerprint": "fp-a",
+                "lastListingFingerprint": "listing-a",
+            },
+            "eligible_b": {
+                "browserEscalationEligible": True,
+                "lastFingerprint": "fp-b",
+                "lastListingFingerprint": "listing-b",
+            },
+        },
+        redirect_resolver=type("Resolver", (), {"resolve": staticmethod(lambda url: url)})(),
+        task_rows=task_rows,
+        task_lock=threading.Lock(),
+        thread_local=_ThreadLocal(),
+        write_task_state=lambda **_kwargs: None,
+        write_progress_report=lambda: None,
+        canonical_rows=[],
+        source_reports=[],
+    )
+
+    assert observed["peak"] == 2
+
+
+def test_stage_persists_browser_fallback_circuit_breaker_state(monkeypatch) -> None:
+    monkeypatch.setattr(stage_mod, "_default_adapter_for_loader", lambda _name, _meta: "static")
+    monkeypatch.setattr(
+        stage_mod,
+        "resolve_fetch_browser_fallback_helper",
+        lambda: (
+            lambda _url, _timeout: (
+                "",
+                "browser fallback unavailable (playwright is not installed)",
+            )
+        ),
+    )
+
+    config = SourceExecutionStageConfig(
+        max_workers=1,
+        timeout_s=1,
+        retries=0,
+        backoff_s=0.0,
+        static_detail_concurrency=1,
+        google_sheets_redirect_concurrency=1,
+        started_at="2026-03-23T00:00:00Z",
+        show_progress=False,
+        force_refresh_all=False,
+        browser_fallback_cooldown_minutes=30,
+    )
+
+    def loader(**kwargs):  # noqa: ANN202
+        kwargs["try_playwright"]("https://example.com/browser", 1)
+        return []
+
+    source_state_rows = {
+        "eligible_source": {
+            "browserEscalationEligible": True,
+            "lastFingerprint": "fp",
+            "lastListingFingerprint": "listing",
+        }
+    }
+    task_rows = {
+        "eligible_source": {
+            "status": "pending",
+            "startedAt": "",
+            "finishedAt": "",
+            "heartbeatAt": "",
+            "durationMs": 0,
+            "error": "",
+            "_startedMonotonic": 0.0,
+            "_slowWarned": False,
+        }
+    }
+
+    run_source_execution_stage(
+        config=config,
+        selected_loaders=[("eligible_source", loader)],
+        fetch_text_limited=lambda _url, _timeout: "",
+        source_state_rows=source_state_rows,
+        redirect_resolver=type("Resolver", (), {"resolve": staticmethod(lambda url: url)})(),
+        task_rows=task_rows,
+        task_lock=threading.Lock(),
+        thread_local=_ThreadLocal(),
+        write_task_state=lambda **_kwargs: None,
+        write_progress_report=lambda: None,
+        canonical_rows=[],
+        source_reports=[],
+    )
+
+    state_row = source_state_rows.get(BROWSER_FALLBACK_STATE_KEY) or {}
+    assert int(state_row.get("browserFallbackFailureCount") or 0) == 1
+    assert "browserFallbackQuarantinedUntilAt" in state_row
 
 
 def test_stage_passes_heartbeat_to_any_loader_that_accepts_it_without_breaking_plain_loaders() -> (

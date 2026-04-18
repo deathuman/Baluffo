@@ -377,8 +377,10 @@ export function resetLiveTaskPlaceholder({
 }
 
 export function createRestoreActiveRunWatches({
+  loadFetcherLivePayload,
   loadLatestFetcherReport,
   fetcherController,
+  loadDiscoveryLivePayload,
   loadLatestDiscoveryReport,
   discoveryController
 }) {
@@ -390,23 +392,49 @@ export function createRestoreActiveRunWatches({
     }
 
     restorePromise = (async () => {
-      const fetchReport = await loadLatestFetcherReport({ silent: true }).catch(() => null);
-      const fetchMeta = fetcherController?.getRestorableFetcherRunMeta?.(fetchReport);
-      if (fetchMeta) {
-        fetcherController?.restartFetcherCompletionWatch?.(fetchMeta);
-      } else if (isLiveTaskReportActive(fetchReport)) {
-        fetcherController?.restartFetcherCompletionWatch?.({
-          runId: fetchReport?.runId,
-          startedAt: fetchReport?.startedAt
+      const fetchLivePayload = await loadFetcherLivePayload?.().catch(() => null);
+      if (isLiveTaskReportActive(fetchLivePayload)) {
+        fetcherController?.attachToActiveFetchRun?.({
+          runId: fetchLivePayload?.runId,
+          startedAt: fetchLivePayload?.startedAt
+        }, {
+          announceStart: false
         });
+      } else {
+        const fetchReport = await loadLatestFetcherReport({ silent: true }).catch(() => null);
+        const fetchMeta = fetcherController?.getRestorableFetcherRunMeta?.(fetchReport);
+        if (fetchMeta) {
+          fetcherController?.attachToActiveFetchRun?.(fetchMeta, {
+            announceStart: false
+          });
+        } else if (isLiveTaskReportActive(fetchReport)) {
+          fetcherController?.attachToActiveFetchRun?.({
+            runId: fetchReport?.runId,
+            startedAt: fetchReport?.startedAt
+          }, {
+            announceStart: false
+          });
+        }
       }
 
-      const discoveryReport = await loadLatestDiscoveryReport({ silent: true }).catch(() => null);
-      if (isLiveTaskReportActive(discoveryReport)) {
-        discoveryController?.restartDiscoveryCompletionWatch?.({
-          runId: discoveryReport?.runId,
-          startedAt: discoveryReport?.startedAt
+      const discoveryLivePayload = await loadDiscoveryLivePayload?.().catch(() => null);
+      if (isLiveTaskReportActive(discoveryLivePayload)) {
+        discoveryController?.attachToActiveDiscoveryRun?.({
+          runId: discoveryLivePayload?.runId,
+          startedAt: discoveryLivePayload?.startedAt
+        }, {
+          announceStart: false
         });
+      } else {
+        const discoveryReport = await loadLatestDiscoveryReport({ silent: true }).catch(() => null);
+        if (isLiveTaskReportActive(discoveryReport)) {
+          discoveryController?.attachToActiveDiscoveryRun?.({
+            runId: discoveryReport?.runId,
+            startedAt: discoveryReport?.startedAt
+          }, {
+            announceStart: false
+          });
+        }
       }
     })();
 

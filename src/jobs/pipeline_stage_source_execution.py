@@ -15,7 +15,7 @@ from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from threading import Lock
+from threading import BoundedSemaphore, Lock
 from types import SimpleNamespace
 from typing import Any
 
@@ -47,15 +47,33 @@ from src.shared.utils import now_iso
 FetchTextLimited = Callable[[str, int], str]
 WriteTaskStateFunc = Callable[..., None]
 WriteProgressReportFunc = Callable[[], None]
+TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 
 
-def _best_effort_get_try_playwright() -> Callable[[str, int], tuple[str, str]] | None:
+def resolve_fetch_browser_fallback_helper() -> TryPlaywrightFn | None:
     try:
         from src.bridge.source_check_http import try_fetch_with_playwright
 
         return try_fetch_with_playwright
     except ImportError:
         return None
+
+
+def _build_capped_try_playwright(
+    try_playwright: TryPlaywrightFn,
+    *,
+    max_concurrent: int,
+) -> TryPlaywrightFn:
+    gate = BoundedSemaphore(max(1, int(max_concurrent or 1)))
+
+    def capped_try_playwright(url: str, timeout_s: int) -> tuple[str, str]:
+        gate.acquire()
+        try:
+            return try_playwright(url, timeout_s)
+        finally:
+            gate.release()
+
+    return capped_try_playwright
 
 
 def _default_adapter_for_loader(name: str, base_meta: dict[str, Any]) -> str:
@@ -171,14 +189,27 @@ def run_source_execution_stage(
             current_output_count=0,
             show_progress=bool(config.show_progress),
         )
-
-    _try_playwright = _best_effort_get_try_playwright()
+    _try_playwright = resolve_fetch_browser_fallback_helper()
     browser_fallback_guard = BrowserFallbackCircuitBreaker.from_state(
         source_state_rows, cooldown_minutes=config.browser_fallback_cooldown_minutes
     )
-    guarded_try_playwright = (
-        browser_fallback_guard.wrap(_try_playwright) if _try_playwright is not None else None
+    capped_try_playwright = (
+        _build_capped_try_playwright(_try_playwright, max_concurrent=config.max_workers)
+        if _try_playwright is not None
+        else None
     )
+    guarded_try_playwright = (
+        browser_fallback_guard.wrap(capped_try_playwright)
+        if capped_try_playwright is not None
+        else None
+    )
+    if config.show_progress:
+        if guarded_try_playwright is not None:
+            _emit_progress_line(
+                f"[jobs_fetcher] INFO browserFallbackEnabled=true browserFallbackCap={max(1, int(config.max_workers or 1))}"
+            )
+        else:
+            _emit_progress_line("[jobs_fetcher] INFO browserFallbackEnabled=false")
 
     def execute_loader(
         name: str, loader: Callable[..., list[dict[str, Any]]]
@@ -768,4 +799,8 @@ def run_source_execution_stage(
     set_browser_fallback_state(source_state_rows, browser_fallback_guard.to_state_row())
 
 
-__all__ = ["SourceExecutionStageConfig", "run_source_execution_stage"]
+__all__ = [
+    "SourceExecutionStageConfig",
+    "resolve_fetch_browser_fallback_helper",
+    "run_source_execution_stage",
+]

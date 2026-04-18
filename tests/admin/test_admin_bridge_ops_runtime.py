@@ -966,7 +966,17 @@ FETCHER_ARGS_CASES = [
             name="social-enabled-default",
             payload={"preset": "default"},
             expected_preset="default",
-            expected_present=("--social-enabled",),
+            expected_present=(
+                "--social-enabled",
+                "--max-workers",
+                "--max-per-domain",
+                "--adapter-http-concurrency",
+            ),
+            expected_values=(
+                ("--max-workers", "12"),
+                ("--max-per-domain", "3"),
+                ("--adapter-http-concurrency", "48"),
+            ),
         ),
         id="social-enabled-default",
     ),
@@ -1407,6 +1417,36 @@ def test_start_fetcher_task_writes_report_shell_with_run_id(admin_bridge_entrypo
         and str(row.get("runId") or "") == run_id
         for row in rows
     )
+
+
+def test_start_fetcher_task_returns_conflict_for_active_fetch(admin_bridge_entrypoint_root):
+    started_at = "2026-03-27T14:00:00+00:00"
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "fetch": _task_state_entry("fetch", run_id="fetch_live_1", started_at=started_at),
+        },
+    )
+
+    with (
+        mock.patch.object(admin_bridge, "pid_is_running", return_value=True),
+        mock.patch.object(admin_bridge, "run_background_script") as spawn,
+    ):
+        result = admin_bridge.start_fetcher_task({})
+
+    assert result == {
+        "started": False,
+        "alreadyRunning": True,
+        "task": "jobs_fetcher",
+        "taskType": "fetch",
+        "runId": "fetch_live_1",
+        "startedAt": started_at,
+        "pid": 111,
+        "status": "running",
+    }
+    spawn.assert_not_called()
+    assert admin_bridge.load_run_history() == []
+    assert not admin_bridge.JOBS_FETCH_REPORT_PATH.exists()
 
 
 def _setup_fetch_launcher_report_merge() -> None:
@@ -1943,6 +1983,63 @@ def _assert_report_finished_while_owner_active(payload: dict[str, object]) -> No
     )
 
 
+def _setup_stale_finished_report_with_live_fetch_owner() -> None:
+    live_started_at = admin_bridge.now_iso()
+    live_run_id = "fetch_live_owner_1"
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "fetch": _task_state_entry("fetch", run_id=live_run_id, started_at=live_started_at),
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        _fetch_report(
+            run_id="fetch_finished_old_1",
+            started_at="2026-03-01T00:00:00+00:00",
+            finished_at="2026-03-01T00:05:00+00:00",
+            task_progress=_completed_progress("Fetcher completed"),
+            summary={"outputCount": 7, "failedSources": 0, "sourceCount": 10},
+        ),
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_TASKS_PATH,
+        {
+            "taskType": "fetch",
+            "runId": live_run_id,
+            "startedAt": live_started_at,
+            "heartbeatAt": live_started_at,
+            "status": "running",
+            "summary": {"running": 1},
+            "taskProgress": _active_progress(
+                "execute_sources",
+                "Executing sources",
+                {"sourceCount": 10, "runningTasks": 1, "resolvedSources": 2},
+            ),
+            "workItems": [
+                {
+                    "id": "source_live_1",
+                    "name": "Live Source",
+                    "status": "running",
+                }
+            ],
+        },
+    )
+
+
+def _assert_stale_finished_report_with_live_fetch_owner(payload: dict[str, object]) -> None:
+    fetch_row = _task_row(payload, "fetch")
+    assert payload.get("count") == 1
+    assert fetch_row.get("active") is True
+    assert str(fetch_row.get("status") or "") == "running"
+    assert str(fetch_row.get("runId") or "") == "fetch_live_owner_1"
+    counts = (fetch_row.get("taskProgress") or {}).get("counts") or {}
+    assert counts.get("sourceCount") == 10
+    assert counts.get("runningTasks") == 1
+    task_state = admin_bridge.load_json_object(admin_bridge.TASK_STATE_PATH, {})
+    assert str((task_state.get("fetch") or {}).get("runId") or "") == "fetch_live_owner_1"
+
+
 CURRENT_TASK_STATE_CASES = [
     pytest.param(
         _CurrentTaskStateCase(
@@ -1984,6 +2081,15 @@ CURRENT_TASK_STATE_CASES = [
             assert_payload=_assert_report_finished_while_owner_active,
         ),
         id="report-finished-while-owner-active",
+    ),
+    pytest.param(
+        _CurrentTaskStateCase(
+            name="stale-finished-report-with-live-fetch-owner",
+            setup=_setup_stale_finished_report_with_live_fetch_owner,
+            assert_payload=_assert_stale_finished_report_with_live_fetch_owner,
+            pid_is_running=True,
+        ),
+        id="stale-finished-report-with-live-fetch-owner",
     ),
 ]
 
@@ -2276,6 +2382,27 @@ def test_get_task_live_payload_fetch_supplements_current_run_detail_when_task_ar
     recent_events = payload.get("recentEvents") or []
     assert len(recent_events) == 1
     assert "output 34081" in str(recent_events[0].get("message") or "")
+
+
+def test_get_task_live_payload_fetch_prefers_live_owner_state_over_stale_finished_report(
+    admin_bridge_entrypoint_root,
+) -> None:
+    _setup_stale_finished_report_with_live_fetch_owner()
+
+    with mock.patch.object(admin_bridge, "pid_is_running", return_value=True):
+        payload = _task_live_payload("fetch")
+
+    assert bool(payload.get("active")) is True
+    assert str(payload.get("status") or "") == "running"
+    assert str(payload.get("runId") or "") == "fetch_live_owner_1"
+    counts = (payload.get("taskProgress") or {}).get("counts") or {}
+    assert counts.get("resolvedSources") == 2
+    assert counts.get("runningTasks") == 1
+    work_items = payload.get("workItems") or []
+    assert len(work_items) == 1
+    assert work_items[0].get("id") == "source_live_1"
+    task_state = admin_bridge.load_json_object(admin_bridge.TASK_STATE_PATH, {})
+    assert str((task_state.get("fetch") or {}).get("runId") or "") == "fetch_live_owner_1"
 
 
 def test_get_task_live_payload_discovery_preserves_shared_contract(

@@ -52,6 +52,8 @@ def normalize_runtime_payload(
         "browserFallbackCooldownMinutes": _clamped_int(
             src.get("browserFallbackCooldownMinutes"), 0, 0
         ),
+        "browserFallbackEnabled": bool(src.get("browserFallbackEnabled")),
+        "browserFallbackCap": _clamped_int(src.get("browserFallbackCap"), 0, 0),
         "ignoreCircuitBreaker": bool(src.get("ignoreCircuitBreaker")),
         "socialEnabled": bool(src.get("socialEnabled")),
         "socialLookbackMinutes": _clamped_int(src.get("socialLookbackMinutes"), 0, 1),

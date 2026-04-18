@@ -9,9 +9,11 @@ from __future__ import annotations
 import threading
 import uuid
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 
+from src.bridge.task_admission import build_duplicate_start_payload, get_active_task_metadata
 from src.source_registry import (
     _pending_row_is_auto_approvable as registry_pending_row_is_auto_approvable,
 )
@@ -30,6 +32,7 @@ class DiscoveryPaths:
     log: Any
     settings: Any
     approval_state: Any
+    task_state: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class DiscoveryDeps:
     load_sync_runtime_state: Callable[[], dict[str, Any]]
     maybe_trigger_auto_sync_push: Callable[[str], bool]
     mark_discovery_sync_finished: Callable[[str], None]
+    task_state_lock: Any | None = None
 
 
 class DiscoveryService:
@@ -231,109 +235,40 @@ class DiscoveryService:
     ) -> tuple[int, dict[str, Any]]:
         data = payload if isinstance(payload, dict) else {}
         preset = str(data.get("preset") or "default").strip().lower()
-        run_id = f"discovery_{uuid.uuid4().hex[:10]}"
-        started_at = self._deps.now_iso()
-        self._deps.bridge_log(
-            "info",
-            "discovery_launch_started",
-            runId=run_id,
-            route=route_name,
-            preset=preset or "default",
+        lock_context = (
+            self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
         )
-        self._deps.save_json_atomic(
-            self._paths.report,
-            {
-                "schemaVersion": self._schema_version_int(),
-                "runId": run_id,
-                "mode": "dynamic",
-                "startedAt": started_at,
-                "finishedAt": "",
-                "summary": {
-                    "foundEndpointCount": 0,
-                    "probedCandidateCount": 0,
-                    "queuedCandidateCount": 0,
-                    "failedProbeCount": 0,
-                    "skippedDuplicateCount": 0,
-                    "skippedLowEvidenceProbeCount": 0,
-                    "phase": "starting",
-                    "phaseKey": "starting",
-                    "phaseLabel": "Spawning discovery worker",
-                },
-                "taskProgress": {
-                    "active": True,
-                    "phaseKey": "starting",
-                    "phaseLabel": "Spawning discovery worker",
-                    "mode": "indeterminate",
-                    "ratio": 0.0,
-                    "counts": {
-                        "foundEndpoints": 0,
-                        "probedCandidates": 0,
-                        "probeTotal": 0,
-                        "queuedCandidates": 0,
-                        "deferredCandidates": 0,
-                        "failedProbes": 0,
-                    },
-                },
-                "candidates": [],
-                "failures": [],
-                "topFailures": [],
-                "outputs": {
-                    "report": str(self._paths.report),
-                    "candidates": str(self._paths.candidates),
-                    "pending": str(self._paths.pending),
-                },
-                "runtime": {
-                    "lifecycle": {
-                        "owner": "discovery_report",
-                        "heartbeatAt": started_at,
-                    },
-                    "autoApproval": {
-                        "enabled": bool(
-                            self.get_saved_discovery_config_payload().get(
-                                "autoApproveHealthyPendingOnComplete"
-                            )
-                        ),
-                        "approvedCount": 0,
-                    },
-                },
-            },
-        )
-        self._deps.prune_started_rows_for_type("discovery", keep_started_at=started_at)
-        try:
-            self._paths.log.parent.mkdir(parents=True, exist_ok=True)
-            self._paths.log.write_text(
-                f"[{started_at}] Launching source discovery task...\n", encoding="utf-8"
+        with lock_context:
+            active_metadata = get_active_task_metadata(
+                "discovery",
+                load_json_object=self._deps.load_json_object,
+                task_state_path=self._paths.task_state,
+                pid_is_running=self._deps.pid_is_running,
             )
-        except OSError:
-            pass
-        self._deps.append_run_history(
-            {
-                "id": run_id,
-                "runId": run_id,
-                "type": "discovery",
-                "status": "started",
-                "startedAt": started_at,
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {},
-            }
-        )
-        spawn_args = ["--mode", "dynamic"]
-        if preset == "uncapped":
-            spawn_args.extend(["--top", "0", "--preset", "uncapped"])
-        else:
-            preset = "default"
-            spawn_args.extend(["--preset", "default"])
-        try:
-            pid = self._deps.run_background_script(
-                "source_discovery.py",
-                spawn_args,
-                extra_env={
-                    "BALUFFO_DISCOVERY_RUN_ID": run_id,
-                    "BALUFFO_DISCOVERY_STARTED_AT": started_at,
-                },
+            if active_metadata:
+                response = build_duplicate_start_payload(
+                    "source_discovery", "discovery", active_metadata
+                )
+                self._deps.bridge_log(
+                    "info",
+                    "task_start_attached_existing",
+                    task="source_discovery",
+                    taskType="discovery",
+                    route=route_name,
+                    runId=str(response.get("runId") or ""),
+                    pid=int(response.get("pid") or 0),
+                )
+                return 409, response
+
+            run_id = f"discovery_{uuid.uuid4().hex[:10]}"
+            started_at = self._deps.now_iso()
+            self._deps.bridge_log(
+                "info",
+                "discovery_launch_started",
+                runId=run_id,
+                route=route_name,
+                preset=preset or "default",
             )
-        except Exception as exc:  # noqa: BLE001
             self._deps.save_json_atomic(
                 self._paths.report,
                 {
@@ -341,23 +276,36 @@ class DiscoveryService:
                     "runId": run_id,
                     "mode": "dynamic",
                     "startedAt": started_at,
-                    "finishedAt": self._deps.now_iso(),
+                    "finishedAt": "",
                     "summary": {
                         "foundEndpointCount": 0,
                         "probedCandidateCount": 0,
                         "queuedCandidateCount": 0,
-                        "failedProbeCount": 1,
+                        "failedProbeCount": 0,
+                        "skippedDuplicateCount": 0,
+                        "skippedLowEvidenceProbeCount": 0,
+                        "phase": "starting",
+                        "phaseKey": "starting",
+                        "phaseLabel": "Spawning discovery worker",
+                    },
+                    "taskProgress": {
+                        "active": True,
+                        "phaseKey": "starting",
+                        "phaseLabel": "Spawning discovery worker",
+                        "mode": "indeterminate",
+                        "ratio": 0.0,
+                        "counts": {
+                            "foundEndpoints": 0,
+                            "probedCandidates": 0,
+                            "probeTotal": 0,
+                            "queuedCandidates": 0,
+                            "deferredCandidates": 0,
+                            "failedProbes": 0,
+                        },
                     },
                     "candidates": [],
-                    "failures": [
-                        {
-                            "name": "source_discovery.py",
-                            "adapter": "bridge",
-                            "error": str(exc),
-                            "stage": "launch",
-                        }
-                    ],
-                    "topFailures": [{"key": "bridge:launch", "count": 1}],
+                    "failures": [],
+                    "topFailures": [],
                     "outputs": {
                         "report": str(self._paths.report),
                         "candidates": str(self._paths.candidates),
@@ -366,7 +314,7 @@ class DiscoveryService:
                     "runtime": {
                         "lifecycle": {
                             "owner": "discovery_report",
-                            "heartbeatAt": self._deps.now_iso(),
+                            "heartbeatAt": started_at,
                         },
                         "autoApproval": {
                             "enabled": bool(
@@ -379,57 +327,138 @@ class DiscoveryService:
                     },
                 },
             )
+            self._deps.prune_started_rows_for_type("discovery", keep_started_at=started_at)
             try:
-                with self._paths.log.open("a", encoding="utf-8") as handle:
-                    handle.write(f"[{self._deps.now_iso()}] Launch failed: {str(exc)}\n")
+                self._paths.log.parent.mkdir(parents=True, exist_ok=True)
+                self._paths.log.write_text(
+                    f"[{started_at}] Launching source discovery task...\n", encoding="utf-8"
+                )
             except OSError:
                 pass
+            self._deps.append_run_history(
+                {
+                    "id": run_id,
+                    "runId": run_id,
+                    "type": "discovery",
+                    "status": "started",
+                    "startedAt": started_at,
+                    "finishedAt": "",
+                    "durationMs": 0,
+                    "summary": {},
+                }
+            )
+            spawn_args = ["--mode", "dynamic"]
+            if preset == "uncapped":
+                spawn_args.extend(["--top", "0", "--preset", "uncapped"])
+            else:
+                preset = "default"
+                spawn_args.extend(["--preset", "default"])
+            try:
+                pid = self._deps.run_background_script(
+                    "source_discovery.py",
+                    spawn_args,
+                    extra_env={
+                        "BALUFFO_DISCOVERY_RUN_ID": run_id,
+                        "BALUFFO_DISCOVERY_STARTED_AT": started_at,
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._deps.save_json_atomic(
+                    self._paths.report,
+                    {
+                        "schemaVersion": self._schema_version_int(),
+                        "runId": run_id,
+                        "mode": "dynamic",
+                        "startedAt": started_at,
+                        "finishedAt": self._deps.now_iso(),
+                        "summary": {
+                            "foundEndpointCount": 0,
+                            "probedCandidateCount": 0,
+                            "queuedCandidateCount": 0,
+                            "failedProbeCount": 1,
+                        },
+                        "candidates": [],
+                        "failures": [
+                            {
+                                "name": "source_discovery.py",
+                                "adapter": "bridge",
+                                "error": str(exc),
+                                "stage": "launch",
+                            }
+                        ],
+                        "topFailures": [{"key": "bridge:launch", "count": 1}],
+                        "outputs": {
+                            "report": str(self._paths.report),
+                            "candidates": str(self._paths.candidates),
+                            "pending": str(self._paths.pending),
+                        },
+                        "runtime": {
+                            "lifecycle": {
+                                "owner": "discovery_report",
+                                "heartbeatAt": self._deps.now_iso(),
+                            },
+                            "autoApproval": {
+                                "enabled": bool(
+                                    self.get_saved_discovery_config_payload().get(
+                                        "autoApproveHealthyPendingOnComplete"
+                                    )
+                                ),
+                                "approvedCount": 0,
+                            },
+                        },
+                    },
+                )
+                try:
+                    with self._paths.log.open("a", encoding="utf-8") as handle:
+                        handle.write(f"[{self._deps.now_iso()}] Launch failed: {str(exc)}\n")
+                except OSError:
+                    pass
+                self._deps.bridge_log(
+                    "error",
+                    "task_start_failed",
+                    runId=run_id,
+                    task="source_discovery",
+                    mode="dynamic",
+                    route=route_name,
+                    error=str(exc),
+                )
+                return 500, {
+                    "started": False,
+                    "task": "source_discovery",
+                    "mode": "dynamic",
+                    "preset": preset,
+                    "route": route_name,
+                    "error": str(exc),
+                }
+            if enable_auto_sync_watch:
+                watcher = threading.Thread(
+                    target=self.watch_discovery_run_for_auto_sync,
+                    args=(run_id, pid, started_at),
+                    name=f"discovery-sync-watch-{run_id}",
+                    daemon=True,
+                )
+                watcher.start()
             self._deps.bridge_log(
-                "error",
-                "task_start_failed",
+                "info",
+                "task_started",
                 runId=run_id,
                 task="source_discovery",
                 mode="dynamic",
+                preset=preset,
                 route=route_name,
-                error=str(exc),
+                pid=int(pid),
             )
-            return 500, {
-                "started": False,
+            return 200, {
+                "started": True,
+                "runId": run_id,
                 "task": "source_discovery",
                 "mode": "dynamic",
                 "preset": preset,
+                "args": spawn_args,
                 "route": route_name,
-                "error": str(exc),
+                "startedAt": started_at,
+                "pid": int(pid),
             }
-        if enable_auto_sync_watch:
-            watcher = threading.Thread(
-                target=self.watch_discovery_run_for_auto_sync,
-                args=(run_id, pid, started_at),
-                name=f"discovery-sync-watch-{run_id}",
-                daemon=True,
-            )
-            watcher.start()
-        self._deps.bridge_log(
-            "info",
-            "task_started",
-            runId=run_id,
-            task="source_discovery",
-            mode="dynamic",
-            preset=preset,
-            route=route_name,
-            pid=int(pid),
-        )
-        return 200, {
-            "started": True,
-            "runId": run_id,
-            "task": "source_discovery",
-            "mode": "dynamic",
-            "preset": preset,
-            "args": spawn_args,
-            "route": route_name,
-            "startedAt": started_at,
-            "pid": int(pid),
-        }
 
 
 __all__ = ["DiscoveryDeps", "DiscoveryPaths", "DiscoveryService"]
