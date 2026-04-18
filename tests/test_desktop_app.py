@@ -172,6 +172,36 @@ def test_resolve_runtime_ports_keeps_explicit_port_fail_fast() -> None:
             desktop_app.resolve_runtime_ports(config)
 
 
+def test_resolve_browser_session_root_falls_back_to_runtime_temp_when_standard_locations_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("desktop-session-root") as tmp:
+        root = Path(tmp)
+        temp_root = root / "temp"
+        localappdata_root = root / "localappdata"
+        env = {"LOCALAPPDATA": str(localappdata_root), "USERNAME": "tester"}
+        local_candidate = (localappdata_root / "Baluffo").resolve()
+        temp_candidate = (temp_root / "Baluffo-tester").resolve()
+        original_write_text = Path.write_text
+
+        monkeypatch.setattr(desktop_app.tempfile, "gettempdir", lambda: str(temp_root))
+
+        def blocked_write_text(self: Path, *args: object, **kwargs: object) -> int:
+            if self.name == ".baluffo-write-probe" and self.parent in {
+                local_candidate,
+                temp_candidate,
+            }:
+                raise OSError("blocked for test")
+            return original_write_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", blocked_write_text)
+
+        resolved = desktop_app.resolve_browser_session_root(env)
+
+    assert "BaluffoRuntime" in str(resolved)
+    assert desktop_app.last_session_root_resolution()["strategy"] == "runtime-temp"
+
+
 def test_resolve_chromium_browser_candidates_prefers_chrome_then_brave_then_edge() -> None:
     with (
         mock.patch.object(
@@ -1283,6 +1313,61 @@ def test_publish_success_marker_when_ready_async_writes_marker_after_startup_rea
     }
 
 
+def test_publish_success_marker_when_ready_async_records_classified_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("desktop-startup-timeout") as tmp:
+        data_dir = Path(tmp) / "ship" / "data"
+        config = desktop_app.DesktopRuntimeConfig(
+            ship_root=Path(tmp) / "ship",
+            site_port=8080,
+            bridge_port=8877,
+            bridge_host="127.0.0.1",
+            data_dir=data_dir,
+            open_path="jobs.html",
+            title="Baluffo",
+            startup_probe=False,
+        )
+        trace_mock = mock.Mock()
+
+        class ImmediateThread:
+            def __init__(self, *, target, name, daemon) -> None:
+                self._target = target
+                self.name = name
+                self.daemon = daemon
+
+            def start(self) -> None:
+                self._target()
+
+        def raise_timeout(
+            bridge_port: int, *, app_version: str, timeout_s: float
+        ) -> dict[str, object]:
+            raise desktop_app.DesktopStartupReadyTimeout(
+                "startup_pending",
+                "Baluffo bridge is running, but desktop startup did not finish in time.",
+                payload={"startupReady": False},
+            )
+
+        monkeypatch.setattr(desktop_app, "wait_for_desktop_startup_ready", raise_timeout)
+        monkeypatch.setattr(desktop_app.threading, "Thread", ImmediateThread)
+        monkeypatch.setattr(desktop_app, "_append_startup_trace", trace_mock)
+
+        desktop_app.publish_success_marker_when_ready_async(config, launcher_token="token-1")
+
+        diagnostics_path = data_dir / "desktop-bridge-startup-timeout.txt"
+        assert diagnostics_path.is_file()
+        diagnostics_text = diagnostics_path.read_text(encoding="utf-8")
+        assert "startup did not finish in time" in diagnostics_text
+        assert desktop_app.build_open_url(config) in diagnostics_text
+        trace_mock.assert_any_call(
+            data_dir,
+            "desktop_bridge_startup_timeout",
+            reason="startup_pending",
+            bridgePort=8877,
+            url=desktop_app.build_open_url(config),
+        )
+
+
 def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_app.DesktopRuntimeConfig(
@@ -1689,6 +1774,142 @@ def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> 
     )
 
 
+def test_launch_desktop_app_retries_default_ports_after_bind_race() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    original_config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=data_dir,
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+    )
+    retried_config = desktop_app.DesktopRuntimeConfig(
+        ship_root=original_config.ship_root,
+        site_port=18080,
+        bridge_port=18877,
+        bridge_host=original_config.bridge_host,
+        data_dir=data_dir,
+        open_path=original_config.open_path,
+        title=original_config.title,
+        startup_probe=False,
+    )
+    start_child_process = mock.Mock(
+        side_effect=[
+            SimpleNamespace(pid=101),
+            SimpleNamespace(pid=301),
+            SimpleNamespace(pid=302),
+        ]
+    )
+    wait_for_url = mock.Mock(side_effect=[RuntimeError("site port already in use"), None])
+    trace_mock = mock.Mock()
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(
+            desktop_app,
+            "resolve_runtime_ports",
+            side_effect=[original_config, retried_config],
+        ) as resolve_ports_mock,
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(desktop_app, "start_child_process", start_child_process),
+        mock.patch.object(desktop_app, "wait_for_url", wait_for_url),
+        mock.patch.object(desktop_app, "_windows_create_kill_on_close_job", side_effect=[11, 12]),
+        mock.patch.object(desktop_app, "_windows_close_desktop_job"),
+        mock.patch.object(desktop_app, "publish_success_marker_when_ready_async"),
+        mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "launch_browser_for_url",
+            return_value={
+                "mode": "chromium-app",
+                "browserName": "msedge",
+                "browserPath": "C:/Edge/msedge.exe",
+                "process": None,
+            },
+        ),
+        mock.patch.object(desktop_app, "save_session_state") as save_mock,
+        mock.patch.object(
+            desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
+        ) as watch_mock,
+        mock.patch.object(desktop_app, "clear_session_state"),
+        mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(desktop_app, "_append_startup_trace", trace_mock),
+    ):
+        desktop_app.launch_desktop_app(original_config)
+
+    assert resolve_ports_mock.call_count == 2
+    assert start_child_process.call_count == 3
+    assert wait_for_url.call_count == 2
+    assert save_mock.call_args.args[0]["sitePort"] == 18080
+    assert save_mock.call_args.args[0]["bridgePort"] == 18877
+    watch_mock.assert_called_once_with(
+        data_dir,
+        mock.ANY,
+        bridge_port=18877,
+        bridge_process=mock.ANY,
+        browser_process=None,
+        browser_pid=0,
+        launch_accepted_elapsed_ms=mock.ANY,
+        require_window=True,
+    )
+    assert any(call.args[1] == "desktop_runtime_port_retry" for call in trace_mock.call_args_list)
+
+
+def test_launch_desktop_app_keeps_explicit_ports_fail_fast_after_bind_race() -> None:
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=Path("C:/tmp/baluffo-ship/data"),
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+        site_port_explicit=True,
+        bridge_port_explicit=True,
+    )
+    start_child_process = mock.Mock(return_value=SimpleNamespace(pid=101))
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(
+            desktop_app, "resolve_runtime_ports", return_value=config
+        ) as resolve_ports_mock,
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(desktop_app, "start_child_process", start_child_process),
+        mock.patch.object(
+            desktop_app,
+            "wait_for_url",
+            side_effect=RuntimeError("site port already in use"),
+        ),
+        mock.patch.object(desktop_app, "_windows_create_kill_on_close_job", return_value=11),
+        mock.patch.object(desktop_app, "_windows_close_desktop_job"),
+        mock.patch.object(desktop_app, "clear_session_state"),
+        mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+    ):
+        with pytest.raises(RuntimeError, match="site port already in use"):
+            desktop_app.launch_desktop_app(config)
+
+    assert resolve_ports_mock.call_count == 1
+    start_child_process.assert_called_once()
+
+
 def test_launch_desktop_app_spawns_update_helper_from_launcher_on_install_request() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_app.DesktopRuntimeConfig(
@@ -1815,6 +2036,74 @@ def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_ex
         browser_pid=0,
         launch_accepted_elapsed_ms=mock.ANY,
         require_window=True,
+    )
+
+
+def test_launch_desktop_app_keeps_runtime_alive_when_browser_launch_fails() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=data_dir,
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+    )
+    open_url = desktop_app.build_open_url(config)
+    trace_mock = mock.Mock()
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(
+            desktop_app,
+            "start_child_process",
+            side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
+        ),
+        mock.patch.object(desktop_app, "wait_for_url"),
+        mock.patch.object(desktop_app, "publish_success_marker_when_ready_async"),
+        mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "launch_browser_for_url",
+            side_effect=RuntimeError("Baluffo could not launch a browser window."),
+        ),
+        mock.patch.object(desktop_app, "show_native_message") as show_message_mock,
+        mock.patch.object(desktop_app, "save_session_state") as save_mock,
+        mock.patch.object(
+            desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
+        ) as watch_mock,
+        mock.patch.object(desktop_app, "clear_session_state"),
+        mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(desktop_app, "_write_launch_diagnostics"),
+        mock.patch.object(desktop_app, "_append_startup_trace", trace_mock),
+    ):
+        desktop_app.launch_desktop_app(config)
+
+    assert save_mock.call_args.args[0]["launchMode"] == "browser-launch-recovery"
+    watch_mock.assert_called_once_with(
+        data_dir,
+        mock.ANY,
+        bridge_port=8877,
+        bridge_process=mock.ANY,
+        browser_process=None,
+        browser_pid=0,
+        launch_accepted_elapsed_ms=mock.ANY,
+        require_window=False,
+    )
+    show_message_mock.assert_called_once()
+    assert open_url in show_message_mock.call_args.args[1]
+    assert any(
+        call.args[1] == "desktop_browser_launch_recovered" for call in trace_mock.call_args_list
     )
 
 

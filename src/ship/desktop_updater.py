@@ -26,11 +26,13 @@ if str(ROOT) not in sys.path:
 
 from src.ship import update_manager
 from src.ship.desktop_update import (
+    DESKTOP_UPDATE_MANIFEST_ASSET,
     DesktopUpdatePaths,
     clear_handoff_request,
     clear_success_marker,
     compute_sha256,
     desktop_update_public_key_candidate_paths,
+    download_file,
     fetch_json,
     install_stage_label,
     iso_now,
@@ -38,10 +40,13 @@ from src.ship.desktop_update import (
     load_status,
     pid_is_running,
     read_cached_manifest,
+    resolve_github_api_base,
+    resolve_release_repo,
     save_status,
     validate_desktop_manifest,
     validate_install_plan,
     verify_manifest_signature,
+    write_json_atomic,
 )
 
 MUTATING_INSTALL_STAGES = frozenset(
@@ -342,6 +347,142 @@ def _status_for_stage(
     return save_status(paths, status)
 
 
+def _find_release_for_target_version(repo: str, target_version: str) -> dict[str, Any]:
+    url = f"{resolve_github_api_base()}/repos/{repo}/releases?per_page=10"
+    payload = fetch_json(url)
+    if not isinstance(payload, list):
+        raise RuntimeError("GitHub releases payload was not a list.")
+    wanted = str(target_version or "").strip()
+    wanted_tags = {wanted, f"v{wanted}"} if wanted else set()
+    for release in payload:
+        if not isinstance(release, dict):
+            continue
+        if bool(release.get("draft")) or bool(release.get("prerelease")):
+            continue
+        tag_name = str(release.get("tag_name") or "").strip()
+        release_name = str(release.get("name") or "").strip()
+        if wanted and tag_name not in wanted_tags and release_name != wanted:
+            continue
+        return release
+    raise RuntimeError(f"Could not recover desktop manifest for version {wanted}.")
+
+
+def _recover_manifest_for_install(
+    plan: dict[str, Any],
+    *,
+    install_root: Path,
+    ship_root: Path,
+    paths: DesktopUpdatePaths,
+) -> dict[str, Any]:
+    cached_manifest = read_cached_manifest(paths)
+    manifest = (
+        cached_manifest.get("manifest") if isinstance(cached_manifest.get("manifest"), dict) else {}
+    )
+    if manifest:
+        return manifest
+    repo = resolve_release_repo(install_root=install_root, ship_root=ship_root)
+    if not repo:
+        raise RuntimeError(
+            "Verified manifest cache is unavailable and desktop update repo is not configured."
+        )
+    release = _find_release_for_target_version(repo, str(plan.get("targetVersion") or ""))
+    assets = release.get("assets") if isinstance(release.get("assets"), list) else []
+    manifest_asset = next(
+        (
+            asset
+            for asset in assets
+            if isinstance(asset, dict)
+            and str(asset.get("name") or "").strip() == DESKTOP_UPDATE_MANIFEST_ASSET
+        ),
+        None,
+    )
+    if manifest_asset is None:
+        raise RuntimeError("Recovered release did not publish a desktop manifest asset.")
+    manifest_url = str(manifest_asset.get("browser_download_url") or "").strip()
+    if not manifest_url:
+        raise RuntimeError("Recovered desktop manifest asset is missing its download URL.")
+    manifest = fetch_json(manifest_url)
+    if not isinstance(manifest, dict):
+        raise RuntimeError("Recovered desktop manifest payload is invalid.")
+    validate_desktop_manifest(manifest)
+    verify_manifest_signature(
+        manifest,
+        public_keys=load_desktop_update_public_keys(
+            candidate_paths=desktop_update_public_key_candidate_paths(ship_root),
+        ),
+    )
+    if str(manifest.get("version") or "").strip() != str(plan.get("targetVersion") or "").strip():
+        raise RuntimeError("Recovered desktop manifest does not match the install target version.")
+    if str(manifest.get("key_id") or "").strip() != str(plan.get("manifestKeyId") or "").strip():
+        raise RuntimeError("Recovered desktop manifest does not match the expected signing key.")
+    artifact = (
+        manifest.get("portable_artifact")
+        if isinstance(manifest.get("portable_artifact"), dict)
+        else {}
+    )
+    expected_hash = str(plan.get("expectedZipSha256") or "").strip().lower()
+    manifest_hash = str(artifact.get("sha256") or "").strip().lower()
+    if expected_hash and manifest_hash and manifest_hash != expected_hash:
+        raise RuntimeError("Recovered desktop manifest does not match the expected ZIP checksum.")
+    write_json_atomic(paths.manifest_cache_path, {"cachedAt": iso_now(), "manifest": manifest})
+    return manifest
+
+
+def _ensure_verified_zip_for_install(
+    plan: dict[str, Any],
+    *,
+    manifest: dict[str, Any],
+    zip_path: Path,
+) -> Path:
+    expected_hash = str(plan.get("expectedZipSha256") or "").strip().lower()
+    artifact = (
+        manifest.get("portable_artifact")
+        if isinstance(manifest.get("portable_artifact"), dict)
+        else {}
+    )
+    manifest_hash = str(artifact.get("sha256") or "").strip().lower()
+    expected_hash = expected_hash or manifest_hash
+    artifact_url = str(artifact.get("url") or "").strip()
+    try:
+        if (
+            zip_path.is_file()
+            and expected_hash
+            and compute_sha256(zip_path).lower() == expected_hash
+        ):
+            return zip_path
+    except OSError:
+        pass
+    if not artifact_url:
+        raise RuntimeError("Recovered desktop manifest is missing its portable artifact URL.")
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    download_file(artifact_url, zip_path)
+    if expected_hash and compute_sha256(zip_path).lower() != expected_hash:
+        raise RuntimeError("Downloaded desktop ZIP failed re-verification.")
+    return zip_path
+
+
+def _classify_install_failure(exc: Exception) -> str:
+    message = str(exc).strip()
+    lowered = message.lower()
+    if "manifest" in lowered and (
+        "cache" in lowered
+        or "recover" in lowered
+        or "release" in lowered
+        or "signature" in lowered
+        or "key" in lowered
+    ):
+        return f"desktop_update_manifest_recovery_failed: {message}"
+    if "zip failed re-verification" in lowered:
+        return f"desktop_update_zip_reverification_failed: {message}"
+    if "startup readiness in time" in lowered:
+        return f"desktop_update_relaunch_verification_failed: {message}"
+    if ("zip" in lowered and "not found" in lowered) or "no such file or directory" in lowered:
+        return f"desktop_update_zip_unavailable: {message}"
+    if "access is denied" in lowered or "permission denied" in lowered:
+        return f"desktop_update_zip_unavailable: {message}"
+    return message or "desktop_install_failed"
+
+
 def _show_message(title: str, message: str) -> None:
     if os.name == "nt":
         import ctypes
@@ -566,23 +707,6 @@ def run_install(
     data_dir = ship_root / "data"
     paths = DesktopUpdatePaths.from_data_dir(data_dir)
     rollback_root = Path(str(plan.get("rollbackPath") or "")).expanduser().resolve()
-    manifest_cache = read_cached_manifest(paths)
-    manifest = (
-        manifest_cache.get("manifest") if isinstance(manifest_cache.get("manifest"), dict) else {}
-    )
-    if not manifest:
-        raise RuntimeError("Verified manifest cache is unavailable for desktop install.")
-    validate_desktop_manifest(manifest)
-    verify_manifest_signature(
-        manifest,
-        public_keys=load_desktop_update_public_keys(
-            candidate_paths=desktop_update_public_key_candidate_paths(ship_root),
-        ),
-    )
-    zip_path = Path(str(plan.get("downloadedZipPath") or "")).expanduser().resolve()
-    expected_hash = str(plan.get("expectedZipSha256") or "").strip().lower()
-    if expected_hash and compute_sha256(zip_path).lower() != expected_hash:
-        raise RuntimeError("Downloaded desktop ZIP failed re-verification.")
     existing_status = load_status(paths)
     progress = progress if progress is not None else NullProgressWindow()
     progress.start(
@@ -597,6 +721,17 @@ def run_install(
     temp_extract.mkdir(parents=True, exist_ok=True)
     backup_ref: Path | None = None
     try:
+        manifest = _recover_manifest_for_install(
+            plan,
+            install_root=install_root,
+            ship_root=ship_root,
+            paths=paths,
+        )
+        zip_path = _ensure_verified_zip_for_install(
+            plan,
+            manifest=manifest,
+            zip_path=Path(str(plan.get("downloadedZipPath") or "")).expanduser().resolve(),
+        )
         recovered_as_complete = _recover_interrupted_install(
             plan,
             install_root=install_root,
@@ -699,7 +834,7 @@ def run_install(
         _verify_target_startup(plan)
         _finalize_success(paths, plan, rollback_root)
         return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
-    except Exception:
+    except Exception as exc:
         clear_handoff_request(paths)
         progress.update(install_stage_label("installing", "rolling_back"))
         if backup_ref is not None:
@@ -712,7 +847,7 @@ def run_install(
             paths,
             install_state="failed",
             install_stage="rolling_back",
-            lastError="desktop_install_failed",
+            lastError=_classify_install_failure(exc),
             rollbackPath=str(rollback_root),
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )

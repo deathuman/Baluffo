@@ -81,6 +81,44 @@ def test_resolve_runtime_layout_uses_current_pointer() -> None:
         assert layout.data_dir == root / "data"
 
 
+def test_resolve_runtime_layout_repairs_missing_current_pointer() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_ship_root(root, version="2.4.6")
+        (root / "app" / "current.txt").unlink()
+
+        layout = rl.resolve_runtime_layout(root)
+
+        assert layout.current_version == "2.4.6"
+        assert layout.active_root == root / "app" / "versions" / "2.4.6"
+        assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "2.4.6"
+
+
+def test_resolve_runtime_layout_repairs_missing_active_version_dir_via_startup_check() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_ship_root(root, version="0.9.0")
+        _write(root / "app" / "current.txt", "9.9.9\n")
+        _write(
+            root / "app" / "update-state.json",
+            json.dumps(
+                {
+                    "current_version": "9.9.9",
+                    "previous_version": "",
+                    "last_update_status": "ready",
+                    "last_error_code": "",
+                    "updated_at": "2026-03-09T00:00:00+00:00",
+                }
+            ),
+        )
+
+        layout = rl.resolve_runtime_layout(root)
+
+        assert layout.current_version == "0.9.0"
+        assert layout.active_root == root / "app" / "versions" / "0.9.0"
+        assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "0.9.0"
+
+
 def test_build_layout_uses_explicit_data_dir() -> None:
     with workspace_tmpdir("runtime-launcher") as tmp:
         root = Path(tmp) / "ship"
@@ -498,6 +536,46 @@ def test_run_bridge_server_forwards_desktop_owner_arguments() -> None:
         assert "launcher-1" in captured_argv
 
 
+def test_run_bridge_server_uses_current_version_repaired_by_startup_check() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "ship"
+        repaired_version = "4.0.0"
+        _seed_ship_root(root, version="3.1.4")
+        _write(
+            root / "app" / "versions" / repaired_version / "src" / "admin_bridge.py",
+            "print('repaired')\n",
+        )
+        captured = {"script": ""}
+
+        def _capture_run_path(script: str, run_name: str) -> None:
+            captured["script"] = script
+            raise RuntimeError("stop-after-script")
+
+        with pytest.raises(RuntimeError, match="stop-after-script"):
+            with (
+                mock.patch.object(
+                    rl.update_manager,
+                    "startup_check",
+                    return_value={
+                        "ok": True,
+                        "current_version": repaired_version,
+                        "repaired_pointer": True,
+                    },
+                ),
+                mock.patch.object(rl.runpy, "run_path", side_effect=_capture_run_path),
+            ):
+                rl.run_bridge_server(
+                    root,
+                    bind_host="127.0.0.1",
+                    port=8877,
+                    data_dir=root / "data",
+                )
+
+        assert captured["script"].endswith(
+            f"app\\versions\\{repaired_version}\\src\\admin_bridge.py"
+        )
+
+
 def test_run_bridge_server_emits_bootstrap_trace_events_for_startup_probe() -> None:
     with workspace_tmpdir("runtime-launcher") as tmp:
         root = Path(tmp) / "ship"
@@ -543,3 +621,21 @@ def test_run_bridge_server_emits_bootstrap_trace_events_for_startup_probe() -> N
         assert "desktop_bridge_repair_completed" in events
         assert "desktop_bridge_startup_check_started" in events
         assert "desktop_bridge_startup_check_completed" in events
+
+
+def test_run_site_wrapper_defers_pointer_resolution_to_runtime_launcher() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "src" / "ship" / "run-site.ps1"
+    script = script_path.read_text(encoding="utf-8")
+
+    assert "Get-Content $CurrentPointer" not in script
+    assert "Push-Location $ActiveRoot" not in script
+    assert "-m src.ship.runtime_launcher site --root $Root --port $Port" in script
+
+
+def test_run_bridge_wrapper_defers_pointer_resolution_to_runtime_launcher() -> None:
+    script_path = Path(__file__).resolve().parents[1] / "src" / "ship" / "run-bridge.ps1"
+    script = script_path.read_text(encoding="utf-8")
+
+    assert "Get-Content $CurrentPointer" not in script
+    assert "Push-Location $ActiveRoot" not in script
+    assert "-m src.ship.runtime_launcher bridge --root $Root" in script

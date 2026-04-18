@@ -156,6 +156,43 @@ def test_load_desktop_update_public_keys_reads_packaged_fallback() -> None:
         assert keys["desktop-ed25519-2026-01"] == b"p" * 32
 
 
+def test_load_desktop_update_public_keys_repairs_missing_current_pointer() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        ship_root = Path(tmp) / "portable" / "ship"
+        app_dir = ship_root / "app"
+        version_root = app_dir / "versions" / "0.1.0"
+        packaging_dir = version_root / "packaging"
+        (version_root / "src").mkdir(parents=True, exist_ok=True)
+        packaging_dir.mkdir(parents=True, exist_ok=True)
+        (version_root / "src" / "admin_bridge.py").write_text("print('ok')\n", encoding="utf-8")
+        (version_root / "index.html").write_text("<html></html>\n", encoding="utf-8")
+        (version_root / "jobs.html").write_text("<html></html>\n", encoding="utf-8")
+        (version_root / "saved.html").write_text("<html></html>\n", encoding="utf-8")
+        (app_dir / "update-state.json").write_text(
+            json.dumps(
+                {
+                    "current_version": "0.1.0",
+                    "previous_version": "",
+                    "last_update_status": "ready",
+                    "last_error_code": "",
+                    "updated_at": du.iso_now(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        (packaging_dir / du.PUBLIC_KEYS_FILE).write_text(
+            json.dumps({"desktop-ed25519-2026-01": base64.b64encode(b"k" * 32).decode("ascii")}),
+            encoding="utf-8",
+        )
+
+        keys = du.load_desktop_update_public_keys(
+            candidate_paths=du.desktop_update_public_key_candidate_paths(ship_root)
+        )
+
+        assert keys["desktop-ed25519-2026-01"] == b"k" * 32
+        assert (app_dir / "current.txt").read_text(encoding="utf-8").strip() == "0.1.0"
+
+
 def test_get_app_version_honors_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(app_version.APP_VERSION_OVERRIDE_ENV, "0.0.9")
 
@@ -252,6 +289,44 @@ def test_resolve_release_repo_prefers_packaged_desktop_update_config() -> None:
         )
 
         assert repo == "owner/app-release"
+
+
+def test_resolve_release_repo_repairs_missing_current_pointer() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        ship_root = Path(tmp) / "portable" / "ship"
+        app_dir = ship_root / "app"
+        version_root = app_dir / "versions" / "0.1.0"
+        packaging_dir = version_root / "packaging"
+        (version_root / "src").mkdir(parents=True, exist_ok=True)
+        packaging_dir.mkdir(parents=True, exist_ok=True)
+        (version_root / "src" / "admin_bridge.py").write_text("print('ok')\n", encoding="utf-8")
+        (version_root / "index.html").write_text("<html></html>\n", encoding="utf-8")
+        (version_root / "jobs.html").write_text("<html></html>\n", encoding="utf-8")
+        (version_root / "saved.html").write_text("<html></html>\n", encoding="utf-8")
+        (app_dir / "update-state.json").write_text(
+            json.dumps(
+                {
+                    "current_version": "0.1.0",
+                    "previous_version": "",
+                    "last_update_status": "ready",
+                    "last_error_code": "",
+                    "updated_at": du.iso_now(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        (packaging_dir / "desktop-update-config.json").write_text(
+            json.dumps({"repo": "owner/repaired-release"}),
+            encoding="utf-8",
+        )
+
+        repo = du.resolve_release_repo(
+            install_root=ship_root.parent,
+            ship_root=ship_root,
+        )
+
+        assert repo == "owner/repaired-release"
+        assert (app_dir / "current.txt").read_text(encoding="utf-8").strip() == "0.1.0"
 
 
 def test_resolve_desktop_session_root_falls_back_to_temp_when_primary_is_not_writable() -> None:

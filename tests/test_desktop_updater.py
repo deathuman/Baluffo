@@ -4,6 +4,8 @@ from types import SimpleNamespace
 from unittest import mock
 from urllib import error as urllib_error
 
+import pytest
+
 from src.ship import desktop_update as du
 from src.ship import desktop_updater as updater
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -254,6 +256,255 @@ def test_run_install_finishes_stale_verifying_state_when_target_is_already_healt
         assert status["installState"] == "installed"
         assert status["installStage"] == "installed"
         assert status["targetVersion"] == str(plan["targetVersion"])
+
+
+def test_run_install_recovers_manifest_cache_from_release_metadata(monkeypatch) -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        install_root = Path(tmp) / "portable"
+        ship_root = install_root / "ship"
+        data_dir = ship_root / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        zip_path.write_text("zip", encoding="utf-8")
+        rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
+        _write_install_plan(paths.install_plan_path, install_root, rollback_root, zip_path)
+        manifest_payload = {
+            "version": "1.4.0",
+            "portable_artifact": {
+                "url": "https://example.com/baluffo-portable-1.4.0.zip",
+                "sha256": "expected-zip-sha",
+            },
+            "signature": "ignored-for-test",
+            "key_id": "desktop-ed25519-test",
+        }
+        release_payload = [
+            {
+                "tag_name": "v1.4.0",
+                "name": "Baluffo v1.4.0",
+                "assets": [
+                    {
+                        "name": updater.DESKTOP_UPDATE_MANIFEST_ASSET,
+                        "browser_download_url": "https://example.com/manifest.json",
+                    }
+                ],
+            }
+        ]
+        zip_context = mock.MagicMock()
+        zip_context.__enter__.return_value = zip_context
+        zip_context.__exit__.return_value = False
+
+        def fetch_json(url: str, *, timeout_s: float = 20.0):
+            if url.endswith("/releases?per_page=10"):
+                return release_payload
+            if url == "https://example.com/manifest.json":
+                return manifest_payload
+            raise AssertionError(url)
+
+        monkeypatch.setattr(updater, "fetch_json", fetch_json)
+        monkeypatch.setattr(updater, "resolve_release_repo", lambda **kwargs: "deathuman/Baluffo")
+        monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
+        monkeypatch.setattr(
+            updater, "load_desktop_update_public_keys", lambda candidate_paths=None: []
+        )
+        monkeypatch.setattr(
+            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
+        )
+        monkeypatch.setattr(updater, "compute_sha256", lambda path: "expected-zip-sha")
+        monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
+        monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
+        monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
+        monkeypatch.setattr(updater, "_copy_install_snapshot", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater, "_sync_extract_to_install", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater, "_launch_executable", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater, "_verify_target_startup", lambda plan: None)
+        monkeypatch.setattr(updater, "_finalize_success", lambda *args, **kwargs: None)
+
+        result = updater.run_install(paths.install_plan_path)
+
+        cached_manifest = json.loads(paths.manifest_cache_path.read_text(encoding="utf-8"))
+        assert result == {"ok": True, "installedVersion": "1.4.0"}
+        assert cached_manifest["manifest"]["version"] == "1.4.0"
+        assert (
+            cached_manifest["manifest"]["portable_artifact"]["url"]
+            == "https://example.com/baluffo-portable-1.4.0.zip"
+        )
+
+
+def test_run_install_redownloads_zip_when_cached_artifact_is_missing(monkeypatch) -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        install_root = Path(tmp) / "portable"
+        ship_root = install_root / "ship"
+        data_dir = ship_root / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
+        rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
+        _write_install_plan(paths.install_plan_path, install_root, rollback_root, zip_path)
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {
+                "manifest": {
+                    "version": "1.4.0",
+                    "portable_artifact": {
+                        "url": "https://example.com/baluffo-portable-1.4.0.zip",
+                        "sha256": "expected-zip-sha",
+                    },
+                    "signature": "ignored-for-test",
+                    "key_id": "desktop-ed25519-test",
+                }
+            },
+        )
+        zip_context = mock.MagicMock()
+        zip_context.__enter__.return_value = zip_context
+        zip_context.__exit__.return_value = False
+        download_mock = mock.Mock(
+            side_effect=lambda url, destination: destination.write_text("zip", encoding="utf-8")
+        )
+
+        monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
+        monkeypatch.setattr(
+            updater, "load_desktop_update_public_keys", lambda candidate_paths=None: []
+        )
+        monkeypatch.setattr(
+            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
+        )
+        monkeypatch.setattr(updater, "download_file", download_mock)
+        monkeypatch.setattr(updater, "compute_sha256", lambda path: "expected-zip-sha")
+        monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
+        monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
+        monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
+        monkeypatch.setattr(updater, "_copy_install_snapshot", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater, "_sync_extract_to_install", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater, "_launch_executable", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater, "_verify_target_startup", lambda plan: None)
+        monkeypatch.setattr(updater, "_finalize_success", lambda *args, **kwargs: None)
+
+        result = updater.run_install(paths.install_plan_path)
+
+        assert result == {"ok": True, "installedVersion": "1.4.0"}
+        download_mock.assert_called_once_with(
+            "https://example.com/baluffo-portable-1.4.0.zip",
+            zip_path.resolve(),
+        )
+
+
+def test_run_install_records_zip_reverification_failure_after_redownload(monkeypatch) -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        install_root = Path(tmp) / "portable"
+        ship_root = install_root / "ship"
+        data_dir = ship_root / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
+        rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
+        _write_install_plan(paths.install_plan_path, install_root, rollback_root, zip_path)
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {
+                "manifest": {
+                    "version": "1.4.0",
+                    "portable_artifact": {
+                        "url": "https://example.com/baluffo-portable-1.4.0.zip",
+                        "sha256": "expected-zip-sha",
+                    },
+                    "signature": "ignored-for-test",
+                    "key_id": "desktop-ed25519-test",
+                }
+            },
+        )
+
+        monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
+        monkeypatch.setattr(
+            updater, "load_desktop_update_public_keys", lambda candidate_paths=None: []
+        )
+        monkeypatch.setattr(
+            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
+        )
+        monkeypatch.setattr(
+            updater,
+            "download_file",
+            lambda url, destination: destination.write_text("zip", encoding="utf-8"),
+        )
+        monkeypatch.setattr(updater, "compute_sha256", lambda path: "wrong-zip-sha")
+        monkeypatch.setattr(updater, "_restore_install_snapshot", mock.Mock())
+
+        with pytest.raises(RuntimeError, match="Downloaded desktop ZIP failed re-verification."):
+            updater.run_install(paths.install_plan_path)
+
+        status = du.load_status(paths, current_version="0.1.0")
+        assert status["lastError"].startswith("desktop_update_zip_reverification_failed:")
+        assert status["installState"] == "failed"
+        assert status["installStage"] == "failed"
+
+
+def test_run_install_records_specific_failure_when_relaunch_verification_fails(
+    monkeypatch,
+) -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        install_root = Path(tmp) / "portable"
+        ship_root = install_root / "ship"
+        data_dir = ship_root / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        zip_path.write_text("zip", encoding="utf-8")
+        rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
+        _write_install_plan(paths.install_plan_path, install_root, rollback_root, zip_path)
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {
+                "manifest": {
+                    "version": "1.4.0",
+                    "portable_artifact": {
+                        "url": "https://example.com/baluffo-portable-1.4.0.zip",
+                        "sha256": "expected-zip-sha",
+                    },
+                    "signature": "ignored-for-test",
+                    "key_id": "desktop-ed25519-test",
+                }
+            },
+        )
+        zip_context = mock.MagicMock()
+        zip_context.__enter__.return_value = zip_context
+        zip_context.__exit__.return_value = False
+        restore_snapshot = mock.Mock()
+        launch_executable = mock.Mock()
+
+        monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
+        monkeypatch.setattr(
+            updater, "load_desktop_update_public_keys", lambda candidate_paths=None: []
+        )
+        monkeypatch.setattr(
+            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
+        )
+        monkeypatch.setattr(updater, "compute_sha256", lambda path: "expected-zip-sha")
+        monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
+        monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
+        monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
+        monkeypatch.setattr(updater, "_copy_install_snapshot", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater, "_sync_extract_to_install", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater, "_launch_executable", launch_executable)
+        monkeypatch.setattr(
+            updater,
+            "_verify_target_startup",
+            mock.Mock(
+                side_effect=RuntimeError(
+                    "Updated desktop app did not report startup readiness in time."
+                )
+            ),
+        )
+        monkeypatch.setattr(updater, "_restore_install_snapshot", restore_snapshot)
+
+        with pytest.raises(
+            RuntimeError, match="Updated desktop app did not report startup readiness in time."
+        ):
+            updater.run_install(paths.install_plan_path)
+
+        status = du.load_status(paths, current_version="0.1.0")
+        assert status["lastError"].startswith("desktop_update_relaunch_verification_failed:")
+        assert status["installState"] == "failed"
+        assert status["installStage"] == "failed"
+        restore_snapshot.assert_called_once()
+        assert launch_executable.call_count == 2
 
 
 def test_verify_target_startup_retries_after_transient_bridge_refusal(monkeypatch) -> None:

@@ -127,14 +127,33 @@ class ShipPaths:
         )
 
 
+def _healthy_version_name(paths: ShipPaths, version_name: str) -> str:
+    candidate_name = str(version_name or "").strip()
+    if not candidate_name:
+        return ""
+    ok, _ = health_check_version(paths.versions / candidate_name)
+    return candidate_name if ok else ""
+
+
+def _recover_current_version(paths: ShipPaths, state: dict[str, Any]) -> str:
+    state_current = _healthy_version_name(paths, str(state.get("current_version") or ""))
+    if state_current:
+        return state_current
+    previous = _healthy_version_name(paths, str(state.get("previous_version") or ""))
+    if previous:
+        return previous
+    replacement = _prefer_higher_semver(_list_healthy_version_names(paths))
+    if replacement:
+        return replacement
+    raise RuntimeError(
+        "Current pointer is missing or empty and no recoverable healthy version tree was found. "
+        f"Pointer path: {paths.current}. Versions root: {paths.versions}."
+    )
+
+
 def ensure_state(paths: ShipPaths) -> dict[str, Any]:
-    if not paths.current.exists():
-        raise RuntimeError(f"Missing current pointer file: {paths.current}")
-    current_version = paths.current.read_text(encoding="utf-8").strip()
-    if not current_version:
-        raise RuntimeError("Current pointer is empty.")
     fallback_state = {
-        "current_version": current_version,
+        "current_version": "",
         "previous_version": "",
         "last_update_status": "ready",
         "last_error_code": "",
@@ -149,6 +168,14 @@ def ensure_state(paths: ShipPaths) -> dict[str, Any]:
     except OSError:
         state_path = fallback_state_path
         state = read_json(fallback_state_path, fallback_state)
+    current_version = (
+        paths.current.read_text(encoding="utf-8").strip() if paths.current.exists() else ""
+    )
+    repaired_pointer = False
+    if not current_version:
+        current_version = _recover_current_version(paths, state)
+        write_text_atomic(paths.current, f"{current_version}\n")
+        repaired_pointer = True
     # ``current.txt`` is the on-disk truth for which ``app/versions/<v>`` is active.
     # ``update-state.json`` can drift (hand edits, partial deploys, interrupted updates).
     state["current_version"] = current_version
@@ -156,6 +183,11 @@ def ensure_state(paths: ShipPaths) -> dict[str, Any]:
     state.setdefault("last_update_status", "ready")
     state.setdefault("last_error_code", "")
     state.setdefault("updated_at", iso_now())
+    if repaired_pointer:
+        previous_version = _healthy_version_name(paths, str(state.get("previous_version") or ""))
+        state["previous_version"] = (
+            previous_version if previous_version and previous_version != current_version else ""
+        )
     try:
         write_json_atomic(state_path, state)
     except OSError:

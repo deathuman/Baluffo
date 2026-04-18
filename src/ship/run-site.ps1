@@ -10,29 +10,9 @@ $Root = if (Test-Path (Join-Path $PSScriptRoot "src")) {
 } else {
   (Resolve-Path (Join-Path $PSScriptRoot "..\\..")).Path
 }
-$CurrentPointer = Join-Path $Root "app\current.txt"
-$CurrentPointer = Join-Path $Root "app\current.txt"
-if (-not (Test-Path $CurrentPointer)) {
-  throw "Missing app current pointer: $CurrentPointer"
-}
-$CurrentVersion = (Get-Content $CurrentPointer -Raw).Trim()
-if ([string]::IsNullOrWhiteSpace($CurrentVersion)) {
-  throw "Current version pointer is empty."
-}
-$ActiveRoot = Join-Path $Root "app\versions\$CurrentVersion"
-if (-not (Test-Path $ActiveRoot)) {
-  throw "Active version directory not found: $ActiveRoot"
-}
 Write-Host "[baluffo-ship] Starting static site..." -ForegroundColor Cyan
 Write-Host "[baluffo-ship] URL: http://127.0.0.1:$Port" -ForegroundColor Gray
-Write-Host "[baluffo-ship] Root: $ActiveRoot" -ForegroundColor Gray
-Write-Host "[baluffo-ship] Version: $CurrentVersion" -ForegroundColor Gray
+Write-Host "[baluffo-ship] Ship root: $Root" -ForegroundColor Gray
 Write-Host "[baluffo-ship] Python: $PythonCommand $($PythonArgs -join ' ')" -ForegroundColor Gray
 
-Push-Location $ActiveRoot
-try {
-  & $PythonCommand @PythonArgs -m src.ship.runtime_launcher site --root $Root --port $Port
-}
-finally {
-  Pop-Location
-}
+& $PythonCommand @PythonArgs -m src.ship.runtime_launcher site --root $Root --port $Port

@@ -98,6 +98,106 @@ def test_ensure_state_resyncs_current_version_from_current_txt() -> None:
         assert result["ok"]
 
 
+@pytest.mark.parametrize("pointer_payload", [None, ""])
+def test_ensure_state_repairs_missing_or_empty_current_from_state_current(pointer_payload) -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="1.0.0")
+        current_path = root / "app" / "current.txt"
+        if pointer_payload is None:
+            current_path.unlink()
+        else:
+            _write(current_path, pointer_payload)
+
+        paths = um.ShipPaths.from_root(root)
+        state = um.ensure_state(paths)
+
+        assert state["current_version"] == "1.0.0"
+        assert current_path.read_text(encoding="utf-8").strip() == "1.0.0"
+        reparsed = json.loads((root / "app" / "update-state.json").read_text(encoding="utf-8"))
+        assert reparsed["current_version"] == "1.0.0"
+        assert reparsed["previous_version"] == ""
+
+
+def test_ensure_state_repairs_missing_current_from_healthy_previous_version() -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="1.0.0")
+        _seed_full_version(root, "0.9.0")
+        (root / "app" / "current.txt").unlink()
+        _write(
+            root / "app" / "update-state.json",
+            json.dumps(
+                {
+                    "current_version": "9.9.9",
+                    "previous_version": "0.9.0",
+                    "last_update_status": "ready",
+                    "last_error_code": "",
+                    "updated_at": um.iso_now(),
+                }
+            ),
+        )
+
+        paths = um.ShipPaths.from_root(root)
+        state = um.ensure_state(paths)
+
+        assert state["current_version"] == "0.9.0"
+        assert state["previous_version"] == ""
+        assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "0.9.0"
+
+
+def test_ensure_state_repairs_missing_current_from_highest_healthy_version() -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="0.8.0")
+        _seed_full_version(root, "1.1.0")
+        _seed_full_version(root, "2.4.0")
+        (root / "app" / "current.txt").unlink()
+        _write(
+            root / "app" / "update-state.json",
+            json.dumps(
+                {
+                    "current_version": "9.9.9",
+                    "previous_version": "8.8.8",
+                    "last_update_status": "ready",
+                    "last_error_code": "",
+                    "updated_at": um.iso_now(),
+                }
+            ),
+        )
+
+        paths = um.ShipPaths.from_root(root)
+        state = um.ensure_state(paths)
+
+        assert state["current_version"] == "2.4.0"
+        assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "2.4.0"
+
+
+def test_ensure_state_raises_when_missing_current_has_no_healthy_recovery() -> None:
+    with workspace_tmpdir("ship-update") as tmp:
+        root = Path(tmp) / "ship"
+        _seed_root(root, version="1.0.0")
+        (root / "app" / "current.txt").unlink()
+        broken = root / "app" / "versions" / "1.0.0"
+        (broken / "src" / "admin_bridge.py").unlink()
+        _write(
+            root / "app" / "update-state.json",
+            json.dumps(
+                {
+                    "current_version": "9.9.9",
+                    "previous_version": "8.8.8",
+                    "last_update_status": "ready",
+                    "last_error_code": "",
+                    "updated_at": um.iso_now(),
+                }
+            ),
+        )
+
+        paths = um.ShipPaths.from_root(root)
+        with pytest.raises(RuntimeError, match="missing or empty.*no recoverable healthy version"):
+            um.ensure_state(paths)
+
+
 def test_startup_check_rejects_data_dir_inside_versions() -> None:
     with workspace_tmpdir("ship-update") as tmp:
         root = Path(tmp) / "ship"

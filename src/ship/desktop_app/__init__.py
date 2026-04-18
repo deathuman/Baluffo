@@ -92,6 +92,8 @@ CHROMIUM_BROWSER_CANDIDATES = (
 PREFERRED_BROWSER_PATH_ENV = "BALUFFO_DESKTOP_BROWSER_PATH"
 NO_BROWSER_ENV = "BALUFFO_DESKTOP_NO_BROWSER"
 STARTUP_PROFILE_MODE_ENV = "BALUFFO_STARTUP_PROFILE_MODE"
+_RUNTIME_SESSION_ROOT: Path | None = None
+_LAST_SESSION_ROOT_INFO: dict[str, str] = {"strategy": "", "path": ""}
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,15 @@ class InstanceLock:
     handle: int
     launcher_token: str = ""
     created_at: str = ""
+
+
+class DesktopStartupReadyTimeout(RuntimeError):
+    def __init__(
+        self, reason: str, message: str, *, payload: dict[str, object] | None = None
+    ) -> None:
+        super().__init__(message)
+        self.reason = str(reason or "").strip()
+        self.payload = dict(payload or {})
 
 
 def _write_launch_diagnostics(data_dir: Path, filename: str, content: str) -> None:
@@ -380,6 +391,82 @@ def resolve_runtime_ports(config: DesktopRuntimeConfig) -> DesktopRuntimeConfig:
     return resolved
 
 
+def _runtime_ports_need_retry(config: DesktopRuntimeConfig) -> bool:
+    return (not bool(config.site_port_explicit)) or (not bool(config.bridge_port_explicit))
+
+
+def _runtime_ports_contended(config: DesktopRuntimeConfig) -> bool:
+    site_busy = not _port_is_available("127.0.0.1", int(config.site_port))
+    bridge_busy = int(config.bridge_port) == int(config.site_port) or not _port_is_available(
+        str(config.bridge_host), int(config.bridge_port)
+    )
+    return bool(site_busy or bridge_busy)
+
+
+def _should_retry_runtime_launch(
+    config: DesktopRuntimeConfig,
+    exc: Exception,
+    *,
+    site_process: subprocess.Popen[str] | None = None,
+    bridge_process: subprocess.Popen[str] | None = None,
+) -> bool:
+    if not _runtime_ports_need_retry(config):
+        return False
+    if "already in use" in str(exc).strip().lower():
+        return True
+    if site_process is not None and site_process.poll() is not None:
+        return True
+    if bridge_process is not None and bridge_process.poll() is not None:
+        return True
+    return False
+
+
+def _recoverable_browser_launch_result(
+    *,
+    open_url: str,
+    error: Exception,
+    data_dir: Path,
+    elapsed_ms: int,
+) -> dict[str, object]:
+    message = (
+        f"{str(error).strip() or 'Baluffo could not launch a browser window.'}\n\n"
+        f"Baluffo is still running.\nOpen this URL manually:\n{open_url}"
+    )
+    show_native_message(WINDOW_TITLE, message)
+    _append_startup_trace(
+        data_dir,
+        "desktop_browser_launch_recovered",
+        elapsedMs=int(elapsed_ms),
+        error=str(error),
+        recoveryUrl=str(open_url),
+    )
+    _write_launch_diagnostics(
+        data_dir,
+        "desktop-browser-launch-recovery.txt",
+        message,
+    )
+    return {
+        "mode": "browser-launch-recovery",
+        "browserName": "",
+        "browserPath": "",
+        "process": None,
+        "browserPid": 0,
+        "spawnStartedAtMonotonic": time.perf_counter(),
+        "launchAcceptedAtMonotonic": time.perf_counter(),
+        "windowShownAtMonotonic": time.perf_counter(),
+        "windowShownObserved": False,
+        "windowPid": 0,
+        "windowTitle": "",
+        "launchTraceEventsEmitted": False,
+        "shellWindowEventEmitted": False,
+        "shellWindowEvent": "desktop_shell_window_shown_inferred",
+        "spawnToAcceptMs": 0,
+        "processReadyTimeoutMs": 0,
+        "processReadyPollIntervalMs": 0,
+        "revealHandoffEvidence": "browser_launch_recovery",
+    }
+
+
 def build_open_url(config: DesktopRuntimeConfig) -> str:
     separator = "&" if "?" in config.open_path else "?"
     extra = "&startupProbe=1" if bool(config.startup_probe) else ""
@@ -389,23 +476,52 @@ def build_open_url(config: DesktopRuntimeConfig) -> str:
     )
 
 
+def _runtime_session_root_candidate() -> Path:
+    global _RUNTIME_SESSION_ROOT
+    if _RUNTIME_SESSION_ROOT is None:
+        _RUNTIME_SESSION_ROOT = (
+            Path(tempfile.gettempdir()).resolve()
+            / "BaluffoRuntime"
+            / f"desktop-session-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        ).resolve()
+    return _RUNTIME_SESSION_ROOT
+
+
+def _record_session_root_resolution(path: Path, strategy: str) -> None:
+    _LAST_SESSION_ROOT_INFO["path"] = str(path)
+    _LAST_SESSION_ROOT_INFO["strategy"] = str(strategy or "").strip()
+
+
+def last_session_root_resolution() -> dict[str, str]:
+    return dict(_LAST_SESSION_ROOT_INFO)
+
+
 def resolve_browser_session_root(env: dict[str, str] | None = None) -> Path:
     env_map = env if env is not None else os.environ
-    candidates: list[Path] = []
+    env_override = str(env_map.get("BALUFFO_DESKTOP_SESSION_ROOT") or "").strip()
+    candidates: list[tuple[Path, str]] = []
+    if env_override:
+        candidates.append((Path(env_override).expanduser().resolve(), "env"))
     base = str(env_map.get("LOCALAPPDATA") or "").strip()
     if base:
-        candidates.append(Path(base).expanduser().resolve() / "Baluffo")
+        candidates.append((Path(base).expanduser().resolve() / "Baluffo", "localappdata"))
     else:
-        candidates.append((Path.home() / "AppData" / "Local" / "Baluffo").resolve())
+        candidates.append(
+            (((Path.home() / "AppData" / "Local" / "Baluffo").resolve()), "home-localappdata")
+        )
     username = str(env_map.get("USERNAME") or env_map.get("USER") or "user").strip() or "user"
-    candidates.append((Path(tempfile.gettempdir()) / f"Baluffo-{username}").resolve())
-    for candidate in candidates:
+    candidates.append(
+        ((Path(tempfile.gettempdir()) / f"Baluffo-{username}").resolve(), "temp-user")
+    )
+    candidates.append((_runtime_session_root_candidate(), "runtime-temp"))
+    for candidate, strategy in candidates:
         try:
             candidate.mkdir(parents=True, exist_ok=True)
             probe_path = candidate / ".baluffo-write-probe"
             probe_path.write_text("ok", encoding="utf-8")
             with contextlib.suppress(OSError):
                 probe_path.unlink()
+            _record_session_root_resolution(candidate, strategy)
             return candidate
         except OSError:
             continue
@@ -1078,6 +1194,29 @@ def get_baluffo_bridge_health(bridge_port: int, *, timeout_s: float = 2.0) -> di
     return payload if str(payload.get("service") or "") == "baluffo-bridge" else {}
 
 
+def classify_desktop_startup_state(
+    bridge_port: int,
+    *,
+    app_version: str,
+    timeout_s: float = 1.5,
+) -> tuple[str, dict[str, object]]:
+    try:
+        payload = fetch_json(f"http://127.0.0.1:{int(bridge_port)}/ops/health", timeout_s=timeout_s)
+    except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
+        return "bridge_unbound", {}
+    if not isinstance(payload, dict):
+        return "bridge_health_mismatch", {}
+    if str(payload.get("service") or "") != "baluffo-bridge":
+        return "bridge_health_mismatch", payload
+    if not bool(payload.get("desktopMode")):
+        return "bridge_health_mismatch", payload
+    if str(payload.get("appVersion") or "").strip() != str(app_version or "").strip():
+        return "bridge_health_mismatch", payload
+    if not bool(payload.get("startupReady")):
+        return "startup_pending", payload
+    return "ready", payload
+
+
 def wait_for_desktop_startup_ready(
     bridge_port: int,
     *,
@@ -1085,17 +1224,25 @@ def wait_for_desktop_startup_ready(
     timeout_s: float = READY_TIMEOUT_S,
 ) -> dict[str, object]:
     deadline = time.monotonic() + max(1.0, float(timeout_s))
+    last_reason = "bridge_unbound"
+    last_payload: dict[str, object] = {}
     while time.monotonic() < deadline:
-        payload = get_baluffo_bridge_health(bridge_port, timeout_s=1.5)
-        if (
-            payload
-            and bool(payload.get("desktopMode"))
-            and bool(payload.get("startupReady"))
-            and str(payload.get("appVersion") or "").strip() == str(app_version or "").strip()
-        ):
-            return payload
+        reason, payload = classify_desktop_startup_state(
+            bridge_port,
+            app_version=app_version,
+            timeout_s=1.5,
+        )
+        last_reason = str(reason or "bridge_unbound")
+        last_payload = dict(payload or {})
+        if last_reason == "ready":
+            return last_payload
         time.sleep(0.25)
-    raise RuntimeError("Baluffo bridge did not reach desktop startup readiness.")
+    message = {
+        "bridge_unbound": "Baluffo bridge did not bind to the desktop health endpoint in time.",
+        "bridge_health_mismatch": "Baluffo bridge responded, but it did not report the expected desktop health state.",
+        "startup_pending": "Baluffo bridge is running, but desktop startup did not finish in time.",
+    }.get(last_reason, "Baluffo bridge did not reach desktop startup readiness.")
+    raise DesktopStartupReadyTimeout(last_reason, message, payload=last_payload)
 
 
 def publish_success_marker_when_ready_async(
@@ -1107,7 +1254,7 @@ def publish_success_marker_when_ready_async(
     paths = DesktopUpdatePaths.from_data_dir(config.data_dir)
 
     def worker() -> None:
-        with contextlib.suppress(RuntimeError):
+        try:
             ready_payload = wait_for_desktop_startup_ready(
                 config.bridge_port,
                 app_version=get_app_version(),
@@ -1119,6 +1266,25 @@ def publish_success_marker_when_ready_async(
                 bridge_port=int(config.bridge_port),
                 launcher_token=str(launcher_token or ""),
             )
+        except DesktopStartupReadyTimeout as exc:
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_bridge_startup_timeout",
+                reason=str(exc.reason or ""),
+                bridgePort=int(config.bridge_port),
+                url=build_open_url(config),
+            )
+            _write_launch_diagnostics(
+                config.data_dir,
+                "desktop-bridge-startup-timeout.txt",
+                (
+                    f"{str(exc)}\n\n"
+                    f"Reason: {str(exc.reason or 'unknown')}\n"
+                    f"Recovery URL: {build_open_url(config)}\n"
+                ),
+            )
+        except RuntimeError:
+            return
 
     threading.Thread(
         target=worker,
@@ -1953,122 +2119,188 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 bridgePort=int(existing_session.get("bridgePort") or 0),
             )
             raise RuntimeError(ALREADY_RUNNING_ERROR)
+        session_root = resolve_browser_session_root()
+        session_root_info = last_session_root_resolution()
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_session_root_resolved",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            sessionRoot=str(session_root),
+            strategy=str(session_root_info.get("strategy") or ""),
+        )
         # Desktop runtime must always enable desktop-local-data endpoints in the bridge.
         # Child processes inherit this environment (even when using child-mode argv flags).
         child_env = {"BALUFFO_DATA_DIR": str(config.data_dir), "BALUFFO_DESKTOP_MODE": "1"}
         if bool(config.startup_probe):
             child_env["BALUFFO_STARTUP_PROBE"] = "1"
-        ensure_runtime_ports(config)
-        desktop_job = _windows_create_kill_on_close_job()
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_ports_available",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-        )
-        site_process = start_child_process(
-            build_child_command(
-                "site", root=config.ship_root, port=config.site_port, desktop_runtime=True
-            ),
-            extra_env=child_env,
-            job_handle=desktop_job,
-        )
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_site_spawned",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            pid=int(site_process.pid) if site_process else 0,
-        )
-        open_url = build_open_url(config)
-        wait_for_url(
-            open_url,
-            timeout_s=READY_TIMEOUT_S,
-            interval_s=STARTUP_PROBE_URL_READY_INTERVAL_S if config.startup_probe else 0.25,
-            trace_data_dir=config.data_dir if config.startup_probe else None,
-        )
-        site_ready_elapsed_ms = int((time.perf_counter() - started_mono) * 1000)
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_site_ready",
-            elapsedMs=site_ready_elapsed_ms,
-            url=str(open_url),
-        )
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_bridge_spawn_deferred_until_site_ready",
-            elapsedMs=site_ready_elapsed_ms,
-            url=str(open_url),
-        )
-        bridge_process = start_child_process(
-            build_child_command(
-                "bridge",
-                root=config.ship_root,
-                port=config.bridge_port,
-                bridge_host=config.bridge_host,
-                data_dir=config.data_dir,
-                desktop_runtime=True,
-                owner_mode="desktop-window",
-                owner_token=owner_token,
-                desktop_session_id=desktop_session_id,
-                started_by=str(os.getpid()),
-                owner_idle_timeout_s=(
-                    STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S if config.startup_probe else 15.0
-                ),
-            ),
-            extra_env=child_env,
-            job_handle=desktop_job,
-        )
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_bridge_spawned",
-            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-            pid=int(bridge_process.pid) if bridge_process else 0,
-        )
-        _append_startup_trace(
-            config.data_dir,
-            "desktop_window_create_started",
-            elapsedMs=site_ready_elapsed_ms,
-        )
+        launch_result: dict[str, object] = {}
+        port_retry_attempted = False
+        open_url = ""
+        site_ready_elapsed_ms = 0
+        while True:
+            try:
+                ensure_runtime_ports(config)
+                desktop_job = _windows_create_kill_on_close_job()
+                _append_startup_trace(
+                    config.data_dir,
+                    "desktop_ports_available",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    sitePort=int(config.site_port),
+                    bridgePort=int(config.bridge_port),
+                )
+                site_process = start_child_process(
+                    build_child_command(
+                        "site", root=config.ship_root, port=config.site_port, desktop_runtime=True
+                    ),
+                    extra_env=child_env,
+                    job_handle=desktop_job,
+                )
+                _append_startup_trace(
+                    config.data_dir,
+                    "desktop_site_spawned",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    pid=int(site_process.pid) if site_process else 0,
+                )
+                open_url = build_open_url(config)
+                wait_for_url(
+                    open_url,
+                    timeout_s=READY_TIMEOUT_S,
+                    interval_s=STARTUP_PROBE_URL_READY_INTERVAL_S if config.startup_probe else 0.25,
+                    trace_data_dir=config.data_dir if config.startup_probe else None,
+                )
+                site_ready_elapsed_ms = int((time.perf_counter() - started_mono) * 1000)
+                _append_startup_trace(
+                    config.data_dir,
+                    "desktop_site_ready",
+                    elapsedMs=site_ready_elapsed_ms,
+                    url=str(open_url),
+                )
+                _append_startup_trace(
+                    config.data_dir,
+                    "desktop_bridge_spawn_deferred_until_site_ready",
+                    elapsedMs=site_ready_elapsed_ms,
+                    url=str(open_url),
+                )
+                bridge_process = start_child_process(
+                    build_child_command(
+                        "bridge",
+                        root=config.ship_root,
+                        port=config.bridge_port,
+                        bridge_host=config.bridge_host,
+                        data_dir=config.data_dir,
+                        desktop_runtime=True,
+                        owner_mode="desktop-window",
+                        owner_token=owner_token,
+                        desktop_session_id=desktop_session_id,
+                        started_by=str(os.getpid()),
+                        owner_idle_timeout_s=(
+                            STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S
+                            if config.startup_probe
+                            else 15.0
+                        ),
+                    ),
+                    extra_env=child_env,
+                    job_handle=desktop_job,
+                )
+                _append_startup_trace(
+                    config.data_dir,
+                    "desktop_bridge_spawned",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    pid=int(bridge_process.pid) if bridge_process else 0,
+                )
+                _append_startup_trace(
+                    config.data_dir,
+                    "desktop_window_create_started",
+                    elapsedMs=site_ready_elapsed_ms,
+                )
 
-        def _record_browser_launch_trace(
-            event: str, event_mono: float, fields: dict[str, object]
-        ) -> None:
-            _append_startup_trace(
-                config.data_dir,
-                event,
-                elapsedMs=max(0, int((float(event_mono) - started_mono) * 1000)),
-                **fields,
-            )
+                trace_data_dir = config.data_dir
 
-        if config.no_browser:
-            launch_result = {
-                "mode": "no-browser",
-                "browserName": "",
-                "browserPath": "",
-                "browserPid": 0,
-                "process": None,
-                "windowShownAtMonotonic": time.perf_counter(),
-                "windowShownObserved": False,
-                "windowPid": 0,
-                "windowTitle": "",
-            }
-            _append_startup_trace(
-                config.data_dir,
-                "desktop_browser_launch_selected",
-                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
-                mode="no-browser",
-                browser="",
-                browserPath="",
-            )
-        else:
-            launch_result = launch_browser_for_url(
-                open_url,
-                preferred_browser_path=str(
-                    os.environ.get(PREFERRED_BROWSER_PATH_ENV) or ""
-                ).strip(),
-                data_dir=config.data_dir,
-                started_mono=started_mono,
-                trace_hook=_record_browser_launch_trace,
-            )
+                def _record_browser_launch_trace(
+                    event: str,
+                    event_mono: float,
+                    fields: dict[str, object],
+                    *,
+                    data_dir: Path = trace_data_dir,
+                ) -> None:
+                    _append_startup_trace(
+                        data_dir,
+                        event,
+                        elapsedMs=max(0, int((float(event_mono) - started_mono) * 1000)),
+                        **fields,
+                    )
+
+                if config.no_browser:
+                    launch_result = {
+                        "mode": "no-browser",
+                        "browserName": "",
+                        "browserPath": "",
+                        "browserPid": 0,
+                        "process": None,
+                        "windowShownAtMonotonic": time.perf_counter(),
+                        "windowShownObserved": False,
+                        "windowPid": 0,
+                        "windowTitle": "",
+                    }
+                    _append_startup_trace(
+                        config.data_dir,
+                        "desktop_browser_launch_selected",
+                        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                        mode="no-browser",
+                        browser="",
+                        browserPath="",
+                    )
+                else:
+                    try:
+                        launch_result = launch_browser_for_url(
+                            open_url,
+                            preferred_browser_path=str(
+                                os.environ.get(PREFERRED_BROWSER_PATH_ENV) or ""
+                            ).strip(),
+                            data_dir=config.data_dir,
+                            started_mono=started_mono,
+                            trace_hook=_record_browser_launch_trace,
+                        )
+                    except RuntimeError as exc:
+                        launch_result = _recoverable_browser_launch_result(
+                            open_url=open_url,
+                            error=exc,
+                            data_dir=config.data_dir,
+                            elapsed_ms=int((time.perf_counter() - started_mono) * 1000),
+                        )
+                break
+            except Exception as exc:
+                retry_ports = (
+                    not session_state_written
+                    and not port_retry_attempted
+                    and _should_retry_runtime_launch(
+                        config,
+                        exc,
+                        site_process=site_process,
+                        bridge_process=bridge_process,
+                    )
+                )
+                if not retry_ports:
+                    raise
+                _append_startup_trace(
+                    config.data_dir,
+                    "desktop_runtime_port_retry",
+                    elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                    sitePort=int(config.site_port),
+                    bridgePort=int(config.bridge_port),
+                    error=str(exc),
+                )
+                terminate_process(browser_process)
+                terminate_process(bridge_process)
+                terminate_process(site_process)
+                browser_process = None
+                bridge_process = None
+                site_process = None
+                _windows_close_desktop_job(desktop_job)
+                desktop_job = None
+                config = resolve_runtime_ports(config)
+                port_retry_attempted = True
+                continue
         launch_mode = str(launch_result.get("mode") or "default-browser")
         launch_trace_events_emitted = bool(launch_result.get("launchTraceEventsEmitted"))
         shell_window_event_emitted = bool(launch_result.get("shellWindowEventEmitted"))
@@ -2224,7 +2456,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             browser_process=browser_process,
             browser_pid=int(browser_pid or 0),
             launch_accepted_elapsed_ms=int(accepted_elapsed_ms or 0),
-            require_window=not config.no_browser,
+            require_window=(not config.no_browser) and launch_mode != "browser-launch-recovery",
         )
         _append_startup_trace(
             config.data_dir,

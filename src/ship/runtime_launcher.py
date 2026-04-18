@@ -146,13 +146,19 @@ def resolve_runtime_layout(
     bundle_root = resolve_root(root)
     paths = update_manager.ShipPaths.from_root(bundle_root)
     update_manager.ensure_state(paths)
+    resolved_data_dir = Path(data_dir).expanduser().resolve() if data_dir else paths.data
     current_version = paths.current.read_text(encoding="utf-8").strip()
     if not current_version:
         raise RuntimeError("Current version pointer is empty.")
     active_root = paths.versions / current_version
     if not active_root.exists():
-        raise RuntimeError(f"Active version directory not found: {active_root}")
-    resolved_data_dir = Path(data_dir).expanduser().resolve() if data_dir else paths.data
+        startup_check_result = update_manager.startup_check(bundle_root, resolved_data_dir)
+        current_version = str(startup_check_result.get("current_version") or "").strip()
+        if not current_version:
+            raise RuntimeError("Current version pointer is empty.")
+        active_root = paths.versions / current_version
+        if not active_root.exists():
+            raise RuntimeError(f"Active version directory not found: {active_root}")
     return RuntimeLayout(
         root=bundle_root,
         current_version=current_version,
@@ -377,6 +383,17 @@ def run_bridge_server(
         repairedPointer=bool(startup_check_result.get("repaired_pointer")),
         bootstrapRepair=int(startup_check_result.get("bootstrap_repair") or 0),
     )
+    checked_version = str(startup_check_result.get("current_version") or "").strip()
+    if checked_version and checked_version != layout.current_version:
+        updated_active_root = (
+            update_manager.ShipPaths.from_root(layout.root).versions / checked_version
+        )
+        layout = RuntimeLayout(
+            root=layout.root,
+            current_version=checked_version,
+            active_root=updated_active_root,
+            data_dir=layout.data_dir,
+        )
     bridge_script = layout.active_root / "src" / "admin_bridge.py"
     if not bridge_script.exists():
         raise RuntimeError(f"Admin bridge entrypoint not found: {bridge_script}")

@@ -210,18 +210,11 @@ def _decode_public_keys_payload(payload: Any) -> dict[str, bytes]:
 def desktop_update_public_key_candidate_paths(ship_root: Path) -> tuple[Path, ...]:
     resolved_ship = Path(ship_root).expanduser().resolve()
     candidates: list[Path] = [resolved_ship / "app" / PUBLIC_KEYS_FILE]
-    current_path = resolved_ship / "app" / "current.txt"
-    if current_path.exists():
-        current_version = str(current_path.read_text(encoding="utf-8").strip())
-        if current_version:
-            candidates.append(
-                resolved_ship
-                / "app"
-                / "versions"
-                / current_version
-                / "packaging"
-                / PUBLIC_KEYS_FILE
-            )
+    current_version = _resolve_ship_current_version(resolved_ship)
+    if current_version:
+        candidates.append(
+            resolved_ship / "app" / "versions" / current_version / "packaging" / PUBLIC_KEYS_FILE
+        )
     return tuple(candidates)
 
 
@@ -307,14 +300,27 @@ def validate_desktop_manifest(manifest: dict[str, Any]) -> None:
         raise ValueError("Desktop manifest channel is unsupported.")
 
 
-def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
-    env_repo = str(os.environ.get("BALUFFO_DESKTOP_UPDATE_REPO") or "").strip()
-    if env_repo:
-        return env_repo
+def _resolve_ship_current_version(ship_root: Path) -> str:
     current_path = ship_root / "app" / "current.txt"
     current_version = (
         str(current_path.read_text(encoding="utf-8").strip()) if current_path.exists() else ""
     )
+    if current_version:
+        return current_version
+    try:
+        from src.ship import update_manager
+
+        state = update_manager.ensure_state(update_manager.ShipPaths.from_root(ship_root))
+    except Exception:  # noqa: BLE001
+        return ""
+    return str(state.get("current_version") or "").strip()
+
+
+def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
+    env_repo = str(os.environ.get("BALUFFO_DESKTOP_UPDATE_REPO") or "").strip()
+    if env_repo:
+        return env_repo
+    current_version = _resolve_ship_current_version(ship_root)
     if current_version:
         packaging_dir = ship_root / "app" / "versions" / current_version / "packaging"
         payload = read_json(packaging_dir / DESKTOP_UPDATE_CONFIG_FILE, {})
