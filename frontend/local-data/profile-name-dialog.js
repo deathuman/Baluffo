@@ -9,10 +9,27 @@ function isFocusableElement(value) {
   return Boolean(value && typeof value === "object" && typeof value.focus === "function");
 }
 
+function normalizeExistingProfiles(existingProfiles) {
+  const seen = new Set();
+  return (Array.isArray(existingProfiles) ? existingProfiles : [])
+    .map(profile => {
+      const name = String(profile?.name || profile?.displayName || "").trim();
+      if (!name) return null;
+      const normalizedName = name.toLowerCase();
+      if (seen.has(normalizedName)) return null;
+      seen.add(normalizedName);
+      return {
+        ...profile,
+        name
+      };
+    })
+    .filter(Boolean);
+}
+
 function buildProfilePromptLabel(existingProfiles) {
-  const profiles = Array.isArray(existingProfiles) ? existingProfiles : [];
+  const profiles = normalizeExistingProfiles(existingProfiles);
   return profiles.length
-    ? `Sign in with a local profile. Existing profiles: ${profiles.map(profile => profile?.name).filter(Boolean).join(", ")}`
+    ? `Sign in with a local profile. Existing profiles: ${profiles.map(profile => profile?.name).join(", ")}`
     : "Create a local profile to sign in.";
 }
 
@@ -87,7 +104,7 @@ export async function requestTextInputDialog({
     submitBtn.textContent = String(submitLabel || "Continue");
 
     const listId = "local-auth-profile-list";
-    const profileNames = (Array.isArray(existingProfiles) ? existingProfiles : [])
+    const profileNames = normalizeExistingProfiles(existingProfiles)
       .map(profile => String(profile?.name || "").trim())
       .filter(Boolean);
     if (profileNames.length) {
@@ -166,13 +183,339 @@ export async function requestProfileName({
   existingProfiles = [],
   defaultValue = ""
 } = {}) {
-  return requestTextInputDialog({
-    title,
-    description,
-    label: "Profile name",
-    submitLabel: "Continue",
-    existingProfiles,
-    defaultValue
+  const profiles = normalizeExistingProfiles(existingProfiles);
+  if (!profiles.length) {
+    return requestTextInputDialog({
+      title,
+      description,
+      label: "Profile name",
+      submitLabel: "Continue",
+      existingProfiles,
+      defaultValue
+    });
+  }
+
+  const doc = getDocumentTarget();
+  if (!doc) {
+    const fallbackPrompt = typeof globalThis?.window?.prompt === "function"
+      ? globalThis.window.prompt.bind(globalThis.window)
+      : null;
+    if (!fallbackPrompt) return null;
+    const fallbackLabel = [title, description || buildProfilePromptLabel(profiles)]
+      .filter(Boolean)
+      .join("\n\n");
+    const matchedDefault = profiles.find(
+      profile => profile.name.toLowerCase() === String(defaultValue || "").trim().toLowerCase()
+    );
+    const initialValue = String(
+      matchedDefault?.name
+      || profiles.find(profile => Boolean(profile?.isCurrent))?.name
+      || profiles[0]?.name
+      || ""
+    );
+    const fallbackValue = fallbackPrompt(fallbackLabel, initialValue);
+    return typeof fallbackValue === "string" ? fallbackValue : null;
+  }
+
+  return new Promise(resolve => {
+    const overlay = doc.createElement("div");
+    overlay.className = "popup-overlay local-auth-dialog-overlay";
+    overlay.dataset.localAuthDialog = "true";
+
+    const panel = doc.createElement("div");
+    panel.className = "popup local-auth-dialog";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-labelledby", "local-auth-dialog-title");
+
+    const heading = doc.createElement("h2");
+    heading.id = "local-auth-dialog-title";
+    heading.className = "local-auth-dialog-title";
+    heading.textContent = String(title || "Sign in");
+
+    const descriptionEl = doc.createElement("p");
+    descriptionEl.className = "local-auth-dialog-description";
+    descriptionEl.textContent = String(description || buildProfilePromptLabel(profiles));
+
+    const form = doc.createElement("form");
+    form.className = "local-auth-dialog-form";
+
+    const helperEl = doc.createElement("p");
+    helperEl.className = "local-auth-dialog-helper";
+
+    const stack = doc.createElement("div");
+    stack.className = "local-auth-dialog-stack";
+
+    const existingLabel = doc.createElement("label");
+    existingLabel.className = "local-auth-dialog-label";
+    existingLabel.setAttribute("for", "local-auth-profile-select");
+    existingLabel.textContent = "Choose profile";
+
+    const selectEl = doc.createElement("select");
+    selectEl.id = "local-auth-profile-select";
+    selectEl.className = "local-auth-dialog-select";
+    selectEl.name = "existingProfile";
+
+    profiles.forEach(profile => {
+      const option = doc.createElement("option");
+      option.value = profile.name;
+      option.textContent = profile.name;
+      selectEl.appendChild(option);
+    });
+
+    const createLabel = doc.createElement("label");
+    createLabel.className = "local-auth-dialog-label";
+    createLabel.setAttribute("for", "local-auth-name-input");
+    createLabel.textContent = "New profile name";
+
+    const inputEl = doc.createElement("input");
+    inputEl.id = "local-auth-name-input";
+    inputEl.className = "local-auth-dialog-input";
+    inputEl.name = "profileName";
+    inputEl.type = "text";
+    inputEl.maxLength = 120;
+    inputEl.autocomplete = "off";
+    inputEl.required = true;
+    inputEl.placeholder = "Enter new profile name";
+
+    const actions = doc.createElement("div");
+    actions.className = "local-auth-dialog-actions";
+
+    const createToggleBtn = doc.createElement("button");
+    createToggleBtn.id = "local-auth-create-btn";
+    createToggleBtn.className = "btn back-btn local-auth-dialog-secondary";
+    createToggleBtn.type = "button";
+
+    const cancelBtn = doc.createElement("button");
+    cancelBtn.id = "local-auth-cancel-btn";
+    cancelBtn.className = "btn back-btn local-auth-dialog-cancel";
+    cancelBtn.type = "button";
+    cancelBtn.textContent = "Cancel";
+
+    const submitBtn = doc.createElement("button");
+    submitBtn.id = "local-auth-submit-btn";
+    submitBtn.className = "btn back-btn local-auth-dialog-submit";
+    submitBtn.type = "submit";
+
+    const requestedDefault = String(defaultValue || "").trim();
+    const matchedDefault = profiles.find(
+      profile => profile.name.toLowerCase() === requestedDefault.toLowerCase()
+    );
+    let createMode = Boolean(requestedDefault) && !matchedDefault;
+    let selectedProfileName = String(
+      matchedDefault?.name
+      || profiles.find(profile => Boolean(profile?.isCurrent))?.name
+      || profiles[0]?.name
+      || ""
+    );
+    let newProfileName = createMode ? requestedDefault : "";
+
+    if (selectedProfileName) {
+      selectEl.value = selectedProfileName;
+    }
+    inputEl.value = newProfileName;
+
+    let finished = false;
+    let previousActiveElement = isFocusableElement(doc.activeElement) ? doc.activeElement : null;
+
+    function cleanup(result) {
+      if (finished) return;
+      finished = true;
+      doc.removeEventListener("keydown", onKeyDown, true);
+      overlay.remove();
+      if (previousActiveElement && doc.contains(previousActiveElement)) {
+        try {
+          previousActiveElement.focus({ preventScroll: true });
+        } catch {
+          previousActiveElement.focus();
+        }
+      }
+      resolve(result);
+    }
+
+    function focusCurrentField() {
+      const target = createMode ? inputEl : selectEl;
+      try {
+        target.focus({ preventScroll: true });
+      } catch {
+        target.focus();
+      }
+      if (createMode && typeof inputEl.select === "function") {
+        inputEl.select();
+      }
+    }
+
+    function renderMode() {
+      stack.replaceChildren();
+      if (createMode) {
+        helperEl.textContent = "Create a new local profile for this device.";
+        stack.append(createLabel, inputEl);
+        createToggleBtn.textContent = "Use existing profile";
+        submitBtn.textContent = "Create profile";
+      } else {
+        helperEl.textContent = "Pick an existing profile to avoid creating a duplicate by mistake.";
+        stack.append(existingLabel, selectEl);
+        createToggleBtn.textContent = "Create new profile";
+        submitBtn.textContent = "Continue";
+      }
+      queueMicrotask(focusCurrentField);
+    }
+
+    function onKeyDown(event) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      cleanup(null);
+    }
+
+    createToggleBtn.addEventListener("click", () => {
+      if (createMode) {
+        newProfileName = inputEl.value;
+      } else {
+        selectedProfileName = selectEl.value;
+      }
+      createMode = !createMode;
+      if (createMode) {
+        inputEl.value = newProfileName || "";
+      } else if (selectedProfileName) {
+        selectEl.value = selectedProfileName;
+      }
+      renderMode();
+    });
+    cancelBtn.addEventListener("click", () => cleanup(null));
+    overlay.addEventListener("click", event => {
+      if (event.target === overlay) {
+        cleanup(null);
+      }
+    });
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      cleanup(createMode ? inputEl.value : selectEl.value);
+    });
+    doc.addEventListener("keydown", onKeyDown, true);
+
+    actions.append(createToggleBtn, cancelBtn, submitBtn);
+    form.append(helperEl, stack, actions);
+    panel.append(heading, descriptionEl, form);
+    overlay.appendChild(panel);
+    doc.body.appendChild(overlay);
+    renderMode();
+  });
+}
+
+export async function requestProfileLoadFailureAction({
+  title = "Sign in",
+  description = ""
+} = {}) {
+  const fallbackDescription = String(
+    description
+    || "Could not load existing local profiles. Retry to load them again, create a new local profile, or cancel sign-in."
+  );
+  const doc = getDocumentTarget();
+  if (!doc) {
+    const fallbackPrompt = typeof globalThis?.window?.prompt === "function"
+      ? globalThis.window.prompt.bind(globalThis.window)
+      : null;
+    if (!fallbackPrompt) return null;
+    const fallbackLabel = [
+      title,
+      fallbackDescription,
+      "Type retry to try again, create to create a new profile, or cancel to abort."
+    ].filter(Boolean).join("\n\n");
+    const fallbackValue = String(fallbackPrompt(fallbackLabel, "retry") || "").trim().toLowerCase();
+    if (fallbackValue === "retry") return "retry";
+    if (fallbackValue === "create") return "create";
+    return null;
+  }
+  return new Promise(resolve => {
+    const overlay = doc.createElement("div");
+    overlay.className = "popup-overlay local-auth-dialog-overlay";
+    overlay.dataset.localAuthDialog = "true";
+
+    const panel = doc.createElement("div");
+    panel.className = "popup local-auth-dialog";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-labelledby", "local-auth-dialog-title");
+
+    const heading = doc.createElement("h2");
+    heading.id = "local-auth-dialog-title";
+    heading.className = "local-auth-dialog-title";
+    heading.textContent = String(title || "Sign in");
+
+    const descriptionEl = doc.createElement("p");
+    descriptionEl.className = "local-auth-dialog-description";
+    descriptionEl.textContent = fallbackDescription;
+
+    const actions = doc.createElement("div");
+    actions.className = "local-auth-dialog-actions";
+
+    const cancelBtn = doc.createElement("button");
+    cancelBtn.id = "local-auth-cancel-btn";
+    cancelBtn.className = "btn back-btn local-auth-dialog-cancel";
+    cancelBtn.type = "button";
+    cancelBtn.textContent = "Cancel";
+
+    const retryBtn = doc.createElement("button");
+    retryBtn.id = "local-auth-retry-btn";
+    retryBtn.className = "btn back-btn local-auth-dialog-secondary";
+    retryBtn.type = "button";
+    retryBtn.textContent = "Retry";
+
+    const createBtn = doc.createElement("button");
+    createBtn.id = "local-auth-create-fallback-btn";
+    createBtn.className = "btn back-btn local-auth-dialog-submit";
+    createBtn.type = "button";
+    createBtn.textContent = "Create new profile";
+
+    let finished = false;
+    let previousActiveElement = isFocusableElement(doc.activeElement) ? doc.activeElement : null;
+
+    function cleanup(result) {
+      if (finished) return;
+      finished = true;
+      doc.removeEventListener("keydown", onKeyDown, true);
+      overlay.remove();
+      if (previousActiveElement && doc.contains(previousActiveElement)) {
+        try {
+          previousActiveElement.focus({ preventScroll: true });
+        } catch {
+          previousActiveElement.focus();
+        }
+      }
+      resolve(result);
+    }
+
+    function onKeyDown(event) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      cleanup(null);
+    }
+
+    cancelBtn.addEventListener("click", () => cleanup(null));
+    retryBtn.addEventListener("click", () => cleanup("retry"));
+    createBtn.addEventListener("click", () => cleanup("create"));
+    overlay.addEventListener("click", event => {
+      if (event.target === overlay) cleanup(null);
+    });
+    doc.addEventListener("keydown", onKeyDown, true);
+
+    actions.append(cancelBtn, retryBtn, createBtn);
+    panel.append(heading, descriptionEl, actions);
+    overlay.appendChild(panel);
+    doc.body.appendChild(overlay);
+
+    const focusRetry = () => {
+      try {
+        retryBtn.focus({ preventScroll: true });
+      } catch {
+        retryBtn.focus();
+      }
+    };
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(focusRetry);
+    } else {
+      setTimeout(focusRetry, 0);
+    }
   });
 }
 

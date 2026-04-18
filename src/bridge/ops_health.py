@@ -18,6 +18,7 @@ SOCIAL_UNIQUE_VALUE_THRESHOLD = 0.10
 SOCIAL_DUPLICATE_RATE_THRESHOLD = 0.70
 SOCIAL_FALSE_POSITIVE_THRESHOLD = 0.05
 SOCIAL_FALSE_POSITIVE_SAMPLE_SIZE = 50
+NON_DISMISSIBLE_ALERT_IDS = frozenset({"fetch_never_run"})
 
 
 def load_alert_state(
@@ -295,13 +296,23 @@ def evaluate_alerts(
         finished = parse_iso(last_success_fetch.get("finishedAt"))
         if finished:
             stale_hours = (now - finished).total_seconds() / 3600.0
-    if stale_hours is None or stale_hours > STALE_FETCH_HOURS:
+    if stale_hours is None:
+        active_conditions.append(
+            {
+                "id": "fetch_never_run",
+                "severity": "warning",
+                "message": "No successful fetch has run yet. Run Jobs Fetcher to update the jobs listing.",
+                "value": None,
+                "triggeredAt": now_iso(),
+            }
+        )
+    elif stale_hours > STALE_FETCH_HOURS:
         active_conditions.append(
             {
                 "id": "stale_fetch",
-                "severity": "critical",
-                "message": f"No successful fetch in the last {STALE_FETCH_HOURS}h.",
-                "value": None if stale_hours is None else round(stale_hours, 2),
+                "severity": "warning",
+                "message": f"Last successful fetch is older than {STALE_FETCH_HOURS}h. A full Jobs Fetcher run is suggested to update the jobs listing.",
+                "value": round(stale_hours, 2),
                 "triggeredAt": now_iso(),
             }
         )
@@ -441,9 +452,15 @@ def evaluate_alerts(
                 }
             )
 
+    for row in active_conditions:
+        row["dismissible"] = str(row.get("id") or "") not in NON_DISMISSIBLE_ALERT_IDS
+
     active_ids = {row["id"] for row in active_conditions}
+    non_dismissible_ids = {
+        row["id"] for row in active_conditions if not bool(row.get("dismissible", True))
+    }
     for key in list(acked.keys()):
-        if key not in active_ids:
+        if key not in active_ids or key in non_dismissible_ids:
             acked.pop(key, None)
 
     visible_alerts = [row for row in active_conditions if row["id"] not in acked]

@@ -36,6 +36,16 @@ test("admin render: alerts and kpis render healthy/critical states", () => {
   assert.match(kpisEl.innerHTML, /12\.3s/);
 });
 
+test("admin render: non-dismissible alerts omit dismiss control", () => {
+  const alertsEl = makeEl();
+  renderAdminOpsAlerts(alertsEl, [
+    { id: "fetch_never_run", severity: "warning", message: "No successful fetch yet.", dismissible: false }
+  ]);
+
+  assert.match(alertsEl.innerHTML, /No successful fetch yet/i);
+  assert.doesNotMatch(alertsEl.innerHTML, /Dismiss/i);
+});
+
 test("admin render: schedule/trends/history render deterministic core text", () => {
   const scheduleEl = makeEl();
   renderAdminOpsSchedule(
@@ -156,6 +166,9 @@ test("admin render: signature patching skips redundant alerts/kpis/schedule rewr
   alertsEl.innerHTML = `${alertsEl.innerHTML}<!--keep-->`;
   renderAdminOpsAlerts(alertsEl, alerts);
   assert.match(alertsEl.innerHTML, /<!--keep-->/);
+  renderAdminOpsAlerts(alertsEl, [{ id: "a1", severity: "warning", message: "x", dismissible: false }]);
+  assert.doesNotMatch(alertsEl.innerHTML, /<!--keep-->/);
+  assert.doesNotMatch(alertsEl.innerHTML, /Dismiss/);
 
   const kpisEl = makeEl();
   kpisEl.dataset = {};

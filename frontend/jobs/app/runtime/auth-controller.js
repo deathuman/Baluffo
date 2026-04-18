@@ -46,6 +46,11 @@ export function createJobsAuthController({
     }, isSignedIn);
   }
 
+  function setGuestNoticeVisible(visible) {
+    if (!refs.guestNoticeEl) return;
+    refs.guestNoticeEl.hidden = !visible;
+  }
+
   function focusSavedJobsButton() {
     const { savedJobsBtn } = refs;
     if (!savedJobsBtn || savedJobsBtn.classList.contains("hidden")) return;
@@ -68,6 +73,7 @@ export function createJobsAuthController({
     userState.savedJobKeys = new Set();
     userState.seenJobKeys = new Set();
     setAuthStatus("Browsing as guest");
+    setGuestNoticeVisible(true);
     toggleAuthButtons(false);
     setSkipInitialGuestAuthRerender(false);
     if (!shouldSkipGuestRerender && getAllJobs().length) {
@@ -78,6 +84,7 @@ export function createJobsAuthController({
   async function handleSignedIn(user) {
     setSkipInitialGuestAuthRerender(false);
     setAuthStatus(`Signed in as ${user.displayName || user.email || "user"}`);
+    setGuestNoticeVisible(false);
     toggleAuthButtons(true);
 
     try {
@@ -101,6 +108,7 @@ export function createJobsAuthController({
     if (shouldWaitForAuth()) {
       emitDesktopStartupMetric("jobs_auth_waiting");
       setAuthStatus("Local auth starting...");
+      setGuestNoticeVisible(false);
       toggleAuthButtons(false);
       setAuthControlsReady(false);
       authReadyPoller.schedulePoll();

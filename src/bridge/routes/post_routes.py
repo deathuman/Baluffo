@@ -643,6 +643,18 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         if not alert_id:
             handler._send_json({"error": "Missing alert id"}, status=400)  # noqa: SLF001
             return True
+        health = api.compute_ops_health()
+        active_alert = next(
+            (
+                row
+                for row in (health.get("alerts") or [])
+                if str((row or {}).get("id") or "").strip() == alert_id
+            ),
+            None,
+        )
+        if active_alert is not None and not bool(active_alert.get("dismissible", True)):
+            handler._send_json({"acked": alert_id, "ignored": True, "ok": True})  # noqa: SLF001
+            return True
         state_alert = api.load_alert_state()
         acked = dict(state_alert.get("acked") or {})
         acked[alert_id] = api.now_iso()

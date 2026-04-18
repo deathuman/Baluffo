@@ -396,11 +396,43 @@ h1 {
   border-color: var(--accent);
 }
 
+.local-auth-dialog-select {
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--surface-3);
+  color: var(--text-primary);
+  padding: 0.8rem 0.9rem;
+  font: inherit;
+}
+
+.local-auth-dialog-select:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 72%, white 28%);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+.local-auth-dialog-stack {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.local-auth-dialog-helper {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
 .local-auth-dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.65rem;
   margin-top: 0.2rem;
+}
+
+.local-auth-dialog-secondary {
+  margin-right: auto;
 }
 
 .release-notes-dialog-overlay {
@@ -625,6 +657,21 @@ h1 {
   color: var(--text-muted);
   font-size: 0.9rem;
   margin: 0 0 1rem;
+}
+
+.jobs-guest-notice {
+  margin: 0 0 1rem;
+  padding: 0.72rem 0.88rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-default));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-soft-bg) 52%, transparent);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.jobs-guest-notice strong {
+  color: var(--text-primary);
 }
 
 .auth-status {
@@ -3583,6 +3630,17 @@ h1 {
 
 .jobs-footer a:hover {
   text-decoration: underline;
+}
+
+.jobs-footer-version {
+  margin: 0.45rem 0 0;
+  color: var(--text-subtle);
+  font-size: 0.82rem;
+  letter-spacing: 0.01em;
+}
+
+.admin-page-footer {
+  margin-top: 1.25rem;
 }
 
 .jobs-sources {

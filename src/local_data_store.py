@@ -218,6 +218,31 @@ class LocalDataStore:
                 return profile
         return None
 
+    def list_profiles(self) -> list[dict[str, Any]]:
+        with LOCK:
+            current_uid = str(self._load_session().get("currentProfileId") or "")
+            rows = []
+            for profile in self._load_profiles():
+                uid = str(profile.get("id") or "").strip()
+                display_name = str(profile.get("name") or "").strip()
+                if not uid or not display_name:
+                    continue
+                rows.append(
+                    {
+                        "uid": uid,
+                        "displayName": display_name,
+                        "email": str(profile.get("email") or ""),
+                        "isCurrent": uid == current_uid,
+                    }
+                )
+            rows.sort(
+                key=lambda row: (
+                    str(row.get("displayName") or "").lower(),
+                    str(row.get("uid") or ""),
+                )
+            )
+            return rows
+
     def _require_current_user(self, uid: str) -> None:
         current = self.get_current_user()
         if not current or str(current.get("uid") or "") != str(uid or ""):

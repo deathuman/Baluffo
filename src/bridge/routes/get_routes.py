@@ -102,6 +102,15 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
             handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
         return True
 
+    if path == "/desktop-local-data/profiles":
+        try:
+            handler._send_json(
+                {"ok": True, "profiles": api.desktop_local_data_store().list_profiles()}
+            )  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+        return True
+
     if path == "/desktop-local-data/saved-jobs":
         try:
             uid = (query.get("uid") or [""])[0]

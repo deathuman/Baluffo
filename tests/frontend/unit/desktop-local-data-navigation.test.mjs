@@ -50,7 +50,9 @@ async function flushMicrotasks(count = 5) {
 function setupDesktopGlobals({
   locationHref = "http://127.0.0.1:4173/jobs.html?desktop=1",
   taskPayload = { tasks: [], count: 0 },
-  updatePayload = { availability: "unknown", downloadState: "idle", installState: "idle" }
+  updatePayload = { availability: "unknown", downloadState: "idle", installState: "idle" },
+  profilesPayload = { profiles: [] },
+  promptImpl = () => "Desktop User"
 } = {}) {
   const localStorage = createStorageMock();
   const sessionStorage = createStorageMock();
@@ -80,7 +82,7 @@ function setupDesktopGlobals({
     addEventListener(name, handler) {
       eventListeners.set(name, handler);
     },
-    prompt: () => "Desktop User"
+    prompt: promptImpl
   };
   global.fetch = async (url, options = {}) => {
     const normalizedUrl = String(url);
@@ -104,6 +106,35 @@ function setupDesktopGlobals({
     }
     if (normalizedUrl.includes("/app/update-status")) {
       return createJsonResponse(updatePayload);
+    }
+    if (normalizedUrl.includes("/desktop-local-data/profiles")) {
+      const resolvedProfilesPayload = typeof profilesPayload === "function"
+        ? profilesPayload({ url: normalizedUrl, options, fetchCalls })
+        : profilesPayload;
+      if (resolvedProfilesPayload instanceof Error) {
+        throw resolvedProfilesPayload;
+      }
+      return createJsonResponse({
+        ok: true,
+        profiles: resolvedProfilesPayload?.profiles || []
+      });
+    }
+    if (normalizedUrl.includes("/desktop-local-data/sign-in")) {
+      let body = {};
+      try {
+        body = JSON.parse(String(options?.body || "{}"));
+      } catch {
+        body = {};
+      }
+      const displayName = String(body?.name || "Existing User");
+      return createJsonResponse({
+        ok: true,
+        user: {
+          uid: "local_existing",
+          displayName,
+          email: ""
+        }
+      });
     }
     throw new Error(`unexpected fetch: ${normalizedUrl}`);
   };
@@ -286,4 +317,127 @@ test("normal unload without active work signals desktop closing", async () => {
   assert.equal(event.returnValue, undefined);
   assert.equal(beaconCalls.length, 1);
   assert.match(beaconCalls[0].url, /desktop-session-lifecycle/);
+});
+
+test("desktop sign-in loads existing profiles before prompting", async () => {
+  const promptCalls = [];
+  setupDesktopGlobals({
+    profilesPayload: {
+      profiles: [
+        { uid: "local_existing", displayName: "Existing User", email: "", isCurrent: true },
+        { uid: "local_other", displayName: "Other User", email: "", isCurrent: false }
+      ]
+    },
+    promptImpl: (message, initialValue) => {
+      promptCalls.push({ message: String(message || ""), initialValue: String(initialValue || "") });
+      return "Existing User";
+    }
+  });
+  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const api = initDesktopLocalDataClient();
+  await flushMicrotasks();
+
+  const result = await api.signIn();
+
+  assert.equal(result.user.displayName, "Existing User");
+  assert.equal(promptCalls.length, 1);
+  assert.match(promptCalls[0].message, /Choose an existing local profile/i);
+  assert.equal(promptCalls[0].initialValue, "Existing User");
+});
+
+test("desktop sign-in retries profile loading before showing the existing-profile picker", async () => {
+  const promptCalls = [];
+  let profileLoadAttempts = 0;
+  setupDesktopGlobals({
+    profilesPayload: () => {
+      profileLoadAttempts += 1;
+      if (profileLoadAttempts === 1) {
+        throw new Error("profiles unavailable");
+      }
+      return {
+        profiles: [
+          { uid: "local_existing", displayName: "Existing User", email: "", isCurrent: true }
+        ]
+      };
+    },
+    promptImpl: (message, initialValue) => {
+      promptCalls.push({ message: String(message || ""), initialValue: String(initialValue || "") });
+      return promptCalls.length === 1 ? "retry" : "Existing User";
+    }
+  });
+  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const api = initDesktopLocalDataClient();
+  await flushMicrotasks();
+
+  const result = await api.signIn();
+
+  assert.equal(result.user.displayName, "Existing User");
+  assert.equal(profileLoadAttempts, 2);
+  assert.equal(promptCalls.length, 2);
+  assert.match(promptCalls[0].message, /Could not load existing local profiles/i);
+  assert.equal(promptCalls[0].initialValue, "retry");
+  assert.match(promptCalls[1].message, /Choose an existing local profile/i);
+});
+
+test("desktop sign-in requires an explicit create action when profile loading fails", async () => {
+  const promptCalls = [];
+  const { fetchCalls } = setupDesktopGlobals({
+    profilesPayload: () => new Error("profiles unavailable"),
+    promptImpl: (message, initialValue) => {
+      promptCalls.push({ message: String(message || ""), initialValue: String(initialValue || "") });
+      return promptCalls.length === 1 ? "create" : "New Desktop User";
+    }
+  });
+  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const api = initDesktopLocalDataClient();
+  await flushMicrotasks();
+
+  const result = await api.signIn();
+
+  assert.equal(result.user.displayName, "New Desktop User");
+  assert.equal(promptCalls.length, 2);
+  assert.match(promptCalls[0].message, /Retry to load them again, create a new local profile, or cancel sign-in/i);
+  assert.match(promptCalls[1].message, /Create a new local profile for this device to continue/i);
+  const signInCall = fetchCalls.find(call => call.url.includes("/desktop-local-data/sign-in"));
+  assert.ok(signInCall);
+  assert.match(String(signInCall.options?.body || ""), /New Desktop User/);
+});
+
+test("desktop sign-in cancels cleanly when profile loading fails and the user aborts", async () => {
+  const { fetchCalls } = setupDesktopGlobals({
+    profilesPayload: () => new Error("profiles unavailable"),
+    promptImpl: () => "cancel"
+  });
+  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const api = initDesktopLocalDataClient();
+  await flushMicrotasks();
+
+  await assert.rejects(() => api.signIn(), /Sign-in cancelled\./);
+  assert.equal(fetchCalls.filter(call => call.url.includes("/desktop-local-data/sign-in")).length, 0);
+});
+
+test("desktop version labels render the installed app version", async () => {
+  setupDesktopGlobals({
+    updatePayload: {
+      currentVersion: "0.1.23",
+      availability: "unknown",
+      downloadState: "idle",
+      installState: "idle"
+    }
+  });
+  const labels = [
+    { hidden: true, textContent: "" },
+    { hidden: true, textContent: "" }
+  ];
+  const { hydrateDesktopVersionLabels } = await importFresh("../../../frontend/shared/app-version.js");
+
+  const version = await hydrateDesktopVersionLabels({
+    querySelectorAll() {
+      return labels;
+    }
+  });
+
+  assert.equal(version, "0.1.23");
+  assert.deepEqual(labels.map(label => label.textContent), ["Version 0.1.23", "Version 0.1.23"]);
+  assert.ok(labels.every(label => label.hidden === false));
 });

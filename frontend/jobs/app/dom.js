@@ -24,6 +24,7 @@ export function cacheJobsDom(doc = document) {
     countrySelectionBadge: doc.querySelector(ui(t.countrySelectionBadge)),
     sourceStatus: doc.querySelector(ui(t.sourceStatus)),
     fetchProgress: doc.querySelector(ui(t.fetchProgress)),
+    guestNoticeEl: doc.querySelector(ui(t.guestNotice)),
     pagination: doc.querySelector(ui(t.pagination)),
     refreshJobsBtn: doc.querySelector(ui(t.refreshJobsBtn)),
     desktopUpdateToggleBtn: doc.querySelector(ui(t.desktopUpdateToggleBtn)),

@@ -3,6 +3,7 @@ console.log("[baluffo] frontend/shared/local-data/app-client.js: module script l
 
 import { initBrowserLocalDataClient } from "./browser-client.js";
 import { initDesktopLocalDataClient } from "./desktop-client.js";
+import { hydrateDesktopVersionLabels } from "../app-version.js";
 import { resolveDesktopRuntimeMode } from "./runtime-context.js";
 import {
   bindStartupProbeErrorHandlers,
@@ -23,6 +24,7 @@ if (window.__baluffoDesktopMode) {
   emitStartupProbeMetric(`${page}_local_data_init_start`);
   try {
     initDesktopLocalDataClient();
+    hydrateDesktopVersionLabels().catch(() => {});
     window.__baluffoLocalDataLoaded = true;
     console.log("[baluffo] Desktop local data initialized successfully");
     emitStartupProbeMetric(`${page}_local_data_init_ready`);

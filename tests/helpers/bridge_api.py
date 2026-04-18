@@ -85,6 +85,23 @@ class FakeDesktopLocalDataStore:
     def get_current_user(self) -> dict | None:
         return self._current_user
 
+    def list_profiles(self) -> list[dict[str, Any]]:
+        current_uid = str((self._current_user or {}).get("uid") or "")
+        rows = []
+        for uid, user in sorted(
+            self.users.items(),
+            key=lambda item: str((item[1] or {}).get("name") or "").lower(),
+        ):
+            rows.append(
+                {
+                    "uid": str(uid),
+                    "displayName": str((user or {}).get("name") or ""),
+                    "email": str((user or {}).get("email") or ""),
+                    "isCurrent": str(uid) == current_uid,
+                }
+            )
+        return rows
+
     def get_saved_jobs(self, uid: str) -> list[dict]:
         return self.saved_jobs.get(uid, [])
 

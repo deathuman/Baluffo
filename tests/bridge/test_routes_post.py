@@ -665,6 +665,12 @@ def test_ack_alert_success(tmp_path: Path) -> None:
     """Test acknowledging an alert."""
     store = _FakeDesktopLocalDataStore()
     api = _make_api(tmp_path, store)
+    alert_state = {"acked": {}}
+    api.load_alert_state = lambda: {"acked": dict(alert_state["acked"])}
+    api.save_alert_state = lambda payload: alert_state.update(
+        {"acked": dict((payload or {}).get("acked") or {})}
+    )
+    api.now_iso = lambda: "2026-04-18T10:00:00Z"
 
     handler = _FakeHandler()
     result = handle_post(
@@ -676,3 +682,27 @@ def test_ack_alert_success(tmp_path: Path) -> None:
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
+    assert alert_state["acked"]["alert-123"] == "2026-04-18T10:00:00Z"
+
+
+def test_ack_alert_ignores_non_dismissible_alert(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    alert_state = {"acked": {}}
+    saved_payloads: list[dict[str, Any]] = []
+    api.load_alert_state = lambda: {"acked": dict(alert_state["acked"])}
+    api.save_alert_state = lambda payload: saved_payloads.append(dict(payload or {}))
+    api.compute_ops_health = lambda: {"alerts": [{"id": "fetch_never_run", "dismissible": False}]}
+
+    handler = _FakeHandler()
+    result = handle_post(
+        handler,
+        api=api,
+        path="/ops/alerts/ack",
+        payload={"id": "fetch_never_run"},
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["ignored"] is True
+    assert saved_payloads == []

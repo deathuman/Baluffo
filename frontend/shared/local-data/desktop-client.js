@@ -1,6 +1,10 @@
 import { AdminConfig } from "../config/admin-config.js";
 import { APPLICATION_STATUSES } from "../../local-data/constants.js";
-import { requestProfileName } from "../../local-data/profile-name-dialog.js";
+import {
+  requestProfileLoadFailureAction,
+  requestProfileName,
+  requestTextInputDialog
+} from "../../local-data/profile-name-dialog.js";
 import { createLocalDataRuntime } from "../../local-data/runtime-contract.js";
 import { buildAttachmentPath, generateJobKey } from "../../local-data/job-utils.js";
 import { canTransitionPhase, normalizeApplicationStatus } from "../../local-data/phase.js";
@@ -398,6 +402,11 @@ async function fetchCurrentUser() {
   return payload.user || null;
 }
 
+async function listDesktopProfiles() {
+  const payload = await requestJson("/profiles");
+  return Array.isArray(payload.profiles) ? payload.profiles : [];
+}
+
 function commitAuthState(user, revision = null) {
   if (revision !== null && Number(revision) !== authStateRevision) {
     return currentUser;
@@ -471,21 +480,63 @@ const desktopApi = createLocalDataRuntime({
     return () => AUTH_LISTENERS.delete(callback);
   },
   async signIn() {
-    const name = await requestProfileName({
-      title: "Sign in",
-      description: "Enter a profile name to sign in or create a local desktop profile.",
-      defaultValue: currentUser?.displayName || ""
-    });
-    if (!String(name || "").trim()) {
-      throw new Error("Sign-in cancelled.");
+    let defaultValue = String(currentUser?.displayName || "").trim();
+    const completeSignIn = async name => {
+      const trimmedName = String(name || "").trim();
+      if (!trimmedName) {
+        throw new Error("Sign-in cancelled.");
+      }
+      const payload = await requestJson("/sign-in", {
+        method: "POST",
+        body: JSON.stringify({ name: trimmedName })
+      });
+      authStateRevision += 1;
+      const user = commitAuthState(payload.user || null);
+      return { user };
+    };
+
+    while (true) {
+      let existingProfiles = [];
+      let description = "Enter a profile name to sign in or create a local desktop profile. Signing in keeps your seen and saved jobs on this device.";
+      try {
+        existingProfiles = await listDesktopProfiles();
+      } catch {
+        const action = await requestProfileLoadFailureAction({
+          title: "Sign in",
+          description: "Could not load existing local profiles. Retry to load them again, create a new local profile, or cancel sign-in."
+        });
+        if (action === "retry") {
+          continue;
+        }
+        if (action === "create") {
+          const name = await requestTextInputDialog({
+            title: "Create profile",
+            description: "Could not load existing local profiles. Create a new local profile for this device to continue.",
+            label: "New profile name",
+            submitLabel: "Create profile",
+            defaultValue
+          });
+          return completeSignIn(name);
+        }
+        throw new Error("Sign-in cancelled.");
+      }
+
+      if (existingProfiles.length) {
+        const currentProfile = existingProfiles.find(profile => Boolean(profile?.isCurrent));
+        defaultValue = defaultValue
+          || String(currentProfile?.displayName || currentProfile?.name || "").trim()
+          || String(existingProfiles[0]?.displayName || existingProfiles[0]?.name || "").trim();
+        description = "Choose an existing local profile or create a new one. Signing in keeps your seen and saved jobs on this device.";
+      }
+
+      const name = await requestProfileName({
+        title: "Sign in",
+        description,
+        existingProfiles,
+        defaultValue
+      });
+      return completeSignIn(name);
     }
-    const payload = await requestJson("/sign-in", {
-      method: "POST",
-      body: JSON.stringify({ name })
-    });
-    authStateRevision += 1;
-    const user = commitAuthState(payload.user || null);
-    return { user };
   },
   async signOut() {
     await requestJson("/sign-out", { method: "POST", body: "{}" });

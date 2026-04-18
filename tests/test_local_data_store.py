@@ -64,6 +64,19 @@ def test_attachment_round_trip_and_admin_overview() -> None:
         assert overview["totals"]["attachmentsCount"] == 1
 
 
+def test_list_profiles_returns_sorted_profiles_with_current_flag() -> None:
+    with workspace_tmpdir("local-data-store") as tmp:
+        store = LocalDataStore(LocalDataPaths.from_data_dir(Path(tmp) / "data"))
+        store.sign_in("Zed")
+        current = store.sign_in("Andrea")
+        rows = store.list_profiles()
+
+        assert [row["displayName"] for row in rows] == ["Andrea", "Zed"]
+        assert rows[0]["uid"] == str(current["uid"])
+        assert rows[0]["isCurrent"] is True
+        assert rows[1]["isCurrent"] is False
+
+
 def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
     with workspace_tmpdir("local-data-store") as tmp:
         store = LocalDataStore(LocalDataPaths.from_data_dir(Path(tmp) / "data"))

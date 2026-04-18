@@ -39,6 +39,23 @@ def test_session_no_user(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["desktopSession"]["ownerToken"] == "desktop-owner-1"
 
 
+def test_profiles_returns_sorted_profiles_with_current_flag(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    store.sign_in("Zed")
+    store.sign_in("Andrea")
+    api = _make_api(tmp_path, store)
+
+    handler = _FakeHandler()
+    result = handle_get(handler, api=api, path="/desktop-local-data/profiles", query={})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"]["ok"] is True
+    profiles = handler.sent[-1]["payload"]["profiles"]
+    assert [row["displayName"] for row in profiles] == ["Andrea", "Zed"]
+    assert profiles[0]["isCurrent"] is True
+
+
 def test_saved_jobs_endpoint_exists(tmp_path: Path) -> None:
     """Test saved jobs endpoint exists."""
     store = _FakeDesktopLocalDataStore()

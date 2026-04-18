@@ -325,6 +325,73 @@ def test_compute_ops_health_reports_alerts(admin_bridge_entrypoint_root):
     assert any(alert["id"] == "degraded_reliability" for alert in health["alerts"])
 
 
+def test_compute_ops_health_guides_initial_fetch_when_none_has_succeeded(
+    admin_bridge_entrypoint_root,
+):
+    health = admin_bridge.compute_ops_health()
+
+    guidance = next(
+        (alert for alert in health.get("alerts", []) if alert.get("id") == "fetch_never_run"),
+        None,
+    )
+
+    assert guidance is not None
+    assert guidance["severity"] == "warning"
+    assert guidance["dismissible"] is False
+    assert "Run Jobs Fetcher" in guidance["message"]
+
+
+def test_compute_ops_health_reframes_stale_fetch_as_guidance(admin_bridge_entrypoint_root):
+    admin_bridge.append_run_history(
+        {
+            "id": "fetch_stale_1",
+            "runId": "fetch_stale_1",
+            "type": "fetch",
+            "status": "ok",
+            "startedAt": "2026-03-01T00:00:00+00:00",
+            "finishedAt": "2026-03-01T00:10:00+00:00",
+            "durationMs": 600000,
+            "summary": {"outputCount": 40, "failedSources": 0, "sourceCount": 4},
+        }
+    )
+
+    with mock.patch.object(
+        admin_bridge,
+        "now_utc",
+        return_value=admin_bridge.parse_iso("2026-03-02T13:00:00+00:00"),
+    ):
+        health = admin_bridge.compute_ops_health()
+
+    stale_alert = next(
+        (alert for alert in health.get("alerts", []) if alert.get("id") == "stale_fetch"),
+        None,
+    )
+
+    assert stale_alert is not None
+    assert stale_alert["severity"] == "warning"
+    assert stale_alert["dismissible"] is True
+    assert "full Jobs Fetcher run is suggested" in stale_alert["message"]
+
+
+def test_compute_ops_health_reshows_fetch_never_run_even_if_previously_acked(
+    admin_bridge_entrypoint_root,
+):
+    state = admin_bridge.load_alert_state()
+    state["acked"]["fetch_never_run"] = admin_bridge.now_iso()
+    admin_bridge.save_alert_state(state)
+
+    health = admin_bridge.compute_ops_health()
+
+    guidance = next(
+        (alert for alert in health.get("alerts", []) if alert.get("id") == "fetch_never_run"),
+        None,
+    )
+
+    assert guidance is not None
+    assert guidance["dismissible"] is False
+    assert "fetch_never_run" not in admin_bridge.load_alert_state().get("acked", {})
+
+
 def test_owner_session_should_exit_when_supervised_bridge_is_idle(admin_bridge_entrypoint_root):
     cfg = admin_bridge.RuntimeConfig(
         root=admin_bridge_entrypoint_root,
@@ -907,6 +974,7 @@ def _history_row(
     *,
     row_id: str | None = None,
     run_id: str | None = None,
+    allow_missing_run_id: bool = False,
     status: str = "started",
     started_at: str,
     finished_at: str = "",
@@ -925,7 +993,28 @@ def _history_row(
         row["id"] = row_id
     if run_id is not None:
         row["runId"] = run_id
+    elif not allow_missing_run_id:
+        fallback_run_id = str(row_id or "").strip() or (
+            f"fetch:{status}:{started_at}:{finished_at}:{duration_ms}"
+        )
+        row["runId"] = fallback_run_id
     return row
+
+
+def test_history_row_defaults_run_id() -> None:
+    row = _history_row(started_at="2026-03-01T00:00:00+00:00")
+
+    assert str(row.get("runId") or "") == "fetch:started:2026-03-01T00:00:00+00:00::0"
+
+
+def test_history_row_allows_explicit_missing_run_id() -> None:
+    row = _history_row(
+        row_id="legacy_fetch_started",
+        started_at="2026-03-01T00:00:00+00:00",
+        allow_missing_run_id=True,
+    )
+
+    assert "runId" not in row
 
 
 def _fetch_report(
@@ -1064,7 +1153,7 @@ def _setup_unfinished_fetch_without_run_id() -> None:
     admin_bridge.save_json_atomic(admin_bridge.DISCOVERY_REPORT_PATH, {})
     admin_bridge.save_json_atomic(
         admin_bridge.OPS_HISTORY_PATH,
-        [_history_row(started_at=old_started)],
+        [_history_row(started_at=old_started, allow_missing_run_id=True)],
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
@@ -1346,7 +1435,13 @@ def _setup_project_run_id_row_only() -> None:
     started_at = admin_bridge.now_iso()
     admin_bridge.save_json_atomic(
         admin_bridge.OPS_HISTORY_PATH,
-        [_history_row(row_id="legacy_fetch_started", started_at=started_at)],
+        [
+            _history_row(
+                row_id="legacy_fetch_started",
+                started_at=started_at,
+                allow_missing_run_id=True,
+            )
+        ],
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
@@ -1367,7 +1462,11 @@ def _setup_discards_rows_without_run_id() -> None:
         admin_bridge.OPS_HISTORY_PATH,
         [
             _history_row(row_id=run_id, run_id=run_id, started_at=started_at),
-            _history_row(row_id="legacy_duplicate", started_at=started_at),
+            _history_row(
+                row_id="legacy_duplicate",
+                started_at=started_at,
+                allow_missing_run_id=True,
+            ),
         ],
     )
     admin_bridge.save_json_atomic(
