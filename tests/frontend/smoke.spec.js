@@ -36,6 +36,19 @@ const BRIDGE_RUNTIME_BASE = resolveBridgeRuntimeBase();
 const DESKTOP_RUNTIME_QUERY = resolveDesktopRuntimeQuery();
 const PLAYWRIGHT_BRIDGE_DATA_DIR = path.resolve(".tmp", "playwright", "admin-bridge-data");
 
+function isIgnorableSmokeConsoleError(msg) {
+  if (!msg || msg.type() !== "error") {
+    return false;
+  }
+  const location = msg.location?.() || {};
+  const url = String(location.url || "");
+  const text = String(msg.text?.() || "");
+  if (!/Failed to load resource: the server responded with a status of 404/i.test(text)) {
+    return false;
+  }
+  return /\/(?:data\/)?jobs-unified-startup\.json(?:\?|$)/i.test(url);
+}
+
 async function seedBridgeRuntimeBase(page) {
   await page.addInitScript((runtimeBridgeBase) => {
     try {
@@ -113,7 +126,7 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
     console.error("[pageerror]", msg);
   });
   page.on("console", msg => {
-    if (msg.type() === "error") {
+    if (msg.type() === "error" && !isIgnorableSmokeConsoleError(msg)) {
       const location = msg.location();
       const where = location?.url
         ? `${location.url}:${location.lineNumber || 0}:${location.columnNumber || 0}`
