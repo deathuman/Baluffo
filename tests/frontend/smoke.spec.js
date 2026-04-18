@@ -1,6 +1,23 @@
+import { readFileSync } from "fs";
+import path from "path";
 import { test, expect } from "@playwright/test";
 
-const DESKTOP_RUNTIME_QUERY = "?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1";
+function resolveDesktopRuntimeQuery() {
+  try {
+    const metaPath = path.resolve(".tmp", "playwright", "bridge-meta.json");
+    const payload = JSON.parse(readFileSync(metaPath, "utf8"));
+    const bridgeHost = String(payload?.bridgeHost || "127.0.0.1").trim() || "127.0.0.1";
+    const bridgePort = Number(payload?.bridgePort || 0);
+    if (bridgePort > 0) {
+      return `?desktop=1&bridgePort=${bridgePort}&bridgeHost=${bridgeHost}`;
+    }
+  } catch {
+    // Fall back to the historical local smoke port if the setup metadata is unavailable.
+  }
+  return "?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1";
+}
+
+const DESKTOP_RUNTIME_QUERY = resolveDesktopRuntimeQuery();
 
 async function expectJobsPageReady(page, timeout = 90000) {
   await page.waitForFunction(() => {
@@ -23,6 +40,7 @@ async function expectDesktopUpdateToggleUsable(page, timeout = 15000) {
 }
 
 async function signInWithProfile(page, buttonSelector, profileName, expectedFocusSelector) {
+  await expect(page.locator(buttonSelector)).toBeVisible();
   await page.click(buttonSelector);
   await page.waitForTimeout(1000);
 
