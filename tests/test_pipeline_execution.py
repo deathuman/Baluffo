@@ -19,6 +19,7 @@ def test_pipeline_execution_module_loads() -> None:
     assert PipelineService is not None
 
 
+import datetime as datetime_module
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -120,6 +121,31 @@ def _pipeline_status_payload(
         "jobsPageLoadedCount": jobs_page_loaded_count,
         "appVersion": "1.0.0",
     }
+
+
+def _install_fake_wait_clock(
+    monkeypatch: pytest.MonkeyPatch, *, start_at: str
+) -> tuple[dict[str, datetime], list[float]]:
+    clock = {"now": datetime.fromisoformat(start_at.replace("Z", "+00:00"))}
+    waits: list[float] = []
+    real_datetime = datetime_module.datetime
+
+    class FakeDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = clock["now"]
+            if tz is None:
+                return current.replace(tzinfo=None)
+            return current.astimezone(tz)
+
+    class FakeEvent:
+        def wait(self, delay: float) -> None:
+            waits.append(float(delay))
+            clock["now"] = clock["now"] + datetime_module.timedelta(seconds=float(delay))
+
+    monkeypatch.setattr(datetime_module, "datetime", FakeDateTime)
+    monkeypatch.setattr(threading, "Event", FakeEvent)
+    return clock, waits
 
 
 class TestPipelineServiceStages:
@@ -872,6 +898,282 @@ def test_wait_for_report_completion_waits_for_projected_child_task_to_go_idle(
 
     assert str(report.get("finishedAt") or "") == "2026-03-22T12:00:02Z"
     assert waits == [1.0]
+
+
+def test_wait_for_report_completion_survives_timeout_while_projected_child_stays_active(
+    monkeypatch, tmp_path: Path
+) -> None:
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "fetch",
+        "progress": {"currentStep": 2, "totalSteps": 3, "percent": 67, "label": "Running fetch..."},
+        "startedAt": "2026-03-22T12:00:00Z",
+        "finishedAt": "",
+        "error": "",
+        "updatesFound": False,
+        "refreshRecommended": False,
+        "baselineOutputCount": 0,
+        "finalOutputCount": 0,
+        "jobsPageLoadedCount": 0,
+    }
+    clock, waits = _install_fake_wait_clock(monkeypatch, start_at="2026-03-22T12:00:00Z")
+
+    projection_states = [True] * 11 + [False]
+    fetch_reports = [
+        {"runId": "fetch_1", "startedAt": "2026-03-22T12:00:01Z", "finishedAt": ""}
+    ] * 11 + [
+        {
+            "runId": "fetch_1",
+            "startedAt": "2026-03-22T12:00:01Z",
+            "finishedAt": "2026-03-22T12:00:15Z",
+        }
+    ]
+
+    def get_projected_run_history():
+        active = projection_states.pop(0) if projection_states else False
+        return _projection_snapshot(task_type="fetch", run_id="fetch_1", active=active)
+
+    def load_fetch_report(_path: Path, _default: Any) -> dict[str, Any]:
+        if len(fetch_reports) > 1:
+            return fetch_reports.pop(0)
+        return fetch_reports[0]
+
+    service = PipelineService(
+        pipeline_state_lock=FakeLock(),
+        pipeline_status=status,
+        runtime=PipelineRuntime(),
+        bridge_log=lambda *a, **kw: None,
+        now_iso=lambda: clock["now"].isoformat().replace("+00:00", "Z"),
+        parse_iso=make_parse_iso(),
+        append_run_history=lambda x: x,
+        upsert_run_history=lambda x, **kw: x,
+        task_running_from_state=lambda x: False,
+        sync_task_running=lambda: False,
+        current_fetch_output_count=lambda: 0,
+        load_json_object=load_fetch_report,
+        wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+        discovery_report_path=tmp_path / "discovery-report.json",
+        fetch_report_path=tmp_path / "fetch-report.json",
+        trigger_discovery_task=lambda **kw: (200, {"started": True}),
+        start_fetcher_task=lambda x: {"started": True, "runId": "fetch_1"},
+        start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+        get_app_version=lambda: "1.0.0",
+        get_projected_run_history=get_projected_run_history,
+    )
+
+    report = service.wait_for_report_completion(
+        report_path=tmp_path / "fetch-report.json",
+        started_at="2026-03-22T12:00:01Z",
+        timeout_s=10.0,
+        report_name="fetch report",
+        load_json_object=service._load_json_object,
+        task_type="fetch",
+        task_run_id="fetch_1",
+    )
+
+    assert str(report.get("finishedAt") or "") == "2026-03-22T12:00:15Z"
+    assert len(waits) == 11
+    assert clock["now"] == datetime.fromisoformat("2026-03-22T12:00:11+00:00")
+
+
+def test_run_worker_completes_after_long_active_fetch_wait(monkeypatch, tmp_path: Path) -> None:
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "starting",
+        "progress": {
+            "currentStep": 0,
+            "totalSteps": 3,
+            "percent": 0,
+            "label": "Starting pipeline...",
+        },
+        "startedAt": "2026-03-22T12:00:00Z",
+        "finishedAt": "",
+        "error": "",
+        "updatesFound": False,
+        "refreshRecommended": False,
+        "baselineOutputCount": 0,
+        "finalOutputCount": 0,
+        "jobsPageLoadedCount": 0,
+    }
+    upserts: list[dict[str, Any]] = []
+    clock, waits = _install_fake_wait_clock(monkeypatch, start_at="2026-03-22T12:00:00Z")
+    discovery_report_path = tmp_path / "discovery-report.json"
+    fetch_report_path = tmp_path / "fetch-report.json"
+    fetch_projection_states = [True] * 1201 + [False]
+    fetch_reports = [
+        {"runId": "fetch_1", "startedAt": "2026-03-22T12:00:01Z", "finishedAt": ""}
+    ] * 1201 + [
+        {
+            "runId": "fetch_1",
+            "startedAt": "2026-03-22T12:00:01Z",
+            "finishedAt": "2026-03-22T12:20:05Z",
+        }
+    ]
+
+    def load_json_object(path: Path, default: Any) -> Any:
+        if path == discovery_report_path:
+            return {
+                "runId": "discovery_1",
+                "startedAt": "2026-03-22T12:00:00Z",
+                "finishedAt": "2026-03-22T12:00:01Z",
+            }
+        if path == fetch_report_path:
+            if len(fetch_reports) > 1:
+                return fetch_reports.pop(0)
+            return fetch_reports[0]
+        return default
+
+    def get_projected_run_history():
+        stage = str(status.get("stage") or "").strip().lower()
+        if stage == "discovery":
+            return SimpleNamespace(
+                child_tasks={
+                    "discovery": SimpleNamespace(
+                        run_id="discovery_1",
+                        active=False,
+                        finished_at="2026-03-22T12:00:01Z",
+                        explicit_dead=False,
+                    )
+                }
+            )
+        if stage == "fetch":
+            active = fetch_projection_states.pop(0) if fetch_projection_states else False
+            return _projection_snapshot(task_type="fetch", run_id="fetch_1", active=active)
+        return SimpleNamespace(child_tasks={})
+
+    service = PipelineService(
+        pipeline_state_lock=FakeLock(),
+        pipeline_status=status,
+        runtime=PipelineRuntime(),
+        bridge_log=lambda *a, **kw: None,
+        now_iso=lambda: clock["now"].isoformat().replace("+00:00", "Z"),
+        parse_iso=make_parse_iso(),
+        append_run_history=lambda x: x,
+        upsert_run_history=lambda x, **kw: upserts.append(x),
+        task_running_from_state=lambda x: False,
+        sync_task_running=lambda: False,
+        current_fetch_output_count=lambda: 12,
+        load_json_object=load_json_object,
+        wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+        discovery_report_path=discovery_report_path,
+        fetch_report_path=fetch_report_path,
+        trigger_discovery_task=lambda **kw: (
+            200,
+            {"started": True, "runId": "discovery_1", "startedAt": "2026-03-22T12:00:00Z"},
+        ),
+        start_fetcher_task=lambda x: {
+            "started": True,
+            "runId": "fetch_1",
+            "startedAt": "2026-03-22T12:00:01Z",
+        },
+        start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+        get_app_version=lambda: "1.0.0",
+        get_projected_run_history=get_projected_run_history,
+    )
+
+    service._run_worker("pipeline_1")
+
+    assert status["active"] is False
+    assert status["stage"] == "completed"
+    assert status["error"] == ""
+    assert len(waits) == 1201
+    assert upserts[-1]["status"] == "ok"
+
+
+def test_run_worker_errors_when_fetch_owner_goes_inactive_without_terminal_report(
+    monkeypatch, tmp_path: Path
+) -> None:
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "starting",
+        "progress": {
+            "currentStep": 0,
+            "totalSteps": 3,
+            "percent": 0,
+            "label": "Starting pipeline...",
+        },
+        "startedAt": "2026-03-22T12:00:00Z",
+        "finishedAt": "",
+        "error": "",
+        "updatesFound": False,
+        "refreshRecommended": False,
+        "baselineOutputCount": 0,
+        "finalOutputCount": 0,
+        "jobsPageLoadedCount": 0,
+    }
+    upserts: list[dict[str, Any]] = []
+    clock, waits = _install_fake_wait_clock(monkeypatch, start_at="2026-03-22T12:00:00Z")
+    discovery_report_path = tmp_path / "discovery-report.json"
+    fetch_report_path = tmp_path / "fetch-report.json"
+
+    def load_json_object(path: Path, default: Any) -> Any:
+        if path == discovery_report_path:
+            return {
+                "runId": "discovery_1",
+                "startedAt": "2026-03-22T12:00:00Z",
+                "finishedAt": "2026-03-22T12:00:01Z",
+            }
+        if path == fetch_report_path:
+            return {"runId": "fetch_1", "startedAt": "2026-03-22T12:00:01Z", "finishedAt": ""}
+        return default
+
+    def get_projected_run_history():
+        stage = str(status.get("stage") or "").strip().lower()
+        if stage == "discovery":
+            return SimpleNamespace(
+                child_tasks={
+                    "discovery": SimpleNamespace(
+                        run_id="discovery_1",
+                        active=False,
+                        finished_at="2026-03-22T12:00:01Z",
+                        explicit_dead=False,
+                    )
+                }
+            )
+        if stage == "fetch":
+            return _projection_snapshot(task_type="fetch", run_id="fetch_1", active=False)
+        return SimpleNamespace(child_tasks={})
+
+    service = PipelineService(
+        pipeline_state_lock=FakeLock(),
+        pipeline_status=status,
+        runtime=PipelineRuntime(),
+        bridge_log=lambda *a, **kw: None,
+        now_iso=lambda: clock["now"].isoformat().replace("+00:00", "Z"),
+        parse_iso=make_parse_iso(),
+        append_run_history=lambda x: x,
+        upsert_run_history=lambda x, **kw: upserts.append(x),
+        task_running_from_state=lambda x: False,
+        sync_task_running=lambda: False,
+        current_fetch_output_count=lambda: 0,
+        load_json_object=load_json_object,
+        wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+        discovery_report_path=discovery_report_path,
+        fetch_report_path=fetch_report_path,
+        trigger_discovery_task=lambda **kw: (
+            200,
+            {"started": True, "runId": "discovery_1", "startedAt": "2026-03-22T12:00:00Z"},
+        ),
+        start_fetcher_task=lambda x: {
+            "started": True,
+            "runId": "fetch_1",
+            "startedAt": "2026-03-22T12:00:01Z",
+        },
+        start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+        get_app_version=lambda: "1.0.0",
+        get_projected_run_history=get_projected_run_history,
+    )
+
+    service._run_worker("pipeline_1")
+
+    assert status["active"] is False
+    assert status["stage"] == "error"
+    assert "did not finish within timeout" in status["error"]
+    assert len(waits) == 1200
+    assert upserts[-1]["status"] == "error"
 
 
 def test_pipeline_start_blocks_when_projected_fetch_snapshot_is_active(tmp_path: Path) -> None:

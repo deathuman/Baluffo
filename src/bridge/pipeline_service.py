@@ -190,26 +190,29 @@ class PipelineService:
         stale_guard = report_is_stale_in_progress or (lambda *_args, **_kwargs: False)
         deadline = datetime.now(UTC) + timedelta(seconds=max(10.0, float(timeout_s)))
         started_dt = self._parse_iso(started_at)
-        while datetime.now(UTC) < deadline:
+        while True:
             report = load_json_object(report_path, {})
-            report_started = self._parse_iso(report.get("startedAt"))
-            report_finished = self._parse_iso(report.get("finishedAt"))
+            normalized_report = report if isinstance(report, dict) else {}
+            report_started = self._parse_iso(normalized_report.get("startedAt"))
+            report_finished = self._parse_iso(normalized_report.get("finishedAt"))
+            child_active = self._child_task_is_active(task_type, task_run_id)
             if (
                 started_dt
                 and report_started
                 and report_started >= (started_dt - timedelta(seconds=1))
             ):
                 if report_finished and report_finished >= report_started:
-                    if not self._child_task_is_active(task_type, task_run_id):
-                        return report if isinstance(report, dict) else {}
+                    if not child_active:
+                        return normalized_report
             if fail_on_stale and stale_guard(
                 "fetch" if "fetch" in report_name else "discovery",
                 report_path,
-                report if isinstance(report, dict) else {},
+                normalized_report,
             ):
                 raise RuntimeError(f"{report_name} became stale before completion")
+            if datetime.now(UTC) >= deadline and not child_active:
+                raise TimeoutError(f"{report_name} did not finish within timeout")
             Event().wait(1.0)
-        raise TimeoutError(f"{report_name} did not finish within timeout")
 
     def _run_worker(self, run_id: str) -> None:
         try:
