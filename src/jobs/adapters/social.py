@@ -43,6 +43,7 @@ def run_social_reddit_source(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
     heartbeat_callback: Callable[[], None] | None = None,
+    progress_callback: Callable[..., None] | None = None,
 ) -> list[RawJob]:
     cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
@@ -70,7 +71,31 @@ def run_social_reddit_source(
         if heartbeat_callback:
             heartbeat_callback()
 
+    def emit_progress(
+        *,
+        phase_key: str,
+        phase_label: str,
+        target_label: str = "",
+        target_url: str = "",
+        counts: dict[str, Any] | None = None,
+        event_level: str = "muted",
+        message: str = "",
+    ) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(
+            phase_key=phase_key,
+            phase_label=phase_label,
+            target_label=target_label,
+            target_url=target_url,
+            counts=counts,
+            event_level=event_level,
+            message=message,
+        )
+
     for sub in subs:
+        subreddit_label = f"reddit/r/{sub}"
+        subreddit_url = f"https://www.reddit.com/r/{sub}/new.json"
         entry = {
             "adapter": "social",
             "studio": f"reddit/{sub}",
@@ -97,6 +122,13 @@ def run_social_reddit_source(
             details.append(entry)
             continue
         try:
+            emit_progress(
+                phase_key="scanning_subsource",
+                phase_label="Scanning subsource",
+                target_label=subreddit_label,
+                target_url=subreddit_url,
+                message=f"Scanning {subreddit_label}.",
+            )
             tick()
             sub_rows = plugin.run(
                 fetch_text=fetch_text,
@@ -109,11 +141,27 @@ def run_social_reddit_source(
             entry["fetchedCount"] = len(sub_rows)
             entry["keptCount"] = len(sub_rows)
             rows.extend(sub_rows)
+            emit_progress(
+                phase_key="subsource_loaded",
+                phase_label="Subsource loaded",
+                target_label=subreddit_label,
+                target_url=subreddit_url,
+                counts={"fetchedCount": len(sub_rows), "keptCount": len(sub_rows)},
+                message=f"Loaded {len(sub_rows)} row(s) from {subreddit_label}.",
+            )
             tick()
         except Exception as exc:  # noqa: BLE001
             entry["status"] = "error"
             entry["error"] = str(exc)
             errors.append(f"reddit:{sub}: {exc}")
+            emit_progress(
+                phase_key="subsource_error",
+                phase_label="Subsource error",
+                target_label=subreddit_label,
+                target_url=subreddit_url,
+                event_level="warn",
+                message=f"{subreddit_label} failed: {exc}",
+            )
         details.append(entry)
 
     plugin_diag = (
@@ -154,6 +202,7 @@ def run_social_x_source(
     social_config: dict[str, Any],
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
+    progress_callback: Callable[..., None] | None = None,
 ) -> list[RawJob]:
     cfg = social_config.get("x") if isinstance(social_config.get("x"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
@@ -195,7 +244,30 @@ def run_social_x_source(
     jobs: list[RawJob] = []
     low_conf_total = 0
 
+    def emit_progress(
+        *,
+        phase_key: str,
+        phase_label: str,
+        target_label: str = "",
+        target_url: str = "",
+        counts: dict[str, Any] | None = None,
+        event_level: str = "muted",
+        message: str = "",
+    ) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(
+            phase_key=phase_key,
+            phase_label=phase_label,
+            target_label=target_label,
+            target_url=target_url,
+            counts=counts,
+            event_level=event_level,
+            message=message,
+        )
+
     for query in queries:
+        query_label = f"x:{query}"
         entry = {
             "adapter": "social",
             "studio": "x",
@@ -225,6 +297,13 @@ def run_social_x_source(
             details.append(entry)
             continue
         try:
+            emit_progress(
+                phase_key="scanning_subsource",
+                phase_label="Scanning subsource",
+                target_label=query_label,
+                counts={"maxPosts": max_posts},
+                message=f"Scanning {query_label}.",
+            )
             payload: Any = {}
             if bool(api_cfg.get("enabled", True)) and bearer and endpoint:
                 url = f"{endpoint}?query={quote(query, safe='')}&max_results={max_posts}&tweet.fields=created_at,entities"
@@ -268,6 +347,16 @@ def run_social_x_source(
                     entry["rejectReasonCounts"] = reject_reason_counts
                 low_conf_total += int(low_conf_query)
                 jobs.extend(parsed_rows)
+                emit_progress(
+                    phase_key="subsource_loaded",
+                    phase_label="Subsource loaded",
+                    target_label=query_label,
+                    counts={
+                        "fetchedCount": len(parsed_rows) + int(low_conf_query),
+                        "keptCount": len(parsed_rows),
+                    },
+                    message=f"Loaded {len(parsed_rows)} row(s) from {query_label}.",
+                )
                 details.append(entry)
                 continue
             else:
@@ -292,11 +381,26 @@ def run_social_x_source(
             entry["status"] = "error"
             entry["error"] = str(exc)
             errors.append(f"x:{query}: {exc}")
+            emit_progress(
+                phase_key="subsource_error",
+                phase_label="Subsource error",
+                target_label=query_label,
+                event_level="warn",
+                message=f"{query_label} failed: {exc}",
+            )
         entry["keptCount"] = len(parsed_rows)
         if reject_reason_counts:
             entry["rejectReasonCounts"] = reject_reason_counts
         low_conf_total += int(low_conf_query)
         jobs.extend(parsed_rows)
+        if entry["status"] == "ok":
+            emit_progress(
+                phase_key="subsource_loaded",
+                phase_label="Subsource loaded",
+                target_label=query_label,
+                counts={"fetchedCount": entry["fetchedCount"], "keptCount": len(parsed_rows)},
+                message=f"Loaded {len(parsed_rows)} row(s) from {query_label}.",
+            )
         details.append(entry)
 
     set_source_diagnostics(
@@ -319,6 +423,8 @@ def run_social_mastodon_source(
     social_config: dict[str, Any],
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
+    heartbeat_callback: Callable[[], None] | None = None,
+    progress_callback: Callable[..., None] | None = None,
 ) -> list[RawJob]:
     cfg = social_config.get("mastodon") if isinstance(social_config.get("mastodon"), dict) else {}
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
@@ -350,8 +456,38 @@ def run_social_mastodon_source(
     jobs: list[RawJob] = []
     low_conf_total = 0
 
+    def tick() -> None:
+        if heartbeat_callback:
+            heartbeat_callback()
+
+    def emit_progress(
+        *,
+        phase_key: str,
+        phase_label: str,
+        target_label: str = "",
+        target_url: str = "",
+        counts: dict[str, Any] | None = None,
+        event_level: str = "muted",
+        message: str = "",
+    ) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(
+            phase_key=phase_key,
+            phase_label=phase_label,
+            target_label=target_label,
+            target_url=target_url,
+            counts=counts,
+            event_level=event_level,
+            message=message,
+        )
+
     for instance in instances:
         for tag in tags:
+            timeline_url = (
+                f"{instance}/api/v1/timelines/tag/{quote(tag, safe='')}?limit={max_posts}"
+            )
+            target_label = f"mastodon:{clean_text(urlparse(instance).netloc)}:#{tag}"
             entry = {
                 "adapter": "social",
                 "studio": f"mastodon/{clean_text(urlparse(instance).netloc)}",
@@ -379,8 +515,16 @@ def run_social_mastodon_source(
                 details.append(entry)
                 continue
             try:
-                url = f"{instance}/api/v1/timelines/tag/{quote(tag, safe='')}?limit={max_posts}"
-                text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+                emit_progress(
+                    phase_key="scanning_subsource",
+                    phase_label="Scanning subsource",
+                    target_label=target_label,
+                    target_url=timeline_url,
+                    counts={"maxPosts": max_posts},
+                    message=f"Scanning {target_label}.",
+                )
+                tick()
+                text = fetch_with_retries(timeline_url, fetch_text, timeout_s, retries, backoff_s)
                 payload = json.loads(text)
                 parsed_rows, low_conf_tag = _social_parsers.parse_mastodon_payload(
                     payload,
@@ -400,10 +544,27 @@ def run_social_mastodon_source(
                     entry["rejectReasonCounts"] = reject_reason_counts
                 low_conf_total += int(low_conf_tag)
                 jobs.extend(parsed_rows)
+                emit_progress(
+                    phase_key="subsource_loaded",
+                    phase_label="Subsource loaded",
+                    target_label=target_label,
+                    target_url=timeline_url,
+                    counts={"fetchedCount": entry["fetchedCount"], "keptCount": len(parsed_rows)},
+                    message=f"Loaded {len(parsed_rows)} row(s) from {target_label}.",
+                )
+                tick()
             except Exception as exc:  # noqa: BLE001
                 entry["status"] = "error"
                 entry["error"] = str(exc)
                 errors.append(f"mastodon:{instance}:#{tag}: {exc}")
+                emit_progress(
+                    phase_key="subsource_error",
+                    phase_label="Subsource error",
+                    target_label=target_label,
+                    target_url=timeline_url,
+                    event_level="warn",
+                    message=f"{target_label} failed: {exc}",
+                )
             details.append(entry)
 
     set_source_diagnostics(

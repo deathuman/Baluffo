@@ -54,6 +54,7 @@ def build_bridge_api(
     should_exit_for_owner_timeout: Callable[[], bool],
     load_alert_state: Callable[[], dict[str, Any]],
     save_alert_state: Callable[[dict[str, Any]], None],
+    get_task_live_payload: Callable[[str], dict[str, Any]] = lambda _task_type="": {},
 ) -> BridgeApi:
     return BridgeApi(
         runtime_config=config,
@@ -96,6 +97,7 @@ def build_bridge_api(
         compute_fetcher_metrics=compute_fetcher_metrics,
         sync_history_from_reports=sync_history_from_reports,
         get_projected_run_history=get_projected_run_history,
+        get_task_live_payload=get_task_live_payload,
         get_current_task_state_payload=get_current_task_state_payload,
         should_exit_for_owner_timeout=should_exit_for_owner_timeout,
         load_alert_state=load_alert_state,

@@ -1,4 +1,5 @@
 import { deriveFetcherFailureSummary } from "../domain.js";
+import { getTaskStateRows } from "../../shared/live-task.js";
 
 export function formatBytes(bytes) {
   const value = Number(bytes) || 0;
@@ -110,9 +111,8 @@ export function createAdminOpsController({
         },
         Date.now()
       );
-      const liveTaskRows = Array.isArray(taskStatePayload?.tasks)
-        ? taskStatePayload.tasks.filter(row => row && typeof row === "object" && row.active)
-        : [];
+      const liveTaskRows = getTaskStateRows(taskStatePayload)
+        .filter(row => row && typeof row === "object" && row.active);
       const liveTypes = new Set(
         liveTaskRows
           .map(row => String(row?.taskType || row?.type || "").toLowerCase())

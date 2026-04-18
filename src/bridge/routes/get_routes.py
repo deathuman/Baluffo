@@ -16,6 +16,17 @@ from src.core.schemas import SavedJobSchema
 logger = logging.getLogger(__name__)
 
 
+def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    compact_payload = dict(payload or {})
+    sources = payload.get("sources") if isinstance(payload.get("sources"), list) else []
+    compact_payload["sources"] = [
+        {key: value for key, value in row.items() if key != "details"}
+        for row in sources
+        if isinstance(row, dict)
+    ]
+    return compact_payload
+
+
 def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list[str]]) -> bool:
     """Handle GET routes for the admin bridge.
 
@@ -322,6 +333,17 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
         handler._send_json(api.get_current_task_state_payload())  # noqa: SLF001
         return True
 
+    if path.startswith("/ops/task-live/"):
+        task_type = path.removeprefix("/ops/task-live/").strip().lower()
+        if task_type not in {"fetch", "discovery", "sync"}:
+            handler._send_json(
+                {"ok": False, "error": f"unsupported task type: {task_type or 'unknown'}"},
+                status=404,
+            )  # noqa: SLF001
+            return True
+        handler._send_json(api.get_task_live_payload(task_type))  # noqa: SLF001
+        return True
+
     if path == "/ops/fetcher-metrics":
         window_raw = (query.get("windowRuns") or ["20"])[0]
         try:
@@ -332,11 +354,13 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
         return True
 
     if path == "/ops/fetch-report":
-        handler._send_json(
-            api.normalize_fetch_report_contract(
-                api.load_json_object(api.JOBS_FETCH_REPORT_PATH, {})
-            )
-        )  # noqa: SLF001
+        view = str((query.get("view") or [""])[0] or "").strip().lower()
+        payload = api.normalize_fetch_report_contract(
+            api.load_json_object(api.JOBS_FETCH_REPORT_PATH, {})
+        )
+        if view == "live" and isinstance(payload, dict):
+            payload = _compact_live_fetch_report_payload(payload)
+        handler._send_json(payload)  # noqa: SLF001
         return True
 
     if path == "/sync/status":

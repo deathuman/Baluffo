@@ -96,6 +96,7 @@ def run_static_studio_pages_source(
     retries: int,
     backoff_s: float,
     heartbeat_callback: Callable[[], None] | None = None,
+    progress_callback: Callable[..., None] | None = None,
     sources: list[dict[str, Any]] | None = None,
     shard: str | None = None,
     diagnostics_name: str = "static_studio_pages",
@@ -171,6 +172,74 @@ def run_static_studio_pages_source(
         kept_before = len(jobs)
         link_rejections: Counter[str] = Counter()
         stats = entry_report["stats"]
+        progress_state = {
+            "listingPagesVisited": 0,
+            "lastProgressSignature": "",
+        }
+        source_pages = pages
+        source_jobs = jobs
+        source_stats = stats
+        source_kept_before = kept_before
+
+        def emit_source_progress(
+            *,
+            phase_key: str,
+            phase_label: str,
+            counts: dict[str, Any] | None = None,
+            target_label: str = "",
+            target_url: str = "",
+            event_level: str = "muted",
+            message: str = "",
+            progress_state_ref: dict[str, Any] = progress_state,
+            source_pages_ref: list[str] = source_pages,
+            source_jobs_ref: list[dict[str, Any]] = source_jobs,
+            source_stats_ref: dict[str, Any] = source_stats,
+            source_kept_before_ref: int = source_kept_before,
+        ) -> None:
+            if progress_callback is None:
+                return
+            payload_counts = {
+                "listingPages": len(source_pages_ref),
+                "listingPagesVisited": max(0, int(progress_state_ref["listingPagesVisited"])),
+                "candidateLinksFound": int(source_stats_ref.get("candidate_links_found") or 0),
+                "detailPagesVisited": int(source_stats_ref.get("detail_pages_visited") or 0),
+                "jobsEmitted": max(0, int(len(source_jobs_ref) - source_kept_before_ref)),
+            }
+            if isinstance(counts, dict):
+                payload_counts.update(counts)
+            signature = json.dumps(
+                {
+                    "phaseKey": str(phase_key or "").strip(),
+                    "phaseLabel": str(phase_label or "").strip(),
+                    "counts": payload_counts,
+                    "targetLabel": str(target_label or "").strip(),
+                    "targetUrl": str(target_url or "").strip(),
+                    "message": str(message or "").strip(),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            if signature == progress_state_ref["lastProgressSignature"]:
+                return
+            progress_state_ref["lastProgressSignature"] = signature
+            progress_callback(
+                phase_key=phase_key,
+                phase_label=phase_label,
+                counts=payload_counts,
+                target_label=target_label,
+                target_url=target_url,
+                event_level=event_level,
+                message=message,
+            )
+
+        emit_source_progress(
+            phase_key="static_prepare",
+            phase_label="Preparing static source",
+            counts={"cacheDecision": entry_report["cacheDecision"]},
+            target_label=source_name,
+            event_level="info",
+            message=f"Preparing static source {source_name}.",
+        )
         if entry_report["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
             entry_report["status"] = "excluded"
             entry_report["error"] = entry_report["cacheDecisionReason"]
@@ -381,6 +450,7 @@ def run_static_studio_pages_source(
             page_url = clean_text(page)
             if not page_url:
                 continue
+            progress_state["listingPagesVisited"] += 1
             domain_profile = domain_profile_for_url(page_url)
             source_budget_s = int(
                 domain_profile.get("static_source_time_budget_s") or static_source_time_budget_s
@@ -394,6 +464,19 @@ def run_static_studio_pages_source(
                 break
             try:
                 listing_fetch_started = time.perf_counter()
+                emit_source_progress(
+                    phase_key="static_listing_fetch",
+                    phase_label="Fetching listing pages",
+                    target_label=(
+                        f"Listing {progress_state['listingPagesVisited']}/{max(1, len(pages))}"
+                    ),
+                    target_url=page_url,
+                    event_level="muted",
+                    message=(
+                        f"Fetching listing page {progress_state['listingPagesVisited']}/{max(1, len(pages))} "
+                        f"for {source_name}."
+                    ),
+                )
                 remaining_budget_s = float(source_budget_s) - float(
                     time.perf_counter() - source_started
                 )
@@ -473,6 +556,16 @@ def run_static_studio_pages_source(
 
                 extraction_started = time.perf_counter()
                 listing_jobs_found = 0
+                emit_source_progress(
+                    phase_key="static_candidate_extraction",
+                    phase_label="Extracting candidates",
+                    target_label=(
+                        f"Listing {progress_state['listingPagesVisited']}/{max(1, len(pages))}"
+                    ),
+                    target_url=page_url,
+                    event_level="muted",
+                    message=f"Extracting listing candidates for {source_name}.",
+                )
                 for listing_html in listing_htmls:
                     emit_heartbeat()
                     parsed = parse_jobpostings_from_html(
@@ -539,6 +632,12 @@ def run_static_studio_pages_source(
                                             ignored_link_titles=ignored_link_titles,
                                         )
                                         stats["detail_pages_visited"] += 1
+                                        emit_source_progress(
+                                            phase_key="static_detail_traversal",
+                                            phase_label="Traversing detail pages",
+                                            target_label=title or link or source_name,
+                                            target_url=link,
+                                        )
                                         stats["detail_fetch_ms"] += int(
                                             detail_result.get("fetchMs") or 0
                                         )
@@ -583,6 +682,12 @@ def run_static_studio_pages_source(
                                     ignored_link_titles=ignored_link_titles,
                                 )
                                 stats["detail_pages_visited"] += 1
+                                emit_source_progress(
+                                    phase_key="static_detail_traversal",
+                                    phase_label="Traversing detail pages",
+                                    target_label=title or link or source_name,
+                                    target_url=link,
+                                )
                                 stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
                                 emitted_detail_rows = detail_result.get("rows") or []
                                 if emitted_detail_rows:
@@ -676,6 +781,23 @@ def run_static_studio_pages_source(
                 stats["candidate_extraction_ms"] += int(
                     (time.perf_counter() - extraction_started) * 1000
                 )
+                emit_source_progress(
+                    phase_key="static_candidate_extraction",
+                    phase_label="Candidates extracted",
+                    counts={
+                        "detailCandidates": len(detail_links),
+                        "listingJobsFound": listing_jobs_found,
+                    },
+                    target_label=(
+                        f"Listing {progress_state['listingPagesVisited']}/{max(1, len(pages))}"
+                    ),
+                    target_url=page_url,
+                    event_level="muted",
+                    message=(
+                        f"Found {len(detail_links)} detail candidate"
+                        f"{'' if len(detail_links) == 1 else 's'} for {source_name}."
+                    ),
+                )
                 listing_fingerprint = hashlib.sha1(
                     "\n".join(listing_htmls).encode("utf-8")
                 ).hexdigest()
@@ -741,6 +863,18 @@ def run_static_studio_pages_source(
                 if detail_limit and detail_limit < len(detail_links):
                     detail_links = detail_links[:detail_limit]
                 detail_fetch_started = time.perf_counter()
+                emit_source_progress(
+                    phase_key="static_detail_traversal",
+                    phase_label="Traversing detail pages",
+                    counts={"detailCandidates": len(detail_links)},
+                    target_label=f"{len(detail_links)} detail page(s)",
+                    target_url=page_url,
+                    event_level="muted",
+                    message=(
+                        f"Traversing {len(detail_links)} detail page"
+                        f"{'' if len(detail_links) == 1 else 's'} for {source_name}."
+                    ),
+                )
                 emit_heartbeat()
                 with ThreadPoolExecutor(
                     max_workers=source_detail_concurrency_for(
@@ -769,6 +903,12 @@ def run_static_studio_pages_source(
                     for future in as_completed(future_map):
                         detail, _detail_title = future_map[future]
                         stats["detail_pages_visited"] += 1
+                        emit_source_progress(
+                            phase_key="static_detail_traversal",
+                            phase_label="Traversing detail pages",
+                            target_label=_detail_title or detail or source_name,
+                            target_url=detail,
+                        )
                         emit_heartbeat()
                         try:
                             detail_result = future.result()
@@ -868,6 +1008,23 @@ def run_static_studio_pages_source(
             entry_report["browserFallbackRecommended"] = False
             entry_report["browserEscalationEligible"] = False
             entry_report.pop("browserEscalationEligibilityReason", None)
+        emit_source_progress(
+            phase_key="static_completed",
+            phase_label="Static source completed",
+            counts={
+                "keptCount": int(entry_report.get("keptCount") or 0),
+                "fetchedCount": int(entry_report.get("fetchedCount") or 0),
+                "detailCandidates": int(stats.get("candidate_links_found") or 0),
+                "detailPagesVisited": int(stats.get("detail_pages_visited") or 0),
+            },
+            target_label=source_name,
+            event_level="success" if int(entry_report.get("keptCount") or 0) > 0 else "warn",
+            message=(
+                f"Completed static source {source_name}: kept "
+                f"{int(entry_report.get('keptCount') or 0)} job"
+                f"{'' if int(entry_report.get('keptCount') or 0) == 1 else 's'}."
+            ),
+        )
         details.append(entry_report)
 
     diag_studio = "multiple"
@@ -903,6 +1060,7 @@ def run_static_source_entry_source(
     retries: int,
     backoff_s: float,
     heartbeat_callback: Callable[[], None] | None = None,
+    progress_callback: Callable[..., None] | None = None,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
@@ -914,6 +1072,7 @@ def run_static_source_entry_source(
         retries=retries,
         backoff_s=backoff_s,
         heartbeat_callback=heartbeat_callback,
+        progress_callback=progress_callback,
         sources=[source_row],
         diagnostics_name=diagnostics_name,
         static_detail_concurrency=static_detail_concurrency,
@@ -930,6 +1089,7 @@ def run_static_studio_pages_a_i_source(
     retries: int,
     backoff_s: float,
     heartbeat_callback: Callable[[], None] | None = None,
+    progress_callback: Callable[..., None] | None = None,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
@@ -941,6 +1101,7 @@ def run_static_studio_pages_a_i_source(
         retries=retries,
         backoff_s=backoff_s,
         heartbeat_callback=heartbeat_callback,
+        progress_callback=progress_callback,
         shard="a_i",
         diagnostics_name="static_studio_pages_a_i",
         static_detail_concurrency=static_detail_concurrency,
@@ -976,6 +1137,7 @@ def build_static_source_loaders() -> list[tuple[str, SourceLoader]]:
             retries: int,
             backoff_s: float,
             heartbeat_callback: Callable[[], None] | None = None,
+            progress_callback: Callable[..., None] | None = None,
             _row: dict[str, Any] = row,
             _loader_name: str = loader_name,
             static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
@@ -991,6 +1153,7 @@ def build_static_source_loaders() -> list[tuple[str, SourceLoader]]:
                 retries=retries,
                 backoff_s=backoff_s,
                 heartbeat_callback=heartbeat_callback,
+                progress_callback=progress_callback,
                 static_detail_concurrency=static_detail_concurrency,
                 source_state_rows=source_state_rows,
                 try_playwright=try_playwright,
@@ -1008,6 +1171,7 @@ def run_static_studio_pages_j_r_source(
     retries: int,
     backoff_s: float,
     heartbeat_callback: Callable[[], None] | None = None,
+    progress_callback: Callable[..., None] | None = None,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
@@ -1019,6 +1183,7 @@ def run_static_studio_pages_j_r_source(
         retries=retries,
         backoff_s=backoff_s,
         heartbeat_callback=heartbeat_callback,
+        progress_callback=progress_callback,
         shard="j_r",
         diagnostics_name="static_studio_pages_j_r",
         static_detail_concurrency=static_detail_concurrency,
@@ -1034,6 +1199,8 @@ def run_static_studio_pages_s_z_source(
     timeout_s: int,
     retries: int,
     backoff_s: float,
+    heartbeat_callback: Callable[[], None] | None = None,
+    progress_callback: Callable[..., None] | None = None,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
@@ -1044,6 +1211,8 @@ def run_static_studio_pages_s_z_source(
         timeout_s=timeout_s,
         retries=retries,
         backoff_s=backoff_s,
+        heartbeat_callback=heartbeat_callback,
+        progress_callback=progress_callback,
         shard="s_z",
         diagnostics_name="static_studio_pages_s_z",
         static_detail_concurrency=static_detail_concurrency,

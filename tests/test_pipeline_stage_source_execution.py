@@ -162,11 +162,14 @@ def test_stage_enables_browser_only_for_eligible_static_sources(monkeypatch) -> 
     assert not browser_calls
 
 
-def test_stage_passes_heartbeat_to_google_sheets_social_reddit_and_static_loaders() -> None:
+def test_stage_passes_heartbeat_to_any_loader_that_accepts_it_without_breaking_plain_loaders() -> (
+    None
+):
     google_kwargs: list[dict[str, object]] = []
     reddit_kwargs: list[dict[str, object]] = []
     static_kwargs: list[dict[str, object]] = []
-    other_kwargs: list[dict[str, object]] = []
+    generic_kwargs: list[dict[str, object]] = []
+    plain_calls: list[tuple[object, ...]] = []
     task_state_calls: list[dict[str, object]] = []
 
     config = SourceExecutionStageConfig(
@@ -203,8 +206,15 @@ def test_stage_passes_heartbeat_to_google_sheets_social_reddit_and_static_loader
             heartbeat()
         return []
 
-    def other_loader(**kwargs):  # noqa: ANN202
-        other_kwargs.append(kwargs)
+    def generic_loader(**kwargs):  # noqa: ANN202
+        generic_kwargs.append(kwargs)
+        heartbeat = kwargs.get("heartbeat_callback")
+        if callable(heartbeat):
+            heartbeat()
+        return []
+
+    def plain_loader(fetch_text, timeout_s, retries, backoff_s):  # noqa: ANN001, ANN201
+        plain_calls.append((fetch_text, timeout_s, retries, backoff_s))
         return []
 
     task_rows = {
@@ -238,7 +248,17 @@ def test_stage_passes_heartbeat_to_google_sheets_social_reddit_and_static_loader
             "_startedMonotonic": 0.0,
             "_slowWarned": False,
         },
-        "remote_ok": {
+        "remote_generic": {
+            "status": "pending",
+            "startedAt": "",
+            "finishedAt": "",
+            "heartbeatAt": "",
+            "durationMs": 0,
+            "error": "",
+            "_startedMonotonic": 0.0,
+            "_slowWarned": False,
+        },
+        "remote_plain": {
             "status": "pending",
             "startedAt": "",
             "finishedAt": "",
@@ -256,7 +276,8 @@ def test_stage_passes_heartbeat_to_google_sheets_social_reddit_and_static_loader
             ("google_sheets", google_loader),
             ("social_reddit", reddit_loader),
             ("static_source::static:listing_url:https://example.com/jobs", static_loader),
-            ("remote_ok", other_loader),
+            ("remote_generic", generic_loader),
+            ("remote_plain", plain_loader),
         ],
         fetch_text_limited=lambda _url, _timeout: "",
         source_state_rows={},
@@ -276,8 +297,10 @@ def test_stage_passes_heartbeat_to_google_sheets_social_reddit_and_static_loader
     assert callable(reddit_kwargs[0]["heartbeat_callback"])
     assert "heartbeat_callback" in static_kwargs[0]
     assert callable(static_kwargs[0]["heartbeat_callback"])
-    assert "heartbeat_callback" not in other_kwargs[0]
-    assert len(task_state_calls) >= 5
+    assert "heartbeat_callback" in generic_kwargs[0]
+    assert callable(generic_kwargs[0]["heartbeat_callback"])
+    assert len(plain_calls) == 1
+    assert len(task_state_calls) >= 6
 
 
 def test_stage_reclassifies_zero_kept_static_manual_no_jobs_sources(monkeypatch) -> None:

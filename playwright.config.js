@@ -24,10 +24,10 @@ export default defineConfig({
   fullyParallel: false,
   retries: 0,
   workers: 1,
-  reporter: [["list"]],
+  reporter: [["line"]],
   use: {
     baseURL: "http://127.0.0.1:4173",
-    trace: "on-first-retry",
+    trace: process.env.BALUFFO_PLAYWRIGHT_TRACE === "1" ? "retain-on-failure" : "off",
     headless: true
   },
   webServer: {
@@ -42,5 +42,6 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] }
     }
   ],
-  globalSetup: "./tests/frontend/global-setup.js"
+  globalSetup: "./tests/frontend/global-setup.js",
+  globalTeardown: "./tests/frontend/global-teardown.js"
 });

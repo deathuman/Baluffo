@@ -49,6 +49,9 @@ from src.jobs.pipeline_runtime import (
     make_task_state_writer,
 )
 from src.jobs.pipeline_runtime import (
+    snapshot_task_rows as _snapshot_task_rows,
+)
+from src.jobs.pipeline_runtime import (
     write_progress_report as write_pipeline_progress_report,
 )
 from src.jobs.pipeline_stage_source_execution import (
@@ -111,6 +114,7 @@ read_approved_since_last_run = common_sources.read_approved_since_last_run
 validate_canonical_jobs_payload = _validate_canonical_jobs_payload
 health_module = _health_module
 build_fetch_task_progress_payload = _build_fetch_task_progress_payload
+snapshot_task_rows = _snapshot_task_rows
 serialize_rows_for_csv = _serialize_rows_for_csv
 serialize_rows_for_json = _serialize_rows_for_json
 write_atomic_if_changed = _write_atomic_if_changed
@@ -441,7 +445,12 @@ def run_pipeline(
     )
     source_reports.extend(excluded_by_circuit)
 
-    task_runtime = initialize_task_runtime(selected_loaders, show_progress=show_progress)
+    task_runtime = initialize_task_runtime(
+        selected_loaders,
+        run_id=run_id,
+        started_at=started_at,
+        show_progress=show_progress,
+    )
     write_task_state = make_task_state_writer(
         runtime=task_runtime,
         run_id=run_id,
@@ -462,6 +471,7 @@ def run_pipeline(
         "label": "Selecting sources",
     }
     write_progress_report = lambda: write_pipeline_progress_report(
+        runtime=task_runtime,
         canonical_rows=canonical_rows,
         lifecycle_rows=lifecycle_rows,
         source_reports=source_reports,
@@ -477,7 +487,6 @@ def run_pipeline(
         normalize_fetch_report_payload=normalize_fetch_report_payload,
         write_text_if_changed=write_text_if_changed,
         deduplicator_factory=CanonicalDeduplicator,
-        task_rows=task_runtime.task_rows,
         phase_key=str(progress_phase["key"]),
         phase_label=str(progress_phase["label"]),
         run_id=run_id,
@@ -505,6 +514,7 @@ def run_pipeline(
             fetch_text_limited=fetch_text_limited,
             source_state_rows=source_state_rows,
             redirect_resolver=redirect_resolver,
+            task_runtime=task_runtime,
             task_rows=task_runtime.task_rows,
             task_lock=task_runtime.task_lock,
             thread_local=task_runtime.thread_local,

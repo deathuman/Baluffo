@@ -1,3 +1,40 @@
+import { getLiveTaskWorkItems } from "../../shared/live-task.js";
+
+const DEFAULT_SIGNATURE_TRACKER_CAP = 256;
+
+class BoundedSignatureSet extends Set {
+  constructor(limit = DEFAULT_SIGNATURE_TRACKER_CAP) {
+    super();
+    this.limit = Math.max(1, Number(limit) || DEFAULT_SIGNATURE_TRACKER_CAP);
+    this.order = [];
+  }
+
+  add(value) {
+    const signature = String(value ?? "").trim();
+    if (!signature || super.has(signature)) {
+      return this;
+    }
+    super.add(signature);
+    this.order.push(signature);
+    while (this.size > this.limit && this.order.length > 0) {
+      const dropped = String(this.order.shift() || "").trim();
+      if (dropped) {
+        super.delete(dropped);
+      }
+    }
+    return this;
+  }
+
+  clear() {
+    this.order = [];
+    return super.clear();
+  }
+}
+
+export function createBoundedSignatureSet(limit = DEFAULT_SIGNATURE_TRACKER_CAP) {
+  return new BoundedSignatureSet(limit);
+}
+
 export function maybeUnrefTimer(timer) {
   timer?.unref?.();
   return timer;
@@ -44,6 +81,170 @@ export function loadLiveTaskLogChunk({
     onNextOffset?.(payload || null);
     return payload || null;
   });
+}
+
+export function loadTaskLivePayload({
+  getBridge,
+  taskType
+}) {
+  return getBridge(`/ops/task-live/${encodeURIComponent(String(taskType || "").trim().toLowerCase())}`)
+    .then(payload => (payload && typeof payload === "object" ? payload : null));
+}
+
+export function getTaskLiveWorkItems(payload) {
+  return getLiveTaskWorkItems(payload);
+}
+
+export function getTaskLiveRecentEvents(payload) {
+  return Array.isArray(payload?.recentEvents) ? payload.recentEvents : [];
+}
+
+export function hasTaskLivePayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  if (Boolean(payload.active)) return true;
+  if (String(payload.runId || "").trim()) return true;
+  if (String(payload.startedAt || "").trim()) return true;
+  if (String(payload.finishedAt || "").trim()) return true;
+  if (payload.taskProgress && typeof payload.taskProgress === "object" && !Array.isArray(payload.taskProgress)) {
+    return true;
+  }
+  if (getTaskLiveWorkItems(payload).length > 0) return true;
+  if (Array.isArray(payload.recentEvents) && payload.recentEvents.length > 0) return true;
+  return false;
+}
+
+export function pickTaskLivePayload(livePayload, fallbackPayload = null) {
+  void fallbackPayload;
+  return hasTaskLivePayload(livePayload) ? livePayload : null;
+}
+
+export function markLiveTaskActivity(liveState, nowMs = Date.now()) {
+  if (!liveState || typeof liveState !== "object") return;
+  liveState.lastActivityAtMs = Math.max(0, Number(nowMs) || Date.now());
+}
+
+function formatCountsSignature(counts) {
+  if (!counts || typeof counts !== "object" || Array.isArray(counts)) return "";
+  return Object.keys(counts)
+    .sort()
+    .map(key => `${String(key)}:${String(counts[key] ?? "")}`)
+    .join(",");
+}
+
+export function buildTaskWorkItemActivitySignature(payload) {
+  return getTaskLiveWorkItems(payload).map(item => {
+    const progress = item?.progress && typeof item.progress === "object" && !Array.isArray(item.progress)
+      ? item.progress
+      : {};
+    return [
+      String(item?.id || item?.name || ""),
+      String(item?.status || ""),
+      String(item?.startedAt || ""),
+      String(item?.finishedAt || ""),
+      String(item?.heartbeatAt || ""),
+      String(progress.phaseKey || ""),
+      String(progress.phaseLabel || ""),
+      formatCountsSignature(progress.counts),
+      String(progress.targetLabel || ""),
+      String(progress.targetUrl || ""),
+      String(progress.updatedAt || ""),
+      String(item?.error || "")
+    ].join("|");
+  }).join("||");
+}
+
+export function appendStructuredTaskEvents({
+  payload,
+  liveState,
+  appendEvent,
+  scope
+}) {
+  if (!liveState || typeof appendEvent !== "function") return false;
+  const events = getTaskLiveRecentEvents(payload);
+  if (!events.length) return false;
+  if (!(liveState.recentEventSignatures instanceof Set)) {
+    liveState.recentEventSignatures = createBoundedSignatureSet();
+  }
+  let sawActivity = false;
+  events.forEach(eventLike => {
+    const signature = [
+      String(eventLike?.timestamp || ""),
+      String(eventLike?.phaseKey || ""),
+      String(eventLike?.workItemId || eventLike?.sourceId || ""),
+      String(eventLike?.message || "")
+    ].join("|");
+    if (!signature || liveState.recentEventSignatures.has(signature)) {
+      return;
+    }
+    liveState.recentEventSignatures.add(signature);
+    appendEvent({
+      ...eventLike,
+      scope: String(eventLike?.scope || scope || "admin"),
+      sourceId: String(eventLike?.sourceId || eventLike?.workItemId || "")
+    });
+    sawActivity = true;
+  });
+  return sawActivity;
+}
+
+export function appendLiveTaskActivity({
+  payload,
+  liveState,
+  nowMs,
+  appendEvent,
+  scope,
+  summarySignature = "",
+  workItemSignature = "",
+  onSummaryChange,
+  onHeartbeat,
+  heartbeatIntervalMs = 60000
+}) {
+  if (!liveState || typeof liveState !== "object") return false;
+  let sawActivity = appendStructuredTaskEvents({
+    payload,
+    liveState,
+    appendEvent,
+    scope
+  });
+  const nextSummarySignature = String(summarySignature || "");
+  if (nextSummarySignature !== String(liveState.summarySignature || "")) {
+    liveState.summarySignature = nextSummarySignature;
+    sawActivity = true;
+    onSummaryChange?.();
+  }
+  const nextWorkItemSignature = String(workItemSignature || "");
+  if (nextWorkItemSignature !== String(liveState.workItemSignature || "")) {
+    liveState.workItemSignature = nextWorkItemSignature;
+    sawActivity = true;
+  }
+  if (sawActivity) {
+    markLiveTaskActivity(liveState, nowMs);
+  }
+  const heartbeatInterval = Math.max(1000, Number(heartbeatIntervalMs) || 60000);
+  const clockNowMs = Math.max(0, Number(nowMs) || Date.now());
+  const idleMs = clockNowMs - Number(liveState.lastActivityAtMs || 0);
+  if (idleMs < heartbeatInterval) return sawActivity;
+  if ((clockNowMs - Number(liveState.lastHeartbeatAtMs || 0)) < heartbeatInterval) return sawActivity;
+  liveState.lastHeartbeatAtMs = clockNowMs;
+  onHeartbeat?.();
+  return true;
+}
+
+export function scheduleAsyncWatchTimer({
+  state,
+  timerKey,
+  delayMs,
+  task,
+  onError
+}) {
+  state[timerKey] = maybeUnrefTimer(setTimeout(
+    () => Promise.resolve()
+      .then(task)
+      .catch(err => {
+        onError?.(err);
+      }),
+    Math.max(0, Number(delayMs) || 0)
+  ));
 }
 
 export function startLiveTaskWatch({
@@ -193,6 +394,11 @@ export function createRestoreActiveRunWatches({
       const fetchMeta = fetcherController?.getRestorableFetcherRunMeta?.(fetchReport);
       if (fetchMeta) {
         fetcherController?.restartFetcherCompletionWatch?.(fetchMeta);
+      } else if (isLiveTaskReportActive(fetchReport)) {
+        fetcherController?.restartFetcherCompletionWatch?.({
+          runId: fetchReport?.runId,
+          startedAt: fetchReport?.startedAt
+        });
       }
 
       const discoveryReport = await loadLatestDiscoveryReport({ silent: true }).catch(() => null);

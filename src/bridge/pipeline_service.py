@@ -38,6 +38,7 @@ class PipelineService:
         start_fetcher_task: Callable[..., dict[str, Any]],
         start_sync_task: Callable[..., dict[str, Any]],
         get_app_version: Callable[[], str],
+        get_projected_run_history: Callable[[], Any] | None = None,
     ) -> None:
         self._lock = pipeline_state_lock
         self._status = pipeline_status
@@ -58,6 +59,7 @@ class PipelineService:
         self._start_fetcher_task = start_fetcher_task
         self._start_sync_task = start_sync_task
         self._get_app_version = get_app_version
+        self._get_projected_run_history = get_projected_run_history
 
     @staticmethod
     def _pipeline_progress(current_step: int, total_steps: int, label: str) -> dict[str, Any]:
@@ -131,6 +133,31 @@ class PipelineService:
                 )
             self._runtime.active_run_id = ""
 
+    def _get_child_task_snapshot(self, task_type: str, run_id: str = "") -> Any:
+        if not callable(self._get_projected_run_history):
+            return None
+        try:
+            projection = self._get_projected_run_history()
+        except Exception:  # noqa: BLE001
+            return None
+        child_tasks = getattr(projection, "child_tasks", {})
+        if not isinstance(child_tasks, dict):
+            return None
+        snapshot = child_tasks.get(str(task_type or "").strip().lower())
+        if snapshot is None:
+            return None
+        snapshot_run_id = str(getattr(snapshot, "run_id", "") or "").strip()
+        if run_id and snapshot_run_id and snapshot_run_id != run_id:
+            return None
+        return snapshot
+
+    def _child_task_is_active(self, task_type: str, run_id: str = "") -> bool:
+        snapshot = self._get_child_task_snapshot(task_type, run_id)
+        return bool(snapshot and getattr(snapshot, "active", False))
+
+    def _has_projected_blocking_child_work(self) -> bool:
+        return self._child_task_is_active("fetch") or self._child_task_is_active("discovery")
+
     def get_status_payload(self) -> dict[str, Any]:
         with self._lock:
             payload = dict(self._status)
@@ -154,6 +181,8 @@ class PipelineService:
         load_json_object: Callable[[Any, Any], Any],
         report_is_stale_in_progress: Callable[..., bool] | None = None,
         fail_on_stale: bool = False,
+        task_type: str = "",
+        task_run_id: str = "",
     ) -> dict[str, Any]:
         from datetime import UTC, datetime, timedelta
         from threading import Event
@@ -171,7 +200,8 @@ class PipelineService:
                 and report_started >= (started_dt - timedelta(seconds=1))
             ):
                 if report_finished and report_finished >= report_started:
-                    return report if isinstance(report, dict) else {}
+                    if not self._child_task_is_active(task_type, task_run_id):
+                        return report if isinstance(report, dict) else {}
             if fail_on_stale and stale_guard(
                 "fetch" if "fetch" in report_name else "discovery",
                 report_path,
@@ -193,6 +223,7 @@ class PipelineService:
             if int(discovery_status) >= 300 or not bool(discovery_result.get("started")):
                 raise RuntimeError(str(discovery_result.get("error") or "discovery start failed"))
             discovery_started_at = str(discovery_result.get("startedAt") or self._now_iso())
+            discovery_run_id = str(discovery_result.get("runId") or "").strip()
             self.wait_for_report_completion(
                 report_path=self._discovery_report_path,
                 started_at=discovery_started_at,
@@ -200,11 +231,14 @@ class PipelineService:
                 report_name="discovery report",
                 load_json_object=self._load_json_object,
                 report_is_stale_in_progress=lambda *_args, **_kwargs: False,
+                task_type="discovery",
+                task_run_id=discovery_run_id,
             )
 
             self._mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
             fetch_result = self._start_fetcher_task({"preset": "default"})
             fetch_started_at = str(fetch_result.get("startedAt") or self._now_iso())
+            fetch_run_id = str(fetch_result.get("runId") or "").strip()
             self.wait_for_report_completion(
                 report_path=self._fetch_report_path,
                 started_at=fetch_started_at,
@@ -212,6 +246,8 @@ class PipelineService:
                 report_name="fetch report",
                 load_json_object=self._load_json_object,
                 report_is_stale_in_progress=lambda *_args, **_kwargs: False,
+                task_type="fetch",
+                task_run_id=fetch_run_id,
             )
 
             self._mark_stage(
@@ -249,6 +285,7 @@ class PipelineService:
                 self._task_running_from_state("fetch")
                 or self._task_running_from_state("discovery")
                 or self._sync_task_running()
+                or self._has_projected_blocking_child_work()
             ):
                 return {
                     "started": False,

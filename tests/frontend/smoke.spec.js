@@ -1,6 +1,21 @@
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { test, expect } from "@playwright/test";
+
+function resolveBridgeRuntimeBase() {
+  try {
+    const metaPath = path.resolve(".tmp", "playwright", "bridge-meta.json");
+    const payload = JSON.parse(readFileSync(metaPath, "utf8"));
+    const bridgeHost = String(payload?.bridgeHost || "127.0.0.1").trim() || "127.0.0.1";
+    const bridgePort = Number(payload?.bridgePort || 0);
+    if (bridgePort > 0) {
+      return `http://${bridgeHost}:${bridgePort}`;
+    }
+  } catch {
+    // Fall back to the historical local smoke port if the setup metadata is unavailable.
+  }
+  return "http://127.0.0.1:8877";
+}
 
 function resolveDesktopRuntimeQuery() {
   try {
@@ -17,7 +32,19 @@ function resolveDesktopRuntimeQuery() {
   return "?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1";
 }
 
+const BRIDGE_RUNTIME_BASE = resolveBridgeRuntimeBase();
 const DESKTOP_RUNTIME_QUERY = resolveDesktopRuntimeQuery();
+const PLAYWRIGHT_BRIDGE_DATA_DIR = path.resolve(".tmp", "playwright", "admin-bridge-data");
+
+async function seedBridgeRuntimeBase(page) {
+  await page.addInitScript((runtimeBridgeBase) => {
+    try {
+      window.sessionStorage.setItem("baluffo_runtime_bridge_base", String(runtimeBridgeBase || ""));
+    } catch {
+      // Ignore storage errors in smoke setup.
+    }
+  }, BRIDGE_RUNTIME_BASE);
+}
 
 async function expectJobsPageReady(page, timeout = 90000) {
   await page.waitForFunction(() => {
@@ -61,13 +88,23 @@ async function cancelSignIn(page) {
   await expect(page.locator("#local-auth-name-input")).toBeHidden();
 }
 
+function writePlaywrightBridgeJson(relativeName, payload) {
+  writeFileSync(
+    path.join(PLAYWRIGHT_BRIDGE_DATA_DIR, relativeName),
+    `${JSON.stringify(payload, null, 2)}\n`,
+    "utf8"
+  );
+}
+
 test("index entry redirects to jobs", async ({ page }) => {
+  await seedBridgeRuntimeBase(page);
   await page.goto("/index.html");
   await page.waitForURL("**/jobs.html");
   await expect(page.locator("#jobs-list")).toBeVisible();
 });
 
 test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning", async ({ page }) => {
+  await seedBridgeRuntimeBase(page);
   test.setTimeout(120000);
   const pageErrors = [];
   page.on("pageerror", error => {
@@ -158,6 +195,7 @@ test("jobs smoke: filters + refresh + pagination + save/unsave + guest warning",
 });
 
 test("jobs filter popups close on outside click and Escape", async ({ page }) => {
+  await seedBridgeRuntimeBase(page);
   await page.goto("/jobs.html");
   await expectJobsPageReady(page);
 
@@ -191,6 +229,7 @@ test("jobs filter popups close on outside click and Escape", async ({ page }) =>
 });
 
 test("saved smoke: export stays available for signed-in browser users and guest state restores", async ({ page }) => {
+  await seedBridgeRuntimeBase(page);
   await page.goto("/saved.html");
 
   await signInWithProfile(page, "#saved-auth-sign-in-btn", "Smoke User", "#add-custom-job-btn");
@@ -209,6 +248,7 @@ test("saved smoke: export stays available for signed-in browser users and guest 
 });
 
 test("jobs admin badge reaches online state after navigating back from saved", async ({ page }) => {
+  await seedBridgeRuntimeBase(page);
   await page.goto("/saved.html");
   await expect(page.locator("#jobs-page-btn")).toBeVisible();
 
@@ -223,6 +263,7 @@ test("jobs admin badge reaches online state after navigating back from saved", a
 });
 
 test("desktop jobs update toggle stays usable after Jobs to Saved to Jobs navigation", async ({ page }) => {
+  await seedBridgeRuntimeBase(page);
   await page.goto(`/jobs.html${DESKTOP_RUNTIME_QUERY}`);
   await expectJobsPageReady(page);
   await expectDesktopUpdateToggleUsable(page);
@@ -239,6 +280,7 @@ test("desktop jobs update toggle stays usable after Jobs to Saved to Jobs naviga
 });
 
 test("desktop jobs update toggle stays usable after Jobs to Admin to Jobs navigation", async ({ page }) => {
+  await seedBridgeRuntimeBase(page);
   await page.goto(`/jobs.html${DESKTOP_RUNTIME_QUERY}`);
   await expectJobsPageReady(page);
   await expectDesktopUpdateToggleUsable(page);
@@ -256,12 +298,14 @@ test("desktop jobs update toggle stays usable after Jobs to Admin to Jobs naviga
 });
 
 test("admin smoke: loads directly without a PIN gate", async ({ page }) => {
+  await seedBridgeRuntimeBase(page);
   await page.goto("/admin.html");
   await expect(page.locator("#admin-content")).toBeVisible();
   await expect(page.locator("#admin-source-status")).toContainText(/Loading|Loaded|users|Could not|Admin overview/i);
 });
 
 test("admin smoke: direct admin load shows bucketed fetch failure summary", async ({ page }) => {
+  await seedBridgeRuntimeBase(page);
   await page.goto("/admin.html");
   await expect(page.locator("#admin-content")).toBeVisible();
   await expect(page.locator("h1")).toContainText(/Administration/i);
@@ -269,4 +313,158 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   // Load the fetch report - requires bridge to be running
   await page.click("#admin-refresh-report-btn");
   await expect(page.locator("#admin-ops-fetcher-metrics")).not.toContainText(/Loading/i, { timeout: 15000 });
+});
+
+test("admin smoke: fetch live detail stays aligned with run history and discovery live table stays full width", async ({ page }) => {
+  const nowIso = new Date().toISOString();
+  const fetchRunId = "smoke_fetch_live_current_1";
+  const discoveryRunId = "smoke_discovery_live_current_1";
+  const fetchReport = {
+    runId: fetchRunId,
+    startedAt: nowIso,
+    finishedAt: "",
+    summary: {
+      successfulSources: 10,
+      failedSources: 0,
+      excludedSources: 0,
+      outputCount: 34081,
+      sourceCount: 551
+    },
+    runtime: {
+      selectedSourceCount: 551,
+      heartbeatAt: nowIso
+    },
+    taskProgress: {
+      active: true,
+      phaseKey: "executing_sources",
+      phaseLabel: "Executing sources",
+      mode: "determinate",
+      ratio: 10 / 551,
+      counts: {
+        resolvedSources: 10,
+        sourceCount: 551,
+        runningTasks: 541,
+        queuedTasks: 0,
+        outputCount: 34081,
+        failedSources: 0,
+        excludedSources: 0,
+        completedTasks: 10
+      }
+    },
+    sources: [
+      {
+        name: "Studio A",
+        status: "running",
+        adapter: "static",
+        studio: "Studio A",
+        keptCount: 17,
+        durationMs: 26000
+      }
+    ]
+  };
+  const staleFetchTasks = {
+    taskType: "fetch",
+    runId: "smoke_fetch_live_stale_1",
+    startedAt: "2026-04-18T11:00:00.000Z",
+    status: "running",
+    taskProgress: {
+      active: true,
+      phaseKey: "executing_sources",
+      phaseLabel: "Executing sources",
+      mode: "determinate",
+      ratio: 9 / 551,
+      counts: {
+        resolvedSources: 9,
+        sourceCount: 551,
+        runningTasks: 542,
+        queuedTasks: 0,
+        outputCount: 29957,
+        completedTasks: 9
+      }
+    }
+  };
+  const discoveryReport = {
+    runId: discoveryRunId,
+    startedAt: nowIso,
+    finishedAt: "",
+    summary: {
+      foundEndpointCount: 12,
+      probedCandidateCount: 5,
+      queuedCandidateCount: 3,
+      failedProbeCount: 0
+    },
+    taskProgress: {
+      active: true,
+      phaseKey: "probing_candidates",
+      phaseLabel: "Probing candidates",
+      mode: "determinate",
+      ratio: 0.5,
+      counts: {
+        foundEndpoints: 12,
+        probedCandidates: 5,
+        queuedCandidates: 3
+      }
+    },
+    runtime: {
+      lifecycle: { heartbeatAt: nowIso },
+      adapterTimings: [
+        {
+          adapter: "greenhouse",
+          generatedCount: 12,
+          failureCount: 0,
+          probedCount: 5,
+          healthyCount: 5,
+          queuedCount: 3,
+          durationMs: 12000
+        }
+      ]
+    },
+    failures: [],
+    candidates: []
+  };
+  writePlaywrightBridgeJson("admin-task-state.json", {
+    fetch: {
+      runId: fetchRunId,
+      taskType: "fetch",
+      pid: process.pid,
+      script: "jobs_fetcher.py",
+      status: "running",
+      startedAt: nowIso
+    },
+    discovery: {
+      runId: discoveryRunId,
+      taskType: "discovery",
+      pid: process.pid,
+      script: "source_discovery.py",
+      status: "running",
+      startedAt: nowIso
+    }
+  });
+  writePlaywrightBridgeJson("jobs-fetch-report.json", fetchReport);
+  writePlaywrightBridgeJson("jobs-fetch-tasks.json", staleFetchTasks);
+  writePlaywrightBridgeJson("source-discovery-report.json", discoveryReport);
+  writePlaywrightBridgeJson("admin-run-history.json", []);
+
+  await seedBridgeRuntimeBase(page);
+  await page.route("**/data/jobs-fetch-report.json*", async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(fetchReport)
+    });
+  });
+  await page.goto(`/admin.html${DESKTOP_RUNTIME_QUERY}`);
+  await expect(page.locator("#admin-content")).toBeVisible();
+  await expect(page.locator(".admin-discovery-live-card")).toBeVisible({ timeout: 15000 });
+
+  const runCardBox = await page.locator(".admin-discovery-run-card").boundingBox();
+  const liveCardBox = await page.locator(".admin-discovery-live-card").boundingBox();
+  expect(runCardBox).not.toBeNull();
+  expect(liveCardBox).not.toBeNull();
+  expect(liveCardBox.width).toBeGreaterThan(runCardBox.width + 100);
+
+  await expect(page.locator("#admin-fetcher-progress-label")).toContainText(/10\/551 sources resolved/i, { timeout: 15000 });
+  await expect(page.locator("#admin-ops-history")).toContainText(/10\/551 sources resolved/i, { timeout: 15000 });
+  await expect(page.locator("[data-ui='admin-fetcher-live-items']")).toContainText(/Studio A/i, { timeout: 15000 });
+  await expect(page.locator("[data-ui='admin-fetcher-live-items']")).not.toContainText(/Waiting for fetch source activity/i);
 });

@@ -1,13 +1,20 @@
 import { deriveFetcherFailureSummary, deriveFetcherProgressModel, deriveFetcherTaskProgress } from "../domain.js";
+import { renderAdminTaskLiveItems } from "../render.js";
 import {
+  appendLiveTaskActivity,
+  buildTaskWorkItemActivitySignature,
   attachToActiveRun,
   clearOptimisticRun,
+  createBoundedSignatureSet,
   getRestorableRunMeta,
   loadLiveTaskLogChunk,
-  maybeUnrefTimer,
+  loadTaskLivePayload,
+  markLiveTaskActivity,
   parseReportTimestampMs,
+  pickTaskLivePayload,
   resetLiveTaskPlaceholder,
   restartCompletionWatch,
+  scheduleAsyncWatchTimer,
   setOptimisticRun,
   startLiveTaskWatch,
   stopLiveTaskWatch
@@ -85,6 +92,21 @@ export function createAdminFetcherController({
   createLogEvent,
   appendLogRow
 }) {
+  function hasLiveFetcherSummaryState() {
+    const liveState = state.fetcherLiveProgressState;
+    if (!liveState || typeof liveState !== "object") return false;
+    if (String(liveState.summarySignature || "").trim()) return true;
+    if (String(liveState.workItemSignature || "").trim()) return true;
+    if (liveState.recentEventSignatures instanceof Set && liveState.recentEventSignatures.size > 0) {
+      return true;
+    }
+    return false;
+  }
+
+  function hasVisibleFetcherProgressLabel() {
+    return Boolean(String(refs.adminFetcherProgressLabelEl?.textContent || "").trim());
+  }
+
   function formatDurationCompact(ms) {
     const value = Math.max(0, Number(ms) || 0);
     if (value < 1000) return `${value}ms`;
@@ -105,6 +127,13 @@ export function createAdminFetcherController({
       refs.adminFetcherProgressLabelEl,
       view
     );
+  }
+
+  function renderFetcherLiveItems(payload, { emptyText = "" } = {}) {
+    renderAdminTaskLiveItems(refs.adminFetcherLiveItemsEl, payload || {}, {
+      taskType: "fetch",
+      emptyText
+    });
   }
 
   function getFetcherTaskProgress(report, { running = false } = {}) {
@@ -133,6 +162,27 @@ export function createAdminFetcherController({
 
   function updateFetcherProgressFromReport(report, { running = false } = {}) {
     setFetcherProgress(deriveFetcherProgressModel(report, { running }));
+  }
+
+  function appendFetcherLogEvent(eventLike, fallbackLevel = "muted") {
+    if (!refs.adminFetcherLogEl) return;
+    const event = (eventLike && typeof eventLike === "object" && !Array.isArray(eventLike))
+      ? {
+          timestamp: String(eventLike.timestamp || new Date().toISOString()),
+          level: String(eventLike.level || fallbackLevel || "muted"),
+          scope: String(eventLike.scope || "fetch"),
+          sourceId: String(eventLike.sourceId || eventLike.workItemId || ""),
+          message: String(eventLike.message || "")
+        }
+      : createLogEvent("fetch", String(eventLike || ""), fallbackLevel);
+    appendLogRow(refs.adminFetcherLogEl, event);
+  }
+
+  async function loadFetcherLivePayload() {
+    return loadTaskLivePayload({
+      getBridge,
+      taskType: "fetch"
+    });
   }
 
   function getFetcherPresetMeta(preset) {
@@ -195,9 +245,7 @@ export function createAdminFetcherController({
       if (!normalizedLine) return;
       if (state.fetcherLiveProgressState?.serverLogSignatures?.has(normalizedLine.message)) return;
       state.fetcherLiveProgressState?.serverLogSignatures?.add(normalizedLine.message);
-      if (state.fetcherLiveProgressState) {
-        state.fetcherLiveProgressState.lastActivityAtMs = Date.now();
-      }
+      markLiveTaskActivity(state.fetcherLiveProgressState);
       if (match) {
         const event = {
           timestamp: String(match[1] || new Date().toISOString()),
@@ -223,6 +271,7 @@ export function createAdminFetcherController({
       appendLog: appendFetcherLog,
       message
     });
+    renderFetcherLiveItems(null);
   }
 
   function setOptimisticFetchRun(runMeta) {
@@ -264,13 +313,16 @@ export function createAdminFetcherController({
 
   function scheduleFetcherLogPoll(delayMs) {
     stopFetcherLogPolling();
-    state.fetcherLogPollTimer = maybeUnrefTimer(setTimeout(() => {
-      loadFetcherLogChunk().catch(() => null).finally(() => {
+    scheduleAsyncWatchTimer({
+      state,
+      timerKey: "fetcherLogPollTimer",
+      delayMs: Math.max(250, Number(delayMs) || 900),
+      task: () => loadFetcherLogChunk().catch(() => null).finally(() => {
         if (state.adminBusyState.fetcherWatch) {
           scheduleFetcherLogPoll(delayMs);
         }
-      });
-    }, Math.max(250, Number(delayMs) || 900)));
+      })
+    });
   }
 
   function _formatFetcherRuntimeOptions(report) {
@@ -338,11 +390,11 @@ export function createAdminFetcherController({
       .slice(0, 5);
   }
 
-  async function fetchJobsFetchReportJsonWithRetry(maxAttempts = 3, delayMs = 850) {
+  async function fetchJobsFetchReportJsonWithRetry(options = {}, maxAttempts = 3, delayMs = 850) {
     let attempt = 0;
     while (attempt < Math.max(1, Number(maxAttempts) || 1)) {
       attempt += 1;
-      const report = await fetchJobsFetchReportJson();
+      const report = await fetchJobsFetchReportJson(options);
       if (report) return report;
       if (attempt < maxAttempts) {
         await new Promise(resolve => {
@@ -369,8 +421,21 @@ export function createAdminFetcherController({
         if (!silent) showToast("Fetch report not available yet. Retry in a few seconds.", "info");
         return null;
       }
+      const liveWatchActive = Boolean(state.adminBusyState.fetcherWatch || state.adminBusyState.liveFetchRunning);
+      const reportFinished = Boolean(String(report?.finishedAt || "").trim());
       state.latestFetcherReportCache = report;
-      updateFetcherProgressFromReport(report, { running: false });
+      if (!liveWatchActive || reportFinished) {
+        renderFetcherLiveItems(report, {
+          emptyText: "Waiting for fetch source activity..."
+        });
+        updateFetcherProgressFromReport(report, { running: false });
+      } else if (!hasLiveFetcherSummaryState() && !hasVisibleFetcherProgressLabel()) {
+        updateFetcherProgressFromReport(report, { running: true });
+      }
+
+      if (liveWatchActive && !reportFinished) {
+        return report;
+      }
 
       const summary = report?.summary || {};
       const progress = getFetcherTaskProgress(report, { running: false });
@@ -489,11 +554,16 @@ export function createAdminFetcherController({
     const liveState = state.fetcherLiveProgressState;
     if (!liveState) return;
     updateFetcherProgressFromReport(report, { running: true });
+    renderFetcherLiveItems(report, {
+      emptyText: "Waiting for fetch source activity..."
+    });
     const summary = report?.summary || {};
     const progress = getFetcherTaskProgress(report, { running: true });
     const counts = progress.counts && typeof progress.counts === "object" ? progress.counts : {};
     const outputCount = Math.max(0, Number(counts.outputCount ?? summary.outputCount ?? 0));
     const selectedSourceCount = progress.mode === "determinate" ? Math.max(0, Number(counts.sourceCount || 0)) : 0;
+    const runningSources = Math.max(0, Number(counts.runningTasks ?? counts.running ?? summary.running ?? 0));
+    const queuedSources = Math.max(0, Number(counts.queuedTasks ?? counts.queued ?? summary.queued ?? 0));
     const failedSources = Math.max(0, Number(counts.failedSources ?? summary.failedSources ?? 0));
     const excludedSources = Math.max(0, Number(counts.excludedSources ?? summary.excludedSources ?? 0));
     const resolvedSources = Math.max(
@@ -503,96 +573,36 @@ export function createAdminFetcherController({
         ?? (Number(summary.successfulSources || 0) + Number(summary.failedSources || 0) + Number(summary.excludedSources || 0))
       )
     );
-    let sawActivity = false;
-
     const summarySignature = [
       outputCount,
       selectedSourceCount,
       resolvedSources,
+      runningSources,
+      queuedSources,
       failedSources,
       excludedSources
     ].join("|");
-    if (summarySignature !== liveState.summarySignature) {
-      liveState.summarySignature = summarySignature;
-      sawActivity = true;
-      appendFetcherLog(
-        `Fetcher: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, output ${outputCount.toLocaleString()}, failed ${failedSources}, excluded ${excludedSources}.`,
-        failedSources > 0 ? "warn" : "info"
-      );
-    }
-
-    const sources = Array.isArray(report?.sources) ? report.sources : [];
-    const notableEvents = [];
-    sources.forEach(source => {
-      const name = String(source?.name || "unknown");
-      const status = String(source?.status || "unknown").toLowerCase();
-      const signature = [
-        status,
-        Number(source?.keptCount || 0),
-        Number(source?.durationMs || 0),
-        String(source?.error || "")
-      ].join("|");
-      const previousSignature = liveState.sourceSignatures.get(name);
-      if (previousSignature === signature) return;
-      liveState.sourceSignatures.set(name, signature);
-      if (status === "error") {
-        notableEvents.push({
-          level: "error",
-          message: `Failure: ${name}${source?.error ? ` [${String(source.error)}]` : ""}`
-        });
-        return;
-      }
-      if (status === "excluded") {
-        notableEvents.push({
-          level: "warn",
-          message: `Excluded: ${name}${source?.error ? ` [${String(source.error)}]` : ""}`
-        });
-        return;
-      }
-      if (status === "running" && Number(source?.durationMs || 0) >= 20_000 && !liveState.reportedSlowSources.has(name)) {
-        liveState.reportedSlowSources.add(name);
-        notableEvents.push({
-          level: "muted",
-          message: `Slow source: ${name} still running after ${formatDurationCompact(source?.durationMs)}`
-        });
+    appendLiveTaskActivity({
+      payload: report,
+      liveState,
+      nowMs,
+      appendEvent: event => appendFetcherLogEvent(event, "muted"),
+      scope: "fetch",
+      summarySignature,
+      workItemSignature: buildTaskWorkItemActivitySignature(report),
+      onSummaryChange: () => {
+        appendFetcherLog(
+          `Fetcher: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}, failed ${failedSources}, excluded ${excludedSources}.`,
+          failedSources > 0 ? "warn" : "info"
+        );
+      },
+      onHeartbeat: () => {
+        appendFetcherLog(
+          `Fetcher active: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}.`,
+          "muted"
+        );
       }
     });
-    notableEvents.slice(0, 2).forEach(item => {
-      appendFetcherLog(item.message, item.level);
-    });
-    if (notableEvents.length) {
-      sawActivity = true;
-    }
-
-    const slowSourceLine = selectSlowSources(report)
-      .slice(0, 2)
-      .map(source => `${String(source?.name || "unknown")} ${formatDurationCompact(source?.durationMs)}`)
-      .join(" | ");
-    if (slowSourceLine && slowSourceLine !== liveState.slowSourceSummarySignature) {
-      liveState.slowSourceSummarySignature = slowSourceLine;
-      sawActivity = true;
-      appendFetcherLog(`Slowest sources: ${slowSourceLine}`, "muted");
-    }
-
-    const slowStageLine = formatStageTopSummary(report);
-    if (slowStageLine && slowStageLine !== liveState.slowStageSummarySignature) {
-      liveState.slowStageSummarySignature = slowStageLine;
-      sawActivity = true;
-      appendFetcherLog(`Slowest stages: ${slowStageLine}`, "muted");
-    }
-
-    if (sawActivity) {
-      liveState.lastActivityAtMs = nowMs;
-    }
-
-    const idleMs = nowMs - Number(liveState.lastActivityAtMs || 0);
-    if (idleMs >= 60000 && (nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 60000) {
-      liveState.lastHeartbeatAtMs = nowMs;
-      appendFetcherLog(
-        `Fetcher active: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} resolved` : `${resolvedSources} resolved`}, output ${outputCount.toLocaleString()}.`,
-        "muted"
-      );
-    }
   }
 
   function startFetcherCompletionWatch() {
@@ -607,11 +617,9 @@ export function createAdminFetcherController({
       liveStateKey: "fetcherLiveProgressState",
       createLiveState: () => ({
         summarySignature: "",
-        sourceSignatures: new Map(),
-        reportedSlowSources: new Set(),
-        serverLogSignatures: new Set(),
-        slowSourceSummarySignature: "",
-        slowStageSummarySignature: "",
+        workItemSignature: "",
+        recentEventSignatures: createBoundedSignatureSet(),
+        serverLogSignatures: createBoundedSignatureSet(),
         lastHeartbeatAtMs: 0,
         lastActivityAtMs: Date.now()
       }),
@@ -619,7 +627,7 @@ export function createAdminFetcherController({
       onStart: () => appendFetcherLog("Fetcher started. Watching live progress...", "info"),
       loadInitialLogChunk: () => loadFetcherLogChunk({ reset: true }).catch(() => {}),
       scheduleLogPoll: () => scheduleFetcherLogPoll(700),
-      scheduleCompletionPoll: () => scheduleFetcherCompletionPoll(900)
+      scheduleCompletionPoll: () => scheduleFetcherCompletionPoll(0)
     });
   }
 
@@ -636,49 +644,62 @@ export function createAdminFetcherController({
   }
 
   function scheduleFetcherCompletionPoll(delayMs) {
-    state.fetcherCompletionPollTimer = maybeUnrefTimer(setTimeout(() => {
-      pollFetcherCompletion().catch(err => {
+    scheduleAsyncWatchTimer({
+      state,
+      timerKey: "fetcherCompletionPollTimer",
+      delayMs,
+      task: pollFetcherCompletion,
+      onError: err => {
         logAdminError("Fetcher completion poll failed", err);
         scheduleFetcherCompletionPoll(fetchReportPollIntervalMs);
-      });
-    }, delayMs));
+      }
+    });
   }
 
   async function pollFetcherCompletion() {
     const now = Date.now();
+    const [livePayload, report] = await Promise.all([
+      loadFetcherLivePayload().catch(() => null),
+      fetchJobsFetchReportJson({ live: true }).catch(() => null)
+    ]);
+    const normalizedLivePayload = pickTaskLivePayload(livePayload);
 
-    const report = await fetchJobsFetchReportJson();
-
-    // Always update progress during polling for real-time updates
-    if (report) {
-      const startedMs = parseReportTimestampMs(report?.startedAt);
+    // Detailed live progress comes only from the structured live-task payload.
+    if (normalizedLivePayload) {
+      const startedMs = parseReportTimestampMs(normalizedLivePayload?.startedAt);
       if (startedMs >= (state.fetcherLaunchAtMs - 1000)) {
-        appendFetcherProgressFromReport(report, now);
+        appendFetcherProgressFromReport(normalizedLivePayload, now);
       }
-
-      // Update progress even if not started yet, for better UX
-      updateFetcherProgressFromReport(report, { running: true });
+      updateFetcherProgressFromReport(normalizedLivePayload, { running: true });
+    } else {
+      renderFetcherLiveItems(null, {
+        emptyText: "Waiting for fetch live state..."
+      });
     }
 
-    const finishedMs = parseReportTimestampMs(report?.finishedAt);
+    const terminalPayload = report || normalizedLivePayload;
+    const finishedMs = parseReportTimestampMs(terminalPayload?.finishedAt);
     if (finishedMs >= (state.fetcherLaunchAtMs - 1000)) {
-      const summary = report?.summary || {};
-      updateFetcherProgressFromReport(report, { running: true });
+      const finalReport = await fetchJobsFetchReportJson().catch(() => null);
+      const completedPayload = finalReport || terminalPayload;
+      const summary = completedPayload?.summary || {};
+      updateFetcherProgressFromReport(completedPayload, { running: true });
+      renderFetcherLiveItems(completedPayload);
       appendFetcherLog(
         `Fetcher completed: output ${Number(summary.outputCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
         Number(summary.failedSources || 0) > 0 ? "warn" : "success"
       );
-      const slowSources = selectSlowSources(report)
+      const slowSources = selectSlowSources(completedPayload)
         .slice(0, 3)
         .map(source => `${String(source?.name || "unknown")} ${formatDurationCompact(source?.durationMs)}`);
       if (slowSources.length) {
         appendFetcherLog(`Slowest sources: ${slowSources.join(" | ")}`, "muted");
       }
-      const slowStages = formatStageTopSummary(report);
+      const slowStages = formatStageTopSummary(completedPayload);
       if (slowStages) {
         appendFetcherLog(`Slowest stages: ${slowStages}`, "muted");
       }
-      emitJobsAutoRefreshSignal(report);
+      emitJobsAutoRefreshSignal(completedPayload);
       setBusyFlag("liveFetchRunning", false);
       clearOptimisticFetchRun();
       stopFetcherCompletionWatch();

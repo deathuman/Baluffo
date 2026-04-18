@@ -1,9 +1,70 @@
 import {
   clearJobsPipelinePolling as clearJobsPipelinePollingFromModule,
+  formatBlockingTaskProgressLabel,
   getPipelineRunningLabel,
   scheduleJobsPipelineStatusPoll as scheduleJobsPipelineStatusPollFromModule,
   updateJobsPipelineUi as updateJobsPipelineUiFromModule
 } from "../pipeline.js";
+
+const BLOCKING_TASK_TYPES = new Set(["pipeline", "fetch", "discovery", "sync"]);
+
+function getTaskStateRows(payload) {
+  return Array.isArray(payload?.tasks) ? payload.tasks : [];
+}
+
+function normalizeTaskType(task) {
+  return String(task?.taskType || task?.type || "").trim().toLowerCase();
+}
+
+function buildBlockingTaskPayload(task) {
+  const taskType = normalizeTaskType(task);
+  const taskProgress = task?.taskProgress && typeof task.taskProgress === "object"
+    ? task.taskProgress
+    : {};
+  const summary = task?.summary && typeof task.summary === "object"
+    ? task.summary
+    : {};
+  const syncAction = taskType === "sync"
+    ? String(summary.action || taskProgress?.counts?.lastAction || "").trim().toLowerCase()
+    : "";
+  const payload = {
+    active: true,
+    stage: taskType === "sync" && syncAction ? `sync_${syncAction}` : (taskType || "pipeline"),
+    startedAt: String(task?.startedAt || "")
+  };
+  if (taskType === "pipeline") {
+    const phaseLabel = String(taskProgress.phaseLabel || "").trim();
+    if (phaseLabel) {
+      payload.progress = { label: phaseLabel };
+    }
+  }
+  return payload;
+}
+
+function getBlockingTask(taskStatePayload, trackedRunId = "") {
+  const tasks = getTaskStateRows(taskStatePayload);
+  const activeTasks = tasks.filter(task => (
+    Boolean(task?.active) && BLOCKING_TASK_TYPES.has(normalizeTaskType(task))
+  ));
+  if (!activeTasks.length) {
+    return null;
+  }
+  if (trackedRunId) {
+    const trackedPipelineTask = activeTasks.find(task => (
+      normalizeTaskType(task) === "pipeline" && String(task?.runId || "") === trackedRunId
+    ));
+    if (trackedPipelineTask) {
+      return trackedPipelineTask;
+    }
+  }
+  for (const taskType of ["pipeline", "fetch", "discovery", "sync"]) {
+    const match = activeTasks.find(task => normalizeTaskType(task) === taskType);
+    if (match) {
+      return match;
+    }
+  }
+  return activeTasks[0] || null;
+}
 
 export function createJobsPipelineController({
   refs,
@@ -63,7 +124,7 @@ export function createJobsPipelineController({
       isError: hasError
     });
     if (updatesFound) {
-      showToast("Pipeline completed. Refresh jobs to load new updates.", "success");
+      showToast("Pipeline completed. Refresh jobs to load updated listings.", "success");
     } else if (payload?.error) {
       showToast(`Pipeline failed: ${String(payload.error)}`, "error");
     }
@@ -71,11 +132,23 @@ export function createJobsPipelineController({
 
   async function pollJobsPipelineStatus() {
     try {
-      const payload = await callJobsBridge("/tasks/run-jobs-pipeline-status");
+      const [pipelineStatusResult, taskStateResult] = await Promise.allSettled([
+        callJobsBridge("/tasks/run-jobs-pipeline-status"),
+        callJobsBridge("/ops/task-state")
+      ]);
+      if (pipelineStatusResult.status !== "fulfilled") {
+        throw pipelineStatusResult.reason;
+      }
+      const payload = pipelineStatusResult.value;
+      const taskStatePayload = taskStateResult.status === "fulfilled"
+        ? taskStateResult.value
+        : { tasks: [] };
       jobsPipelineUiState.bridgeOnline = true;
 
       const active = Boolean(payload?.active);
       const runId = String(payload?.runId || "");
+      const trackedRunId = String(jobsPipelineUiState.runId || "");
+      const blockingTask = getBlockingTask(taskStatePayload, trackedRunId);
       if (active) {
         jobsPipelineUiState.active = true;
         jobsPipelineUiState.pendingStart = false;
@@ -94,13 +167,28 @@ export function createJobsPipelineController({
         return;
       }
 
-      const trackedRunId = String(jobsPipelineUiState.runId || "");
       if (jobsPipelineUiState.pendingStart) {
         updateJobsPipelineUi({
           running: true,
           disabled: true,
           buttonLabel: "Starting Pipeline...",
           pipelinePayload: payload
+        });
+        scheduleJobsPipelineStatusPoll(pollDelayMs);
+        return;
+      }
+      if (blockingTask) {
+        if (trackedRunId || jobsPipelineUiState.active) {
+          jobsPipelineUiState.active = true;
+        }
+        const blockingPayload = buildBlockingTaskPayload(blockingTask);
+        const blockingProgressLabel = formatBlockingTaskProgressLabel(blockingTask);
+        updateJobsPipelineUi({
+          running: true,
+          disabled: true,
+          buttonLabel: getPipelineRunningLabel(blockingPayload),
+          progressLabel: blockingProgressLabel || String(blockingTask?.taskProgress?.phaseLabel || "").trim(),
+          pipelinePayload: blockingPayload
         });
         scheduleJobsPipelineStatusPoll(pollDelayMs);
         return;
@@ -185,6 +273,7 @@ export function createJobsPipelineController({
       scheduleJobsPipelineStatusPoll(pollDelayMs);
     } catch (err) {
       const message = String(err?.message || "Could not start jobs pipeline.");
+      const normalizedMessage = message.toLowerCase();
       jobsPipelineUiState.active = false;
       jobsPipelineUiState.pendingStart = false;
       jobsPipelineUiState.runId = "";
@@ -196,7 +285,14 @@ export function createJobsPipelineController({
         pipelinePayload: null,
         isError: true
       });
-      showToast(message.toLowerCase().includes("409") ? "Pipeline already running." : "Could not start jobs pipeline.", "error");
+      showToast(
+        normalizedMessage.includes("already running")
+          ? "Pipeline already running."
+          : normalizedMessage.includes("another fetch/discovery/sync task is already running")
+            ? "Another background task is still running."
+            : "Could not start jobs pipeline.",
+        "error"
+      );
       scheduleJobsPipelineStatusPoll(idlePollDelayMs);
     }
   }

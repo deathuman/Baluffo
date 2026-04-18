@@ -304,6 +304,35 @@ def test_ops_fetch_report(tmp_path: Path) -> None:
     assert handler.sent[-1]["status"] == 200
 
 
+def test_ops_fetch_report_live_view_omits_source_details(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    api.load_json_object = lambda path, default: {
+        "runId": "fetch_live_1",
+        "summary": {"outputCount": 12, "failedSources": 0, "sourceCount": 1},
+        "taskProgress": {"active": True, "counts": {"resolvedSources": 1, "sourceCount": 1}},
+        "sources": [
+            {
+                "name": "studio_a",
+                "status": "ok",
+                "durationMs": 1234,
+                "details": [{"url": "https://example.com/job/1", "status": "ok"}],
+            }
+        ],
+    }
+
+    handler = _FakeHandler()
+    result = handle_get(handler, api=api, path="/ops/fetch-report", query={"view": ["live"]})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    payload = handler.sent[-1]["payload"]
+    assert payload["summary"]["outputCount"] == 12
+    assert payload["taskProgress"]["counts"]["resolvedSources"] == 1
+    assert payload["sources"][0]["durationMs"] == 1234
+    assert "details" not in payload["sources"][0]
+
+
 def test_sync_status(tmp_path: Path) -> None:
     """Test /sync/status endpoint."""
     store = _FakeDesktopLocalDataStore()

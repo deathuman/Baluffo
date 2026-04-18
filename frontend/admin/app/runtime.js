@@ -177,16 +177,17 @@ function postBridge(path, payload) {
   return callBridge(() => postBridgeFromData(ADMIN_BRIDGE_BASE, path, payload));
 }
 
-async function fetchJobsFetchReportJson() {
+async function fetchJobsFetchReportJson(options = {}) {
+  const bridgePath = options?.live ? "/ops/fetch-report?view=live" : "/ops/fetch-report";
   try {
-    const bridgeReport = await getBridge("/ops/fetch-report");
+    const bridgeReport = await getBridge(bridgePath);
     if (bridgeReport && typeof bridgeReport === "object") {
       return bridgeReport;
     }
   } catch {
     // Fall through to static report fetch.
   }
-  return fetchJobsFetchReportJsonFromData(JOBS_FETCH_REPORT_URL);
+  return fetchJobsFetchReportJsonFromData(JOBS_FETCH_REPORT_URL, options);
 }
 
 function getLastJobsUrl() {

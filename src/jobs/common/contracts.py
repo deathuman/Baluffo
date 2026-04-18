@@ -15,6 +15,10 @@ from src.jobs.common.taxonomy import (
     failure_bucket_from_zero_extract_assessment,
 )
 from src.jobs.text_utils import clean_text, norm_text
+from src.shared.live_task import (
+    build_live_task_contract_fields,
+    normalize_live_task_payload,
+)
 
 
 def normalize_runtime_payload(
@@ -627,42 +631,6 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def normalize_task_progress_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
-    mode = clean_text(src.get("mode")).lower()
-    if mode not in {"determinate", "indeterminate"}:
-        mode = "indeterminate"
-    counts_src = src.get("counts") if isinstance(src.get("counts"), dict) else {}
-    counts: dict[str, Any] = {}
-    for key, value in counts_src.items():
-        clean_key = clean_text(key)
-        if not clean_key:
-            continue
-        if isinstance(value, bool):
-            counts[clean_key] = bool(value)
-            continue
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            counts[clean_key] = _clamped_int(value, 0, 0)
-            continue
-        text = clean_text(value)
-        if text:
-            counts[clean_key] = text
-    ratio_value = src.get("ratio")
-    try:
-        ratio = float(ratio_value)
-    except (TypeError, ValueError):
-        ratio = 0.0
-    ratio = max(0.0, min(1.0, ratio))
-    return {
-        "active": bool(src.get("active")),
-        "phaseKey": clean_text(src.get("phaseKey")),
-        "phaseLabel": clean_text(src.get("phaseLabel")),
-        "mode": mode,
-        "ratio": ratio,
-        "counts": counts,
-    }
-
-
 def normalize_task_state_payload(
     payload: dict[str, Any],
     *,
@@ -672,40 +640,33 @@ def normalize_task_state_payload(
     report_path: str = "",
 ) -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
-    rows = src.get("tasks")
-    normalized_rows: list[dict[str, Any]] = []
-    if isinstance(rows, list):
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            normalized_rows.append(
-                {
-                    "name": clean_text(row.get("name")),
-                    "status": norm_text(row.get("status")) or "queued",
-                    "startedAt": clean_text(row.get("startedAt")),
-                    "finishedAt": clean_text(row.get("finishedAt")),
-                    "durationMs": _clamped_int(row.get("durationMs"), 0, 0),
-                    "heartbeatAt": clean_text(row.get("heartbeatAt")),
-                    "error": clean_text(row.get("error")),
-                }
-            )
+    normalized = normalize_live_task_payload(
+        src,
+        task_type="fetch",
+        run_id=run_id,
+        started_at=started_at,
+        finished_at=finished_at,
+    )
+    live_task_fields = build_live_task_contract_fields(normalized)
     summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
     return {
         "schemaVersion": SCHEMA_VERSION,
-        "runId": clean_text(src.get("runId")) or clean_text(run_id),
-        "startedAt": clean_text(src.get("startedAt")) or clean_text(started_at),
-        "finishedAt": clean_text(src.get("finishedAt")) or clean_text(finished_at),
-        "heartbeatAt": clean_text(src.get("heartbeatAt")),
+        "taskType": clean_text(normalized.get("taskType")) or "fetch",
+        "status": norm_text(normalized.get("status")),
+        "active": bool(normalized.get("active")),
+        "runId": clean_text(normalized.get("runId")) or clean_text(run_id),
+        "startedAt": clean_text(normalized.get("startedAt")) or clean_text(started_at),
+        "finishedAt": clean_text(normalized.get("finishedAt")) or clean_text(finished_at),
+        **live_task_fields,
         "summary": {
             "queued": _clamped_int(summary.get("queued"), 0, 0),
             "running": _clamped_int(summary.get("running"), 0, 0),
             "ok": _clamped_int(summary.get("ok"), 0, 0),
             "error": _clamped_int(summary.get("error"), 0, 0),
+            "excluded": _clamped_int(summary.get("excluded"), 0, 0),
         },
-        "taskProgress": normalize_task_progress_payload(src.get("taskProgress")),
-        "tasks": normalized_rows,
         "outputs": {
-            "report": clean_text((src.get("outputs") or {}).get("report"))
+            "report": clean_text((normalized.get("outputs") or {}).get("report"))
             or clean_text(report_path)
         },
     }
@@ -713,6 +674,14 @@ def normalize_task_state_payload(
 
 def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     src = payload if isinstance(payload, dict) else {}
+    live_task_payload = normalize_live_task_payload(
+        src,
+        task_type="fetch",
+        run_id=clean_text(src.get("runId")),
+        started_at=clean_text(src.get("startedAt")),
+        finished_at=clean_text(src.get("finishedAt")),
+    )
+    live_task_fields = build_live_task_contract_fields(live_task_payload)
     summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
     outputs = src.get("outputs") if isinstance(src.get("outputs"), dict) else {}
     changed = outputs.get("changed") if isinstance(outputs.get("changed"), dict) else {}
@@ -761,9 +730,12 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     )
     return {
         "schemaVersion": SCHEMA_VERSION,
+        "taskType": clean_text(src.get("taskType")) or "fetch",
+        "active": bool(live_task_payload.get("active")),
         "runId": clean_text(src.get("runId")),
         "startedAt": clean_text(src.get("startedAt")),
         "finishedAt": clean_text(src.get("finishedAt")),
+        **live_task_fields,
         "runtime": normalize_runtime_payload(runtime, selected_source_count=len(source_rows)),
         "summary": dict(summary),
         "socialSummary": {
@@ -797,7 +769,6 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         }
         if social_summary_raw
         else {},
-        "taskProgress": normalize_task_progress_payload(src.get("taskProgress")),
         "contaminationAudit": {
             "totalRows": _clamped_int(contamination_audit.get("totalRows"), 0, 0),
             "contaminatedRows": _clamped_int(contamination_audit.get("contaminatedRows"), 0, 0),

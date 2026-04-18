@@ -95,6 +95,7 @@ JOBS_FETCH_REPORT_PATH = ROOT / "data" / "jobs-fetch-report.json"
 JOBS_FETCH_TASKS_PATH = ROOT / "data" / "jobs-fetch-tasks.json"
 TASKS_CONFIG_PATH = ROOT / ".vscode" / "tasks.json"
 TASK_STATE_PATH = ROOT / "data" / "admin-task-state.json"
+SYNC_LIVE_TASK_PATH = ROOT / "data" / "sync-live-task.json"
 DISCOVERY_LOG_PATH = ROOT / "data" / "source-discovery.log"
 FETCHER_LOG_PATH = ROOT / "data" / "jobs-fetcher.log"
 SYNC_CONFIG_PATH = SYNC_CONFIG_PATH_DEFAULT
@@ -262,6 +263,7 @@ def _get_ops_api() -> _ops_api.OpsApi:
             jobs_fetch_report=JOBS_FETCH_REPORT_PATH,
             jobs_fetch_tasks=JOBS_FETCH_TASKS_PATH,
             discovery_report=DISCOVERY_REPORT_PATH,
+            sync_live_task=SYNC_LIVE_TASK_PATH,
             task_state=TASK_STATE_PATH,
         ),
         deps=_ops_api.OpsDeps(
@@ -415,6 +417,7 @@ def _get_pipeline_service() -> PipelineService:
                 start_fetcher_task=pipeline_start_fetcher_task,
                 start_sync_task=pipeline_start_sync_task,
                 get_app_version=get_app_version,
+                get_projected_run_history=_get_ops_api().get_projected_run_history,
             )
         return _PIPELINE_SERVICE
 
@@ -516,6 +519,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
         JOBS_FETCH_REPORT_PATH, \
         JOBS_FETCH_TASKS_PATH, \
         TASK_STATE_PATH, \
+        SYNC_LIVE_TASK_PATH, \
         DISCOVERY_LOG_PATH, \
         FETCHER_LOG_PATH
     global \
@@ -546,6 +550,7 @@ def configure_runtime_paths(config: RuntimeConfig) -> None:
     JOBS_FETCH_REPORT_PATH = data_dir / "jobs-fetch-report.json"
     JOBS_FETCH_TASKS_PATH = data_dir / "jobs-fetch-tasks.json"
     TASK_STATE_PATH = data_dir / "admin-task-state.json"
+    SYNC_LIVE_TASK_PATH = data_dir / "sync-live-task.json"
     DISCOVERY_LOG_PATH = data_dir / "source-discovery.log"
     FETCHER_LOG_PATH = data_dir / "jobs-fetcher.log"
     SYNC_CONFIG_PATH = data_dir / SYNC_CONFIG_PATH_DEFAULT.name
@@ -641,6 +646,7 @@ def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
         compute_fetcher_metrics=compute_fetcher_metrics,
         sync_history_from_reports=sync_history_from_reports,
         get_projected_run_history=_get_ops_api().get_projected_run_history,
+        get_task_live_payload=_get_ops_api().get_task_live_payload,
         get_current_task_state_payload=_get_ops_api().get_current_task_state_payload,
         should_exit_for_owner_timeout=owner_session_should_exit,
         load_alert_state=load_alert_state,
@@ -973,6 +979,36 @@ def update_desktop_session_lifecycle(
 def owner_session_should_exit() -> bool:
     expired = bridge_runtime_state.owner_session_should_exit(parse_iso=parse_iso, now_utc=now_utc)
     if expired:
+        try:
+            active_tasks_payload = _get_ops_api().get_current_task_state_payload()
+            active_tasks = [
+                {
+                    "taskType": str(task.get("taskType") or task.get("type") or "").strip().lower(),
+                    "runId": str(task.get("runId") or "").strip(),
+                }
+                for task in (
+                    active_tasks_payload.get("tasks")
+                    if isinstance(active_tasks_payload.get("tasks"), list)
+                    else []
+                )
+                if isinstance(task, dict)
+                and bool(task.get("active"))
+                and str(task.get("taskType") or task.get("type") or "").strip().lower()
+                in {"fetch", "discovery", "pipeline", "sync"}
+            ]
+        except Exception:
+            active_tasks = []
+        if active_tasks:
+            owner_state = bridge_runtime_state.get_owner_state()
+            bridge_log(
+                "info",
+                "admin_bridge_owner_session_exit_suppressed_for_active_tasks",
+                owner_mode=str(owner_state.get("ownerMode") or ""),
+                owner_token=str(owner_state.get("ownerToken") or ""),
+                session_id=str(owner_state.get("sessionId") or ""),
+                active_tasks=active_tasks,
+            )
+            return False
         owner_state = bridge_runtime_state.get_owner_state()
         bridge_log(
             "info",
@@ -1175,6 +1211,8 @@ def _run_sync_task_worker(
         ),
         upsert_run_history=lambda entry: upsert_run_history(entry, dedupe_fields=("type", "runId")),
         bridge_log=bridge_log,
+        save_json_atomic=save_json_atomic,
+        live_task_path=SYNC_LIVE_TASK_PATH,
     )
 
 

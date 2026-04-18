@@ -188,6 +188,10 @@ class BridgeApi:
     compute_fetcher_metrics: Callable[..., dict[str, Any]] = lambda **_kw: {"ok": True}  # type: ignore[assignment]
     sync_history_from_reports: Callable[[], list[dict[str, Any]]] = lambda: []  # type: ignore[assignment]
     get_projected_run_history: Callable[[], Any] = lambda: {"rows": []}  # type: ignore[assignment]
+    get_task_live_payload: Callable[[str], dict[str, Any]] = lambda _task_type="": {
+        "taskType": "",
+        "active": False,
+    }  # type: ignore[assignment]
     get_current_task_state_payload: Callable[[], dict[str, Any]] = lambda: {"tasks": [], "count": 0}  # type: ignore[assignment]
     should_exit_for_owner_timeout: Callable[[], bool] = lambda: False  # type: ignore[assignment]
 

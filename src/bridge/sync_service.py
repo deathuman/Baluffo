@@ -133,6 +133,7 @@ class SyncService:
 
         # Path for sync config
         self._sync_config_path = data_dir / "source-sync-config.json"
+        self._sync_live_task_path = data_dir / "sync-live-task.json"
 
         # Initialize sync config
         self._sync_config = self._resolve_effective_sync_config()
@@ -297,7 +298,9 @@ class SyncService:
 
     # === Sync Operations ===
 
-    def sync_pull_sources(self) -> dict[str, Any]:
+    def sync_pull_sources(
+        self, *, progress_callback: Callable[..., None] | None = None
+    ) -> dict[str, Any]:
         """Pull sources from remote and merge with local.
 
         Returns:
@@ -307,15 +310,48 @@ class SyncService:
         if guard:
             return guard
 
+        emit_progress = progress_callback or (lambda **_kwargs: None)
+        emit_progress(
+            phase_key="prepare",
+            phase_label="Preparing sync pull",
+            counts={"action": "pull"},
+            event_level="info",
+            message="Preparing sync pull.",
+        )
         local_state = self._load_state()
+        emit_progress(
+            phase_key="remote_read",
+            phase_label="Reading remote snapshot",
+            counts={"action": "pull"},
+            event_level="muted",
+            message="Reading remote snapshot.",
+        )
         result = self._source_sync.pull_and_merge_sources(self._sync_config, local_state)
         merged_state = (
             result.get("mergedState")
             if isinstance(result.get("mergedState"), dict)
             else local_state
         )
+        emit_progress(
+            phase_key="merge_apply",
+            phase_label="Applying remote changes",
+            counts={
+                "action": "pull",
+                "changed": bool(result.get("changed")),
+                "remoteFound": bool(result.get("remoteFound")),
+            },
+            event_level="muted",
+            message="Applying remote sync results.",
+        )
 
         if bool(result.get("changed")):
+            emit_progress(
+                phase_key="persist_state",
+                phase_label="Persisting merged state",
+                counts={"action": "pull"},
+                event_level="muted",
+                message="Persisting merged registry state.",
+            )
             self._persist_state(merged_state)
 
             self.set_sync_status(
@@ -326,6 +362,19 @@ class SyncService:
             )
 
         summary = self._summarize_state(self._load_state())
+        emit_progress(
+            phase_key="finalize",
+            phase_label="Finalizing pull",
+            counts={
+                "action": "pull",
+                "activeCount": int(summary.get("activeCount") or 0),
+                "pendingCount": int(summary.get("pendingCount") or 0),
+                "rejectedCount": int(summary.get("rejectedCount") or 0),
+                "changed": bool(result.get("changed")),
+            },
+            event_level="success",
+            message="Sync pull summary updated.",
+        )
         return {
             "ok": True,
             "changed": bool(result.get("changed")),
@@ -335,7 +384,9 @@ class SyncService:
             "summary": summary,
         }
 
-    def sync_push_sources(self) -> dict[str, Any]:
+    def sync_push_sources(
+        self, *, progress_callback: Callable[..., None] | None = None
+    ) -> dict[str, Any]:
         """Push local sources snapshot to remote.
 
         Returns:
@@ -345,7 +396,34 @@ class SyncService:
         if guard:
             return guard
 
+        emit_progress = progress_callback or (lambda **_kwargs: None)
+        emit_progress(
+            phase_key="prepare",
+            phase_label="Preparing sync push",
+            counts={"action": "push"},
+            event_level="info",
+            message="Preparing sync push.",
+        )
         state = self._load_state()
+        emit_progress(
+            phase_key="snapshot_build",
+            phase_label="Building local snapshot",
+            counts={
+                "action": "push",
+                "activeCount": len(state.get("active") or []),
+                "pendingCount": len(state.get("pending") or []),
+                "rejectedCount": len(state.get("rejected") or []),
+            },
+            event_level="muted",
+            message="Building local source snapshot.",
+        )
+        emit_progress(
+            phase_key="remote_write",
+            phase_label="Writing remote snapshot",
+            counts={"action": "push"},
+            event_level="muted",
+            message="Writing remote snapshot.",
+        )
         result = self._source_sync.push_sources_snapshot(self._sync_config, state)
         snapshot = result.get("snapshot") if isinstance(result.get("snapshot"), dict) else {}
 
@@ -354,6 +432,18 @@ class SyncService:
             result="ok",
             pushed=True,
             error="",
+        )
+        emit_progress(
+            phase_key="finalize",
+            phase_label="Finalizing push",
+            counts={
+                "action": "push",
+                "activeCount": len(snapshot.get("active") or []),
+                "pendingCount": len(snapshot.get("pending") or []),
+                "rejectedCount": len(state.get("rejected") or []),
+            },
+            event_level="success",
+            message="Sync push summary updated.",
         )
 
         return {
@@ -481,6 +571,8 @@ class SyncService:
                 entry, dedupe_fields=("type", "finishedAt")
             ),
             bridge_log=self._bridge_log,
+            save_json_atomic=save_json_atomic,
+            live_task_path=self._sync_live_task_path,
         )
 
     def start_sync_task(

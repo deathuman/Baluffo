@@ -355,7 +355,18 @@ def _build_child_task_snapshot(
             }
         )
 
-    active = bool(run_id and not finished_at and (state_active or artifact_active or report_active))
+    owner_active = bool(run_id and (state_active or artifact_active or report_active))
+    if finished_at and owner_active:
+        diagnostics.append(
+            {
+                "code": "report_finished_while_owner_active",
+                "taskType": task_type,
+                "runId": run_id,
+            }
+        )
+        finished_at = ""
+
+    active = bool(owner_active)
     explicit_dead = False
     if run_id and not finished_at and not active:
         started_dt = _safe_parse_iso(parse_iso, started_at)

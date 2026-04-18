@@ -61,6 +61,15 @@ HEARTBEAT_IDLE_TIMEOUT_S = 600.0
 STARTUP_HANDOFF_GRACE_TIMEOUT_S = 20.0
 STARTUP_HANDOFF_POLL_INTERVAL_S = 0.25
 STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S = 45.0
+PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S = 120.0
+ACTIVE_WORK_BROWSER_RECOVERY_TIMEOUT_S = 20.0
+ACTIVE_WORK_RECOVERY_STOP_REASONS = {
+    "bridge_exit",
+    "heartbeat_timeout",
+    "process_exit",
+    "browser_handoff_failed",
+}
+ACTIVE_WORK_TASK_TYPES = {"fetch", "discovery", "pipeline", "sync"}
 CHROMIUM_PROCESS_READY_TIMEOUT_S = 2.0
 CHROMIUM_PROCESS_READY_TIMEOUTS_S = {
     "chrome": 0.35,
@@ -1186,6 +1195,176 @@ def get_baluffo_bridge_health(bridge_port: int, *, timeout_s: float = 2.0) -> di
     return payload if str(payload.get("service") or "") == "baluffo-bridge" else {}
 
 
+def _bridge_health_matches_owner_session(payload: dict[str, object], *, owner_token: str) -> bool:
+    if str(payload.get("service") or "") != "baluffo-bridge":
+        return False
+    if not bool(payload.get("desktopMode")):
+        return False
+    owner = payload.get("owner") if isinstance(payload.get("owner"), dict) else {}
+    return str(owner.get("token") or "").strip() == str(owner_token or "").strip()
+
+
+def _normalize_active_task_descriptor(
+    row: dict[str, object], *, fallback_task_type: str = ""
+) -> dict[str, str]:
+    return {
+        "taskType": str(row.get("taskType") or row.get("type") or fallback_task_type or "")
+        .strip()
+        .lower(),
+        "runId": str(row.get("runId") or "").strip(),
+        "status": str(row.get("status") or "").strip().lower(),
+    }
+
+
+def _task_descriptor_is_active(task: dict[str, str], row: dict[str, object]) -> bool:
+    if task["taskType"] not in ACTIVE_WORK_TASK_TYPES:
+        return False
+    if bool(row.get("active")):
+        return True
+    if task["status"] in {"running", "pending"}:
+        return True
+    if int(row.get("pid") or 0) > 0 and not str(row.get("finishedAt") or "").strip():
+        return True
+    return False
+
+
+def _load_active_critical_desktop_tasks(
+    data_dir: Path,
+    *,
+    bridge_port: int,
+    timeout_s: float = 1.5,
+    allow_disk_fallback: bool = True,
+) -> list[dict[str, str]]:
+    try:
+        payload = fetch_json(
+            f"http://127.0.0.1:{int(bridge_port)}/ops/task-state",
+            timeout_s=timeout_s,
+        )
+    except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
+        payload = {}
+    rows = payload.get("tasks") if isinstance(payload.get("tasks"), list) else []
+    active_tasks: list[dict[str, str]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        task = _normalize_active_task_descriptor(row)
+        if _task_descriptor_is_active(task, row):
+            active_tasks.append(task)
+    if active_tasks:
+        return active_tasks
+
+    if not allow_disk_fallback:
+        return []
+
+    task_state_path = Path(data_dir) / "admin-task-state.json"
+    try:
+        task_state_payload = json.loads(task_state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(task_state_payload, dict):
+        return []
+
+    disk_tasks: list[dict[str, str]] = []
+    for fallback_task_type, row in task_state_payload.items():
+        if not isinstance(row, dict):
+            continue
+        task = _normalize_active_task_descriptor(row, fallback_task_type=str(fallback_task_type))
+        if _task_descriptor_is_active(task, row):
+            disk_tasks.append(task)
+    return disk_tasks
+
+
+def _wait_for_bridge_activity_after(
+    bridge_port: int,
+    *,
+    activity_ts: float,
+    timeout_s: float = ACTIVE_WORK_BROWSER_RECOVERY_TIMEOUT_S,
+) -> bool:
+    deadline = time.monotonic() + max(1.0, float(timeout_s))
+    baseline = max(0.0, float(activity_ts or 0.0))
+    while time.monotonic() < deadline:
+        if bridge_last_activity_ts(bridge_port) > baseline:
+            return True
+        time.sleep(1.0)
+    return False
+
+
+def _attempt_active_work_browser_relaunch(
+    *,
+    config: DesktopRuntimeConfig,
+    open_url: str,
+    preferred_browser_path: str,
+    started_mono: float,
+    desktop_job: int | None,
+    stop_reason: str,
+    active_tasks: list[dict[str, str]],
+) -> dict[str, object] | None:
+    _append_startup_trace(
+        config.data_dir,
+        "desktop_browser_relaunch_requested",
+        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+        reason=str(stop_reason or ""),
+        activeTasks=active_tasks,
+    )
+    last_activity_ts = bridge_last_activity_ts(config.bridge_port)
+    try:
+        launch_result = launch_browser_for_url(
+            open_url,
+            preferred_browser_path=str(preferred_browser_path or "").strip(),
+            data_dir=config.data_dir,
+            started_mono=started_mono,
+        )
+    except RuntimeError as exc:
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_browser_relaunch_failed",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            reason=str(stop_reason or ""),
+            error=str(exc),
+        )
+        return None
+    browser_process = (
+        launch_result.get("process")
+        if isinstance(launch_result.get("process"), subprocess.Popen)
+        else None
+    )
+    browser_pid = int(launch_result.get("browserPid") or getattr(browser_process, "pid", 0) or 0)
+    if desktop_job and browser_process is not None and browser_pid > 0:
+        _windows_try_assign_pid_to_job(desktop_job, browser_pid)
+    _append_startup_trace(
+        config.data_dir,
+        "desktop_browser_relaunch_accepted",
+        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+        reason=str(stop_reason or ""),
+        mode=str(launch_result.get("mode") or "default-browser"),
+        browser=str(launch_result.get("browserName") or ""),
+        browserPath=str(launch_result.get("browserPath") or ""),
+        browserPid=browser_pid,
+    )
+    if _wait_for_bridge_activity_after(
+        config.bridge_port,
+        activity_ts=last_activity_ts,
+        timeout_s=ACTIVE_WORK_BROWSER_RECOVERY_TIMEOUT_S,
+    ):
+        _append_startup_trace(
+            config.data_dir,
+            "desktop_browser_relaunch_succeeded",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            reason=str(stop_reason or ""),
+            activeTasks=active_tasks,
+        )
+        return launch_result
+    terminate_process(browser_process)
+    _append_startup_trace(
+        config.data_dir,
+        "desktop_browser_relaunch_failed",
+        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+        reason=str(stop_reason or ""),
+        error="desktop_activity_timeout",
+    )
+    return None
+
+
 def classify_desktop_startup_state(
     bridge_port: int,
     *,
@@ -2188,7 +2367,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                         owner_idle_timeout_s=(
                             STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S
                             if config.startup_probe
-                            else 15.0
+                            else PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S
                         ),
                     ),
                     extra_env=child_env,
@@ -2440,16 +2619,96 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 windowTitle=str(launch_result.get("windowTitle") or ""),
                 handoffEvidence=str(launch_result.get("revealHandoffEvidence") or ""),
             )
-        stop_reason = watch_browser_session(
-            config.data_dir,
-            started_mono,
-            bridge_port=config.bridge_port,
-            bridge_process=bridge_process,
-            browser_process=browser_process,
-            browser_pid=int(browser_pid or 0),
-            launch_accepted_elapsed_ms=int(accepted_elapsed_ms or 0),
-            require_window=(not config.no_browser) and launch_mode != "browser-launch-recovery",
-        )
+        recovery_attempted = False
+        while True:
+            stop_reason = watch_browser_session(
+                config.data_dir,
+                started_mono,
+                bridge_port=config.bridge_port,
+                bridge_process=bridge_process,
+                browser_process=browser_process,
+                browser_pid=int(browser_pid or 0),
+                launch_accepted_elapsed_ms=int(accepted_elapsed_ms or 0),
+                require_window=(not config.no_browser) and launch_mode != "browser-launch-recovery",
+            )
+            if (
+                config.startup_probe
+                or config.no_browser
+                or stop_reason not in ACTIVE_WORK_RECOVERY_STOP_REASONS
+            ):
+                break
+            bridge_health = get_baluffo_bridge_health(
+                config.bridge_port,
+                timeout_s=0.75,
+            )
+            bridge_healthy = _bridge_health_matches_owner_session(
+                bridge_health,
+                owner_token=owner_token,
+            )
+            if bool(bridge_health) and not bridge_healthy:
+                break
+            active_tasks = _load_active_critical_desktop_tasks(
+                config.data_dir,
+                bridge_port=config.bridge_port,
+                allow_disk_fallback=not bridge_healthy,
+            )
+            if not active_tasks:
+                break
+            if recovery_attempted:
+                recovered_launch_result = None
+            else:
+                recovered_launch_result = (
+                    _attempt_active_work_browser_relaunch(
+                        config=config,
+                        open_url=open_url,
+                        preferred_browser_path=str(launch_result.get("browserPath") or ""),
+                        started_mono=started_mono,
+                        desktop_job=desktop_job,
+                        stop_reason=stop_reason,
+                        active_tasks=active_tasks,
+                    )
+                    if bridge_healthy
+                    else None
+                )
+                recovery_attempted = True
+            if recovered_launch_result is not None:
+                launch_result = recovered_launch_result
+                launch_mode = str(launch_result.get("mode") or launch_mode or "default-browser")
+                browser_process = (
+                    launch_result.get("process")
+                    if isinstance(launch_result.get("process"), subprocess.Popen)
+                    else None
+                )
+                browser_pid = int(
+                    launch_result.get("browserPid") or getattr(browser_process, "pid", 0) or 0
+                )
+                launch_accepted_at_mono = launch_result.get("launchAcceptedAtMonotonic")
+                if isinstance(launch_accepted_at_mono, (int, float)):
+                    accepted_elapsed_ms = max(
+                        0, int((float(launch_accepted_at_mono) - started_mono) * 1000)
+                    )
+                continue
+            diagnostics_path = config.data_dir / "desktop-runtime-fatal.txt"
+            fatal_message = (
+                "Baluffo closed unexpectedly while background work was still active.\n\n"
+                f"Reason: {stop_reason}\n"
+                f"Active tasks: {', '.join(task['taskType'] for task in active_tasks)}\n"
+                f"Bridge healthy: {'yes' if bridge_healthy else 'no'}\n"
+                f"Artifacts: {config.data_dir}\n"
+                f"Diagnostics: {diagnostics_path}\n"
+            )
+            _append_startup_trace(
+                config.data_dir,
+                "desktop_runtime_fatal",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                reason=stop_reason,
+                activeTasks=active_tasks,
+                bridgeHealthy=bool(bridge_healthy),
+                diagnosticsPath=str(diagnostics_path),
+            )
+            _write_launch_diagnostics(config.data_dir, diagnostics_path.name, fatal_message)
+            show_native_message("Baluffo closed unexpectedly", fatal_message)
+            break
         _append_startup_trace(
             config.data_dir,
             "desktop_window_closed",

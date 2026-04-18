@@ -472,6 +472,51 @@ def test_owner_session_should_exit_after_last_desktop_page_closing_grace(
         assert admin_bridge.owner_session_should_exit() is True
 
 
+def test_owner_session_should_not_exit_while_active_critical_tasks_exist(
+    admin_bridge_entrypoint_root,
+):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+        desktop_mode=True,
+        owner_mode="desktop-window",
+        owner_token="owner-1",
+        desktop_session_id="session-1",
+        started_by="test",
+        owner_idle_timeout_s=15.0,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    admin_bridge.bridge_runtime_state.OWNER_STATE["lastActivityAt"] = "2026-03-01T00:00:00+00:00"
+
+    with (
+        mock.patch.object(
+            admin_bridge,
+            "now_utc",
+            return_value=admin_bridge.parse_iso("2026-03-01T00:00:20+00:00"),
+        ),
+        mock.patch.object(
+            admin_bridge,
+            "_get_ops_api",
+            return_value=mock.Mock(
+                get_current_task_state_payload=mock.Mock(
+                    return_value={
+                        "tasks": [
+                            {"taskType": "fetch", "runId": "fetch_live_1", "active": True},
+                            {"taskType": "pipeline", "runId": "pipeline_1", "active": True},
+                        ]
+                    }
+                )
+            ),
+        ),
+    ):
+        assert admin_bridge.owner_session_should_exit() is False
+
+
 def test_compute_ops_health_includes_social_alerts(admin_bridge_entrypoint_root):
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
@@ -1139,6 +1184,12 @@ def _current_task_payload() -> dict[str, object]:
     return admin_bridge.build_bridge_api(
         admin_bridge.RUNTIME_CONFIG
     ).get_current_task_state_payload()
+
+
+def _task_live_payload(task_type: str) -> dict[str, object]:
+    return admin_bridge.build_bridge_api(admin_bridge.RUNTIME_CONFIG).get_task_live_payload(
+        task_type
+    )
 
 
 @dataclass(frozen=True)
@@ -1829,6 +1880,69 @@ def _assert_active_owner_over_finished_history(payload: dict[str, object]) -> No
     )
 
 
+def _setup_report_finished_while_owner_active() -> None:
+    started_at = admin_bridge.now_iso()
+    finished_at = admin_bridge.now_iso()
+    run_id = "fetch_report_finished_1"
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "fetch": _task_state_entry("fetch", run_id=run_id, started_at=started_at),
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        _fetch_report(
+            run_id=run_id,
+            started_at=started_at,
+            finished_at=finished_at,
+            runtime={"lifecycle": {"owner": "fetch_report", "heartbeatAt": started_at}},
+            task_progress=_active_progress(
+                "executing_sources",
+                "Executing sources",
+                {"resolvedSources": 5, "sourceCount": 10},
+            ),
+            summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+        ),
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_TASKS_PATH,
+        {
+            "runId": run_id,
+            "startedAt": started_at,
+            "finishedAt": "",
+            "heartbeatAt": started_at,
+            "taskProgress": {"active": True},
+            "summary": {"queued": 0, "running": 1, "ok": 0, "error": 0},
+            "tasks": [],
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.OPS_HISTORY_PATH,
+        [
+            _history_row(
+                row_id=run_id,
+                run_id=run_id,
+                status="warning",
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=123,
+                summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+            )
+        ],
+    )
+
+
+def _assert_report_finished_while_owner_active(payload: dict[str, object]) -> None:
+    fetch_row = _task_row(payload, "fetch")
+    assert fetch_row["active"] is True
+    assert str(fetch_row.get("runId") or "") == "fetch_report_finished_1"
+    diagnostics = payload.get("diagnostics") or []
+    assert any(
+        str(item.get("code") or "") == "report_finished_while_owner_active" for item in diagnostics
+    )
+
+
 CURRENT_TASK_STATE_CASES = [
     pytest.param(
         _CurrentTaskStateCase(
@@ -1863,6 +1977,14 @@ CURRENT_TASK_STATE_CASES = [
         ),
         id="active-owner-over-finished-history",
     ),
+    pytest.param(
+        _CurrentTaskStateCase(
+            name="report-finished-while-owner-active",
+            setup=_setup_report_finished_while_owner_active,
+            assert_payload=_assert_report_finished_while_owner_active,
+        ),
+        id="report-finished-while-owner-active",
+    ),
 ]
 
 
@@ -1881,3 +2003,471 @@ def test_get_current_task_state_payload_cases(case: _CurrentTaskStateCase) -> No
     finally:
         if cleanup is not None:
             cleanup()
+
+
+def test_projected_run_history_keeps_live_fetch_started_when_report_finishes_early() -> None:
+    _setup_report_finished_while_owner_active()
+
+    projection = admin_bridge.get_projected_run_history()
+    matching = _matching_history_rows(projection.rows, run_id="fetch_report_finished_1")
+
+    assert len(matching) == 1
+    assert str(matching[0].get("status") or "") == "started"
+    assert str(matching[0].get("finishedAt") or "") == ""
+    assert any(
+        str(item.get("code") or "") == "report_finished_while_owner_active"
+        for item in (projection.diagnostics or [])
+    )
+
+
+def test_get_task_live_payload_fetch_preserves_shared_contract(
+    admin_bridge_entrypoint_root,
+) -> None:
+    run_id = "fetch_live_contract_1"
+    started_at = "2026-03-08T10:00:00.000Z"
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "fetch": _task_state_entry("fetch", run_id=run_id, started_at=started_at),
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        _fetch_report(
+            run_id=run_id,
+            started_at=started_at,
+            summary={"outputCount": 7, "failedSources": 1, "sourceCount": 4},
+            task_progress=_active_progress(
+                "execute_sources",
+                "Executing sources",
+                {"sourceCount": 4, "completedTasks": 2},
+            ),
+        ),
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_TASKS_PATH,
+        {
+            "taskType": "fetch",
+            "runId": run_id,
+            "startedAt": started_at,
+            "status": "running",
+            "summary": {"running": 1},
+            "taskProgress": _active_progress(
+                "execute_sources",
+                "Executing sources",
+                {"sourceCount": 4, "runningTasks": 1},
+            ),
+            "workItems": [
+                {
+                    "id": "source_1",
+                    "name": "Source 1",
+                    "status": "running",
+                    "progress": {
+                        "phaseKey": "details",
+                        "phaseLabel": "Fetching details",
+                        "counts": {"emittedJobs": 3},
+                        "updatedAt": started_at,
+                    },
+                }
+            ],
+            "recentEvents": [
+                {
+                    "timestamp": started_at,
+                    "phaseKey": "details",
+                    "workItemId": "source_1",
+                    "message": "Fetching details",
+                }
+            ],
+        },
+    )
+
+    payload = _task_live_payload("fetch")
+
+    assert str(payload.get("taskType") or "") == "fetch"
+    assert bool(payload.get("active")) is True
+    assert str(payload.get("status") or "") == "running"
+    assert str(payload.get("runId") or "") == run_id
+    assert str(payload.get("startedAt") or "") == started_at
+    assert (payload.get("summary") or {}).get("outputCount") == 7
+    assert (payload.get("summary") or {}).get("running") == 1
+    progress = payload.get("taskProgress") or {}
+    counts = progress.get("counts") or {}
+    assert progress.get("phaseKey") == "execute_sources"
+    assert counts.get("sourceCount") == 4
+    assert counts.get("completedTasks") == 2
+    assert counts.get("runningTasks") == 1
+    work_items = payload.get("workItems") or []
+    assert len(work_items) == 1
+    assert "tasks" not in payload
+    assert work_items[0].get("id") == "source_1"
+    assert ((work_items[0].get("progress") or {}).get("counts") or {}).get("emittedJobs") == 3
+    recent_events = payload.get("recentEvents") or []
+    assert len(recent_events) == 1
+    assert recent_events[0].get("message") == "Fetching details"
+
+
+def test_get_task_live_payload_fetch_ignores_stale_task_artifact_and_uses_current_report_detail(
+    admin_bridge_entrypoint_root,
+) -> None:
+    run_id = "fetch_live_current_1"
+    started_at = "2026-03-08T10:00:00.000Z"
+    heartbeat_at = "2026-03-08T10:03:00.000Z"
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "fetch": _task_state_entry("fetch", run_id=run_id, started_at=started_at),
+        },
+    )
+    current_report = _fetch_report(
+        run_id=run_id,
+        started_at=started_at,
+        summary={
+            "successfulSources": 10,
+            "failedSources": 0,
+            "excludedSources": 0,
+            "outputCount": 34081,
+            "sourceCount": 551,
+        },
+        runtime={"selectedSourceCount": 551, "heartbeatAt": heartbeat_at},
+        task_progress=_active_progress(
+            "execute_sources",
+            "Executing sources",
+            {
+                "resolvedSources": 10,
+                "sourceCount": 551,
+                "runningTasks": 541,
+                "queuedTasks": 0,
+                "outputCount": 34081,
+                "failedSources": 0,
+                "excludedSources": 0,
+                "completedTasks": 10,
+            },
+        ),
+    )
+    current_report["sources"] = [
+        {
+            "name": "Studio A",
+            "status": "running",
+            "adapter": "static",
+            "studio": "Studio A",
+            "keptCount": 17,
+            "durationMs": 26000,
+        }
+    ]
+    admin_bridge.save_json_atomic(admin_bridge.JOBS_FETCH_REPORT_PATH, current_report)
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_TASKS_PATH,
+        {
+            "taskType": "fetch",
+            "runId": "fetch_live_stale_1",
+            "startedAt": "2026-03-08T09:50:00.000Z",
+            "status": "running",
+            "taskProgress": _active_progress(
+                "execute_sources",
+                "Executing sources",
+                {
+                    "resolvedSources": 9,
+                    "sourceCount": 551,
+                    "runningTasks": 542,
+                    "queuedTasks": 0,
+                    "outputCount": 29957,
+                    "completedTasks": 9,
+                },
+            ),
+        },
+    )
+
+    payload = _task_live_payload("fetch")
+
+    assert str(payload.get("runId") or "") == run_id
+    progress = payload.get("taskProgress") or {}
+    counts = progress.get("counts") or {}
+    assert counts.get("resolvedSources") == 10
+    assert counts.get("sourceCount") == 551
+    assert counts.get("outputCount") == 34081
+    work_items = payload.get("workItems") or []
+    assert len(work_items) == 1
+    assert work_items[0].get("name") == "Studio A"
+    recent_events = payload.get("recentEvents") or []
+    assert len(recent_events) == 1
+    assert "10/551 sources resolved" in str(recent_events[0].get("message") or "")
+
+
+def test_get_task_live_payload_fetch_supplements_current_run_detail_when_task_artifact_lacks_work_items(
+    admin_bridge_entrypoint_root,
+) -> None:
+    run_id = "fetch_live_partial_1"
+    started_at = "2026-03-08T10:00:00.000Z"
+    heartbeat_at = "2026-03-08T10:04:00.000Z"
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "fetch": _task_state_entry("fetch", run_id=run_id, started_at=started_at),
+        },
+    )
+    report = _fetch_report(
+        run_id=run_id,
+        started_at=started_at,
+        summary={
+            "successfulSources": 10,
+            "failedSources": 0,
+            "excludedSources": 0,
+            "outputCount": 34081,
+            "sourceCount": 551,
+        },
+        runtime={"selectedSourceCount": 551, "heartbeatAt": heartbeat_at},
+        task_progress=_active_progress(
+            "execute_sources",
+            "Executing sources",
+            {
+                "resolvedSources": 10,
+                "sourceCount": 551,
+                "runningTasks": 541,
+                "queuedTasks": 0,
+                "outputCount": 34081,
+                "completedTasks": 10,
+            },
+        ),
+    )
+    report["sources"] = [
+        {
+            "name": "Studio A",
+            "status": "running",
+            "adapter": "static",
+            "studio": "Studio A",
+            "keptCount": 17,
+            "durationMs": 26000,
+        }
+    ]
+    admin_bridge.save_json_atomic(admin_bridge.JOBS_FETCH_REPORT_PATH, report)
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_TASKS_PATH,
+        {
+            "taskType": "fetch",
+            "runId": run_id,
+            "startedAt": started_at,
+            "status": "running",
+            "taskProgress": _active_progress(
+                "execute_sources",
+                "Executing sources",
+                {
+                    "resolvedSources": 9,
+                    "sourceCount": 551,
+                    "runningTasks": 541,
+                    "queuedTasks": 0,
+                    "outputCount": 29957,
+                    "completedTasks": 9,
+                },
+            ),
+            "summary": {"running": 541},
+        },
+    )
+
+    payload = _task_live_payload("fetch")
+
+    progress = payload.get("taskProgress") or {}
+    counts = progress.get("counts") or {}
+    assert counts.get("resolvedSources") == 10
+    assert counts.get("runningTasks") == 541
+    assert counts.get("sourceCount") == 551
+    work_items = payload.get("workItems") or []
+    assert len(work_items) == 1
+    assert work_items[0].get("name") == "Studio A"
+    recent_events = payload.get("recentEvents") or []
+    assert len(recent_events) == 1
+    assert "output 34081" in str(recent_events[0].get("message") or "")
+
+
+def test_get_task_live_payload_discovery_preserves_shared_contract(
+    admin_bridge_entrypoint_root,
+) -> None:
+    run_id = "discovery_live_contract_1"
+    started_at = "2026-03-08T10:00:00.000Z"
+    heartbeat_at = "2026-03-08T10:00:05.000Z"
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "discovery": _task_state_entry("discovery", run_id=run_id, started_at=started_at),
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.DISCOVERY_REPORT_PATH,
+        {
+            **_discovery_report(
+                run_id=run_id,
+                started_at=started_at,
+                summary={
+                    "foundEndpointCount": 4,
+                    "probedCandidateCount": 9,
+                    "queuedCandidateCount": 3,
+                    "failedProbeCount": 1,
+                },
+                task_progress=_active_progress(
+                    "probing_candidates",
+                    "Probing candidates",
+                    {"foundEndpoints": 4, "probedCandidates": 9, "queuedCandidates": 3},
+                ),
+            ),
+            "runtime": {
+                "lifecycle": {"heartbeatAt": heartbeat_at},
+                "adapterTimings": [
+                    {
+                        "adapter": "games_jobs_direct",
+                        "generatedCount": 4,
+                        "failureCount": 1,
+                        "probedCount": 9,
+                        "healthyCount": 3,
+                        "queuedCount": 3,
+                        "durationMs": 9000,
+                    }
+                ],
+            },
+            "recentEvents": [
+                {
+                    "timestamp": heartbeat_at,
+                    "phaseKey": "probing_candidates",
+                    "workItemId": "games_jobs_direct",
+                    "message": "Probing games_jobs_direct",
+                }
+            ],
+        },
+    )
+
+    payload = _task_live_payload("discovery")
+
+    assert str(payload.get("taskType") or "") == "discovery"
+    assert bool(payload.get("active")) is True
+    assert str(payload.get("status") or "") == "running"
+    assert str(payload.get("runId") or "") == run_id
+    progress = payload.get("taskProgress") or {}
+    counts = progress.get("counts") or {}
+    assert progress.get("phaseKey") == "probing_candidates"
+    assert counts.get("foundEndpoints") == 4
+    assert counts.get("probedCandidates") == 9
+    assert counts.get("queuedCandidates") == 3
+    work_items = payload.get("workItems") or []
+    assert len(work_items) == 1
+    assert "tasks" not in payload
+    assert work_items[0].get("id") == "games_jobs_direct"
+    assert work_items[0].get("status") == "running"
+    assert ((work_items[0].get("progress") or {}).get("counts") or {}).get("healthyCount") == 3
+    recent_events = payload.get("recentEvents") or []
+    assert len(recent_events) == 1
+    assert recent_events[0].get("phaseKey") == "probing_candidates"
+    assert "endpoints 4" in str(recent_events[0].get("message") or "")
+    assert "queued 3" in str(recent_events[0].get("message") or "")
+
+
+def test_get_task_live_payload_sync_preserves_active_live_contract(
+    admin_bridge_entrypoint_root,
+) -> None:
+    run_id = "sync_live_contract_1"
+    started_at = "2026-03-08T10:00:00.000Z"
+    admin_bridge.save_json_atomic(
+        admin_bridge.SYNC_LIVE_TASK_PATH,
+        {
+            "taskType": "sync",
+            "runId": run_id,
+            "startedAt": started_at,
+            "status": "running",
+            "taskProgress": {
+                "active": True,
+                "phaseKey": "sync_pull",
+                "phaseLabel": "Sync pull",
+                "mode": "determinate",
+                "ratio": 0.5,
+                "counts": {
+                    "activeCount": 12,
+                    "pendingCount": 4,
+                    "rejectedCount": 1,
+                    "changed": True,
+                },
+            },
+            "summary": {"action": "pull", "activeCount": 12, "pendingCount": 4, "rejectedCount": 1},
+            "workItems": [
+                {
+                    "id": "registry_pull",
+                    "name": "Registry pull",
+                    "status": "running",
+                    "progress": {
+                        "phaseKey": "sync_pull",
+                        "phaseLabel": "Sync pull",
+                        "counts": {"changed": True},
+                        "updatedAt": started_at,
+                    },
+                }
+            ],
+            "recentEvents": [
+                {
+                    "timestamp": started_at,
+                    "phaseKey": "sync_pull",
+                    "workItemId": "registry_pull",
+                    "message": "Pulling remote registry",
+                }
+            ],
+        },
+    )
+
+    with mock.patch.object(admin_bridge.SyncState, "get_active_sync_runs", return_value={run_id}):
+        payload = _task_live_payload("sync")
+
+    assert str(payload.get("taskType") or "") == "sync"
+    assert bool(payload.get("active")) is True
+    assert str(payload.get("status") or "") == "running"
+    assert str(payload.get("runId") or "") == run_id
+    progress = payload.get("taskProgress") or {}
+    counts = progress.get("counts") or {}
+    assert progress.get("phaseKey") == "sync_pull"
+    assert counts.get("activeCount") == 12
+    assert counts.get("pendingCount") == 4
+    assert counts.get("rejectedCount") == 1
+    assert counts.get("changed") is True
+    work_items = payload.get("workItems") or []
+    assert len(work_items) == 1
+    assert "tasks" not in payload
+    assert work_items[0].get("id") == "registry_pull"
+    recent_events = payload.get("recentEvents") or []
+    assert len(recent_events) == 1
+    assert recent_events[0].get("message") == "Pulling remote registry"
+
+
+def test_get_task_live_payload_sync_normalizes_history_backed_started_run(
+    admin_bridge_entrypoint_root,
+) -> None:
+    run_id = "sync_history_contract_1"
+    started_at = "2026-03-08T10:00:00.000Z"
+    admin_bridge.save_json_atomic(admin_bridge.SYNC_LIVE_TASK_PATH, {})
+    admin_bridge.save_json_atomic(
+        admin_bridge.OPS_HISTORY_PATH,
+        [
+            {
+                "id": run_id,
+                "runId": run_id,
+                "type": "sync",
+                "status": "started",
+                "startedAt": started_at,
+                "finishedAt": "",
+                "durationMs": 0,
+                "summary": {
+                    "action": "push",
+                    "activeCount": 8,
+                    "pendingCount": 2,
+                    "rejectedCount": 1,
+                },
+            }
+        ],
+    )
+
+    with mock.patch.object(admin_bridge.SyncState, "get_active_sync_runs", return_value=set()):
+        payload = _task_live_payload("sync")
+
+    assert str(payload.get("taskType") or "") == "sync"
+    assert bool(payload.get("active")) is False
+    assert str(payload.get("status") or "") == "started"
+    assert str(payload.get("runId") or "") == run_id
+    progress = payload.get("taskProgress") or {}
+    counts = progress.get("counts") or {}
+    assert progress.get("phaseKey") == "sync_push"
+    assert progress.get("phaseLabel") == "Sync push"
+    assert counts.get("lastAction") == "push"
+    assert (payload.get("summary") or {}).get("pendingCount") == 2

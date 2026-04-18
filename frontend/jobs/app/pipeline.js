@@ -1,4 +1,5 @@
 import { fetchBridge } from "../../shared/api-client.js";
+import { formatTaskProgressDetail } from "../../shared/task-progress.js";
 import { normalizeToken } from "../../shared/text-utils.js";
 
 function titleCaseWords(value) {
@@ -109,6 +110,15 @@ export function getPipelineRunningLabel(payload, nowMs = Date.now()) {
   const stage = normalizePipelineStage(payload);
   const elapsed = formatPipelineElapsed(payload?.startedAt, nowMs);
   return elapsed ? `${stage} running... ${elapsed}` : `${stage} running...`;
+}
+
+export function formatBlockingTaskProgressLabel(task) {
+  const taskType = String(task?.taskType || task?.type || "").trim().toLowerCase();
+  return formatTaskProgressDetail(
+    taskType,
+    task?.taskProgress || {},
+    task?.summary || {}
+  );
 }
 
 function getPipelineProgressLabel(payload) {

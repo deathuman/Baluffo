@@ -243,10 +243,11 @@ def finalize_pipeline_run(
                 phase_key="completed",
                 phase_label="Completed",
                 task_rows=task_runtime.task_rows,
-                source_reports=source_reports,
                 output_count=len(deduped_rows),
                 finished=True,
             ),
+            "workItems": module.snapshot_task_rows(task_runtime.task_rows),
+            "recentEvents": list(task_runtime.recent_events),
             "summary": module.build_pipeline_summary(
                 dedup_stats,
                 deduped_rows,

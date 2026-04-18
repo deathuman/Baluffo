@@ -16,6 +16,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from threading import Lock
+from types import SimpleNamespace
 from typing import Any
 
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
@@ -29,6 +30,10 @@ from src.jobs.common.taxonomy import (
     assess_zero_extract,
 )
 from src.jobs.models import CanonicalJob
+from src.jobs.pipeline_runtime import (
+    PipelineTaskRuntime,
+    update_fetch_work_item_progress,
+)
 from src.jobs.reporting import format_source_error
 from src.jobs.state import (
     set_browser_fallback_state,
@@ -140,6 +145,7 @@ def run_source_execution_stage(
     fetch_text_limited: FetchTextLimited,
     source_state_rows: dict[str, dict[str, Any]],
     redirect_resolver: Any,
+    task_runtime: PipelineTaskRuntime | None = None,
     task_rows: dict[str, dict[str, Any]],
     task_lock: Lock,
     thread_local: Any,
@@ -150,10 +156,22 @@ def run_source_execution_stage(
 ) -> None:
     """
     Executes selected source loaders, mutating `canonical_rows` and `source_reports` in-place,
-    and updating `task_rows` via `write_task_state(...)` plus periodic progress writes.
+    and updating live fetch task state via `write_task_state(...)` plus periodic progress writes.
     """
 
     # Resolve optional Playwright fetch helper.
+    if task_runtime is None:
+        task_runtime = SimpleNamespace(
+            task_lock=task_lock,
+            task_rows=task_rows,
+            recent_events=[],
+            run_id="",
+            current_phase_key="",
+            current_phase_label="",
+            current_output_count=0,
+            show_progress=bool(config.show_progress),
+        )
+
     _try_playwright = _best_effort_get_try_playwright()
     browser_fallback_guard = BrowserFallbackCircuitBreaker.from_state(
         source_state_rows, cooldown_minutes=config.browser_fallback_cooldown_minutes
@@ -199,24 +217,45 @@ def run_source_execution_stage(
             },
         }
         canonical_batch: list[CanonicalJob] = []
-        loader_heartbeat_callback = None
-        if (
-            clean_text(name) in {"google_sheets", "social_reddit"}
-            or norm_text(report.get("adapter")) == "static"
-        ):
-            last_heartbeat_write = 0.0
+        last_heartbeat_write = 0.0
 
-            def loader_heartbeat_callback() -> None:
-                nonlocal last_heartbeat_write
-                now_mono = time.perf_counter()
-                if (now_mono - last_heartbeat_write) < 4.0:
-                    return
-                last_heartbeat_write = now_mono
-                with task_lock:
-                    row = task_rows.get(name)
-                    if isinstance(row, dict) and row.get("status") == "running":
-                        row["heartbeatAt"] = now_iso()
-                write_task_state(force=True)
+        def loader_heartbeat_callback() -> None:
+            nonlocal last_heartbeat_write
+            now_mono = time.perf_counter()
+            if (now_mono - last_heartbeat_write) < 4.0:
+                return
+            last_heartbeat_write = now_mono
+            with task_lock:
+                row = task_rows.get(name)
+                if isinstance(row, dict) and row.get("status") == "running":
+                    row["heartbeatAt"] = now_iso()
+            write_task_state(force=True)
+
+        loader_progress_callback = None
+
+        def loader_progress_callback(
+            *,
+            phase_key: str = "",
+            phase_label: str = "",
+            counts: dict[str, Any] | None = None,
+            target_label: str = "",
+            target_url: str = "",
+            event_level: str = "muted",
+            message: str = "",
+        ) -> None:
+            update_fetch_work_item_progress(
+                task_runtime,
+                name,
+                phase_key=phase_key,
+                phase_label=phase_label,
+                counts=counts,
+                target_label=target_label,
+                target_url=target_url,
+                emit_event=bool(message),
+                event_level=event_level,
+                event_message=message,
+            )
+            write_task_state()
 
         try:
             thread_local.source_name = name
@@ -237,6 +276,7 @@ def run_source_execution_stage(
                     loader_kwargs["try_playwright"] = guarded_try_playwright
             if loader_heartbeat_callback is not None:
                 loader_kwargs["heartbeat_callback"] = loader_heartbeat_callback
+            loader_kwargs["progress_callback"] = loader_progress_callback
 
             try:
                 signature = inspect.signature(loader)
@@ -260,12 +300,30 @@ def run_source_execution_stage(
                     "retries": config.retries,
                     "backoff_s": config.backoff_s,
                 }
+                if loader_heartbeat_callback is not None:
+                    accepted_kwargs["heartbeat_callback"] = loader_heartbeat_callback
+                accepted_kwargs["progress_callback"] = loader_progress_callback
 
+            loader_progress_callback(
+                phase_key="loading_source",
+                phase_label="Loading source",
+                counts={"adapter": clean_text(report.get("adapter")) or "custom"},
+                message=f"Loading source {name}.",
+            )
             raw_rows = loader(**accepted_kwargs)
             fetch_and_parse_ms = int((time.perf_counter() - loader_started) * 1000)
             report["fetchedCount"] = len(raw_rows)
             report_loss = report["loss"] if isinstance(report.get("loss"), dict) else {}
             report_loss["rawFetched"] = int(len(raw_rows))
+            loader_progress_callback(
+                phase_key="normalizing_rows",
+                phase_label="Normalizing rows",
+                counts={"fetchedCount": int(len(raw_rows)), "fetchMs": fetch_and_parse_ms},
+                message=(
+                    f"Fetched source {name}: {int(len(raw_rows))} row"
+                    f"{'' if int(len(raw_rows)) == 1 else 's'} ready for normalization."
+                ),
+            )
 
             normalizer = CanonicalNormalizer(
                 source=name,
@@ -295,6 +353,19 @@ def run_source_execution_stage(
                 "invalid_url": int(drop_reasons.get("invalid_url", 0)),
                 "invalid_payload": int(drop_reasons.get("invalid_payload", 0)),
             }
+            loader_progress_callback(
+                phase_key="normalized_rows",
+                phase_label="Rows normalized",
+                counts={
+                    "fetchedCount": int(len(raw_rows)),
+                    "keptCount": int(kept),
+                    "canonicalDropped": max(0, int(len(raw_rows)) - int(kept)),
+                    "canonicalizationMs": int(canonicalization_ms),
+                },
+                message=(
+                    f"Normalized source {name}: kept {int(kept)} of {int(len(raw_rows))} fetched rows."
+                ),
+            )
 
             current_fingerprint = source_rows_fingerprint(
                 [row.to_dict() for row in canonical_batch]
@@ -619,19 +690,63 @@ def run_source_execution_stage(
             task_rows[source_name]["heartbeatAt"] = start_time
             task_rows[source_name]["_startedMonotonic"] = time.perf_counter()
             task_rows[source_name]["_slowWarned"] = False
+        update_fetch_work_item_progress(
+            task_runtime,
+            source_name,
+            phase_key="starting_source",
+            phase_label="Starting source",
+            emit_event=True,
+            event_level="info",
+            event_message=f"Started source {source_name}.",
+        )
         write_task_state(force=True)
         if config.show_progress:
             _emit_progress_line(f"[jobs_fetcher] START source={source_name}")
 
     def mark_task_finished(source_name: str, report: dict[str, Any]) -> None:
         end_time = now_iso()
+        report_status = str(report.get("status") or "").strip().lower()
         with task_lock:
-            task_rows[source_name]["status"] = "ok" if report.get("status") == "ok" else "error"
+            task_rows[source_name]["status"] = (
+                "excluded"
+                if report_status == "excluded"
+                else "ok"
+                if report_status == "ok"
+                else "error"
+            )
             task_rows[source_name]["finishedAt"] = end_time
             task_rows[source_name]["durationMs"] = int(report.get("durationMs") or 0)
             task_rows[source_name]["heartbeatAt"] = end_time
             task_rows[source_name]["error"] = clean_text(report.get("error"))
             task_rows[source_name]["_slowWarned"] = False
+        update_fetch_work_item_progress(
+            task_runtime,
+            source_name,
+            phase_key="completed_source"
+            if report_status in {"ok", "excluded"}
+            else "failed_source",
+            phase_label="Completed"
+            if report_status == "ok"
+            else "Excluded"
+            if report_status == "excluded"
+            else "Failed",
+            counts={
+                "fetchedCount": int(report.get("fetchedCount") or 0),
+                "keptCount": int(report.get("keptCount") or 0),
+                "durationMs": int(report.get("durationMs") or 0),
+            },
+            emit_event=True,
+            event_level="success"
+            if report_status == "ok"
+            else "warn"
+            if report_status == "excluded"
+            else "error",
+            event_message=(
+                f"Finished source {source_name}: status={report_status or 'ok'}, "
+                f"fetched={int(report.get('fetchedCount') or 0)}, "
+                f"kept={int(report.get('keptCount') or 0)}."
+            ),
+        )
         write_progress_report()
         write_task_state(force=True)
         if config.show_progress:

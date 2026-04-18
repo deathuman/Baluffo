@@ -100,6 +100,8 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 |--------|------|---------|
 | GET | `/ops/health` | Bridge health check |
 | GET | `/ops/history?limit=` | Run history (sync/fetcher/discovery) |
+| GET | `/ops/task-live/<taskType>` | Detailed live task payload for `fetch`, `discovery`, or `sync` |
+| GET | `/ops/task-state` | Current summary task projection; top-level `tasks` array remains the current-run contract |
 | GET | `/ops/fetch-report` | Last fetch summary |
 | GET | `/ops/fetcher-metrics?windowRuns=` | Fetcher metrics |
 | POST | `/ops/alerts/ack` | Acknowledge alert (`{id: ""}`); active non-dismissible alerts return `{ok: true, ignored: true}` |
@@ -119,6 +121,8 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 - Desktop sign-in UI should call `/desktop-local-data/profiles` first and prefer existing-profile selection. If that load fails, the current desktop flow is explicit `Retry` / `Create new profile` / `Cancel`, not blind text entry for existing profiles.
 - `/app/update-status` is the desktop source of truth for installed app version and updater state. Jobs/Saved/Admin desktop chrome reads `currentVersion` from this payload.
 - `/ops/alerts/ack` does not persist acknowledgement for active non-dismissible alerts. The first-run `fetch_never_run` guidance remains visible until a successful fetch clears the condition.
+- `/ops/task-live/<taskType>` is the detailed live surface for fetch/discovery/sync. It emits `workItems`, `recentEvents`, `taskProgress`, and lifecycle fields; it does not emit a detailed `tasks` alias anymore.
+- `/ops/task-state` is unchanged. Its top-level `tasks` array remains the compact current-task summary contract used by Ops and Jobs.
 - Long-running admin tasks are now **runId-owned**. `runId` is the only lifecycle identity for fetch, discovery, sync, and pipeline rows. Timestamp-only matching is not part of the runtime lifecycle model anymore.
 - Current Runs and `/ops/history` are projected from task owners, not from `admin-run-history.json` alone.
 - Authoritative owners by task type:

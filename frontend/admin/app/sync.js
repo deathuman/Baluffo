@@ -1,3 +1,5 @@
+import { formatTaskProgressDetail } from "../../shared/task-progress.js";
+
 export function createAdminSyncController({
   state,
   refs,
@@ -12,6 +14,21 @@ export function createAdminSyncController({
   scheduleOpsHealthPolling,
   escapeHtml
 }) {
+  function setLiveSyncRunning(value) {
+    const nextValue = Boolean(value);
+    const currentValue = Boolean(
+      typeof state.liveSyncRunning === "boolean"
+        ? state.liveSyncRunning
+        : state.adminBusyState?.liveSyncRunning
+    );
+    if (currentValue === nextValue) return;
+    state.liveSyncRunning = nextValue;
+    if (state.adminBusyState && typeof state.adminBusyState === "object") {
+      state.adminBusyState.liveSyncRunning = nextValue;
+    }
+    setBusyFlag("liveSyncRunning", nextValue);
+  }
+
   function populateSyncConfigForm(savedConfig, options = {}) {
     if (state.syncConfigDirty && !options.force) return;
     const config = savedConfig || {};
@@ -29,6 +46,9 @@ export function createAdminSyncController({
     populateSyncConfigForm(statusPayload?.savedConfig || {}, { force: Boolean(options.forceForm) });
     const config = statusPayload?.config || {};
     const runtime = statusPayload?.runtime || {};
+    const livePayload = options?.livePayload && typeof options.livePayload === "object"
+      ? options.livePayload
+      : {};
     const stateToken = String(config?.state || "disabled");
     const missing = Array.isArray(config?.missing) ? config.missing : [];
     const configMessage = String(config?.message || "").trim();
@@ -65,6 +85,9 @@ export function createAdminSyncController({
           : stateToken === "misconfigured"
             ? `Source sync cannot run yet.${missing.length ? ` Missing: ${missing.join(", ")}.` : ""}${configMessage ? ` ${configMessage}` : ""}`
             : `Connected to ${repo} and ready to keep the shared source registry in sync.`;
+    const liveSummary = Boolean(livePayload?.active)
+      ? formatTaskProgressDetail("sync", livePayload?.taskProgress, livePayload?.summary || {})
+      : "";
     const meta = [
       ["Mode", authMode],
       ["Repository", repo],
@@ -88,6 +111,7 @@ export function createAdminSyncController({
         <span class="admin-sync-inline-note">${escapeHtml(config?.enabled ? "Local sync enabled" : "Local sync disabled")}</span>
       </div>
       <p class="admin-sync-summary">${escapeHtml(summaryText)}</p>
+      ${liveSummary ? `<div class="admin-sync-summary">${escapeHtml(liveSummary)}</div>` : ""}
       <div class="admin-sync-meta-grid">${metaHtml}</div>
       ${errorHtml}
     `;
@@ -97,11 +121,16 @@ export function createAdminSyncController({
     const silent = Boolean(options?.silent);
     const forceForm = Boolean(options?.forceForm);
     try {
-      const payload = await getBridge("/sync/status");
+      const [payload, livePayload] = await Promise.all([
+        getBridge("/sync/status"),
+        getBridge("/ops/task-live/sync").catch(() => null)
+      ]);
       state.latestSyncStatusCache = payload || null;
-      renderSyncStatus(payload || {}, { forceForm });
+      setLiveSyncRunning(Boolean(livePayload?.active));
+      renderSyncStatus(payload || {}, { forceForm, livePayload });
       return payload || null;
     } catch (err) {
+      setLiveSyncRunning(false);
       if (refs.adminSyncStatusEl) refs.adminSyncStatusEl.textContent = `Sync status unavailable: ${getErrorMessage(err)}`;
       if (!silent) showToast(`Could not load sync status: ${getErrorMessage(err)}`, "error");
       throw err;

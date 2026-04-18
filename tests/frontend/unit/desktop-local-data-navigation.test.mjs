@@ -187,6 +187,18 @@ test("desktop beforeunload prompts when admin bridge work is active", async () =
   assert.equal(beaconCalls.length, 0);
 });
 
+test("desktop lifecycle binds beforeunload, pagehide, and focus but not unload", async () => {
+  const { eventListeners } = setupDesktopGlobals();
+  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  initDesktopLocalDataClient();
+  await flushMicrotasks();
+
+  assert.equal(typeof eventListeners.get("beforeunload"), "function");
+  assert.equal(typeof eventListeners.get("pagehide"), "function");
+  assert.equal(typeof eventListeners.get("focus"), "function");
+  assert.equal(eventListeners.has("unload"), false);
+});
+
 test("desktop beforeunload prompts when update handoff or install is active", async () => {
   const { eventListeners, beaconCalls } = setupDesktopGlobals({
     updatePayload: {
@@ -302,7 +314,7 @@ test("external navigation does not bypass the unload prompt", async () => {
   assert.equal(beaconCalls.length, 0);
 });
 
-test("normal unload without active work signals desktop closing", async () => {
+test("normal beforeunload without active work signals desktop closing", async () => {
   const { eventListeners, beaconCalls } = setupDesktopGlobals();
   const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
   initDesktopLocalDataClient();
@@ -315,6 +327,21 @@ test("normal unload without active work signals desktop closing", async () => {
   assert.equal(result, undefined);
   assert.equal(event.defaultPrevented, false);
   assert.equal(event.returnValue, undefined);
+  assert.equal(beaconCalls.length, 1);
+  assert.match(beaconCalls[0].url, /desktop-session-lifecycle/);
+});
+
+test("pagehide without beforeunload still signals desktop closing", async () => {
+  const { eventListeners, beaconCalls } = setupDesktopGlobals();
+  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  initDesktopLocalDataClient();
+  await flushMicrotasks();
+
+  const pagehide = eventListeners.get("pagehide");
+  assert.equal(typeof pagehide, "function");
+
+  pagehide();
+
   assert.equal(beaconCalls.length, 1);
   assert.match(beaconCalls[0].url, /desktop-session-lifecycle/);
 });

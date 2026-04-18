@@ -916,12 +916,13 @@ def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts()
         assert str(task_payload.get("schemaVersion") or "") == str(jf.SCHEMA_VERSION)
         assert "heartbeatAt" in task_payload
         assert "summary" in task_payload
-        assert "tasks" in task_payload
+        assert "tasks" not in task_payload
+        assert "workItems" in task_payload
         assert "outputs" in task_payload
         assert str((task_payload.get("outputs") or {}).get("report") or "") == str(
             out / "jobs-fetch-report.json"
         )
-        assert str((task_payload.get("tasks") or [])[0].get("status") or "") == "ok"
+        assert str((task_payload.get("workItems") or [])[0].get("status") or "") == "ok"
         assert (
             str(((report.get("runtime") or {}).get("lifecycle") or {}).get("owner") or "")
             == "fetch_report"

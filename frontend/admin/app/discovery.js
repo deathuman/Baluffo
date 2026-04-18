@@ -1,18 +1,25 @@
 import { deriveDiscoveryProgressModel, deriveDiscoveryQueuedCount, deriveDiscoveryTaskProgress } from "../domain.js";
 import {
+  appendLiveTaskActivity,
+  buildTaskWorkItemActivitySignature,
   attachToActiveRun,
   clearOptimisticRun,
+  createBoundedSignatureSet,
   loadLiveTaskLogChunk,
-  maybeUnrefTimer,
+  loadTaskLivePayload,
+  markLiveTaskActivity,
   parseReportTimestampMs,
+  pickTaskLivePayload,
   resetLiveTaskPlaceholder,
   restartCompletionWatch,
+  scheduleAsyncWatchTimer,
   setOptimisticRun,
   shouldApplyTimestampGate,
   startLiveTaskWatch,
   stopLiveTaskWatch
 } from "./live-task.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
+import { renderAdminTaskLiveItems } from "../render.js";
 
 export function isDiscoveryMobileViewport(width = window.innerWidth) {
   return Number(width) < 900;
@@ -100,6 +107,9 @@ export function createAdminDiscoveryController({
       const report = await getBridge("/discovery/report");
       if (report && typeof report === "object" && !Array.isArray(report)) {
         state.latestDiscoveryReportCache = report;
+        renderDiscoveryLiveItems(report, {
+          emptyText: "Waiting for discovery adapter activity..."
+        });
       }
       return report || null;
     } catch (err) {
@@ -169,6 +179,20 @@ export function createAdminDiscoveryController({
     setOptimisticRun(state, "discoveryOptimisticRun", runMeta);
   }
 
+  function renderDiscoveryLiveItems(payload, { emptyText = "" } = {}) {
+    renderAdminTaskLiveItems(refs.adminDiscoveryLiveItemsEl, payload || {}, {
+      taskType: "discovery",
+      emptyText
+    });
+  }
+
+  async function loadDiscoveryLivePayload() {
+    return loadTaskLivePayload({
+      getBridge,
+      taskType: "discovery"
+    });
+  }
+
   function clearOptimisticDiscoveryRun() {
     clearOptimisticRun(state, "discoveryOptimisticRun");
   }
@@ -196,7 +220,7 @@ export function createAdminDiscoveryController({
     if (!liveState) return;
     if (liveState.serverPhaseLabel === nextLabel) return;
     liveState.serverPhaseLabel = nextLabel;
-    liveState.lastActivityAtMs = Date.now();
+    markLiveTaskActivity(liveState);
     updateDiscoveryProgressFromReport(null, { running: true });
   }
 
@@ -288,9 +312,7 @@ export function createAdminDiscoveryController({
       if (!normalizedLine) return;
       if (state.discoveryLiveProgressState?.serverLogSignatures?.has(normalizedLine.message)) return;
       state.discoveryLiveProgressState?.serverLogSignatures?.add(normalizedLine.message);
-      if (state.discoveryLiveProgressState) {
-        state.discoveryLiveProgressState.lastActivityAtMs = Date.now();
-      }
+      markLiveTaskActivity(state.discoveryLiveProgressState);
       updateDiscoveryProgressFromLivePhase(inferDiscoveryPhaseLabelFromServerMessage(normalizedLine.message));
       if (match) {
         appendDiscoveryLogEvent({
@@ -315,6 +337,7 @@ export function createAdminDiscoveryController({
       appendLog: appendDiscoveryLog,
       message
     });
+    renderDiscoveryLiveItems(null);
   }
 
   async function loadDiscoveryLogChunk(options = {}) {
@@ -332,6 +355,9 @@ export function createAdminDiscoveryController({
     const liveState = state.discoveryLiveProgressState;
     if (!liveState) return;
     updateDiscoveryProgressFromReport(report, { running: true });
+    renderDiscoveryLiveItems(report, {
+      emptyText: "Waiting for discovery adapter activity..."
+    });
     const summary = report?.summary || {};
     const progress = deriveDiscoveryTaskProgress(report, {
       running: true,
@@ -346,21 +372,13 @@ export function createAdminDiscoveryController({
     const failedCount = Number(counts.failedProbes ?? summary.failedProbeCount ?? 0);
     const skippedCount = Number(summary.skippedDuplicateCount || 0);
     const invalidCount = Number(summary.skippedInvalidCount || 0);
-    let sawActivity = false;
+    let sawLocalActivity = false;
 
     const summarySignature = [foundCount, probedCount, queuedCount, deferredCount, failedCount, skippedCount, invalidCount].join("|");
     if (phaseLabel && phaseLabel !== liveState.phaseLabel) {
       liveState.phaseLabel = phaseLabel;
-      sawActivity = true;
+      sawLocalActivity = true;
       appendDiscoveryLog(`Discovery phase: ${phaseLabel}.`, "muted");
-    }
-    if (summarySignature !== liveState.summarySignature) {
-      liveState.summarySignature = summarySignature;
-      sawActivity = true;
-      appendDiscoveryLog(
-        `Discovery: endpoints ${foundCount}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}, failed ${failedCount}, skipped dupes ${skippedCount}, invalid ${invalidCount}.`,
-        failedCount > 0 ? "warn" : "info"
-      );
     }
 
     const candidates = Array.isArray(report?.candidates) ? report.candidates : [];
@@ -381,7 +399,7 @@ export function createAdminDiscoveryController({
         "muted"
       );
       liveState.candidateCount = candidates.length;
-      sawActivity = true;
+      sawLocalActivity = true;
     } else {
       liveState.candidateCount = candidates.length;
     }
@@ -401,23 +419,36 @@ export function createAdminDiscoveryController({
         .join(" | ");
       appendDiscoveryLog(`Failure cluster: ${cluster}`, "warn");
       liveState.failureCount = failures.length;
-      sawActivity = true;
+      sawLocalActivity = true;
     } else {
       liveState.failureCount = failures.length;
     }
 
-    if (sawActivity) {
-      liveState.lastActivityAtMs = nowMs;
+    if (sawLocalActivity) {
+      markLiveTaskActivity(liveState, nowMs);
     }
 
-    const idleMs = nowMs - Number(liveState.lastActivityAtMs || 0);
-    if (idleMs >= 60000 && (nowMs - Number(liveState.lastHeartbeatAtMs || 0)) >= 60000) {
-      liveState.lastHeartbeatAtMs = nowMs;
-      appendDiscoveryLog(
-        `Discovery active${phaseLabel ? ` (${phaseLabel})` : ""}: endpoints ${foundCount}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}.`,
-        "muted"
-      );
-    }
+    appendLiveTaskActivity({
+      payload: report,
+      liveState,
+      nowMs,
+      appendEvent: event => appendDiscoveryLogEvent(event, "muted"),
+      scope: "discovery",
+      summarySignature,
+      workItemSignature: buildTaskWorkItemActivitySignature(report),
+      onSummaryChange: () => {
+        appendDiscoveryLog(
+          `Discovery: endpoints ${foundCount}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}, failed ${failedCount}, skipped dupes ${skippedCount}, invalid ${invalidCount}.`,
+          failedCount > 0 ? "warn" : "info"
+        );
+      },
+      onHeartbeat: () => {
+        appendDiscoveryLog(
+          `Discovery active${phaseLabel ? ` (${phaseLabel})` : ""}: endpoints ${foundCount}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}.`,
+          "muted"
+        );
+      }
+    });
   }
 
   /** Avoid dropping live progress when report.startedAt lags discoveryLaunchAtMs (slow POST, skew, etc.). */
@@ -453,18 +484,20 @@ export function createAdminDiscoveryController({
       createLiveState: () => ({
         phaseLabel: "",
         summarySignature: "",
+        workItemSignature: "",
         registryRefreshSignature: "",
         candidateCount: 0,
         failureCount: 0,
         serverPhaseLabel: "",
-        serverLogSignatures: new Set(),
+        recentEventSignatures: createBoundedSignatureSet(),
+        serverLogSignatures: createBoundedSignatureSet(),
         lastHeartbeatAtMs: 0,
         lastActivityAtMs: Date.now()
       }),
       setProgress: () => updateDiscoveryProgressFromReport(null, { running: true }),
       onStart: () => appendDiscoveryLog("Discovery started. Watching live progress...", "info"),
       loadInitialLogChunk: () => loadDiscoveryLogChunk({ reset: true }).catch(() => {}),
-      scheduleCompletionPoll: () => scheduleDiscoveryCompletionPoll(250)
+      scheduleCompletionPoll: () => scheduleDiscoveryCompletionPoll(0)
     });
   }
 
@@ -503,30 +536,41 @@ export function createAdminDiscoveryController({
   }
 
   function scheduleDiscoveryCompletionPoll(delayMs) {
-    state.discoveryCompletionPollTimer = maybeUnrefTimer(setTimeout(() => {
-      pollDiscoveryCompletion().catch(err => {
+    scheduleAsyncWatchTimer({
+      state,
+      timerKey: "discoveryCompletionPollTimer",
+      delayMs,
+      task: pollDiscoveryCompletion,
+      onError: err => {
         logAdminError("Discovery completion poll failed", err);
         scheduleDiscoveryCompletionPoll(state.discoveryReportPollIntervalMs);
-      });
-    }, delayMs));
+      }
+    });
   }
 
   async function pollDiscoveryCompletion() {
     const now = Date.now();
 
-    const [report] = await Promise.all([
+    const [report, livePayload] = await Promise.all([
       getBridge("/discovery/report"),
+      loadDiscoveryLivePayload().catch(() => null),
       loadDiscoveryLogChunk().catch(() => null)
     ]);
+    const normalizedLivePayload = pickTaskLivePayload(livePayload);
 
-    // Always update progress during polling for real-time updates
-    if (report) {
-      if (shouldApplyDiscoveryLiveProgressGate(report)) {
-        runProgressAppend(report, now);
+    // Detailed live progress comes only from the structured live-task payload.
+    if (normalizedLivePayload) {
+      if (shouldApplyDiscoveryLiveProgressGate(normalizedLivePayload)) {
+        runProgressAppend(normalizedLivePayload, now);
       }
-
-      // Update progress even if not started yet, for better UX
-      updateDiscoveryProgressFromReport(report, { running: true });
+      updateDiscoveryProgressFromReport(normalizedLivePayload, { running: true });
+      renderDiscoveryLiveItems(normalizedLivePayload, {
+        emptyText: "Waiting for discovery adapter activity..."
+      });
+    } else {
+      renderDiscoveryLiveItems(null, {
+        emptyText: "Waiting for discovery live state..."
+      });
       refreshDiscoveryDataIfNeeded(report);
     }
 

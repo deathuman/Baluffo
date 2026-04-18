@@ -8,6 +8,7 @@ import {
 import { createLocalDataRuntime } from "../../local-data/runtime-contract.js";
 import { buildAttachmentPath, generateJobKey } from "../../local-data/job-utils.js";
 import { canTransitionPhase, normalizeApplicationStatus } from "../../local-data/phase.js";
+import { hasActiveTaskStateRows } from "../live-task.js";
 import { appendDesktopRuntimeQueryParams } from "./runtime-context.js";
 
 const BASE_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/desktop-local-data`;
@@ -137,8 +138,7 @@ export function navigateDesktopPage(
 }
 
 function isActiveTaskPayload(payload) {
-  const tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
-  return tasks.some(task => Boolean(task?.active));
+  return hasActiveTaskStateRows(payload);
 }
 
 function isActiveUpdatePayload(payload) {
@@ -260,9 +260,6 @@ function bindDesktopLifecycleEvents() {
       desktopCloseAttemptPending = true;
     }
     sendDesktopClosingSignal("pagehide");
-  });
-  window.addEventListener?.("unload", () => {
-    sendDesktopClosingSignal("unload");
   });
   window.addEventListener?.("focus", () => {
     desktopCloseAttemptPending = false;

@@ -1,3 +1,9 @@
+import {
+  formatTaskProgressCounts,
+  normalizeTaskProgressPayload
+} from "../shared/task-progress.js";
+import { getTaskStateRows } from "../shared/live-task.js";
+
 export function getErrorMessage(err, unknownErrorText = "unknown error") {
   return err?.message || unknownErrorText;
 }
@@ -337,7 +343,7 @@ export function deriveAdminRunsModel(
   } = {},
   nowMs = Date.now()
 ) {
-  const taskRows = Array.isArray(taskState?.tasks) ? taskState.tasks : [];
+  const taskRows = getTaskStateRows(taskState);
   const normalizedCurrentRows = taskRows
     .map(row => normalizeCurrentTaskStateRow(row, nowMs))
     .filter(row => row && row.isLive);
@@ -367,20 +373,7 @@ function compactCount(value) {
 }
 
 function normalizeTaskProgressContract(progress) {
-  if (!progress || typeof progress !== "object" || Array.isArray(progress)) return null;
-  const mode = String(progress.mode || "").trim().toLowerCase() === "determinate" ? "determinate" : "indeterminate";
-  const counts = progress.counts && typeof progress.counts === "object" && !Array.isArray(progress.counts)
-    ? progress.counts
-    : {};
-  const ratioValue = Number(progress.ratio);
-  return {
-    active: Boolean(progress.active),
-    phaseKey: String(progress.phaseKey || "").trim(),
-    phaseLabel: String(progress.phaseLabel || "").trim(),
-    mode,
-    ratio: Number.isFinite(ratioValue) ? Math.max(0, Math.min(1, ratioValue)) : 0,
-    counts
-  };
+  return normalizeTaskProgressPayload(progress);
 }
 
 function inferDiscoveryPhaseKeyFromLabel(label, fallback = "") {
@@ -593,29 +586,11 @@ export function deriveDiscoveryTaskProgress(report, { running = false, phaseHint
 }
 
 function formatFetcherCountsLabel(counts, progress) {
-  const resolved = Math.max(0, Number(counts?.resolvedSources || 0));
-  const total = Math.max(0, Number(counts?.sourceCount || 0));
-  const output = Math.max(0, Number(counts?.outputCount || 0));
-  const failed = Math.max(0, Number(counts?.failedSources || 0));
-  const excluded = Math.max(0, Number(counts?.excludedSources || 0));
-  const showTotal = String(progress?.mode || "").toLowerCase() === "determinate" && total > 0;
-  const resolvedLabel = showTotal
-    ? `${compactCount(resolved)}/${compactCount(total)} sources resolved`
-    : `${compactCount(resolved)} sources resolved`;
-  return `${resolvedLabel} | output ${compactCount(output)} | failed ${compactCount(failed)} | excluded ${compactCount(excluded)}`;
+  return formatTaskProgressCounts("fetch", counts, progress);
 }
 
 function formatDiscoveryCountsLabel(counts, progress) {
-  const found = Math.max(0, Number(counts?.foundEndpoints || 0));
-  const probed = Math.max(0, Number(counts?.probedCandidates || 0));
-  const probeTotal = Math.max(0, Number(counts?.probeTotal || 0));
-  const queued = Math.max(0, Number(counts?.queuedCandidates || 0));
-  const deferred = Math.max(0, Number(counts?.deferredCandidates || 0));
-  const failed = Math.max(0, Number(counts?.failedProbes || 0));
-  const probedLabel = progress?.mode === "determinate" && probeTotal > 0
-    ? `${compactCount(probed)}/${compactCount(probeTotal)}`
-    : compactCount(probed);
-  return `endpoints ${compactCount(found)} | probed ${probedLabel} | queued ${compactCount(queued)} | deferred ${compactCount(deferred)} | failed ${compactCount(failed)}`;
+  return formatTaskProgressCounts("discovery", counts, progress);
 }
 
 export function applyOptimisticDiscoveryRun(model, optimisticRun, nowMs = Date.now()) {

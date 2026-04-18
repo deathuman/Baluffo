@@ -1,8 +1,13 @@
 import { fetchJson, postJson } from "../shared/api-client.js";
 
-export async function fetchJobsFetchReportJson(jobsFetchReportUrl) {
+export async function fetchJobsFetchReportJson(jobsFetchReportUrl, options = {}) {
   try {
-    const response = await fetch(`${jobsFetchReportUrl}?t=${Date.now()}`, { cache: "no-store" });
+    const url = new URL(String(jobsFetchReportUrl || ""), globalThis.location?.href || "http://127.0.0.1/");
+    url.searchParams.set("t", String(Date.now()));
+    if (options?.live) {
+      url.searchParams.set("view", "live");
+    }
+    const response = await fetch(String(url), { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } catch {
