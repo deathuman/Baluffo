@@ -150,14 +150,20 @@ test("admin live-task restore helper restarts active fetch and discovery watches
     loadFetcherLivePayload: async () => {
       fetchLiveLoads += 1;
       return {
+        active: true,
+        runId: "fetch_restore_2",
+        startedAt: "2026-03-29T11:49:22+02:00",
+        finishedAt: ""
+      };
+    },
+    loadLatestFetcherReport: async options => {
+      calls.push(`loadLatestFetcherReport:${String(Boolean(options?.silent))}`);
+      return {
         runId: "fetch_restore_2",
         startedAt: "2026-03-29T11:49:22+02:00",
         finishedAt: "",
         taskProgress: { active: true, phaseKey: "executing_sources", phaseLabel: "Executing sources" }
       };
-    },
-    loadLatestFetcherReport: async () => {
-      throw new Error("fetch report fallback should not run");
     },
     fetcherController: {
       attachToActiveFetchRun(runMeta, options) {
@@ -167,10 +173,10 @@ test("admin live-task restore helper restarts active fetch and discovery watches
     loadDiscoveryLivePayload: async () => {
       discoveryLiveLoads += 1;
       return {
+        active: true,
         runId: "discovery_restore_2",
         startedAt: "2026-03-29T11:49:22+02:00",
-        finishedAt: "",
-        taskProgress: { active: true, phaseKey: "scanning_sources", phaseLabel: "Scanning sources" }
+        finishedAt: ""
       };
     },
     loadLatestDiscoveryReport: async () => {
@@ -195,6 +201,7 @@ test("admin live-task restore helper restarts active fetch and discovery watches
     calls.filter(line => line === "attachToActiveDiscoveryRun:discovery_restore_2:false").length,
     1
   );
+  assert.ok(calls.includes("loadLatestFetcherReport:true"));
 });
 
 test("admin live-task restore helper reattaches fetch watch from an active cold-load report", async () => {
@@ -227,6 +234,77 @@ test("admin live-task restore helper reattaches fetch watch from an active cold-
 
   assert.ok(calls.includes("restoreMeta:fetch_restore_cold_1"));
   assert.ok(calls.includes("attachToActiveFetchRun:fetch_restore_cold_1:false"));
+});
+
+test("admin live-task restore helper silently hydrates fetch progress on first boot attach", async () => {
+  const timerStub = stubScheduledTimers();
+  let controller;
+  try {
+    const fixture = createFetcherControllerFixture();
+    fixture.options.getBridge = async path => {
+      if (String(path).startsWith("/fetcher/log?offset=")) {
+        return { text: "", nextOffset: 0 };
+      }
+      if (path === "/ops/task-live/fetch") {
+        return {
+          active: true,
+          runId: "fetch_boot_restore_1",
+          startedAt: "2026-03-08T10:00:00.000Z",
+          finishedAt: ""
+        };
+      }
+      return {};
+    };
+    fixture.options.fetchJobsFetchReportJson = async () => ({
+      runId: "fetch_boot_restore_1",
+      startedAt: "2026-03-08T10:00:00.000Z",
+      finishedAt: "",
+      taskProgress: {
+        active: true,
+        phaseKey: "executing_sources",
+        phaseLabel: "Executing sources",
+        mode: "determinate",
+        ratio: 0.5,
+        counts: {
+          resolvedSources: 6,
+          sourceCount: 12,
+          runningTasks: 6,
+          queuedTasks: 0,
+          outputCount: 18,
+          failedSources: 1,
+          excludedSources: 0
+        }
+      },
+      summary: { outputCount: 18, failedSources: 1, excludedSources: 0, sourceCount: 12 },
+      sources: [{ name: "Studio A", status: "running" }]
+    });
+    fixture.options.loadOpsHealthData = async () => {};
+    controller = createAdminFetcherController(fixture.options);
+
+    const restoreActiveRunWatches = createRestoreActiveRunWatches({
+      loadFetcherLivePayload: (...args) => controller.loadFetcherLivePayload(...args),
+      loadLatestFetcherReport: options => controller.loadLatestFetcherReport(options),
+      fetcherController: controller,
+      loadDiscoveryLivePayload: async () => null,
+      loadLatestDiscoveryReport: async () => null,
+      discoveryController: {}
+    });
+
+    await restoreActiveRunWatches();
+
+    assert.equal(fixture.state.adminBusyState.fetcherWatch, true);
+    assert.equal(fixture.refs.adminFetcherProgressEl.classList.contains("hidden"), false);
+    assert.match(String(fixture.refs.adminFetcherProgressLabelEl.textContent || ""), /executing sources/i);
+    assert.match(String(fixture.refs.adminFetcherProgressLabelEl.textContent || ""), /6\/12 sources resolved/i);
+    assert.deepEqual(fixture.state.fetchOptimisticRun, {
+      runId: "fetch_boot_restore_1",
+      startedAt: "2026-03-08T10:00:00.000Z"
+    });
+    assert.deepEqual(fixture.logs, []);
+  } finally {
+    controller?.stopFetcherCompletionWatch?.();
+    timerStub.restore();
+  }
 });
 
 test("admin auth controller session view model tracks bridge badge state", async () => {

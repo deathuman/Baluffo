@@ -273,6 +273,24 @@ def _task_progress_active(payload: dict[str, Any]) -> bool:
     return bool(progress.get("active")) if isinstance(progress, dict) else False
 
 
+def _payload_has_live_run_identity(payload: dict[str, Any], run_id: str = "") -> bool:
+    if not isinstance(payload, dict):
+        return False
+    payload_run_id = str(payload.get("runId") or "").strip()
+    if run_id and payload_run_id and payload_run_id != run_id:
+        return False
+    if str(payload.get("finishedAt") or "").strip():
+        return False
+    return bool(
+        payload.get("active")
+        or _task_progress_active(payload)
+        or payload_run_id
+        or str(payload.get("startedAt") or "").strip()
+        or bool(payload.get("workItems"))
+        or bool(payload.get("recentEvents"))
+    )
+
+
 def _build_child_task_snapshot(
     *,
     task_type: str,
@@ -307,7 +325,7 @@ def _build_child_task_snapshot(
     artifact_matches = bool(run_id and artifact_run_id and artifact_run_id == run_id)
     artifact_active = bool(
         artifact_matches
-        and _task_progress_active(artifact)
+        and _payload_has_live_run_identity(artifact, run_id)
         and (
             _signal_is_recent(
                 _lifecycle_heartbeat(artifact),
@@ -324,7 +342,7 @@ def _build_child_task_snapshot(
     )
     report_active = bool(
         run_id
-        and _task_progress_active(report)
+        and _payload_has_live_run_identity(report, run_id)
         and (
             _signal_is_recent(
                 _lifecycle_heartbeat(report),

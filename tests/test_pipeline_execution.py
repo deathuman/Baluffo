@@ -827,7 +827,7 @@ def test_admin_bridge_pipeline_service_wires_load_json_object(monkeypatch, tmp_p
     assert service._load_json_object is admin_bridge.load_json_object
 
 
-def test_wait_for_report_completion_waits_for_projected_child_task_to_go_idle(
+def test_wait_for_report_completion_returns_terminal_report_even_while_projected_child_is_active(
     monkeypatch, tmp_path: Path
 ) -> None:
     status: dict[str, Any] = {
@@ -897,7 +897,7 @@ def test_wait_for_report_completion_waits_for_projected_child_task_to_go_idle(
     )
 
     assert str(report.get("finishedAt") or "") == "2026-03-22T12:00:02Z"
-    assert waits == [1.0]
+    assert waits == []
 
 
 def test_wait_for_report_completion_survives_timeout_while_projected_child_stays_active(
@@ -977,6 +977,86 @@ def test_wait_for_report_completion_survives_timeout_while_projected_child_stays
     assert clock["now"] == datetime.fromisoformat("2026-03-22T12:00:11+00:00")
 
 
+def test_wait_for_report_completion_survives_timeout_while_child_liveness_callback_stays_true(
+    monkeypatch, tmp_path: Path
+) -> None:
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "fetch",
+        "progress": {"currentStep": 2, "totalSteps": 3, "percent": 67, "label": "Running fetch..."},
+        "startedAt": "2026-03-22T12:00:00Z",
+        "finishedAt": "",
+        "error": "",
+        "updatesFound": False,
+        "refreshRecommended": False,
+        "baselineOutputCount": 0,
+        "finalOutputCount": 0,
+        "jobsPageLoadedCount": 0,
+    }
+    clock, waits = _install_fake_wait_clock(monkeypatch, start_at="2026-03-22T12:00:00Z")
+
+    child_live_states = [True] * 11 + [False]
+    fetch_reports = [
+        {"runId": "fetch_1", "startedAt": "2026-03-22T12:00:01Z", "finishedAt": ""}
+    ] * 11 + [
+        {
+            "runId": "fetch_1",
+            "startedAt": "2026-03-22T12:00:01Z",
+            "finishedAt": "2026-03-22T12:00:15Z",
+        }
+    ]
+
+    def load_fetch_report(_path: Path, _default: Any) -> dict[str, Any]:
+        if len(fetch_reports) > 1:
+            return fetch_reports.pop(0)
+        return fetch_reports[0]
+
+    service = PipelineService(
+        pipeline_state_lock=FakeLock(),
+        pipeline_status=status,
+        runtime=PipelineRuntime(),
+        bridge_log=lambda *a, **kw: None,
+        now_iso=lambda: clock["now"].isoformat().replace("+00:00", "Z"),
+        parse_iso=make_parse_iso(),
+        append_run_history=lambda x: x,
+        upsert_run_history=lambda x, **kw: x,
+        task_running_from_state=lambda x: False,
+        sync_task_running=lambda: False,
+        current_fetch_output_count=lambda: 0,
+        load_json_object=load_fetch_report,
+        wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+        discovery_report_path=tmp_path / "discovery-report.json",
+        fetch_report_path=tmp_path / "fetch-report.json",
+        trigger_discovery_task=lambda **kw: (200, {"started": True}),
+        start_fetcher_task=lambda x: {"started": True, "runId": "fetch_1"},
+        start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+        get_app_version=lambda: "1.0.0",
+        child_run_is_live=lambda task_type, run_id: (
+            str(task_type) == "fetch"
+            and str(run_id) == "fetch_1"
+            and bool(child_live_states.pop(0) if child_live_states else False)
+        ),
+        get_projected_run_history=lambda: _projection_snapshot(
+            task_type="fetch", run_id="fetch_1", active=False
+        ),
+    )
+
+    report = service.wait_for_report_completion(
+        report_path=tmp_path / "fetch-report.json",
+        started_at="2026-03-22T12:00:01Z",
+        timeout_s=10.0,
+        report_name="fetch report",
+        load_json_object=service._load_json_object,
+        task_type="fetch",
+        task_run_id="fetch_1",
+    )
+
+    assert str(report.get("finishedAt") or "") == "2026-03-22T12:00:15Z"
+    assert len(waits) == 11
+    assert clock["now"] == datetime.fromisoformat("2026-03-22T12:00:11+00:00")
+
+
 def test_run_worker_completes_after_long_active_fetch_wait(monkeypatch, tmp_path: Path) -> None:
     status: dict[str, Any] = {
         "active": True,
@@ -998,6 +1078,7 @@ def test_run_worker_completes_after_long_active_fetch_wait(monkeypatch, tmp_path
         "jobsPageLoadedCount": 0,
     }
     upserts: list[dict[str, Any]] = []
+    bridge_events: list[tuple[str, dict[str, Any]]] = []
     clock, waits = _install_fake_wait_clock(monkeypatch, start_at="2026-03-22T12:00:00Z")
     discovery_report_path = tmp_path / "discovery-report.json"
     fetch_report_path = tmp_path / "fetch-report.json"
@@ -1182,6 +1263,109 @@ def test_run_worker_attaches_to_existing_child_tasks_on_conflict(tmp_path: Path)
             "childRunId": "discovery_live_1",
         },
     ) in bridge_events
+
+
+def test_run_worker_keeps_waiting_for_attached_fetch_child_while_live_evidence_remains(
+    monkeypatch, tmp_path: Path
+) -> None:
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "starting",
+        "progress": {
+            "currentStep": 0,
+            "totalSteps": 3,
+            "percent": 0,
+            "label": "Starting pipeline...",
+        },
+        "startedAt": "2026-03-22T12:00:00Z",
+        "finishedAt": "",
+        "error": "",
+        "updatesFound": False,
+        "refreshRecommended": False,
+        "baselineOutputCount": 0,
+        "finalOutputCount": 0,
+        "jobsPageLoadedCount": 0,
+    }
+    upserts: list[dict[str, Any]] = []
+    bridge_events: list[tuple[str, dict[str, Any]]] = []
+    clock, waits = _install_fake_wait_clock(monkeypatch, start_at="2026-03-22T12:00:00Z")
+    discovery_report_path = tmp_path / "discovery-report.json"
+    fetch_report_path = tmp_path / "fetch-report.json"
+    fetch_reports = [
+        {"runId": "fetch_live_1", "startedAt": "2026-03-22T12:00:01Z", "finishedAt": ""}
+    ] * 1201 + [
+        {
+            "runId": "fetch_live_1",
+            "startedAt": "2026-03-22T12:00:01Z",
+            "finishedAt": "2026-03-22T12:20:05Z",
+        }
+    ]
+    child_live_states = [True] * 1201 + [False]
+
+    def load_json_object(path: Path, default: Any) -> Any:
+        if path == discovery_report_path:
+            return {
+                "runId": "discovery_1",
+                "startedAt": "2026-03-22T12:00:00Z",
+                "finishedAt": "2026-03-22T12:00:01Z",
+            }
+        if path == fetch_report_path:
+            if len(fetch_reports) > 1:
+                return fetch_reports.pop(0)
+            return fetch_reports[0]
+        return default
+
+    def bridge_log(level: str, message: str, **fields: Any) -> None:
+        bridge_events.append((message, {"level": level, **fields}))
+
+    service = PipelineService(
+        pipeline_state_lock=FakeLock(),
+        pipeline_status=status,
+        runtime=PipelineRuntime(),
+        bridge_log=bridge_log,
+        now_iso=lambda: clock["now"].isoformat().replace("+00:00", "Z"),
+        parse_iso=make_parse_iso(),
+        append_run_history=lambda x: x,
+        upsert_run_history=lambda x, **kw: upserts.append(x),
+        task_running_from_state=lambda x: False,
+        sync_task_running=lambda: False,
+        current_fetch_output_count=lambda: 12,
+        load_json_object=load_json_object,
+        wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+        discovery_report_path=discovery_report_path,
+        fetch_report_path=fetch_report_path,
+        trigger_discovery_task=lambda **kw: (
+            200,
+            {"started": True, "runId": "discovery_1", "startedAt": "2026-03-22T12:00:00Z"},
+        ),
+        start_fetcher_task=lambda x: {
+            "started": False,
+            "alreadyRunning": True,
+            "runId": "fetch_live_1",
+            "startedAt": "2026-03-22T12:00:01Z",
+            "task": "jobs_fetcher",
+            "taskType": "fetch",
+            "pid": 222,
+            "status": "running",
+        },
+        start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+        get_app_version=lambda: "1.0.0",
+        child_run_is_live=lambda task_type, run_id: (
+            str(task_type) == "fetch"
+            and str(run_id) == "fetch_live_1"
+            and bool(child_live_states.pop(0) if child_live_states else False)
+        ),
+        get_projected_run_history=lambda: SimpleNamespace(child_tasks={}),
+    )
+
+    service._run_worker("pipeline_1")
+
+    assert status["active"] is False
+    assert status["stage"] == "completed"
+    assert status["error"] == ""
+    assert len(waits) == 1201
+    assert upserts[-1]["status"] == "ok"
     assert (
         "jobs_pipeline_attached_existing_child_task",
         {

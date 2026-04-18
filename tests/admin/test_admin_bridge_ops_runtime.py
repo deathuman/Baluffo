@@ -2040,6 +2040,61 @@ def _assert_stale_finished_report_with_live_fetch_owner(payload: dict[str, objec
     assert str((task_state.get("fetch") or {}).get("runId") or "") == "fetch_live_owner_1"
 
 
+def _setup_sparse_fetch_task_artifact_keeps_owner_active() -> None:
+    started_at = admin_bridge.now_iso()
+    run_id = "fetch_sparse_live_1"
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_STATE_PATH,
+        {
+            "fetch": _task_state_entry("fetch", run_id=run_id, started_at=started_at),
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        _fetch_report(
+            run_id=run_id,
+            started_at=started_at,
+            finished_at="",
+            runtime={"lifecycle": {"owner": "fetch_sparse", "heartbeatAt": started_at}},
+            task_progress={},
+            summary={"outputCount": 4, "failedSources": 0, "sourceCount": 10},
+        ),
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_TASKS_PATH,
+        {
+            "taskType": "fetch",
+            "active": True,
+            "runId": run_id,
+            "startedAt": started_at,
+            "heartbeatAt": started_at,
+            "status": "running",
+            "taskProgress": {},
+            "workItems": [
+                {
+                    "id": "source_sparse_1",
+                    "name": "Sparse Source",
+                    "status": "running",
+                }
+            ],
+            "recentEvents": [
+                {
+                    "timestamp": started_at,
+                    "message": "Fetch still active",
+                }
+            ],
+            "summary": {"running": 1},
+        },
+    )
+
+
+def _assert_sparse_fetch_task_artifact_keeps_owner_active(payload: dict[str, object]) -> None:
+    fetch_row = _task_row(payload, "fetch")
+    assert fetch_row.get("active") is True
+    assert str(fetch_row.get("status") or "") == "running"
+    assert str(fetch_row.get("runId") or "") == "fetch_sparse_live_1"
+
+
 CURRENT_TASK_STATE_CASES = [
     pytest.param(
         _CurrentTaskStateCase(
@@ -2090,6 +2145,15 @@ CURRENT_TASK_STATE_CASES = [
             pid_is_running=True,
         ),
         id="stale-finished-report-with-live-fetch-owner",
+    ),
+    pytest.param(
+        _CurrentTaskStateCase(
+            name="sparse-fetch-task-artifact-keeps-owner-active",
+            setup=_setup_sparse_fetch_task_artifact_keeps_owner_active,
+            assert_payload=_assert_sparse_fetch_task_artifact_keeps_owner_active,
+            pid_is_running=False,
+        ),
+        id="sparse-fetch-task-artifact-keeps-owner-active",
     ),
 ]
 

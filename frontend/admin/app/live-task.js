@@ -352,11 +352,16 @@ export function shouldApplyTimestampGate(report, {
   return timestampMs >= (Number(launchAtMs) - Number(skewMs));
 }
 
-function isLiveTaskReportActive(report) {
+function isRestorableLiveTaskRun(report) {
   return Boolean(
     report
     && !String(report.finishedAt || "").trim()
-    && Boolean(report?.taskProgress?.active)
+    && (
+      Boolean(report?.active)
+      || Boolean(report?.taskProgress?.active)
+      || String(report?.runId || "").trim()
+      || String(report?.startedAt || "").trim()
+    )
     && (String(report.runId || "").trim() || String(report.startedAt || "").trim())
   );
 }
@@ -393,13 +398,14 @@ export function createRestoreActiveRunWatches({
 
     restorePromise = (async () => {
       const fetchLivePayload = await loadFetcherLivePayload?.().catch(() => null);
-      if (isLiveTaskReportActive(fetchLivePayload)) {
+      if (isRestorableLiveTaskRun(fetchLivePayload)) {
         fetcherController?.attachToActiveFetchRun?.({
           runId: fetchLivePayload?.runId,
           startedAt: fetchLivePayload?.startedAt
         }, {
           announceStart: false
         });
+        await loadLatestFetcherReport?.({ silent: true, hydrateActiveProgress: true }).catch(() => null);
       } else {
         const fetchReport = await loadLatestFetcherReport({ silent: true }).catch(() => null);
         const fetchMeta = fetcherController?.getRestorableFetcherRunMeta?.(fetchReport);
@@ -407,18 +413,20 @@ export function createRestoreActiveRunWatches({
           fetcherController?.attachToActiveFetchRun?.(fetchMeta, {
             announceStart: false
           });
-        } else if (isLiveTaskReportActive(fetchReport)) {
+          await loadLatestFetcherReport?.({ silent: true, hydrateActiveProgress: true }).catch(() => null);
+        } else if (isRestorableLiveTaskRun(fetchReport)) {
           fetcherController?.attachToActiveFetchRun?.({
             runId: fetchReport?.runId,
             startedAt: fetchReport?.startedAt
           }, {
             announceStart: false
           });
+          await loadLatestFetcherReport?.({ silent: true, hydrateActiveProgress: true }).catch(() => null);
         }
       }
 
       const discoveryLivePayload = await loadDiscoveryLivePayload?.().catch(() => null);
-      if (isLiveTaskReportActive(discoveryLivePayload)) {
+      if (isRestorableLiveTaskRun(discoveryLivePayload)) {
         discoveryController?.attachToActiveDiscoveryRun?.({
           runId: discoveryLivePayload?.runId,
           startedAt: discoveryLivePayload?.startedAt
@@ -427,7 +435,7 @@ export function createRestoreActiveRunWatches({
         });
       } else {
         const discoveryReport = await loadLatestDiscoveryReport({ silent: true }).catch(() => null);
-        if (isLiveTaskReportActive(discoveryReport)) {
+        if (isRestorableLiveTaskRun(discoveryReport)) {
           discoveryController?.attachToActiveDiscoveryRun?.({
             runId: discoveryReport?.runId,
             startedAt: discoveryReport?.startedAt

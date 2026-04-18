@@ -400,6 +400,70 @@ def _get_pipeline_service() -> PipelineService:
                     summary = summarize_fetch_report(normalize_fetch_report_contract(report))
                     return int(summary.get("outputCount") or 0)
 
+            def pipeline_child_run_is_live(task_type: str, run_id: str) -> bool:
+                normalized_type = str(task_type or "").strip().lower()
+                normalized_run_id = str(run_id or "").strip()
+                if not normalized_type or not normalized_run_id:
+                    return False
+
+                task_state = pipeline_load_json_object(TASK_STATE_PATH, {})
+                task_state_entry = (
+                    task_state.get(normalized_type)
+                    if isinstance(task_state, dict)
+                    and isinstance(task_state.get(normalized_type), dict)
+                    else {}
+                )
+                if str(
+                    task_state_entry.get("runId") or ""
+                ).strip() == normalized_run_id and task_running_from_state(normalized_type):
+                    return True
+
+                if normalized_type != "fetch":
+                    return False
+
+                fetch_tasks = pipeline_load_json_object(JOBS_FETCH_TASKS_PATH, {})
+                if not isinstance(fetch_tasks, dict):
+                    return False
+                if str(fetch_tasks.get("runId") or "").strip() != normalized_run_id:
+                    return False
+                if str(fetch_tasks.get("finishedAt") or "").strip():
+                    return False
+
+                lifecycle = (
+                    fetch_tasks.get("runtime", {}).get("lifecycle")
+                    if isinstance(fetch_tasks.get("runtime"), dict)
+                    and isinstance((fetch_tasks.get("runtime") or {}).get("lifecycle"), dict)
+                    else {}
+                )
+                heartbeat_at = str(
+                    lifecycle.get("heartbeatAt") or fetch_tasks.get("heartbeatAt") or ""
+                ).strip()
+                heartbeat_dt = parse_iso(heartbeat_at) if heartbeat_at else None
+                recent_heartbeat = bool(
+                    heartbeat_dt and (datetime.now(UTC) - heartbeat_dt) <= timedelta(minutes=2)
+                )
+                recent_artifact = False
+                try:
+                    artifact_mtime = datetime.fromtimestamp(
+                        Path(JOBS_FETCH_TASKS_PATH).stat().st_mtime, tz=UTC
+                    )
+                    recent_artifact = (datetime.now(UTC) - artifact_mtime) <= timedelta(minutes=2)
+                except OSError:
+                    recent_artifact = False
+                task_progress = (
+                    fetch_tasks.get("taskProgress")
+                    if isinstance(fetch_tasks.get("taskProgress"), dict)
+                    else {}
+                )
+                has_live_evidence = bool(
+                    fetch_tasks.get("active")
+                    or task_progress.get("active")
+                    or str(fetch_tasks.get("startedAt") or "").strip()
+                    or bool(fetch_tasks.get("workItems"))
+                    or bool(fetch_tasks.get("recentEvents"))
+                )
+                return bool(has_live_evidence and (recent_heartbeat or recent_artifact))
+
             _PIPELINE_SERVICE = PipelineService(
                 pipeline_state_lock=bridge_runtime_state.PIPELINE_STATE_LOCK,
                 pipeline_status=bridge_runtime_state.PIPELINE_STATUS,
@@ -420,6 +484,7 @@ def _get_pipeline_service() -> PipelineService:
                 start_fetcher_task=pipeline_start_fetcher_task,
                 start_sync_task=pipeline_start_sync_task,
                 get_app_version=get_app_version,
+                child_run_is_live=pipeline_child_run_is_live,
                 get_projected_run_history=_get_ops_api().get_projected_run_history,
             )
         return _PIPELINE_SERVICE

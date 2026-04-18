@@ -38,6 +38,7 @@ class PipelineService:
         start_fetcher_task: Callable[..., dict[str, Any]],
         start_sync_task: Callable[..., dict[str, Any]],
         get_app_version: Callable[[], str],
+        child_run_is_live: Callable[[str, str], bool] | None = None,
         get_projected_run_history: Callable[[], Any] | None = None,
     ) -> None:
         self._lock = pipeline_state_lock
@@ -59,6 +60,7 @@ class PipelineService:
         self._start_fetcher_task = start_fetcher_task
         self._start_sync_task = start_sync_task
         self._get_app_version = get_app_version
+        self._child_run_is_live = child_run_is_live
         self._get_projected_run_history = get_projected_run_history
 
     @staticmethod
@@ -155,6 +157,16 @@ class PipelineService:
         snapshot = self._get_child_task_snapshot(task_type, run_id)
         return bool(snapshot and getattr(snapshot, "active", False))
 
+    def _child_task_has_live_evidence(self, task_type: str, run_id: str = "") -> bool:
+        if self._child_task_is_active(task_type, run_id):
+            return True
+        if not callable(self._child_run_is_live):
+            return False
+        try:
+            return bool(self._child_run_is_live(task_type, run_id))
+        except Exception:  # noqa: BLE001
+            return False
+
     @staticmethod
     def _is_duplicate_task_response(result: dict[str, Any] | None) -> bool:
         return bool(isinstance(result, dict) and result.get("alreadyRunning"))
@@ -199,22 +211,21 @@ class PipelineService:
             normalized_report = report if isinstance(report, dict) else {}
             report_started = self._parse_iso(normalized_report.get("startedAt"))
             report_finished = self._parse_iso(normalized_report.get("finishedAt"))
-            child_active = self._child_task_is_active(task_type, task_run_id)
+            child_live = self._child_task_has_live_evidence(task_type, task_run_id)
             if (
                 started_dt
                 and report_started
                 and report_started >= (started_dt - timedelta(seconds=1))
             ):
                 if report_finished and report_finished >= report_started:
-                    if not child_active:
-                        return normalized_report
+                    return normalized_report
             if fail_on_stale and stale_guard(
                 "fetch" if "fetch" in report_name else "discovery",
                 report_path,
                 normalized_report,
             ):
                 raise RuntimeError(f"{report_name} became stale before completion")
-            if datetime.now(UTC) >= deadline and not child_active:
+            if datetime.now(UTC) >= deadline and not child_live:
                 raise TimeoutError(f"{report_name} did not finish within timeout")
             Event().wait(1.0)
 

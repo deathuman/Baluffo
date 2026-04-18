@@ -397,6 +397,7 @@ export function createAdminFetcherController({
 
   async function loadLatestFetcherReport(options = {}) {
     const silent = Boolean(options.silent);
+    const hydrateActiveProgress = Boolean(options.hydrateActiveProgress);
     if (state.adminBusyState.fetcherReportLoad) {
       if (!silent) showToast("Fetch report loading already in progress.", "info");
       return null;
@@ -416,7 +417,7 @@ export function createAdminFetcherController({
       state.latestFetcherReportCache = report;
       if (!liveWatchActive || reportFinished) {
         updateFetcherProgressFromReport(report, { running: false });
-      } else if (!hasLiveFetcherSummaryState() && !hasVisibleFetcherProgressLabel()) {
+      } else if (hydrateActiveProgress || (!hasLiveFetcherSummaryState() && !hasVisibleFetcherProgressLabel())) {
         updateFetcherProgressFromReport(report, { running: true });
       }
 
