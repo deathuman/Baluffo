@@ -100,18 +100,24 @@ def normalize_live_task_payload(
     if not isinstance(rows, list):
         rows = src.get("tasks")
     events = src.get("recentEvents")
-    normalized_rows = [
-        normalize_live_task_work_item(row) for row in rows if isinstance(row, dict)
-    ] if isinstance(rows, list) else []
-    normalized_events = [
-        normalize_live_task_event(
-            row,
-            default_task_type=task_type or clean_text(src.get("taskType")),
-            default_run_id=run_id or clean_text(src.get("runId")),
-        )
-        for row in events
-        if isinstance(row, dict)
-    ] if isinstance(events, list) else []
+    normalized_rows = (
+        [normalize_live_task_work_item(row) for row in rows if isinstance(row, dict)]
+        if isinstance(rows, list)
+        else []
+    )
+    normalized_events = (
+        [
+            normalize_live_task_event(
+                row,
+                default_task_type=task_type or clean_text(src.get("taskType")),
+                default_run_id=run_id or clean_text(src.get("runId")),
+            )
+            for row in events
+            if isinstance(row, dict)
+        ]
+        if isinstance(events, list)
+        else []
+    )
     summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
     outputs = src.get("outputs") if isinstance(src.get("outputs"), dict) else {}
     return {
@@ -135,7 +141,9 @@ def build_live_task_contract_fields(
 ) -> dict[str, Any]:
     normalized = normalize_live_task_payload(payload)
     work_items = [dict(row) for row in (normalized.get("workItems") or []) if isinstance(row, dict)]
-    recent_events = [dict(row) for row in (normalized.get("recentEvents") or []) if isinstance(row, dict)]
+    recent_events = [
+        dict(row) for row in (normalized.get("recentEvents") or []) if isinstance(row, dict)
+    ]
     return {
         "heartbeatAt": clean_text(normalized.get("heartbeatAt")),
         "taskProgress": normalize_live_task_progress(normalized.get("taskProgress")),
