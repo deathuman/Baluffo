@@ -89,23 +89,17 @@ const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python -m src.
 const JOBS_FETCHER_TASK_LABEL = adminConfig.JOBS_FETCHER_TASK_LABEL || "Run jobs fetcher";
 const JOBS_FETCH_REPORT_URL = adminConfig.JOBS_FETCH_REPORT_URL || "data/jobs-fetch-report.json";
 const JOBS_AUTO_REFRESH_SIGNAL_KEY = adminConfig.JOBS_AUTO_REFRESH_SIGNAL_KEY || "baluffo_jobs_auto_refresh_signal";
-const FETCH_REPORT_POLL_INTERVAL_MS = Number(adminConfig.FETCH_REPORT_POLL_INTERVAL_MS || 2000);
-const FETCH_REPORT_POLL_TIMEOUT_MS = Number(adminConfig.FETCH_REPORT_POLL_TIMEOUT_MS || (10 * 60 * 1000));
-const DISCOVERY_REPORT_POLL_INTERVAL_MS = Number(adminConfig.DISCOVERY_REPORT_POLL_INTERVAL_MS || 2000);
-const DISCOVERY_REPORT_POLL_TIMEOUT_MS = Number(adminConfig.DISCOVERY_REPORT_POLL_TIMEOUT_MS || (10 * 60 * 1000));
 const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
 const BRIDGE_STATUS_POLL_INTERVAL_MS = Number(adminConfig.BRIDGE_STATUS_POLL_INTERVAL_MS || 10000);
 const OPS_POLL_IDLE_INTERVAL_MS = 10000;
 const OPS_POLL_LIVE_INTERVAL_MS = 2000;
+const ACTIVE_TASK_POLL_INTERVAL_MS = 500;
 const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const ADMIN_SOURCE_FILTER_KEY = "baluffo_admin_source_filter";
 const UNKNOWN_ERROR_TEXT = "unknown error";
 
 const adminDispatch = createAdminDispatcher();
-const state = createAdminRuntimeState({
-  discoveryReportPollIntervalMs: DISCOVERY_REPORT_POLL_INTERVAL_MS,
-  discoveryReportPollTimeoutMs: DISCOVERY_REPORT_POLL_TIMEOUT_MS
-});
+const state = createAdminRuntimeState();
 
 let refs = {};
 let authController;
@@ -173,8 +167,8 @@ function getBridge(path) {
   return callBridge(() => getBridgeFromData(ADMIN_BRIDGE_BASE, path));
 }
 
-function postBridge(path, payload) {
-  return callBridge(() => postBridgeFromData(ADMIN_BRIDGE_BASE, path, payload));
+function postBridge(path, payload, options = {}) {
+  return callBridge(() => postBridgeFromData(ADMIN_BRIDGE_BASE, path, payload, options));
 }
 
 async function fetchJobsFetchReportJson(options = {}) {
@@ -390,13 +384,11 @@ function composeControllers() {
     setBusyFlag,
     getSourceStatusSetter: () => setSourceStatus,
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
-    startOpsHealthPolling: (...args) => opsController.scheduleOpsHealthPolling(...args),
-    fetchReportPollIntervalMs: FETCH_REPORT_POLL_INTERVAL_MS,
-    fetchReportPollTimeoutMs: FETCH_REPORT_POLL_TIMEOUT_MS,
+    activeProgressPollIntervalMs: ACTIVE_TASK_POLL_INTERVAL_MS,
     jobsAutoRefreshSignalKey: JOBS_AUTO_REFRESH_SIGNAL_KEY,
     jobsFetcherCommand: JOBS_FETCHER_COMMAND,
     jobsFetcherTaskLabel: JOBS_FETCHER_TASK_LABEL,
-    jobsFetchReportUrl: JOBS_FETCH_REPORT_URL,
+    syncSourceTablesAfterTaskCompletion: (...args) => registryController?.syncSourceTablesAfterTaskCompletion?.(...args),
     createLogEvent,
     appendLogRow
   });
@@ -414,12 +406,16 @@ function composeControllers() {
     appendLogRow,
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
     scheduleOpsHealthPolling: (...args) => opsController.scheduleOpsHealthPolling(...args),
-    _loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args)
+    activeProgressPollIntervalMs: ACTIVE_TASK_POLL_INTERVAL_MS,
+    syncSourceTablesAfterTaskCompletion: (...args) => registryController?.syncSourceTablesAfterTaskCompletion?.(...args),
+    loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args)
   });
 
   restoreActiveRunWatches = createRestoreActiveRunWatches({
+    loadFetcherLivePayload: (...args) => fetcherController.loadFetcherLivePayload(...args),
     loadLatestFetcherReport: options => fetcherController.loadLatestFetcherReport(options),
     fetcherController,
+    loadDiscoveryLivePayload: (...args) => discoveryController.loadDiscoveryLivePayload(...args),
     loadLatestDiscoveryReport: options => discoveryController.loadLatestDiscoveryReport(options),
     discoveryController
   });
@@ -488,11 +484,7 @@ function bindEvents() {
   [
     ["pageshow", event => {
       if (event?.persisted) restoreWatch();
-    }, window],
-    ["visibilitychange", () => {
-      if (document.visibilityState === "visible") restoreWatch();
-    }, document],
-    ["focus", restoreWatch, window]
+    }, window]
   ].forEach(([eventName, handler, target]) => target.addEventListener(eventName, handler));
 
   [

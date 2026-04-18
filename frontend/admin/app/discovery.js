@@ -19,7 +19,6 @@ import {
   stopLiveTaskWatch
 } from "./live-task.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
-import { renderAdminTaskLiveItems } from "../render.js";
 
 export function isDiscoveryMobileViewport(width = window.innerWidth) {
   return Number(width) < 900;
@@ -72,7 +71,8 @@ export function createAdminDiscoveryController({
   appendLogRow,
   loadOpsHealthData,
   scheduleOpsHealthPolling,
-  _loadDiscoveryData,
+  activeProgressPollIntervalMs = 500,
+  syncSourceTablesAfterTaskCompletion,
   loadDiscoveryData
 }) {
   function populateDiscoveryConfigForm(savedConfig = {}, { force = false } = {}) {
@@ -107,9 +107,6 @@ export function createAdminDiscoveryController({
       const report = await getBridge("/discovery/report");
       if (report && typeof report === "object" && !Array.isArray(report)) {
         state.latestDiscoveryReportCache = report;
-        renderDiscoveryLiveItems(report, {
-          emptyText: "Waiting for discovery adapter activity..."
-        });
       }
       return report || null;
     } catch (err) {
@@ -177,13 +174,6 @@ export function createAdminDiscoveryController({
 
   function setOptimisticDiscoveryRun(runMeta) {
     setOptimisticRun(state, "discoveryOptimisticRun", runMeta);
-  }
-
-  function renderDiscoveryLiveItems(payload, { emptyText = "" } = {}) {
-    renderAdminTaskLiveItems(refs.adminDiscoveryLiveItemsEl, payload || {}, {
-      taskType: "discovery",
-      emptyText
-    });
   }
 
   async function loadDiscoveryLivePayload() {
@@ -269,16 +259,16 @@ export function createAdminDiscoveryController({
     return true;
   }
 
-  function attachToActiveDiscoveryRun(runMeta = null) {
+  function attachToActiveDiscoveryRun(runMeta = null, options = {}) {
     attachToActiveRun({
       isWatching: () => state.adminBusyState.discoveryWatch,
       setOptimisticRun: setOptimisticDiscoveryRun,
-      startWatch: () => startDiscoveryCompletionWatch()
+      startWatch: () => startDiscoveryCompletionWatch(options)
     }, runMeta);
   }
 
-  function restartDiscoveryCompletionWatch(runMeta = null) {
-    restartCompletionWatch(stopDiscoveryCompletionWatch, attachToActiveDiscoveryRun, runMeta);
+  function restartDiscoveryCompletionWatch(runMeta = null, options = {}) {
+    restartCompletionWatch(stopDiscoveryCompletionWatch, nextRunMeta => attachToActiveDiscoveryRun(nextRunMeta, options), runMeta);
   }
 
   function appendDiscoveryLog(message, level = "info") {
@@ -337,7 +327,6 @@ export function createAdminDiscoveryController({
       appendLog: appendDiscoveryLog,
       message
     });
-    renderDiscoveryLiveItems(null);
   }
 
   async function loadDiscoveryLogChunk(options = {}) {
@@ -355,9 +344,6 @@ export function createAdminDiscoveryController({
     const liveState = state.discoveryLiveProgressState;
     if (!liveState) return;
     updateDiscoveryProgressFromReport(report, { running: true });
-    renderDiscoveryLiveItems(report, {
-      emptyText: "Waiting for discovery adapter activity..."
-    });
     const summary = report?.summary || {};
     const progress = deriveDiscoveryTaskProgress(report, {
       running: true,
@@ -471,7 +457,8 @@ export function createAdminDiscoveryController({
     });
   }
 
-  function startDiscoveryCompletionWatch() {
+  function startDiscoveryCompletionWatch(options = {}) {
+    const announceStart = options?.announceStart !== false;
     stopDiscoveryCompletionWatch();
     startLiveTaskWatch({
       state,
@@ -495,17 +482,14 @@ export function createAdminDiscoveryController({
         lastActivityAtMs: Date.now()
       }),
       setProgress: () => updateDiscoveryProgressFromReport(null, { running: true }),
-      onStart: () => appendDiscoveryLog("Discovery started. Watching live progress...", "info"),
+      onStart: announceStart ? () => appendDiscoveryLog("Discovery started. Watching live progress...", "info") : null,
       loadInitialLogChunk: () => loadDiscoveryLogChunk({ reset: true }).catch(() => {}),
       scheduleCompletionPoll: () => scheduleDiscoveryCompletionPoll(0)
     });
   }
 
   function refreshDiscoveryDataIfNeeded(report) {
-    const loadDiscoveryDataFn = typeof _loadDiscoveryData === "function"
-      ? _loadDiscoveryData
-      : (typeof loadDiscoveryData === "function" ? loadDiscoveryData : null);
-    if (!loadDiscoveryDataFn) return;
+    if (typeof loadDiscoveryData !== "function") return;
     const liveState = state.discoveryLiveProgressState;
     if (!liveState) return;
     const summary = report?.summary || {};
@@ -521,7 +505,7 @@ export function createAdminDiscoveryController({
     ].join("|");
     if (signature === liveState.registryRefreshSignature) return;
     liveState.registryRefreshSignature = signature;
-    loadDiscoveryDataFn().catch(() => {});
+    loadDiscoveryData().catch(() => {});
   }
 
   function stopDiscoveryCompletionWatch() {
@@ -543,34 +527,31 @@ export function createAdminDiscoveryController({
       task: pollDiscoveryCompletion,
       onError: err => {
         logAdminError("Discovery completion poll failed", err);
-        scheduleDiscoveryCompletionPoll(state.discoveryReportPollIntervalMs);
+        scheduleDiscoveryCompletionPoll(activeProgressPollIntervalMs);
       }
     });
   }
 
   async function pollDiscoveryCompletion() {
     const now = Date.now();
-
-    const [report, livePayload] = await Promise.all([
-      getBridge("/discovery/report"),
+    const [livePayload] = await Promise.all([
       loadDiscoveryLivePayload().catch(() => null),
       loadDiscoveryLogChunk().catch(() => null)
     ]);
     const normalizedLivePayload = pickTaskLivePayload(livePayload);
+    const liveFinishedMs = parseReportTimestampMs(normalizedLivePayload?.finishedAt);
 
-    // Detailed live progress comes only from the structured live-task payload.
-    if (normalizedLivePayload) {
+    if (normalizedLivePayload && liveFinishedMs <= 0) {
       if (shouldApplyDiscoveryLiveProgressGate(normalizedLivePayload)) {
         runProgressAppend(normalizedLivePayload, now);
       }
       updateDiscoveryProgressFromReport(normalizedLivePayload, { running: true });
-      renderDiscoveryLiveItems(normalizedLivePayload, {
-        emptyText: "Waiting for discovery adapter activity..."
-      });
-    } else {
-      renderDiscoveryLiveItems(null, {
-        emptyText: "Waiting for discovery live state..."
-      });
+      scheduleDiscoveryCompletionPoll(activeProgressPollIntervalMs);
+      return;
+    }
+
+    const report = await getBridge("/discovery/report").catch(() => null);
+    if (!normalizedLivePayload && report) {
       refreshDiscoveryDataIfNeeded(report);
     }
 
@@ -581,8 +562,14 @@ export function createAdminDiscoveryController({
       const deferredCount = Number(summary.discoverableButDeferredCount ?? 0);
       const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
       const failedCount = Number(summary.failedProbeCount || 0);
-      updateDiscoveryProgressFromReport(report, { running: true });
-      refreshDiscoveryDataIfNeeded(report);
+      updateDiscoveryProgressFromReport(report, { running: false });
+      await Promise.resolve(syncSourceTablesAfterTaskCompletion?.({
+        taskType: "discovery",
+        completionSignature: [
+          String(report?.runId || state.discoveryOptimisticRun?.runId || ""),
+          String(report?.finishedAt || "")
+        ].join("|")
+      })).catch(() => {});
       appendDiscoveryLog(
         `Discovery completed: endpoints ${Number(summary.foundEndpointCount ?? 0)}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}, failed ${failedCount}.`,
         failedCount > 0 ? "warn" : "success"
@@ -593,7 +580,7 @@ export function createAdminDiscoveryController({
       return;
     }
 
-    scheduleDiscoveryCompletionPoll(state.discoveryReportPollIntervalMs);
+    scheduleDiscoveryCompletionPoll(activeProgressPollIntervalMs);
   }
 
   async function runDiscoveryTask(runOptions = {}) {
@@ -610,7 +597,21 @@ export function createAdminDiscoveryController({
       const payload = (runOptions && typeof runOptions === "object" && !Array.isArray(runOptions))
         ? { ...runOptions }
         : {};
-      const result = await postBridge("/tasks/run-discovery", payload);
+      const response = await postBridge("/tasks/run-discovery", payload, {
+        allowStatuses: [409],
+        returnMeta: true
+      });
+      const responseStatus = Number(response?.status || 200);
+      const result = response?.data || response || null;
+      if (responseStatus === 409 && result?.alreadyRunning) {
+        attachToActiveDiscoveryRun(result, { announceStart: false });
+        appendDiscoveryLog("Discovery already running; attached to the active bridge-managed run.", "info");
+        showToast("Source discovery already running. Attached to active run.", "info");
+        loadOpsHealthData().catch(() => {});
+        loadLatestDiscoveryReport({ silent: true }).catch(() => {});
+        scheduleOpsHealthPolling(250);
+        return;
+      }
       setOptimisticDiscoveryRun(result || {});
       const preset = String(result?.preset || payload?.preset || "default").trim().toLowerCase();
       const isUncapped = preset === "uncapped";
@@ -659,6 +660,7 @@ export function createAdminDiscoveryController({
     appendDiscoveryLogEvent,
     appendDiscoveryServerLogText,
     loadDiscoveryLogChunk,
+    loadDiscoveryLivePayload,
     loadLatestDiscoveryReport,
     setDiscoveryLogPlaceholder,
     clearOptimisticDiscoveryRun,

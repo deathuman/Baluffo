@@ -1,5 +1,4 @@
 import { deriveFetcherFailureSummary, deriveFetcherProgressModel, deriveFetcherTaskProgress } from "../domain.js";
-import { renderAdminTaskLiveItems } from "../render.js";
 import {
   appendLiveTaskActivity,
   buildTaskWorkItemActivitySignature,
@@ -83,12 +82,11 @@ export function createAdminFetcherController({
   setBusyFlag,
   getSourceStatusSetter,
   loadOpsHealthData,
-  _startOpsHealthPolling,
-  fetchReportPollIntervalMs,
+  activeProgressPollIntervalMs = 500,
   jobsAutoRefreshSignalKey,
   jobsFetcherCommand,
   jobsFetcherTaskLabel,
-  _jobsFetchReportUrl,
+  syncSourceTablesAfterTaskCompletion,
   createLogEvent,
   appendLogRow
 }) {
@@ -127,13 +125,6 @@ export function createAdminFetcherController({
       refs.adminFetcherProgressLabelEl,
       view
     );
-  }
-
-  function renderFetcherLiveItems(payload, { emptyText = "" } = {}) {
-    renderAdminTaskLiveItems(refs.adminFetcherLiveItemsEl, payload || {}, {
-      taskType: "fetch",
-      emptyText
-    });
   }
 
   function getFetcherTaskProgress(report, { running = false } = {}) {
@@ -271,7 +262,6 @@ export function createAdminFetcherController({
       appendLog: appendFetcherLog,
       message
     });
-    renderFetcherLiveItems(null);
   }
 
   function setOptimisticFetchRun(runMeta) {
@@ -282,16 +272,16 @@ export function createAdminFetcherController({
     clearOptimisticRun(state, "fetchOptimisticRun");
   }
 
-  function attachToActiveFetchRun(runMeta = null) {
+  function attachToActiveFetchRun(runMeta = null, options = {}) {
     attachToActiveRun({
       isWatching: () => state.adminBusyState.fetcherWatch,
       setOptimisticRun: setOptimisticFetchRun,
-      startWatch: () => startFetcherCompletionWatch()
+      startWatch: () => startFetcherCompletionWatch(options)
     }, runMeta);
   }
 
-  function restartFetcherCompletionWatch(runMeta = null) {
-    restartCompletionWatch(stopFetcherCompletionWatch, attachToActiveFetchRun, runMeta);
+  function restartFetcherCompletionWatch(runMeta = null, options = {}) {
+    restartCompletionWatch(stopFetcherCompletionWatch, nextRunMeta => attachToActiveFetchRun(nextRunMeta, options), runMeta);
   }
 
   async function loadFetcherLogChunk(options = {}) {
@@ -425,9 +415,6 @@ export function createAdminFetcherController({
       const reportFinished = Boolean(String(report?.finishedAt || "").trim());
       state.latestFetcherReportCache = report;
       if (!liveWatchActive || reportFinished) {
-        renderFetcherLiveItems(report, {
-          emptyText: "Waiting for fetch source activity..."
-        });
         updateFetcherProgressFromReport(report, { running: false });
       } else if (!hasLiveFetcherSummaryState() && !hasVisibleFetcherProgressLabel()) {
         updateFetcherProgressFromReport(report, { running: true });
@@ -554,9 +541,6 @@ export function createAdminFetcherController({
     const liveState = state.fetcherLiveProgressState;
     if (!liveState) return;
     updateFetcherProgressFromReport(report, { running: true });
-    renderFetcherLiveItems(report, {
-      emptyText: "Waiting for fetch source activity..."
-    });
     const summary = report?.summary || {};
     const progress = getFetcherTaskProgress(report, { running: true });
     const counts = progress.counts && typeof progress.counts === "object" ? progress.counts : {};
@@ -605,7 +589,8 @@ export function createAdminFetcherController({
     });
   }
 
-  function startFetcherCompletionWatch() {
+  function startFetcherCompletionWatch(options = {}) {
+    const announceStart = options?.announceStart !== false;
     stopFetcherCompletionWatch();
     startLiveTaskWatch({
       state,
@@ -624,9 +609,9 @@ export function createAdminFetcherController({
         lastActivityAtMs: Date.now()
       }),
       setProgress: () => updateFetcherProgressFromReport(null, { running: true }),
-      onStart: () => appendFetcherLog("Fetcher started. Watching live progress...", "info"),
+      onStart: announceStart ? () => appendFetcherLog("Fetcher started. Watching live progress...", "info") : null,
       loadInitialLogChunk: () => loadFetcherLogChunk({ reset: true }).catch(() => {}),
-      scheduleLogPoll: () => scheduleFetcherLogPoll(700),
+      scheduleLogPoll: () => scheduleFetcherLogPoll(activeProgressPollIntervalMs),
       scheduleCompletionPoll: () => scheduleFetcherCompletionPoll(0)
     });
   }
@@ -651,40 +636,40 @@ export function createAdminFetcherController({
       task: pollFetcherCompletion,
       onError: err => {
         logAdminError("Fetcher completion poll failed", err);
-        scheduleFetcherCompletionPoll(fetchReportPollIntervalMs);
+        scheduleFetcherCompletionPoll(activeProgressPollIntervalMs);
       }
     });
   }
 
   async function pollFetcherCompletion() {
     const now = Date.now();
-    const [livePayload, report] = await Promise.all([
-      loadFetcherLivePayload().catch(() => null),
-      fetchJobsFetchReportJson({ live: true }).catch(() => null)
-    ]);
+    const livePayload = await loadFetcherLivePayload().catch(() => null);
     const normalizedLivePayload = pickTaskLivePayload(livePayload);
+    const liveStartedMs = parseReportTimestampMs(normalizedLivePayload?.startedAt);
+    const liveFinishedMs = parseReportTimestampMs(normalizedLivePayload?.finishedAt);
 
-    // Detailed live progress comes only from the structured live-task payload.
-    if (normalizedLivePayload) {
-      const startedMs = parseReportTimestampMs(normalizedLivePayload?.startedAt);
-      if (startedMs >= (state.fetcherLaunchAtMs - 1000)) {
+    if (normalizedLivePayload && liveStartedMs >= (state.fetcherLaunchAtMs - 1000)) {
+      if (liveFinishedMs <= 0) {
         appendFetcherProgressFromReport(normalizedLivePayload, now);
+        updateFetcherProgressFromReport(normalizedLivePayload, { running: true });
       }
-      updateFetcherProgressFromReport(normalizedLivePayload, { running: true });
-    } else {
-      renderFetcherLiveItems(null, {
-        emptyText: "Waiting for fetch live state..."
-      });
     }
 
-    const terminalPayload = report || normalizedLivePayload;
+    let terminalPayload = normalizedLivePayload;
+    if (!terminalPayload || liveFinishedMs > 0) {
+      terminalPayload = await fetchJobsFetchReportJson({ live: true }).catch(() => null) || terminalPayload;
+      if (!normalizedLivePayload && terminalPayload && !String(terminalPayload?.finishedAt || "").trim()) {
+        updateFetcherProgressFromReport(terminalPayload, { running: true });
+      }
+    }
+
     const finishedMs = parseReportTimestampMs(terminalPayload?.finishedAt);
     if (finishedMs >= (state.fetcherLaunchAtMs - 1000)) {
       const finalReport = await fetchJobsFetchReportJson().catch(() => null);
       const completedPayload = finalReport || terminalPayload;
+      state.latestFetcherReportCache = completedPayload || state.latestFetcherReportCache;
       const summary = completedPayload?.summary || {};
-      updateFetcherProgressFromReport(completedPayload, { running: true });
-      renderFetcherLiveItems(completedPayload);
+      updateFetcherProgressFromReport(completedPayload, { running: false });
       appendFetcherLog(
         `Fetcher completed: output ${Number(summary.outputCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
         Number(summary.failedSources || 0) > 0 ? "warn" : "success"
@@ -699,6 +684,14 @@ export function createAdminFetcherController({
       if (slowStages) {
         appendFetcherLog(`Slowest stages: ${slowStages}`, "muted");
       }
+      await Promise.resolve(syncSourceTablesAfterTaskCompletion?.({
+        taskType: "fetch",
+        completionSignature: [
+          String(completedPayload?.runId || state.fetchOptimisticRun?.runId || ""),
+          String(completedPayload?.finishedAt || "")
+        ].join("|"),
+        fetchReport: completedPayload
+      })).catch(() => {});
       emitJobsAutoRefreshSignal(completedPayload);
       setBusyFlag("liveFetchRunning", false);
       clearOptimisticFetchRun();
@@ -706,7 +699,7 @@ export function createAdminFetcherController({
       return;
     }
 
-    scheduleFetcherCompletionPoll(fetchReportPollIntervalMs);
+    scheduleFetcherCompletionPoll(activeProgressPollIntervalMs);
   }
 
   function launchVsCodeUri(uri) {
@@ -729,7 +722,12 @@ export function createAdminFetcherController({
     const payload = { ...runOptions };
     let usedFallback = false;
     try {
-      const bridge = await postBridge("/tasks/run-fetcher", payload);
+      const bridgeResponse = await postBridge("/tasks/run-fetcher", payload, {
+        allowStatuses: [409],
+        returnMeta: true
+      });
+      const bridgeStatus = Number(bridgeResponse?.status || 200);
+      const bridge = bridgeResponse?.data || bridgeResponse || null;
       if (bridge && bridge.started) {
         setOptimisticFetchRun(bridge);
         const presetLabel = String(bridge?.preset || presetMeta.preset || "default");
@@ -742,6 +740,15 @@ export function createAdminFetcherController({
         loadOpsHealthData().catch(() => {});
         loadLatestFetcherReport({ silent: true }).catch(() => {});
         startFetcherCompletionWatch();
+        return;
+      }
+      if (bridgeStatus === 409 && bridge?.alreadyRunning) {
+        attachToActiveFetchRun(bridge, { announceStart: false });
+        appendFetcherLog("Fetcher already running; attached to the active bridge-managed run.", "info");
+        getSourceStatusSetter()("Attached to the active fetcher task via admin bridge.");
+        showToast("Fetcher already running. Attached to active run.", "info");
+        loadOpsHealthData().catch(() => {});
+        loadLatestFetcherReport({ silent: true }).catch(() => {});
         return;
       }
     } catch {
@@ -817,6 +824,7 @@ export function createAdminFetcherController({
     restartFetcherCompletionWatch,
     getRestorableFetcherRunMeta,
     appendFetcherLog,
+    loadFetcherLivePayload,
     loadLatestFetcherReport,
     copyLatestFailureSummary,
     triggerJobsFetcherTask,

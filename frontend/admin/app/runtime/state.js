@@ -18,9 +18,7 @@ function createAdminBusyState() {
   };
 }
 
-export function createAdminRuntimeState({
-  discoveryReportPollIntervalMs
-}) {
+export function createAdminRuntimeState() {
   return {
     activeSourceFilter: "all",
     latestFetcherReportCache: null,
@@ -35,18 +33,21 @@ export function createAdminRuntimeState({
     fetcherLogPollTimer: null,
     fetcherLaunchAtMs: 0,
     fetcherLiveProgressState: null,
+    fetcherSourceSyncSignature: "",
     fetchOptimisticRun: null,
     fetcherLogRemoteOffset: 0,
     discoveryCompletionPollTimer: null,
     discoveryLaunchAtMs: 0,
     discoveryLiveProgressState: null,
+    discoverySourceSyncSignature: "",
+    discoveryRegistrySignature: "",
     discoveryOptimisticRun: null,
+    discoveryLoadPromise: null,
     discoveryLogRemoteOffset: 0,
     discoveryLogDetailsSyncing: false,
     discoveryLogUserToggled: false,
     discoveryLogPreferredOpen: true,
     adminInteractiveMetricSent: false,
-    discoveryReportPollIntervalMs,
     adminBusyState: createAdminBusyState()
   };
 }
