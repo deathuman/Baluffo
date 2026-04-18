@@ -28,7 +28,7 @@ Every release must track these versions explicitly:
 - The default `app_version` used by local build/package workflows is defined in `src/app_version.py`.
 - Git tags should use the `v<app_version>` form.
 - The public release history should follow the same `app_version` line; updater/schema versions are documented separately and should not introduce a second public version family.
-- GitHub release notes must be generated from the top versioned section of `docs/CHANGELOG.md`; that section is the single release-note source of truth.
+- GitHub release notes must be generated from the matching versioned section of `docs/CHANGELOG.md`; `Unreleased` may sit above tagged releases, but the versioned section remains the single release-note source of truth.
 
 Compatibility rules:
 

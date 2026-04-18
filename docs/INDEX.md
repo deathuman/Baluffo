@@ -53,7 +53,7 @@ Load these only when your task touches that subsystem.
 | [`startup-probe-architecture.md`](startup-probe-architecture.md) | Startup perf architecture | You are changing packaged startup timing, launcher startup traces, or startup probe policy |
 | [`scraping-pipeline.md`](scraping-pipeline.md) | Scraping/browser fallback flow | You are working on adapters, browser queue, Scrapy-Playwright, or extraction flow |
 | [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) | Source adapter inventory | You are adding/changing a source family, plugin, or loader path |
-| [`LOCAL_SETUP.md`](LOCAL_SETUP.md) | Local runtime/setup | You need local-first development setup, storage model, backup/restore, or packaging setup details |
+| [`LOCAL_SETUP.md`](LOCAL_SETUP.md) | Local runtime/setup | You need browser-local vs desktop-local storage behavior, sign-in semantics, backup/restore, or the smallest local command set |
 
 ---
 
@@ -67,8 +67,6 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Debugging help | You are investigating a known issue or checking common failure modes |
 | [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
 | [`refactor-charter-template.md`](refactor-charter-template.md) | Planning template | You are drafting a structured refactor proposal |
-| [`quality-follow-up.md`](quality-follow-up.md) | Quality follow-up tracker | You are working on current provider parity, static-source triage, or social experiment follow-up |
-
 ---
 
 ## Historical / Archive-like Docs
@@ -141,4 +139,4 @@ When adding or modifying documentation:
 
 ---
 
-*Last updated: 2026-04-13*
+*Last updated: 2026-04-18*

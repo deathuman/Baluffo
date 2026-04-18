@@ -40,7 +40,14 @@
 |----------------|----------|
 | Browser mode: IndexedDB issue | Check browser console for IndexedDB errors |
 | Desktop mode: file permissions | Ensure `data/local-user-data/` is writable |
-| Profile not signed in | Sign in to create a profile before saving jobs |
+| Guest mode | Sign in if you want seen/saved job state to persist; guest browsing is intentionally non-persistent |
+
+### Desktop sign-in creates an unexpected new profile
+
+| Possible Cause | Solution |
+|----------------|----------|
+| Existing profile list did not load | Use the desktop sign-in `Retry` path first; only choose `Create new profile` when you intentionally want a new local profile |
+| Bridge/local data unavailable | Confirm the bridge is running and `data/local-user-data/` is readable/writable |
 
 ### UI elements not responding
 
@@ -106,6 +113,13 @@ python src/admin_bridge.py --host 127.0.0.1 --port 8877
 | Source registry | Verify `data/source-registry-active.json` has entries |
 | Network access | Test with `python src/jobs_fetcher.py --only-sources google_sheets` |
 | Report errors | Check `data/jobs-fetch-report.json` for per-source errors |
+
+### Admin says no successful fetch has run yet
+
+| Check | Action |
+|-------|--------|
+| First desktop run | This is expected until the first successful fetch; use `Run Jobs Fetcher` from Jobs or Admin |
+| Alert cannot be dismissed | `fetch_never_run` is intentionally non-dismissible until a successful fetch clears it |
 
 ### Specific source fails
 
@@ -302,4 +316,4 @@ python -c "import json; r=json.load(open('data/source-discovery-report.json')); 
 
 ---
 
-*Last updated: 2026-04-09*
+*Last updated: 2026-04-18*

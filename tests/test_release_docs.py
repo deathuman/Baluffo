@@ -55,7 +55,7 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     )
     assert "Desktop portable EXE with PyInstaller" not in legacy_notes
     assert "Ship bundle (zip-first) release channel" not in legacy_notes
-    assert "## [Unreleased]" not in changelog_text
+    assert "## [Unreleased]" in changelog_text
     assert "Current development" not in changelog_text
     assert "## [1.3.0]" not in changelog_text
     assert "[1.3.0] — 2026-03-22" not in changelog_text
@@ -92,12 +92,14 @@ def test_release_notes_extractor_uses_top_changelog_section(
     assert "## [Unreleased]" not in extracted
 
 
-def test_local_setup_examples_use_placeholder_version(repo_root: Path) -> None:
+def test_local_setup_points_to_canonical_commands_and_docs(repo_root: Path) -> None:
     local_setup_path = repo_root / "docs" / "LOCAL_SETUP.md"
     text = local_setup_path.read_text(encoding="utf-8")
 
-    assert "--bundle-version <version>" in text
-    assert "dist/baluffo-portable-<version>.zip" in text
+    assert "npm run dev:bridge" in text
+    assert "npm run test:py" in text
+    assert "admin-bridge-api.md" in text
+    assert "RELEASE.md" in text
     assert "1.2.3" not in text
 
 
@@ -242,8 +244,6 @@ def test_active_docs_avoid_stale_runtime_and_test_guidance(repo_root: Path) -> N
     release_text = (repo_root / "docs" / "RELEASE.md").read_text(encoding="utf-8")
     testing_text = (repo_root / "docs" / "testing.md").read_text(encoding="utf-8")
     index_text = (repo_root / "docs" / "INDEX.md").read_text(encoding="utf-8")
-    follow_up_text = (repo_root / "docs" / "quality-follow-up.md").read_text(encoding="utf-8")
-
     assert "configured local admin PIN" not in local_setup_text
     assert "1234" not in local_setup_text
     assert "Admin overview (requires PIN)" not in admin_api_text
@@ -252,12 +252,13 @@ def test_active_docs_avoid_stale_runtime_and_test_guidance(repo_root: Path) -> N
     for text in (local_setup_text, admin_api_text):
         assert "requires PIN" not in text
 
-    for text in (local_setup_text, game_sheet_text, testing_text, follow_up_text, index_text):
+    for text in (local_setup_text, game_sheet_text, testing_text, index_text):
         assert "tests/test_source_discovery.py" not in text
 
     assert "scripts/ship/update_manager.py" not in release_text
     assert "src/ship/update_manager.py" in release_text
-    assert "`npm run test:py` (developer lane)" in local_setup_text
+    assert "## Minimum commands" in local_setup_text
+    assert "npm run test:py" in local_setup_text
     assert "Full suite / release lane" in testing_text
 
 
@@ -266,7 +267,7 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
 
     assert "historical-debt-roadmap.md" not in index_text
     assert "quality-improvement-roadmap.md" not in index_text
-    assert "quality-follow-up.md" in index_text
+    assert "quality-follow-up.md" not in index_text
     assert "startup-probe-architecture.md" in index_text
 
 

@@ -126,7 +126,9 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 | `data/source-registry-tombstones.json` | Local-only delete ledger keyed by source identity |
 | `data/source-sync.json` | Remote sync snapshot v2 (`active` and `pending` only) |
 | `data/source-discovery-report.json` | Last discovery run |
-| `data/local-user-data/users/{uid}/*.json` | Per-user saved jobs, notes, attachments |
+| `data/local-user-data/profiles.json` | Desktop-local profile registry |
+| `data/local-user-data/session.json` | Desktop-local current session |
+| `data/local-user-data/users/{uid}/*` | Desktop-local per-user saved jobs, notes, attachments |
 
 ---
 
@@ -172,4 +174,4 @@ See [`testing.md`](testing.md) for more commands.
 
 ---
 
-*Last updated: 2026-04-13*
+*Last updated: 2026-04-18*

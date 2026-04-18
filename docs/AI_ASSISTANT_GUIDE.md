@@ -47,6 +47,7 @@
 | `src/source_discovery.py` == `src/source_discovery/` | CLI/legacy vs package modules |
 | `src/jobs_fetcher.py` is where new pipeline logic belongs | Treat it as a thin CLI facade; add pipeline logic in `src/jobs/*` |
 | Desktop and browser modes behave the same | Startup, session, heartbeat differ |
+| Desktop local data uses browser `localStorage` / IndexedDB directly | Desktop pages use the bridge-backed file store under `data/local-user-data/` |
 | Bridge changes need only backend tests | Verify both Python backend and frontend tests |
 | UI selectors can be guessed | Always use `frontend/shared/ui/selectors.js` |
 | Build scripts can import composition roots | Use leaf modules (`src/bridge/*`, `src/core/*`) or data-file reads |
@@ -125,4 +126,4 @@ For the narrowest verification matrix, fixture layout, and test-to-source map, s
 
 ---
 
-*Last updated: 2026-04-13*
+*Last updated: 2026-04-18*

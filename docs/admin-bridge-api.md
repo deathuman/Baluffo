@@ -13,6 +13,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/desktop-local-data/session` | Current user session |
+| GET | `/desktop-local-data/profiles` | List existing local desktop profiles |
 | POST | `/desktop-local-data/sign-in` | Create/sign-in profile |
 | POST | `/desktop-local-data/sign-out` | Sign out current profile |
 | GET | `/desktop-local-data/saved-jobs?uid=` | List saved jobs for user |
@@ -31,6 +32,17 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | POST | `/desktop-local-data/backup/import` | Import backup |
 | POST | `/desktop-local-data/admin/overview` | Admin overview |
 | POST | `/desktop-local-data/admin/wipe` | Wipe account |
+| POST | `/desktop-local-data/open-url` | Open a job/application URL in the default browser |
+
+## App / Desktop Runtime
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/app/update-status` | Desktop updater/install status; `currentVersion` is the installed app version |
+| POST | `/app/check-for-update` | Check GitHub release/update manifest state |
+| POST | `/app/download-update` | Start desktop update download |
+| POST | `/app/install-update` | Start install-and-restart handoff |
+| POST | `/app/desktop-session-lifecycle` | Desktop session heartbeat / closing lifecycle |
 
 ## Source Registry
 
@@ -90,7 +102,7 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | GET | `/ops/history?limit=` | Run history (sync/fetcher/discovery) |
 | GET | `/ops/fetch-report` | Last fetch summary |
 | GET | `/ops/fetcher-metrics?windowRuns=` | Fetcher metrics |
-| POST | `/ops/alerts/ack` | Acknowledge alert (`{id: ""}`) |
+| POST | `/ops/alerts/ack` | Acknowledge alert (`{id: ""}`); active non-dismissible alerts return `{ok: true, ignored: true}` |
 | GET | `/desktop-local-data/startup-metrics?limit=` | Startup performance data |
 | POST | `/desktop-local-data/startup-metric` | Record startup event |
 
@@ -104,6 +116,9 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 
 ## Notes
 
+- Desktop sign-in UI should call `/desktop-local-data/profiles` first and prefer existing-profile selection. If that load fails, the current desktop flow is explicit `Retry` / `Create new profile` / `Cancel`, not blind text entry for existing profiles.
+- `/app/update-status` is the desktop source of truth for installed app version and updater state. Jobs/Saved/Admin desktop chrome reads `currentVersion` from this payload.
+- `/ops/alerts/ack` does not persist acknowledgement for active non-dismissible alerts. The first-run `fetch_never_run` guidance remains visible until a successful fetch clears the condition.
 - Long-running admin tasks are now **runId-owned**. `runId` is the only lifecycle identity for fetch, discovery, sync, and pipeline rows. Timestamp-only matching is not part of the runtime lifecycle model anymore.
 - Current Runs and `/ops/history` are projected from task owners, not from `admin-run-history.json` alone.
 - Authoritative owners by task type:
