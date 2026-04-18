@@ -63,6 +63,7 @@ STARTUP_HANDOFF_POLL_INTERVAL_S = 0.25
 STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S = 45.0
 PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S = 120.0
 ACTIVE_WORK_BROWSER_RECOVERY_TIMEOUT_S = 20.0
+ACTIVE_WORK_BACKGROUND_RECOVERY_POLL_INTERVAL_S = 5.0
 ACTIVE_WORK_RECOVERY_STOP_REASONS = {
     "bridge_exit",
     "heartbeat_timeout",
@@ -465,6 +466,58 @@ def _recoverable_browser_launch_result(
         "processReadyTimeoutMs": 0,
         "processReadyPollIntervalMs": 0,
         "revealHandoffEvidence": "browser_launch_recovery",
+    }
+
+
+def _recoverable_active_work_browser_loss_result(
+    *,
+    open_url: str,
+    stop_reason: str,
+    active_tasks: list[dict[str, str]],
+    data_dir: Path,
+    elapsed_ms: int,
+) -> dict[str, object]:
+    task_types = ", ".join(task["taskType"] for task in active_tasks) or "unknown"
+    message = (
+        "Baluffo lost its browser window while background work is still active.\n\n"
+        "Baluffo is still running.\n"
+        f"Reason: {str(stop_reason or '').strip() or 'browser_loss'}\n"
+        f"Active tasks: {task_types}\n"
+        f"Open this URL manually:\n{open_url}"
+    )
+    show_native_message(WINDOW_TITLE, message)
+    _append_startup_trace(
+        data_dir,
+        "desktop_active_work_browser_recovery",
+        elapsedMs=int(elapsed_ms),
+        reason=str(stop_reason or ""),
+        activeTasks=active_tasks,
+        recoveryUrl=str(open_url),
+    )
+    _write_launch_diagnostics(
+        data_dir,
+        "desktop-active-work-browser-recovery.txt",
+        message,
+    )
+    return {
+        "mode": "active-work-browser-recovery",
+        "browserName": "",
+        "browserPath": "",
+        "process": None,
+        "browserPid": 0,
+        "spawnStartedAtMonotonic": time.perf_counter(),
+        "launchAcceptedAtMonotonic": time.perf_counter(),
+        "windowShownAtMonotonic": time.perf_counter(),
+        "windowShownObserved": False,
+        "windowPid": 0,
+        "windowTitle": "",
+        "launchTraceEventsEmitted": False,
+        "shellWindowEventEmitted": False,
+        "shellWindowEvent": "desktop_shell_window_shown_inferred",
+        "spawnToAcceptMs": 0,
+        "processReadyTimeoutMs": 0,
+        "processReadyPollIntervalMs": 0,
+        "revealHandoffEvidence": "active_work_browser_recovery",
     }
 
 
@@ -1787,11 +1840,15 @@ def launch_browser_for_url(
                     handoffEvidence=str(reveal_result.get("handoffEvidence") or ""),
                     **trace_common,
                 )
+            return_code = process.poll()
+            detached_after_reveal = (
+                isinstance(return_code, (int, float)) and int(return_code or 0) == 0
+            )
             return {
                 "mode": "chromium-app",
                 "browserName": str(candidate.get("name") or ""),
                 "browserPath": browser_path,
-                "process": process,
+                "process": None if detached_after_reveal else process,
                 "browserPid": browser_pid,
                 "spawnStartedAtMonotonic": spawn_started_mono,
                 "launchAcceptedAtMonotonic": launch_accepted_mono,
@@ -2011,7 +2068,45 @@ def watch_browser_session(
     launch_accepted_elapsed_ms: int = 0,
     heartbeat_idle_timeout_s: float = HEARTBEAT_IDLE_TIMEOUT_S,
     require_window: bool = True,
+    background_active_work_recovery: bool = False,
+    recovery_owner_token: str = "",
 ) -> str:
+    def _watch_active_work_browserless_recovery() -> str:
+        _append_startup_trace(
+            data_dir,
+            "desktop_browser_watchdog_started",
+            elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+            mode="active_work_recovery",
+        )
+        while True:
+            if updater_install_requested(data_dir):
+                return "update_install_requested"
+            if bridge_process is not None and bridge_process.poll() is not None:
+                return "bridge_exit"
+            bridge_health = get_baluffo_bridge_health(bridge_port, timeout_s=0.75)
+            bridge_healthy = _bridge_health_matches_owner_session(
+                bridge_health,
+                owner_token=recovery_owner_token,
+            )
+            active_tasks = _load_active_critical_desktop_tasks(
+                data_dir,
+                bridge_port=bridge_port,
+                timeout_s=0.75,
+                allow_disk_fallback=not bridge_healthy,
+            )
+            if active_tasks:
+                time.sleep(ACTIVE_WORK_BACKGROUND_RECOVERY_POLL_INTERVAL_S)
+                continue
+            _append_startup_trace(
+                data_dir,
+                "desktop_active_work_browser_recovery_completed"
+                if bridge_healthy
+                else "desktop_active_work_browser_recovery_bridge_unavailable",
+                elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                bridgeHealthy=bool(bridge_healthy),
+            )
+            return "active_work_completed" if bridge_healthy else "bridge_exit"
+
     def _watch_heartbeat_loop() -> str:
         if not wait_for_browser_heartbeat(data_dir):
             while True:
@@ -2036,6 +2131,9 @@ def watch_browser_session(
             if idle_for > float(heartbeat_idle_timeout_s):
                 return "heartbeat_timeout"
             time.sleep(1.0)
+
+    if background_active_work_recovery:
+        return _watch_active_work_browserless_recovery()
 
     if bridge_process is not None:
         browser_exit_logged = False
@@ -2093,7 +2191,8 @@ def watch_browser_session(
                         elapsedMs=int((time.perf_counter() - started_mono) * 1000),
                     )
                     return "browser_handoff_failed"
-            if handoff_confirmed and latest_browser_heartbeat_ts(data_dir) > 0.0:
+            latest_heartbeat = latest_browser_heartbeat_ts(data_dir)
+            if handoff_confirmed and latest_heartbeat > 0.0:
                 _append_startup_trace(
                     data_dir,
                     "desktop_browser_watchdog_handoff",
@@ -2116,6 +2215,15 @@ def watch_browser_session(
                     "desktop_browser_window_missing_waiting_for_bridge",
                     elapsedMs=int((time.perf_counter() - started_mono) * 1000),
                 )
+                if latest_heartbeat <= 0.0:
+                    _append_startup_trace(
+                        data_dir,
+                        "desktop_browser_heartbeat_timeout",
+                        elapsedMs=int((time.perf_counter() - started_mono) * 1000),
+                        idleSeconds=0,
+                        reason="window_missing_without_heartbeat",
+                    )
+                    return "heartbeat_timeout"
             time.sleep(0.5)
 
     if browser_process is not None:
@@ -2629,11 +2737,15 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 browser_process=browser_process,
                 browser_pid=int(browser_pid or 0),
                 launch_accepted_elapsed_ms=int(accepted_elapsed_ms or 0),
-                require_window=(not config.no_browser) and launch_mode != "browser-launch-recovery",
+                require_window=(not config.no_browser)
+                and launch_mode not in {"browser-launch-recovery", "active-work-browser-recovery"},
+                background_active_work_recovery=launch_mode == "active-work-browser-recovery",
+                recovery_owner_token=owner_token,
             )
             if (
                 config.startup_probe
                 or config.no_browser
+                or launch_mode == "browser-launch-recovery"
                 or stop_reason not in ACTIVE_WORK_RECOVERY_STOP_REASONS
             ):
                 break
@@ -2645,8 +2757,6 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 bridge_health,
                 owner_token=owner_token,
             )
-            if bool(bridge_health) and not bridge_healthy:
-                break
             active_tasks = _load_active_critical_desktop_tasks(
                 config.data_dir,
                 bridge_port=config.bridge_port,
@@ -2687,6 +2797,18 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                     accepted_elapsed_ms = max(
                         0, int((float(launch_accepted_at_mono) - started_mono) * 1000)
                     )
+                continue
+            if bridge_healthy:
+                launch_result = _recoverable_active_work_browser_loss_result(
+                    open_url=open_url,
+                    stop_reason=stop_reason,
+                    active_tasks=active_tasks,
+                    data_dir=config.data_dir,
+                    elapsed_ms=int((time.perf_counter() - started_mono) * 1000),
+                )
+                launch_mode = str(launch_result.get("mode") or "active-work-browser-recovery")
+                browser_process = None
+                browser_pid = 0
                 continue
             diagnostics_path = config.data_dir / "desktop-runtime-fatal.txt"
             fatal_message = (
