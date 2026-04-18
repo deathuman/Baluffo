@@ -395,14 +395,6 @@ def _runtime_ports_need_retry(config: DesktopRuntimeConfig) -> bool:
     return (not bool(config.site_port_explicit)) or (not bool(config.bridge_port_explicit))
 
 
-def _runtime_ports_contended(config: DesktopRuntimeConfig) -> bool:
-    site_busy = not _port_is_available("127.0.0.1", int(config.site_port))
-    bridge_busy = int(config.bridge_port) == int(config.site_port) or not _port_is_available(
-        str(config.bridge_host), int(config.bridge_port)
-    )
-    return bool(site_busy or bridge_busy)
-
-
 def _should_retry_runtime_launch(
     config: DesktopRuntimeConfig,
     exc: Exception,
