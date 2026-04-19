@@ -247,22 +247,23 @@ def test_startup_check_auto_selects_healthy_version_when_current_broken() -> Non
         assert (root / "app" / "current.txt").read_text(encoding="utf-8").strip() == "0.9.0"
 
 
-def test_startup_check_prefers_highest_healthy_semver_when_current_broken() -> None:
+def test_startup_check_prefers_highest_healthy_baluffo_version_when_current_broken() -> None:
     with workspace_tmpdir("ship-update") as tmp:
         root = Path(tmp) / "ship"
-        _seed_root(root, version="0.9.0")
-        _seed_full_version(root, "1.1.0")
-        vbroken = root / "app" / "versions" / "3.0.0"
+        _seed_root(root, version="0.1.23")
+        _seed_full_version(root, "0.1.29")
+        _seed_full_version(root, "0.1.3")
+        vbroken = root / "app" / "versions" / "0.1.30"
         (vbroken / "src").mkdir(parents=True, exist_ok=True)
         _write(vbroken / "index.html", "<html></html>\n")
         _write(vbroken / "jobs.html", "<html></html>\n")
         _write(vbroken / "saved.html", "<html></html>\n")
-        _write(root / "app" / "current.txt", "3.0.0\n")
+        _write(root / "app" / "current.txt", "0.1.30\n")
         _write(
             root / "app" / "update-state.json",
             json.dumps(
                 {
-                    "current_version": "3.0.0",
+                    "current_version": "0.1.30",
                     "previous_version": "",
                     "last_update_status": "ready",
                     "last_error_code": "",
@@ -272,7 +273,13 @@ def test_startup_check_prefers_highest_healthy_semver_when_current_broken() -> N
         )
         result = um.startup_check(root, root / "data")
         assert result["ok"] is True
-        assert result["current_version"] == "1.1.0"
+        assert result["current_version"] == "0.1.3"
+
+
+def test_is_downgrade_uses_baluffo_release_ordering() -> None:
+    assert um.is_downgrade("0.1.3", "0.1.29") is True
+    assert um.is_downgrade("0.1.29", "0.1.3") is False
+    assert um.is_downgrade("0.1.30", "0.1.29") is True
 
 
 def test_startup_check_skips_unhealthy_previous_and_scans_versions() -> None:

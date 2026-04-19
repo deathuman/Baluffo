@@ -16,6 +16,7 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import cmp_to_key
 from pathlib import Path
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -24,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.baluffo_version import compare_baluffo_versions, parse_baluffo_version
 from src.ship.migrations import resolve_migrations
 
 UPDATER_VERSION = "1.0.0"
@@ -78,22 +80,8 @@ def compute_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _parse_version(v: str) -> tuple[int, ...]:
-    numbers: list[int] = []
-    for part in str(v or "").split("."):
-        if part.isdigit():
-            numbers.append(int(part))
-        else:
-            break
-    return tuple(numbers)
-
-
 def is_downgrade(current: str, target: str) -> bool:
-    left = _parse_version(current)
-    right = _parse_version(target)
-    if left and right:
-        return right < left
-    return str(target) < str(current)
+    return compare_baluffo_versions(target, current) < 0
 
 
 @dataclass(frozen=True)
@@ -234,8 +222,8 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     if missing:
         raise ValueError(f"Manifest missing fields: {', '.join(missing)}")
     minimum = str(manifest.get("min_updater_version") or "").strip()
-    if minimum and _parse_version(minimum) and _parse_version(UPDATER_VERSION):
-        if _parse_version(minimum) > _parse_version(UPDATER_VERSION):
+    if minimum and parse_baluffo_version(minimum) and parse_baluffo_version(UPDATER_VERSION):
+        if compare_baluffo_versions(minimum, UPDATER_VERSION) > 0:
             raise ValueError("Updater is too old for this package.")
     elif minimum > UPDATER_VERSION:
         raise ValueError("Updater is too old for this package.")
@@ -347,7 +335,7 @@ def _prefer_higher_semver(names: Iterable[str]) -> str:
     bucket = list(names)
     if not bucket:
         return ""
-    return max(bucket, key=lambda v: (_parse_version(v), v))
+    return sorted(bucket, key=cmp_to_key(compare_baluffo_versions))[-1]
 
 
 def create_data_backup(paths: ShipPaths) -> Path:

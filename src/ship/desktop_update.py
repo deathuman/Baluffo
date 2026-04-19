@@ -20,6 +20,7 @@ from typing import Any
 from urllib.request import Request, urlopen
 
 from src.app_version import get_app_version
+from src.baluffo_version import compare_baluffo_versions
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -159,27 +160,8 @@ def compute_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _parse_version(value: str) -> tuple[int, ...]:
-    text = str(value or "").strip()
-    parts = text.split(".")
-    numbers: list[int] = []
-    for part in parts:
-        token = part.strip()
-        if not token.isdigit():
-            break
-        numbers.append(int(token))
-    return tuple(numbers)
-
-
 def compare_versions(left: str, right: str) -> int:
-    left_parts = _parse_version(left)
-    right_parts = _parse_version(right)
-    if left_parts and right_parts:
-        width = max(len(left_parts), len(right_parts))
-        left_parts = (*left_parts, *([0] * (width - len(left_parts))))
-        right_parts = (*right_parts, *([0] * (width - len(right_parts))))
-        return (left_parts > right_parts) - (left_parts < right_parts)
-    return (str(left) > str(right)) - (str(left) < str(right))
+    return compare_baluffo_versions(left, right)
 
 
 def sort_json(value: Any) -> Any:

@@ -3,11 +3,18 @@
 > All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and Baluffo desktop releases use the project-specific `0.1.x` ordering documented in
+[`RELEASE.md`](RELEASE.md).
 
 ---
 
 ## [Unreleased]
+
+### Changed
+- Desktop release version ordering now follows Baluffo's `0.1.x` scheme across the updater, recovery manager, and release tooling, so releases like `0.1.3` correctly outrank `0.1.24` through `0.1.29`.
+
+### Fixed
+- The packaged desktop now reports its intended `0.1.3` app version instead of `0.1.23`, removing contradictory `Current` / `Latest` update states in the Jobs-page updater card.
 
 ## [0.1.3] - 2026-04-19
 

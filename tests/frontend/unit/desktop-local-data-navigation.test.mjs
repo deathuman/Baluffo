@@ -446,7 +446,7 @@ test("desktop sign-in cancels cleanly when profile loading fails and the user ab
 test("desktop version labels render the installed app version", async () => {
   setupDesktopGlobals({
     updatePayload: {
-      currentVersion: "0.1.23",
+      currentVersion: "0.1.3",
       availability: "unknown",
       downloadState: "idle",
       installState: "idle"
@@ -464,7 +464,7 @@ test("desktop version labels render the installed app version", async () => {
     }
   });
 
-  assert.equal(version, "0.1.23");
-  assert.deepEqual(labels.map(label => label.textContent), ["Version 0.1.23", "Version 0.1.23"]);
+  assert.equal(version, "0.1.3");
+  assert.deepEqual(labels.map(label => label.textContent), ["Version 0.1.3", "Version 0.1.3"]);
   assert.ok(labels.every(label => label.hidden === false));
 });
