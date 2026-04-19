@@ -241,7 +241,11 @@ def start_child_process(
         )
     proc = subprocess.Popen(list(command), **popen_kwargs)
     if job_handle and proc.pid:
-        _windows_try_assign_pid_to_job(job_handle, int(proc.pid))
+        try:
+            _windows_try_assign_pid_to_job(job_handle, int(proc.pid))
+        except OSError:
+            terminate_process(proc)
+            raise
     return proc
 
 
@@ -831,9 +835,16 @@ if os.name == "nt":
         },
     )
     _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
-    _JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK = 0x1000
     _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
     _PROCESS_SET_QUOTA = 0x0100
+    _PROCESS_TERMINATE = 0x0001
+    _PROCESS_ASSIGN_TO_JOB_ACCESS = _PROCESS_SET_QUOTA | _PROCESS_TERMINATE
+
+
+def _windows_raise_last_error(message: str) -> None:
+    code = int(ctypes.windll.kernel32.GetLastError() or 0)
+    detail = str(ctypes.FormatError(code) or "").strip() if code else ""
+    raise OSError(code, f"{message}: {detail or 'Unknown Windows error'}")
 
 
 def _windows_create_kill_on_close_job() -> int | None:
@@ -844,9 +855,7 @@ def _windows_create_kill_on_close_job() -> int | None:
     if not job:
         return None
     info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-    info.BasicLimitInformation.LimitFlags = (
-        _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | _JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK
-    )
+    info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
     ok = ctypes.windll.kernel32.SetInformationJobObject(
         job,
         _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
@@ -862,11 +871,17 @@ def _windows_create_kill_on_close_job() -> int | None:
 def _windows_try_assign_pid_to_job(job_handle: int, pid: int) -> None:
     if os.name != "nt" or not job_handle or pid <= 0:
         return
-    hproc = ctypes.windll.kernel32.OpenProcess(_PROCESS_SET_QUOTA, False, int(pid))
+    hproc = ctypes.windll.kernel32.OpenProcess(_PROCESS_ASSIGN_TO_JOB_ACCESS, False, int(pid))
     if not hproc:
-        return
+        _windows_raise_last_error(
+            f"OpenProcess failed while attaching pid={int(pid)} to desktop job"
+        )
     try:
-        ctypes.windll.kernel32.AssignProcessToJobObject(job_handle, hproc)
+        ok = ctypes.windll.kernel32.AssignProcessToJobObject(job_handle, hproc)
+        if not ok:
+            _windows_raise_last_error(
+                f"AssignProcessToJobObject failed while attaching pid={int(pid)} to desktop job"
+            )
     finally:
         ctypes.windll.kernel32.CloseHandle(hproc)
 
@@ -1361,6 +1376,7 @@ def _attempt_active_work_browser_relaunch(
         activeTasks=active_tasks,
     )
     last_activity_ts = bridge_last_activity_ts(config.bridge_port)
+    browser_process: subprocess.Popen[str] | None = None
     try:
         launch_result = launch_browser_for_url(
             open_url,
@@ -1368,7 +1384,19 @@ def _attempt_active_work_browser_relaunch(
             data_dir=config.data_dir,
             started_mono=started_mono,
         )
-    except RuntimeError as exc:
+        browser_process = (
+            launch_result.get("process")
+            if isinstance(launch_result.get("process"), subprocess.Popen)
+            else None
+        )
+        browser_pid = int(
+            launch_result.get("browserPid") or getattr(browser_process, "pid", 0) or 0
+        )
+        if desktop_job and browser_process is not None and browser_pid > 0:
+            _windows_try_assign_pid_to_job(desktop_job, browser_pid)
+    except (OSError, RuntimeError) as exc:
+        if browser_process is not None:
+            terminate_process(browser_process)
         _append_startup_trace(
             config.data_dir,
             "desktop_browser_relaunch_failed",
@@ -1377,14 +1405,6 @@ def _attempt_active_work_browser_relaunch(
             error=str(exc),
         )
         return None
-    browser_process = (
-        launch_result.get("process")
-        if isinstance(launch_result.get("process"), subprocess.Popen)
-        else None
-    )
-    browser_pid = int(launch_result.get("browserPid") or getattr(browser_process, "pid", 0) or 0)
-    if desktop_job and browser_process is not None and browser_pid > 0:
-        _windows_try_assign_pid_to_job(desktop_job, browser_pid)
     _append_startup_trace(
         config.data_dir,
         "desktop_browser_relaunch_accepted",
@@ -2586,6 +2606,27 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                             started_mono=started_mono,
                             trace_hook=_record_browser_launch_trace,
                         )
+                        browser_process = (
+                            launch_result.get("process")
+                            if isinstance(launch_result.get("process"), subprocess.Popen)
+                            else None
+                        )
+                        browser_pid = int(
+                            launch_result.get("browserPid")
+                            or getattr(browser_process, "pid", 0)
+                            or 0
+                        )
+                        if desktop_job and browser_process is not None and browser_pid > 0:
+                            try:
+                                _windows_try_assign_pid_to_job(desktop_job, int(browser_pid))
+                            except OSError as exc:
+                                terminate_process(browser_process)
+                                launch_result = _recoverable_browser_launch_result(
+                                    open_url=open_url,
+                                    error=exc,
+                                    data_dir=config.data_dir,
+                                    elapsed_ms=int((time.perf_counter() - started_mono) * 1000),
+                                )
                     except RuntimeError as exc:
                         launch_result = _recoverable_browser_launch_result(
                             open_url=open_url,
@@ -2650,10 +2691,6 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         browser_pid = int(
             launch_result.get("browserPid") or getattr(browser_process, "pid", 0) or 0
         )
-        if desktop_job and browser_process is not None:
-            browser_pid = getattr(browser_process, "pid", None)
-            if browser_pid:
-                _windows_try_assign_pid_to_job(desktop_job, int(browser_pid))
         shell_window_shown_elapsed_ms = int((time.perf_counter() - started_mono) * 1000)
         window_shown_at_mono = launch_result.get("windowShownAtMonotonic")
         if isinstance(window_shown_at_mono, (int, float)):

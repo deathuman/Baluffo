@@ -855,6 +855,87 @@ def test_launch_browser_for_url_emits_trace_events_at_spawn_accept_and_reveal() 
     assert selected_event[1] == shell_event[1]
 
 
+def test_windows_try_assign_pid_to_job_raises_when_open_process_fails() -> None:
+    kernel32 = SimpleNamespace(
+        GetLastError=mock.Mock(return_value=5),
+        OpenProcess=mock.Mock(return_value=0),
+    )
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(
+            desktop_app.ctypes,
+            "windll",
+            SimpleNamespace(kernel32=kernel32),
+            create=True,
+        ),
+        mock.patch.object(
+            desktop_app.ctypes,
+            "FormatError",
+            return_value="Access is denied.",
+            create=True,
+        ),
+    ):
+        with pytest.raises(
+            OSError,
+            match="OpenProcess failed while attaching pid=123 to desktop job: Access is denied.",
+        ):
+            desktop_app._windows_try_assign_pid_to_job(11, 123)
+
+
+def test_windows_try_assign_pid_to_job_raises_when_assign_process_fails() -> None:
+    kernel32 = SimpleNamespace(
+        GetLastError=mock.Mock(return_value=5),
+        OpenProcess=mock.Mock(return_value=99),
+        AssignProcessToJobObject=mock.Mock(return_value=0),
+        CloseHandle=mock.Mock(),
+    )
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(
+            desktop_app.ctypes,
+            "windll",
+            SimpleNamespace(kernel32=kernel32),
+            create=True,
+        ),
+        mock.patch.object(
+            desktop_app.ctypes,
+            "FormatError",
+            return_value="Access is denied.",
+            create=True,
+        ),
+    ):
+        with pytest.raises(
+            OSError,
+            match=(
+                "AssignProcessToJobObject failed while attaching pid=123 to desktop job: "
+                "Access is denied."
+            ),
+        ):
+            desktop_app._windows_try_assign_pid_to_job(11, 123)
+
+    kernel32.CloseHandle.assert_called_once_with(99)
+
+
+def test_start_child_process_terminates_child_when_job_attach_fails() -> None:
+    fake_process = SimpleNamespace(pid=321)
+
+    with (
+        mock.patch.object(desktop_app.subprocess, "Popen", return_value=fake_process),
+        mock.patch.object(
+            desktop_app,
+            "_windows_try_assign_pid_to_job",
+            side_effect=OSError("attach failed"),
+        ),
+        mock.patch.object(desktop_app, "terminate_process") as terminate_mock,
+    ):
+        with pytest.raises(OSError, match="attach failed"):
+            desktop_app.start_child_process(["python", "-V"], job_handle=11)
+
+    terminate_mock.assert_called_once_with(fake_process)
+
+
 def test_find_baluffo_visible_window_accepts_same_pid_chromium_window_without_baluffo_title() -> (
     None
 ):
@@ -1397,11 +1478,6 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
         mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
         mock.patch.object(
             desktop_app,
-            "wait_for_desktop_startup_ready",
-            return_value={"appVersion": APP_VERSION},
-        ),
-        mock.patch.object(
-            desktop_app,
             "launch_browser_for_url",
             return_value={
                 "mode": "chromium-app",
@@ -1410,6 +1486,7 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
                 "process": fake_browser_process,
             },
         ),
+        mock.patch.object(desktop_app, "_windows_try_assign_pid_to_job"),
         mock.patch.object(desktop_app, "save_session_state") as save_mock,
         mock.patch.object(
             desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
@@ -1587,11 +1664,6 @@ def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
         mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
         mock.patch.object(
             desktop_app,
-            "wait_for_desktop_startup_ready",
-            return_value={"appVersion": APP_VERSION},
-        ),
-        mock.patch.object(
-            desktop_app,
             "launch_browser_for_url",
             return_value={
                 "mode": "chromium-app",
@@ -1646,11 +1718,6 @@ def test_launch_desktop_app_emits_window_created_before_shell_window_shown() -> 
         ),
         mock.patch.object(desktop_app, "wait_for_url"),
         mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
-        mock.patch.object(
-            desktop_app,
-            "wait_for_desktop_startup_ready",
-            return_value={"appVersion": APP_VERSION},
-        ),
         mock.patch.object(
             desktop_app,
             "launch_browser_for_url",
@@ -1725,11 +1792,6 @@ def test_launch_desktop_app_emits_inferred_shell_window_event_when_visibility_no
         mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
         mock.patch.object(
             desktop_app,
-            "wait_for_desktop_startup_ready",
-            return_value={"appVersion": APP_VERSION},
-        ),
-        mock.patch.object(
-            desktop_app,
             "launch_browser_for_url",
             return_value={
                 "mode": "chromium-app",
@@ -1790,11 +1852,6 @@ def test_launch_desktop_app_launches_browser_before_bridge_ready_diagnostic() ->
         mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=False),
         mock.patch.object(
             desktop_app,
-            "wait_for_desktop_startup_ready",
-            return_value={"appVersion": APP_VERSION},
-        ),
-        mock.patch.object(
-            desktop_app,
             "launch_browser_for_url",
             return_value={
                 "mode": "chromium-app",
@@ -1850,11 +1907,6 @@ def test_launch_desktop_app_uses_tighter_site_ready_polling_for_startup_probe() 
         ),
         mock.patch.object(desktop_app, "wait_for_url") as wait_for_url_mock,
         mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
-        mock.patch.object(
-            desktop_app,
-            "wait_for_desktop_startup_ready",
-            return_value={"appVersion": APP_VERSION},
-        ),
         mock.patch.object(
             desktop_app,
             "launch_browser_for_url",
@@ -2192,6 +2244,7 @@ def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_ex
                 "process": fake_browser_process,
             },
         ),
+        mock.patch.object(desktop_app, "_windows_try_assign_pid_to_job"),
         mock.patch.object(desktop_app, "save_session_state"),
         mock.patch.object(
             desktop_app, "watch_browser_session", return_value="process_exit"
@@ -2267,6 +2320,7 @@ def test_launch_desktop_app_attempts_one_browser_relaunch_when_active_work_loses
                 "process": fake_browser_process,
             },
         ),
+        mock.patch.object(desktop_app, "_windows_try_assign_pid_to_job"),
         mock.patch.object(desktop_app, "save_session_state"),
         mock.patch.object(
             desktop_app,
@@ -2325,70 +2379,68 @@ def test_launch_desktop_app_enters_background_recovery_after_recovery_budget_is_
     fake_browser_process = mock.Mock(spec=subprocess.Popen)
     fake_browser_process.pid = 303
 
-    with (
-        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
-        mock.patch.object(
-            desktop_app,
-            "acquire_instance_lock",
-            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
-        ),
-        mock.patch.object(desktop_app, "release_instance_lock"),
-        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
-        mock.patch.object(desktop_app, "ensure_runtime_ports"),
-        mock.patch.object(
-            desktop_app,
-            "start_child_process",
-            side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
-        ),
-        mock.patch.object(desktop_app, "wait_for_url"),
-        mock.patch.object(
-            desktop_app,
-            "wait_for_desktop_startup_ready",
-            return_value={"appVersion": APP_VERSION},
-        ),
-        mock.patch.object(
-            desktop_app,
-            "launch_browser_for_url",
-            return_value={
-                "mode": "chromium-app",
-                "browserName": "msedge",
-                "browserPath": "C:/Edge/msedge.exe",
-                "process": fake_browser_process,
-            },
-        ),
-        mock.patch.object(desktop_app, "save_session_state"),
-        mock.patch.object(
-            desktop_app,
-            "watch_browser_session",
-            side_effect=["heartbeat_timeout", "active_work_completed"],
-        ),
-        mock.patch.object(
-            desktop_app,
-            "get_baluffo_bridge_health",
-            side_effect=[
-                {"service": "baluffo-bridge", "desktopMode": True, "owner": {"token": "live"}},
-                {"service": "baluffo-bridge", "desktopMode": True, "owner": {"token": "live"}},
-            ],
-        ),
-        mock.patch.object(desktop_app, "_bridge_health_matches_owner_session", return_value=True),
-        mock.patch.object(
-            desktop_app,
-            "_load_active_critical_desktop_tasks",
-            return_value=[{"taskType": "fetch", "runId": "fetch_live_1", "status": "running"}],
-        ),
-        mock.patch.object(
-            desktop_app,
-            "_attempt_active_work_browser_relaunch",
-            return_value=None,
-        ) as recover_mock,
-        mock.patch.object(desktop_app, "write_success_marker"),
-        mock.patch.object(desktop_app, "clear_session_state"),
-        mock.patch.object(desktop_app, "terminate_process"),
-        mock.patch.object(desktop_app, "_append_startup_trace"),
-        mock.patch.object(desktop_app, "_write_launch_diagnostics") as diagnostics_mock,
-        mock.patch.object(desktop_app, "show_native_message") as show_message_mock,
-    ):
-        desktop_app.launch_desktop_app(config)
+    with mock.patch.object(desktop_app, "_windows_try_assign_pid_to_job"):
+        with (
+            mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+            mock.patch.object(
+                desktop_app,
+                "acquire_instance_lock",
+                return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+            ),
+            mock.patch.object(desktop_app, "release_instance_lock"),
+            mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+            mock.patch.object(desktop_app, "ensure_runtime_ports"),
+            mock.patch.object(
+                desktop_app,
+                "start_child_process",
+                side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
+            ),
+            mock.patch.object(desktop_app, "wait_for_url"),
+            mock.patch.object(desktop_app, "publish_success_marker_when_ready_async"),
+            mock.patch.object(
+                desktop_app,
+                "launch_browser_for_url",
+                return_value={
+                    "mode": "chromium-app",
+                    "browserName": "msedge",
+                    "browserPath": "C:/Edge/msedge.exe",
+                    "process": fake_browser_process,
+                },
+            ),
+            mock.patch.object(desktop_app, "save_session_state"),
+            mock.patch.object(
+                desktop_app,
+                "watch_browser_session",
+                side_effect=["heartbeat_timeout", "active_work_completed"],
+            ),
+            mock.patch.object(
+                desktop_app,
+                "get_baluffo_bridge_health",
+                side_effect=[
+                    {"service": "baluffo-bridge", "desktopMode": True, "owner": {"token": "live"}},
+                    {"service": "baluffo-bridge", "desktopMode": True, "owner": {"token": "live"}},
+                ],
+            ),
+            mock.patch.object(
+                desktop_app, "_bridge_health_matches_owner_session", return_value=True
+            ),
+            mock.patch.object(
+                desktop_app,
+                "_load_active_critical_desktop_tasks",
+                return_value=[{"taskType": "fetch", "runId": "fetch_live_1", "status": "running"}],
+            ),
+            mock.patch.object(
+                desktop_app,
+                "_attempt_active_work_browser_relaunch",
+                return_value=None,
+            ) as recover_mock,
+            mock.patch.object(desktop_app, "clear_session_state"),
+            mock.patch.object(desktop_app, "terminate_process"),
+            mock.patch.object(desktop_app, "_append_startup_trace"),
+            mock.patch.object(desktop_app, "_write_launch_diagnostics") as diagnostics_mock,
+            mock.patch.object(desktop_app, "show_native_message") as show_message_mock,
+        ):
+            desktop_app.launch_desktop_app(config)
 
     recover_mock.assert_called_once()
     diagnostics_mock.assert_called_once()
@@ -2412,67 +2464,67 @@ def test_launch_desktop_app_enters_background_recovery_for_process_exit() -> Non
     fake_browser_process = mock.Mock(spec=subprocess.Popen)
     fake_browser_process.pid = 303
 
-    with (
-        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
-        mock.patch.object(
-            desktop_app,
-            "acquire_instance_lock",
-            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
-        ),
-        mock.patch.object(desktop_app, "release_instance_lock"),
-        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
-        mock.patch.object(desktop_app, "ensure_runtime_ports"),
-        mock.patch.object(
-            desktop_app,
-            "start_child_process",
-            side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
-        ),
-        mock.patch.object(desktop_app, "wait_for_url"),
-        mock.patch.object(
-            desktop_app,
-            "wait_for_desktop_startup_ready",
-            return_value={"appVersion": APP_VERSION},
-        ),
-        mock.patch.object(
-            desktop_app,
-            "launch_browser_for_url",
-            return_value={
-                "mode": "chromium-app",
-                "browserName": "msedge",
-                "browserPath": "C:/Edge/msedge.exe",
-                "process": fake_browser_process,
-            },
-        ),
-        mock.patch.object(desktop_app, "save_session_state"),
-        mock.patch.object(
-            desktop_app,
-            "watch_browser_session",
-            side_effect=["process_exit", "active_work_completed"],
-        ),
-        mock.patch.object(
-            desktop_app,
-            "get_baluffo_bridge_health",
-            return_value={
-                "service": "baluffo-bridge",
-                "desktopMode": True,
-                "owner": {"token": "live"},
-            },
-        ),
-        mock.patch.object(desktop_app, "_bridge_health_matches_owner_session", return_value=True),
-        mock.patch.object(
-            desktop_app,
-            "_load_active_critical_desktop_tasks",
-            return_value=[{"taskType": "pipeline", "runId": "pipeline_1", "status": "running"}],
-        ),
-        mock.patch.object(desktop_app, "_attempt_active_work_browser_relaunch", return_value=None),
-        mock.patch.object(desktop_app, "write_success_marker"),
-        mock.patch.object(desktop_app, "clear_session_state"),
-        mock.patch.object(desktop_app, "terminate_process"),
-        mock.patch.object(desktop_app, "_append_startup_trace"),
-        mock.patch.object(desktop_app, "_write_launch_diagnostics") as diagnostics_mock,
-        mock.patch.object(desktop_app, "show_native_message") as show_message_mock,
-    ):
-        desktop_app.launch_desktop_app(config)
+    with mock.patch.object(desktop_app, "_windows_try_assign_pid_to_job"):
+        with (
+            mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+            mock.patch.object(
+                desktop_app,
+                "acquire_instance_lock",
+                return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+            ),
+            mock.patch.object(desktop_app, "release_instance_lock"),
+            mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+            mock.patch.object(desktop_app, "ensure_runtime_ports"),
+            mock.patch.object(
+                desktop_app,
+                "start_child_process",
+                side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
+            ),
+            mock.patch.object(desktop_app, "wait_for_url"),
+            mock.patch.object(desktop_app, "publish_success_marker_when_ready_async"),
+            mock.patch.object(
+                desktop_app,
+                "launch_browser_for_url",
+                return_value={
+                    "mode": "chromium-app",
+                    "browserName": "msedge",
+                    "browserPath": "C:/Edge/msedge.exe",
+                    "process": fake_browser_process,
+                },
+            ),
+            mock.patch.object(desktop_app, "save_session_state"),
+            mock.patch.object(
+                desktop_app,
+                "watch_browser_session",
+                side_effect=["process_exit", "active_work_completed"],
+            ),
+            mock.patch.object(
+                desktop_app,
+                "get_baluffo_bridge_health",
+                return_value={
+                    "service": "baluffo-bridge",
+                    "desktopMode": True,
+                    "owner": {"token": "live"},
+                },
+            ),
+            mock.patch.object(
+                desktop_app, "_bridge_health_matches_owner_session", return_value=True
+            ),
+            mock.patch.object(
+                desktop_app,
+                "_load_active_critical_desktop_tasks",
+                return_value=[{"taskType": "pipeline", "runId": "pipeline_1", "status": "running"}],
+            ),
+            mock.patch.object(
+                desktop_app, "_attempt_active_work_browser_relaunch", return_value=None
+            ),
+            mock.patch.object(desktop_app, "clear_session_state"),
+            mock.patch.object(desktop_app, "terminate_process"),
+            mock.patch.object(desktop_app, "_append_startup_trace"),
+            mock.patch.object(desktop_app, "_write_launch_diagnostics") as diagnostics_mock,
+            mock.patch.object(desktop_app, "show_native_message") as show_message_mock,
+        ):
+            desktop_app.launch_desktop_app(config)
 
     diagnostics_mock.assert_called_once()
     show_message_mock.assert_called_once()
@@ -2495,65 +2547,65 @@ def test_launch_desktop_app_still_shows_fatal_message_when_bridge_health_is_lost
     fake_browser_process = mock.Mock(spec=subprocess.Popen)
     fake_browser_process.pid = 303
 
-    with (
-        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
-        mock.patch.object(
-            desktop_app,
-            "acquire_instance_lock",
-            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
-        ),
-        mock.patch.object(desktop_app, "release_instance_lock"),
-        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
-        mock.patch.object(desktop_app, "ensure_runtime_ports"),
-        mock.patch.object(
-            desktop_app,
-            "start_child_process",
-            side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
-        ),
-        mock.patch.object(desktop_app, "wait_for_url"),
-        mock.patch.object(
-            desktop_app,
-            "wait_for_desktop_startup_ready",
-            return_value={"appVersion": APP_VERSION},
-        ),
-        mock.patch.object(
-            desktop_app,
-            "launch_browser_for_url",
-            return_value={
-                "mode": "chromium-app",
-                "browserName": "msedge",
-                "browserPath": "C:/Edge/msedge.exe",
-                "process": fake_browser_process,
-            },
-        ),
-        mock.patch.object(desktop_app, "save_session_state"),
-        mock.patch.object(desktop_app, "watch_browser_session", return_value="heartbeat_timeout"),
-        mock.patch.object(
-            desktop_app,
-            "get_baluffo_bridge_health",
-            return_value={
-                "service": "baluffo-bridge",
-                "desktopMode": True,
-                "owner": {"token": "other"},
-            },
-        ),
-        mock.patch.object(desktop_app, "_bridge_health_matches_owner_session", return_value=False),
-        mock.patch.object(
-            desktop_app,
-            "_load_active_critical_desktop_tasks",
-            return_value=[{"taskType": "fetch", "runId": "fetch_live_1", "status": "running"}],
-        ),
-        mock.patch.object(
-            desktop_app, "_attempt_active_work_browser_relaunch", return_value=None
-        ) as recover_mock,
-        mock.patch.object(desktop_app, "write_success_marker"),
-        mock.patch.object(desktop_app, "clear_session_state"),
-        mock.patch.object(desktop_app, "terminate_process"),
-        mock.patch.object(desktop_app, "_append_startup_trace"),
-        mock.patch.object(desktop_app, "_write_launch_diagnostics") as diagnostics_mock,
-        mock.patch.object(desktop_app, "show_native_message") as show_message_mock,
-    ):
-        desktop_app.launch_desktop_app(config)
+    with mock.patch.object(desktop_app, "_windows_try_assign_pid_to_job"):
+        with (
+            mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+            mock.patch.object(
+                desktop_app,
+                "acquire_instance_lock",
+                return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+            ),
+            mock.patch.object(desktop_app, "release_instance_lock"),
+            mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+            mock.patch.object(desktop_app, "ensure_runtime_ports"),
+            mock.patch.object(
+                desktop_app,
+                "start_child_process",
+                side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
+            ),
+            mock.patch.object(desktop_app, "wait_for_url"),
+            mock.patch.object(desktop_app, "publish_success_marker_when_ready_async"),
+            mock.patch.object(
+                desktop_app,
+                "launch_browser_for_url",
+                return_value={
+                    "mode": "chromium-app",
+                    "browserName": "msedge",
+                    "browserPath": "C:/Edge/msedge.exe",
+                    "process": fake_browser_process,
+                },
+            ),
+            mock.patch.object(desktop_app, "save_session_state"),
+            mock.patch.object(
+                desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
+            ),
+            mock.patch.object(
+                desktop_app,
+                "get_baluffo_bridge_health",
+                return_value={
+                    "service": "baluffo-bridge",
+                    "desktopMode": True,
+                    "owner": {"token": "other"},
+                },
+            ),
+            mock.patch.object(
+                desktop_app, "_bridge_health_matches_owner_session", return_value=False
+            ),
+            mock.patch.object(
+                desktop_app,
+                "_load_active_critical_desktop_tasks",
+                return_value=[{"taskType": "fetch", "runId": "fetch_live_1", "status": "running"}],
+            ),
+            mock.patch.object(
+                desktop_app, "_attempt_active_work_browser_relaunch", return_value=None
+            ) as recover_mock,
+            mock.patch.object(desktop_app, "clear_session_state"),
+            mock.patch.object(desktop_app, "terminate_process"),
+            mock.patch.object(desktop_app, "_append_startup_trace"),
+            mock.patch.object(desktop_app, "_write_launch_diagnostics") as diagnostics_mock,
+            mock.patch.object(desktop_app, "show_native_message") as show_message_mock,
+        ):
+            desktop_app.launch_desktop_app(config)
 
     recover_mock.assert_not_called()
     diagnostics_mock.assert_called_once()
@@ -2631,6 +2683,206 @@ def test_launch_desktop_app_keeps_runtime_alive_when_browser_launch_fails() -> N
     assert open_url in show_message_mock.call_args.args[1]
     assert any(
         call.args[1] == "desktop_browser_launch_recovered" for call in trace_mock.call_args_list
+    )
+
+
+def test_launch_desktop_app_fails_when_bridge_attach_fails() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=data_dir,
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+    )
+    site_process = mock.Mock(spec=subprocess.Popen)
+    site_process.pid = 101
+    site_process.poll.return_value = None
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(
+            desktop_app,
+            "start_child_process",
+            side_effect=[site_process, OSError("bridge attach failed")],
+        ),
+        mock.patch.object(desktop_app, "wait_for_url"),
+        mock.patch.object(desktop_app, "_windows_create_kill_on_close_job", return_value=11),
+        mock.patch.object(desktop_app, "_windows_close_desktop_job"),
+        mock.patch.object(desktop_app, "save_session_state") as save_mock,
+        mock.patch.object(desktop_app, "watch_browser_session") as watch_mock,
+        mock.patch.object(desktop_app, "launch_browser_for_url") as launch_browser_mock,
+        mock.patch.object(desktop_app, "clear_session_state"),
+        mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+    ):
+        with pytest.raises(OSError, match="bridge attach failed"):
+            desktop_app.launch_desktop_app(config)
+
+    save_mock.assert_not_called()
+    watch_mock.assert_not_called()
+    launch_browser_mock.assert_not_called()
+
+
+def test_launch_desktop_app_recovers_when_initial_browser_attach_fails() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=data_dir,
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+    )
+    open_url = desktop_app.build_open_url(config)
+    site_process = mock.Mock(spec=subprocess.Popen)
+    site_process.pid = 101
+    site_process.poll.return_value = None
+    bridge_process = mock.Mock(spec=subprocess.Popen)
+    bridge_process.pid = 202
+    bridge_process.poll.return_value = None
+    browser_process = mock.Mock(spec=subprocess.Popen)
+    browser_process.pid = 303
+    trace_mock = mock.Mock()
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(
+            desktop_app,
+            "start_child_process",
+            side_effect=[site_process, bridge_process],
+        ),
+        mock.patch.object(desktop_app, "wait_for_url"),
+        mock.patch.object(desktop_app, "_windows_create_kill_on_close_job", return_value=11),
+        mock.patch.object(desktop_app, "_windows_close_desktop_job"),
+        mock.patch.object(desktop_app, "publish_success_marker_when_ready_async"),
+        mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "launch_browser_for_url",
+            return_value={
+                "mode": "chromium-app",
+                "browserName": "chrome",
+                "browserPath": "C:/Chrome/chrome.exe",
+                "process": browser_process,
+                "browserPid": 303,
+            },
+        ),
+        mock.patch.object(
+            desktop_app,
+            "_windows_try_assign_pid_to_job",
+            side_effect=OSError("browser attach failed"),
+        ),
+        mock.patch.object(desktop_app, "show_native_message") as show_message_mock,
+        mock.patch.object(desktop_app, "save_session_state") as save_mock,
+        mock.patch.object(
+            desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
+        ) as watch_mock,
+        mock.patch.object(desktop_app, "clear_session_state"),
+        mock.patch.object(desktop_app, "terminate_process") as terminate_mock,
+        mock.patch.object(desktop_app, "_write_launch_diagnostics"),
+        mock.patch.object(desktop_app, "_append_startup_trace", trace_mock),
+    ):
+        desktop_app.launch_desktop_app(config)
+
+    assert save_mock.call_args.args[0]["launchMode"] == "browser-launch-recovery"
+    watch_mock.assert_called_once_with(
+        data_dir,
+        mock.ANY,
+        bridge_port=8877,
+        bridge_process=mock.ANY,
+        browser_process=None,
+        browser_pid=0,
+        launch_accepted_elapsed_ms=mock.ANY,
+        require_window=False,
+        background_active_work_recovery=False,
+        recovery_owner_token=mock.ANY,
+    )
+    show_message_mock.assert_called_once()
+    assert open_url in show_message_mock.call_args.args[1]
+    assert [call for call in terminate_mock.call_args_list if call.args == (browser_process,)] == [
+        mock.call(browser_process)
+    ]
+    assert any(
+        call.args[1] == "desktop_browser_launch_recovered" for call in trace_mock.call_args_list
+    )
+
+
+def test_attempt_active_work_browser_relaunch_returns_none_when_job_attach_fails() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=data_dir,
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+    )
+    browser_process = mock.Mock(spec=subprocess.Popen)
+    browser_process.pid = 404
+    trace_mock = mock.Mock()
+
+    with (
+        mock.patch.object(desktop_app, "bridge_last_activity_ts", return_value=0.0),
+        mock.patch.object(
+            desktop_app,
+            "launch_browser_for_url",
+            return_value={
+                "mode": "chromium-app",
+                "browserName": "chrome",
+                "browserPath": "C:/Chrome/chrome.exe",
+                "process": browser_process,
+                "browserPid": 404,
+            },
+        ),
+        mock.patch.object(
+            desktop_app,
+            "_windows_try_assign_pid_to_job",
+            side_effect=OSError("browser attach failed"),
+        ),
+        mock.patch.object(desktop_app, "terminate_process") as terminate_mock,
+        mock.patch.object(desktop_app, "_append_startup_trace", trace_mock),
+    ):
+        result = desktop_app._attempt_active_work_browser_relaunch(
+            config=config,
+            open_url=desktop_app.build_open_url(config),
+            preferred_browser_path="C:/Chrome/chrome.exe",
+            started_mono=100.0,
+            desktop_job=11,
+            stop_reason="heartbeat_timeout",
+            active_tasks=[{"taskType": "fetch", "runId": "fetch_live_1"}],
+        )
+
+    assert result is None
+    terminate_mock.assert_called_once_with(browser_process)
+    assert any(
+        call.args[1] == "desktop_browser_relaunch_failed" for call in trace_mock.call_args_list
+    )
+    assert not any(
+        call.args[1] == "desktop_browser_relaunch_accepted" for call in trace_mock.call_args_list
     )
 
 
