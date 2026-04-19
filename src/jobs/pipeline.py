@@ -42,6 +42,9 @@ from src.jobs.pipeline_loader_selection import (
     sort_selected_loaders,
 )
 from src.jobs.pipeline_runtime import (
+    build_detailed_source_rows as _build_detailed_source_rows,
+)
+from src.jobs.pipeline_runtime import (
     build_fetch_task_progress_payload as _build_fetch_task_progress_payload,
 )
 from src.jobs.pipeline_runtime import (
@@ -112,6 +115,7 @@ OUTPUT_FIELDS = common_config.OUTPUT_FIELDS
 LIGHTWEIGHT_OUTPUT_FIELDS = common_config.LIGHTWEIGHT_OUTPUT_FIELDS
 
 load_social_config = common_social.load_social_config
+build_detailed_source_rows = _build_detailed_source_rows
 default_fetch_text = transport_pkg.default_fetch_text
 async_fetch_text_httpx = transport_pkg.async_fetch_text_httpx
 resolve_fetch_text_impl = transport_pkg.resolve_fetch_text_impl

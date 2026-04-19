@@ -1307,7 +1307,7 @@ def test_run_static_studio_pages_source_uses_async_listing_fetch_when_provided()
     )
 
     assert len(rows) == 1
-    assert async_calls == [("https://example.net/jobs", 8)]
+    assert async_calls == [("https://example.net/jobs", 5)]
 
 
 def test_run_static_studio_pages_source_rejects_obvious_off_target_detail_links() -> None:
@@ -1360,7 +1360,7 @@ def test_run_static_studio_pages_source_rejects_obvious_off_target_detail_links(
     assert int((details[0].get("loss") or {}).get("staticNonJobUrlRejected") or 0) >= 3
 
 
-def test_run_static_studio_pages_source_stops_zero_yield_listing_after_one_capped_cycle() -> None:
+def test_run_static_studio_pages_source_zero_yield_listing_falls_through_to_needs_review() -> None:
     source_row = {
         "name": "Provider Zero Yield Studio",
         "studio": "Provider Zero Yield Studio",
@@ -1388,15 +1388,11 @@ def test_run_static_studio_pages_source_stops_zero_yield_listing_after_one_cappe
     assert fetch_calls == ["https://jobs.workdayjobs.com/provider-zero-yield"]
     details = jf.SOURCE_DIAGNOSTICS.get("static_studio_pages", {}).get("details") or []
     assert details
-    assert (details[0].get("stats") or {}).get("listing_terminal_reason") == (
-        "provider_listing_zero_yield"
-    )
+    assert str((details[0].get("stats") or {}).get("listing_terminal_reason") or "") == ""
     assert details[0].get("classification") == "site_changed"
 
 
-def test_run_static_studio_pages_source_caps_post_listing_detail_tail(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_run_static_studio_pages_source_keeps_post_listing_detail_tail() -> None:
     source_row = {
         "name": "Post Listing Tail Studio",
         "studio": "Post Listing Tail Studio",
@@ -1421,7 +1417,6 @@ def test_run_static_studio_pages_source_caps_post_listing_detail_tail(
         </html>
     """
     fetched_detail_urls: list[str] = []
-    monkeypatch.setenv("BALUFFO_STATIC_POST_LISTING_DETAIL_BUDGET_S", "1")
 
     def fake_fetch(url: str, _timeout: int) -> str:
         if url == "https://example.net/careers":
@@ -1443,7 +1438,11 @@ def test_run_static_studio_pages_source_caps_post_listing_detail_tail(
     )
 
     assert len(rows) >= 1
-    assert fetched_detail_urls == ["https://example.net/job/a"]
+    assert fetched_detail_urls == [
+        "https://example.net/job/a",
+        "https://example.net/job/b",
+        "https://example.net/job/c",
+    ]
 
 
 def test_run_static_studio_pages_source_records_listing_browser_fallback_terminal_reason() -> None:
@@ -1477,7 +1476,11 @@ def test_run_static_studio_pages_source_records_listing_browser_fallback_termina
     )
 
     assert rows == []
-    assert fetch_calls == ["https://example.net/careers"]
+    assert fetch_calls == [
+        "https://example.net/careers",
+        "https://example.net/careers",
+        "https://example.net/careers",
+    ]
     assert len(playwright_calls) == 1
     details = jf.SOURCE_DIAGNOSTICS.get("static_studio_pages", {}).get("details") or []
     assert details
@@ -2004,7 +2007,7 @@ def test_static_source_rejects_regular_pages_as_dead_listing_pages() -> None:
         jf.STUDIO_SOURCE_REGISTRY = prev
 
 
-def test_run_static_studio_pages_source_stops_after_repeated_dead_detail_pages() -> None:
+def test_run_static_studio_pages_source_keeps_scanning_after_repeated_dead_detail_pages() -> None:
     prev = list(jf.STUDIO_SOURCE_REGISTRY)
     jf.STUDIO_SOURCE_REGISTRY = [
         {
@@ -2050,10 +2053,12 @@ def test_run_static_studio_pages_source_stops_after_repeated_dead_detail_pages()
     assert detail_fetches == [
         "https://example.net/job/1",
         "https://example.net/job/2",
+        "https://example.net/job/3",
+        "https://example.net/job/4",
     ]
 
 
-def test_run_static_studio_pages_source_adaptive_detail_batches_stop_after_two_empty_batches() -> (
+def test_run_static_studio_pages_source_empty_detail_batches_do_not_stop_remaining_candidates() -> (
     None
 ):
     prev = list(jf.STUDIO_SOURCE_REGISTRY)
@@ -2106,16 +2111,16 @@ def test_run_static_studio_pages_source_adaptive_detail_batches_stop_after_two_e
         "https://example.net/job/2",
         "https://example.net/job/3",
         "https://example.net/job/4",
+        "https://example.net/job/5",
+        "https://example.net/job/6",
     ]
     detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
     stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
     assert int(stats.get("detail_batch_count") or 0) == 2
-    assert int(stats.get("detail_pages_skipped_by_adaptive_stop") or 0) == 2
+    assert int(stats.get("detail_pages_skipped_by_adaptive_stop") or 0) == 0
 
 
-def test_run_static_studio_pages_source_caps_residual_detail_batches_when_listing_jobs_exist() -> (
-    None
-):
+def test_run_static_studio_pages_source_listing_rows_do_not_cap_residual_detail_batches() -> None:
     source_row = {
         "name": "Listing Wins Studio",
         "studio": "Listing Wins Studio",
@@ -2172,7 +2177,7 @@ def test_run_static_studio_pages_source_caps_residual_detail_batches_when_listin
     ]
     detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
     stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
-    assert int(stats.get("detail_batch_count") or 0) == 2
+    assert int(stats.get("detail_batch_count") or 0) == 1
 
 
 def test_static_zero_extract_generic_path_falls_back_to_needs_review() -> None:

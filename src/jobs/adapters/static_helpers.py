@@ -48,11 +48,6 @@ class StaticSourceRuntimeConfig:
     static_profile: str
     static_detail_concurrency: int
     static_source_time_budget_s: int
-    static_listing_http_timeout_s: int
-    static_listing_browser_timeout_s: int
-    static_listing_total_budget_s: int
-    static_listing_retries: int
-    static_post_listing_detail_budget_s: int
     low_yield_detail_cap: int
     very_low_yield_detail_cap: int
     listing_only_hosts: list[str]
@@ -208,41 +203,6 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
         static_detail_concurrency=detail_concurrency,
         static_source_time_budget_s=max(
             5, int(os.getenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S") or 25)
-        ),
-        static_listing_http_timeout_s=max(
-            1,
-            int(
-                os.getenv("BALUFFO_STATIC_LISTING_HTTP_TIMEOUT_S")
-                or common_config.DEFAULT_STATIC_LISTING_HTTP_TIMEOUT_S
-            ),
-        ),
-        static_listing_browser_timeout_s=max(
-            1,
-            int(
-                os.getenv("BALUFFO_STATIC_LISTING_BROWSER_TIMEOUT_S")
-                or common_config.DEFAULT_STATIC_LISTING_BROWSER_TIMEOUT_S
-            ),
-        ),
-        static_listing_total_budget_s=max(
-            3,
-            int(
-                os.getenv("BALUFFO_STATIC_LISTING_TOTAL_BUDGET_S")
-                or common_config.DEFAULT_STATIC_LISTING_TOTAL_BUDGET_S
-            ),
-        ),
-        static_listing_retries=max(
-            0,
-            int(
-                os.getenv("BALUFFO_STATIC_LISTING_RETRIES")
-                or common_config.DEFAULT_STATIC_LISTING_RETRIES
-            ),
-        ),
-        static_post_listing_detail_budget_s=max(
-            1,
-            int(
-                os.getenv("BALUFFO_STATIC_POST_LISTING_DETAIL_BUDGET_S")
-                or common_config.DEFAULT_STATIC_POST_LISTING_DETAIL_BUDGET_S
-            ),
         ),
         low_yield_detail_cap=max(4, int(os.getenv("BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP") or 12)),
         very_low_yield_detail_cap=max(

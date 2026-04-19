@@ -556,11 +556,6 @@ def run_static_studio_pages_source(
             1,
             min(static_detail_concurrency, len(cleaned_pages) if cleaned_pages else 1),
         )
-        listing_stage_started = time.perf_counter()
-        listing_deadline_monotonic = min(
-            float(source_deadline_state["value"]),
-            listing_stage_started + float(static_runtime.static_listing_total_budget_s),
-        )
         listing_stage_meta: dict[str, Any] = {
             "browserFallbacks": 0,
             "terminalReason": clean_text(stats.get("listing_terminal_reason")),
@@ -586,40 +581,9 @@ def run_static_studio_pages_source(
         def remaining_listing_budget_s(
             *,
             _source_deadline_state: dict[str, float] = source_deadline_state,
-            _listing_deadline_monotonic: float = listing_deadline_monotonic,
         ) -> float:
-            return min(
-                remaining_static_source_budget_s(
-                    deadline_monotonic=float(_source_deadline_state["value"])
-                ),
-                remaining_static_source_budget_s(deadline_monotonic=_listing_deadline_monotonic),
-            )
-
-        def provider_like_listing_host(url: str) -> bool:
-            host = clean_text(urlparse(clean_text(url) or "").netloc).lower()
-            return any(
-                token in host
-                for token in (
-                    "applytojob.com",
-                    "ashbyhq.com",
-                    "breezy.hr",
-                    "careers-page.com",
-                    "gohire.io",
-                    "greenhouse.io",
-                    "greenhouse.com",
-                    "hrmos.co",
-                    "icims.com",
-                    "intervieweb.it",
-                    "jobvite.com",
-                    "myworkdayjobs.com",
-                    "personio.de",
-                    "recruitee.com",
-                    "rippling-ats.com",
-                    "smartrecruiters.com",
-                    "teamtailor.com",
-                    "workable.com",
-                    "workdayjobs.com",
-                )
+            return remaining_static_source_budget_s(
+                deadline_monotonic=float(_source_deadline_state["value"])
             )
 
         def should_try_listing_browser_fallback(url: str, error_text: str) -> tuple[bool, str]:
@@ -656,7 +620,7 @@ def run_static_studio_pages_source(
                 url,
                 fetch_text,
                 timeout_s=effective_timeout_s,
-                retries=static_runtime.static_listing_retries,
+                retries=retries,
                 backoff_s=backoff_s,
             )
 
@@ -666,15 +630,6 @@ def run_static_studio_pages_source(
         source_strong_detail_candidates_total = 0
         for batch_start in range(0, len(cleaned_pages), listing_batch_size):
             if stop_source:
-                break
-            if remaining_listing_budget_s() < 1.0:
-                note_listing_terminal_reason("listing_budget_exhausted")
-                stop_for_budget_exhaustion(
-                    target_url=clean_text(cleaned_pages[batch_start]) or source_name,
-                    source_budget_s=min(
-                        static_source_time_budget_s, static_runtime.static_listing_total_budget_s
-                    ),
-                )
                 break
             if static_source_budget_exhausted(
                 deadline_monotonic=float(source_deadline_state["value"]), reserve_s=1.0
@@ -733,14 +688,11 @@ def run_static_studio_pages_source(
                 sync_source_deadline(source_budget_s)
                 remaining_budget_s = remaining_listing_budget_s()
                 effective_timeout_s = effective_timeout_for_remaining_budget(
-                    timeout_s=static_runtime.static_listing_http_timeout_s,
+                    timeout_s=timeout_s,
                     remaining_budget_s=remaining_budget_s,
                 )
                 if effective_timeout_s <= 0:
-                    note_listing_terminal_reason("listing_budget_exhausted")
-                    raise TimeoutError(
-                        f"listing time budget exceeded ({static_runtime.static_listing_total_budget_s}s)"
-                    )
+                    raise TimeoutError(f"time budget exceeded ({source_budget_s}s)")
                 html = ""
                 browser_fallback_attempted = False
                 browser_fallback_error = ""
@@ -751,7 +703,7 @@ def run_static_studio_pages_source(
                     should_fallback, reason = should_try_listing_browser_fallback(url, err_str)
                     if try_playwright and should_fallback:
                         browser_budget_s = effective_timeout_for_remaining_budget(
-                            timeout_s=static_runtime.static_listing_browser_timeout_s,
+                            timeout_s=timeout_s,
                             remaining_budget_s=remaining_listing_budget_s(),
                         )
                         if browser_budget_s > 0:
@@ -803,14 +755,11 @@ def run_static_studio_pages_source(
                 sync_source_deadline(source_budget_s)
                 remaining_budget_s = remaining_listing_budget_s()
                 effective_timeout_s = effective_timeout_for_remaining_budget(
-                    timeout_s=static_runtime.static_listing_http_timeout_s,
+                    timeout_s=timeout_s,
                     remaining_budget_s=remaining_budget_s,
                 )
                 if effective_timeout_s <= 0:
-                    note_listing_terminal_reason("listing_budget_exhausted")
-                    raise TimeoutError(
-                        f"listing time budget exceeded ({static_runtime.static_listing_total_budget_s}s)"
-                    )
+                    raise TimeoutError(f"time budget exceeded ({source_budget_s}s)")
                 html = ""
                 browser_fallback_attempted = False
                 browser_fallback_error = ""
@@ -828,7 +777,7 @@ def run_static_studio_pages_source(
                     should_fallback, reason = should_try_listing_browser_fallback(url, err_str)
                     if try_playwright and should_fallback:
                         browser_budget_s = effective_timeout_for_remaining_budget(
-                            timeout_s=static_runtime.static_listing_browser_timeout_s,
+                            timeout_s=timeout_s,
                             remaining_budget_s=remaining_listing_budget_s(),
                         )
                         if browser_budget_s > 0:
@@ -976,10 +925,7 @@ def run_static_studio_pages_source(
                     html = str(result.get("text") or "")
                     if try_playwright and html and detect_js_shell(html):
                         dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
-                            timeout_s=min(
-                                static_runtime.static_listing_http_timeout_s,
-                                max(1, effective_timeout_s),
-                            ),
+                            timeout_s=max(1, effective_timeout_s),
                             remaining_budget_s=remaining_listing_budget_s(),
                         )
                         parsed_pre = parse_jobpostings_from_html(
@@ -1007,7 +953,7 @@ def run_static_studio_pages_source(
                     listing_htmls = [html]
                     try:
                         dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
-                            timeout_s=static_runtime.static_listing_http_timeout_s,
+                            timeout_s=timeout_s,
                             remaining_budget_s=remaining_listing_budget_s(),
                         )
                         if dynamic_listing_timeout_s > 0:
@@ -1015,7 +961,7 @@ def run_static_studio_pages_source(
                                 page_url=page_url,
                                 page_html=html,
                                 timeout_s=dynamic_listing_timeout_s,
-                                retries=static_runtime.static_listing_retries,
+                                retries=retries,
                                 backoff_s=backoff_s,
                             )
                             if dynamic_listing_html and dynamic_listing_html not in listing_htmls:
@@ -1291,17 +1237,6 @@ def run_static_studio_pages_source(
                             f"{'' if len(detail_links) == 1 else 's'} for {source_name}."
                         ),
                     )
-                    if (
-                        listing_jobs_found <= 0
-                        and strong_detail_candidate_count <= 0
-                        and len(detail_links) <= 0
-                    ):
-                        if provider_like_listing_host(page_url):
-                            note_listing_terminal_reason("provider_listing_zero_yield")
-                        else:
-                            note_listing_terminal_reason("listing_zero_yield")
-                        stop_source = True
-                        continue
                     listing_fingerprint = hashlib.sha1(
                         "\n".join(listing_htmls).encode("utf-8")
                     ).hexdigest()
@@ -1402,7 +1337,6 @@ def run_static_studio_pages_source(
                         source_state_rows=source_state_rows,
                         static_detail_concurrency=static_detail_concurrency,
                     )
-                    initial_detail_batch_size = max(1, min(detail_concurrency, 6))
                     emit_source_progress(
                         phase_key="static_detail_traversal",
                         phase_label="Traversing detail pages",
@@ -1427,17 +1361,8 @@ def run_static_studio_pages_source(
                     detail_redirect_loop_count = 0
                     detail_state = {
                         "stop": False,
-                        "consecutiveZeroBatches": 0,
-                        "nextBatchSize": initial_detail_batch_size,
                         "index": 0,
                     }
-                    initial_low_yield_pages = 0
-                    post_listing_detail_deadline = (
-                        time.perf_counter()
-                        + float(static_runtime.static_post_listing_detail_budget_s)
-                        if source_has_listing_rows
-                        else 0.0
-                    )
 
                     def stop_detail_traversal_adaptively(
                         *,
@@ -1461,20 +1386,9 @@ def run_static_studio_pages_source(
                         remaining_budget_s: float,
                         _detail_state: dict[str, Any] = detail_state,
                         _detail_concurrency: int = detail_concurrency,
-                        _source_has_listing_rows: bool = source_has_listing_rows,
                         _source_stats: dict[str, Any] = source_stats,
                     ) -> int:
-                        batch_size = max(
-                            1,
-                            min(
-                                _detail_concurrency,
-                                int(_detail_state.get("nextBatchSize") or 1),
-                            ),
-                        )
-                        if _source_has_listing_rows:
-                            batch_size = min(batch_size, 2)
-                        if int(_detail_state.get("consecutiveZeroBatches") or 0) >= 1:
-                            batch_size = 1
+                        batch_size = max(1, int(_detail_concurrency))
                         current_gate_wait_ms, current_gate_wait_count = (
                             current_domain_gate_wait_stats()
                         )
@@ -1496,13 +1410,6 @@ def run_static_studio_pages_source(
                     while int(detail_state.get("index") or 0) < len(detail_links):
                         if bool(detail_state.get("stop")) or stop_source:
                             break
-                        if int(detail_state.get("consecutiveZeroBatches") or 0) >= 2:
-                            stop_detail_traversal_adaptively()
-                            break
-                        if source_has_listing_rows and post_listing_detail_deadline > 0:
-                            if time.perf_counter() >= post_listing_detail_deadline:
-                                stop_detail_traversal_adaptively()
-                                break
                         if static_source_budget_exhausted(
                             deadline_monotonic=float(source_deadline_state["value"]), reserve_s=1.0
                         ):
@@ -1721,20 +1628,6 @@ def run_static_studio_pages_source(
                         if stop_source:
                             break
                         detail_state["index"] = detail_batch_start + len(detail_batch)
-                        initial_low_yield_pages += batch_low_yield_terminal_pages
-                        if (
-                            initial_low_yield_pages >= min(4, len(detail_links))
-                            and detail_rows_from_pages == 0
-                        ):
-                            stop_detail_traversal_adaptively()
-                        if batch_rows_emitted == 0:
-                            detail_state["consecutiveZeroBatches"] = (
-                                int(detail_state.get("consecutiveZeroBatches") or 0) + 1
-                            )
-                            detail_state["nextBatchSize"] = 1
-                        else:
-                            detail_state["consecutiveZeroBatches"] = 0
-                            detail_state["nextBatchSize"] = initial_detail_batch_size
                     stats["detail_fetch_ms"] += max(
                         0,
                         int((time.perf_counter() - detail_fetch_started) * 1000)
@@ -1793,7 +1686,6 @@ def run_static_studio_pages_source(
             if terminal_reason in {
                 "listing_timeout",
                 "listing_timeout_after_browser_fallback",
-                "listing_budget_exhausted",
             }:
                 entry_report["classification"] = "timeout"
             elif terminal_reason in {
@@ -1801,11 +1693,6 @@ def run_static_studio_pages_source(
                 "browser_fallback_empty",
             }:
                 entry_report["classification"] = "blocked_or_challenge"
-            elif terminal_reason in {
-                "listing_zero_yield",
-                "provider_listing_zero_yield",
-            }:
-                entry_report["classification"] = "site_changed"
             # If we're running a single static source loader, treat this as a hard error
             # so it isn't silently reported as ok-with-zero.
             if len(selected_sources) == 1:

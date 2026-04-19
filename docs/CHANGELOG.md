@@ -9,17 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> Upcoming `v0.1.24`.
+## [0.1.3] - 2026-04-19
 
 ### Changed
 - Packaged desktop startup probing, crash coverage, and updater finalize/retry behavior were hardened so release-preflight and smoke lanes stay aligned with the shipped runtime.
 - Desktop first-use flow now explains guest-mode persistence, lists existing local desktop profiles before sign-in, shows the installed app version in page chrome, and reframes the initial Admin no-fetch state as guidance instead of an unexpected error.
 - Release-notes and desktop update UI wording were tightened around finalize/retry and startup resilience.
+- Static listing/detail completeness caps were removed so the fetcher can keep pursuing valid zero-yield and residual detail paths instead of cutting them off early.
+- Static traversal now prioritizes recall again without giving up the async transport, capped Playwright, and packaged-runtime throughput improvements that stabilized cold fetches.
 
 ### Fixed
 - Desktop startup/update resilience regressions around launch handoff, stale launch retry paths, and packaged crash recovery were removed, including cleanup of the unused desktop launch retry helper.
 - Desktop sign-in no longer falls back silently to blind profile-name entry when profile listing fails; it now requires explicit `Retry`, `Create new profile`, or `Cancel`.
 - The first-run `fetch_never_run` Admin guidance can no longer be dismissed away before a successful fetch clears the condition.
+- Packaged cold fetch validation stayed in the fast runtime class while slightly improving final merged output after the static completeness rollback.
 
 ## [0.1.23] - 2026-04-17
 
