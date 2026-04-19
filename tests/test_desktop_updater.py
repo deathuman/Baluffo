@@ -76,6 +76,24 @@ def test_helper_diagnostics_path_prefers_plan_field() -> None:
         assert resolved == diag_path.resolve()
 
 
+def test_helper_failure_dialog_enabled_respects_no_dialog_env(monkeypatch) -> None:
+    monkeypatch.setenv(updater.DESKTOP_UPDATER_NO_DIALOG_ENV, "1")
+
+    assert updater._helper_failure_dialog_enabled() is False
+
+
+def test_helper_relaunch_verify_timeout_s_uses_env_override(monkeypatch) -> None:
+    monkeypatch.setenv(updater.DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV, "7.5")
+
+    assert updater._helper_relaunch_verify_timeout_s() == 7.5
+
+
+def test_helper_relaunch_verify_timeout_s_falls_back_on_invalid_env(monkeypatch) -> None:
+    monkeypatch.setenv(updater.DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV, "fast")
+
+    assert updater._helper_relaunch_verify_timeout_s(default=12.0) == 12.0
+
+
 def test_helper_window_layout_uses_baluffo_dark_tokens() -> None:
     layout = updater._helper_window_layout("  ")
 
@@ -256,6 +274,57 @@ def test_run_install_finishes_stale_verifying_state_when_target_is_already_healt
         assert status["installState"] == "installed"
         assert status["installStage"] == "installed"
         assert status["targetVersion"] == str(plan["targetVersion"])
+
+
+def test_run_install_uses_env_override_for_relaunch_verification_timeout(monkeypatch) -> None:
+    with workspace_tmpdir("desktop-updater") as tmp:
+        install_root = Path(tmp) / "portable"
+        ship_root = install_root / "ship"
+        data_dir = ship_root / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        zip_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        zip_path.write_text("zip", encoding="utf-8")
+        rollback_root = paths.rollback_root / "1.4.0-20260414-120000"
+        _write_install_plan(paths.install_plan_path, install_root, rollback_root, zip_path)
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {
+                "manifest": {
+                    "version": "1.4.0",
+                    "portable_artifact": {"sha256": "expected-zip-sha"},
+                    "signature": "ignored-for-test",
+                    "key_id": "desktop-ed25519-test",
+                }
+            },
+        )
+        zip_context = mock.MagicMock()
+        zip_context.__enter__.return_value = zip_context
+        zip_context.__exit__.return_value = False
+        verify_startup = mock.Mock()
+
+        monkeypatch.setenv(updater.DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV, "6")
+        monkeypatch.setattr(updater, "validate_desktop_manifest", lambda manifest: None)
+        monkeypatch.setattr(
+            updater, "load_desktop_update_public_keys", lambda candidate_paths=None: []
+        )
+        monkeypatch.setattr(
+            updater, "verify_manifest_signature", lambda manifest, public_keys=None: None
+        )
+        monkeypatch.setattr(updater, "compute_sha256", lambda path: "expected-zip-sha")
+        monkeypatch.setattr(updater, "_recover_interrupted_install", lambda *args, **kwargs: False)
+        monkeypatch.setattr(updater, "_wait_for_launcher_exit", lambda plan: None)
+        monkeypatch.setattr(updater.zipfile, "ZipFile", mock.Mock(return_value=zip_context))
+        monkeypatch.setattr(updater, "_copy_install_snapshot", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater, "_sync_extract_to_install", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater, "_launch_executable", lambda *args, **kwargs: None)
+        monkeypatch.setattr(updater, "_verify_target_startup", verify_startup)
+        monkeypatch.setattr(updater, "_finalize_success", lambda *args, **kwargs: None)
+
+        result = updater.run_install(paths.install_plan_path)
+
+        assert result == {"ok": True, "installedVersion": "1.4.0"}
+        verify_startup.assert_called_once_with(mock.ANY, timeout_s=6.0)
 
 
 def test_run_install_recovers_manifest_cache_from_release_metadata(monkeypatch) -> None:

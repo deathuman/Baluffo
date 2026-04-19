@@ -2062,6 +2062,8 @@ def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_ex
             )
 
         assert result["status"] == "passed"
+        assert captured_env["BALUFFO_DESKTOP_UPDATER_NO_DIALOG"] == "1"
+        assert captured_env["BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S"] == "10"
 
 
 def test_assert_desktop_update_helper_succeeded_rejects_failed_helper_stdout() -> None:

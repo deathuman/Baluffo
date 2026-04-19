@@ -49,6 +49,9 @@ from src.ship.desktop_update import (
     write_json_atomic,
 )
 
+DESKTOP_UPDATER_NO_DIALOG_ENV = "BALUFFO_DESKTOP_UPDATER_NO_DIALOG"
+DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV = "BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S"
+
 MUTATING_INSTALL_STAGES = frozenset(
     {
         "replacing",
@@ -307,6 +310,25 @@ def _helper_diagnostics_path_for_plan(plan_path: Path) -> Path:
     return plan_path.parent / "desktop-updater-helper.diagnostics.jsonl"
 
 
+def _helper_failure_dialog_enabled(*, env: dict[str, str] | None = None) -> bool:
+    env_map = env if env is not None else os.environ
+    raw = str(env_map.get(DESKTOP_UPDATER_NO_DIALOG_ENV) or "").strip().lower()
+    return raw not in {"1", "true", "yes", "on"}
+
+
+def _helper_relaunch_verify_timeout_s(
+    default: float = 90.0, *, env: dict[str, str] | None = None
+) -> float:
+    env_map = env if env is not None else os.environ
+    raw = str(env_map.get(DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV) or "").strip()
+    if not raw:
+        return float(default)
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return float(default)
+
+
 def _launch_executable(executable_path: Path, *, clear_app_version_override: bool = False) -> None:
     if not executable_path.is_file():
         raise RuntimeError(f"Desktop executable not found: {executable_path}")
@@ -484,6 +506,8 @@ def _classify_install_failure(exc: Exception) -> str:
 
 
 def _show_message(title: str, message: str) -> None:
+    if not _helper_failure_dialog_enabled():
+        return
     if os.name == "nt":
         import ctypes
 
@@ -831,7 +855,7 @@ def run_install(
             rollbackPath=str(rollback_root),
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
-        _verify_target_startup(plan)
+        _verify_target_startup(plan, timeout_s=_helper_relaunch_verify_timeout_s())
         _finalize_success(paths, plan, rollback_root)
         return {"ok": True, "installedVersion": str(plan.get("targetVersion") or "")}
     except Exception as exc:

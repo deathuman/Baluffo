@@ -1765,6 +1765,8 @@ def run_desktop_update_rehearsal(
                 "BALUFFO_DESKTOP_UPDATE_REPO": "local/baluffo-smoke",
                 "BALUFFO_DESKTOP_UPDATE_GITHUB_API_BASE": base_url,
                 "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON": json.dumps({key_id: public_key_b64}),
+                "BALUFFO_DESKTOP_UPDATER_NO_DIALOG": "1",
+                "BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S": "10",
             }
         )
         runtime_env.update(
