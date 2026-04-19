@@ -11,6 +11,7 @@
 
 ```
 jobs.html / saved.html / admin.html
+  -> styles/base.css + styles/components.css + styles/<page>.css
   -> frontend/{jobs|saved|admin}/index.js
   -> frontend/{jobs|saved|admin}/app.js
   -> frontend/{jobs|saved|admin}/app/runtime.js
@@ -79,6 +80,8 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 **Admin page:** `frontend/admin/app.js` → `runtime.js` → `app/auth.js`, `app/fetcher.js`, `app/discovery.js`, `app/sync.js`, `app/registry.js`, `app/ops.js`
 
 **Shared:** `frontend/shared/state-hub.js` (cross-module state), `frontend/shared/api-client.js` (bridge HTTP), `frontend/shared/config/admin-config.js` (frontend-safe runtime config), `frontend/shared/local-data/` (desktop/browser local-data clients)
+
+**Styles:** `styles/base.css` owns tokens and page foundations, `styles/components.css` owns shared UI primitives, and `styles/{jobs,saved,admin}.css` own page-specific polish. Change shared styling in the shared layer first; only touch page CSS when the selector is clearly page-owned.
 
 ---
 

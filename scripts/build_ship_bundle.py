@@ -41,7 +41,6 @@ APP_RUNTIME_FILES = (
     "index.html",
     "jobs.html",
     "saved.html",
-    "styles.css",
     "theme.js",
     "startup-probe.js",
     "README.md",
@@ -80,7 +79,7 @@ APP_RUNTIME_SHIP_FILES = (
     "__init__.py",
     "desktop_update.py",
 )
-APP_RUNTIME_ASSET_DIRS = ("probes",)
+APP_RUNTIME_ASSET_DIRS = ("probes", "styles")
 PACKAGING_FILES = (
     "README.md",
     "github-app-sync-config.template.json",

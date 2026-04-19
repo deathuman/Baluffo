@@ -5,7 +5,6 @@ REQUIRED_ROOT_FILES = (
     "jobs.html",
     "saved.html",
     "admin.html",
-    "styles.css",
     "theme.js",
     "frontend-runtime-config.js",
 )
@@ -34,6 +33,8 @@ REQUIRED_FRONTEND_OWNERS = (
 def test_repo_root_keeps_required_page_assets_only(repo_root: Path) -> None:
     for rel_path in REQUIRED_ROOT_FILES:
         assert (repo_root / rel_path).exists(), f"required root asset missing: {rel_path}"
+
+    assert (repo_root / "styles").is_dir(), "required root styles directory missing: styles"
 
     for rel_path in MOVED_ROOT_SUPPORT_FILES:
         assert not (repo_root / rel_path).exists(), (

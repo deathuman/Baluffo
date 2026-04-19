@@ -5,20 +5,20 @@ Purpose
 - Brief: Help contributors and AI agents work productively on this small static web project.
 
 Big picture
-- This is a tiny static site delivered from three primary files: `index.html`, `styles.css`, and `app.js`.
-- `index.html` contains the DOM structure and loads `app.js`.
-- `app.js` implements small, event-driven UI logic (button -> popup). The data source is the in-file `descriptions` array.
+- This is a Windows-first, local-first jobs app with multiple HTML entrypoints: `index.html`, `jobs.html`, `saved.html`, and `admin.html`.
+- Shared frontend logic lives under `frontend/` as ES modules. The app is still served as static HTML/CSS/JS without a bundler.
+- Styles are split under `styles/`: `base.css` for tokens and page foundations, `components.css` for shared UI, and page-scoped files such as `jobs.css`, `saved.css`, and `admin.css`.
 
 Key files (examples)
-- `index.html`: root markup and IDs used by JS (`learn-more-btn`, `popup-overlay`, `popup-description`, `popup-close-btn`).
-- `app.js`: single-file DOM scripting; modify here for behavior changes.
-- `styles.css`: visual styles including the `.hidden` utility class used to toggle the popup.
+- `jobs.html`, `saved.html`, `admin.html`: primary UI entrypoints; keep their stylesheet includes aligned with the split `styles/` layout.
+- `frontend/`: shared and page-specific ES modules; prefer editing the narrow owner module instead of reviving root-level script files.
+- `styles/`: shared and page-scoped CSS; keep shared primitives in `base.css` / `components.css` and page-specific polish in the page stylesheet.
 
 Project-specific patterns & conventions
-- No build system or dependencies — edits are reflected by reloading `index.html` in a browser.
-- UI state is toggled with the `hidden` class on `#popup-overlay`. Respect this pattern when changing show/hide behavior.
-- Buttons use the `.btn` utility class; close actions use `.btn-close`.
-- IDs are primary selectors for JS wiring. Prefer updating IDs consistently across `index.html` and `app.js`.
+- No build system or dependencies — edits are reflected by reloading the HTML entrypoints in a browser.
+- Preserve the current split stylesheet ownership; do not collapse page CSS back into a root `styles.css` shim.
+- Buttons and shared UI primitives should stay in the shared CSS layer unless they are clearly page-owned.
+- IDs and `data-ui` hooks are primary selectors for JS wiring. Prefer updating markup and the owning frontend module together.
 
 Developer workflows (how to run / test)
 - Quick preview: open `index.html` in a browser or run a local static server from the repo root.
@@ -27,16 +27,16 @@ Developer workflows (how to run / test)
 - Debugging: use browser DevTools. Inspect elements referenced by `app.js` and watch console for uncaught errors.
 
 What to look for when editing
-- Keep DOM IDs in sync: when renaming an ID in `index.html`, update `app.js` references.
-- Keep styles modular: prefer class-based styling (`.btn`, `.popup`) rather than inline styles.
-- Small JS only: if a feature grows, suggest introducing a lightweight module structure (ES modules) and document it here.
+- Keep DOM IDs and `data-ui` hooks in sync with the corresponding frontend modules.
+- Keep styles modular: shared rules belong in `styles/base.css` or `styles/components.css`; page-only rules belong in the matching page stylesheet.
+- Prefer editing the smallest owning frontend module rather than introducing new root-level scripts.
 
 Integration points & external deps
 - None currently. There are no external APIs, packages, or build steps.
 
 Examples (common tasks)
-- Change popup wording: edit `descriptions` array in `app.js`.
-- Add another button that shows a fixed message: add element to `index.html`, add `getElementById` and `addEventListener` in `app.js`, and reuse `.btn` styling.
+- Adjust Jobs page presentation: edit `jobs.html`, the owning `frontend/jobs/...` module, and `styles/jobs.css` if the change is page-specific.
+- Adjust shared UI styling: update `styles/components.css`, and only touch page CSS when the behavior or polish is page-specific.
 
 Agent guidance (do / don't)
 - Do: make minimal, focused edits; update both HTML and JS for ID/name changes.

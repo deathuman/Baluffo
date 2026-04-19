@@ -21,6 +21,11 @@
 2. **Backend:** Python for fetching, discovery, sync, and local HTTP bridge
 3. **Desktop:** Windows packaging/runtime that launches site + bridge locally
 
+**Frontend styling layout**
+- Shared CSS lives under `styles/base.css` (tokens, foundations) and `styles/components.css` (shared UI primitives).
+- Page-scoped CSS lives under `styles/jobs.css`, `styles/saved.css`, and `styles/admin.css`.
+- Do not reintroduce a root `styles.css` compatibility shim; keep shared rules shared and page polish page-scoped.
+
 **Not** a React/Vite app. Not a cloud backend.
 
 ---
@@ -73,6 +78,7 @@
 | Task | Start here | Then only if needed |
 |------|------------|---------------------|
 | Frontend behavior | `frontend/<page>/app/*.js` | `frontend/<page>/app/runtime.js` |
+| Shared/page CSS | `styles/{base,components,<page>}.css` | The owning HTML entrypoint only if stylesheet includes need to change |
 | Bridge/API | `src/bridge/*.py` | `src/bridge/routes/*.py` |
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
 | Registry sync / tombstones | `src/source_registry.py`, `src/bridge/registry_service.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py` | `src/bridge/registry_tombstones.py`, `src/source_sync.py`, `src/source_sync_crypto.py`, `src/bridge/routes/post_routes.py` |

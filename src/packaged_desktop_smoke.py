@@ -81,12 +81,11 @@ _PORTABLE_EXE_FRESHNESS_MARKERS = (
     ROOT / "jobs.html",
     ROOT / "saved.html",
     ROOT / "admin.html",
-    ROOT / "styles.css",
     ROOT / "theme.js",
     ROOT / "frontend-runtime-config.js",
     ROOT / "baluffo.config.json",
 )
-_PORTABLE_EXE_FRESHNESS_DIRS = (ROOT / "frontend", ROOT / "probes")
+_PORTABLE_EXE_FRESHNESS_DIRS = (ROOT / "frontend", ROOT / "probes", ROOT / "styles")
 DESKTOP_SESSION_STATE_FILE = "desktop-session.json"
 DESKTOP_INSTANCE_LOCK_FILE = "desktop-instance.lock"
 DESKTOP_BROWSER_PROFILE_DIR = "desktop-browser-profile"
