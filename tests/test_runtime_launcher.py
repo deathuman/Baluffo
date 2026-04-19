@@ -571,8 +571,10 @@ def test_run_bridge_server_uses_current_version_repaired_by_startup_check() -> N
                     data_dir=root / "data",
                 )
 
-        assert captured["script"].endswith(
-            f"app\\versions\\{repaired_version}\\src\\admin_bridge.py"
+        assert (
+            Path(captured["script"])
+            .as_posix()
+            .endswith(f"app/versions/{repaired_version}/src/admin_bridge.py")
         )
 
 

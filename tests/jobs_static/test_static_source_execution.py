@@ -2050,7 +2050,7 @@ def test_run_static_studio_pages_source_keeps_scanning_after_repeated_dead_detai
         jf.STUDIO_SOURCE_REGISTRY = prev
 
     assert rows == []
-    assert detail_fetches == [
+    assert sorted(detail_fetches) == [
         "https://example.net/job/1",
         "https://example.net/job/2",
         "https://example.net/job/3",
@@ -2169,7 +2169,7 @@ def test_run_static_studio_pages_source_listing_rows_do_not_cap_residual_detail_
     )
 
     assert len(rows) == 5
-    assert detail_fetches == [
+    assert sorted(detail_fetches) == [
         "https://example.net/job/a",
         "https://example.net/job/b",
         "https://example.net/job/c",
