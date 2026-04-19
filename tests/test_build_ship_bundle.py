@@ -80,6 +80,7 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
         assert (version_root / "frontend" / "admin" / "app.js").exists()
         assert (version_root / "src" / "admin_bridge.py").exists()
         assert (version_root / "src" / "app_version.py").exists()
+        assert (version_root / "src" / "baluffo_version.py").exists()
         assert (version_root / "src" / "baluffo_config.py").exists()
         assert (version_root / "src" / "exceptions.py").exists()
         assert (version_root / "src" / "local_data_store.py").exists()

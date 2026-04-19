@@ -253,17 +253,18 @@ def test_startup_check_prefers_highest_healthy_baluffo_version_when_current_brok
         _seed_root(root, version="0.1.23")
         _seed_full_version(root, "0.1.29")
         _seed_full_version(root, "0.1.3")
-        vbroken = root / "app" / "versions" / "0.1.30"
+        _seed_full_version(root, "0.1.31")
+        vbroken = root / "app" / "versions" / "0.1.39"
         (vbroken / "src").mkdir(parents=True, exist_ok=True)
         _write(vbroken / "index.html", "<html></html>\n")
         _write(vbroken / "jobs.html", "<html></html>\n")
         _write(vbroken / "saved.html", "<html></html>\n")
-        _write(root / "app" / "current.txt", "0.1.30\n")
+        _write(root / "app" / "current.txt", "0.1.39\n")
         _write(
             root / "app" / "update-state.json",
             json.dumps(
                 {
-                    "current_version": "0.1.30",
+                    "current_version": "0.1.39",
                     "previous_version": "",
                     "last_update_status": "ready",
                     "last_error_code": "",
@@ -273,13 +274,15 @@ def test_startup_check_prefers_highest_healthy_baluffo_version_when_current_brok
         )
         result = um.startup_check(root, root / "data")
         assert result["ok"] is True
-        assert result["current_version"] == "0.1.3"
+        assert result["current_version"] == "0.1.31"
 
 
 def test_is_downgrade_uses_baluffo_release_ordering() -> None:
     assert um.is_downgrade("0.1.3", "0.1.29") is True
     assert um.is_downgrade("0.1.29", "0.1.3") is False
     assert um.is_downgrade("0.1.30", "0.1.29") is True
+    assert um.is_downgrade("0.1.31", "0.1.29") is True
+    assert um.is_downgrade("0.1.23", "0.1.31") is False
 
 
 def test_startup_check_skips_unhealthy_previous_and_scans_versions() -> None:

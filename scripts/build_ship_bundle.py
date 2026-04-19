@@ -50,6 +50,7 @@ APP_RUNTIME_SCRIPTS = (
     "__init__.py",
     "admin_bridge.py",
     "app_version.py",
+    "baluffo_version.py",
     "baluffo_config.py",
     "contracts.py",
     "exceptions.py",
