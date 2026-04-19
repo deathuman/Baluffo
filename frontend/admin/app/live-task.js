@@ -113,9 +113,37 @@ export function hasTaskLivePayload(payload) {
   return false;
 }
 
+function hasMeaningfulTaskProgress(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  if (Boolean(payload.active)) return true;
+  if (String(payload.phaseKey || "").trim()) return true;
+  if (String(payload.phaseLabel || "").trim()) return true;
+  const counts = payload.counts && typeof payload.counts === "object" && !Array.isArray(payload.counts)
+    ? payload.counts
+    : {};
+  return Object.values(counts).some(value => {
+    if (typeof value === "number") return Number(value) > 0;
+    if (typeof value === "boolean") return value;
+    return Boolean(String(value || "").trim());
+  });
+}
+
+export function hasMeaningfulTaskLivePayload(payload) {
+  if (!hasTaskLivePayload(payload)) return false;
+  if (hasMeaningfulTaskProgress(payload.taskProgress)) return true;
+  if (getTaskLiveWorkItems(payload).length > 0) return true;
+  if (getTaskLiveRecentEvents(payload).length > 0) return true;
+  return false;
+}
+
 export function pickTaskLivePayload(livePayload, fallbackPayload = null) {
   void fallbackPayload;
   return hasTaskLivePayload(livePayload) ? livePayload : null;
+}
+
+export function pickMeaningfulTaskLivePayload(livePayload, fallbackPayload = null) {
+  if (hasMeaningfulTaskLivePayload(livePayload)) return livePayload;
+  return hasMeaningfulTaskLivePayload(fallbackPayload) ? fallbackPayload : null;
 }
 
 export function markLiveTaskActivity(liveState, nowMs = Date.now()) {

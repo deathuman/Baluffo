@@ -2469,6 +2469,31 @@ def test_get_task_live_payload_fetch_prefers_live_owner_state_over_stale_finishe
     assert str((task_state.get("fetch") or {}).get("runId") or "") == "fetch_live_owner_1"
 
 
+def test_get_task_live_payload_fetch_keeps_sparse_active_artifact_meaningful(
+    admin_bridge_entrypoint_root,
+) -> None:
+    _setup_sparse_fetch_task_artifact_keeps_owner_active()
+
+    with mock.patch.object(admin_bridge, "pid_is_running", return_value=False):
+        payload = _task_live_payload("fetch")
+
+    assert bool(payload.get("active")) is True
+    assert str(payload.get("status") or "") == "running"
+    progress = payload.get("taskProgress") or {}
+    counts = progress.get("counts") or {}
+    assert bool(progress.get("active")) is True
+    assert str(progress.get("phaseLabel") or "") == "Executing sources"
+    assert counts.get("sourceCount") == 10
+    assert counts.get("outputCount") == 4
+    assert counts.get("runningTasks") == 1
+    work_items = payload.get("workItems") or []
+    assert len(work_items) == 1
+    assert work_items[0].get("name") == "Sparse Source"
+    recent_events = payload.get("recentEvents") or []
+    assert len(recent_events) == 1
+    assert "Fetch still active" in str(recent_events[0].get("message") or "")
+
+
 def test_get_task_live_payload_discovery_preserves_shared_contract(
     admin_bridge_entrypoint_root,
 ) -> None:

@@ -296,6 +296,8 @@ test("admin live-task restore helper silently hydrates fetch progress on first b
     assert.equal(fixture.refs.adminFetcherProgressEl.classList.contains("hidden"), false);
     assert.match(String(fixture.refs.adminFetcherProgressLabelEl.textContent || ""), /executing sources/i);
     assert.match(String(fixture.refs.adminFetcherProgressLabelEl.textContent || ""), /6\/12 sources resolved/i);
+    await timerStub.scheduled[1]();
+    assert.match(String(fixture.refs.adminFetcherProgressLabelEl.textContent || ""), /6\/12 sources resolved/i);
     assert.deepEqual(fixture.state.fetchOptimisticRun, {
       runId: "fetch_boot_restore_1",
       startedAt: "2026-03-08T10:00:00.000Z"
@@ -1935,6 +1937,302 @@ test("admin ops controller renders bridge task-state without reattaching from hi
   }
 });
 
+test("admin ops controller quietly auto-attaches active fetch and discovery task-state rows", async () => {
+  const state = {
+    latestOpsHealthCache: null,
+    latestOpsHistoryPayload: null,
+    latestTaskStatePayload: null,
+    taskStateMissingStreakByType: {},
+    adminBusyState: {
+      opsLoad: false,
+      fetcherWatch: false,
+      discoveryWatch: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    }
+  };
+  const refs = {
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement(),
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement()
+  };
+  const calls = [];
+  const controller = createAdminOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/history?limit=80") return { runs: [] };
+      if (path === "/ops/task-state") {
+        return {
+          tasks: [
+            {
+              taskType: "fetch",
+              type: "fetch",
+              runId: "fetch_live_attach_1",
+              active: true,
+              startedAt: "2026-03-08T10:01:00.000Z",
+              status: "running"
+            },
+            {
+              taskType: "discovery",
+              type: "discovery",
+              runId: "discovery_live_attach_1",
+              active: true,
+              startedAt: "2026-03-08T10:02:00.000Z",
+              status: "running"
+            }
+          ]
+        };
+      }
+      if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: ({ taskState }) => ({
+      currentRows: (taskState?.tasks || []).map(row => ({ ...row, isLive: true })),
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: true,
+      liveTypes: ["fetch", "discovery"]
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory() {},
+    loadSyncStatus: async () => {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange() {},
+    loadDiscoveryData: async () => {},
+    attachToActiveFetchRun(runMeta, options) {
+      calls.push(`fetch:${String(runMeta?.runId || "")}:${String(options?.announceStart)}`);
+    },
+    loadLatestFetcherReport: async options => {
+      calls.push(`fetchReport:${String(Boolean(options?.silent))}:${String(Boolean(options?.hydrateActiveProgress))}`);
+      return {};
+    },
+    attachToActiveDiscoveryRun(runMeta, options) {
+      calls.push(`discovery:${String(runMeta?.runId || "")}:${String(options?.announceStart)}`);
+    },
+    loadLatestDiscoveryReport: async options => {
+      calls.push(`discoveryReport:${String(Boolean(options?.silent))}`);
+      return {};
+    },
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000
+  });
+
+  await controller.loadOpsHealthData();
+  controller.stopOpsHealthPolling();
+
+  assert.ok(calls.includes("fetch:fetch_live_attach_1:false"));
+  assert.ok(calls.includes("fetchReport:true:true"));
+  assert.ok(calls.includes("discovery:discovery_live_attach_1:false"));
+  assert.ok(calls.includes("discoveryReport:true"));
+});
+
+test("admin ops controller retains current live rows across one empty task-state sample and clears on the second", async () => {
+  const state = {
+    latestOpsHealthCache: null,
+    latestOpsHistoryPayload: null,
+    latestTaskStatePayload: null,
+    taskStateMissingStreakByType: {},
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    }
+  };
+  const refs = {
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement(),
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement()
+  };
+  const taskStatePayloads = [
+    {
+      tasks: [
+        {
+          taskType: "fetch",
+          type: "fetch",
+          runId: "fetch_live_stable_1",
+          active: true,
+          startedAt: "2026-03-08T10:01:00.000Z",
+          status: "running"
+        }
+      ]
+    },
+    { tasks: [] },
+    { tasks: [] }
+  ];
+  const renderedCurrentCounts = [];
+  const controller = createAdminOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/history?limit=80") return { runs: [] };
+      if (path === "/ops/task-state") return taskStatePayloads.shift() || { tasks: [] };
+      if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: ({ taskState }) => ({
+      currentRows: (taskState?.tasks || []).map(row => ({ ...row, isLive: true })),
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: Boolean((taskState?.tasks || []).length),
+      liveTypes: (taskState?.tasks || []).map(row => String(row?.taskType || row?.type || "").toLowerCase())
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory(_el, runModel) {
+      renderedCurrentCounts.push(runModel.currentRows.length);
+    },
+    loadSyncStatus: async () => {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange() {},
+    loadDiscoveryData: async () => {},
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000
+  });
+
+  await controller.loadOpsHealthData();
+  await controller.loadOpsHealthData();
+  await controller.loadOpsHealthData();
+  controller.stopOpsHealthPolling();
+
+  assert.deepEqual(renderedCurrentCounts, [1, 1, 0]);
+  assert.equal(state.adminBusyState.liveFetchRunning, false);
+});
+
+test("admin ops controller keeps the last live rows rendered on transient ops polling failure", async () => {
+  const state = {
+    latestOpsHealthCache: null,
+    latestOpsHistoryPayload: null,
+    latestTaskStatePayload: null,
+    taskStateMissingStreakByType: {},
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    }
+  };
+  const refs = {
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement(),
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement()
+  };
+  let callCount = 0;
+  const renderedCurrentCounts = [];
+  const controller = createAdminOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      callCount += 1;
+      if (callCount > 4 && path === "/ops/health") {
+        throw new Error("transient bridge error");
+      }
+      if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/history?limit=80") return { runs: [] };
+      if (path === "/ops/task-state") {
+        return {
+          tasks: [
+            {
+              taskType: "fetch",
+              type: "fetch",
+              runId: "fetch_live_error_hold_1",
+              active: true,
+              startedAt: "2026-03-08T10:01:00.000Z",
+              status: "running"
+            }
+          ]
+        };
+      }
+      if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: ({ taskState }) => ({
+      currentRows: (taskState?.tasks || []).map(row => ({ ...row, isLive: true })),
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: Boolean((taskState?.tasks || []).length),
+      liveTypes: (taskState?.tasks || []).map(row => String(row?.taskType || row?.type || "").toLowerCase())
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory(_el, runModel) {
+      renderedCurrentCounts.push(runModel.currentRows.length);
+    },
+    loadSyncStatus: async () => {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange() {},
+    loadDiscoveryData: async () => {},
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000
+  });
+
+  await controller.loadOpsHealthData();
+  await controller.loadOpsHealthData();
+  controller.stopOpsHealthPolling();
+
+  assert.deepEqual(renderedCurrentCounts, [1, 1]);
+  assert.equal(state.adminBusyState.liveFetchRunning, true);
+});
+
 test("admin fetcher controller stores optimistic run metadata while fetch watch is active", async () => {
   const timerStub = stubScheduledTimers();
 
@@ -2661,7 +2959,7 @@ test("admin fetcher controller keeps current live detail when an active report r
   }
 });
 
-test("admin fetcher controller does not synthesize detailed progress from the report when live payload is empty", async () => {
+test("admin fetcher controller hydrates progress from the report without replaying summary noise when live payload is empty", async () => {
   const timerStub = stubScheduledTimers();
 
   let controller;
@@ -2702,6 +3000,7 @@ test("admin fetcher controller does not synthesize detailed progress from the re
     await timerStub.scheduled[0]();
     await timerStub.scheduled[1]();
     assert.equal(fixture.refs.adminFetcherProgressEl.classList.contains("hidden"), false);
+    assert.match(String(fixture.refs.adminFetcherProgressLabelEl.textContent || ""), /6\/12 sources resolved/i);
     assert.ok(!fixture.logs.some(line => /6\/12 sources resolved/i.test(line)));
   } finally {
     controller?.stopFetcherCompletionWatch?.();
@@ -2709,7 +3008,7 @@ test("admin fetcher controller does not synthesize detailed progress from the re
   }
 });
 
-test("admin discovery controller does not synthesize detailed progress from the report when live payload is empty", async () => {
+test("admin discovery controller hydrates progress from the report when live payload is empty", async () => {
   const timerStub = stubScheduledTimers();
 
   try {
@@ -2757,7 +3056,7 @@ test("admin discovery controller does not synthesize detailed progress from the 
 
     await controller.runDiscoveryTask();
     await timerStub.scheduled[0]();
-    assert.doesNotMatch(String(fixture.refs.adminDiscoveryProgressLabelEl.textContent || ""), /scanning known careers pages/i);
+    assert.match(String(fixture.refs.adminDiscoveryProgressLabelEl.textContent || ""), /scanning known careers pages/i);
     assert.ok(!fixture.logs.some(line => /discovery: endpoints 12/i.test(line)));
   } finally {
     timerStub.restore();

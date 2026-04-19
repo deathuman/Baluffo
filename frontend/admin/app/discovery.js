@@ -9,6 +9,7 @@ import {
   loadTaskLivePayload,
   markLiveTaskActivity,
   parseReportTimestampMs,
+  pickMeaningfulTaskLivePayload,
   pickTaskLivePayload,
   resetLiveTaskPlaceholder,
   restartCompletionWatch,
@@ -538,20 +539,24 @@ export function createAdminDiscoveryController({
       loadDiscoveryLivePayload().catch(() => null),
       loadDiscoveryLogChunk().catch(() => null)
     ]);
-    const normalizedLivePayload = pickTaskLivePayload(livePayload);
-    const liveFinishedMs = parseReportTimestampMs(normalizedLivePayload?.finishedAt);
+    const identityLivePayload = pickTaskLivePayload(livePayload);
+    const meaningfulLivePayload = pickMeaningfulTaskLivePayload(livePayload);
+    const liveFinishedMs = parseReportTimestampMs((meaningfulLivePayload || identityLivePayload)?.finishedAt);
 
-    if (normalizedLivePayload && liveFinishedMs <= 0) {
-      if (shouldApplyDiscoveryLiveProgressGate(normalizedLivePayload)) {
-        runProgressAppend(normalizedLivePayload, now);
+    if (meaningfulLivePayload && liveFinishedMs <= 0) {
+      if (shouldApplyDiscoveryLiveProgressGate(meaningfulLivePayload)) {
+        runProgressAppend(meaningfulLivePayload, now);
       }
-      updateDiscoveryProgressFromReport(normalizedLivePayload, { running: true });
+      updateDiscoveryProgressFromReport(meaningfulLivePayload, { running: true });
       scheduleDiscoveryCompletionPoll(activeProgressPollIntervalMs);
       return;
     }
 
     const report = await getBridge("/discovery/report").catch(() => null);
-    if (!normalizedLivePayload && report) {
+    if (!meaningfulLivePayload && report) {
+      if (!String(report?.finishedAt || "").trim()) {
+        updateDiscoveryProgressFromReport(report, { running: true });
+      }
       refreshDiscoveryDataIfNeeded(report);
     }
 

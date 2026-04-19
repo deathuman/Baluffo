@@ -10,6 +10,7 @@ import {
   loadTaskLivePayload,
   markLiveTaskActivity,
   parseReportTimestampMs,
+  pickMeaningfulTaskLivePayload,
   pickTaskLivePayload,
   resetLiveTaskPlaceholder,
   restartCompletionWatch,
@@ -645,21 +646,24 @@ export function createAdminFetcherController({
   async function pollFetcherCompletion() {
     const now = Date.now();
     const livePayload = await loadFetcherLivePayload().catch(() => null);
-    const normalizedLivePayload = pickTaskLivePayload(livePayload);
-    const liveStartedMs = parseReportTimestampMs(normalizedLivePayload?.startedAt);
-    const liveFinishedMs = parseReportTimestampMs(normalizedLivePayload?.finishedAt);
+    const identityLivePayload = pickTaskLivePayload(livePayload);
+    const meaningfulLivePayload = pickMeaningfulTaskLivePayload(livePayload);
+    const liveEnvelope = meaningfulLivePayload || identityLivePayload;
+    const liveStartedMs = parseReportTimestampMs(liveEnvelope?.startedAt);
+    const liveFinishedMs = parseReportTimestampMs(liveEnvelope?.finishedAt);
 
-    if (normalizedLivePayload && liveStartedMs >= (state.fetcherLaunchAtMs - 1000)) {
+    if (meaningfulLivePayload && liveStartedMs >= (state.fetcherLaunchAtMs - 1000)) {
       if (liveFinishedMs <= 0) {
-        appendFetcherProgressFromReport(normalizedLivePayload, now);
-        updateFetcherProgressFromReport(normalizedLivePayload, { running: true });
+        appendFetcherProgressFromReport(meaningfulLivePayload, now);
+        updateFetcherProgressFromReport(meaningfulLivePayload, { running: true });
       }
     }
 
-    let terminalPayload = normalizedLivePayload;
-    if (!terminalPayload || liveFinishedMs > 0) {
+    let terminalPayload = meaningfulLivePayload || identityLivePayload;
+    if (!meaningfulLivePayload || liveFinishedMs > 0) {
       terminalPayload = await fetchJobsFetchReportJson({ live: true }).catch(() => null) || terminalPayload;
-      if (!normalizedLivePayload && terminalPayload && !String(terminalPayload?.finishedAt || "").trim()) {
+      if (terminalPayload && !String(terminalPayload?.finishedAt || "").trim()) {
+        state.latestFetcherReportCache = terminalPayload || state.latestFetcherReportCache;
         updateFetcherProgressFromReport(terminalPayload, { running: true });
       }
     }

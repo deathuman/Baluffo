@@ -352,6 +352,10 @@ function composeControllers() {
       }
     },
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
+    attachToActiveFetchRun: (...args) => fetcherController?.attachToActiveFetchRun?.(...args),
+    loadLatestFetcherReport: options => fetcherController?.loadLatestFetcherReport?.(options),
+    attachToActiveDiscoveryRun: (...args) => discoveryController?.attachToActiveDiscoveryRun?.(...args),
+    loadLatestDiscoveryReport: options => discoveryController?.loadLatestDiscoveryReport?.(options),
     bridgeStatusPollIntervalMs: BRIDGE_STATUS_POLL_INTERVAL_MS,
     idlePollIntervalMs: OPS_POLL_IDLE_INTERVAL_MS
   });

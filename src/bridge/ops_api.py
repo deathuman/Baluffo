@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -467,6 +468,39 @@ class OpsApi:
     def _count_present(counts: dict[str, Any], *keys: str) -> bool:
         return any(key in counts for key in keys)
 
+    def _live_task_signal_is_recent(self, timestamp: str, *, max_idle_minutes: float = 2.0) -> bool:
+        parsed = self._deps.parse_iso(timestamp) if timestamp else None
+        if not parsed:
+            return False
+        try:
+            return (self._deps.now_utc() - parsed) <= timedelta(minutes=max_idle_minutes)
+        except TypeError:
+            return False
+
+    @staticmethod
+    def _live_task_artifact_recently_updated(
+        path: Path, *, now_utc: Any, max_idle_minutes: float = 2.0
+    ) -> bool:
+        try:
+            artifact_mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+        except OSError:
+            return False
+        try:
+            return (now_utc - artifact_mtime) <= timedelta(minutes=max_idle_minutes)
+        except TypeError:
+            return False
+
+    @staticmethod
+    def _live_task_heartbeat_at(payload: dict[str, Any]) -> str:
+        runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
+        lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
+        return str(
+            lifecycle.get("heartbeatAt")
+            or payload.get("heartbeatAt")
+            or runtime.get("heartbeatAt")
+            or ""
+        ).strip()
+
     @classmethod
     def _build_fetch_report_work_items(
         cls,
@@ -606,15 +640,39 @@ class OpsApi:
             if isinstance(fetch_tasks.get("taskProgress"), dict)
             else {}
         )
+        task_summary_raw = (
+            dict(fetch_tasks.get("summary") or {})
+            if isinstance(fetch_tasks.get("summary"), dict)
+            else {}
+        )
         task_artifact_matches_current = bool(
             str(fetch_tasks.get("runId") or "").strip()
             and current_run_id
             and str(fetch_tasks.get("runId") or "").strip() == current_run_id
         )
+        task_progress = (
+            fetch_tasks.get("taskProgress")
+            if isinstance(fetch_tasks.get("taskProgress"), dict)
+            else {}
+        )
+        task_artifact_recent = bool(
+            self._live_task_signal_is_recent(self._live_task_heartbeat_at(fetch_tasks))
+            or self._live_task_artifact_recently_updated(
+                self._paths.jobs_fetch_tasks,
+                now_utc=self._deps.now_utc(),
+            )
+        )
         task_artifact_has_live_evidence = bool(
-            (fetch_tasks.get("taskProgress") or {}).get("active")
-            or bool(fetch_tasks.get("workItems"))
-            or bool(fetch_tasks.get("recentEvents"))
+            not str(fetch_tasks.get("finishedAt") or "").strip()
+            and (
+                fetch_tasks.get("active")
+                or task_progress.get("active")
+                or str(fetch_tasks.get("runId") or "").strip()
+                or str(fetch_tasks.get("startedAt") or "").strip()
+                or bool(fetch_tasks.get("workItems"))
+                or bool(fetch_tasks.get("recentEvents"))
+            )
+            and task_artifact_recent
         )
         fetch_live_source = (
             fetch_tasks
@@ -715,7 +773,10 @@ class OpsApi:
         if (
             task_artifact_matches_current
             and task_artifact_has_live_evidence
-            and self._count_present(task_counts_raw, "runningTasks", "running")
+            and (
+                self._count_present(task_counts_raw, "runningTasks", "running")
+                or self._count_present(task_summary_raw, "runningTasks", "running")
+            )
         ):
             merged_counts["runningTasks"] = self._coerce_non_negative_int(
                 task_counts.get("runningTasks")
@@ -731,7 +792,10 @@ class OpsApi:
         if (
             task_artifact_matches_current
             and task_artifact_has_live_evidence
-            and self._count_present(task_counts_raw, "queuedTasks", "queued")
+            and (
+                self._count_present(task_counts_raw, "queuedTasks", "queued")
+                or self._count_present(task_summary_raw, "queuedTasks", "queued")
+            )
         ):
             merged_counts["queuedTasks"] = self._coerce_non_negative_int(
                 task_counts.get("queuedTasks")
@@ -746,6 +810,22 @@ class OpsApi:
             )
         else:
             merged_counts["queuedTasks"] = 0
+        if bool(payload.get("active")):
+            merged_progress["active"] = True
+            if not str(merged_progress.get("phaseKey") or "").strip():
+                merged_progress["phaseKey"] = "executing_sources"
+            if not str(merged_progress.get("phaseLabel") or "").strip():
+                merged_progress["phaseLabel"] = "Executing sources"
+            source_count = self._coerce_non_negative_int(merged_counts.get("sourceCount"))
+            resolved_sources = self._coerce_non_negative_int(merged_counts.get("resolvedSources"))
+            if source_count > 0:
+                merged_progress["mode"] = "determinate"
+                merged_progress["ratio"] = min(1.0, resolved_sources / max(1, source_count))
+            elif str(merged_progress.get("mode") or "").strip().lower() not in {
+                "determinate",
+                "indeterminate",
+            }:
+                merged_progress["mode"] = "indeterminate"
         merged_progress["counts"] = merged_counts
         payload["taskProgress"] = merged_progress
         return normalize_live_task_payload(payload, task_type="fetch")

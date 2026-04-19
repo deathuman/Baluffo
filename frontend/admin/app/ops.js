@@ -31,6 +31,10 @@ export function createAdminOpsController({
   escapeHtml,
   onBridgeStatusChange,
   loadDiscoveryData,
+  attachToActiveFetchRun,
+  loadLatestFetcherReport,
+  attachToActiveDiscoveryRun,
+  loadLatestDiscoveryReport,
   bridgeStatusPollIntervalMs,
   idlePollIntervalMs
 }) {
@@ -40,6 +44,162 @@ export function createAdminOpsController({
   function maybeUnrefTimer(timer) {
     timer?.unref?.();
     return timer;
+  }
+
+  function normalizeTaskStatePayload(payload) {
+    const tasks = getTaskStateRows(payload)
+      .filter(row => row && typeof row === "object");
+    return {
+      ...(payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {}),
+      tasks,
+      count: tasks.length
+    };
+  }
+
+  function getActiveTaskRows(payload) {
+    return getTaskStateRows(payload)
+      .filter(row => row && typeof row === "object" && Boolean(row.active));
+  }
+
+  function getTaskType(row) {
+    return String(row?.taskType || row?.type || "").trim().toLowerCase();
+  }
+
+  function hasTaskRunMeta(row) {
+    return Boolean(String(row?.runId || "").trim() || String(row?.startedAt || "").trim());
+  }
+
+  function isTerminalHistoryRun(row) {
+    if (!row || typeof row !== "object") return false;
+    if (String(row?.finishedAt || "").trim()) return true;
+    const status = String(row?.status || "").trim().toLowerCase();
+    return Boolean(
+      status
+      && !["started", "running", "queued", "pending"].includes(status)
+    );
+  }
+
+  function matchesTaskHistoryRow(taskRow, historyRow) {
+    if (!taskRow || !historyRow || typeof taskRow !== "object" || typeof historyRow !== "object") {
+      return false;
+    }
+    const taskType = getTaskType(taskRow);
+    const historyType = String(historyRow?.type || historyRow?.taskType || "").trim().toLowerCase();
+    if (!taskType || taskType !== historyType) return false;
+    const taskRunId = String(taskRow?.runId || "").trim();
+    const historyRunId = String(historyRow?.runId || historyRow?.id || "").trim();
+    if (taskRunId && historyRunId) {
+      return taskRunId === historyRunId;
+    }
+    const taskStartedAt = String(taskRow?.startedAt || "").trim();
+    const historyStartedAt = String(historyRow?.startedAt || "").trim();
+    return Boolean(taskStartedAt && historyStartedAt && taskStartedAt === historyStartedAt);
+  }
+
+  function hasTerminalHistoryEvidence(taskRow, historyRuns) {
+    return Array.isArray(historyRuns) && historyRuns.some(historyRow => (
+      matchesTaskHistoryRow(taskRow, historyRow) && isTerminalHistoryRun(historyRow)
+    ));
+  }
+
+  function syncLiveBusyFlags(liveTypes) {
+    setBusyFlag("liveFetchRunning", liveTypes.has("fetch"));
+    setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
+    setBusyFlag("liveSyncRunning", liveTypes.has("sync"));
+    setBusyFlag("livePipelineRunning", liveTypes.has("pipeline"));
+  }
+
+  function rememberTaskStatePayload(payload) {
+    state.latestTaskStatePayload = normalizeTaskStatePayload(payload);
+    return state.latestTaskStatePayload;
+  }
+
+  function clearRetainedTaskState() {
+    state.taskStateMissingStreakByType = {};
+    state.latestTaskStatePayload = { tasks: [], count: 0 };
+  }
+
+  function mergeRetainedTaskStatePayload(candidatePayload, historyRuns) {
+    const candidate = normalizeTaskStatePayload(candidatePayload);
+    const previous = normalizeTaskStatePayload(state.latestTaskStatePayload);
+    const mergedRows = [...getTaskStateRows(candidate)];
+    const candidateActiveRows = getActiveTaskRows(candidate);
+    const candidateActiveTypes = new Set(candidateActiveRows.map(getTaskType).filter(Boolean));
+    const previousActiveRows = getActiveTaskRows(previous);
+    const previousMissingStreaks = (
+      state.taskStateMissingStreakByType && typeof state.taskStateMissingStreakByType === "object"
+    )
+      ? state.taskStateMissingStreakByType
+      : {};
+    const nextMissingStreaks = {};
+
+    candidateActiveTypes.forEach(type => {
+      nextMissingStreaks[type] = 0;
+    });
+
+    previousActiveRows.forEach(row => {
+      const taskType = getTaskType(row);
+      if (!taskType || candidateActiveTypes.has(taskType)) return;
+      if (hasTerminalHistoryEvidence(row, historyRuns)) {
+        nextMissingStreaks[taskType] = 0;
+        return;
+      }
+      const nextMissingCount = Math.max(
+        0,
+        Number(previousMissingStreaks[taskType]) || 0
+      ) + 1;
+      nextMissingStreaks[taskType] = nextMissingCount;
+      if (nextMissingCount < 2) {
+        mergedRows.push(row);
+      }
+    });
+
+    state.taskStateMissingStreakByType = nextMissingStreaks;
+    return rememberTaskStatePayload({
+      ...candidate,
+      tasks: mergedRows,
+      count: mergedRows.length
+    });
+  }
+
+  function resolveTaskStatePayload(taskStateResult, historyRuns) {
+    const previous = normalizeTaskStatePayload(state.latestTaskStatePayload);
+    const previousLiveRows = getActiveTaskRows(previous);
+    if (
+      taskStateResult?.status !== "fulfilled"
+      || !taskStateResult?.value
+      || typeof taskStateResult.value !== "object"
+      || Array.isArray(taskStateResult.value)
+    ) {
+      return previousLiveRows.length > 0
+        ? previous
+        : rememberTaskStatePayload({ tasks: [], count: 0 });
+    }
+    return mergeRetainedTaskStatePayload(taskStateResult.value, historyRuns);
+  }
+
+  function maybeAttachLiveTaskRows(liveTaskRows) {
+    const fetchRow = liveTaskRows.find(row => getTaskType(row) === "fetch" && hasTaskRunMeta(row));
+    if (fetchRow && !state.adminBusyState.fetcherWatch) {
+      attachToActiveFetchRun?.({
+        runId: fetchRow?.runId,
+        startedAt: fetchRow?.startedAt
+      }, {
+        announceStart: false
+      });
+      loadLatestFetcherReport?.({ silent: true, hydrateActiveProgress: true }).catch(() => {});
+    }
+
+    const discoveryRow = liveTaskRows.find(row => getTaskType(row) === "discovery" && hasTaskRunMeta(row));
+    if (discoveryRow && !state.adminBusyState.discoveryWatch) {
+      attachToActiveDiscoveryRun?.({
+        runId: discoveryRow?.runId,
+        startedAt: discoveryRow?.startedAt
+      }, {
+        announceStart: false
+      });
+      loadLatestDiscoveryReport?.({ silent: true }).catch(() => {});
+    }
   }
 
   function setOpsPlaceholders(message = "Operations health unavailable.") {
@@ -84,44 +244,60 @@ export function createAdminOpsController({
     const showLoadingState = !options?.fromPoll && !state.latestOpsHealthCache;
     if (showLoadingState && refs.adminOpsTrendsEl) refs.adminOpsTrendsEl.textContent = "Loading operations health...";
     try {
-      const [health, historyPayload] = await Promise.all([
+      const [healthResult, historyResult, taskStateResult, fetcherMetricsResult] = await Promise.allSettled([
         getBridge("/ops/health"),
-        getBridge("/ops/history?limit=80")
+        getBridge("/ops/history?limit=80"),
+        getBridge("/ops/task-state"),
+        getBridge("/ops/fetcher-metrics?windowRuns=80")
       ]);
-      let taskStatePayload = { tasks: [], count: 0 };
-      try {
-        const loadedTaskState = await getBridge("/ops/task-state");
-        if (loadedTaskState && typeof loadedTaskState === "object") {
-          taskStatePayload = loadedTaskState;
-        }
-      } catch {
-        taskStatePayload = { tasks: [], count: 0 };
+      const health = (
+        healthResult.status === "fulfilled"
+        && healthResult.value
+        && typeof healthResult.value === "object"
+        && !Array.isArray(healthResult.value)
+      )
+        ? healthResult.value
+        : state.latestOpsHealthCache;
+      const historyPayload = (
+        historyResult.status === "fulfilled"
+        && historyResult.value
+        && typeof historyResult.value === "object"
+        && !Array.isArray(historyResult.value)
+      )
+        ? historyResult.value
+        : (
+          state.latestOpsHistoryPayload
+          && typeof state.latestOpsHistoryPayload === "object"
+          && !Array.isArray(state.latestOpsHistoryPayload)
+            ? state.latestOpsHistoryPayload
+            : { runs: [] }
+        );
+      if (healthResult.status === "fulfilled" && health && typeof health === "object") {
+        state.latestOpsHealthCache = health || null;
       }
-      let fetcherMetrics = null;
-      try {
-        fetcherMetrics = await getBridge("/ops/fetcher-metrics?windowRuns=80");
-      } catch {
-        fetcherMetrics = null;
+      if (historyResult.status === "fulfilled" && historyPayload && typeof historyPayload === "object") {
+        state.latestOpsHistoryPayload = historyPayload;
       }
-      state.latestOpsHealthCache = health || null;
+      const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
+      const taskStatePayload = resolveTaskStatePayload(taskStateResult, historyRuns);
+      const fetcherMetrics = fetcherMetricsResult.status === "fulfilled"
+        ? fetcherMetricsResult.value
+        : null;
       const runModel = deriveAdminRunsModel(
         {
           taskState: taskStatePayload || {},
-          historyRuns: historyPayload?.runs || []
+          historyRuns
         },
         Date.now()
       );
-      const liveTaskRows = getTaskStateRows(taskStatePayload)
-        .filter(row => row && typeof row === "object" && row.active);
+      const liveTaskRows = getActiveTaskRows(taskStatePayload);
       const liveTypes = new Set(
         liveTaskRows
-          .map(row => String(row?.taskType || row?.type || "").toLowerCase())
+          .map(row => getTaskType(row))
           .filter(Boolean)
       );
-      setBusyFlag("liveFetchRunning", liveTypes.has("fetch"));
-      setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
-      setBusyFlag("liveSyncRunning", liveTypes.has("sync"));
-      setBusyFlag("livePipelineRunning", liveTypes.has("pipeline"));
+      syncLiveBusyFlags(liveTypes);
+      maybeAttachLiveTaskRows(liveTaskRows);
       const nowMs = Date.now();
       const discoveryLive = liveTypes.has("discovery");
       if (!discoveryLive) {
@@ -150,17 +326,25 @@ export function createAdminOpsController({
         deriveFetcherFailureSummary(state.latestFetcherReportCache || {})
       );
       renderAdminOpsHistory(refs.adminOpsHistoryEl, runModel);
-      renderAdminOpsTrends(refs.adminOpsTrendsEl, historyPayload?.runs || []);
+      renderAdminOpsTrends(refs.adminOpsTrendsEl, historyRuns);
       loadSyncStatus({ silent: true }).catch(() => {});
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
       scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0));
     } catch (err) {
-      setOpsPlaceholders(`Ops health unavailable: ${getErrorMessage(err)}`);
-      setBusyFlag("liveFetchRunning", false);
-      setBusyFlag("liveDiscoveryRunning", false);
-      setBusyFlag("liveSyncRunning", false);
-      setBusyFlag("livePipelineRunning", false);
-      scheduleOpsHealthPolling(idlePollIntervalMs);
+      const retainedLiveTypes = new Set(
+        getActiveTaskRows(state.latestTaskStatePayload)
+          .map(row => getTaskType(row))
+          .filter(Boolean)
+      );
+      if (lastBridgeStatus === "offline" || retainedLiveTypes.size === 0) {
+        clearRetainedTaskState();
+        setOpsPlaceholders(`Ops health unavailable: ${getErrorMessage(err)}`);
+        syncLiveBusyFlags(new Set());
+        scheduleOpsHealthPolling(idlePollIntervalMs);
+      } else {
+        syncLiveBusyFlags(retainedLiveTypes);
+        scheduleOpsHealthPolling(getOpsPollIntervalMs(true));
+      }
     } finally {
       setBusyFlag("opsLoad", false);
     }
