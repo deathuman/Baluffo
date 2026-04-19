@@ -20,9 +20,9 @@ def _write_packaged_sync_bundle_config(
     portable_root: Path, *, key_derivation: str = "embedded"
 ) -> Path:
     app_dir = portable_root / "ship" / "app"
-    version_dir = app_dir / "versions" / "0.1.31" / "packaging"
+    version_dir = app_dir / "versions" / "0.1.32" / "packaging"
     version_dir.mkdir(parents=True, exist_ok=True)
-    (app_dir / "current.txt").write_text("0.1.31\n", encoding="utf-8")
+    (app_dir / "current.txt").write_text("0.1.32\n", encoding="utf-8")
     private_key_pem = "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----\n"
     salt_b64 = source_sync._base64url_encode(b"packaged-sync-rehearsal-salt")  # noqa: SLF001
     payload = {
