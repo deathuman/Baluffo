@@ -548,20 +548,6 @@
   font-size: 0.9rem;
 }
 
-.clear-filters-btn {
-  margin: 0;
-  background-color: var(--btn-muted-bg);
-  color: var(--btn-muted-text);
-  border: 1px solid var(--btn-muted-border);
-  padding: 0.45rem 0.75rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.clear-filters-btn:hover {
-  background-color: var(--btn-muted-bg-hover);
-}
-
 .jobs-list {
   display: flex;
   flex-direction: column;
@@ -1187,31 +1173,6 @@
     opacity: 1;
     transform: scale(1);
   }
-}
-
-.admin-bridge-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  margin-right: 0.2rem;
-  padding: 0.34rem 0.62rem;
-  border-radius: 999px;
-  border: 1px solid var(--border-default);
-  background-color: var(--surface-8);
-  color: var(--text-secondary);
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  white-space: nowrap;
-}
-
-.admin-bridge-badge::before {
-  content: "";
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 999px;
-  background-color: var(--text-subtle);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .admin-bridge-badge.online {
