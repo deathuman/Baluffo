@@ -702,7 +702,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       type,
       taskProgress,
       summary,
-      type === "fetch" ? { includeCounts: false } : {}
+      type === "fetch" || type === "discovery" ? { includeCounts: false } : {}
     );
     const key = [
       rowArea,

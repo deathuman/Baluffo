@@ -116,6 +116,42 @@ test("admin render: schedule/trends/history render deterministic core text", () 
   assert.match(historyEl.innerHTML, /Sync pull/i);
 });
 
+test("admin render: live discovery ops history keeps only the primary phase text", () => {
+  const historyEl = makeEl();
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [
+      {
+        type: "discovery",
+        displayStatus: "running",
+        isLive: true,
+        elapsedMs: 5000,
+        startedAt: "2026-03-08T11:00:00.000Z",
+        taskProgress: {
+          active: true,
+          phaseKey: "probing_candidates",
+          phaseLabel: "gamemap",
+          mode: "determinate",
+          ratio: 0.5,
+          counts: {
+            foundEndpoints: 12,
+            probedCandidates: 5,
+            probeTotal: 10,
+            queuedCandidates: 3
+          }
+        },
+        summary: { failedProbeCount: 1 }
+      }
+    ],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  });
+
+  assert.match(historyEl.innerHTML, /gamemap \(50%\)/i);
+  assert.doesNotMatch(historyEl.innerHTML, /found/i);
+  assert.doesNotMatch(historyEl.innerHTML, /endpoints/i);
+  assert.doesNotMatch(historyEl.innerHTML, /probed/i);
+});
+
 test("admin render: fetcher metrics render failure buckets and examples", () => {
   const metricsEl = makeEl();
   renderAdminOpsFetcherMetrics(metricsEl, {
