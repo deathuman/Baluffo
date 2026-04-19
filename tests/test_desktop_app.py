@@ -1172,7 +1172,7 @@ def test_watch_browser_session_confirms_handoff_after_accepted_process_exit_when
     event_names = [call.args[1] for call in trace_mock.call_args_list]
     assert "desktop_browser_watchdog_handoff_candidate" in event_names
     assert "desktop_browser_watchdog_handoff_confirmed" in event_names
-    assert "desktop_browser_watchdog_handoff" not in event_names
+    assert "desktop_browser_watchdog_handoff" in event_names
     assert "desktop_browser_watchdog_handoff_failed" not in event_names
 
 
