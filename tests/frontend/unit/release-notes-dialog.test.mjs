@@ -223,7 +223,13 @@ test("openReleaseNotesDialog renders fallback state, supports escape close, and 
   const openButton = doc.find(
     node => typeof node.className === "string" && node.className.includes("release-notes-dialog-open")
   );
+  const closeButton = doc.find(
+    node => typeof node.className === "string" && node.className.includes("release-notes-dialog-close")
+  );
   assert.ok(openButton);
+  assert.ok(closeButton);
+  assert.match(openButton.className, /\bpopup-btn-primary\b/);
+  assert.match(closeButton.className, /\bpopup-btn-secondary\b/);
   openButton.dispatch("click");
   assert.deepEqual(openedUrls, ["https://example.com/releases/v0.1.2"]);
 

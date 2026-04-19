@@ -285,11 +285,16 @@ test("text input dialog becomes visible, focuses the field, and restores trigger
     const cancelBtn = doc.find(
       node => typeof node.className === "string" && node.className.includes("local-auth-dialog-cancel")
     );
+    const submitBtn = doc.find(
+      node => typeof node.className === "string" && node.className.includes("local-auth-dialog-submit")
+    );
 
     assert.ok(overlay);
     assert.ok(panel);
     assert.match(overlay.className, /\bpopup-overlay-visible\b/);
     assert.match(panel.className, /\bpopup-visible\b/);
+    assert.match(cancelBtn.className, /\bpopup-btn-secondary\b/);
+    assert.match(submitBtn.className, /\bpopup-btn-primary\b/);
     assert.equal(doc.activeElement, input);
     assert.equal(input.selected, true);
 
@@ -321,6 +326,9 @@ test("confirmation dialog becomes visible, focuses confirm, and resolves on ente
 
     const overlay = doc.find(node => typeof node.className === "string" && node.className.includes("popup-overlay"));
     const panel = doc.find(node => typeof node.className === "string" && node.className.includes("popup "));
+    const cancelBtn = doc.find(
+      node => typeof node.className === "string" && node.className.includes("local-auth-dialog-cancel")
+    );
     const confirmBtn = doc.find(
       node => typeof node.className === "string" && node.className.includes("local-auth-dialog-submit")
     );
@@ -329,6 +337,8 @@ test("confirmation dialog becomes visible, focuses confirm, and resolves on ente
     assert.ok(panel);
     assert.match(overlay.className, /\bpopup-overlay-visible\b/);
     assert.match(panel.className, /\bpopup-visible\b/);
+    assert.match(cancelBtn.className, /\bpopup-btn-secondary\b/);
+    assert.match(confirmBtn.className, /\bpopup-btn-primary\b/);
     assert.equal(doc.activeElement, confirmBtn);
 
     doc.dispatch("keydown", { key: "Enter" });

@@ -36,7 +36,7 @@ export function createAuthDomain(deps) {
     const input = await requestProfileName({
       title: "Sign in",
       description: profiles.length
-        ? "Choose an existing local profile or create a new one. Signing in keeps your seen and saved jobs on this device."
+        ? "Choose an existing local profile or create a new one. Signing in keeps your seen jobs, saved jobs, notes, reminders, and attachments on this device."
         : "Enter a profile name to create local sign-in. Signing in keeps your seen and saved jobs on this device.",
       existingProfiles: profiles,
       defaultValue: profiles[0]?.name || ""

@@ -35,6 +35,18 @@ function buildProfilePromptLabel(existingProfiles) {
     : "Create a local profile to sign in.";
 }
 
+function buildModalButtonClassName(variant, ...names) {
+  return ["btn", "back-btn", variant, ...names].filter(Boolean).join(" ");
+}
+
+function setModeToggleButtonClassName(button, createMode) {
+  if (!button) return;
+  button.className = buildModalButtonClassName(
+    createMode ? "popup-btn-tertiary" : "popup-btn-secondary",
+    "local-auth-dialog-secondary"
+  );
+}
+
 export async function requestTextInputDialog({
   title = "Sign in",
   description = "",
@@ -95,13 +107,13 @@ export async function requestTextInputDialog({
 
     const cancelBtn = doc.createElement("button");
     cancelBtn.id = "local-auth-cancel-btn";
-    cancelBtn.className = "btn back-btn local-auth-dialog-cancel";
+    cancelBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-cancel");
     cancelBtn.type = "button";
     cancelBtn.textContent = "Cancel";
 
     const submitBtn = doc.createElement("button");
     submitBtn.id = "local-auth-submit-btn";
-    submitBtn.className = "btn back-btn local-auth-dialog-submit";
+    submitBtn.className = buildModalButtonClassName("popup-btn-primary", "local-auth-dialog-submit");
     submitBtn.type = "submit";
     submitBtn.textContent = String(submitLabel || "Continue");
 
@@ -284,20 +296,23 @@ export async function requestProfileName({
     const actions = doc.createElement("div");
     actions.className = "local-auth-dialog-actions";
 
+    const actionCluster = doc.createElement("div");
+    actionCluster.className = "local-auth-dialog-action-cluster";
+
     const createToggleBtn = doc.createElement("button");
     createToggleBtn.id = "local-auth-create-btn";
-    createToggleBtn.className = "btn back-btn local-auth-dialog-secondary";
+    createToggleBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-secondary");
     createToggleBtn.type = "button";
 
     const cancelBtn = doc.createElement("button");
     cancelBtn.id = "local-auth-cancel-btn";
-    cancelBtn.className = "btn back-btn local-auth-dialog-cancel";
+    cancelBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-cancel");
     cancelBtn.type = "button";
     cancelBtn.textContent = "Cancel";
 
     const submitBtn = doc.createElement("button");
     submitBtn.id = "local-auth-submit-btn";
-    submitBtn.className = "btn back-btn local-auth-dialog-submit";
+    submitBtn.className = buildModalButtonClassName("popup-btn-primary", "local-auth-dialog-submit");
     submitBtn.type = "submit";
 
     const requestedDefault = String(defaultValue || "").trim();
@@ -351,12 +366,17 @@ export async function requestProfileName({
     function renderMode() {
       stack.replaceChildren();
       if (createMode) {
+        actions.className = "local-auth-dialog-actions local-auth-dialog-actions-create-mode";
+        setModeToggleButtonClassName(createToggleBtn, true);
         helperEl.textContent = "Create a new local profile for this device.";
+        form.prepend(helperEl);
         stack.append(createLabel, inputEl);
         createToggleBtn.textContent = "Use existing profile";
         submitBtn.textContent = "Create profile";
       } else {
-        helperEl.textContent = "Pick an existing profile to avoid creating a duplicate by mistake.";
+        actions.className = "local-auth-dialog-actions";
+        setModeToggleButtonClassName(createToggleBtn, false);
+        helperEl.remove();
         stack.append(existingLabel, selectEl);
         createToggleBtn.textContent = "Create new profile";
         submitBtn.textContent = "Continue";
@@ -396,7 +416,8 @@ export async function requestProfileName({
     });
     doc.addEventListener("keydown", onKeyDown, true);
 
-    actions.append(createToggleBtn, cancelBtn, submitBtn);
+    actionCluster.append(cancelBtn, submitBtn);
+    actions.append(createToggleBtn, actionCluster);
     form.append(helperEl, stack, actions);
     panel.append(heading, descriptionEl, form);
     overlay.appendChild(panel);
@@ -455,19 +476,19 @@ export async function requestProfileLoadFailureAction({
 
     const cancelBtn = doc.createElement("button");
     cancelBtn.id = "local-auth-cancel-btn";
-    cancelBtn.className = "btn back-btn local-auth-dialog-cancel";
+    cancelBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-cancel");
     cancelBtn.type = "button";
     cancelBtn.textContent = "Cancel";
 
     const retryBtn = doc.createElement("button");
     retryBtn.id = "local-auth-retry-btn";
-    retryBtn.className = "btn back-btn local-auth-dialog-secondary";
+    retryBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-secondary");
     retryBtn.type = "button";
     retryBtn.textContent = "Retry";
 
     const createBtn = doc.createElement("button");
     createBtn.id = "local-auth-create-fallback-btn";
-    createBtn.className = "btn back-btn local-auth-dialog-submit";
+    createBtn.className = buildModalButtonClassName("popup-btn-primary", "local-auth-dialog-submit");
     createBtn.type = "button";
     createBtn.textContent = "Create new profile";
 
@@ -562,13 +583,13 @@ export async function requestConfirmationDialog({
 
     const cancelBtn = doc.createElement("button");
     cancelBtn.id = "local-auth-cancel-btn";
-    cancelBtn.className = "btn back-btn local-auth-dialog-cancel";
+    cancelBtn.className = buildModalButtonClassName("popup-btn-secondary", "local-auth-dialog-cancel");
     cancelBtn.type = "button";
     cancelBtn.textContent = String(cancelLabel || "Cancel");
 
     const confirmBtn = doc.createElement("button");
     confirmBtn.id = "local-auth-confirm-btn";
-    confirmBtn.className = "btn back-btn local-auth-dialog-submit";
+    confirmBtn.className = buildModalButtonClassName("popup-btn-primary", "local-auth-dialog-submit");
     confirmBtn.type = "button";
     confirmBtn.textContent = String(confirmLabel || "Confirm");
 

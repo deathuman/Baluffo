@@ -227,12 +227,12 @@ export function openReleaseNotesDialog({
 
   const closeBtn = doc.createElement("button");
   closeBtn.type = "button";
-  closeBtn.className = "btn back-btn release-notes-dialog-close";
+  closeBtn.className = "btn back-btn popup-btn-secondary release-notes-dialog-close";
   closeBtn.textContent = "Close";
 
   const openBtn = doc.createElement("button");
   openBtn.type = "button";
-  openBtn.className = "btn back-btn release-notes-dialog-open";
+  openBtn.className = "btn back-btn popup-btn-primary release-notes-dialog-open";
   openBtn.textContent = "Open on GitHub";
 
   let finished = false;

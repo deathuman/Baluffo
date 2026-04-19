@@ -523,7 +523,7 @@ const desktopApi = createLocalDataRuntime({
         defaultValue = defaultValue
           || String(currentProfile?.displayName || currentProfile?.name || "").trim()
           || String(existingProfiles[0]?.displayName || existingProfiles[0]?.name || "").trim();
-        description = "Choose an existing local profile or create a new one. Signing in keeps your seen and saved jobs on this device.";
+        description = "Choose an existing local profile or create a new one. Signing in keeps your seen jobs, saved jobs, notes, reminders, and attachments on this device.";
       }
 
       const name = await requestProfileName({

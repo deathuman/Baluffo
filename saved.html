@@ -12,8 +12,7 @@
     <div class="jobs-header">
       <h1>Saved Jobs</h1>
       <div class="header-actions">
-        <button id="jobs-page-btn" data-ui="jobs-page-btn" class="btn back-btn" aria-label="Back to jobs listing">All Jobs</button>
-        <button id="add-custom-job-btn" data-ui="add-custom-job-btn" class="btn back-btn" aria-label="Add custom job">+ Add Custom Job</button>
+        <button id="jobs-page-btn" data-ui="jobs-page-btn" class="btn back-btn page-nav-btn" aria-label="Back to all jobs">Back to All Jobs</button>
       </div>
       <div class="auth-profile-shell" aria-live="polite">
         <div class="auth-profile-pill">
@@ -73,6 +72,10 @@
             <button type="button" class="btn back-btn saved-custom-filter-btn" data-ui="custom-filter-btn" data-saved-filter="imported">Imported</button>
           </div>
           <span id="saved-custom-filter-count" data-ui="saved-custom-filter-count" class="saved-custom-filter-count"></span>
+        </div>
+        <div class="saved-actions-group saved-actions-quick">
+          <button id="add-custom-job-btn" data-ui="add-custom-job-btn" class="btn clear-filters-btn" aria-label="Add custom job">+ Add Custom Job</button>
+          <button id="global-phase-override-btn" data-ui="global-phase-override-btn" class="btn clear-filters-btn" disabled>Override Phase Lock</button>
         </div>
         <section id="custom-job-panel" data-ui="custom-job-panel" class="custom-job-panel hidden" aria-hidden="true">
           <div class="custom-job-panel-header">
@@ -156,9 +159,6 @@
           <details id="saved-utilities" class="saved-utilities">
             <summary class="saved-utilities-summary">Utilities</summary>
             <div class="saved-utilities-body">
-              <div class="saved-actions-group">
-                <button id="global-phase-override-btn" data-ui="global-phase-override-btn" class="btn back-btn" disabled>Override Phase Lock</button>
-              </div>
               <section class="saved-backup-section" aria-label="Backup and restore">
                 <div class="saved-backup-head">Backup & Restore</div>
                 <div class="saved-backup-row">
