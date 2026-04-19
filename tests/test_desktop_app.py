@@ -1145,6 +1145,9 @@ def test_watch_browser_session_confirms_handoff_after_accepted_process_exit_when
             "latest_browser_heartbeat_ts",
             side_effect=[0.0, 100.0, 100.0],
         ),
+        mock.patch.object(
+            desktop_app, "_is_baluffo_browser_window_open", return_value=True
+        ) as window_mock,
         mock.patch.object(desktop_app, "wait_for_browser_heartbeat", return_value=True),
         mock.patch.object(desktop_app, "bridge_last_activity_ts", return_value=0.0),
         mock.patch.object(desktop_app.time, "time", return_value=102.5),
@@ -1174,6 +1177,10 @@ def test_watch_browser_session_confirms_handoff_after_accepted_process_exit_when
     assert "desktop_browser_watchdog_handoff_confirmed" in event_names
     assert "desktop_browser_watchdog_handoff" in event_names
     assert "desktop_browser_watchdog_handoff_failed" not in event_names
+    window_mock.assert_called_with(
+        browser_pid=9090,
+        allow_title_fallback=True,
+    )
 
 
 def test_watch_browser_session_returns_handoff_failed_when_signal_never_arrives() -> None:

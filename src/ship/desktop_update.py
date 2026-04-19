@@ -38,6 +38,11 @@ except Exception:  # noqa: BLE001
     Ed25519PrivateKey = None  # type: ignore[assignment]
     Ed25519PublicKey = None  # type: ignore[assignment]
 
+try:
+    import psutil
+except Exception:  # noqa: BLE001
+    psutil = None  # type: ignore[assignment]
+
 
 DESKTOP_UPDATE_SCHEMA_VERSION = 1
 DESKTOP_UPDATE_CHANNEL = "stable"
@@ -379,10 +384,17 @@ def read_desktop_session_state(session_root: Path) -> dict[str, Any]:
 
 
 def pid_is_running(pid: int) -> bool:
-    if int(pid or 0) <= 0:
+    pid = int(pid or 0)
+    if pid <= 0:
         return False
+    if psutil is not None:
+        try:
+            process = psutil.Process(pid)
+            return bool(process.is_running()) and process.status() != psutil.STATUS_ZOMBIE
+        except Exception:  # noqa: BLE001
+            return False
     try:
-        os.kill(int(pid), 0)
+        os.kill(pid, 0)
     except OSError:
         return False
     return True

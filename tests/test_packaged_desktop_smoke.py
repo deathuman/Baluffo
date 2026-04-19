@@ -1951,6 +1951,119 @@ def test_wait_for_relaunched_runtime_prefers_explicit_session_env_over_global_st
         fetch_mock.assert_called_once_with("http://127.0.0.1:4567/ops/health", timeout_s=5.0)
 
 
+def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_exit() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        portable_root = root / "portable"
+        (portable_root / "ship" / "data").mkdir(parents=True, exist_ok=True)
+        exe_path = portable_root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        (portable_root / "BaluffoUpdater.exe").write_text("helper", encoding="utf-8")
+        process = mock.Mock()
+        stdout_handle = mock.Mock()
+        stderr_handle = mock.Mock()
+        captured_env: dict[str, str] = {}
+        session_state_path: Path | None = None
+
+        def fake_archive_portable_dir(_portable_root: Path, output_path: Path) -> Path:
+            output_path.write_bytes(b"portable-update")
+            return output_path
+
+        def fake_launch_packaged_exe(*args, **kwargs):  # noqa: ANN002, ANN003
+            captured_env.update(kwargs.get("env") or {})
+            return process, stdout_handle, stderr_handle
+
+        def fake_wait_for_packaged_runtime(*args, **kwargs):  # noqa: ANN002, ANN003
+            nonlocal session_state_path
+            session_root = smoke.desktop_update_mod.resolve_desktop_session_root(captured_env)
+            session_root.mkdir(parents=True, exist_ok=True)
+            session_state_path = session_root / smoke.DESKTOP_SESSION_STATE_FILE
+            session_state_path.write_text(
+                json.dumps({"launcherPid": 6060, "launcherToken": "token"}),
+                encoding="utf-8",
+            )
+            return {}
+
+        def fake_wait_for_process_exit(*args, **kwargs):  # noqa: ANN002, ANN003
+            assert session_state_path is not None
+            assert session_state_path.exists()
+
+        def fake_wait_for_relaunched_runtime(*args, **kwargs):  # noqa: ANN002, ANN003
+            assert session_state_path is not None
+            assert not session_state_path.exists()
+            return {"session": {"launcherPid": 7001, "bridgePort": 7002, "sitePort": 7003}}
+
+        with (
+            mock.patch.object(smoke, "_inject_desktop_update_public_keys"),
+            mock.patch.object(smoke, "_seed_rehearsal_local_data", return_value={}),
+            mock.patch.object(
+                smoke,
+                "_archive_portable_dir",
+                side_effect=fake_archive_portable_dir,
+            ),
+            mock.patch.object(
+                smoke,
+                "_start_desktop_update_release_server",
+                return_value=("http://127.0.0.1:63092", mock.Mock(), mock.Mock()),
+            ),
+            mock.patch.object(
+                smoke,
+                "packaged_runtime_env_overrides",
+                return_value={"LOCALAPPDATA": str(root / "desktop-localappdata")},
+            ),
+            mock.patch.object(smoke, "_preferred_desktop_browser_env", return_value={}),
+            mock.patch.object(smoke, "clear_packaged_desktop_session_state"),
+            mock.patch.object(smoke, "choose_free_port", side_effect=[63093, 63094]),
+            mock.patch.object(
+                smoke,
+                "launch_packaged_exe",
+                side_effect=fake_launch_packaged_exe,
+            ),
+            mock.patch.object(
+                smoke,
+                "wait_for_packaged_runtime",
+                side_effect=fake_wait_for_packaged_runtime,
+            ),
+            mock.patch.object(
+                smoke,
+                "post_json",
+                side_effect=[
+                    (
+                        200,
+                        {"status": {"updateAvailable": True, "availability": "available"}},
+                    ),
+                    (
+                        200,
+                        {
+                            "started": True,
+                            "status": {"downloadState": "downloaded", "installState": "ready"},
+                        },
+                    ),
+                    (200, {"started": True, "exitRequested": True}),
+                ],
+            ),
+            mock.patch.object(
+                smoke, "_wait_for_process_exit", side_effect=fake_wait_for_process_exit
+            ),
+            mock.patch.object(
+                smoke,
+                "_wait_for_relaunched_runtime",
+                side_effect=fake_wait_for_relaunched_runtime,
+            ),
+            mock.patch.object(smoke, "_verify_rehearsal_local_data"),
+            mock.patch.object(smoke, "_assert_desktop_update_helper_succeeded"),
+            mock.patch.object(smoke, "terminate_process_tree"),
+            mock.patch.object(smoke, "cleanup_orphaned_desktop_ports_nt"),
+        ):
+            result = smoke.run_desktop_update_rehearsal(
+                exe_path=exe_path,
+                artifacts_dir=root / "artifacts",
+                runtime_timeout_s=5.0,
+            )
+
+        assert result["status"] == "passed"
+
+
 def test_assert_desktop_update_helper_succeeded_rejects_failed_helper_stdout() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"

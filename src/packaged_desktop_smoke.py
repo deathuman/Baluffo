@@ -1859,9 +1859,9 @@ def run_desktop_update_rehearsal(
             raise RuntimeError(f"Update install handoff could not start: {install_payload}")
         session_root = desktop_update_mod.resolve_desktop_session_root(runtime_env)
         session_state_path = session_root / DESKTOP_SESSION_STATE_FILE
+        _wait_for_process_exit(process, timeout_s=max(20.0, runtime_timeout_s))
         with contextlib.suppress(OSError):
             session_state_path.unlink()
-        _wait_for_process_exit(process, timeout_s=max(20.0, runtime_timeout_s))
         relaunched = _wait_for_relaunched_runtime(
             expected_data_dir=data_dir,
             expected_version=desktop_update_mod.get_app_version(),

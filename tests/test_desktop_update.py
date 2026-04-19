@@ -133,6 +133,30 @@ def test_compare_versions_uses_baluffo_release_ordering() -> None:
     assert du.compare_versions("0.1.30", "0.1.29") > 0
 
 
+def test_pid_is_running_prefers_psutil_when_available() -> None:
+    process = mock.Mock()
+    process.is_running.return_value = True
+    process.status.return_value = "running"
+    fake_psutil = mock.Mock()
+    fake_psutil.Process.return_value = process
+    fake_psutil.STATUS_ZOMBIE = "zombie"
+
+    with mock.patch.object(du, "psutil", fake_psutil):
+        assert du.pid_is_running(4242) is True
+
+
+def test_pid_is_running_rejects_zombie_psutil_processes() -> None:
+    process = mock.Mock()
+    process.is_running.return_value = True
+    process.status.return_value = "zombie"
+    fake_psutil = mock.Mock()
+    fake_psutil.Process.return_value = process
+    fake_psutil.STATUS_ZOMBIE = "zombie"
+
+    with mock.patch.object(du, "psutil", fake_psutil):
+        assert du.pid_is_running(4242) is False
+
+
 def test_manifest_to_status_marks_0_1_3_available_over_0_1_23() -> None:
     status = du._manifest_to_status(
         current_version="0.1.23",
