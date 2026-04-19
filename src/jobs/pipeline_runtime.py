@@ -545,7 +545,6 @@ def write_progress_report(
     build_pipeline_summary: Callable[..., dict[str, Any]],
     normalize_fetch_report_payload: Callable[[dict[str, Any]], dict[str, Any]],
     write_text_if_changed: Callable[[Any, str], Any],
-    deduplicator_factory: Callable[[], Any],
     phase_key: str,
     phase_label: str,
     run_id: str = "",

@@ -43,7 +43,7 @@ def test_browser_fallback_state_roundtrip_preserves_cooldown_fields() -> None:
     assert restored.disabled_until_at == row["browserFallbackQuarantinedUntilAt"]
 
 
-def test_browser_escalation_state_roundtrip_and_guard_bootstrap() -> None:
+def test_browser_escalation_state_roundtrip_preserves_guard_fields() -> None:
     normalized = jobs_state.normalize_source_state_payload(
         {
             "sources": {
@@ -66,30 +66,9 @@ def test_browser_escalation_state_roundtrip_and_guard_bootstrap() -> None:
     assert source_row["browserEscalationEligibilityReason"] == "js_required"
     assert source_row["browserEscalationFailureCount"] == 1
 
-    assert not jobs_state.should_browser_escalate_source(
-        "crystal_dynamics",
-        {
-            "crystal_dynamics": {
-                **source_row,
-                "lastFingerprint": "fp-a",
-                "lastListingFingerprint": "listing-a",
-            }
-        },
-    )
-    assert jobs_state.should_browser_escalate_source(
-        "crystal_dynamics",
-        {
-            "crystal_dynamics": {
-                **source_row,
-                "lastFingerprint": "fp-b",
-                "lastListingFingerprint": "listing-b",
-            }
-        },
-    )
-    assert jobs_state.should_browser_escalate_source(
-        "legacy_flagged",
-        {"legacy_flagged": {"lastFailureBucket": "js_required"}},
-    )
+    assert source_row["browserEscalationLastAttemptFingerprint"] == "fp-a"
+    assert source_row["browserEscalationLastAttemptListingFingerprint"] == "listing-a"
+    assert source_row["browserEscalationLastAttemptAt"] == "2026-03-23T11:00:00Z"
 
 
 def test_browser_escalation_state_update_remembers_attempts_and_successes() -> None:
@@ -122,7 +101,7 @@ def test_browser_escalation_state_update_remembers_attempts_and_successes() -> N
     assert entry["browserEscalationLastAttemptAt"] == finished_at
     assert entry["browserEscalationLastAttemptListingFingerprint"] == "listing-a"
     assert entry["browserEscalationFailureCount"] == 1
-    assert not jobs_state.should_browser_escalate_source("crystal_dynamics", state_rows)
+    assert entry["browserEscalationLastAttemptAt"] == finished_at
 
     success_finished_at = "2026-03-23T12:45:00Z"
     success_report = {

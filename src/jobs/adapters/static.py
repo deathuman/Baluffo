@@ -625,9 +625,6 @@ def run_static_studio_pages_source(
             )
 
         stop_source = False
-        source_listing_jobs_found_total = 0
-        source_detail_candidates_total = 0
-        source_strong_detail_candidates_total = 0
         for batch_start in range(0, len(cleaned_pages), listing_batch_size):
             if stop_source:
                 break
@@ -1203,19 +1200,6 @@ def run_static_studio_pages_source(
                                 default_path_tokens=static_runtime.default_path_tokens,
                                 default_query_keys=static_runtime.default_query_keys,
                             )
-                    strong_detail_candidate_count = sum(
-                        1
-                        for detail, _detail_title in detail_links
-                        if is_probable_job_detail_url(
-                            detail,
-                            source,
-                            default_path_tokens=static_runtime.default_path_tokens,
-                            default_query_keys=static_runtime.default_query_keys,
-                        )
-                    )
-                    source_listing_jobs_found_total += listing_jobs_found
-                    source_detail_candidates_total += len(detail_links)
-                    source_strong_detail_candidates_total += strong_detail_candidate_count
                     stats["candidate_links_found"] += len(detail_links)
                     stats["candidate_extraction_ms"] += int(
                         (time.perf_counter() - extraction_started) * 1000
@@ -1356,7 +1340,6 @@ def run_static_studio_pages_source(
                     detail_source_name = source_name
                     detail_target_url = page_url
                     detail_candidate_count = len(detail_links)
-                    detail_rows_from_pages = 0
                     detail_off_domain_failure_count = 0
                     detail_redirect_loop_count = 0
                     detail_state = {
@@ -1518,10 +1501,6 @@ def run_static_studio_pages_source(
                             progress_callback=_on_detail_batch_progress,
                         )
 
-                        batch_rows_emitted = 0
-                        batch_terminal_pages = 0
-                        batch_processed_pages = 0
-                        batch_low_yield_terminal_pages = 0
                         for detail_result_row in detail_results:
                             if static_source_budget_exhausted(
                                 deadline_monotonic=float(source_deadline_state["value"]),
@@ -1543,7 +1522,6 @@ def run_static_studio_pages_source(
                             )
                             detail_title = clean_text(detail_payload.get("detailTitle"))
                             stats["detail_pages_visited"] += 1
-                            batch_processed_pages += 1
                             emit_source_progress(
                                 phase_key="static_detail_traversal",
                                 phase_label="Traversing detail pages",
@@ -1557,13 +1535,10 @@ def run_static_studio_pages_source(
                                 linked_in_throttle = "linkedin" in f"{page_url} {msg}".lower()
                                 detail_host = (urlparse(detail).netloc or "").strip().lower()
                                 page_host = (urlparse(page_url).netloc or "").strip().lower()
-                                low_yield_terminal = False
                                 if "Exceeded maximum allowed redirects" in msg:
                                     detail_redirect_loop_count += 1
-                                    low_yield_terminal = True
                                 if detail_host and page_host and detail_host != page_host:
                                     detail_off_domain_failure_count += 1
-                                    low_yield_terminal = True
                                 if "HTTP 403" in msg or (
                                     linked_in_throttle
                                     and ("HTTP 429" in msg or "Too Many Requests" in msg)
@@ -1574,9 +1549,6 @@ def run_static_studio_pages_source(
                                     warnings.append(f"static:{source_name}:{detail}: {msg}")
                                 else:
                                     errors.append(f"static:{source_name}:{detail}: {msg}")
-                                batch_terminal_pages += 1
-                                if low_yield_terminal:
-                                    batch_low_yield_terminal_pages += 1
                                 if (
                                     detail_redirect_loop_count >= 2
                                     or detail_off_domain_failure_count >= 2
@@ -1603,16 +1575,12 @@ def run_static_studio_pages_source(
                             if rejected_classification == "dead_listing_page":
                                 link_rejections["dead_listing_page"] += 1
                                 stats["dead_listing_pages_rejected"] += 1
-                                batch_terminal_pages += 1
-                                batch_low_yield_terminal_pages += 1
                                 if len(dead_listing_page_examples) < 5:
                                     example = clean_text(detail_result.get("rejectedExample"))
                                     if example:
                                         dead_listing_page_examples.append(example)
                             elif detail_result.get("parseEmpty"):
                                 link_rejections["detail_parse_empty"] += 1
-                                batch_terminal_pages += 1
-                                batch_low_yield_terminal_pages += 1
                             rows_added_from_detail = 0
                             for row in detail_result.get("rows") or []:
                                 link = normalize_url(row.get("jobLink"))
@@ -1621,8 +1589,6 @@ def run_static_studio_pages_source(
                                 seen_links.add(link)
                                 jobs.append(row)
                                 rows_added_from_detail += 1
-                            batch_rows_emitted += rows_added_from_detail
-                            detail_rows_from_pages += rows_added_from_detail
                             emit_heartbeat()
 
                         if stop_source:

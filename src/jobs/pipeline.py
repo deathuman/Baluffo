@@ -521,7 +521,6 @@ def run_pipeline(
         build_pipeline_summary=build_pipeline_summary,
         normalize_fetch_report_payload=normalize_fetch_report_payload,
         write_text_if_changed=write_hot_text_if_changed,
-        deduplicator_factory=CanonicalDeduplicator,
         phase_key=str(progress_phase["key"]),
         phase_label=str(progress_phase["label"]),
         run_id=run_id,

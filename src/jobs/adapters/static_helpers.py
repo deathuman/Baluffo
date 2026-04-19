@@ -140,21 +140,6 @@ class StaticHtmlFetcher:
             retries=effective_retries,
         )
 
-    def get_cached_html(self, url: str) -> tuple[str, str | None]:
-        normalized = normalize_url(url) or clean_text(url)
-        if not normalized:
-            return "", None
-        with self._fetch_cache_lock:
-            cached = self._fetch_cache.get(normalized)
-        return normalized, cached
-
-    def store_cached_html(self, url: str, html: str) -> None:
-        normalized = normalize_url(url) or clean_text(url)
-        if not normalized:
-            return
-        with self._fetch_cache_lock:
-            self._fetch_cache[normalized] = str(html)
-
     def fetch_html_cached(
         self,
         url: str,
@@ -515,21 +500,6 @@ def choose_detail_traversal_mode(
     if detail_limit < discovered_links:
         return "capped_detail"
     return "full_detail"
-
-
-def create_fetch_html_cached(
-    *,
-    fetch_text: Callable[[str, int], str],
-    timeout_s: int,
-    retries: int,
-    backoff_s: float,
-) -> Callable[[str], tuple[str, bool]]:
-    return StaticHtmlFetcher(
-        fetch_text=fetch_text,
-        timeout_s=timeout_s,
-        retries=retries,
-        backoff_s=backoff_s,
-    ).fetch_html_cached
 
 
 def build_static_html_fetcher(

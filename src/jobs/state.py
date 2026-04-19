@@ -1013,32 +1013,6 @@ def browser_escalation_state_row(
     return dict(entry) if isinstance(entry, dict) else {}
 
 
-def should_browser_escalate_source(
-    source_name: str,
-    source_state_rows: dict[str, dict[str, Any]] | None,
-) -> bool:
-    entry = browser_escalation_state_row(source_state_rows, source_name)
-    if not entry:
-        return False
-    eligible = bool(entry.get("browserEscalationEligible"))
-    if not eligible:
-        legacy_bucket = clean_text(entry.get("lastFailureBucket"))
-        eligible = legacy_bucket in {"js_required", "anti_bot_or_challenge"}
-    if not eligible:
-        return False
-    current_fp = clean_text(entry.get("lastFingerprint"))
-    current_listing_fp = clean_text(entry.get("lastListingFingerprint"))
-    attempt_fp = clean_text(entry.get("browserEscalationLastAttemptFingerprint"))
-    attempt_listing_fp = clean_text(entry.get("browserEscalationLastAttemptListingFingerprint"))
-    if clean_text(entry.get("browserEscalationLastAttemptAt")):
-        if attempt_fp or attempt_listing_fp:
-            if current_fp == attempt_fp and current_listing_fp == attempt_listing_fp:
-                return False
-        elif not current_fp and not current_listing_fp:
-            return False
-    return True
-
-
 def build_browser_fallback_circuit_breaker(
     source_state_rows: dict[str, dict[str, Any]] | None,
     *,

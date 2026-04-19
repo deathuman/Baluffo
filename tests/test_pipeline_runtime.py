@@ -149,13 +149,6 @@ def test_write_progress_report_keeps_in_progress_fetch_report_valid_json(tmp_pat
         recent_events=[],
     )
 
-    class _Deduplicator:
-        def __init__(self) -> None:
-            self.stats: dict[str, int] = {}
-
-        def process(self, rows: list[object]) -> list[object]:
-            return list(rows)
-
     write_progress_report(
         runtime=runtime,
         canonical_rows=[],
@@ -172,7 +165,6 @@ def test_write_progress_report_keeps_in_progress_fetch_report_valid_json(tmp_pat
         build_pipeline_summary=lambda *_args, **_kwargs: {"outputCount": 0},
         normalize_fetch_report_payload=lambda payload: payload,
         write_text_if_changed=write_atomic_if_changed,
-        deduplicator_factory=_Deduplicator,
         phase_key="starting",
         phase_label="Starting",
         run_id="run-123",
@@ -234,15 +226,6 @@ def test_write_progress_report_uses_incremental_runtime_counts_and_skips_dedup(
     )
     runtime.current_output_count = 7
     runtime.current_raw_fetched_count = 11
-    dedup_calls = {"count": 0}
-
-    class _Deduplicator:
-        def __init__(self) -> None:
-            self.stats: dict[str, int] = {}
-
-        def process(self, rows: list[object]) -> list[object]:
-            dedup_calls["count"] += 1
-            return list(rows)
 
     write_progress_report(
         runtime=runtime,
@@ -260,7 +243,6 @@ def test_write_progress_report_uses_incremental_runtime_counts_and_skips_dedup(
         build_pipeline_summary=lambda *_args, **_kwargs: {"outputCount": 999},
         normalize_fetch_report_payload=lambda payload: payload,
         write_text_if_changed=write_atomic_if_changed,
-        deduplicator_factory=_Deduplicator,
         phase_key="executing_sources",
         phase_label="Executing sources",
         run_id="run-live",
@@ -268,7 +250,6 @@ def test_write_progress_report_uses_incremental_runtime_counts_and_skips_dedup(
     )
 
     payload = json.loads(paths.report_path.read_text(encoding="utf-8"))
-    assert dedup_calls["count"] == 0
     assert payload["summary"]["rawFetchedCount"] == 11
     assert payload["summary"]["outputCount"] == 7
     assert payload["summary"]["finalOutput"] == 7
@@ -311,13 +292,6 @@ def test_write_progress_report_serializes_concurrent_writes(tmp_path: Path) -> N
     max_active_writes = 0
     write_lock = threading.Lock()
 
-    class _Deduplicator:
-        def __init__(self) -> None:
-            self.stats = {}
-
-        def process(self, rows: list[object]) -> list[object]:
-            return list(rows)
-
     def fake_write(_path: Path, _text: str) -> bool:
         nonlocal active_writes, max_active_writes
         with write_lock:
@@ -345,7 +319,6 @@ def test_write_progress_report_serializes_concurrent_writes(tmp_path: Path) -> N
             build_pipeline_summary=lambda *_args, **_kwargs: {"outputCount": 0},
             normalize_fetch_report_payload=lambda payload: payload,
             write_text_if_changed=fake_write,
-            deduplicator_factory=_Deduplicator,
             phase_key="executing_sources",
             phase_label="Executing sources",
             run_id="run-serialize",

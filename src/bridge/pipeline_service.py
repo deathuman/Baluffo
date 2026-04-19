@@ -49,7 +49,6 @@ class PipelineService:
         self._parse_iso = parse_iso
         self._append_run_history = append_run_history
         self._upsert_run_history = upsert_run_history
-        self._task_running_from_state = task_running_from_state
         self._sync_task_running = sync_task_running
         self._current_fetch_output_count = current_fetch_output_count
         self._load_json_object = load_json_object
@@ -170,9 +169,6 @@ class PipelineService:
     @staticmethod
     def _is_duplicate_task_response(result: dict[str, Any] | None) -> bool:
         return bool(isinstance(result, dict) and result.get("alreadyRunning"))
-
-    def _has_projected_blocking_child_work(self) -> bool:
-        return self._child_task_is_active("fetch") or self._child_task_is_active("discovery")
 
     def get_status_payload(self) -> dict[str, Any]:
         with self._lock:
