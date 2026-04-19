@@ -1315,6 +1315,7 @@ def test_launch_desktop_app_fails_when_active_session_exists_without_spawning_ch
     )
     session = {
         "launcherPid": 1234,
+        "launcherToken": "existing-launcher-token",
         "bridgePort": 8877,
         "url": "http://127.0.0.1:8080/jobs.html?desktop=1",
         "browserPath": "C:/Edge/msedge.exe",
@@ -1330,12 +1331,30 @@ def test_launch_desktop_app_fails_when_active_session_exists_without_spawning_ch
         mock.patch.object(desktop_app, "release_instance_lock"),
         mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
         mock.patch.object(desktop_app, "start_child_process") as start_mock,
-        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(
+            desktop_app,
+            "_desktop_update_restart_snapshot",
+            return_value={
+                "handoffRequestPresent": True,
+                "updateInstallState": "handoff_requested",
+                "updateInstallStage": "preparing",
+            },
+        ),
+        mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock,
     ):
         with pytest.raises(RuntimeError, match="Baluffo is already running"):
             desktop_app.launch_desktop_app(config)
 
     start_mock.assert_not_called()
+    assert any(
+        call.args[1] == "desktop_launch_rejected_already_running"
+        and call.kwargs["detection"] == "valid_session_state"
+        and call.kwargs["existingLauncherToken"] == "existing-launcher-token"
+        and call.kwargs["handoffRequestPresent"] is True
+        and call.kwargs["updateInstallState"] == "handoff_requested"
+        and call.kwargs["updateInstallStage"] == "preparing"
+        for call in trace_mock.call_args_list
+    )
 
 
 def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() -> None:
@@ -2621,6 +2640,7 @@ def test_launch_desktop_app_fails_when_instance_lock_is_contended_and_session_ex
     )
     session = {
         "launcherPid": 1234,
+        "launcherToken": "existing-launcher-token",
         "bridgePort": 8877,
         "url": "http://127.0.0.1:8080/jobs.html?desktop=1",
         "browserPath": "C:/Edge/msedge.exe",
@@ -2635,9 +2655,27 @@ def test_launch_desktop_app_fails_when_instance_lock_is_contended_and_session_ex
         ),
         mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
         mock.patch.object(desktop_app, "start_child_process") as start_mock,
-        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(
+            desktop_app,
+            "_desktop_update_restart_snapshot",
+            return_value={
+                "handoffRequestPresent": False,
+                "updateInstallState": "idle",
+                "updateInstallStage": "idle",
+            },
+        ),
+        mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock,
     ):
         with pytest.raises(RuntimeError, match="Baluffo is already running"):
             desktop_app.launch_desktop_app(config)
 
     start_mock.assert_not_called()
+    assert any(
+        call.args[1] == "desktop_launch_rejected_already_running"
+        and call.kwargs["detection"] == "instance_lock_contended"
+        and call.kwargs["existingLauncherToken"] == "existing-launcher-token"
+        and call.kwargs["handoffRequestPresent"] is False
+        and call.kwargs["updateInstallState"] == "idle"
+        and call.kwargs["updateInstallStage"] == "idle"
+        for call in trace_mock.call_args_list
+    )

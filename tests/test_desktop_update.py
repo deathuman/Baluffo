@@ -11,6 +11,52 @@ from src.ship import desktop_update as du
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
+def _write_credible_handoff_request(
+    paths: du.DesktopUpdatePaths,
+    session_root: Path,
+    *,
+    install_state: str = "handoff_requested",
+    launcher_pid: int = 1234,
+    launcher_token: str = "token-1",
+) -> None:
+    session_root.mkdir(parents=True, exist_ok=True)
+    du.write_json_atomic(
+        session_root / "desktop-session.json",
+        {
+            "launcherPid": int(launcher_pid),
+            "launcherToken": str(launcher_token),
+        },
+    )
+    du.write_json_atomic(
+        paths.install_plan_path,
+        {
+            "planVersion": 1,
+            "installRoot": str(paths.install_root),
+            "tempHelperPath": str(paths.install_root / du.DESKTOP_UPDATE_HELPER_NAME),
+            "targetVersion": "1.4.0",
+            "currentVersion": "0.1.0",
+            "manifestPath": str(paths.manifest_cache_path),
+            "downloadedZipPath": str(paths.downloads_dir / "baluffo-portable-1.4.0.zip"),
+            "expectedZipSha256": "a" * 64,
+            "manifestKeyId": "desktop-ed25519-test",
+            "rollbackPath": str(paths.rollback_root / "rollback-1"),
+            "updaterWorkingDir": str(paths.updater_dir),
+            "createdAt": "2026-04-19T12:00:00Z",
+            "launcherPid": int(launcher_pid),
+            "launcherToken": str(launcher_token),
+            "desktopSessionRoot": str(session_root),
+        },
+    )
+    du.write_json_atomic(paths.handoff_request_path, {"requestedAt": "2026-04-19T12:00:00Z"})
+    du.save_status(
+        paths,
+        {
+            **du.default_status_payload(current_version="0.1.0"),
+            "installState": str(install_state),
+        },
+    )
+
+
 def test_canonical_manifest_bytes_sorts_keys_and_omits_signature() -> None:
     manifest = {
         "signature": "ignored",
@@ -168,7 +214,7 @@ def test_manifest_to_status_marks_matching_0_1_31_up_to_date() -> None:
     assert status["updateAvailable"] is False
 
 
-def test_updater_install_requested_reads_persisted_state() -> None:
+def test_updater_install_requested_clears_stale_persisted_handoff_state() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"
         paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
@@ -180,7 +226,12 @@ def test_updater_install_requested_reads_persisted_state() -> None:
             },
         )
 
-        assert du.updater_install_requested(data_dir) is True
+        assert du.updater_install_requested(data_dir) is False
+
+        status = du.load_status(paths, current_version="0.1.0")
+        assert status["installState"] == "idle"
+        assert status["installStage"] == "idle"
+        assert status["lastError"] == "Stale desktop update handoff state was cleared."
 
 
 def test_updater_install_requested_ignores_installing_without_handoff_marker() -> None:
@@ -199,28 +250,52 @@ def test_updater_install_requested_ignores_installing_without_handoff_marker() -
         assert du.updater_install_requested(data_dir) is False
 
 
-def test_updater_install_requested_reads_handoff_marker() -> None:
+def test_updater_install_requested_clears_stale_handoff_marker_without_plan() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"
         paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
         du.write_json_atomic(paths.handoff_request_path, {"requestedAt": "2026-04-14T12:00:00Z"})
 
-        assert du.updater_install_requested(data_dir) is True
+        assert du.updater_install_requested(data_dir) is False
+        assert not paths.handoff_request_path.exists()
+
+
+def test_updater_install_requested_accepts_credible_handoff_state() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        session_root = Path(tmp) / "session"
+        _write_credible_handoff_request(
+            paths,
+            session_root,
+            install_state="waiting_for_exit",
+        )
+
+        with mock.patch.object(du, "pid_is_running", return_value=True):
+            assert du.updater_install_requested(data_dir) is True
+            status = du.load_status(paths, current_version="0.1.0")
+
+        assert status["installState"] == "waiting_for_exit"
+        assert status["installStage"] == "waiting_for_exit"
+        assert status["installStageLabel"] == "Closing Baluffo"
+
+
+def test_updater_install_requested_ignores_default_state_after_pipeline_completion() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+
+        assert du.updater_install_requested(data_dir) is False
 
 
 def test_load_status_derives_install_stage_label_from_install_state() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"
         paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
-        du.save_status(
-            paths,
-            {
-                **du.default_status_payload(current_version="0.1.0"),
-                "installState": "waiting_for_exit",
-            },
-        )
+        session_root = Path(tmp) / "session"
+        _write_credible_handoff_request(paths, session_root, install_state="waiting_for_exit")
 
-        status = du.load_status(paths, current_version="0.1.0")
+        with mock.patch.object(du, "pid_is_running", return_value=True):
+            status = du.load_status(paths, current_version="0.1.0")
 
         assert status["installStage"] == "waiting_for_exit"
         assert status["installStageLabel"] == "Closing Baluffo"
@@ -1074,6 +1149,7 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
         with (
             mock.patch.object(du, "resolve_desktop_session_root", return_value=session_root),
             mock.patch.object(du.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
+            mock.patch.object(du, "pid_is_running", return_value=True),
             mock.patch.object(du, "verify_manifest_signature"),
         ):
             result = service.request_install()

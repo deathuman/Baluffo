@@ -35,6 +35,7 @@ from src.baluffo_config import get_desktop_defaults
 from src.ship.desktop_update import (
     DesktopUpdatePaths,
     launch_staged_update_helper,
+    load_status,
     updater_install_requested,
     write_success_marker,
 )
@@ -2334,6 +2335,39 @@ def show_native_message(title: str, message: str) -> bool:
     return False
 
 
+def _desktop_update_restart_snapshot(data_dir: Path) -> dict[str, object]:
+    paths = DesktopUpdatePaths.from_data_dir(Path(data_dir))
+    status = load_status(paths)
+    return {
+        "handoffRequestPresent": bool(paths.handoff_request_path.exists()),
+        "updateInstallState": str(status.get("installState") or "").strip().lower(),
+        "updateInstallStage": str(status.get("installStage") or "").strip().lower(),
+    }
+
+
+def _trace_already_running_rejection(
+    *,
+    data_dir: Path,
+    detection: str,
+    launcher_token: str,
+    existing_session: dict[str, object] | None = None,
+) -> None:
+    session = dict(existing_session or {})
+    update_snapshot = _desktop_update_restart_snapshot(data_dir)
+    _append_startup_trace(
+        data_dir,
+        "desktop_launch_rejected_already_running",
+        detection=str(detection or "").strip(),
+        launcherToken=str(launcher_token or "").strip(),
+        existingLauncherToken=str(session.get("launcherToken") or "").strip(),
+        existingLauncherPid=int(session.get("launcherPid") or 0),
+        bridgePort=int(session.get("bridgePort") or 0),
+        handoffRequestPresent=bool(update_snapshot.get("handoffRequestPresent")),
+        updateInstallState=str(update_snapshot.get("updateInstallState") or "").strip(),
+        updateInstallStage=str(update_snapshot.get("updateInstallStage") or "").strip(),
+    )
+
+
 def ensure_desktop_prerequisites() -> None:
     return None
 
@@ -2361,6 +2395,12 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 "desktop_session_reused",
                 bridgePort=int(existing_session.get("bridgePort") or 0),
                 reason="instance_lock_contended",
+            )
+            _trace_already_running_rejection(
+                data_dir=config.data_dir,
+                detection="instance_lock_contended",
+                launcher_token=launcher_token,
+                existing_session=existing_session,
             )
             raise RuntimeError(ALREADY_RUNNING_ERROR)
         if action == "reclaimed" or action == "retry":
@@ -2396,6 +2436,12 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 config.data_dir,
                 "desktop_session_reused",
                 bridgePort=int(existing_session.get("bridgePort") or 0),
+            )
+            _trace_already_running_rejection(
+                data_dir=config.data_dir,
+                detection="valid_session_state",
+                launcher_token=launcher_token,
+                existing_session=existing_session,
             )
             raise RuntimeError(ALREADY_RUNNING_ERROR)
         session_root = resolve_browser_session_root()

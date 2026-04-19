@@ -80,6 +80,7 @@ INSTALL_STAGE_LABELS = {
     "installed": "",
     "failed": "",
 }
+HANDOFF_PENDING_INSTALL_STATES = frozenset({"handoff_requested", "waiting_for_exit"})
 
 
 def iso_now() -> str:
@@ -490,12 +491,62 @@ def default_status_payload(*, current_version: str | None = None) -> dict[str, A
     }
 
 
+def _load_credible_handoff_install_plan(paths: DesktopUpdatePaths) -> dict[str, Any]:
+    if not paths.handoff_request_path.exists():
+        return {}
+    try:
+        plan = validate_install_plan(read_json(paths.install_plan_path, {}))
+    except ValueError:
+        return {}
+    launcher_pid = int(plan.get("launcherPid") or 0)
+    launcher_token = str(plan.get("launcherToken") or "").strip()
+    session_root_raw = str(plan.get("desktopSessionRoot") or "").strip()
+    if launcher_pid <= 0 or not launcher_token or not session_root_raw:
+        return {}
+    if not pid_is_running(launcher_pid):
+        return {}
+    try:
+        session_root = _resolve_runtime_path(session_root_raw)
+    except Exception:  # noqa: BLE001
+        return {}
+    session_state = read_desktop_session_state(session_root)
+    if int(session_state.get("launcherPid") or 0) != launcher_pid:
+        return {}
+    if str(session_state.get("launcherToken") or "").strip() != launcher_token:
+        return {}
+    return plan
+
+
+def _reconcile_stale_handoff_status(
+    paths: DesktopUpdatePaths,
+    status: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
+    next_status = dict(status or {})
+    install_state = str(next_status.get("installState") or "").strip().lower()
+    handoff_marker_present = paths.handoff_request_path.exists()
+    if install_state not in HANDOFF_PENDING_INSTALL_STATES and not handoff_marker_present:
+        return next_status, False
+    if _load_credible_handoff_install_plan(paths):
+        return next_status, False
+    if install_state in HANDOFF_PENDING_INSTALL_STATES:
+        next_status.update(
+            {
+                "installState": "idle",
+                "installStage": "idle",
+                "installStageLabel": "",
+                "lastError": "Stale desktop update handoff state was cleared.",
+            }
+        )
+    return next_status, True
+
+
 def load_status(paths: DesktopUpdatePaths, *, current_version: str | None = None) -> dict[str, Any]:
     status = default_status_payload(current_version=current_version)
     status.update(read_json(paths.install_state_path, {}))
     status["currentVersion"] = str(
         current_version or status.get("currentVersion") or get_app_version()
     )
+    status, _stale_handoff = _reconcile_stale_handoff_status(paths, status)
     status["installStage"] = normalize_install_stage(
         status.get("installState"),
         status.get("installStage"),
@@ -514,13 +565,15 @@ def save_status(paths: DesktopUpdatePaths, payload: dict[str, Any]) -> dict[str,
 
 def updater_install_requested(data_dir: Path) -> bool:
     paths = DesktopUpdatePaths.from_data_dir(Path(data_dir))
-    if paths.handoff_request_path.exists():
-        return True
     state = load_status(paths)
-    return str(state.get("installState") or "").strip().lower() in {
-        "handoff_requested",
-        "waiting_for_exit",
-    }
+    state, stale_handoff = _reconcile_stale_handoff_status(paths, state)
+    if stale_handoff:
+        clear_handoff_request(paths)
+        save_status(paths, state)
+        return False
+    if _load_credible_handoff_install_plan(paths):
+        return True
+    return str(state.get("installState") or "").strip().lower() in HANDOFF_PENDING_INSTALL_STATES
 
 
 def clear_success_marker(paths: DesktopUpdatePaths) -> None:
