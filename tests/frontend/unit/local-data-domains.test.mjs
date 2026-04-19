@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createAuthDomain } from "../../../frontend/local-data/auth.js";
-import { requestConfirmationDialog } from "../../../frontend/local-data/profile-name-dialog.js";
+import {
+  requestConfirmationDialog,
+  requestTextInputDialog
+} from "../../../frontend/local-data/profile-name-dialog.js";
 import { createSavedJobsDomain } from "../../../frontend/local-data/saved-jobs.js";
 
 function createStorageMock() {
@@ -17,6 +20,179 @@ function createStorageMock() {
       map.delete(String(key));
     }
   };
+}
+
+function createFakeDocument() {
+  const documentListeners = new Map();
+
+  function createTextNode(text) {
+    return {
+      nodeType: "text",
+      ownerDocument: doc,
+      parentNode: null,
+      _textContent: String(text || ""),
+      get textContent() {
+        return this._textContent;
+      },
+      set textContent(value) {
+        this._textContent = String(value || "");
+      },
+      remove() {
+        this.parentNode?.removeChild?.(this);
+      }
+    };
+  }
+
+  function createElement(tagName) {
+    const listeners = new Map();
+    const element = {
+      nodeType: "element",
+      ownerDocument: doc,
+      parentNode: null,
+      tagName: String(tagName || "").toUpperCase(),
+      className: "",
+      dataset: {},
+      attributes: {},
+      children: [],
+      _textContent: "",
+      id: "",
+      type: "",
+      value: "",
+      name: "",
+      placeholder: "",
+      required: false,
+      autocomplete: "",
+      maxLength: 0,
+      selected: false,
+      get textContent() {
+        if (this._textContent) return this._textContent;
+        return this.children.map(child => child.textContent).join("");
+      },
+      set textContent(value) {
+        this._textContent = String(value || "");
+        this.children = [];
+      },
+      appendChild(child) {
+        this._textContent = "";
+        child.parentNode = this;
+        this.children.push(child);
+        return child;
+      },
+      append(...nodes) {
+        nodes.forEach(node => {
+          if (typeof node === "string") {
+            this.appendChild(createTextNode(node));
+            return;
+          }
+          this.appendChild(node);
+        });
+      },
+      replaceChildren(...nodes) {
+        this.children.forEach(child => {
+          child.parentNode = null;
+        });
+        this.children = [];
+        this._textContent = "";
+        if (nodes.length) {
+          this.append(...nodes);
+        }
+      },
+      removeChild(child) {
+        const index = this.children.indexOf(child);
+        if (index >= 0) {
+          this.children.splice(index, 1);
+          child.parentNode = null;
+        }
+        return child;
+      },
+      remove() {
+        this.parentNode?.removeChild?.(this);
+      },
+      addEventListener(name, handler) {
+        const handlers = listeners.get(name) || [];
+        handlers.push(handler);
+        listeners.set(name, handlers);
+      },
+      removeEventListener(name, handler) {
+        const handlers = listeners.get(name) || [];
+        listeners.set(name, handlers.filter(item => item !== handler));
+      },
+      dispatch(name, event = {}) {
+        const handlers = listeners.get(name) || [];
+        handlers.forEach(handler => handler({
+          target: this,
+          preventDefault() {},
+          ...event,
+        }));
+      },
+      setAttribute(name, value) {
+        this.attributes[name] = String(value);
+        if (name === "id") this.id = String(value);
+        if (name === "name") this.name = String(value);
+        if (name === "type") this.type = String(value);
+        if (name === "placeholder") this.placeholder = String(value);
+        if (name === "autocomplete") this.autocomplete = String(value);
+        if (name === "maxlength") this.maxLength = Number(value);
+      },
+      focus() {
+        doc.activeElement = this;
+      },
+      select() {
+        this.selected = true;
+      }
+    };
+    return element;
+  }
+
+  function walk(node, predicate) {
+    if (!node) return null;
+    if (predicate(node)) return node;
+    const children = Array.isArray(node.children) ? node.children : [];
+    for (const child of children) {
+      const match = walk(child, predicate);
+      if (match) return match;
+    }
+    return null;
+  }
+
+  const doc = {
+    activeElement: null,
+    defaultView: {
+      requestAnimationFrame(callback) {
+        callback();
+        return 1;
+      },
+      open() {
+        return null;
+      }
+    },
+    body: null,
+    createElement,
+    createTextNode,
+    addEventListener(name, handler) {
+      const handlers = documentListeners.get(name) || [];
+      handlers.push(handler);
+      documentListeners.set(name, handlers);
+    },
+    removeEventListener(name, handler) {
+      const handlers = documentListeners.get(name) || [];
+      documentListeners.set(name, handlers.filter(item => item !== handler));
+    },
+    dispatch(name, event = {}) {
+      const handlers = documentListeners.get(name) || [];
+      handlers.forEach(handler => handler({
+        preventDefault() {},
+        ...event,
+      }));
+    },
+    contains(target) {
+      return Boolean(walk(this.body, node => node === target));
+    }
+  };
+  doc.body = createElement("body");
+  doc.body.ownerDocument = doc;
+  doc.find = predicate => walk(doc.body, predicate);
+  return doc;
 }
 
 test("auth domain signIn/signOut updates session and emits auth changes", async () => {
@@ -84,6 +260,85 @@ test("confirmation dialog falls back to window.confirm outside the browser DOM",
 
   assert.equal(result, true);
   assert.equal(confirmCalls, 1);
+});
+
+test("text input dialog becomes visible, focuses the field, and restores trigger focus on cancel", async () => {
+  const previousDocument = global.document;
+  const previousWindow = global.window;
+  const doc = createFakeDocument();
+  const trigger = doc.createElement("button");
+  doc.body.appendChild(trigger);
+  trigger.focus();
+  global.document = doc;
+  global.window = doc.defaultView;
+
+  try {
+    const pending = requestTextInputDialog({
+      title: "Sign in",
+      label: "Profile name",
+      defaultValue: "Andrea"
+    });
+
+    const overlay = doc.find(node => typeof node.className === "string" && node.className.includes("popup-overlay"));
+    const panel = doc.find(node => typeof node.className === "string" && node.className.includes("popup "));
+    const input = doc.find(node => node.tagName === "INPUT");
+    const cancelBtn = doc.find(
+      node => typeof node.className === "string" && node.className.includes("local-auth-dialog-cancel")
+    );
+
+    assert.ok(overlay);
+    assert.ok(panel);
+    assert.match(overlay.className, /\bpopup-overlay-visible\b/);
+    assert.match(panel.className, /\bpopup-visible\b/);
+    assert.equal(doc.activeElement, input);
+    assert.equal(input.selected, true);
+
+    cancelBtn.dispatch("click");
+    const result = await pending;
+    assert.equal(result, null);
+    assert.equal(doc.activeElement, trigger);
+  } finally {
+    global.document = previousDocument;
+    global.window = previousWindow;
+  }
+});
+
+test("confirmation dialog becomes visible, focuses confirm, and resolves on enter", async () => {
+  const previousDocument = global.document;
+  const previousWindow = global.window;
+  const doc = createFakeDocument();
+  const trigger = doc.createElement("button");
+  doc.body.appendChild(trigger);
+  trigger.focus();
+  global.document = doc;
+  global.window = doc.defaultView;
+
+  try {
+    const pending = requestConfirmationDialog({
+      title: "Delete selected sources?",
+      description: "Delete 2 selected source(s) from registry? This cannot be undone."
+    });
+
+    const overlay = doc.find(node => typeof node.className === "string" && node.className.includes("popup-overlay"));
+    const panel = doc.find(node => typeof node.className === "string" && node.className.includes("popup "));
+    const confirmBtn = doc.find(
+      node => typeof node.className === "string" && node.className.includes("local-auth-dialog-submit")
+    );
+
+    assert.ok(overlay);
+    assert.ok(panel);
+    assert.match(overlay.className, /\bpopup-overlay-visible\b/);
+    assert.match(panel.className, /\bpopup-visible\b/);
+    assert.equal(doc.activeElement, confirmBtn);
+
+    doc.dispatch("keydown", { key: "Enter" });
+    const result = await pending;
+    assert.equal(result, true);
+    assert.equal(doc.activeElement, trigger);
+  } finally {
+    global.document = previousDocument;
+    global.window = previousWindow;
+  }
 });
 
 test("saved-jobs domain normalizes bookmark timestamp and merge keeps richer existing row", () => {

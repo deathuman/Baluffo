@@ -212,6 +212,8 @@ test("openReleaseNotesDialog renders fallback state, supports escape close, and 
 
   assert.ok(dialog);
   assert.equal(dialog.overlay.parentNode, doc.body);
+  assert.match(dialog.overlay.className, /\bpopup-overlay-visible\b/);
+  assert.match(dialog.panel.className, /\bpopup-visible\b/);
   assert.equal(
     doc.activeElement,
     doc.find(node => typeof node.className === "string" && node.className.includes("release-notes-dialog-close"))

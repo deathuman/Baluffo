@@ -8,7 +8,10 @@ import pytest
 from scripts import build_ship_bundle
 from scripts.build_portable_exe import (
     DEFAULT_BUNDLE_VERSION,
+    MAIN_RUNTIME_COLLECT_DATA_PACKAGES,
     MAIN_RUNTIME_HIDDEN_IMPORTS,
+    OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
+    UPDATER_HELPER_COLLECT_DATA_PACKAGES,
     UPDATER_HELPER_HIDDEN_IMPORTS,
     build_portable_layout,
     create_zip,
@@ -112,11 +115,20 @@ def test_resolve_icon_path_generates_default_icon() -> None:
 def test_helper_hidden_imports_include_tkinter_progress_ui_modules() -> None:
     assert "tkinter" in UPDATER_HELPER_HIDDEN_IMPORTS
     assert "tkinter.ttk" in UPDATER_HELPER_HIDDEN_IMPORTS
+    assert "src.shared.github_https" in UPDATER_HELPER_HIDDEN_IMPORTS
 
 
 def test_main_runtime_hidden_imports_preserve_packaged_browser_fallback_support() -> None:
     assert "src.admin_bridge" in MAIN_RUNTIME_HIDDEN_IMPORTS
     assert "tkinter" in MAIN_RUNTIME_HIDDEN_IMPORTS
+    assert "src.shared.github_https" in MAIN_RUNTIME_HIDDEN_IMPORTS
+
+
+def test_portable_build_collects_optional_github_tls_runtime_data() -> None:
+    assert MAIN_RUNTIME_COLLECT_DATA_PACKAGES == OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
+    assert UPDATER_HELPER_COLLECT_DATA_PACKAGES == OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
+    if OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES:
+        assert "certifi" in OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
 
 
 def test_helper_hidden_imports_omit_playwright_heavy_runtime_graph() -> None:

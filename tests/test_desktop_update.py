@@ -1,8 +1,10 @@
 import base64
 import json
+import ssl
 from hashlib import sha256
 from pathlib import Path
 from unittest import mock
+from urllib.error import URLError
 
 import pytest
 
@@ -406,6 +408,7 @@ def test_download_file_retries_transient_permission_error_on_finalize() -> None:
         target = Path(tmp) / "portable" / "ship" / "data" / "updater" / "downloads" / "app.zip"
         content = b"portable-zip"
         calls = {"count": 0}
+        seen = {}
         original_replace = du.os.replace
 
         def flaky_replace(src, dst):  # noqa: ANN001
@@ -414,8 +417,13 @@ def test_download_file_retries_transient_permission_error_on_finalize() -> None:
                 raise PermissionError(32, "sharing violation")
             return original_replace(src, dst)
 
+        def fake_urlopen(request, timeout=300.0, context=None):  # noqa: ANN001
+            seen["timeout"] = timeout
+            seen["context"] = context
+            return FakeResponse(content)
+
         with (
-            mock.patch.object(du, "urlopen", return_value=FakeResponse(content)),
+            mock.patch.object(du, "urlopen", side_effect=fake_urlopen),
             mock.patch.object(du.os, "replace", side_effect=flaky_replace),
         ):
             result = du.download_file("https://example.com/app.zip", target)
@@ -423,7 +431,67 @@ def test_download_file_retries_transient_permission_error_on_finalize() -> None:
         assert result == target
         assert target.read_bytes() == content
         assert calls["count"] == 2
+        assert seen["timeout"] == 300.0
+        assert isinstance(seen["context"], ssl.SSLContext)
         assert list(target.parent.glob("*.download")) == []
+
+
+def test_fetch_json_uses_ssl_context_for_default_https_urlopen() -> None:
+    seen = {}
+
+    class FakeResponse:
+        headers = {}
+
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+            return None
+
+        def read(self) -> bytes:
+            return b'{"ok": true}'
+
+    def fake_urlopen(request, timeout=20.0, context=None):  # noqa: ANN001
+        seen["timeout"] = timeout
+        seen["context"] = context
+        return FakeResponse()
+
+    with mock.patch.object(du, "urlopen", side_effect=fake_urlopen):
+        payload = du.fetch_json("https://api.github.com/repos/example/app/releases", timeout_s=12.0)
+
+    assert payload == {"ok": True}
+    assert seen["timeout"] == 12.0
+    assert isinstance(seen["context"], ssl.SSLContext)
+
+
+def test_fetch_json_wraps_certificate_verify_failures_for_https() -> None:
+    def failing_urlopen(_request, timeout=20.0, context=None):  # noqa: ANN001,ARG001
+        raise URLError(ssl.SSLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"))
+
+    with (
+        mock.patch.object(du, "urlopen", side_effect=failing_urlopen),
+        pytest.raises(
+            RuntimeError,
+            match="SSL certificate verification failed while connecting to GitHub",
+        ),
+    ):
+        du.fetch_json("https://api.github.com/repos/example/app/releases", timeout_s=12.0)
+
+
+def test_download_file_wraps_certificate_verify_failures_for_https(tmp_path: Path) -> None:
+    target = tmp_path / "app.zip"
+
+    def failing_urlopen(_request, timeout=300.0, context=None):  # noqa: ANN001,ARG001
+        raise URLError(ssl.SSLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"))
+
+    with (
+        mock.patch.object(du, "urlopen", side_effect=failing_urlopen),
+        pytest.raises(
+            RuntimeError,
+            match="SSL certificate verification failed while connecting to GitHub",
+        ),
+    ):
+        du.download_file("https://example.com/app.zip", target)
 
 
 def test_resolve_github_api_base_honors_env_override(monkeypatch: pytest.MonkeyPatch) -> None:

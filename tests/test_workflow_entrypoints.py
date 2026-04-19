@@ -14,6 +14,7 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
         "npm run test:frontend:unit",
         "npm run test:py:extended",
         "npm run test:frontend:packaged",
+        "npm run test:frontend:packaged:sync-rehearsal",
         "npm run test:frontend:packaged:update-rehearsal",
         "npm run test:frontend:packaged:jobs-pipeline",
         "python scripts/build_ship_bundle.py",
@@ -93,6 +94,9 @@ def test_package_json_packaged_smoke_scripts_use_direct_dist_by_default(repo_roo
     scripts = package["scripts"]
     assert scripts["test:frontend:packaged"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py"
+    )
+    assert scripts["test:frontend:packaged:sync-rehearsal"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --sync-rehearsal --rebuild --runtime-timeout 60"
     )
     assert scripts["test:frontend:packaged:update-rehearsal"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py --desktop-update-rehearsal --rebuild --runtime-timeout 60"

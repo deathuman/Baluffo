@@ -98,7 +98,7 @@ python src/admin_bridge.py --host 127.0.0.1 --port 8877
 | Possible Cause | Solution |
 |----------------|----------|
 | GitHub App not configured | Run `python scripts/build_sync_app_config.py` |
-| `SSL certificate verification failed` | Install/update the machine trust store, or set `BALUFFO_SYNC_CA_BUNDLE` to a PEM CA bundle that trusts GitHub and any TLS-inspecting proxy |
+| `SSL certificate verification failed` | Install/update the machine trust store, or set `BALUFFO_GITHUB_CA_BUNDLE` to a PEM CA bundle that trusts GitHub and any TLS-inspecting proxy. `BALUFFO_SYNC_CA_BUNDLE` still works for sync-only overrides, and `BALUFFO_DESKTOP_UPDATE_CA_BUNDLE` can scope the override to desktop updates only |
 | Invalid credentials | Check `packaging/github-app-sync-config.json` |
 | Network issues | Check internet connection |
 

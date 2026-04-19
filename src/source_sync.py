@@ -8,7 +8,6 @@ import ctypes
 import json
 import os
 import platform
-import ssl
 import sys
 import threading
 from collections.abc import Callable
@@ -42,11 +41,6 @@ from src.source_registry import (
     source_identity as _source_identity,
 )
 
-try:
-    import certifi
-except ImportError:  # pragma: no cover - optional dependency at runtime
-    certifi = None  # type: ignore[assignment]
-
 ROOT = Path(__file__).resolve().parents[1]
 _SYNC_DEFAULTS = get_sync_defaults()
 _SECURITY_DEFAULTS = get_security_defaults()
@@ -63,6 +57,7 @@ DEFAULT_TIMEOUT_S = 20
 PACKAGED_SYNC_CONFIG_ENV = "BALUFFO_SYNC_APP_CONFIG_PATH"
 PACKAGED_SYNC_PASSPHRASE_ENV = "BALUFFO_SYNC_KEY_PASSPHRASE"
 SYNC_CA_BUNDLE_ENV = "BALUFFO_SYNC_CA_BUNDLE"
+GITHUB_API_BASE_ENV = "BALUFFO_SYNC_GITHUB_API_BASE"
 SYNC_DISABLE_ENV = "BALUFFO_SYNC_DISABLE"
 SYNC_ALLOWED_REPO_ENV = "BALUFFO_SYNC_ALLOWED_REPO"
 SYNC_ALLOWED_BRANCH_ENV = "BALUFFO_SYNC_ALLOWED_BRANCH"
@@ -93,6 +88,11 @@ _EMBEDDED_SECRET_PARTS = (
 
 def _self_module() -> Any:
     return sys.modules[__name__]
+
+
+def _github_api_base() -> str:
+    override = str(os.environ.get(GITHUB_API_BASE_ENV) or "").strip().rstrip("/")
+    return override or "https://api.github.com"
 
 
 class SyncOperationError(RuntimeError):
@@ -441,7 +441,7 @@ def validate_sync_config(config: SyncConfig) -> None:
 def _content_api_url(config: SyncConfig, *, with_ref: bool = False) -> str:
     repo_token = quote(config.repo, safe="/")
     path_token = quote(config.path, safe="/")
-    base = f"https://api.github.com/repos/{repo_token}/contents/{path_token}"
+    base = f"{_github_api_base()}/repos/{repo_token}/contents/{path_token}"
     if with_ref:
         ref_token = quote(config.branch, safe="")
         return f"{base}?ref={ref_token}"
@@ -456,10 +456,6 @@ def _github_json_headers(authorization: str) -> dict[str, str]:
         "X-GitHub-Api-Version": "2022-11-28",
         "Content-Type": "application/json; charset=utf-8",
     }
-
-
-def _build_sync_ssl_context() -> ssl.SSLContext:
-    return _source_sync_config.build_sync_ssl_context(_self_module())
 
 
 def _request_raw_json(
@@ -718,7 +714,10 @@ class GitHubAppAuth:
 
     def _refresh_installation_token(self, *, opener: Callable[..., Any] = urlopen) -> str:
         jwt_token = build_app_jwt(self.packaged_config.app_id, self.packaged_config.private_key_pem)
-        url = f"https://api.github.com/app/installations/{quote(self.packaged_config.installation_id, safe='')}/access_tokens"
+        url = (
+            f"{_github_api_base()}/app/installations/"
+            f"{quote(self.packaged_config.installation_id, safe='')}/access_tokens"
+        )
         status, payload, _headers = _request_raw_json(
             method="POST",
             url=url,

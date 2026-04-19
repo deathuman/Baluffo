@@ -325,26 +325,62 @@ h1 {
 .popup-overlay {
   position: fixed;
   inset: 0;
-  background-color: var(--bg-overlay);
+  background:
+    radial-gradient(circle at top, rgba(187, 134, 252, 0.1), transparent 50%),
+    rgba(5, 7, 12, 0.8);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 100;
+  opacity: 0;
+  transition: opacity 0.18s ease;
 }
 
 .popup-overlay.hidden {
   display: none;
 }
 
+.popup-overlay-visible {
+  opacity: 1;
+}
+
 .popup {
-  background-color: var(--surface-7);
-  border: 2px solid var(--accent);
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05) 22%, rgba(255, 255, 255, 0.015) 54%, rgba(255, 255, 255, 0.08)),
+    linear-gradient(135deg, rgba(187, 134, 252, 0.18), rgba(187, 134, 252, 0.07) 28%, rgba(29, 34, 49, 0.24) 66%, rgba(15, 17, 24, 0.34)),
+    rgba(24, 27, 36, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 10px;
   padding: 2rem;
   max-width: 420px;
   width: 90%;
-  box-shadow: 0 4px 20px rgba(187, 134, 252, 0.3);
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.34),
+    0 8px 24px rgba(187, 134, 252, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 0 1px rgba(187, 134, 252, 0.1);
   text-align: center;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.22s ease, transform 0.22s ease, border-color 0.18s ease, background-color 0.18s ease;
+}
+
+@supports ((-webkit-backdrop-filter: blur(18px)) or (backdrop-filter: blur(18px))) {
+  .popup {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06) 22%, rgba(255, 255, 255, 0.02) 58%, rgba(255, 255, 255, 0.08)),
+      linear-gradient(135deg, rgba(187, 134, 252, 0.2), rgba(187, 134, 252, 0.08) 28%, rgba(29, 34, 49, 0.16) 66%, rgba(15, 17, 24, 0.18)),
+      rgba(24, 27, 36, 0.16);
+    -webkit-backdrop-filter: blur(22px) saturate(155%);
+    backdrop-filter: blur(22px) saturate(155%);
+  }
+}
+
+.popup-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .local-auth-dialog-overlay {
@@ -391,9 +427,10 @@ h1 {
 }
 
 .local-auth-dialog-input:focus {
-  outline: 2px solid color-mix(in srgb, var(--accent) 72%, white 28%);
-  outline-offset: 2px;
-  border-color: var(--accent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 52%, white 48%);
+  outline-offset: 1px;
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border-default));
+  box-shadow: 0 0 0 1px rgba(187, 134, 252, 0.14);
 }
 
 .local-auth-dialog-select {
@@ -407,9 +444,10 @@ h1 {
 }
 
 .local-auth-dialog-select:focus {
-  outline: 2px solid color-mix(in srgb, var(--accent) 72%, white 28%);
-  outline-offset: 2px;
-  border-color: var(--accent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 52%, white 48%);
+  outline-offset: 1px;
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--border-default));
+  box-shadow: 0 0 0 1px rgba(187, 134, 252, 0.14);
 }
 
 .local-auth-dialog-stack {
@@ -440,7 +478,8 @@ h1 {
 }
 
 .release-notes-dialog {
-  width: min(94vw, 920px);
+  width: min(96vw, 800px);
+  max-width: min(96vw, 800px);
   max-height: min(82vh, 760px);
   display: flex;
   flex-direction: column;
@@ -1756,6 +1795,15 @@ h1 {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .popup-overlay,
+  .popup {
+    transition: none !important;
+  }
+
+  .popup {
+    transform: none;
+  }
+
   .jobs-page .jobs-header,
   .jobs-page .filters {
     animation: none !important;

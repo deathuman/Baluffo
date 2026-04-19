@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import binascii
+import importlib.util
 import math
 import os
 import shutil
@@ -19,6 +20,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = ROOT / "dist" / "baluffo-portable"
 DEFAULT_EXE_NAME = "Baluffo"
 DEFAULT_ICON_SIZE = 256
+OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES = tuple(
+    package_name
+    for package_name in ("certifi",)
+    if importlib.util.find_spec(package_name) is not None
+)
 MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "src.admin_bridge",
     "src.app_version",
@@ -31,6 +37,7 @@ MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "src.local_data_store",
     "src.pipeline_io",
     "src.shared",
+    "src.shared.github_https",
     "src.shared.regex",
     "src.shared.utils",
     "src.ship.migrations",
@@ -45,13 +52,18 @@ MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "src.source_sync_crypto",
     "src.source_sync_snapshot",
     "src.source_sync",
+    *OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
     "tkinter",
     "tkinter.ttk",
 )
+MAIN_RUNTIME_COLLECT_DATA_PACKAGES = OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
 UPDATER_HELPER_HIDDEN_IMPORTS = (
+    "src.shared.github_https",
+    *OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
     "tkinter",
     "tkinter.ttk",
 )
+UPDATER_HELPER_COLLECT_DATA_PACKAGES = OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -405,6 +417,8 @@ def run_pyinstaller(
     ]
     for module_name in MAIN_RUNTIME_HIDDEN_IMPORTS:
         command.extend(["--hidden-import", module_name])
+    for package_name in MAIN_RUNTIME_COLLECT_DATA_PACKAGES:
+        command.extend(["--collect-data", package_name])
     ship_version_dir = output_dir / "ship" / "app" / "versions" / bundle_version
     for rel in REQUIRED_VERSION_FILES:
         src_file = (ship_version_dir / rel).resolve()
@@ -454,6 +468,8 @@ def run_helper_pyinstaller(output_dir: Path, *, icon_path: Path) -> Path:
     ]
     for module_name in UPDATER_HELPER_HIDDEN_IMPORTS:
         command.extend(["--hidden-import", module_name])
+    for package_name in UPDATER_HELPER_COLLECT_DATA_PACKAGES:
+        command.extend(["--collect-data", package_name])
     command.append(str(ROOT / "src" / "ship" / "desktop_updater.py"))
     subprocess.run(command, check=True, cwd=str(ROOT))
     helper_exe = helper_dist / "BaluffoUpdater.exe"

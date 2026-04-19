@@ -1,3 +1,5 @@
+import { presentPopup } from "../shared/ui/popup-presentation.js";
+
 function getDocumentTarget() {
   if (typeof document === "undefined" || !document || !document.body) {
     return null;
@@ -160,6 +162,7 @@ export async function requestTextInputDialog({
     panel.append(heading, descriptionEl, form);
     overlay.appendChild(panel);
     doc.body.appendChild(overlay);
+    presentPopup(overlay, panel, { windowTarget: doc.defaultView });
 
     const focusInput = () => {
       try {
@@ -398,6 +401,7 @@ export async function requestProfileName({
     panel.append(heading, descriptionEl, form);
     overlay.appendChild(panel);
     doc.body.appendChild(overlay);
+    presentPopup(overlay, panel, { windowTarget: doc.defaultView });
     renderMode();
   });
 }
@@ -503,6 +507,7 @@ export async function requestProfileLoadFailureAction({
     panel.append(heading, descriptionEl, actions);
     overlay.appendChild(panel);
     doc.body.appendChild(overlay);
+    presentPopup(overlay, panel, { windowTarget: doc.defaultView });
 
     const focusRetry = () => {
       try {
@@ -608,6 +613,7 @@ export async function requestConfirmationDialog({
     panel.append(heading, descriptionEl, actions);
     overlay.appendChild(panel);
     doc.body.appendChild(overlay);
+    presentPopup(overlay, panel, { windowTarget: doc.defaultView });
 
     const focusConfirm = () => {
       try {

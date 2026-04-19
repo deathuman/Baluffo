@@ -33,6 +33,7 @@ def test_release_docs_cover_the_current_public_release_line(repo_root: Path) -> 
     assert "v<app_version>" in release_text
     assert "single release-note source of truth" in release_text
     assert "npm run test:frontend:packaged:jobs-pipeline" in release_text
+    assert "npm run test:frontend:packaged:sync-rehearsal" in release_text
     assert "npm run test:py:extended" in release_text
     assert "python scripts/extract_release_notes.py" in release_text
     assert f"## [{app_version}]" in changelog_text
@@ -181,8 +182,11 @@ def test_package_json_build_aliases_use_leaf_builders(repo_root: Path) -> None:
     assert scripts["test:frontend:packaged"] == (
         "npm run check:python-version && python src/packaged_desktop_smoke.py"
     )
+    assert scripts["test:frontend:packaged:sync-rehearsal"] == (
+        "npm run check:python-version && python src/packaged_desktop_smoke.py --sync-rehearsal --rebuild --runtime-timeout 60"
+    )
     assert scripts["release:preflight"] == (
-        "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run test:frontend:packaged && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:jobs-pipeline"
+        "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run test:frontend:packaged && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:jobs-pipeline"
     )
     assert (
         "_out/latest/build/portable/Baluffo.exe"
@@ -213,6 +217,7 @@ def test_testing_doc_owns_verification_matrix(repo_root: Path) -> None:
         "python scripts/build_ship_bundle.py --bundle-version <version>",
         "python scripts/build_portable_exe.py --bundle-version <version>",
         "npm run test:frontend:packaged",
+        "npm run test:frontend:packaged:sync-rehearsal",
         "npm run probe:desktop:startup:cold",
     ):
         assert command in testing_text
@@ -233,6 +238,7 @@ def test_release_guide_uses_canonical_release_preflight(repo_root: Path) -> None
     assert "npm run release:preflight" in release_text
     assert "exact commit you plan to push or tag" in release_text
     assert "npm run lint:precommit" in release_text
+    assert "npm run test:frontend:packaged:sync-rehearsal" in release_text
     assert "npm run test:frontend:packaged:jobs-pipeline" in release_text
     assert "startup-probe-architecture.md" in release_text
 

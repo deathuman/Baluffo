@@ -90,6 +90,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Discovery perf sanity | `npm run perf:discovery:benchmark` |
 | Packaged startup perf probe (cold/warm) | `npm run perf:startup:cold` / `npm run perf:startup:warm` |
 | Packaged desktop smoke gate | `npm run test:frontend:packaged` |
+| Packaged sync rehearsal | `npm run test:frontend:packaged:sync-rehearsal` |
 | Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
 | Packaged desktop updater rehearsal | `npm run test:frontend:packaged:update-rehearsal` |
 | Orchestrated packaged smoke gate | `npm run test:frontend:packaged:orchestrated` |
@@ -119,8 +120,9 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - Direct packaging commands own `dist/` outputs:
   - `npm run build:portable-exe`
   - `python scripts/build_portable_exe.py`
-  - `npm run test:frontend:packaged*`
-  - `npm run test:frontend:packaged:update-rehearsal`
+- `npm run test:frontend:packaged*`
+- `npm run test:frontend:packaged:sync-rehearsal`
+- `npm run test:frontend:packaged:update-rehearsal`
 - Orchestrated build and verify commands own `_out/runs/...` and `_out/latest/...`:
   - `npm run build`
   - `npm run verify`
@@ -155,11 +157,22 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - seeded local profile data, saved jobs, notes, and attachments remain intact across the update.
 - Use this lane for updater-helper, desktop session/handoff, release-manifest, and portable runtime mutation changes.
 
+## Packaged Sync Rehearsal Contract
+
+- `npm run test:frontend:packaged:sync-rehearsal` is the packaged GitHub sync portability gate for the portable desktop runtime.
+- It must prove all of the following:
+  - the shipped `packaging/github-app-sync-config.json` is present and not `keyDerivation: "machine"`,
+  - the packaged runtime loads the embedded sync config successfully,
+  - packaged GitHub App auth initializes against a local fake GitHub endpoint,
+  - `/sync/test` reads a remote snapshot successfully without touching real GitHub.
+- Use this lane for packaged sync config, source-sync auth, ship-bundle embedding, and release portability changes.
+
 ## Release/build regression picks
 
 Use the narrowest check that matches the risky path:
 
 - Packaging or portable EXE changes: `python scripts/build_portable_exe.py`
+- Packaged sync config, auth portability, or sync release-gate changes: `npm run test:frontend:packaged:sync-rehearsal`
 - Packaged updater, desktop handoff, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
 - Bridge route wiring or task-launch signature changes: focused `tests/bridge/...` plus `tests/test_pipeline_execution.py` for worker-path coverage
 - Admin task buttons, presets, or busy-state changes: focused frontend unit tests plus the nearest admin bridge payload test

@@ -1,16 +1,75 @@
+import base64
 import json
 import os
 from datetime import datetime
 from pathlib import Path
 from unittest import mock
+from urllib.request import Request, urlopen
 
 import pytest
 
 from src import packaged_desktop_smoke as smoke
+from src import source_sync as source_sync
 from src.ship.startup_profile import summarize_startup_metrics
 from tests.helpers.temp_paths import workspace_tmpdir
 
 pytestmark = [pytest.mark.packaging, pytest.mark.slow]
+
+
+def _write_packaged_sync_bundle_config(
+    portable_root: Path, *, key_derivation: str = "embedded"
+) -> Path:
+    app_dir = portable_root / "ship" / "app"
+    version_dir = app_dir / "versions" / "0.1.31" / "packaging"
+    version_dir.mkdir(parents=True, exist_ok=True)
+    (app_dir / "current.txt").write_text("0.1.31\n", encoding="utf-8")
+    private_key_pem = "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----\n"
+    salt_b64 = source_sync._base64url_encode(b"packaged-sync-rehearsal-salt")  # noqa: SLF001
+    payload = {
+        "schemaVersion": 1,
+        "appId": "123456",
+        "installationId": "999999",
+        "repo": "owner/repo",
+        "branch": "main",
+        "path": "baluffo/source-sync.json",
+        "allowedRepo": "owner/repo",
+        "allowedBranch": "main",
+        "allowedPathPrefix": "baluffo/source-sync.json",
+    }
+    if key_derivation == "embedded":
+        payload.update(
+            {
+                "keyDerivation": "embedded",
+                "embeddedKeyHint": "sync-smoke-hint",
+                "embeddedKeyVersion": "v1",
+                "keySalt": salt_b64,
+                "privateKeyPemEnc": source_sync.encrypt_private_key_pem_with_passphrase(
+                    private_key_pem,
+                    salt_b64=salt_b64,
+                    app_id="123456",
+                    installation_id="999999",
+                    passphrase=source_sync.build_embedded_passphrase(
+                        hint="sync-smoke-hint", version="v1"
+                    ),
+                ),
+            }
+        )
+    else:
+        payload.update(
+            {
+                "keyDerivation": "machine",
+                "keySalt": salt_b64,
+                "privateKeyPemEnc": source_sync.encrypt_private_key_pem(
+                    private_key_pem,
+                    salt_b64=salt_b64,
+                    app_id="123456",
+                    installation_id="999999",
+                ),
+            }
+        )
+    config_path = version_dir / "github-app-sync-config.json"
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+    return config_path
 
 
 def test_local_address_matches_listen_port() -> None:
@@ -1740,6 +1799,112 @@ def test_run_packaged_smoke_can_run_desktop_update_rehearsal_mode() -> None:
         assert payload["artifacts"]["helperDiagnostics"] == str(
             artifacts_dir / "helper.diagnostics.jsonl"
         )
+        rehearsal_mock.assert_called_once()
+        saved = json.loads(report_path.read_text(encoding="utf-8"))
+        assert saved["ok"] is True
+
+
+def test_packaged_sync_rehearsal_server_serves_fake_github_app_flow() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        portable_root = Path(tmp) / "portable"
+        config_path = _write_packaged_sync_bundle_config(portable_root)
+        loaded_path, _raw_payload, packaged_config = (
+            smoke._load_portable_packaged_sync_rehearsal_config(  # noqa: SLF001
+                portable_root
+            )
+        )
+        assert loaded_path == config_path
+        base_url, _stats, server, thread = smoke._start_packaged_sync_rehearsal_server(  # noqa: SLF001
+            packaged_config=packaged_config,
+            snapshot_payload={
+                "schemaVersion": source_sync.SYNC_SCHEMA_VERSION,
+                "generatedAt": "2026-04-19T12:00:00+00:00",
+                "source": {"name": "packaged_sync_rehearsal"},
+                "active": [],
+                "pending": [],
+                "rejected": [],
+            },
+        )
+        try:
+            token_request = Request(
+                f"{base_url}/app/installations/999999/access_tokens",
+                data=b"{}",
+                headers={"Authorization": "Bearer rehearsal-jwt"},
+                method="POST",
+            )
+            with urlopen(token_request, timeout=5) as response:  # noqa: S310
+                token_payload = json.loads(response.read().decode("utf-8"))
+            assert token_payload["token"] == "packaged-sync-rehearsal-token"
+
+            content_request = Request(
+                f"{base_url}/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
+                headers={"Authorization": "Bearer packaged-sync-rehearsal-token"},
+            )
+            with urlopen(content_request, timeout=5) as response:  # noqa: S310
+                content_payload = json.loads(response.read().decode("utf-8"))
+            decoded = json.loads(base64.b64decode(content_payload["content"]).decode("utf-8"))
+            assert content_payload["sha"] == "packaged-sync-rehearsal-sha"
+            assert decoded["source"]["name"] == "packaged_sync_rehearsal"
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2.0)
+
+
+def test_load_portable_packaged_sync_rehearsal_config_rejects_machine_key_derivation() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        portable_root = Path(tmp) / "portable"
+        _write_packaged_sync_bundle_config(portable_root, key_derivation="machine")
+        with pytest.raises(RuntimeError, match="keyDerivation=machine"):
+            smoke._load_portable_packaged_sync_rehearsal_config(portable_root)  # noqa: SLF001
+
+
+def test_run_packaged_smoke_can_run_sync_rehearsal_mode() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+                "--sync-rehearsal",
+            ]
+        )
+        with (
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(
+                smoke,
+                "collect_packaged_smoke_env_diagnostics",
+                return_value={"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False},
+            ),
+            mock.patch.object(
+                smoke,
+                "run_packaged_sync_rehearsal",
+                return_value={
+                    "name": "Packaged sync rehearsal",
+                    "slug": "packaged-sync-rehearsal",
+                    "status": "passed",
+                    "durationMs": 1200,
+                    "error": "",
+                    "details": {
+                        "runtimeStdout": str(artifacts_dir / "sync.stdout.log"),
+                        "runtimeStderr": str(artifacts_dir / "sync.stderr.log"),
+                    },
+                },
+            ) as rehearsal_mock,
+        ):
+            payload = smoke.run_packaged_smoke(args)
+        assert payload["ok"] is True
+        assert payload["scenarios"][0]["slug"] == "packaged-sync-rehearsal"
+        assert payload["artifacts"]["syncRehearsalStdout"] == str(artifacts_dir / "sync.stdout.log")
+        assert payload["artifacts"]["syncRehearsalStderr"] == str(artifacts_dir / "sync.stderr.log")
         rehearsal_mock.assert_called_once()
         saved = json.loads(report_path.read_text(encoding="utf-8"))
         assert saved["ok"] is True

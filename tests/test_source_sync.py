@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from src import source_sync as sync
+from src.shared import github_https
 
 
 class _FakeResponse:
@@ -229,6 +230,30 @@ def test_config_status_covers_supported_states(source_sync_test_root):
         sync._SYNC_DEFAULTS = original_sync  # type: ignore[assignment] # noqa: SLF001
 
 
+def test_config_status_reports_machine_bound_packaged_key_error(source_sync_test_root, monkeypatch):
+    source_sync_test_root.write_packaged_config(
+        {
+            "keyDerivation": sync.KEY_DERIVATION_MACHINE,
+            "keySalt": sync._base64url_encode(b"unit-test-salt-999"),  # noqa: SLF001
+            "privateKeyPemEnc": "ciphertext",
+            "privateKeyPem": "",
+        }
+    )
+
+    def fail_machine_decrypt(*args, **kwargs):  # noqa: ANN002,ANN003
+        raise UnicodeDecodeError("utf-8", b"\xb4\x00", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(sync, "decrypt_private_key_pem", fail_machine_decrypt)
+
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    status = sync.config_status(cfg)
+
+    assert status["ready"] is False
+    assert status["state"] == "misconfigured"
+    assert "privateKeyPemEnc" in status["missing"]
+    assert "machine-bound" in status["message"]
+
+
 def test_build_app_jwt_has_rs256_shape(source_sync_test_root):
     original_sign = sync._rsa_pkcs1_sign_sha256  # noqa: SLF001
     try:
@@ -344,6 +369,39 @@ def test_read_remote_snapshot_parses_contents_payload(source_sync_test_root):
     assert result["exists"]
     assert result["sha"] == "abc123"
     assert len(result["snapshot"]["active"]) == 1
+
+
+def test_read_remote_snapshot_uses_github_api_base_override(source_sync_test_root, monkeypatch):
+    source_sync_test_root.write_packaged_config()
+    snapshot = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-03-09T10:00:00+00:00",
+        "source": {"name": "admin_bridge"},
+        "active": [],
+        "pending": [],
+        "rejected": [],
+    }
+    encoded = base64.b64encode(json.dumps(snapshot).encode("utf-8")).decode("ascii")
+    opener = _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            _FakeResponse(200, {"sha": "abc123", "content": encoded}),
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    monkeypatch.setenv(sync.GITHUB_API_BASE_ENV, "http://127.0.0.1:8765")
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.read_remote_snapshot(cfg, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["exists"] is True
+    assert opener.calls[0]["url"] == "http://127.0.0.1:8765/app/installations/999999/access_tokens"
+    assert (
+        opener.calls[1]["url"]
+        == "http://127.0.0.1:8765/repos/owner/repo/contents/baluffo/source-sync.json?ref=main"
+    )
 
 
 def test_pull_and_merge_sources_merges_distinct_sources_by_identity(source_sync_test_root):
@@ -696,7 +754,7 @@ def test_request_raw_json_wraps_certificate_verify_failures():
         )
 
 
-def test_build_sync_ssl_context_loads_custom_ca_bundle(monkeypatch, tmp_path):
+def test_request_raw_json_loads_sync_specific_ca_bundle(monkeypatch, tmp_path):
     cafile = tmp_path / "custom-ca.pem"
     cafile.write_text("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
     seen = {"default_certs": False, "cafiles": []}
@@ -708,12 +766,96 @@ def test_build_sync_ssl_context_loads_custom_ca_bundle(monkeypatch, tmp_path):
         def load_verify_locations(self, *, cafile=None):
             seen["cafiles"].append(cafile)
 
-    monkeypatch.setattr(sync.ssl, "create_default_context", lambda: FakeContext())
-    monkeypatch.setattr(sync, "certifi", None)
+    def fake_urlopen(req, timeout=20, context=None):  # noqa: ANN001
+        seen["timeout"] = timeout
+        seen["context"] = context
+        return _FakeResponse(200, {"ok": True})
+
+    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(github_https, "certifi", None)
     monkeypatch.setenv(sync.SYNC_CA_BUNDLE_ENV, str(cafile))
+    monkeypatch.setattr(sync, "urlopen", fake_urlopen)
 
-    context = sync._build_sync_ssl_context()  # noqa: SLF001
+    status, payload, _headers = sync._request_raw_json(  # noqa: SLF001
+        method="GET",
+        url="https://api.github.com/test",
+        headers={"Accept": "application/json"},
+        timeout_s=12,
+    )
 
-    assert isinstance(context, FakeContext)
+    assert status == 200
+    assert payload["ok"] is True
+    assert isinstance(seen["context"], FakeContext)
     assert seen["default_certs"] is True
     assert seen["cafiles"] == [str(cafile)]
+
+
+def test_request_raw_json_uses_shared_ca_bundle(monkeypatch, tmp_path):
+    cafile = tmp_path / "shared-ca.pem"
+    cafile.write_text("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
+    seen = {"cafiles": []}
+
+    class FakeContext:
+        def load_default_certs(self):
+            return None
+
+        def load_verify_locations(self, *, cafile=None):
+            seen["cafiles"].append(cafile)
+
+    def fake_urlopen(req, timeout=20, context=None):  # noqa: ANN001
+        seen["timeout"] = timeout
+        seen["context"] = context
+        return _FakeResponse(200, {"ok": True})
+
+    monkeypatch.setattr(github_https.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(github_https, "certifi", None)
+    monkeypatch.setenv(github_https.GITHUB_CA_BUNDLE_ENV, str(cafile))
+    monkeypatch.setattr(sync, "urlopen", fake_urlopen)
+
+    status, payload, _headers = sync._request_raw_json(  # noqa: SLF001
+        method="GET",
+        url="https://api.github.com/test",
+        headers={"Accept": "application/json"},
+        timeout_s=12,
+    )
+
+    assert status == 200
+    assert payload["ok"] is True
+    assert isinstance(seen["context"], FakeContext)
+    assert seen["cafiles"] == [str(cafile)]
+
+
+def test_read_remote_snapshot_uses_ssl_context_for_default_runtime_opener(
+    source_sync_test_root, monkeypatch
+):
+    source_sync_test_root.write_packaged_config()
+    snapshot = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-03-09T10:00:00+00:00",
+        "source": {"name": "admin_bridge"},
+        "active": [],
+        "pending": [],
+        "rejected": [],
+    }
+    encoded = base64.b64encode(json.dumps(snapshot).encode("utf-8")).decode("ascii")
+    seen: dict[str, object] = {}
+
+    def fake_urlopen(req, timeout=20, context=None):  # noqa: ANN001
+        seen["timeout"] = timeout
+        seen["context"] = context
+        url = req.full_url
+        if url.endswith("/access_tokens"):
+            return _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"})
+        return _FakeResponse(200, {"sha": "abc123", "content": encoded})
+
+    monkeypatch.setattr(sync, "urlopen", fake_urlopen)
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.read_remote_snapshot(cfg, opener=sync.urlopen)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["exists"] is True
+    assert seen["timeout"] == sync.DEFAULT_TIMEOUT_S
+    assert isinstance(seen["context"], ssl.SSLContext)

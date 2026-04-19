@@ -188,6 +188,7 @@ Runtime notes:
 - Desktop runtime waits for `jobs.html` and `/ops/health` readiness before opening the window.
 - Child processes shut down with the desktop window.
 - Desktop local data uses the bridge-backed file store instead of browser-local IndexedDB/localStorage.
+- The shipped `packaging\github-app-sync-config.json` must stay portable in the artifact (`embedded` or an explicitly approved `passphrase` flow), never `machine`.
 
 Portable desktop in-app update flow:
 
@@ -215,6 +216,7 @@ Before any release:
    - `npm run test:py:extended`
    - `npm run test:frontend:unit`
    - `npm run test:frontend:packaged`
+   - `npm run test:frontend:packaged:sync-rehearsal`
    - `npm run test:frontend:packaged:update-rehearsal`
    - `npm run test:frontend:packaged:jobs-pipeline`
 4. Validate any declared migrations and rollback behavior.
@@ -245,12 +247,14 @@ Before any release:
 
 ```powershell
 npm run test:frontend:packaged
+npm run test:frontend:packaged:sync-rehearsal
 npm run test:frontend:packaged:jobs-pipeline
 npm run test:frontend:packaged:update-rehearsal
 ```
 
 These packaged smoke commands validate the direct `dist\baluffo-portable\Baluffo.exe` artifact. `_out\latest\build\portable\Baluffo.exe` is reserved for orchestrator-driven `build` / `verify` runs.
 The Jobs-page packaged smoke is now a terminal-success gate: it must launch the Jobs pipeline, observe visible running progress, and then reach a non-error terminal state. It uses a smoke-only stub-success pipeline mode so the lane stays deterministic and does not run the full real discovery/fetch/sync workload.
+The packaged sync rehearsal gate validates the shipped `github-app-sync-config.json` inside the artifact, fails if it is machine-derived, and then drives `/sync/test` against a local fake GitHub App endpoint so the release gate exercises packaged auth/read portability without hitting real GitHub.
 The updater rehearsal gate exercises the real packaged `N -> N+1` helper-driven install path, including portable ZIP download staging, relaunch verification, and preservation of `ship\data\local-user-data`.
 
 Optional rebuild-backed smoke validation:

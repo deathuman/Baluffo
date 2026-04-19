@@ -334,10 +334,10 @@ def _seed_version_contract_data(data_dir: Path) -> None:
 
 def _resolve_packaged_sync_config() -> Path | None:
     if PACKAGED_SYNC_CONFIG_PATH.exists():
-        return PACKAGED_SYNC_CONFIG_PATH
+        return _ensure_portable_packaged_sync_config(PACKAGED_SYNC_CONFIG_PATH)
     restored_path = _maybe_restore_packaged_sync_config_from_local()
     if restored_path is not None and restored_path.exists():
-        return restored_path
+        return _ensure_portable_packaged_sync_config(restored_path)
     generated_path = _maybe_generate_packaged_sync_config()
     if generated_path is not None and generated_path.exists():
         return generated_path
@@ -354,6 +354,93 @@ def _resolve_packaged_sync_config() -> Path | None:
         f"See {PACKAGED_SYNC_CONFIG_TEMPLATE_PATH}."
     )
     return None
+
+
+def _ensure_portable_packaged_sync_config(source_path: Path) -> Path:
+    resolved_source = Path(source_path).expanduser().resolve()
+    if not resolved_source.exists():
+        raise RuntimeError(f"Packaged sync config not found: {resolved_source}")
+
+    try:
+        payload = json.loads(resolved_source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"Could not read packaged sync config from {resolved_source}: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Packaged sync config at {resolved_source} must be a JSON object.")
+
+    from scripts.build_sync_app_config import (
+        build_packaged_sync_payload,
+        write_packaged_sync_config,
+    )
+    from src import source_sync
+
+    normalized = source_sync._normalize_packaged_payload(payload)  # noqa: SLF001
+    target_path = PACKAGED_SYNC_CONFIG_PATH
+    if resolved_source != target_path.resolve():
+        _copy_file(resolved_source, target_path)
+    if normalized.get("keyDerivation") != source_sync.KEY_DERIVATION_MACHINE:
+        return target_path
+
+    loaded_config = source_sync.load_packaged_sync_config(
+        env={**os.environ, source_sync.PACKAGED_SYNC_CONFIG_ENV: str(target_path)}
+    )
+    if loaded_config is None or not str(loaded_config.private_key_pem or "").strip():
+        detail = (
+            str(loaded_config.decryption_error).strip()
+            if loaded_config is not None
+            else "Packaged sync config could not be loaded."
+        )
+        raise RuntimeError(
+            f"Machine-derived packaged sync config at {resolved_source} is not portable. {detail}"
+        )
+
+    payload = build_packaged_sync_payload(
+        app_id=normalized["appId"],
+        installation_id=normalized["installationId"],
+        repo=normalized["repo"],
+        branch=normalized["branch"],
+        path=normalized["path"],
+        allowed_repo=normalized.get("allowedRepo") or normalized["repo"],
+        allowed_branch=normalized.get("allowedBranch") or normalized["branch"],
+        allowed_path_prefix=normalized.get("allowedPathPrefix") or normalized["path"],
+        private_key_pem=loaded_config.private_key_pem,
+        key_derivation=str(
+            SYNC_DEFAULTS["build_key_derivation_default"] or source_sync.KEY_DERIVATION_EMBEDDED
+        ),
+        portable_passphrase_env=_env_value(PACKAGED_SYNC_BUILD_ENV["portable_passphrase_env"])
+        or str(SYNC_DEFAULTS["build_passphrase_env"]),
+        embedded_key_hint=_env_value(PACKAGED_SYNC_BUILD_ENV["embedded_key_hint"])
+        or normalized.get("embeddedKeyHint")
+        or "",
+        embedded_key_version=_env_value(PACKAGED_SYNC_BUILD_ENV["embedded_key_version"])
+        or normalized.get("embeddedKeyVersion")
+        or str(SYNC_DEFAULTS["build_embedded_key_version"]),
+    )
+    return write_packaged_sync_config(target_path, payload)
+
+
+def _assert_versioned_packaged_sync_config_portable(config_path: Path) -> None:
+    resolved = Path(config_path).expanduser().resolve()
+    if not resolved.exists():
+        return
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"Could not validate bundled packaged sync config at {resolved}: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Bundled packaged sync config at {resolved} must be a JSON object.")
+    from src import source_sync
+
+    normalized = source_sync._normalize_packaged_payload(payload)  # noqa: SLF001
+    if normalized.get("keyDerivation") == source_sync.KEY_DERIVATION_MACHINE:
+        raise RuntimeError(
+            "Portable build invariant failed: shipped packaging/github-app-sync-config.json "
+            f"must be portable and cannot use keyDerivation=machine ({resolved})."
+        )
 
 
 def _env_value(name: str) -> str:
@@ -528,7 +615,9 @@ def _copy_app_version(version_dir: Path) -> None:
     for rel in PACKAGING_FILES:
         _copy_file(ROOT / "packaging" / rel, version_dir / "packaging" / rel)
     if packaged_sync_config is not None:
-        _copy_file(packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json")
+        bundled_sync_config = version_dir / "packaging" / "github-app-sync-config.json"
+        _copy_file(packaged_sync_config, bundled_sync_config)
+        _assert_versioned_packaged_sync_config_portable(bundled_sync_config)
     if desktop_update_repo:
         _write_text(
             version_dir / "packaging" / DESKTOP_UPDATE_CONFIG_FILE,

@@ -7,6 +7,7 @@ import pytest
 
 from scripts import build_ship_bundle
 from scripts.build_ship_bundle import STARTUP_PREVIEW_LIMIT, build_bundle
+from src import source_sync
 from src.app_version import APP_VERSION
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -170,7 +171,23 @@ def test_bundle_generates_capped_startup_preview() -> None:
     with workspace_tmpdir("build-ship-bundle") as tmp:
         rows = [{"title": f"Role {index}", "company": "Studio"} for index in range(300)]
         data_dir = Path(tmp) / "data"
+        config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
         data_dir.mkdir(parents=True, exist_ok=True)
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "appId": "123456",
+                    "installationId": "999999",
+                    "repo": "owner/repo",
+                    "branch": "main",
+                    "path": "baluffo/source-sync.json",
+                    "privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----",
+                }
+            ),
+            encoding="utf-8",
+        )
         (data_dir / "jobs-unified-light.json").write_text(
             json.dumps(rows, ensure_ascii=False),
             encoding="utf-8",
@@ -371,6 +388,100 @@ def test_bundle_restores_packaged_sync_config_from_local_env_path() -> None:
         bundled_config = json.loads(bundled_config_path.read_text(encoding="utf-8"))
         assert bundled_config["appId"] == source_payload["appId"]
         assert bundled_config["installationId"] == source_payload["installationId"]
+
+
+def test_bundle_normalizes_machine_bound_packaged_sync_config_for_portable_build() -> None:
+    with workspace_tmpdir("build-ship-bundle") as tmp:
+        private_key_pem = "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----\n"
+        config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        source_payload = {
+            "schemaVersion": 1,
+            "appId": "123456",
+            "installationId": "999999",
+            "repo": "owner/repo",
+            "branch": "main",
+            "path": "baluffo/source-sync.json",
+            "allowedRepo": "owner/repo",
+            "allowedBranch": "main",
+            "allowedPathPrefix": "baluffo/source-sync.json",
+            "keyDerivation": "machine",
+            "keySalt": source_sync._base64url_encode(b"unit-test-salt-123"),  # noqa: SLF001
+            "privateKeyPemEnc": source_sync.encrypt_private_key_pem(
+                private_key_pem,
+                salt_b64=source_sync._base64url_encode(b"unit-test-salt-123"),  # noqa: SLF001
+                app_id="123456",
+                installation_id="999999",
+            ),
+        }
+        config_path.write_text(json.dumps(source_payload), encoding="utf-8")
+        with (
+            mock.patch(
+                "scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version
+            ),
+            mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
+        ):
+            output = _build_with_temp_packaged_config(tmp)
+        bundled_config_path = (
+            output / "app" / "versions" / "1.2.3" / "packaging" / "github-app-sync-config.json"
+        )
+        bundled_config = json.loads(bundled_config_path.read_text(encoding="utf-8"))
+        assert bundled_config["keyDerivation"] == "embedded"
+        assert bundled_config["privateKeyPemEnc"] != source_payload["privateKeyPemEnc"]
+        loaded_config = source_sync.load_packaged_sync_config(
+            env={source_sync.PACKAGED_SYNC_CONFIG_ENV: str(bundled_config_path)}
+        )
+        assert loaded_config is not None
+        assert loaded_config.private_key_pem == private_key_pem
+
+
+def test_versioned_packaged_sync_portability_invariant_rejects_machine_config() -> None:
+    with workspace_tmpdir("build-ship-bundle") as tmp:
+        config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "appId": "123456",
+                    "installationId": "999999",
+                    "repo": "owner/repo",
+                    "branch": "main",
+                    "path": "baluffo/source-sync.json",
+                    "keyDerivation": "machine",
+                    "keySalt": "salt",
+                    "privateKeyPemEnc": "ciphertext",
+                }
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(RuntimeError, match="cannot use keyDerivation=machine"):
+            build_ship_bundle._assert_versioned_packaged_sync_config_portable(config_path)  # noqa: SLF001
+
+
+def test_versioned_packaged_sync_portability_invariant_accepts_embedded_config() -> None:
+    with workspace_tmpdir("build-ship-bundle") as tmp:
+        config_path = Path(tmp) / "packaging" / "github-app-sync-config.json"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "appId": "123456",
+                    "installationId": "999999",
+                    "repo": "owner/repo",
+                    "branch": "main",
+                    "path": "baluffo/source-sync.json",
+                    "keyDerivation": "embedded",
+                    "embeddedKeyHint": "hint",
+                    "embeddedKeyVersion": "v1",
+                    "keySalt": "salt",
+                    "privateKeyPemEnc": "ciphertext",
+                }
+            ),
+            encoding="utf-8",
+        )
+        build_ship_bundle._assert_versioned_packaged_sync_config_portable(config_path)  # noqa: SLF001
 
 
 def test_bundle_derives_desktop_update_repo_from_git_remote() -> None:

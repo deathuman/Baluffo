@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import shutil
+import ssl
 import subprocess
 import tempfile
 import threading
@@ -17,10 +18,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from src.app_version import get_app_version
 from src.baluffo_version import compare_baluffo_versions
+from src.shared.github_https import (
+    GITHUB_CA_BUNDLE_ENV,
+    build_github_ssl_context,
+    wrap_github_request_error,
+)
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -41,6 +48,7 @@ DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS = 6 * 60 * 60
 DOWNLOAD_CHUNK_SIZE = 1024 * 256
 GITHUB_API_BASE = "https://api.github.com"
 GITHUB_API_BASE_ENV = "BALUFFO_DESKTOP_UPDATE_GITHUB_API_BASE"
+DESKTOP_UPDATE_CA_BUNDLE_ENV = "BALUFFO_DESKTOP_UPDATE_CA_BUNDLE"
 INSTALL_STATE_FILE = "install-state.json"
 INSTALL_PLAN_FILE = "install-plan.json"
 MANIFEST_CACHE_FILE = "manifest-cache.json"
@@ -90,6 +98,19 @@ def iso_now() -> str:
 def resolve_github_api_base() -> str:
     value = str(os.environ.get(GITHUB_API_BASE_ENV) or "").strip()
     return value.rstrip("/") if value else GITHUB_API_BASE
+
+
+def _uses_github_https(url: str) -> bool:
+    return str(url or "").strip().lower().startswith("https://")
+
+
+def _build_desktop_update_ssl_context() -> ssl.SSLContext:
+    try:
+        return build_github_ssl_context(
+            ca_bundle_envs=(DESKTOP_UPDATE_CA_BUNDLE_ENV, GITHUB_CA_BUNDLE_ENV)
+        )
+    except RuntimeError as exc:
+        raise RuntimeError(f"Desktop update request failed: {exc}") from exc
 
 
 def normalize_install_stage(
@@ -376,8 +397,22 @@ def _json_headers() -> dict[str, str]:
 
 def fetch_json(url: str, *, timeout_s: float = 20.0) -> Any:
     request = Request(str(url), headers=_json_headers())
-    with urlopen(request, timeout=max(1.0, float(timeout_s))) as response:  # noqa: S310
-        payload = response.read().decode("utf-8")
+    timeout = max(1.0, float(timeout_s))
+    try:
+        if _uses_github_https(url):
+            response_ctx = urlopen(  # noqa: S310
+                request,
+                timeout=timeout,
+                context=_build_desktop_update_ssl_context(),
+            )
+        else:
+            response_ctx = urlopen(request, timeout=timeout)  # noqa: S310
+        with response_ctx as response:
+            payload = response.read().decode("utf-8")
+    except (ssl.SSLError, URLError) as exc:
+        if _uses_github_https(url):
+            raise wrap_github_request_error(exc, prefix="Desktop update request failed") from exc
+        raise
     return json.loads(payload)
 
 
@@ -392,10 +427,23 @@ def download_file(
     temp_target = target.with_name(f"{target.name}.{uuid.uuid4().hex}.download")
     request = Request(str(url), headers={"User-Agent": USER_AGENT})
     try:
-        with (
-            urlopen(request, timeout=max(5.0, float(timeout_s))) as response,  # noqa: S310
-            temp_target.open("wb") as handle,
-        ):
+        timeout = max(5.0, float(timeout_s))
+        try:
+            if _uses_github_https(url):
+                response_ctx = urlopen(  # noqa: S310
+                    request,
+                    timeout=timeout,
+                    context=_build_desktop_update_ssl_context(),
+                )
+            else:
+                response_ctx = urlopen(request, timeout=timeout)  # noqa: S310
+        except (ssl.SSLError, URLError) as exc:
+            if _uses_github_https(url):
+                raise wrap_github_request_error(
+                    exc, prefix="Desktop update request failed"
+                ) from exc
+            raise
+        with response_ctx as response, temp_target.open("wb") as handle:
             total_raw = response.headers.get("Content-Length")
             try:
                 total = int(total_raw) if total_raw else 0

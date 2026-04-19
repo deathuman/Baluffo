@@ -1,3 +1,5 @@
+import { presentPopup } from "./popup-presentation.js";
+
 function getDocumentTarget(documentTarget = globalThis?.document) {
   if (!documentTarget || !documentTarget.body || typeof documentTarget.createElement !== "function") {
     return null;
@@ -280,6 +282,7 @@ export function openReleaseNotesDialog({
   panel.appendChild(actions);
   overlay.appendChild(panel);
   doc.body.appendChild(overlay);
+  presentPopup(overlay, panel, { windowTarget });
 
   const focusClose = () => {
     try {

@@ -2,9 +2,17 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
+
+from src.shared.github_https import (
+    GITHUB_CA_BUNDLE_ENV,
+    build_github_ssl_context,
+    wrap_github_request_error,
+)
 
 
 def normalize_packaged_payload(module: Any, payload: dict[str, Any]) -> dict[str, str]:
@@ -107,7 +115,13 @@ def load_packaged_sync_config(module: Any, *, env: dict[str, str] | None = None)
             else:
                 raise RuntimeError(f"Unsupported keyDerivation mode: {key_derivation}")
         except Exception as exc:  # noqa: BLE001
-            decryption_error = str(exc)
+            if key_derivation == module.KEY_DERIVATION_MACHINE:
+                decryption_error = (
+                    "Packaged GitHub App key is machine-bound and cannot be decrypted on this "
+                    "machine. Rebuild the packaged sync config with embedded or passphrase derivation."
+                )
+            else:
+                decryption_error = str(exc)
     if private_key_pem:
         try:
             module._write_local_wrapped_key(config_path, fingerprint, private_key_pem)
@@ -238,28 +252,6 @@ def validate_sync_config(module: Any, config: Any) -> None:
         )
 
 
-def build_sync_ssl_context(module: Any):
-    context = module.ssl.create_default_context()
-    context.load_default_certs()
-    ca_bundle_path = str(os.environ.get(module.SYNC_CA_BUNDLE_ENV) or "").strip()
-    if ca_bundle_path:
-        resolved_bundle = Path(ca_bundle_path).expanduser()
-        if not resolved_bundle.is_file():
-            raise RuntimeError(
-                f"Sync request failed: CA bundle not found at {resolved_bundle} "
-                f"(set {module.SYNC_CA_BUNDLE_ENV} to a valid PEM bundle)."
-            )
-        context.load_verify_locations(cafile=str(resolved_bundle))
-    certifi_path = ""
-    try:
-        certifi_path = str(module.certifi.where() if module.certifi else "").strip()
-    except Exception:
-        certifi_path = ""
-    if certifi_path:
-        context.load_verify_locations(cafile=certifi_path)
-    return context
-
-
 def request_raw_json(
     module: Any,
     *,
@@ -276,13 +268,14 @@ def request_raw_json(
     request = module.Request(url=url, data=body, method=method.upper(), headers=headers)
     try:
         active_opener = opener or module.urlopen
-        if opener is None:
-            build_ssl_context = getattr(module, "_build_sync_ssl_context", None)
-            ssl_context = (
-                build_ssl_context()
-                if callable(build_ssl_context)
-                else build_sync_ssl_context(module)
-            )
+        uses_default_opener = opener is None or opener is module.urlopen
+        if uses_default_opener:
+            try:
+                ssl_context = build_github_ssl_context(
+                    ca_bundle_envs=(module.SYNC_CA_BUNDLE_ENV, GITHUB_CA_BUNDLE_ENV)
+                )
+            except RuntimeError as exc:
+                raise RuntimeError(f"Sync request failed: {exc}") from exc
             response_ctx = active_opener(
                 request,
                 timeout=timeout_s,
@@ -313,16 +306,7 @@ def request_raw_json(
             parsed,
             {key.lower(): str(value) for key, value in (exc.headers or {}).items()},
         )
-    except module.ssl.SSLError as exc:
-        raise RuntimeError(
-            "Sync request failed: SSL certificate verification failed while connecting to GitHub. "
-            f"Original error: {exc}"
-        ) from exc
-    except module.URLError as exc:
-        message = str(exc)
-        if "certificate verify failed" in message.lower():
-            raise RuntimeError(
-                "Sync request failed: SSL certificate verification failed while connecting to GitHub. "
-                f"Original error: {exc}"
-            ) from exc
-        raise RuntimeError(f"Sync request failed: {exc}") from exc
+    except ssl.SSLError as exc:
+        raise wrap_github_request_error(exc, prefix="Sync request failed") from exc
+    except URLError as exc:
+        raise wrap_github_request_error(exc, prefix="Sync request failed") from exc
