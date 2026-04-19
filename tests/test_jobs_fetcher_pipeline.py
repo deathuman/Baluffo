@@ -108,6 +108,7 @@ def test_run_pipeline_social_sources_report_and_output() -> None:
             backoff_s=0,
         )
         sources = {row["name"]: row for row in report["sources"]}
+        source_families = {row["name"]: row for row in (report.get("sourceFamilies") or [])}
         assert sources["social_reddit"]["status"] == "ok"
         assert sources["social_mastodon"]["status"] == "ok"
         assert sources["social_reddit"]["keptCount"] == 1
@@ -785,6 +786,7 @@ def test_pipeline_default_source_mix_smoke_excludes_wellfound_and_includes_guerr
         )
 
         sources = {row["name"]: row for row in report["sources"]}
+        source_families = {row["name"]: row for row in (report.get("sourceFamilies") or [])}
         assert sources["google_sheets"]["status"] == "ok"
         assert sources["google_sheets_1er2oaxo"]["status"] == "ok"
         assert sources["google_sheets_1mvqhxat"]["status"] == "ok"
@@ -810,8 +812,8 @@ def test_pipeline_default_source_mix_smoke_excludes_wellfound_and_includes_guerr
         ]
         assert static_rows
         assert any(str(row.get("status") or "").lower() == "ok" for row in static_rows)
-        assert sources["wellfound"]["status"] == "excluded"
-        assert "disabled_by_default" in sources["wellfound"]["error"]
+        assert source_families["wellfound"]["status"] == "excluded"
+        assert "disabled_by_default" in source_families["wellfound"]["error"]
         assert sources["greenhouse_boards"]["adapter"] == "greenhouse"
         assert sources["teamtailor_sources"]["adapter"] == "teamtailor"
         assert sources["lever_sources"]["adapter"] == "lever"
@@ -826,7 +828,7 @@ def test_pipeline_default_source_mix_smoke_excludes_wellfound_and_includes_guerr
         assert sources["jazzhr_sources"]["adapter"] == "jazzhr"
         assert sources["personio_sources"]["adapter"] == "personio"
         assert "failedSources" in report["summary"]
-        assert report["summary"]["excludedSources"] == 1
+        assert report["summary"]["excludedSources"] == 0
         assert "targetRoleCount" in report["summary"]
         assert "netherlandsCount" in report["summary"]
         assert "remoteCount" in report["summary"]
@@ -895,6 +897,8 @@ def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts()
         )
         assert int(runtime.get("selectedSourceCount") or 0) == 1
         assert isinstance(runtime.get("slowestSources"), list)
+        assert "staticListingTimeoutStops" in runtime
+        assert "staticListingBrowserFallbacks" in runtime
         timing = runtime.get("timingSummary") or {}
         assert "medianSourceDurationMs" in timing
         assert "p95SourceDurationMs" in timing
@@ -902,6 +906,7 @@ def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts()
         assert "adapterTimings" in timing
         assert "summary" in report
         assert "sources" in report
+        assert "sourceFamilies" in report
         assert str(report["sources"][0].get("fetchStrategy") or "") == "auto"
         assert "loss" in report["sources"][0]
         assert "canonicalDropReasons" in (report["sources"][0].get("loss") or {})
@@ -973,7 +978,9 @@ def test_run_pipeline_includes_selection_exclusions() -> None:
             ],
         )
         excluded_rows = [
-            row for row in (report.get("sources") or []) if row.get("name") == "excluded_source"
+            row
+            for row in (report.get("sourceFamilies") or [])
+            if row.get("name") == "excluded_source"
         ]
         assert len(excluded_rows) == 1
         assert str(excluded_rows[0].get("status") or "") == "excluded"
@@ -1098,7 +1105,9 @@ def test_run_pipeline_incremental_second_run_skips_fresh_source_and_preserves_ou
         assert int(first["summary"].get("outputCount") or 0) == 1
         assert int(second["summary"].get("outputCount") or 0) == 1
         excluded = [
-            row for row in (second.get("sources") or []) if row.get("name") == "incremental_source"
+            row
+            for row in (second.get("sourceFamilies") or [])
+            if row.get("name") == "incremental_source"
         ]
         assert len(excluded) == 1
         assert str(excluded[0].get("status") or "") == "excluded"
@@ -1930,7 +1939,9 @@ def test_run_pipeline_excludes_quarantined_source_unless_ignored() -> None:
             ignore_circuit_breaker=False,
         )
         blocked_rows = [
-            row for row in blocked_report.get("sources", []) if row.get("name") == "blocked_source"
+            row
+            for row in (blocked_report.get("sourceFamilies") or [])
+            if row.get("name") == "blocked_source"
         ]
         assert calls["count"] == 0
         assert len(blocked_rows) == 1

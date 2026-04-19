@@ -32,12 +32,12 @@ from src.jobs.common.taxonomy import (
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_runtime import (
     PipelineTaskRuntime,
+    record_completed_source_report,
     update_fetch_work_item_progress,
 )
 from src.jobs.reporting import format_source_error
 from src.jobs.state import (
     set_browser_fallback_state,
-    should_browser_escalate_source,
     source_rows_fingerprint,
 )
 from src.jobs.text_utils import clean_text, norm_text
@@ -46,7 +46,7 @@ from src.shared.utils import now_iso
 
 FetchTextLimited = Callable[[str, int], str]
 WriteTaskStateFunc = Callable[..., None]
-WriteProgressReportFunc = Callable[[], None]
+WriteProgressReportFunc = Callable[..., None]
 TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 
 
@@ -161,6 +161,8 @@ def run_source_execution_stage(
     config: SourceExecutionStageConfig,
     selected_loaders: list[tuple[str, Callable[..., list[dict[str, Any]]]]],
     fetch_text_limited: FetchTextLimited,
+    fetch_text_static_limited: FetchTextLimited | None = None,
+    static_listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Any] | None = None,
     source_state_rows: dict[str, dict[str, Any]],
     redirect_resolver: Any,
     task_runtime: PipelineTaskRuntime | None = None,
@@ -271,6 +273,7 @@ def run_source_execution_stage(
             counts: dict[str, Any] | None = None,
             target_label: str = "",
             target_url: str = "",
+            wait_reason: str = "",
             event_level: str = "muted",
             message: str = "",
         ) -> None:
@@ -282,6 +285,7 @@ def run_source_execution_stage(
                 counts=counts,
                 target_label=target_label,
                 target_url=target_url,
+                wait_reason=wait_reason,
                 emit_event=bool(message),
                 event_level=event_level,
                 event_message=message,
@@ -291,6 +295,7 @@ def run_source_execution_stage(
         try:
             thread_local.source_name = name
             loader_started = time.perf_counter()
+            adapter_name = norm_text(report.get("adapter"))
             loader_kwargs: dict[str, Any] = {
                 "fetch_text": fetch_text_limited,
                 "timeout_s": config.timeout_s,
@@ -299,11 +304,12 @@ def run_source_execution_stage(
                 "source_state_rows": source_state_rows,
                 "force_refresh_all": config.force_refresh_all,
             }
-            if norm_text(report.get("adapter")) == "static":
+            if adapter_name == "static":
+                loader_kwargs["fetch_text"] = fetch_text_static_limited or fetch_text_limited
                 loader_kwargs["static_detail_concurrency"] = config.static_detail_concurrency
-                if guarded_try_playwright is not None and should_browser_escalate_source(
-                    name, source_state_rows
-                ):
+                if static_listing_async_fetch is not None:
+                    loader_kwargs["listing_async_fetch"] = static_listing_async_fetch
+                if guarded_try_playwright is not None:
                     loader_kwargs["try_playwright"] = guarded_try_playwright
             if loader_heartbeat_callback is not None:
                 loader_kwargs["heartbeat_callback"] = loader_heartbeat_callback
@@ -326,7 +332,7 @@ def run_source_execution_stage(
                 )
             except (TypeError, ValueError):
                 accepted_kwargs = {
-                    "fetch_text": fetch_text_limited,
+                    "fetch_text": loader_kwargs["fetch_text"],
                     "timeout_s": config.timeout_s,
                     "retries": config.retries,
                     "backoff_s": config.backoff_s,
@@ -496,10 +502,15 @@ def run_source_execution_stage(
                 else {}
             )
             stage_timings["fetchAndParse"] = int(fetch_and_parse_ms)
-            if norm_text(report.get("adapter")) == "static":
+            if adapter_name == "static":
                 listing_fetch_ms = 0
                 candidate_extraction_ms = 0
                 detail_fetch_ms = 0
+                static_domain_gate_wait_ms = 0
+                static_domain_gate_wait_count = 0
+                static_listing_batch_count = 0
+                static_detail_batch_count = 0
+                static_detail_pages_skipped = 0
                 for detail in detail_rows:
                     if not isinstance(detail, dict):
                         continue
@@ -507,6 +518,13 @@ def run_source_execution_stage(
                     listing_fetch_ms += int(stats.get("listing_fetch_ms") or 0)
                     candidate_extraction_ms += int(stats.get("candidate_extraction_ms") or 0)
                     detail_fetch_ms += int(stats.get("detail_fetch_ms") or 0)
+                    static_domain_gate_wait_ms += int(stats.get("domain_gate_wait_ms") or 0)
+                    static_domain_gate_wait_count += int(stats.get("domain_gate_wait_count") or 0)
+                    static_listing_batch_count += int(stats.get("listing_batch_count") or 0)
+                    static_detail_batch_count += int(stats.get("detail_batch_count") or 0)
+                    static_detail_pages_skipped += int(
+                        stats.get("detail_pages_skipped_by_adaptive_stop") or 0
+                    )
                 stage_timings.update(
                     {
                         "listingFetch": int(listing_fetch_ms),
@@ -514,6 +532,41 @@ def run_source_execution_stage(
                         "detailFetch": int(detail_fetch_ms),
                     }
                 )
+                if detail_rows:
+                    for detail in detail_rows:
+                        if not isinstance(detail, dict):
+                            continue
+                        stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
+                        stats["domain_gate_wait_ms"] = int(static_domain_gate_wait_ms)
+                        stats["domain_gate_wait_count"] = int(static_domain_gate_wait_count)
+                        stats["listing_batch_count"] = int(static_listing_batch_count)
+                        stats["detail_batch_count"] = int(static_detail_batch_count)
+                        stats["detail_pages_skipped_by_adaptive_stop"] = int(
+                            static_detail_pages_skipped
+                        )
+                with task_lock:
+                    row = task_rows.get(name)
+                    if isinstance(row, dict):
+                        gate_wait_ms = int(row.get("_staticDomainGateWaitMs") or 0)
+                        gate_wait_count = int(row.get("_staticDomainGateWaitCount") or 0)
+                    else:
+                        gate_wait_ms = 0
+                        gate_wait_count = 0
+                if detail_rows:
+                    first_detail = detail_rows[0] if isinstance(detail_rows[0], dict) else None
+                    if isinstance(first_detail, dict):
+                        first_stats = (
+                            first_detail.get("stats")
+                            if isinstance(first_detail.get("stats"), dict)
+                            else {}
+                        )
+                        first_stats["domain_gate_wait_ms"] = int(gate_wait_ms)
+                        first_stats["domain_gate_wait_count"] = int(gate_wait_count)
+                        first_stats["listing_batch_count"] = int(static_listing_batch_count)
+                        first_stats["detail_batch_count"] = int(static_detail_batch_count)
+                        first_stats["detail_pages_skipped_by_adaptive_stop"] = int(
+                            static_detail_pages_skipped
+                        )
 
             if norm_text(report.get("adapter")) == "csv":
                 parse_csv_ms = 0
@@ -642,21 +695,27 @@ def run_source_execution_stage(
                 mark_task_finished(source_name, report)
             return
 
+        def _execute_loader_started(
+            source_name: str,
+            loader: Callable[..., list[dict[str, Any]]],
+        ) -> tuple[dict[str, Any], list[CanonicalJob]]:
+            mark_task_started(source_name)
+            try:
+                report, canonical_batch = execute_loader(source_name, loader)
+            except Exception as exc:  # noqa: BLE001
+                report = fallback_error_report(source_name, exc)
+                canonical_batch = []
+            mark_task_finished(source_name, report)
+            return report, canonical_batch
+
         with ThreadPoolExecutor(max_workers=config.max_workers) as executor:
             futures = {}
             for source_name, loader in selected_loaders:
-                mark_task_started(source_name)
-                futures[executor.submit(execute_loader, source_name, loader)] = source_name
+                futures[executor.submit(_execute_loader_started, source_name, loader)] = source_name
             for future in as_completed(futures):
-                source_name = futures[future]
-                try:
-                    report, canonical_batch = future.result()
-                except Exception as exc:  # noqa: BLE001
-                    report = fallback_error_report(source_name, exc)
-                    canonical_batch = []
+                report, canonical_batch = future.result()
                 canonical_rows.extend(canonical_batch)
                 source_reports.append(report)
-                mark_task_finished(source_name, report)
 
     # The closure below expects `now_iso()` and `fallback_error_report()`/`mark_task_finished()`.
     def fallback_error_report(source_name: str, exc: Exception) -> dict[str, Any]:
@@ -721,6 +780,8 @@ def run_source_execution_stage(
             task_rows[source_name]["heartbeatAt"] = start_time
             task_rows[source_name]["_startedMonotonic"] = time.perf_counter()
             task_rows[source_name]["_slowWarned"] = False
+            task_rows[source_name]["_staticDomainGateWaitMs"] = 0
+            task_rows[source_name]["_staticDomainGateWaitCount"] = 0
         update_fetch_work_item_progress(
             task_runtime,
             source_name,
@@ -750,6 +811,7 @@ def run_source_execution_stage(
             task_rows[source_name]["heartbeatAt"] = end_time
             task_rows[source_name]["error"] = clean_text(report.get("error"))
             task_rows[source_name]["_slowWarned"] = False
+        record_completed_source_report(task_runtime, source_name=source_name, report=report)
         update_fetch_work_item_progress(
             task_runtime,
             source_name,
@@ -793,7 +855,7 @@ def run_source_execution_stage(
                 f"durationMs={int(report.get('durationMs') or 0)}"
             )
 
-    write_progress_report()
+    write_progress_report(force=True)
     write_task_state(force=True)
     run_stage()
     set_browser_fallback_state(source_state_rows, browser_fallback_guard.to_state_row())

@@ -63,7 +63,7 @@ def test_stage_progress_logging_is_windows_console_safe(monkeypatch) -> None:
         task_lock=threading.Lock(),
         thread_local=_ThreadLocal(),
         write_task_state=lambda **kwargs: task_state_calls.append(bool(kwargs.get("force"))),
-        write_progress_report=lambda: progress_calls.append("progress"),
+        write_progress_report=lambda **_kwargs: progress_calls.append("progress"),
         canonical_rows=[],
         source_reports=[],
     )
@@ -79,12 +79,19 @@ def test_stage_progress_logging_is_windows_console_safe(monkeypatch) -> None:
     assert task_state_calls
 
 
-def test_stage_enables_browser_only_for_eligible_static_sources(monkeypatch) -> None:
+def test_stage_enables_browser_for_static_sources_and_not_non_static_sources(monkeypatch) -> None:
     browser_calls: list[tuple[str, int]] = []
-    eligible_kwargs: list[dict[str, object]] = []
-    ineligible_kwargs: list[dict[str, object]] = []
+    static_kwargs: list[dict[str, object]] = []
+    non_static_kwargs: list[dict[str, object]] = []
+    default_fetch = lambda _url, _timeout: ""
+    static_fetch = lambda _url, _timeout: ""
+    async_listing_fetch = lambda _client, _job, _url, _timeout: ""
 
-    monkeypatch.setattr(stage_mod, "_default_adapter_for_loader", lambda _name, _meta: "static")
+    monkeypatch.setattr(
+        stage_mod,
+        "_default_adapter_for_loader",
+        lambda name, _meta: "static" if name == "static_source" else "greenhouse",
+    )
     monkeypatch.setattr(
         stage_mod,
         "resolve_fetch_browser_fallback_helper",
@@ -104,16 +111,16 @@ def test_stage_enables_browser_only_for_eligible_static_sources(monkeypatch) -> 
         browser_fallback_cooldown_minutes=30,
     )
 
-    def eligible_loader(**kwargs):  # noqa: ANN202
-        eligible_kwargs.append(kwargs)
+    def static_loader(**kwargs):  # noqa: ANN202
+        static_kwargs.append(kwargs)
         return []
 
-    def ineligible_loader(**kwargs):  # noqa: ANN202
-        ineligible_kwargs.append(kwargs)
+    def non_static_loader(**kwargs):  # noqa: ANN202
+        non_static_kwargs.append(kwargs)
         return []
 
     task_rows = {
-        "eligible_source": {
+        "static_source": {
             "status": "pending",
             "startedAt": "",
             "finishedAt": "",
@@ -123,7 +130,7 @@ def test_stage_enables_browser_only_for_eligible_static_sources(monkeypatch) -> 
             "_startedMonotonic": 0.0,
             "_slowWarned": False,
         },
-        "ineligible_source": {
+        "greenhouse_source": {
             "status": "pending",
             "startedAt": "",
             "finishedAt": "",
@@ -138,30 +145,29 @@ def test_stage_enables_browser_only_for_eligible_static_sources(monkeypatch) -> 
     run_source_execution_stage(
         config=config,
         selected_loaders=[
-            ("eligible_source", eligible_loader),
-            ("ineligible_source", ineligible_loader),
+            ("static_source", static_loader),
+            ("greenhouse_source", non_static_loader),
         ],
-        fetch_text_limited=lambda _url, _timeout: "",
-        source_state_rows={
-            "eligible_source": {
-                "browserEscalationEligible": True,
-                "lastFingerprint": "fp-old",
-                "lastListingFingerprint": "listing-old",
-            },
-            "ineligible_source": {},
-        },
+        fetch_text_limited=default_fetch,
+        fetch_text_static_limited=static_fetch,
+        static_listing_async_fetch=async_listing_fetch,
+        source_state_rows={},
         redirect_resolver=type("Resolver", (), {"resolve": staticmethod(lambda url: url)})(),
         task_rows=task_rows,
         task_lock=threading.Lock(),
         thread_local=_ThreadLocal(),
         write_task_state=lambda **_kwargs: None,
-        write_progress_report=lambda: None,
+        write_progress_report=lambda **_kwargs: None,
         canonical_rows=[],
         source_reports=[],
     )
 
-    assert "try_playwright" in eligible_kwargs[0]
-    assert "try_playwright" not in ineligible_kwargs[0]
+    assert "try_playwright" in static_kwargs[0]
+    assert static_kwargs[0]["listing_async_fetch"] is async_listing_fetch
+    assert "try_playwright" not in non_static_kwargs[0]
+    assert "listing_async_fetch" not in non_static_kwargs[0]
+    assert static_kwargs[0]["fetch_text"] is static_fetch
+    assert non_static_kwargs[0]["fetch_text"] is default_fetch
     assert not browser_calls
 
 
@@ -244,7 +250,7 @@ def test_stage_caps_browser_fallback_concurrency_to_max_workers(monkeypatch) -> 
         task_lock=threading.Lock(),
         thread_local=_ThreadLocal(),
         write_task_state=lambda **_kwargs: None,
-        write_progress_report=lambda: None,
+        write_progress_report=lambda **_kwargs: None,
         canonical_rows=[],
         source_reports=[],
     )
@@ -312,7 +318,7 @@ def test_stage_persists_browser_fallback_circuit_breaker_state(monkeypatch) -> N
         task_lock=threading.Lock(),
         thread_local=_ThreadLocal(),
         write_task_state=lambda **_kwargs: None,
-        write_progress_report=lambda: None,
+        write_progress_report=lambda **_kwargs: None,
         canonical_rows=[],
         source_reports=[],
     )
@@ -320,6 +326,84 @@ def test_stage_persists_browser_fallback_circuit_breaker_state(monkeypatch) -> N
     state_row = source_state_rows.get(BROWSER_FALLBACK_STATE_KEY) or {}
     assert int(state_row.get("browserFallbackFailureCount") or 0) == 1
     assert "browserFallbackQuarantinedUntilAt" in state_row
+
+
+def test_stage_keeps_sources_queued_until_worker_threads_start(monkeypatch) -> None:
+    running_counts: list[int] = []
+    queued_counts: list[int] = []
+    snapshots_lock = threading.Lock()
+    release_event = threading.Event()
+    started_counter = {"count": 0}
+    started_lock = threading.Lock()
+
+    config = SourceExecutionStageConfig(
+        max_workers=2,
+        timeout_s=1,
+        retries=0,
+        backoff_s=0.0,
+        static_detail_concurrency=1,
+        google_sheets_redirect_concurrency=1,
+        started_at="2026-03-23T00:00:00Z",
+        show_progress=False,
+        force_refresh_all=False,
+        browser_fallback_cooldown_minutes=30,
+    )
+
+    def slow_loader(**_kwargs):  # noqa: ANN202
+        with started_lock:
+            started_counter["count"] += 1
+            if started_counter["count"] >= 2:
+                release_event.set()
+        release_event.wait(timeout=1.0)
+        time.sleep(0.02)
+        return []
+
+    task_rows = {
+        name: {
+            "status": "queued",
+            "startedAt": "",
+            "finishedAt": "",
+            "heartbeatAt": "",
+            "durationMs": 0,
+            "error": "",
+            "_startedMonotonic": 0.0,
+            "_slowWarned": False,
+        }
+        for name in ("source_a", "source_b", "source_c", "source_d")
+    }
+
+    def capture_task_state(**_kwargs) -> None:
+        with snapshots_lock:
+            running_counts.append(
+                sum(1 for row in task_rows.values() if row.get("status") == "running")
+            )
+            queued_counts.append(
+                sum(1 for row in task_rows.values() if row.get("status") == "queued")
+            )
+
+    run_source_execution_stage(
+        config=config,
+        selected_loaders=[
+            ("source_a", slow_loader),
+            ("source_b", slow_loader),
+            ("source_c", slow_loader),
+            ("source_d", slow_loader),
+        ],
+        fetch_text_limited=lambda _url, _timeout: "",
+        source_state_rows={},
+        redirect_resolver=type("Resolver", (), {"resolve": staticmethod(lambda url: url)})(),
+        task_rows=task_rows,
+        task_lock=threading.Lock(),
+        thread_local=_ThreadLocal(),
+        write_task_state=capture_task_state,
+        write_progress_report=lambda **_kwargs: None,
+        canonical_rows=[],
+        source_reports=[],
+    )
+
+    assert running_counts
+    assert max(running_counts) <= 2
+    assert any(count > 0 for count in queued_counts)
 
 
 def test_stage_passes_heartbeat_to_any_loader_that_accepts_it_without_breaking_plain_loaders() -> (
@@ -446,7 +530,7 @@ def test_stage_passes_heartbeat_to_any_loader_that_accepts_it_without_breaking_p
         task_lock=threading.Lock(),
         thread_local=_ThreadLocal(),
         write_task_state=lambda **kwargs: task_state_calls.append(kwargs),
-        write_progress_report=lambda: None,
+        write_progress_report=lambda **_kwargs: None,
         canonical_rows=[],
         source_reports=[],
     )
@@ -517,7 +601,7 @@ def test_stage_reclassifies_zero_kept_static_manual_no_jobs_sources(monkeypatch)
         task_lock=threading.Lock(),
         thread_local=_ThreadLocal(),
         write_task_state=lambda **_kwargs: None,
-        write_progress_report=lambda: None,
+        write_progress_report=lambda **_kwargs: None,
         canonical_rows=[],
         source_reports=source_reports,
     )

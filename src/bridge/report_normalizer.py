@@ -245,7 +245,11 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     sources = src.get("sources")
     if not isinstance(sources, list):
         sources = []
+    source_families = src.get("sourceFamilies")
+    if not isinstance(source_families, list):
+        source_families = []
     normalized_sources: list[dict[str, Any]] = []
+    normalized_source_families: list[dict[str, Any]] = []
     social_summary_raw = (
         src.get("socialSummary") if isinstance(src.get("socialSummary"), dict) else {}
     )
@@ -271,30 +275,38 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
             ),
         }
 
-    for row in sources:
-        if not isinstance(row, dict):
-            continue
-        details_raw = row.get("details")
-        details = details_raw if isinstance(details_raw, list) else []
-        normalized_details: list[dict[str, Any]] = []
-        for detail in details:
-            parsed_detail = coerce_fetch_report_detail_row(detail)
-            if parsed_detail:
-                normalized_details.append(parsed_detail)
-        normalized_sources.append(
-            {
-                "name": str(row.get("name") or "").strip(),
-                "status": str(row.get("status") or "").strip().lower(),
-                "adapter": str(row.get("adapter") or "").strip().lower(),
-                "studio": str(row.get("studio") or "").strip(),
-                "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
-                "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
-                "lowConfidenceDropped": safe_int(row.get("lowConfidenceDropped"), 0, 0, 1_000_000),
-                "error": str(row.get("error") or "").strip(),
-                "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                "details": normalized_details,
-            }
-        )
+    def _normalize_source_rows(rows: list[Any]) -> list[dict[str, Any]]:
+        normalized_rows: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            details_raw = row.get("details")
+            details = details_raw if isinstance(details_raw, list) else []
+            normalized_details: list[dict[str, Any]] = []
+            for detail in details:
+                parsed_detail = coerce_fetch_report_detail_row(detail)
+                if parsed_detail:
+                    normalized_details.append(parsed_detail)
+            normalized_rows.append(
+                {
+                    "name": str(row.get("name") or "").strip(),
+                    "status": str(row.get("status") or "").strip().lower(),
+                    "adapter": str(row.get("adapter") or "").strip().lower(),
+                    "studio": str(row.get("studio") or "").strip(),
+                    "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
+                    "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
+                    "lowConfidenceDropped": safe_int(
+                        row.get("lowConfidenceDropped"), 0, 0, 1_000_000
+                    ),
+                    "error": str(row.get("error") or "").strip(),
+                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                    "details": normalized_details,
+                }
+            )
+        return normalized_rows
+
+    normalized_sources = _normalize_source_rows(sources)
+    normalized_source_families = _normalize_source_rows(source_families)
     slowest_sources_raw = (
         runtime.get("slowestSources") if isinstance(runtime.get("slowestSources"), list) else []
     )
@@ -470,6 +482,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
             default_active_when_missing=not bool(str(src.get("finishedAt") or "").strip()),
         ),
         "sources": normalized_sources,
+        "sourceFamilies": normalized_source_families,
         "outputs": dict(src.get("outputs") or {}),
     }
     finished_at = str(normalized.get("finishedAt") or "").strip()

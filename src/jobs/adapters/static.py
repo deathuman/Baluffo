@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
 import sys
 import time
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from threading import Lock
 from typing import Any
 from urllib.parse import urlparse
 
@@ -31,16 +33,22 @@ from src.jobs.adapters.static_helpers import (
     add_detail_link,
     build_static_entry_report,
     build_static_html_fetcher,
+    build_static_source_deadline,
     build_static_source_runtime_config,
     choose_detail_traversal_mode,
+    effective_timeout_for_remaining_budget,
+    is_probable_job_detail_url,
     process_detail_html,
     process_detail_link,
+    remaining_static_source_budget_s,
     source_detail_concurrency_for,
     source_detail_limit_for,
     source_detail_retries_for,
+    static_source_budget_exhausted,
     update_source_detail_taxonomy,
 )
 from src.jobs.common.diagnostics import set_source_diagnostics
+from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import RawJob
 from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
@@ -133,6 +141,7 @@ def run_static_studio_pages_source(
     diagnostics_name: str = "static_studio_pages",
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
+    listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
@@ -208,6 +217,12 @@ def run_static_studio_pages_source(
             "listingPagesVisited": 0,
             "lastProgressSignature": "",
         }
+        source_deadline_state = {
+            "value": build_static_source_deadline(
+                source_started=source_started,
+                source_budget_s=static_source_time_budget_s,
+            )
+        }
         source_pages = pages
         source_jobs = jobs
         source_stats = stats
@@ -220,6 +235,7 @@ def run_static_studio_pages_source(
             counts: dict[str, Any] | None = None,
             target_label: str = "",
             target_url: str = "",
+            wait_reason: str = "",
             event_level: str = "muted",
             message: str = "",
             progress_state_ref: dict[str, Any] = progress_state,
@@ -246,6 +262,7 @@ def run_static_studio_pages_source(
                     "counts": payload_counts,
                     "targetLabel": str(target_label or "").strip(),
                     "targetUrl": str(target_url or "").strip(),
+                    "waitReason": str(wait_reason or "").strip(),
                     "message": str(message or "").strip(),
                 },
                 ensure_ascii=False,
@@ -260,9 +277,66 @@ def run_static_studio_pages_source(
                 counts=payload_counts,
                 target_label=target_label,
                 target_url=target_url,
+                wait_reason=wait_reason,
                 event_level=event_level,
                 message=message,
             )
+
+        def sync_source_deadline(
+            source_budget_s: int,
+            *,
+            _source_started: float = source_started,
+            _source_deadline_state: dict[str, float] = source_deadline_state,
+        ) -> float:
+            _source_deadline_state["value"] = min(
+                float(_source_deadline_state["value"]),
+                build_static_source_deadline(
+                    source_started=_source_started,
+                    source_budget_s=source_budget_s,
+                ),
+            )
+            return float(_source_deadline_state["value"])
+
+        def current_source_kept_count(
+            *,
+            _source_jobs: list[dict[str, Any]] = source_jobs,
+            _source_kept_before: int = source_kept_before,
+        ) -> int:
+            return max(0, len(_source_jobs) - _source_kept_before)
+
+        def current_domain_gate_wait_stats(
+            *,
+            _fetch_text: Any = fetch_text,
+            _source_name: str = source_name,
+            _source_stats: dict[str, Any] = source_stats,
+        ) -> tuple[int, int]:
+            reader = getattr(_fetch_text, "_baluffo_gate_wait_stats", None)
+            if callable(reader):
+                payload = reader(_source_name)
+                if isinstance(payload, dict):
+                    return (
+                        int(payload.get("domainGateWaitMs") or 0),
+                        int(payload.get("domainGateWaitCount") or 0),
+                    )
+            return (
+                int(_source_stats.get("domain_gate_wait_ms") or 0),
+                int(_source_stats.get("domain_gate_wait_count") or 0),
+            )
+
+        def stop_for_budget_exhaustion(
+            *,
+            target_url: str,
+            source_budget_s: int,
+            _entry_report: dict[str, Any] = entry_report,
+            _warnings: list[str] = warnings,
+            _source_name: str = source_name,
+        ) -> None:
+            _entry_report["classification"] = "timeout"
+            _entry_report["browserFallbackRecommended"] = True
+            _entry_report["error"] = f"time budget exceeded ({source_budget_s}s)"
+            if current_source_kept_count() <= 0:
+                _entry_report["status"] = "error"
+            _warnings.append(f"static:{_source_name}:{target_url}: time_budget_exceeded")
 
         emit_source_progress(
             phase_key="static_prepare",
@@ -482,9 +556,133 @@ def run_static_studio_pages_source(
             1,
             min(static_detail_concurrency, len(cleaned_pages) if cleaned_pages else 1),
         )
+        listing_stage_started = time.perf_counter()
+        listing_deadline_monotonic = min(
+            float(source_deadline_state["value"]),
+            listing_stage_started + float(static_runtime.static_listing_total_budget_s),
+        )
+        listing_stage_meta: dict[str, Any] = {
+            "browserFallbacks": 0,
+            "terminalReason": clean_text(stats.get("listing_terminal_reason")),
+        }
+        listing_meta_lock = Lock()
+        listing_batch_meta_ref: dict[str, dict[str, Any]] = {}
+
+        def note_listing_terminal_reason(
+            reason: str,
+            *,
+            _listing_meta_lock: Lock = listing_meta_lock,
+            _listing_stage_meta: dict[str, Any] = listing_stage_meta,
+            _source_stats: dict[str, Any] = source_stats,
+        ) -> None:
+            clean_reason = clean_text(reason)
+            if not clean_reason:
+                return
+            with _listing_meta_lock:
+                if not clean_text(_listing_stage_meta.get("terminalReason")):
+                    _listing_stage_meta["terminalReason"] = clean_reason
+                    _source_stats["listing_terminal_reason"] = clean_reason
+
+        def remaining_listing_budget_s(
+            *,
+            _source_deadline_state: dict[str, float] = source_deadline_state,
+            _listing_deadline_monotonic: float = listing_deadline_monotonic,
+        ) -> float:
+            return min(
+                remaining_static_source_budget_s(
+                    deadline_monotonic=float(_source_deadline_state["value"])
+                ),
+                remaining_static_source_budget_s(deadline_monotonic=_listing_deadline_monotonic),
+            )
+
+        def provider_like_listing_host(url: str) -> bool:
+            host = clean_text(urlparse(clean_text(url) or "").netloc).lower()
+            return any(
+                token in host
+                for token in (
+                    "applytojob.com",
+                    "ashbyhq.com",
+                    "breezy.hr",
+                    "careers-page.com",
+                    "gohire.io",
+                    "greenhouse.io",
+                    "greenhouse.com",
+                    "hrmos.co",
+                    "icims.com",
+                    "intervieweb.it",
+                    "jobvite.com",
+                    "myworkdayjobs.com",
+                    "personio.de",
+                    "recruitee.com",
+                    "rippling-ats.com",
+                    "smartrecruiters.com",
+                    "teamtailor.com",
+                    "workable.com",
+                    "workdayjobs.com",
+                )
+            )
+
+        def should_try_listing_browser_fallback(url: str, error_text: str) -> tuple[bool, str]:
+            err_str = str(error_text or "")
+            err_lower = err_str.lower()
+            linked_in_throttle = "linkedin" in f"{url} {err_str}".lower()
+            if "403" in err_str:
+                return True, "403"
+            if linked_in_throttle and "429" in err_str:
+                return True, "429"
+            if "timeout" in err_lower or "timed out" in err_lower:
+                return True, "timeout"
+            return False, ""
+
+        def _record_listing_meta(
+            url: str,
+            *,
+            _listing_meta_lock: Lock = listing_meta_lock,
+            _listing_batch_meta: dict[str, dict[str, Any]] = listing_batch_meta_ref,
+            **payload: Any,
+        ) -> None:
+            with _listing_meta_lock:
+                _listing_batch_meta[url] = {
+                    **(_listing_batch_meta.get(url) or {}),
+                    **payload,
+                }
+
+        def _fetch_listing_html_sync(
+            url: str,
+            *,
+            effective_timeout_s: int,
+        ) -> str:
+            return fetch_with_retries(
+                url,
+                fetch_text,
+                timeout_s=effective_timeout_s,
+                retries=static_runtime.static_listing_retries,
+                backoff_s=backoff_s,
+            )
+
         stop_source = False
+        source_listing_jobs_found_total = 0
+        source_detail_candidates_total = 0
+        source_strong_detail_candidates_total = 0
         for batch_start in range(0, len(cleaned_pages), listing_batch_size):
             if stop_source:
+                break
+            if remaining_listing_budget_s() < 1.0:
+                note_listing_terminal_reason("listing_budget_exhausted")
+                stop_for_budget_exhaustion(
+                    target_url=clean_text(cleaned_pages[batch_start]) or source_name,
+                    source_budget_s=min(
+                        static_source_time_budget_s, static_runtime.static_listing_total_budget_s
+                    ),
+                )
+                break
+            if static_source_budget_exhausted(
+                deadline_monotonic=float(source_deadline_state["value"]), reserve_s=1.0
+            ):
+                stop_for_budget_exhaustion(
+                    target_url=clean_text(cleaned_pages[batch_start]) or source_name,
+                    source_budget_s=static_source_time_budget_s,
+                )
                 break
             page_batch = cleaned_pages[batch_start : batch_start + listing_batch_size]
             listing_batch_jobs: list[dict[str, Any]] = []
@@ -493,12 +691,11 @@ def run_static_studio_pages_source(
                 source_budget_s = int(
                     domain_profile.get("static_source_time_budget_s") or static_source_time_budget_s
                 )
-                if (time.perf_counter() - source_started) > float(source_budget_s):
-                    entry_report["status"] = "error"
-                    entry_report["classification"] = "timeout"
-                    entry_report["browserFallbackRecommended"] = True
-                    entry_report["error"] = f"time budget exceeded ({source_budget_s}s)"
-                    warnings.append(f"static:{source_name}:{page_url}: time_budget_exceeded")
+                sync_source_deadline(source_budget_s)
+                if static_source_budget_exhausted(
+                    deadline_monotonic=float(source_deadline_state["value"]), reserve_s=1.0
+                ):
+                    stop_for_budget_exhaustion(target_url=page_url, source_budget_s=source_budget_s)
                     stop_source = True
                     break
                 listing_batch_jobs.append(
@@ -513,7 +710,7 @@ def run_static_studio_pages_source(
             if stop_source or not listing_batch_jobs:
                 break
 
-            listing_batch_meta: dict[str, dict[str, Any]] = {}
+            listing_batch_meta_ref.clear()
 
             listing_source_started = source_started
             listing_source_name = source_name
@@ -524,52 +721,147 @@ def run_static_studio_pages_source(
                 _timeout_s: int,
                 *,
                 _listing_source_started: float = listing_source_started,
-                _listing_batch_meta: dict[str, dict[str, Any]] = listing_batch_meta,
+                _listing_batch_meta: dict[str, dict[str, Any]] = listing_batch_meta_ref,
+                _listing_meta_lock: Lock = listing_meta_lock,
+                _listing_stage_meta: dict[str, Any] = listing_stage_meta,
             ) -> str:
                 fetch_started = time.perf_counter()
                 payload = batch_job.get("payload") if isinstance(batch_job, dict) else {}
                 source_budget_s = int(
                     (payload or {}).get("sourceBudgetS") or static_source_time_budget_s
                 )
-                remaining_budget_s = float(source_budget_s) - float(
-                    time.perf_counter() - _listing_source_started
+                sync_source_deadline(source_budget_s)
+                remaining_budget_s = remaining_listing_budget_s()
+                effective_timeout_s = effective_timeout_for_remaining_budget(
+                    timeout_s=static_runtime.static_listing_http_timeout_s,
+                    remaining_budget_s=remaining_budget_s,
                 )
-                effective_timeout_s = max(
-                    3, min(int(timeout_s or 1), int(remaining_budget_s or timeout_s))
-                )
+                if effective_timeout_s <= 0:
+                    note_listing_terminal_reason("listing_budget_exhausted")
+                    raise TimeoutError(
+                        f"listing time budget exceeded ({static_runtime.static_listing_total_budget_s}s)"
+                    )
                 html = ""
-                cache_hit = False
+                browser_fallback_attempted = False
+                browser_fallback_error = ""
                 try:
-                    html, cache_hit = fetch_html_cached(url, remaining_budget_s=remaining_budget_s)
+                    html = _fetch_listing_html_sync(url, effective_timeout_s=effective_timeout_s)
                 except Exception as exc:  # noqa: BLE001
                     err_str = str(exc)
-                    err_lower = err_str.lower()
-                    linked_in_throttle = "linkedin" in f"{url} {err_str}".lower()
-                    if try_playwright and (
-                        "403" in err_str
-                        or (linked_in_throttle and "429" in err_str)
-                        or "timeout" in err_lower
-                        or "timed out" in err_lower
-                    ):
-                        if "403" in err_str:
-                            reason = "403"
-                        elif linked_in_throttle and "429" in err_str:
-                            reason = "429"
-                        else:
-                            reason = "timeout"
-                        html, _ = try_playwright(url, effective_timeout_s)
+                    should_fallback, reason = should_try_listing_browser_fallback(url, err_str)
+                    if try_playwright and should_fallback:
+                        browser_budget_s = effective_timeout_for_remaining_budget(
+                            timeout_s=static_runtime.static_listing_browser_timeout_s,
+                            remaining_budget_s=remaining_listing_budget_s(),
+                        )
+                        if browser_budget_s > 0:
+                            browser_fallback_attempted = True
+                            with _listing_meta_lock:
+                                _listing_stage_meta["browserFallbacks"] = (
+                                    int(_listing_stage_meta.get("browserFallbacks") or 0) + 1
+                                )
+                            html, browser_fallback_error = try_playwright(url, browser_budget_s)
                         print(
                             f"[static] playwright_fallback_used url={url!r} reason={reason} got_html={bool(html)}",
                             file=sys.stderr,
                             flush=True,
                         )
                     if not html:
+                        if browser_fallback_attempted:
+                            if "403" in err_str:
+                                note_listing_terminal_reason("blocked_after_browser_fallback")
+                            else:
+                                note_listing_terminal_reason("browser_fallback_empty")
+                        elif reason == "timeout":
+                            note_listing_terminal_reason("listing_timeout")
                         raise
-                _listing_batch_meta[url] = {
-                    "cacheHit": cache_hit,
-                    "durationMs": int((time.perf_counter() - fetch_started) * 1000),
-                    "timeoutS": effective_timeout_s,
-                }
+                _record_listing_meta(
+                    url,
+                    durationMs=int((time.perf_counter() - fetch_started) * 1000),
+                    timeoutS=effective_timeout_s,
+                    cacheHit=False,
+                    browserFallbackUsed=browser_fallback_attempted,
+                    browserFallbackError=browser_fallback_error,
+                )
+                return html
+
+            async def _fetch_listing_job_async(
+                client: Any,
+                batch_job: dict[str, Any],
+                url: str,
+                _timeout_s: int,
+                *,
+                _listing_source_started: float = listing_source_started,
+                _listing_meta_lock: Lock = listing_meta_lock,
+                _listing_stage_meta: dict[str, Any] = listing_stage_meta,
+            ) -> str:
+                fetch_started = time.perf_counter()
+                payload = batch_job.get("payload") if isinstance(batch_job, dict) else {}
+                source_budget_s = int(
+                    (payload or {}).get("sourceBudgetS") or static_source_time_budget_s
+                )
+                sync_source_deadline(source_budget_s)
+                remaining_budget_s = remaining_listing_budget_s()
+                effective_timeout_s = effective_timeout_for_remaining_budget(
+                    timeout_s=static_runtime.static_listing_http_timeout_s,
+                    remaining_budget_s=remaining_budget_s,
+                )
+                if effective_timeout_s <= 0:
+                    note_listing_terminal_reason("listing_budget_exhausted")
+                    raise TimeoutError(
+                        f"listing time budget exceeded ({static_runtime.static_listing_total_budget_s}s)"
+                    )
+                html = ""
+                browser_fallback_attempted = False
+                browser_fallback_error = ""
+                try:
+                    if listing_async_fetch is None:
+                        html = await asyncio.to_thread(
+                            _fetch_listing_html_sync, url, effective_timeout_s=effective_timeout_s
+                        )
+                    else:
+                        html = await listing_async_fetch(
+                            client, batch_job, url, effective_timeout_s
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    err_str = str(exc)
+                    should_fallback, reason = should_try_listing_browser_fallback(url, err_str)
+                    if try_playwright and should_fallback:
+                        browser_budget_s = effective_timeout_for_remaining_budget(
+                            timeout_s=static_runtime.static_listing_browser_timeout_s,
+                            remaining_budget_s=remaining_listing_budget_s(),
+                        )
+                        if browser_budget_s > 0:
+                            browser_fallback_attempted = True
+                            with _listing_meta_lock:
+                                _listing_stage_meta["browserFallbacks"] = (
+                                    int(_listing_stage_meta.get("browserFallbacks") or 0) + 1
+                                )
+                            html, browser_fallback_error = await asyncio.to_thread(
+                                try_playwright, url, browser_budget_s
+                            )
+                            print(
+                                f"[static] playwright_fallback_used url={url!r} reason={reason} got_html={bool(html)}",
+                                file=sys.stderr,
+                                flush=True,
+                            )
+                    if not html:
+                        if browser_fallback_attempted:
+                            if "403" in err_str:
+                                note_listing_terminal_reason("blocked_after_browser_fallback")
+                            else:
+                                note_listing_terminal_reason("browser_fallback_empty")
+                        elif reason == "timeout":
+                            note_listing_terminal_reason("listing_timeout")
+                        raise
+                _record_listing_meta(
+                    url,
+                    durationMs=int((time.perf_counter() - fetch_started) * 1000),
+                    timeoutS=effective_timeout_s,
+                    cacheHit=False,
+                    browserFallbackUsed=browser_fallback_attempted,
+                    browserFallbackError=browser_fallback_error,
+                )
                 return html
 
             def _on_listing_batch_progress(
@@ -586,6 +878,7 @@ def run_static_studio_pages_source(
                     phase_label="Fetching listing pages",
                     counts={"listingPagesFetched": completed_count},
                     target_label=f"Listing fetch {completed_count}/{total_count}",
+                    wait_reason="listing_batch",
                     event_level="muted",
                     message=(
                         f"Fetched {completed_count}/{total_count} listing page"
@@ -599,6 +892,7 @@ def run_static_studio_pages_source(
                 counts={"listingPagesFetched": 0},
                 target_label=f"Listing fetch 0/{max(1, len(listing_batch_jobs))}",
                 target_url=clean_text((listing_batch_jobs[0] or {}).get("url")),
+                wait_reason="listing_batch",
                 event_level="muted",
                 message=(
                     f"Fetching {max(1, len(listing_batch_jobs))} listing page"
@@ -609,13 +903,20 @@ def run_static_studio_pages_source(
                 timeout_s,
                 listing_batch_jobs,
                 sync_fetch=_fetch_listing_job,
+                async_fetch=_fetch_listing_job_async if listing_async_fetch is not None else None,
                 total_concurrency=max(1, len(listing_batch_jobs)),
-                per_host_concurrency=max(1, len(listing_batch_jobs)),
+                per_host_concurrency=common_config.DEFAULT_STATIC_FETCH_MAX_PER_DOMAIN,
                 progress_callback=_on_listing_batch_progress,
             )
+            stats["listing_batch_count"] = int(stats.get("listing_batch_count") or 0) + 1
 
             for result in listing_results:
                 emit_heartbeat()
+                if static_source_budget_exhausted(
+                    deadline_monotonic=float(source_deadline_state["value"]), reserve_s=0.0
+                ):
+                    stop_source = True
+                    break
                 page_url = clean_text(result.get("url"))
                 if not page_url:
                     continue
@@ -627,6 +928,7 @@ def run_static_studio_pages_source(
                         f"Listing {progress_state['listingPagesVisited']}/{max(1, len(pages))}"
                     ),
                     target_url=page_url,
+                    wait_reason="listing_batch",
                     event_level="muted",
                     message=(
                         f"Fetching listing page {progress_state['listingPagesVisited']}/{max(1, len(pages))} "
@@ -640,6 +942,7 @@ def run_static_studio_pages_source(
                     else domain_profile_for_url(page_url)
                 )
                 source_budget_s = int(payload.get("sourceBudgetS") or static_source_time_budget_s)
+                sync_source_deadline(source_budget_s)
                 try:
                     if not bool(result.get("ok")):
                         _record_static_fetch_failure(
@@ -652,14 +955,33 @@ def run_static_studio_pages_source(
                         )
                         emit_heartbeat()
                         continue
+                    if static_source_budget_exhausted(
+                        deadline_monotonic=float(source_deadline_state["value"]), reserve_s=0.0
+                    ):
+                        stop_for_budget_exhaustion(
+                            target_url=page_url,
+                            source_budget_s=source_budget_s,
+                        )
+                        stop_source = True
+                        continue
 
-                    listing_meta = listing_batch_meta.get(page_url) or {}
+                    listing_meta = listing_batch_meta_ref.get(page_url) or {}
                     stats["listing_fetch_ms"] += int(listing_meta.get("durationMs") or 0)
+                    stats["listing_browser_fallbacks"] = int(
+                        stats.get("listing_browser_fallbacks") or 0
+                    ) + int(bool(listing_meta.get("browserFallbackUsed")))
                     if bool(listing_meta.get("cacheHit")):
                         stats["fetch_cache_hits"] += 1
                     effective_timeout_s = int(listing_meta.get("timeoutS") or timeout_s)
                     html = str(result.get("text") or "")
                     if try_playwright and html and detect_js_shell(html):
+                        dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
+                            timeout_s=min(
+                                static_runtime.static_listing_http_timeout_s,
+                                max(1, effective_timeout_s),
+                            ),
+                            remaining_budget_s=remaining_listing_budget_s(),
+                        )
                         parsed_pre = parse_jobpostings_from_html(
                             html,
                             base_url=page_url,
@@ -667,28 +989,37 @@ def run_static_studio_pages_source(
                             fallback_source_id_prefix=f"static:{source_name}",
                         )
                         link_count = len(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html))
-                        if not parsed_pre and link_count < 3:
-                            html2, _ = try_playwright(page_url, effective_timeout_s)
+                        if not parsed_pre and link_count < 3 and dynamic_listing_timeout_s > 0:
+                            html2, _ = try_playwright(page_url, dynamic_listing_timeout_s)
                             print(
                                 f"[static] playwright_fallback_used url={page_url!r} reason=js_shell got_html={bool(html2)}",
                                 file=sys.stderr,
                                 flush=True,
                             )
                             if html2:
+                                with listing_meta_lock:
+                                    listing_stage_meta["browserFallbacks"] = (
+                                        int(listing_stage_meta.get("browserFallbacks") or 0) + 1
+                                    )
                                 html = html2
                     detail_links: list[tuple[str, str]] = []
                     detail_seen = set()
                     listing_htmls = [html]
                     try:
-                        dynamic_listing_html = maybe_fetch_kojima_job_listing_html(
-                            page_url=page_url,
-                            page_html=html,
-                            timeout_s=timeout_s,
-                            retries=retries,
-                            backoff_s=backoff_s,
+                        dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
+                            timeout_s=static_runtime.static_listing_http_timeout_s,
+                            remaining_budget_s=remaining_listing_budget_s(),
                         )
-                        if dynamic_listing_html and dynamic_listing_html not in listing_htmls:
-                            listing_htmls.append(dynamic_listing_html)
+                        if dynamic_listing_timeout_s > 0:
+                            dynamic_listing_html = maybe_fetch_kojima_job_listing_html(
+                                page_url=page_url,
+                                page_html=html,
+                                timeout_s=dynamic_listing_timeout_s,
+                                retries=static_runtime.static_listing_retries,
+                                backoff_s=backoff_s,
+                            )
+                            if dynamic_listing_html and dynamic_listing_html not in listing_htmls:
+                                listing_htmls.append(dynamic_listing_html)
                     except Exception as exc:  # noqa: BLE001
                         errors.append(
                             f"static:{source_name}:{page_url}: dynamic-listing-fetch failed: {exc}"
@@ -703,6 +1034,7 @@ def run_static_studio_pages_source(
                             f"Listing {progress_state['listingPagesVisited']}/{max(1, len(pages))}"
                         ),
                         target_url=page_url,
+                        wait_reason="parsing",
                         event_level="muted",
                         message=f"Extracting listing candidates for {source_name}.",
                     )
@@ -925,6 +1257,19 @@ def run_static_studio_pages_source(
                                 default_path_tokens=static_runtime.default_path_tokens,
                                 default_query_keys=static_runtime.default_query_keys,
                             )
+                    strong_detail_candidate_count = sum(
+                        1
+                        for detail, _detail_title in detail_links
+                        if is_probable_job_detail_url(
+                            detail,
+                            source,
+                            default_path_tokens=static_runtime.default_path_tokens,
+                            default_query_keys=static_runtime.default_query_keys,
+                        )
+                    )
+                    source_listing_jobs_found_total += listing_jobs_found
+                    source_detail_candidates_total += len(detail_links)
+                    source_strong_detail_candidates_total += strong_detail_candidate_count
                     stats["candidate_links_found"] += len(detail_links)
                     stats["candidate_extraction_ms"] += int(
                         (time.perf_counter() - extraction_started) * 1000
@@ -946,6 +1291,17 @@ def run_static_studio_pages_source(
                             f"{'' if len(detail_links) == 1 else 's'} for {source_name}."
                         ),
                     )
+                    if (
+                        listing_jobs_found <= 0
+                        and strong_detail_candidate_count <= 0
+                        and len(detail_links) <= 0
+                    ):
+                        if provider_like_listing_host(page_url):
+                            note_listing_terminal_reason("provider_listing_zero_yield")
+                        else:
+                            note_listing_terminal_reason("listing_zero_yield")
+                        stop_source = True
+                        continue
                     listing_fingerprint = hashlib.sha1(
                         "\n".join(listing_htmls).encode("utf-8")
                     ).hexdigest()
@@ -971,6 +1327,15 @@ def run_static_studio_pages_source(
                     if not detail_links:
                         emit_heartbeat()
                         continue
+                    if static_source_budget_exhausted(
+                        deadline_monotonic=float(source_deadline_state["value"]), reserve_s=1.0
+                    ):
+                        stop_for_budget_exhaustion(
+                            target_url=page_url,
+                            source_budget_s=source_budget_s,
+                        )
+                        stop_source = True
+                        continue
                     source_key = diagnostics_name if len(selected_sources) == 1 else source_name
                     plugin_meta = (
                         source.get("_staticPluginMeta") if isinstance(source, dict) else None
@@ -988,6 +1353,22 @@ def run_static_studio_pages_source(
                     entry_report["detailTraversalMode"] = detail_traversal_mode
                     if detail_traversal_mode == "listing_only":
                         detail_links = []
+                        emit_heartbeat()
+                        continue
+                    source_has_listing_rows = max(0, len(jobs) - kept_before) > 0
+                    if source_has_listing_rows and detail_links:
+                        strong_detail_links = [
+                            (detail, detail_title)
+                            for detail, detail_title in detail_links
+                            if is_probable_job_detail_url(
+                                detail,
+                                source,
+                                default_path_tokens=static_runtime.default_path_tokens,
+                                default_query_keys=static_runtime.default_query_keys,
+                            )
+                        ]
+                        detail_links = strong_detail_links
+                    if not detail_links:
                         emit_heartbeat()
                         continue
                     detail_limit = source_detail_limit_for(
@@ -1016,18 +1397,19 @@ def run_static_studio_pages_source(
                         detail_links = detail_links[:detail_limit]
                     detail_fetch_started = time.perf_counter()
                     detail_fetch_base_ms = int(stats.get("detail_fetch_ms") or 0)
-                    detail_batch_meta: dict[str, dict[str, Any]] = {}
                     detail_concurrency = source_detail_concurrency_for(
                         source_key,
                         source_state_rows=source_state_rows,
                         static_detail_concurrency=static_detail_concurrency,
                     )
+                    initial_detail_batch_size = max(1, min(detail_concurrency, 6))
                     emit_source_progress(
                         phase_key="static_detail_traversal",
                         phase_label="Traversing detail pages",
                         counts={"detailCandidates": len(detail_links)},
                         target_label=f"{len(detail_links)} detail page(s)",
                         target_url=page_url,
+                        wait_reason="detail_batch",
                         event_level="muted",
                         message=(
                             f"Traversing {len(detail_links)} detail page"
@@ -1037,147 +1419,330 @@ def run_static_studio_pages_source(
                     emit_heartbeat()
 
                     detail_source_budget_s = source_budget_s
-                    detail_source_started = source_started
                     detail_source_name = source_name
                     detail_target_url = page_url
                     detail_candidate_count = len(detail_links)
+                    detail_rows_from_pages = 0
+                    detail_off_domain_failure_count = 0
+                    detail_redirect_loop_count = 0
+                    detail_state = {
+                        "stop": False,
+                        "consecutiveZeroBatches": 0,
+                        "nextBatchSize": initial_detail_batch_size,
+                        "index": 0,
+                    }
+                    initial_low_yield_pages = 0
+                    post_listing_detail_deadline = (
+                        time.perf_counter()
+                        + float(static_runtime.static_post_listing_detail_budget_s)
+                        if source_has_listing_rows
+                        else 0.0
+                    )
 
-                    def _fetch_detail_job(
-                        batch_job: dict[str, Any],
-                        url: str,
-                        _timeout_s: int,
+                    def stop_detail_traversal_adaptively(
                         *,
-                        _detail_source_budget_s: int = detail_source_budget_s,
-                        _detail_source_started: float = detail_source_started,
-                        _detail_retries: int = detail_retries,
-                        _detail_batch_meta: dict[str, dict[str, Any]] = detail_batch_meta,
-                    ) -> str:
-                        fetch_started = time.perf_counter()
-                        remaining_budget_s = float(_detail_source_budget_s) - float(
-                            time.perf_counter() - _detail_source_started
-                        )
-                        html, cache_hit = fetch_html_cached(
-                            url,
-                            remaining_budget_s=remaining_budget_s,
-                            retries_override=_detail_retries,
-                        )
-                        _detail_batch_meta[url] = {
-                            "cacheHit": cache_hit,
-                            "fetchMs": int((time.perf_counter() - fetch_started) * 1000),
-                        }
-                        return html
-
-                    def _on_detail_batch_progress(
-                        completed: int,
-                        total: int,
-                        *,
-                        _detail_candidate_count: int = detail_candidate_count,
-                        _detail_target_url: str = detail_target_url,
-                        _detail_source_name: str = detail_source_name,
+                        _detail_state: dict[str, Any] = detail_state,
+                        _detail_links: list[tuple[str, str]] = detail_links,
+                        _source_stats: dict[str, Any] = source_stats,
                     ) -> None:
-                        completed_count = max(0, int(completed or 0))
-                        total_count = max(1, int(total or 0))
-                        emit_heartbeat()
-                        emit_source_progress(
-                            phase_key="static_detail_traversal",
-                            phase_label="Traversing detail pages",
-                            counts={
-                                "detailCandidates": _detail_candidate_count,
-                                "detailPagesFetched": completed_count,
-                            },
-                            target_label=f"Detail fetch {completed_count}/{total_count}",
-                            target_url=_detail_target_url,
-                            event_level="muted",
-                            message=(
-                                f"Fetched {completed_count}/{total_count} detail page"
-                                f"{'' if total_count == 1 else 's'} for {_detail_source_name}."
+                        _detail_state["stop"] = True
+                        remaining_candidates = max(
+                            0,
+                            len(_detail_links) - int(_detail_state.get("index") or 0),
+                        )
+                        if remaining_candidates > 0:
+                            _source_stats["detail_pages_skipped_by_adaptive_stop"] = (
+                                int(_source_stats.get("detail_pages_skipped_by_adaptive_stop") or 0)
+                                + remaining_candidates
+                            )
+
+                    def next_detail_batch_size(
+                        *,
+                        remaining_budget_s: float,
+                        _detail_state: dict[str, Any] = detail_state,
+                        _detail_concurrency: int = detail_concurrency,
+                        _source_has_listing_rows: bool = source_has_listing_rows,
+                        _source_stats: dict[str, Any] = source_stats,
+                    ) -> int:
+                        batch_size = max(
+                            1,
+                            min(
+                                _detail_concurrency,
+                                int(_detail_state.get("nextBatchSize") or 1),
                             ),
                         )
+                        if _source_has_listing_rows:
+                            batch_size = min(batch_size, 2)
+                        if int(_detail_state.get("consecutiveZeroBatches") or 0) >= 1:
+                            batch_size = 1
+                        current_gate_wait_ms, current_gate_wait_count = (
+                            current_domain_gate_wait_stats()
+                        )
+                        _source_stats["domain_gate_wait_ms"] = int(current_gate_wait_ms)
+                        _source_stats["domain_gate_wait_count"] = int(current_gate_wait_count)
+                        if (
+                            current_gate_wait_ms > 0
+                            and int(_detail_state.get("index") or 0) > 0
+                            and current_gate_wait_ms
+                            >= int(_source_stats.get("detail_fetch_ms") or 0)
+                        ):
+                            batch_size = 1
+                        if remaining_budget_s < 8.0:
+                            batch_size = 1
+                        batch_budget_cap = max(1, int(max(0.0, remaining_budget_s) // 3.0))
+                        batch_size = min(batch_size, batch_budget_cap)
+                        return max(1, batch_size)
 
-                    detail_results = fetch_pages_batched(
-                        timeout_s,
-                        [
-                            {
-                                "url": detail,
-                                "payload": {"detailTitle": detail_title},
+                    while int(detail_state.get("index") or 0) < len(detail_links):
+                        if bool(detail_state.get("stop")) or stop_source:
+                            break
+                        if int(detail_state.get("consecutiveZeroBatches") or 0) >= 2:
+                            stop_detail_traversal_adaptively()
+                            break
+                        if source_has_listing_rows and post_listing_detail_deadline > 0:
+                            if time.perf_counter() >= post_listing_detail_deadline:
+                                stop_detail_traversal_adaptively()
+                                break
+                        if static_source_budget_exhausted(
+                            deadline_monotonic=float(source_deadline_state["value"]), reserve_s=1.0
+                        ):
+                            stop_for_budget_exhaustion(
+                                target_url=page_url,
+                                source_budget_s=detail_source_budget_s,
+                            )
+                            stop_source = True
+                            break
+                        remaining_budget_s = remaining_static_source_budget_s(
+                            deadline_monotonic=float(source_deadline_state["value"])
+                        )
+                        detail_batch_size = next_detail_batch_size(
+                            remaining_budget_s=remaining_budget_s
+                        )
+                        detail_batch_start = int(detail_state.get("index") or 0)
+                        detail_batch = detail_links[
+                            detail_batch_start : detail_batch_start
+                            + min(detail_batch_size, len(detail_links))
+                        ]
+                        detail_batch_meta: dict[str, dict[str, Any]] = {}
+                        stats["detail_batch_count"] = int(stats.get("detail_batch_count") or 0) + 1
+
+                        def _fetch_detail_job(
+                            batch_job: dict[str, Any],
+                            url: str,
+                            _timeout_s: int,
+                            *,
+                            _detail_source_budget_s: int = detail_source_budget_s,
+                            _detail_retries: int = detail_retries,
+                            _detail_batch_meta: dict[str, dict[str, Any]] = detail_batch_meta,
+                            _source_deadline_state: dict[str, float] = source_deadline_state,
+                        ) -> str:
+                            fetch_started = time.perf_counter()
+                            sync_source_deadline(_detail_source_budget_s)
+                            remaining_budget_s = remaining_static_source_budget_s(
+                                deadline_monotonic=float(_source_deadline_state["value"])
+                            )
+                            effective_timeout_s = effective_timeout_for_remaining_budget(
+                                timeout_s=timeout_s,
+                                remaining_budget_s=remaining_budget_s,
+                            )
+                            if effective_timeout_s <= 0:
+                                raise TimeoutError(
+                                    f"time budget exceeded ({_detail_source_budget_s}s)"
+                                )
+                            html, cache_hit = fetch_html_cached(
+                                url,
+                                remaining_budget_s=remaining_budget_s,
+                                retries_override=_detail_retries,
+                            )
+                            _detail_batch_meta[url] = {
+                                "cacheHit": cache_hit,
+                                "fetchMs": int((time.perf_counter() - fetch_started) * 1000),
+                                "timeoutS": effective_timeout_s,
                             }
-                            for detail, detail_title in detail_links
-                        ],
-                        sync_fetch=_fetch_detail_job,
-                        total_concurrency=detail_concurrency,
-                        per_host_concurrency=detail_concurrency,
-                        progress_callback=_on_detail_batch_progress,
-                    )
-                    for detail_result_row in detail_results:
-                        detail = clean_text(detail_result_row.get("url"))
-                        if not detail:
-                            continue
-                        detail_payload = (
-                            detail_result_row.get("payload")
-                            if isinstance(detail_result_row.get("payload"), dict)
-                            else {}
+                            return html
+
+                        def _on_detail_batch_progress(
+                            completed: int,
+                            total: int,
+                            *,
+                            _detail_candidate_count: int = detail_candidate_count,
+                            _detail_target_url: str = detail_target_url,
+                            _detail_source_name: str = detail_source_name,
+                            _detail_batch_start: int = detail_batch_start,
+                        ) -> None:
+                            completed_count = max(0, int(completed or 0))
+                            total_count = max(1, int(total or 0))
+                            emit_heartbeat()
+                            emit_source_progress(
+                                phase_key="static_detail_traversal",
+                                phase_label="Traversing detail pages",
+                                counts={
+                                    "detailCandidates": _detail_candidate_count,
+                                    "detailPagesFetched": min(
+                                        _detail_candidate_count,
+                                        _detail_batch_start + completed_count,
+                                    ),
+                                },
+                                target_label=(
+                                    f"Detail fetch {min(_detail_candidate_count, _detail_batch_start + completed_count)}/"
+                                    f"{_detail_candidate_count}"
+                                ),
+                                target_url=_detail_target_url,
+                                wait_reason="detail_batch",
+                                event_level="muted",
+                                message=(
+                                    f"Fetched {completed_count}/{total_count} detail page"
+                                    f"{'' if total_count == 1 else 's'} for {_detail_source_name}."
+                                ),
+                            )
+
+                        detail_results = fetch_pages_batched(
+                            timeout_s,
+                            [
+                                {
+                                    "url": detail,
+                                    "payload": {"detailTitle": detail_title},
+                                }
+                                for detail, detail_title in detail_batch
+                            ],
+                            sync_fetch=_fetch_detail_job,
+                            total_concurrency=detail_concurrency,
+                            per_host_concurrency=detail_concurrency,
+                            progress_callback=_on_detail_batch_progress,
                         )
-                        detail_title = clean_text(detail_payload.get("detailTitle"))
-                        stats["detail_pages_visited"] += 1
-                        emit_source_progress(
-                            phase_key="static_detail_traversal",
-                            phase_label="Traversing detail pages",
-                            target_label=detail_title or detail or source_name,
-                            target_url=detail,
-                        )
-                        emit_heartbeat()
-                        if not bool(detail_result_row.get("ok")):
-                            msg = str(detail_result_row.get("error") or "")
-                            linked_in_throttle = "linkedin" in f"{page_url} {msg}".lower()
-                            if "HTTP 403" in msg or (
-                                linked_in_throttle
-                                and ("HTTP 429" in msg or "Too Many Requests" in msg)
+
+                        batch_rows_emitted = 0
+                        batch_terminal_pages = 0
+                        batch_processed_pages = 0
+                        batch_low_yield_terminal_pages = 0
+                        for detail_result_row in detail_results:
+                            if static_source_budget_exhausted(
+                                deadline_monotonic=float(source_deadline_state["value"]),
+                                reserve_s=0.0,
                             ):
-                                entry_report["classification"] = "blocked_or_challenge"
-                                entry_report["browserFallbackRecommended"] = True
-                                entry_report["error"] = msg
-                                warnings.append(f"static:{source_name}:{detail}: {msg}")
-                            else:
-                                errors.append(f"static:{source_name}:{detail}: {msg}")
-                            continue
-                        detail_meta = detail_batch_meta.get(detail) or {}
-                        detail_result = process_detail_html(
-                            detail=detail,
-                            detail_title=detail_title,
-                            detail_html=str(detail_result_row.get("text") or ""),
-                            fetch_ms=int(detail_meta.get("fetchMs") or 0),
-                            cache_hit=bool(detail_meta.get("cacheHit")),
-                            company=company,
-                            source_name=source_name,
-                            source=source,
-                            ignored_link_titles=ignored_link_titles,
-                        )
-                        stats["fetch_cache_hits"] += 1 if detail_result.get("cacheHit") else 0
-                        stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
-                        rejected_classification = clean_text(
-                            detail_result.get("rejectedClassification")
-                        )
-                        if rejected_classification == "dead_listing_page":
-                            link_rejections["dead_listing_page"] += 1
-                            stats["dead_listing_pages_rejected"] += 1
-                            if len(dead_listing_page_examples) < 5:
-                                example = clean_text(detail_result.get("rejectedExample"))
-                                if example:
-                                    dead_listing_page_examples.append(example)
-                        elif detail_result.get("parseEmpty"):
-                            link_rejections["detail_parse_empty"] += 1
-                        for row in detail_result.get("rows") or []:
-                            link = normalize_url(row.get("jobLink"))
-                            if not link or link in seen_links:
+                                stop_source = True
+                                stop_for_budget_exhaustion(
+                                    target_url=page_url,
+                                    source_budget_s=detail_source_budget_s,
+                                )
+                                break
+                            detail = clean_text(detail_result_row.get("url"))
+                            if not detail:
                                 continue
-                            seen_links.add(link)
-                            jobs.append(row)
-                        emit_heartbeat()
+                            detail_payload = (
+                                detail_result_row.get("payload")
+                                if isinstance(detail_result_row.get("payload"), dict)
+                                else {}
+                            )
+                            detail_title = clean_text(detail_payload.get("detailTitle"))
+                            stats["detail_pages_visited"] += 1
+                            batch_processed_pages += 1
+                            emit_source_progress(
+                                phase_key="static_detail_traversal",
+                                phase_label="Traversing detail pages",
+                                target_label=detail_title or detail or source_name,
+                                target_url=detail,
+                                wait_reason="parsing",
+                            )
+                            emit_heartbeat()
+                            if not bool(detail_result_row.get("ok")):
+                                msg = str(detail_result_row.get("error") or "")
+                                linked_in_throttle = "linkedin" in f"{page_url} {msg}".lower()
+                                detail_host = (urlparse(detail).netloc or "").strip().lower()
+                                page_host = (urlparse(page_url).netloc or "").strip().lower()
+                                low_yield_terminal = False
+                                if "Exceeded maximum allowed redirects" in msg:
+                                    detail_redirect_loop_count += 1
+                                    low_yield_terminal = True
+                                if detail_host and page_host and detail_host != page_host:
+                                    detail_off_domain_failure_count += 1
+                                    low_yield_terminal = True
+                                if "HTTP 403" in msg or (
+                                    linked_in_throttle
+                                    and ("HTTP 429" in msg or "Too Many Requests" in msg)
+                                ):
+                                    entry_report["classification"] = "blocked_or_challenge"
+                                    entry_report["browserFallbackRecommended"] = True
+                                    entry_report["error"] = msg
+                                    warnings.append(f"static:{source_name}:{detail}: {msg}")
+                                else:
+                                    errors.append(f"static:{source_name}:{detail}: {msg}")
+                                batch_terminal_pages += 1
+                                if low_yield_terminal:
+                                    batch_low_yield_terminal_pages += 1
+                                if (
+                                    detail_redirect_loop_count >= 2
+                                    or detail_off_domain_failure_count >= 2
+                                ):
+                                    stop_detail_traversal_adaptively()
+                                continue
+                            detail_meta = detail_batch_meta.get(detail) or {}
+                            detail_result = process_detail_html(
+                                detail=detail,
+                                detail_title=detail_title,
+                                detail_html=str(detail_result_row.get("text") or ""),
+                                fetch_ms=int(detail_meta.get("fetchMs") or 0),
+                                cache_hit=bool(detail_meta.get("cacheHit")),
+                                company=company,
+                                source_name=source_name,
+                                source=source,
+                                ignored_link_titles=ignored_link_titles,
+                            )
+                            stats["fetch_cache_hits"] += 1 if detail_result.get("cacheHit") else 0
+                            stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
+                            rejected_classification = clean_text(
+                                detail_result.get("rejectedClassification")
+                            )
+                            if rejected_classification == "dead_listing_page":
+                                link_rejections["dead_listing_page"] += 1
+                                stats["dead_listing_pages_rejected"] += 1
+                                batch_terminal_pages += 1
+                                batch_low_yield_terminal_pages += 1
+                                if len(dead_listing_page_examples) < 5:
+                                    example = clean_text(detail_result.get("rejectedExample"))
+                                    if example:
+                                        dead_listing_page_examples.append(example)
+                            elif detail_result.get("parseEmpty"):
+                                link_rejections["detail_parse_empty"] += 1
+                                batch_terminal_pages += 1
+                                batch_low_yield_terminal_pages += 1
+                            rows_added_from_detail = 0
+                            for row in detail_result.get("rows") or []:
+                                link = normalize_url(row.get("jobLink"))
+                                if not link or link in seen_links:
+                                    continue
+                                seen_links.add(link)
+                                jobs.append(row)
+                                rows_added_from_detail += 1
+                            batch_rows_emitted += rows_added_from_detail
+                            detail_rows_from_pages += rows_added_from_detail
+                            emit_heartbeat()
+
+                        if stop_source:
+                            break
+                        detail_state["index"] = detail_batch_start + len(detail_batch)
+                        initial_low_yield_pages += batch_low_yield_terminal_pages
+                        if (
+                            initial_low_yield_pages >= min(4, len(detail_links))
+                            and detail_rows_from_pages == 0
+                        ):
+                            stop_detail_traversal_adaptively()
+                        if batch_rows_emitted == 0:
+                            detail_state["consecutiveZeroBatches"] = (
+                                int(detail_state.get("consecutiveZeroBatches") or 0) + 1
+                            )
+                            detail_state["nextBatchSize"] = 1
+                        else:
+                            detail_state["consecutiveZeroBatches"] = 0
+                            detail_state["nextBatchSize"] = initial_detail_batch_size
                     stats["detail_fetch_ms"] += max(
                         0,
                         int((time.perf_counter() - detail_fetch_started) * 1000)
                         - max(0, int(stats.get("detail_fetch_ms") or 0) - detail_fetch_base_ms),
                     )
+                    current_gate_wait_ms, current_gate_wait_count = current_domain_gate_wait_stats()
+                    stats["domain_gate_wait_ms"] = int(current_gate_wait_ms)
+                    stats["domain_gate_wait_count"] = int(current_gate_wait_count)
                 except Exception as exc:  # noqa: BLE001
                     _record_static_fetch_failure(
                         entry_report=entry_report,
@@ -1187,7 +1752,21 @@ def run_static_studio_pages_source(
                         target_url=page_url,
                         exc=exc,
                     )
+                    if current_source_kept_count() <= 0 and clean_text(
+                        listing_stage_meta.get("terminalReason")
+                    ) in {
+                        "blocked_after_browser_fallback",
+                        "browser_fallback_empty",
+                        "listing_timeout",
+                        "listing_timeout_after_browser_fallback",
+                    }:
+                        stop_source = True
                     emit_heartbeat()
+        current_gate_wait_ms, current_gate_wait_count = current_domain_gate_wait_stats()
+        stats["listing_browser_fallbacks"] = int(listing_stage_meta.get("browserFallbacks") or 0)
+        stats["listing_terminal_reason"] = clean_text(listing_stage_meta.get("terminalReason"))
+        stats["domain_gate_wait_ms"] = int(current_gate_wait_ms)
+        stats["domain_gate_wait_count"] = int(current_gate_wait_count)
         entry_report["keptCount"] = max(0, len(jobs) - kept_before)
         stats["jobs_emitted"] = int(entry_report["keptCount"])
         if int(stats["detail_pages_visited"] or 0) > 0:
@@ -1210,6 +1789,23 @@ def run_static_studio_pages_source(
         ):
             entry_report["status"] = "error"
             entry_report["error"] = "no jobs extracted from source pages"
+            terminal_reason = clean_text(stats.get("listing_terminal_reason"))
+            if terminal_reason in {
+                "listing_timeout",
+                "listing_timeout_after_browser_fallback",
+                "listing_budget_exhausted",
+            }:
+                entry_report["classification"] = "timeout"
+            elif terminal_reason in {
+                "blocked_after_browser_fallback",
+                "browser_fallback_empty",
+            }:
+                entry_report["classification"] = "blocked_or_challenge"
+            elif terminal_reason in {
+                "listing_zero_yield",
+                "provider_listing_zero_yield",
+            }:
+                entry_report["classification"] = "site_changed"
             # If we're running a single static source loader, treat this as a hard error
             # so it isn't silently reported as ok-with-zero.
             if len(selected_sources) == 1:
@@ -1279,6 +1875,7 @@ def run_static_source_entry_source(
     progress_callback: Callable[..., None] | None = None,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
+    listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
@@ -1293,6 +1890,7 @@ def run_static_source_entry_source(
         diagnostics_name=diagnostics_name,
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        listing_async_fetch=listing_async_fetch,
         try_playwright=try_playwright,
         force_refresh_all=force_refresh_all,
     )
@@ -1308,6 +1906,7 @@ def run_static_studio_pages_a_i_source(
     progress_callback: Callable[..., None] | None = None,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
+    listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
@@ -1322,6 +1921,7 @@ def run_static_studio_pages_a_i_source(
         diagnostics_name="static_studio_pages_a_i",
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        listing_async_fetch=listing_async_fetch,
         try_playwright=try_playwright,
         force_refresh_all=force_refresh_all,
     )
@@ -1358,6 +1958,8 @@ def build_static_source_loaders() -> list[tuple[str, SourceLoader]]:
             _loader_name: str = loader_name,
             static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
             source_state_rows: dict[str, dict[str, Any]] | None = None,
+            listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]]
+            | None = None,
             try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
             force_refresh_all: bool = False,
         ) -> list[RawJob]:
@@ -1372,6 +1974,7 @@ def build_static_source_loaders() -> list[tuple[str, SourceLoader]]:
                 progress_callback=progress_callback,
                 static_detail_concurrency=static_detail_concurrency,
                 source_state_rows=source_state_rows,
+                listing_async_fetch=listing_async_fetch,
                 try_playwright=try_playwright,
                 force_refresh_all=force_refresh_all,
             )
@@ -1390,6 +1993,7 @@ def run_static_studio_pages_j_r_source(
     progress_callback: Callable[..., None] | None = None,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
+    listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
@@ -1404,6 +2008,7 @@ def run_static_studio_pages_j_r_source(
         diagnostics_name="static_studio_pages_j_r",
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        listing_async_fetch=listing_async_fetch,
         try_playwright=try_playwright,
         force_refresh_all=force_refresh_all,
     )
@@ -1419,6 +2024,7 @@ def run_static_studio_pages_s_z_source(
     progress_callback: Callable[..., None] | None = None,
     static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
+    listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
@@ -1433,6 +2039,7 @@ def run_static_studio_pages_s_z_source(
         diagnostics_name="static_studio_pages_s_z",
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
+        listing_async_fetch=listing_async_fetch,
         try_playwright=try_playwright,
         force_refresh_all=force_refresh_all,
     )

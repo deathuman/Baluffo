@@ -616,6 +616,7 @@ def build_pipeline_summary(
     csv_bytes: int,
     light_json_bytes: int,
     lifecycle_counts_map: dict[str, int] | None = None,
+    summary_source_rows: Sequence[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     deduped_payload = [
         row.to_dict() if isinstance(row, CanonicalJob) else dict(row) for row in deduped_rows
@@ -633,10 +634,13 @@ def build_pipeline_summary(
         decision = clean_text(row.get("cacheDecision"))
         if decision:
             cache_decision_counts[decision] = int(cache_decision_counts.get(decision, 0)) + 1
+    source_count_rows = [
+        row for row in (summary_source_rows or source_reports) if isinstance(row, dict)
+    ]
     raw_fetched = int(
         sum(
             int(row.get("fetchedCount") or 0)
-            for row in source_reports
+            for row in source_count_rows
             if norm_text(row.get("status")) == "ok"
         )
     )
@@ -651,7 +655,7 @@ def build_pipeline_summary(
         "canonicalKept": canonical_kept,
         "dedupMerged": dedup_merged,
         "finalOutput": final_output,
-        "rawFetchedCount": canonical_count,
+        "rawFetchedCount": raw_fetched,
         "uniqueOutputCount": len(deduped_payload),
         "sourceBundleCollisions": sum(
             1 for row in deduped_payload if int(row.get("sourceBundleCount") or 0) > 1
@@ -678,10 +682,10 @@ def build_pipeline_summary(
             and norm_text(row.get("workType")) == "remote"
         ),
         "preservedPreviousOutput": preserved_previous,
-        "sourceCount": len(source_reports),
-        "successfulSources": sum(1 for row in source_reports if row["status"] == "ok"),
-        "failedSources": sum(1 for row in source_reports if row["status"] == "error"),
-        "excludedSources": sum(1 for row in source_reports if row["status"] == "excluded"),
+        "sourceCount": len(source_count_rows),
+        "successfulSources": sum(1 for row in source_count_rows if row["status"] == "ok"),
+        "failedSources": sum(1 for row in source_count_rows if row["status"] == "error"),
+        "excludedSources": sum(1 for row in source_count_rows if row["status"] == "excluded"),
         "cacheSkippedCount": sum(
             1
             for row in cache_rows

@@ -39,6 +39,7 @@ def _write_report_bundle(
     fetch_source_name: str,
     fetch_source_error: str = "HTTP 500",
     listing_url: str | None = "https://example.com/careers",
+    write_discovery: bool = True,
 ) -> None:
     discovery_report_path = root / "source-discovery-report.json"
     fetch_report_path = root / "jobs-fetch-report.json"
@@ -46,35 +47,36 @@ def _write_report_bundle(
     parser_queue_path = root / "jobs-parser-regression-queue.json"
     browser_queue_path = root / "jobs-browser-fallback-queue.json"
 
-    _write_json(
-        discovery_report_path,
-        {
-            "startedAt": discovery_started,
-            "finishedAt": discovery_finished,
-            "summary": {
-                "queuedCandidateCount": 3,
-                "failedProbeCount": 1,
-                "probeMissCount": 0,
-                "discoverableButDeferredCount": 2,
-                "lossAccounting": {"queueFiltered": 1},
+    if write_discovery:
+        _write_json(
+            discovery_report_path,
+            {
+                "startedAt": discovery_started,
+                "finishedAt": discovery_finished,
+                "summary": {
+                    "queuedCandidateCount": 3,
+                    "failedProbeCount": 1,
+                    "probeMissCount": 0,
+                    "discoverableButDeferredCount": 2,
+                    "lossAccounting": {"queueFiltered": 1},
+                },
+                "runtime": {
+                    "totalDurationMs": 5000,
+                    "stageTop": [{"stage": "probe", "durationMs": 2500}],
+                    "adapterTimings": [{"adapter": "static", "durationMs": 3000, "queuedCount": 2}],
+                },
+                "failures": [
+                    {
+                        "name": "Bad Studio",
+                        "adapter": "static",
+                        "stage": "probe_failed",
+                        "dropStage": "probe_failed",
+                        "error": "timeout",
+                    }
+                ],
+                "topFailures": [{"key": "static:bad.example", "count": 1}],
             },
-            "runtime": {
-                "totalDurationMs": 5000,
-                "stageTop": [{"stage": "probe", "durationMs": 2500}],
-                "adapterTimings": [{"adapter": "static", "durationMs": 3000, "queuedCount": 2}],
-            },
-            "failures": [
-                {
-                    "name": "Bad Studio",
-                    "adapter": "static",
-                    "stage": "probe_failed",
-                    "dropStage": "probe_failed",
-                    "error": "timeout",
-                }
-            ],
-            "topFailures": [{"key": "static:bad.example", "count": 1}],
-        },
-    )
+        )
     _write_json(
         fetch_report_path,
         {
@@ -82,6 +84,11 @@ def _write_report_bundle(
             "finishedAt": fetch_finished,
             "summary": {"successfulSources": 1, "failedSources": 1, "outputCount": 2},
             "runtime": {
+                "staticDomainGateWaitMs": 2100,
+                "staticDetailBatchCount": 7,
+                "staticAdaptiveStops": 2,
+                "staticListingTimeoutStops": 3,
+                "staticListingBrowserFallbacks": 4,
                 "timingSummary": {
                     "totalDurationMs": 10000,
                     "wallClockDurationMs": 12000,
@@ -98,7 +105,7 @@ def _write_report_bundle(
                         }
                     ],
                     "detailHeavySources": [],
-                }
+                },
             },
             "sources": [
                 {
@@ -212,9 +219,41 @@ def test_latest_run_report_summary_includes_key_metrics_and_queue_preview(tmp_pa
     )
     assert "site_changed diagnosed: 1" in text
     assert "parser regression queue: 1" in text
+    assert "Static domain-gate wait: 2100 ms" in text
+    assert "Static detail batches: 7" in text
+    assert "Static adaptive stops: 2" in text
+    assert "Static listing timeout stops: 3" in text
+    assert "Static listing browser fallbacks: 4" in text
     assert "oldUrl=https://example.com/careers" in text
     assert "Top Fetch Failures" in text
     assert "Top Discovery Failures" in text
+
+
+def test_latest_run_report_supports_fetch_only_report_roots(tmp_path: Path) -> None:
+    repo_root = tmp_path / "ship"
+    root = repo_root / "data"
+    _write_report_bundle(
+        root,
+        discovery_started="2026-03-28T12:00:00+00:00",
+        discovery_finished="2026-03-28T12:05:00+00:00",
+        fetch_started="2026-03-28T12:06:00+00:00",
+        fetch_finished="2026-03-28T12:10:00+00:00",
+        fetch_source_name="Fetch Only Source",
+        listing_url="https://example.com/fetch-only",
+        write_discovery=False,
+    )
+
+    summary = latest_run_report.build_latest_run_summary(repo_root=repo_root, limit=2)
+    text = latest_run_report.render_text_summary(summary)
+
+    assert summary["paths"]["discoveryReport"] == ""
+    assert int((summary.get("report") or {}).get("fetch", {}).get("outputCount") or 0) == 2
+    assert (
+        int((summary.get("report") or {}).get("discovery", {}).get("queuedCandidateCount") or 0)
+        == 0
+    )
+    assert "Discovery report: (missing)" in text
+    assert "Fetch report:" in text
 
 
 def test_latest_run_report_fails_cleanly_without_fetch_report(tmp_path: Path) -> None:

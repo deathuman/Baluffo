@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import re
 import threading
@@ -47,11 +48,45 @@ class StaticSourceRuntimeConfig:
     static_profile: str
     static_detail_concurrency: int
     static_source_time_budget_s: int
+    static_listing_http_timeout_s: int
+    static_listing_browser_timeout_s: int
+    static_listing_total_budget_s: int
+    static_listing_retries: int
+    static_post_listing_detail_budget_s: int
     low_yield_detail_cap: int
     very_low_yield_detail_cap: int
     listing_only_hosts: list[str]
     default_path_tokens: list[str]
     default_query_keys: list[str]
+
+
+KNOWN_NON_JOB_DETAIL_HOSTS = (
+    "discord.com",
+    "discord.gg",
+    "facebook.com",
+    "forms.gle",
+    "forbes.com",
+    "instagram.com",
+    "medium.com",
+    "reddit.com",
+    "telegram.me",
+    "telegram.org",
+    "tiktok.com",
+    "t.me",
+    "twitter.com",
+    "x.com",
+    "youtube.com",
+    "youtu.be",
+)
+KNOWN_NON_JOB_DETAIL_PATH_TOKENS = (
+    "/cookie",
+    "/cookies",
+    "/covid",
+    "/data-privacy-policy",
+    "/legal",
+    "/privacy",
+    "/terms",
+)
 
 
 @dataclass(frozen=True)
@@ -95,7 +130,12 @@ class StaticHtmlFetcher:
         )
         if remaining_budget_s is not None:
             remaining = float(max(0.0, remaining_budget_s))
-            effective_timeout_s = max(3, min(effective_timeout_s, int(remaining)))
+            if remaining < 1.0:
+                return None
+            effective_timeout_s = min(
+                effective_timeout_s,
+                max(1, int(math.ceil(remaining))),
+            )
             if remaining <= float(effective_timeout_s) * float(max(1, effective_retries + 1)):
                 effective_retries = 0
         return StaticHtmlFetchRequest(
@@ -169,6 +209,41 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
         static_source_time_budget_s=max(
             5, int(os.getenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S") or 25)
         ),
+        static_listing_http_timeout_s=max(
+            1,
+            int(
+                os.getenv("BALUFFO_STATIC_LISTING_HTTP_TIMEOUT_S")
+                or common_config.DEFAULT_STATIC_LISTING_HTTP_TIMEOUT_S
+            ),
+        ),
+        static_listing_browser_timeout_s=max(
+            1,
+            int(
+                os.getenv("BALUFFO_STATIC_LISTING_BROWSER_TIMEOUT_S")
+                or common_config.DEFAULT_STATIC_LISTING_BROWSER_TIMEOUT_S
+            ),
+        ),
+        static_listing_total_budget_s=max(
+            3,
+            int(
+                os.getenv("BALUFFO_STATIC_LISTING_TOTAL_BUDGET_S")
+                or common_config.DEFAULT_STATIC_LISTING_TOTAL_BUDGET_S
+            ),
+        ),
+        static_listing_retries=max(
+            0,
+            int(
+                os.getenv("BALUFFO_STATIC_LISTING_RETRIES")
+                or common_config.DEFAULT_STATIC_LISTING_RETRIES
+            ),
+        ),
+        static_post_listing_detail_budget_s=max(
+            1,
+            int(
+                os.getenv("BALUFFO_STATIC_POST_LISTING_DETAIL_BUDGET_S")
+                or common_config.DEFAULT_STATIC_POST_LISTING_DETAIL_BUDGET_S
+            ),
+        ),
         low_yield_detail_cap=max(4, int(os.getenv("BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP") or 12)),
         very_low_yield_detail_cap=max(
             2, int(os.getenv("BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP") or 6)
@@ -184,6 +259,51 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
         default_path_tokens=default_path_tokens,
         default_query_keys=default_query_keys,
     )
+
+
+def build_static_source_deadline(*, source_started: float, source_budget_s: int) -> float:
+    return float(source_started) + max(1.0, float(int(source_budget_s or 0)))
+
+
+def remaining_static_source_budget_s(*, deadline_monotonic: float) -> float:
+    return max(0.0, float(deadline_monotonic) - float(time.perf_counter()))
+
+
+def static_source_budget_exhausted(*, deadline_monotonic: float, reserve_s: float = 0.0) -> bool:
+    return remaining_static_source_budget_s(deadline_monotonic=deadline_monotonic) <= max(
+        0.0, float(reserve_s)
+    )
+
+
+def effective_timeout_for_remaining_budget(
+    *,
+    timeout_s: int,
+    remaining_budget_s: float | None,
+) -> int:
+    if remaining_budget_s is None:
+        return max(1, int(timeout_s or 1))
+    remaining = float(max(0.0, remaining_budget_s))
+    if remaining < 1.0:
+        return 0
+    return max(1, min(max(1, int(timeout_s or 1)), int(math.ceil(remaining))))
+
+
+def is_known_non_job_detail_url(url: str) -> bool:
+    absolute = normalize_url(url) or clean_text(url)
+    if not absolute:
+        return True
+    parsed = urlparse(absolute)
+    host = (parsed.netloc or "").strip().lower()
+    if not host:
+        return True
+    if any(
+        host == blocked or host.endswith(f".{blocked}") for blocked in KNOWN_NON_JOB_DETAIL_HOSTS
+    ):
+        return True
+    if host == "docs.google.com" and parsed.path.lower().startswith("/forms"):
+        return True
+    path_and_query = f"{parsed.path or ''}?{parsed.query or ''}".lower()
+    return any(token in path_and_query for token in KNOWN_NON_JOB_DETAIL_PATH_TOKENS)
 
 
 def build_static_entry_report(
@@ -214,9 +334,16 @@ def build_static_entry_report(
             "jobs_emitted": 0,
             "fetch_cache_hits": 0,
             "detail_yield_percent": 0,
+            "domain_gate_wait_ms": 0,
+            "domain_gate_wait_count": 0,
             "listing_fetch_ms": 0,
+            "listing_browser_fallbacks": 0,
+            "listing_batch_count": 0,
+            "listing_terminal_reason": "",
             "candidate_extraction_ms": 0,
             "detail_fetch_ms": 0,
+            "detail_batch_count": 0,
+            "detail_pages_skipped_by_adaptive_stop": 0,
             "detail_skipped_by_listing_fingerprint": 0,
             "dead_listing_pages_rejected": 0,
         },
@@ -525,6 +652,9 @@ def add_detail_link(
     host = parsed.netloc.lower()
     if host == "linkedin.com" or host.endswith(".linkedin.com") or host.endswith(".linkedin.cn"):
         link_rejections["dead_listing_page"] += 1
+        return
+    if is_known_non_job_detail_url(absolute):
+        link_rejections["non_job_url"] += 1
         return
     if looks_like_regular_navigation_text(anchor_text) or looks_like_regular_page_url(absolute):
         link_rejections["dead_listing_page"] += 1
@@ -925,6 +1055,8 @@ def process_detail_link(
     remaining_budget_s = float(static_source_time_budget_s) - float(
         time.perf_counter() - source_started
     )
+    if remaining_budget_s < 1.0:
+        raise TimeoutError(f"time budget exceeded ({static_source_time_budget_s}s)")
     detail_html, cache_hit = fetch_html_cached(
         detail,
         remaining_budget_s=remaining_budget_s,

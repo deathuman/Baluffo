@@ -268,6 +268,28 @@ def default_fetch_text(url: str, timeout_s: int, request: RequestConfig | None =
     return common_default_fetch_text(url, timeout_s, headers=headers)
 
 
+async def async_fetch_text_httpx(
+    client: Any,
+    url: str,
+    timeout_s: int,
+    *,
+    request: RequestConfig | None = None,
+) -> str:
+    if httpx is None:
+        raise RuntimeError("httpx is not installed")
+    timeout = httpx.Timeout(float(max(1, timeout_s)))
+    try:
+        headers = build_headers(request or default_request_config(timeout_s=timeout_s))
+        response = await client.get(url, timeout=timeout, headers=headers)
+        response.raise_for_status()
+        return str(response.text)
+    except httpx.HTTPStatusError as exc:
+        code = int(getattr(exc.response, "status_code", 0) or 0)
+        raise RuntimeError(f"HTTP {code} for {url}") from exc
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"Network error for {url}: {exc}") from exc
+
+
 class AsyncHttpTextFetcher:
     def __init__(self, *, max_connections: int = DEFAULT_ADAPTER_HTTP_CONCURRENCY) -> None:
         if httpx is None:
@@ -303,17 +325,7 @@ class AsyncHttpTextFetcher:
             self._loop.close()
 
     async def _fetch(self, url: str, timeout_s: int, request: RequestConfig | None = None) -> str:
-        timeout = httpx.Timeout(float(max(1, timeout_s)))
-        try:
-            headers = build_headers(request or default_request_config(timeout_s=timeout_s))
-            response = await self._client.get(url, timeout=timeout, headers=headers)
-            response.raise_for_status()
-            return response.text
-        except httpx.HTTPStatusError as exc:
-            code = int(getattr(exc.response, "status_code", 0) or 0)
-            raise RuntimeError(f"HTTP {code} for {url}") from exc
-        except httpx.HTTPError as exc:
-            raise RuntimeError(f"Network error for {url}: {exc}") from exc
+        return await async_fetch_text_httpx(self._client, url, timeout_s, request=request)
 
     async def _aclose(self) -> None:
         await self._client.aclose()

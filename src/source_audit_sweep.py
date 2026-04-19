@@ -154,7 +154,13 @@ def _family_name(
 
 def _aggregate_report_sources(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     aggregated: dict[str, dict[str, Any]] = {}
-    report_sources = report.get("sources") if isinstance(report.get("sources"), list) else []
+    report_sources = (
+        report.get("sourceFamilies")
+        if isinstance(report.get("sourceFamilies"), list)
+        else report.get("sources")
+        if isinstance(report.get("sources"), list)
+        else []
+    )
     for family_row in report_sources:
         if not isinstance(family_row, dict):
             continue
@@ -539,7 +545,9 @@ def build_report(
             "fetchFinishedAt": fetch_finished_at,
             "manifestRunId": manifest_run_id,
             "manifestRunTime": safe_text((manifest or {}).get("lastRunTime")),
-            "reportSourceCount": len(fetch_report.get("sources") or []),
+            "reportSourceCount": len(
+                fetch_report.get("sourceFamilies") or fetch_report.get("sources") or []
+            ),
             "registryActiveCount": len(registry_active),
             "sourceStateCount": len(source_state),
             "unifiedLightCount": len(unified_light),

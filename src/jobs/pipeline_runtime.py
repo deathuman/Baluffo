@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_bootstrap import PipelinePaths
-from src.jobs.text_utils import clean_text
+from src.jobs.text_utils import clean_text, norm_text
 from src.shared.live_task import (
     append_live_task_event,
     build_live_task_payload,
@@ -35,7 +35,18 @@ class PipelineTaskRuntime:
     current_phase_key: str = "selecting_sources"
     current_phase_label: str = "Selecting sources"
     current_output_count: int = 0
+    current_raw_fetched_count: int = 0
     show_progress: bool = False
+    report_lock: threading.Lock | None = None
+    last_report_write_monotonic: float = 0.0
+    last_report_phase_key: str = ""
+    completed_source_reports: dict[str, dict[str, Any]] | None = None
+    completed_source_order: list[str] | None = None
+    report_condition: threading.Condition | None = None
+    report_requested_generation: int = 0
+    report_completed_generation: int = 0
+    report_stop_requested: bool = False
+    report_thread: threading.Thread | None = None
 
     def __post_init__(self) -> None:
         if self.task_rows is None:
@@ -52,6 +63,14 @@ class PipelineTaskRuntime:
             self.domain_gates = {}
         if self.recent_events is None:
             self.recent_events = []
+        if self.report_lock is None:
+            self.report_lock = threading.Lock()
+        if self.completed_source_reports is None:
+            self.completed_source_reports = {}
+        if self.completed_source_order is None:
+            self.completed_source_order = []
+        if self.report_condition is None:
+            self.report_condition = threading.Condition(threading.Lock())
 
 
 def build_fetch_task_progress_payload(
@@ -150,12 +169,242 @@ def initialize_task_runtime(
         current_phase_key="selecting_sources",
         current_phase_label="Selecting sources",
         current_output_count=0,
+        current_raw_fetched_count=0,
         show_progress=bool(show_progress),
+        report_lock=threading.Lock(),
+        last_report_write_monotonic=0.0,
+        last_report_phase_key="",
+        completed_source_reports={},
+        completed_source_order=[],
+        report_condition=threading.Condition(threading.Lock()),
+        report_requested_generation=0,
+        report_completed_generation=0,
+        report_stop_requested=False,
+        report_thread=None,
     )
 
 
 def snapshot_task_rows(task_rows: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     return snapshot_live_task_work_items(task_rows)
+
+
+def build_detailed_source_rows(
+    task_rows: dict[str, dict[str, Any]],
+    source_reports: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    report_by_name = {
+        clean_text(row.get("name")): dict(row)
+        for row in source_reports
+        if isinstance(row, dict) and clean_text(row.get("name"))
+    }
+    detailed_rows: list[dict[str, Any]] = []
+    for task_row in snapshot_task_rows(task_rows):
+        if not isinstance(task_row, dict):
+            continue
+        name = clean_text(task_row.get("name"))
+        if not name:
+            continue
+        progress = task_row.get("progress") if isinstance(task_row.get("progress"), dict) else {}
+        counts = progress.get("counts") if isinstance(progress.get("counts"), dict) else {}
+        report_row = dict(report_by_name.get(name) or {})
+        merged: dict[str, Any] = {**report_row}
+        merged["name"] = name
+        merged["status"] = (
+            norm_text(task_row.get("status")) or norm_text(report_row.get("status")) or "queued"
+        )
+        merged["startedAt"] = clean_text(task_row.get("startedAt")) or clean_text(
+            report_row.get("startedAt")
+        )
+        merged["finishedAt"] = clean_text(task_row.get("finishedAt")) or clean_text(
+            report_row.get("finishedAt")
+        )
+        merged["heartbeatAt"] = clean_text(task_row.get("heartbeatAt")) or clean_text(
+            report_row.get("heartbeatAt")
+        )
+        merged["durationMs"] = max(
+            0,
+            int(report_row.get("durationMs") or 0),
+            int(task_row.get("durationMs") or 0),
+            int((counts or {}).get("durationMs") or 0),
+        )
+        merged["fetchedCount"] = max(
+            0,
+            int(report_row.get("fetchedCount") or 0),
+            int((counts or {}).get("fetchedCount") or 0),
+        )
+        merged["keptCount"] = max(
+            0,
+            int(report_row.get("keptCount") or 0),
+            int((counts or {}).get("keptCount") or 0),
+        )
+        merged["lowConfidenceDropped"] = max(
+            0,
+            int(report_row.get("lowConfidenceDropped") or 0),
+            int((counts or {}).get("lowConfidenceDropped") or 0),
+        )
+        merged["error"] = clean_text(report_row.get("error")) or clean_text(task_row.get("error"))
+        if isinstance(progress, dict) and progress:
+            merged["progress"] = dict(progress)
+        detailed_rows.append(merged)
+    return detailed_rows
+
+
+def build_active_source_rows(runtime: PipelineTaskRuntime) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    report_by_name = runtime.completed_source_reports or {}
+    for name in list(runtime.completed_source_order or []):
+        task_row = runtime.task_rows.get(name) if isinstance(runtime.task_rows, dict) else None
+        report_row = report_by_name.get(name)
+        if not isinstance(task_row, dict) or not isinstance(report_row, dict):
+            continue
+        merged = dict(report_row)
+        merged["name"] = name
+        merged["status"] = (
+            norm_text(task_row.get("status")) or norm_text(report_row.get("status")) or "ok"
+        )
+        merged["startedAt"] = clean_text(task_row.get("startedAt")) or clean_text(
+            report_row.get("startedAt")
+        )
+        merged["finishedAt"] = clean_text(task_row.get("finishedAt")) or clean_text(
+            report_row.get("finishedAt")
+        )
+        merged["heartbeatAt"] = clean_text(task_row.get("heartbeatAt")) or clean_text(
+            report_row.get("heartbeatAt")
+        )
+        merged["durationMs"] = max(
+            0,
+            int(task_row.get("durationMs") or 0),
+            int(report_row.get("durationMs") or 0),
+        )
+        merged["fetchedCount"] = max(
+            0,
+            int(report_row.get("fetchedCount") or 0),
+        )
+        merged["keptCount"] = max(
+            0,
+            int(report_row.get("keptCount") or 0),
+        )
+        merged["error"] = clean_text(task_row.get("error")) or clean_text(report_row.get("error"))
+        rows.append(merged)
+    return rows
+
+
+def build_active_pipeline_summary(
+    *,
+    runtime: PipelineTaskRuntime,
+    rows_snapshot: list[dict[str, Any]],
+) -> dict[str, Any]:
+    source_count = len(rows_snapshot)
+    successful_sources = sum(1 for row in rows_snapshot if row.get("status") == "ok")
+    failed_sources = sum(1 for row in rows_snapshot if row.get("status") == "error")
+    excluded_sources = sum(1 for row in rows_snapshot if row.get("status") == "excluded")
+    output_count = max(0, int(runtime.current_output_count or 0))
+    raw_fetched = max(0, int(runtime.current_raw_fetched_count or 0))
+    return {
+        "rawFetched": raw_fetched,
+        "rawFetchedCount": raw_fetched,
+        "canonicalKept": output_count,
+        "outputCount": output_count,
+        "finalOutput": output_count,
+        "sourceCount": source_count,
+        "successfulSources": successful_sources,
+        "failedSources": failed_sources,
+        "excludedSources": excluded_sources,
+    }
+
+
+def record_completed_source_report(
+    runtime: PipelineTaskRuntime,
+    *,
+    source_name: str,
+    report: dict[str, Any],
+) -> None:
+    name = clean_text(source_name)
+    if not name:
+        return
+    report_copy = dict(report)
+    report_copy["name"] = name
+    if getattr(runtime, "completed_source_reports", None) is None:
+        runtime.completed_source_reports = {}
+    if getattr(runtime, "completed_source_order", None) is None:
+        runtime.completed_source_order = []
+    if not hasattr(runtime, "current_raw_fetched_count"):
+        runtime.current_raw_fetched_count = 0
+    if not hasattr(runtime, "current_output_count"):
+        runtime.current_output_count = 0
+    with runtime.task_lock:
+        runtime.current_raw_fetched_count = max(
+            0, int(runtime.current_raw_fetched_count or 0)
+        ) + max(0, int(report_copy.get("fetchedCount") or 0))
+        runtime.current_output_count = max(0, int(runtime.current_output_count or 0)) + max(
+            0, int(report_copy.get("keptCount") or 0)
+        )
+        runtime.completed_source_reports[name] = report_copy
+        if name not in runtime.completed_source_order:
+            runtime.completed_source_order.append(name)
+
+
+def make_progress_report_dispatcher(
+    *,
+    runtime: PipelineTaskRuntime,
+    write_progress_report: Callable[..., None],
+    coalesce_seconds: float = 0.25,
+) -> tuple[Callable[..., None], Callable[[], None]]:
+    def reporter_loop() -> None:
+        while True:
+            with runtime.report_condition:
+                runtime.report_condition.wait_for(
+                    lambda: (
+                        runtime.report_stop_requested
+                        or runtime.report_requested_generation
+                        != runtime.report_completed_generation
+                    )
+                )
+                if (
+                    runtime.report_stop_requested
+                    and runtime.report_requested_generation == runtime.report_completed_generation
+                ):
+                    return
+                target_generation = runtime.report_requested_generation
+                runtime.report_condition.wait(timeout=max(0.0, float(coalesce_seconds)))
+                target_generation = runtime.report_requested_generation
+            write_progress_report(force=False)
+            with runtime.report_condition:
+                runtime.report_completed_generation = max(
+                    int(runtime.report_completed_generation or 0),
+                    int(target_generation or 0),
+                )
+                if (
+                    runtime.report_stop_requested
+                    and runtime.report_requested_generation == runtime.report_completed_generation
+                ):
+                    return
+
+    def request_progress_report(*, force: bool = False) -> None:
+        if force:
+            write_progress_report(force=True)
+            return
+        with runtime.report_condition:
+            runtime.report_requested_generation = int(runtime.report_requested_generation or 0) + 1
+            runtime.report_condition.notify_all()
+
+    def stop_progress_reporter() -> None:
+        thread = runtime.report_thread
+        if thread is None:
+            return
+        with runtime.report_condition:
+            runtime.report_stop_requested = True
+            runtime.report_condition.notify_all()
+        thread.join(timeout=5)
+        runtime.report_thread = None
+
+    runtime.report_thread = threading.Thread(
+        target=reporter_loop,
+        name=f"fetch-progress-reporter-{clean_text(runtime.run_id) or 'run'}",
+        daemon=True,
+    )
+    runtime.report_thread.start()
+    return request_progress_report, stop_progress_reporter
 
 
 def build_fetch_live_task_payload(
@@ -244,6 +493,7 @@ def update_fetch_work_item_progress(
     counts: dict[str, Any] | None = None,
     target_label: str = "",
     target_url: str = "",
+    wait_reason: str = "",
     emit_event: bool = False,
     event_level: str = "muted",
     event_message: str = "",
@@ -263,6 +513,7 @@ def update_fetch_work_item_progress(
             counts=dict(next_counts),
             target_label=str(target_label or progress.get("targetLabel") or "").strip(),
             target_url=str(target_url or progress.get("targetUrl") or "").strip(),
+            wait_reason=str(wait_reason or progress.get("waitReason") or "").strip(),
             updated_at=now_iso(),
         )
         row["progress"] = next_progress
@@ -298,74 +549,71 @@ def write_progress_report(
     phase_key: str,
     phase_label: str,
     run_id: str = "",
+    force: bool = False,
 ) -> None:
-    update_fetch_runtime_phase(
-        runtime,
-        phase_key=phase_key,
-        phase_label=phase_label,
-        output_count=len(canonical_rows),
-    )
-    deduplicator = deduplicator_factory()
-    deduped_progress_rows = deduplicator.process(canonical_rows)
-    dedup_progress_stats = deduplicator.stats
-    dedup_progress_stats["outputCount"] = len(deduped_progress_rows)
-    progress_lifecycle_counts = lifecycle_counts(lifecycle_rows)
-    progress_payload = normalize_fetch_report_payload(
-        {
-            "schemaVersion": schema_version,
-            "runId": run_id,
-            "startedAt": started_at,
-            "finishedAt": "",
-            "runtime": {
-                **dict(runtime_payload),
-                "lifecycle": {
-                    "owner": "fetch_report",
-                    "heartbeatAt": now_iso(),
-                },
-            },
-            "taskProgress": build_fetch_task_progress_payload(
-                phase_key=phase_key,
-                phase_label=phase_label,
-                task_rows=runtime.task_rows,
-                output_count=int(dedup_progress_stats.get("outputCount") or 0),
-                finished=False,
-            ),
-            "workItems": snapshot_task_rows(runtime.task_rows),
-            "recentEvents": list(runtime.recent_events),
-            "summary": build_pipeline_summary(
-                dedup_progress_stats,
-                deduped_progress_rows,
-                source_reports,
+    with runtime.report_lock:
+        now_mono = time.perf_counter()
+        phase_changed = str(phase_key or "").strip() != runtime.last_report_phase_key
+        if (
+            not force
+            and not phase_changed
+            and (now_mono - runtime.last_report_write_monotonic) < 0.75
+        ):
+            return
+        runtime.last_report_write_monotonic = now_mono
+        runtime.last_report_phase_key = str(phase_key or "").strip()
+        update_fetch_runtime_phase(
+            runtime,
+            phase_key=phase_key,
+            phase_label=phase_label,
+            output_count=max(
+                max(0, int(runtime.current_output_count or 0)),
                 len(canonical_rows),
-                False,
-                len(
-                    [
-                        row
-                        for row in studio_source_registry
-                        if bool(row.get("enabledByDefault", True))
-                    ]
-                ),
-                len(load_registry_from_file(paths.pending_registry_path, [])),
-                read_approved_since_last_run(paths.approval_state_path),
-                json_bytes=0,
-                csv_bytes=0,
-                light_json_bytes=0,
-                lifecycle_counts_map=progress_lifecycle_counts,
             ),
-            "sources": source_reports,
-            "outputs": {
-                "json": str(paths.json_path),
-                "csv": str(paths.csv_path),
-                "lightJson": str(paths.light_json_path),
-                "report": str(paths.report_path),
-                "lifecycleState": str(paths.lifecycle_state_path),
-                "changed": {"json": False, "csv": False, "lightJson": False},
-            },
-        }
-    )
-    write_text_if_changed(
-        paths.report_path, json.dumps(progress_payload, indent=2, ensure_ascii=False)
-    )
+        )
+        rows_snapshot = snapshot_task_rows(runtime.task_rows)
+        active_source_rows = build_active_source_rows(runtime)
+        progress_payload = normalize_fetch_report_payload(
+            {
+                "schemaVersion": schema_version,
+                "runId": run_id,
+                "startedAt": started_at,
+                "finishedAt": "",
+                "runtime": {
+                    **dict(runtime_payload),
+                    "lifecycle": {
+                        "owner": "fetch_report",
+                        "heartbeatAt": now_iso(),
+                    },
+                },
+                "taskProgress": build_fetch_task_progress_payload(
+                    phase_key=phase_key,
+                    phase_label=phase_label,
+                    task_rows=runtime.task_rows,
+                    output_count=max(0, int(runtime.current_output_count or 0)),
+                    finished=False,
+                ),
+                "workItems": rows_snapshot,
+                "recentEvents": list(runtime.recent_events),
+                "summary": build_active_pipeline_summary(
+                    runtime=runtime,
+                    rows_snapshot=rows_snapshot,
+                ),
+                "sources": active_source_rows,
+                "sourceFamilies": [],
+                "outputs": {
+                    "json": str(paths.json_path),
+                    "csv": str(paths.csv_path),
+                    "lightJson": str(paths.light_json_path),
+                    "report": str(paths.report_path),
+                    "lifecycleState": str(paths.lifecycle_state_path),
+                    "changed": {"json": False, "csv": False, "lightJson": False},
+                },
+            }
+        )
+        write_text_if_changed(
+            paths.report_path, json.dumps(progress_payload, indent=2, ensure_ascii=False)
+        )
 
 
 def make_task_state_writer(
@@ -408,18 +656,51 @@ def make_fetch_text_limited(
     max_per_domain: int,
     fetch_text_impl: Callable[[str, int], str],
     write_task_state: Callable[..., None],
+    gate_namespace: str = "default",
+    wait_reason_label: str = "",
+    collect_wait_stats: bool = False,
 ) -> Callable[[str, int], str]:
     def fetch_text_limited(url: str, timeout: int) -> str:
         host = clean_text(urlparse(url).netloc).lower() or "_unknown"
+        gate_key = f"{clean_text(gate_namespace) or 'default'}::{host}"
         with runtime.domain_lock:
-            gate = runtime.domain_gates.get(host)
+            gate = runtime.domain_gates.get(gate_key)
             if gate is None:
                 gate = threading.BoundedSemaphore(max_per_domain)
-                runtime.domain_gates[host] = gate
+                runtime.domain_gates[gate_key] = gate
+        current = clean_text(getattr(runtime.thread_local, "source_name", ""))
+        wait_started = time.perf_counter()
+        if current and current in runtime.task_rows and wait_reason_label:
+            update_fetch_work_item_progress(
+                runtime,
+                current,
+                target_label=host,
+                target_url=str(url or "").strip(),
+                wait_reason=wait_reason_label,
+            )
+            write_task_state()
         gate.acquire()
         try:
-            current = clean_text(getattr(runtime.thread_local, "source_name", ""))
+            wait_ms = int((time.perf_counter() - wait_started) * 1000)
             if current and current in runtime.task_rows:
+                if collect_wait_stats and wait_ms > 0:
+                    with runtime.task_lock:
+                        row = runtime.task_rows.get(current)
+                        if isinstance(row, dict):
+                            row["_staticDomainGateWaitMs"] = int(
+                                row.get("_staticDomainGateWaitMs") or 0
+                            ) + max(0, wait_ms)
+                            row["_staticDomainGateWaitCount"] = (
+                                int(row.get("_staticDomainGateWaitCount") or 0) + 1
+                            )
+                if wait_reason_label:
+                    update_fetch_work_item_progress(
+                        runtime,
+                        current,
+                        target_label=host,
+                        target_url=str(url or "").strip(),
+                        wait_reason="",
+                    )
                 now_mono = time.perf_counter()
                 if (now_mono - float(runtime.last_heartbeat_write.get(current) or 0.0)) >= 4.0:
                     with runtime.task_lock:
@@ -432,6 +713,8 @@ def make_fetch_text_limited(
                             )
                             progress["targetUrl"] = str(url or "").strip()
                             progress["targetLabel"] = host
+                            if wait_reason_label:
+                                progress["waitReason"] = ""
                             progress["updatedAt"] = runtime.task_rows[current]["heartbeatAt"]
                             runtime.task_rows[current]["progress"] = progress
                             started_mono = float(
@@ -470,4 +753,15 @@ def make_fetch_text_limited(
         finally:
             gate.release()
 
+    def _gate_wait_stats(source_name: str) -> dict[str, int]:
+        with runtime.task_lock:
+            row = runtime.task_rows.get(clean_text(source_name))
+            if not isinstance(row, dict):
+                return {"domainGateWaitMs": 0, "domainGateWaitCount": 0}
+            return {
+                "domainGateWaitMs": int(row.get("_staticDomainGateWaitMs") or 0),
+                "domainGateWaitCount": int(row.get("_staticDomainGateWaitCount") or 0),
+            }
+
+    fetch_text_limited._baluffo_gate_wait_stats = _gate_wait_stats
     return fetch_text_limited

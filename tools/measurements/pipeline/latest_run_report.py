@@ -109,10 +109,26 @@ def _preview_rows(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]
     return preview
 
 
+def _empty_discovery_report() -> dict[str, Any]:
+    return {
+        "startedAt": "",
+        "finishedAt": "",
+        "summary": {},
+        "runtime": {},
+        "failures": [],
+        "topFailures": [],
+        "candidates": [],
+    }
+
+
 def build_latest_run_summary(*, repo_root: Path | None = None, limit: int = 5) -> dict[str, Any]:
     root = Path(repo_root or REPO_ROOT).resolve()
-    discovery_report_path = _resolve_latest_artifact_path(root, DISCOVERY_REPORT_NAME)
     fetch_report_path = _resolve_latest_artifact_path(root, FETCH_REPORT_NAME)
+    discovery_report_path: Path | None = None
+    try:
+        discovery_report_path = _resolve_latest_artifact_path(root, DISCOVERY_REPORT_NAME)
+    except FileNotFoundError:
+        discovery_report_path = None
     jobs_unified_path = fetch_report_path.parent / JOBS_UNIFIED_NAME
     if not jobs_unified_path.is_file():
         try:
@@ -120,10 +136,17 @@ def build_latest_run_summary(*, repo_root: Path | None = None, limit: int = 5) -
         except FileNotFoundError:
             jobs_unified_path = jobs_unified_path
 
-    discovery_report = _read_json(discovery_report_path)
     fetch_report = _read_json(fetch_report_path)
+    discovery_report = (
+        _read_json(discovery_report_path)
+        if discovery_report_path is not None
+        else _empty_discovery_report()
+    )
     if not isinstance(discovery_report, dict):
-        raise TypeError(f"Discovery report must be a JSON object: {discovery_report_path}")
+        raise TypeError(
+            "Discovery report must be a JSON object: "
+            f"{discovery_report_path or DISCOVERY_REPORT_NAME}"
+        )
     if not isinstance(fetch_report, dict):
         raise TypeError(f"Fetch report must be a JSON object: {fetch_report_path}")
 
@@ -142,18 +165,30 @@ def build_latest_run_summary(*, repo_root: Path | None = None, limit: int = 5) -
     parser_regression_queue_path = fetch_report_path.parent / PARSER_REGRESSION_QUEUE_NAME
     browser_fallback_queue_path = fetch_report_path.parent / BROWSER_FALLBACK_QUEUE_NAME
     parser_regression_rows = _read_json_list(parser_regression_queue_path)
+    fetch_runtime = (
+        fetch_report.get("runtime") if isinstance(fetch_report.get("runtime"), dict) else {}
+    )
 
     return {
         "generatedAt": audit.now_iso(),
         "repoRoot": str(root),
         "paths": {
-            "discoveryReport": str(discovery_report_path),
+            "discoveryReport": str(discovery_report_path) if discovery_report_path else "",
             "fetchReport": str(fetch_report_path),
             "jobsUnified": str(jobs_unified_path) if jobs_unified_path.is_file() else "",
             "parserRegressionQueue": str(parser_regression_queue_path),
             "browserFallbackQueue": str(browser_fallback_queue_path),
         },
         "report": audit_report,
+        "fetchRuntimeStatic": {
+            "staticDomainGateWaitMs": int(fetch_runtime.get("staticDomainGateWaitMs") or 0),
+            "staticDetailBatchCount": int(fetch_runtime.get("staticDetailBatchCount") or 0),
+            "staticAdaptiveStops": int(fetch_runtime.get("staticAdaptiveStops") or 0),
+            "staticListingTimeoutStops": int(fetch_runtime.get("staticListingTimeoutStops") or 0),
+            "staticListingBrowserFallbacks": int(
+                fetch_runtime.get("staticListingBrowserFallbacks") or 0
+            ),
+        },
         "parserRegressionQueuePreview": _preview_rows(parser_regression_rows, limit),
     }
 
@@ -168,6 +203,11 @@ def render_text_summary(summary: dict[str, Any]) -> str:
     preview = [
         row for row in (summary.get("parserRegressionQueuePreview") or []) if isinstance(row, dict)
     ]
+    fetch_runtime_static = (
+        summary.get("fetchRuntimeStatic")
+        if isinstance(summary.get("fetchRuntimeStatic"), dict)
+        else {}
+    )
     lines = [
         "# Latest Run Report",
         "",
@@ -194,6 +234,11 @@ def render_text_summary(summary: dict[str, Any]) -> str:
         f"- Failed sources: {int(fetch.get('failedSourcesCount') or 0)}",
         f"- Output rows: {int(fetch.get('outputCount') or 0)}",
         f"- Browser fallback queue: {int(fetch.get('browserFallbackQueueCount') or 0)}",
+        f"- Static domain-gate wait: {int(fetch_runtime_static.get('staticDomainGateWaitMs') or 0)} ms",
+        f"- Static detail batches: {int(fetch_runtime_static.get('staticDetailBatchCount') or 0)}",
+        f"- Static adaptive stops: {int(fetch_runtime_static.get('staticAdaptiveStops') or 0)}",
+        f"- Static listing timeout stops: {int(fetch_runtime_static.get('staticListingTimeoutStops') or 0)}",
+        f"- Static listing browser fallbacks: {int(fetch_runtime_static.get('staticListingBrowserFallbacks') or 0)}",
         "",
         "## Triage",
         f"- site_changed diagnosed: {int(fetch.get('siteChangedDiagnosedCount') or 0)}",

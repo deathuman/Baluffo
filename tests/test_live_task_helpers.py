@@ -46,6 +46,18 @@ def test_build_live_task_contract_fields_emits_tasks_alias_without_shared_rows()
     assert fields["recentEvents"][0]["message"] == "Running source 1"
 
 
+def test_build_live_task_progress_payload_preserves_wait_reason() -> None:
+    payload = build_live_task_progress_payload(
+        active=True,
+        phase_key="fetching",
+        phase_label="Fetching",
+        counts={"runningTasks": 1},
+        wait_reason="domain_gate",
+    )
+
+    assert payload["waitReason"] == "domain_gate"
+
+
 def test_normalize_live_task_payload_accepts_legacy_tasks_input() -> None:
     payload = {
         "taskType": "fetch",

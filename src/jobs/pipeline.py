@@ -26,6 +26,7 @@ from src.jobs import transport as transport_pkg
 from src.jobs.adapters import community as community_adapter
 from src.jobs.adapters import static as static_adapter
 from src.jobs.adapters.api import default_source_loaders as adapters_default_source_loaders
+from src.jobs.common import config as common_config
 from src.jobs.common import health as _health_module
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.common.contracts import normalize_task_state_payload
@@ -46,6 +47,7 @@ from src.jobs.pipeline_runtime import (
 from src.jobs.pipeline_runtime import (
     initialize_task_runtime,
     make_fetch_text_limited,
+    make_progress_report_dispatcher,
     make_task_state_writer,
 )
 from src.jobs.pipeline_runtime import (
@@ -75,7 +77,10 @@ from src.pipeline_io import (
     write_atomic_if_changed as _write_atomic_if_changed,
 )
 from src.pipeline_io import (
-    write_text_if_changed,
+    write_hot_text_if_changed,
+)
+from src.pipeline_io import (
+    write_text_if_changed as _write_text_if_changed,
 )
 from src.shared.utils import now_iso
 
@@ -108,6 +113,7 @@ LIGHTWEIGHT_OUTPUT_FIELDS = common_config.LIGHTWEIGHT_OUTPUT_FIELDS
 
 load_social_config = common_social.load_social_config
 default_fetch_text = transport_pkg.default_fetch_text
+async_fetch_text_httpx = transport_pkg.async_fetch_text_httpx
 resolve_fetch_text_impl = transport_pkg.resolve_fetch_text_impl
 build_redirect_resolver = transport_pkg.build_redirect_resolver
 load_registry_from_file = common_sources.load_registry_from_file
@@ -121,6 +127,7 @@ snapshot_task_rows = _snapshot_task_rows
 serialize_rows_for_csv = _serialize_rows_for_csv
 serialize_rows_for_json = _serialize_rows_for_json
 write_atomic_if_changed = _write_atomic_if_changed
+write_text_if_changed = _write_text_if_changed
 
 canonicalize_job = canonicalize_pkg.canonicalize_job
 CanonicalNormalizer = canonicalize_pkg.CanonicalNormalizer
@@ -318,6 +325,11 @@ def run_pipeline(
         fetch_strategy=fetch_strategy,
         adapter_http_concurrency=adapter_http_concurrency,
     )
+    static_listing_async_fetch = (
+        (lambda client, _job, url, timeout_s: async_fetch_text_httpx(client, url, timeout_s))
+        if fetch_client == "httpx_async"
+        else None
+    )
     redirect_resolver = build_redirect_resolver(
         timeout_s=timeout_s,
         max_connections=google_sheets_redirect_concurrency,
@@ -459,6 +471,8 @@ def run_pipeline(
         started_at=started_at,
         show_progress=show_progress,
     )
+    if canonical_rows:
+        task_runtime.current_output_count = len(canonical_rows)
     write_task_state = make_task_state_writer(
         runtime=task_runtime,
         run_id=run_id,
@@ -466,7 +480,7 @@ def run_pipeline(
         report_path=str(paths.report_path),
         task_state_path=paths.task_state_path,
         normalize_task_state_payload=normalize_task_state_payload,
-        write_text_if_changed=write_text_if_changed,
+        write_text_if_changed=write_hot_text_if_changed,
     )
     fetch_text_limited = make_fetch_text_limited(
         runtime=task_runtime,
@@ -474,11 +488,20 @@ def run_pipeline(
         fetch_text_impl=fetch_text_impl,
         write_task_state=write_task_state,
     )
+    fetch_text_static_limited = make_fetch_text_limited(
+        runtime=task_runtime,
+        max_per_domain=common_config.DEFAULT_STATIC_FETCH_MAX_PER_DOMAIN,
+        fetch_text_impl=fetch_text_impl,
+        write_task_state=write_task_state,
+        gate_namespace="static",
+        wait_reason_label="domain_gate",
+        collect_wait_stats=True,
+    )
     progress_phase = {
         "key": "selecting_sources",
         "label": "Selecting sources",
     }
-    write_progress_report = lambda: write_pipeline_progress_report(
+    write_progress_report_sync = lambda force=False: write_pipeline_progress_report(
         runtime=task_runtime,
         canonical_rows=canonical_rows,
         lifecycle_rows=lifecycle_rows,
@@ -493,13 +516,18 @@ def run_pipeline(
         lifecycle_counts=lifecycle_counts,
         build_pipeline_summary=build_pipeline_summary,
         normalize_fetch_report_payload=normalize_fetch_report_payload,
-        write_text_if_changed=write_text_if_changed,
+        write_text_if_changed=write_hot_text_if_changed,
         deduplicator_factory=CanonicalDeduplicator,
         phase_key=str(progress_phase["key"]),
         phase_label=str(progress_phase["label"]),
         run_id=run_id,
+        force=bool(force),
     )
-    write_progress_report()
+    write_progress_report, stop_progress_reporter = make_progress_report_dispatcher(
+        runtime=task_runtime,
+        write_progress_report=write_progress_report_sync,
+    )
+    write_progress_report(force=True)
 
     stage_config = SourceExecutionStageConfig(
         max_workers=max_workers,
@@ -516,76 +544,82 @@ def run_pipeline(
     progress_phase["key"] = "executing_sources"
     progress_phase["label"] = "Executing sources"
     try:
-        run_source_execution_stage(
-            config=stage_config,
+        try:
+            run_source_execution_stage(
+                config=stage_config,
+                selected_loaders=selected_loaders,
+                fetch_text_limited=fetch_text_limited,
+                fetch_text_static_limited=fetch_text_static_limited,
+                static_listing_async_fetch=static_listing_async_fetch,
+                source_state_rows=source_state_rows,
+                redirect_resolver=redirect_resolver,
+                task_runtime=task_runtime,
+                task_rows=task_runtime.task_rows,
+                task_lock=task_runtime.task_lock,
+                thread_local=task_runtime.thread_local,
+                write_task_state=write_task_state,
+                write_progress_report=write_progress_report,
+                canonical_rows=canonical_rows,
+                source_reports=source_reports,
+            )
+        finally:
+            if async_fetcher is not None:
+                async_fetcher.close()
+            close_redirect_resolver = getattr(redirect_resolver, "close", None)
+            if callable(close_redirect_resolver):
+                close_redirect_resolver()
+
+        if using_default_loaders:
+            append_excluded_default_sources(source_reports)
+
+        # Attach provenance for static sources (e.g. game_studios_sheet) so fetch report can filter by sourceDirectory
+        _static_name_to_row: dict[str, dict[str, Any]] = {}
+        for _row in registry_entries("static"):
+            _name = static_adapter.static_source_name_for_registry_row(_row)
+            _static_name_to_row[_name] = _row
+        for _report in source_reports:
+            if not isinstance(_report, dict):
+                continue
+            _name = clean_text(_report.get("name"))
+            _reg = _static_name_to_row.get(_name)
+            if _reg is not None:
+                if clean_text(_reg.get("sourceDirectory")):
+                    _report["sourceDirectory"] = clean_text(_reg.get("sourceDirectory"))
+                if clean_text(_reg.get("sourceDirectoryUrl")):
+                    _report["sourceDirectoryUrl"] = clean_text(_reg.get("sourceDirectoryUrl"))
+                if clean_text(_reg.get("listing_url")):
+                    _report["listingUrl"] = clean_text(_reg.get("listing_url"))
+
+        progress_phase["key"] = "merging_results"
+        progress_phase["label"] = "Merging results"
+        write_progress_report(force=True)
+        stop_progress_reporter()
+        return pipeline_finalize_pkg.finalize_pipeline_run(
+            sys.modules[__name__],
+            paths=paths,
+            source_reports=source_reports,
+            canonical_rows=canonical_rows,
+            using_default_loaders=using_default_loaders,
             selected_loaders=selected_loaders,
-            fetch_text_limited=fetch_text_limited,
+            effective_seed_from_existing_output=effective_seed_from_existing_output,
+            preserve_previous_on_empty=preserve_previous_on_empty,
             source_state_rows=source_state_rows,
+            lifecycle_rows=lifecycle_rows,
+            runtime_payload=runtime_payload,
             redirect_resolver=redirect_resolver,
             task_runtime=task_runtime,
-            task_rows=task_runtime.task_rows,
-            task_lock=task_runtime.task_lock,
-            thread_local=task_runtime.thread_local,
-            write_task_state=write_task_state,
+            progress_phase=progress_phase,
             write_progress_report=write_progress_report,
-            canonical_rows=canonical_rows,
-            source_reports=source_reports,
+            write_task_state=write_task_state,
+            started_at=started_at,
+            run_started_mono=run_started_mono,
+            run_id=run_id,
+            circuit_breaker_failures=circuit_breaker_failures,
+            circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+            circuit_breaker_zero_kept=circuit_breaker_zero_kept,
         )
     finally:
-        if async_fetcher is not None:
-            async_fetcher.close()
-        close_redirect_resolver = getattr(redirect_resolver, "close", None)
-        if callable(close_redirect_resolver):
-            close_redirect_resolver()
-
-    if using_default_loaders:
-        append_excluded_default_sources(source_reports)
-
-    # Attach provenance for static sources (e.g. game_studios_sheet) so fetch report can filter by sourceDirectory
-    _static_name_to_row: dict[str, dict[str, Any]] = {}
-    for _row in registry_entries("static"):
-        _name = static_adapter.static_source_name_for_registry_row(_row)
-        _static_name_to_row[_name] = _row
-    for _report in source_reports:
-        if not isinstance(_report, dict):
-            continue
-        _name = clean_text(_report.get("name"))
-        _reg = _static_name_to_row.get(_name)
-        if _reg is not None:
-            if clean_text(_reg.get("sourceDirectory")):
-                _report["sourceDirectory"] = clean_text(_reg.get("sourceDirectory"))
-            if clean_text(_reg.get("sourceDirectoryUrl")):
-                _report["sourceDirectoryUrl"] = clean_text(_reg.get("sourceDirectoryUrl"))
-            if clean_text(_reg.get("listing_url")):
-                _report["listingUrl"] = clean_text(_reg.get("listing_url"))
-
-    progress_phase["key"] = "merging_results"
-    progress_phase["label"] = "Merging results"
-    write_progress_report()
-    return pipeline_finalize_pkg.finalize_pipeline_run(
-        sys.modules[__name__],
-        paths=paths,
-        source_reports=source_reports,
-        canonical_rows=canonical_rows,
-        using_default_loaders=using_default_loaders,
-        selected_loaders=selected_loaders,
-        effective_seed_from_existing_output=effective_seed_from_existing_output,
-        preserve_previous_on_empty=preserve_previous_on_empty,
-        source_state_rows=source_state_rows,
-        lifecycle_rows=lifecycle_rows,
-        runtime_payload=runtime_payload,
-        redirect_resolver=redirect_resolver,
-        task_runtime=task_runtime,
-        progress_phase=progress_phase,
-        write_progress_report=write_progress_report,
-        write_task_state=write_task_state,
-        started_at=started_at,
-        run_started_mono=run_started_mono,
-        run_id=run_id,
-        circuit_breaker_failures=circuit_breaker_failures,
-        circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
-        circuit_breaker_zero_kept=circuit_breaker_zero_kept,
-    )
+        stop_progress_reporter()
 
 
 def parse_args() -> argparse.Namespace:

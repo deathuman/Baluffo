@@ -191,6 +191,79 @@ def build_runtime_timing_summary(
             reverse=True,
         )[:10]
     ]
+    static_detail_rows = [
+        (row.get("details") or [])[0]
+        for row in rows
+        if (clean_text_fn(row.get("adapter")) or "custom") == "static"
+        and isinstance(row.get("details"), list)
+        and row.get("details")
+        and isinstance((row.get("details") or [])[0], dict)
+    ]
+    static_domain_gate_wait_ms = sum(
+        max(
+            0,
+            int(
+                (detail.get("stats") if isinstance(detail.get("stats"), dict) else {}).get(
+                    "domain_gate_wait_ms"
+                )
+                or 0
+            ),
+        )
+        for detail in static_detail_rows
+    )
+    static_detail_batch_count = sum(
+        max(
+            0,
+            int(
+                (detail.get("stats") if isinstance(detail.get("stats"), dict) else {}).get(
+                    "detail_batch_count"
+                )
+                or 0
+            ),
+        )
+        for detail in static_detail_rows
+    )
+    static_adaptive_stops = sum(
+        1
+        for detail in static_detail_rows
+        if max(
+            0,
+            int(
+                (detail.get("stats") if isinstance(detail.get("stats"), dict) else {}).get(
+                    "detail_pages_skipped_by_adaptive_stop"
+                )
+                or 0
+            ),
+        )
+        > 0
+    )
+    static_listing_timeout_stops = sum(
+        1
+        for detail in static_detail_rows
+        if str(
+            (detail.get("stats") if isinstance(detail.get("stats"), dict) else {}).get(
+                "listing_terminal_reason"
+            )
+            or ""
+        ).strip()
+        in {
+            "listing_budget_exhausted",
+            "listing_timeout",
+            "listing_timeout_after_browser_fallback",
+        }
+    )
+    static_listing_browser_fallbacks = sum(
+        max(
+            0,
+            int(
+                (detail.get("stats") if isinstance(detail.get("stats"), dict) else {}).get(
+                    "listing_browser_fallbacks"
+                )
+                or 0
+            ),
+        )
+        for detail in static_detail_rows
+    )
     return {
         "totalDurationMs": int(sum(durations)),
         "wallClockDurationMs": max(0, int(wall_clock_duration_ms or 0)),
@@ -203,4 +276,9 @@ def build_runtime_timing_summary(
         "highCostLowYieldSources": high_cost_low_yield,
         "detailHeavySources": detail_heavy_sources,
         "slowestSources": slowest_sources,
+        "staticDomainGateWaitMs": int(static_domain_gate_wait_ms),
+        "staticDetailBatchCount": int(static_detail_batch_count),
+        "staticAdaptiveStops": int(static_adaptive_stops),
+        "staticListingTimeoutStops": int(static_listing_timeout_stops),
+        "staticListingBrowserFallbacks": int(static_listing_browser_fallbacks),
     }

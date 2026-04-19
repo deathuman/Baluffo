@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import csv
 import json
+import os
+import time
+import uuid
 from collections.abc import Callable, Sequence
 from io import StringIO
 from pathlib import Path
@@ -79,21 +82,82 @@ def write_text_if_changed(path: Path, text: str) -> bool:
     return True
 
 
+def _write_text_with_retry(path: Path, text: str, *, attempts: int, sleep_base_s: float) -> None:
+    last_error: OSError | None = None
+    for attempt in range(max(1, int(attempts or 1))):
+        try:
+            path.write_text(text, encoding="utf-8")
+            return
+        except OSError as exc:
+            last_error = exc
+            if attempt >= max(1, int(attempts or 1)) - 1:
+                break
+            time.sleep(float(sleep_base_s) * float(attempt + 1))
+    if last_error is not None:
+        raise last_error
+
+
+def _write_atomic_text(
+    path: Path,
+    text: str,
+    *,
+    attempts: int = 1,
+    sleep_base_s: float = 0.0,
+    fallback_to_in_place: bool = False,
+) -> None:
+    """Write text to path via temp file + replace, with optional retry/fallback."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp_path.write_text(text, encoding="utf-8")
+        last_error: OSError | None = None
+        for attempt in range(max(1, int(attempts or 1))):
+            try:
+                os.replace(tmp_path, path)
+                last_error = None
+                return
+            except OSError as exc:
+                last_error = exc
+                if attempt >= max(1, int(attempts or 1)) - 1:
+                    break
+                time.sleep(float(sleep_base_s) * float(attempt + 1))
+        if fallback_to_in_place and last_error is not None:
+            _write_text_with_retry(
+                path,
+                text,
+                attempts=max(2, min(6, max(1, int(attempts or 1)) // 2)),
+                sleep_base_s=max(0.01, float(sleep_base_s)),
+            )
+            last_error = None
+            return
+        if last_error is not None:
+            raise last_error
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def write_atomic_if_changed(path: Path, text: str) -> bool:
-    """Write text to path atomically (via .tmp + rename) so readers never see partial content."""
+    """Write text to path atomically (via temp file + rename) so readers never see partial content."""
     try:
         existing = path.read_text(encoding="utf-8")
         if existing == text:
             return False
     except OSError:
         pass
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    _write_atomic_text(path, text)
+    return True
+
+
+def write_hot_text_if_changed(path: Path, text: str) -> bool:
+    """Write frequently polled task/report files with retry and in-place fallback on Windows locks."""
     try:
-        tmp_path.write_text(text, encoding="utf-8")
-        tmp_path.replace(path)
-    finally:
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        existing = path.read_text(encoding="utf-8")
+        if existing == text:
+            return False
+    except OSError:
+        pass
+    _write_atomic_text(path, text, attempts=18, sleep_base_s=0.012, fallback_to_in_place=True)
     return True

@@ -17,6 +17,9 @@ def normalize_live_task_progress(payload: dict[str, Any] | None) -> dict[str, An
     mode = clean_text(src.get("mode")).lower()
     if mode not in {"determinate", "indeterminate"}:
         mode = "indeterminate"
+    wait_reason = clean_text(src.get("waitReason")).lower()
+    if wait_reason not in {"domain_gate", "listing_batch", "detail_batch", "parsing"}:
+        wait_reason = ""
     counts_src = src.get("counts") if isinstance(src.get("counts"), dict) else {}
     counts: dict[str, Any] = {}
     for key, value in counts_src.items():
@@ -46,6 +49,7 @@ def normalize_live_task_progress(payload: dict[str, Any] | None) -> dict[str, An
         "counts": counts,
         "targetLabel": clean_text(src.get("targetLabel")),
         "targetUrl": clean_text(src.get("targetUrl")),
+        "waitReason": wait_reason,
         "updatedAt": clean_text(src.get("updatedAt")),
     }
 
@@ -172,6 +176,7 @@ def build_live_task_progress_payload(
     counts: dict[str, Any] | None = None,
     target_label: str = "",
     target_url: str = "",
+    wait_reason: str = "",
     updated_at: str = "",
 ) -> dict[str, Any]:
     return normalize_live_task_progress(
@@ -184,6 +189,7 @@ def build_live_task_progress_payload(
             "counts": dict(counts or {}),
             "targetLabel": clean_text(target_label),
             "targetUrl": clean_text(target_url),
+            "waitReason": clean_text(wait_reason),
             "updatedAt": clean_text(updated_at),
         }
     )

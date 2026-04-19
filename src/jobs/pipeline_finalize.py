@@ -119,7 +119,7 @@ def finalize_pipeline_run(
     wrote_light_json = False
     progress_phase["key"] = "writing_outputs"
     progress_phase["label"] = "Writing outputs"
-    write_progress_report()
+    write_progress_report(force=True)
     if deduped_payload_rows:
         module.validate_canonical_jobs_payload(deduped_payload_rows)
         wrote_json = module.write_atomic_if_changed(
@@ -200,11 +200,25 @@ def finalize_pipeline_run(
         social_review_path,
         json.dumps(social_review_payload, indent=2, ensure_ascii=False),
     )
+    detailed_source_rows = module.build_detailed_source_rows(task_runtime.task_rows, source_reports)
     timing_summary = module.build_runtime_timing_summary(
-        source_reports,
+        detailed_source_rows,
         wall_clock_duration_ms=int((time.perf_counter() - run_started_mono) * 1000),
     )
     runtime_payload["slowestSources"] = list(timing_summary.get("slowestSources") or [])
+    runtime_payload["staticDomainGateWaitMs"] = int(
+        timing_summary.get("staticDomainGateWaitMs") or 0
+    )
+    runtime_payload["staticDetailBatchCount"] = int(
+        timing_summary.get("staticDetailBatchCount") or 0
+    )
+    runtime_payload["staticAdaptiveStops"] = int(timing_summary.get("staticAdaptiveStops") or 0)
+    runtime_payload["staticListingTimeoutStops"] = int(
+        timing_summary.get("staticListingTimeoutStops") or 0
+    )
+    runtime_payload["staticListingBrowserFallbacks"] = int(
+        timing_summary.get("staticListingBrowserFallbacks") or 0
+    )
     runtime_payload["timingSummary"] = {
         "totalDurationMs": int(timing_summary.get("totalDurationMs") or 0),
         "wallClockDurationMs": int(timing_summary.get("wallClockDurationMs") or 0),
@@ -217,7 +231,6 @@ def finalize_pipeline_run(
         "highCostLowYieldSources": list(timing_summary.get("highCostLowYieldSources") or []),
         "detailHeavySources": list(timing_summary.get("detailHeavySources") or []),
     }
-
     report_payload = module.normalize_fetch_report_payload(
         {
             "schemaVersion": module.SCHEMA_VERSION,
@@ -267,8 +280,10 @@ def finalize_pipeline_run(
                 csv_bytes=csv_bytes,
                 light_json_bytes=light_json_bytes,
                 lifecycle_counts_map=lifecycle_counts_map,
+                summary_source_rows=detailed_source_rows,
             ),
-            "sources": source_reports,
+            "sources": detailed_source_rows,
+            "sourceFamilies": source_reports,
             "contaminationAudit": contamination_report,
             "cityGarbageAudit": city_garbage_audit,
             "locationQualityAudit": location_quality_audit,
@@ -330,7 +345,7 @@ def finalize_pipeline_run(
         file=module.sys.stderr,
     )
     print(f"DEBUG: report_payload keys: {list(report_payload.keys())}", file=module.sys.stderr)
-    module.write_text_if_changed(
+    module.write_hot_text_if_changed(
         paths.report_path, json.dumps(report_payload, indent=2, ensure_ascii=False)
     )
     write_task_state(finished_at=finished_at, force=True)

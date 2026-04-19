@@ -54,6 +54,13 @@ def normalize_runtime_payload(
         ),
         "browserFallbackEnabled": bool(src.get("browserFallbackEnabled")),
         "browserFallbackCap": _clamped_int(src.get("browserFallbackCap"), 0, 0),
+        "staticDomainGateWaitMs": _clamped_int(src.get("staticDomainGateWaitMs"), 0, 0),
+        "staticDetailBatchCount": _clamped_int(src.get("staticDetailBatchCount"), 0, 0),
+        "staticAdaptiveStops": _clamped_int(src.get("staticAdaptiveStops"), 0, 0),
+        "staticListingTimeoutStops": _clamped_int(src.get("staticListingTimeoutStops"), 0, 0),
+        "staticListingBrowserFallbacks": _clamped_int(
+            src.get("staticListingBrowserFallbacks"), 0, 0
+        ),
         "ignoreCircuitBreaker": bool(src.get("ignoreCircuitBreaker")),
         "socialEnabled": bool(src.get("socialEnabled")),
         "socialLookbackMinutes": _clamped_int(src.get("socialLookbackMinutes"), 0, 1),
@@ -592,15 +599,28 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
                         "detail_yield_percent": _clamped_int(
                             stats.get("detail_yield_percent"), 0, 0
                         ),
+                        "domain_gate_wait_ms": _clamped_int(stats.get("domain_gate_wait_ms"), 0, 0),
+                        "domain_gate_wait_count": _clamped_int(
+                            stats.get("domain_gate_wait_count"), 0, 0
+                        ),
                         "redirect_candidates": _clamped_int(stats.get("redirect_candidates"), 0, 0),
                         "redirect_resolved": _clamped_int(stats.get("redirect_resolved"), 0, 0),
                         "redirect_cache_hits": _clamped_int(stats.get("redirect_cache_hits"), 0, 0),
                         "parse_csv_ms": _clamped_int(stats.get("parse_csv_ms"), 0, 0),
                         "listing_fetch_ms": _clamped_int(stats.get("listing_fetch_ms"), 0, 0),
+                        "listing_browser_fallbacks": _clamped_int(
+                            stats.get("listing_browser_fallbacks"), 0, 0
+                        ),
+                        "listing_terminal_reason": clean_text(stats.get("listing_terminal_reason")),
+                        "listing_batch_count": _clamped_int(stats.get("listing_batch_count"), 0, 0),
                         "candidate_extraction_ms": _clamped_int(
                             stats.get("candidate_extraction_ms"), 0, 0
                         ),
                         "detail_fetch_ms": _clamped_int(stats.get("detail_fetch_ms"), 0, 0),
+                        "detail_batch_count": _clamped_int(stats.get("detail_batch_count"), 0, 0),
+                        "detail_pages_skipped_by_adaptive_stop": _clamped_int(
+                            stats.get("detail_pages_skipped_by_adaptive_stop"), 0, 0
+                        ),
                         "detail_skipped_by_listing_fingerprint": _clamped_int(
                             stats.get("detail_skipped_by_listing_fingerprint"), 0, 0
                         ),
@@ -689,6 +709,8 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     changed = outputs.get("changed") if isinstance(outputs.get("changed"), dict) else {}
     source_rows_raw = src.get("sources")
     source_rows = source_rows_raw if isinstance(source_rows_raw, list) else []
+    source_family_rows_raw = src.get("sourceFamilies")
+    source_family_rows = source_family_rows_raw if isinstance(source_family_rows_raw, list) else []
     runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
     contamination_audit = (
         src.get("contaminationAudit") if isinstance(src.get("contaminationAudit"), dict) else {}
@@ -907,6 +929,9 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "sources": [
             normalize_source_report_row(row) for row in source_rows if isinstance(row, dict)
+        ],
+        "sourceFamilies": [
+            normalize_source_report_row(row) for row in source_family_rows if isinstance(row, dict)
         ],
         "healthSummary": dict(src.get("healthSummary"))
         if isinstance(src.get("healthSummary"), dict)
