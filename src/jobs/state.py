@@ -1001,18 +1001,6 @@ def browser_fallback_state_row(
     return dict(entry) if isinstance(entry, dict) else {}
 
 
-def browser_escalation_state_row(
-    source_state_rows: dict[str, dict[str, Any]] | None, source_name: str
-) -> dict[str, Any]:
-    if not isinstance(source_state_rows, dict):
-        return {}
-    name = clean_text(source_name)
-    if not name:
-        return {}
-    entry = source_state_rows.get(name)
-    return dict(entry) if isinstance(entry, dict) else {}
-
-
 def build_browser_fallback_circuit_breaker(
     source_state_rows: dict[str, dict[str, Any]] | None,
     *,

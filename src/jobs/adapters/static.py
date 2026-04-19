@@ -1581,14 +1581,12 @@ def run_static_studio_pages_source(
                                         dead_listing_page_examples.append(example)
                             elif detail_result.get("parseEmpty"):
                                 link_rejections["detail_parse_empty"] += 1
-                            rows_added_from_detail = 0
                             for row in detail_result.get("rows") or []:
                                 link = normalize_url(row.get("jobLink"))
                                 if not link or link in seen_links:
                                     continue
                                 seen_links.add(link)
                                 jobs.append(row)
-                                rows_added_from_detail += 1
                             emit_heartbeat()
 
                         if stop_source:
