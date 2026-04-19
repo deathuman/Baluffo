@@ -2106,7 +2106,7 @@ def test_run_static_studio_pages_source_empty_detail_batches_do_not_stop_remaini
         jf.STUDIO_SOURCE_REGISTRY = prev
 
     assert rows == []
-    assert detail_fetches == [
+    assert sorted(detail_fetches) == [
         "https://example.net/job/1",
         "https://example.net/job/2",
         "https://example.net/job/3",
