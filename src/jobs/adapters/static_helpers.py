@@ -982,8 +982,11 @@ def process_detail_link(
     ignored_link_titles: set[str],
 ) -> dict[str, Any]:
     fetch_started = time.perf_counter()
+    source_started_mono = float(source_started or 0.0)
+    if source_started_mono <= 0.0:
+        source_started_mono = fetch_started
     remaining_budget_s = float(static_source_time_budget_s) - float(
-        time.perf_counter() - source_started
+        time.perf_counter() - source_started_mono
     )
     if remaining_budget_s < 1.0:
         raise TimeoutError(f"time budget exceeded ({static_source_time_budget_s}s)")

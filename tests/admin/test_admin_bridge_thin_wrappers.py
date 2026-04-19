@@ -123,12 +123,17 @@ def test_wait_for_report_completion_ignores_stale_flag_until_report_finishes(
         {"startedAt": started_at, "finishedAt": finished_at},
     ]
 
+    def _next_report(*_args, **_kwargs):
+        if len(reports) > 1:
+            return reports.pop(0)
+        return reports[0]
+
     class _NoWaitEvent:
         def wait(self, _seconds):
             return None
 
     with (
-        mock.patch.object(admin_bridge, "load_json_object", side_effect=reports),
+        mock.patch.object(admin_bridge, "load_json_object", side_effect=_next_report),
         mock.patch.object(admin_bridge, "report_is_stale_in_progress", return_value=True),
         mock.patch.object(admin_bridge.threading, "Event", return_value=_NoWaitEvent()),
     ):
