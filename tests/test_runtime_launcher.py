@@ -244,12 +244,19 @@ def test_build_site_request_handler_traces_probe_requests(monkeypatch: pytest.Mo
             thread.join(timeout=2)
 
         metrics_path = data_dir / "desktop-startup-metrics.jsonl"
+        deadline = time.monotonic() + 2.0
+        events: list[str] = []
+        while time.monotonic() < deadline:
+            if metrics_path.exists():
+                events = [
+                    json.loads(line)["event"]
+                    for line in metrics_path.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
+                if "desktop_site_request_complete" in events:
+                    break
+            time.sleep(0.05)
         assert metrics_path.exists()
-        events = [
-            json.loads(line)["event"]
-            for line in metrics_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
         assert "desktop_url_probe_started" in events
         assert "desktop_url_probe_succeeded" in events
         assert "desktop_site_request_start" in events

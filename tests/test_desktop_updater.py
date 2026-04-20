@@ -386,7 +386,7 @@ def test_run_install_recovers_manifest_cache_from_release_metadata(monkeypatch) 
         monkeypatch.setattr(updater, "_copy_install_snapshot", lambda *args, **kwargs: None)
         monkeypatch.setattr(updater, "_sync_extract_to_install", lambda *args, **kwargs: None)
         monkeypatch.setattr(updater, "_launch_executable", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_verify_target_startup", lambda plan: None)
+        monkeypatch.setattr(updater, "_verify_target_startup", lambda plan, timeout_s=90.0: None)
         monkeypatch.setattr(updater, "_finalize_success", lambda *args, **kwargs: None)
 
         result = updater.run_install(paths.install_plan_path)
@@ -445,7 +445,7 @@ def test_run_install_redownloads_zip_when_cached_artifact_is_missing(monkeypatch
         monkeypatch.setattr(updater, "_copy_install_snapshot", lambda *args, **kwargs: None)
         monkeypatch.setattr(updater, "_sync_extract_to_install", lambda *args, **kwargs: None)
         monkeypatch.setattr(updater, "_launch_executable", lambda *args, **kwargs: None)
-        monkeypatch.setattr(updater, "_verify_target_startup", lambda plan: None)
+        monkeypatch.setattr(updater, "_verify_target_startup", lambda plan, timeout_s=90.0: None)
         monkeypatch.setattr(updater, "_finalize_success", lambda *args, **kwargs: None)
 
         result = updater.run_install(paths.install_plan_path)

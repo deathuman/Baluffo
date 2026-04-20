@@ -91,6 +91,8 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Packaged startup perf probe (cold/warm) | `npm run perf:startup:cold` / `npm run perf:startup:warm` |
 | Packaged desktop smoke gate | `npm run test:frontend:packaged` |
 | Packaged sync rehearsal | `npm run test:frontend:packaged:sync-rehearsal` |
+| Packaged orphan reclaim rehearsal | `npm run test:frontend:packaged:orphan-reclaim-rehearsal` |
+| Packaged browser job rehearsal | `npm run test:frontend:packaged:browser-job-rehearsal` |
 | Jobs-page no-Admin packaged smoke gate | `npm run test:frontend:packaged:jobs-pipeline` |
 | Packaged desktop updater rehearsal | `npm run test:frontend:packaged:update-rehearsal` |
 | Orchestrated packaged smoke gate | `npm run test:frontend:packaged:orchestrated` |
@@ -122,6 +124,8 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - `python scripts/build_portable_exe.py`
 - `npm run test:frontend:packaged*`
 - `npm run test:frontend:packaged:sync-rehearsal`
+- `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
+- `npm run test:frontend:packaged:browser-job-rehearsal`
 - `npm run test:frontend:packaged:update-rehearsal`
 - Orchestrated build and verify commands own `_out/runs/...` and `_out/latest/...`:
   - `npm run build`
@@ -167,12 +171,35 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
   - `/sync/test` reads a remote snapshot successfully without touching real GitHub.
 - Use this lane for packaged sync config, source-sync auth, ship-bundle embedding, and release portability changes.
 
+## Packaged Orphan Reclaim Rehearsal Contract
+
+- `npm run test:frontend:packaged:orphan-reclaim-rehearsal` is the packaged stale-runtime recovery gate for the portable desktop runtime.
+- It must prove all of the following:
+  - stale packaged `site` and `bridge` children can be seeded with strong attribution in desktop session state,
+  - the relaunched packaged app reuses the requested ports instead of silently retrying to fresh ports,
+  - startup metrics emit `desktop_stale_runtime_reclaim_started`,
+  - startup metrics emit `desktop_stale_runtime_reclaim_result` with `target=bridge` / `outcome=killed` and `target=site` / `outcome=killed`,
+  - no `desktop_lock_reclaim_failed` event appears during relaunch.
+- Use this lane for packaged desktop supervision, stale-session recovery, startup self-heal, and runtime-port collision fixes.
+
+## Packaged Browser Job Rehearsal Contract
+
+- `npm run test:frontend:packaged:browser-job-rehearsal` is the packaged Chromium supervision gate for the portable desktop runtime.
+- It must prove all of the following:
+  - the packaged runtime launches in managed Chromium app mode instead of degrading to default-browser or recovery mode,
+  - startup metrics emit `desktop_browser_job_attached` and do not emit `desktop_browser_job_attach_failed`,
+  - the rehearsal can prove a live browser proof PID from either the still-attached Chromium launcher PID or a live visible-window PID,
+  - killing only `Baluffo.exe` causes that proof PID to exit before any generic smoke cleanup runs.
+- Use this lane for packaged browser supervision, Chromium app-mode launch changes, and Windows Job Object browser-lifecycle fixes.
+
 ## Release/build regression picks
 
 Use the narrowest check that matches the risky path:
 
 - Packaging or portable EXE changes: `python scripts/build_portable_exe.py`
 - Packaged sync config, auth portability, or sync release-gate changes: `npm run test:frontend:packaged:sync-rehearsal`
+- Packaged desktop supervision, stale-runtime recovery, or launcher self-heal changes: `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
+- Packaged Chromium supervision or managed-browser shutdown propagation changes: `npm run test:frontend:packaged:browser-job-rehearsal`
 - Packaged updater, desktop handoff, or release-manifest changes: `npm run test:frontend:packaged:update-rehearsal`
 - Bridge route wiring or task-launch signature changes: focused `tests/bridge/...` plus `tests/test_pipeline_execution.py` for worker-path coverage
 - Admin task buttons, presets, or busy-state changes: focused frontend unit tests plus the nearest admin bridge payload test

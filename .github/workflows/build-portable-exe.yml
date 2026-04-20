@@ -159,6 +159,8 @@ jobs:
           npm run test:frontend:packaged
           npm run test:frontend:packaged:sync-rehearsal
           npm run test:frontend:packaged:update-rehearsal
+          npm run test:frontend:packaged:orphan-reclaim-rehearsal
+          npm run test:frontend:packaged:browser-job-rehearsal
           npm run test:frontend:packaged:jobs-pipeline
 
       - name: Upload smoke test artifacts on failure

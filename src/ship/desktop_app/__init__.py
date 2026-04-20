@@ -239,6 +239,7 @@ def start_child_process(
         popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) | int(
             getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         )
+        popen_kwargs["close_fds"] = True
     proc = subprocess.Popen(list(command), **popen_kwargs)
     if job_handle and proc.pid:
         try:
@@ -269,6 +270,436 @@ def terminate_process(process: subprocess.Popen[str] | None) -> None:
         return
     with contextlib.suppress(Exception):  # noqa: BLE001
         process.kill()
+
+
+def _local_address_matches_listen_port(local_addr: str, port: int) -> bool:
+    token = str(local_addr or "").strip()
+    if not token:
+        return False
+    return token.endswith(f":{int(port)}")
+
+
+def _pids_listening_on_tcp_port_windows(port: int) -> set[int]:
+    pids: set[int] = set()
+    if os.name != "nt" or int(port or 0) <= 0:
+        return pids
+    try:
+        completed = subprocess.run(
+            ["netstat", "-ano", "-p", "tcp"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except OSError:
+        return pids
+    for line in str(completed.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        if str(parts[0]).upper() != "TCP":
+            continue
+        if str(parts[3]).upper() != "LISTENING":
+            continue
+        if not _local_address_matches_listen_port(parts[1], port):
+            continue
+        try:
+            pid = int(parts[-1])
+        except ValueError:
+            continue
+        if pid > 0:
+            pids.add(pid)
+    return pids
+
+
+def _wait_for_process_exit_pid(pid: int, *, timeout_s: float = 5.0) -> bool:
+    deadline = time.monotonic() + max(0.2, float(timeout_s))
+    while time.monotonic() < deadline:
+        if not is_process_alive(pid):
+            return True
+        time.sleep(0.1)
+    return not is_process_alive(pid)
+
+
+def _windows_terminate_process_tree_by_pid(pid: int) -> bool:
+    if os.name != "nt":
+        return False
+    pid = int(pid or 0)
+    if pid <= 0:
+        return False
+    try:
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=10,
+        )
+    except OSError:
+        return not is_process_alive(pid)
+    return _wait_for_process_exit_pid(pid, timeout_s=15.0)
+
+
+def _windows_process_image_matches(pid: int, *, expected_exe_path: object) -> bool:
+    if os.name != "nt" or int(pid or 0) <= 0:
+        return False
+    expected = _normalize_path_text(expected_exe_path)
+    if not expected:
+        return False
+    actual = _normalize_path_text(_get_windows_process_image_path(int(pid)))
+    return bool(actual) and actual == expected
+
+
+def _trace_stale_runtime_reclaim(
+    data_dir: Path,
+    *,
+    target: str,
+    status: str,
+    reason: str,
+    pid: int = 0,
+    port: int = 0,
+    confirmed: bool = False,
+) -> None:
+    _append_startup_trace(
+        data_dir,
+        "desktop_stale_runtime_reclaim_result",
+        target=str(target or ""),
+        outcome=str(status or ""),
+        reason=_truncate_reason(reason),
+        pid=int(pid or 0),
+        port=int(port or 0),
+        confirmed=bool(confirmed),
+    )
+
+
+def _stale_runtime_reclaim_result(
+    target: str,
+    *,
+    status: str,
+    reason: str,
+    pid: int = 0,
+    port: int = 0,
+    confirmed: bool = False,
+) -> dict[str, object]:
+    return {
+        "target": str(target or ""),
+        "status": str(status or ""),
+        "reason": str(reason or ""),
+        "pid": int(pid or 0),
+        "port": int(port or 0),
+        "confirmed": bool(confirmed),
+    }
+
+
+def _windows_try_reclaim_stale_bridge_process(
+    stale_state: dict[str, object],
+    *,
+    data_dir: Path,
+) -> dict[str, object]:
+    bridge_port = int(stale_state.get("bridgePort") or 0)
+    bridge_pid = int(stale_state.get("bridgePid") or 0)
+    owner_token = str(stale_state.get("desktopOwnerToken") or "").strip()
+    session_exe_path = stale_state.get("exePath")
+    if bridge_port <= 0:
+        result = _stale_runtime_reclaim_result(
+            "bridge",
+            status="skipped",
+            reason="missing_bridge_port",
+            pid=bridge_pid,
+            port=bridge_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+    if not owner_token:
+        result = _stale_runtime_reclaim_result(
+            "bridge",
+            status="skipped",
+            reason="missing_desktop_owner_token",
+            pid=bridge_pid,
+            port=bridge_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+    if not _normalize_path_text(session_exe_path):
+        result = _stale_runtime_reclaim_result(
+            "bridge",
+            status="skipped",
+            reason="missing_exe_path",
+            pid=bridge_pid,
+            port=bridge_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+
+    listener_pids = _pids_listening_on_tcp_port_windows(bridge_port)
+    if not listener_pids:
+        result = _stale_runtime_reclaim_result(
+            "bridge",
+            status="not_found",
+            reason="no_listener_on_expected_port",
+            pid=bridge_pid,
+            port=bridge_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+    if len(listener_pids) != 1:
+        result = _stale_runtime_reclaim_result(
+            "bridge",
+            status="skipped",
+            reason="ambiguous_bridge_listener",
+            pid=bridge_pid,
+            port=bridge_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+
+    listener_pid = next(iter(listener_pids))
+    if bridge_pid > 0:
+        if not is_process_alive(bridge_pid):
+            result = _stale_runtime_reclaim_result(
+                "bridge",
+                status="skipped",
+                reason="stored_bridge_pid_not_alive",
+                pid=listener_pid,
+                port=bridge_port,
+            )
+            _trace_stale_runtime_reclaim(data_dir, **result)
+            return result
+        if listener_pid != bridge_pid:
+            result = _stale_runtime_reclaim_result(
+                "bridge",
+                status="skipped",
+                reason="bridge_pid_mismatch",
+                pid=listener_pid,
+                port=bridge_port,
+            )
+            _trace_stale_runtime_reclaim(data_dir, **result)
+            return result
+
+    bridge_health = get_baluffo_bridge_health(bridge_port, timeout_s=0.75)
+    if not _bridge_health_matches_owner_session(bridge_health, owner_token=owner_token):
+        result = _stale_runtime_reclaim_result(
+            "bridge",
+            status="skipped",
+            reason="bridge_owner_identity_mismatch",
+            pid=listener_pid,
+            port=bridge_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+    if not _windows_process_image_matches(listener_pid, expected_exe_path=session_exe_path):
+        result = _stale_runtime_reclaim_result(
+            "bridge",
+            status="skipped",
+            reason="bridge_image_path_mismatch",
+            pid=listener_pid,
+            port=bridge_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+    _windows_terminate_process_tree_by_pid(listener_pid)
+    if _pids_listening_on_tcp_port_windows(bridge_port):
+        result = _stale_runtime_reclaim_result(
+            "bridge",
+            status="failed",
+            reason="bridge_termination_failed",
+            pid=listener_pid,
+            port=bridge_port,
+            confirmed=True,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+    result = _stale_runtime_reclaim_result(
+        "bridge",
+        status="killed",
+        reason="bridge_terminated",
+        pid=listener_pid,
+        port=bridge_port,
+        confirmed=True,
+    )
+    _trace_stale_runtime_reclaim(data_dir, **result)
+    return result
+
+
+def _windows_try_reclaim_stale_site_process(
+    stale_state: dict[str, object],
+    *,
+    bridge_confirmed: bool,
+    data_dir: Path,
+) -> dict[str, object]:
+    site_port = int(stale_state.get("sitePort") or 0)
+    site_pid = int(stale_state.get("sitePid") or 0)
+    session_exe_path = stale_state.get("exePath")
+    if site_port <= 0:
+        result = _stale_runtime_reclaim_result(
+            "site",
+            status="skipped",
+            reason="missing_site_port",
+            pid=site_pid,
+            port=site_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+    if not _normalize_path_text(session_exe_path):
+        result = _stale_runtime_reclaim_result(
+            "site",
+            status="skipped",
+            reason="missing_exe_path",
+            pid=site_pid,
+            port=site_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+
+    listener_pids = _pids_listening_on_tcp_port_windows(site_port)
+    if not listener_pids:
+        result = _stale_runtime_reclaim_result(
+            "site",
+            status="not_found",
+            reason="no_listener_on_expected_port",
+            pid=site_pid,
+            port=site_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+    if len(listener_pids) != 1:
+        result = _stale_runtime_reclaim_result(
+            "site",
+            status="skipped",
+            reason="ambiguous_site_listener",
+            pid=site_pid,
+            port=site_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+
+    listener_pid = next(iter(listener_pids))
+    if site_pid > 0:
+        if not is_process_alive(site_pid):
+            result = _stale_runtime_reclaim_result(
+                "site",
+                status="skipped",
+                reason="stored_site_pid_not_alive",
+                pid=listener_pid,
+                port=site_port,
+            )
+            _trace_stale_runtime_reclaim(data_dir, **result)
+            return result
+        if listener_pid != site_pid:
+            result = _stale_runtime_reclaim_result(
+                "site",
+                status="skipped",
+                reason="site_pid_mismatch",
+                pid=listener_pid,
+                port=site_port,
+            )
+            _trace_stale_runtime_reclaim(data_dir, **result)
+            return result
+    elif not bridge_confirmed:
+        result = _stale_runtime_reclaim_result(
+            "site",
+            status="skipped",
+            reason="bridge_not_confirmed",
+            pid=listener_pid,
+            port=site_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+
+    if not _windows_process_image_matches(listener_pid, expected_exe_path=session_exe_path):
+        result = _stale_runtime_reclaim_result(
+            "site",
+            status="skipped",
+            reason="site_image_path_mismatch",
+            pid=listener_pid,
+            port=site_port,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+    _windows_terminate_process_tree_by_pid(listener_pid)
+    if _pids_listening_on_tcp_port_windows(site_port):
+        result = _stale_runtime_reclaim_result(
+            "site",
+            status="failed",
+            reason="site_termination_failed",
+            pid=listener_pid,
+            port=site_port,
+            confirmed=True,
+        )
+        _trace_stale_runtime_reclaim(data_dir, **result)
+        return result
+    result = _stale_runtime_reclaim_result(
+        "site",
+        status="killed",
+        reason="site_terminated",
+        pid=listener_pid,
+        port=site_port,
+        confirmed=True,
+    )
+    _trace_stale_runtime_reclaim(data_dir, **result)
+    return result
+
+
+def _windows_reclaim_stale_runtime_children(
+    stale_state: dict[str, object],
+    *,
+    data_dir: Path,
+) -> dict[str, object]:
+    if os.name != "nt" or not stale_state:
+        return {
+            "blocked": False,
+            "reason": "",
+            "target": "",
+            "bridge": _stale_runtime_reclaim_result(
+                "bridge",
+                status="skipped",
+                reason="runtime_reclaim_not_applicable",
+            ),
+            "site": _stale_runtime_reclaim_result(
+                "site",
+                status="skipped",
+                reason="runtime_reclaim_not_applicable",
+            ),
+        }
+    _append_startup_trace(
+        data_dir,
+        "desktop_stale_runtime_reclaim_started",
+        bridgePort=int(stale_state.get("bridgePort") or 0),
+        sitePort=int(stale_state.get("sitePort") or 0),
+    )
+    bridge_result = _windows_try_reclaim_stale_bridge_process(stale_state, data_dir=data_dir)
+    if str(bridge_result.get("status") or "") == "failed":
+        return {
+            "blocked": True,
+            "reason": "stale_bridge_cleanup_failed",
+            "target": "bridge",
+            "bridge": bridge_result,
+            "site": _stale_runtime_reclaim_result(
+                "site",
+                status="skipped",
+                reason="bridge_cleanup_failed",
+            ),
+        }
+    site_result = _windows_try_reclaim_stale_site_process(
+        stale_state,
+        bridge_confirmed=bool(bridge_result.get("confirmed")),
+        data_dir=data_dir,
+    )
+    if str(site_result.get("status") or "") == "failed":
+        return {
+            "blocked": True,
+            "reason": "stale_site_cleanup_failed",
+            "target": "site",
+            "bridge": bridge_result,
+            "site": site_result,
+        }
+    return {
+        "blocked": False,
+        "reason": "",
+        "target": "",
+        "bridge": bridge_result,
+        "site": site_result,
+    }
 
 
 @contextlib.contextmanager
@@ -836,9 +1267,14 @@ if os.name == "nt":
     )
     _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
     _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
+    _HANDLE_FLAG_INHERIT = 0x00000001
     _PROCESS_SET_QUOTA = 0x0100
     _PROCESS_TERMINATE = 0x0001
+    _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
     _PROCESS_ASSIGN_TO_JOB_ACCESS = _PROCESS_SET_QUOTA | _PROCESS_TERMINATE
+    _PROCESS_SYNCHRONIZE = 0x00100000
+    _WAIT_TIMEOUT = 0x00000102
+    _STILL_ACTIVE = 259
 
 
 def _windows_raise_last_error(message: str) -> None:
@@ -853,6 +1289,10 @@ def _windows_create_kill_on_close_job() -> int | None:
         return None
     job = ctypes.windll.kernel32.CreateJobObjectW(None, None)
     if not job:
+        return None
+    ok = ctypes.windll.kernel32.SetHandleInformation(job, _HANDLE_FLAG_INHERIT, 0)
+    if not ok:
+        ctypes.windll.kernel32.CloseHandle(job)
         return None
     info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
     info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
@@ -1218,19 +1658,28 @@ def release_instance_lock(lock: InstanceLock | None) -> None:
 def is_process_alive(pid: int) -> bool:
     if int(pid or 0) <= 0:
         return False
+    if os.name == "nt":
+        handle = ctypes.windll.kernel32.OpenProcess(
+            _PROCESS_SYNCHRONIZE | _PROCESS_QUERY_LIMITED_INFORMATION,
+            False,
+            int(pid),
+        )
+        if not handle:
+            return False
+        try:
+            wait_result = int(ctypes.windll.kernel32.WaitForSingleObject(handle, 0))
+            if wait_result != _WAIT_TIMEOUT:
+                return False
+            exit_code = ctypes.wintypes.DWORD(0)
+            ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            return bool(ok) and int(exit_code.value) == _STILL_ACTIVE
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
     try:
         os.kill(int(pid), 0)
         return True
     except OSError:
-        if os.name != "nt":
-            return False
-    if os.name == "nt":
-        handle = ctypes.windll.kernel32.OpenProcess(0x00100000 | 0x1000, False, int(pid))
-        if not handle:
-            return False
-        ctypes.windll.kernel32.CloseHandle(handle)
-        return True
-    return False
+        return False
 
 
 def fetch_json(url: str, timeout_s: float = 2.5) -> dict[str, object]:
@@ -1383,6 +1832,7 @@ def _attempt_active_work_browser_relaunch(
             preferred_browser_path=str(preferred_browser_path or "").strip(),
             data_dir=config.data_dir,
             started_mono=started_mono,
+            job_handle=desktop_job,
         )
         browser_process = (
             launch_result.get("process")
@@ -1392,8 +1842,6 @@ def _attempt_active_work_browser_relaunch(
         browser_pid = int(
             launch_result.get("browserPid") or getattr(browser_process, "pid", 0) or 0
         )
-        if desktop_job and browser_process is not None and browser_pid > 0:
-            _windows_try_assign_pid_to_job(desktop_job, browser_pid)
     except (OSError, RuntimeError) as exc:
         if browser_process is not None:
             terminate_process(browser_process)
@@ -1600,11 +2048,25 @@ def _truncate_reason(reason: object, *, limit: int = 120) -> str:
     return text[: max(0, limit - 3)] + "..."
 
 
-def _reclaim_stale_instance_artifacts(*, env: dict[str, str] | None = None) -> None:
+def _clear_stale_instance_artifacts(*, env: dict[str, str] | None = None) -> None:
     lock_path = resolve_instance_lock_path(env)
     with contextlib.suppress(OSError):
         lock_path.unlink()
     clear_session_state(env)
+
+
+def _reclaim_stale_instance_artifacts(
+    *,
+    data_dir: Path,
+    stale_state: dict[str, object] | None = None,
+    env: dict[str, str] | None = None,
+) -> dict[str, object]:
+    reclaim_result = _windows_reclaim_stale_runtime_children(
+        stale_state if isinstance(stale_state, dict) else {},
+        data_dir=data_dir,
+    )
+    _clear_stale_instance_artifacts(env=env)
+    return reclaim_result
 
 
 def diagnose_instance_conflict(
@@ -1623,7 +2085,26 @@ def diagnose_instance_conflict(
         owner_active = _process_identity_matches(lock_payload)
         lock_token = str(lock_payload.get("launcherToken") or "")
         if not owner_active:
-            _reclaim_stale_instance_artifacts(env=env)
+            reclaim_result = _reclaim_stale_instance_artifacts(
+                data_dir=data_dir,
+                stale_state=load_session_state(env),
+                env=env,
+            )
+            if bool(reclaim_result.get("blocked")):
+                target = str(reclaim_result.get("target") or "")
+                reason = str(reclaim_result.get("reason") or "stale_runtime_cleanup_failed")
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_lock_reclaim_failed",
+                    reason=_truncate_reason(reason),
+                    target=target,
+                )
+                return {
+                    "action": "blocked",
+                    "reason": reason,
+                    "target": target,
+                    "reclaim": reclaim_result,
+                }
             _append_startup_trace(
                 data_dir,
                 "desktop_lock_reclaimed",
@@ -1647,7 +2128,26 @@ def diagnose_instance_conflict(
                 "desktop_session_invalid_reason",
                 reason=_truncate_reason(reason),
             )
-            _reclaim_stale_instance_artifacts(env=env)
+            reclaim_result = _reclaim_stale_instance_artifacts(
+                data_dir=data_dir,
+                stale_state=raw_state,
+                env=env,
+            )
+            if bool(reclaim_result.get("blocked")):
+                target = str(reclaim_result.get("target") or "")
+                blocked_reason = str(reclaim_result.get("reason") or "stale_runtime_cleanup_failed")
+                _append_startup_trace(
+                    data_dir,
+                    "desktop_lock_reclaim_failed",
+                    reason=_truncate_reason(blocked_reason),
+                    target=target,
+                )
+                return {
+                    "action": "blocked",
+                    "reason": blocked_reason,
+                    "target": target,
+                    "reclaim": reclaim_result,
+                }
             _append_startup_trace(
                 data_dir,
                 "desktop_lock_reclaimed",
@@ -1738,6 +2238,7 @@ def launch_chromium_app(
     popen_kwargs: dict[str, object] = {"text": True}
     if os.name == "nt":
         popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        popen_kwargs["close_fds"] = True
     return subprocess.Popen(
         build_browser_launch_command(browser_path, url, profile_dir), **popen_kwargs
     )
@@ -1762,6 +2263,7 @@ def launch_browser_for_url(
     url: str,
     *,
     preferred_browser_path: str = "",
+    job_handle: int | None = None,
     env: dict[str, str] | None = None,
     data_dir: Path | None = None,
     started_mono: float | None = None,
@@ -1812,6 +2314,26 @@ def launch_browser_for_url(
             clearProfileCaches=bool(clear_profile_caches),
             **trace_common,
         )
+        if job_handle and browser_pid > 0:
+            attach_mono = time.perf_counter()
+            try:
+                _windows_try_assign_pid_to_job(job_handle, browser_pid)
+            except OSError as exc:
+                _trace(
+                    "desktop_browser_job_attach_failed",
+                    attach_mono,
+                    pid=browser_pid,
+                    error=str(exc),
+                    **trace_common,
+                )
+                terminate_process(process)
+                raise
+            _trace(
+                "desktop_browser_job_attached",
+                attach_mono,
+                pid=browser_pid,
+                **trace_common,
+            )
         ready_timeout_s = chromium_process_ready_timeout_s(candidate)
         poll_interval_s = chromium_process_ready_poll_interval_s(candidate)
         if wait_for_browser_process_ready(
@@ -2393,7 +2915,6 @@ def ensure_desktop_prerequisites() -> None:
 
 
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
-    config = resolve_runtime_ports(config)
     launcher_token = uuid.uuid4().hex
     desktop_session_id = uuid.uuid4().hex
     owner_token = uuid.uuid4().hex
@@ -2423,6 +2944,12 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 existing_session=existing_session,
             )
             raise RuntimeError(ALREADY_RUNNING_ERROR)
+        if action == "blocked":
+            target = str(diagnosis.get("target") or "desktop runtime").strip() or "desktop runtime"
+            raise RuntimeError(
+                f"Baluffo found a stale {target} process but could not terminate it. "
+                "Please close it manually and retry."
+            )
         if action == "reclaimed" or action == "retry":
             instance_lock = acquire_instance_lock(
                 launcher_token=launcher_token,
@@ -2450,7 +2977,10 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
         shipRoot=str(config.ship_root),
     )
     try:
-        existing_session = get_valid_session_state(expected_launcher_token=launcher_token)
+        existing_session = get_valid_session_state(
+            expected_launcher_token=str(instance_lock.launcher_token or launcher_token),
+            clear_invalid=False,
+        )
         if existing_session:
             _append_startup_trace(
                 config.data_dir,
@@ -2464,6 +2994,38 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 existing_session=existing_session,
             )
             raise RuntimeError(ALREADY_RUNNING_ERROR)
+        raw_session_state = load_session_state()
+        if raw_session_state:
+            session_ok, reason = validate_session_state(
+                raw_session_state,
+                expected_launcher_token=str(instance_lock.launcher_token or launcher_token),
+            )
+            if not session_ok:
+                _append_startup_trace(
+                    config.data_dir,
+                    "desktop_session_invalid_reason",
+                    reason=_truncate_reason(reason),
+                )
+                reclaim_result = _reclaim_stale_instance_artifacts(
+                    data_dir=config.data_dir,
+                    stale_state=raw_session_state,
+                )
+                if bool(reclaim_result.get("blocked")):
+                    target = str(reclaim_result.get("target") or "desktop runtime").strip()
+                    blocked_reason = str(
+                        reclaim_result.get("reason") or "stale_runtime_cleanup_failed"
+                    )
+                    _append_startup_trace(
+                        config.data_dir,
+                        "desktop_lock_reclaim_failed",
+                        reason=_truncate_reason(blocked_reason),
+                        target=target,
+                    )
+                    raise RuntimeError(
+                        f"Baluffo found a stale {target or 'desktop runtime'} process but could not terminate it. "
+                        "Please close it manually and retry."
+                    )
+        config = resolve_runtime_ports(config)
         session_root = resolve_browser_session_root()
         session_root_info = last_session_root_resolution()
         _append_startup_trace(
@@ -2602,6 +3164,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                             preferred_browser_path=str(
                                 os.environ.get(PREFERRED_BROWSER_PATH_ENV) or ""
                             ).strip(),
+                            job_handle=desktop_job,
                             data_dir=config.data_dir,
                             started_mono=started_mono,
                             trace_hook=_record_browser_launch_trace,
@@ -2616,18 +3179,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                             or getattr(browser_process, "pid", 0)
                             or 0
                         )
-                        if desktop_job and browser_process is not None and browser_pid > 0:
-                            try:
-                                _windows_try_assign_pid_to_job(desktop_job, int(browser_pid))
-                            except OSError as exc:
-                                terminate_process(browser_process)
-                                launch_result = _recoverable_browser_launch_result(
-                                    open_url=open_url,
-                                    error=exc,
-                                    data_dir=config.data_dir,
-                                    elapsed_ms=int((time.perf_counter() - started_mono) * 1000),
-                                )
-                    except RuntimeError as exc:
+                    except (OSError, RuntimeError) as exc:
                         launch_result = _recoverable_browser_launch_result(
                             open_url=open_url,
                             error=exc,
@@ -2763,7 +3315,9 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 "desktopOwnerToken": owner_token,
                 "launcherStartedAt": str(instance_lock.created_at or datetime.now(UTC).isoformat()),
                 "sitePort": int(config.site_port),
+                "sitePid": int(getattr(site_process, "pid", 0) or 0),
                 "bridgePort": int(config.bridge_port),
+                "bridgePid": int(getattr(bridge_process, "pid", 0) or 0),
                 "bridgeHost": str(config.bridge_host),
                 "url": str(open_url),
                 "launchMode": launch_mode,

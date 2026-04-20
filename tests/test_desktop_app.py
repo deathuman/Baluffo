@@ -267,9 +267,10 @@ def test_launch_chromium_app_clears_cache_dirs_before_launch_when_requested(tmp_
     (code_cache_dir / "js.bin").write_text("cached", encoding="utf-8")
 
     fake_process = mock.Mock(spec=subprocess.Popen)
-    with mock.patch.object(
-        desktop_app.subprocess, "Popen", return_value=fake_process
-    ) as popen_mock:
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app.subprocess, "Popen", return_value=fake_process) as popen_mock,
+    ):
         result = desktop_app.launch_chromium_app(
             "http://127.0.0.1:8080/jobs.html?desktop=1",
             "C:/Edge/msedge.exe",
@@ -281,6 +282,7 @@ def test_launch_chromium_app_clears_cache_dirs_before_launch_when_requested(tmp_
     assert not cache_dir.exists()
     assert not code_cache_dir.exists()
     popen_mock.assert_called_once()
+    assert popen_mock.call_args.kwargs["close_fds"] is True
 
 
 def test_launch_chromium_app_preserves_cache_dirs_by_default(tmp_path: Path) -> None:
@@ -358,65 +360,6 @@ def test_latest_browser_heartbeat_ts_parses_iso_timestamps() -> None:
     assert value > 0.0
 
 
-def test_get_valid_session_state_clears_stale_pid_immediately() -> None:
-    with workspace_tmpdir("desktop-app") as tmp:
-        root = Path(tmp) / "session-root"
-        root.mkdir(parents=True, exist_ok=True)
-        state_path = root / "desktop-session.json"
-        state_path.write_text(
-            json.dumps(
-                {
-                    "launcherPid": 4444,
-                    "bridgePort": 8877,
-                    "launcherToken": "token-a",
-                    "launcherStartedAt": "2026-03-12T14:00:00+00:00",
-                    "exePath": "C:/tmp/Baluffo.exe",
-                    "url": "http://127.0.0.1:8080",
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        with (
-            mock.patch.object(desktop_app, "resolve_session_state_path", return_value=state_path),
-            mock.patch.object(desktop_app, "is_process_alive", return_value=False),
-        ):
-            state = desktop_app.get_valid_session_state()
-
-        assert state == {}
-        assert not (state_path.exists())
-
-
-def test_get_valid_session_state_rejects_non_baluffo_health_identity() -> None:
-    with workspace_tmpdir("desktop-app") as tmp:
-        root = Path(tmp) / "session-root"
-        root.mkdir(parents=True, exist_ok=True)
-        state_path = root / "desktop-session.json"
-        state_path.write_text(
-            json.dumps(
-                {
-                    "launcherPid": 4444,
-                    "bridgePort": 8877,
-                    "launcherToken": "token-a",
-                    "launcherStartedAt": "2026-03-12T14:00:00+00:00",
-                    "url": "http://127.0.0.1:8080",
-                    "exePath": "C:/tmp/Baluffo.exe",
-                }
-            ),
-            encoding="utf-8",
-        )
-
-        with (
-            mock.patch.object(desktop_app, "resolve_session_state_path", return_value=state_path),
-            mock.patch.object(desktop_app, "_process_identity_matches", return_value=True),
-            mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=False),
-        ):
-            state = desktop_app.get_valid_session_state()
-
-        assert state == {}
-        assert not (state_path.exists())
-
-
 def test_acquire_instance_lock_reclaims_stale_lock() -> None:
     with workspace_tmpdir("desktop-app") as tmp:
         root = Path(tmp) / "session-root"
@@ -469,6 +412,354 @@ def test_diagnose_instance_conflict_reclaims_stale_owner() -> None:
         assert result.get("action") == "reclaimed"
         assert not (lock_path.exists())
         assert not (session_path.exists())
+
+
+def test_diagnose_instance_conflict_blocks_when_stale_runtime_cleanup_fails() -> None:
+    with workspace_tmpdir("desktop-app") as tmp:
+        root = Path(tmp) / "session-root"
+        root.mkdir(parents=True, exist_ok=True)
+        lock_path = root / "desktop-instance.lock"
+        lock_path.write_text(
+            json.dumps(
+                {
+                    "pid": 999,
+                    "createdAt": "2026-03-12T14:00:00+00:00",
+                    "launcherToken": "abc",
+                    "exePath": "C:/stale/Baluffo.exe",
+                    "sessionRoot": str(root),
+                    "state": "launching",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with (
+            mock.patch.object(desktop_app, "resolve_instance_lock_path", return_value=lock_path),
+            mock.patch.object(desktop_app, "_process_identity_matches", return_value=False),
+            mock.patch.object(
+                desktop_app,
+                "_reclaim_stale_instance_artifacts",
+                return_value={
+                    "blocked": True,
+                    "reason": "stale_bridge_cleanup_failed",
+                    "target": "bridge",
+                },
+            ),
+            mock.patch.object(desktop_app, "_append_startup_trace"),
+        ):
+            result = desktop_app.diagnose_instance_conflict(data_dir=root, timeout_s=0.5)
+
+    assert result["action"] == "blocked"
+    assert result["reason"] == "stale_bridge_cleanup_failed"
+    assert result["target"] == "bridge"
+
+
+def test_windows_try_reclaim_stale_bridge_process_skips_when_owner_token_missing() -> None:
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+    ):
+        result = desktop_app._windows_try_reclaim_stale_bridge_process(
+            {
+                "bridgePort": 8877,
+                "bridgePid": 202,
+                "exePath": "C:/tmp/Baluffo.exe",
+            },
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+        )
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "missing_desktop_owner_token"
+
+
+def test_windows_try_reclaim_stale_bridge_process_returns_not_found_without_listener() -> None:
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(desktop_app, "_pids_listening_on_tcp_port_windows", return_value=set()),
+    ):
+        result = desktop_app._windows_try_reclaim_stale_bridge_process(
+            {
+                "bridgePort": 8877,
+                "bridgePid": 202,
+                "desktopOwnerToken": "owner-token",
+                "exePath": "C:/tmp/Baluffo.exe",
+            },
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+        )
+
+    assert result["status"] == "not_found"
+    assert result["reason"] == "no_listener_on_expected_port"
+
+
+def test_windows_try_reclaim_stale_bridge_process_kills_strong_listener() -> None:
+    terminate_mock = mock.Mock(return_value=True)
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(
+            desktop_app,
+            "_pids_listening_on_tcp_port_windows",
+            side_effect=[{202}, set()],
+        ),
+        mock.patch.object(desktop_app, "is_process_alive", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "get_baluffo_bridge_health",
+            return_value={
+                "service": "baluffo-bridge",
+                "desktopMode": True,
+                "owner": {"token": "owner-token"},
+            },
+        ),
+        mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "_windows_terminate_process_tree_by_pid",
+            terminate_mock,
+        ),
+    ):
+        result = desktop_app._windows_try_reclaim_stale_bridge_process(
+            {
+                "bridgePort": 8877,
+                "bridgePid": 202,
+                "desktopOwnerToken": "owner-token",
+                "exePath": "C:/tmp/Baluffo.exe",
+            },
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+        )
+
+    assert result["status"] == "killed"
+    assert result["confirmed"] is True
+    terminate_mock.assert_called_once_with(202)
+
+
+def test_windows_try_reclaim_stale_bridge_process_accepts_listener_clear_after_forced_kill() -> (
+    None
+):
+    terminate_mock = mock.Mock(return_value=False)
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(
+            desktop_app,
+            "_pids_listening_on_tcp_port_windows",
+            side_effect=[{202}, set()],
+        ),
+        mock.patch.object(desktop_app, "is_process_alive", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "get_baluffo_bridge_health",
+            return_value={
+                "service": "baluffo-bridge",
+                "desktopMode": True,
+                "owner": {"token": "owner-token"},
+            },
+        ),
+        mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "_windows_terminate_process_tree_by_pid",
+            terminate_mock,
+        ),
+    ):
+        result = desktop_app._windows_try_reclaim_stale_bridge_process(
+            {
+                "bridgePort": 8877,
+                "bridgePid": 202,
+                "desktopOwnerToken": "owner-token",
+                "exePath": "C:/tmp/Baluffo.exe",
+            },
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+        )
+
+    assert result["status"] == "killed"
+    assert result["confirmed"] is True
+    terminate_mock.assert_called_once_with(202)
+
+
+def test_windows_try_reclaim_stale_bridge_process_skips_when_listener_is_ambiguous() -> None:
+    terminate_mock = mock.Mock()
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(
+            desktop_app,
+            "_pids_listening_on_tcp_port_windows",
+            return_value={202, 303},
+        ),
+        mock.patch.object(
+            desktop_app,
+            "_windows_terminate_process_tree_by_pid",
+            terminate_mock,
+        ),
+    ):
+        result = desktop_app._windows_try_reclaim_stale_bridge_process(
+            {
+                "bridgePort": 8877,
+                "bridgePid": 202,
+                "desktopOwnerToken": "owner-token",
+                "exePath": "C:/tmp/Baluffo.exe",
+            },
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+        )
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "ambiguous_bridge_listener"
+    terminate_mock.assert_not_called()
+
+
+def test_windows_terminate_process_tree_by_pid_waits_for_forced_taskkill_exit() -> None:
+    run_mock = mock.Mock()
+    wait_mock = mock.Mock(return_value=True)
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app.subprocess, "run", run_mock),
+        mock.patch.object(desktop_app, "_wait_for_process_exit_pid", wait_mock),
+    ):
+        result = desktop_app._windows_terminate_process_tree_by_pid(323)
+
+    assert result is True
+    run_mock.assert_called_once()
+    wait_mock.assert_called_once_with(323, timeout_s=15.0)
+
+
+def test_windows_try_reclaim_stale_site_process_kills_when_stored_pid_matches() -> None:
+    terminate_mock = mock.Mock(return_value=True)
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(
+            desktop_app,
+            "_pids_listening_on_tcp_port_windows",
+            side_effect=[{101}, set()],
+        ),
+        mock.patch.object(desktop_app, "is_process_alive", return_value=True),
+        mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "_windows_terminate_process_tree_by_pid",
+            terminate_mock,
+        ),
+    ):
+        result = desktop_app._windows_try_reclaim_stale_site_process(
+            {
+                "sitePort": 8080,
+                "sitePid": 101,
+                "exePath": "C:/tmp/Baluffo.exe",
+            },
+            bridge_confirmed=False,
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+        )
+
+    assert result["status"] == "killed"
+    assert result["confirmed"] is True
+    terminate_mock.assert_called_once_with(101)
+
+
+def test_windows_try_reclaim_stale_site_process_accepts_listener_clear_after_forced_kill() -> None:
+    terminate_mock = mock.Mock(return_value=False)
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(
+            desktop_app,
+            "_pids_listening_on_tcp_port_windows",
+            side_effect=[{101}, set()],
+        ),
+        mock.patch.object(desktop_app, "is_process_alive", return_value=True),
+        mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "_windows_terminate_process_tree_by_pid",
+            terminate_mock,
+        ),
+    ):
+        result = desktop_app._windows_try_reclaim_stale_site_process(
+            {
+                "sitePort": 8080,
+                "sitePid": 101,
+                "exePath": "C:/tmp/Baluffo.exe",
+            },
+            bridge_confirmed=False,
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+        )
+
+    assert result["status"] == "killed"
+    assert result["confirmed"] is True
+    terminate_mock.assert_called_once_with(101)
+
+
+def test_windows_try_reclaim_stale_site_process_requires_bridge_confirmation_without_pid() -> None:
+    terminate_mock = mock.Mock()
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(
+            desktop_app,
+            "_pids_listening_on_tcp_port_windows",
+            side_effect=[{101}, set()],
+        ),
+        mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "_windows_terminate_process_tree_by_pid",
+            terminate_mock,
+        ),
+    ):
+        result = desktop_app._windows_try_reclaim_stale_site_process(
+            {
+                "sitePort": 8080,
+                "exePath": "C:/tmp/Baluffo.exe",
+            },
+            bridge_confirmed=False,
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+        )
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "bridge_not_confirmed"
+    terminate_mock.assert_not_called()
+
+
+def test_windows_try_reclaim_stale_site_process_can_reclaim_without_pid_after_bridge_confirmation() -> (
+    None
+):
+    terminate_mock = mock.Mock(return_value=True)
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(
+            desktop_app,
+            "_pids_listening_on_tcp_port_windows",
+            side_effect=[{101}, set()],
+        ),
+        mock.patch.object(desktop_app, "_windows_process_image_matches", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "_windows_terminate_process_tree_by_pid",
+            terminate_mock,
+        ),
+    ):
+        result = desktop_app._windows_try_reclaim_stale_site_process(
+            {
+                "sitePort": 8080,
+                "exePath": "C:/tmp/Baluffo.exe",
+            },
+            bridge_confirmed=True,
+            data_dir=Path("C:/tmp/baluffo-ship/data"),
+        )
+
+    assert result["status"] == "killed"
+    assert result["confirmed"] is True
+    terminate_mock.assert_called_once_with(101)
 
 
 def test_validate_session_state_rejects_token_mismatch() -> None:
@@ -795,14 +1086,19 @@ def test_launch_browser_for_url_treats_clean_exit_after_reveal_as_detached() -> 
                 "handoffEvidence": "startup_metric",
             },
         ),
+        mock.patch.object(desktop_app, "_windows_try_assign_pid_to_job") as assign_mock,
     ):
-        result = desktop_app.launch_browser_for_url("http://127.0.0.1:8080/jobs.html")
+        result = desktop_app.launch_browser_for_url(
+            "http://127.0.0.1:8080/jobs.html",
+            job_handle=11,
+        )
 
     assert result["mode"] == "chromium-app"
     assert result["process"] is None
     assert result["browserPid"] == 654
     assert result["windowShownObserved"] is False
     assert result["revealHandoffEvidence"] == "startup_metric"
+    assign_mock.assert_called_once_with(11, 654)
 
 
 def test_launch_browser_for_url_emits_trace_events_at_spawn_accept_and_reveal() -> None:
@@ -853,6 +1149,114 @@ def test_launch_browser_for_url_emits_trace_events_at_spawn_accept_and_reveal() 
     )
     shell_event = next(item for item in trace_events if item[0] == "desktop_shell_window_shown")
     assert selected_event[1] == shell_event[1]
+
+
+def test_launch_browser_for_url_attaches_browser_job_before_readiness_polling() -> None:
+    fake_process = mock.Mock(spec=subprocess.Popen)
+    fake_process.pid = 701
+    call_order: list[str] = []
+    trace_events: list[str] = []
+
+    def _trace(event: str, _mono: float, _fields: dict[str, object]) -> None:
+        trace_events.append(event)
+
+    def _attach(_job_handle: int, _pid: int) -> None:
+        call_order.append("attach")
+
+    def _wait(*args: object, **kwargs: object) -> bool:
+        call_order.append("wait")
+        return True
+
+    def _reveal(**kwargs: object) -> dict[str, object]:
+        call_order.append("reveal")
+        return {
+            "pid": 701,
+            "title": "Baluffo",
+            "observedAtMonotonic": 46.0,
+            "event": "desktop_shell_window_shown",
+            "observed": True,
+            "handoffEvidence": "",
+        }
+
+    with (
+        mock.patch.object(
+            desktop_app,
+            "resolve_chromium_browser_candidates",
+            return_value=[{"name": "chrome", "path": "C:/Chrome/chrome.exe"}],
+        ),
+        mock.patch.object(desktop_app, "launch_chromium_app", return_value=fake_process),
+        mock.patch.object(
+            desktop_app,
+            "_windows_try_assign_pid_to_job",
+            side_effect=_attach,
+        ) as assign_mock,
+        mock.patch.object(
+            desktop_app,
+            "wait_for_browser_process_ready",
+            side_effect=_wait,
+        ) as wait_mock,
+        mock.patch.object(
+            desktop_app,
+            "_wait_for_browser_reveal",
+            side_effect=_reveal,
+        ) as reveal_mock,
+    ):
+        result = desktop_app.launch_browser_for_url(
+            "http://127.0.0.1:8080/jobs.html",
+            job_handle=11,
+            trace_hook=_trace,
+        )
+
+    assert result["mode"] == "chromium-app"
+    assign_mock.assert_called_once_with(11, 701)
+    wait_mock.assert_called_once()
+    reveal_mock.assert_called_once()
+    assert call_order == ["attach", "wait", "reveal"]
+    assert trace_events[:2] == [
+        "desktop_browser_process_spawn_started",
+        "desktop_browser_job_attached",
+    ]
+
+
+def test_launch_browser_for_url_stops_before_readiness_when_job_attach_fails() -> None:
+    fake_process = mock.Mock(spec=subprocess.Popen)
+    fake_process.pid = 702
+    trace_events: list[str] = []
+
+    def _trace(event: str, _mono: float, _fields: dict[str, object]) -> None:
+        trace_events.append(event)
+
+    with (
+        mock.patch.object(
+            desktop_app,
+            "resolve_chromium_browser_candidates",
+            return_value=[{"name": "chrome", "path": "C:/Chrome/chrome.exe"}],
+        ),
+        mock.patch.object(desktop_app, "launch_chromium_app", return_value=fake_process),
+        mock.patch.object(
+            desktop_app,
+            "_windows_try_assign_pid_to_job",
+            side_effect=OSError("browser attach failed"),
+        ) as assign_mock,
+        mock.patch.object(desktop_app, "wait_for_browser_process_ready") as wait_mock,
+        mock.patch.object(desktop_app, "_wait_for_browser_reveal") as reveal_mock,
+        mock.patch.object(desktop_app, "terminate_process") as terminate_mock,
+    ):
+        with pytest.raises(OSError, match="browser attach failed"):
+            desktop_app.launch_browser_for_url(
+                "http://127.0.0.1:8080/jobs.html",
+                job_handle=11,
+                trace_hook=_trace,
+            )
+
+    assign_mock.assert_called_once_with(11, 702)
+    terminate_mock.assert_called_once_with(fake_process)
+    wait_mock.assert_not_called()
+    reveal_mock.assert_not_called()
+    assert trace_events == [
+        "desktop_browser_process_spawn_started",
+        "desktop_browser_job_attach_failed",
+    ]
 
 
 def test_windows_try_assign_pid_to_job_raises_when_open_process_fails() -> None:
@@ -922,7 +1326,8 @@ def test_start_child_process_terminates_child_when_job_attach_fails() -> None:
     fake_process = SimpleNamespace(pid=321)
 
     with (
-        mock.patch.object(desktop_app.subprocess, "Popen", return_value=fake_process),
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app.subprocess, "Popen", return_value=fake_process) as popen_mock,
         mock.patch.object(
             desktop_app,
             "_windows_try_assign_pid_to_job",
@@ -934,6 +1339,74 @@ def test_start_child_process_terminates_child_when_job_attach_fails() -> None:
             desktop_app.start_child_process(["python", "-V"], job_handle=11)
 
     terminate_mock.assert_called_once_with(fake_process)
+    assert popen_mock.call_args.kwargs["close_fds"] is True
+
+
+def test_windows_create_kill_on_close_job_marks_handle_non_inheritable() -> None:
+    kernel32 = mock.Mock()
+    kernel32.CreateJobObjectW.return_value = 77
+    kernel32.SetHandleInformation.return_value = 1
+    kernel32.SetInformationJobObject.return_value = 1
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(desktop_app.ctypes, "windll", mock.Mock(kernel32=kernel32)),
+    ):
+        handle = desktop_app._windows_create_kill_on_close_job()
+
+    assert handle == 77
+    kernel32.SetHandleInformation.assert_called_once_with(77, 0x00000001, 0)
+    kernel32.SetInformationJobObject.assert_called_once()
+
+
+def test_is_process_alive_returns_false_for_signaled_windows_process_handle() -> None:
+    kernel32 = SimpleNamespace(
+        OpenProcess=mock.Mock(return_value=55),
+        WaitForSingleObject=mock.Mock(return_value=0),
+        GetExitCodeProcess=mock.Mock(return_value=1),
+        CloseHandle=mock.Mock(),
+    )
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(
+            desktop_app.ctypes,
+            "windll",
+            SimpleNamespace(kernel32=kernel32),
+            create=True,
+        ),
+    ):
+        assert desktop_app.is_process_alive(123) is False
+
+    kernel32.GetExitCodeProcess.assert_not_called()
+    kernel32.CloseHandle.assert_called_once_with(55)
+
+
+def test_is_process_alive_returns_true_for_running_windows_process_handle() -> None:
+    def _get_exit_code(_handle: int, exit_code_ptr: object) -> int:
+        exit_code_ptr._obj.value = desktop_app._STILL_ACTIVE
+        return 1
+
+    kernel32 = SimpleNamespace(
+        OpenProcess=mock.Mock(return_value=55),
+        WaitForSingleObject=mock.Mock(return_value=desktop_app._WAIT_TIMEOUT),
+        GetExitCodeProcess=mock.Mock(side_effect=_get_exit_code),
+        CloseHandle=mock.Mock(),
+    )
+
+    with (
+        mock.patch.object(desktop_app.os, "name", "nt"),
+        mock.patch.object(
+            desktop_app.ctypes,
+            "windll",
+            SimpleNamespace(kernel32=kernel32),
+            create=True,
+        ),
+    ):
+        assert desktop_app.is_process_alive(123) is True
+
+    kernel32.GetExitCodeProcess.assert_called_once()
+    kernel32.CloseHandle.assert_called_once_with(55)
 
 
 def test_find_baluffo_visible_window_accepts_same_pid_chromium_window_without_baluffo_title() -> (
@@ -1445,6 +1918,122 @@ def test_launch_desktop_app_fails_when_active_session_exists_without_spawning_ch
     )
 
 
+def test_launch_desktop_app_raises_when_stale_runtime_cleanup_is_blocked() -> None:
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=Path("C:/tmp/baluffo-ship/data"),
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+    )
+
+    with (
+        mock.patch.object(desktop_app, "acquire_instance_lock", return_value=None),
+        mock.patch.object(
+            desktop_app,
+            "diagnose_instance_conflict",
+            return_value={"action": "blocked", "target": "bridge"},
+        ),
+        mock.patch.object(desktop_app, "start_child_process") as start_child_mock,
+        pytest.raises(RuntimeError, match="stale bridge process"),
+    ):
+        desktop_app.launch_desktop_app(config)
+
+    start_child_mock.assert_not_called()
+
+
+def test_launch_desktop_app_reclaims_stale_session_before_resolving_explicit_ports() -> None:
+    config = desktop_app.DesktopRuntimeConfig(
+        ship_root=Path("C:/tmp/baluffo-ship"),
+        site_port=8080,
+        bridge_port=8877,
+        bridge_host="127.0.0.1",
+        data_dir=Path("C:/tmp/baluffo-ship/data"),
+        open_path="jobs.html",
+        title="Baluffo",
+        startup_probe=False,
+        site_port_explicit=True,
+        bridge_port_explicit=True,
+    )
+    call_order: list[str] = []
+    stale_session = {
+        "launcherPid": 321,
+        "launcherToken": "stale-launcher-token",
+        "desktopSessionId": "stale-session",
+        "desktopOwnerToken": "stale-owner",
+        "launcherStartedAt": "2026-04-20T05:00:00+00:00",
+        "sitePort": 8080,
+        "bridgePort": 8877,
+        "bridgeHost": "127.0.0.1",
+        "exePath": "C:/tmp/Baluffo.exe",
+        "dataDir": "C:/tmp/baluffo-ship/data",
+    }
+
+    def _resolve_runtime_ports(
+        current: desktop_app.DesktopRuntimeConfig,
+    ) -> desktop_app.DesktopRuntimeConfig:
+        call_order.append("resolve")
+        return current
+
+    def _ensure_runtime_ports(_config: desktop_app.DesktopRuntimeConfig) -> None:
+        call_order.append("ensure")
+        raise RuntimeError("stop after resolve")
+
+    def _load_session_state(*args: object, **kwargs: object) -> dict[str, object]:
+        call_order.append("load")
+        return stale_session
+
+    def _validate_session_state(*args: object, **kwargs: object) -> tuple[bool, str]:
+        call_order.append("validate")
+        return False, "launcher_pid_inactive"
+
+    def _reclaim_stale_instance_artifacts(*args: object, **kwargs: object) -> dict[str, object]:
+        call_order.append("reclaim")
+        assert kwargs["stale_state"] == stale_session
+        return {"blocked": False}
+
+    with (
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(
+                Path("C:/tmp/desktop.lock"), 1, launcher_token="launcher-token"
+            ),
+        ),
+        mock.patch.object(desktop_app, "load_session_state", side_effect=_load_session_state),
+        mock.patch.object(
+            desktop_app, "validate_session_state", side_effect=_validate_session_state
+        ),
+        mock.patch.object(
+            desktop_app,
+            "_reclaim_stale_instance_artifacts",
+            side_effect=_reclaim_stale_instance_artifacts,
+        ),
+        mock.patch.object(desktop_app, "resolve_runtime_ports", side_effect=_resolve_runtime_ports),
+        mock.patch.object(desktop_app, "ensure_runtime_ports", side_effect=_ensure_runtime_ports),
+        mock.patch.object(desktop_app, "start_child_process") as start_child_mock,
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+        mock.patch.object(desktop_app, "_write_launch_diagnostics"),
+        pytest.raises(RuntimeError, match="stop after resolve"),
+    ):
+        desktop_app.launch_desktop_app(config)
+
+    assert call_order == [
+        "load",
+        "validate",
+        "load",
+        "validate",
+        "reclaim",
+        "resolve",
+        "ensure",
+    ]
+    start_child_mock.assert_not_called()
+
+
 def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_app.DesktopRuntimeConfig(
@@ -1475,6 +2064,8 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
             side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
         ),
         mock.patch.object(desktop_app, "wait_for_url"),
+        mock.patch.object(desktop_app, "_windows_create_kill_on_close_job", return_value=11),
+        mock.patch.object(desktop_app, "_windows_close_desktop_job"),
         mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
         mock.patch.object(
             desktop_app,
@@ -1485,8 +2076,8 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
                 "browserPath": "C:/Edge/msedge.exe",
                 "process": fake_browser_process,
             },
-        ),
-        mock.patch.object(desktop_app, "_windows_try_assign_pid_to_job"),
+        ) as launch_browser_mock,
+        mock.patch.object(desktop_app, "_windows_try_assign_pid_to_job") as assign_mock,
         mock.patch.object(desktop_app, "save_session_state") as save_mock,
         mock.patch.object(
             desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
@@ -1502,9 +2093,14 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
     assert save_payload["appVersion"] == APP_VERSION
     assert save_payload["launchMode"] == "chromium-app"
     assert save_payload["browserPath"] == "C:/Edge/msedge.exe"
+    assert save_payload["sitePid"] == 101
     assert save_payload["bridgePort"] == 8877
+    assert save_payload["bridgePid"] == 202
     assert save_payload["desktopSessionId"]
     assert save_payload["desktopOwnerToken"]
+    launch_browser_mock.assert_called_once()
+    assert launch_browser_mock.call_args.kwargs["job_handle"] == 11
+    assign_mock.assert_not_called()
     watch_mock.assert_called_once_with(
         data_dir,
         mock.ANY,
@@ -2754,8 +3350,6 @@ def test_launch_desktop_app_recovers_when_initial_browser_attach_fails() -> None
     bridge_process = mock.Mock(spec=subprocess.Popen)
     bridge_process.pid = 202
     bridge_process.poll.return_value = None
-    browser_process = mock.Mock(spec=subprocess.Popen)
-    browser_process.pid = 303
     trace_mock = mock.Mock()
 
     with (
@@ -2781,32 +3375,22 @@ def test_launch_desktop_app_recovers_when_initial_browser_attach_fails() -> None
         mock.patch.object(
             desktop_app,
             "launch_browser_for_url",
-            return_value={
-                "mode": "chromium-app",
-                "browserName": "chrome",
-                "browserPath": "C:/Chrome/chrome.exe",
-                "process": browser_process,
-                "browserPid": 303,
-            },
-        ),
-        mock.patch.object(
-            desktop_app,
-            "_windows_try_assign_pid_to_job",
             side_effect=OSError("browser attach failed"),
-        ),
+        ) as launch_browser_mock,
         mock.patch.object(desktop_app, "show_native_message") as show_message_mock,
         mock.patch.object(desktop_app, "save_session_state") as save_mock,
         mock.patch.object(
             desktop_app, "watch_browser_session", return_value="heartbeat_timeout"
         ) as watch_mock,
         mock.patch.object(desktop_app, "clear_session_state"),
-        mock.patch.object(desktop_app, "terminate_process") as terminate_mock,
+        mock.patch.object(desktop_app, "terminate_process"),
         mock.patch.object(desktop_app, "_write_launch_diagnostics"),
         mock.patch.object(desktop_app, "_append_startup_trace", trace_mock),
     ):
         desktop_app.launch_desktop_app(config)
 
     assert save_mock.call_args.args[0]["launchMode"] == "browser-launch-recovery"
+    assert launch_browser_mock.call_args.kwargs["job_handle"] == 11
     watch_mock.assert_called_once_with(
         data_dir,
         mock.ANY,
@@ -2821,9 +3405,6 @@ def test_launch_desktop_app_recovers_when_initial_browser_attach_fails() -> None
     )
     show_message_mock.assert_called_once()
     assert open_url in show_message_mock.call_args.args[1]
-    assert [call for call in terminate_mock.call_args_list if call.args == (browser_process,)] == [
-        mock.call(browser_process)
-    ]
     assert any(
         call.args[1] == "desktop_browser_launch_recovered" for call in trace_mock.call_args_list
     )
@@ -2841,8 +3422,6 @@ def test_attempt_active_work_browser_relaunch_returns_none_when_job_attach_fails
         title="Baluffo",
         startup_probe=False,
     )
-    browser_process = mock.Mock(spec=subprocess.Popen)
-    browser_process.pid = 404
     trace_mock = mock.Mock()
 
     with (
@@ -2850,19 +3429,8 @@ def test_attempt_active_work_browser_relaunch_returns_none_when_job_attach_fails
         mock.patch.object(
             desktop_app,
             "launch_browser_for_url",
-            return_value={
-                "mode": "chromium-app",
-                "browserName": "chrome",
-                "browserPath": "C:/Chrome/chrome.exe",
-                "process": browser_process,
-                "browserPid": 404,
-            },
-        ),
-        mock.patch.object(
-            desktop_app,
-            "_windows_try_assign_pid_to_job",
             side_effect=OSError("browser attach failed"),
-        ),
+        ) as launch_browser_mock,
         mock.patch.object(desktop_app, "terminate_process") as terminate_mock,
         mock.patch.object(desktop_app, "_append_startup_trace", trace_mock),
     ):
@@ -2877,7 +3445,8 @@ def test_attempt_active_work_browser_relaunch_returns_none_when_job_attach_fails
         )
 
     assert result is None
-    terminate_mock.assert_called_once_with(browser_process)
+    assert launch_browser_mock.call_args.kwargs["job_handle"] == 11
+    terminate_mock.assert_not_called()
     assert any(
         call.args[1] == "desktop_browser_relaunch_failed" for call in trace_mock.call_args_list
     )

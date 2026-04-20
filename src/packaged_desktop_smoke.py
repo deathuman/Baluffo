@@ -202,6 +202,64 @@ def startup_metric_launch_mode(rows: list[dict[str, Any]]) -> str:
     return ""
 
 
+def startup_metric_event_present(
+    rows: list[dict[str, Any]], event: str, **expected_fields: object
+) -> bool:
+    expected_event = str(event or "").strip()
+    for row in rows:
+        if str(row.get("event") or "").strip() != expected_event:
+            continue
+        fields = startup_metric_fields(row)
+        matches = True
+        for key, expected in expected_fields.items():
+            actual = fields.get(str(key))
+            if isinstance(expected, bool):
+                if bool(actual) is not bool(expected):
+                    matches = False
+                    break
+                continue
+            if isinstance(expected, int):
+                if int(actual or 0) != int(expected):
+                    matches = False
+                    break
+                continue
+            if str(actual or "").strip() != str(expected or "").strip():
+                matches = False
+                break
+        if matches:
+            return True
+    return False
+
+
+def find_startup_metric_fields(
+    rows: list[dict[str, Any]], event: str, **expected_fields: object
+) -> dict[str, Any] | None:
+    expected_event = str(event or "").strip()
+    for row in reversed(rows):
+        if str(row.get("event") or "").strip() != expected_event:
+            continue
+        fields = startup_metric_fields(row)
+        matches = True
+        for key, expected in expected_fields.items():
+            actual = fields.get(str(key))
+            if isinstance(expected, bool):
+                if bool(actual) is not bool(expected):
+                    matches = False
+                    break
+                continue
+            if isinstance(expected, int):
+                if int(actual or 0) != int(expected):
+                    matches = False
+                    break
+                continue
+            if str(actual or "").strip() != str(expected or "").strip():
+                matches = False
+                break
+        if matches:
+            return fields
+    return None
+
+
 def choose_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as handle:
         handle.bind(("127.0.0.1", 0))
@@ -587,6 +645,86 @@ def launch_packaged_exe(
     return process, stdout_handle, stderr_handle
 
 
+def launch_packaged_command(
+    exe_path: Path,
+    *,
+    args: list[str],
+    stdout_path: Path,
+    stderr_path: Path,
+    env: dict[str, str] | None = None,
+) -> tuple[subprocess.Popen[Any], Any, Any]:
+    stdout_path.parent.mkdir(parents=True, exist_ok=True)
+    stderr_path.parent.mkdir(parents=True, exist_ok=True)
+    stdout_handle = stdout_path.open("wb")
+    stderr_handle = stderr_path.open("wb")
+    process = subprocess.Popen(
+        [str(exe_path), *list(args)],
+        cwd=exe_path.parent,
+        stdout=stdout_handle,
+        stderr=stderr_handle,
+        env=env,
+    )
+    return process, stdout_handle, stderr_handle
+
+
+def launch_packaged_desktop_child(
+    exe_path: Path,
+    *,
+    mode: str,
+    port: int,
+    data_dir: Path | None = None,
+    owner_token: str = "",
+    desktop_session_id: str = "",
+    stdout_path: Path,
+    stderr_path: Path,
+    env: dict[str, str] | None = None,
+) -> tuple[subprocess.Popen[Any], Any, Any]:
+    normalized = str(mode or "").strip().lower()
+    portable_root = exe_path.parent.resolve()
+    ship_root = portable_root / "ship"
+    if normalized == "site":
+        args = [
+            "__child_site__",
+            "--root",
+            str(ship_root),
+            "--port",
+            str(int(port)),
+            "--desktop-runtime",
+        ]
+    elif normalized == "bridge":
+        args = [
+            "__child_bridge__",
+            "--root",
+            str(ship_root),
+            "--bind-host",
+            "127.0.0.1",
+            "--port",
+            str(int(port)),
+            "--data-dir",
+            str(data_dir or (ship_root / "data")),
+            "--desktop-runtime",
+            "--owner-mode",
+            "desktop-window",
+            "--owner-token",
+            str(owner_token or ""),
+            "--desktop-session-id",
+            str(desktop_session_id or ""),
+            "--started-by",
+            "packaged-orphan-reclaim",
+            "--owner-idle-timeout-s",
+            "600.0",
+        ]
+    else:
+        raise ValueError(f"Unsupported packaged child mode: {mode}")
+    return launch_packaged_command(
+        exe_path,
+        args=args,
+        stdout_path=stdout_path,
+        stderr_path=stderr_path,
+        env=env,
+    )
+
+
 def _local_address_matches_listen_port(local_addr: str, port: int) -> bool:
     token = str(local_addr or "").strip()
     if not token:
@@ -681,6 +819,42 @@ def terminate_process_tree(process: subprocess.Popen[Any] | None) -> None:
         process.wait(timeout=5)
 
 
+def terminate_process_only(process: subprocess.Popen[Any] | None) -> None:
+    if process is None:
+        return
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    else:
+        process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired as exc:
+        raise TimeoutError(
+            "Packaged launcher did not exit after launcher-only termination."
+        ) from exc
+
+
+def _packaged_runtime_page_ready(site_base_url: str, open_path: str) -> bool:
+    page_name = str(Path(str(open_path or "jobs.html")).name or "jobs.html")
+    page_text = fetch_text(f"{site_base_url}/{page_name}?desktop=1", timeout_s=2.5)
+    if page_name == "jobs.html":
+        return "jobs-list" in page_text
+    if page_name == "saved.html":
+        return "saved" in page_text.lower()
+    if page_name == "admin.html":
+        return "admin" in page_text.lower()
+    if page_name == "desktop-probe.html":
+        return "Desktop Probe" in page_text
+    return True
+
+
 def wait_for_packaged_runtime(
     process: subprocess.Popen[Any],
     *,
@@ -717,16 +891,7 @@ def wait_for_packaged_runtime(
             events = {str(row.get("event") or "") for row in metrics_rows if isinstance(row, dict)}
             page_ready = True
             if require_page_ready:
-                page_name = str(Path(str(open_path or "jobs.html")).name or "jobs.html")
-                page_text = fetch_text(f"{site_base_url}/{page_name}?desktop=1", timeout_s=2.5)
-                if page_name == "jobs.html":
-                    page_ready = "jobs-list" in page_text
-                elif page_name == "saved.html":
-                    page_ready = "saved" in page_text.lower()
-                elif page_name == "admin.html":
-                    page_ready = "admin" in page_text.lower()
-                elif page_name == "desktop-probe.html":
-                    page_ready = "Desktop Probe" in page_text
+                page_ready = _packaged_runtime_page_ready(site_base_url, open_path)
             if (
                 all(_required_startup_event_present(events, event) for event in normalized)
                 and page_ready
@@ -747,6 +912,132 @@ def wait_for_packaged_runtime(
         time.sleep(0.35)
     raise TimeoutError(
         f"Packaged desktop runtime did not become ready within {timeout_s:.1f}s."
+        + (f" Last error: {last_error}" if last_error else "")
+    )
+
+
+def wait_for_packaged_runtime_with_port_pivot(
+    process: subprocess.Popen[Any],
+    *,
+    requested_site_port: int,
+    requested_bridge_port: int,
+    expected_data_dir: Path,
+    timeout_s: float,
+    open_path: str = "jobs.html",
+    required_events: list[str] | tuple[str, ...] = STARTUP_REQUIRED_EVENTS,
+    env: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + max(1.0, float(timeout_s))
+    last_error = ""
+    normalized = tuple(
+        str(event or "").strip() for event in required_events if str(event or "").strip()
+    )
+    actual_site_port = int(requested_site_port or 0)
+    actual_bridge_port = int(requested_bridge_port or 0)
+    retry_observed = False
+    session_root = packaged_desktop_session_paths(env)["sessionRoot"]
+    while time.monotonic() < deadline:
+        exit_code = process.poll()
+        if exit_code is not None:
+            raise RuntimeError(
+                f"Packaged desktop executable exited before smoke runtime became ready (exit {exit_code})."
+            )
+        try:
+            session_state = desktop_update_mod.read_desktop_session_state(session_root)
+            data_dir = Path(str(session_state.get("dataDir") or "")).expanduser()
+            if session_state and data_dir.resolve() == expected_data_dir.resolve():
+                session_site_port = int(session_state.get("sitePort") or 0)
+                session_bridge_port = int(session_state.get("bridgePort") or 0)
+                if session_site_port > 0:
+                    actual_site_port = session_site_port
+                if session_bridge_port > 0:
+                    actual_bridge_port = session_bridge_port
+                if actual_site_port != int(requested_site_port or 0) or actual_bridge_port != int(
+                    requested_bridge_port or 0
+                ):
+                    retry_observed = True
+            site_base_url = f"http://127.0.0.1:{actual_site_port}"
+            bridge_base_url = f"http://127.0.0.1:{actual_bridge_port}"
+            health = fetch_json(f"{bridge_base_url}/ops/health")
+            session = fetch_json(f"{bridge_base_url}/desktop-local-data/session")
+            metrics_rows = fetch_startup_metrics(bridge_base_url, limit=1000)
+            if startup_metric_event_present(metrics_rows, "desktop_runtime_port_retry"):
+                retry_observed = True
+            events = {str(row.get("event") or "") for row in metrics_rows if isinstance(row, dict)}
+            if all(
+                _required_startup_event_present(events, event) for event in normalized
+            ) and _packaged_runtime_page_ready(site_base_url, open_path):
+                return {
+                    "health": health,
+                    "session": session,
+                    "startupMetrics": metrics_rows,
+                    "siteBaseUrl": site_base_url,
+                    "bridgeBaseUrl": bridge_base_url,
+                    "requestedSitePort": int(requested_site_port or 0),
+                    "requestedBridgePort": int(requested_bridge_port or 0),
+                    "actualSitePort": int(actual_site_port or 0),
+                    "actualBridgePort": int(actual_bridge_port or 0),
+                    "portRetryObserved": retry_observed,
+                }
+        except (
+            TimeoutError,
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as exc:
+            last_error = str(exc)
+        time.sleep(0.35)
+    raise TimeoutError(
+        f"Packaged desktop runtime did not become ready within {timeout_s:.1f}s."
+        + (f" Last error: {last_error}" if last_error else "")
+    )
+
+
+def wait_for_packaged_child_runtime(
+    site_process: subprocess.Popen[Any],
+    bridge_process: subprocess.Popen[Any],
+    *,
+    site_base_url: str,
+    bridge_base_url: str,
+    owner_token: str,
+    timeout_s: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + max(1.0, float(timeout_s))
+    last_error = ""
+    while time.monotonic() < deadline:
+        site_exit = site_process.poll()
+        if site_exit is not None:
+            raise RuntimeError(
+                f"Packaged stale site child exited before rehearsal setup completed (exit {site_exit})."
+            )
+        bridge_exit = bridge_process.poll()
+        if bridge_exit is not None:
+            raise RuntimeError(
+                f"Packaged stale bridge child exited before rehearsal setup completed (exit {bridge_exit})."
+            )
+        try:
+            page_text = fetch_text(f"{site_base_url}/jobs.html?desktop=1", timeout_s=2.5)
+            health = fetch_json(f"{bridge_base_url}/ops/health", timeout_s=2.5)
+            owner = health.get("owner") if isinstance(health.get("owner"), dict) else {}
+            if (
+                "jobs-list" in page_text
+                and str(health.get("service") or "") == "baluffo-bridge"
+                and bool(health.get("desktopMode"))
+                and str(owner.get("token") or "").strip() == str(owner_token or "").strip()
+            ):
+                return {"health": health}
+        except (
+            TimeoutError,
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as exc:
+            last_error = str(exc)
+        time.sleep(0.35)
+    raise TimeoutError(
+        f"Packaged stale child runtime did not become ready within {timeout_s:.1f}s."
         + (f" Last error: {last_error}" if last_error else "")
     )
 
@@ -1425,6 +1716,15 @@ def _wait_for_process_exit(process: subprocess.Popen[Any], *, timeout_s: float) 
     raise TimeoutError("Packaged runtime did not exit for helper handoff in time.")
 
 
+def _wait_for_pid_exit(pid: int, *, timeout_s: float) -> None:
+    deadline = time.monotonic() + max(5.0, float(timeout_s))
+    while time.monotonic() < deadline:
+        if not desktop_app_mod.is_process_alive(int(pid or 0)):
+            return
+        time.sleep(0.5)
+    raise TimeoutError(f"Managed browser pid {int(pid or 0)} remained alive after launcher exit.")
+
+
 def _wait_for_relaunched_runtime(
     *,
     expected_data_dir: Path,
@@ -1499,6 +1799,67 @@ def _preferred_desktop_browser_env() -> dict[str, str]:
     candidates = resolve_chromium_browser_candidates()
     browser_path = str((candidates[0] or {}).get("path") or "").strip() if candidates else ""
     return {"BALUFFO_DESKTOP_BROWSER_PATH": browser_path} if browser_path else {}
+
+
+def _select_packaged_browser_job_browser(
+    env: dict[str, str] | None = None,
+) -> tuple[dict[str, str], dict[str, str]]:
+    env_map = dict(env or os.environ)
+    try:
+        selected = select_startup_probe_browser(env_map)
+    except RuntimeError as base_exc:
+        edge_env = dict(env_map)
+        edge_env["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] = "1"
+        try:
+            selected = select_startup_probe_browser(edge_env)
+            env_map = edge_env
+        except RuntimeError as edge_exc:
+            raise RuntimeError(str(base_exc)) from edge_exc
+    browser_name = str(selected.get("browserName") or "").strip().lower()
+    browser_path = str(selected.get("browserPath") or "").strip()
+    if not browser_name or not browser_path:
+        raise RuntimeError("Packaged browser job rehearsal could not resolve a managed browser.")
+    env_overrides = {desktop_app_mod.PREFERRED_BROWSER_PATH_ENV: browser_path}
+    if browser_name == "msedge":
+        env_overrides["BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"] = "1"
+    return (
+        {
+            "browserName": browser_name,
+            "browserPath": browser_path,
+        },
+        env_overrides,
+    )
+
+
+def _select_browser_shutdown_proof(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    attached_fields = find_startup_metric_fields(rows, "desktop_browser_job_attached") or {}
+    attached_pid = int(attached_fields.get("pid") or 0)
+    if attached_pid > 0 and desktop_app_mod.is_process_alive(attached_pid):
+        return {
+            "proofSource": "attached-browser-pid",
+            "proofPid": attached_pid,
+            "attachedPid": attached_pid,
+            "windowPid": 0,
+        }
+    window_fields = (
+        find_startup_metric_fields(
+            rows,
+            "desktop_shell_window_shown",
+            observed=True,
+        )
+        or {}
+    )
+    window_pid = int(window_fields.get("windowPid") or 0)
+    if window_pid > 0 and desktop_app_mod.is_process_alive(window_pid):
+        return {
+            "proofSource": "window-pid",
+            "proofPid": window_pid,
+            "attachedPid": attached_pid,
+            "windowPid": window_pid,
+        }
+    raise RuntimeError(
+        "Packaged browser job rehearsal could not establish a live attached PID or visible window PID."
+    )
 
 
 def _assert_desktop_update_helper_succeeded(
@@ -1934,6 +2295,407 @@ def run_desktop_update_rehearsal(
         )
 
 
+def run_packaged_browser_job_rehearsal(
+    *,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    if os.name != "nt":
+        return {
+            "name": "Packaged browser job rehearsal",
+            "slug": "packaged-browser-job-rehearsal",
+            "status": "failed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": "Packaged browser job rehearsal requires Windows.",
+        }
+    runtime_env = os.environ.copy()
+    runtime_env.update(
+        packaged_runtime_env_overrides(
+            artifacts_dir=artifacts_dir,
+            session_scope="browser-job-rehearsal",
+        )
+    )
+    clear_packaged_desktop_session_state(runtime_env)
+    runtime_data_dir = artifacts_dir / "runtime-data"
+    runtime_data_dir.mkdir(parents=True, exist_ok=True)
+    selected_browser: dict[str, str] = {"browserName": "", "browserPath": ""}
+    session_root = packaged_desktop_session_paths(runtime_env)["sessionRoot"]
+    requested_site_port = choose_free_port()
+    requested_bridge_port = choose_free_port()
+    actual_site_port = requested_site_port
+    actual_bridge_port = requested_bridge_port
+    port_retry_observed = False
+    proof_pid = 0
+    attached_pid = 0
+    window_pid = 0
+    proof_source = ""
+    runtime_process = None
+    runtime_stdout_handle = None
+    runtime_stderr_handle = None
+    runtime_stdout_path = artifacts_dir / "browser-job-rehearsal-runtime.stdout.log"
+    runtime_stderr_path = artifacts_dir / "browser-job-rehearsal-runtime.stderr.log"
+    metrics_path = artifacts_dir / "browser-job-rehearsal.startup-metrics.json"
+    try:
+        selected_browser, browser_env = _select_packaged_browser_job_browser(runtime_env)
+        runtime_env.update(browser_env)
+        session_root = packaged_desktop_session_paths(runtime_env)["sessionRoot"]
+        runtime_process, runtime_stdout_handle, runtime_stderr_handle = launch_packaged_exe(
+            exe_path,
+            site_port=requested_site_port,
+            bridge_port=requested_bridge_port,
+            data_dir=runtime_data_dir,
+            stdout_path=runtime_stdout_path,
+            stderr_path=runtime_stderr_path,
+            open_path="jobs.html",
+            startup_probe=False,
+            env=runtime_env,
+        )
+        runtime_state = wait_for_packaged_runtime_with_port_pivot(
+            runtime_process,
+            requested_site_port=requested_site_port,
+            requested_bridge_port=requested_bridge_port,
+            expected_data_dir=runtime_data_dir,
+            timeout_s=runtime_timeout_s,
+            open_path="jobs.html",
+            env=runtime_env,
+        )
+        actual_site_port = int(runtime_state.get("actualSitePort") or requested_site_port)
+        actual_bridge_port = int(runtime_state.get("actualBridgePort") or requested_bridge_port)
+        port_retry_observed = bool(runtime_state.get("portRetryObserved"))
+        metrics_rows = list(runtime_state.get("startupMetrics") or [])
+        write_json(metrics_path, {"rows": metrics_rows})
+        launch_mode = startup_metric_launch_mode(metrics_rows)
+        if launch_mode != "chromium-app":
+            raise RuntimeError(
+                "Packaged browser job rehearsal required chromium-app launch mode; "
+                f"desktop launch mode was '{launch_mode or 'unknown'}'."
+            )
+        if not startup_metric_event_present(metrics_rows, "desktop_browser_process_spawn_started"):
+            raise RuntimeError(
+                "Packaged browser job rehearsal never emitted desktop_browser_process_spawn_started."
+            )
+        if not startup_metric_event_present(metrics_rows, "desktop_browser_job_attached"):
+            raise RuntimeError(
+                "Packaged browser job rehearsal never emitted desktop_browser_job_attached."
+            )
+        if startup_metric_event_present(metrics_rows, "desktop_browser_job_attach_failed"):
+            raise RuntimeError(
+                "Packaged browser job rehearsal emitted desktop_browser_job_attach_failed."
+            )
+        if not startup_metric_event_present(metrics_rows, "desktop_browser_launch_accepted"):
+            raise RuntimeError(
+                "Packaged browser job rehearsal never emitted desktop_browser_launch_accepted."
+            )
+        if not startup_metric_event_present(metrics_rows, "desktop_browser_launch_selected"):
+            raise RuntimeError(
+                "Packaged browser job rehearsal never emitted desktop_browser_launch_selected."
+            )
+        proof = _select_browser_shutdown_proof(metrics_rows)
+        proof_source = str(proof.get("proofSource") or "")
+        proof_pid = int(proof.get("proofPid") or 0)
+        attached_pid = int(proof.get("attachedPid") or 0)
+        window_pid = int(proof.get("windowPid") or 0)
+        if proof_pid <= 0 or not desktop_app_mod.is_process_alive(proof_pid):
+            raise RuntimeError(
+                "Packaged browser job rehearsal proof PID was not alive before launcher shutdown."
+            )
+        terminate_process_only(runtime_process)
+        _wait_for_pid_exit(proof_pid, timeout_s=max(15.0, float(runtime_timeout_s)))
+        return {
+            "name": "Packaged browser job rehearsal",
+            "slug": "packaged-browser-job-rehearsal",
+            "status": "passed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": "",
+            "details": {
+                "sessionRoot": str(session_root),
+                "requestedSitePort": requested_site_port,
+                "requestedBridgePort": requested_bridge_port,
+                "actualSitePort": actual_site_port,
+                "actualBridgePort": actual_bridge_port,
+                "portRetryObserved": port_retry_observed,
+                "selectedBrowserName": str(selected_browser.get("browserName") or ""),
+                "selectedBrowserPath": str(selected_browser.get("browserPath") or ""),
+                "attachedPid": attached_pid,
+                "windowPid": window_pid,
+                "proofPid": proof_pid,
+                "proofSource": proof_source,
+                "runtimeStdout": str(runtime_stdout_path),
+                "runtimeStderr": str(runtime_stderr_path),
+                "startupMetrics": str(metrics_path),
+            },
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "name": "Packaged browser job rehearsal",
+            "slug": "packaged-browser-job-rehearsal",
+            "status": "failed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": str(exc),
+            "details": {
+                "sessionRoot": str(session_root),
+                "requestedSitePort": requested_site_port,
+                "requestedBridgePort": requested_bridge_port,
+                "actualSitePort": actual_site_port,
+                "actualBridgePort": actual_bridge_port,
+                "portRetryObserved": port_retry_observed,
+                "selectedBrowserName": str(selected_browser.get("browserName") or ""),
+                "selectedBrowserPath": str(selected_browser.get("browserPath") or ""),
+                "attachedPid": attached_pid,
+                "windowPid": window_pid,
+                "proofPid": proof_pid,
+                "proofSource": proof_source,
+                "runtimeStdout": str(runtime_stdout_path),
+                "runtimeStderr": str(runtime_stderr_path),
+                "startupMetrics": str(metrics_path),
+            },
+        }
+    finally:
+        terminate_process_tree(runtime_process)
+        if runtime_stdout_handle is not None:
+            runtime_stdout_handle.close()
+        if runtime_stderr_handle is not None:
+            runtime_stderr_handle.close()
+        cleanup_orphaned_desktop_ports_nt(
+            requested_site_port,
+            requested_bridge_port,
+            actual_site_port,
+            actual_bridge_port,
+        )
+        clear_packaged_desktop_session_state(runtime_env)
+
+
+def run_packaged_orphan_reclaim_rehearsal(
+    *,
+    exe_path: Path,
+    artifacts_dir: Path,
+    runtime_timeout_s: float,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    runtime_env = os.environ.copy()
+    runtime_env.update(
+        packaged_runtime_env_overrides(
+            artifacts_dir=artifacts_dir,
+            session_scope="orphan-reclaim-rehearsal",
+        )
+    )
+    runtime_env["BALUFFO_DESKTOP_NO_BROWSER"] = "1"
+    session_paths = packaged_desktop_session_paths(runtime_env)
+    runtime_data_dir = artifacts_dir / "runtime-data"
+    runtime_data_dir.mkdir(parents=True, exist_ok=True)
+    clear_packaged_desktop_session_state(runtime_env)
+    site_port = choose_free_port()
+    bridge_port = choose_free_port()
+    owner_token = generate_packaged_smoke_run_token()
+    launcher_token = generate_packaged_smoke_run_token()
+    desktop_session_id = generate_packaged_smoke_run_token()
+    stale_launcher_pid = 2_147_483_647
+    stale_started_at = utc_now_iso()
+    stale_site_process = None
+    stale_site_stdout_handle = None
+    stale_site_stderr_handle = None
+    stale_bridge_process = None
+    stale_bridge_stdout_handle = None
+    stale_bridge_stderr_handle = None
+    runtime_process = None
+    runtime_stdout_handle = None
+    runtime_stderr_handle = None
+    relaunch_site_port = 0
+    relaunch_bridge_port = 0
+    runtime_state: dict[str, Any] = {}
+    stale_site_stdout_path = artifacts_dir / "orphan-reclaim-site.stdout.log"
+    stale_site_stderr_path = artifacts_dir / "orphan-reclaim-site.stderr.log"
+    stale_bridge_stdout_path = artifacts_dir / "orphan-reclaim-bridge.stdout.log"
+    stale_bridge_stderr_path = artifacts_dir / "orphan-reclaim-bridge.stderr.log"
+    runtime_stdout_path = artifacts_dir / "orphan-reclaim-runtime.stdout.log"
+    runtime_stderr_path = artifacts_dir / "orphan-reclaim-runtime.stderr.log"
+    try:
+        stale_site_process, stale_site_stdout_handle, stale_site_stderr_handle = (
+            launch_packaged_desktop_child(
+                exe_path,
+                mode="site",
+                port=site_port,
+                stdout_path=stale_site_stdout_path,
+                stderr_path=stale_site_stderr_path,
+                env=runtime_env,
+            )
+        )
+        stale_bridge_process, stale_bridge_stdout_handle, stale_bridge_stderr_handle = (
+            launch_packaged_desktop_child(
+                exe_path,
+                mode="bridge",
+                port=bridge_port,
+                data_dir=runtime_data_dir,
+                owner_token=owner_token,
+                desktop_session_id=desktop_session_id,
+                stdout_path=stale_bridge_stdout_path,
+                stderr_path=stale_bridge_stderr_path,
+                env=runtime_env,
+            )
+        )
+        wait_for_packaged_child_runtime(
+            stale_site_process,
+            stale_bridge_process,
+            site_base_url=f"http://127.0.0.1:{site_port}",
+            bridge_base_url=f"http://127.0.0.1:{bridge_port}",
+            owner_token=owner_token,
+            timeout_s=runtime_timeout_s,
+        )
+
+        session_paths["sessionRoot"].mkdir(parents=True, exist_ok=True)
+        write_json(
+            session_paths["sessionState"],
+            {
+                "appVersion": desktop_update_mod.get_app_version(),
+                "launcherPid": stale_launcher_pid,
+                "launcherToken": launcher_token,
+                "desktopSessionId": desktop_session_id,
+                "desktopOwnerToken": owner_token,
+                "launcherStartedAt": stale_started_at,
+                "sitePort": site_port,
+                "sitePid": int(stale_site_process.pid),
+                "bridgePort": bridge_port,
+                "bridgePid": int(stale_bridge_process.pid),
+                "bridgeHost": "127.0.0.1",
+                "url": f"http://127.0.0.1:{site_port}/jobs.html?desktop=1",
+                "launchMode": "no-browser",
+                "browserPath": "",
+                "exePath": str(exe_path.resolve()),
+                "dataDir": str(runtime_data_dir.resolve()),
+                "timestamp": utc_now_iso(),
+            },
+        )
+        write_json(
+            session_paths["instanceLock"],
+            {
+                "pid": stale_launcher_pid,
+                "createdAt": stale_started_at,
+                "launcherToken": launcher_token,
+                "exePath": str(exe_path.resolve()),
+                "sessionRoot": str(session_paths["sessionRoot"]),
+                "state": "running",
+            },
+        )
+
+        runtime_process, runtime_stdout_handle, runtime_stderr_handle = launch_packaged_exe(
+            exe_path,
+            site_port=site_port,
+            bridge_port=bridge_port,
+            data_dir=runtime_data_dir,
+            stdout_path=runtime_stdout_path,
+            stderr_path=runtime_stderr_path,
+            open_path="jobs.html",
+            startup_probe=False,
+            env=runtime_env,
+        )
+        runtime_state = wait_for_packaged_runtime_with_port_pivot(
+            runtime_process,
+            requested_site_port=site_port,
+            requested_bridge_port=bridge_port,
+            expected_data_dir=runtime_data_dir,
+            timeout_s=runtime_timeout_s,
+            open_path="jobs.html",
+            env=runtime_env,
+        )
+        relaunch_site_port = int(runtime_state.get("actualSitePort") or site_port)
+        relaunch_bridge_port = int(runtime_state.get("actualBridgePort") or bridge_port)
+        port_retry_observed = bool(runtime_state.get("portRetryObserved"))
+        metrics_rows = list(runtime_state.get("startupMetrics") or [])
+        if relaunch_site_port != site_port or relaunch_bridge_port != bridge_port:
+            raise RuntimeError(
+                "Packaged orphan reclaim rehearsal did not preserve the requested ports after relaunch."
+            )
+        if not startup_metric_event_present(
+            metrics_rows,
+            "desktop_stale_runtime_reclaim_started",
+        ):
+            raise RuntimeError(
+                "Packaged orphan reclaim rehearsal never emitted desktop_stale_runtime_reclaim_started."
+            )
+        if not startup_metric_event_present(
+            metrics_rows,
+            "desktop_stale_runtime_reclaim_result",
+            target="bridge",
+            outcome="killed",
+        ):
+            raise RuntimeError(
+                "Packaged orphan reclaim rehearsal did not prove bridge reclaim in startup metrics."
+            )
+        if not startup_metric_event_present(
+            metrics_rows,
+            "desktop_stale_runtime_reclaim_result",
+            target="site",
+            outcome="killed",
+        ):
+            raise RuntimeError(
+                "Packaged orphan reclaim rehearsal did not prove site reclaim in startup metrics."
+            )
+        if startup_metric_event_present(metrics_rows, "desktop_lock_reclaim_failed"):
+            raise RuntimeError(
+                "Packaged orphan reclaim rehearsal reported desktop_lock_reclaim_failed."
+            )
+        if port_retry_observed:
+            raise RuntimeError(
+                "Packaged orphan reclaim rehearsal retried to different runtime ports instead of reclaiming stale children."
+            )
+        _wait_for_process_exit(stale_site_process, timeout_s=15.0)
+        _wait_for_process_exit(stale_bridge_process, timeout_s=15.0)
+        return {
+            "name": "Packaged orphan reclaim rehearsal",
+            "slug": "packaged-orphan-reclaim-rehearsal",
+            "status": "passed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": "",
+            "details": {
+                "sessionRoot": str(session_paths["sessionRoot"]),
+                "sitePort": site_port,
+                "bridgePort": bridge_port,
+                "actualSitePort": relaunch_site_port,
+                "actualBridgePort": relaunch_bridge_port,
+                "portRetryObserved": port_retry_observed,
+                "runtimeStdout": str(runtime_stdout_path),
+                "runtimeStderr": str(runtime_stderr_path),
+                "staleSiteStdout": str(stale_site_stdout_path),
+                "staleSiteStderr": str(stale_site_stderr_path),
+                "staleBridgeStdout": str(stale_bridge_stdout_path),
+                "staleBridgeStderr": str(stale_bridge_stderr_path),
+            },
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "name": "Packaged orphan reclaim rehearsal",
+            "slug": "packaged-orphan-reclaim-rehearsal",
+            "status": "failed",
+            "durationMs": int((time.perf_counter() - started) * 1000),
+            "error": str(exc),
+        }
+    finally:
+        terminate_process_tree(runtime_process)
+        terminate_process_tree(stale_bridge_process)
+        terminate_process_tree(stale_site_process)
+        if runtime_stdout_handle is not None:
+            runtime_stdout_handle.close()
+        if runtime_stderr_handle is not None:
+            runtime_stderr_handle.close()
+        if stale_site_stdout_handle is not None:
+            stale_site_stdout_handle.close()
+        if stale_site_stderr_handle is not None:
+            stale_site_stderr_handle.close()
+        if stale_bridge_stdout_handle is not None:
+            stale_bridge_stdout_handle.close()
+        if stale_bridge_stderr_handle is not None:
+            stale_bridge_stderr_handle.close()
+        cleanup_orphaned_desktop_ports_nt(
+            site_port,
+            bridge_port,
+            relaunch_site_port,
+            relaunch_bridge_port,
+        )
+        clear_packaged_desktop_session_state(runtime_env)
+
+
 def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     started_at = utc_now_iso()
     run_token = generate_packaged_smoke_run_token()
@@ -2094,6 +2856,57 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 report["failure"] = build_failure_payload(
                     "desktop-update-rehearsal",
                     str(rehearsal.get("error") or "Packaged desktop update rehearsal failed."),
+                )
+            return report
+        if bool(args.orphan_reclaim_rehearsal):
+            rehearsal = run_packaged_orphan_reclaim_rehearsal(
+                exe_path=exe_path,
+                artifacts_dir=artifacts_dir,
+                runtime_timeout_s=float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S),
+            )
+            report["scenarios"].append(rehearsal)
+            if isinstance(rehearsal.get("details"), dict):
+                details = rehearsal.get("details") or {}
+                for src_key, artifact_key in (
+                    ("runtimeStdout", "orphanRehearsalRuntimeStdout"),
+                    ("runtimeStderr", "orphanRehearsalRuntimeStderr"),
+                    ("staleSiteStdout", "orphanRehearsalSiteStdout"),
+                    ("staleSiteStderr", "orphanRehearsalSiteStderr"),
+                    ("staleBridgeStdout", "orphanRehearsalBridgeStdout"),
+                    ("staleBridgeStderr", "orphanRehearsalBridgeStderr"),
+                ):
+                    value = str(details.get(src_key) or "").strip()
+                    if value:
+                        report["artifacts"][artifact_key] = value
+            report["ok"] = str(rehearsal.get("status")) == "passed"
+            if not report["ok"]:
+                report["failure"] = build_failure_payload(
+                    "packaged-orphan-reclaim-rehearsal",
+                    str(rehearsal.get("error") or "Packaged orphan reclaim rehearsal failed."),
+                )
+            return report
+        if bool(args.browser_job_rehearsal):
+            rehearsal = run_packaged_browser_job_rehearsal(
+                exe_path=exe_path,
+                artifacts_dir=artifacts_dir,
+                runtime_timeout_s=float(args.runtime_timeout or DEFAULT_RUNTIME_TIMEOUT_S),
+            )
+            report["scenarios"].append(rehearsal)
+            if isinstance(rehearsal.get("details"), dict):
+                details = rehearsal.get("details") or {}
+                for src_key, artifact_key in (
+                    ("runtimeStdout", "browserJobRehearsalRuntimeStdout"),
+                    ("runtimeStderr", "browserJobRehearsalRuntimeStderr"),
+                    ("startupMetrics", "browserJobRehearsalStartupMetrics"),
+                ):
+                    value = str(details.get(src_key) or "").strip()
+                    if value:
+                        report["artifacts"][artifact_key] = value
+            report["ok"] = str(rehearsal.get("status")) == "passed"
+            if not report["ok"]:
+                report["failure"] = build_failure_payload(
+                    "packaged-browser-job-rehearsal",
+                    str(rehearsal.get("error") or "Packaged browser job rehearsal failed."),
                 )
             return report
         if profile_mode == "warm":
@@ -2364,6 +3177,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--embedded-probes", action="store_true")
     parser.add_argument("--sync-rehearsal", action="store_true")
     parser.add_argument("--desktop-update-rehearsal", action="store_true")
+    parser.add_argument("--orphan-reclaim-rehearsal", action="store_true")
+    parser.add_argument("--browser-job-rehearsal", action="store_true")
     parser.add_argument("--profile-only", action="store_true")
     parser.add_argument("--profile-mode", choices=("cold", "warm"), default="cold")
     parser.add_argument("--open-path", default="jobs.html")
