@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import json
 import subprocess
 from pathlib import Path
@@ -10,6 +11,80 @@ import pytest
 from src.app_version import APP_VERSION
 from src.ship import desktop_app
 from tests.helpers.temp_paths import workspace_tmpdir
+
+
+@contextlib.contextmanager
+def _patch_windows_desktop_app(
+    kernel32: object,
+    *,
+    format_error: str = "Access is denied.",
+):
+    class _FakeJobInfo:
+        def __init__(self) -> None:
+            self.BasicLimitInformation = SimpleNamespace(LimitFlags=0)
+
+    fake_ctypes = SimpleNamespace(
+        windll=SimpleNamespace(kernel32=kernel32),
+        FormatError=mock.Mock(return_value=format_error),
+        byref=lambda obj: SimpleNamespace(_obj=obj),
+        sizeof=lambda _obj: 1,
+        wintypes=SimpleNamespace(DWORD=lambda value=0: SimpleNamespace(value=int(value))),
+    )
+
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(mock.patch.object(desktop_app.os, "name", "nt"))
+        stack.enter_context(mock.patch.object(desktop_app, "ctypes", fake_ctypes, create=True))
+        stack.enter_context(
+            mock.patch.object(desktop_app, "_PROCESS_ASSIGN_TO_JOB_ACCESS", 0x0101, create=True)
+        )
+        stack.enter_context(
+            mock.patch.object(desktop_app, "_HANDLE_FLAG_INHERIT", 0x00000001, create=True)
+        )
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE",
+                0x2000,
+                create=True,
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "_JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS",
+                9,
+                create=True,
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "_JOBOBJECT_EXTENDED_LIMIT_INFORMATION",
+                _FakeJobInfo,
+                create=True,
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "_PROCESS_SYNCHRONIZE",
+                0x00100000,
+                create=True,
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                desktop_app,
+                "_PROCESS_QUERY_LIMITED_INFORMATION",
+                0x1000,
+                create=True,
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(desktop_app, "_WAIT_TIMEOUT", 0x00000102, create=True)
+        )
+        stack.enter_context(mock.patch.object(desktop_app, "_STILL_ACTIVE", 259, create=True))
+        yield fake_ctypes
 
 
 def test_create_runtime_config_defaults_to_fixed_desktop_ports() -> None:
@@ -1265,21 +1340,7 @@ def test_windows_try_assign_pid_to_job_raises_when_open_process_fails() -> None:
         OpenProcess=mock.Mock(return_value=0),
     )
 
-    with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
-        mock.patch.object(
-            desktop_app.ctypes,
-            "windll",
-            SimpleNamespace(kernel32=kernel32),
-            create=True,
-        ),
-        mock.patch.object(
-            desktop_app.ctypes,
-            "FormatError",
-            return_value="Access is denied.",
-            create=True,
-        ),
-    ):
+    with _patch_windows_desktop_app(kernel32):
         with pytest.raises(
             OSError,
             match="OpenProcess failed while attaching pid=123 to desktop job: Access is denied.",
@@ -1295,21 +1356,7 @@ def test_windows_try_assign_pid_to_job_raises_when_assign_process_fails() -> Non
         CloseHandle=mock.Mock(),
     )
 
-    with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
-        mock.patch.object(
-            desktop_app.ctypes,
-            "windll",
-            SimpleNamespace(kernel32=kernel32),
-            create=True,
-        ),
-        mock.patch.object(
-            desktop_app.ctypes,
-            "FormatError",
-            return_value="Access is denied.",
-            create=True,
-        ),
-    ):
+    with _patch_windows_desktop_app(kernel32):
         with pytest.raises(
             OSError,
             match=(
@@ -1348,10 +1395,7 @@ def test_windows_create_kill_on_close_job_marks_handle_non_inheritable() -> None
     kernel32.SetHandleInformation.return_value = 1
     kernel32.SetInformationJobObject.return_value = 1
 
-    with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
-        mock.patch.object(desktop_app.ctypes, "windll", mock.Mock(kernel32=kernel32)),
-    ):
+    with _patch_windows_desktop_app(kernel32):
         handle = desktop_app._windows_create_kill_on_close_job()
 
     assert handle == 77
@@ -1367,15 +1411,7 @@ def test_is_process_alive_returns_false_for_signaled_windows_process_handle() ->
         CloseHandle=mock.Mock(),
     )
 
-    with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
-        mock.patch.object(
-            desktop_app.ctypes,
-            "windll",
-            SimpleNamespace(kernel32=kernel32),
-            create=True,
-        ),
-    ):
+    with _patch_windows_desktop_app(kernel32):
         assert desktop_app.is_process_alive(123) is False
 
     kernel32.GetExitCodeProcess.assert_not_called()
@@ -1384,25 +1420,17 @@ def test_is_process_alive_returns_false_for_signaled_windows_process_handle() ->
 
 def test_is_process_alive_returns_true_for_running_windows_process_handle() -> None:
     def _get_exit_code(_handle: int, exit_code_ptr: object) -> int:
-        exit_code_ptr._obj.value = desktop_app._STILL_ACTIVE
+        exit_code_ptr._obj.value = 259
         return 1
 
     kernel32 = SimpleNamespace(
         OpenProcess=mock.Mock(return_value=55),
-        WaitForSingleObject=mock.Mock(return_value=desktop_app._WAIT_TIMEOUT),
+        WaitForSingleObject=mock.Mock(return_value=0x00000102),
         GetExitCodeProcess=mock.Mock(side_effect=_get_exit_code),
         CloseHandle=mock.Mock(),
     )
 
-    with (
-        mock.patch.object(desktop_app.os, "name", "nt"),
-        mock.patch.object(
-            desktop_app.ctypes,
-            "windll",
-            SimpleNamespace(kernel32=kernel32),
-            create=True,
-        ),
-    ):
+    with _patch_windows_desktop_app(kernel32):
         assert desktop_app.is_process_alive(123) is True
 
     kernel32.GetExitCodeProcess.assert_called_once()
