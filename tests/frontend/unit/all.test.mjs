@@ -43,3 +43,4 @@ import "./saved-render.test.mjs";
 import "./saved-timeline.test.mjs";
 import "./startup-metrics-effects.test.mjs";
 import "./structure-cleanup.test.mjs";
+import "./task-progress.test.mjs";
