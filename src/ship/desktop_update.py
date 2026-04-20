@@ -28,6 +28,7 @@ from src.shared.github_https import (
     build_github_ssl_context,
     wrap_github_request_error,
 )
+from src.ship.desktop_app.config import resolve_browser_session_root
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -354,26 +355,7 @@ def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
 
 
 def resolve_desktop_session_root(env: dict[str, str] | None = None) -> Path:
-    env_map = env if env is not None else os.environ
-    candidates: list[Path] = []
-    local_app_data = str(env_map.get("LOCALAPPDATA") or "").strip()
-    if local_app_data:
-        candidates.append(Path(local_app_data).expanduser().resolve() / "Baluffo")
-    else:
-        candidates.append((Path.home() / "AppData" / "Local" / "Baluffo").resolve())
-    username = str(env_map.get("USERNAME") or env_map.get("USER") or "user").strip() or "user"
-    candidates.append((Path(tempfile.gettempdir()) / f"Baluffo-{username}").resolve())
-    for candidate in candidates:
-        try:
-            candidate.mkdir(parents=True, exist_ok=True)
-            probe_path = candidate / ".baluffo-write-probe"
-            probe_path.write_text("ok", encoding="utf-8")
-            with contextlib.suppress(OSError):
-                probe_path.unlink()
-            return candidate
-        except OSError:
-            continue
-    raise RuntimeError("Baluffo could not resolve a writable desktop session directory.")
+    return resolve_browser_session_root(env)
 
 
 def _looks_like_windows_absolute_path(value: str) -> bool:
@@ -587,17 +569,38 @@ def _load_credible_handoff_install_plan(paths: DesktopUpdatePaths) -> dict[str, 
     return plan
 
 
-def _reconcile_stale_handoff_status(
-    paths: DesktopUpdatePaths,
-    status: dict[str, Any],
-) -> tuple[dict[str, Any], bool]:
+def _handoff_status_pending(status: dict[str, Any]) -> bool:
+    return str(status.get("installState") or "").strip().lower() in HANDOFF_PENDING_INSTALL_STATES
+
+
+def _apply_credible_handoff_status(status: dict[str, Any]) -> dict[str, Any]:
     next_status = dict(status or {})
     install_state = str(next_status.get("installState") or "").strip().lower()
+    if install_state == "waiting_for_exit":
+        next_status["installState"] = "waiting_for_exit"
+        next_status["installStage"] = "waiting_for_exit"
+    else:
+        next_status["installState"] = "handoff_requested"
+        next_status["installStage"] = "preparing"
+    next_status["installStageLabel"] = install_stage_label(
+        next_status.get("installState"),
+        next_status.get("installStage"),
+    )
+    return next_status
+
+
+def _reconcile_handoff_status(
+    paths: DesktopUpdatePaths,
+    status: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    next_status = dict(status or {})
+    install_state = str(next_status.get("installState") or "").strip().lower()
+    credible_plan = _load_credible_handoff_install_plan(paths)
+    if credible_plan:
+        return _apply_credible_handoff_status(next_status), credible_plan, False
     handoff_marker_present = paths.handoff_request_path.exists()
     if install_state not in HANDOFF_PENDING_INSTALL_STATES and not handoff_marker_present:
-        return next_status, False
-    if _load_credible_handoff_install_plan(paths):
-        return next_status, False
+        return next_status, {}, False
     if install_state in HANDOFF_PENDING_INSTALL_STATES:
         next_status.update(
             {
@@ -607,7 +610,9 @@ def _reconcile_stale_handoff_status(
                 "lastError": "Stale desktop update handoff state was cleared.",
             }
         )
-    return next_status, True
+    elif handoff_marker_present:
+        next_status["lastError"] = "Stale desktop update handoff state was cleared."
+    return next_status, {}, True
 
 
 def load_status(paths: DesktopUpdatePaths, *, current_version: str | None = None) -> dict[str, Any]:
@@ -616,7 +621,7 @@ def load_status(paths: DesktopUpdatePaths, *, current_version: str | None = None
     status["currentVersion"] = str(
         current_version or status.get("currentVersion") or get_app_version()
     )
-    status, _stale_handoff = _reconcile_stale_handoff_status(paths, status)
+    status, _credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(paths, status)
     status["installStage"] = normalize_install_stage(
         status.get("installState"),
         status.get("installStage"),
@@ -636,14 +641,15 @@ def save_status(paths: DesktopUpdatePaths, payload: dict[str, Any]) -> dict[str,
 def updater_install_requested(data_dir: Path) -> bool:
     paths = DesktopUpdatePaths.from_data_dir(Path(data_dir))
     state = load_status(paths)
-    state, stale_handoff = _reconcile_stale_handoff_status(paths, state)
+    state, credible_handoff_plan, stale_handoff = _reconcile_handoff_status(paths, state)
     if stale_handoff:
         clear_handoff_request(paths)
+        clear_install_plan(paths)
         save_status(paths, state)
         return False
-    if _load_credible_handoff_install_plan(paths):
+    if credible_handoff_plan:
         return True
-    return str(state.get("installState") or "").strip().lower() in HANDOFF_PENDING_INSTALL_STATES
+    return _handoff_status_pending(state)
 
 
 def clear_success_marker(paths: DesktopUpdatePaths) -> None:
@@ -654,6 +660,18 @@ def clear_success_marker(paths: DesktopUpdatePaths) -> None:
 def clear_handoff_request(paths: DesktopUpdatePaths) -> None:
     with contextlib.suppress(OSError):
         paths.handoff_request_path.unlink()
+
+
+def clear_install_plan(paths: DesktopUpdatePaths) -> None:
+    with contextlib.suppress(OSError):
+        paths.install_plan_path.unlink()
+
+
+def clear_staged_helper(path: Path | None) -> None:
+    if path is None:
+        return
+    with contextlib.suppress(OSError):
+        Path(path).unlink()
 
 
 def helper_runtime_tmpdir() -> Path:
@@ -922,6 +940,31 @@ def _failure_result(
     return payload
 
 
+def _retryable_install_status(
+    status: dict[str, Any],
+    *,
+    zip_path: Path,
+    error: str,
+) -> dict[str, Any]:
+    next_status = dict(status)
+    size_bytes = int(zip_path.stat().st_size) if zip_path.is_file() else 0
+    next_status.update(
+        {
+            "downloadState": "downloaded" if zip_path.is_file() else "idle",
+            "downloadedBytes": size_bytes,
+            "totalBytes": size_bytes,
+            "downloadPercent": 100 if size_bytes > 0 else 0,
+            "installState": "ready" if zip_path.is_file() else "idle",
+            "installStage": "idle",
+            "installStageLabel": "",
+            "downloadedZipPath": str(zip_path) if zip_path.is_file() else "",
+            "rollbackPath": "",
+            "lastError": str(error or "").strip(),
+        }
+    )
+    return next_status
+
+
 class DesktopUpdateService:
     """App-side desktop updater state, fetch, download, and helper handoff service."""
 
@@ -973,6 +1016,10 @@ class DesktopUpdateService:
             if isinstance(status, dict)
             else load_status(self.paths, current_version=current_version)
         )
+        existing, _credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(
+            self.paths,
+            existing,
+        )
         cached, cached_manifest_payload, release_notes = self._load_cached_manifest_parts(
             cached_manifest=cached_manifest,
         )
@@ -1009,6 +1056,10 @@ class DesktopUpdateService:
                 next_status,
                 message="The previous update download stopped before it finished. Check for updates and try again.",
             )
+        next_status, _credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(
+            self.paths,
+            next_status,
+        )
         next_status = _normalize_installed_status(next_status, current_version=current_version)
         if not (
             next_status.get("releaseNotesUrl")
@@ -1052,6 +1103,27 @@ class DesktopUpdateService:
             },
         )
         return _failure_result(status=next_status, error=error, error_code=error_code)
+
+    def _install_handoff_unconfirmed_locked(
+        self,
+        *,
+        status: dict[str, Any],
+        zip_path: Path,
+        temp_helper: Path | None,
+    ) -> dict[str, Any]:
+        error = "Baluffo did not confirm the install handoff. Try install again."
+        clear_handoff_request(self.paths)
+        clear_install_plan(self.paths)
+        clear_staged_helper(temp_helper)
+        retryable_status = save_status(
+            self.paths,
+            _retryable_install_status(status, zip_path=zip_path, error=error),
+        )
+        return _failure_result(
+            status=retryable_status,
+            error=error,
+            error_code="install_handoff_unconfirmed",
+        )
 
     def load_public_keys(self) -> dict[str, bytes]:
         return load_desktop_update_public_keys(
@@ -1441,9 +1513,20 @@ class DesktopUpdateService:
                         "rollbackPath": str(rollback_path),
                     },
                 )
+                verified_status = load_status(self.paths, current_version=self.current_version())
+                verified_status, credible_handoff_plan, _stale_handoff = _reconcile_handoff_status(
+                    self.paths,
+                    verified_status,
+                )
+                if not credible_handoff_plan or not _handoff_status_pending(verified_status):
+                    return self._install_handoff_unconfirmed_locked(
+                        status=status,
+                        zip_path=zip_path,
+                        temp_helper=temp_helper,
+                    )
                 return {
                     "started": True,
-                    "status": load_status(self.paths, current_version=self.current_version()),
+                    "status": verified_status,
                     "exitRequested": True,
                 }
             except Exception as exc:  # noqa: BLE001

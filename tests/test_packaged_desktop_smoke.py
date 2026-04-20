@@ -2577,7 +2577,11 @@ def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_ex
         exe_path = portable_root / "Baluffo.exe"
         exe_path.write_text("exe", encoding="utf-8")
         (portable_root / "BaluffoUpdater.exe").write_text("helper", encoding="utf-8")
+        paths = smoke.desktop_update_mod.DesktopUpdatePaths.from_data_dir(
+            root / "artifacts" / "portable-install" / "ship" / "data"
+        )
         process = mock.Mock()
+        process.poll.return_value = None
         stdout_handle = mock.Mock()
         stderr_handle = mock.Mock()
         captured_env: dict[str, str] = {}
@@ -2605,11 +2609,22 @@ def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_ex
         def fake_wait_for_process_exit(*args, **kwargs):  # noqa: ANN002, ANN003
             assert session_state_path is not None
             assert session_state_path.exists()
+            assert paths.handoff_request_path.exists()
 
         def fake_wait_for_relaunched_runtime(*args, **kwargs):  # noqa: ANN002, ANN003
             assert session_state_path is not None
             assert not session_state_path.exists()
             return {"session": {"launcherPid": 7001, "bridgePort": 7002, "sitePort": 7003}}
+
+        def fake_request_json(url: str, *, timeout_s: float = 10.0, **kwargs):  # noqa: ANN001, ANN003
+            assert "/app/update-status" in url
+            paths.handoff_request_path.parent.mkdir(parents=True, exist_ok=True)
+            paths.handoff_request_path.write_text("{}", encoding="utf-8")
+            return 200, {
+                "downloadState": "downloaded",
+                "installState": "handoff_requested",
+                "installStage": "preparing",
+            }
 
         with (
             mock.patch.object(smoke, "_inject_desktop_update_public_keys"),
@@ -2660,6 +2675,7 @@ def test_run_desktop_update_rehearsal_clears_session_state_only_after_runtime_ex
                     (200, {"started": True, "exitRequested": True}),
                 ],
             ),
+            mock.patch.object(smoke, "request_json", side_effect=fake_request_json),
             mock.patch.object(
                 smoke, "_wait_for_process_exit", side_effect=fake_wait_for_process_exit
             ),

@@ -1716,6 +1716,41 @@ def _wait_for_process_exit(process: subprocess.Popen[Any], *, timeout_s: float) 
     raise TimeoutError("Packaged runtime did not exit for helper handoff in time.")
 
 
+def _wait_for_install_handoff_confirmation(
+    *,
+    bridge_port: int,
+    paths: desktop_update_mod.DesktopUpdatePaths,
+    process: subprocess.Popen[Any],
+    timeout_s: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + max(5.0, float(timeout_s))
+    last_status: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        handoff_marker_exists = paths.handoff_request_path.exists()
+        status_code, status_payload = request_json(
+            f"http://127.0.0.1:{bridge_port}/app/update-status?t={time.time_ns()}",
+            timeout_s=10.0,
+        )
+        if status_code != 200:
+            raise RuntimeError(
+                f"Packaged update handoff status failed: {status_payload or {'status': status_code}}"
+            )
+        last_status = dict(status_payload) if isinstance(status_payload, dict) else {}
+        install_state = str(last_status.get("installState") or "").strip().lower()
+        if handoff_marker_exists and install_state in {"handoff_requested", "waiting_for_exit"}:
+            return last_status
+        if process.poll() is not None:
+            raise RuntimeError(
+                "Packaged runtime exited before updater handoff was confirmed: "
+                f"{last_status or {'handoffRequestPresent': handoff_marker_exists}}"
+            )
+        time.sleep(0.2)
+    raise TimeoutError(
+        "Packaged runtime did not confirm updater handoff in time: "
+        f"{last_status or {'handoffRequestPresent': paths.handoff_request_path.exists()}}"
+    )
+
+
 def _wait_for_pid_exit(pid: int, *, timeout_s: float) -> None:
     deadline = time.monotonic() + max(5.0, float(timeout_s))
     while time.monotonic() < deadline:
@@ -2220,8 +2255,16 @@ def run_desktop_update_rehearsal(
         )
         if status_code != 200:
             raise RuntimeError(f"Update install handoff could not start: {install_payload}")
+        if not bool(install_payload.get("started")):
+            raise RuntimeError(f"Update install handoff did not start: {install_payload}")
         session_root = desktop_update_mod.resolve_desktop_session_root(runtime_env)
         session_state_path = session_root / DESKTOP_SESSION_STATE_FILE
+        _wait_for_install_handoff_confirmation(
+            bridge_port=initial_bridge_port,
+            paths=paths,
+            process=process,
+            timeout_s=max(20.0, runtime_timeout_s),
+        )
         _wait_for_process_exit(process, timeout_s=max(20.0, runtime_timeout_s))
         with contextlib.suppress(OSError):
             session_state_path.unlink()

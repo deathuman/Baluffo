@@ -614,3 +614,210 @@ test("desktop update controller surfaces background download failure once and al
     toasts.some(item => item.message === "Desktop update download started." && item.level === "info")
   );
 });
+
+test("desktop update controller falls back to basic confirm when the dialog helper is unavailable", async () => {
+  const refs = buildRefs();
+  const confirmMessages = [];
+  const postCalls = [];
+  const toasts = [];
+  const fetchStatus = {
+    currentVersion: "0.1.31",
+    latestVersion: "0.1.32",
+    targetVersion: "0.1.32",
+    availability: "available",
+    updateAvailable: true,
+    downloadState: "downloaded",
+    installState: "ready",
+    lastCheckedAt: "2026-04-20T08:00:00Z"
+  };
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async () => fetchStatus,
+    postJson: async (_baseUrl, path) => {
+      postCalls.push(path);
+      return {
+        started: true,
+        status: {
+          ...fetchStatus,
+          installState: "waiting_for_exit",
+          installStage: "waiting_for_exit",
+          installStageLabel: "Waiting for Baluffo to close"
+        }
+      };
+    },
+    bindAsyncClick: () => {},
+    showToast: (message, level) => {
+      toasts.push({ message, level });
+    },
+    confirmFallback: message => {
+      confirmMessages.push(message);
+      return true;
+    },
+    isDesktopRuntimeMode: () => true,
+    setTimeoutFn: handler => ({ unref() {}, handler }),
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  await controller.handlePrimaryAction();
+
+  assert.equal(confirmMessages.length, 1);
+  assert.match(confirmMessages[0], /Install update now\?/);
+  assert.deepEqual(postCalls, ["/app/install-update"]);
+  assert.equal(controller._getState().status.installState, "waiting_for_exit");
+  assert.ok(
+    toasts.some(item => item.message === "Closing Baluffo to install the update..." && item.level === "info")
+  );
+});
+
+test("desktop update controller shows an explicit error when no install confirmation UI is available", async () => {
+  const refs = buildRefs();
+  const postCalls = [];
+  const toasts = [];
+  const fetchStatus = {
+    currentVersion: "0.1.31",
+    latestVersion: "0.1.32",
+    targetVersion: "0.1.32",
+    availability: "available",
+    updateAvailable: true,
+    downloadState: "downloaded",
+    installState: "ready",
+    lastCheckedAt: "2026-04-20T08:00:00Z"
+  };
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async () => fetchStatus,
+    postJson: async (_baseUrl, path) => {
+      postCalls.push(path);
+      throw new Error(`Unexpected path ${path}`);
+    },
+    bindAsyncClick: () => {},
+    showToast: (message, level) => {
+      toasts.push({ message, level });
+    },
+    isDesktopRuntimeMode: () => true,
+    setTimeoutFn: handler => ({ unref() {}, handler }),
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  await controller.handlePrimaryAction();
+
+  assert.deepEqual(postCalls, []);
+  assert.ok(
+    toasts.some(
+      item =>
+        item.message === "Could not open the install confirmation dialog. Restart Baluffo and try again."
+        && item.level === "error"
+    )
+  );
+});
+
+test("desktop update controller forces install handoff polling after a stale started response", async () => {
+  const refs = buildRefs();
+  const scheduled = [];
+  const toasts = [];
+  const fetchStatus = {
+    currentVersion: "0.1.31",
+    latestVersion: "0.1.32",
+    targetVersion: "0.1.32",
+    availability: "available",
+    updateAvailable: true,
+    downloadState: "downloaded",
+    installState: "ready",
+    lastCheckedAt: "2026-04-20T08:00:00Z"
+  };
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async () => fetchStatus,
+    postJson: async () => ({
+      started: true,
+      status: { ...fetchStatus, installState: "ready", installStage: "idle" }
+    }),
+    bindAsyncClick: () => {},
+    showToast: (message, level) => {
+      toasts.push({ message, level });
+    },
+    requestConfirmationDialog: async () => true,
+    isDesktopRuntimeMode: () => true,
+    setTimeoutFn: (handler, delay) => {
+      scheduled.push({ handler, delay });
+      return { unref() {} };
+    },
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  await controller.handlePrimaryAction();
+
+  assert.equal(controller._getState().status.installState, "handoff_requested");
+  assert.equal(controller._getState().installStartPending, true);
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Installing...");
+  assert.equal(scheduled.at(-1)?.delay, 600);
+  assert.ok(
+    toasts.some(item => item.message === "Closing Baluffo to install the update..." && item.level === "info")
+  );
+});
+
+test("desktop update controller surfaces a stale install-start refresh as a visible failure", async () => {
+  const refs = buildRefs();
+  const scheduled = [];
+  const toasts = [];
+  const fetchStatus = {
+    currentVersion: "0.1.31",
+    latestVersion: "0.1.32",
+    targetVersion: "0.1.32",
+    availability: "available",
+    updateAvailable: true,
+    downloadState: "downloaded",
+    installState: "ready",
+    lastCheckedAt: "2026-04-20T08:00:00Z"
+  };
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async () => fetchStatus,
+    postJson: async () => ({
+      started: true,
+      status: { ...fetchStatus, installState: "ready", installStage: "idle" }
+    }),
+    bindAsyncClick: () => {},
+    showToast: (message, level) => {
+      toasts.push({ message, level });
+    },
+    requestConfirmationDialog: async () => true,
+    isDesktopRuntimeMode: () => true,
+    setTimeoutFn: (handler, delay) => {
+      scheduled.push({ handler, delay });
+      return { unref() {} };
+    },
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  await controller.handlePrimaryAction();
+  scheduled.at(-1)?.handler();
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(controller._getState().status.installState, "failed");
+  assert.equal(refs.desktopUpdateToggleBtn.textContent, "Update failed");
+  assert.equal(
+    refs.desktopUpdateBody.textContent,
+    "Baluffo could not confirm the updater handoff. Try Install and restart again."
+  );
+  assert.equal(
+    toasts.filter(
+      item =>
+        item.message === "Baluffo could not confirm the updater handoff. Try Install and restart again."
+        && item.level === "error"
+    ).length,
+    1
+  );
+});

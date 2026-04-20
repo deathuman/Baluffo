@@ -10,6 +10,7 @@ import pytest
 
 from src import app_version
 from src.ship import desktop_update as du
+from src.ship.desktop_app import config as desktop_app_config
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -624,6 +625,51 @@ def test_resolve_desktop_session_root_falls_back_to_temp_when_primary_is_not_wri
         assert session_root == (temp_root / "Baluffo-tester").resolve()
 
 
+def test_resolve_desktop_session_root_honors_env_override() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        override_root = Path(tmp) / "override-session-root"
+
+        session_root = du.resolve_desktop_session_root(
+            {
+                "BALUFFO_DESKTOP_SESSION_ROOT": str(override_root),
+                "LOCALAPPDATA": str(Path(tmp) / "local-app-data"),
+                "USERNAME": "tester",
+            }
+        )
+
+        assert session_root == override_root.resolve()
+
+
+def test_resolve_desktop_session_root_falls_back_to_runtime_temp_when_standard_locations_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        root = Path(tmp)
+        temp_root = root / "temp"
+        localappdata_root = root / "localappdata"
+        env = {"LOCALAPPDATA": str(localappdata_root), "USERNAME": "tester"}
+        local_candidate = (localappdata_root / "Baluffo").resolve()
+        temp_candidate = (temp_root / "Baluffo-tester").resolve()
+        original_write_text = Path.write_text
+
+        monkeypatch.setattr(desktop_app_config.tempfile, "gettempdir", lambda: str(temp_root))
+        monkeypatch.setattr(desktop_app_config, "_RUNTIME_SESSION_ROOT", None)
+
+        def blocked_write_text(self: Path, *args: object, **kwargs: object) -> int:
+            if self.name == ".baluffo-write-probe" and self.parent in {
+                local_candidate,
+                temp_candidate,
+            }:
+                raise OSError("blocked for test")
+            return original_write_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "write_text", blocked_write_text)
+
+        resolved = du.resolve_desktop_session_root(env)
+
+    assert "BaluffoRuntime" in str(resolved)
+
+
 def test_check_for_update_clears_stale_downloaded_state_for_newer_manifest() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"
@@ -777,9 +823,9 @@ def test_get_status_payload_preserves_handoff_state_with_downloaded_zip() -> Non
                 "latestVersion": "0.1.32",
                 "targetVersion": "0.1.32",
                 "downloadState": "downloaded",
-                "installState": "handoff_requested",
-                "installStage": "preparing",
-                "installStageLabel": du.install_stage_label("handoff_requested", "preparing"),
+                "installState": "ready",
+                "installStage": "idle",
+                "installStageLabel": "",
                 "downloadedZipPath": str(zip_path),
                 "helperUpdatedAt": "2026-04-19T22:26:21.821985+00:00",
                 "rollbackPath": str(paths.rollback_root / "0.1.32-20260419-222621"),
@@ -1322,6 +1368,92 @@ def test_request_install_writes_plan_and_launches_helper() -> None:
         assert result["status"]["installStageLabel"] == "Preparing update"
         assert result["status"]["rollbackPath"]
         assert paths.handoff_request_path.is_file()
+
+
+def test_request_install_not_ready_leaves_no_partial_handoff_artifacts() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+
+        result = service.request_install()
+
+        assert result["started"] is False
+        assert result["errorCode"] == "install_not_ready"
+        assert not paths.install_plan_path.exists()
+        assert not paths.handoff_request_path.exists()
+
+
+def test_request_install_returns_handoff_unconfirmed_when_post_write_verification_fails() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        install_root = Path(tmp) / "portable"
+        ship_root = install_root / "ship"
+        data_dir = ship_root / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        helper_path = install_root / du.DESKTOP_UPDATE_HELPER_NAME
+        download_path = paths.downloads_dir / "baluffo-portable-1.4.0.zip"
+        helper_path.parent.mkdir(parents=True, exist_ok=True)
+        helper_path.write_text("helper", encoding="utf-8")
+        download_path.parent.mkdir(parents=True, exist_ok=True)
+        download_path.write_text("zip", encoding="utf-8")
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {
+                "manifest": {
+                    "schema_version": 2,
+                    "key_id": "desktop-ed25519-test",
+                    "channel": "stable",
+                    "version": "1.4.0",
+                    "published_at": "2026-04-14T12:00:00Z",
+                    "release_notes_url": "https://example.com/release",
+                    "min_desktop_updater_version": "2.0.0",
+                    "min_supported_current_version": "0.1.0",
+                    "data_schema_version": "2",
+                    "rollback_allowed": True,
+                    "portable_artifact": {
+                        "url": "https://example.com/baluffo-portable-1.4.0.zip",
+                        "sha256": du.compute_sha256(download_path),
+                        "size_bytes": int(download_path.stat().st_size),
+                    },
+                    "migration_plan": [],
+                    "signature": "ignored-for-test",
+                }
+            },
+        )
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.0"),
+                "availability": "available",
+                "updateAvailable": True,
+                "downloadState": "downloaded",
+                "downloadedZipPath": str(download_path),
+            },
+        )
+        service = du.DesktopUpdateService(data_dir=data_dir, current_version_getter=lambda: "0.1.0")
+        session_root = Path(tmp) / "session"
+        session_root.mkdir(parents=True, exist_ok=True)
+        (session_root / "desktop-session.json").write_text(
+            json.dumps({"launcherPid": 1234, "launcherToken": "token-1"}),
+            encoding="utf-8",
+        )
+
+        with (
+            mock.patch.object(du, "resolve_desktop_session_root", return_value=session_root),
+            mock.patch.object(du.shutil, "disk_usage", return_value=mock.Mock(free=10**9)),
+            mock.patch.object(du, "pid_is_running", return_value=False),
+            mock.patch.object(du, "verify_manifest_signature"),
+        ):
+            result = service.request_install()
+
+        status = du.load_status(paths, current_version="0.1.0")
+        assert result["started"] is False
+        assert result["errorCode"] == "install_handoff_unconfirmed"
+        assert status["downloadState"] == "downloaded"
+        assert status["installState"] == "ready"
+        assert status["downloadedZipPath"] == str(download_path)
+        assert not paths.install_plan_path.exists()
+        assert not paths.handoff_request_path.exists()
 
 
 def test_run_download_worker_failure_clears_install_ready_state_and_bad_zip() -> None:

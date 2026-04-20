@@ -110,6 +110,9 @@ function installResultMessage(errorCode, fallbackMessage) {
   if (code === "install_not_ready") {
     return { message: "Download the update before trying to install it.", level: "error" };
   }
+  if (code === "install_handoff_unconfirmed") {
+    return { message: "Baluffo could not confirm the updater handoff. Try Install and restart again.", level: "error" };
+  }
   if (code === "install_session_unavailable") {
     return { message: "The desktop launcher session is unavailable. Restart Baluffo and try again.", level: "error" };
   }
@@ -140,6 +143,39 @@ function inFlightInstallState(installState) {
   return new Set(["handoff_requested", "waiting_for_exit", "installing", "verifying"]).has(
     String(installState || "").toLowerCase()
   );
+}
+
+function installHandoffFailureMessage(status = {}) {
+  return String(status.lastError || "").trim()
+    || "Baluffo could not confirm the updater handoff. Try Install and restart again.";
+}
+
+function optimisticInstallHandoffStatus(status = {}, fallbackStatus = {}) {
+  const normalized = normalizeDesktopUpdateStatus({
+    ...fallbackStatus,
+    ...(status && typeof status === "object" ? status : {}),
+  });
+  if (inFlightInstallState(normalized.installState)) {
+    return normalized;
+  }
+  return normalizeDesktopUpdateStatus({
+    ...normalized,
+    installState: "handoff_requested",
+    installStage: "preparing",
+    installStageLabel: normalized.installStageLabel || "Preparing update",
+    lastError: "",
+  });
+}
+
+function installHandoffFailureStatus(status = {}) {
+  const normalized = normalizeDesktopUpdateStatus(status);
+  return normalizeDesktopUpdateStatus({
+    ...normalized,
+    installState: "failed",
+    installStage: "",
+    installStageLabel: "",
+    lastError: installHandoffFailureMessage(normalized),
+  });
 }
 
 export function shouldExposeJobsDesktopUpdateStatus(status = {}, { hasFreshStatus = false } = {}) {
@@ -347,6 +383,7 @@ export function createJobsDesktopUpdateController({
   bindAsyncClick,
   showToast,
   requestConfirmationDialog,
+  confirmFallback,
   isDesktopRuntimeMode,
   showReleaseNotesDialog,
   openExternalUrl,
@@ -363,6 +400,7 @@ export function createJobsDesktopUpdateController({
     pollTimer: null,
     status: normalizeDesktopUpdateStatus(),
     dismissedTargetVersion: "",
+    installStartPending: false,
   };
 
   function stopPolling() {
@@ -391,6 +429,10 @@ export function createJobsDesktopUpdateController({
   }
 
   function syncPolling(nextStatus) {
+    if (state.installStartPending) {
+      schedulePoll(600);
+      return;
+    }
     if (shouldPollDesktopUpdateStatus(nextStatus)) {
       schedulePoll();
       return;
@@ -449,7 +491,17 @@ export function createJobsDesktopUpdateController({
     isFresh = false
   } = {}) {
     const previousStatus = state.status;
-    const nextStatus = normalizeDesktopUpdateStatus(status);
+    let nextStatus = normalizeDesktopUpdateStatus(status);
+    if (state.installStartPending) {
+      if (inFlightInstallState(nextStatus.installState) || new Set(["failed", "installed"]).has(nextStatus.installState)) {
+        state.installStartPending = false;
+      } else if (nextStatus.installState === "ready" || nextStatus.downloadState === "downloaded") {
+        nextStatus = installHandoffFailureStatus(nextStatus);
+        state.installStartPending = false;
+      } else {
+        nextStatus = optimisticInstallHandoffStatus(nextStatus, previousStatus);
+      }
+    }
     const targetVersion = String(nextStatus.targetVersion || nextStatus.latestVersion || "").trim();
     if (isFresh) {
       state.hasFreshStatus = true;
@@ -555,25 +607,46 @@ export function createJobsDesktopUpdateController({
   }
 
   async function installUpdate() {
-    const confirmed = await requestConfirmationDialog?.({
+    const confirmationOptions = {
       title: "Install update now?",
       description: "Baluffo will close, install the downloaded update, preserve ship\\data, and reopen automatically.",
       confirmLabel: "Install and restart",
       cancelLabel: "Later",
-    });
+    };
+    let confirmed = false;
+    if (typeof requestConfirmationDialog === "function") {
+      confirmed = Boolean(await requestConfirmationDialog(confirmationOptions));
+    } else if (typeof confirmFallback === "function") {
+      confirmed = Boolean(confirmFallback(
+        `${confirmationOptions.title}\n\n${confirmationOptions.description}`
+      ));
+    } else {
+      showToast?.("Could not open the install confirmation dialog. Restart Baluffo and try again.", "error");
+      return null;
+    }
     if (!confirmed) return null;
+    state.installStartPending = false;
     try {
       const payload = await postJson(baseUrl, "/app/install-update", {});
-      const nextStatus = payload?.status || { ...state.status, installState: "handoff_requested" };
+      const payloadStatus = payload?.status || {};
+      const payloadInstallState = normalizeDesktopUpdateStatus(payloadStatus).installState;
+      const optimisticHandoff = optimisticInstallHandoffStatus(payloadStatus, state.status);
+      const nextStatus = payload?.started ? optimisticHandoff : payloadStatus || optimisticHandoff;
       applyStatus(nextStatus, { openPanel: true });
       if (payload?.started === false || payload?.error) {
+        state.installStartPending = false;
         const feedback = installResultMessage(payload?.errorCode, payload?.error);
         showToast?.(feedback.message, feedback.level);
         return payload;
       }
+      state.installStartPending = !inFlightInstallState(payloadInstallState);
+      if (state.installStartPending) {
+        schedulePoll(600);
+      }
       showToast?.("Closing Baluffo to install the update...", "info");
       return payload;
     } catch (error) {
+      state.installStartPending = false;
       applyStatus({ ...state.status, availability: "error", lastError: errorMessage(error) }, { openPanel: true });
       showToast?.(`Could not start install: ${errorMessage(error)}`, "error");
       return null;
