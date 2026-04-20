@@ -28,7 +28,6 @@ from src.shared.github_https import (
     build_github_ssl_context,
     wrap_github_request_error,
 )
-from src.ship.desktop_app.config import resolve_browser_session_root
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -355,6 +354,8 @@ def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
 
 
 def resolve_desktop_session_root(env: dict[str, str] | None = None) -> Path:
+    from src.ship.desktop_app.config import resolve_browser_session_root
+
     return resolve_browser_session_root(env)
 
 
