@@ -104,6 +104,7 @@ INSTALL_STATES_PRESERVING_DOWNLOADED_ARTIFACT = frozenset(
     }
 )
 HANDOFF_PENDING_INSTALL_STATES = frozenset({"handoff_requested", "waiting_for_exit"})
+_RUNTIME_SESSION_ROOT_FALLBACK: Path | None = None
 
 
 def iso_now() -> str:
@@ -353,9 +354,51 @@ def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
     return ""
 
 
-def resolve_desktop_session_root(env: dict[str, str] | None = None) -> Path:
-    from src.ship.desktop_app.config import resolve_browser_session_root
+def _runtime_session_root_candidate_fallback() -> Path:
+    global _RUNTIME_SESSION_ROOT_FALLBACK
+    if _RUNTIME_SESSION_ROOT_FALLBACK is None:
+        _RUNTIME_SESSION_ROOT_FALLBACK = (
+            Path(tempfile.gettempdir()).resolve()
+            / "BaluffoRuntime"
+            / f"desktop-session-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        ).resolve()
+    return _RUNTIME_SESSION_ROOT_FALLBACK
 
+
+def _resolve_desktop_session_root_fallback(env: dict[str, str] | None = None) -> Path:
+    env_map = env if env is not None else os.environ
+    env_override = str(env_map.get("BALUFFO_DESKTOP_SESSION_ROOT") or "").strip()
+    candidates: list[Path] = []
+    if env_override:
+        candidates.append(Path(env_override).expanduser().resolve())
+    local_app_data = str(env_map.get("LOCALAPPDATA") or "").strip()
+    if local_app_data:
+        candidates.append(Path(local_app_data).expanduser().resolve() / "Baluffo")
+    else:
+        candidates.append((Path.home() / "AppData" / "Local" / "Baluffo").resolve())
+    username = str(env_map.get("USERNAME") or env_map.get("USER") or "user").strip() or "user"
+    candidates.append((Path(tempfile.gettempdir()) / f"Baluffo-{username}").resolve())
+    candidates.append(_runtime_session_root_candidate_fallback())
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            probe_path = candidate / ".baluffo-write-probe"
+            probe_path.write_text("ok", encoding="utf-8")
+            with contextlib.suppress(OSError):
+                probe_path.unlink()
+            return candidate
+        except OSError:
+            continue
+    raise RuntimeError("Baluffo could not resolve a writable desktop session directory.")
+
+
+def resolve_desktop_session_root(env: dict[str, str] | None = None) -> Path:
+    try:
+        from src.ship.desktop_app.config import resolve_browser_session_root
+    except ModuleNotFoundError as exc:
+        if not str(getattr(exc, "name", "") or "").startswith("src.ship.desktop_app"):
+            raise
+        return _resolve_desktop_session_root_fallback(env)
     return resolve_browser_session_root(env)
 
 
