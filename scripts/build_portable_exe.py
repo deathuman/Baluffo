@@ -25,6 +25,24 @@ OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES = tuple(
     for package_name in ("certifi",)
     if importlib.util.find_spec(package_name) is not None
 )
+OPTIONAL_SCRAPY_RUNTIME_PACKAGES = tuple(
+    package_name
+    for package_name in (
+        "scrapy",
+        "scrapy_playwright",
+        "twisted",
+        "parsel",
+        "w3lib",
+        "queuelib",
+        "itemadapter",
+        "itemloaders",
+        "cssselect",
+        "protego",
+        "service_identity",
+        "pydispatch",
+    )
+    if importlib.util.find_spec(package_name) is not None
+)
 MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "src.admin_bridge",
     "src.app_version",
@@ -53,10 +71,12 @@ MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "src.source_sync_snapshot",
     "src.source_sync",
     *OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
+    *OPTIONAL_SCRAPY_RUNTIME_PACKAGES,
     "tkinter",
     "tkinter.ttk",
 )
 MAIN_RUNTIME_COLLECT_DATA_PACKAGES = OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
+MAIN_RUNTIME_COLLECT_ALL_PACKAGES = OPTIONAL_SCRAPY_RUNTIME_PACKAGES
 UPDATER_HELPER_HIDDEN_IMPORTS = (
     "src.shared.github_https",
     *OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
@@ -419,6 +439,8 @@ def run_pyinstaller(
         command.extend(["--hidden-import", module_name])
     for package_name in MAIN_RUNTIME_COLLECT_DATA_PACKAGES:
         command.extend(["--collect-data", package_name])
+    for package_name in MAIN_RUNTIME_COLLECT_ALL_PACKAGES:
+        command.extend(["--collect-all", package_name])
     ship_version_dir = output_dir / "ship" / "app" / "versions" / bundle_version
     for rel in REQUIRED_VERSION_FILES:
         src_file = (ship_version_dir / rel).resolve()

@@ -50,6 +50,7 @@ class StaticSourceRuntimeConfig:
     static_source_time_budget_s: int
     low_yield_detail_cap: int
     very_low_yield_detail_cap: int
+    uncapped_deep_static: bool
     listing_only_hosts: list[str]
     default_path_tokens: list[str]
     default_query_keys: list[str]
@@ -175,9 +176,20 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
         norm_text(os.getenv("BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE"))
         or common_config.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
     )
+    uncapped_deep_static = bool(
+        norm_text(os.getenv("BALUFFO_UNCAPPED_DEEP_STATIC")) in {"1", "true", "yes", "on"}
+    )
     detail_concurrency = max(
         1, int(static_detail_concurrency or common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY)
     )
+    raw_low_yield_detail_cap = int(os.getenv("BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP") or 12)
+    raw_very_low_yield_detail_cap = int(os.getenv("BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP") or 6)
+    if uncapped_deep_static:
+        low_yield_detail_cap = max(0, raw_low_yield_detail_cap)
+        very_low_yield_detail_cap = max(0, raw_very_low_yield_detail_cap)
+    else:
+        low_yield_detail_cap = max(4, raw_low_yield_detail_cap)
+        very_low_yield_detail_cap = max(2, raw_very_low_yield_detail_cap)
     default_path_tokens = ["/job/", "/jobs/", "/jobdetail/"]
     default_query_keys = ["job_id"]
     if static_profile == "broad":
@@ -189,10 +201,9 @@ def build_static_source_runtime_config(static_detail_concurrency: int) -> Static
         static_source_time_budget_s=max(
             5, int(os.getenv("BALUFFO_STATIC_SOURCE_TIME_BUDGET_S") or 25)
         ),
-        low_yield_detail_cap=max(4, int(os.getenv("BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP") or 12)),
-        very_low_yield_detail_cap=max(
-            2, int(os.getenv("BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP") or 6)
-        ),
+        low_yield_detail_cap=low_yield_detail_cap,
+        very_low_yield_detail_cap=very_low_yield_detail_cap,
+        uncapped_deep_static=uncapped_deep_static,
         listing_only_hosts=[
             clean_text(part).lower()
             for part in (
@@ -388,9 +399,16 @@ def source_detail_limit_for(
     listing_jobs_found: int,
     low_yield_detail_cap: int,
     very_low_yield_detail_cap: int,
+    uncapped_deep_static: bool = False,
 ) -> int:
     if discovered_links <= 0:
         return 0
+    if (
+        uncapped_deep_static
+        and int(low_yield_detail_cap or 0) <= 0
+        and int(very_low_yield_detail_cap or 0) <= 0
+    ):
+        return discovered_links
     metrics = _source_tail_metrics(source_key, source_state_rows=source_state_rows)
     if not metrics:
         return discovered_links
@@ -432,9 +450,12 @@ def source_detail_retries_for(
     *,
     source_state_rows: dict[str, dict[str, Any]] | None,
     base_retries: int,
+    uncapped_deep_static: bool = False,
 ) -> int:
     metrics = _source_tail_metrics(source_key, source_state_rows=source_state_rows)
     retries = max(0, int(base_retries or 0))
+    if uncapped_deep_static:
+        return retries
     if not metrics:
         return retries
     last_duration_ms = metrics["last_duration_ms"]
@@ -460,19 +481,27 @@ def choose_detail_traversal_mode(
     discovered_links: int,
     source_key: str,
     source_state_rows: dict[str, dict[str, Any]] | None,
+    probable_detail_candidates: int = 0,
 ) -> str:
     plugin_meta = plugin_meta if isinstance(plugin_meta, dict) else {}
     profile = profile if isinstance(profile, dict) else {}
     explicit_mode = clean_text(plugin_meta.get("detailTraversalMode")) or clean_text(
         profile.get("detail_traversal_mode")
     )
+    allow_uncapped_deep_override = bool(
+        runtime_config.uncapped_deep_static and int(probable_detail_candidates or 0) > 0
+    )
     if explicit_mode in {"listing_only", "capped_detail", "full_detail"}:
-        return explicit_mode
+        if explicit_mode == "listing_only" and allow_uncapped_deep_override:
+            explicit_mode = ""
+        else:
+            return explicit_mode
     detail_fetch_required = plugin_meta.get("detailFetchRequired")
     if detail_fetch_required is None:
         detail_fetch_required = profile.get("detail_fetch_required")
     if detail_fetch_required is False and listing_jobs_found > 0:
-        return "listing_only"
+        if not allow_uncapped_deep_override:
+            return "listing_only"
     metrics = _source_tail_metrics(source_key, source_state_rows=source_state_rows)
     if metrics and listing_jobs_found > 0:
         last_detail_pages = metrics["last_detail_pages"]
@@ -485,10 +514,12 @@ def choose_detail_traversal_mode(
             or last_duration_ms >= 120_000
             or last_detail_pages >= 40
         ) and (last_detail_yield_pct <= 20 or last_kept <= 1):
-            return "listing_only"
+            if not allow_uncapped_deep_override:
+                return "listing_only"
     host = (urlparse(clean_text(page_url) or "").hostname or "").lower()
     if host in runtime_config.listing_only_hosts and listing_jobs_found > 0:
-        return "listing_only"
+        if not allow_uncapped_deep_override:
+            return "listing_only"
     detail_limit = source_detail_limit_for(
         source_key,
         source_state_rows=source_state_rows,
@@ -496,6 +527,7 @@ def choose_detail_traversal_mode(
         listing_jobs_found=listing_jobs_found,
         low_yield_detail_cap=runtime_config.low_yield_detail_cap,
         very_low_yield_detail_cap=runtime_config.very_low_yield_detail_cap,
+        uncapped_deep_static=runtime_config.uncapped_deep_static,
     )
     if detail_limit < discovered_links:
         return "capped_detail"

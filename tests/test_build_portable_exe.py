@@ -8,9 +8,11 @@ import pytest
 from scripts import build_ship_bundle
 from scripts.build_portable_exe import (
     DEFAULT_BUNDLE_VERSION,
+    MAIN_RUNTIME_COLLECT_ALL_PACKAGES,
     MAIN_RUNTIME_COLLECT_DATA_PACKAGES,
     MAIN_RUNTIME_HIDDEN_IMPORTS,
     OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
+    OPTIONAL_SCRAPY_RUNTIME_PACKAGES,
     UPDATER_HELPER_COLLECT_DATA_PACKAGES,
     UPDATER_HELPER_HIDDEN_IMPORTS,
     build_portable_layout,
@@ -122,6 +124,14 @@ def test_main_runtime_hidden_imports_preserve_packaged_browser_fallback_support(
     assert "src.admin_bridge" in MAIN_RUNTIME_HIDDEN_IMPORTS
     assert "tkinter" in MAIN_RUNTIME_HIDDEN_IMPORTS
     assert "src.shared.github_https" in MAIN_RUNTIME_HIDDEN_IMPORTS
+
+
+def test_main_runtime_collect_all_packages_include_scrapy_runtime_when_available() -> None:
+    assert MAIN_RUNTIME_COLLECT_ALL_PACKAGES == OPTIONAL_SCRAPY_RUNTIME_PACKAGES
+    if OPTIONAL_SCRAPY_RUNTIME_PACKAGES:
+        assert "scrapy" in OPTIONAL_SCRAPY_RUNTIME_PACKAGES
+        assert "twisted" in OPTIONAL_SCRAPY_RUNTIME_PACKAGES
+        assert "scrapy_playwright" in OPTIONAL_SCRAPY_RUNTIME_PACKAGES
 
 
 def test_portable_build_collects_optional_github_tls_runtime_data() -> None:

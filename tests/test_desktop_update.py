@@ -733,6 +733,70 @@ def test_get_status_payload_promotes_completed_stale_download_to_ready() -> None
         assert status["downloadedZipPath"] == str(zip_path)
 
 
+def test_get_status_payload_preserves_handoff_state_with_downloaded_zip() -> None:
+    with workspace_tmpdir("desktop-update") as tmp:
+        data_dir = Path(tmp) / "portable" / "ship" / "data"
+        paths = du.DesktopUpdatePaths.from_data_dir(data_dir)
+        service = du.DesktopUpdateService(
+            data_dir=data_dir, current_version_getter=lambda: "0.1.31"
+        )
+        session_root = Path(tmp) / "session"
+        _write_credible_handoff_request(paths, session_root, install_state="handoff_requested")
+        zip_path = paths.downloads_dir / "baluffo-portable-0.1.32.zip"
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        zip_path.write_text("portable-zip", encoding="utf-8")
+        manifest = {
+            "schema_version": 2,
+            "key_id": "desktop-ed25519-test",
+            "channel": "stable",
+            "version": "0.1.32",
+            "published_at": "2026-04-19T19:49:37Z",
+            "release_notes_url": "https://example.com/release",
+            "min_desktop_updater_version": "2.0.0",
+            "min_supported_current_version": "0.1.0",
+            "data_schema_version": "2",
+            "rollback_allowed": True,
+            "portable_artifact": {
+                "url": "https://example.com/baluffo-portable-0.1.32.zip",
+                "sha256": du.compute_sha256(zip_path),
+                "size_bytes": int(zip_path.stat().st_size),
+            },
+            "migration_plan": [],
+            "signature": "ignored-for-test",
+        }
+        du.write_json_atomic(
+            paths.manifest_cache_path,
+            {"cachedAt": du.iso_now(), "manifest": manifest},
+        )
+        du.save_status(
+            paths,
+            {
+                **du.default_status_payload(current_version="0.1.31"),
+                "availability": "available",
+                "updateAvailable": True,
+                "latestVersion": "0.1.32",
+                "targetVersion": "0.1.32",
+                "downloadState": "downloaded",
+                "installState": "handoff_requested",
+                "installStage": "preparing",
+                "installStageLabel": du.install_stage_label("handoff_requested", "preparing"),
+                "downloadedZipPath": str(zip_path),
+                "helperUpdatedAt": "2026-04-19T22:26:21.821985+00:00",
+                "rollbackPath": str(paths.rollback_root / "0.1.32-20260419-222621"),
+            },
+        )
+
+        with mock.patch.object(du, "pid_is_running", return_value=True):
+            status = service.get_status_payload()
+
+        assert status["downloadState"] == "downloaded"
+        assert status["installState"] == "handoff_requested"
+        assert status["installStage"] == "preparing"
+        assert status["installStageLabel"] == "Preparing update"
+        assert status["helperUpdatedAt"] == "2026-04-19T22:26:21.821985+00:00"
+        assert status["rollbackPath"] == str(paths.rollback_root / "0.1.32-20260419-222621")
+
+
 def test_get_status_payload_marks_interrupted_download_as_failed() -> None:
     with workspace_tmpdir("desktop-update") as tmp:
         data_dir = Path(tmp) / "portable" / "ship" / "data"

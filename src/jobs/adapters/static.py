@@ -1259,6 +1259,16 @@ def run_static_studio_pages_source(
                     plugin_meta = (
                         source.get("_staticPluginMeta") if isinstance(source, dict) else None
                     )
+                    probable_detail_links = [
+                        (detail, detail_title)
+                        for detail, detail_title in detail_links
+                        if is_probable_job_detail_url(
+                            detail,
+                            source,
+                            default_path_tokens=static_runtime.default_path_tokens,
+                            default_query_keys=static_runtime.default_query_keys,
+                        )
+                    ]
                     detail_traversal_mode = choose_detail_traversal_mode(
                         page_url,
                         runtime_config=static_runtime,
@@ -1266,6 +1276,7 @@ def run_static_studio_pages_source(
                         plugin_meta=plugin_meta,
                         listing_jobs_found=listing_jobs_found,
                         discovered_links=len(detail_links),
+                        probable_detail_candidates=len(probable_detail_links),
                         source_key=source_key,
                         source_state_rows=source_state_rows,
                     )
@@ -1275,18 +1286,12 @@ def run_static_studio_pages_source(
                         emit_heartbeat()
                         continue
                     source_has_listing_rows = max(0, len(jobs) - kept_before) > 0
-                    if source_has_listing_rows and detail_links:
-                        strong_detail_links = [
-                            (detail, detail_title)
-                            for detail, detail_title in detail_links
-                            if is_probable_job_detail_url(
-                                detail,
-                                source,
-                                default_path_tokens=static_runtime.default_path_tokens,
-                                default_query_keys=static_runtime.default_query_keys,
-                            )
-                        ]
-                        detail_links = strong_detail_links
+                    if (
+                        detail_links
+                        and probable_detail_links
+                        and (source_has_listing_rows or static_runtime.uncapped_deep_static)
+                    ):
+                        detail_links = probable_detail_links
                     if not detail_links:
                         emit_heartbeat()
                         continue
@@ -1297,11 +1302,13 @@ def run_static_studio_pages_source(
                         listing_jobs_found=listing_jobs_found,
                         low_yield_detail_cap=static_runtime.low_yield_detail_cap,
                         very_low_yield_detail_cap=static_runtime.very_low_yield_detail_cap,
+                        uncapped_deep_static=static_runtime.uncapped_deep_static,
                     )
                     detail_retries = source_detail_retries_for(
                         source_key,
                         source_state_rows=source_state_rows,
                         base_retries=retries,
+                        uncapped_deep_static=static_runtime.uncapped_deep_static,
                     )
                     profile_max_detail_links = max(
                         0, int(domain_profile.get("max_detail_links") or 0)

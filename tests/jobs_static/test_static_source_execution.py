@@ -86,6 +86,300 @@ def test_run_scrapy_static_source_timeout_is_not_requeued() -> None:
         jf.STUDIO_SOURCE_REGISTRY = prev
 
 
+def test_run_scrapy_static_source_uses_child_script_command_when_frozen() -> None:
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    jf.STUDIO_SOURCE_REGISTRY = [
+        {
+            "name": "Scrapy Test Studio",
+            "studio": "Scrapy Test Studio",
+            "adapter": "scrapy_static",
+            "pages": ["https://example.com/jobs"],
+            "enabledByDefault": True,
+        }
+    ]
+    fake_result = mock.Mock()
+    fake_result.stdout = json.dumps(
+        {
+            "ok": True,
+            "jobs": [],
+            "details": [{"status": "ok", "keptCount": 0, "fetchedCount": 0}],
+            "partialErrors": [],
+        }
+    ).encode("utf-8")
+    fake_result.stderr = b""
+    fake_result.returncode = 0
+    try:
+        with (
+            mock.patch("subprocess.run", return_value=fake_result) as run_mock,
+            mock.patch.object(
+                static_scrapy, "registry_entries", return_value=list(jf.STUDIO_SOURCE_REGISTRY)
+            ),
+            mock.patch.object(static_scrapy.sys, "frozen", True, create=True),
+            mock.patch.object(
+                static_scrapy.sys,
+                "executable",
+                "C:/tmp/Baluffo.exe",
+            ),
+        ):
+            rows = jf.run_scrapy_static_source(
+                fetch_text=lambda _url, _timeout: "",
+                timeout_s=5,
+                retries=0,
+                backoff_s=0.0,
+            )
+
+        assert rows == []
+        command = run_mock.call_args.args[0]
+        src_root = static_scrapy.Path(static_scrapy.__file__).resolve().parents[2]
+        runtime_root = src_root.parent
+        assert command[:6] == [
+            "C:/tmp/Baluffo.exe",
+            "__child_script__",
+            "--root",
+            str(runtime_root),
+            "--script",
+            "scrapers/runner.py",
+        ]
+        assert command[6] == "--"
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+
+def test_run_scrapy_static_source_uses_python_runner_command_when_not_frozen() -> None:
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    jf.STUDIO_SOURCE_REGISTRY = [
+        {
+            "name": "Scrapy Test Studio",
+            "studio": "Scrapy Test Studio",
+            "adapter": "scrapy_static",
+            "pages": ["https://example.com/jobs"],
+            "enabledByDefault": True,
+        }
+    ]
+    fake_result = mock.Mock()
+    fake_result.stdout = json.dumps(
+        {
+            "ok": True,
+            "jobs": [],
+            "details": [{"status": "ok", "keptCount": 0, "fetchedCount": 0}],
+            "partialErrors": [],
+        }
+    ).encode("utf-8")
+    fake_result.stderr = b""
+    fake_result.returncode = 0
+    try:
+        with (
+            mock.patch("subprocess.run", return_value=fake_result) as run_mock,
+            mock.patch.object(
+                static_scrapy, "registry_entries", return_value=list(jf.STUDIO_SOURCE_REGISTRY)
+            ),
+            mock.patch.object(static_scrapy.sys, "frozen", False, create=True),
+            mock.patch.object(
+                static_scrapy.sys,
+                "executable",
+                "C:/Python313/python.exe",
+            ),
+        ):
+            rows = jf.run_scrapy_static_source(
+                fetch_text=lambda _url, _timeout: "",
+                timeout_s=5,
+                retries=0,
+                backoff_s=0.0,
+            )
+
+        assert rows == []
+        command = run_mock.call_args.args[0]
+        expected_runner = (
+            static_scrapy.Path(static_scrapy.__file__).resolve().parents[2]
+            / "scrapers"
+            / "runner.py"
+        )
+        assert command == ["C:/Python313/python.exe", str(expected_runner)]
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+
+def test_run_scrapy_static_source_processes_queue_with_bounded_parallelism() -> None:
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    sources = [
+        {
+            "name": "Scrapy Studio A",
+            "studio": "Scrapy Studio A",
+            "adapter": "scrapy_static",
+            "pages": ["https://example.com/a"],
+            "enabledByDefault": True,
+        },
+        {
+            "name": "Tequilaworks (Manual Website)",
+            "studio": "Tequilaworks",
+            "adapter": "scrapy_static",
+            "pages": ["https://example.com/timeout"],
+            "enabledByDefault": True,
+        },
+        {
+            "name": "Scrapy Studio B",
+            "studio": "Scrapy Studio B",
+            "adapter": "scrapy_static",
+            "pages": ["https://example.com/b"],
+            "enabledByDefault": True,
+        },
+    ]
+    jf.STUDIO_SOURCE_REGISTRY = sources
+    active = 0
+    max_active = 0
+    active_lock = threading.Lock()
+    progress_events: list[dict[str, object]] = []
+    try:
+        jf.SOURCE_DIAGNOSTICS.clear()
+
+        def fake_run(_command, **kwargs):  # noqa: ANN001, ANN202
+            nonlocal active, max_active
+            payload = json.loads(kwargs["input"].decode("utf-8"))
+            source_name = str(((payload.get("source") or {}).get("name")) or "")
+            with active_lock:
+                active += 1
+                max_active = max(max_active, active)
+            try:
+                time.sleep(0.05)
+                if source_name == "Tequilaworks (Manual Website)":
+                    raise subprocess.TimeoutExpired(cmd="runner", timeout=20)
+                result = mock.Mock()
+                result.stdout = json.dumps(
+                    {
+                        "ok": True,
+                        "jobs": [],
+                        "details": [{"status": "ok", "keptCount": 0, "fetchedCount": 0}],
+                        "partialErrors": [],
+                    }
+                ).encode("utf-8")
+                result.stderr = b""
+                result.returncode = 0
+                return result
+            finally:
+                with active_lock:
+                    active -= 1
+
+        with (
+            mock.patch("subprocess.run", side_effect=fake_run),
+            mock.patch.object(static_scrapy, "registry_entries", return_value=list(sources)),
+            mock.patch.object(
+                static_scrapy,
+                "set_source_diagnostics",
+                wraps=static_scrapy.set_source_diagnostics,
+            ) as diag_mock,
+        ):
+            rows = jf.run_scrapy_static_source(
+                fetch_text=lambda _url, _timeout: "",
+                timeout_s=5,
+                retries=0,
+                backoff_s=0.0,
+                max_workers=2,
+                progress_callback=lambda **kwargs: progress_events.append(dict(kwargs)),
+            )
+
+        assert rows == []
+        assert max_active == 2
+        assert diag_mock.call_count == len(sources)
+        details = (jf.SOURCE_DIAGNOSTICS.get("scrapy_static_sources") or {}).get("details") or []
+        assert len(details) == len(sources)
+        assert any(
+            str(detail.get("classification") or "") == "browser_timeout" for detail in details
+        )
+        assert any(
+            int((event.get("counts") or {}).get("runningSources") or 0) >= 2
+            for event in progress_events
+        )
+        assert any(
+            int((event.get("counts") or {}).get("completedSources") or 0) == len(sources)
+            for event in progress_events
+        )
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+
+def test_run_scrapy_static_source_emits_heartbeat_while_waiting_for_queue_child() -> None:
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    source = {
+        "name": "Scrapy Heartbeat Studio",
+        "studio": "Scrapy Heartbeat Studio",
+        "adapter": "scrapy_static",
+        "pages": ["https://example.com/heartbeat"],
+        "enabledByDefault": True,
+    }
+    jf.STUDIO_SOURCE_REGISTRY = [source]
+    release_runner = threading.Event()
+    runner_started = threading.Event()
+    heartbeat_calls: list[str] = []
+    errors: list[BaseException] = []
+    try:
+        result = mock.Mock()
+        result.stdout = json.dumps(
+            {
+                "ok": True,
+                "jobs": [],
+                "details": [{"status": "ok", "keptCount": 0, "fetchedCount": 0}],
+                "partialErrors": [],
+            }
+        ).encode("utf-8")
+        result.stderr = b""
+        result.returncode = 0
+
+        def fake_run(_command, **_kwargs):  # noqa: ANN001, ANN202
+            runner_started.set()
+            release_runner.wait(timeout=2.0)
+            return result
+
+        def target() -> None:
+            try:
+                jf.run_scrapy_static_source(
+                    fetch_text=lambda _url, _timeout: "",
+                    timeout_s=5,
+                    retries=0,
+                    backoff_s=0.0,
+                    max_workers=1,
+                    heartbeat_callback=lambda: heartbeat_calls.append("tick"),
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        with (
+            mock.patch("subprocess.run", side_effect=fake_run),
+            mock.patch.object(static_scrapy, "registry_entries", return_value=[source]),
+        ):
+            thread = threading.Thread(target=target)
+            thread.start()
+            assert runner_started.wait(timeout=1.0)
+            time.sleep(static_scrapy.SCRAPY_STATIC_QUEUE_POLL_S * 2 + 0.2)
+            release_runner.set()
+            thread.join(timeout=2.0)
+
+        assert not thread.is_alive()
+        assert not errors
+        assert heartbeat_calls
+    finally:
+        release_runner.set()
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+
+def test_child_timeout_window_uses_shared_timeout_and_page_count() -> None:
+    assert (
+        static_scrapy._child_timeout_window_s(
+            source_name="Tequilaworks (Manual Website)",
+            timeout_s=15,
+            pages=["https://example.com/jobs"],
+        )
+        == 40
+    )
+    assert (
+        static_scrapy._child_timeout_window_s(
+            source_name="Scrapy Studio",
+            timeout_s=15,
+            pages=["https://example.com/jobs", "https://example.com/jobs-2"],
+        )
+        == 120
+    )
+
+
 def test_run_static_frontier_source_skips_non_location_dd_values() -> None:
     html = """
         <html>

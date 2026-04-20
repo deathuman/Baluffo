@@ -24,6 +24,23 @@ function compactCount(value) {
   return Number(value || 0).toLocaleString();
 }
 
+export function formatScrapyStaticSourcesTailBadge(workItems) {
+  if (!Array.isArray(workItems) || workItems.length === 0) return "";
+  const activeQueueItem = workItems.find(item => {
+    const itemId = String(item?.id || item?.name || "").trim();
+    const status = String(item?.status || "").trim().toLowerCase();
+    return itemId === "scrapy_static_sources" && status === "running";
+  });
+  if (!activeQueueItem) return "";
+  const progress = normalizeTaskProgressPayload(activeQueueItem?.progress);
+  const counts = progress?.counts && typeof progress.counts === "object" ? progress.counts : {};
+  const completedSources = Number(counts.completedSources);
+  const totalSources = Number(counts.totalSources);
+  if (!Number.isFinite(completedSources) || completedSources < 0) return "";
+  if (!Number.isFinite(totalSources) || totalSources <= 0) return "";
+  return `Browser fallback ${compactCount(completedSources)}/${compactCount(totalSources)}`;
+}
+
 function formatFetcherCounts(counts, progress) {
   const resolved = Math.max(0, Number(counts?.resolvedSources || 0));
   const total = Math.max(0, Number(counts?.sourceCount || 0));

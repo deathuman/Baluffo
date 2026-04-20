@@ -1349,6 +1349,105 @@ def test_choose_detail_traversal_mode_prefers_listing_only_for_verified_hosts() 
     assert mode == "listing_only"
 
 
+def test_choose_detail_traversal_mode_uncapped_deep_static_overrides_listing_only_with_probable_detail_links() -> (
+    None
+):
+    from src.jobs.adapters.static_helpers import (
+        build_static_source_runtime_config,
+        choose_detail_traversal_mode,
+    )
+
+    with mock.patch.dict("os.environ", {"BALUFFO_UNCAPPED_DEEP_STATIC": "1"}, clear=False):
+        runtime = build_static_source_runtime_config(4)
+    mode = choose_detail_traversal_mode(
+        "https://hrmos.co/pages/cygames/jobs",
+        runtime_config=runtime,
+        profile={"detail_fetch_required": False},
+        plugin_meta={"detailFetchRequired": False},
+        listing_jobs_found=10,
+        discovered_links=10,
+        source_key="static_source::cygames",
+        source_state_rows={},
+        probable_detail_candidates=3,
+    )
+    assert mode == "full_detail"
+
+
+def test_choose_detail_traversal_mode_uncapped_deep_static_keeps_listing_only_without_probable_detail_links() -> (
+    None
+):
+    from src.jobs.adapters.static_helpers import (
+        build_static_source_runtime_config,
+        choose_detail_traversal_mode,
+    )
+
+    with mock.patch.dict("os.environ", {"BALUFFO_UNCAPPED_DEEP_STATIC": "1"}, clear=False):
+        runtime = build_static_source_runtime_config(4)
+    mode = choose_detail_traversal_mode(
+        "https://hrmos.co/pages/cygames/jobs",
+        runtime_config=runtime,
+        profile={"detail_fetch_required": False},
+        plugin_meta={"detailFetchRequired": False},
+        listing_jobs_found=10,
+        discovered_links=10,
+        source_key="static_source::cygames",
+        source_state_rows={},
+        probable_detail_candidates=0,
+    )
+    assert mode == "listing_only"
+
+
+def test_choose_detail_traversal_mode_uncapped_zero_caps_promotes_capped_detail_to_full_detail() -> (
+    None
+):
+    from src.jobs.adapters.static_helpers import (
+        build_static_source_runtime_config,
+        choose_detail_traversal_mode,
+    )
+
+    source_state_rows = {
+        "static_source::climax": {
+            "lastDetailPagesVisited": 42,
+            "lastKeptCount": 1,
+            "lastDurationMs": 52000,
+            "lastDetailYieldPct": 2,
+        }
+    }
+    regular_runtime = build_static_source_runtime_config(4)
+    regular_mode = choose_detail_traversal_mode(
+        "https://careers.climaxstudios.com/jobs",
+        runtime_config=regular_runtime,
+        profile={},
+        plugin_meta={},
+        listing_jobs_found=0,
+        discovered_links=28,
+        source_key="static_source::climax",
+        source_state_rows=source_state_rows,
+    )
+    with mock.patch.dict(
+        "os.environ",
+        {
+            "BALUFFO_UNCAPPED_DEEP_STATIC": "1",
+            "BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP": "0",
+            "BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP": "0",
+        },
+        clear=False,
+    ):
+        uncapped_runtime = build_static_source_runtime_config(4)
+    uncapped_mode = choose_detail_traversal_mode(
+        "https://careers.climaxstudios.com/jobs",
+        runtime_config=uncapped_runtime,
+        profile={},
+        plugin_meta={},
+        listing_jobs_found=0,
+        discovered_links=28,
+        source_key="static_source::climax",
+        source_state_rows=source_state_rows,
+    )
+    assert regular_mode == "capped_detail"
+    assert uncapped_mode == "full_detail"
+
+
 def test_personio_adapter_skips_recent_rate_limited_source_only() -> None:
     from src.jobs.adapters import provider_api
 

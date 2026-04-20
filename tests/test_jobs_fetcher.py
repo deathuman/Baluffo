@@ -13,6 +13,7 @@ from tests.jobs_fetcher_helpers import (
     patch_jobs_fetcher_aliases,
     source_detail_limit_for,
     source_detail_retries_for,
+    static_helpers,
 )
 
 patch_jobs_fetcher_aliases()
@@ -251,6 +252,36 @@ def test_source_detail_limit_for_tails_off_from_detail_fetch_history() -> None:
     assert limit == 6
 
 
+def test_source_detail_limit_for_uncapped_zero_caps_disables_low_yield_truncation() -> None:
+    source_state_rows = {
+        "Climax (Manual Website)": {
+            "lastDetailPagesVisited": 42,
+            "lastKeptCount": 1,
+            "lastDurationMs": 52000,
+            "lastDetailYieldPct": 2,
+        }
+    }
+    regular_limit = source_detail_limit_for(
+        "Climax (Manual Website)",
+        source_state_rows=source_state_rows,
+        discovered_links=28,
+        listing_jobs_found=0,
+        low_yield_detail_cap=12,
+        very_low_yield_detail_cap=6,
+    )
+    uncapped_limit = source_detail_limit_for(
+        "Climax (Manual Website)",
+        source_state_rows=source_state_rows,
+        discovered_links=28,
+        listing_jobs_found=0,
+        low_yield_detail_cap=0,
+        very_low_yield_detail_cap=0,
+        uncapped_deep_static=True,
+    )
+    assert regular_limit == 12
+    assert uncapped_limit == 28
+
+
 def test_source_detail_retries_for_reduces_tail_retry_pressure() -> None:
     retries = source_detail_retries_for(
         "Stillfront (Sheet)",
@@ -266,3 +297,58 @@ def test_source_detail_retries_for_reduces_tail_retry_pressure() -> None:
         base_retries=2,
     )
     assert retries == 0
+
+
+def test_source_detail_retries_for_uncapped_deep_static_keeps_base_retries() -> None:
+    retries = source_detail_retries_for(
+        "Stillfront (Sheet)",
+        source_state_rows={
+            "Stillfront (Sheet)": {
+                "lastDetailPagesVisited": 54,
+                "lastKeptCount": 21,
+                "lastDurationMs": 145137,
+                "lastDetailYieldPct": 39,
+                "lastStageTimingsMs": {"detailFetch": 217029},
+            }
+        },
+        base_retries=2,
+        uncapped_deep_static=True,
+    )
+    assert retries == 2
+
+
+def test_build_static_source_runtime_config_reads_uncapped_deep_env_overrides() -> None:
+    with mock.patch.dict(
+        "os.environ",
+        {
+            "BALUFFO_STATIC_SOURCE_TIME_BUDGET_S": "180",
+            "BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP": "0",
+            "BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP": "0",
+            "BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE": "broad",
+            "BALUFFO_UNCAPPED_DEEP_STATIC": "1",
+        },
+        clear=False,
+    ):
+        runtime = static_helpers.build_static_source_runtime_config(10)
+
+    assert runtime.static_source_time_budget_s == 180
+    assert runtime.low_yield_detail_cap == 0
+    assert runtime.very_low_yield_detail_cap == 0
+    assert runtime.static_profile == "broad"
+    assert runtime.uncapped_deep_static is True
+
+
+def test_build_static_source_runtime_config_regular_still_clamps_zero_caps() -> None:
+    with mock.patch.dict(
+        "os.environ",
+        {
+            "BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP": "0",
+            "BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP": "0",
+        },
+        clear=False,
+    ):
+        runtime = static_helpers.build_static_source_runtime_config(10)
+
+    assert runtime.low_yield_detail_cap == 4
+    assert runtime.very_low_yield_detail_cap == 2
+    assert runtime.uncapped_deep_static is False

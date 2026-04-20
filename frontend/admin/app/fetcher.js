@@ -19,6 +19,7 @@ import {
   startLiveTaskWatch,
   stopLiveTaskWatch
 } from "./live-task.js";
+import { formatScrapyStaticSourcesTailBadge } from "../../shared/task-progress.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
 
 const FETCHER_FALLBACK_MESSAGES = {
@@ -559,6 +560,8 @@ export function createAdminFetcherController({
         ?? (Number(summary.successfulSources || 0) + Number(summary.failedSources || 0) + Number(summary.excludedSources || 0))
       )
     );
+    const fallbackTailBadge = formatScrapyStaticSourcesTailBadge(report?.workItems);
+    const fallbackTailSuffix = fallbackTailBadge ? ` | ${fallbackTailBadge}` : "";
     const summarySignature = [
       outputCount,
       selectedSourceCount,
@@ -566,7 +569,8 @@ export function createAdminFetcherController({
       runningSources,
       queuedSources,
       failedSources,
-      excludedSources
+      excludedSources,
+      fallbackTailBadge
     ].join("|");
     appendLiveTaskActivity({
       payload: report,
@@ -578,13 +582,13 @@ export function createAdminFetcherController({
       workItemSignature: buildTaskWorkItemActivitySignature(report),
       onSummaryChange: () => {
         appendFetcherLog(
-          `Fetcher: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}, failed ${failedSources}, excluded ${excludedSources}.`,
+          `Fetcher: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}, failed ${failedSources}, excluded ${excludedSources}${fallbackTailSuffix}.`,
           failedSources > 0 ? "warn" : "info"
         );
       },
       onHeartbeat: () => {
         appendFetcherLog(
-          `Fetcher active: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}.`,
+          `Fetcher active: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}${fallbackTailSuffix}.`,
           "muted"
         );
       }

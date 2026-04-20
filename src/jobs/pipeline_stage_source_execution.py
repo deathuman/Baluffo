@@ -311,6 +311,8 @@ def run_source_execution_stage(
                     loader_kwargs["listing_async_fetch"] = static_listing_async_fetch
                 if guarded_try_playwright is not None:
                     loader_kwargs["try_playwright"] = guarded_try_playwright
+            if name == "scrapy_static_sources":
+                loader_kwargs["max_workers"] = config.max_workers
             if loader_heartbeat_callback is not None:
                 loader_kwargs["heartbeat_callback"] = loader_heartbeat_callback
             loader_kwargs["progress_callback"] = loader_progress_callback

@@ -85,7 +85,7 @@ from src.pipeline_io import (
 from src.pipeline_io import (
     write_text_if_changed as _write_text_if_changed,
 )
-from src.shared.utils import now_iso
+from src.shared.utils import env_flag, now_iso
 
 from .common import config as common_config
 from .common import social as common_social
@@ -355,9 +355,10 @@ def run_pipeline(
     if callable(seed_redirect_cache) and google_sheets_redirect_cache:
         seed_redirect_cache(google_sheets_redirect_cache)
     lifecycle_rows = read_job_lifecycle_state(paths.lifecycle_state_path)
+    seed_existing_output_override = env_flag("BALUFFO_FETCH_SEED_EXISTING_OUTPUT", False)
     incremental_cache_enabled = bool(not force_refresh_all and paths.json_path.exists())
     effective_seed_from_existing_output = bool(
-        seed_from_existing_output or incremental_cache_enabled
+        seed_from_existing_output or incremental_cache_enabled or seed_existing_output_override
     )
     if effective_seed_from_existing_output:
         seeded_rows = read_existing_output_from_file(

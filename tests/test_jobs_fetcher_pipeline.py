@@ -139,6 +139,25 @@ def test_run_pipeline_social_sources_report_and_output() -> None:
         assert any(str(row.get("source") or "").startswith("social_") for row in rows)
 
 
+def test_run_pipeline_passes_max_workers_to_scrapy_static_loader() -> None:
+    seen: dict[str, object] = {}
+
+    def scrapy_loader(**kwargs):  # noqa: ANN001, ANN202
+        seen["max_workers"] = kwargs.get("max_workers")
+        return []
+
+    with workspace_tmpdir("jobs-fetcher-scrapy-static-max-workers") as tmp:
+        report = jf.run_pipeline(
+            output_dir=Path(tmp),
+            source_loaders=[("scrapy_static_sources", scrapy_loader)],
+            max_workers=3,
+            max_per_domain=1,
+        )
+
+    assert seen["max_workers"] == 3
+    assert str((report.get("sources") or [{}])[0].get("name") or "") == "scrapy_static_sources"
+
+
 def test_task_state_writer_serializes_concurrent_writes() -> None:
     runtime = PipelineTaskRuntime(
         task_rows={
@@ -1147,6 +1166,93 @@ def test_run_pipeline_force_refresh_all_bypasses_incremental_skip() -> None:
             force_refresh_all=True,
         )
         assert calls["count"] == 2
+
+
+def test_run_pipeline_force_refresh_all_without_seed_env_drops_existing_output() -> None:
+    calls = {"count": 0}
+
+    def loader(**_: object):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return [
+                {
+                    "title": "Engine Programmer",
+                    "company": "Refresh Studio",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "Remote",
+                    "contractType": "Full-time",
+                    "jobLink": "https://example.com/refresh/engine-programmer",
+                    "sector": "Game",
+                    "sourceJobId": "refresh-1",
+                    "postedAt": "2026-03-01",
+                }
+            ]
+        return []
+
+    with workspace_tmpdir("jobs-fetcher-force-refresh-no-seed") as tmp:
+        out = Path(tmp)
+        first = jf.run_pipeline(
+            output_dir=out,
+            source_loaders=[("refresh_source", loader)],
+            show_progress=False,
+            preserve_previous_on_empty=False,
+        )
+        second = jf.run_pipeline(
+            output_dir=out,
+            source_loaders=[("refresh_source", loader)],
+            show_progress=False,
+            preserve_previous_on_empty=False,
+            force_refresh_all=True,
+        )
+        assert int(first["summary"].get("outputCount") or 0) == 1
+        assert int(second["summary"].get("outputCount") or 0) == 0
+        assert bool((second.get("runtime") or {}).get("seedFromExistingOutput")) is False
+
+
+def test_run_pipeline_force_refresh_all_can_seed_existing_output_via_env() -> None:
+    calls = {"count": 0}
+
+    def loader(**_: object):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return [
+                {
+                    "title": "Engine Programmer",
+                    "company": "Refresh Studio",
+                    "city": "Remote",
+                    "country": "Remote",
+                    "workType": "Remote",
+                    "contractType": "Full-time",
+                    "jobLink": "https://example.com/refresh/engine-programmer",
+                    "sector": "Game",
+                    "sourceJobId": "refresh-1",
+                    "postedAt": "2026-03-01",
+                }
+            ]
+        return []
+
+    with workspace_tmpdir("jobs-fetcher-force-refresh-seeded") as tmp:
+        out = Path(tmp)
+        first = jf.run_pipeline(
+            output_dir=out,
+            source_loaders=[("refresh_source", loader)],
+            show_progress=False,
+            preserve_previous_on_empty=False,
+        )
+        with mock.patch.dict(
+            "os.environ", {"BALUFFO_FETCH_SEED_EXISTING_OUTPUT": "1"}, clear=False
+        ):
+            second = jf.run_pipeline(
+                output_dir=out,
+                source_loaders=[("refresh_source", loader)],
+                show_progress=False,
+                preserve_previous_on_empty=False,
+                force_refresh_all=True,
+            )
+        assert int(first["summary"].get("outputCount") or 0) == 1
+        assert int(second["summary"].get("outputCount") or 0) == 1
+        assert int(second["summary"].get("lifecycleLikelyRemovedCount") or 0) == 0
 
 
 def test_apply_incremental_cache_exclusions_keeps_provider_family_loader_for_board_level_refresh() -> (

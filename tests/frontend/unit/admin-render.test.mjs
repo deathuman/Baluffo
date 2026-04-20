@@ -152,6 +152,52 @@ test("admin render: live discovery ops history keeps only the primary phase text
   assert.doesNotMatch(historyEl.innerHTML, /probed/i);
 });
 
+test("admin render: live fetch ops history appends scrapy fallback badge", () => {
+  const historyEl = makeEl();
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [
+      {
+        type: "fetch",
+        displayStatus: "running",
+        isLive: true,
+        elapsedMs: 5000,
+        startedAt: "2026-03-08T11:00:00.000Z",
+        taskProgress: {
+          active: true,
+          phaseKey: "executing_sources",
+          phaseLabel: "Executing sources",
+          mode: "determinate",
+          ratio: 0.5,
+          counts: {
+            resolvedSources: 550,
+            sourceCount: 551
+          }
+        },
+        workItems: [
+          {
+            id: "scrapy_static_sources",
+            status: "running",
+            progress: {
+              active: true,
+              phaseKey: "loading_source",
+              phaseLabel: "Processing browser fallback queue",
+              counts: {
+                completedSources: 19,
+                totalSources: 26
+              }
+            }
+          }
+        ],
+        summary: { failedSources: 0 }
+      }
+    ],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  });
+
+  assert.match(historyEl.innerHTML, /Executing sources \(50%\) \| Browser fallback 19\/26/i);
+});
+
 test("admin render: fetcher metrics render failure buckets and examples", () => {
   const metricsEl = makeEl();
   renderAdminOpsFetcherMetrics(metricsEl, {

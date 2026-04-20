@@ -1,5 +1,5 @@
 import { escapeHtml } from "../shared/ui/index.js";
-import { formatTaskProgressDetail } from "../shared/task-progress.js";
+import { formatScrapyStaticSourcesTailBadge, formatTaskProgressDetail } from "../shared/task-progress.js";
 
 export function renderTotalsHtml(totals, formatBytes) {
   if (!totals) return "";
@@ -704,6 +704,10 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       summary,
       type === "fetch" || type === "discovery" ? { includeCounts: false } : {}
     );
+    const currentRunTailBadge = row?.isLive && type === "fetch"
+      ? formatScrapyStaticSourcesTailBadge(row?.workItems)
+      : "";
+    const liveRunDetail = [currentRunDetail, currentRunTailBadge].filter(Boolean).join(" | ");
     const key = [
       rowArea,
       String(row?.id || ""),
@@ -722,8 +726,8 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       statusTitle: buildRunStatusTooltip(row),
       isRunning: statusToken === "running" || statusToken === "started",
       durationText: formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),
-      outputOrQueuedText: (row?.isLive && currentRunDetail)
-        ? currentRunDetail
+      outputOrQueuedText: (row?.isLive && liveRunDetail)
+        ? liveRunDetail
         : row?.type === "discovery"
           ? `Queued (new): ${Number(summary?.queuedCandidateCount || 0).toLocaleString()}`
           : row?.type === "sync"

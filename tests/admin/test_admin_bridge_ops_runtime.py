@@ -1001,18 +1001,27 @@ FETCHER_ARGS_CASES = [
                 "--max-per-domain",
                 "--static-detail-concurrency",
                 "--source-ttl-minutes",
+                "--fetch-strategy",
+                "--adapter-http-concurrency",
                 "--circuit-breaker-failures",
                 "--circuit-breaker-cooldown-minutes",
+                "--browser-fallback-cooldown-minutes",
+                "--hot-source-cadence-minutes",
+                "--cold-source-cadence-minutes",
                 "--social-enabled",
             ),
-            expected_absent=("--adapter-http-concurrency",),
             expected_values=(
-                ("--max-workers", "64"),
-                ("--max-per-domain", "6"),
-                ("--static-detail-concurrency", "24"),
+                ("--max-workers", "50"),
+                ("--max-per-domain", "5"),
+                ("--static-detail-concurrency", "10"),
                 ("--source-ttl-minutes", "0"),
-                ("--circuit-breaker-failures", "0"),
-                ("--circuit-breaker-cooldown-minutes", "0"),
+                ("--fetch-strategy", "auto"),
+                ("--adapter-http-concurrency", "48"),
+                ("--circuit-breaker-failures", "3"),
+                ("--circuit-breaker-cooldown-minutes", "180"),
+                ("--browser-fallback-cooldown-minutes", "30"),
+                ("--hot-source-cadence-minutes", "15"),
+                ("--cold-source-cadence-minutes", "60"),
             ),
         ),
         id="uncapped-keeps-social",
@@ -1417,6 +1426,33 @@ def test_start_fetcher_task_writes_report_shell_with_run_id(admin_bridge_entrypo
         and str(row.get("runId") or "") == run_id
         for row in rows
     )
+
+
+def test_start_fetcher_task_sets_uncapped_static_budget_env(admin_bridge_entrypoint_root):
+    with mock.patch.object(admin_bridge, "run_background_script", return_value=24680) as spawn:
+        result = admin_bridge.start_fetcher_task({"preset": "uncapped"})
+
+    run_id = str(result.get("runId") or "")
+    assert run_id.startswith("fetch_")
+    args, kwargs = spawn.call_args
+    assert args[0] == "jobs_fetcher.py"
+    assert "--force-refresh-all" in args[1]
+    assert kwargs["extra_env"]["BALUFFO_FETCH_RUN_ID"] == run_id
+    assert kwargs["extra_env"]["BALUFFO_FETCH_SEED_EXISTING_OUTPUT"] == "1"
+    assert kwargs["extra_env"]["BALUFFO_STATIC_SOURCE_TIME_BUDGET_S"] == "180"
+    assert kwargs["extra_env"]["BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP"] == "0"
+    assert kwargs["extra_env"]["BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP"] == "0"
+    assert kwargs["extra_env"]["BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE"] == "broad"
+    assert kwargs["extra_env"]["BALUFFO_UNCAPPED_DEEP_STATIC"] == "1"
+
+
+def test_start_fetcher_task_default_preset_omits_static_budget_env(admin_bridge_entrypoint_root):
+    with mock.patch.object(admin_bridge, "run_background_script", return_value=24680) as spawn:
+        admin_bridge.start_fetcher_task({})
+
+    _args, kwargs = spawn.call_args
+    assert "BALUFFO_FETCH_SEED_EXISTING_OUTPUT" not in kwargs["extra_env"]
+    assert "BALUFFO_STATIC_SOURCE_TIME_BUDGET_S" not in kwargs["extra_env"]
 
 
 def test_start_fetcher_task_returns_conflict_for_active_fetch(admin_bridge_entrypoint_root):

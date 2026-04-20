@@ -93,6 +93,16 @@ INSTALL_STAGE_LABELS = {
     "installed": "",
     "failed": "",
 }
+INSTALL_STATES_PRESERVING_DOWNLOADED_ARTIFACT = frozenset(
+    {
+        "handoff_requested",
+        "waiting_for_exit",
+        "installing",
+        "verifying",
+        "installed",
+        "failed",
+    }
+)
 HANDOFF_PENDING_INSTALL_STATES = frozenset({"handoff_requested", "waiting_for_exit"})
 
 
@@ -810,6 +820,7 @@ def _reconcile_downloaded_artifact_status(
     status: dict[str, Any],
 ) -> dict[str, Any]:
     next_status = dict(status)
+    install_state = str(next_status.get("installState") or "").strip().lower()
     artifact = (
         manifest.get("portable_artifact")
         if isinstance(manifest.get("portable_artifact"), dict)
@@ -821,7 +832,8 @@ def _reconcile_downloaded_artifact_status(
         if compute_sha256(artifact_path).lower() == expected_hash:
             size_bytes = int(artifact_path.stat().st_size)
             next_status["downloadState"] = "downloaded"
-            next_status["installState"] = "ready"
+            if install_state not in INSTALL_STATES_PRESERVING_DOWNLOADED_ARTIFACT:
+                next_status["installState"] = "ready"
             next_status["downloadedBytes"] = size_bytes
             next_status["totalBytes"] = size_bytes
             next_status["downloadPercent"] = 100

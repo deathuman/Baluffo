@@ -162,6 +162,53 @@ class TaskLaunchApi:
         )
         return int(proc.pid)
 
+    @staticmethod
+    def _set_cli_option(args: list[str], option: str, value: str) -> None:
+        try:
+            index = args.index(option)
+        except ValueError:
+            args.extend([option, value])
+            return
+        if index + 1 < len(args):
+            args[index + 1] = value
+        else:
+            args.append(value)
+
+    def _apply_fetcher_shared_runtime_args(
+        self,
+        args: list[str],
+        *,
+        max_workers: int,
+        max_per_domain: int,
+        fetch_strategy: str,
+        adapter_http_concurrency: int,
+        hot_cadence: int,
+        cold_cadence: int,
+        circuit_failures: int,
+        circuit_cooldown: int,
+        browser_fallback_cooldown: int,
+    ) -> None:
+        args.extend(["--max-workers", str(max_workers), "--max-per-domain", str(max_per_domain)])
+        args.extend(
+            [
+                "--fetch-strategy",
+                fetch_strategy,
+                "--adapter-http-concurrency",
+                str(adapter_http_concurrency),
+            ]
+        )
+        args.extend(["--circuit-breaker-failures", str(circuit_failures)])
+        args.extend(["--circuit-breaker-cooldown-minutes", str(circuit_cooldown)])
+        args.extend(["--browser-fallback-cooldown-minutes", str(browser_fallback_cooldown)])
+        args.extend(
+            [
+                "--hot-source-cadence-minutes",
+                str(hot_cadence),
+                "--cold-source-cadence-minutes",
+                str(cold_cadence),
+            ]
+        )
+
     def build_fetcher_args_from_payload(self, payload: dict[str, Any]) -> tuple[list[str], str]:
         data = payload if isinstance(payload, dict) else {}
         preset = str(data.get("preset") or "default").strip().lower()
@@ -193,6 +240,19 @@ class TaskLaunchApi:
             data.get("browserFallbackCooldownMinutes"), 30, 0, 24 * 60
         )
 
+        self._apply_fetcher_shared_runtime_args(
+            args,
+            max_workers=max_workers,
+            max_per_domain=max_per_domain,
+            fetch_strategy=fetch_strategy,
+            adapter_http_concurrency=adapter_http_concurrency,
+            hot_cadence=hot_cadence,
+            cold_cadence=cold_cadence,
+            circuit_failures=circuit_failures,
+            circuit_cooldown=circuit_cooldown,
+            browser_fallback_cooldown=browser_fallback_cooldown,
+        )
+
         if preset == "incremental":
             args.extend(["--skip-successful-sources", "--source-ttl-minutes", str(source_ttl)])
         elif preset == "retry_failed":
@@ -202,56 +262,19 @@ class TaskLaunchApi:
                 args.extend(["--only-sources", ",".join(failed_names)])
             args.extend(["--ignore-circuit-breaker"])
         elif preset == "uncapped":
-            args.extend(
-                [
-                    "--force-refresh-all",
-                    "--ignore-circuit-breaker",
-                    "--max-workers",
-                    "64",
-                    "--max-per-domain",
-                    "6",
-                    "--static-detail-concurrency",
-                    "24",
-                    "--source-ttl-minutes",
-                    "0",
-                    "--hot-source-cadence-minutes",
-                    "1",
-                    "--cold-source-cadence-minutes",
-                    "1",
-                    "--circuit-breaker-failures",
-                    "0",
-                    "--circuit-breaker-cooldown-minutes",
-                    "0",
-                ]
+            args.extend(["--force-refresh-all", "--ignore-circuit-breaker"])
+            self._set_cli_option(args, "--max-workers", "50")
+            self._set_cli_option(args, "--max-per-domain", "5")
+            self._set_cli_option(
+                args,
+                "--static-detail-concurrency",
+                str(jobs_common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY),
             )
+            self._set_cli_option(args, "--source-ttl-minutes", "0")
         elif preset == "force_full":
             args.extend(["--ignore-circuit-breaker"])
         else:
             preset = "default"
-
-        if preset != "uncapped":
-            args.extend(
-                ["--max-workers", str(max_workers), "--max-per-domain", str(max_per_domain)]
-            )
-            args.extend(
-                [
-                    "--fetch-strategy",
-                    fetch_strategy,
-                    "--adapter-http-concurrency",
-                    str(adapter_http_concurrency),
-                ]
-            )
-            args.extend(["--circuit-breaker-failures", str(circuit_failures)])
-            args.extend(["--circuit-breaker-cooldown-minutes", str(circuit_cooldown)])
-            args.extend(["--browser-fallback-cooldown-minutes", str(browser_fallback_cooldown)])
-            args.extend(
-                [
-                    "--hot-source-cadence-minutes",
-                    str(hot_cadence),
-                    "--cold-source-cadence-minutes",
-                    str(cold_cadence),
-                ]
-            )
 
         if bool(data.get("skipSuccessfulSources")) and "--skip-successful-sources" not in args:
             args.append("--skip-successful-sources")
@@ -274,6 +297,19 @@ class TaskLaunchApi:
             if sanitized:
                 args.extend(["--only-sources", ",".join(sanitized)])
         return args, preset
+
+    def build_fetcher_extra_env_from_preset(self, preset: str) -> dict[str, str]:
+        normalized_preset = str(preset or "").strip().lower()
+        if normalized_preset != "uncapped":
+            return {}
+        return {
+            "BALUFFO_FETCH_SEED_EXISTING_OUTPUT": "1",
+            "BALUFFO_STATIC_SOURCE_TIME_BUDGET_S": "180",
+            "BALUFFO_STATIC_LOW_YIELD_DETAIL_CAP": "0",
+            "BALUFFO_STATIC_VERY_LOW_YIELD_DETAIL_CAP": "0",
+            "BALUFFO_STATIC_DETAIL_HEURISTICS_PROFILE": "broad",
+            "BALUFFO_UNCAPPED_DEEP_STATIC": "1",
+        }
 
     def start_fetcher_task(
         self,
@@ -314,6 +350,7 @@ class TaskLaunchApi:
             fetcher_args, preset = self.build_fetcher_args_from_payload(
                 payload if isinstance(payload, dict) else {}
             )
+            extra_env = self.build_fetcher_extra_env_from_preset(preset)
             self._paths.fetcher_log.parent.mkdir(parents=True, exist_ok=True)
             self._paths.fetcher_log.write_text(
                 f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8"
@@ -340,6 +377,7 @@ class TaskLaunchApi:
                 extra_env={
                     "BALUFFO_FETCH_RUN_ID": run_id,
                     "BALUFFO_FETCH_STARTED_AT": started_at,
+                    **extra_env,
                 },
             )
             save_json_atomic(
