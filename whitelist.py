@@ -152,3 +152,5 @@ _prime_bridge_discovery_report  # unused function (src\source_discovery\orchestr
 _gamedevmap_enabled  # unused function (src\source_discovery\gamedevmap.py:48)
 parse_gamesmap_index_entries  # unused function (src\source_discovery\gamesmap.py:546)
 parse_gamesmap_detail_page  # unused function (src\source_discovery\gamesmap.py:557)
+__getattr__  # unused function (src\jobs_fetcher.py:363, src\ship\desktop_app\__init__.py:85)
+__dir__  # unused function (src\jobs_fetcher.py:375, src\ship\desktop_app\__init__.py:94)
