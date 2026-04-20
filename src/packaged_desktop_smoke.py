@@ -1793,7 +1793,7 @@ def _verify_rehearsal_local_data(data_dir: Path, expected: dict[str, Any]) -> No
 
 def _preferred_desktop_browser_env() -> dict[str, str]:
     try:
-        from src.ship.desktop_app.__init__ import resolve_chromium_browser_candidates
+        from src.ship.desktop_app import resolve_chromium_browser_candidates
     except Exception:  # noqa: BLE001
         return {}
     candidates = resolve_chromium_browser_candidates()

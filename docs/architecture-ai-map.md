@@ -30,8 +30,10 @@ src/jobs_fetcher.py (stable thin CLI facade)
 src/source_discovery.py (stable thin CLI entrypoint)
   -> src/source_discovery/ (package)
 
-src/ship/desktop_app/__init__.py (desktop runtime)
-  -> spawns site + bridge, opens browser, watches heartbeat
+src/ship/desktop_app/ (desktop runtime package)
+  -> launcher.py orchestrates site + bridge + browser startup
+  -> startup.py owns readiness, handoff, heartbeat, and watchdog flow
+  -> browser.py / session.py / _windows.py / config.py own focused helpers
 ```
 
 ---
@@ -66,7 +68,7 @@ src/ship/desktop_app/__init__.py (desktop runtime)
 | Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
 | Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
-| Desktop runtime | `src/ship/desktop_app/__init__.py` | `src/ship/runtime_launcher.py` |
+| Desktop runtime | `src/ship/desktop_app/launcher.py` | `src/ship/desktop_app/{startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
 | UI selectors | `frontend/shared/ui/selectors.js` | — |
 
 ---

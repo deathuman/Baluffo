@@ -1572,6 +1572,82 @@ def test_watch_browser_session_prefers_bridge_exit_when_authoritative_process_is
     assert result == "bridge_exit"
 
 
+def test_watch_browser_session_times_out_missing_window_with_bridge_authoritative_detached_browser() -> (
+    None
+):
+    bridge_process = mock.Mock(spec=subprocess.Popen)
+    bridge_process.poll.return_value = None
+
+    with (
+        mock.patch.object(
+            desktop_app, "_is_baluffo_browser_window_open", return_value=False
+        ) as window_mock,
+        mock.patch.object(desktop_app, "latest_browser_heartbeat_ts", return_value=100.0),
+        mock.patch.object(desktop_app, "bridge_last_activity_ts", return_value=0.0),
+        mock.patch.object(
+            desktop_app.time,
+            "time",
+            side_effect=[110.0, 100.0 + desktop_app.DETACHED_WINDOW_IDLE_TIMEOUT_S + 1.0],
+        ),
+        mock.patch.object(desktop_app.time, "sleep"),
+        mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock,
+    ):
+        result = desktop_app.watch_browser_session(
+            Path("C:/tmp"),
+            5.0,
+            bridge_port=8877,
+            bridge_process=bridge_process,
+            browser_process=None,
+            browser_pid=6060,
+            heartbeat_idle_timeout_s=desktop_app.HEARTBEAT_IDLE_TIMEOUT_S,
+        )
+
+    assert result == "heartbeat_timeout"
+    event_names = [call.args[1] for call in trace_mock.call_args_list]
+    assert "desktop_browser_window_missing_waiting_for_bridge" in event_names
+    assert "desktop_browser_heartbeat_timeout" in event_names
+    window_mock.assert_called_with(
+        browser_pid=6060,
+        allow_title_fallback=True,
+    )
+
+
+def test_watch_browser_session_bridge_authoritative_missing_window_still_prefers_bridge_exit() -> (
+    None
+):
+    bridge_process = mock.Mock(spec=subprocess.Popen)
+    bridge_process.poll.side_effect = [None, 0]
+
+    with (
+        mock.patch.object(
+            desktop_app, "_is_baluffo_browser_window_open", return_value=False
+        ) as window_mock,
+        mock.patch.object(desktop_app, "latest_browser_heartbeat_ts", return_value=100.0),
+        mock.patch.object(desktop_app, "bridge_last_activity_ts", return_value=0.0),
+        mock.patch.object(desktop_app.time, "time", return_value=110.0),
+        mock.patch.object(desktop_app.time, "sleep"),
+        mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock,
+    ):
+        result = desktop_app.watch_browser_session(
+            Path("C:/tmp"),
+            5.0,
+            bridge_port=8877,
+            bridge_process=bridge_process,
+            browser_process=None,
+            browser_pid=6061,
+            heartbeat_idle_timeout_s=desktop_app.HEARTBEAT_IDLE_TIMEOUT_S,
+        )
+
+    assert result == "bridge_exit"
+    event_names = [call.args[1] for call in trace_mock.call_args_list]
+    assert "desktop_browser_window_missing_waiting_for_bridge" in event_names
+    assert "desktop_browser_heartbeat_timeout" not in event_names
+    window_mock.assert_called_with(
+        browser_pid=6061,
+        allow_title_fallback=True,
+    )
+
+
 def test_watch_browser_session_detects_window_close_in_detached_mode() -> None:
     with (
         mock.patch.object(
