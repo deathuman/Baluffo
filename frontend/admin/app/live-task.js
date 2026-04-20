@@ -35,7 +35,7 @@ export function createBoundedSignatureSet(limit = DEFAULT_SIGNATURE_TRACKER_CAP)
   return new BoundedSignatureSet(limit);
 }
 
-export function maybeUnrefTimer(timer) {
+function maybeUnrefTimer(timer) {
   timer?.unref?.();
   return timer;
 }
@@ -91,15 +91,15 @@ export function loadTaskLivePayload({
     .then(payload => (payload && typeof payload === "object" ? payload : null));
 }
 
-export function getTaskLiveWorkItems(payload) {
+function getTaskLiveWorkItems(payload) {
   return getLiveTaskWorkItems(payload);
 }
 
-export function getTaskLiveRecentEvents(payload) {
+function getTaskLiveRecentEvents(payload) {
   return Array.isArray(payload?.recentEvents) ? payload.recentEvents : [];
 }
 
-export function hasTaskLivePayload(payload) {
+function hasTaskLivePayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
   if (Boolean(payload.active)) return true;
   if (String(payload.runId || "").trim()) return true;
@@ -128,7 +128,7 @@ function hasMeaningfulTaskProgress(payload) {
   });
 }
 
-export function hasMeaningfulTaskLivePayload(payload) {
+function hasMeaningfulTaskLivePayload(payload) {
   if (!hasTaskLivePayload(payload)) return false;
   if (hasMeaningfulTaskProgress(payload.taskProgress)) return true;
   if (getTaskLiveWorkItems(payload).length > 0) return true;
@@ -181,7 +181,7 @@ export function buildTaskWorkItemActivitySignature(payload) {
   }).join("||");
 }
 
-export function appendStructuredTaskEvents({
+function appendStructuredTaskEvents({
   payload,
   liveState,
   appendEvent,

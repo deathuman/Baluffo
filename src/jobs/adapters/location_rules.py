@@ -5,8 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from src.jobs.normalizers import COUNTRY_NAME_TO_CODE
-from src.jobs.text_utils import clean_text, norm_text
+from src.jobs.text_utils import clean_text, looks_like_country_token, norm_text
 
 _REMOTEISH_LOCATION_TOKENS = {"remote", "anywhere", "worldwide", "global"}
 _LOCATION_LABEL_TOKENS = {
@@ -588,11 +587,7 @@ _SCRIPT_LIKE_RE = re.compile(
 
 
 def _looks_like_country_token(value: str) -> bool:
-    token = clean_text(value)
-    lowered = token.lower()
-    if lowered in COUNTRY_NAME_TO_CODE:
-        return True
-    return len(token) == 2 and token.isalpha()
+    return looks_like_country_token(value)
 
 
 def _location_candidate_words(value: str) -> list[str]:

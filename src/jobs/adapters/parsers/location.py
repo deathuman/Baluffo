@@ -14,13 +14,14 @@ from src.jobs.adapters.location_rules import (
 from src.jobs.adapters.location_rules import (
     is_plausibly_location_candidate as _is_plausibly_location_candidate,
 )
-from src.jobs.normalizers import COUNTRY_NAME_TO_CODE, normalize_country
+from src.jobs.normalizers import normalize_country
 from src.jobs.text_utils import (
+    COUNTRY_TOKEN_ALIASES,
     clean_text,
     invalid_location_reason,
     is_city_noise_fragment,
+    looks_like_country_token,
     norm_text,
-    resolve_country_acceptance_value,
 )
 
 _CITY_LOCATION_KEY_ALIASES = {
@@ -133,17 +134,7 @@ _REGION_COUNTRY_CODE_COLLISIONS = {
     "ut",
     "va",
 }
-_COUNTRY_KEY_ALIASES = {
-    "england": "uk",
-    "great britain": "uk",
-    "united kingdom": "uk",
-    "uk": "uk",
-    "gb": "uk",
-    "usa": "us",
-    "u s a": "us",
-    "united states": "us",
-    "united states of america": "us",
-}
+_COUNTRY_KEY_ALIASES = COUNTRY_TOKEN_ALIASES
 
 _REGION_KEY_HINTS = {
     "alabama",
@@ -410,15 +401,7 @@ _REGION_COUNTRY_HINTS = {
 
 
 def _looks_like_country_token(value: str) -> bool:
-    token = clean_text(value)
-    lowered = token.lower()
-    if lowered in COUNTRY_NAME_TO_CODE:
-        return True
-    if lowered in _COUNTRY_KEY_ALIASES:
-        return True
-    if resolve_country_acceptance_value(token):
-        return True
-    return len(token) == 2 and token.isalpha()
+    return looks_like_country_token(value)
 
 
 def _normalize_country_fragment(value: Any) -> str:

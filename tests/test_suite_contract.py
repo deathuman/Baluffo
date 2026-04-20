@@ -203,6 +203,28 @@ def test_jobs_fetcher_facade_uses_leaf_common_modules_not_root_symbol_barrel(
     assert "from src.jobs.common import fetch as _common_fetch" in text
 
 
+def test_jobs_fetcher_facade_stays_lazy_and_small(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs_fetcher.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+
+    function_names = _top_level_function_names(tree)
+    assert "__getattr__" in function_names
+    assert "__dir__" in function_names
+    assert "_ensure_repo_on_path" in function_names
+    assert "_COMPAT_MODULE_EXPORTS" in text
+    assert "parse_google_sheets_csv = _parsers.parse_google_sheets_csv" not in text
+    assert "run_static_studio_pages_source = _static.run_static_studio_pages_source" not in text
+    assert "raise SystemExit(main())" in text
+
+    alias_lines = [
+        line
+        for line in text.splitlines()
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*=\s*_[A-Za-z0-9_]+\.[A-Za-z0-9_]+$", line)
+    ]
+    assert len(alias_lines) <= 3, "jobs_fetcher facade drifted back to bulk alias re-exports"
+
+
 def test_sync_task_worker_logic_is_shared_between_admin_bridge_and_sync_service(
     repo_root: Path,
 ) -> None:
@@ -259,6 +281,18 @@ def test_admin_bridge_delegates_source_check_orchestration_to_bridge_module(
     assert "_source_check_api.normalize_manual_static_studio_fields" in _function_call_names(
         normalize_fn
     )
+
+
+def test_desktop_app_package_stays_lazy_compat_facade(repo_root: Path) -> None:
+    target = repo_root / "src" / "ship" / "desktop_app" / "__init__.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+
+    function_names = _top_level_function_names(tree)
+    assert "__getattr__" in function_names
+    assert "__dir__" in function_names
+    assert "import *" not in text
+    assert "_COMPAT_MODULES = (" in text
 
 
 def test_admin_bridge_delegates_task_launch_orchestration_to_bridge_module(repo_root: Path) -> None:

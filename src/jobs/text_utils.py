@@ -46,6 +46,17 @@ LOCATION_ROLE_BLOB_RE = re.compile(
     r"(?i)\b(administratif|administration|assistant|assistante|gestion|human resources|hr|office|operations?|coordination|support)\b"
 )
 REMOTEISH_TOKENS = {"remote", "hybrid", "onsite", "on-site", "worldwide"}
+COUNTRY_TOKEN_ALIASES = {
+    "england": "uk",
+    "great britain": "uk",
+    "united kingdom": "uk",
+    "uk": "uk",
+    "gb": "uk",
+    "usa": "us",
+    "u s a": "us",
+    "united states": "us",
+    "united states of america": "us",
+}
 LOWERCASE_CITY_NOISE_TOKENS = {
     "background",
     "block",
@@ -269,6 +280,20 @@ def resolve_country_acceptance_value(value: Any) -> str:
         return ""
     contract = load_country_acceptance_contract()
     return contract["aliasToCanonical"].get(token) or contract["exactLabelMap"].get(token, "")
+
+
+def looks_like_country_token(value: Any) -> bool:
+    token = clean_text(value)
+    if not token:
+        return False
+    lowered = token.lower()
+    if lowered in COUNTRY_NAME_TO_CODE:
+        return True
+    if lowered in COUNTRY_TOKEN_ALIASES:
+        return True
+    if resolve_country_acceptance_value(token):
+        return True
+    return len(token) == 2 and token.isalpha()
 
 
 def sanitize_country_text(value: Any) -> tuple[str, str]:

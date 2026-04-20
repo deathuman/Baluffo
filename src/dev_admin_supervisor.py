@@ -19,7 +19,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.contracts import SCHEMA_VERSION
-from src.ship.desktop_app import launch_browser_for_url, terminate_process, watch_browser_session
+from src.ship.desktop_app.browser import launch_browser_for_url
+from src.ship.desktop_app.process import terminate_process
+from src.ship.desktop_app.startup import watch_browser_session
 from src.ship.startup_telemetry import wait_for_url
 
 DEFAULT_SITE_PORT = 8080

@@ -12,13 +12,13 @@
   ],
   "project": [
     "frontend/**/*.js",
-    "admin-config.js",
-    "app-local-data-client.js",
-    "desktop-local-data-client.js",
-    "jobs-parsing-utils.js",
-    "jobs-state.js",
-    "local-data-client.js",
-    "saved-zip-utils.js",
+    "frontend/shared/config/admin-config.js",
+    "frontend/shared/local-data/app-client.js",
+    "frontend/shared/local-data/browser-client.js",
+    "frontend/shared/local-data/desktop-client.js",
+    "frontend/jobs/parsing-utils.js",
+    "frontend/jobs/state.js",
+    "frontend/saved/zip-utils.js",
     "probes/startup-probe.js",
     "tests/frontend/unit/**/*.mjs"
   ]

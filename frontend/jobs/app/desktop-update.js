@@ -35,7 +35,7 @@ export function formatDesktopUpdateBytes(bytes) {
   return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-export function normalizeDesktopUpdateStatus(status = {}) {
+function normalizeDesktopUpdateStatus(status = {}) {
   const payload = status && typeof status === "object" ? status : {};
   return {
     currentVersion: String(payload.currentVersion || ""),

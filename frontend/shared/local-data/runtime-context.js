@@ -1,6 +1,6 @@
-export const RUNTIME_MODE_KEY = "baluffo_runtime_mode";
-export const RUNTIME_BRIDGE_BASE_KEY = "baluffo_runtime_bridge_base";
-export const STARTUP_PROBE_KEY = "baluffo_startup_probe_enabled";
+const RUNTIME_MODE_KEY = "baluffo_runtime_mode";
+const RUNTIME_BRIDGE_BASE_KEY = "baluffo_runtime_bridge_base";
+const STARTUP_PROBE_KEY = "baluffo_startup_probe_enabled";
 
 function resolveUrl(href, fallbackHref = "") {
   const rawHref = String(href || fallbackHref || "").trim();
@@ -43,7 +43,7 @@ export function resolveDesktopRuntimeMode(
   return safeGetItem(sessionStorageObject, RUNTIME_MODE_KEY) === "desktop";
 }
 
-export function resolveDesktopRuntimeBridgeParams(
+function resolveDesktopRuntimeBridgeParams(
   href = window.location?.href || "",
   { sessionStorageObject = window.sessionStorage, persist = true } = {}
 ) {
@@ -77,7 +77,7 @@ export function resolveDesktopRuntimeBridgeParams(
   return {};
 }
 
-export function resolveStartupProbeStickyEnabled(
+function resolveStartupProbeStickyEnabled(
   href = window.location?.href || "",
   { sessionStorageObject = window.sessionStorage, persist = true } = {}
 ) {
@@ -92,7 +92,7 @@ export function resolveStartupProbeStickyEnabled(
   return safeGetItem(sessionStorageObject, STARTUP_PROBE_KEY) === "1";
 }
 
-export function resolveDesktopRuntimeQueryParams(
+function resolveDesktopRuntimeQueryParams(
   href = window.location?.href || "",
   { sessionStorageObject = window.sessionStorage, persist = true } = {}
 ) {

@@ -68,6 +68,11 @@ from ..common import config as common_config
 
 register_static_plugins()
 run_scrapy_static_source = _static_scrapy.run_scrapy_static_source
+_STATIC_SHARD_SOURCE_NAMES = {
+    "a_i": "static_studio_pages_a_i",
+    "j_r": "static_studio_pages_j_r",
+    "s_z": "static_studio_pages_s_z",
+}
 
 
 def _needs_detail_location_resolution(
@@ -1754,7 +1759,7 @@ def run_static_source_entry_source(
     )
 
 
-def run_static_studio_pages_a_i_source(
+def _run_static_studio_pages_shard_source(
     *,
     fetch_text: Callable[[str, int], str],
     timeout_s: int,
@@ -1767,7 +1772,9 @@ def run_static_studio_pages_a_i_source(
     listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None,
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     force_refresh_all: bool = False,
+    shard: str,
 ) -> list[RawJob]:
+    diagnostics_name = _STATIC_SHARD_SOURCE_NAMES[shard]
     return run_static_studio_pages_source(
         fetch_text=fetch_text,
         timeout_s=timeout_s,
@@ -1775,8 +1782,8 @@ def run_static_studio_pages_a_i_source(
         backoff_s=backoff_s,
         heartbeat_callback=heartbeat_callback,
         progress_callback=progress_callback,
-        shard="a_i",
-        diagnostics_name="static_studio_pages_a_i",
+        shard=shard,
+        diagnostics_name=diagnostics_name,
         static_detail_concurrency=static_detail_concurrency,
         source_state_rows=source_state_rows,
         listing_async_fetch=listing_async_fetch,
@@ -1799,105 +1806,83 @@ def static_source_name_for_registry_row(row: dict[str, Any]) -> str:
     return f"static_source::{source_id}"
 
 
+def _build_static_source_loader(source_row: dict[str, Any], loader_name: str) -> SourceLoader:
+    def _loader(
+        *,
+        fetch_text: Callable[[str, int], str],
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+        heartbeat_callback: Callable[[], None] | None = None,
+        progress_callback: Callable[..., None] | None = None,
+        static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
+        source_state_rows: dict[str, dict[str, Any]] | None = None,
+        listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]]
+        | None = None,
+        try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+        force_refresh_all: bool = False,
+    ) -> list[RawJob]:
+        return run_static_source_entry_source(
+            source_row=source_row,
+            diagnostics_name=loader_name,
+            fetch_text=fetch_text,
+            timeout_s=timeout_s,
+            retries=retries,
+            backoff_s=backoff_s,
+            heartbeat_callback=heartbeat_callback,
+            progress_callback=progress_callback,
+            static_detail_concurrency=static_detail_concurrency,
+            source_state_rows=source_state_rows,
+            listing_async_fetch=listing_async_fetch,
+            try_playwright=try_playwright,
+            force_refresh_all=force_refresh_all,
+        )
+
+    return _loader
+
+
 def build_static_source_loaders() -> list[tuple[str, SourceLoader]]:
     loaders: list[tuple[str, SourceLoader]] = []
     for row in registry_entries("static"):
         loader_name = static_source_name_for_registry_row(row)
-
-        def _loader(
-            *,
-            fetch_text: Callable[[str, int], str],
-            timeout_s: int,
-            retries: int,
-            backoff_s: float,
-            heartbeat_callback: Callable[[], None] | None = None,
-            progress_callback: Callable[..., None] | None = None,
-            _row: dict[str, Any] = row,
-            _loader_name: str = loader_name,
-            static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
-            source_state_rows: dict[str, dict[str, Any]] | None = None,
-            listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]]
-            | None = None,
-            try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
-            force_refresh_all: bool = False,
-        ) -> list[RawJob]:
-            return run_static_source_entry_source(
-                source_row=_row,
-                diagnostics_name=_loader_name,
-                fetch_text=fetch_text,
-                timeout_s=timeout_s,
-                retries=retries,
-                backoff_s=backoff_s,
-                heartbeat_callback=heartbeat_callback,
-                progress_callback=progress_callback,
-                static_detail_concurrency=static_detail_concurrency,
-                source_state_rows=source_state_rows,
-                listing_async_fetch=listing_async_fetch,
-                try_playwright=try_playwright,
-                force_refresh_all=force_refresh_all,
-            )
-
-        loaders.append((loader_name, _loader))
+        loaders.append((loader_name, _build_static_source_loader(row, loader_name)))
     return loaders
 
 
-def run_static_studio_pages_j_r_source(
-    *,
-    fetch_text: Callable[[str, int], str],
-    timeout_s: int,
-    retries: int,
-    backoff_s: float,
-    heartbeat_callback: Callable[[], None] | None = None,
-    progress_callback: Callable[..., None] | None = None,
-    static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: dict[str, dict[str, Any]] | None = None,
-    listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None,
-    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
-    force_refresh_all: bool = False,
-) -> list[RawJob]:
-    return run_static_studio_pages_source(
-        fetch_text=fetch_text,
-        timeout_s=timeout_s,
-        retries=retries,
-        backoff_s=backoff_s,
-        heartbeat_callback=heartbeat_callback,
-        progress_callback=progress_callback,
-        shard="j_r",
-        diagnostics_name="static_studio_pages_j_r",
-        static_detail_concurrency=static_detail_concurrency,
-        source_state_rows=source_state_rows,
-        listing_async_fetch=listing_async_fetch,
-        try_playwright=try_playwright,
-        force_refresh_all=force_refresh_all,
-    )
+def _build_static_shard_runner(shard: str) -> SourceLoader:
+    def _runner(
+        *,
+        fetch_text: Callable[[str, int], str],
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+        heartbeat_callback: Callable[[], None] | None = None,
+        progress_callback: Callable[..., None] | None = None,
+        static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
+        source_state_rows: dict[str, dict[str, Any]] | None = None,
+        listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]]
+        | None = None,
+        try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+        force_refresh_all: bool = False,
+    ) -> list[RawJob]:
+        return _run_static_studio_pages_shard_source(
+            fetch_text=fetch_text,
+            timeout_s=timeout_s,
+            retries=retries,
+            backoff_s=backoff_s,
+            heartbeat_callback=heartbeat_callback,
+            progress_callback=progress_callback,
+            static_detail_concurrency=static_detail_concurrency,
+            source_state_rows=source_state_rows,
+            listing_async_fetch=listing_async_fetch,
+            try_playwright=try_playwright,
+            force_refresh_all=force_refresh_all,
+            shard=shard,
+        )
+
+    return _runner
 
 
-def run_static_studio_pages_s_z_source(
-    *,
-    fetch_text: Callable[[str, int], str],
-    timeout_s: int,
-    retries: int,
-    backoff_s: float,
-    heartbeat_callback: Callable[[], None] | None = None,
-    progress_callback: Callable[..., None] | None = None,
-    static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
-    source_state_rows: dict[str, dict[str, Any]] | None = None,
-    listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]] | None = None,
-    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
-    force_refresh_all: bool = False,
-) -> list[RawJob]:
-    return run_static_studio_pages_source(
-        fetch_text=fetch_text,
-        timeout_s=timeout_s,
-        retries=retries,
-        backoff_s=backoff_s,
-        heartbeat_callback=heartbeat_callback,
-        progress_callback=progress_callback,
-        shard="s_z",
-        diagnostics_name="static_studio_pages_s_z",
-        static_detail_concurrency=static_detail_concurrency,
-        source_state_rows=source_state_rows,
-        listing_async_fetch=listing_async_fetch,
-        try_playwright=try_playwright,
-        force_refresh_all=force_refresh_all,
-    )
+run_static_studio_pages_a_i_source = _build_static_shard_runner("a_i")
+run_static_studio_pages_j_r_source = _build_static_shard_runner("j_r")
+run_static_studio_pages_s_z_source = _build_static_shard_runner("s_z")

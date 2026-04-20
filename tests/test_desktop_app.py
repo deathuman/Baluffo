@@ -2162,6 +2162,7 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
         mock.patch.object(desktop_app, "release_instance_lock"),
         mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
         mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(desktop_app, "load_session_state", return_value={}),
         mock.patch.object(
             desktop_app,
             "start_child_process",

@@ -4,6 +4,10 @@ import assert from "node:assert/strict";
 import { createJobsStartupMetrics } from "../../../frontend/jobs/app/runtime/effects.js";
 import { createSavedStartupMetrics } from "../../../frontend/saved/app/runtime/effects.js";
 import { createAdminStartupMetrics } from "../../../frontend/admin/app/runtime/effects.js";
+import {
+  emitStartupProbeMetric,
+  flushStartupProbeMetricQueue
+} from "../../../probes/startup-probe.js";
 
 function createStorageMock() {
   const map = new Map();
@@ -18,10 +22,6 @@ function createStorageMock() {
       map.delete(String(key));
     }
   };
-}
-
-async function importFresh(specifier) {
-  return import(`${specifier}?t=${Date.now()}_${Math.random()}`);
 }
 
 function setupStartupProbeGlobals(href = "http://127.0.0.1:8080/jobs.html?desktop=1&startupProbe=1&bridgePort=8877&bridgeHost=127.0.0.1") {
@@ -100,10 +100,6 @@ test("startup probe metric transport retries queued posts after an early bridge 
     }
     return { ok: true, status: 200 };
   };
-
-  const { emitStartupProbeMetric, flushStartupProbeMetricQueue } = await importFresh(
-    "../../../probes/startup-probe.js"
-  );
 
   emitStartupProbeMetric("jobs_module_boot_start", { phase: "boot" });
   await flushStartupProbeMetricQueue();

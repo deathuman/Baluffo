@@ -3,12 +3,18 @@ from pathlib import Path
 
 import pytest
 
+from src.jobs.adapters.location_rules import (
+    _looks_like_country_token as rules_looks_like_country_token,
+)
 from src.jobs.adapters.location_rules import classify_city_garbage
 from src.jobs.adapters.parsers.location import (
     _is_plausibly_location_candidate,
     normalize_location_details,
     parse_generic_location_fields,
     parse_greenhouse_location,
+)
+from src.jobs.adapters.parsers.location import (
+    _looks_like_country_token as parser_looks_like_country_token,
 )
 from src.jobs.text_utils import invalid_location_reason, sanitize_location_text
 
@@ -53,6 +59,28 @@ def test_parse_greenhouse_location_matches_generic_location_parsing(entry: dict[
         entry["expectedCountry"],
         entry["expectedWorkType"],
     )
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("UK", True),
+        ("Great Britain", True),
+        ("United States of America", True),
+        ("Türkiye", True),
+        ("Côte d'Ivoire", True),
+        ("cdmx", False),
+        ("California", True),
+        ("zz", True),
+        ("", False),
+    ],
+)
+def test_country_token_detection_stays_shared_between_parser_and_location_rules(
+    value: str,
+    expected: bool,
+) -> None:
+    assert parser_looks_like_country_token(value) is expected
+    assert rules_looks_like_country_token(value) is expected
 
 
 @pytest.mark.parametrize(
