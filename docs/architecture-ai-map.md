@@ -3,13 +3,13 @@
 > **Use this when:** locating the correct subsystem, choosing edit boundaries, mapping task-to-files
 > **Canonical for:** system boundaries, task routing, verification matrix
 > **Not canonical for:** endpoint payloads, data schema details
-> **Then inspect:** the minimal source files listed in the task table, plus matching contract doc if shape changes involved
+> **Then inspect:** the minimal source files listed in the task table, plus the matching contract doc if shape changes are involved
 
 ---
 
 ## 1) System boundary map
 
-```
+```text
 jobs.html / saved.html / admin.html
   -> styles/base.css + styles/components.css + styles/<page>.css
   -> frontend/{jobs|saved|admin}/index.js
@@ -34,6 +34,12 @@ src/ship/desktop_app/ (desktop runtime package)
   -> launcher.py orchestrates site + bridge + browser startup
   -> startup.py owns readiness, handoff, heartbeat, and watchdog flow
   -> browser.py / session.py / _windows.py / config.py own focused helpers
+
+src/packaged_desktop_smoke.py (stable packaged smoke entrypoint)
+  -> src/ship/packaged_smoke/{build_env,runtime,rehearsals}.py
+
+src/ship/desktop_update.py (stable updater surface)
+  -> src/ship/desktop_update_{shared,state,service}.py
 ```
 
 ---
@@ -48,12 +54,13 @@ src/ship/desktop_app/ (desktop runtime package)
 | `src/admin_bridge.py` | Bridge-only entry (expert/manual mode, wiring only) |
 | `src/jobs/pipeline.py` | Pipeline entry flow |
 | `src/source_discovery/` | Discovery package modules |
+| `src/packaged_desktop_smoke.py` | Packaged smoke CLI and rehearsal entry flow |
 | `scripts/build_ship_bundle.py` | Create ship bundle |
 | `scripts/build_portable_exe.py` | Create portable EXE |
 
 ---
 
-## 3) Task→ minimal files
+## 3) Task -> minimal files
 
 | Task | Start here | Then only if needed |
 |------|------------|---------------------|
@@ -69,17 +76,18 @@ src/ship/desktop_app/ (desktop runtime package)
 | Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
 | Desktop runtime | `src/ship/desktop_app/launcher.py` | `src/ship/desktop_app/{startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
-| UI selectors | `frontend/shared/ui/selectors.js` | — |
+| Packaged smoke / updater | `src/ship/packaged_smoke/{build_env,runtime,rehearsals}.py`, `src/ship/desktop_update_{shared,state,service}.py` | `src/packaged_desktop_smoke.py` and `src/ship/desktop_update.py` only for CLI/public-surface compatibility work |
+| UI selectors | `frontend/shared/ui/selectors.js` | - |
 
 ---
 
 ## 4) Frontend topology
 
-**Jobs page:** `frontend/jobs/app.js` → `runtime.js` → `app/filters.js`, `app/feed.js`, `app/cache.js`, `app/pipeline.js`, `app/sources.js`
+**Jobs page:** `frontend/jobs/app.js` -> `runtime.js` -> `app/filters.js`, `app/feed.js`, `app/cache.js`, `app/pipeline.js`, `app/sources.js`
 
-**Saved page:** `frontend/saved/app.js` → `runtime.js` → `app/notes.js`, `app/attachments.js`, `app/activity.js`, `app/view-state.js`
+**Saved page:** `frontend/saved/app.js` -> `runtime.js` -> `runtime/state.js`, `runtime/events.js`, `app/notes.js`, `app/attachments.js`, `app/activity.js`, `app/view-state.js`
 
-**Admin page:** `frontend/admin/app.js` → `runtime.js` → `app/auth.js`, `app/fetcher.js`, `app/discovery.js`, `app/sync.js`, `app/registry.js`, `app/ops.js`
+**Admin page:** `frontend/admin/app.js` -> `runtime.js` -> `app/auth.js`, `app/fetcher.js`, `app/discovery.js`, `app/sync.js`, `app/registry.js`, `app/ops.js`
 
 **Shared:** `frontend/shared/state-hub.js` (cross-module state), `frontend/shared/api-client.js` (bridge HTTP), `frontend/shared/config/admin-config.js` (frontend-safe runtime config), `frontend/shared/local-data/` (desktop/browser local-data clients)
 
@@ -90,31 +98,31 @@ src/ship/desktop_app/ (desktop runtime package)
 ## 5) Backend topology
 
 **Bridge services (`src/bridge/`):**
-- `sync_service.py`, `sync_state.py` — sync operations
-- `registry_service.py` — canonical active/pending/rejected state, tombstone filtering, local persistence
-- `registry_tombstones.py` — local delete ledger and restore helpers
-- `discovery_service.py` — discovery task orchestration
-- `pipeline_service.py` — jobs pipeline task
-- `routes/get_routes.py`, `routes/post_routes.py` — HTTP handlers
-- `ops_api.py`, `task_history.py`, `source_check_api.py` — ops/report/orchestration
+- `sync_service.py`, `sync_state.py` - sync operations
+- `registry_service.py` - canonical active/pending/rejected state, tombstone filtering, local persistence
+- `registry_tombstones.py` - local delete ledger and restore helpers
+- `discovery_service.py` - discovery task orchestration
+- `pipeline_service.py` - jobs pipeline task
+- `routes/get_routes.py`, `routes/post_routes.py` - HTTP handlers
+- `ops_api.py`, `task_history.py`, `source_check_api.py` - ops/report/orchestration
 
 **Still in `admin_bridge.py`:** HTTP server, service wiring, compatibility wrappers
 
 **Jobs package (`src/jobs/`):**
-- `pipeline.py` — pipeline entry flow
-- `pipeline_timing.py`, `pipeline_finalize.py` — timing aggregation and late-stage output/report assembly
-- `adapters/` — static, provider_api, social fetchers
-- `canonicalize.py`, `dedup.py` — normalization
-- `common/` — leaf helpers (`config`, `contracts`, `heuristics`, `parsing`, etc.); `common/__init__.py` is compatibility-only
+- `pipeline.py` - pipeline entry flow
+- `pipeline_timing.py`, `pipeline_finalize.py` - timing aggregation and late-stage output/report assembly
+- `adapters/` - static, provider_api, social fetchers
+- `canonicalize.py`, `dedup.py` - normalization
+- `common/` - leaf helpers (`config`, `contracts`, `heuristics`, `parsing`, etc.); `common/__init__.py` is compatibility-only
 
 **Discovery package (`src/source_discovery/`):**
-- `orchestrator.py` — public run flow
-- `runtime_metrics.py`, `stage_control.py`, `reporting.py` — runtime bookkeeping, stage toggles, report helpers
-- `gamesmap.py`, `gamedevmap.py`, `gameprog.py`, `sheet_directory.py`, `web_search.py` — domain generators
+- `orchestrator.py` - public run flow
+- `runtime_metrics.py`, `stage_control.py`, `reporting.py` - runtime bookkeeping, stage toggles, report helpers
+- `gamesmap.py`, `gamedevmap.py`, `gameprog.py`, `sheet_directory.py`, `web_search.py` - domain generators
 
 **Sync helpers:**
-- `source_sync.py` — compatibility and test patch surface
-- `source_sync_config.py`, `source_sync_snapshot.py`, `source_sync_crypto.py` — config resolution, snapshot I/O, and crypto/JWT helpers
+- `source_sync.py` - compatibility and test patch surface
+- `source_sync_config.py`, `source_sync_snapshot.py`, `source_sync_crypto.py` - config resolution, snapshot I/O, and crypto/JWT helpers
 
 ---
 
@@ -139,8 +147,8 @@ src/ship/desktop_app/ (desktop runtime package)
 
 ## 7) Runtime contracts
 
-- **Desktop single-instance:** If healthy session exists, raise error — do not open another window
-- **Desktop startup:** start site + bridge → wait for page URL readiness → wait for `/ops/health` before steady state
+- **Desktop single-instance:** If healthy session exists, raise error - do not open another window
+- **Desktop startup:** start site + bridge -> wait for page URL readiness -> wait for `/ops/health` before steady state
 - **Session/watchdog:** store metadata in `desktop-session.json`, track browser heartbeat, close on idle timeout
 
 ---
@@ -153,30 +161,33 @@ src/ship/desktop_app/ (desktop runtime package)
 | Frontend unit | `npm run test:unit` |
 | Bridge behavior | `python -m pytest tests/admin/ -q` |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
-| Desktop launcher | `python -m pytest tests/test_desktop_app.py -q` |
+| Desktop launcher | `python -m pytest tests/desktop_app/ -q` |
+| Packaged desktop smoke | `python -m pytest tests/packaged_desktop/ -q` |
 | Full verification | `npm run verify` |
 
 See [`testing.md`](testing.md) for more commands.
 
 ---
 
-## 9) Thin Boundaries (don't move blindly)
+## 9) Thin boundaries (don't move blindly)
 
-- `src/admin_bridge.py` — stable thin entrypoint; add new bridge logic to `src/bridge/*.py`
-- `src/source_discovery.py` — stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
-- `src/jobs_fetcher.py` — stable thin CLI facade; add pipeline logic to `src/jobs/*`
-- `src/source_sync.py` — permanent thin sync integration surface; keep new sync logic in `src/source_sync_*` helpers
-- `src/jobs/common/__init__.py` — package marker only; prefer `src.jobs.common.<leaf>` or package-submodule imports
-- `frontend/local-data/services.js` — transitional local-data boundary; page code should go through slice-local `services.js`
+- `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and test patch surface; keep implementation in `src/ship/packaged_smoke/*.py`
+- `src/ship/desktop_update.py` - stable updater surface; keep implementation in `src/ship/desktop_update_{shared,state,service}.py`
+- `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py`
+- `src/source_discovery.py` - stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
+- `src/jobs_fetcher.py` - stable thin CLI facade; add pipeline logic to `src/jobs/*`
+- `src/source_sync.py` - permanent thin sync integration surface; keep new sync logic in `src/source_sync_*` helpers
+- `src/jobs/common/__init__.py` - package marker only; prefer `src.jobs.common.<leaf>` or package-submodule imports
+- `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`
 
 ---
 
 ## 10) Key libraries
 
-- **Playwright** — frontend smoke tests
-- **PyInstaller** — portable Windows executable
-- **Scrapy + Playwright** — scraping fallback
+- **Playwright** - frontend smoke tests
+- **PyInstaller** - portable Windows executable
+- **Scrapy + Playwright** - scraping fallback
 
 ---
 
-*Last updated: 2026-04-18*
+*Last updated: 2026-04-21*

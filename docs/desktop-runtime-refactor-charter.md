@@ -44,7 +44,7 @@ Turn `src/ship/desktop_app/__init__.py` into a thin compatibility facade over fo
 - Persisted state touched: desktop session JSON, desktop instance lock, startup metrics reads, updater success-marker path
 - Packaging or desktop behavior touched: yes, throughout the launcher path
 - Compatibility concern: tests and internal tools patch `src.ship.desktop_app` directly, so facade compatibility is part of the effective contract
-- Rollback trigger: any regression in `tests/test_desktop_app.py` or packaged smoke coverage tied to startup, reclaim, updater handoff, or Chromium supervision
+- Rollback trigger: any regression in `tests/desktop_app/` or packaged smoke coverage tied to startup, reclaim, updater handoff, or Chromium supervision
 
 ## Compatibility Surface Audit
 
@@ -61,8 +61,8 @@ Turn `src/ship/desktop_app/__init__.py` into a thin compatibility facade over fo
 - Direct internal callers outside the package:
   - `src/dev_admin_supervisor.py`
   - `src/packaged_desktop_smoke.py`
-  - `tests/test_desktop_app.py`
-  - `tests/test_packaged_desktop_smoke.py`
+  - `tests/desktop_app/`
+  - `tests/packaged_desktop/`
 - Transitional constraint:
   - moved functions must continue resolving key dependencies through `src.ship.desktop_app` where tests patch the package root directly
 
@@ -111,9 +111,9 @@ Turn `src/ship/desktop_app/__init__.py` into a thin compatibility facade over fo
 ## Verification
 
 - Cheapest syntax/check step:
-  - `python -m pytest tests/test_desktop_app.py -q`
+  - `python -m pytest tests/desktop_app/ -q`
 - Cheapest focused packaged step:
-  - `python -m pytest tests/test_packaged_desktop_smoke.py -q`
+  - `python -m pytest tests/packaged_desktop/ -q`
 - Broader verification required only if:
   - packaged startup probe behavior, updater handoff flow, or release-facing launcher wiring changes semantically
 
@@ -145,8 +145,8 @@ Turn `src/ship/desktop_app/__init__.py` into a thin compatibility facade over fo
   - direct packaged smoke import from `src.ship.desktop_app.__init__`
   - implicit desktop `ROOT` lookup
 - Verification completed:
-  - `python -m pytest tests/test_desktop_app.py -q`
-  - `python -m pytest tests/test_packaged_desktop_smoke.py -q`
+  - `python -m pytest tests/desktop_app/ -q`
+  - `python -m pytest tests/packaged_desktop/ -q`
 
 ## Notes
 

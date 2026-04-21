@@ -145,6 +145,7 @@ test("cleanup structure: app runtime modules import only canonical layers and lo
 test("cleanup structure: app runtime helper modules stay slice-local", () => {
   const slices = ["jobs", "saved", "admin"];
   const allowedImportPattern = /^(\.\.\/[A-Za-z0-9-]+\.js|\.\/[A-Za-z0-9-]+\.js)$/;
+  const allowedSharedRuntimeImportPattern = /^\.\.\/\.\.\/\.\.\/shared\/[A-Za-z0-9_/-]+\.js$/;
   const blockedCrossSlicePattern = /^(\.\.\/)+(jobs|saved|admin)\//;
 
   for (const slice of slices) {
@@ -160,7 +161,9 @@ test("cleanup structure: app runtime helper modules stay slice-local", () => {
           `Runtime helper must not import cross-slice modules: ${rel} -> ${specifier}`
         );
         assert.equal(
-          allowedImportPattern.test(specifier) || specifier.startsWith("/"),
+          allowedImportPattern.test(specifier) ||
+            allowedSharedRuntimeImportPattern.test(specifier) ||
+            specifier.startsWith("/"),
           true,
           `Unexpected runtime helper import in ${rel}: ${specifier}`
         );

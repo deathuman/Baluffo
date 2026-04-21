@@ -1,4 +1,4 @@
-# ruff: noqa: F403, F405
+# ruff: noqa: F401
 import json
 import subprocess
 import threading
@@ -10,7 +10,49 @@ import pytest
 from src.exceptions import AdapterValidationError
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 
-from ._helpers import *  # noqa: F401,F403
+from ._helpers import (
+    AdapterPluginContext,
+    Counter,
+    FIXTURES_DIR,
+    GenericCareersSpider,
+    HtmlResponse,
+    Path,
+    Request,
+    _fixture,
+    _looks_like_location_cell,
+    _parse_structured_locations,
+    _read_fixture,
+    ats_wrappers,
+    build_city_garbage_report,
+    build_contamination_report,
+    build_location_quality_report,
+    build_public_text_quality_report,
+    classify_job_page,
+    default_registry,
+    ensure_provider_plugins,
+    extract_rendered_card_jobs,
+    frontier,
+    hashlib,
+    jf,
+    jobs_canonicalize,
+    jobs_common_config,
+    jobs_common_registry,
+    jobs_dedup,
+    jobs_registry,
+    jobs_reporting,
+    jfr,
+    kojima,
+    patch_jobs_fetcher_aliases,
+    process_detail_link,
+    rendered_cards,
+    scrapy_runner,
+    sheet_studios,
+    source_detail_limit_for,
+    source_detail_retries_for,
+    static_helpers,
+    static_scrapy,
+    workspace_tmpdir,
+)
 
 
 def test_run_scrapy_static_source_handles_malformed_json() -> None:

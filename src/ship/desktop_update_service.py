@@ -1,0 +1,607 @@
+"""Desktop update service implementation behind the root compatibility facade."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Callable
+
+root: Any | None = None
+
+
+def _root() -> Any:
+    if root is None:
+        raise RuntimeError("desktop_update_service.root is not configured")
+    return root
+
+
+class DesktopUpdateService:
+    """App-side desktop updater state, fetch, download, and helper handoff service."""
+
+    def __init__(
+        self,
+        *,
+        data_dir: Path,
+        current_version_getter: Callable[[], str] | None = None,
+    ) -> None:
+        deps = _root()
+        self._deps = deps
+        self.paths = deps.DesktopUpdatePaths.from_data_dir(data_dir)
+        self._current_version_getter = current_version_getter or deps.get_app_version
+        self._lock = deps.threading.RLock()
+        self._download_thread: Any | None = None
+
+    def current_version(self) -> str:
+        deps = self._deps
+        return str(self._current_version_getter() or deps.get_app_version()).strip()
+
+    def _download_worker_alive_locked(self) -> bool:
+        return self._download_thread is not None and self._download_thread.is_alive()
+
+    def _load_cached_manifest_parts(
+        self,
+        *,
+        cached_manifest: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
+        deps = self._deps
+        cached = (
+            dict(cached_manifest)
+            if isinstance(cached_manifest, dict)
+            else deps.read_cached_manifest(self.paths)
+        )
+        manifest = cached.get("manifest") if isinstance(cached.get("manifest"), dict) else {}
+        release_notes = deps._cached_release_notes(
+            cached,
+            target_version=str(manifest.get("version") or "").strip(),
+            manifest_url=str(manifest.get("release_notes_url") or "").strip(),
+        )
+        return cached, manifest, release_notes
+
+    def _reconcile_status_locked(
+        self,
+        *,
+        status: dict[str, Any] | None = None,
+        cached_manifest: dict[str, Any] | None = None,
+        manifest: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        deps = self._deps
+        current_version = self.current_version()
+        existing = (
+            dict(status)
+            if isinstance(status, dict)
+            else deps.load_status(self.paths, current_version=current_version)
+        )
+        existing, _credible_handoff_plan, _stale_handoff = deps._reconcile_handoff_status(
+            self.paths,
+            existing,
+        )
+        cached, cached_manifest_payload, release_notes = self._load_cached_manifest_parts(
+            cached_manifest=cached_manifest,
+        )
+        manifest_payload = (
+            dict(manifest) if isinstance(manifest, dict) else dict(cached_manifest_payload)
+        )
+        next_status = dict(existing)
+        if manifest_payload:
+            next_status = deps._manifest_to_status(
+                current_version=current_version,
+                manifest=manifest_payload,
+                existing=next_status,
+                release_notes=release_notes,
+            )
+            next_status = deps._reconcile_downloaded_artifact_status(
+                paths=self.paths,
+                manifest=manifest_payload,
+                status=next_status,
+            )
+            if (
+                str(existing.get("downloadState") or "").strip().lower() == "downloading"
+                and str(next_status.get("downloadState") or "").strip().lower() != "downloaded"
+                and not self._download_worker_alive_locked()
+            ):
+                next_status = deps._stale_download_failed_status(
+                    next_status,
+                    message="The previous update download stopped before it finished. Download the update again.",
+                )
+        elif (
+            str(existing.get("downloadState") or "").strip().lower() == "downloading"
+            and not self._download_worker_alive_locked()
+        ):
+            next_status = deps._stale_download_failed_status(
+                next_status,
+                message="The previous update download stopped before it finished. Check for updates and try again.",
+            )
+        next_status, _credible_handoff_plan, _stale_handoff = deps._reconcile_handoff_status(
+            self.paths,
+            next_status,
+        )
+        next_status = deps._normalize_installed_status(next_status, current_version=current_version)
+        if not (
+            next_status.get("releaseNotesUrl")
+            or next_status.get("releaseNotesTitle")
+            or next_status.get("releaseNotesBody")
+            or next_status.get("releaseNotesPublishedAt")
+        ):
+            next_status.update(release_notes)
+        if next_status != existing:
+            return deps.save_status(self.paths, next_status)
+        return next_status
+
+    def _download_failure_locked(
+        self,
+        *,
+        status: dict[str, Any],
+        error: str,
+        error_code: str,
+        mutate_status: bool = False,
+    ) -> dict[str, Any]:
+        deps = self._deps
+        next_status = dict(status)
+        if mutate_status:
+            next_status = deps.save_status(
+                self.paths,
+                deps._stale_download_failed_status(next_status, message=error),
+            )
+        return deps._failure_result(status=next_status, error=error, error_code=error_code)
+
+    def _install_failure_locked(
+        self,
+        *,
+        status: dict[str, Any],
+        error: str,
+        error_code: str,
+    ) -> dict[str, Any]:
+        deps = self._deps
+        next_status = deps.save_status(
+            self.paths,
+            {
+                **dict(status),
+                "lastError": str(error or "").strip(),
+            },
+        )
+        return deps._failure_result(status=next_status, error=error, error_code=error_code)
+
+    def _install_handoff_unconfirmed_locked(
+        self,
+        *,
+        status: dict[str, Any],
+        zip_path: Path,
+        temp_helper: Path | None,
+    ) -> dict[str, Any]:
+        deps = self._deps
+        error = "Baluffo did not confirm the install handoff. Try install again."
+        deps.clear_handoff_request(self.paths)
+        deps.clear_install_plan(self.paths)
+        deps.clear_staged_helper(temp_helper)
+        retryable_status = deps.save_status(
+            self.paths,
+            deps._retryable_install_status(status, zip_path=zip_path, error=error),
+        )
+        return deps._failure_result(
+            status=retryable_status,
+            error=error,
+            error_code="install_handoff_unconfirmed",
+        )
+
+    def load_public_keys(self) -> dict[str, bytes]:
+        deps = self._deps
+        return deps.load_desktop_update_public_keys(
+            candidate_paths=deps.desktop_update_public_key_candidate_paths(self.paths.ship_root),
+        )
+
+    def get_status_payload(self) -> dict[str, Any]:
+        with self._lock:
+            return self._reconcile_status_locked()
+
+    def _resolve_latest_release(self) -> dict[str, Any]:
+        deps = self._deps
+        repo = deps.resolve_release_repo(
+            install_root=self.paths.install_root,
+            ship_root=self.paths.ship_root,
+        )
+        if not repo:
+            raise RuntimeError("Desktop update repository is not configured.")
+        url = f"{deps.resolve_github_api_base()}/repos/{repo}/releases?per_page=10"
+        payload = deps.fetch_json(url)
+        if not isinstance(payload, list):
+            raise RuntimeError("GitHub releases payload was not a list.")
+        for release in payload:
+            if not isinstance(release, dict):
+                continue
+            if bool(release.get("draft")) or bool(release.get("prerelease")):
+                continue
+            return release
+        raise RuntimeError("No stable GitHub release is available.")
+
+    def _resolve_manifest_from_release(self, release: dict[str, Any]) -> dict[str, Any]:
+        deps = self._deps
+        assets = release.get("assets") if isinstance(release.get("assets"), list) else []
+        manifest_asset = next(
+            (
+                asset
+                for asset in assets
+                if isinstance(asset, dict)
+                and str(asset.get("name") or "").strip() == deps.DESKTOP_UPDATE_MANIFEST_ASSET
+            ),
+            None,
+        )
+        if manifest_asset is None:
+            raise RuntimeError("Stable GitHub release did not publish a desktop manifest asset.")
+        manifest_url = str(manifest_asset.get("browser_download_url") or "").strip()
+        if not manifest_url:
+            raise RuntimeError("Desktop manifest asset is missing its download URL.")
+        manifest = deps.fetch_json(manifest_url)
+        if not isinstance(manifest, dict):
+            raise RuntimeError("Desktop manifest payload is invalid.")
+        deps.validate_desktop_manifest(manifest)
+        deps.verify_manifest_signature(manifest, public_keys=self.load_public_keys())
+        if not str(manifest.get("release_notes_url") or "").strip():
+            manifest["release_notes_url"] = str(release.get("html_url") or "").strip()
+        return manifest
+
+    def check_for_update(self, *, force: bool = False) -> dict[str, Any]:
+        deps = self._deps
+        with self._lock:
+            current_version = self.current_version()
+            status = self._reconcile_status_locked()
+            last_checked_at = str(status.get("lastCheckedAt") or "").strip()
+            if not force and last_checked_at and self.paths.manifest_cache_path.exists():
+                try:
+                    last_checked = deps.datetime.fromisoformat(last_checked_at.replace("Z", "+00:00"))
+                except ValueError:
+                    last_checked = None
+                if last_checked is not None:
+                    age = (deps.datetime.now(deps.UTC) - last_checked).total_seconds()
+                    if age < deps.DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS:
+                        cached, manifest, release_notes = self._load_cached_manifest_parts()
+                        if manifest:
+                            return deps.save_status(
+                                self.paths,
+                                self._reconcile_status_locked(
+                                    status=deps._manifest_to_status(
+                                        current_version=current_version,
+                                        manifest=manifest,
+                                        existing=status,
+                                        release_notes=release_notes,
+                                    ),
+                                    cached_manifest=cached,
+                                    manifest=manifest,
+                                ),
+                            )
+            deps.save_status(self.paths, {**status, "availability": "checking", "lastError": ""})
+        try:
+            release = self._resolve_latest_release()
+            manifest = self._resolve_manifest_from_release(release)
+            release_notes = deps._normalize_release_notes_payload(
+                release,
+                fallback_url=str(manifest.get("release_notes_url") or "").strip(),
+                fallback_title=str(manifest.get("version") or "").strip(),
+            )
+            deps.write_json_atomic(
+                self.paths.manifest_cache_path,
+                {
+                    "cachedAt": deps.iso_now(),
+                    "releaseId": int(release.get("id") or 0),
+                    "releaseTag": str(release.get("tag_name") or ""),
+                    "manifest": manifest,
+                    "releaseNotes": release_notes,
+                },
+            )
+            next_status = deps._manifest_to_status(
+                current_version=current_version,
+                manifest=manifest,
+                existing=deps.load_status(self.paths, current_version=current_version),
+                release_notes=release_notes,
+            )
+            with self._lock:
+                return self._reconcile_status_locked(
+                    status=next_status,
+                    cached_manifest=deps.read_cached_manifest(self.paths),
+                    manifest=manifest,
+                )
+        except Exception as exc:
+            return deps.save_status(
+                self.paths,
+                {
+                    **deps.load_status(self.paths, current_version=current_version),
+                    "lastCheckedAt": deps.iso_now(),
+                    "availability": "error",
+                    "updateAvailable": False,
+                    "lastError": str(exc),
+                },
+            )
+
+    def _run_download_worker(self, manifest: dict[str, Any]) -> None:
+        deps = self._deps
+        artifact = (
+            manifest.get("portable_artifact")
+            if isinstance(manifest.get("portable_artifact"), dict)
+            else {}
+        )
+        target = self.paths.downloads_dir / deps._portable_artifact_name(manifest)
+        last_reported_percent = -1
+
+        def on_progress(downloaded: int, total: int) -> None:
+            nonlocal last_reported_percent
+            total_bytes = total or int(artifact.get("size_bytes") or 0)
+            percent = int((downloaded / total_bytes) * 100) if total_bytes > 0 else 0
+            clamped_percent = max(0, min(100, percent))
+            if clamped_percent == last_reported_percent:
+                return
+            last_reported_percent = clamped_percent
+            try:
+                deps.save_status(
+                    self.paths,
+                    {
+                        **deps.load_status(self.paths, current_version=self.current_version()),
+                        "downloadState": "downloading",
+                        "downloadedBytes": int(downloaded),
+                        "totalBytes": int(total_bytes),
+                        "downloadPercent": clamped_percent,
+                        "lastError": "",
+                    },
+                )
+            except Exception:
+                return
+
+        try:
+            deps.download_file(str(artifact.get("url") or ""), target, on_progress=on_progress)
+            expected_hash = str(artifact.get("sha256") or "").strip().lower()
+            if expected_hash and deps.compute_sha256(target).lower() != expected_hash:
+                raise RuntimeError("Downloaded portable ZIP checksum mismatch.")
+            deps.save_status(
+                self.paths,
+                {
+                    **deps.load_status(self.paths, current_version=self.current_version()),
+                    "downloadState": "downloaded",
+                    "downloadedBytes": int(target.stat().st_size),
+                    "totalBytes": int(target.stat().st_size),
+                    "downloadPercent": 100,
+                    "installState": "ready",
+                    "downloadedZipPath": str(target),
+                    "lastError": "",
+                },
+            )
+        except Exception as exc:
+            with deps.contextlib.suppress(OSError):
+                target.unlink()
+            current_status = deps.load_status(self.paths, current_version=self.current_version())
+            deps.save_status(
+                self.paths,
+                {
+                    **current_status,
+                    "downloadState": "failed",
+                    "installState": "idle",
+                    "installStage": "idle",
+                    "downloadedBytes": 0,
+                    "downloadPercent": 0,
+                    "downloadedZipPath": "",
+                    "lastError": str(exc),
+                },
+            )
+        finally:
+            with self._lock:
+                self._download_thread = None
+
+    def download_update(self) -> dict[str, Any]:
+        deps = self._deps
+        status = self.check_for_update(force=False)
+        with self._lock:
+            status = self._reconcile_status_locked(status=status)
+            availability = str(status.get("availability") or "").strip().lower()
+            download_state = str(status.get("downloadState") or "").strip().lower()
+            install_state = str(status.get("installState") or "").strip().lower()
+            if download_state == "downloading" and self._download_worker_alive_locked():
+                return self._download_failure_locked(
+                    status=status,
+                    error="Update download already in progress.",
+                    error_code="download_in_progress",
+                )
+            if download_state == "downloaded" or install_state == "ready":
+                return self._download_failure_locked(
+                    status=status,
+                    error="The update ZIP is already downloaded and ready to install.",
+                    error_code="update_ready_to_install",
+                )
+            if availability == "blocked":
+                return self._download_failure_locked(
+                    status=status,
+                    error="This update is available but cannot be downloaded automatically from the current build.",
+                    error_code=str(status.get("blockedReason") or "update_blocked"),
+                )
+            if availability != "available":
+                return self._download_failure_locked(
+                    status=status,
+                    error=str(status.get("lastError") or "No update is available."),
+                    error_code="no_update_available",
+                )
+            _cached, manifest, _release_notes = self._load_cached_manifest_parts()
+            if not manifest:
+                return self._download_failure_locked(
+                    status=status,
+                    error="No verified manifest is cached. Check for updates again.",
+                    error_code="manifest_cache_missing",
+                )
+            try:
+                self.paths.downloads_dir.mkdir(parents=True, exist_ok=True)
+                state = deps.save_status(
+                    self.paths,
+                    {
+                        **status,
+                        "downloadState": "downloading",
+                        "downloadedBytes": 0,
+                        "totalBytes": int(
+                            (
+                                (manifest.get("portable_artifact") or {})
+                                if isinstance(manifest.get("portable_artifact"), dict)
+                                else {}
+                            ).get("size_bytes")
+                            or 0
+                        ),
+                        "downloadPercent": 0,
+                        "lastError": "",
+                    },
+                )
+                thread = deps.threading.Thread(
+                    target=self._run_download_worker,
+                    args=(manifest,),
+                    daemon=True,
+                    name="baluffo-desktop-update-download",
+                )
+                self._download_thread = thread
+                thread.start()
+                return {"started": True, "status": state}
+            except Exception as exc:
+                self._download_thread = None
+                return self._download_failure_locked(
+                    status=status,
+                    error=f"Could not start the desktop update download: {exc}",
+                    error_code="download_start_failed",
+                    mutate_status=True,
+                )
+
+    def _ensure_install_preflight(self, zip_path: Path) -> None:
+        deps = self._deps
+        if not zip_path.is_file():
+            raise RuntimeError(f"Downloaded update ZIP not found: {zip_path}")
+        helper_path = self.paths.install_root / deps.DESKTOP_UPDATE_HELPER_NAME
+        if not helper_path.is_file():
+            raise RuntimeError(f"Installed desktop updater helper not found: {helper_path}")
+        self.paths.updater_dir.mkdir(parents=True, exist_ok=True)
+        self.paths.rollback_root.mkdir(parents=True, exist_ok=True)
+        usage = deps.shutil.disk_usage(self.paths.updater_dir)
+        required_free = max(int(zip_path.stat().st_size) * 3, 128 * 1024 * 1024)
+        if int(usage.free) < required_free:
+            raise RuntimeError(
+                "Not enough free disk space for desktop update staging and rollback."
+            )
+
+    def request_install(self) -> dict[str, Any]:
+        deps = self._deps
+        with self._lock:
+            status = self._reconcile_status_locked()
+            if str(status.get("downloadState") or "").strip().lower() != "downloaded":
+                return self._install_failure_locked(
+                    status=status,
+                    error="Update ZIP is not ready to install.",
+                    error_code="install_not_ready",
+                )
+            _cached, manifest, _release_notes = self._load_cached_manifest_parts()
+            if not manifest:
+                return self._install_failure_locked(
+                    status=status,
+                    error="No verified manifest is cached. Check for updates again.",
+                    error_code="manifest_cache_missing",
+                )
+            zip_path = Path(str(status.get("downloadedZipPath") or "")).expanduser().resolve()
+            try:
+                self._ensure_install_preflight(zip_path)
+            except Exception as exc:
+                return self._install_failure_locked(
+                    status=status,
+                    error=str(exc),
+                    error_code="install_preflight_failed",
+                )
+            session_root = deps.resolve_desktop_session_root()
+            session_state = deps.read_desktop_session_state(session_root)
+            launcher_pid = int(session_state.get("launcherPid") or 0)
+            launcher_token = str(session_state.get("launcherToken") or "").strip()
+            if launcher_pid <= 0 or not launcher_token:
+                return self._install_failure_locked(
+                    status=status,
+                    error="The desktop launcher session is unavailable for updater handoff.",
+                    error_code="install_session_unavailable",
+                )
+            helper_source = self.paths.install_root / deps.DESKTOP_UPDATE_HELPER_NAME
+            temp_helper = (
+                Path(deps.tempfile.gettempdir()).resolve()
+                / f"BaluffoUpdater-{deps.uuid.uuid4().hex}.exe"
+            )
+            try:
+                deps.shutil.copy2(helper_source, temp_helper)
+            except Exception as exc:
+                return self._install_failure_locked(
+                    status=status,
+                    error=f"Could not stage the updater helper: {exc}",
+                    error_code="install_start_failed",
+                )
+            try:
+                rollback_path = self.paths.rollback_root / (
+                    f"{str(manifest.get('version') or '').strip()}-"
+                    f"{deps.datetime.now(deps.UTC).strftime('%Y%m%d-%H%M%S')}"
+                )
+                plan = {
+                    "planVersion": 1,
+                    "installRoot": str(self.paths.install_root),
+                    "tempHelperPath": str(temp_helper),
+                    "targetVersion": str(manifest.get("version") or "").strip(),
+                    "currentVersion": self.current_version(),
+                    "manifestPath": str(self.paths.manifest_cache_path),
+                    "downloadedZipPath": str(zip_path),
+                    "expectedZipSha256": str(
+                        (
+                            (manifest.get("portable_artifact") or {})
+                            if isinstance(manifest.get("portable_artifact"), dict)
+                            else {}
+                        ).get("sha256")
+                        or ""
+                    ).strip(),
+                    "manifestKeyId": str(manifest.get("key_id") or "").strip(),
+                    "rollbackPath": str(rollback_path),
+                    "updaterWorkingDir": str(self.paths.updater_dir),
+                    "helperStdoutPath": str(self.paths.helper_stdout_log_path),
+                    "helperStderrPath": str(self.paths.helper_stderr_log_path),
+                    "helperDiagnosticsPath": str(self.paths.helper_diagnostics_log_path),
+                    "createdAt": deps.iso_now(),
+                    "launcherPid": launcher_pid,
+                    "launcherToken": launcher_token,
+                    "desktopSessionRoot": str(session_root),
+                }
+                deps.write_json_atomic(self.paths.install_plan_path, plan)
+                deps.write_json_atomic(
+                    self.paths.handoff_request_path,
+                    {
+                        "requestedAt": deps.iso_now(),
+                        "targetVersion": str(manifest.get("version") or "").strip(),
+                        "launcherPid": launcher_pid,
+                        "launcherToken": launcher_token,
+                    },
+                )
+                deps.save_status(
+                    self.paths,
+                    {
+                        **status,
+                        "installState": "handoff_requested",
+                        "installStage": "preparing",
+                        "installStageLabel": deps.install_stage_label(
+                            "handoff_requested",
+                            "preparing",
+                        ),
+                        "helperUpdatedAt": deps.iso_now(),
+                        "lastError": "",
+                        "manifestPath": str(self.paths.manifest_cache_path),
+                        "downloadedZipPath": str(zip_path),
+                        "rollbackPath": str(rollback_path),
+                    },
+                )
+                verified_status = deps.load_status(self.paths, current_version=self.current_version())
+                verified_status, credible_handoff_plan, _stale_handoff = deps._reconcile_handoff_status(
+                    self.paths,
+                    verified_status,
+                )
+                if not credible_handoff_plan or not deps._handoff_status_pending(verified_status):
+                    return self._install_handoff_unconfirmed_locked(
+                        status=status,
+                        zip_path=zip_path,
+                        temp_helper=temp_helper,
+                    )
+                return {
+                    "started": True,
+                    "status": verified_status,
+                    "exitRequested": True,
+                }
+            except Exception as exc:
+                return self._install_failure_locked(
+                    status=status,
+                    error=f"Could not start the desktop update install: {exc}",
+                    error_code="install_start_failed",
+                )

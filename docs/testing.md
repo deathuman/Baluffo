@@ -212,9 +212,10 @@ Use the narrowest check that matches the risky path:
 | Jobs pipeline / jobs_fetcher | `tests/test_jobs_fetcher.py` (integration shim), `tests/test_jobs_fetcher_google_sheets.py`, `tests/test_jobs_fetcher_parsing.py`, `tests/test_jobs_fetcher_providers.py`, `tests/jobs_static/`, `tests/test_jobs_fetcher_pipeline.py`, `tests/test_jobs_fetcher_quality.py` |
 | Source discovery | `tests/source_discovery/` |
 | Admin bridge (registry, runtime, static fallback, sync) | `tests/admin/test_admin_bridge_ops_*.py` |
-| Desktop app / launcher | `tests/test_desktop_app.py` |
+| Desktop app / launcher | `tests/desktop_app/` |
+| Packaged desktop smoke / rehearsal | `tests/packaged_desktop/` |
 | Source sync | `tests/test_source_sync.py` |
-| Local data store, backup, config, etc. | `tests/test_local_data_store.py`, `tests/test_desktop_app.py`, and the nearest focused `tests/test_*.py` module for the subsystem |
+| Local data store, backup, config, etc. | `tests/test_local_data_store.py`, `tests/desktop_app/`, and the nearest focused `tests/test_*.py` module for the subsystem |
 
 ## Frontend smoke tests (Playwright)
 

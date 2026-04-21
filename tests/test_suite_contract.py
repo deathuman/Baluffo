@@ -295,6 +295,21 @@ def test_desktop_app_package_stays_lazy_compat_facade(repo_root: Path) -> None:
     assert "_COMPAT_MODULES = (" in text
 
 
+def test_sharded_python_test_families_do_not_use_star_helper_imports(repo_root: Path) -> None:
+    for relative_path in (
+        "tests/source_discovery/test_candidate_generation.py",
+        "tests/source_discovery/test_config_and_helpers.py",
+        "tests/source_discovery/test_directory_sources.py",
+        "tests/source_discovery/test_run_discovery_flow.py",
+        "tests/jobs_static/test_browser_and_regression_queues.py",
+        "tests/jobs_static/test_detail_fallback.py",
+        "tests/jobs_static/test_rendered_cards_and_plugins.py",
+        "tests/jobs_static/test_static_source_execution.py",
+    ):
+        text = (repo_root / relative_path).read_text(encoding="utf-8")
+        assert "from ._helpers import *" not in text
+
+
 def test_admin_bridge_delegates_task_launch_orchestration_to_bridge_module(repo_root: Path) -> None:
     admin_bridge_tree = _module_tree(repo_root / "src" / "admin_bridge.py")
     task_launch_api = (repo_root / "src" / "bridge" / "task_launch_api.py").read_text(
