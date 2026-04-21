@@ -191,6 +191,21 @@ def test_source_discovery_entrypoint_stays_thin_cli_wrapper(repo_root: Path) -> 
     assert _has_name_main_guard(tree)
 
 
+def test_source_discovery_orchestrator_stays_split_by_phase(repo_root: Path) -> None:
+    target = repo_root / "src" / "source_discovery" / "orchestrator.py"
+    text = target.read_text(encoding="utf-8")
+
+    assert "from . import orchestrator_generation as orchestrator_generation_mod" in text
+    assert "from . import orchestrator_probe as orchestrator_probe_mod" in text
+    assert "from . import orchestrator_finalize as orchestrator_finalize_mod" in text
+    assert "from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState" in text
+    assert "orchestrator_generation_mod.root = sys.modules[__name__]" in text
+    assert "orchestrator_probe_mod.root = sys.modules[__name__]" in text
+    assert "orchestrator_finalize_mod.root = sys.modules[__name__]" in text
+    assert "async def _run_probe_batch(" not in text
+    assert "def write_progress_report(" not in text
+
+
 def test_jobs_fetcher_facade_uses_leaf_common_modules_not_root_symbol_barrel(
     repo_root: Path,
 ) -> None:

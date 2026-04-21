@@ -73,7 +73,7 @@ src/ship/desktop_update.py (stable updater surface)
 | Saved attachments | `frontend/saved/app/attachments.js` | `frontend/saved/services.js` |
 | Admin ops | `frontend/admin/app/{auth,ops,fetcher,discovery,sync}.js` | `frontend/admin/services.js` |
 | Bridge API | `src/bridge/*.py` | `src/bridge/routes/*.py` |
-| Discovery behavior | `src/source_discovery/orchestrator.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
+| Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
 | Bridge sync | `src/bridge/sync_service.py` | `src/source_sync.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py`, `src/source_sync_crypto.py`, `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
 | Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
@@ -120,7 +120,7 @@ src/ship/desktop_update.py (stable updater surface)
 - `common/` - leaf helpers (`config`, `contracts`, `heuristics`, `parsing`, etc.); `common/__init__.py` is compatibility-only
 
 **Discovery package (`src/source_discovery/`):**
-- `orchestrator.py` - public run flow
+- `orchestrator.py` - public run flow and test patch surface over `orchestrator_{runtime,generation,probe,finalize}.py`
 - `runtime_metrics.py`, `stage_control.py`, `reporting.py` - runtime bookkeeping, stage toggles, report helpers
 - `gamesmap.py`, `gamedevmap.py`, `gameprog.py`, `sheet_directory.py`, `web_search.py` - domain generators
 

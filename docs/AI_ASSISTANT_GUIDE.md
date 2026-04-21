@@ -82,7 +82,7 @@
 | Frontend behavior | `frontend/<page>/app/*.js` | `frontend/<page>/app/runtime.js` |
 | Shared/page CSS | `styles/{base,components,<page>}.css` | The owning HTML entrypoint only if stylesheet includes need to change |
 | Bridge/API | `src/bridge/*.py` | `src/bridge/routes/*.py` |
-| Discovery behavior | `src/source_discovery/orchestrator.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
+| Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
 | Registry sync / tombstones | `src/source_registry.py`, `src/bridge/registry_service.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py` | `src/bridge/registry_tombstones.py`, `src/source_sync.py`, `src/source_sync_crypto.py`, `src/bridge/routes/post_routes.py` |
 | Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
 | Static adapter / scraping behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_helpers.py` | `src/jobs/adapters/static.py` only when the root adapter surface or root patch seams must stay stable |

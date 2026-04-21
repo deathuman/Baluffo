@@ -71,6 +71,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
 | [`refactor-charter-template.md`](refactor-charter-template.md) | Planning template | You are drafting a structured refactor proposal |
 | [`desktop-packaging-boundary-charter.md`](desktop-packaging-boundary-charter.md) | Active refactor tracker | You are changing packaged smoke or desktop updater boundaries and need the current compatibility assumptions |
+| [`discovery-orchestrator-boundary-charter.md`](discovery-orchestrator-boundary-charter.md) | Active refactor tracker | You are changing discovery orchestration boundaries and need the current compatibility assumptions |
 | [`static-adapter-boundary-charter.md`](static-adapter-boundary-charter.md) | Active refactor tracker | You are changing the static adapter boundary and need the current compatibility assumptions |
 
 ---
@@ -93,7 +94,7 @@ Useful as context, but **not authoritative** for current implementation unless e
 | Understand product and top-level layout | [`README.md`](../README.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
 | Change frontend behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then task-specific source files |
 | Change bridge/API behavior | [`architecture-ai-map.md`](architecture-ai-map.md) | [`admin-bridge-api.md`](admin-bridge-api.md) |
-| Change discovery behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/source_discovery/*` |
+| Change discovery behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/source_discovery/orchestrator*.py` or the relevant discovery leaf module |
 | Change jobs pipeline / fetcher behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/jobs/*` leaf modules |
 | Change payload/schema shape | [`DATA_CONTRACT.md`](DATA_CONTRACT.md) | `src/core/*`, related tests, task-specific runtime docs |
 | Work on scraping/adapters | [`scraping-pipeline.md`](scraping-pipeline.md) | [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) |

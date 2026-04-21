@@ -1,0 +1,641 @@
+from __future__ import annotations
+
+import time
+from typing import Any
+from urllib.parse import urlparse
+
+from src import source_registry as source_registry_module
+from src.bridge.registry_tombstones import filter_tombstoned_rows, load_tombstones
+from src.source_registry import load_json_array, source_identity
+
+from . import config as discovery_config_module
+from .config import DISCOVERY_STAGES, LOW_EVIDENCE_PROBE_LIMIT
+from .core import (
+    _evidence_threshold_for_probe,
+    adapter_domain_fingerprint,
+    classify_static_suppression,
+    estimate_probe_priority,
+)
+from .io_runtime import endpoint_url
+from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
+from .probe import validate_candidate_for_probe
+from .runtime_metrics import (
+    distribute_duration_by_adapter as _distribute_duration_by_adapter,
+)
+from .runtime_metrics import (
+    increment_adapter_runtime as _increment_adapter_runtime,
+)
+from .runtime_metrics import (
+    record_stage_timing as _record_stage_timing,
+)
+from .stage_control import discovery_stage_enabled as _discovery_stage_enabled
+from .url_patches import apply_url_patches_to_candidate, summarize_url_patch_runtime
+from .web_search import is_blocked_generic_static_url
+
+root: Any | None = None
+
+
+def _require_root() -> Any:
+    if root is None:
+        raise RuntimeError("source discovery orchestrator root is not bound")
+    return root
+
+
+def _record_stage_runtime(
+    state: DiscoveryRunState,
+    *,
+    rows: list[dict[str, Any]],
+    stage_duration_ms: int,
+    failure_rows: list[dict[str, Any]] | None = None,
+) -> None:
+    failures = failure_rows or []
+    _distribute_duration_by_adapter(
+        state.adapter_runtime,
+        duration_ms=stage_duration_ms,
+        rows=rows,
+        failure_rows=failures,
+    )
+    for row in rows:
+        _increment_adapter_runtime(state.adapter_runtime, row.get("adapter"), generated=1)
+    for row in failures:
+        if isinstance(row, dict):
+            _increment_adapter_runtime(state.adapter_runtime, row.get("adapter"), failures=1)
+
+
+def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> None:
+    orchestrator = _require_root()
+    stage_enabled = {
+        "curatedSeed": _discovery_stage_enabled(deps.effective_config, "curatedSeed"),
+        "sheetDirectory": _discovery_stage_enabled(deps.effective_config, "sheetDirectory"),
+        "providerPatterns": _discovery_stage_enabled(deps.effective_config, "providerPatterns"),
+        "seedCareersScan": _discovery_stage_enabled(deps.effective_config, "seedCareersScan"),
+        "gamesmap": _discovery_stage_enabled(deps.effective_config, "gamesmap"),
+        "gameprog": _discovery_stage_enabled(deps.effective_config, "gameprog"),
+        "gamedevmap": _discovery_stage_enabled(deps.effective_config, "gamedevmap"),
+        "webSearch": _discovery_stage_enabled(deps.effective_config, "webSearch"),
+    }
+
+    state.active = load_json_array(source_registry_module.ACTIVE_PATH, [])
+    state.pending_existing = load_json_array(source_registry_module.PENDING_PATH, [])
+    state.rejected = load_json_array(source_registry_module.REJECTED_PATH, [])
+    state.tombstones = load_tombstones()
+    state.active = filter_tombstoned_rows(state.active, state.tombstones)
+    state.pending_existing = filter_tombstoned_rows(state.pending_existing, state.tombstones)
+    state.rejected = filter_tombstoned_rows(state.rejected, state.tombstones)
+    prior_review_candidates = load_json_array(source_registry_module.DISCOVERY_CANDIDATES_PATH, [])
+    state.prior_review_candidates_by_id = {
+        source_identity(row): dict(row) for row in prior_review_candidates if isinstance(row, dict)
+    }
+    state.ranking_registry_rows = [
+        *[dict(row) for row in state.active if isinstance(row, dict)],
+        *[dict(row) for row in state.pending_existing if isinstance(row, dict)],
+    ]
+
+    orchestrator.emit_log(
+        f"Starting source discovery: mode={deps.mode}, preset={deps.preset_name}, top_n={deps.top_n}, web_search={'on' if deps.include_web_search else 'off'}."
+    )
+    orchestrator.emit_log(
+        "Loaded registries: "
+        f"active={len(state.active)}, pending={len(state.pending_existing)}, rejected={len(state.rejected)}."
+    )
+
+    existing_rows = [*state.active, *state.rejected]
+    seen_ids = {source_identity(row) for row in existing_rows if isinstance(row, dict)}
+    seen_domains = {
+        fp
+        for fp in (
+            adapter_domain_fingerprint(row) for row in existing_rows if isinstance(row, dict)
+        )
+        if fp
+    }
+
+    if deps.url_patch_manifest_enabled:
+        state.url_patches = orchestrator.load_url_patches(deps.url_patch_manifest_path)
+        state.url_patch_stats = summarize_url_patch_runtime(
+            loaded=len(state.url_patches),
+            added=0,
+            updated=0,
+            reprobed=0,
+        )
+
+    if stage_enabled["curatedSeed"]:
+        orchestrator.emit_log("Generating curated seed candidates from static discovery inputs.")
+        stage_started = time.perf_counter()
+        curated_seed_candidates = orchestrator.stage_curated_seed_candidates()
+        stage_duration_ms = _record_stage_timing(
+            state.stage_timings_ms, "curatedSeed", stage_started
+        )
+        _record_stage_runtime(
+            state, rows=curated_seed_candidates, stage_duration_ms=stage_duration_ms
+        )
+        orchestrator.emit_log(
+            f"Curated seed generation complete: {len(curated_seed_candidates)} candidate(s)."
+        )
+        state.streams.append(("curated_seed", curated_seed_candidates))
+    else:
+        orchestrator.emit_log("Curated seed stage disabled, skipping.")
+
+    if stage_enabled["sheetDirectory"]:
+        state.write_progress_report(
+            [],
+            phase="scanning_sources",
+            phase_label="Scanning game studios sheet directory",
+            deps=deps,
+            root=orchestrator,
+        )
+        orchestrator.emit_log("Scanning game studios sheet directory for candidate sources.")
+        stage_started = time.perf_counter()
+        provider_sheet_candidates, static_sheet_candidates, sheet_failures = (
+            orchestrator.discover_game_studio_sheet_candidates(
+                deps.timeout_s,
+                sheet_id=str(discovery_config_module.GAME_STUDIOS_SHEET_ID or "") or None,
+                gid=str(discovery_config_module.GAME_STUDIOS_SHEET_GID or "") or None,
+                fetcher=deps.fetcher,
+            )
+        )
+        sheet_stage_rows = [*provider_sheet_candidates, *static_sheet_candidates]
+        stage_duration_ms = _record_stage_timing(
+            state.stage_timings_ms, "sheetDirectory", stage_started
+        )
+        _record_stage_runtime(
+            state,
+            rows=sheet_stage_rows,
+            failure_rows=sheet_failures,
+            stage_duration_ms=stage_duration_ms,
+        )
+        orchestrator.emit_log(
+            "Game studios sheet scan complete: "
+            f"provider={len(provider_sheet_candidates)}, static={len(static_sheet_candidates)}, failures={len(sheet_failures)}."
+        )
+        if sheet_failures:
+            if deps.fetcher is orchestrator.fetch_text or (
+                provider_sheet_candidates or static_sheet_candidates
+            ):
+                state.web_failures.extend(sheet_failures)
+        state.streams.append(("sheet_directory", provider_sheet_candidates))
+        state.streams.append(("sheet_directory", static_sheet_candidates))
+    else:
+        orchestrator.emit_log("Game studios sheet stage disabled, skipping.")
+
+    if deps.mode == "dynamic":
+        if stage_enabled["providerPatterns"]:
+            state.write_progress_report(
+                [],
+                phase="generating_candidates",
+                phase_label="Generating provider-pattern candidates",
+                deps=deps,
+                root=orchestrator,
+            )
+            orchestrator.emit_log(
+                "Generating provider-pattern candidates from the studio seed catalog."
+            )
+            stage_started = time.perf_counter()
+            provider_pattern_candidates = orchestrator.build_pattern_candidates(
+                list(discovery_config_module.STUDIO_SEEDS)
+            )
+            stage_duration_ms = _record_stage_timing(
+                state.stage_timings_ms, "providerPatterns", stage_started
+            )
+            _record_stage_runtime(
+                state, rows=provider_pattern_candidates, stage_duration_ms=stage_duration_ms
+            )
+            orchestrator.emit_log(
+                "Provider-pattern generation complete: "
+                f"{len(provider_pattern_candidates)} candidate(s)."
+            )
+            state.streams.append(("provider_pattern", provider_pattern_candidates))
+        else:
+            orchestrator.emit_log("Provider-pattern stage disabled, skipping.")
+
+        if stage_enabled["seedCareersScan"]:
+            state.write_progress_report(
+                [],
+                phase="scanning_sources",
+                phase_label="Scanning known careers pages",
+                deps=deps,
+                root=orchestrator,
+            )
+            orchestrator.emit_log("Scanning known careers pages from the seed catalog.")
+            stage_started = time.perf_counter()
+            provider_web_candidates, static_web_candidates, seed_failures = (
+                orchestrator.discover_seed_careers_page_candidates(
+                    deps.timeout_s,
+                    studio_seeds=list(discovery_config_module.STUDIO_SEEDS),
+                    fetcher=deps.fetcher,
+                )
+            )
+            seed_stage_rows = [*provider_web_candidates, *static_web_candidates]
+            stage_duration_ms = _record_stage_timing(
+                state.stage_timings_ms, "seedCareersScan", stage_started
+            )
+            _record_stage_runtime(
+                state,
+                rows=seed_stage_rows,
+                failure_rows=seed_failures,
+                stage_duration_ms=stage_duration_ms,
+            )
+            orchestrator.emit_log(
+                "Seed careers scan complete: "
+                f"provider={len(provider_web_candidates)}, static={len(static_web_candidates)}, failures={len(seed_failures)}."
+            )
+            state.web_failures.extend(seed_failures)
+            state.streams.append(("web_provider", provider_web_candidates))
+            state.streams.append(("generic_static", static_web_candidates))
+        else:
+            orchestrator.emit_log("Seed careers stage disabled, skipping.")
+
+        if stage_enabled["gamesmap"]:
+            state.write_progress_report(
+                [],
+                phase="scanning_sources",
+                phase_label="Scanning Gamesmap directory",
+                deps=deps,
+                root=orchestrator,
+            )
+            orchestrator.emit_log("Scanning Gamesmap directory for discoverable studios.")
+            stage_started = time.perf_counter()
+            provider_gamesmap_candidates, static_gamesmap_candidates, gamesmap_failures = (
+                orchestrator.discover_gamesmap_candidates(
+                    deps.timeout_s,
+                    config=deps.effective_config,
+                    fetcher=deps.fetcher,
+                )
+            )
+            gamesmap_stage_rows = [*provider_gamesmap_candidates, *static_gamesmap_candidates]
+            stage_duration_ms = _record_stage_timing(
+                state.stage_timings_ms, "gamesmap", stage_started
+            )
+            _record_stage_runtime(
+                state,
+                rows=gamesmap_stage_rows,
+                failure_rows=gamesmap_failures,
+                stage_duration_ms=stage_duration_ms,
+            )
+            orchestrator.emit_log(
+                "Gamesmap scan complete: "
+                f"provider={len(provider_gamesmap_candidates)}, static={len(static_gamesmap_candidates)}, failures={len(gamesmap_failures)}."
+            )
+            state.web_failures.extend(gamesmap_failures)
+            state.streams.append(("web_provider", provider_gamesmap_candidates))
+            state.streams.append(("generic_static", static_gamesmap_candidates))
+        else:
+            orchestrator.emit_log("Gamesmap stage disabled, skipping.")
+
+        if stage_enabled["gameprog"]:
+            state.write_progress_report(
+                [],
+                phase="scanning_sources",
+                phase_label="Scanning Gameprog directory",
+                deps=deps,
+                root=orchestrator,
+            )
+            orchestrator.emit_log("Scanning Gameprog directory for discoverable studios.")
+            stage_started = time.perf_counter()
+            gameprog_config = dict(deps.effective_config.get("gameprog") or {})
+            config_with_gameprog = dict(deps.effective_config)
+            config_with_gameprog["gameprog"] = gameprog_config
+            provider_gameprog_candidates, static_gameprog_candidates, gameprog_failures = (
+                orchestrator.discover_gameprog_candidates(
+                    deps.timeout_s,
+                    config=config_with_gameprog,
+                    fetcher=deps.fetcher,
+                )
+            )
+            gameprog_stage_rows = [*provider_gameprog_candidates, *static_gameprog_candidates]
+            stage_duration_ms = _record_stage_timing(
+                state.stage_timings_ms, "gameprog", stage_started
+            )
+            _record_stage_runtime(
+                state,
+                rows=gameprog_stage_rows,
+                failure_rows=gameprog_failures,
+                stage_duration_ms=stage_duration_ms,
+            )
+            orchestrator.emit_log(
+                "Gameprog scan complete: "
+                f"provider={len(provider_gameprog_candidates)}, static={len(static_gameprog_candidates)}, failures={len(gameprog_failures)}."
+            )
+            state.web_failures.extend(gameprog_failures)
+            state.streams.append(("web_provider", provider_gameprog_candidates))
+            state.streams.append(("generic_static", static_gameprog_candidates))
+        else:
+            orchestrator.emit_log("Gameprog stage disabled, skipping.")
+
+        if stage_enabled["gamedevmap"]:
+            state.write_progress_report(
+                [],
+                phase="scanning_sources",
+                phase_label="Scanning GameDevMap directory",
+                deps=deps,
+                root=orchestrator,
+            )
+            orchestrator.emit_log("Scanning GameDevMap directory for discoverable studios.")
+            stage_started = time.perf_counter()
+            provider_gamedevmap_candidates, static_gamedevmap_candidates, gamedevmap_failures = (
+                orchestrator.discover_gamedevmap_candidates(
+                    deps.timeout_s,
+                    config=deps.effective_config,
+                    fetcher=deps.fetcher,
+                )
+            )
+            gamedevmap_stage_rows = [
+                *provider_gamedevmap_candidates,
+                *static_gamedevmap_candidates,
+            ]
+            stage_duration_ms = _record_stage_timing(
+                state.stage_timings_ms, "gamedevmap", stage_started
+            )
+            _record_stage_runtime(
+                state,
+                rows=gamedevmap_stage_rows,
+                failure_rows=gamedevmap_failures,
+                stage_duration_ms=stage_duration_ms,
+            )
+            orchestrator.emit_log(
+                "GameDevMap scan complete: "
+                f"provider={len(provider_gamedevmap_candidates)}, static={len(static_gamedevmap_candidates)}, failures={len(gamedevmap_failures)}."
+            )
+            state.web_failures.extend(gamedevmap_failures)
+            state.streams.append(("web_provider", provider_gamedevmap_candidates))
+            state.streams.append(("generic_static", static_gamedevmap_candidates))
+        else:
+            orchestrator.emit_log("GameDevMap stage disabled, skipping.")
+
+        if deps.include_web_search and stage_enabled["webSearch"]:
+            state.write_progress_report(
+                [],
+                phase="generating_candidates",
+                phase_label="Running web-search discovery queries",
+                deps=deps,
+                root=orchestrator,
+            )
+            orchestrator.emit_log("Running web-search discovery queries.")
+            stage_started = time.perf_counter()
+            provider_search_candidates, static_search_candidates, search_failures = (
+                orchestrator.discover_web_search_candidates(
+                    deps.timeout_s,
+                    studio_seeds=list(discovery_config_module.STUDIO_SEEDS),
+                    fetcher=deps.fetcher,
+                )
+            )
+            search_stage_rows = [*provider_search_candidates, *static_search_candidates]
+            stage_duration_ms = _record_stage_timing(
+                state.stage_timings_ms, "webSearch", stage_started
+            )
+            _record_stage_runtime(
+                state,
+                rows=search_stage_rows,
+                failure_rows=search_failures,
+                stage_duration_ms=stage_duration_ms,
+            )
+            orchestrator.emit_log(
+                "Web-search discovery complete: "
+                f"provider={len(provider_search_candidates)}, static={len(static_search_candidates)}, failures={len(search_failures)}."
+            )
+            state.web_failures.extend(search_failures)
+            state.streams.append(("web_provider", provider_search_candidates))
+            state.streams.append(("generic_static", static_search_candidates))
+        elif deps.include_web_search:
+            orchestrator.emit_log("Web-search stage disabled, skipping.")
+
+    stage_started = time.perf_counter()
+    discovered = orchestrator.merge_candidate_streams(state.streams)
+    for row in discovered:
+        state.generated_count_by_stage[str(row.get("discoveryStage") or "provider_pattern")] += 1
+    state.found_endpoint_count = len(discovered)
+    orchestrator.emit_log(
+        "Generated candidates by stage: "
+        + ", ".join(
+            f"{stage}={state.generated_count_by_stage.get(stage, 0)}"
+            for stage in DISCOVERY_STAGES
+        )
+        + f" (total={state.found_endpoint_count})."
+    )
+
+    local_seen_ids = set(seen_ids)
+    local_seen_domains = set(seen_domains)
+    for row in discovered:
+        stage = str(row.get("discoveryStage") or "provider_pattern")
+        row_id = source_identity(row)
+        row_domain = adapter_domain_fingerprint(row)
+        if row_id in seen_ids:
+            state.skipped_duplicate_count += 1
+            state.duplicate_reasons["existing_id"] += 1
+            state.dedupe_drop_rows.append(
+                {
+                    "name": row.get("name"),
+                    "adapter": row.get("adapter"),
+                    "stage": "dedupe_skipped",
+                    "error": "existing_id",
+                    "dropStage": "dedupe_skipped",
+                    "dropReason": "existing_id",
+                }
+            )
+            continue
+        if row_domain and row_domain in seen_domains:
+            state.skipped_duplicate_count += 1
+            state.duplicate_reasons["existing_domain"] += 1
+            state.dedupe_drop_rows.append(
+                {
+                    "name": row.get("name"),
+                    "adapter": row.get("adapter"),
+                    "stage": "dedupe_skipped",
+                    "error": "existing_domain",
+                    "dropStage": "dedupe_skipped",
+                    "dropReason": "existing_domain",
+                }
+            )
+            continue
+        if row_id in local_seen_ids:
+            state.skipped_duplicate_count += 1
+            state.duplicate_reasons["run_id"] += 1
+            state.dedupe_drop_rows.append(
+                {
+                    "name": row.get("name"),
+                    "adapter": row.get("adapter"),
+                    "stage": "dedupe_skipped",
+                    "error": "run_id",
+                    "dropStage": "dedupe_skipped",
+                    "dropReason": "run_id",
+                }
+            )
+            continue
+        if row_domain and row_domain in local_seen_domains:
+            state.skipped_duplicate_count += 1
+            state.duplicate_reasons["run_domain"] += 1
+            state.dedupe_drop_rows.append(
+                {
+                    "name": row.get("name"),
+                    "adapter": row.get("adapter"),
+                    "stage": "dedupe_skipped",
+                    "error": "run_domain",
+                    "dropStage": "dedupe_skipped",
+                    "dropReason": "run_domain",
+                }
+            )
+            continue
+        local_seen_ids.add(row_id)
+        if row_domain:
+            local_seen_domains.add(row_domain)
+        state.survived_dedupe_count_by_stage[stage] += 1
+        state.filtered.append(row)
+    _record_stage_timing(state.stage_timings_ms, "dedupeFilter", stage_started)
+
+    state.filtered.sort(key=estimate_probe_priority, reverse=True)
+    state.source_state_rows = orchestrator.read_source_state(
+        source_registry_module.ACTIVE_PATH.parent / "jobs-source-state.json"
+    )
+    state.filtered, sheet_static_suppressed = orchestrator.apply_sheet_directory_static_probe_cap(
+        state.filtered,
+        top_n=deps.top_n,
+        bypass_cap=deps.sheet_static_probe_cap_bypassed,
+        source_state_rows=state.source_state_rows,
+    )
+    orchestrator.emit_log(
+        "After dedupe: "
+        + ", ".join(
+            f"{stage}={state.survived_dedupe_count_by_stage.get(stage, 0)}"
+            for stage in DISCOVERY_STAGES
+        )
+        + f"; skipped_duplicates={state.skipped_duplicate_count}."
+    )
+
+    state.failures = [
+        {**row, "dropStage": "page_fetch", "dropReason": "page_fetch"}
+        for row in list(state.web_failures)
+        if isinstance(row, dict)
+    ]
+    state.failures.extend(state.dedupe_drop_rows)
+
+    for raw in sheet_static_suppressed:
+        stage = str(raw.get("discoveryStage") or "provider_pattern")
+        state.suppressed_static_count += 1
+        state.suppressed_static_by_reason["sheet_directory_stage_cap"] += 1
+        state.suppressed_static_by_stage[stage] += 1
+        state.failures.append(
+            {
+                "name": raw.get("name"),
+                "adapter": raw.get("adapter"),
+                "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                "error": "sheet_directory_stage_cap",
+                "stage": "suppressed_static",
+                "dropStage": "suppressed_static",
+                "dropReason": "sheet_directory_stage_cap",
+            }
+        )
+
+    low_evidence_probes_used = 0
+    state.write_progress_report(
+        [],
+        phase="generating_candidates",
+        phase_label="Generating initial discovery candidates",
+        deps=deps,
+        root=orchestrator,
+    )
+    orchestrator.emit_log(f"Starting probe phase for {len(state.filtered)} candidate(s).")
+    state.write_progress_report(
+        state.queueable_candidates,
+        phase="probing_candidates",
+        phase_label=f"Probing {len(state.filtered)} candidate(s)",
+        deps=deps,
+        root=orchestrator,
+    )
+
+    for raw in state.filtered:
+        raw, _patch_applied = apply_url_patches_to_candidate(raw, state.url_patches)
+        stage = str(raw.get("discoveryStage") or "provider_pattern")
+        if str(raw.get("adapter") or "").strip().lower() == "static":
+            blocked_url = str(
+                raw.get("listing_url") or raw.get("careersUrl") or endpoint_url(raw) or ""
+            ).strip()
+            if blocked_url and is_blocked_generic_static_url(blocked_url):
+                state.suppressed_static_count += 1
+                state.suppressed_static_by_reason["blocked_domain"] += 1
+                state.suppressed_static_by_stage[stage] += 1
+                state.failures.append(
+                    {
+                        "name": raw.get("name"),
+                        "adapter": raw.get("adapter"),
+                        "domain": (urlparse(blocked_url).netloc or "").lower(),
+                        "error": "blocked_domain",
+                        "stage": "suppressed_static",
+                        "dropStage": "suppressed_static",
+                        "dropReason": "blocked_domain",
+                    }
+                )
+                continue
+        suppression_reason = classify_static_suppression(
+            raw,
+            source_state_rows=state.source_state_rows,
+            thresholds=deps.thresholds,
+        )
+        if suppression_reason:
+            state.suppressed_static_count += 1
+            state.suppressed_static_by_reason[suppression_reason] += 1
+            state.suppressed_static_by_stage[stage] += 1
+            state.failures.append(
+                {
+                    "name": raw.get("name"),
+                    "adapter": raw.get("adapter"),
+                    "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                    "error": suppression_reason,
+                    "stage": "suppressed_static",
+                    "dropStage": "suppressed_static",
+                    "dropReason": suppression_reason,
+                }
+            )
+            continue
+        valid, invalid_reason = validate_candidate_for_probe(raw)
+        if not valid:
+            state.skipped_invalid += 1
+            state.validation_skipped_count += 1
+            state.failures.append(
+                {
+                    "name": raw.get("name"),
+                    "adapter": raw.get("adapter"),
+                    "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                    "error": invalid_reason,
+                    "stage": "validation",
+                    "dropStage": "validation",
+                    "dropReason": "validation",
+                }
+            )
+            continue
+        evidence_score = int(raw.get("evidenceScore") or 0)
+        threshold = _evidence_threshold_for_probe(raw, deps.thresholds)
+        if evidence_score < threshold:
+            if stage == "provider_pattern":
+                state.skipped_low_evidence_probe_count += 1
+                state.failures.append(
+                    {
+                        "name": raw.get("name"),
+                        "adapter": raw.get("adapter"),
+                        "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                        "error": (
+                            f"pattern evidence score {evidence_score} below probe threshold "
+                            f"{threshold}"
+                        ),
+                        "stage": "probe_skipped",
+                        "dropStage": "low_evidence_skipped",
+                        "dropReason": "probe_threshold",
+                    }
+                )
+                continue
+            if low_evidence_probes_used >= int(
+                deps.thresholds.get("lowEvidenceProbeLimit", LOW_EVIDENCE_PROBE_LIMIT)
+            ):
+                state.skipped_low_evidence_probe_count += 1
+                state.failures.append(
+                    {
+                        "name": raw.get("name"),
+                        "adapter": raw.get("adapter"),
+                        "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                        "error": f"evidence score {evidence_score} below probe threshold {threshold}",
+                        "stage": "probe_skipped",
+                        "dropStage": "low_evidence_skipped",
+                        "dropReason": "low_evidence_probe_cap",
+                    }
+                )
+                continue
+            low_evidence_probes_used += 1
+        state.probe_inputs.append(raw)
