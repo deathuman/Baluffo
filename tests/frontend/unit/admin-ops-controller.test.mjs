@@ -532,4 +532,3 @@ test("admin ops controller keeps the last live rows rendered on transient ops po
   assert.deepEqual(renderedCurrentCounts, [1, 1]);
   assert.equal(state.adminBusyState.liveFetchRunning, true);
 });
-

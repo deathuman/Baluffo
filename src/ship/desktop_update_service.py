@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 root: Any | None = None
 
@@ -246,7 +247,9 @@ class DesktopUpdateService:
             last_checked_at = str(status.get("lastCheckedAt") or "").strip()
             if not force and last_checked_at and self.paths.manifest_cache_path.exists():
                 try:
-                    last_checked = deps.datetime.fromisoformat(last_checked_at.replace("Z", "+00:00"))
+                    last_checked = deps.datetime.fromisoformat(
+                        last_checked_at.replace("Z", "+00:00")
+                    )
                 except ValueError:
                     last_checked = None
                 if last_checked is not None:
@@ -583,10 +586,14 @@ class DesktopUpdateService:
                         "rollbackPath": str(rollback_path),
                     },
                 )
-                verified_status = deps.load_status(self.paths, current_version=self.current_version())
-                verified_status, credible_handoff_plan, _stale_handoff = deps._reconcile_handoff_status(
-                    self.paths,
-                    verified_status,
+                verified_status = deps.load_status(
+                    self.paths, current_version=self.current_version()
+                )
+                verified_status, credible_handoff_plan, _stale_handoff = (
+                    deps._reconcile_handoff_status(
+                        self.paths,
+                        verified_status,
+                    )
                 )
                 if not credible_handoff_plan or not deps._handoff_status_pending(verified_status):
                     return self._install_handoff_unconfirmed_locked(

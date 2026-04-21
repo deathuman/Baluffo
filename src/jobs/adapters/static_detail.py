@@ -104,6 +104,7 @@ def run_detail_traversal(ctx: StaticSourceContext, plan: StaticDetailTraversalPl
             batch_job: dict[str, Any],
             url: str,
             _timeout_s: int,
+            _detail_batch_meta: dict[str, dict[str, Any]] = detail_batch_meta,
         ) -> str:
             del batch_job, _timeout_s
             fetch_started = time.perf_counter()
@@ -122,14 +123,18 @@ def run_detail_traversal(ctx: StaticSourceContext, plan: StaticDetailTraversalPl
                 remaining_budget_s=current_remaining_budget_s,
                 retries_override=plan.detail_retries,
             )
-            detail_batch_meta[url] = {
+            _detail_batch_meta[url] = {
                 "cacheHit": cache_hit,
                 "fetchMs": int((time.perf_counter() - fetch_started) * 1000),
                 "timeoutS": effective_timeout_s,
             }
             return html
 
-        def _on_detail_batch_progress(completed: int, total: int) -> None:
+        def _on_detail_batch_progress(
+            completed: int,
+            total: int,
+            _detail_batch_start: int = detail_batch_start,
+        ) -> None:
             completed_count = max(0, int(completed or 0))
             total_count = max(1, int(total or 0))
             ctx.emit_heartbeat()
@@ -140,12 +145,12 @@ def run_detail_traversal(ctx: StaticSourceContext, plan: StaticDetailTraversalPl
                     "detailCandidates": detail_candidate_count,
                     "detailPagesFetched": min(
                         detail_candidate_count,
-                        detail_batch_start + completed_count,
+                        _detail_batch_start + completed_count,
                     ),
                 },
                 target_label=(
                     f"Detail fetch "
-                    f"{min(detail_candidate_count, detail_batch_start + completed_count)}/"
+                    f"{min(detail_candidate_count, _detail_batch_start + completed_count)}/"
                     f"{detail_candidate_count}"
                 ),
                 target_url=plan.page_url,

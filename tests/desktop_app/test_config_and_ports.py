@@ -1,18 +1,12 @@
 import argparse
-import contextlib
-import json
-import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 import pytest
 
-from src.app_version import APP_VERSION
 from src.ship import desktop_app
 from tests.helpers.temp_paths import workspace_tmpdir
 
-from ._helpers import _patch_windows_desktop_app
 
 def test_create_runtime_config_defaults_to_fixed_desktop_ports() -> None:
     root = Path("C:/tmp/baluffo-ship")
@@ -202,5 +196,3 @@ def test_resolve_browser_session_root_falls_back_to_runtime_temp_when_standard_l
 
     assert "BaluffoRuntime" in str(resolved)
     assert desktop_app.last_session_root_resolution()["strategy"] == "runtime-temp"
-
-

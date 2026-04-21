@@ -1,7 +1,7 @@
 # ruff: noqa: F401
 from ._helpers import (
-    DiscoveryReportSummarySchema,
     FIXTURES_DIR,
+    DiscoveryReportSummarySchema,
     Path,
     _fixture_json,
     _fixture_text,

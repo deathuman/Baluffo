@@ -1,5 +1,3 @@
-import argparse
-import contextlib
 import json
 import subprocess
 from pathlib import Path
@@ -8,11 +6,11 @@ from unittest import mock
 
 import pytest
 
-from src.app_version import APP_VERSION
 from src.ship import desktop_app
 from tests.helpers.temp_paths import workspace_tmpdir
 
 from ._helpers import _patch_windows_desktop_app
+
 
 def test_resolve_chromium_browser_candidates_prefers_chrome_then_brave_then_edge() -> None:
     with (
@@ -1261,5 +1259,3 @@ def test_wait_for_browser_reveal_caps_inferred_fallback_at_earliest_browser_evid
     assert result["observed"] is False
     assert result["event"] == "desktop_shell_window_shown_inferred"
     assert result["inferredElapsedMsCap"] == 1900
-
-

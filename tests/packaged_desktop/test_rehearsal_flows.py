@@ -2,7 +2,6 @@ import base64
 import json
 import os
 import subprocess
-from datetime import datetime
 from pathlib import Path
 from unittest import mock
 from urllib.request import Request, urlopen
@@ -11,13 +10,13 @@ import pytest
 
 from src import packaged_desktop_smoke as smoke
 from src import source_sync
-from src.app_version import APP_VERSION
-from src.ship.startup_profile import summarize_startup_metrics
 from tests.helpers.temp_paths import workspace_tmpdir
 
 from ._helpers import _write_packaged_sync_bundle_config
 
 pytestmark = [pytest.mark.packaging, pytest.mark.slow]
+
+
 def test_run_packaged_smoke_can_run_desktop_update_rehearsal_mode() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)

@@ -124,9 +124,7 @@ def add_manual_source(raw_url: str) -> dict[str, Any]:
             pages = (
                 list(updated.get("pages") or []) if isinstance(updated.get("pages"), list) else []
             )
-            normalized_pages = [
-                root_mod.normalize_source_url(str(page or "")) for page in pages
-            ]
+            normalized_pages = [root_mod.normalize_source_url(str(page or "")) for page in pages]
             normalized_pages = [page for page in normalized_pages if page]
             if normalized_url not in normalized_pages:
                 normalized_pages.append(normalized_url)
@@ -153,7 +151,11 @@ def add_manual_source(raw_url: str) -> dict[str, Any]:
         reason=root_mod.REGISTRY_REASON_MANUAL_SOURCE,
     )
     added = next(
-        (row for row in state["pending"] if root_mod.source_identity(row) == root_mod.source_identity(candidate)),
+        (
+            row
+            for row in state["pending"]
+            if root_mod.source_identity(row) == root_mod.source_identity(candidate)
+        ),
         candidate,
     )
     return {

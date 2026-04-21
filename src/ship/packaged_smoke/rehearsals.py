@@ -6,7 +6,6 @@ import base64
 import contextlib
 import http.server
 import json
-import os
 import shutil
 import subprocess
 import threading
@@ -44,7 +43,11 @@ def _inject_desktop_update_public_keys(portable_root: Path, public_keys: dict[st
     payload = json.dumps(public_keys, indent=2, sort_keys=True)
     targets = [
         app_dir / deps.desktop_update_mod.PUBLIC_KEYS_FILE,
-        app_dir / "versions" / current_version / "packaging" / deps.desktop_update_mod.PUBLIC_KEYS_FILE,
+        app_dir
+        / "versions"
+        / current_version
+        / "packaging"
+        / deps.desktop_update_mod.PUBLIC_KEYS_FILE,
     ]
     for target in targets:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -441,7 +444,10 @@ def _wait_for_relaunched_runtime(
             deps.time.sleep(0.75)
             continue
         session = deps.desktop_update_mod.read_desktop_session_state(session_root)
-        if Path(str(session.get("dataDir") or "")).expanduser().resolve() != expected_data_dir.resolve():
+        if (
+            Path(str(session.get("dataDir") or "")).expanduser().resolve()
+            != expected_data_dir.resolve()
+        ):
             deps.time.sleep(0.75)
             continue
         bridge_port = int(session.get("bridgePort") or 0)
@@ -449,7 +455,9 @@ def _wait_for_relaunched_runtime(
             deps.time.sleep(0.75)
             continue
         try:
-            last_health = deps.fetch_json(f"http://127.0.0.1:{bridge_port}/ops/health", timeout_s=5.0)
+            last_health = deps.fetch_json(
+                f"http://127.0.0.1:{bridge_port}/ops/health", timeout_s=5.0
+            )
         except Exception:
             last_health = {}
             deps.time.sleep(0.75)
@@ -458,7 +466,8 @@ def _wait_for_relaunched_runtime(
             isinstance(last_health, dict)
             and bool(last_health.get("desktopMode"))
             and bool(last_health.get("startupReady"))
-            and str(last_health.get("appVersion") or "").strip() == str(expected_version or "").strip()
+            and str(last_health.get("appVersion") or "").strip()
+            == str(expected_version or "").strip()
         ):
             return {"session": session, "health": last_health}
         deps.time.sleep(0.75)
@@ -628,8 +637,8 @@ def run_packaged_sync_rehearsal(
     server = None
     server_thread = None
     try:
-        config_path, raw_payload, packaged_config = deps._load_portable_packaged_sync_rehearsal_config(
-            portable_root
+        config_path, raw_payload, packaged_config = (
+            deps._load_portable_packaged_sync_rehearsal_config(portable_root)
         )
         snapshot_payload = {
             "schemaVersion": deps.source_sync_mod.SYNC_SCHEMA_VERSION,
@@ -777,7 +786,9 @@ def run_desktop_update_rehearsal(
     install_exe = install_root / "Baluffo.exe"
     data_dir = install_root / "ship" / "data"
     seeded = deps._seed_rehearsal_local_data(data_dir)
-    target_zip = deps._archive_portable_dir(portable_root, artifacts_dir / "baluffo-portable-update.zip")
+    target_zip = deps._archive_portable_dir(
+        portable_root, artifacts_dir / "baluffo-portable-update.zip"
+    )
     manifest = {
         "schema_version": deps.desktop_update_mod.DESKTOP_UPDATE_SCHEMA_VERSION,
         "key_id": key_id,
@@ -876,7 +887,10 @@ def run_desktop_update_rehearsal(
             if isinstance(check_payload, dict)
             else {}
         )
-        if not bool(check_status.get("updateAvailable")) or str(check_status.get("availability") or "") != "available":
+        if (
+            not bool(check_status.get("updateAvailable"))
+            or str(check_status.get("availability") or "") != "available"
+        ):
             raise RuntimeError(f"Update check did not surface an available release: {check_status}")
         paths = deps.desktop_update_mod.DesktopUpdatePaths.from_data_dir(data_dir)
         status_code, download_payload = deps.post_json(
@@ -940,7 +954,9 @@ def run_desktop_update_rehearsal(
             env=runtime_env,
         )
         deps._verify_rehearsal_local_data(data_dir, seeded)
-        relaunch_session = relaunched.get("session") if isinstance(relaunched.get("session"), dict) else {}
+        relaunch_session = (
+            relaunched.get("session") if isinstance(relaunched.get("session"), dict) else {}
+        )
         relaunch_launcher_pid = int(relaunch_session.get("launcherPid") or 0)
         relaunch_bridge_port = int(relaunch_session.get("bridgePort") or 0)
         relaunch_site_port = int(relaunch_session.get("sitePort") or 0)
@@ -1079,7 +1095,9 @@ def run_packaged_browser_job_rehearsal(
                 "Packaged browser job rehearsal required chromium-app launch mode; "
                 f"desktop launch mode was '{launch_mode or 'unknown'}'."
             )
-        if not deps.startup_metric_event_present(metrics_rows, "desktop_browser_process_spawn_started"):
+        if not deps.startup_metric_event_present(
+            metrics_rows, "desktop_browser_process_spawn_started"
+        ):
             raise RuntimeError(
                 "Packaged browser job rehearsal never emitted desktop_browser_process_spawn_started."
             )
@@ -1315,7 +1333,9 @@ def run_packaged_orphan_reclaim_rehearsal(
             raise RuntimeError(
                 "Packaged orphan reclaim rehearsal did not preserve the requested ports after relaunch."
             )
-        if not deps.startup_metric_event_present(metrics_rows, "desktop_stale_runtime_reclaim_started"):
+        if not deps.startup_metric_event_present(
+            metrics_rows, "desktop_stale_runtime_reclaim_started"
+        ):
             raise RuntimeError(
                 "Packaged orphan reclaim rehearsal never emitted desktop_stale_runtime_reclaim_started."
             )

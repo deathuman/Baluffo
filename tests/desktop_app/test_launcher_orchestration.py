@@ -1,6 +1,3 @@
-import argparse
-import contextlib
-import json
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,7 +9,7 @@ from src.app_version import APP_VERSION
 from src.ship import desktop_app
 from tests.helpers.temp_paths import workspace_tmpdir
 
-from ._helpers import _patch_windows_desktop_app
+
 def test_main_surfaces_native_error_without_installer_prompt() -> None:
     with (
         mock.patch.object(desktop_app, "create_runtime_config", return_value=object()),

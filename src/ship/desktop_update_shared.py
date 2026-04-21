@@ -6,11 +6,7 @@ import base64
 import contextlib
 import hashlib
 import json
-import os
 import ssl
-import tempfile
-import time
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -160,7 +156,12 @@ def desktop_update_public_key_candidate_paths(ship_root: Path) -> tuple[Path, ..
     current_version = deps._resolve_ship_current_version(resolved_ship)
     if current_version:
         candidates.append(
-            resolved_ship / "app" / "versions" / current_version / "packaging" / deps.PUBLIC_KEYS_FILE
+            resolved_ship
+            / "app"
+            / "versions"
+            / current_version
+            / "packaging"
+            / deps.PUBLIC_KEYS_FILE
         )
     return tuple(candidates)
 
@@ -476,7 +477,7 @@ class DesktopUpdatePaths:
     helper_diagnostics_log_path: Path
 
     @staticmethod
-    def from_data_dir(data_dir: Path) -> "DesktopUpdatePaths":
+    def from_data_dir(data_dir: Path) -> DesktopUpdatePaths:
         deps = _root()
         resolved_data = deps._resolve_runtime_path(data_dir)
         ship_root = resolved_data.parent

@@ -177,7 +177,6 @@ def test_admin_bridge_keeps_registry_autosync_and_sync_normalization_out_of_entr
         encoding="utf-8"
     )
     assert "from src.bridge import admin_registry_api as admin_registry_api_mod" in admin_bridge
-    assert "from src.bridge import registry_sync_flow as _registry_sync_flow" in admin_bridge
     assert "_registry_sync_flow.persist_state_and_auto_sync(" not in admin_bridge
     assert "_registry_sync_flow.persist_state_and_auto_sync(" in admin_registry_api
     assert "_registry_sync_flow.maybe_trigger_auto_sync_push(" not in admin_bridge
@@ -246,6 +245,42 @@ def test_jobs_fetcher_facade_stays_lazy_and_small(repo_root: Path) -> None:
         if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*=\s*_[A-Za-z0-9_]+\.[A-Za-z0-9_]+$", line)
     ]
     assert len(alias_lines) <= 3, "jobs_fetcher facade drifted back to bulk alias re-exports"
+
+
+def test_python_leaf_modules_do_not_import_root_compatibility_surfaces(repo_root: Path) -> None:
+    src_root = repo_root / "src"
+    allowed_imports_by_path = {
+        (src_root / "admin_bridge.py").resolve(): {"src.admin_bridge", "src.ship.desktop_update"},
+        (src_root / "jobs_fetcher.py").resolve(): {"src.jobs_fetcher"},
+        (src_root / "source_discovery.py").resolve(): {"src.source_discovery"},
+        (src_root / "packaged_desktop_smoke.py").resolve(): {
+            "src.packaged_desktop_smoke",
+            "src.ship.desktop_update",
+        },
+        (src_root / "ship" / "desktop_update.py").resolve(): {"src.ship.desktop_update"},
+        (src_root / "ship" / "desktop_app" / "__init__.py").resolve(): {"src.ship.desktop_update"},
+        (src_root / "ship" / "desktop_updater.py").resolve(): {"src.ship.desktop_update"},
+    }
+    forbidden_imports = {
+        "src.admin_bridge",
+        "src.jobs_fetcher",
+        "src.source_discovery",
+        "src.packaged_desktop_smoke",
+        "src.ship.desktop_update",
+    }
+
+    offenders: list[str] = []
+    for path in sorted(src_root.rglob("*.py")):
+        imports = _imported_modules(_module_tree(path))
+        allowed_imports = allowed_imports_by_path.get(path.resolve(), set())
+        bad = sorted((imports & forbidden_imports) - allowed_imports)
+        if bad:
+            offenders.append(f"{path.relative_to(repo_root)} -> {', '.join(bad)}")
+
+    assert not offenders, (
+        "Leaf Python modules should not import root compatibility surfaces directly:\n- "
+        + "\n- ".join(offenders)
+    )
 
 
 def test_static_adapter_root_stays_thin_orchestration_surface(repo_root: Path) -> None:

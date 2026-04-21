@@ -1493,4 +1493,3 @@ test("admin fetcher controller forwards uncapped preset payload", async () => {
 
   assert.ok(calls.includes('/tasks/run-fetcher:{"preset":"uncapped"}'));
 });
-

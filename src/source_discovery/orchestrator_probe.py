@@ -318,5 +318,7 @@ def probe_and_recover(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> No
             )
         else:
             original_failure["error"] = reprobe_error
-            original_failure["domain"] = (urlparse(endpoint_url(patched_candidate)).netloc or "").lower()
+            original_failure["domain"] = (
+                urlparse(endpoint_url(patched_candidate)).netloc or ""
+            ).lower()
             original_failure["urlPatchRetried"] = True

@@ -406,8 +406,7 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
     orchestrator.emit_log(
         "Generated candidates by stage: "
         + ", ".join(
-            f"{stage}={state.generated_count_by_stage.get(stage, 0)}"
-            for stage in DISCOVERY_STAGES
+            f"{stage}={state.generated_count_by_stage.get(stage, 0)}" for stage in DISCOVERY_STAGES
         )
         + f" (total={state.found_endpoint_count})."
     )

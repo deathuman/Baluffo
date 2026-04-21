@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import Counter
 from typing import Any
-from urllib.parse import urlparse
 
 from src import source_registry as source_registry_module
 from src.bridge.registry_tombstones import filter_tombstoned_rows
@@ -11,7 +10,6 @@ from src.shared.utils import now_iso
 from src.source_registry import source_identity, unique_sources
 
 from .core import apply_queue_balancing
-from .io_runtime import endpoint_url
 from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
 from .reporting import (
     build_discovery_task_progress,
@@ -81,14 +79,18 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
         state.tombstones,
     )
     orchestrator.save_json_atomic(source_registry_module.PENDING_PATH, pending_rows)
-    orchestrator.save_json_atomic(source_registry_module.DISCOVERY_CANDIDATES_PATH, report_candidates)
+    orchestrator.save_json_atomic(
+        source_registry_module.DISCOVERY_CANDIDATES_PATH, report_candidates
+    )
     m5_strategic_backlog = build_m5_strategic_backlog(
         report_candidates=report_candidates,
         failures=state.failures,
         active_rows=state.active,
         source_state_rows=state.source_state_rows,
     )
-    orchestrator.save_json_atomic(source_registry_module.M5_STRATEGIC_BACKLOG_PATH, m5_strategic_backlog)
+    orchestrator.save_json_atomic(
+        source_registry_module.M5_STRATEGIC_BACKLOG_PATH, m5_strategic_backlog
+    )
 
     summary = build_stage_summary(
         report_candidates,
@@ -168,7 +170,9 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
             str(failure.get("stage")) == "directory_parse" for failure in sheet_directory_failures
         ),
         "failureCount": len(sheet_directory_failures),
-        "generatedCount": int((summary.get("generatedCountByStage") or {}).get("sheet_directory", 0)),
+        "generatedCount": int(
+            (summary.get("generatedCountByStage") or {}).get("sheet_directory", 0)
+        ),
     }
 
     report = {
@@ -212,7 +216,9 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
 
     registry_state = {
         "active": state.active,
-        "pending": filter_tombstoned_rows([*queued_candidates, *state.pending_existing], state.tombstones),
+        "pending": filter_tombstoned_rows(
+            [*queued_candidates, *state.pending_existing], state.tombstones
+        ),
         "rejected": state.rejected,
     }
     auto_approve_enabled = bool(
@@ -238,9 +244,7 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
             source_registry_module.REJECTED_PATH,
             filter_tombstoned_rows(registry_state["rejected"], state.tombstones),
         )
-        orchestrator.emit_log(
-            f"Auto-approval applied during discovery: approved={auto_approved}."
-        )
+        orchestrator.emit_log(f"Auto-approval applied during discovery: approved={auto_approved}.")
 
     DiscoveryReportSchema.model_validate(report)
     final_report_path = orchestrator._discovery_report_write_path()

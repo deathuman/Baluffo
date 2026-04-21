@@ -19,6 +19,9 @@ from src.jobs.adapters.html_parsers import (
 )
 from src.jobs.adapters.location_rules import _looks_like_location_name, classify_city_garbage
 from src.jobs.adapters.parsers.location import parse_generic_location_fields
+from src.jobs.adapters.plugins.static.rendered_cards import (
+    extract_rendered_card_jobs as _extract_rendered_card_jobs,
+)
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.common.taxonomy import (
     assess_zero_extract,
@@ -41,6 +44,8 @@ from src.jobs.text_utils import (
 )
 
 from ..common import config as common_config
+
+extract_rendered_card_jobs = _extract_rendered_card_jobs
 
 
 @dataclass(frozen=True)

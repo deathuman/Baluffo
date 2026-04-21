@@ -9,6 +9,16 @@ from typing import Any
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import static_scrapy as _static_scrapy
 from src.jobs.adapters.plugins.static import register_static_plugins
+from src.jobs.adapters.static_helpers import (
+    build_static_html_fetcher,
+    build_static_source_runtime_config,
+)
+from src.jobs.adapters.static_helpers import (
+    extract_rendered_card_jobs as _extract_rendered_card_jobs,
+)
+from src.jobs.adapters.static_helpers import (
+    process_detail_html as _process_detail_html,
+)
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
@@ -19,17 +29,13 @@ from . import static_detail as static_detail_mod
 from . import static_listing as static_listing_mod
 from . import static_runtime as static_runtime_mod
 from . import static_sources as static_sources_mod
-from .plugins.static._rendered_cards import extract_rendered_card_jobs
-from .static_helpers import (
-    build_static_html_fetcher,
-    build_static_source_runtime_config,
-    process_detail_html,
-)
 
 register_static_plugins()
 static_detail_mod.root = sys.modules[__name__]
 static_listing_mod.root = sys.modules[__name__]
 
+extract_rendered_card_jobs = _extract_rendered_card_jobs
+process_detail_html = _process_detail_html
 run_scrapy_static_source = _static_scrapy.run_scrapy_static_source
 static_source_shard = static_sources_mod.static_source_shard
 run_static_source_entry_source = static_sources_mod.run_static_source_entry_source

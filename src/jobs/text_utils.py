@@ -304,17 +304,19 @@ def sanitize_country_text(value: Any) -> tuple[str, str]:
         return "Remote", ""
     if len(text) == 2 and text.isalpha() and text == text.upper():
         return text, ""
+    resolved = resolve_country_acceptance_value(text)
+    if resolved:
+        resolved_normalized = normalize_country(resolved)
+        if resolved_normalized in set(COUNTRY_NAME_TO_CODE.values()):
+            return resolved_normalized, ""
+        if resolved != text:
+            return resolved, ""
     normalized = normalize_country(text)
-    if (
-        normalized in set(COUNTRY_NAME_TO_CODE.values())
-        or text.lower() in COUNTRY_NAME_TO_CODE
-        or resolve_country_acceptance_value(text)
-    ):
+    if normalized in set(COUNTRY_NAME_TO_CODE.values()) or text.lower() in COUNTRY_NAME_TO_CODE:
         return normalized, ""
     reason = invalid_location_reason(text, field_name="country")
     if reason:
         return "", reason
-    resolved = resolve_country_acceptance_value(text)
     if resolved:
         return resolved, ""
     return "", "invalid_country_semantic_noise"

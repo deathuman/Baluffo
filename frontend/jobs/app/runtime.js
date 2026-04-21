@@ -202,7 +202,7 @@ const PROFESSION_LABELS = jobsStateModule.PROFESSION_LABELS || {};
 const QUICK_FILTERS = Array.isArray(jobsStateModule.QUICK_FILTERS) ? jobsStateModule.QUICK_FILTERS : [];
 const authReadyPoller = createAuthReadyPoller({
   isReady: () => isJobsApiReady() && jobsPageService.isAvailable(),
-  onReady: () => initAuth()
+  onReady: () => authController.initAuth()
 });
 const filtersController = createJobsFiltersController({
   refs: jobsControllerRefs,
@@ -372,7 +372,7 @@ function setupJobsListDelegation() {
     saveJobBtnSelector: ui(UI_TOKENS.jobs.saveJobBtn),
     sanitizeUrl,
     getJobById: jobId => runtimeState.allJobs.find(job => String(job.id) === String(jobId || "")),
-    onToggleSaveJob: toggleSaveJob,
+    onToggleSaveJob: job => authController.toggleSaveJob(job),
     onOpenJobLink: openJobLinkInDefaultBrowser,
     onMarkJobSeen: jobKey => authController.markJobSeenFromInteraction(jobKey)
   });
@@ -493,8 +493,8 @@ function bindCoreEvents() {
   ]);
   bindHandlersMap(clickHandlers);
 
-  bindAsyncClick(dom.authSignInBtn, signInUser);
-  bindAsyncClick(dom.authSignOutBtn, signOutUser);
+  bindAsyncClick(dom.authSignInBtn, () => authController.signInUser());
+  bindAsyncClick(dom.authSignOutBtn, () => authController.signOutUser());
   bindAsyncClick(dom.adminPageBtn, openAdminPageFromJobs);
   bindAsyncClick(dom.refreshJobsBtn, () => refreshJobsNow({ manual: true }));
   bindAsyncClick(dom.jobsPipelineRunBtn, triggerJobsPipelineRun);
@@ -625,7 +625,7 @@ async function init() {
   return initJobsFeed({
     hasJobsList: Boolean(dom.jobsList),
     emitMetric: emitDesktopStartupMetric,
-    initAuth,
+    initAuth: () => authController.initAuth(),
     isDesktopRuntimeMode,
     readCachedJobs,
     normalizeRows: rows => {
@@ -710,18 +710,6 @@ async function triggerAutoRefreshFromSignal(signal) {
     markAutoRefreshSignalHandled,
     showToast
   });
-}
-
-function initAuth() {
-  return authController.initAuth();
-}
-
-async function signInUser() {
-  return authController.signInUser();
-}
-
-async function signOutUser() {
-  return authController.signOutUser();
 }
 
 function readStateFromUrl() {
@@ -1101,10 +1089,6 @@ function getJobKeyForJobWithService(job) {
   return getJobKeyForJob(job, {
     generateJobKey: row => jobsPageService.generateJobKey(row)
   });
-}
-
-async function toggleSaveJob(job) {
-  return authController.toggleSaveJob(job);
 }
 
 function setProgress(visible) {

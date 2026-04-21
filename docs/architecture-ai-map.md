@@ -4,6 +4,8 @@
 > **Canonical for:** system boundaries, task routing, verification matrix
 > **Not canonical for:** endpoint payloads, data schema details
 > **Then inspect:** the minimal source files listed in the task table, plus the matching contract doc if shape changes are involved
+>
+> Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) first. Boundary-charter docs are supporting historical/planning records, not part of the default AI read path.
 
 ---
 

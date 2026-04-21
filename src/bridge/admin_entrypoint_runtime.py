@@ -77,6 +77,7 @@ def configure_runtime_paths(config: Any) -> None:
     root_mod.ACTIVE_PATH = data_dir / "source-registry-active.json"
     root_mod.PENDING_PATH = data_dir / "source-registry-pending.json"
     root_mod.REJECTED_PATH = data_dir / "source-registry-rejected.json"
+    root_mod.DISCOVERY_CANDIDATES_PATH = data_dir / "source-discovery-candidates.json"
     root_mod.TOMBSTONES_PATH = data_dir / "source-registry-tombstones.json"
     root_mod.DISCOVERY_REPORT_PATH = data_dir / "source-discovery-report.json"
     root_mod.APPROVAL_STATE_PATH = data_dir / "source-approval-state.json"
@@ -88,6 +89,7 @@ def configure_runtime_paths(config: Any) -> None:
     root_mod.source_registry_module.REJECTED_PATH = root_mod.REJECTED_PATH
     root_mod.source_registry_module.TOMBSTONES_PATH = root_mod.TOMBSTONES_PATH
     root_mod.source_registry_module.DISCOVERY_REPORT_PATH = root_mod.DISCOVERY_REPORT_PATH
+    root_mod.source_registry_module.DISCOVERY_CANDIDATES_PATH = root_mod.DISCOVERY_CANDIDATES_PATH
     root_mod.source_registry_module.APPROVAL_STATE_PATH = root_mod.APPROVAL_STATE_PATH
     bridge_runtime_state.configure_runtime_paths(
         startup_metrics_path=root_mod.STARTUP_METRICS_PATH,

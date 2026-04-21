@@ -3,6 +3,8 @@
 > **Navigation guide for Baluffo project documentation.** Use this page to find the smallest authoritative document set for your task.
 >
 > For AI coding tasks, start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) and only add [`architecture-ai-map.md`](architecture-ai-map.md) when you need routing, ownership details, or compatibility-surface classification.
+>
+> Boundary-charter docs stay in the repo as planning/history records. They are not part of the default AI read path.
 
 ---
 
@@ -71,10 +73,20 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Debugging help | You are investigating a known issue or checking common failure modes |
 | [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
 | [`refactor-charter-template.md`](refactor-charter-template.md) | Planning template | You are drafting a structured refactor proposal |
-| [`desktop-packaging-boundary-charter.md`](desktop-packaging-boundary-charter.md) | Active refactor tracker | You are changing packaged smoke or desktop updater boundaries and need the current compatibility assumptions |
-| [`discovery-orchestrator-boundary-charter.md`](discovery-orchestrator-boundary-charter.md) | Active refactor tracker | You are changing discovery orchestration boundaries and need the current compatibility assumptions |
-| [`static-adapter-boundary-charter.md`](static-adapter-boundary-charter.md) | Active refactor tracker | You are changing the static adapter boundary and need the current compatibility assumptions |
-| [`admin-bridge-boundary-charter.md`](admin-bridge-boundary-charter.md) | Active refactor tracker | You are changing admin bridge startup/runtime boundaries and need the current compatibility assumptions |
+
+---
+
+## Refactor Charters
+
+Planning/history records for major cleanup passes. Use them only after the canonical AI docs when you need lane-specific compatibility assumptions or acceptance criteria.
+
+| Document | Status | Use it when |
+|----------|--------|-------------|
+| [`desktop-packaging-boundary-charter.md`](desktop-packaging-boundary-charter.md) | Refactor record | You are changing packaged smoke or desktop updater boundaries and need lane-specific compatibility assumptions |
+| [`discovery-orchestrator-boundary-charter.md`](discovery-orchestrator-boundary-charter.md) | Refactor record | You are changing discovery orchestration boundaries and need lane-specific compatibility assumptions |
+| [`static-adapter-boundary-charter.md`](static-adapter-boundary-charter.md) | Refactor record | You are changing the static adapter boundary and need lane-specific compatibility assumptions |
+| [`admin-bridge-boundary-charter.md`](admin-bridge-boundary-charter.md) | Refactor record | You are changing admin bridge startup/runtime boundaries and need lane-specific compatibility assumptions |
+| [`desktop-runtime-refactor-charter.md`](desktop-runtime-refactor-charter.md) | Refactor record | You are changing desktop runtime package boundaries and need lane-specific compatibility assumptions |
 
 ---
 

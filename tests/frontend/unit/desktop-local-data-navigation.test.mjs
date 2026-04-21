@@ -1,24 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-
-function createStorageMock() {
-  const map = new Map();
-  return {
-    getItem(key) {
-      return map.has(key) ? map.get(key) : null;
-    },
-    setItem(key, value) {
-      map.set(String(key), String(value));
-    },
-    removeItem(key) {
-      map.delete(String(key));
-    }
-  };
-}
-
-async function importFresh(specifier) {
-  return import(`${specifier}?t=${Date.now()}_${Math.random()}`);
-}
+import {
+  createStorageMock,
+  importFresh
+} from "./helpers/browser-test-helpers.mjs";
 
 function createJsonResponse(payload) {
   return {
@@ -171,7 +156,10 @@ test("desktop beforeunload prompts when admin bridge work is active", async () =
       count: 1
     }
   });
-  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -189,7 +177,10 @@ test("desktop beforeunload prompts when admin bridge work is active", async () =
 
 test("desktop lifecycle binds beforeunload, pagehide, and focus but not unload", async () => {
   const { eventListeners } = setupDesktopGlobals();
-  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -207,7 +198,10 @@ test("desktop beforeunload prompts when update handoff or install is active", as
       installState: "waiting_for_exit"
     }
   });
-  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -228,7 +222,10 @@ test("approved desktop page navigation bypasses the unload prompt and still sign
       count: 1
     }
   });
-  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -251,7 +248,10 @@ test("approved desktop page navigation preserves desktop runtime query params", 
   const { locationState } = setupDesktopGlobals({
     locationHref: "http://127.0.0.1:4173/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1&startupProbe=1"
   });
-  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -270,7 +270,10 @@ test("approved desktop page navigation preserves target query params while appen
   const { locationState } = setupDesktopGlobals({
     locationHref: "http://127.0.0.1:4173/admin.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1"
   });
-  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -295,7 +298,10 @@ test("external navigation does not bypass the unload prompt", async () => {
       count: 1
     }
   });
-  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -316,7 +322,10 @@ test("external navigation does not bypass the unload prompt", async () => {
 
 test("normal beforeunload without active work signals desktop closing", async () => {
   const { eventListeners, beaconCalls } = setupDesktopGlobals();
-  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -333,7 +342,10 @@ test("normal beforeunload without active work signals desktop closing", async ()
 
 test("pagehide without beforeunload still signals desktop closing", async () => {
   const { eventListeners, beaconCalls } = setupDesktopGlobals();
-  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -360,7 +372,10 @@ test("desktop sign-in loads existing profiles before prompting", async () => {
       return "Existing User";
     }
   });
-  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   const api = initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -392,7 +407,10 @@ test("desktop sign-in retries profile loading before showing the existing-profil
       return promptCalls.length === 1 ? "retry" : "Existing User";
     }
   });
-  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   const api = initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -415,7 +433,10 @@ test("desktop sign-in requires an explicit create action when profile loading fa
       return promptCalls.length === 1 ? "create" : "New Desktop User";
     }
   });
-  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   const api = initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -435,7 +456,10 @@ test("desktop sign-in cancels cleanly when profile loading fails and the user ab
     profilesPayload: () => new Error("profiles unavailable"),
     promptImpl: () => "cancel"
   });
-  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   const api = initDesktopLocalDataClient();
   await flushMicrotasks();
 
@@ -456,7 +480,10 @@ test("desktop version labels render the installed app version", async () => {
     { hidden: true, textContent: "" },
     { hidden: true, textContent: "" }
   ];
-  const { hydrateDesktopVersionLabels } = await importFresh("../../../frontend/shared/app-version.js");
+  const { hydrateDesktopVersionLabels } = await importFresh(
+    "../../../frontend/shared/app-version.js",
+    { relativeTo: import.meta.url }
+  );
 
   const version = await hydrateDesktopVersionLabels({
     querySelectorAll() {

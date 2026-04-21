@@ -357,6 +357,8 @@ test("jobs domain blanks semantic location noise but preserves valid locations",
   assert.equal(sanitizeLocationField("Tokyo", "city"), "Tokyo");
   assert.equal(sanitizeLocationField("Japan", "country"), "Japan");
   assert.equal(sanitizeLocationField("United States of America", "country"), "US");
+  assert.equal(sanitizeLocationField("Türkiye", "country"), "TR");
+  assert.equal(sanitizeLocationField("Côte d'Ivoire", "country"), "CI");
   assert.equal(sanitizeLocationField("Hybrid", "country"), "");
   assert.equal(isSemanticallyValidLocationValue("Montréal", "city"), true);
   assert.equal(isSemanticallyValidLocationValue("6,559 followers", "city"), false);

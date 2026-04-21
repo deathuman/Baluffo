@@ -414,4 +414,3 @@ test("admin registry controller approves selected pending rows", async () => {
     }
   );
 });
-

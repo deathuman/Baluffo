@@ -18,13 +18,21 @@ from pathlib import Path
 from typing import Any
 
 from src import source_registry as source_registry_module
-from src.jobs.state import read_source_state
+from src.jobs.state import read_source_state as _read_source_state
 from src.shared.utils import now_iso
-from src.source_registry import APPROVAL_STATE_PATH as DEFAULT_APPROVAL_STATE_PATH
-from src.source_registry import URL_PATCH_MANIFEST_PATH as DEFAULT_URL_PATCH_MANIFEST_PATH
-from src.source_registry import apply_discovery_auto_approval, save_json_atomic
+from src.source_registry import (
+    APPROVAL_STATE_PATH as _DEFAULT_APPROVAL_STATE_PATH,
+)
+from src.source_registry import (
+    URL_PATCH_MANIFEST_PATH as DEFAULT_URL_PATCH_MANIFEST_PATH,
+)
+from src.source_registry import (
+    apply_discovery_auto_approval as _apply_discovery_auto_approval,
+)
+from src.source_registry import (
+    save_json_atomic,
+)
 
-from . import config as discovery_config_module
 from . import orchestrator_finalize as orchestrator_finalize_mod
 from . import orchestrator_generation as orchestrator_generation_mod
 from . import orchestrator_probe as orchestrator_probe_mod
@@ -36,28 +44,71 @@ from .config import (
     UNCAPPED_DISCOVERY_DOMAIN_QUEUE_CAP,
     load_discovery_config,
 )
-from .core import apply_sheet_directory_static_probe_cap
-from .gamedevmap import discover_gamedevmap_candidates
-from .gameprog import discover_gameprog_candidates
-from .gamesmap import discover_gamesmap_candidates
+from .core import apply_sheet_directory_static_probe_cap as _apply_sheet_directory_static_probe_cap
+from .gamedevmap import discover_gamedevmap_candidates as _discover_gamedevmap_candidates
+from .gameprog import discover_gameprog_candidates as _discover_gameprog_candidates
+from .gamesmap import discover_gamesmap_candidates as _discover_gamesmap_candidates
 from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
-from .probe import async_probe_candidate
-from .provider_patterns import build_pattern_candidates
-from .reporting import emit_log, merge_candidate_streams, stage_curated_seed_candidates
-from .reporting import write_discovery_progress_report
+from .probe import async_probe_candidate as _async_probe_candidate
+from .provider_patterns import build_pattern_candidates as _build_pattern_candidates
+from .reporting import (
+    emit_log,
+)
+from .reporting import (
+    merge_candidate_streams as _merge_candidate_streams,
+)
+from .reporting import (
+    stage_curated_seed_candidates as _stage_curated_seed_candidates,
+)
+from .reporting import (
+    write_discovery_progress_report as _write_discovery_progress_report,
+)
 from .scoring import resolve_discovery_thresholds
-from .sheet_directory import discover_game_studio_sheet_candidates
+from .sheet_directory import (
+    discover_game_studio_sheet_candidates as _discover_game_studio_sheet_candidates,
+)
 from .stage_control import apply_discovery_cli_args_to_config as _apply_discovery_cli_args_to_config
-from .url_patches import load_url_patches, resolve_patch_target, save_url_patch_manifest
+from .url_patches import (
+    load_url_patches as _load_url_patches,
+)
+from .url_patches import (
+    resolve_patch_target as _resolve_patch_target,
+)
+from .url_patches import (
+    save_url_patch_manifest as _save_url_patch_manifest,
+)
 from .web_search import (
-    discover_seed_careers_page_candidates,
-    discover_web_search_candidates,
+    discover_seed_careers_page_candidates as _discover_seed_careers_page_candidates,
+)
+from .web_search import (
+    discover_web_search_candidates as _discover_web_search_candidates,
+)
+from .web_search import (
     fetch_text,
 )
 
 orchestrator_generation_mod.root = sys.modules[__name__]
 orchestrator_probe_mod.root = sys.modules[__name__]
 orchestrator_finalize_mod.root = sys.modules[__name__]
+
+DEFAULT_APPROVAL_STATE_PATH = _DEFAULT_APPROVAL_STATE_PATH
+apply_discovery_auto_approval = _apply_discovery_auto_approval
+read_source_state = _read_source_state
+apply_sheet_directory_static_probe_cap = _apply_sheet_directory_static_probe_cap
+discover_gamedevmap_candidates = _discover_gamedevmap_candidates
+discover_gameprog_candidates = _discover_gameprog_candidates
+discover_gamesmap_candidates = _discover_gamesmap_candidates
+async_probe_candidate = _async_probe_candidate
+build_pattern_candidates = _build_pattern_candidates
+merge_candidate_streams = _merge_candidate_streams
+stage_curated_seed_candidates = _stage_curated_seed_candidates
+write_discovery_progress_report = _write_discovery_progress_report
+discover_game_studio_sheet_candidates = _discover_game_studio_sheet_candidates
+load_url_patches = _load_url_patches
+resolve_patch_target = _resolve_patch_target
+save_url_patch_manifest = _save_url_patch_manifest
+discover_seed_careers_page_candidates = _discover_seed_careers_page_candidates
+discover_web_search_candidates = _discover_web_search_candidates
 
 
 def _discovery_report_write_path() -> Path:

@@ -72,7 +72,10 @@ def get_discovery_service() -> Any:
         Path(root_mod.DISCOVERY_LOG_PATH),
     )
     with root_mod._DISCOVERY_SERVICE_LOCK:
-        if root_mod._DISCOVERY_SERVICE is None or root_mod._DISCOVERY_SERVICE_PATHS != current_paths:
+        if (
+            root_mod._DISCOVERY_SERVICE is None
+            or root_mod._DISCOVERY_SERVICE_PATHS != current_paths
+        ):
             root_mod._DISCOVERY_SERVICE_PATHS = current_paths
             root_mod._DISCOVERY_SERVICE = root_mod.DiscoveryService(
                 paths=root_mod.DiscoveryPaths(
@@ -302,7 +305,9 @@ def get_pipeline_service() -> Any:
                 )
                 if str(
                     task_state_entry.get("runId") or ""
-                ).strip() == normalized_run_id and root_mod.task_running_from_state(normalized_type):
+                ).strip() == normalized_run_id and root_mod.task_running_from_state(
+                    normalized_type
+                ):
                     return True
 
                 if normalized_type != "fetch":

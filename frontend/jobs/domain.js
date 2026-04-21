@@ -1,4 +1,5 @@
 import {
+  COUNTRY_ACCEPTANCE,
   resolveCountryAcceptanceValue
 } from "../shared/data/country-acceptance.js";
 import {
@@ -195,8 +196,17 @@ export function fullCountryName(code, options = {}) {
 function sanitizeCountryField(value) {
   const text = sanitizePublicText(value);
   if (!text) return "";
+  if (text === "Remote") return "Remote";
+  if (text.length === 2 && /^[A-Z]+$/.test(text)) return text;
   const resolved = resolveCountryAcceptanceValue(text);
-  return resolved || "";
+  if (!resolved) return "";
+  const normalized = normalizeCountryToken(text);
+  if (COUNTRY_ACCEPTANCE.aliasToCanonical.has(normalized)) {
+    for (const [code, name] of Object.entries(COUNTRY_ACCEPTANCE.countryNameByCode || {})) {
+      if (name === resolved) return code;
+    }
+  }
+  return resolved;
 }
 
 function matchesCitySentencePrefix(text, prefix) {

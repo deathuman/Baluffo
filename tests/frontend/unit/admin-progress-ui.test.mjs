@@ -67,4 +67,3 @@ test("shared admin task progress renderer resets indeterminate state before dete
   assert.equal(barEl.style.width, "100%");
   assert.equal(rootEl.attributes["aria-valuenow"], "100");
 });
-

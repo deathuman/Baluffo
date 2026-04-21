@@ -8,7 +8,6 @@ import pytest
 from src import admin_bridge
 from tests.admin._runtime_helpers import (
     active_progress,
-    completed_progress,
     discovery_report,
     fetch_report,
     history_row,
@@ -226,19 +225,39 @@ def _run_discovery_report_case(case: _DiscoveryReportCase) -> None:
     if case.expected_status is None:
         payload = admin_bridge.normalize_discovery_report_contract(case.payload)
         task_progress = payload.get("taskProgress") or {}
-        assert int((payload.get("summary") or {}).get("queuedCandidateCount") or 0) == case.expected_queued_candidates
+        assert (
+            int((payload.get("summary") or {}).get("queuedCandidateCount") or 0)
+            == case.expected_queued_candidates
+        )
         if case.expected_probed_candidates is not None:
-            assert int(task_progress.get("counts", {}).get("probedCandidates") or 0) == case.expected_probed_candidates
+            assert (
+                int(task_progress.get("counts", {}).get("probedCandidates") or 0)
+                == case.expected_probed_candidates
+            )
         if case.expected_phase_key is not None:
             assert str(task_progress.get("phaseKey") or "") == case.expected_phase_key
         if case.expected_mode is not None:
             assert str(task_progress.get("mode") or "") == case.expected_mode
         if case.expected_runtime_total_ms is not None:
-            assert int((payload.get("runtime") or {}).get("totalDurationMs") or 0) == case.expected_runtime_total_ms
+            assert (
+                int((payload.get("runtime") or {}).get("totalDurationMs") or 0)
+                == case.expected_runtime_total_ms
+            )
         if case.expected_stage_probe_ms is not None:
-            assert int((((payload.get("runtime") or {}).get("stageTimingsMs") or {}).get("probe")) or 0) == case.expected_stage_probe_ms
+            assert (
+                int(
+                    (((payload.get("runtime") or {}).get("stageTimingsMs") or {}).get("probe")) or 0
+                )
+                == case.expected_stage_probe_ms
+            )
         if case.expected_adapter_name is not None:
-            assert str((((payload.get("runtime") or {}).get("adapterTimings") or [])[0].get("adapter")) or "") == case.expected_adapter_name
+            assert (
+                str(
+                    (((payload.get("runtime") or {}).get("adapterTimings") or [])[0].get("adapter"))
+                    or ""
+                )
+                == case.expected_adapter_name
+            )
         counts = task_progress.get("counts") or {}
         assert int(counts.get("queuedCandidates") or 0) == case.expected_queued_candidates
     else:
@@ -419,7 +438,9 @@ def _setup_duplicate_run_id_rows() -> None:
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
-        fetch_report(run_id=run_id, started_at=started_at, finished_at=finished_at, summary=summary),
+        fetch_report(
+            run_id=run_id, started_at=started_at, finished_at=finished_at, summary=summary
+        ),
     )
 
 
@@ -488,7 +509,10 @@ def _assert_discards_rows_without_run_id(rows: list[dict[str, object]]) -> None:
     )
     assert len(matching) == 1
     assert str(matching[0].get("status") or "").lower() == "error"
-    assert str((matching[0].get("summary") or {}).get("error") or "") == "owner_inactive_without_terminal_report"
+    assert (
+        str((matching[0].get("summary") or {}).get("error") or "")
+        == "owner_inactive_without_terminal_report"
+    )
     assert all(str(row.get("runId") or "").strip() for row in rows)
 
 
@@ -574,7 +598,9 @@ def test_start_fetcher_task_registers_history_before_report_can_duplicate():
         result = admin_bridge.start_fetcher_task({})
 
     rows = admin_bridge.load_run_history()
-    matching = [row for row in rows if str(row.get("runId") or "") == str(result.get("runId") or "")]
+    matching = [
+        row for row in rows if str(row.get("runId") or "") == str(result.get("runId") or "")
+    ]
     assert len(matching) == 1
 
 

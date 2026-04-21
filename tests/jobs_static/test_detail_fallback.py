@@ -4,9 +4,9 @@ from unittest import mock
 import pytest
 
 from ._helpers import (
+    FIXTURES_DIR,
     AdapterPluginContext,
     Counter,
-    FIXTURES_DIR,
     GenericCareersSpider,
     HtmlResponse,
     Path,
@@ -27,13 +27,13 @@ from ._helpers import (
     frontier,
     hashlib,
     jf,
+    jfr,
     jobs_canonicalize,
     jobs_common_config,
     jobs_common_registry,
     jobs_dedup,
     jobs_registry,
     jobs_reporting,
-    jfr,
     kojima,
     patch_jobs_fetcher_aliases,
     process_detail_link,

@@ -4,42 +4,36 @@
 from __future__ import annotations
 
 import argparse
-import base64
-import contextlib
-import ctypes
-import errno
-import http.server
+import ctypes as _ctypes
+import errno as _errno
 import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
-import threading
 import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src import source_sync as source_sync_mod
-from src.local_data_store import LocalDataPaths, LocalDataStore
+from src import source_sync as _source_sync_mod
+from src.local_data_store import LocalDataPaths as _LocalDataPaths
+from src.local_data_store import LocalDataStore as _LocalDataStore
 from src.python_version_guard import ensure_required_python
 from src.shared.utils import utc_now_iso
 from src.ship import desktop_app as desktop_app_mod
-from src.ship import desktop_update as desktop_update_mod
+from src.ship import desktop_update as _desktop_update_mod
 from src.ship.packaged_smoke import build_env as packaged_smoke_build_env_mod
 from src.ship.packaged_smoke import rehearsals as packaged_smoke_rehearsals_mod
 from src.ship.packaged_smoke import runtime as packaged_smoke_runtime_mod
 from src.ship.startup_probe_policy import (
     EMBEDDED_PAGE_PROBES,
-    REQUIRED_STARTUP_PROBE_LAUNCH_MODE,
     STARTUP_REQUIRED_EVENTS,
     classify_startup_probe_failure,
     refine_startup_probe_summary,
@@ -48,10 +42,13 @@ from src.ship.startup_probe_policy import (
     startup_profile_required_events,
 )
 from src.ship.startup_probe_policy import (
-    required_startup_event_present as _required_startup_event_present,
+    REQUIRED_STARTUP_PROBE_LAUNCH_MODE as _REQUIRED_STARTUP_PROBE_LAUNCH_MODE,
 )
 from src.ship.startup_probe_policy import (
-    select_startup_probe_browser as select_startup_probe_browser_policy,
+    required_startup_event_present as _required_startup_event_present_policy,
+)
+from src.ship.startup_probe_policy import (
+    select_startup_probe_browser as _select_startup_probe_browser_policy,
 )
 from src.ship.startup_profile import (
     render_startup_summary,
@@ -267,24 +264,41 @@ packaged_smoke_build_env_mod.root = sys.modules[__name__]
 packaged_smoke_runtime_mod.root = sys.modules[__name__]
 packaged_smoke_rehearsals_mod.root = sys.modules[__name__]
 
+ctypes = _ctypes
+errno = _errno
+source_sync_mod = _source_sync_mod
+LocalDataPaths = _LocalDataPaths
+LocalDataStore = _LocalDataStore
+desktop_update_mod = _desktop_update_mod
+REQUIRED_STARTUP_PROBE_LAUNCH_MODE = _REQUIRED_STARTUP_PROBE_LAUNCH_MODE
+_required_startup_event_present = _required_startup_event_present_policy
+select_startup_probe_browser_policy = _select_startup_probe_browser_policy
 choose_free_port = packaged_smoke_build_env_mod.choose_free_port
 _default_portable_exe_stale = packaged_smoke_build_env_mod._default_portable_exe_stale
 _exe_path_uses_default_dist = packaged_smoke_build_env_mod._exe_path_uses_default_dist
 _portable_exe_marker_staleness = packaged_smoke_build_env_mod._portable_exe_marker_staleness
-_iter_portable_exe_freshness_markers = packaged_smoke_build_env_mod._iter_portable_exe_freshness_markers
+_iter_portable_exe_freshness_markers = (
+    packaged_smoke_build_env_mod._iter_portable_exe_freshness_markers
+)
 run_portable_build = packaged_smoke_build_env_mod.run_portable_build
 cleanup_portable_build_scratch = packaged_smoke_build_env_mod.cleanup_portable_build_scratch
 select_startup_probe_browser = packaged_smoke_build_env_mod.select_startup_probe_browser
 prune_packaged_smoke_artifacts = packaged_smoke_build_env_mod.prune_packaged_smoke_artifacts
 resolve_node_command = packaged_smoke_build_env_mod.resolve_node_command
 write_text = packaged_smoke_build_env_mod.write_text
-packaged_desktop_local_appdata_root = packaged_smoke_build_env_mod.packaged_desktop_local_appdata_root
+packaged_desktop_local_appdata_root = (
+    packaged_smoke_build_env_mod.packaged_desktop_local_appdata_root
+)
 packaged_desktop_session_paths = packaged_smoke_build_env_mod.packaged_desktop_session_paths
-clear_packaged_desktop_session_state = packaged_smoke_build_env_mod.clear_packaged_desktop_session_state
+clear_packaged_desktop_session_state = (
+    packaged_smoke_build_env_mod.clear_packaged_desktop_session_state
+)
 is_windows_process_elevated = packaged_smoke_build_env_mod.is_windows_process_elevated
 path_is_writable = packaged_smoke_build_env_mod.path_is_writable
 classify_subprocess_error = packaged_smoke_build_env_mod.classify_subprocess_error
-collect_packaged_smoke_env_diagnostics = packaged_smoke_build_env_mod.collect_packaged_smoke_env_diagnostics
+collect_packaged_smoke_env_diagnostics = (
+    packaged_smoke_build_env_mod.collect_packaged_smoke_env_diagnostics
+)
 build_packaged_smoke_env = packaged_smoke_build_env_mod.build_packaged_smoke_env
 packaged_pipeline_smoke_mode = packaged_smoke_build_env_mod.packaged_pipeline_smoke_mode
 packaged_runtime_env_overrides = packaged_smoke_build_env_mod.packaged_runtime_env_overrides
@@ -300,7 +314,9 @@ terminate_process_tree = packaged_smoke_runtime_mod.terminate_process_tree
 terminate_process_only = packaged_smoke_runtime_mod.terminate_process_only
 _packaged_runtime_page_ready = packaged_smoke_runtime_mod._packaged_runtime_page_ready
 wait_for_packaged_runtime = packaged_smoke_runtime_mod.wait_for_packaged_runtime
-wait_for_packaged_runtime_with_port_pivot = packaged_smoke_runtime_mod.wait_for_packaged_runtime_with_port_pivot
+wait_for_packaged_runtime_with_port_pivot = (
+    packaged_smoke_runtime_mod.wait_for_packaged_runtime_with_port_pivot
+)
 wait_for_packaged_child_runtime = packaged_smoke_runtime_mod.wait_for_packaged_child_runtime
 capture_runtime_snapshot = packaged_smoke_runtime_mod.capture_runtime_snapshot
 wait_for_runtime_events = packaged_smoke_runtime_mod.wait_for_runtime_events
@@ -312,15 +328,21 @@ build_failure_payload = packaged_smoke_runtime_mod.build_failure_payload
 run_warmup_launch = packaged_smoke_runtime_mod.run_warmup_launch
 
 _archive_portable_dir = packaged_smoke_rehearsals_mod._archive_portable_dir
-_inject_desktop_update_public_keys = packaged_smoke_rehearsals_mod._inject_desktop_update_public_keys
+_inject_desktop_update_public_keys = (
+    packaged_smoke_rehearsals_mod._inject_desktop_update_public_keys
+)
 _portable_current_version = packaged_smoke_rehearsals_mod._portable_current_version
-_portable_packaged_sync_config_path = packaged_smoke_rehearsals_mod._portable_packaged_sync_config_path
+_portable_packaged_sync_config_path = (
+    packaged_smoke_rehearsals_mod._portable_packaged_sync_config_path
+)
 _load_portable_packaged_sync_rehearsal_config = (
     packaged_smoke_rehearsals_mod._load_portable_packaged_sync_rehearsal_config
 )
 _seed_rehearsal_local_data = packaged_smoke_rehearsals_mod._seed_rehearsal_local_data
 _PackagedSyncRehearsalHandler = packaged_smoke_rehearsals_mod._PackagedSyncRehearsalHandler
-_start_packaged_sync_rehearsal_server = packaged_smoke_rehearsals_mod._start_packaged_sync_rehearsal_server
+_start_packaged_sync_rehearsal_server = (
+    packaged_smoke_rehearsals_mod._start_packaged_sync_rehearsal_server
+)
 _DesktopUpdateReleaseHandler = packaged_smoke_rehearsals_mod._DesktopUpdateReleaseHandler
 _start_desktop_update_release_server = (
     packaged_smoke_rehearsals_mod._start_desktop_update_release_server
@@ -342,7 +364,9 @@ _assert_desktop_update_helper_succeeded = (
 )
 run_packaged_sync_rehearsal = packaged_smoke_rehearsals_mod.run_packaged_sync_rehearsal
 run_desktop_update_rehearsal = packaged_smoke_rehearsals_mod.run_desktop_update_rehearsal
-run_packaged_browser_job_rehearsal = packaged_smoke_rehearsals_mod.run_packaged_browser_job_rehearsal
+run_packaged_browser_job_rehearsal = (
+    packaged_smoke_rehearsals_mod.run_packaged_browser_job_rehearsal
+)
 run_packaged_orphan_reclaim_rehearsal = (
     packaged_smoke_rehearsals_mod.run_packaged_orphan_reclaim_rehearsal
 )
@@ -374,6 +398,8 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
     if artifacts_dir.parent == DEFAULT_ARTIFACT_ROOT.resolve():
         prune_packaged_smoke_artifacts(
             DEFAULT_ARTIFACT_ROOT,
+            keep_recent_runs=DEFAULT_ARTIFACT_RETENTION_RUNS,
+            file_retention_s=DEFAULT_ARTIFACT_FILE_RETENTION_S,
             current_artifacts_dir=artifacts_dir,
         )
     artifacts_dir.mkdir(parents=True, exist_ok=True)

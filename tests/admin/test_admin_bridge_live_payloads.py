@@ -12,7 +12,6 @@ from tests.admin._runtime_helpers import (
     discovery_report,
     fetch_report,
     history_row,
-    matching_history_rows,
     task_live_payload,
     task_row,
     task_state_entry,
@@ -125,7 +124,9 @@ def _assert_active_tasks_projection(payload: dict[str, object]) -> None:
     fetch_row = task_row(payload, "fetch")
     assert str((fetch_row.get("taskProgress") or {}).get("phaseKey") or "") == "executing_sources"
     pipeline_row = task_row(payload, "pipeline")
-    assert str((pipeline_row.get("taskProgress") or {}).get("phaseLabel") or "") == "Running fetch..."
+    assert (
+        str((pipeline_row.get("taskProgress") or {}).get("phaseLabel") or "") == "Running fetch..."
+    )
 
 
 def _setup_finished_reports_clear_stale_state() -> None:
@@ -511,7 +512,9 @@ def test_get_current_task_state_payload_cases(case: _CurrentTaskStateCase) -> No
         if case.pid_is_running is None:
             payload = current_task_payload()
         else:
-            with mock.patch.object(admin_bridge, "pid_is_running", return_value=case.pid_is_running):
+            with mock.patch.object(
+                admin_bridge, "pid_is_running", return_value=case.pid_is_running
+            ):
                 payload = current_task_payload()
         case.assert_payload(payload)
     finally:
@@ -603,7 +606,9 @@ def test_get_task_live_payload_fetch_preserves_shared_contract() -> None:
     assert recent_events[0].get("message") == "Fetching details"
 
 
-def test_get_task_live_payload_fetch_ignores_stale_task_artifact_and_uses_current_report_detail() -> None:
+def test_get_task_live_payload_fetch_ignores_stale_task_artifact_and_uses_current_report_detail() -> (
+    None
+):
     run_id = "fetch_live_current_1"
     started_at = "2026-03-08T10:00:00.000Z"
     heartbeat_at = "2026-03-08T10:03:00.000Z"
@@ -688,7 +693,9 @@ def test_get_task_live_payload_fetch_ignores_stale_task_artifact_and_uses_curren
     assert "10/551 sources resolved" in str(recent_events[0].get("message") or "")
 
 
-def test_get_task_live_payload_fetch_supplements_current_run_detail_when_task_artifact_lacks_work_items() -> None:
+def test_get_task_live_payload_fetch_supplements_current_run_detail_when_task_artifact_lacks_work_items() -> (
+    None
+):
     run_id = "fetch_live_partial_1"
     started_at = "2026-03-08T10:00:00.000Z"
     heartbeat_at = "2026-03-08T10:04:00.000Z"

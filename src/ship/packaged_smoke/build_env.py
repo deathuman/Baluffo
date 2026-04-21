@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import contextlib
-import ctypes
-import errno
 import os
 import shutil
 import socket
 import subprocess
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -161,7 +158,9 @@ def prune_packaged_smoke_artifacts(
 
 def resolve_node_command() -> list[str]:
     deps = _root()
-    local_node = deps.ROOT / "node_modules" / ".bin" / ("node.cmd" if deps.os.name == "nt" else "node")
+    local_node = (
+        deps.ROOT / "node_modules" / ".bin" / ("node.cmd" if deps.os.name == "nt" else "node")
+    )
     if local_node.exists():
         return [str(local_node)]
     node_path = deps.shutil.which("node.exe") or deps.shutil.which("node")
@@ -235,7 +234,10 @@ def classify_subprocess_error(error: Exception | str) -> str:
     if isinstance(error, PermissionError):
         return "node_process_spawn_blocked"
     if isinstance(error, OSError):
-        if getattr(error, "errno", None) == deps.errno.EPERM or getattr(error, "winerror", None) == 5:
+        if (
+            getattr(error, "errno", None) == deps.errno.EPERM
+            or getattr(error, "winerror", None) == 5
+        ):
             return "node_process_spawn_blocked"
     message = str(error or "").lower()
     if "executable doesn't exist" in message or "download new browsers" in message:
@@ -266,7 +268,9 @@ def collect_packaged_smoke_env_diagnostics(
     resolved = Path(exe_path).expanduser().resolve()
     uses_default_dist = deps._exe_path_uses_default_dist(requested)
     rebuilt_portable_used = rebuilt_portable_dir is not None and uses_default_dist
-    explicit_freshness = "n/a" if uses_default_dist else deps._portable_exe_marker_staleness(requested)
+    explicit_freshness = (
+        "n/a" if uses_default_dist else deps._portable_exe_marker_staleness(requested)
+    )
     exe_path_source = "default-dist"
     if rebuilt_portable_used:
         exe_path_source = "rebuilt-dist"

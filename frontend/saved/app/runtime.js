@@ -49,7 +49,7 @@ import { createAdminBridgeButtonWatcher } from "../../shared/admin-bridge-button
 import { createAuthReadyPoller } from "../../shared/auth-ready-poll.js";
 import { normalizeToken } from "../../shared/text-utils.js";
 import { cacheSavedDom } from "./dom.js";
-import { setSavedAuthControlsReady, setSavedAuthStatus, toggleSavedAuthButtons } from "./auth.js";
+import { applySavedAdminBridgeState as applySavedAdminBridgeStateFromModule } from "./admin-bridge-state.js";
 import { requestConfirmationDialog, requestTextInputDialog } from "../../local-data/profile-name-dialog.js";
 import { navigateDesktopPage } from "../../shared/local-data/desktop-client.js";
 import { updateCustomJobWarning as updateCustomJobWarningUi } from "./custom-job.js";
@@ -101,12 +101,13 @@ import {
   renderAttachmentList as renderAttachmentListFromModule
 } from "./attachments.js";
 import { createSavedPageState, cacheSavedDomState } from "./runtime/state.js";
+import { createSavedAuthController } from "./runtime/auth-controller.js";
 import { createSavedStartupMetrics } from "./runtime/effects.js";
 import { setStatusText, setElementText } from "./runtime/view.js";
 import { bindSavedPageEvents, bindSavedJobsListDelegation } from "./runtime/events.js";
 const savedAuthReadyPoller = createAuthReadyPoller({
   isReady: () => savedPageService.isAvailable() && isSavedApiReady(),
-  onReady: () => initSavedJobsPage()
+  onReady: () => savedAuthController.initSavedJobsPage()
 });
 const JOBS_LAST_URL_KEY = "baluffo_jobs_last_url";
 const TIMELINE_PREF_PREFIX = "baluffo_saved_timeline_prefs";
@@ -173,6 +174,41 @@ const startupMetrics = createSavedStartupMetrics({
     postJson(ADMIN_BRIDGE_BASE, "/desktop-local-data/startup-metric", { event, payload: payload || {} }).catch(() => {});
   }
 });
+const savedAuthController = createSavedAuthController({
+  refs: dom,
+  viewState,
+  savedPageService,
+  savedAuthService,
+  savedAuthReadyPoller,
+  isSavedApiReady,
+  savedDispatch,
+  SAVED_ACTIONS,
+  clearNoteSaveQueues,
+  setActivityPanelOpen,
+  setCustomJobPanelOpen,
+  setCustomJobAvailability,
+  updateTimelineScopeButtons,
+  renderWorkspaceStats,
+  emitSavedStartupMetric,
+  setSourceStatus,
+  setActivityStatus,
+  renderAuthRequired,
+  renderTimeline,
+  markSavedFirstInteractive,
+  setSavedFilter,
+  defaultSavedFilter: DEFAULT_SAVED_FILTER,
+  setSavedSort,
+  defaultSavedSort: SORT_UPDATED,
+  renderSelectedJobHint,
+  setBackupButtonsEnabled,
+  setSavedFilterBarVisible,
+  setSavedSortBarVisible,
+  loadTimelinePreferences,
+  subscribeToSavedJobs,
+  refreshActivityLog,
+  timelineScopeAll: TIMELINE_SCOPE_ALL,
+  showToast
+});
 
 /**
  * Entry map (Saved runtime):
@@ -184,31 +220,8 @@ const startupMetrics = createSavedStartupMetrics({
  * - events concern: ./runtime/events.js
  */
 
-/**
- * Applies page-specific presentation for admin bridge button state.
- * @param {Object} params
- * @param {HTMLElement} params.buttonEl
- * @param {string} params.state - "online", "offline", or "checking"
- * @param {string} params.label
- * @param {string} params.title
- * @param {number} params.activeAlerts
- */
-function applySavedAdminBridgeState({ buttonEl, state, label, title }) {
-  if (!buttonEl) return;
-  viewState.adminBridgeButtonState = state;
-  buttonEl.dataset.bridgeState = state;
-  buttonEl.classList.remove("online", "offline", "checking");
-  buttonEl.classList.add(state);
-  buttonEl.textContent = label || "Admin Checking...";
-  buttonEl.title = title || label || "Checking admin bridge status";
-  const enabled = state === "online";
-  buttonEl.disabled = !enabled;
-  buttonEl.setAttribute("aria-disabled", enabled ? "false" : "true");
-}
-
-function startAdminBridgeButtonWatch() {
-  if (!viewState.adminBridgeWatcher) return;
-  viewState.adminBridgeWatcher.startAdminBridgeButtonWatch();
+function applySavedAdminBridgeState(params) {
+  return applySavedAdminBridgeStateFromModule({ ...params, viewState });
 }
 
 function bootSavedPage() {
@@ -219,7 +232,7 @@ function bootSavedPage() {
     fetchJson,
     applyState: applySavedAdminBridgeState
   });
-  startAdminBridgeButtonWatch();
+  viewState.adminBridgeWatcher?.startAdminBridgeButtonWatch();
   bindSavedJobsListDelegation({
     dom,
     viewState,
@@ -256,15 +269,15 @@ function bootSavedPage() {
     renderSavedJobs,
     setActivityPanelOpen,
     refreshActivityLog,
-    signInUser,
-    signOutUser,
+    signInUser: () => savedAuthController.signInUser(),
+    signOutUser: () => savedAuthController.signOutUser(),
     exportBackup,
     importBackup,
     updateGlobalOverrideButton,
     setTimelineScope,
     renderTimeline
   });
-  initSavedJobsPage();
+  savedAuthController.initSavedJobsPage();
 }
 
 function emitSavedStartupMetric(event, payload = {}) {
@@ -274,94 +287,6 @@ function emitSavedStartupMetric(event, payload = {}) {
 function markSavedFirstInteractive(reason) {
   markFirstInteractive(startupMetrics, reason);
   viewState.savedInteractiveMetricSent = true;
-}
-
-function initSavedJobsPage() {
-  setActivityPanelOpen(false);
-  setCustomJobPanelOpen(false);
-  setCustomJobAvailability(false);
-  updateTimelineScopeButtons();
-  renderWorkspaceStats();
-
-  const pageServiceAvailable = savedPageService.isAvailable();
-  const apiReady = isSavedApiReady();
-
-  if (!pageServiceAvailable || !apiReady) {
-    emitSavedStartupMetric("saved_auth_waiting");
-    setAuthStatus("Local auth starting...");
-    setSourceStatus("Local auth provider is starting...");
-    setActivityStatus("Local provider is starting...");
-    toggleAuthButtons(false);
-    setAuthControlsReady(false);
-    savedAuthReadyPoller.schedulePoll();
-    setCustomJobAvailability(false);
-    setSavedSortBarVisible(false);
-    renderAuthRequired("Local auth provider is starting. Please wait...");
-    renderTimeline();
-    return;
-  }
-  savedAuthReadyPoller.stopPoll();
-  emitSavedStartupMetric("saved_auth_ready");
-  setAuthControlsReady(true);
-  markSavedFirstInteractive("auth_ready");
-  if (viewState.savedAuthListenerBound) return;
-  viewState.savedAuthListenerBound = true;
-
-  savedAuthService.onAuthStateChanged(user => {
-    viewState.currentUser = user || null;
-    savedDispatch.dispatch({
-      type: SAVED_ACTIONS.AUTH_CHANGED,
-      payload: { uid: viewState.currentUser?.uid || "" }
-    });
-    viewState.unsubscribeSavedJobs();
-    viewState.unsubscribeSavedJobs = () => {};
-    clearNoteSaveQueues();
-    viewState.expandedJobKey = null;
-    viewState.phaseOverrideArmedGlobal = false;
-    viewState.jobDetailTabByKey = new Map();
-    viewState.cachedActivityEntries = [];
-    viewState.lastSavedJobsByKey = new Map();
-    viewState.selectedJobKey = "";
-    viewState.timelineScope = TIMELINE_SCOPE_ALL;
-    viewState.lastActivityPulse = null;
-    setSavedFilter(DEFAULT_SAVED_FILTER);
-    setSavedSort(SORT_UPDATED);
-    updateTimelineScopeButtons();
-    renderSelectedJobHint();
-    renderWorkspaceStats();
-
-    if (!viewState.currentUser) {
-      setAuthStatus("Browsing as guest");
-      setSourceStatus("Sign in to view your saved jobs.");
-      setActivityStatus("Sign in to view history.");
-      toggleAuthButtons(false);
-      setBackupButtonsEnabled(false);
-      setCustomJobAvailability(false);
-      setCustomJobPanelOpen(false);
-      setSavedFilterBarVisible(false);
-      setSavedSortBarVisible(false);
-      renderAuthRequired("Sign in to access your custom saved jobs table.");
-      renderTimeline();
-      return;
-    }
-
-    setAuthStatus(`Signed in as ${viewState.currentUser.displayName || viewState.currentUser.email || "user"}`);
-    setSourceStatus("Loading your saved jobs...");
-    setActivityStatus("Loading activity...");
-    toggleAuthButtons(true);
-    setBackupButtonsEnabled(true);
-    setCustomJobAvailability(true);
-    const timelinePrefs = loadTimelinePreferences(viewState.currentUser.uid);
-    viewState.timelineScope = timelinePrefs.scope;
-    setActivityPanelOpen(false, { persist: false });
-    updateTimelineScopeButtons();
-    renderSelectedJobHint();
-    subscribeToSavedJobs(viewState.currentUser.uid);
-    refreshActivityLog().catch(err => {
-      console.error("Failed to load activity:", err);
-      setActivityStatus("Could not load activity.");
-    });
-  });
 }
 
 function subscribeToSavedJobs(uid) {
@@ -1143,14 +1068,6 @@ function cssEscape(value) {
   return String(value).replace(/["\\]/g, "\\$&");
 }
 
-function setAuthStatus(text) {
-  setSavedAuthStatus({
-    savedAuthStatusEl: dom.savedAuthStatusEl,
-    savedAuthStatusHintEl: dom.savedAuthStatusHintEl,
-    savedAuthAvatarEl: dom.savedAuthAvatarEl
-  }, text);
-}
-
 function setSavedFilter(nextFilter) {
   viewState.activeSavedFilter = isValidSavedFilter(nextFilter) ? nextFilter : DEFAULT_SAVED_FILTER;
   dom.savedCustomFilterBtnEls.forEach(btn => {
@@ -1424,14 +1341,6 @@ function renderWorkspaceStats(jobs = null) {
   }
 }
 
-function toggleAuthButtons(isSignedIn) {
-  toggleSavedAuthButtons({ signInBtnEl: dom.signInBtnEl, signOutBtnEl: dom.signOutBtnEl }, isSignedIn);
-}
-
-function setAuthControlsReady(ready) {
-  setSavedAuthControlsReady({ signInBtnEl: dom.signInBtnEl, signOutBtnEl: dom.signOutBtnEl }, ready);
-}
-
 function setBackupButtonsEnabled(enabled) {
   if (dom.exportBackupBtnEl) dom.exportBackupBtnEl.disabled = !enabled;
   if (dom.exportIncludeFilesEl) dom.exportIncludeFilesEl.disabled = !enabled;
@@ -1524,56 +1433,6 @@ function formatActivityDetail(entry) {
 
 function getLastJobsUrl() {
   return readSavedLastJobsUrl(JOBS_LAST_URL_KEY, "jobs.html");
-}
-
-async function signInUser() {
-  const pageServiceAvailable = savedPageService.isAvailable();
-  const apiReady = isSavedApiReady();
-
-  if (!apiReady || !pageServiceAvailable) {
-    setAuthControlsReady(false);
-    savedAuthReadyPoller.schedulePoll();
-    showToast("Local auth provider is starting. Try again in a moment.", "info");
-    return;
-  }
-  if (!viewState.savedAuthListenerBound) {
-    initSavedJobsPage();
-  }
-  setAuthControlsReady(true);
-
-  const result = await savedAuthService.signIn();
-
-  if (!result.ok) {
-    if (String(result.error || "").toLowerCase().includes("cancel")) return;
-    console.error("Sign-in failed:", result.error);
-    showToast("Sign-in failed.", "error");
-    return;
-  }
-  const focusTarget = dom.addCustomJobBtnEl || dom.signOutBtnEl || dom.jobsPageBtnEl;
-  if (focusTarget) {
-    try {
-      focusTarget.focus({ preventScroll: true });
-    } catch {
-      focusTarget.focus();
-    }
-  }
-}
-
-async function signOutUser() {
-  if (!isSavedApiReady() || !savedPageService.isAvailable()) {
-    setAuthControlsReady(false);
-    savedAuthReadyPoller.schedulePoll();
-    return;
-  }
-  if (!viewState.savedAuthListenerBound) {
-    initSavedJobsPage();
-  }
-  setAuthControlsReady(true);
-  const result = await savedAuthService.signOut();
-  if (!result.ok) {
-    console.error("Sign-out failed:", result.error);
-    showToast("Sign-out failed.", "error");
-  }
 }
 
 async function exportBackup() {

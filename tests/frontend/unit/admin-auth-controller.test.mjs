@@ -184,4 +184,3 @@ test("admin auth controller session view model tracks bridge badge state", async
     bridgeStatus: "online"
   });
 });
-

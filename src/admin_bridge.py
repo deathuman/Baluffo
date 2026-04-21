@@ -3,13 +3,12 @@
 
 from __future__ import annotations
 
-import json
-import os
+import os as _os
 import subprocess
 import sys
 import threading
-import time
-from datetime import UTC, datetime, timedelta
+import time as _time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,52 +20,71 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src import source_discovery as discovery
+from src import source_discovery as _discovery_mod
 from src import source_registry as source_registry_module
 from src import source_sync as source_sync_module
-from src.app_version import get_app_version
-from src.baluffo_config import get_bridge_defaults, get_security_defaults, get_storage_defaults
+from src.app_version import get_app_version as _get_app_version
+from src.baluffo_config import get_bridge_defaults, get_storage_defaults
+from src.baluffo_config import get_security_defaults as _get_security_defaults
 
 # Bridge service/runtime imports. Keep new bridge logic under `src.bridge.*`.
-from src.bridge import SYNC_STATE_LOCK, SyncService, SyncState, report_normalizer
-from src.bridge import bootstrap as bridge_bootstrap
-from src.bridge import config as bridge_config
-from src.bridge import html_extractor as _html_extractor
+from src.bridge import SYNC_STATE_LOCK as _SYNC_STATE_LOCK
+from src.bridge import SyncService, SyncState, report_normalizer
 from src.bridge import admin_entrypoint_runtime as admin_entrypoint_runtime_mod
 from src.bridge import admin_entrypoint_services as admin_entrypoint_services_mod
 from src.bridge import admin_registry_api as admin_registry_api_mod
 from src.bridge import admin_task_runtime as admin_task_runtime_mod
+from src.bridge import bootstrap as bridge_bootstrap
+from src.bridge import config as bridge_config
+from src.bridge import html_extractor as _html_extractor_mod
 from src.bridge import ops_api as _ops_api
-from src.bridge import registry_sync_flow as _registry_sync_flow
+from src.bridge import registry_sync_flow as _registry_sync_flow_mod
 from src.bridge import run_history_api as _run_history_api
-from src.bridge import source_check_api as _source_check_api
-from src.bridge import source_check_fetch as _source_check_fetch
-from src.bridge import source_check_http as _source_check_http
-from src.bridge import source_checker as _source_checker
-from src.bridge import sync_task_flow as _sync_task_flow
+from src.bridge import source_check_api as _source_check_api_mod
+from src.bridge import source_check_fetch as _source_check_fetch_mod
+from src.bridge import source_check_http as _source_check_http_mod
+from src.bridge import source_checker as _source_checker_mod
+from src.bridge import sync_task_flow as _sync_task_flow_mod
 from src.bridge import task_launch_api as _task_launch_api
 from src.bridge.admin_task_history import AdminTaskHistory
 from src.bridge.api import BridgeApi
-from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
+from src.bridge.discovery_service import (
+    DiscoveryDeps as _DiscoveryDeps,
+)
+from src.bridge.discovery_service import (
+    DiscoveryPaths as _DiscoveryPaths,
+)
+from src.bridge.discovery_service import (
+    DiscoveryService,
+)
 from src.bridge.pipeline_service import PipelineService
-from src.bridge.registry_service import RegistryPaths, RegistryService
+from src.bridge.registry_service import RegistryPaths as _RegistryPaths
+from src.bridge.registry_service import RegistryService
 from src.bridge.registry_tombstones import (
-    is_tombstoned,
-    load_tombstones,
+    is_tombstoned as _is_tombstoned,
+)
+from src.bridge.registry_tombstones import (
+    load_tombstones as _load_tombstones,
 )
 from src.bridge.server import runtime_state as bridge_runtime_state
 from src.bridge.source_helpers import (
-    find_existing_source_by_url,
-    find_existing_static_source_by_studio_domain,
-    infer_studio_name_from_host,
+    find_existing_source_by_url as _find_existing_source_by_url,
+)
+from src.bridge.source_helpers import (
+    find_existing_static_source_by_studio_domain as _find_existing_static_source_by_studio_domain,
+)
+from src.bridge.source_helpers import (
+    infer_studio_name_from_host as _infer_studio_name_from_host,
 )
 from src.bridge.sync_state import SYNC_CONFIG_PATH_DEFAULT, SYNC_RUNTIME_PATH_DEFAULT
-from src.contracts import SCHEMA_VERSION
-from src.jobs.parsers import parse_jobpostings_from_html
-from src.jobs.pipeline import default_source_loaders
-from src.jobs.registry import DEFAULT_STUDIO_SOURCE_REGISTRY
-from src.jobs.transport import normalize_url as normalize_job_url
-from src.local_data_store import LocalDataPaths, LocalDataStore
+from src.contracts import SCHEMA_VERSION as _SCHEMA_VERSION
+from src.jobs.adapters import default_source_loaders as _default_source_loaders
+from src.jobs.common.registry_defaults import (
+    DEFAULT_STUDIO_SOURCE_REGISTRY as _DEFAULT_STUDIO_SOURCE_REGISTRY,
+)
+from src.jobs.parsers import parse_jobpostings_from_html as _parse_jobpostings_from_html
+from src.jobs.transport import normalize_url as _normalize_job_url
+from src.local_data_store import LocalDataStore
 from src.ship.desktop_update import DesktopUpdateService
 from src.source_registry import (
     ACTIVE_PATH,
@@ -74,23 +92,69 @@ from src.source_registry import (
     DISCOVERY_CANDIDATES_PATH,
     DISCOVERY_REPORT_PATH,
     PENDING_PATH,
-    REGISTRY_REASON_MANUAL_SOURCE,
-    REGISTRY_REASON_MANUAL_SOURCE_VARIANT,
     REJECTED_PATH,
     TOMBSTONES_PATH,
-    ensure_source_id,
     load_json_array,
     load_json_object,
-    normalize_source_url,
     save_json_atomic,
-    source_identity,
-    unique_sources,
+)
+from src.source_registry import (
+    REGISTRY_REASON_MANUAL_SOURCE as _REGISTRY_REASON_MANUAL_SOURCE,
+)
+from src.source_registry import (
+    REGISTRY_REASON_MANUAL_SOURCE_VARIANT as _REGISTRY_REASON_MANUAL_SOURCE_VARIANT,
+)
+from src.source_registry import (
+    ensure_source_id as _ensure_source_id,
+)
+from src.source_registry import (
+    normalize_source_url as _normalize_source_url,
+)
+from src.source_registry import (
+    source_identity as _source_identity,
+)
+from src.source_registry import (
+    unique_sources as _unique_sources,
 )
 
 normalize_fetch_report_contract = report_normalizer.normalize_fetch_report_contract
 normalize_discovery_report_contract = report_normalizer.normalize_discovery_report_contract
 _safe_int = report_normalizer.safe_int
 source_url_fingerprint = source_registry_module.source_url_fingerprint
+
+# Compatibility exports consumed indirectly by split bridge modules.
+os = _os
+time = _time
+discovery = _discovery_mod
+get_app_version = _get_app_version
+get_security_defaults = _get_security_defaults
+SCHEMA_VERSION = _SCHEMA_VERSION
+SYNC_STATE_LOCK = _SYNC_STATE_LOCK
+_html_extractor = _html_extractor_mod
+_registry_sync_flow = _registry_sync_flow_mod
+_source_check_api = _source_check_api_mod
+_source_check_fetch = _source_check_fetch_mod
+_source_check_http = _source_check_http_mod
+_source_checker = _source_checker_mod
+_sync_task_flow = _sync_task_flow_mod
+RegistryPaths = _RegistryPaths
+DiscoveryDeps = _DiscoveryDeps
+DiscoveryPaths = _DiscoveryPaths
+DEFAULT_STUDIO_SOURCE_REGISTRY = _DEFAULT_STUDIO_SOURCE_REGISTRY
+default_source_loaders = _default_source_loaders
+find_existing_source_by_url = _find_existing_source_by_url
+find_existing_static_source_by_studio_domain = _find_existing_static_source_by_studio_domain
+infer_studio_name_from_host = _infer_studio_name_from_host
+load_tombstones = _load_tombstones
+is_tombstoned = _is_tombstoned
+parse_jobpostings_from_html = _parse_jobpostings_from_html
+normalize_job_url = _normalize_job_url
+ensure_source_id = _ensure_source_id
+normalize_source_url = _normalize_source_url
+source_identity = _source_identity
+unique_sources = _unique_sources
+REGISTRY_REASON_MANUAL_SOURCE = _REGISTRY_REASON_MANUAL_SOURCE
+REGISTRY_REASON_MANUAL_SOURCE_VARIANT = _REGISTRY_REASON_MANUAL_SOURCE_VARIANT
 from src.shared.utils import now_iso, now_utc
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
@@ -106,6 +170,10 @@ SYNC_CONFIG_PATH = SYNC_CONFIG_PATH_DEFAULT
 DISCOVERY_CONFIG_PATH = ROOT / "data" / "source-discovery-config.json"
 SYNC_RUNTIME_PATH = SYNC_RUNTIME_PATH_DEFAULT
 STARTUP_METRICS_PATH = ROOT / "data" / "desktop-startup-metrics.jsonl"
+ACTIVE_PATH = ROOT / "data" / "source-registry-active.json"
+PENDING_PATH = ROOT / "data" / "source-registry-pending.json"
+REJECTED_PATH = ROOT / "data" / "source-registry-rejected.json"
+DISCOVERY_CANDIDATES_PATH = ROOT / "data" / "source-discovery-candidates.json"
 TOMBSTONES_PATH = ROOT / "data" / "source-registry-tombstones.json"
 DESKTOP_UPDATE_STATE_PATH = ROOT / "data" / "updater" / "install-state.json"
 
@@ -380,16 +448,6 @@ def build_manual_candidate(normalized_url: str) -> dict[str, Any] | None:
 
 def add_manual_source(raw_url: str) -> dict[str, Any]:
     return admin_registry_api_mod.add_manual_source(raw_url)
-
-
-def _fetch_html_with_fallback_bound(url: str, timeout_s: int) -> tuple[str, str, bool, bool]:
-    return admin_registry_api_mod.fetch_html_with_fallback_bound(url, timeout_s)
-
-
-def _fetch_static_page_with_alternates_bound(
-    page_url: str, timeout_s: int
-) -> tuple[str, str, bool, bool, str]:
-    return admin_registry_api_mod.fetch_static_page_with_alternates_bound(page_url, timeout_s)
 
 
 def check_static_source(

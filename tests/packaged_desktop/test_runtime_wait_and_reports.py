@@ -1,24 +1,16 @@
-import base64
 import json
 import os
-import subprocess
-from datetime import datetime
 from pathlib import Path
 from unittest import mock
-from urllib.request import Request, urlopen
 
 import pytest
 
 from src import packaged_desktop_smoke as smoke
-from src import source_sync
-from src.app_version import APP_VERSION
-from src.ship.startup_profile import summarize_startup_metrics
 from tests.helpers.temp_paths import workspace_tmpdir
 
-from ._helpers import _write_packaged_sync_bundle_config
-
-
 pytestmark = [pytest.mark.packaging, pytest.mark.slow]
+
+
 @pytest.mark.slow
 def test_run_packaged_smoke_writes_failure_report_on_runtime_timeout() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
@@ -694,5 +686,3 @@ def test_run_packaged_smoke_uses_artifact_local_session_root_even_when_global_se
         )
         assert Path(captured_env["LOCALAPPDATA"]).resolve() != global_local_app_data.resolve()
         assert captured_env["BALUFFO_PACKAGED_SMOKE_PIPELINE_MODE"] == "stub-success"
-
-

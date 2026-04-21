@@ -1,5 +1,7 @@
 # Desktop Runtime Refactor Charter
 
+> Historical/planning record for a focused cleanup lane. Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) and [`architecture-ai-map.md`](architecture-ai-map.md) before using this document for lane-specific compatibility context.
+
 Use this tracker for the `src/ship/desktop_app` modularization campaign.
 
 ## Title

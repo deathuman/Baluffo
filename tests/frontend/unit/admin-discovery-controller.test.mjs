@@ -1051,4 +1051,3 @@ test("admin discovery controller hydrates progress from the report when live pay
     timerStub.restore();
   }
 });
-

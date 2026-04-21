@@ -1,0 +1,88 @@
+{
+  "cases": [
+    {
+      "field": "city",
+      "value": "Tokyo",
+      "sanitized": "Tokyo",
+      "valid": true
+    },
+    {
+      "field": "city",
+      "value": "Montréal",
+      "sanitized": "Montréal",
+      "valid": true
+    },
+    {
+      "field": "city",
+      "value": "6,559 followers",
+      "sanitized": "",
+      "valid": false
+    },
+    {
+      "field": "city",
+      "value": "Berlin / Hamburg",
+      "sanitized": "",
+      "valid": false
+    },
+    {
+      "field": "city",
+      "value": "%LABEL_POSITION_TYPE_REMOTE_ANY%",
+      "sanitized": "",
+      "valid": false
+    },
+    {
+      "field": "city",
+      "value": "Learn how talent, purpose, and progress combine to create careers that change the world at our new Careers home .",
+      "sanitized": "",
+      "valid": false
+    },
+    {
+      "field": "city",
+      "value": "31-621 Kraków, Poland",
+      "sanitized": "",
+      "valid": false
+    },
+    {
+      "field": "city",
+      "value": "AI Solutions PM",
+      "sanitized": "",
+      "valid": false
+    },
+    {
+      "field": "city",
+      "value": "UK",
+      "sanitized": "",
+      "valid": false
+    },
+    {
+      "field": "country",
+      "value": "Japan",
+      "sanitized": "Japan",
+      "valid": true
+    },
+    {
+      "field": "country",
+      "value": "United States of America",
+      "sanitized": "US",
+      "valid": true
+    },
+    {
+      "field": "country",
+      "value": "Hybrid",
+      "sanitized": "",
+      "valid": false
+    },
+    {
+      "field": "country",
+      "value": "UK",
+      "sanitized": "UK",
+      "valid": true
+    },
+    {
+      "field": "country",
+      "value": "EU & NA",
+      "sanitized": "EU & NA",
+      "valid": true
+    }
+  ]
+}

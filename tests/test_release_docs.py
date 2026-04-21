@@ -116,10 +116,12 @@ def test_ai_bootstrap_sequence_is_single_path(repo_root: Path) -> None:
     assert "testing.md" in sequence
     assert "README.md" not in sequence
     assert "../AGENTS.md" not in sequence
+    assert "Boundary-charter docs stay in the repo as planning/history records" in index_text
 
     assert "README.md" not in read_order
     assert "architecture-ai-map.md" in read_order
     assert "AGENTS.md" in read_order
+    assert "Do not load boundary-charter docs by default." in guide_text
 
 
 def test_ai_docs_classify_compatibility_surfaces(repo_root: Path) -> None:
@@ -282,6 +284,8 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
     assert "quality-improvement-roadmap.md" not in index_text
     assert "quality-follow-up.md" not in index_text
     assert "startup-probe-architecture.md" in index_text
+    assert "## Refactor Charters" in index_text
+    assert "Refactor record" in index_text
 
 
 def test_contributing_points_startup_perf_changes_to_canonical_architecture_doc(

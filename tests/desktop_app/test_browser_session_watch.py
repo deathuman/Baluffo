@@ -1,18 +1,9 @@
-import argparse
-import contextlib
-import json
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
-import pytest
-
-from src.app_version import APP_VERSION
 from src.ship import desktop_app
-from tests.helpers.temp_paths import workspace_tmpdir
 
-from ._helpers import _patch_windows_desktop_app
 
 def test_watch_browser_session_uses_heartbeat_when_no_browser_process() -> None:
     with (
@@ -412,5 +403,3 @@ def test_watch_browser_session_times_out_when_handoff_window_disappears_without_
     assert "desktop_browser_watchdog_handoff_confirmed" in event_names
     assert "desktop_browser_window_missing_waiting_for_bridge" in event_names
     assert "desktop_browser_heartbeat_timeout" in event_names
-
-

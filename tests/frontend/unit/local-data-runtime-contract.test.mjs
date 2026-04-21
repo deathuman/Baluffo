@@ -5,25 +5,10 @@ import {
   LOCAL_DATA_RUNTIME_METHODS,
   assertLocalDataRuntime
 } from "../../../frontend/local-data/runtime-contract.js";
-
-function createStorageMock() {
-  const map = new Map();
-  return {
-    getItem(key) {
-      return map.has(key) ? map.get(key) : null;
-    },
-    setItem(key, value) {
-      map.set(String(key), String(value));
-    },
-    removeItem(key) {
-      map.delete(String(key));
-    }
-  };
-}
-
-async function importFresh(specifier) {
-  return import(`${specifier}?t=${Date.now()}_${Math.random()}`);
-}
+import {
+  createStorageMock,
+  importFresh
+} from "./helpers/browser-test-helpers.mjs";
 
 function setupBrowserGlobals() {
   const localStorage = createStorageMock();
@@ -118,7 +103,10 @@ test("assertLocalDataRuntime rejects missing required methods", () => {
 
 test("browser local-data client conforms to shared runtime contract", async () => {
   setupBrowserGlobals();
-  const { initBrowserLocalDataClient } = await importFresh("../../../frontend/shared/local-data/browser-client.js");
+  const { initBrowserLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/browser-client.js",
+    { relativeTo: import.meta.url }
+  );
   const api = initBrowserLocalDataClient();
 
   assert.equal(assertLocalDataRuntime(api, "browser runtime"), api);
@@ -134,7 +122,10 @@ test("browser local-data client conforms to shared runtime contract", async () =
 
 test("desktop local-data client conforms to shared runtime contract", async () => {
   setupDesktopGlobals();
-  const { initDesktopLocalDataClient } = await importFresh("../../../frontend/shared/local-data/desktop-client.js");
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
   const api = initDesktopLocalDataClient();
   await Promise.resolve();
   await Promise.resolve();

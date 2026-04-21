@@ -2,32 +2,33 @@
 
 from __future__ import annotations
 
-import base64
-import contextlib
-import hashlib
-import json
-import os
-import shutil
-import ssl
+import contextlib as _contextlib
+import os as _os
+import shutil as _shutil
+import ssl as _ssl
+import subprocess as _subprocess
 import sys
-import subprocess
-import tempfile
-import threading
-import time
-import uuid
-from dataclasses import dataclass
-from datetime import UTC, datetime
+import tempfile as _tempfile
+import threading as _threading
+import time as _time
+import uuid as _uuid
+from datetime import UTC as _UTC
+from datetime import datetime as _datetime
 from pathlib import Path
-from typing import Any
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.error import URLError as _URLError
+from urllib.request import Request as _Request
+from urllib.request import urlopen as _urlopen
 
-from src.app_version import get_app_version
-from src.baluffo_version import compare_baluffo_versions
+from src.app_version import get_app_version as _get_app_version
+from src.baluffo_version import compare_baluffo_versions as _compare_baluffo_versions
 from src.shared.github_https import (
-    GITHUB_CA_BUNDLE_ENV,
-    build_github_ssl_context,
-    wrap_github_request_error,
+    GITHUB_CA_BUNDLE_ENV as _GITHUB_CA_BUNDLE_ENV,
+)
+from src.shared.github_https import (
+    build_github_ssl_context as _build_github_ssl_context_impl,
+)
+from src.shared.github_https import (
+    wrap_github_request_error as _wrap_github_request_error,
 )
 from src.ship import desktop_update_service as desktop_update_service_mod
 from src.ship import desktop_update_shared as desktop_update_shared_mod
@@ -114,6 +115,25 @@ desktop_update_shared_mod.root = sys.modules[__name__]
 desktop_update_state_mod.root = sys.modules[__name__]
 desktop_update_service_mod.root = sys.modules[__name__]
 
+contextlib = _contextlib
+os = _os
+shutil = _shutil
+ssl = _ssl
+subprocess = _subprocess
+tempfile = _tempfile
+threading = _threading
+time = _time
+uuid = _uuid
+UTC = _UTC
+datetime = _datetime
+URLError = _URLError
+Request = _Request
+urlopen = _urlopen
+get_app_version = _get_app_version
+compare_baluffo_versions = _compare_baluffo_versions
+GITHUB_CA_BUNDLE_ENV = _GITHUB_CA_BUNDLE_ENV
+build_github_ssl_context = _build_github_ssl_context_impl
+wrap_github_request_error = _wrap_github_request_error
 iso_now = desktop_update_shared_mod.iso_now
 resolve_github_api_base = desktop_update_shared_mod.resolve_github_api_base
 _uses_github_https = desktop_update_shared_mod._uses_github_https
@@ -174,7 +194,9 @@ _normalize_release_notes_payload = desktop_update_state_mod._normalize_release_n
 _cached_release_notes = desktop_update_state_mod._cached_release_notes
 _portable_artifact_name = desktop_update_state_mod._portable_artifact_name
 _manifest_to_status = desktop_update_state_mod._manifest_to_status
-_reconcile_downloaded_artifact_status = desktop_update_state_mod._reconcile_downloaded_artifact_status
+_reconcile_downloaded_artifact_status = (
+    desktop_update_state_mod._reconcile_downloaded_artifact_status
+)
 _stale_download_failed_status = desktop_update_state_mod._stale_download_failed_status
 _normalize_installed_status = desktop_update_state_mod._normalize_installed_status
 _failure_result = desktop_update_state_mod._failure_result

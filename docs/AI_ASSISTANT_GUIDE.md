@@ -41,6 +41,8 @@
 4. One deep-dive if needed: [`testing.md`](testing.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), [`scraping-pipeline.md`](scraping-pipeline.md)
 5. [`AGENTS.md`](../AGENTS.md) only when you need hard repo guardrails
 
+**Do not load boundary-charter docs by default.** They are refactor/planning records, not the primary AI routing path. Use them only when you are intentionally working inside that specific cleanup lane and the canonical docs above are not enough.
+
 ---
 
 ## Common wrong assumptions
@@ -139,6 +141,7 @@ For the narrowest verification matrix, fixture layout, and test-to-source map, s
 - Update implementation + schemas + tests + docs together
 - Follow task-to-files table before guessing
 - When uncertain about ownership after reading this guide, check [`architecture-ai-map.md`](architecture-ai-map.md)
+- Treat boundary-charter docs as supporting historical/planning context, not as the default routing source
 
 ---
 

@@ -77,7 +77,9 @@ def _load_credible_handoff_install_plan(paths: Any) -> dict[str, Any]:
 
 def _handoff_status_pending(status: dict[str, Any]) -> bool:
     deps = _root()
-    return str(status.get("installState") or "").strip().lower() in deps.HANDOFF_PENDING_INSTALL_STATES
+    return (
+        str(status.get("installState") or "").strip().lower() in deps.HANDOFF_PENDING_INSTALL_STATES
+    )
 
 
 def _apply_credible_handoff_status(status: dict[str, Any]) -> dict[str, Any]:
@@ -188,7 +190,9 @@ def clear_staged_helper(path: Path | None) -> None:
 
 def helper_runtime_tmpdir() -> Path:
     deps = _root()
-    return (Path(deps.tempfile.gettempdir()).resolve() / deps.HELPER_RUNTIME_TMP_ROOT_NAME).resolve()
+    return (
+        Path(deps.tempfile.gettempdir()).resolve() / deps.HELPER_RUNTIME_TMP_ROOT_NAME
+    ).resolve()
 
 
 def launch_staged_update_helper(paths: Any) -> None:

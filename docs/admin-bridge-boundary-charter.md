@@ -1,5 +1,7 @@
 # Admin Bridge Boundary Cleanup
 
+> Historical/planning record for a focused cleanup lane. Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) and [`architecture-ai-map.md`](architecture-ai-map.md) before using this document for lane-specific compatibility context.
+
 ## Goal
 
 Thin `src/admin_bridge.py` into a stable entrypoint and compatibility surface while moving runtime/path rebinding, cached service builders, manual-source glue, and task/runtime helpers under `src/bridge/*`. The refactor must preserve bridge route signatures, task launch/live-status behavior, manual-source/source-check flows, owner-session shutdown semantics, and the existing root monkeypatch surface used by tests and scripts.

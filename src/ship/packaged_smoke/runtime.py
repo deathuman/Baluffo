@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import time
 import urllib.error
@@ -298,7 +297,10 @@ def wait_for_packaged_runtime(
             page_ready = True
             if require_page_ready:
                 page_ready = deps._packaged_runtime_page_ready(site_base_url, open_path)
-            if all(deps._required_startup_event_present(events, event) for event in normalized) and page_ready:
+            if (
+                all(deps._required_startup_event_present(events, event) for event in normalized)
+                and page_ready
+            ):
                 return {
                     "health": health,
                     "session": session,
@@ -367,7 +369,9 @@ def wait_for_packaged_runtime_with_port_pivot(
             if deps.startup_metric_event_present(metrics_rows, "desktop_runtime_port_retry"):
                 retry_observed = True
             events = {str(row.get("event") or "") for row in metrics_rows if isinstance(row, dict)}
-            if all(deps._required_startup_event_present(events, event) for event in normalized) and deps._packaged_runtime_page_ready(site_base_url, open_path):
+            if all(
+                deps._required_startup_event_present(events, event) for event in normalized
+            ) and deps._packaged_runtime_page_ready(site_base_url, open_path):
                 return {
                     "health": health,
                     "session": session,
@@ -451,12 +455,16 @@ def capture_runtime_snapshot(bridge_base_url: str, artifacts_dir: Path) -> dict[
         "sessionSnapshot": artifacts_dir / "session.json",
         "startupMetricsSnapshot": artifacts_dir / "startup-metrics.json",
     }
-    deps.write_json(snapshots["opsHealthSnapshot"], deps.fetch_json(f"{bridge_base_url}/ops/health"))
+    deps.write_json(
+        snapshots["opsHealthSnapshot"], deps.fetch_json(f"{bridge_base_url}/ops/health")
+    )
     deps.write_json(
         snapshots["sessionSnapshot"],
         deps.fetch_json(f"{bridge_base_url}/desktop-local-data/session"),
     )
-    metrics_payload = deps.fetch_json(f"{bridge_base_url}/desktop-local-data/startup-metrics?limit=1000")
+    metrics_payload = deps.fetch_json(
+        f"{bridge_base_url}/desktop-local-data/startup-metrics?limit=1000"
+    )
     deps.write_json(snapshots["startupMetricsSnapshot"], metrics_payload)
     return {key: str(path) for key, path in snapshots.items()}
 
@@ -473,7 +481,9 @@ def wait_for_runtime_events(
         try:
             rows = deps.fetch_startup_metrics(bridge_base_url, limit=1000)
             last_events = {str(row.get("event") or "") for row in rows}
-            if all(deps._required_startup_event_present(last_events, event) for event in normalized):
+            if all(
+                deps._required_startup_event_present(last_events, event) for event in normalized
+            ):
                 return rows
         except (
             TimeoutError,
@@ -486,7 +496,9 @@ def wait_for_runtime_events(
             last_error = str(exc)
         deps.time.sleep(0.35)
     missing = ", ".join(
-        event for event in normalized if not deps._required_startup_event_present(last_events, event)
+        event
+        for event in normalized
+        if not deps._required_startup_event_present(last_events, event)
     )
     raise TimeoutError(
         f"Missing embedded runtime events: {missing or 'unknown'}"
@@ -555,7 +567,9 @@ def run_embedded_runtime_probe(
         required_runtime_events = tuple(probe.get("requiredEvents") or ())
         if startup_probe:
             required_runtime_events = tuple(
-                dict.fromkeys(deps.startup_profile_required_events(page_name) + required_runtime_events)
+                dict.fromkeys(
+                    deps.startup_profile_required_events(page_name) + required_runtime_events
+                )
             )
         metrics_rows = deps.wait_for_runtime_events(
             bridge_base_url,

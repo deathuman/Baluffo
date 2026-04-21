@@ -78,7 +78,11 @@ APP_RUNTIME_SCRIPT_DIRS = (
 APP_RUNTIME_SHIP_FILES = (
     "__init__.py",
     "desktop_update.py",
+    "desktop_update_service.py",
+    "desktop_update_shared.py",
+    "desktop_update_state.py",
 )
+APP_TOOLING_SHIP_FILES = APP_RUNTIME_SHIP_FILES + ("desktop_updater.py",)
 APP_RUNTIME_ASSET_DIRS = ("probes", "styles")
 PACKAGING_FILES = (
     "README.md",
@@ -667,8 +671,8 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     _copy_file(ROOT / "src" / "ship" / "update_manager.py", tooling_dir / "update_manager.py")
     _copy_file(ROOT / "src" / "ship" / "migrations.py", tooling_dir / "migrations.py")
     _copy_file(ROOT / "src" / "ship" / "runtime_launcher.py", tooling_dir / "runtime_launcher.py")
-    _copy_file(ROOT / "src" / "ship" / "desktop_update.py", tooling_dir / "desktop_update.py")
-    _copy_file(ROOT / "src" / "ship" / "desktop_updater.py", tooling_dir / "desktop_updater.py")
+    for rel in APP_TOOLING_SHIP_FILES:
+        _copy_file(ROOT / "src" / "ship" / rel, tooling_dir / rel)
 
     # Launcher scripts + ship runbook.
     _copy_file(ROOT / "src" / "ship" / "run-bridge.ps1", output_dir / "run-bridge.ps1")
