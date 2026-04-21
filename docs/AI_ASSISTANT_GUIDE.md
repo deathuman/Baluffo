@@ -82,6 +82,7 @@
 | Task | Start here | Then only if needed |
 |------|------------|---------------------|
 | Frontend behavior | `frontend/<page>/app/*.js` | `frontend/<page>/app/runtime.js` |
+| Jobs page runtime behavior | `frontend/jobs/app/feed.js`, `frontend/jobs/app/filters.js`, `frontend/jobs/app/runtime/{events,feed-controller,list-view,pipeline-controller,query,startup-preview,auth-controller}.js` | `frontend/jobs/app/runtime.js` only for page-entry wiring/export changes |
 | Saved page runtime behavior | `frontend/saved/app/runtime/{activity-controller,attachments-controller,custom-job-controller,render-controller}.js`, `frontend/saved/app/runtime/auth-controller.js`, `frontend/saved/app/admin-bridge-state.js` | `frontend/saved/app/runtime.js` only for page-entry wiring/export changes |
 | Shared/page CSS | `styles/{base,components,<page>}.css` | The owning HTML entrypoint only if stylesheet includes need to change |
 | Bridge/API | `src/bridge/*.py` | `src/bridge/routes/*.py`; for ops/report/live-task work start with `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, and `src/bridge/ops_live_payload.py` |
@@ -110,8 +111,8 @@
 - `frontend/local-data/services.js` is a transitional local-data boundary; page code should go through slice-local `services.js`.
 
 **Stable roots vs safe leaf targets**
-- Stable patch-safe roots stay thin: `src/admin_bridge.py`, `src/source_discovery.py`, `src/jobs_fetcher.py`, `src/jobs/adapters/static.py`, `src/packaged_desktop_smoke.py`, `src/ship/desktop_update.py`, and `frontend/saved/app/runtime.js`.
-- Safe extraction targets are the owning leaves behind those roots: `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`, `src/jobs/adapters/static_listing_flow.py`, `src/jobs/state_incremental.py`, and `frontend/saved/app/runtime/*.js`.
+- Stable patch-safe roots stay thin: `src/admin_bridge.py`, `src/source_discovery.py`, `src/jobs_fetcher.py`, `src/jobs/adapters/static.py`, `src/packaged_desktop_smoke.py`, `src/ship/desktop_update.py`, `frontend/jobs/app/runtime.js`, and `frontend/saved/app/runtime.js`.
+- Safe extraction targets are the owning leaves behind those roots: `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`, `src/jobs/adapters/static_listing_flow.py`, `src/jobs/state_incremental.py`, `frontend/jobs/app/runtime/*.js`, and `frontend/saved/app/runtime/*.js`.
 
 ---
 

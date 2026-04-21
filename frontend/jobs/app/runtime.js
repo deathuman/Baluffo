@@ -104,10 +104,12 @@ import { createJobsRuntimeState } from "./runtime/state.js";
 import { createJobsStartupMetrics } from "./runtime/effects.js";
 import { createJobsBridgeRequest } from "./runtime/actions.js";
 import { setProgressVisibility, setStatusText } from "./runtime/view.js";
-import { bindWindowResize } from "./runtime/events.js";
+import { createJobsEventsController } from "./runtime/events.js";
 import { createJobsAuthController } from "./runtime/auth-controller.js";
 import { createJobsPipelineController } from "./runtime/pipeline-controller.js";
 import { createJobsFiltersController } from "./runtime/filters-ui.js";
+import { createJobsFeedController } from "./runtime/feed-controller.js";
+import { createJobsStartupPreviewController } from "./runtime/startup-preview.js";
 import {
   fullCountryName as fullCountryNameForJobs,
   getAvailableRegionOptions as getAvailableRegionOptionsForJobs,
@@ -259,7 +261,7 @@ const authController = createJobsAuthController({
   markSeenJob,
   buildSeenRowKey,
   getJobKeyForJob: getJobKeyForJobWithService,
-  openJobsCacheDb,
+  openJobsCacheDb: () => feedController.openJobsCacheDb(),
   JOBS_SEEN_STORE,
   toJobSnapshot,
   sanitizeUrl
@@ -271,10 +273,103 @@ const pipelineController = createJobsPipelineController({
   callJobsBridge,
   getAllJobs: () => runtimeState.allJobs,
   showToast,
-  setRefreshJobsNeedsAttention,
+  setRefreshJobsNeedsAttention: needsRefresh => feedController.setRefreshJobsNeedsAttention(needsRefresh),
   isErrorStage: payload => Boolean(payload?.error) || normalizeToken(payload?.stage) === "error",
   pollDelayMs: JOBS_PIPELINE_STATUS_POLL_MS,
   idlePollDelayMs: JOBS_PIPELINE_STATUS_IDLE_POLL_MS
+});
+const startupPreviewController = createJobsStartupPreviewController({
+  runtimeState,
+  pageState: state,
+  displayJobs: (...args) => displayJobs(...args),
+  createFilterOptionsAccumulator,
+  addJobToFilterOptions,
+  finalizeFilterOptions,
+  compareJobsForSort,
+  sortJobs: sortJobsFromQuery,
+  getJobLocationCities,
+  getJobLocationCountries,
+  isSemanticallyValidLocationValue,
+  isValidCountry,
+  getAvailableRegionOptions: getAvailableRegionOptionsForJobs,
+  fullCountryName: fullCountryNameForJobs
+});
+const eventsController = createJobsEventsController({
+  dom,
+  pageState: state,
+  runtimeState,
+  filtersController,
+  authController,
+  rememberCurrentJobsUrl,
+  navigateDesktopPage,
+  openAdminPageFromJobs,
+  refreshJobsNow: (...args) => feedController.refreshJobsNow(...args),
+  triggerJobsPipelineRun: (...args) => triggerJobsPipelineRun(...args),
+  handleAutoRefreshSignalValue: (...args) => handleAutoRefreshSignalValue(...args),
+  applyFiltersAndRender: (...args) => applyFiltersAndRender(...args),
+  bindUi,
+  bindAsyncClick,
+  bindHandlersMap,
+  debounce,
+  jobsAutoRefreshSignalKey: JOBS_AUTO_REFRESH_SIGNAL_KEY,
+  jobsListDelegation: () => setupJobsListDelegationFromEvents({
+    jobsList: dom.jobsList,
+    jobRowSelector: `${ui(UI_TOKENS.jobs.jobRow)}[data-job-link]`,
+    saveJobBtnSelector: ui(UI_TOKENS.jobs.saveJobBtn),
+    sanitizeUrl,
+    getJobById: jobId => runtimeState.allJobs.find(job => String(job.id) === String(jobId || "")),
+    onToggleSaveJob: job => authController.toggleSaveJob(job),
+    onOpenJobLink: openJobLinkInDefaultBrowser,
+    onMarkJobSeen: jobKey => authController.markJobSeenFromInteraction(jobKey)
+  }),
+  goToPage: (...args) => goToPage(...args)
+});
+const feedController = createJobsFeedController({
+  dom,
+  runtimeState,
+  pageState: state,
+  defaultFilters,
+  professionLabels: PROFESSION_LABELS,
+  sanitizeUrl,
+  jobsParsing,
+  startupPreviewJsonUrls: STARTUP_PREVIEW_JSON_URLS,
+  jobsDispatch,
+  jobsActions: JOBS_ACTIONS,
+  filtersController,
+  showToast,
+  emitDesktopStartupMetric,
+  markStartupRendered,
+  markJobsFirstInteractive,
+  applyFiltersAndRender: (...args) => applyFiltersAndRender(...args),
+  isDesktopRuntimeMode,
+  logJobsError,
+  logJobsInfo,
+  getJobsLastUpdatedText,
+  normalizeJobs,
+  parseUnifiedJobsPayload,
+  openJobsCacheDbFromModule,
+  readJobsCache,
+  writeJobsCache,
+  refreshJobsFeed,
+  loadStartupPreviewJobsFeed,
+  fetchUnifiedJobsFromSources,
+  fetchJsonFromCandidatesFromSources,
+  renderDataSourcesFromSources,
+  mapProfession,
+  normalizeSector,
+  classifyCompanyType,
+  detectWorkType,
+  setProgressVisibility,
+  setStatusText,
+  setText,
+  jobsCacheDb: JOBS_CACHE_DB,
+  jobsCacheDbVersion: JOBS_CACHE_DB_VERSION,
+  jobsCacheStore: JOBS_CACHE_STORE,
+  jobsSeenStore: JOBS_SEEN_STORE,
+  jobsCacheKey: JOBS_CACHE_KEY,
+  jobsFirstLoadRequestTimeoutMs: JOBS_FIRST_LOAD_REQUEST_TIMEOUT_MS,
+  recalculateItemsPerPage: (...args) => eventsController.recalculateItemsPerPage(...args),
+  startupPreviewController
 });
 
 const jobsUrlPersistence = createJobsUrlPersistence({
@@ -361,23 +456,6 @@ export async function openJobLinkInDefaultBrowser(url, deps = {}) {
   }
 }
 
-/**
- * Sets up event delegation on the jobs list container.
- * Called once during boot to avoid reattaching listeners after each render.
- */
-function setupJobsListDelegation() {
-  setupJobsListDelegationFromEvents({
-    jobsList: dom.jobsList,
-    jobRowSelector: `${ui(UI_TOKENS.jobs.jobRow)}[data-job-link]`,
-    saveJobBtnSelector: ui(UI_TOKENS.jobs.saveJobBtn),
-    sanitizeUrl,
-    getJobById: jobId => runtimeState.allJobs.find(job => String(job.id) === String(jobId || "")),
-    onToggleSaveJob: job => authController.toggleSaveJob(job),
-    onOpenJobLink: openJobLinkInDefaultBrowser,
-    onMarkJobSeen: jobKey => authController.markJobSeenFromInteraction(jobKey)
-  });
-}
-
 function bootJobsPage() {
   cacheDom();
   runtimeState.adminBridgeWatcher = createAdminBridgeButtonWatcher({
@@ -412,12 +490,12 @@ function bootJobsPage() {
       logJobsError("Failed to auto-check desktop updates", err);
     }
   })();
-  setupJobsListDelegation();
+  eventsController.setupJobsListDelegation();
   setJobsStartupState("loading", "booting");
-  bindCoreEvents();
+  eventsController.bindCoreEvents();
   try {
     filtersController.initializeQuickFilters();
-    bindEvents();
+    eventsController.bindEvents();
     readStateFromUrl();
     filtersController.applyStateToStaticFilters();
   } catch (err) {
@@ -431,7 +509,7 @@ function scheduleNonCriticalStartupWork() {
   if (runtimeState.nonCriticalStartupScheduled) return;
   runtimeState.nonCriticalStartupScheduled = true;
   scheduleNonCriticalStartup(window, () => {
-    renderDataSources().catch(() => {});
+    feedController.renderDataSources().catch(() => {});
     ensureJobsPipelineStatusWatch();
   });
 }
@@ -474,160 +552,13 @@ async function openAdminPageFromJobs() {
   navigateDesktopPage("admin.html");
 }
 
-function bindCoreEvents() {
-  if (runtimeState.coreEventsBound) return;
-  runtimeState.coreEventsBound = true;
-  const clickHandlers = new Map([
-    [dom.savedJobsBtn, () => {
-      rememberCurrentJobsUrl();
-      navigateDesktopPage("saved.html");
-    }],
-    [dom.countryPickerClearBtn, () => {
-      state.filters.countries = [];
-      filtersController.applyStateToFilters();
-      applyFiltersAndRender({ resetPage: true });
-    }],
-    [dom.quickFiltersResetBtn, () => {
-      filtersController.resetQuickFilterPreferences();
-    }]
-  ]);
-  bindHandlersMap(clickHandlers);
-
-  bindAsyncClick(dom.authSignInBtn, () => authController.signInUser());
-  bindAsyncClick(dom.authSignOutBtn, () => authController.signOutUser());
-  bindAsyncClick(dom.adminPageBtn, openAdminPageFromJobs);
-  bindAsyncClick(dom.refreshJobsBtn, () => refreshJobsNow({ manual: true }));
-  bindAsyncClick(dom.jobsPipelineRunBtn, triggerJobsPipelineRun);
-}
-
-function bindEvents() {
-  if (runtimeState.secondaryEventsBound) return;
-  runtimeState.secondaryEventsBound = true;
-  [
-    dom.workTypeFilter,
-    dom.lifecycleStatusFilter,
-    dom.countryFilter,
-    dom.cityFilter,
-    dom.sectorFilter,
-    dom.professionFilter,
-    dom.sortFilter
-  ].forEach(el => bindUi(el, "change", () => filtersController.onFilterChange()));
-
-  if (dom.professionSearchFilter) {
-    dom.professionSearchFilter.addEventListener("input", () => {
-      filtersController.renderProfessionOptions(dom.professionSearchFilter.value);
-    });
-  }
-
-  if (dom.countryPickerBtn) {
-    dom.countryPickerBtn.addEventListener("click", e => {
-      e.stopPropagation();
-      filtersController.toggleCountryPickerPanel();
-    });
-  }
-  if (dom.countryPickerSearch) {
-    dom.countryPickerSearch.addEventListener("input", () => {
-      filtersController.renderCountryPickerOptions(dom.countryPickerSearch.value);
-    });
-  }
-  if (dom.countryPickerOptions) {
-    dom.countryPickerOptions.addEventListener("change", event => {
-      const target = event.target;
-      if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
-      const current = new Set(state.filters.countries || []);
-      if (target.checked) current.add(target.value);
-      else current.delete(target.value);
-      state.filters.countries = Array.from(current);
-      filtersController.applyStateToFilters();
-      applyFiltersAndRender({ resetPage: true });
-    });
-  }
-
-  const handleDocumentPointerDown = event => {
-    if (dom.countryPickerPanel && !dom.countryPickerPanel.classList.contains("hidden")) {
-      const clickedInsidePanel = dom.countryPickerPanel.contains(event.target);
-      const clickedTrigger = dom.countryPickerBtn && dom.countryPickerBtn.contains(event.target);
-      if (!clickedInsidePanel && !clickedTrigger) {
-        filtersController.closeCountryPickerPanel();
-      }
-    }
-
-    if (dom.quickFiltersPanel && !dom.quickFiltersPanel.classList.contains("hidden")) {
-      const clickedInsideQuickPanel = dom.quickFiltersPanel.contains(event.target);
-      const clickedQuickTrigger = dom.customizeQuickFiltersBtn && dom.customizeQuickFiltersBtn.contains(event.target);
-      if (!clickedInsideQuickPanel && !clickedQuickTrigger) {
-        filtersController.closeQuickFiltersPanel();
-      }
-    }
-  };
-  document.addEventListener("pointerdown", handleDocumentPointerDown, true);
-  document.addEventListener("mousedown", handleDocumentPointerDown, true);
-  document.addEventListener("keydown", event => {
-    if (event.key !== "Escape") return;
-    event.preventDefault();
-    filtersController.closeCountryPickerPanel();
-    filtersController.closeQuickFiltersPanel();
-  }, true);
-
-  if (dom.searchFilter) {
-    bindUi(dom.searchFilter, "input", debounce(() => {
-      filtersController.onFilterChange();
-    }, 180));
-  }
-
-  bindWindowResize(debounce(() => {
-    if (!runtimeState.allJobs.length) return;
-    const changed = recalculateItemsPerPage();
-    if (changed) {
-      applyFiltersAndRender({ resetPage: false });
-    }
-  }, 150));
-
-  if (dom.quickActionsEl) {
-    dom.quickActionsEl.addEventListener("click", event => {
-      const btn = event.target.closest(".quick-btn");
-      if (!btn) return;
-      const quick = btn.dataset.quick;
-      if (!quick) return;
-      filtersController.applyQuickFilter(quick);
-      filtersController.applyStateToFilters();
-      applyFiltersAndRender({ resetPage: true });
-    });
-  }
-
-  if (dom.customizeQuickFiltersBtn) {
-    dom.customizeQuickFiltersBtn.addEventListener("click", event => {
-      event.stopPropagation();
-      filtersController.toggleQuickFiltersPanel();
-    });
-  }
-
-  if (dom.quickFiltersOptionsEl) {
-    dom.quickFiltersOptionsEl.addEventListener("change", event => {
-      const target = event.target;
-      if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
-      const { quick } = target.dataset;
-      if (!quick) return;
-      filtersController.setQuickFilterVisibility(quick, target.checked);
-    });
-  }
-
-  window.addEventListener("storage", event => {
-    if (event.key !== JOBS_AUTO_REFRESH_SIGNAL_KEY) return;
-    if (!event.newValue) return;
-    handleAutoRefreshSignalValue(event.newValue);
-  });
-
-  enableKeyboardNav();
-}
-
 async function init() {
   return initJobsFeed({
     hasJobsList: Boolean(dom.jobsList),
     emitMetric: emitDesktopStartupMetric,
     initAuth: () => authController.initAuth(),
     isDesktopRuntimeMode,
-    readCachedJobs,
+    readCachedJobs: () => feedController.readCachedJobs(),
     normalizeRows: rows => {
       runtimeState.allJobs = normalizeJobs(rows, {
         professionLabels: PROFESSION_LABELS,
@@ -635,7 +566,7 @@ async function init() {
       });
       return runtimeState.allJobs;
     },
-    recalculateItemsPerPage,
+    recalculateItemsPerPage: () => eventsController.recalculateItemsPerPage(),
     updateFilterOptions: () => filtersController.updateFilterOptions(runtimeState.allJobs),
     applyStateToFilters: () => filtersController.applyStateToFilters(),
     applyFiltersAndRender,
@@ -643,15 +574,15 @@ async function init() {
     markJobsFirstInteractive,
     isJobsCacheStale,
     cacheTtlMs: JOBS_CACHE_TTL_MS,
-    setSourceStatus,
-    refreshJobsNow,
-    updateLastUpdatedText,
+    setSourceStatus: text => feedController.setSourceStatus(text),
+    refreshJobsNow: options => feedController.refreshJobsNow(options),
+    updateLastUpdatedText: timestamp => feedController.updateLastUpdatedText(timestamp),
     setHasInitializedJobsFeed: value => {
       runtimeState.hasInitializedJobsFeed = Boolean(value);
     },
     scheduleNonCriticalStartupWork,
     applyPendingAutoRefreshSignal,
-    loadStartupPreviewJobs,
+    loadStartupPreviewJobs: () => feedController.loadStartupPreviewJobs(),
     showError,
     getAllJobs: () => runtimeState.allJobs
   });
@@ -704,9 +635,9 @@ async function applyPendingAutoRefreshSignal() {
 async function triggerAutoRefreshFromSignal(signal) {
   return triggerJobsAutoRefreshFromSignal(signal, {
     getLastHandledAutoRefreshSignalId: () => runtimeState.lastHandledAutoRefreshSignalId,
-    setSourceStatus,
+    setSourceStatus: text => feedController.setSourceStatus(text),
     getAutoRefreshStatusText,
-    refreshJobsNow,
+    refreshJobsNow: options => feedController.refreshJobsNow(options),
     markAutoRefreshSignalHandled,
     showToast
   });
@@ -733,228 +664,8 @@ function rememberCurrentJobsUrl() {
   jobsUrlPersistence.rememberCurrentJobsUrl();
 }
 
-function openJobsCacheDb() {
-  return openJobsCacheDbFromModule({
-    indexedDb: window.indexedDB,
-    dbName: JOBS_CACHE_DB,
-    dbVersion: JOBS_CACHE_DB_VERSION,
-    cacheStore: JOBS_CACHE_STORE,
-    seenStore: JOBS_SEEN_STORE
-  });
-}
-
-async function readCachedJobs() {
-  return readJobsCache({
-    openDb: openJobsCacheDb,
-    cacheStore: JOBS_CACHE_STORE,
-    cacheKey: JOBS_CACHE_KEY
-  });
-}
-
-function updateLastUpdatedText(timestamp) {
-  if (!dom.jobsLastUpdatedEl) return;
-  dom.jobsLastUpdatedEl.textContent = getJobsLastUpdatedText(timestamp);
-}
-
-async function refreshJobsNow({ manual, firstLoad = false }) {
-  return refreshJobsFeed({ manual, firstLoad }, {
-    getRefreshInFlight: () => runtimeState.refreshInFlight,
-    setRefreshInFlight: value => {
-      runtimeState.refreshInFlight = Boolean(value);
-    },
-    dispatchRefreshRequested: () => {
-      jobsDispatch.dispatch({ type: JOBS_ACTIONS.REFRESH_REQUESTED });
-    },
-    setRefreshButtonDisabled: disabled => {
-      if (dom.refreshJobsBtn) dom.refreshJobsBtn.disabled = disabled;
-    },
-    setProgress,
-    setSourceStatus,
-    firstLoadRequestTimeoutMs: JOBS_FIRST_LOAD_REQUEST_TIMEOUT_MS,
-    fetchUnifiedJobs,
-    dispatchRefreshFailed: error => {
-      jobsDispatch.dispatch({
-        type: JOBS_ACTIONS.REFRESH_FAILED,
-        payload: { error }
-      });
-    },
-    showToast,
-    logError: logJobsError,
-    getAllJobs: () => runtimeState.allJobs,
-    setAllJobs: jobs => {
-      runtimeState.allJobs = jobs;
-    },
-    normalizeRows: rows => normalizeJobs(rows, {
-      professionLabels: PROFESSION_LABELS,
-      sanitizeUrl
-    }),
-    setRefreshJobsNeedsAttention,
-    isDesktopRuntimeMode,
-    writeCachedJobs,
-    updateLastUpdatedText,
-    recalculateItemsPerPage,
-    updateFilterOptions: () => filtersController.updateFilterOptions(runtimeState.allJobs),
-    applyStateToFilters: () => filtersController.applyStateToFilters(),
-    applyFiltersAndRender,
-    markStartupRendered,
-    markJobsFirstInteractive,
-    emitMetric: emitDesktopStartupMetric,
-    dispatchRefreshCompleted: () => {
-      jobsDispatch.dispatch({
-        type: JOBS_ACTIONS.REFRESH_COMPLETED,
-        payload: { finishedAt: new Date().toISOString() }
-      });
-    },
-    renderDataSources
-  });
-}
-
-async function writeCachedJobs(jobs) {
-  return writeJobsCache(jobs, {
-    openDb: openJobsCacheDb,
-    cacheStore: JOBS_CACHE_STORE,
-    cacheKey: JOBS_CACHE_KEY,
-    now: Date.now()
-  });
-}
-
-function clearPendingStartupPreviewMaterialization() {
-  if (runtimeState.startupPreviewMaterializeTimer) {
-    window.clearTimeout(runtimeState.startupPreviewMaterializeTimer);
-  }
-  runtimeState.startupPreviewMaterialize = null;
-  runtimeState.startupPreviewMaterializeTimer = null;
-  runtimeState.startupPreviewFilteredCount = 0;
-}
-
-function materializePendingStartupPreview({ render = false } = {}) {
-  if (typeof runtimeState.startupPreviewMaterialize !== "function") return runtimeState.filteredJobs;
-  const materialize = runtimeState.startupPreviewMaterialize;
-  clearPendingStartupPreviewMaterialization();
-  runtimeState.filteredJobs = materialize();
-  if (render) {
-    displayJobs(runtimeState.filteredJobs);
-  }
-  return runtimeState.filteredJobs;
-}
-
-function scheduleStartupPreviewMaterialization(materializeFilteredJobs) {
-  if (typeof materializeFilteredJobs !== "function") return;
-  clearPendingStartupPreviewMaterialization();
-  runtimeState.startupPreviewMaterialize = materializeFilteredJobs;
-  runtimeState.startupPreviewMaterializeTimer = window.setTimeout(() => {
-    materializePendingStartupPreview();
-  }, 0);
-}
-
-function insertTopStartupPreviewJob(topJobs, job, limit) {
-  if (!Number.isFinite(limit) || limit <= 0) return;
-  let insertIndex = topJobs.findIndex(existing =>
-    compareJobsForSort(job, existing, "relevance", {
-      fullCountryName: fullCountryNameForJobs
-    }) < 0
-  );
-  if (insertIndex < 0) insertIndex = topJobs.length;
-  if (insertIndex >= limit && topJobs.length >= limit) return;
-  topJobs.splice(insertIndex, 0, job);
-  if (topJobs.length > limit) {
-    topJobs.pop();
-  }
-}
-
-function buildStartupPreviewFastPathPlan(allJobs) {
-  const filterOptionsAccumulator = createFilterOptionsAccumulator();
-  const activeJobs = [];
-  const firstPageJobs = [];
-  const firstPageLimit = Math.max(1, Number(state.itemsPerPage) || 1);
-
-  (allJobs || []).forEach(job => {
-    addJobToFilterOptions(filterOptionsAccumulator, job, {
-      getJobLocationCities,
-      getJobLocationCountries,
-      isSemanticallyValidLocationValue,
-      isValidCountry
-    });
-    if (String(job?.status || "active").toLowerCase() !== "active") return;
-    activeJobs.push(job);
-    insertTopStartupPreviewJob(firstPageJobs, job, firstPageLimit);
-  });
-
-  return {
-    filterOptions: finalizeFilterOptions(filterOptionsAccumulator, {
-      getAvailableRegionOptions: getAvailableRegionOptionsForJobs,
-      fullCountryName: fullCountryNameForJobs
-    }),
-    filteredCount: activeJobs.length,
-    pageJobs: firstPageJobs,
-    materializeFilteredJobs: () => sortJobsFromQuery(activeJobs, "relevance", {
-      fullCountryName: fullCountryNameForJobs
-    })
-  };
-}
-
-function renderStartupPreviewFastPath(plan = {}) {
-  const pageJobs = Array.isArray(plan?.pageJobs) ? plan.pageJobs : [];
-  const filteredCount = Number.isFinite(Number(plan?.filteredCount))
-    ? Number(plan.filteredCount)
-    : pageJobs.length;
-  runtimeState.filteredJobs = pageJobs;
-  runtimeState.startupPreviewFilteredCount = filteredCount;
-  displayJobs(runtimeState.filteredJobs, {
-    pageJobsOverride: pageJobs,
-    totalCountOverride: filteredCount
-  });
-}
-
-async function loadStartupPreviewJobs() {
-  return loadStartupPreviewJobsFeed({
-    emitMetric: emitDesktopStartupMetric,
-    fetchJsonFromCandidates,
-    startupPreviewJsonUrls: STARTUP_PREVIEW_JSON_URLS,
-    parseUnifiedJobsPayload: payload => parseUnifiedJobsPayload(payload, jobsParsing),
-    normalizeRows: rows => {
-      runtimeState.allJobs = normalizeJobs(rows, {
-        professionLabels: PROFESSION_LABELS,
-        sanitizeUrl
-      });
-      return runtimeState.allJobs;
-    },
-    updateLastUpdatedText,
-    recalculateItemsPerPage,
-    pageState: state,
-    defaultFilters,
-    buildStartupPreviewFastPathPlan,
-    applyFilterOptionsSnapshot: filterOptions =>
-      filtersController.updateFilterOptions(runtimeState.allJobs, {
-        precomputed: filterOptions
-      }),
-    updateFilterOptions: () => filtersController.updateFilterOptions(runtimeState.allJobs),
-    applyStateToFilters: () => filtersController.applyStateToFilters(),
-    renderStartupPreviewFastPath,
-    scheduleStartupPreviewMaterialization,
-    applyFiltersAndRender,
-    markStartupRendered,
-    markJobsFirstInteractive,
-    setSkipInitialGuestAuthRerender: value => {
-      runtimeState.skipInitialGuestAuthRerender = Boolean(value);
-    },
-    getAllJobs: () => runtimeState.allJobs
-  });
-}
-
-function setRefreshJobsNeedsAttention(needsRefresh) {
-  const needs = Boolean(needsRefresh);
-  if (dom.refreshJobsBtn) {
-    dom.refreshJobsBtn.classList.toggle("needs-refresh", needs);
-    dom.refreshJobsBtn.setAttribute("aria-live", "polite");
-  }
-  if (dom.refreshJobsNeededBadgeEl) {
-    dom.refreshJobsNeededBadgeEl.classList.toggle("hidden", !needs);
-  }
-}
-
 function applyFiltersAndRender({ resetPage }) {
-  clearPendingStartupPreviewMaterialization();
+  startupPreviewController.clearPendingStartupPreviewMaterialization();
   if (resetPage) {
     state.currentPage = 1;
   }
@@ -1011,7 +722,7 @@ function displayJobs(jobs, options = {}) {
 
 function goToPage(page) {
   if (page !== state.currentPage) {
-    materializePendingStartupPreview();
+    startupPreviewController.materializePendingStartupPreview();
   }
   return goToPageFromView(page, {
     filteredJobs: runtimeState.filteredJobs,
@@ -1021,82 +732,14 @@ function goToPage(page) {
   });
 }
 
-
-function recalculateItemsPerPage() {
-  if (!dom.jobsList) return false;
-
-  const top = dom.jobsList.getBoundingClientRect().top;
-  const viewportHeight = window.innerHeight;
-  const reservedSpace = 140;
-  const availableHeight = Math.max(260, viewportHeight - top - reservedSpace);
-  const rowHeight = window.innerWidth <= 900 ? 136 : 52;
-  const next = Math.max(4, Math.min(25, Math.floor(availableHeight / rowHeight)));
-
-  if (next !== state.itemsPerPage) {
-    state.itemsPerPage = next;
-    return true;
-  }
-  return false;
-}
-function enableKeyboardNav() {
-  document.addEventListener("keydown", e => {
-    const isField = ["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) || e.target.isContentEditable;
-    if (isField) return;
-
-    if (e.key === "ArrowLeft" && state.currentPage > 1) {
-      goToPage(state.currentPage - 1);
-    } else if (e.key === "ArrowRight") {
-      const totalPages = Math.ceil(runtimeState.filteredJobs.length / state.itemsPerPage);
-      if (state.currentPage < totalPages) {
-        goToPage(state.currentPage + 1);
-      }
-    }
-  });
-}
-
 function updateResultsSummary(total, from, to, loadedTotal = total) {
   return updateResultsSummaryFromView(dom.resultsSummary, total, from, to, loadedTotal);
-}
-
-async function fetchUnifiedJobs({ timeoutMs } = {}) {
-  return fetchUnifiedJobsFromSources({
-    setSourceStatus,
-    jobsParsing,
-    timeoutMs,
-    parserDeps: {
-      mapProfession,
-      normalizeSector,
-      classifyCompanyType,
-      detectWorkType,
-      logInfo: logJobsInfo,
-      logError: logJobsError
-    }
-  });
-}
-
-async function fetchJsonFromCandidates(urls, options) {
-  return fetchJsonFromCandidatesFromSources(urls, options);
-}
-
-async function renderDataSources() {
-  return renderDataSourcesFromSources({
-    dataSourcesListEl: dom.dataSourcesListEl,
-    dataSourcesCaptionEl: dom.dataSourcesCaptionEl
-  });
 }
 
 function getJobKeyForJobWithService(job) {
   return getJobKeyForJob(job, {
     generateJobKey: row => jobsPageService.generateJobKey(row)
   });
-}
-
-function setProgress(visible) {
-  setProgressVisibility(setText, dom.fetchProgress, visible);
-}
-
-function setSourceStatus(text) {
-  setStatusText(setText, dom.sourceStatus, text);
 }
 
 function setJobsStartupState(state, detail = "") {
@@ -1127,8 +770,8 @@ function showError(message, onRetry = null) {
 
 function handleJobsStartupFailure(context, err, options = {}) {
   logJobsError(context, err);
-  setProgress(false);
-  setSourceStatus("Jobs page failed to start.");
+  feedController.setProgress(false);
+  feedController.setSourceStatus("Jobs page failed to start.");
   const retry = options.allowRetryReload
     ? () => window.location.reload()
     : () => init().catch(nextErr => handleJobsStartupFailure("Retry failed", nextErr));

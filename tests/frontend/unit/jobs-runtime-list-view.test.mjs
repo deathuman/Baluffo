@@ -2,14 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { displayJobs } from "../../../frontend/jobs/app/runtime/list-view.js";
-
-function createElement() {
-  return {
-    innerHTML: "",
-    textContent: "",
-    querySelectorAll: () => []
-  };
-}
+import { createElement } from "./helpers/jobs-runtime-helpers.mjs";
 
 test("jobs list view uses the jobs length when no totalCountOverride is provided", () => {
   const jobsList = createElement();

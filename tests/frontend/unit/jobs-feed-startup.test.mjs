@@ -8,51 +8,7 @@ import {
 } from "../../../frontend/jobs/app/feed.js";
 import { STARTUP_PREVIEW_JSON_URLS } from "../../../frontend/jobs/app/sources.js";
 import { createJobsAuthController } from "../../../frontend/jobs/app/runtime/auth-controller.js";
-
-function createClassList(initial = []) {
-  const values = new Set(initial);
-  return {
-    add(...tokens) {
-      tokens.forEach(token => values.add(token));
-    },
-    remove(...tokens) {
-      tokens.forEach(token => values.delete(token));
-    },
-    toggle(token, force) {
-      if (force === true) {
-        values.add(token);
-        return true;
-      }
-      if (force === false) {
-        values.delete(token);
-        return false;
-      }
-      if (values.has(token)) {
-        values.delete(token);
-        return false;
-      }
-      values.add(token);
-      return true;
-    },
-    contains(token) {
-      return values.has(token);
-    }
-  };
-}
-
-function createElement(overrides = {}) {
-  return {
-    textContent: "",
-    disabled: false,
-    title: "",
-    classList: createClassList(),
-    attributes: {},
-    setAttribute(name, value) {
-      this.attributes[name] = String(value);
-    },
-    ...overrides
-  };
-}
+import { createClassList, createElement } from "./helpers/jobs-runtime-helpers.mjs";
 
 function createBaseDeps(overrides = {}) {
   const calls = {

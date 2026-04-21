@@ -113,6 +113,7 @@ Useful as context, but **not authoritative** for current implementation unless e
 | Understand the repo quickly | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
 | Understand product and top-level layout | [`README.md`](../README.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
 | Change frontend behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then task-specific source files |
+| Change jobs page runtime wiring | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `frontend/jobs/app/feed.js`, `frontend/jobs/app/runtime/*.js`, and `frontend/jobs/app/runtime.js` only if the page entrypoint must change |
 | Change saved page runtime wiring | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `frontend/saved/app/runtime/*.js`, `frontend/saved/app/admin-bridge-state.js`, and `frontend/saved/app/runtime.js` only if the page entrypoint must change |
 | Change bridge/API behavior | [`architecture-ai-map.md`](architecture-ai-map.md) | [`admin-bridge-api.md`](admin-bridge-api.md) |
 | Change discovery behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/source_discovery/orchestrator*.py` or the relevant discovery leaf module |

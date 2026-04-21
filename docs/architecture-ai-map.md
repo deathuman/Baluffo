@@ -71,7 +71,8 @@ src/ship/desktop_update.py (stable updater surface)
 
 | Task | Start here | Then only if needed |
 |------|------------|---------------------|
-| Jobs filter/search | `frontend/jobs/app/filters.js` | `frontend/jobs/app/runtime.js` |
+| Jobs filter/search | `frontend/jobs/app/filters.js`, `frontend/jobs/app/runtime/query.js` | `frontend/jobs/app/runtime.js` only for page-entry wiring/export changes |
+| Jobs page runtime wiring | `frontend/jobs/app/feed.js`, `frontend/jobs/app/runtime/{events,feed-controller,list-view,pipeline-controller,startup-preview,auth-controller}.js` | `frontend/jobs/app/runtime.js` only when the stable page-entry root must change |
 | Jobs feed refresh | `frontend/jobs/app/feed.js` | `frontend/jobs/services.js` |
 | Saved notes | `frontend/saved/app/notes.js` | `frontend/saved/services.js` |
 | Saved attachments | `frontend/saved/app/attachments.js` | `frontend/saved/services.js` |
@@ -92,7 +93,7 @@ src/ship/desktop_update.py (stable updater surface)
 
 ## 4) Frontend topology
 
-**Jobs page:** `frontend/jobs/app.js` -> `runtime.js` -> `app/filters.js`, `app/feed.js`, `app/cache.js`, `app/pipeline.js`, `app/sources.js`
+**Jobs page:** `frontend/jobs/app.js` -> `runtime.js` -> `app/feed.js`, `app/filters.js`, `app/cache.js`, `app/pipeline.js`, `app/sources.js`, `runtime/{events,feed-controller,list-view,pipeline-controller,query,startup-preview,auth-controller}.js`
 
 **Saved page:** `frontend/saved/app.js` -> `runtime.js` -> `runtime/{state,events,auth-controller,activity-controller,attachments-controller,custom-job-controller,render-controller}.js`, `app/{notes,attachments,activity}.js`, `app/admin-bridge-state.js`, `app/view-state.js`
 
