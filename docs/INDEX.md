@@ -26,6 +26,7 @@ Use these as entrypoints or shims only; route new logic to the owning modules th
 - `src/admin_bridge.py` - stable thin entrypoint for bridge startup and compatibility wrappers
 - `src/source_discovery.py` - stable thin CLI entrypoint delegating to `src/source_discovery/*`
 - `src/jobs_fetcher.py` - stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`
+- `src/jobs/adapters/static.py` - stable static adapter surface; implementation belongs in `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`
 - `src/source_sync.py` - permanent thin sync integration surface delegating to `src/source_sync_*`
 - `src/jobs/common/__init__.py` - package marker only; import `src.jobs.common.<leaf>` or package-submodule helpers
 - `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`
@@ -70,6 +71,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
 | [`refactor-charter-template.md`](refactor-charter-template.md) | Planning template | You are drafting a structured refactor proposal |
 | [`desktop-packaging-boundary-charter.md`](desktop-packaging-boundary-charter.md) | Active refactor tracker | You are changing packaged smoke or desktop updater boundaries and need the current compatibility assumptions |
+| [`static-adapter-boundary-charter.md`](static-adapter-boundary-charter.md) | Active refactor tracker | You are changing the static adapter boundary and need the current compatibility assumptions |
 
 ---
 

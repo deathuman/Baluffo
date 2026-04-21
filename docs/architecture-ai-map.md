@@ -27,6 +27,9 @@ src/admin_bridge.py (stable thin entrypoint / wiring-only composition root)
 
 src/jobs_fetcher.py (stable thin CLI facade)
   -> src/jobs/ (pipeline, adapters, dedup)
+src/jobs/adapters/static.py (stable static adapter surface)
+  -> src/jobs/adapters/static_{runtime,listing,detail,sources}.py
+  -> src/jobs/adapters/static_helpers.py + plugins/static/*
 src/source_discovery.py (stable thin CLI entrypoint)
   -> src/source_discovery/ (package)
 
@@ -74,6 +77,7 @@ src/ship/desktop_update.py (stable updater surface)
 | Bridge sync | `src/bridge/sync_service.py` | `src/source_sync.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py`, `src/source_sync_crypto.py`, `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
 | Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
+| Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_helpers.py` | `src/jobs/adapters/static.py` only for root-surface compatibility work |
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
 | Desktop runtime | `src/ship/desktop_app/launcher.py` | `src/ship/desktop_app/{startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
 | Packaged smoke / updater | `src/ship/packaged_smoke/{build_env,runtime,rehearsals}.py`, `src/ship/desktop_update_{shared,state,service}.py` | `src/packaged_desktop_smoke.py` and `src/ship/desktop_update.py` only for CLI/public-surface compatibility work |
@@ -123,6 +127,7 @@ src/ship/desktop_update.py (stable updater surface)
 **Sync helpers:**
 - `source_sync.py` - compatibility and test patch surface
 - `source_sync_config.py`, `source_sync_snapshot.py`, `source_sync_crypto.py` - config resolution, snapshot I/O, and crypto/JWT helpers
+- `adapters/static.py` - root static adapter surface over `static_runtime.py`, `static_listing.py`, `static_detail.py`, `static_sources.py`, and `static_helpers.py`
 
 ---
 
@@ -176,6 +181,7 @@ See [`testing.md`](testing.md) for more commands.
 - `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py`
 - `src/source_discovery.py` - stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
 - `src/jobs_fetcher.py` - stable thin CLI facade; add pipeline logic to `src/jobs/*`
+- `src/jobs/adapters/static.py` - stable static adapter surface; keep generic listing/detail/runtime logic in `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`
 - `src/source_sync.py` - permanent thin sync integration surface; keep new sync logic in `src/source_sync_*` helpers
 - `src/jobs/common/__init__.py` - package marker only; prefer `src.jobs.common.<leaf>` or package-submodule imports
 - `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`

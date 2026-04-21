@@ -1,4 +1,4 @@
-## Adapter plugin inventory (2026-03-20)
+## Adapter plugin inventory (2026-04-21)
 
 This note captures the initial inventory for the **adapter plugin framework** rollout.
 
@@ -43,16 +43,20 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 
 **Troubleshooting:** To debug a failing source, find its entry in `sources` and check `status`, `error`, and `loss` (e.g. `canonicalDropReasons`). To run only specific sources: `python src/jobs_fetcher.py --only-sources google_sheets,remote_ok`. To force a full run ignoring circuit breaker: `--ignore-circuit-breaker`. If Playwright/browser fallback is unhealthy, the fetcher will now short-circuit further browser attempts for a short cooldown instead of retrying on every static source. To disable a source without code changes, add it to `EXCLUDED_DEFAULT_SOURCES` in `src/jobs_fetcher_registry.py` or remove it from the active registry (`data/source-registry-active.json`) for registry-driven sources.
 
-### Biggest / highest-churn candidates
+### Static adapter ownership
 
-- **`src/jobs/adapters/static.py` (~550 LOC)**
-  Monolith that includes:
-  - static studio page crawling (listing + detail heuristics)
-  - detail-link heuristics / filtering
-  - per-source concurrency tuning
-  - HTML parsing + fallback title synthesis, guarded by the shared job-page gate so regular pages are rejected as `dead_listing_page` before any synthetic row is created
-  - scrapy-runner integration (`scrapy_static`)
-  - note: this is now narrower than the initial plugin-rollout snapshot because report/config/fetch/detail internals live in `src/jobs/adapters/static_helpers.py`
+- **`src/jobs/adapters/static.py`**
+  Stable root adapter surface only. Keep imports, loader names, and monkeypatch seams stable here.
+- **`src/jobs/adapters/static_runtime.py`**
+  Run-dependency and per-source context state, including progress, budget, and failure helpers.
+- **`src/jobs/adapters/static_listing.py`**
+  Plugin fast path, generic listing fetch, rendered-card fallback, listing fingerprint/cache decisions, and detail-traversal planning inputs.
+- **`src/jobs/adapters/static_detail.py`**
+  Detail traversal batching, adaptive stop behavior, and detail HTML result integration.
+- **`src/jobs/adapters/static_sources.py`**
+  Shard naming, registry-row dynamic loader naming, and single-source/shard wrapper construction.
+- **`src/jobs/adapters/static_helpers.py`**
+  Low-level utility owner for runtime config, HTML fetch caching, detail parsing helpers, heuristics, and taxonomy helpers.
 
 ### Existing “family-like” clusters (good early plugin families)
 
@@ -93,7 +97,7 @@ Then validate framework generality on a second family:
 - **Family**: `social`
   - **Plugins**: `reddit`, `x` (optionally `mastodon`)
 
-`static` remains the largest monolith; it becomes a follow-up family once the framework is validated in production paths.
+The root `static.py` surface is now split behind focused helper modules. New static-adapter work should start in the helper that owns the behavior, not in the root surface.
 
 ### Static plugins (current)
 

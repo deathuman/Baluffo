@@ -37,7 +37,7 @@ Scrapy path (for scrapy_static sources from browser queue)
 |-------|----------|------|
 | **Source check (admin)** | `src/bridge/source_check_http.py` (`try_fetch_with_playwright`), `source_check_fetch.py` | Admin “source check” (trigger_source_check); optional browser fallback when HTTP fails or page is challenge-like. |
 | **Discovery probe** | `src/source_discovery/probe.py` | Optional fallback for **static** / generic_static when probe fails with 403, timeout, or challenge-like response; concurrency limited (e.g. semaphore 5). |
-| **Static adapter listing** | `src/jobs/adapters/static.py` | Optional fallback for the **listing page** only: on 403/timeout from `fetch_html_cached`, or when HTML looks like JS shell and no job data extracted; `try_playwright` injected by pipeline when Playwright is available. |
+| **Static adapter listing** | `src/jobs/adapters/static.py` (root surface) and `src/jobs/adapters/static_{runtime,listing,detail,sources}.py` | Optional fallback for the **listing page** only: on 403/timeout from `fetch_html_cached`, or when HTML looks like JS shell and no job data extracted; `try_playwright` injected by pipeline when Playwright is available. |
 | **Scrapy-Playwright** | `src/scrapers/runner.py`, `src/scrapers/spiders/generic_careers.py` | When scrapy_static sources are run from the browser queue, runner passes `use_browser=True`; if scrapy-playwright is installed, requests are handled by Playwright and spider sets `meta["playwright"] = True`. If scrapy-playwright is missing, runner falls back to HTTP-only. |
 
 All Playwright use is optional: discovery and pipeline run without Playwright if it is not installed.
@@ -56,7 +56,7 @@ To see how much the job count changed after scraping improvements:
 - Before a run: note `len(jobs-unified.json)`, size of `jobs-browser-fallback-queue.json`, and number of sources with `classification` in `{blocked_or_challenge, needs_review}` in the last fetch report.
 - After a run (with Playwright fallbacks and Scrapy-Playwright enabled): compare the same metrics. Higher unified count, smaller browser queue, and fewer blocked/needs_review sources indicate improvement.
 
-See also: `docs/DATA_CONTRACT.md` for report shapes; `docs/architecture-ai-map.md` for static adapter and Scrapy path.
+See also: `docs/DATA_CONTRACT.md` for report shapes; `docs/architecture-ai-map.md` for static adapter and Scrapy path. For static adapter edits, keep `src/jobs/adapters/static.py` as the compatibility surface and route implementation changes to the focused `static_{runtime,listing,detail,sources}.py` helpers.
 
 ## 4) Running the pipeline
 

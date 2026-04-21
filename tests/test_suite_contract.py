@@ -225,6 +225,22 @@ def test_jobs_fetcher_facade_stays_lazy_and_small(repo_root: Path) -> None:
     assert len(alias_lines) <= 3, "jobs_fetcher facade drifted back to bulk alias re-exports"
 
 
+def test_static_adapter_root_stays_thin_orchestration_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "adapters" / "static.py"
+    text = target.read_text(encoding="utf-8")
+
+    assert "from . import static_listing as static_listing_mod" in text
+    assert "from . import static_runtime as static_runtime_mod" in text
+    assert "from . import static_sources as static_sources_mod" in text
+    assert "static_detail_mod.root = sys.modules[__name__]" in text
+    assert "static_listing_mod.root = sys.modules[__name__]" in text
+    assert "def run_static_studio_pages_source(" in text
+    assert "def static_source_shard(" not in text
+    assert "def static_source_name_for_registry_row(" not in text
+    assert "fetch_pages_batched" not in text
+    assert len(text.splitlines()) <= 160, "static adapter root drifted back toward monolith size"
+
+
 def test_sync_task_worker_logic_is_shared_between_admin_bridge_and_sync_service(
     repo_root: Path,
 ) -> None:
