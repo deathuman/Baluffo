@@ -12,13 +12,15 @@ from src.jobs.adapters.html_parsers import (
     parse_jobpostings_from_html,
 )
 from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
-from src.jobs.adapters.static_helpers import (
+from src.jobs.adapters.static_detail_heuristics import (
     choose_detail_traversal_mode,
-    effective_timeout_for_remaining_budget,
     is_probable_job_detail_url,
     source_detail_concurrency_for,
     source_detail_limit_for,
     source_detail_retries_for,
+)
+from src.jobs.adapters.static_runtime_support import (
+    effective_timeout_for_remaining_budget,
     static_source_budget_exhausted,
 )
 from src.jobs.common.fetch import fetch_with_retries

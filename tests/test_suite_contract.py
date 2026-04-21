@@ -299,6 +299,19 @@ def test_static_adapter_root_stays_thin_orchestration_surface(repo_root: Path) -
     assert len(text.splitlines()) <= 160, "static adapter root drifted back toward monolith size"
 
 
+def test_static_helpers_stays_thin_compat_shim_over_new_static_leaves(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "adapters" / "static_helpers.py"
+    text = target.read_text(encoding="utf-8")
+
+    assert "from .static_detail_heuristics import (" in text
+    assert "from .static_runtime_support import (" in text
+    assert "def " not in text
+    assert "class " not in text
+    assert len(text.splitlines()) <= 80, (
+        "static_helpers.py drifted back into implementation ownership"
+    )
+
+
 def test_sync_task_worker_logic_is_shared_between_admin_bridge_and_sync_service(
     repo_root: Path,
 ) -> None:
@@ -387,6 +400,7 @@ def test_sharded_python_test_families_do_not_use_star_helper_imports(repo_root: 
         "tests/jobs_static/test_browser_and_regression_queues.py",
         "tests/jobs_static/test_detail_fallback.py",
         "tests/jobs_static/test_rendered_cards_and_plugins.py",
+        "tests/jobs_static/test_scrapy_static_runtime.py",
         "tests/jobs_static/test_static_source_execution.py",
     ):
         text = (repo_root / relative_path).read_text(encoding="utf-8")

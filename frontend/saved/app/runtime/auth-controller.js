@@ -39,6 +39,9 @@ export function createSavedAuthController({
   timelineScopeAll,
   showToast
 }) {
+  let initialAuthEventHandled = false;
+  let pendingInitialGuestTimer = 0;
+
   function setAuthStatus(text) {
     setSavedAuthStatus({
       savedAuthStatusEl: refs.savedAuthStatusEl,
@@ -125,6 +128,20 @@ export function createSavedAuthController({
     return !savedPageService.isAvailable() || !isSavedApiReady();
   }
 
+  function hasPersistedSessionHint() {
+    try {
+      return Boolean(window.localStorage.getItem("baluffo_current_profile_id"));
+    } catch {
+      return false;
+    }
+  }
+
+  function cancelPendingInitialGuestTimer() {
+    if (!pendingInitialGuestTimer) return;
+    window.clearTimeout(pendingInitialGuestTimer);
+    pendingInitialGuestTimer = 0;
+  }
+
   function initSavedJobsPage() {
     initializePageChrome();
 
@@ -151,6 +168,7 @@ export function createSavedAuthController({
     viewState.savedAuthListenerBound = true;
 
     savedAuthService.onAuthStateChanged(user => {
+      cancelPendingInitialGuestTimer();
       viewState.currentUser = user || null;
       savedDispatch.dispatch({
         type: SAVED_ACTIONS.AUTH_CHANGED,
@@ -160,10 +178,31 @@ export function createSavedAuthController({
       resetUserScopedViewState();
 
       if (!viewState.currentUser) {
+        const shouldDelayInitialGuestRender =
+          !initialAuthEventHandled && hasPersistedSessionHint();
+        initialAuthEventHandled = true;
+        if (shouldDelayInitialGuestRender) {
+          setAuthStatus("Restoring profile...");
+          setSourceStatus("Restoring your saved jobs...");
+          setActivityStatus("Restoring activity...");
+          toggleAuthButtons(false);
+          setCustomJobAvailability(false);
+          setSavedFilterBarVisible(false);
+          setSavedSortBarVisible(false);
+          renderAuthRequired("Restoring your local profile. Please wait...");
+          renderTimeline();
+          pendingInitialGuestTimer = window.setTimeout(() => {
+            pendingInitialGuestTimer = 0;
+            if (viewState.currentUser) return;
+            handleSignedOut();
+          }, 800);
+          return;
+        }
         handleSignedOut();
         return;
       }
 
+      initialAuthEventHandled = true;
       handleSignedIn(viewState.currentUser);
     });
   }

@@ -29,7 +29,7 @@ Use these as entrypoints or shims only; route new logic to the owning modules th
 - `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py` - admin bridge runtime/path/session/manual-source/task helpers behind the stable root surface
 - `src/source_discovery.py` - stable thin CLI entrypoint delegating to `src/source_discovery/*`
 - `src/jobs_fetcher.py` - stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`
-- `src/jobs/adapters/static.py` - stable static adapter surface; implementation belongs in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py`
+- `src/jobs/adapters/static.py` - stable static adapter surface; implementation belongs in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py` plus `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py`, while `static_helpers.py` stays a compatibility shim
 - `src/source_sync.py` - permanent thin sync integration surface delegating to `src/source_sync_*`
 - `src/jobs/common/__init__.py` - package marker only; import `src.jobs.common.<leaf>` or package-submodule helpers
 - `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`

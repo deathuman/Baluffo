@@ -33,7 +33,8 @@ src/jobs_fetcher.py (stable thin CLI facade)
   -> src/jobs/ (pipeline, adapters, dedup)
 src/jobs/adapters/static.py (stable static adapter surface)
   -> src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py
-  -> src/jobs/adapters/static_helpers.py + plugins/static/*
+  -> src/jobs/adapters/static_{runtime_support,detail_heuristics}.py
+  -> src/jobs/adapters/static_helpers.py (compat shim) + plugins/static/*
 src/source_discovery.py (stable thin CLI entrypoint)
   -> src/source_discovery/ (package)
 
@@ -83,7 +84,7 @@ src/ship/desktop_update.py (stable updater surface)
 | Bridge sync | `src/bridge/sync_service.py` | `src/source_sync.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py`, `src/source_sync_crypto.py`, `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
 | Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
-| Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_helpers.py` | `src/jobs/adapters/static.py` only for root-surface compatibility work |
+| Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py` | `src/jobs/adapters/static_helpers.py` only for shim/patch-surface compatibility and `src/jobs/adapters/static.py` only for root-surface compatibility work |
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
 | Desktop runtime | `src/ship/desktop_app/launcher.py` | `src/ship/desktop_app/{startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
 | Packaged smoke / updater | `src/ship/packaged_smoke/{build_env,runtime,rehearsals}.py`, `src/ship/desktop_update_{shared,state,service}.py` | `src/packaged_desktop_smoke.py` and `src/ship/desktop_update.py` only for CLI/public-surface compatibility work |
@@ -141,7 +142,7 @@ src/ship/desktop_update.py (stable updater surface)
 **Sync helpers:**
 - `source_sync.py` - compatibility and test patch surface
 - `source_sync_config.py`, `source_sync_snapshot.py`, `source_sync_crypto.py` - config resolution, snapshot I/O, and crypto/JWT helpers
-- `adapters/static.py` - root static adapter surface over `static_runtime.py`, `static_listing.py`, `static_listing_flow.py`, `static_detail.py`, `static_sources.py`, and `static_helpers.py`
+- `adapters/static.py` - root static adapter surface over `static_runtime.py`, `static_listing.py`, `static_listing_flow.py`, `static_detail.py`, `static_sources.py`, `static_runtime_support.py`, `static_detail_heuristics.py`, and the `static_helpers.py` compatibility shim
 
 ---
 

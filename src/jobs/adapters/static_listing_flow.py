@@ -15,10 +15,12 @@ from src.jobs.adapters.location_rules import classify_city_garbage
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.errors import NoPluginFoundError
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.static_helpers import (
+from src.jobs.adapters.static_detail_heuristics import (
     _is_one_man_studio_noise_city,
     add_detail_link,
     process_detail_link,
+)
+from src.jobs.adapters.static_runtime_support import (
     update_source_detail_taxonomy,
 )
 from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate

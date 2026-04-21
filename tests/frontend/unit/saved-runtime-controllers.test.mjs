@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createSavedActivityController } from "../../../frontend/saved/app/runtime/activity-controller.js";
+import { createSavedAuthController } from "../../../frontend/saved/app/runtime/auth-controller.js";
 import { createSavedCustomJobController } from "../../../frontend/saved/app/runtime/custom-job-controller.js";
 import {
   createButton,
@@ -111,4 +112,132 @@ test("saved custom job controller resets form chrome when closing the panel", ()
   assert.equal(dom.addCustomJobBtnEl.textContent, "+ Add Custom Job");
   assert.equal(dom.customJobPanelTitleEl.textContent, "Add Custom Job");
   assert.equal(dom.customJobSaveBtnEl.textContent, "Save Custom Job");
+});
+
+test("saved auth controller delays the initial guest render while desktop auth restores", () => {
+  const originalWindow = globalThis.window;
+  let pendingTimer = null;
+  globalThis.window = {
+    setTimeout(fn) {
+      pendingTimer = fn;
+      return 1;
+    },
+    clearTimeout() {
+      pendingTimer = null;
+    },
+    localStorage: {
+      getItem(key) {
+        return key === "baluffo_current_profile_id" ? "local_packaged_smoke_user" : "";
+      }
+    }
+  };
+
+  let authListener = null;
+  let sourceStatus = "";
+  let activityStatus = "";
+  let authRequired = "";
+  let subscribedUid = "";
+
+  const refs = {
+    savedAuthStatusEl: createElement(),
+    savedAuthStatusHintEl: createElement(),
+    savedAuthAvatarEl: createElement(),
+    signInBtnEl: createButton(),
+    signOutBtnEl: createButton(),
+    jobsPageBtnEl: createButton(),
+    addCustomJobBtnEl: createButton()
+  };
+  const viewState = {
+    currentUser: null,
+    unsubscribeSavedJobs() {},
+    expandedJobKey: null,
+    phaseOverrideArmedGlobal: false,
+    jobDetailTabByKey: new Map(),
+    cachedActivityEntries: [],
+    lastSavedJobsByKey: new Map(),
+    selectedJobKey: "",
+    timelineScope: "all",
+    lastActivityPulse: null,
+    savedAuthListenerBound: false
+  };
+
+  try {
+    const controller = createSavedAuthController({
+      refs,
+      viewState,
+      savedPageService: {
+        isAvailable: () => true
+      },
+      savedAuthService: {
+        onAuthStateChanged(callback) {
+          authListener = callback;
+          callback(null);
+          return () => {};
+        }
+      },
+      savedAuthReadyPoller: {
+        schedulePoll() {},
+        stopPoll() {}
+      },
+      isSavedApiReady: () => true,
+      savedDispatch: { dispatch() {} },
+      SAVED_ACTIONS: { AUTH_CHANGED: "auth_changed" },
+      clearNoteSaveQueues() {},
+      setActivityPanelOpen() {},
+      setCustomJobPanelOpen() {},
+      setCustomJobAvailability() {},
+      updateTimelineScopeButtons() {},
+      renderWorkspaceStats() {},
+      emitSavedStartupMetric() {},
+      setSourceStatus(value) {
+        sourceStatus = String(value || "");
+      },
+      setActivityStatus(value) {
+        activityStatus = String(value || "");
+      },
+      renderAuthRequired(value) {
+        authRequired = String(value || "");
+      },
+      renderTimeline() {},
+      markSavedFirstInteractive() {},
+      setSavedFilter() {},
+      defaultSavedFilter: "all",
+      setSavedSort() {},
+      defaultSavedSort: "updated",
+      renderSelectedJobHint() {},
+      setBackupButtonsEnabled() {},
+      setSavedFilterBarVisible() {},
+      setSavedSortBarVisible() {},
+      loadTimelinePreferences: () => ({ scope: "all" }),
+      subscribeToSavedJobs(uid) {
+        subscribedUid = uid;
+      },
+      refreshActivityLog: async () => {},
+      timelineScopeAll: "all",
+      showToast() {}
+    });
+
+    controller.initSavedJobsPage();
+
+    assert.equal(refs.savedAuthStatusEl.textContent, "Restoring profile...");
+    assert.equal(sourceStatus, "Restoring your saved jobs...");
+    assert.equal(activityStatus, "Restoring activity...");
+    assert.equal(authRequired, "Restoring your local profile. Please wait...");
+    assert.equal(typeof authListener, "function");
+    assert.equal(typeof pendingTimer, "function");
+    assert.equal(subscribedUid, "");
+
+    authListener({
+      uid: "local_packaged_smoke_user",
+      displayName: "Packaged Smoke User"
+    });
+
+    assert.equal(pendingTimer, null);
+    assert.match(String(refs.savedAuthStatusEl.textContent || ""), /Packaged Smoke User/);
+    assert.equal(sourceStatus, "Loading your saved jobs...");
+    assert.equal(activityStatus, "Loading activity...");
+    assert.equal(subscribedUid, "local_packaged_smoke_user");
+  } finally {
+    globalThis.window = originalWindow;
+  }
 });

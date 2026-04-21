@@ -2,6 +2,11 @@
 import json
 from unittest import mock
 
+import pytest
+
+from src.exceptions import AdapterValidationError
+from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
+
 from ._helpers import (
     FIXTURES_DIR,
     AdapterPluginContext,
@@ -985,3 +990,146 @@ def test_unknown_static_breakdown_groups_by_shape_and_orders_views() -> None:
     assert source_reports[0]["failureBucket"] == "unknown"
     assert source_reports[-1]["status"] == "ok"
     assert source_reports[-1]["keptCount"] == 0
+
+
+def test_static_loader_disables_browser_fallback_after_environment_failure() -> None:
+    sources = [
+        {
+            "name": "Alpha Studio (Manual Website)",
+            "studio": "Alpha Studio",
+            "adapter": "static",
+            "pages": ["https://alpha.example/careers"],
+            "enabledByDefault": True,
+        },
+        {
+            "name": "Beta Studio (Manual Website)",
+            "studio": "Beta Studio",
+            "adapter": "static",
+            "pages": ["https://beta.example/careers"],
+            "enabledByDefault": True,
+        },
+    ]
+    browser_calls: list[str] = []
+    breaker = BrowserFallbackCircuitBreaker(cooldown_minutes=15)
+
+    def fake_try_playwright(url: str, timeout_s: int) -> tuple[str, str]:
+        del timeout_s
+        browser_calls.append(url)
+        return "", "browser fallback unavailable (playwright is not installed)"
+
+    def failing_fetch_text(_url: str, _timeout: int) -> str:
+        raise RuntimeError("HTTP Error 403: forbidden")
+
+    prev = list(jf.STUDIO_SOURCE_REGISTRY)
+    jf.STUDIO_SOURCE_REGISTRY = sources
+    try:
+        with pytest.raises(AdapterValidationError):
+            jf.run_static_studio_pages_source(
+                fetch_text=failing_fetch_text,
+                timeout_s=5,
+                retries=0,
+                backoff_s=0.0,
+                source_state_rows={},
+                try_playwright=breaker.wrap(fake_try_playwright),
+                force_refresh_all=True,
+            )
+    finally:
+        jf.STUDIO_SOURCE_REGISTRY = prev
+
+    assert browser_calls == ["https://alpha.example/careers"]
+    state_row = breaker.to_state_row()
+    assert state_row["browserFallbackFailureCount"] == 1
+    assert "browserFallbackQuarantinedUntilAt" in state_row
+
+
+def test_static_manual_no_jobs_surface_as_js_required() -> None:
+    detail = {
+        "adapter": "static",
+        "studio": "Frontier Developments",
+        "name": "Frontier Developments Careers",
+        "status": "error",
+        "fetchedCount": 0,
+        "keptCount": 0,
+        "error": "static:Frontier Developments (Sheet): no jobs extracted from source pages",
+        "classification": "needs_review",
+        "browserFallbackRecommended": False,
+        "signalQuality": "strong",
+        "stats": {
+            "candidate_links_found": 0,
+            "detail_pages_visited": 0,
+            "jobs_emitted": 0,
+            "jobs_rejected_validation": 0,
+        },
+    }
+
+    updated = static_helpers.update_source_detail_taxonomy(detail)
+    normalized = jf.normalize_source_report_row(updated)
+    breakdown = jobs_reporting.build_unknown_static_breakdown([normalized])
+
+    assert str(updated.get("classification") or "") == "js_required"
+    assert str(updated.get("failureBucket") or "") == "js_required"
+    assert str(updated.get("zeroKeptClassification") or "") == "broken_extraction"
+    assert str(normalized.get("classification") or "") == "js_required"
+    assert str(normalized.get("failureBucket") or "") == "js_required"
+    assert str(normalized.get("zeroKeptClassification") or "") == "broken_extraction"
+    assert breakdown["byShape"]["no_jobs_extracted"]["count"] == 1
+    assert breakdown["topByWallTime"][0]["name"] == "Frontier Developments Careers"
+
+
+def test_static_repeat_offender_no_jobs_surface_as_js_required() -> None:
+    cases = [
+        (
+            "Electronic Arts",
+            "static:Electronic Arts (Manual Website): no jobs extracted from source pages",
+            "static:electronic arts (manual website): no jobs extracted from source pages",
+        ),
+        (
+            "SEGA",
+            "static:SEGA (Manual Website): no jobs extracted from source pages",
+            "static:sega (manual website): no jobs extracted from source pages",
+        ),
+        (
+            "Capcom",
+            "static:Capcom (Sheet): no jobs extracted from source pages",
+            "static:capcom (sheet): no jobs extracted from source pages",
+        ),
+        (
+            "Stormind",
+            "static:Stormind Games (Gameprog): no jobs extracted from source pages",
+            "static:stormind games (gameprog): no jobs extracted from source pages",
+        ),
+        (
+            "Unknown Worlds",
+            "static:Unknown Worlds Entertainment (Sheet): no jobs extracted from source pages",
+            "static:unknown worlds entertainment (sheet): no jobs extracted from source pages",
+        ),
+    ]
+
+    for source_name, error, expected_error in cases:
+        detail = {
+            "adapter": "static",
+            "studio": source_name,
+            "name": f"{source_name} Careers",
+            "status": "error",
+            "fetchedCount": 0,
+            "keptCount": 0,
+            "error": error,
+            "classification": "needs_review",
+            "browserFallbackRecommended": False,
+            "signalQuality": "strong",
+            "stats": {
+                "candidate_links_found": 0,
+                "detail_pages_visited": 0,
+                "jobs_emitted": 0,
+                "jobs_rejected_validation": 0,
+            },
+        }
+
+        updated = static_helpers.update_source_detail_taxonomy(detail)
+        normalized = jf.normalize_source_report_row(updated)
+
+        assert str(updated.get("classification") or "") == "js_required"
+        assert str(updated.get("failureBucket") or "") == "js_required"
+        assert str(normalized.get("classification") or "") == "js_required"
+        assert str(normalized.get("failureBucket") or "") == "js_required"
+        assert str(normalized.get("error") or "").lower() == expected_error

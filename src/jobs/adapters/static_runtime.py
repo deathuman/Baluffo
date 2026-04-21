@@ -12,7 +12,7 @@ from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 
 from ..common import config as common_config
-from .static_helpers import (
+from .static_runtime_support import (
     StaticHtmlFetcher,
     StaticSourceRuntimeConfig,
     build_static_entry_report,

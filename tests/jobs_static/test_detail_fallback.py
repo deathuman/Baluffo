@@ -693,3 +693,118 @@ def test_static_detail_fallback_understands_team_asobi_japanese_location_block()
     assert row["country"] == "Japan"
     assert row["locationSummary"] == "Tokyo, Japan"
     assert row["locations"] == [{"city": "Tokyo", "country": "Japan"}]
+
+
+def test_run_static_frontier_source_skips_non_location_dd_values() -> None:
+    html = """
+        <html>
+          <body>
+            <li>
+              <div class="c-careers-job-listing__department-list-detail">
+                <h3>Senior Gameplay Programmer</h3>
+                <dd>AI Solutions PM</dd>
+                <dd>Administrative & Support Services</dd>
+                <dd>Full Time</dd>
+                <dd>Tokyo</dd>
+                <a href="/careers/jobs/senior-gameplay-programmer">Details</a>
+              </div>
+            </li>
+          </body>
+        </html>
+        """
+    rows = frontier.run(
+        fetch_text=lambda _url, _timeout: html,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        pages=["https://www.frontier.co.uk/careers"],
+        source_row={"name": "Frontier Developments", "id": "frontier"},
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == "Senior Gameplay Programmer"
+    assert row["city"] == "Tokyo"
+    assert row["country"] == "Japan"
+
+
+def test_run_static_studio_pages_source_text_detail_page_overrides_listing_category_city() -> None:
+    listing_html = """
+        <html>
+          <body>
+            <section>
+              <h2>Art</h2>
+              <a href="/en/jobs?job_id=49">
+                <div class="d-table-cell vacancy ps-1 pe-3 pe-md-0">3D Environment Artist</div>
+                <div class="d-table-cell vacancy">Art</div>
+              </a>
+            </section>
+          </body>
+        </html>
+        """
+    detail_html = """
+        <html>
+          <body>
+            <h1>3D Environment Artist</h1>
+            <p>We work together in person, in Bellevue, WA, USA</p>
+          </body>
+        </html>
+        """
+    jf.SOURCE_DIAGNOSTICS.clear()
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=lambda url, _timeout: listing_html if url.endswith("/en/jobs") else detail_html,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[
+            {
+                "name": "Valve Software (Manual Website)",
+                "studio": "Valve Software",
+                "company": "Valve Software",
+                "pages": ["https://www.valvesoftware.com/en/jobs"],
+                "id": "static:listing_url:https://www.valvesoftware.com/en/jobs",
+            }
+        ],
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == "3D Environment Artist"
+    assert row["city"] == "Bellevue"
+    assert row["country"] == "US"
+    assert row["locationSummary"] == "Bellevue, US"
+    assert row["locations"] == [{"city": "Bellevue", "country": "US"}]
+    detail = ((jf.SOURCE_DIAGNOSTICS.get("static_studio_pages") or {}).get("details") or [{}])[0]
+    assert int(detail.get("keptCount") or 0) == 1
+
+
+@pytest.mark.parametrize(
+    "noise_line",
+    ["Apr. 06", "AI Solutions PM", "Assist with outdoor photos"],
+)
+def test_run_static_studio_pages_source_kojima_blank_city_for_noise_trailing_line(
+    noise_line: str,
+) -> None:
+    html = f"""
+        <html>
+          <body>
+            <a href="/en/careers/123">
+              <span>Senior Programmer</span><br />
+              <span>Programming</span><br />
+              <span>{noise_line}</span>
+            </a>
+          </body>
+        </html>
+        """
+    rows = kojima.run(
+        fetch_text=lambda _url, _timeout: html,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        pages=["https://www.kojimaproductions.jp/en/careers"],
+        source_row={"name": "Kojima Productions", "id": "kojima"},
+        parse_jobpostings_from_html=lambda *args, **kwargs: [],
+    )
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["title"] == "Senior Programmer"
+    assert row["city"] == ""
+    assert row["country"] == "Japan"

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-from src.jobs.adapters.static_helpers import (
+from src.jobs.adapters.static_runtime_support import (
     effective_timeout_for_remaining_budget,
     remaining_static_source_budget_s,
     static_source_budget_exhausted,
