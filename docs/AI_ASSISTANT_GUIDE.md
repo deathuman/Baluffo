@@ -82,6 +82,7 @@
 | Frontend behavior | `frontend/<page>/app/*.js` | `frontend/<page>/app/runtime.js` |
 | Shared/page CSS | `styles/{base,components,<page>}.css` | The owning HTML entrypoint only if stylesheet includes need to change |
 | Bridge/API | `src/bridge/*.py` | `src/bridge/routes/*.py` |
+| Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py` | `src/admin_bridge.py` only when the stable wrapper or root patch seam must change |
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
 | Registry sync / tombstones | `src/source_registry.py`, `src/bridge/registry_service.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py` | `src/bridge/registry_tombstones.py`, `src/source_sync.py`, `src/source_sync_crypto.py`, `src/bridge/routes/post_routes.py` |
 | Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
@@ -93,6 +94,7 @@
 
 **Compatibility surfaces**:
 - `src/admin_bridge.py` is a stable thin entrypoint for bridge startup and compatibility wrappers; add new bridge logic in `src/bridge/*`.
+- Admin bridge runtime/path/session glue now lives in `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py`; use `src/admin_bridge.py` only for stable wrapper or monkeypatch-surface changes.
 - `src/source_discovery.py` is a stable thin CLI entrypoint; discovery logic belongs in `src/source_discovery/*`.
 - `src/ship/desktop_app/__init__.py` is now a thin facade; desktop runtime implementation belongs in the focused modules under `src/ship/desktop_app/`.
 - `src/packaged_desktop_smoke.py` is the stable packaged smoke entrypoint and monkeypatch surface; implementation belongs in `src/ship/packaged_smoke/{build_env,runtime,rehearsals}.py`.

@@ -24,6 +24,7 @@ src/dev_admin_supervisor.py (Baluffo launcher)
 
 src/admin_bridge.py (stable thin entrypoint / wiring-only composition root)
   -> src/bridge/ (services: sync, registry, discovery, pipeline, routes)
+  -> src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py
 
 src/jobs_fetcher.py (stable thin CLI facade)
   -> src/jobs/ (pipeline, adapters, dedup)
@@ -73,6 +74,7 @@ src/ship/desktop_update.py (stable updater surface)
 | Saved attachments | `frontend/saved/app/attachments.js` | `frontend/saved/services.js` |
 | Admin ops | `frontend/admin/app/{auth,ops,fetcher,discovery,sync}.js` | `frontend/admin/services.js` |
 | Bridge API | `src/bridge/*.py` | `src/bridge/routes/*.py` |
+| Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py` | `src/admin_bridge.py` only for root-surface compatibility work |
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
 | Bridge sync | `src/bridge/sync_service.py` | `src/source_sync.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py`, `src/source_sync_crypto.py`, `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
@@ -110,7 +112,13 @@ src/ship/desktop_update.py (stable updater surface)
 - `routes/get_routes.py`, `routes/post_routes.py` - HTTP handlers
 - `ops_api.py`, `task_history.py`, `source_check_api.py` - ops/report/orchestration
 
-**Still in `admin_bridge.py`:** HTTP server, service wiring, compatibility wrappers
+**Still in `admin_bridge.py`:** bridge startup entrypoint, `build_bridge_api(...)`, stable compatibility wrappers, and root monkeypatch seams
+
+**Admin bridge entrypoint helpers:**
+- `admin_entrypoint_runtime.py` - bridge log emission, runtime-path rebinding, startup metrics, owner-session lifecycle helpers
+- `admin_entrypoint_services.py` - cached sync/registry/discovery/pipeline/updater/task-launch/ops builders
+- `admin_registry_api.py` - manual-source add/update flow, source-check glue, registry-state persistence helpers
+- `admin_task_runtime.py` - sync/task runtime helpers, report waits, fetch-task launch/runtime glue
 
 **Jobs package (`src/jobs/`):**
 - `pipeline.py` - pipeline entry flow
@@ -178,7 +186,7 @@ See [`testing.md`](testing.md) for more commands.
 
 - `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and test patch surface; keep implementation in `src/ship/packaged_smoke/*.py`
 - `src/ship/desktop_update.py` - stable updater surface; keep implementation in `src/ship/desktop_update_{shared,state,service}.py`
-- `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py`
+- `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py` or `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py`
 - `src/source_discovery.py` - stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
 - `src/jobs_fetcher.py` - stable thin CLI facade; add pipeline logic to `src/jobs/*`
 - `src/jobs/adapters/static.py` - stable static adapter surface; keep generic listing/detail/runtime logic in `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`

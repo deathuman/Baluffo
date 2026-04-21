@@ -1,0 +1,197 @@
+from unittest import mock
+
+from src import admin_bridge
+
+
+def test_compute_ops_health_reports_alerts(admin_bridge_entrypoint_root):
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "startedAt": "2026-03-01T00:00:00+00:00",
+            "finishedAt": "2026-03-01T00:10:00+00:00",
+            "summary": {"outputCount": 100, "failedSources": 3, "sourceCount": 4},
+            "sources": [],
+        },
+    )
+    health = admin_bridge.compute_ops_health()
+    assert health["service"] == "baluffo-bridge"
+    assert health["appVersion"] == admin_bridge.get_app_version()
+    assert health["startupReady"] is True
+    assert "desktopMode" in health
+    assert bool(health["desktopMode"]) == bool(admin_bridge.RUNTIME_CONFIG.desktop_mode)
+    assert "owner" in health
+    assert str(health["owner"]["mode"] or "") == str(admin_bridge.RUNTIME_CONFIG.owner_mode or "")
+    assert "kpis" in health
+    assert "alerts" in health
+    assert "updater" in health
+    assert str((health["updater"] or {}).get("currentVersion") or "") == admin_bridge.get_app_version()
+    assert len(health["alerts"]) >= 1
+    assert any(alert["id"] == "degraded_reliability" for alert in health["alerts"])
+
+
+def test_compute_ops_health_guides_initial_fetch_when_none_has_succeeded(
+    admin_bridge_entrypoint_root,
+):
+    health = admin_bridge.compute_ops_health()
+
+    guidance = next(
+        (alert for alert in health.get("alerts", []) if alert.get("id") == "fetch_never_run"),
+        None,
+    )
+
+    assert guidance is not None
+    assert guidance["severity"] == "warning"
+    assert guidance["dismissible"] is False
+    assert "Run Jobs Fetcher" in guidance["message"]
+
+
+def test_compute_ops_health_reframes_stale_fetch_as_guidance(admin_bridge_entrypoint_root):
+    admin_bridge.append_run_history(
+        {
+            "id": "fetch_stale_1",
+            "runId": "fetch_stale_1",
+            "type": "fetch",
+            "status": "ok",
+            "startedAt": "2026-03-01T00:00:00+00:00",
+            "finishedAt": "2026-03-01T00:10:00+00:00",
+            "durationMs": 600000,
+            "summary": {"outputCount": 40, "failedSources": 0, "sourceCount": 4},
+        }
+    )
+
+    with mock.patch.object(
+        admin_bridge,
+        "now_utc",
+        return_value=admin_bridge.parse_iso("2026-03-02T13:00:00+00:00"),
+    ):
+        health = admin_bridge.compute_ops_health()
+
+    stale_alert = next(
+        (alert for alert in health.get("alerts", []) if alert.get("id") == "stale_fetch"),
+        None,
+    )
+
+    assert stale_alert is not None
+    assert stale_alert["severity"] == "warning"
+    assert stale_alert["dismissible"] is True
+    assert "full Jobs Fetcher run is suggested" in stale_alert["message"]
+
+
+def test_compute_ops_health_reshows_fetch_never_run_even_if_previously_acked(
+    admin_bridge_entrypoint_root,
+):
+    state = admin_bridge.load_alert_state()
+    state["acked"]["fetch_never_run"] = admin_bridge.now_iso()
+    admin_bridge.save_alert_state(state)
+
+    health = admin_bridge.compute_ops_health()
+
+    guidance = next(
+        (alert for alert in health.get("alerts", []) if alert.get("id") == "fetch_never_run"),
+        None,
+    )
+
+    assert guidance is not None
+    assert guidance["dismissible"] is False
+    assert "fetch_never_run" not in admin_bridge.load_alert_state().get("acked", {})
+
+
+def test_compute_ops_health_includes_social_alerts(admin_bridge_entrypoint_root):
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "startedAt": "2026-03-01T00:00:00+00:00",
+            "finishedAt": "2026-03-01T00:10:00+00:00",
+            "summary": {"outputCount": 20, "failedSources": 0, "sourceCount": 3},
+            "socialSummary": {
+                "pilotWindowStartAt": "2026-03-01T00:00:00+00:00",
+                "pilotWindowEndAt": "2026-03-01T00:10:00+00:00",
+                "scheduledRunCount": 1,
+                "keptCount": 2,
+                "uniqueKeptCount": 2,
+                "officialBoardOverlapCount": 0,
+                "duplicateCount": 0,
+                "duplicateRate": 0.0,
+                "lowConfidenceDropped": 0,
+                "sampleSize": 0,
+                "reviewedCount": 0,
+                "falsePositiveCount": 0,
+                "falsePositiveRate": 0.0,
+                "reviewArtifactPath": "data/social-experiment-review.json",
+                "channels": {
+                    "reddit": {
+                        "keptCount": 1,
+                        "uniqueKeptCount": 1,
+                        "officialBoardOverlapCount": 0,
+                        "duplicateCount": 0,
+                        "duplicateRate": 0.0,
+                        "lowConfidenceDropped": 0,
+                    },
+                    "mastodon": {
+                        "keptCount": 1,
+                        "uniqueKeptCount": 1,
+                        "officialBoardOverlapCount": 0,
+                        "duplicateCount": 0,
+                        "duplicateRate": 0.0,
+                        "lowConfidenceDropped": 0,
+                    },
+                },
+            },
+            "sources": [
+                {
+                    "name": "social_reddit",
+                    "status": "error",
+                    "fetchedCount": 30,
+                    "keptCount": 0,
+                    "lowConfidenceDropped": 70,
+                },
+                {
+                    "name": "social_x",
+                    "status": "error",
+                    "fetchedCount": 20,
+                    "keptCount": 0,
+                    "lowConfidenceDropped": 60,
+                },
+                {
+                    "name": "social_mastodon",
+                    "status": "ok",
+                    "fetchedCount": 20,
+                    "keptCount": 0,
+                    "lowConfidenceDropped": 20,
+                },
+            ],
+        },
+    )
+    health = admin_bridge.compute_ops_health()
+    social_kpis = health.get("kpis", {}).get("socialExperiment", {})
+    assert int(social_kpis.get("keptCount") or 0) == 2
+    assert int(social_kpis.get("uniqueKeptCount") or 0) == 2
+    assert int(social_kpis.get("sampleSize") or 0) == 0
+    assert int(social_kpis.get("reviewedCount") or 0) == 0
+    assert float(social_kpis.get("falsePositiveRate") or 0) == 0.0
+    ids = {str(row.get("id") or "") for row in health.get("alerts", [])}
+    assert "social_sources_failing" in ids
+    assert "social_zero_matches" in ids
+    assert "social_low_confidence_spike" in ids
+    assert "social_false_positive_spike" not in ids
+
+
+def test_alert_ack_suppresses_visible_alert(admin_bridge_entrypoint_root):
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "startedAt": "2026-03-01T00:00:00+00:00",
+            "finishedAt": "2026-03-01T00:10:00+00:00",
+            "summary": {"outputCount": 100, "failedSources": 3, "sourceCount": 4},
+            "sources": [],
+        },
+    )
+    initial = admin_bridge.compute_ops_health()
+    alert_ids = [row["id"] for row in initial.get("alerts", [])]
+    assert "degraded_reliability" in alert_ids
+    state = admin_bridge.load_alert_state()
+    state["acked"]["degraded_reliability"] = admin_bridge.now_iso()
+    admin_bridge.save_alert_state(state)
+    updated = admin_bridge.compute_ops_health()
+    updated_ids = [row["id"] for row in updated.get("alerts", [])]
+    assert "degraded_reliability" not in updated_ids

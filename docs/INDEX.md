@@ -24,6 +24,7 @@ Use these as entrypoints or shims only; route new logic to the owning modules th
 - `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and patch surface; implementation belongs in `src/ship/packaged_smoke/*`
 - `src/ship/desktop_update.py` - stable updater surface; implementation belongs in `src/ship/desktop_update_{shared,state,service}.py`
 - `src/admin_bridge.py` - stable thin entrypoint for bridge startup and compatibility wrappers
+- `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py` - admin bridge runtime/path/session/manual-source/task helpers behind the stable root surface
 - `src/source_discovery.py` - stable thin CLI entrypoint delegating to `src/source_discovery/*`
 - `src/jobs_fetcher.py` - stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`
 - `src/jobs/adapters/static.py` - stable static adapter surface; implementation belongs in `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`
@@ -73,6 +74,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`desktop-packaging-boundary-charter.md`](desktop-packaging-boundary-charter.md) | Active refactor tracker | You are changing packaged smoke or desktop updater boundaries and need the current compatibility assumptions |
 | [`discovery-orchestrator-boundary-charter.md`](discovery-orchestrator-boundary-charter.md) | Active refactor tracker | You are changing discovery orchestration boundaries and need the current compatibility assumptions |
 | [`static-adapter-boundary-charter.md`](static-adapter-boundary-charter.md) | Active refactor tracker | You are changing the static adapter boundary and need the current compatibility assumptions |
+| [`admin-bridge-boundary-charter.md`](admin-bridge-boundary-charter.md) | Active refactor tracker | You are changing admin bridge startup/runtime boundaries and need the current compatibility assumptions |
 
 ---
 

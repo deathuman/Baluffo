@@ -169,13 +169,21 @@ def test_bridge_mutable_module_state_stays_in_approved_runtime_modules() -> None
 def test_admin_bridge_keeps_registry_autosync_and_sync_normalization_out_of_entrypoint(
     repo_root: Path,
 ) -> None:
-    target = repo_root / "src" / "admin_bridge.py"
-    text = target.read_text(encoding="utf-8")
-    assert "from src.bridge import registry_sync_flow as _registry_sync_flow" in text
-    assert "_registry_sync_flow.persist_state_and_auto_sync(" in text
-    assert "_registry_sync_flow.maybe_trigger_auto_sync_push(" in text
-    assert "def _normalize_sync_settings" not in text
-    assert "def _mask_sync_token" not in text
+    admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    admin_registry_api = (repo_root / "src" / "bridge" / "admin_registry_api.py").read_text(
+        encoding="utf-8"
+    )
+    admin_task_runtime = (repo_root / "src" / "bridge" / "admin_task_runtime.py").read_text(
+        encoding="utf-8"
+    )
+    assert "from src.bridge import admin_registry_api as admin_registry_api_mod" in admin_bridge
+    assert "from src.bridge import registry_sync_flow as _registry_sync_flow" in admin_bridge
+    assert "_registry_sync_flow.persist_state_and_auto_sync(" not in admin_bridge
+    assert "_registry_sync_flow.persist_state_and_auto_sync(" in admin_registry_api
+    assert "_registry_sync_flow.maybe_trigger_auto_sync_push(" not in admin_bridge
+    assert "_registry_sync_flow.maybe_trigger_auto_sync_push(" in admin_task_runtime
+    assert "def _normalize_sync_settings" not in admin_bridge
+    assert "def _mask_sync_token" not in admin_bridge
 
 
 def test_source_discovery_entrypoint_stays_thin_cli_wrapper(repo_root: Path) -> None:
@@ -260,10 +268,14 @@ def test_sync_task_worker_logic_is_shared_between_admin_bridge_and_sync_service(
     repo_root: Path,
 ) -> None:
     admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    admin_task_runtime = (repo_root / "src" / "bridge" / "admin_task_runtime.py").read_text(
+        encoding="utf-8"
+    )
     sync_service = (repo_root / "src" / "bridge" / "sync_service.py").read_text(encoding="utf-8")
-    assert "from src.bridge import sync_task_flow as _sync_task_flow" in admin_bridge
+    assert "from src.bridge import admin_task_runtime as admin_task_runtime_mod" in admin_bridge
     assert "from src.bridge import sync_task_flow as _sync_task_flow" in sync_service
-    assert "_sync_task_flow.run_sync_task_worker(" in admin_bridge
+    assert "admin_task_runtime_mod.run_sync_task_worker(" in admin_bridge
+    assert "root_mod._sync_task_flow.run_sync_task_worker(" in admin_task_runtime
     assert "_sync_task_flow.run_sync_task_worker(" in sync_service
 
 
@@ -303,13 +315,16 @@ def test_admin_bridge_delegates_source_check_orchestration_to_bridge_module(
 ) -> None:
     target = repo_root / "src" / "admin_bridge.py"
     tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
     imported_modules = _imported_modules(tree)
     trigger_fn = _find_function(tree, "trigger_source_check")
     normalize_fn = _find_function(tree, "normalize_manual_static_studio_fields")
 
     assert "src.bridge" in imported_modules
-    assert "_source_check_api.trigger_source_check" in _function_call_names(trigger_fn)
-    assert "_source_check_api.normalize_manual_static_studio_fields" in _function_call_names(
+    assert "from src.bridge import admin_registry_api as admin_registry_api_mod" in text
+    assert "admin_registry_api_mod.root = sys.modules[__name__]" in text
+    assert "admin_registry_api_mod.trigger_source_check" in _function_call_names(trigger_fn)
+    assert "admin_registry_api_mod.normalize_manual_static_studio_fields" in _function_call_names(
         normalize_fn
     )
 
@@ -328,6 +343,8 @@ def test_desktop_app_package_stays_lazy_compat_facade(repo_root: Path) -> None:
 
 def test_sharded_python_test_families_do_not_use_star_helper_imports(repo_root: Path) -> None:
     for relative_path in (
+        "tests/admin/test_admin_bridge_report_history.py",
+        "tests/admin/test_admin_bridge_live_payloads.py",
         "tests/source_discovery/test_candidate_generation.py",
         "tests/source_discovery/test_config_and_helpers.py",
         "tests/source_discovery/test_directory_sources.py",
@@ -339,6 +356,40 @@ def test_sharded_python_test_families_do_not_use_star_helper_imports(repo_root: 
     ):
         text = (repo_root / relative_path).read_text(encoding="utf-8")
         assert "from ._helpers import *" not in text
+
+
+def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "admin_bridge.py"
+    text = target.read_text(encoding="utf-8")
+
+    assert "from src.bridge import admin_entrypoint_runtime as admin_entrypoint_runtime_mod" in text
+    assert (
+        "from src.bridge import admin_entrypoint_services as admin_entrypoint_services_mod" in text
+    )
+    assert "from src.bridge import admin_registry_api as admin_registry_api_mod" in text
+    assert "from src.bridge import admin_task_runtime as admin_task_runtime_mod" in text
+    assert "admin_entrypoint_runtime_mod.root = sys.modules[__name__]" in text
+    assert "admin_entrypoint_services_mod.root = sys.modules[__name__]" in text
+    assert "admin_registry_api_mod.root = sys.modules[__name__]" in text
+    assert "admin_task_runtime_mod.root = sys.modules[__name__]" in text
+    assert "def build_bridge_api(" in text
+    assert "return bridge_bootstrap.build_bridge_api(" in text
+    assert "smoke_runtime: dict[str, Any]" not in text
+    assert "find_existing_static_source_by_studio_domain(" not in text
+    assert len(text.splitlines()) <= 900, "admin bridge root drifted back toward monolith size"
+
+
+def test_admin_runtime_megatest_stays_split(repo_root: Path) -> None:
+    legacy = repo_root / "tests" / "admin" / "test_admin_bridge_ops_runtime.py"
+    assert not legacy.exists()
+    for relative_path in (
+        "tests/admin/test_admin_bridge_runtime_config.py",
+        "tests/admin/test_admin_bridge_ops_health.py",
+        "tests/admin/test_admin_bridge_report_history.py",
+        "tests/admin/test_admin_bridge_task_launch.py",
+        "tests/admin/test_admin_bridge_live_payloads.py",
+    ):
+        assert (repo_root / relative_path).exists()
 
 
 def test_admin_bridge_delegates_task_launch_orchestration_to_bridge_module(repo_root: Path) -> None:
