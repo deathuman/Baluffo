@@ -49,6 +49,7 @@ import "./saved-notes-editing.test.mjs";
 import "./saved-phase-time.test.mjs";
 import "./saved-render-anchor.test.mjs";
 import "./saved-render.test.mjs";
+import "./saved-runtime-controllers.test.mjs";
 import "./saved-timeline.test.mjs";
 import "./startup-metrics-effects.test.mjs";
 import "./structure-cleanup.test.mjs";

@@ -29,10 +29,16 @@ Use these as entrypoints or shims only; route new logic to the owning modules th
 - `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py` - admin bridge runtime/path/session/manual-source/task helpers behind the stable root surface
 - `src/source_discovery.py` - stable thin CLI entrypoint delegating to `src/source_discovery/*`
 - `src/jobs_fetcher.py` - stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`
-- `src/jobs/adapters/static.py` - stable static adapter surface; implementation belongs in `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`
+- `src/jobs/adapters/static.py` - stable static adapter surface; implementation belongs in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py`
 - `src/source_sync.py` - permanent thin sync integration surface delegating to `src/source_sync_*`
 - `src/jobs/common/__init__.py` - package marker only; import `src.jobs.common.<leaf>` or package-submodule helpers
 - `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`
+
+Current high-value leaf owners behind those surfaces:
+- `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`
+- `src/jobs/adapters/static_listing_flow.py`
+- `src/jobs/state_incremental.py`
+- `frontend/saved/app/runtime/*.js`
 
 ---
 
@@ -107,6 +113,7 @@ Useful as context, but **not authoritative** for current implementation unless e
 | Understand the repo quickly | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
 | Understand product and top-level layout | [`README.md`](../README.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
 | Change frontend behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then task-specific source files |
+| Change saved page runtime wiring | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `frontend/saved/app/runtime/*.js`, `frontend/saved/app/admin-bridge-state.js`, and `frontend/saved/app/runtime.js` only if the page entrypoint must change |
 | Change bridge/API behavior | [`architecture-ai-map.md`](architecture-ai-map.md) | [`admin-bridge-api.md`](admin-bridge-api.md) |
 | Change discovery behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/source_discovery/orchestrator*.py` or the relevant discovery leaf module |
 | Change jobs pipeline / fetcher behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/jobs/*` leaf modules |

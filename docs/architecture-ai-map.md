@@ -18,6 +18,7 @@ jobs.html / saved.html / admin.html
   -> frontend/{jobs|saved|admin}/app.js
   -> frontend/{jobs|saved|admin}/app/runtime.js
       -> page modules (app/*.js + actions/services/render/domain/data-source)
+      -> saved runtime leaves (frontend/saved/app/runtime/*.js + admin-bridge-state.js)
       -> shared (frontend/shared/*, selectors.js, api-client.js, state-hub.js)
 
 src/dev_admin_supervisor.py (Baluffo launcher)
@@ -31,7 +32,7 @@ src/admin_bridge.py (stable thin entrypoint / wiring-only composition root)
 src/jobs_fetcher.py (stable thin CLI facade)
   -> src/jobs/ (pipeline, adapters, dedup)
 src/jobs/adapters/static.py (stable static adapter surface)
-  -> src/jobs/adapters/static_{runtime,listing,detail,sources}.py
+  -> src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py
   -> src/jobs/adapters/static_helpers.py + plugins/static/*
 src/source_discovery.py (stable thin CLI entrypoint)
   -> src/source_discovery/ (package)
@@ -93,7 +94,7 @@ src/ship/desktop_update.py (stable updater surface)
 
 **Jobs page:** `frontend/jobs/app.js` -> `runtime.js` -> `app/filters.js`, `app/feed.js`, `app/cache.js`, `app/pipeline.js`, `app/sources.js`
 
-**Saved page:** `frontend/saved/app.js` -> `runtime.js` -> `runtime/state.js`, `runtime/events.js`, `app/notes.js`, `app/attachments.js`, `app/activity.js`, `app/view-state.js`
+**Saved page:** `frontend/saved/app.js` -> `runtime.js` -> `runtime/{state,events,auth-controller,activity-controller,attachments-controller,custom-job-controller,render-controller}.js`, `app/{notes,attachments,activity}.js`, `app/admin-bridge-state.js`, `app/view-state.js`
 
 **Admin page:** `frontend/admin/app.js` -> `runtime.js` -> `app/auth.js`, `app/fetcher.js`, `app/discovery.js`, `app/sync.js`, `app/registry.js`, `app/ops.js`
 
@@ -112,7 +113,8 @@ src/ship/desktop_update.py (stable updater surface)
 - `discovery_service.py` - discovery task orchestration
 - `pipeline_service.py` - jobs pipeline task
 - `routes/get_routes.py`, `routes/post_routes.py` - HTTP handlers
-- `ops_api.py`, `task_history.py`, `source_check_api.py` - ops/report/orchestration
+- `ops_api.py` - stable OpsApi surface over `ops_history_projection.py`, `ops_task_live.py`, and `ops_live_payload.py`
+- `source_check_api.py` - source probe/check helpers
 
 **Still in `admin_bridge.py`:** bridge startup entrypoint, `build_bridge_api(...)`, stable compatibility wrappers, and root monkeypatch seams
 
@@ -125,6 +127,7 @@ src/ship/desktop_update.py (stable updater surface)
 **Jobs package (`src/jobs/`):**
 - `pipeline.py` - pipeline entry flow
 - `pipeline_timing.py`, `pipeline_finalize.py` - timing aggregation and late-stage output/report assembly
+- `state.py`, `state_incremental.py` - jobs state, cadence, and incremental freshness helpers
 - `adapters/` - static, provider_api, social fetchers
 - `canonicalize.py`, `dedup.py` - normalization
 - `common/` - leaf helpers (`config`, `contracts`, `heuristics`, `parsing`, etc.); `common/__init__.py` is compatibility-only
@@ -137,7 +140,7 @@ src/ship/desktop_update.py (stable updater surface)
 **Sync helpers:**
 - `source_sync.py` - compatibility and test patch surface
 - `source_sync_config.py`, `source_sync_snapshot.py`, `source_sync_crypto.py` - config resolution, snapshot I/O, and crypto/JWT helpers
-- `adapters/static.py` - root static adapter surface over `static_runtime.py`, `static_listing.py`, `static_detail.py`, `static_sources.py`, and `static_helpers.py`
+- `adapters/static.py` - root static adapter surface over `static_runtime.py`, `static_listing.py`, `static_listing_flow.py`, `static_detail.py`, `static_sources.py`, and `static_helpers.py`
 
 ---
 
@@ -191,10 +194,16 @@ See [`testing.md`](testing.md) for more commands.
 - `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py` or `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py`
 - `src/source_discovery.py` - stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
 - `src/jobs_fetcher.py` - stable thin CLI facade; add pipeline logic to `src/jobs/*`
-- `src/jobs/adapters/static.py` - stable static adapter surface; keep generic listing/detail/runtime logic in `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`
+- `src/jobs/adapters/static.py` - stable static adapter surface; keep generic listing/detail/runtime logic in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py`
 - `src/source_sync.py` - permanent thin sync integration surface; keep new sync logic in `src/source_sync_*` helpers
 - `src/jobs/common/__init__.py` - package marker only; prefer `src.jobs.common.<leaf>` or package-submodule imports
 - `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`
+
+**Leaf modules that are still safe extraction targets**
+- `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`
+- `src/jobs/adapters/static_listing_flow.py`
+- `src/jobs/state_incremental.py`
+- `frontend/saved/app/runtime/*.js`
 
 ---
 

@@ -82,13 +82,14 @@
 | Task | Start here | Then only if needed |
 |------|------------|---------------------|
 | Frontend behavior | `frontend/<page>/app/*.js` | `frontend/<page>/app/runtime.js` |
+| Saved page runtime behavior | `frontend/saved/app/runtime/{activity-controller,attachments-controller,custom-job-controller,render-controller}.js`, `frontend/saved/app/runtime/auth-controller.js`, `frontend/saved/app/admin-bridge-state.js` | `frontend/saved/app/runtime.js` only for page-entry wiring/export changes |
 | Shared/page CSS | `styles/{base,components,<page>}.css` | The owning HTML entrypoint only if stylesheet includes need to change |
-| Bridge/API | `src/bridge/*.py` | `src/bridge/routes/*.py` |
+| Bridge/API | `src/bridge/*.py` | `src/bridge/routes/*.py`; for ops/report/live-task work start with `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, and `src/bridge/ops_live_payload.py` |
 | Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py` | `src/admin_bridge.py` only when the stable wrapper or root patch seam must change |
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
 | Registry sync / tombstones | `src/source_registry.py`, `src/bridge/registry_service.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py` | `src/bridge/registry_tombstones.py`, `src/source_sync.py`, `src/source_sync_crypto.py`, `src/bridge/routes/post_routes.py` |
-| Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
-| Static adapter / scraping behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_helpers.py` | `src/jobs/adapters/static.py` only when the root adapter surface or root patch seams must stay stable |
+| Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, `src/jobs/state.py`, `src/jobs/state_incremental.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
+| Static adapter / scraping behavior | `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py`, `src/jobs/adapters/static_helpers.py` | `src/jobs/adapters/static.py` only when the root adapter surface or root patch seams must stay stable |
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
 | Schema/contracts | `src/core/schemas.py` | `src/core/contracts.py`, `src/jobs/common/contracts.py` |
 | Desktop/runtime | `src/ship/desktop_app/launcher.py` | `src/ship/desktop_app/{startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
@@ -107,6 +108,10 @@
 - `src/jobs/common/__init__.py` is a package marker only; do not add root-symbol exports there. Import `src.jobs.common.<leaf>` or use package-submodule imports.
 - `_runtime.facade()` is retired; do not recreate adapter runtime facades.
 - `frontend/local-data/services.js` is a transitional local-data boundary; page code should go through slice-local `services.js`.
+
+**Stable roots vs safe leaf targets**
+- Stable patch-safe roots stay thin: `src/admin_bridge.py`, `src/source_discovery.py`, `src/jobs_fetcher.py`, `src/jobs/adapters/static.py`, `src/packaged_desktop_smoke.py`, `src/ship/desktop_update.py`, and `frontend/saved/app/runtime.js`.
+- Safe extraction targets are the owning leaves behind those roots: `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`, `src/jobs/adapters/static_listing_flow.py`, `src/jobs/state_incremental.py`, and `frontend/saved/app/runtime/*.js`.
 
 ---
 
