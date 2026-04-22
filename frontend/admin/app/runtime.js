@@ -1,29 +1,17 @@
 import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
 import {
-  escapeHtml,
   showToast,
   setText
 } from "../../shared/ui/index.js";
 import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
-import { adminService } from "../services.js";
-import { createAdminDispatcher, ADMIN_ACTIONS } from "../actions.js";
 import {
-  renderTotalsHtml,
-  renderUsersTableHtml,
-  renderUsersEmptyHtml,
   appendAdminLogRow
 } from "../render.js";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,
   createLogEvent as createLogEventFromDomain,
-  formatLogEventText as formatLogEventTextFromDomain,
-  mergeSourceStatusFromReport as mergeSourceStatusFromDomain,
-  applySourceFilter as applySourceFilterFromDomain,
-  getSourceJobsFoundCount as getSourceJobsFoundCountFromDomain,
-  deriveSourceStatus as deriveSourceStatusFromDomain,
-  deriveAdminRunsModel as deriveAdminRunsModelFromDomain,
-  getOpsPollIntervalMs as getOpsPollIntervalMsFromDomain
+  formatLogEventText as formatLogEventTextFromDomain
 } from "../domain.js";
 import {
   fetchJobsFetchReportJson as fetchJobsFetchReportJsonFromData,
@@ -51,28 +39,21 @@ import {
 import {
   isDiscoveryMobileViewport as isDiscoveryMobileViewportFromModule,
   setDiscoveryLogOpen as setDiscoveryLogOpenFromModule,
-  syncDiscoveryLogDisclosure as syncDiscoveryLogDisclosureFromModule,
-  createAdminDiscoveryController
+  syncDiscoveryLogDisclosure as syncDiscoveryLogDisclosureFromModule
 } from "./discovery.js";
 import {
   normalizeSourceFilter as normalizeSourceFilterFromModule,
   setSourceFilterValue
 } from "./sources.js";
-import { createAdminAuthController } from "./auth.js";
-import { createAdminOpsController, formatBytes } from "./ops.js";
 import {
-  createAdminFetcherController,
   FETCHER_PRESET_META
 } from "./fetcher.js";
-import { createAdminSyncController } from "./sync.js";
-import { createAdminRegistryController } from "./registry.js";
 import { createAdminRuntimeState } from "./runtime/state.js";
+import { composeAdminControllers } from "./runtime/composition.js";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
-import { createAdminOverviewController } from "./runtime/overview.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";
 import { bindAdminRuntimeEvents } from "./runtime/events.js";
-import { createRestoreActiveRunWatches } from "./live-task.js";
 
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";
 const JOBS_FETCHER_COMMAND = adminConfig.JOBS_FETCHER_COMMAND || "python -m src.jobs_fetcher --social-enabled";
@@ -88,7 +69,6 @@ const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const ADMIN_SOURCE_FILTER_KEY = "baluffo_admin_source_filter";
 const UNKNOWN_ERROR_TEXT = "unknown error";
 
-const adminDispatch = createAdminDispatcher();
 const state = createAdminRuntimeState();
 
 let refs = {};
@@ -253,66 +233,23 @@ function setSourceFilter(value) {
   return state.activeSourceFilter;
 }
 
-function composeControllers() {
-  overviewController = createAdminOverviewController({
-    refs,
-    adminService,
-    requestConfirmationDialog,
-    showToast,
-    getErrorMessage,
-    setSourceStatus,
-    adminDispatch,
-    adminActions: ADMIN_ACTIONS,
-    formatBytes,
-    renderTotalsHtml,
-    renderUsersTableHtml,
-    renderUsersEmptyHtml
-  });
+function cacheDom() {
+  refs = cacheAdminDom(document);
+}
 
-  opsController = createAdminOpsController({
-    state,
-    refs,
-    getBridge,
-    postBridge,
-    deriveAdminRunsModel: (payload, nowMs = Date.now()) => deriveAdminRunsModelFromDomain(payload, nowMs),
-    getOpsPollIntervalMs: hasLiveRuns => getOpsPollIntervalMsFromDomain(hasLiveRuns, OPS_POLL_IDLE_INTERVAL_MS, OPS_POLL_LIVE_INTERVAL_MS),
-    loadSyncStatus: options => syncController.loadSyncStatus(options),
-    setBusyFlag,
-    showToast,
-    getErrorMessage,
-    adminDispatch,
-    adminActions: ADMIN_ACTIONS,
-    escapeHtml,
-    onBridgeStatusChange: status => {
-      if (status === "online") {
-        registryController?.loadDiscoveryData().catch(() => {});
-      }
-    },
-    loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
-    attachToActiveFetchRun: (...args) => fetcherController?.attachToActiveFetchRun?.(...args),
-    loadLatestFetcherReport: options => fetcherController?.loadLatestFetcherReport?.(options),
-    attachToActiveDiscoveryRun: (...args) => discoveryController?.attachToActiveDiscoveryRun?.(...args),
-    loadLatestDiscoveryReport: options => discoveryController?.loadLatestDiscoveryReport?.(options),
-    bridgeStatusPollIntervalMs: BRIDGE_STATUS_POLL_INTERVAL_MS,
-    idlePollIntervalMs: OPS_POLL_IDLE_INTERVAL_MS
-  });
-
-  syncController = createAdminSyncController({
-    state,
-    refs,
-    getBridge,
-    postBridge,
-    isSyncBusy,
-    setBusyFlag,
-    getErrorMessage,
-    showToast,
-    toLocalTime,
-    loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
-    scheduleOpsHealthPolling: (...args) => opsController.scheduleOpsHealthPolling(...args),
-    escapeHtml
-  });
-
-  fetcherController = createAdminFetcherController({
+function bootAdminPage() {
+  state.activeSourceFilter = normalizeSourceFilterFromModule(readSourceFilter(ADMIN_SOURCE_FILTER_KEY, "all"));
+  cacheDom();
+  ({
+    authController,
+    syncController,
+    opsController,
+    fetcherController,
+    discoveryController,
+    registryController,
+    overviewController,
+    restoreActiveRunWatches
+  } = composeAdminControllers({
     state,
     refs,
     getBridge,
@@ -323,106 +260,28 @@ function composeControllers() {
     getErrorMessage,
     logAdminError,
     setBusyFlag,
-    getSourceStatusSetter: () => setSourceStatus,
-    loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
-    activeProgressPollIntervalMs: ACTIVE_TASK_POLL_INTERVAL_MS,
-    jobsAutoRefreshSignalKey: JOBS_AUTO_REFRESH_SIGNAL_KEY,
-    jobsFetcherCommand: JOBS_FETCHER_COMMAND,
-    jobsFetcherTaskLabel: JOBS_FETCHER_TASK_LABEL,
-    syncSourceTablesAfterTaskCompletion: (...args) => registryController?.syncSourceTablesAfterTaskCompletion?.(...args),
-    createLogEvent,
-    appendLogRow
-  });
-
-  discoveryController = createAdminDiscoveryController({
-    state,
-    refs,
-    getBridge,
-    postBridge,
-    setBusyFlag,
-    getErrorMessage,
-    logAdminError,
-    showToast,
-    createLogEvent,
-    appendLogRow,
-    loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
-    scheduleOpsHealthPolling: (...args) => opsController.scheduleOpsHealthPolling(...args),
-    activeProgressPollIntervalMs: ACTIVE_TASK_POLL_INTERVAL_MS,
-    syncSourceTablesAfterTaskCompletion: (...args) => registryController?.syncSourceTablesAfterTaskCompletion?.(...args),
-    loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args)
-  });
-
-  restoreActiveRunWatches = createRestoreActiveRunWatches({
-    loadFetcherLivePayload: (...args) => fetcherController.loadFetcherLivePayload(...args),
-    loadLatestFetcherReport: options => fetcherController.loadLatestFetcherReport(options),
-    fetcherController,
-    loadDiscoveryLivePayload: (...args) => discoveryController.loadDiscoveryLivePayload(...args),
-    loadLatestDiscoveryReport: options => discoveryController.loadLatestDiscoveryReport(options),
-    discoveryController
-  });
-
-  registryController = createAdminRegistryController({
-    state,
-    refs,
-    getBridge,
-    postBridge,
-    fetchJobsFetchReportJson,
-    mergeSourceStatusFromReport: (...args) => mergeSourceStatusFromDomain(...args),
-    applySourceFilter: rows => applySourceFilterFromDomain(rows, state.activeSourceFilter),
-    getSourceJobsFoundCount: (...args) => getSourceJobsFoundCountFromDomain(...args),
-    deriveSourceStatus: (...args) => deriveSourceStatusFromDomain(...args),
-    readShowZeroJobs,
-    normalizeSourceFilter: normalizeSourceFilterFromModule,
-    adminDispatch,
-    adminActions: ADMIN_ACTIONS,
-    appendDiscoveryLog: (...args) => discoveryController.appendDiscoveryLog(...args),
-    formatManualCheckFailureMessage: (...args) => discoveryController.formatManualCheckFailureMessage(...args),
-    loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
-    setBusyFlag,
-    showToast,
-    getErrorMessage
-  });
-
-  authController = createAdminAuthController({
-    refs,
+    isSyncBusy,
+    setSourceStatus,
     emitAdminStartupMetric,
     markAdminFirstInteractive,
     syncAdminBusyUi,
     syncDiscoveryLogDisclosure,
     resetBusyFlags,
     setSourceFilter,
-    setSourceStatus,
-    setFetcherLogPlaceholder: (...args) => fetcherController.setFetcherLogPlaceholder(...args),
-    clearOptimisticFetchRun: (...args) => fetcherController.clearOptimisticFetchRun(...args),
-    restoreActiveRunWatches,
-    setDiscoveryLogPlaceholder: (...args) => discoveryController.setDiscoveryLogPlaceholder(...args),
-    clearOptimisticDiscoveryRun: (...args) => discoveryController.clearOptimisticDiscoveryRun(...args),
-    setManualSourceFeedback: (...args) => registryController.setManualSourceFeedback(...args),
-    setOpsPlaceholders: (...args) => opsController.setOpsPlaceholders(...args),
-    setBridgeStatusBadge: (...args) => opsController.setBridgeStatusBadge(...args),
-    renderUsersEmpty: (...args) => overviewController.renderUsersEmpty(...args),
-    startBridgeStatusWatch: (...args) => opsController.startBridgeStatusWatch(...args),
-    stopBridgeStatusWatch: (...args) => opsController.stopBridgeStatusWatch(...args),
-    scheduleOpsHealthPolling: (...args) => opsController.scheduleOpsHealthPolling(...args),
-    stopOpsHealthPolling: (...args) => opsController.stopOpsHealthPolling(...args),
-    refreshOverview: (...args) => overviewController.refreshOverview(...args),
-    loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
-    loadDiscoveryConfig: (...args) => discoveryController.loadDiscoveryConfig(...args),
-    loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
-    loadSyncStatus: (...args) => syncController.loadSyncStatus(...args),
-    logAdminError,
-    showToast
-  });
-}
-
-function cacheDom() {
-  refs = cacheAdminDom(document);
-}
-
-function bootAdminPage() {
-  state.activeSourceFilter = normalizeSourceFilterFromModule(readSourceFilter(ADMIN_SOURCE_FILTER_KEY, "all"));
-  cacheDom();
-  composeControllers();
+    readShowZeroJobs,
+    normalizeSourceFilter: normalizeSourceFilterFromModule,
+    toLocalTime,
+    appendLogRow,
+    createLogEvent,
+    activeProgressPollIntervalMs: ACTIVE_TASK_POLL_INTERVAL_MS,
+    bridgeStatusPollIntervalMs: BRIDGE_STATUS_POLL_INTERVAL_MS,
+    opsPollIdleIntervalMs: OPS_POLL_IDLE_INTERVAL_MS,
+    opsPollLiveIntervalMs: OPS_POLL_LIVE_INTERVAL_MS,
+    jobsAutoRefreshSignalKey: JOBS_AUTO_REFRESH_SIGNAL_KEY,
+    jobsFetcherCommand: JOBS_FETCHER_COMMAND,
+    jobsFetcherTaskLabel: JOBS_FETCHER_TASK_LABEL,
+    requestConfirmationDialog
+  }));
   fetcherController.applyFetcherPresetMetadata();
   bindAdminRuntimeEvents({
     state,

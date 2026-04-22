@@ -153,6 +153,7 @@ test("cleanup structure: app runtime helper modules stay slice-local", () => {
   const slices = ["jobs", "saved", "admin"];
   const allowedImportPattern = /^(\.\.\/[A-Za-z0-9-]+\.js|\.\/[A-Za-z0-9-]+\.js)$/;
   const allowedSharedRuntimeImportPattern = /^\.\.\/\.\.\/\.\.\/shared\/[A-Za-z0-9_/-]+\.js$/;
+  const allowedCompositionSliceImportPattern = /^\.\.\/\.\.\/(actions|domain|render|services)\.js$/;
   const blockedCrossSlicePattern = /^(\.\.\/)+(jobs|saved|admin)\//;
 
   for (const slice of slices) {
@@ -167,9 +168,11 @@ test("cleanup structure: app runtime helper modules stay slice-local", () => {
           false,
           `Runtime helper must not import cross-slice modules: ${rel} -> ${specifier}`
         );
+        const isCompositionHelper = slice === "admin" && fileName === "composition.js";
         assert.equal(
           allowedImportPattern.test(specifier) ||
             allowedSharedRuntimeImportPattern.test(specifier) ||
+            (isCompositionHelper && allowedCompositionSliceImportPattern.test(specifier)) ||
             specifier.startsWith("/"),
           true,
           `Unexpected runtime helper import in ${rel}: ${specifier}`
@@ -183,7 +186,7 @@ test("cleanup structure: runtime entrypoints stay within the current size budget
   const budgets = {
     jobs: 1920,
     saved: 1920,
-    admin: 450
+    admin: 320
   };
 
   for (const [slice, maxLines] of Object.entries(budgets)) {
@@ -200,7 +203,9 @@ test("cleanup structure: runtime entrypoints stay within the current size budget
 test("cleanup structure: admin controller roots stay within the current size budget", () => {
   const budgets = {
     fetcher: 450,
-    discovery: 420
+    discovery: 420,
+    registry: 260,
+    ops: 240
   };
 
   for (const [name, maxLines] of Object.entries(budgets)) {
@@ -212,6 +217,66 @@ test("cleanup structure: admin controller roots stay within the current size bud
       `${rel} is ${lines} lines, above the ${maxLines}-line budget`
     );
   }
+});
+
+test("cleanup structure: admin controller roots stay thin composition surfaces", () => {
+  const cases = [
+    {
+      name: "registry",
+      functions: ["createAdminRegistryController"],
+      importPattern: /^\.\/registry\/[A-Za-z0-9-]+\.js$/
+    },
+    {
+      name: "ops",
+      functions: ["createAdminOpsController"],
+      importPattern: /^\.\/ops\/[A-Za-z0-9-]+\.js$/
+    }
+  ];
+
+  for (const { name, functions, importPattern } of cases) {
+    const rel = path.join("frontend", "admin", "app", `${name}.js`);
+    const source = fs.readFileSync(repoPath(rel), "utf8");
+    const imports = readImports(rel);
+    const ownedFunctions = Array.from(
+      source.matchAll(/\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g),
+      match => match[1]
+    );
+
+    assert.deepEqual(
+      ownedFunctions,
+      functions,
+      `${rel} should only own the stable controller surface`
+    );
+    assert.doesNotMatch(
+      source,
+      /\bclass\s+[A-Za-z_][A-Za-z0-9_]*\s*/,
+      `${rel} must not regain class ownership`
+    );
+    for (const specifier of imports) {
+      assert.match(
+        specifier,
+        importPattern,
+        `Unexpected admin ${name} root dependency: ${specifier}`
+      );
+    }
+  }
+});
+
+test("cleanup structure: admin runtime root delegates controller composition", () => {
+  const rel = path.join("frontend", "admin", "app", "runtime.js");
+  const source = fs.readFileSync(repoPath(rel), "utf8");
+  const imports = readImports(rel);
+
+  assert.equal(
+    imports.includes("./runtime/composition.js"),
+    true,
+    "frontend/admin/app/runtime.js must import ./runtime/composition.js"
+  );
+  assert.doesNotMatch(
+    source,
+    /\bfunction\s+composeControllers\s*\(/,
+    "frontend/admin/app/runtime.js must not keep inline controller composition"
+  );
 });
 
 test("cleanup structure: admin domain root stays a thin export surface", () => {

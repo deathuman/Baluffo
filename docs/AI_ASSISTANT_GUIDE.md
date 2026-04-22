@@ -118,8 +118,8 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 - `frontend/local-data/services.js` is a transitional local-data boundary; page code should go through slice-local `services.js`.
 
 **Stable roots vs safe leaf targets**
-- Stable patch-safe roots stay thin: `src/admin_bridge.py`, `src/source_discovery.py`, `src/jobs_fetcher.py`, `src/jobs/adapters/static.py`, `src/packaged_desktop_smoke.py`, `src/ship/desktop_update.py`, `frontend/jobs/app/runtime.js`, and `frontend/saved/app/runtime.js`.
-- Safe extraction targets are the owning leaves behind those roots: `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`, `src/jobs/adapters/static_listing_flow.py`, `src/jobs/state_incremental.py`, `frontend/jobs/app/runtime/*.js`, and `frontend/saved/app/runtime/*.js`.
+- Stable patch-safe roots stay thin: `src/admin_bridge.py`, `src/source_discovery.py`, `src/jobs_fetcher.py`, `src/jobs/adapters/static.py`, `src/packaged_desktop_smoke.py`, `src/ship/desktop_update.py`, `frontend/jobs/app/runtime.js`, `frontend/saved/app/runtime.js`, `frontend/admin/app/runtime.js`, `frontend/admin/app/registry.js`, and `frontend/admin/app/ops.js`.
+- Safe extraction targets are the owning leaves behind those roots: `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`, `src/jobs/adapters/static_listing_flow.py`, `src/jobs/state_incremental.py`, `frontend/jobs/app/runtime/*.js`, `frontend/saved/app/runtime/*.js`, `frontend/admin/app/runtime/*.js`, `frontend/admin/app/registry/*.js`, and `frontend/admin/app/ops/*.js`.
 
 ---
 

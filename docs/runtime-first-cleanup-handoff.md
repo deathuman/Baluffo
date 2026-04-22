@@ -17,10 +17,11 @@ This follow-up landed:
 - `tests/test_suite_contract.py` now locks that root-clock-helper exposure without depending on a brittle exact import line.
 - `frontend/admin/render.js` is now a thin stable re-export surface for leaf render modules under `frontend/admin/render/`.
 - `frontend/admin/domain.js` is now a thin stable re-export surface for leaf domain modules under `frontend/admin/domain/`.
-- `frontend/admin/app/runtime.js` was reduced to boot/composition/orchestration duties, with overview flow and event binding moved into `frontend/admin/app/runtime/`.
+- `frontend/admin/app/runtime.js` now stays under the entrypoint budget and delegates controller assembly to `frontend/admin/app/runtime/composition.js`, while keeping boot/state/event-binding wrappers on the stable root.
 - `frontend/admin/app/fetcher.js` and `frontend/admin/app/discovery.js` now keep their stable controller/export surfaces while delegating preset/log/report/watch responsibilities into leaf modules under `frontend/admin/app/fetcher/` and `frontend/admin/app/discovery/`.
-- `frontend/admin/app/ops.js` and `frontend/admin/app/registry.js` now default to render helpers imported from the stable admin render surface instead of receiving long render dependency lists through composition.
-- `tests/frontend/unit/structure-cleanup.test.mjs` now enforces a tighter admin runtime budget, fetcher/discovery root budgets, and thin-root budget/shape assertions for `frontend/admin/render.js` and `frontend/admin/domain.js`.
+- `frontend/admin/app/registry.js` is now a stable controller root backed by `frontend/admin/app/registry/{ui,load,mutations}.js`.
+- `frontend/admin/app/ops.js` is now a stable controller root backed by `frontend/admin/app/ops/{format,task-state,health,bridge-status}.js`.
+- `tests/frontend/unit/structure-cleanup.test.mjs` now enforces the tighter admin runtime budget plus root budgets/shape assertions for `frontend/admin/app/{registry,ops}.js` and the delegated runtime-composition boundary.
 
 No user-facing UI, route, payload, or persisted data contracts changed in this wave.
 
@@ -36,7 +37,7 @@ That regression is fixed on `main` and covered by the suite-contract test noted 
 
 Verified in this follow-up session:
 
-- `python -m pytest tests/test_source_sync.py tests/admin/test_admin_bridge_ops_sync.py tests/admin/test_admin_bridge_thin_wrappers.py tests/test_build_ship_bundle.py tests/packaged_desktop/test_rehearsal_flows.py tests/test_suite_contract.py -q`
+- `node --test --test-reporter=dot tests/frontend/unit/admin-registry-controller.test.mjs tests/frontend/unit/admin-ops-controller.test.mjs tests/frontend/unit/admin-auth-controller.test.mjs tests/frontend/unit/admin-live-task-restore.test.mjs tests/frontend/unit/admin-fetcher-controller.test.mjs tests/frontend/unit/admin-discovery-controller.test.mjs tests/frontend/unit/admin-domain.test.mjs tests/frontend/unit/admin-render-log.test.mjs tests/frontend/unit/structure-cleanup.test.mjs`
 - `npm run test:unit`
 - `npm run lint:precommit:changed`
 
@@ -46,7 +47,7 @@ If another cleanup wave continues from here, keep the order narrow and compatibi
 
 1. Keep backend compat-barrel work deferred to the next dedicated wave, especially `src/jobs_fetcher.py` and any deeper `src/source_sync.py` thinning beyond the stable facade.
 2. Continue backend helper dedup only where behavior is truly identical and existing root/module boundaries stay intact.
-3. If the admin slice needs another pass, target the remaining large stable roots only after preserving the new domain/fetcher/discovery leaf boundaries and guardrails.
+3. If the admin slice needs another pass, preserve the new `runtime/`, `registry/`, `ops/`, `fetcher/`, and `discovery/` leaf boundaries and keep the stable roots thin.
 4. Do not reopen jobs/saved `types.js` extraction in the near term; the remaining ROI is low after the typedef cleanup already landed.
 
 ## Resume Checklist
@@ -57,7 +58,7 @@ On another machine:
 2. Verify Python, Node, and repo test tooling are available.
 3. Review `git status --short` before making new changes.
 4. Re-run the cleanup verification baseline before extending the cleanup further:
-   - `python -m pytest tests/test_source_sync.py tests/admin/test_admin_bridge_ops_sync.py tests/admin/test_admin_bridge_thin_wrappers.py tests/test_build_ship_bundle.py tests/packaged_desktop/test_rehearsal_flows.py tests/test_suite_contract.py -q`
+   - `node --test --test-reporter=dot tests/frontend/unit/admin-registry-controller.test.mjs tests/frontend/unit/admin-ops-controller.test.mjs tests/frontend/unit/admin-auth-controller.test.mjs tests/frontend/unit/admin-live-task-restore.test.mjs tests/frontend/unit/admin-fetcher-controller.test.mjs tests/frontend/unit/admin-discovery-controller.test.mjs tests/frontend/unit/admin-domain.test.mjs tests/frontend/unit/admin-render-log.test.mjs tests/frontend/unit/structure-cleanup.test.mjs`
    - `npm run test:unit`
    - `npm run lint:precommit:changed`
 

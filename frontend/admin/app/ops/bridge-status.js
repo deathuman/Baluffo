@@ -1,0 +1,80 @@
+function maybeUnrefTimer(timer) {
+  timer?.unref?.();
+  return timer;
+}
+
+export function createOpsBridgeStatusController({
+  state,
+  refs,
+  getBridge,
+  onBridgeStatusChange,
+  bridgeStatusPollIntervalMs
+}) {
+  let lastBridgeStatus = "checking";
+
+  function getBridgeStatus() {
+    return lastBridgeStatus;
+  }
+
+  function setBridgeStatusBadge(stateValue, label) {
+    if (!refs.adminBridgeStatusBadgeEl) return;
+    const normalized = String(stateValue || "checking").toLowerCase();
+    refs.adminBridgeStatusBadgeEl.classList.remove("online", "offline", "checking");
+    refs.adminBridgeStatusBadgeEl.classList.add(
+      normalized === "online" ? "online" : normalized === "offline" ? "offline" : "checking"
+    );
+    refs.adminBridgeStatusBadgeEl.textContent = label || "Bridge Checking";
+    refs.adminBridgeStatusBadgeEl.classList.remove("refresh-pulse");
+    void refs.adminBridgeStatusBadgeEl.offsetWidth;
+    refs.adminBridgeStatusBadgeEl.classList.add("refresh-pulse");
+  }
+
+  function startBridgeStatusWatch() {
+    stopBridgeStatusWatch();
+    pollBridgeStatus({ forceChecking: true }).catch(() => {});
+    state.bridgeStatusPollTimer = maybeUnrefTimer(setInterval(() => {
+      pollBridgeStatus().catch(() => {});
+    }, bridgeStatusPollIntervalMs));
+  }
+
+  function stopBridgeStatusWatch() {
+    if (!state.bridgeStatusPollTimer) return;
+    clearInterval(state.bridgeStatusPollTimer);
+    state.bridgeStatusPollTimer = null;
+  }
+
+  async function pollBridgeStatus(options = {}) {
+    if (options.forceChecking) {
+      if (lastBridgeStatus !== "checking") {
+        lastBridgeStatus = "checking";
+        onBridgeStatusChange?.("checking");
+      }
+      setBridgeStatusBadge("checking", "Bridge Checking");
+    }
+    try {
+      const summaryPayload = await getBridge("/registry/summary");
+      const summary = summaryPayload?.summary || {};
+      const activeCount = Number(summary?.activeCount || 0);
+      const pendingCount = Number(summary?.pendingCount || 0);
+      if (lastBridgeStatus !== "online") {
+        lastBridgeStatus = "online";
+        onBridgeStatusChange?.("online");
+      }
+      setBridgeStatusBadge("online", `Bridge Online (${activeCount} active, ${pendingCount} pending)`);
+    } catch {
+      if (lastBridgeStatus !== "offline") {
+        lastBridgeStatus = "offline";
+        onBridgeStatusChange?.("offline");
+      }
+      setBridgeStatusBadge("offline", "Bridge Offline");
+    }
+  }
+
+  return {
+    getBridgeStatus,
+    setBridgeStatusBadge,
+    startBridgeStatusWatch,
+    stopBridgeStatusWatch,
+    pollBridgeStatus
+  };
+}
