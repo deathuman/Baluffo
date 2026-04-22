@@ -1,5 +1,6 @@
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
 import { deriveDiscoveryLifecycleCounts, deriveDiscoveryQueuedCount } from "../domain.js";
+import { renderSourcesTableHtml } from "../render.js";
 
 const DISCOVERY_OPERATION_BLOCKED_MESSAGE = "Another discovery operation is running.";
 
@@ -54,7 +55,7 @@ export function createAdminRegistryController({
   applySourceFilter,
   getSourceJobsFoundCount,
   deriveSourceStatus,
-  renderSourcesTableHtml,
+  renderSourcesTableHtml: renderSourcesTableHtmlImpl = renderSourcesTableHtml,
   readShowZeroJobs,
   normalizeSourceFilter,
   adminDispatch,
@@ -96,7 +97,7 @@ export function createAdminRegistryController({
 
   function renderSourcesTable(container, rows, mode = "pending") {
     if (!container) return;
-    container.innerHTML = renderSourcesTableHtml(rows, mode, row => {
+    container.innerHTML = renderSourcesTableHtmlImpl(rows, mode, row => {
       const value = getSourceJobsFoundCount(row);
       return Number.isFinite(value) && value >= 0 ? value.toLocaleString() : "N/A";
     }, deriveSourceStatus);

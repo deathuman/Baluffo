@@ -26,6 +26,7 @@ from src.bridge.registry_tombstones import (
     filter_tombstoned_rows as _filter_tombstoned_rows,
 )
 from src.bridge.registry_tombstones import load_tombstones as _load_tombstones
+from src.shared.utils import now_iso as _now_iso
 from src.shared.utils import now_utc
 from src.source_registry import (
     REGISTRY_MIGRATION_V2,
@@ -45,6 +46,9 @@ Request = _Request
 load_tombstones = _load_tombstones
 filter_tombstoned_rows = _filter_tombstoned_rows
 source_identity = _source_identity
+# Re-exported for extracted leaves that still import clock helpers from the
+# stable sync facade.
+now_iso = _now_iso
 SYNC_SCHEMA_VERSION = 2
 DEFAULT_BRANCH = str(_SYNC_DEFAULTS["default_branch"])
 DEFAULT_PATH = str(_SYNC_DEFAULTS["default_path"])

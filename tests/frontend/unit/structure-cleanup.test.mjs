@@ -67,16 +67,23 @@ test("cleanup structure: canonical app runtime modules exist for each slice", ()
   }
 });
 
-test("cleanup structure: admin app defines centralized fetcher preset metadata", () => {
-  const source = fs.readFileSync(repoPath("frontend", "admin", "app", "fetcher.js"), "utf8");
-  assert.match(source, /const FETCHER_PRESET_META\s*=\s*\{/);
-  assert.match(source, /const FETCHER_FALLBACK_MESSAGES\s*=\s*\{/);
-  assert.match(source, /\bdefault:\s*\{/);
-  assert.match(source, /\bincremental:\s*\{/);
-  assert.match(source, /\bforce_full:\s*\{/);
-  assert.match(source, /\bretry_failed:\s*\{/);
-  assert.match(source, /function applyFetcherPresetMetadata\(\)/);
-  assert.doesNotMatch(source, /compatibility URI fallback/i);
+test("cleanup structure: admin app keeps centralized fetcher preset metadata behind the stable root", () => {
+  const rootRel = path.join("frontend", "admin", "app", "fetcher.js");
+  const rootSource = fs.readFileSync(repoPath(rootRel), "utf8");
+  const rootImports = readImports(rootRel);
+  const leafSource = fs.readFileSync(repoPath("frontend", "admin", "app", "fetcher", "presets.js"), "utf8");
+
+  assert.equal(rootImports.includes("./fetcher/presets.js"), true);
+  assert.match(rootSource, /export\s*\{\s*FETCHER_PRESET_META\s*\}\s*from\s*"\.\/fetcher\/presets\.js"/);
+  assert.doesNotMatch(rootSource, /const FETCHER_PRESET_META\s*=\s*\{/);
+  assert.match(leafSource, /const FETCHER_PRESET_META\s*=\s*\{/);
+  assert.match(leafSource, /const FETCHER_FALLBACK_MESSAGES\s*=\s*\{/);
+  assert.match(leafSource, /\bdefault:\s*\{/);
+  assert.match(leafSource, /\bincremental:\s*\{/);
+  assert.match(leafSource, /\bforce_full:\s*\{/);
+  assert.match(leafSource, /\bretry_failed:\s*\{/);
+  assert.match(leafSource, /function applyFetcherPresetMetadata\(/);
+  assert.doesNotMatch(leafSource, /compatibility URI fallback/i);
 });
 
 test("cleanup structure: jobs and saved keep canonical slice file shape", () => {
@@ -176,7 +183,7 @@ test("cleanup structure: runtime entrypoints stay within the current size budget
   const budgets = {
     jobs: 1920,
     saved: 1920,
-    admin: 700
+    admin: 450
   };
 
   for (const [slice, maxLines] of Object.entries(budgets)) {
@@ -186,6 +193,81 @@ test("cleanup structure: runtime entrypoints stay within the current size budget
       lines <= maxLines,
       true,
       `frontend/${slice}/app/runtime.js is ${lines} lines, above the ${maxLines}-line budget`
+    );
+  }
+});
+
+test("cleanup structure: admin controller roots stay within the current size budget", () => {
+  const budgets = {
+    fetcher: 450,
+    discovery: 420
+  };
+
+  for (const [name, maxLines] of Object.entries(budgets)) {
+    const rel = path.join("frontend", "admin", "app", `${name}.js`);
+    const lines = countLines(rel);
+    assert.equal(
+      lines <= maxLines,
+      true,
+      `${rel} is ${lines} lines, above the ${maxLines}-line budget`
+    );
+  }
+});
+
+test("cleanup structure: admin domain root stays a thin export surface", () => {
+  const rel = path.join("frontend", "admin", "domain.js");
+  const source = fs.readFileSync(repoPath(rel), "utf8");
+  const imports = readImports(rel);
+
+  assert.equal(
+    countLines(rel) <= 40,
+    true,
+    `frontend/admin/domain.js is ${countLines(rel)} lines, above the 40-line thin-surface budget`
+  );
+  assert.doesNotMatch(
+    source,
+    /\bfunction\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/,
+    "frontend/admin/domain.js must stay a re-export surface"
+  );
+  assert.doesNotMatch(
+    source,
+    /\bclass\s+[A-Za-z_][A-Za-z0-9_]*\s*/,
+    "frontend/admin/domain.js must not regain class ownership"
+  );
+  for (const specifier of imports) {
+    assert.match(
+      specifier,
+      /^\.\/domain\/[A-Za-z0-9-]+\.js$/,
+      `Unexpected admin domain root dependency: ${specifier}`
+    );
+  }
+});
+
+test("cleanup structure: admin render root stays a thin export surface", () => {
+  const rel = path.join("frontend", "admin", "render.js");
+  const source = fs.readFileSync(repoPath(rel), "utf8");
+  const imports = readImports(rel);
+
+  assert.equal(
+    countLines(rel) <= 40,
+    true,
+    `frontend/admin/render.js is ${countLines(rel)} lines, above the 40-line thin-surface budget`
+  );
+  assert.doesNotMatch(
+    source,
+    /\bfunction\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/,
+    "frontend/admin/render.js must stay a re-export surface"
+  );
+  assert.doesNotMatch(
+    source,
+    /\bclass\s+[A-Za-z_][A-Za-z0-9_]*\s*/,
+    "frontend/admin/render.js must not regain class ownership"
+  );
+  for (const specifier of imports) {
+    assert.match(
+      specifier,
+      /^\.\/render\/[A-Za-z0-9-]+\.js$/,
+      `Unexpected admin render root dependency: ${specifier}`
     );
   }
 });

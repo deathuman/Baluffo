@@ -247,6 +247,18 @@ def test_jobs_fetcher_facade_stays_lazy_and_small(repo_root: Path) -> None:
     assert len(alias_lines) <= 3, "jobs_fetcher facade drifted back to bulk alias re-exports"
 
 
+def test_source_sync_root_exposes_clock_helpers_for_extracted_leaves(repo_root: Path) -> None:
+    from src import source_sync
+    from src.shared.utils import now_iso as shared_now_iso
+    from src.shared.utils import now_utc as shared_now_utc
+
+    tree = _module_tree(repo_root / "src" / "source_sync.py")
+
+    assert source_sync.now_iso is shared_now_iso
+    assert source_sync.now_utc is shared_now_utc
+    assert "now_iso" not in _top_level_function_names(tree)
+
+
 def test_python_leaf_modules_do_not_import_root_compatibility_surfaces(repo_root: Path) -> None:
     src_root = repo_root / "src"
     allowed_imports_by_path = {

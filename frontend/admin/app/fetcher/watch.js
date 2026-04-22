@@ -1,0 +1,201 @@
+import {
+  attachToActiveRun,
+  clearOptimisticRun,
+  createBoundedSignatureSet,
+  getRestorableRunMeta,
+  loadTaskLivePayload,
+  parseReportTimestampMs,
+  pickMeaningfulTaskLivePayload,
+  pickTaskLivePayload,
+  restartCompletionWatch,
+  scheduleAsyncWatchTimer,
+  setOptimisticRun,
+  startLiveTaskWatch,
+  stopLiveTaskWatch
+} from "../live-task.js";
+import {
+  formatDurationCompact,
+  formatStageTopSummary,
+  selectSlowSources
+} from "../fetcher-summary.js";
+
+export function createAdminFetcherWatchController({
+  state,
+  setBusyFlag,
+  getBridge,
+  fetchJobsFetchReportJson,
+  activeProgressPollIntervalMs = 500,
+  syncSourceTablesAfterTaskCompletion,
+  setFetcherProgress,
+  loadFetcherLogChunk,
+  scheduleFetcherLogPoll,
+  appendFetcherLog,
+  appendFetcherProgressFromReport,
+  updateFetcherProgressFromReport,
+  emitJobsAutoRefreshSignal
+}) {
+  function setOptimisticFetchRun(runMeta) {
+    setOptimisticRun(state, "fetchOptimisticRun", runMeta);
+  }
+
+  function clearOptimisticFetchRun() {
+    clearOptimisticRun(state, "fetchOptimisticRun");
+  }
+
+  async function loadFetcherLivePayload() {
+    return loadTaskLivePayload({
+      getBridge,
+      taskType: "fetch"
+    });
+  }
+
+  function getRestorableFetcherRunMeta(report = null) {
+    return getRestorableRunMeta(report, {
+      hasLiveState: Boolean(
+        state.fetcherLiveProgressState
+        || state.fetchOptimisticRun
+        || state.adminBusyState.fetcherWatch
+        || state.adminBusyState.liveFetchRunning
+      ),
+      optimisticRun: state.fetchOptimisticRun,
+      launchAtMs: state.fetcherLaunchAtMs
+    });
+  }
+
+  function attachToActiveFetchRun(runMeta = null, options = {}) {
+    attachToActiveRun({
+      isWatching: () => state.adminBusyState.fetcherWatch,
+      setOptimisticRun: setOptimisticFetchRun,
+      startWatch: () => startFetcherCompletionWatch(options)
+    }, runMeta);
+  }
+
+  function restartFetcherCompletionWatch(runMeta = null, options = {}) {
+    restartCompletionWatch(stopFetcherCompletionWatch, nextRunMeta => attachToActiveFetchRun(nextRunMeta, options), runMeta);
+  }
+
+  function startFetcherCompletionWatch(options = {}) {
+    const announceStart = options?.announceStart !== false;
+    stopFetcherCompletionWatch();
+    startLiveTaskWatch({
+      state,
+      setBusyFlag,
+      watchKey: "fetcherWatch",
+      launchAtKey: "fetcherLaunchAtMs",
+      optimisticRunKey: "fetchOptimisticRun",
+      logOffsetKey: "fetcherLogRemoteOffset",
+      liveStateKey: "fetcherLiveProgressState",
+      createLiveState: () => ({
+        summarySignature: "",
+        workItemSignature: "",
+        recentEventSignatures: createBoundedSignatureSet(),
+        serverLogSignatures: createBoundedSignatureSet(),
+        lastHeartbeatAtMs: 0,
+        lastActivityAtMs: Date.now()
+      }),
+      setProgress: () => updateFetcherProgressFromReport(null, { running: true }),
+      onStart: announceStart ? () => appendFetcherLog("Fetcher started. Watching live progress...", "info") : null,
+      loadInitialLogChunk: () => loadFetcherLogChunk({ reset: true }).catch(() => {}),
+      scheduleLogPoll: () => scheduleFetcherLogPoll(activeProgressPollIntervalMs),
+      scheduleCompletionPoll: () => scheduleFetcherCompletionPoll(0)
+    });
+  }
+
+  function stopFetcherCompletionWatch() {
+    stopLiveTaskWatch({
+      state,
+      setBusyFlag,
+      watchKey: "fetcherWatch",
+      completionPollTimerKey: "fetcherCompletionPollTimer",
+      logPollTimerKey: "fetcherLogPollTimer",
+      liveStateKey: "fetcherLiveProgressState",
+      setProgress: view => setFetcherProgress(view)
+    });
+  }
+
+  function scheduleFetcherCompletionPoll(delayMs) {
+    scheduleAsyncWatchTimer({
+      state,
+      timerKey: "fetcherCompletionPollTimer",
+      delayMs,
+      task: pollFetcherCompletion,
+      onError: () => {
+        scheduleFetcherCompletionPoll(activeProgressPollIntervalMs);
+      }
+    });
+  }
+
+  async function pollFetcherCompletion() {
+    const now = Date.now();
+    const livePayload = await loadFetcherLivePayload().catch(() => null);
+    const identityLivePayload = pickTaskLivePayload(livePayload);
+    const meaningfulLivePayload = pickMeaningfulTaskLivePayload(livePayload);
+    const liveEnvelope = meaningfulLivePayload || identityLivePayload;
+    const liveStartedMs = parseReportTimestampMs(liveEnvelope?.startedAt);
+    const liveFinishedMs = parseReportTimestampMs(liveEnvelope?.finishedAt);
+
+    if (meaningfulLivePayload && liveStartedMs >= (state.fetcherLaunchAtMs - 1000)) {
+      if (liveFinishedMs <= 0) {
+        appendFetcherProgressFromReport(meaningfulLivePayload, now);
+        updateFetcherProgressFromReport(meaningfulLivePayload, { running: true });
+      }
+    }
+
+    let terminalPayload = meaningfulLivePayload || identityLivePayload;
+    if (!meaningfulLivePayload || liveFinishedMs > 0) {
+      terminalPayload = await fetchJobsFetchReportJson({ live: true }).catch(() => null) || terminalPayload;
+      if (terminalPayload && !String(terminalPayload?.finishedAt || "").trim()) {
+        state.latestFetcherReportCache = terminalPayload || state.latestFetcherReportCache;
+        updateFetcherProgressFromReport(terminalPayload, { running: true });
+      }
+    }
+
+    const finishedMs = parseReportTimestampMs(terminalPayload?.finishedAt);
+    if (finishedMs >= (state.fetcherLaunchAtMs - 1000)) {
+      const finalReport = await fetchJobsFetchReportJson().catch(() => null);
+      const completedPayload = finalReport || terminalPayload;
+      state.latestFetcherReportCache = completedPayload || state.latestFetcherReportCache;
+      const summary = completedPayload?.summary || {};
+      updateFetcherProgressFromReport(completedPayload, { running: false });
+      appendFetcherLog(
+        `Fetcher completed: output ${Number(summary.outputCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
+        Number(summary.failedSources || 0) > 0 ? "warn" : "success"
+      );
+      const slowSources = selectSlowSources(completedPayload)
+        .slice(0, 3)
+        .map(source => `${String(source?.name || "unknown")} ${formatDurationCompact(source?.durationMs)}`);
+      if (slowSources.length) {
+        appendFetcherLog(`Slowest sources: ${slowSources.join(" | ")}`, "muted");
+      }
+      const slowStages = formatStageTopSummary(completedPayload);
+      if (slowStages) {
+        appendFetcherLog(`Slowest stages: ${slowStages}`, "muted");
+      }
+      await Promise.resolve(syncSourceTablesAfterTaskCompletion?.({
+        taskType: "fetch",
+        completionSignature: [
+          String(completedPayload?.runId || state.fetchOptimisticRun?.runId || ""),
+          String(completedPayload?.finishedAt || "")
+        ].join("|"),
+        fetchReport: completedPayload
+      })).catch(() => {});
+      emitJobsAutoRefreshSignal(completedPayload);
+      setBusyFlag("liveFetchRunning", false);
+      clearOptimisticFetchRun();
+      stopFetcherCompletionWatch();
+      return;
+    }
+
+    scheduleFetcherCompletionPoll(activeProgressPollIntervalMs);
+  }
+
+  return {
+    clearOptimisticFetchRun,
+    loadFetcherLivePayload,
+    getRestorableFetcherRunMeta,
+    attachToActiveFetchRun,
+    restartFetcherCompletionWatch,
+    startFetcherCompletionWatch,
+    stopFetcherCompletionWatch
+  };
+}

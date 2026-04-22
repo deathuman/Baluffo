@@ -1,64 +1,63 @@
 # Runtime-First Cleanup Handoff
 
-> Operational handoff note for resuming the current runtime-first cleanup lane on another machine.
+> Operational handoff note for the runtime-first cleanup lane after the first wave and this follow-up wave landed on `main`.
 > This is a practical pickup document, not a canonical contract doc and not part of the default AI read path.
 
 ## Purpose
 
-Use this note to resume the current cleanup wave safely from a different machine without rediscovering the same context, verification baseline, or priority order.
+Use this note to resume later cleanup work without rediscovering what is already merged, which regressions were found during the follow-up, and which debt remains intentionally deferred.
 
 ## Current Status
 
-The current working tree already contains the first runtime-first cleanup wave. The goal of this pass is line reduction and boundary cleanup without changing user-facing behavior, payloads, or persisted contracts.
+As of April 22, 2026, the first runtime-first cleanup wave is already merged to remote `main`. This follow-up wave stayed focused on historical debt reduction, stable root preservation, and guardrails against regrowth.
 
-What has already landed in the worktree:
+This follow-up landed:
 
-- `src/source_sync.py` was thinned back into a compatibility facade.
-- `src/source_sync_runtime.py` was added to hold sync runtime/auth/rate-limit state and request helpers behind the stable root.
-- `src/shared/json_io.py` was added for tolerant JSON reads used by matching backend call sites.
-- Shared helper dedup landed for `parse_iso`, tolerant JSON reads, and simple int-or-default coercion where semantics matched.
-- `frontend/admin/app/fetcher-summary.js` was added to pull pure fetcher summary/retry helpers out of the main controller file.
-- `frontend/jobs/app/runtime.js` and `frontend/saved/app/runtime.js` were trimmed by removing unused local typedef blocks and repeated bridge-base constants.
+- `src/source_sync.py` remains the stable sync facade and again re-exports `now_iso` from `src.shared.utils` so extracted leaves keep working through the root surface.
+- `tests/test_suite_contract.py` now locks that root-clock-helper exposure without depending on a brittle exact import line.
+- `frontend/admin/render.js` is now a thin stable re-export surface for leaf render modules under `frontend/admin/render/`.
+- `frontend/admin/domain.js` is now a thin stable re-export surface for leaf domain modules under `frontend/admin/domain/`.
+- `frontend/admin/app/runtime.js` was reduced to boot/composition/orchestration duties, with overview flow and event binding moved into `frontend/admin/app/runtime/`.
+- `frontend/admin/app/fetcher.js` and `frontend/admin/app/discovery.js` now keep their stable controller/export surfaces while delegating preset/log/report/watch responsibilities into leaf modules under `frontend/admin/app/fetcher/` and `frontend/admin/app/discovery/`.
+- `frontend/admin/app/ops.js` and `frontend/admin/app/registry.js` now default to render helpers imported from the stable admin render surface instead of receiving long render dependency lists through composition.
+- `tests/frontend/unit/structure-cleanup.test.mjs` now enforces a tighter admin runtime budget, fetcher/discovery root budgets, and thin-root budget/shape assertions for `frontend/admin/render.js` and `frontend/admin/domain.js`.
 
-## Remaining Work
+No user-facing UI, route, payload, or persisted data contracts changed in this wave.
 
-Continue in this order:
+## Regression Found During Follow-Up
 
-1. Finish the admin frontend cleanup cluster, especially `frontend/admin/render.js` and `frontend/admin/app/runtime.js`.
-2. Decide whether jobs/saved `types.js` extraction is still worth doing now that the unused typedef blocks were removed.
-3. Continue backend helper dedup only where behavior is truly identical.
-4. Defer `src/jobs_fetcher.py` compat-barrel pruning to the next cleanup wave.
+The follow-up surfaced one compatibility regression from the earlier `source_sync.py` thinning:
 
-## Verified Baseline
+- `src/source_sync.py` had stopped exposing `now_iso`, even though extracted sync leaves still called the root helper surface.
 
-Verified in this session:
+That regression is fixed on `main` and covered by the suite-contract test noted above.
 
-- Targeted backend cleanup tests passed:
-  - `python -m pytest tests/test_source_sync.py tests/admin/test_admin_bridge_ops_sync.py tests/admin/test_admin_bridge_thin_wrappers.py -q`
-- Targeted frontend cleanup coverage passed.
-- `npm run test:unit` passed.
-- `npm run lint:precommit:changed` passed.
+## Verification Baseline
 
-Broad Python-suite note:
+Verified in this follow-up session:
 
-- `npm run test:py` is not a blocker for this handoff note.
-- The remaining failure observed in the broad run was `tests/test_runtime_launcher.py::test_build_site_request_handler_traces_probe_requests`.
-- That test passed when rerun in isolation, so treat it as unrelated/flaky unless new evidence says otherwise.
+- `python -m pytest tests/test_source_sync.py tests/admin/test_admin_bridge_ops_sync.py tests/admin/test_admin_bridge_thin_wrappers.py tests/test_build_ship_bundle.py tests/packaged_desktop/test_rehearsal_flows.py tests/test_suite_contract.py -q`
+- `npm run test:unit`
+- `npm run lint:precommit:changed`
 
-## Known Caveats
+## Deferred Follow-Up Order
 
-- `data/source-approval-state.json` is only a newline-normalization diff from the verification tooling.
-- `tools/mcp/SERENA.md` was updated separately and should remain intact.
+If another cleanup wave continues from here, keep the order narrow and compatibility-first:
+
+1. Keep backend compat-barrel work deferred to the next dedicated wave, especially `src/jobs_fetcher.py` and any deeper `src/source_sync.py` thinning beyond the stable facade.
+2. Continue backend helper dedup only where behavior is truly identical and existing root/module boundaries stay intact.
+3. If the admin slice needs another pass, target the remaining large stable roots only after preserving the new domain/fetcher/discovery leaf boundaries and guardrails.
+4. Do not reopen jobs/saved `types.js` extraction in the near term; the remaining ROI is low after the typedef cleanup already landed.
 
 ## Resume Checklist
 
 On another machine:
 
-1. Restore the correct branch and working tree.
+1. Start from `main` or a descendant of the April 22, 2026 cleanup follow-up state; do not look for an unmerged “current working tree” version of this work.
 2. Verify Python, Node, and repo test tooling are available.
 3. Review `git status --short` before making new changes.
-4. Re-run the focused cleanup verification commands before continuing:
-   - `python -m pytest tests/test_source_sync.py tests/admin/test_admin_bridge_ops_sync.py tests/admin/test_admin_bridge_thin_wrappers.py -q`
+4. Re-run the cleanup verification baseline before extending the cleanup further:
+   - `python -m pytest tests/test_source_sync.py tests/admin/test_admin_bridge_ops_sync.py tests/admin/test_admin_bridge_thin_wrappers.py tests/test_build_ship_bundle.py tests/packaged_desktop/test_rehearsal_flows.py tests/test_suite_contract.py -q`
    - `npm run test:unit`
    - `npm run lint:precommit:changed`
 

@@ -1,4 +1,12 @@
 import { deriveFetcherFailureSummary } from "../domain.js";
+import {
+  renderAdminOpsAlerts,
+  renderAdminOpsFetcherMetrics,
+  renderAdminOpsHistory,
+  renderAdminOpsKpis,
+  renderAdminOpsSchedule,
+  renderAdminOpsTrends
+} from "../render.js";
 import { getTaskStateRows } from "../../shared/live-task.js";
 
 export function formatBytes(bytes) {
@@ -16,12 +24,12 @@ export function createAdminOpsController({
   postBridge,
   deriveAdminRunsModel,
   getOpsPollIntervalMs,
-  renderAdminOpsAlerts,
-  renderAdminOpsKpis,
-  renderAdminOpsSchedule,
-  renderAdminOpsFetcherMetrics,
-  renderAdminOpsTrends,
-  renderAdminOpsHistory,
+  renderAdminOpsAlerts: renderAdminOpsAlertsImpl = renderAdminOpsAlerts,
+  renderAdminOpsKpis: renderAdminOpsKpisImpl = renderAdminOpsKpis,
+  renderAdminOpsSchedule: renderAdminOpsScheduleImpl = renderAdminOpsSchedule,
+  renderAdminOpsFetcherMetrics: renderAdminOpsFetcherMetricsImpl = renderAdminOpsFetcherMetrics,
+  renderAdminOpsTrends: renderAdminOpsTrendsImpl = renderAdminOpsTrends,
+  renderAdminOpsHistory: renderAdminOpsHistoryImpl = renderAdminOpsHistory,
   loadSyncStatus,
   setBusyFlag,
   showToast,
@@ -307,7 +315,7 @@ export function createAdminOpsController({
         loadDiscoveryData().catch(() => {});
       }
 
-      renderAdminOpsAlerts(refs.adminOpsAlertsEl, health?.alerts || [], {
+      renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {
         onAck: async alertId => {
           if (!alertId) return;
           try {
@@ -318,15 +326,15 @@ export function createAdminOpsController({
           }
         }
       });
-      renderAdminOpsKpis(refs.adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
-      renderAdminOpsSchedule(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
-      renderAdminOpsFetcherMetrics(
+      renderAdminOpsKpisImpl(refs.adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
+      renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
+      renderAdminOpsFetcherMetricsImpl(
         refs.adminOpsFetcherMetricsEl,
         fetcherMetrics || {},
         deriveFetcherFailureSummary(state.latestFetcherReportCache || {})
       );
-      renderAdminOpsHistory(refs.adminOpsHistoryEl, runModel);
-      renderAdminOpsTrends(refs.adminOpsTrendsEl, historyRuns);
+      renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel);
+      renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
       loadSyncStatus({ silent: true }).catch(() => {});
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
       scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0));

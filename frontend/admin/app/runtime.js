@@ -2,9 +2,7 @@ import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js"
 import {
   escapeHtml,
   showToast,
-  setText,
-  bindUi,
-  bindAsyncClick
+  setText
 } from "../../shared/ui/index.js";
 import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
 import { adminService } from "../services.js";
@@ -13,14 +11,7 @@ import {
   renderTotalsHtml,
   renderUsersTableHtml,
   renderUsersEmptyHtml,
-  appendAdminLogRow,
-  renderSourcesTableHtml,
-  renderAdminOpsAlerts,
-  renderAdminOpsKpis,
-  renderAdminOpsSchedule,
-  renderAdminOpsFetcherMetrics,
-  renderAdminOpsTrends,
-  renderAdminOpsHistory
+  appendAdminLogRow
 } from "../render.js";
 import {
   getErrorMessage as getErrorMessageFromDomain,
@@ -49,8 +40,6 @@ import {
   writeJobsAutoRefreshSignal
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
-import { navigateDesktopPage } from "../../shared/local-data/desktop-client.js";
-import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { cacheAdminDom } from "./dom.js";
 import {
   isSyncBusy as isSyncBusyFromModule,
@@ -80,8 +69,9 @@ import { createAdminRegistryController } from "./registry.js";
 import { createAdminRuntimeState } from "./runtime/state.js";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
+import { createAdminOverviewController } from "./runtime/overview.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";
-import { bindWindowResize } from "./runtime/events.js";
+import { bindAdminRuntimeEvents } from "./runtime/events.js";
 import { createRestoreActiveRunWatches } from "./live-task.js";
 
 const JOBS_LAST_URL_KEY = adminConfig.JOBS_LAST_URL_KEY || "baluffo_jobs_last_url";
@@ -108,6 +98,7 @@ let opsController;
 let fetcherController;
 let discoveryController;
 let registryController;
+let overviewController;
 let restoreActiveRunWatches;
 const startupMetrics = createAdminStartupMetrics({
   emitStartupMetric: (event, payload) => emitAdminStartupMetricFromData(ADMIN_BRIDGE_BASE, event, payload)
@@ -262,70 +253,22 @@ function setSourceFilter(value) {
   return state.activeSourceFilter;
 }
 
-function renderTotals(totals) {
-  if (refs.adminTotalsEl) refs.adminTotalsEl.innerHTML = renderTotalsHtml(totals, formatBytes);
-}
-
-function renderUsers(users) {
-  if (!refs.adminUsersListEl) return;
-  refs.adminUsersListEl.innerHTML = renderUsersTableHtml(users, formatBytes);
-  const t = UI_TOKENS.admin;
-  refs.adminUsersListEl.querySelectorAll(ui(t.wipeBtn)).forEach(btn => {
-    bindAsyncClick(btn, async () => {
-      const uid = String(btn.dataset.uid || "");
-      const name = String(btn.dataset.name || uid || "this account");
-      await wipeAccount(uid, name);
-    });
-  });
-}
-
-function renderUsersEmpty(message) {
-  if (refs.adminUsersListEl) refs.adminUsersListEl.innerHTML = renderUsersEmptyHtml(message);
-}
-
-async function wipeAccount(uid, name) {
-  if (!uid) {
-    showToast("Missing user id for wipe.", "error");
-    return;
-  }
-  const confirmed = await requestConfirmationDialog({
-    title: "Wipe account data?",
-    description: `Wipe account data for ${name || uid}? This cannot be undone.`,
-    confirmLabel: "Wipe account"
-  });
-  if (!confirmed) return;
-  try {
-    const result = await adminService.wipeAccountAdmin(uid);
-    if (!result.ok) throw new Error(result.error || "Could not wipe account.");
-    showToast("User account wiped.", "success");
-    await refreshOverview();
-  } catch (err) {
-    showToast(`Could not wipe account: ${getErrorMessage(err)}`, "error");
-  }
-}
-
-async function refreshOverview() {
-  try {
-    const overviewResult = await adminService.getAdminOverview();
-    if (!overviewResult.ok) throw new Error(overviewResult.error || "Could not load admin overview.");
-    const overview = overviewResult.data || {};
-    renderTotals(overview?.totals || {});
-    const users = Array.isArray(overview?.users) ? overview.users : [];
-    if (users.length) {
-      renderUsers(users);
-    } else {
-      renderUsersEmpty("No local users found.");
-    }
-    setSourceStatus(`Loaded ${users.length} user account(s).`);
-    adminDispatch.dispatch({ type: ADMIN_ACTIONS.OVERVIEW_REFRESHED, payload: { at: new Date().toISOString() } });
-  } catch (err) {
-    renderUsersEmpty("Could not load admin overview.");
-    setSourceStatus(`Admin overview unavailable: ${getErrorMessage(err)}`);
-    showToast(`Could not load overview: ${getErrorMessage(err)}`, "error");
-  }
-}
-
 function composeControllers() {
+  overviewController = createAdminOverviewController({
+    refs,
+    adminService,
+    requestConfirmationDialog,
+    showToast,
+    getErrorMessage,
+    setSourceStatus,
+    adminDispatch,
+    adminActions: ADMIN_ACTIONS,
+    formatBytes,
+    renderTotalsHtml,
+    renderUsersTableHtml,
+    renderUsersEmptyHtml
+  });
+
   opsController = createAdminOpsController({
     state,
     refs,
@@ -333,12 +276,6 @@ function composeControllers() {
     postBridge,
     deriveAdminRunsModel: (payload, nowMs = Date.now()) => deriveAdminRunsModelFromDomain(payload, nowMs),
     getOpsPollIntervalMs: hasLiveRuns => getOpsPollIntervalMsFromDomain(hasLiveRuns, OPS_POLL_IDLE_INTERVAL_MS, OPS_POLL_LIVE_INTERVAL_MS),
-    renderAdminOpsAlerts,
-    renderAdminOpsKpis,
-    renderAdminOpsSchedule,
-    renderAdminOpsFetcherMetrics,
-    renderAdminOpsTrends,
-    renderAdminOpsHistory,
     loadSyncStatus: options => syncController.loadSyncStatus(options),
     setBusyFlag,
     showToast,
@@ -434,7 +371,6 @@ function composeControllers() {
     applySourceFilter: rows => applySourceFilterFromDomain(rows, state.activeSourceFilter),
     getSourceJobsFoundCount: (...args) => getSourceJobsFoundCountFromDomain(...args),
     deriveSourceStatus: (...args) => deriveSourceStatusFromDomain(...args),
-    renderSourcesTableHtml,
     readShowZeroJobs,
     normalizeSourceFilter: normalizeSourceFilterFromModule,
     adminDispatch,
@@ -464,12 +400,12 @@ function composeControllers() {
     setManualSourceFeedback: (...args) => registryController.setManualSourceFeedback(...args),
     setOpsPlaceholders: (...args) => opsController.setOpsPlaceholders(...args),
     setBridgeStatusBadge: (...args) => opsController.setBridgeStatusBadge(...args),
-    renderUsersEmpty,
+    renderUsersEmpty: (...args) => overviewController.renderUsersEmpty(...args),
     startBridgeStatusWatch: (...args) => opsController.startBridgeStatusWatch(...args),
     stopBridgeStatusWatch: (...args) => opsController.stopBridgeStatusWatch(...args),
     scheduleOpsHealthPolling: (...args) => opsController.scheduleOpsHealthPolling(...args),
     stopOpsHealthPolling: (...args) => opsController.stopOpsHealthPolling(...args),
-    refreshOverview,
+    refreshOverview: (...args) => overviewController.refreshOverview(...args),
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),
     loadDiscoveryConfig: (...args) => discoveryController.loadDiscoveryConfig(...args),
     loadOpsHealthData: (...args) => opsController.loadOpsHealthData(...args),
@@ -483,126 +419,28 @@ function cacheDom() {
   refs = cacheAdminDom(document);
 }
 
-function bindEvents() {
-  const restoreWatch = () => Promise.resolve(restoreActiveRunWatches?.()).catch(() => {});
-  [
-    ["pageshow", event => {
-      if (event?.persisted) restoreWatch();
-    }, window]
-  ].forEach(([eventName, handler, target]) => target.addEventListener(eventName, handler));
-
-  [
-    [refs.adminJobsBtnEl, () => { navigateDesktopPage(getLastJobsUrl()); }],
-    [refs.adminSavedBtnEl, () => { navigateDesktopPage("saved.html"); }],
-    [refs.adminClearLogBtnEl, () => { fetcherController.setFetcherLogPlaceholder("Output log cleared."); }],
-    [refs.adminClearDiscoveryLogBtnEl, event => {
-      event.preventDefault();
-      event.stopPropagation();
-      discoveryController.setDiscoveryLogPlaceholder("Discovery log cleared.");
-    }]
-  ].forEach(([el, handler]) => bindUi(el, "click", handler));
-
-  [
-    [refs.adminRefreshBtnEl, refreshOverview],
-    [refs.adminRunFetcherBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "default" })],
-    [refs.adminRunFetcherIncrementalBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "incremental" })],
-    [refs.adminRunFetcherUncappedBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "uncapped" })],
-    [refs.adminRunFetcherForceBtnEl, () => fetcherController.triggerJobsFetcherTask({ preset: "force_full" })],
-    [refs.adminRefreshReportBtnEl, () => fetcherController.loadLatestFetcherReport()],
-    [refs.adminRetryFailedBtnEl, async () => {
-      fetcherController.appendFetcherLog(fetcherController.getFetcherPresetMeta("retry_failed").requestedLog, "warn");
-      await fetcherController.triggerJobsFetcherTask({ preset: "retry_failed" });
-    }],
-    [refs.adminCopyFailuresBtnEl, () => fetcherController.copyLatestFailureSummary()],
-    [refs.adminRunDiscoveryBtnEl, () => discoveryController.runDiscoveryTask()],
-    [refs.adminRunDiscoveryUncappedBtnEl, () => discoveryController.runDiscoveryTask({ preset: "uncapped" })],
-    [refs.adminLoadDiscoveryBtnEl, () => registryController.loadDiscoveryData()],
-    [refs.adminApproveSourcesBtnEl, () => registryController.approveSelectedSources()],
-    [refs.adminRejectSourcesBtnEl, () => registryController.rejectSelectedSources()],
-    [refs.adminDeleteSourcesBtnEl, () => registryController.deleteSelectedSources()],
-    [refs.adminRestoreRejectedBtnEl, () => registryController.restoreRejectedSources()],
-    [refs.adminDemoteActiveBtnEl, () => registryController.demoteActiveSources()],
-    [refs.adminAddManualSourceBtnEl, () => registryController.addManualSource()],
-    [refs.adminRefreshOpsBtnEl, () => opsController.loadOpsHealthData()],
-    [refs.adminSyncTestBtnEl, () => syncController.testSyncConfig()],
-    [refs.adminSyncPullBtnEl, () => syncController.pullSourcesSync()],
-    [refs.adminSyncPushBtnEl, () => syncController.pushSourcesSync()]
-  ].forEach(([el, handler]) => bindAsyncClick(el, handler));
-
-  [
-    [refs.adminPendingSourcesSelectAllEl, "pending"],
-    [refs.adminActiveSourcesSelectAllEl, "active"],
-    [refs.adminRejectedSourcesSelectAllEl, "rejected"]
-  ].forEach(([checkboxEl, type]) => {
-    if (!checkboxEl) return;
-    checkboxEl.addEventListener("change", () => {
-      registryController.toggleSelectAllSources(type, checkboxEl.checked);
-    });
-  });
-
-  if (refs.adminDiscoveryLogDetailsEl) {
-    refs.adminDiscoveryLogDetailsEl.addEventListener("toggle", () => {
-      if (state.discoveryLogDetailsSyncing) return;
-      state.discoveryLogUserToggled = true;
-      state.discoveryLogPreferredOpen = Boolean(refs.adminDiscoveryLogDetailsEl.open);
-    });
-  }
-
-  bindWindowResize(() => {
-    syncDiscoveryLogDisclosure();
-  });
-
-  if (refs.adminManualSourceUrlEl) {
-    refs.adminManualSourceUrlEl.addEventListener("keydown", event => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        registryController.addManualSource().catch(() => {});
-      }
-    });
-  }
-
-  if (refs.adminShowZeroJobsToggleEl) {
-    refs.adminShowZeroJobsToggleEl.checked = readShowZeroJobs(ADMIN_SHOW_ZERO_JOBS_KEY);
-    refs.adminShowZeroJobsToggleEl.addEventListener("change", () => {
-      writeShowZeroJobs(ADMIN_SHOW_ZERO_JOBS_KEY, Boolean(refs.adminShowZeroJobsToggleEl.checked));
-      registryController.loadDiscoveryData().catch(() => {});
-    });
-  }
-
-  if (refs.adminDiscoveryAutoApproveToggleEl) {
-    refs.adminDiscoveryAutoApproveToggleEl.addEventListener("input", () => {
-      state.discoveryConfigDirty = true;
-    });
-    refs.adminDiscoveryAutoApproveToggleEl.addEventListener("change", () => {
-      state.discoveryConfigDirty = true;
-      discoveryController.saveDiscoveryConfig().catch(() => {});
-    });
-  }
-
-  if (refs.adminSyncEnabledEl) {
-    refs.adminSyncEnabledEl.addEventListener("input", () => {
-      state.syncConfigDirty = true;
-    });
-    refs.adminSyncEnabledEl.addEventListener("change", () => {
-      state.syncConfigDirty = true;
-      syncController.saveSyncConfig().catch(() => {});
-    });
-  }
-
-  refs.adminSourceFilterBtnEls.forEach(btn => {
-    btn.addEventListener("click", () => {
-      setSourceFilter(String(btn.dataset.sourceFilter || "all").toLowerCase());
-      registryController.loadDiscoveryData().catch(() => {});
-    });
-  });
-}
-
 function bootAdminPage() {
   state.activeSourceFilter = normalizeSourceFilterFromModule(readSourceFilter(ADMIN_SOURCE_FILTER_KEY, "all"));
   cacheDom();
   composeControllers();
   fetcherController.applyFetcherPresetMetadata();
-  bindEvents();
+  bindAdminRuntimeEvents({
+    state,
+    refs,
+    onRestoreActiveRunWatches: restoreActiveRunWatches,
+    getLastJobsUrl,
+    onRefreshOverview: overviewController.refreshOverview,
+    fetcherController,
+    discoveryController,
+    registryController,
+    opsController,
+    syncController,
+    readShowZeroJobs,
+    writeShowZeroJobs,
+    showZeroJobsKey: ADMIN_SHOW_ZERO_JOBS_KEY,
+    onSyncDiscoveryLogDisclosure: syncDiscoveryLogDisclosure,
+    onSetSourceFilter: setSourceFilter
+  });
   authController.initAdminPage();
   Promise.resolve(restoreActiveRunWatches?.()).catch(() => {});
 }

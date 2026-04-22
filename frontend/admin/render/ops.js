@@ -1,0 +1,612 @@
+import { escapeHtml } from "../../shared/ui/index.js";
+import { formatScrapyStaticSourcesTailBadge, formatTaskProgressDetail } from "../../shared/task-progress.js";
+
+function formatDuration(ms) {
+  const value = Math.max(0, Number(ms) || 0);
+  if (!value) return "0s";
+  if (value < 1000) return `${value}ms`;
+  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
+  return `${(value / 60_000).toFixed(1)}m`;
+}
+
+function formatDateTime(value) {
+  const parsed = Date.parse(String(value || ""));
+  if (!Number.isFinite(parsed)) return "unknown";
+  return new Date(parsed).toLocaleString();
+}
+
+function formatScheduleCell(entry) {
+  const interval = Number(entry?.intervalHours || 0);
+  const next = formatDateTime(entry?.nextRunAt || "");
+  if (interval > 0) return `every ${interval}h, next ${next}`;
+  if (String(entry?.note || "") === "manual_task") return "manual task (no interval)";
+  return "unknown";
+}
+
+function sanitizeSlowSourceName(value, maxLen = 64) {
+  const text = String(value || "")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "unknown-source";
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, Math.max(1, maxLen - 3)).trim()}...`;
+}
+
+function formatLastRunCell(lastRun) {
+  const type = String(lastRun?.type || "");
+  const status = String(lastRun?.status || "");
+  const finished = formatDateTime(lastRun?.finishedAt || "");
+  if (!type) return "none";
+  return `${type} ${status} @ ${finished}`;
+}
+
+function buildRunStatusTooltip(row) {
+  const status = String(row?.status || "").toLowerCase();
+  if (status !== "warning" && status !== "error") return "";
+  const type = String(row?.type || "").toLowerCase();
+  const summary = row?.summary || {};
+  const parts = [];
+  if (type === "discovery") {
+    const failed = Number(summary?.failedProbeCount || 0);
+    const probed = Number(summary?.probedCandidateCount || 0);
+    const queued = Number(summary?.queuedCandidateCount || 0);
+    parts.push(`Failed probes: ${failed}`);
+    if (probed > 0) parts.push(`Probed: ${probed}`);
+    if (queued >= 0) parts.push(`Queued (new): ${queued}`);
+  } else {
+    const failed = Number(summary?.failedSources || 0);
+    const sourceCount = Number(summary?.sourceCount || 0);
+    const output = Number(summary?.outputCount || 0);
+    parts.push(`Failed sources: ${failed}`);
+    if (sourceCount > 0) parts.push(`Sources: ${sourceCount}`);
+    parts.push(`Output: ${output}`);
+  }
+  const durationMs = Number(row?.durationMs || 0);
+  if (durationMs > 0) parts.push(`Duration: ${formatDuration(durationMs)}`);
+  const stamp = formatDateTime(row?.finishedAt || row?.startedAt || "");
+  if (stamp && stamp !== "unknown") parts.push(`Finished: ${stamp}`);
+  return parts.join(" | ");
+}
+
+function getRunStatusChipClass(status) {
+  const token = String(status || "").toLowerCase();
+  if (token === "error") return "critical";
+  if (token === "warning") return "warning";
+  if (token === "running" || token === "started") return "healthy";
+  return "healthy";
+}
+
+function formatSignedInt(value) {
+  const num = Number(value) || 0;
+  return num > 0 ? `+${num}` : `${num}`;
+}
+
+function stableOpsSignature(value) {
+  try {
+    if (Array.isArray(value)) {
+      return JSON.stringify(value.map(item => item || {}));
+    }
+    return JSON.stringify(value || {});
+  } catch {
+    return String(value || "");
+  }
+}
+
+export function renderAdminOpsAlerts(alertsEl, alerts, handlers = {}) {
+  if (!alertsEl) return;
+  const canPatchInPlace = Boolean(alertsEl && alertsEl.dataset);
+  const rows = Array.isArray(alerts) ? alerts : [];
+  const signature = stableOpsSignature(rows.map(alert => ({
+    id: String(alert?.id || ""),
+    severity: String(alert?.severity || ""),
+    message: String(alert?.message || ""),
+    dismissible: alert?.dismissible !== false
+  })));
+  if (canPatchInPlace && alertsEl.dataset.opsAlertsSig === signature) return;
+  if (canPatchInPlace) alertsEl.dataset.opsAlertsSig = signature;
+  if (!rows.length) {
+    alertsEl.innerHTML = '<div class="admin-alert-banner healthy">No active alerts.</div>';
+    return;
+  }
+  alertsEl.innerHTML = rows.map(alert => {
+    const id = escapeHtml(String(alert?.id || ""));
+    const severity = String(alert?.severity || "warning").toLowerCase();
+    const cls = severity === "critical" ? "critical" : "warning";
+    const dismissible = alert?.dismissible !== false;
+    return `
+      <div class="admin-alert-banner ${cls}">
+        <div class="admin-alert-message">${escapeHtml(String(alert?.message || id))}</div>
+        ${dismissible
+          ? `<button class="btn back-btn admin-alert-ack-btn" data-ui="admin-alert-ack-btn" data-alert-id="${id}">Dismiss</button>`
+          : ""}
+      </div>
+    `;
+  }).join("");
+
+  alertsEl.querySelectorAll(".admin-alert-ack-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (typeof handlers.onAck === "function") {
+        handlers.onAck(String(btn.dataset.alertId || ""));
+      }
+    });
+  });
+}
+
+export function renderAdminOpsKpis(kpisEl, kpis, status) {
+  if (!kpisEl) return;
+  const canPatchInPlace = Boolean(kpisEl && kpisEl.dataset);
+  const signature = stableOpsSignature({
+    status: String(status || ""),
+    sevenDayFetchSuccessRate: Number(kpis?.sevenDayFetchSuccessRate || 0),
+    failedSourceRatioLatest: Number(kpis?.failedSourceRatioLatest || 0),
+    pendingApprovalsCount: Number(kpis?.pendingApprovalsCount || 0),
+    avgFetchDurationMs7d: Number(kpis?.avgFetchDurationMs7d || 0),
+    lastSuccessfulFetchAge: String(kpis?.lastSuccessfulFetchAge || "")
+  });
+  if (canPatchInPlace && kpisEl.dataset.opsKpisSig === signature) return;
+  if (canPatchInPlace) kpisEl.dataset.opsKpisSig = signature;
+  const successRate = Number(kpis?.sevenDayFetchSuccessRate || 0);
+  const failedRatio = Number(kpis?.failedSourceRatioLatest || 0);
+  const pending = Number(kpis?.pendingApprovalsCount || 0);
+  const avgMs = Number(kpis?.avgFetchDurationMs7d || 0);
+  const statusClass = status === "critical" ? "critical" : status === "warning" ? "warning" : "healthy";
+  kpisEl.innerHTML = `
+    <div class="admin-total-card">
+      <div class="admin-total-label">Ops Status</div>
+      <div class="admin-total-value"><span class="admin-status-chip ${statusClass}">${escapeHtml(status)}</span></div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Last Successful Fetch</div>
+      <div class="admin-total-value">${escapeHtml(String(kpis?.lastSuccessfulFetchAge || "unknown"))}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Fetch Success (7d)</div>
+      <div class="admin-total-value">${(successRate * 100).toFixed(1)}%</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Avg Fetch Duration (7d)</div>
+      <div class="admin-total-value">${formatDuration(avgMs)}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Failed Source Ratio</div>
+      <div class="admin-total-value">${(failedRatio * 100).toFixed(1)}%</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Pending Approvals</div>
+      <div class="admin-total-value">${pending.toLocaleString()}</div>
+    </div>
+  `;
+}
+
+export function renderAdminOpsSchedule(scheduleEl, schedule, latestOpsHealthCache) {
+  if (!scheduleEl) return;
+  const canPatchInPlace = Boolean(scheduleEl && scheduleEl.dataset);
+  const signature = stableOpsSignature({
+    schedule: schedule || {},
+    lastRunResult: latestOpsHealthCache?.kpis?.lastRunResult || {}
+  });
+  if (canPatchInPlace && scheduleEl.dataset.opsScheduleSig === signature) return;
+  if (canPatchInPlace) scheduleEl.dataset.opsScheduleSig = signature;
+  const fetcher = schedule?.fetcher || {};
+  const discovery = schedule?.discovery || {};
+  scheduleEl.innerHTML = `
+    <div class="admin-ops-schedule-item"><strong>Fetcher</strong>: ${formatScheduleCell(fetcher)}</div>
+    <div class="admin-ops-schedule-item"><strong>Discovery</strong>: ${formatScheduleCell(discovery)}</div>
+    <div class="admin-ops-schedule-item"><strong>Last Run</strong>: ${formatLastRunCell(latestOpsHealthCache?.kpis?.lastRunResult || {})}</div>
+  `;
+}
+
+const FETCHER_FAILURE_BUCKET_LABELS = {
+  extract_zero: "Extract Zero",
+  blocked_or_challenge: "Blocked/Challenge",
+  timeout: "Timeout",
+  provider_rate_limited: "Provider Rate Limited",
+  provider_not_found_or_bad_config: "Provider Bad Config",
+  uncategorized: "Uncategorized"
+};
+
+export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null) {
+  if (!metricsEl) return;
+  const latest = metrics?.latestRun || {};
+  const history = metrics?.history || {};
+  const summary = failureSummary && typeof failureSummary === "object"
+    ? failureSummary
+    : { topLevelFailedSources: 0, detailFailureCount: 0, buckets: [] };
+  const canPatchInPlace = Boolean(metricsEl && metricsEl.dataset);
+  const signature = stableOpsSignature({
+    latestRun: {
+      inputCount: Number(latest?.inputCount || 0),
+      outputCount: Number(latest?.outputCount || 0),
+      duplicateRate: Number(latest?.duplicateRate || 0),
+      sourceFailureRate: Number(latest?.sourceFailureRate || 0),
+      failedSources: Number(latest?.failedSources || 0),
+      sourceCount: Number(latest?.sourceCount || 0),
+      durationMs: Number(latest?.durationMs || 0),
+      medianSourceDurationMs: Number(latest?.medianSourceDurationMs || 0),
+      p95SourceDurationMs: Number(latest?.p95SourceDurationMs || 0)
+    },
+    history: {
+      windowRuns: Number(history?.windowRuns || 0),
+      medianDurationMs: Number(history?.medianDurationMs || 0),
+      averageDurationMs: Number(history?.averageDurationMs || 0)
+    },
+    slowestSources: Array.isArray(latest?.slowestSources) ? latest.slowestSources : [],
+    stageTop: Array.isArray(latest?.stageTop) ? latest.stageTop : [],
+    failureSummary: summary
+  });
+  if (canPatchInPlace && metricsEl.dataset.opsFetcherMetricsSig === signature) return;
+  if (canPatchInPlace) metricsEl.dataset.opsFetcherMetricsSig = signature;
+
+  const failed = Number(latest?.failedSources || 0);
+  const sourceCount = Math.max(0, Number(latest?.sourceCount || 0));
+  const duplicateRate = Math.max(0, Number(latest?.duplicateRate || 0));
+  const outputYieldRate = Math.max(0, Number(latest?.outputYieldRate || 0));
+  const failureRate = Math.max(0, Number(latest?.sourceFailureRate || 0));
+  const slowest = Array.isArray(latest?.slowestSources) ? latest.slowestSources : [];
+  const stageTop = Array.isArray(latest?.stageTop) ? latest.stageTop : [];
+  const highCostLowYield = Array.isArray(latest?.highCostLowYieldSources) ? latest.highCostLowYieldSources : [];
+  const slowestSummary = slowest.length
+    ? slowest
+      .slice(0, 3)
+      .map(row => `${sanitizeSlowSourceName(row?.name)} (${formatDuration(Number(row?.durationMs || 0))})`)
+      .filter(Boolean)
+      .join(" | ")
+    : "No source timing data yet.";
+  const slowestStageSummary = stageTop.length
+    ? stageTop
+      .slice(0, 3)
+      .map(row => `${String(row?.stage || "unknown")} (${formatDuration(Number(row?.durationMs || 0))})`)
+      .join(" | ")
+    : "No stage timing data yet.";
+  const highCostSummary = highCostLowYield.length
+    ? highCostLowYield
+      .slice(0, 3)
+      .map(row => `${sanitizeSlowSourceName(row?.name)} (${formatDuration(Number(row?.durationMs || 0))}, kept ${Number(row?.keptCount || 0)})`)
+      .join(" | ")
+    : "No high-cost low-yield sources.";
+  const bucketRows = Array.isArray(summary?.buckets) ? summary.buckets : [];
+  const bucketSummaryHtml = bucketRows.length
+    ? bucketRows.map(bucket => `
+      <div class="admin-ops-schedule-item admin-ops-full-row">
+        <strong>${escapeHtml(FETCHER_FAILURE_BUCKET_LABELS[bucket.key] || bucket.key)}</strong>
+        : ${Number(bucket.count || 0).toLocaleString()}
+        ${bucket.examples?.length ? ` (${escapeHtml(bucket.examples.join(" | "))})` : ""}
+      </div>
+    `).join("")
+    : `
+      <div class="admin-ops-schedule-item admin-ops-full-row">
+        <strong>Failure buckets</strong>: No classified failures in the latest fetch report.
+      </div>
+    `;
+
+  metricsEl.innerHTML = `
+    <div class="admin-total-card">
+      <div class="admin-total-label">Latest Runtime</div>
+      <div class="admin-total-value">${formatDuration(Number(latest?.durationMs || 0))}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Median Runtime</div>
+      <div class="admin-total-value">${formatDuration(Number(history?.medianDurationMs || 0))}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Average Runtime</div>
+      <div class="admin-total-value">${formatDuration(Number(history?.averageDurationMs || 0))}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Window Runs</div>
+      <div class="admin-total-value">${Number(history?.windowRuns || 0).toLocaleString()}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Duplicate Rate</div>
+      <div class="admin-total-value">${(duplicateRate * 100).toFixed(1)}%</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Output Yield</div>
+      <div class="admin-total-value">${(outputYieldRate * 100).toFixed(1)}%</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Median Source Time</div>
+      <div class="admin-total-value">${formatDuration(Number(latest?.medianSourceDurationMs || 0))}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">P95 Source Time</div>
+      <div class="admin-total-value">${formatDuration(Number(latest?.p95SourceDurationMs || 0))}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Source Failures</div>
+      <div class="admin-total-value">${failed.toLocaleString()} / ${sourceCount.toLocaleString()} (${(failureRate * 100).toFixed(1)}%)</div>
+    </div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top-level failed sources</strong>: ${Number(summary?.topLevelFailedSources || 0).toLocaleString()}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Grouped detail failures</strong>: ${Number(summary?.detailFailureCount || 0).toLocaleString()}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Failure buckets</strong></div>
+    ${bucketSummaryHtml}
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest sources</strong>: ${escapeHtml(slowestSummary)}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
+  `;
+}
+
+export function renderAdminOpsTrends(trendsEl, runs) {
+  if (!trendsEl) return;
+  const canPatchInPlace = Boolean(trendsEl && trendsEl.dataset);
+  const rows = Array.isArray(runs) ? runs : [];
+  const fetchRuns = rows.filter(row => String(row?.type || "") === "fetch");
+  const latest = fetchRuns[fetchRuns.length - 1];
+  const prev = fetchRuns[fetchRuns.length - 2];
+  if (!latest || !prev) {
+    if (canPatchInPlace && trendsEl.dataset.opsTrendSig === "insufficient") return;
+    if (canPatchInPlace) trendsEl.dataset.opsTrendSig = "insufficient";
+    trendsEl.textContent = "Trends: not enough fetch history yet.";
+    return;
+  }
+  const latestOutput = Number(latest?.summary?.outputCount || 0);
+  const prevOutput = Number(prev?.summary?.outputCount || 0);
+  const latestFailed = Number(latest?.summary?.failedSources || 0);
+  const prevFailed = Number(prev?.summary?.failedSources || 0);
+  const summaryText =
+    `Trends: output Δ ${formatSignedInt(latestOutput - prevOutput)} (latest ${latestOutput.toLocaleString()}); failed sources Δ ${formatSignedInt(latestFailed - prevFailed)}.`;
+
+  const successfulRuns = fetchRuns
+    .filter(row => {
+      const status = String(row?.status || row?.displayStatus || "ok").toLowerCase();
+      const output = Number(row?.summary?.outputCount || 0);
+      return status !== "error" && Number.isFinite(output) && output > 0;
+    })
+    .map(row => {
+      const stamp = Date.parse(String(row?.finishedAt || row?.startedAt || ""));
+      return {
+        output: Number(row?.summary?.outputCount || 0),
+        ts: Number.isFinite(stamp) ? stamp : 0
+      };
+    })
+    .sort((a, b) => a.ts - b.ts)
+    .slice(-20);
+
+  if (!successfulRuns.length) {
+    if (canPatchInPlace && trendsEl.dataset.opsTrendSig === "empty") return;
+    if (canPatchInPlace) trendsEl.dataset.opsTrendSig = "empty";
+    trendsEl.textContent = "Trends: no successful fetch history yet.";
+    return;
+  }
+  const signature = successfulRuns.map(item => `${item.ts}:${item.output}`).join("|");
+  if (canPatchInPlace && trendsEl.dataset.opsTrendSig === signature) return;
+  if (canPatchInPlace) trendsEl.dataset.opsTrendSig = signature;
+
+  const width = 640;
+  const height = 170;
+  const padLeft = 54;
+  const padRight = 16;
+  const padTop = 18;
+  const padBottom = 34;
+  const chartW = width - padLeft - padRight;
+  const chartH = height - padTop - padBottom;
+  const values = successfulRuns.map(item => item.output);
+  const rawMinY = Math.min(...values);
+  const rawMaxY = Math.max(...values);
+  const range = Math.max(1, rawMaxY - rawMinY);
+  const pad = Math.max(1, range * 0.18);
+  const zoomMinY = Math.max(0, rawMinY - pad);
+  const zoomMaxY = rawMaxY + pad;
+  const spanY = Math.max(1, zoomMaxY - zoomMinY);
+
+  const points = successfulRuns.map((item, idx) => {
+    const x = padLeft + (successfulRuns.length <= 1 ? chartW / 2 : (idx * chartW) / (successfulRuns.length - 1));
+    const y = padTop + chartH - ((item.output - zoomMinY) / spanY) * chartH;
+    return { x, y, value: item.output, ts: item.ts };
+  });
+
+  const linePath = points.length <= 1
+    ? `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`
+    : points.slice(1).reduce((acc, point, idx) => {
+      const prevPoint = points[idx];
+      const dx = point.x - prevPoint.x;
+      const c1x = prevPoint.x + (dx / 3);
+      const c1y = prevPoint.y;
+      const c2x = prevPoint.x + (2 * dx / 3);
+      const c2y = point.y;
+      return `${acc} C ${c1x.toFixed(2)} ${c1y.toFixed(2)} ${c2x.toFixed(2)} ${c2y.toFixed(2)} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+    }, `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`);
+
+  const areaPath = `${linePath} L ${points[points.length - 1].x.toFixed(2)} ${(padTop + chartH).toFixed(2)} L ${points[0].x.toFixed(2)} ${(padTop + chartH).toFixed(2)} Z`;
+  const yTicks = [0, 0.5, 1].map(ratio => ({
+    y: padTop + chartH - ratio * chartH,
+    label: Math.round(zoomMinY + (spanY * ratio))
+  }));
+  const xLabel = item => (item.ts ? new Date(item.ts).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "n/a");
+  const first = points[0];
+  const mid = points[Math.floor((points.length - 1) / 2)];
+  const last = points[points.length - 1];
+  const pointDots = points.map(point =>
+    `<circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="2.0" class="admin-ops-trend-dot"><title>${point.value.toLocaleString()} jobs</title></circle>`
+  ).join("");
+
+  trendsEl.innerHTML = `
+    <div class="admin-ops-trend-summary">${escapeHtml(summaryText)}</div>
+    <svg class="admin-ops-trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Successful jobs fetched over time">
+      <path class="admin-ops-trend-area" d="${areaPath}" />
+      ${yTicks.map(tick => `<line class="admin-ops-trend-grid" x1="${padLeft}" x2="${width - padRight}" y1="${tick.y.toFixed(2)}" y2="${tick.y.toFixed(2)}" />`).join("")}
+      ${yTicks.map(tick => `<text class="admin-ops-trend-y-label" x="${padLeft - 8}" y="${(tick.y + 4).toFixed(2)}" text-anchor="end">${tick.label.toLocaleString()}</text>`).join("")}
+      <path class="admin-ops-trend-line" d="${linePath}" />
+      ${pointDots}
+      <text class="admin-ops-trend-x-label" x="${first.x.toFixed(2)}" y="${height - 10}" text-anchor="start">${escapeHtml(xLabel(first))}</text>
+      <text class="admin-ops-trend-x-label" x="${mid.x.toFixed(2)}" y="${height - 10}" text-anchor="middle">${escapeHtml(xLabel(mid))}</text>
+      <text class="admin-ops-trend-x-label" x="${last.x.toFixed(2)}" y="${height - 10}" text-anchor="end">${escapeHtml(xLabel(last))}</text>
+    </svg>
+  `;
+}
+
+export function renderAdminOpsHistory(historyEl, runsOrModel) {
+  if (!historyEl) return;
+  const model = Array.isArray(runsOrModel)
+    ? {
+      currentRows: [],
+      visibleCompletedRows: runsOrModel,
+      olderCompletedRows: []
+    }
+    : (runsOrModel || {});
+  const currentRows = Array.isArray(model.currentRows) ? model.currentRows : [];
+  const visibleCompletedRows = Array.isArray(model.visibleCompletedRows) ? model.visibleCompletedRows : [];
+  const olderCompletedRows = Array.isArray(model.olderCompletedRows) ? model.olderCompletedRows : [];
+  const canPatchInPlace = Boolean(
+    historyEl
+    && typeof historyEl.querySelector === "function"
+    && typeof historyEl.querySelectorAll === "function"
+    && historyEl.dataset
+  );
+  if (!currentRows.length && !visibleCompletedRows.length && !olderCompletedRows.length) {
+    historyEl.innerHTML = '<div class="no-results">No run history yet.</div>';
+    if (canPatchInPlace) {
+      delete historyEl.dataset.opsStructureSig;
+    }
+    return;
+  }
+
+  const toRowView = (row, rowArea, index) => {
+    const rawStatus = String(row?.displayStatus || row?.status || "unknown");
+    const statusToken = rawStatus.toLowerCase();
+    const summary = row?.summary || {};
+    const taskProgress = row?.taskProgress || {};
+    const type = String(row?.type || "unknown");
+    const syncAction = String(summary?.action || "").trim().toLowerCase();
+    const syncLabel = syncAction ? `Sync ${syncAction}` : "Sync";
+    const syncCounts = [summary?.activeCount, summary?.pendingCount, summary?.rejectedCount]
+      .map(value => Number(value || 0))
+      .map(value => value.toLocaleString())
+      .join("/");
+    const currentRunDetail = formatTaskProgressDetail(
+      type,
+      taskProgress,
+      summary,
+      type === "fetch" || type === "discovery" ? { includeCounts: false } : {}
+    );
+    const currentRunTailBadge = row?.isLive && type === "fetch"
+      ? formatScrapyStaticSourcesTailBadge(row?.workItems)
+      : "";
+    const liveRunDetail = [currentRunDetail, currentRunTailBadge].filter(Boolean).join(" | ");
+    const key = [
+      rowArea,
+      String(row?.id || ""),
+      String(row?.runId || ""),
+      type,
+      String(row?.startedAt || ""),
+      String(row?.finishedAt || ""),
+      String(index)
+    ].join("|");
+    return {
+      key,
+      rowArea,
+      typeText: type,
+      statusText: rawStatus,
+      statusClass: getRunStatusChipClass(rawStatus),
+      statusTitle: buildRunStatusTooltip(row),
+      isRunning: statusToken === "running" || statusToken === "started",
+      durationText: formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),
+      outputOrQueuedText: (row?.isLive && liveRunDetail)
+        ? liveRunDetail
+        : row?.type === "discovery"
+          ? `Queued (new): ${Number(summary?.queuedCandidateCount || 0).toLocaleString()}`
+          : row?.type === "sync"
+            ? `${syncLabel} (${syncCounts})`
+            : Number(summary?.outputCount || 0).toLocaleString(),
+      failedText: (row?.type === "discovery"
+        ? Number(summary?.failedProbeCount || 0)
+        : row?.type === "sync"
+          ? Number(String(summary?.error || "").trim().length > 0 ? 1 : 0)
+          : Number(summary?.failedSources || 0)).toLocaleString(),
+      finishedText: formatDateTime(row?.finishedAt || row?.startedAt || "")
+    };
+  };
+
+  const currentViews = currentRows.map((row, index) => toRowView(row, "current", index));
+  const visibleCompletedViews = visibleCompletedRows.map((row, index) => toRowView(row, "current", currentRows.length + index));
+  const olderCompletedViews = olderCompletedRows.map((row, index) => toRowView(row, "completed_older", index));
+  const primaryViews = [...currentViews, ...visibleCompletedViews];
+
+  const structureSignature = JSON.stringify({
+    current: primaryViews.map(row => row.key),
+    completedOlder: olderCompletedViews.map(row => row.key)
+  });
+
+  const updateExistingRows = (views, rowArea) => {
+    const rowMap = new Map(
+      Array.from(historyEl.querySelectorAll(`.admin-ops-history-row[data-row-area="${rowArea}"]`))
+        .map(rowEl => [String(rowEl.dataset.runKey || ""), rowEl])
+    );
+    views.forEach(view => {
+      const rowEl = rowMap.get(view.key);
+      if (!rowEl) return;
+      rowEl.classList.toggle("admin-ops-history-row-running", view.isRunning);
+      const cells = rowEl.querySelectorAll(".admin-cell");
+      if (cells.length < 6) return;
+      cells[0].textContent = view.typeText;
+      const chip = cells[1].querySelector(".admin-status-chip");
+      if (chip) {
+        chip.className = `admin-status-chip ${view.statusClass}`;
+        chip.textContent = view.statusText;
+        if (view.statusTitle) {
+          chip.setAttribute("title", view.statusTitle);
+        } else {
+          chip.removeAttribute("title");
+        }
+      }
+      cells[2].textContent = view.durationText;
+      cells[3].textContent = view.outputOrQueuedText;
+      cells[4].textContent = view.failedText;
+      cells[5].textContent = view.finishedText;
+    });
+  };
+
+  if (canPatchInPlace && historyEl.dataset.opsStructureSig === structureSignature) {
+    updateExistingRows(primaryViews, "current");
+    updateExistingRows(olderCompletedViews, "completed_older");
+    return;
+  }
+
+  const olderOpen = canPatchInPlace ? Boolean(historyEl.querySelector(".admin-ops-history-older")?.open) : false;
+  if (canPatchInPlace) {
+    historyEl.dataset.opsStructureSig = structureSignature;
+  }
+
+  const renderRows = views => views.map(view => `
+      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
+        <div class="admin-cell">${escapeHtml(view.typeText)}</div>
+        <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${view.statusTitle ? ` title="${escapeHtml(view.statusTitle)}"` : ""}>${escapeHtml(view.statusText)}</span></div>
+        <div class="admin-cell">${escapeHtml(view.durationText)}</div>
+        <div class="admin-cell">${escapeHtml(view.outputOrQueuedText)}</div>
+        <div class="admin-cell">${escapeHtml(view.failedText)}</div>
+        <div class="admin-cell">${escapeHtml(view.finishedText)}</div>
+      </div>
+    `).join("");
+
+  historyEl.innerHTML = `
+    <div class="admin-ops-current-runs">
+      <div class="admin-ops-history-title">Runs</div>
+      <div class="jobs-table-header">
+        <div class="admin-row-header admin-ops-history-header">
+          <div>Type</div>
+          <div>Status</div>
+          <div>Duration</div>
+          <div>Output / Queued (new)</div>
+          <div>Failed</div>
+          <div>Finished</div>
+        </div>
+      </div>
+      <div class="jobs-table-body">
+        ${primaryViews.length ? renderRows(primaryViews) : '<div class="no-results">No run history yet.</div>'}
+      </div>
+    </div>
+    ${olderCompletedViews.length ? `
+      <details class="admin-ops-history-older admin-ops-completed-runs">
+        <summary>Older runs (${olderCompletedViews.length})</summary>
+        <div class="jobs-table-body">
+          ${renderRows(olderCompletedViews)}
+        </div>
+      </details>
+    ` : ""}
+  `;
+  if (canPatchInPlace) {
+    const detailsEl = historyEl.querySelector(".admin-ops-history-older");
+    if (detailsEl) detailsEl.open = olderOpen;
+  }
+}
