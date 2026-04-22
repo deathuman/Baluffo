@@ -7,6 +7,7 @@ from typing import Any
 
 from src.bridge.server import runtime_state as bridge_runtime_state
 from src.local_data_store import LocalDataPaths, LocalDataStore
+from src.shared.utils import parse_iso as parse_iso_from_utils
 
 root: Any | None = None
 
@@ -197,13 +198,7 @@ def owner_session_should_exit() -> bool:
 
 
 def parse_iso(value: Any) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    return parse_iso_from_utils(value)
 
 
 def pid_is_running(pid: int) -> bool:

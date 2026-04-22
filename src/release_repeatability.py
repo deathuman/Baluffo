@@ -6,28 +6,16 @@ from __future__ import annotations
 import argparse
 import json
 from collections.abc import Iterable
-from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
 from typing import Any
 
-
-def now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def read_json(path: Path, fallback: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return fallback
+from src.shared.json_io import read_json
+from src.shared.utils import int_or_default, now_iso
 
 
 def safe_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return int(default)
+    return int_or_default(value, default)
 
 
 def safe_text(value: Any) -> str:

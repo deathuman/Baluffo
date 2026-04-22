@@ -79,6 +79,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`../tools/mcp/INDEX.md`](../tools/mcp/INDEX.md) | MCP tooling index | You are choosing which MCP tooling doc to load under `tools/mcp/` |
 | [`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md) | AI dev tooling | You are setting up the required Serena MCP workflow for Codex CLI or OpenCode, or checking the repo's Serena-memory rules |
+| [`runtime-first-cleanup-handoff.md`](runtime-first-cleanup-handoff.md) | Cleanup handoff | You need to resume the runtime-first cleanup refactor on another machine with current status, verified commands, and next steps |
 | [`RELEASE.md`](RELEASE.md) | Build and release | You are changing packaging, versioning, release flow, or artifact expectations |
 | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Debugging help | You are investigating a known issue or checking common failure modes |
 | [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |

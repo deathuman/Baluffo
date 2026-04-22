@@ -23,6 +23,22 @@ def utc_now_iso() -> str:
     return now_iso()
 
 
+def parse_iso(value: Any) -> datetime | None:
+    """Parse an ISO timestamp and normalize it to UTC when possible."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
 def env_flag(name: str, default: bool) -> bool:
     """Parse env var as boolean: 1/true/yes/on -> True, 0/false/no/off -> False, else default."""
     raw = str(os.getenv(name) or "").strip()
@@ -59,6 +75,14 @@ def coerce_int(
     except (TypeError, ValueError):
         parsed = int(default)
     return max(minimum, min(maximum, parsed))
+
+
+def int_or_default(value: Any, default: int = 0) -> int:
+    """Return int(value) when possible, otherwise the provided default."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
 
 
 def coerce_str(value: Any, default: str) -> str:

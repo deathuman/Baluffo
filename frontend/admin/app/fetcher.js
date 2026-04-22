@@ -21,6 +21,12 @@ import {
 } from "./live-task.js";
 import { formatScrapyStaticSourcesTailBadge } from "../../shared/task-progress.js";
 import { applyAdminTaskProgress } from "./progress-ui.js";
+import {
+  fetchJobsFetchReportJsonWithRetry,
+  formatDurationCompact,
+  formatStageTopSummary,
+  selectSlowSources
+} from "./fetcher-summary.js";
 
 const FETCHER_FALLBACK_MESSAGES = {
   bridgeUnavailable: "Bridge is offline; using VS Code task fallback for this run.",
@@ -105,15 +111,6 @@ export function createAdminFetcherController({
 
   function hasVisibleFetcherProgressLabel() {
     return Boolean(String(refs.adminFetcherProgressLabelEl?.textContent || "").trim());
-  }
-
-  function formatDurationCompact(ms) {
-    const value = Math.max(0, Number(ms) || 0);
-    if (value < 1000) return `${value}ms`;
-    if (value < 60_000) return `${Math.round(value / 1000)}s`;
-    const minutes = Math.floor(value / 60_000);
-    const seconds = Math.round((value % 60_000) / 1000);
-    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
   }
 
   function setFetcherProgress(view) {
@@ -317,86 +314,6 @@ export function createAdminFetcherController({
     });
   }
 
-  function _formatFetcherRuntimeOptions(report) {
-    const runtime = report?.runtime || {};
-    const maxWorkers = Number(runtime.maxWorkers || 0);
-    const maxPerDomain = Number(runtime.maxPerDomain || 0);
-    const sourceTtlMinutes = Number(runtime.sourceTtlMinutes || 0);
-    const circuitBreakerFailures = Number(runtime.circuitBreakerFailures || 0);
-    const circuitBreakerCooldownMinutes = Number(runtime.circuitBreakerCooldownMinutes || 0);
-    const selectedSourceCount = Number(runtime.selectedSourceCount || 0);
-    const seedFromExistingOutput = Boolean(runtime.seedFromExistingOutput);
-    const ignoreCircuitBreaker = Boolean(runtime.ignoreCircuitBreaker);
-    if (
-      maxWorkers <= 0
-      && maxPerDomain <= 0
-      && sourceTtlMinutes <= 0
-      && circuitBreakerFailures <= 0
-      && circuitBreakerCooldownMinutes <= 0
-      && selectedSourceCount <= 0
-      && !seedFromExistingOutput
-      && !ignoreCircuitBreaker
-    ) {
-      return "";
-    }
-    return [
-      `workers ${maxWorkers || "n/a"}`,
-      `per-domain ${maxPerDomain || "n/a"}`,
-      `ttl ${sourceTtlMinutes || 0}m`,
-      `circuit ${circuitBreakerFailures || 0}/${circuitBreakerCooldownMinutes || 0}m`,
-      `selected ${selectedSourceCount || 0}`,
-      `seed ${seedFromExistingOutput ? "on" : "off"}`,
-      `ignore-cb ${ignoreCircuitBreaker ? "on" : "off"}`
-    ].join(", ");
-  }
-
-  function _formatLifecycleSummary(report) {
-    const summary = report?.summary || {};
-    const active = Number(summary.lifecycleActiveCount || 0);
-    const likelyRemoved = Number(summary.lifecycleLikelyRemovedCount || 0);
-    const archived = Number(summary.lifecycleArchivedCount || 0);
-    const tracked = Number(summary.lifecycleTrackedCount || 0);
-    if (active <= 0 && likelyRemoved <= 0 && archived <= 0 && tracked <= 0) {
-      return "";
-    }
-    return `Lifecycle: active ${active.toLocaleString()}, likely removed ${likelyRemoved.toLocaleString()}, archived ${archived.toLocaleString()}, tracked ${tracked.toLocaleString()}`;
-  }
-
-  function formatStageTopSummary(report) {
-    const timing = report?.runtime?.timingSummary || {};
-    const stageTop = Array.isArray(timing?.stageTop) ? timing.stageTop : [];
-    if (!stageTop.length) return "";
-    return stageTop
-      .slice(0, 3)
-      .map(item => `${String(item?.stage || "unknown")} ${formatDurationCompact(item?.durationMs)}`)
-      .join(" | ");
-  }
-
-  function selectSlowSources(report) {
-    const runtimeSlowest = Array.isArray(report?.runtime?.slowestSources) ? report.runtime.slowestSources : [];
-    if (runtimeSlowest.length) return runtimeSlowest;
-    const sources = Array.isArray(report?.sources) ? report.sources : [];
-    return sources
-      .filter(source => Number(source?.durationMs || 0) >= 20_000)
-      .sort((a, b) => Number(b?.durationMs || 0) - Number(a?.durationMs || 0))
-      .slice(0, 5);
-  }
-
-  async function fetchJobsFetchReportJsonWithRetry(options = {}, maxAttempts = 3, delayMs = 850) {
-    let attempt = 0;
-    while (attempt < Math.max(1, Number(maxAttempts) || 1)) {
-      attempt += 1;
-      const report = await fetchJobsFetchReportJson(options);
-      if (report) return report;
-      if (attempt < maxAttempts) {
-        await new Promise(resolve => {
-          window.setTimeout(resolve, Math.max(100, Number(delayMs) || 850));
-        });
-      }
-    }
-    return null;
-  }
-
   async function loadLatestFetcherReport(options = {}) {
     const silent = Boolean(options.silent);
     const hydrateActiveProgress = Boolean(options.hydrateActiveProgress);
@@ -407,7 +324,7 @@ export function createAdminFetcherController({
     setBusyFlag("fetcherReportLoad", true);
     try {
       if (!silent) appendFetcherLog("Loading latest jobs fetch report...");
-      const report = await fetchJobsFetchReportJsonWithRetry();
+      const report = await fetchJobsFetchReportJsonWithRetry(fetchJobsFetchReportJson);
       if (!report) {
         appendFetcherLog("Fetch report is not available yet. It may still be generating.", "warn");
         updateFetcherProgressFromReport(null, { running: Boolean(state.adminBusyState.fetcherWatch || state.adminBusyState.liveFetchRunning) });

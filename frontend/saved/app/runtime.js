@@ -96,29 +96,6 @@ const PHASE_LABELS = {
 const MAX_ATTACHMENTS_PER_JOB = 20;
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const NOTE_AUTOSAVE_MS = 600;
-const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
-
-/**
- * @typedef {Object} SavedFilterState
- * @property {string} activeFilter
- * @property {string} activeSort
- * @property {string} timelineScope
- */
-
-/**
- * @typedef {Object} SavedViewState
- * @property {string|null} expandedJobKey
- * @property {string} selectedJobKey
- * @property {boolean} activityPanelOpen
- * @property {boolean} customJobPanelOpen
- */
-
-/**
- * @typedef {Object} SavedAuthViewModel
- * @property {boolean} isSignedIn
- * @property {string} uid
- * @property {string} label
- */
 
 const pageState = createSavedPageState({
   defaultSavedFilter: DEFAULT_SAVED_FILTER,
@@ -210,7 +187,7 @@ const savedRenderController = createSavedRenderController({
 });
 const startupMetrics = createSavedStartupMetrics({
   emitMetric: (event, payload) => {
-    postJson(ADMIN_BRIDGE_BASE, "/desktop-local-data/startup-metric", { event, payload: payload || {} }).catch(() => {});
+    postJson(adminConfig.ADMIN_BRIDGE_BASE, "/desktop-local-data/startup-metric", { event, payload: payload || {} }).catch(() => {});
   }
 });
 const savedAuthController = createSavedAuthController({

@@ -11,22 +11,8 @@ from statistics import median
 from typing import Any
 from urllib.parse import urlparse
 
-
-def parse_iso(value: Any) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
-def read_json(path: Path, fallback: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return fallback
+from src.shared.json_io import read_json
+from src.shared.utils import parse_iso
 
 
 def sanitize_source_label(value: Any, *, max_len: int = 64) -> str:

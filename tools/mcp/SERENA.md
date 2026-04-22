@@ -26,6 +26,8 @@ serena --help
 ```
 
 If `serena` is not found after install, restart your shell so the `uv` tool path is available.
+For direct CLI use on Windows, the `uv`-managed executable is typically available at
+`$env:USERPROFILE\.local\bin\serena.exe`.
 
 Upstream references:
 - Serena upstream: <https://github.com/oraios/serena>
@@ -41,9 +43,21 @@ Codex is a first-class client for this repo. Prefer Codex's MCP command flow ins
 ```powershell
 codex mcp add serena -- serena start-mcp-server --context=codex --project-from-cwd
 codex mcp list
+codex mcp get serena
 ```
 
 `codex mcp add` writes the user-global Codex MCP config for you. Keep that config user-local rather than committing a repo-managed Codex config file.
+Codex resolves and stores the Serena executable path for you. In the verified Baluffo setup on
+2026-04-22, `codex mcp get serena` reported:
+
+- `enabled: true`
+- `transport: stdio`
+- `command: C:\Users\AMolino\.local\bin\serena.exe`
+- `args: start-mcp-server --context=codex --project-from-cwd`
+- `env: SERENA_HOME=...`
+
+That means Codex can keep working even if a fresh PowerShell session still does not resolve the bare
+`serena` command on `PATH`.
 
 ### OpenCode
 
@@ -66,6 +80,9 @@ Current repo launch shape:
 ```
 
 Install Serena once, then run OpenCode from the repo root so it can use the committed repo config.
+Unlike Codex's registered MCP entry, this committed OpenCode config still expects `serena` on `PATH`.
+If OpenCode cannot resolve `serena`, restart your shell/session or change the local command to the
+explicit `serena.exe` path.
 
 ## Baluffo Local Project Setup
 
@@ -84,6 +101,41 @@ There is no separate JavaScript Serena language key; use `typescript` for JavaSc
 
 Serena's managed TypeScript language-server flow requires Node.js and npm.
 Those are already present on this machine, so no extra repo dependency step is needed.
+
+## Verified Working Baseline
+
+This repo's Serena setup was re-verified from a fresh Codex session on 2026-04-22.
+
+### Verified Codex Session State
+
+- Serena MCP tools loaded successfully after rebooting the Codex session.
+- The Serena project was visible as `Baluffo`, but the session still needed an explicit project activation on first use.
+- One-time Serena onboarding had not been completed yet for this clone; after onboarding, `check_onboarding_performed` reported 5 project memories.
+
+### Verified Commands
+
+Use these checks when you want to confirm the local Serena setup is actually working:
+
+```powershell
+codex mcp get serena
+& "$env:USERPROFILE\.local\bin\serena.exe" project health-check
+```
+
+Observed working results in this repo:
+
+- `codex mcp get serena` showed a live stdio MCP registration using `C:\Users\AMolino\.local\bin\serena.exe`.
+- `serena.exe project health-check` passed successfully.
+- The health check started both configured language servers:
+  - Python via Pyright
+  - TypeScript via `typescript-language-server`
+- Serena reported version `1.1.2` from the active MCP session.
+- The repo-local Serena health-check log was written under `.serena/logs/health-checks/`.
+
+### Verified Repo-Local Project State
+
+- `.serena/project.yml` exists and is configured for `python` and `typescript`.
+- `.serena/project.local.yml` exists for local-only overrides.
+- `.serena/` remains local-only state and must stay untracked.
 
 ## Secondary Client Examples
 

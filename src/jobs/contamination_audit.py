@@ -11,6 +11,7 @@ from typing import Any
 
 from src.jobs.adapters.location_rules import classify_city_garbage
 from src.jobs.text_utils import clean_text, has_html_like_fragment, invalid_location_reason
+from src.shared.json_io import read_json
 
 PUBLIC_TEXT_FIELDS = (
     "title",
@@ -22,13 +23,6 @@ PUBLIC_TEXT_FIELDS = (
     "contractType",
     "workType",
 )
-
-
-def read_json(path: Path, fallback: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return fallback
 
 
 def build_contamination_report(rows: list[dict[str, Any]]) -> dict[str, Any]:

@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 import json
 from collections.abc import Iterable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from src.shared.json_io import read_json
+from src.shared.utils import int_or_default, now_iso
 
 HIGH_COST_LOW_YIELD_MS = 20_000
 LOW_YIELD_FETCHED_MIN = 20
@@ -31,22 +33,8 @@ SOFT_FAILURE_CLASSIFICATIONS = {
 }
 
 
-def now_iso() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def read_json(path: Path, fallback: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return fallback
-
-
 def safe_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return int(default)
+    return int_or_default(value, default)
 
 
 def safe_text(value: Any) -> str:

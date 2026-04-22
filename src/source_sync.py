@@ -4,15 +4,11 @@
 from __future__ import annotations
 
 import base64
-import ctypes
-import json
 import os
-import platform
 import sys
-import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError as _HTTPError
@@ -23,13 +19,14 @@ from urllib.request import urlopen
 
 import src.source_sync_config as _source_sync_config
 import src.source_sync_crypto as _source_sync_crypto
+import src.source_sync_runtime as _source_sync_runtime
 import src.source_sync_snapshot as _source_sync_snapshot
 from src.baluffo_config import get_security_defaults, get_sync_defaults
 from src.bridge.registry_tombstones import (
     filter_tombstoned_rows as _filter_tombstoned_rows,
 )
 from src.bridge.registry_tombstones import load_tombstones as _load_tombstones
-from src.shared.utils import now_iso, now_utc
+from src.shared.utils import now_utc
 from src.source_registry import (
     REGISTRY_MIGRATION_V2,
     REGISTRY_REASON_PENDING_DEFAULT,
@@ -37,9 +34,7 @@ from src.source_registry import (
     ensure_source_id,
     sort_sources_by_identity,
 )
-from src.source_registry import (
-    source_identity as _source_identity,
-)
+from src.source_registry import source_identity as _source_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 _SYNC_DEFAULTS = get_sync_defaults()
@@ -101,48 +96,16 @@ class SyncOperationError(RuntimeError):
         self.code = str(code or "").strip().lower() or "sync_error"
 
 
-_RUNTIME_STATE_LOCK = threading.RLock()
-_RUNTIME_STATE: dict[str, Any] = {"code": "", "message": "", "until": "", "updatedAt": ""}
-_RATE_LIMIT_LOCK = threading.RLock()
-_RATE_LIMIT_STATE: dict[str, Any] = {"calls": [], "strike": 0, "until": None}
-
-
-class _DPAPI_BLOB(ctypes.Structure):
-    _fields_ = [("cbData", ctypes.c_uint32), ("pbData", ctypes.POINTER(ctypes.c_byte))]
-
-
-if os.name == "nt":
-    _crypt32 = ctypes.windll.crypt32
-    _kernel32 = ctypes.windll.kernel32
-    _crypt_protect_data = _crypt32.CryptProtectData
-    _crypt_protect_data.argtypes = [
-        ctypes.POINTER(_DPAPI_BLOB),
-        ctypes.c_wchar_p,
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_uint32,
-        ctypes.POINTER(_DPAPI_BLOB),
-    ]
-    _crypt_protect_data.restype = ctypes.c_bool
-    _crypt_unprotect_data = _crypt32.CryptUnprotectData
-    _crypt_unprotect_data.argtypes = [
-        ctypes.POINTER(_DPAPI_BLOB),
-        ctypes.POINTER(ctypes.c_wchar_p),
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_void_p,
-        ctypes.c_uint32,
-        ctypes.POINTER(_DPAPI_BLOB),
-    ]
-    _crypt_unprotect_data.restype = ctypes.c_bool
-    _local_free = _kernel32.LocalFree
-    _local_free.argtypes = [ctypes.c_void_p]
-    _local_free.restype = ctypes.c_void_p
-else:
-    _crypt_protect_data = None
-    _crypt_unprotect_data = None
-    _local_free = lambda _x: None  # type: ignore[assignment]
+_RUNTIME_STATE_LOCK = _source_sync_runtime._RUNTIME_STATE_LOCK
+_RUNTIME_STATE = _source_sync_runtime._RUNTIME_STATE
+_RATE_LIMIT_LOCK = _source_sync_runtime._RATE_LIMIT_LOCK
+_RATE_LIMIT_STATE = _source_sync_runtime._RATE_LIMIT_STATE
+_AUTH_MANAGER_LOCK = _source_sync_runtime._AUTH_MANAGER_LOCK
+_AUTH_MANAGER = _source_sync_runtime._AUTH_MANAGER
+_DPAPI_BLOB = _source_sync_runtime._DPAPI_BLOB
+_crypt_protect_data = _source_sync_runtime._crypt_protect_data
+_crypt_unprotect_data = _source_sync_runtime._crypt_unprotect_data
+_local_free = _source_sync_runtime._local_free
 
 
 @dataclass
@@ -180,47 +143,19 @@ def _truthy(value: Any) -> bool:
 
 
 def _set_runtime_state(code: str = "", message: str = "", *, until: datetime | None = None) -> None:
-    with _RUNTIME_STATE_LOCK:
-        _RUNTIME_STATE["code"] = str(code or "").strip().lower()
-        _RUNTIME_STATE["message"] = str(message or "").strip()
-        _RUNTIME_STATE["until"] = until.isoformat() if isinstance(until, datetime) else ""
-        _RUNTIME_STATE["updatedAt"] = now_iso()
+    _source_sync_runtime.set_runtime_state(_self_module(), code, message, until=until)
 
 
 def _clear_runtime_state(*codes: str) -> None:
-    normalized = {str(item or "").strip().lower() for item in codes if str(item or "").strip()}
-    with _RUNTIME_STATE_LOCK:
-        current = str(_RUNTIME_STATE.get("code") or "").strip().lower()
-        if normalized and current not in normalized:
-            return
-        _RUNTIME_STATE.update({"code": "", "message": "", "until": "", "updatedAt": now_iso()})
+    _source_sync_runtime.clear_runtime_state(_self_module(), *codes)
 
 
 def _runtime_state_payload() -> dict[str, str]:
-    with _RUNTIME_STATE_LOCK:
-        code = str(_RUNTIME_STATE.get("code") or "").strip().lower()
-        message = str(_RUNTIME_STATE.get("message") or "").strip()
-        until = str(_RUNTIME_STATE.get("until") or "").strip()
-        updated = str(_RUNTIME_STATE.get("updatedAt") or "").strip()
-    if code == RUNTIME_STATE_RATE_LIMITED and until:
-        until_dt = _parse_iso(until)
-        if until_dt and until_dt <= now_utc():
-            _clear_runtime_state(RUNTIME_STATE_RATE_LIMITED)
-            return {"code": "", "message": "", "until": "", "updatedAt": ""}
-    return {"code": code, "message": message, "until": until, "updatedAt": updated}
+    return _source_sync_runtime.runtime_state_payload(_self_module())
 
 
 def _machine_fingerprint() -> str:
-    user = str(os.getenv("USERNAME") or os.getenv("USER") or "").strip().lower()
-    return "|".join(
-        [
-            MACHINE_SCOPE,
-            platform.system().strip().lower(),
-            platform.machine().strip().lower(),
-            platform.node().strip().lower(),
-            user,
-        ]
-    )
+    return _source_sync_runtime.machine_fingerprint(_self_module())
 
 
 def _base64url_encode(raw: bytes) -> str:
@@ -248,7 +183,9 @@ def encrypt_private_key_pem(
     private_key_pem: str, *, salt_b64: str, app_id: str, installation_id: str
 ) -> str:
     key = _derive_private_key_binding_key(
-        salt_b64=salt_b64, app_id=app_id, installation_id=installation_id
+        salt_b64=salt_b64,
+        app_id=app_id,
+        installation_id=installation_id,
     )
     encrypted = _stream_encrypt(str(private_key_pem or "").encode("utf-8"), key)
     return _base64url_encode(encrypted)
@@ -258,7 +195,9 @@ def decrypt_private_key_pem(
     private_key_pem_enc: str, *, salt_b64: str, app_id: str, installation_id: str
 ) -> str:
     key = _derive_private_key_binding_key(
-        salt_b64=salt_b64, app_id=app_id, installation_id=installation_id
+        salt_b64=salt_b64,
+        app_id=app_id,
+        installation_id=installation_id,
     )
     decrypted = _stream_encrypt(_base64url_decode(private_key_pem_enc), key)
     return decrypted.decode("utf-8")
@@ -320,98 +259,41 @@ def _local_key_cache_fingerprint(normalized: dict[str, str]) -> str:
 
 
 def _dpapi_protect(raw: bytes) -> str:
-    if os.name != "nt":
-        raise RuntimeError("DPAPI unavailable")
-    data_in = ctypes.create_string_buffer(raw)
-    blob_in = _DPAPI_BLOB(len(raw), ctypes.cast(data_in, ctypes.POINTER(ctypes.c_byte)))
-    blob_out = _DPAPI_BLOB()
-    ok = _crypt_protect_data(
-        ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out)
-    )
-    if not ok:
-        raise RuntimeError("CryptProtectData failed")
-    try:
-        encrypted = ctypes.string_at(blob_out.pbData, blob_out.cbData)
-        return _base64url_encode(encrypted)
-    finally:
-        _local_free(blob_out.pbData)
+    return _source_sync_runtime.dpapi_protect(_self_module(), raw)
 
 
 def _dpapi_unprotect(encoded: str) -> bytes:
-    if os.name != "nt":
-        raise RuntimeError("DPAPI unavailable")
-    raw = _base64url_decode(encoded)
-    data_in = ctypes.create_string_buffer(raw)
-    blob_in = _DPAPI_BLOB(len(raw), ctypes.cast(data_in, ctypes.POINTER(ctypes.c_byte)))
-    blob_out = _DPAPI_BLOB()
-    ok = _crypt_unprotect_data(
-        ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out)
-    )
-    if not ok:
-        raise RuntimeError("CryptUnprotectData failed")
-    try:
-        decrypted = ctypes.string_at(blob_out.pbData, blob_out.cbData)
-        return decrypted
-    finally:
-        _local_free(blob_out.pbData)
+    return _source_sync_runtime.dpapi_unprotect(_self_module(), encoded)
 
 
 def _local_key_cache_path(config_path: Path) -> Path:
-    return config_path.with_suffix(".localkey.json")
+    return _source_sync_runtime.local_key_cache_path(config_path)
 
 
 def _read_local_wrapped_key(config_path: Path, fingerprint: str) -> str:
-    cache_path = _local_key_cache_path(config_path)
-    try:
-        payload = json.loads(cache_path.read_text(encoding="utf-8"))
-    except Exception:
-        return ""
-    if not isinstance(payload, dict):
-        return ""
-    if str(payload.get("fingerprint") or "").strip() != str(fingerprint or "").strip():
-        return ""
-    wrapped = str(payload.get("dpapi") or "").strip()
-    if not wrapped:
-        return ""
-    try:
-        return _dpapi_unprotect(wrapped).decode("utf-8")
-    except Exception:
-        return ""
+    return _source_sync_runtime.read_local_wrapped_key(_self_module(), config_path, fingerprint)
 
 
 def _write_local_wrapped_key(config_path: Path, fingerprint: str, private_key_pem: str) -> None:
-    if os.name != "nt":
-        return
-    wrapped = _dpapi_protect(str(private_key_pem or "").encode("utf-8"))
-    payload = {
-        "schemaVersion": 1,
-        "fingerprint": str(fingerprint or ""),
-        "dpapi": wrapped,
-        "updatedAt": now_iso(),
-    }
-    cache_path = _local_key_cache_path(config_path)
-    cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _source_sync_runtime.write_local_wrapped_key(
+        _self_module(),
+        config_path,
+        fingerprint,
+        private_key_pem,
+    )
 
 
 def _allowlist_error(
     *, repo: str, branch: str, path: str, normalized: dict[str, str], env_map: dict[str, str]
 ) -> str:
-    allowed_repo = str(
-        env_map.get(SYNC_ALLOWED_REPO_ENV) or normalized.get("allowedRepo") or ""
-    ).strip()
-    allowed_branch = str(
-        env_map.get(SYNC_ALLOWED_BRANCH_ENV) or normalized.get("allowedBranch") or ""
-    ).strip()
-    allowed_prefix = str(
-        env_map.get(SYNC_ALLOWED_PATH_PREFIX_ENV) or normalized.get("allowedPathPrefix") or ""
-    ).strip()
-    if allowed_repo and str(repo or "").strip().lower() != allowed_repo.lower():
-        return f"Blocked by allowlist: repo must be {allowed_repo}."
-    if allowed_branch and str(branch or "").strip() != allowed_branch:
-        return f"Blocked by allowlist: branch must be {allowed_branch}."
-    if allowed_prefix and not str(path or "").strip().startswith(allowed_prefix):
-        return f"Blocked by allowlist: path must start with {allowed_prefix}."
-    return ""
+    return _source_sync_runtime.allowlist_error(
+        _self_module(),
+        repo=repo,
+        branch=branch,
+        path=path,
+        normalized=normalized,
+        env_map=env_map,
+    )
 
 
 def _normalize_packaged_payload(payload: dict[str, Any]) -> dict[str, str]:
@@ -479,18 +361,7 @@ def _request_raw_json(
 
 
 def _parse_iso(value: Any) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    if text.endswith("Z"):
-        text = f"{text[:-1]}+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+    return _source_sync_runtime.parse_iso(value)
 
 
 def _snapshot_transition_text(*values: Any) -> str:
@@ -606,7 +477,8 @@ def _row_merge_key(row: dict[str, Any]) -> tuple[int, int]:
 
 
 def _choose_more_recent_row(
-    local_row: dict[str, Any] | None, remote_row: dict[str, Any] | None
+    local_row: dict[str, Any] | None,
+    remote_row: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
     if local_row is None:
         return remote_row
@@ -700,44 +572,17 @@ def build_app_jwt(app_id: str, private_key_pem: str, *, issued_at: datetime | No
 
 class GitHubAppAuth:
     def __init__(self, packaged_config: PackagedGitHubAppConfig):
-        self.packaged_config = packaged_config
-        self._token = ""
-        self._token_expires_at: datetime | None = None
-        self._lock = threading.RLock()
+        _source_sync_runtime.init_github_app_auth(self, packaged_config)
 
     def _token_is_fresh(self) -> bool:
-        if not self._token or not self._token_expires_at:
-            return False
-        return (
-            self._token_expires_at - now_utc()
-        ).total_seconds() > INSTALLATION_TOKEN_REFRESH_SKEW_SECONDS
+        return _source_sync_runtime.github_app_auth_token_is_fresh(_self_module(), self)
 
     def _refresh_installation_token(self, *, opener: Callable[..., Any] = urlopen) -> str:
-        jwt_token = build_app_jwt(self.packaged_config.app_id, self.packaged_config.private_key_pem)
-        url = (
-            f"{_github_api_base()}/app/installations/"
-            f"{quote(self.packaged_config.installation_id, safe='')}/access_tokens"
-        )
-        status, payload, _headers = _request_raw_json(
-            method="POST",
-            url=url,
-            headers=_github_json_headers(f"Bearer {jwt_token}"),
-            timeout_s=DEFAULT_TIMEOUT_S,
-            payload={},
+        return _source_sync_runtime.github_app_auth_refresh_installation_token(
+            _self_module(),
+            self,
             opener=opener,
         )
-        if status >= 400:
-            message = str(
-                payload.get("message") or f"GitHub App token request failed with HTTP {status}"
-            )
-            raise RuntimeError(message)
-        token = str(payload.get("token") or "").strip()
-        expires_at = _parse_iso(payload.get("expires_at"))
-        if not token or not expires_at:
-            raise RuntimeError("GitHub App token response missing token or expires_at")
-        self._token = token
-        self._token_expires_at = expires_at
-        return token
 
     def get_installation_token(
         self, *, opener: Callable[..., Any] = urlopen, force_refresh: bool = False
@@ -748,114 +593,26 @@ class GitHubAppAuth:
             return self._refresh_installation_token(opener=opener)
 
 
-_AUTH_MANAGER_LOCK = threading.RLock()
-_AUTH_MANAGER: dict[str, GitHubAppAuth] = {}
-
-
 def _auth_manager_key(config: SyncConfig) -> str:
-    packaged = config.packaged_config
-    if not packaged:
-        return ""
-    return "|".join(
-        [
-            packaged.app_id,
-            packaged.installation_id,
-            packaged.repo,
-            packaged.branch,
-            packaged.path,
-            packaged.config_path,
-        ]
-    )
+    return _source_sync_runtime.auth_manager_key(config)
 
 
 def _get_auth_manager(config: SyncConfig) -> GitHubAppAuth:
-    validate_sync_config(config)
-    key = _auth_manager_key(config)
-    with _AUTH_MANAGER_LOCK:
-        manager = _AUTH_MANAGER.get(key)
-        if manager is None:
-            manager = GitHubAppAuth(config.packaged_config)  # type: ignore[arg-type]
-            _AUTH_MANAGER[key] = manager
-        return manager
+    return _source_sync_runtime.get_auth_manager(_self_module(), config)
 
 
 def _rate_limit_retry_after_seconds(headers: dict[str, str], payload: dict[str, Any]) -> int:
-    retry_after = str((headers or {}).get("retry-after") or "").strip()
-    if retry_after.isdigit():
-        return max(1, min(RATE_LIMIT_BACKOFF_MAX_S, int(retry_after)))
-    reset_raw = str((headers or {}).get("x-ratelimit-reset") or "").strip()
-    if reset_raw.isdigit():
-        reset_at = int(reset_raw)
-        delta = reset_at - int(now_utc().timestamp())
-        if delta > 0:
-            return max(1, min(RATE_LIMIT_BACKOFF_MAX_S, delta))
-    msg = str((payload or {}).get("message") or "").lower()
-    if "secondary rate limit" in msg:
-        return min(RATE_LIMIT_BACKOFF_MAX_S, RATE_LIMIT_BACKOFF_BASE_S * 5)
-    return RATE_LIMIT_BACKOFF_BASE_S
+    return _source_sync_runtime.rate_limit_retry_after_seconds(_self_module(), headers, payload)
 
 
 def _rate_limit_preflight() -> None:
-    with _RATE_LIMIT_LOCK:
-        now = now_utc()
-        until = _RATE_LIMIT_STATE.get("until")
-        if isinstance(until, datetime) and now < until:
-            _set_runtime_state(
-                RUNTIME_STATE_RATE_LIMITED,
-                f"Sync rate limited locally until {until.isoformat()}",
-                until=until,
-            )
-            raise SyncOperationError(RUNTIME_STATE_RATE_LIMITED, "Sync temporarily rate limited.")
-        calls = [
-            item
-            for item in (_RATE_LIMIT_STATE.get("calls") or [])
-            if isinstance(item, datetime) and (now - item).total_seconds() < RATE_LIMIT_WINDOW_S
-        ]
-        if len(calls) >= RATE_LIMIT_MAX_REQUESTS:
-            strike = int(_RATE_LIMIT_STATE.get("strike") or 0) + 1
-            wait_s = min(
-                RATE_LIMIT_BACKOFF_MAX_S, RATE_LIMIT_BACKOFF_BASE_S * (2 ** max(0, strike - 1))
-            )
-            cooldown = now + timedelta(seconds=wait_s)
-            _RATE_LIMIT_STATE.update({"calls": calls, "strike": strike, "until": cooldown})
-            _set_runtime_state(
-                RUNTIME_STATE_RATE_LIMITED,
-                f"Sync rate limited locally for {wait_s}s",
-                until=cooldown,
-            )
-            raise SyncOperationError(RUNTIME_STATE_RATE_LIMITED, "Sync temporarily rate limited.")
-        calls.append(now)
-        _RATE_LIMIT_STATE["calls"] = calls
+    _source_sync_runtime.rate_limit_preflight(_self_module())
 
 
 def _rate_limit_note_response(
     status: int, headers: dict[str, str], payload: dict[str, Any]
 ) -> None:
-    if int(status or 0) in {429, 403}:
-        message = str((payload or {}).get("message") or "").lower()
-        if int(status or 0) == 429 or "rate limit" in message:
-            retry_s = _rate_limit_retry_after_seconds(headers, payload)
-            until = now_utc() + timedelta(seconds=retry_s)
-            with _RATE_LIMIT_LOCK:
-                strike = int(_RATE_LIMIT_STATE.get("strike") or 0) + 1
-                _RATE_LIMIT_STATE["strike"] = strike
-                _RATE_LIMIT_STATE["until"] = until
-            _set_runtime_state(
-                RUNTIME_STATE_RATE_LIMITED,
-                f"GitHub API rate limited sync for {retry_s}s",
-                until=until,
-            )
-            raise SyncOperationError(
-                RUNTIME_STATE_RATE_LIMITED, "GitHub rate limit reached for sync."
-            )
-    with _RATE_LIMIT_LOCK:
-        strike = int(_RATE_LIMIT_STATE.get("strike") or 0)
-        if strike > 0:
-            _RATE_LIMIT_STATE["strike"] = max(0, strike - 1)
-        until = _RATE_LIMIT_STATE.get("until")
-        if isinstance(until, datetime) and now_utc() >= until:
-            _RATE_LIMIT_STATE["until"] = None
-    _clear_runtime_state(RUNTIME_STATE_RATE_LIMITED)
+    _source_sync_runtime.rate_limit_note_response(_self_module(), status, headers, payload)
 
 
 def _request_json(
@@ -868,31 +625,16 @@ def _request_json(
     opener: Callable[..., Any] = urlopen,
     allow_retry_401: bool = True,
 ) -> tuple[int, dict[str, Any], dict[str, str]]:
-    _rate_limit_preflight()
-    manager = _get_auth_manager(config)
-    token = manager.get_installation_token(opener=opener)
-    status, body, headers = _request_raw_json(
+    return _source_sync_runtime.request_json(
+        _self_module(),
         method=method,
         url=url,
-        headers=_github_json_headers(f"Bearer {token}"),
+        config=config,
         timeout_s=timeout_s,
         payload=payload,
         opener=opener,
+        allow_retry_401=allow_retry_401,
     )
-    _rate_limit_note_response(status, headers, body)
-    if status == 401 and allow_retry_401:
-        token = manager.get_installation_token(opener=opener, force_refresh=True)
-        status, body, headers = _request_raw_json(
-            method=method,
-            url=url,
-            headers=_github_json_headers(f"Bearer {token}"),
-            timeout_s=timeout_s,
-            payload=payload,
-            opener=opener,
-        )
-        _rate_limit_note_response(status, headers, body)
-        return status, body, headers
-    return status, body, headers
 
 
 def normalize_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
@@ -900,7 +642,8 @@ def normalize_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def merge_registry_state(
-    local_state: dict[str, Any], remote_snapshot: dict[str, Any]
+    local_state: dict[str, Any],
+    remote_snapshot: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
     return _source_sync_snapshot.merge_registry_state(_self_module(), local_state, remote_snapshot)
 
@@ -946,7 +689,10 @@ def pull_and_merge_sources(
     opener: Callable[..., Any] = urlopen,
 ) -> dict[str, Any]:
     return _source_sync_snapshot.pull_and_merge_sources(
-        _self_module(), config, local_state, opener=opener
+        _self_module(),
+        config,
+        local_state,
+        opener=opener,
     )
 
 
@@ -957,5 +703,8 @@ def push_sources_snapshot(
     opener: Callable[..., Any] = urlopen,
 ) -> dict[str, Any]:
     return _source_sync_snapshot.push_sources_snapshot(
-        _self_module(), config, local_state, opener=opener
+        _self_module(),
+        config,
+        local_state,
+        opener=opener,
     )

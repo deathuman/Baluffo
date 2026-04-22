@@ -122,18 +122,6 @@ import {
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
 const JOBS_LOG_SCOPE = "jobs";
-/**
- * @typedef {Object} JobRow
- * @property {string} title
- * @property {string} company
- * @property {string} city
- * @property {string} country
- * @property {string} workType
- * @property {string} contractType
- * @property {string} jobLink
- * @property {string} sector
- * @property {string} profession
- */
 const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
   workType: "",
   lifecycleStatus: "active",
@@ -147,33 +135,6 @@ const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
   sort: "relevance"
 };
 
-/**
- * @typedef {Object} JobsFilterState
- * @property {string} workType
- * @property {string} lifecycleStatus
- * @property {string[]} countries
- * @property {string} city
- * @property {string} sector
- * @property {string} profession
- * @property {boolean} newOnly
- * @property {boolean} excludeInternship
- * @property {string} search
- * @property {string} sort
- */
-
-/**
- * @typedef {Object} JobsPageState
- * @property {number} currentPage
- * @property {number} itemsPerPage
- * @property {JobsFilterState} filters
- */
-
-/**
- * @typedef {Object} JobsAuthViewModel
- * @property {string} label
- * @property {string} hint
- */
-
 const JOBS_CACHE_DB = "baluffo_jobs_cache";
 const JOBS_CACHE_DB_VERSION = 2;
 const JOBS_CACHE_STORE = "jobs_feed";
@@ -184,7 +145,6 @@ const JOBS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const JOBS_AUTO_REFRESH_SIGNAL_KEY = "baluffo_jobs_auto_refresh_signal";
 const JOBS_AUTO_REFRESH_APPLIED_KEY = "baluffo_jobs_auto_refresh_applied";
 const QUICK_FILTER_PREFS_KEY = "baluffo_quick_filter_prefs";
-const ADMIN_BRIDGE_BASE = adminConfig.ADMIN_BRIDGE_BASE || "http://127.0.0.1:8877";
 const JOBS_PIPELINE_STATUS_POLL_MS = 1500;
 const JOBS_PIPELINE_STATUS_IDLE_POLL_MS = 5000;
 const JOBS_BRIDGE_REQUEST_TIMEOUT_MS = 1800;
@@ -233,7 +193,7 @@ const startupMetrics = createJobsStartupMetrics({
   }
 });
 const callJobsBridge = createJobsBridgeRequest({
-  baseUrl: ADMIN_BRIDGE_BASE,
+  baseUrl: adminConfig.ADMIN_BRIDGE_BASE,
   timeoutMs: JOBS_BRIDGE_REQUEST_TIMEOUT_MS,
   request: callJobsBridgeFromModule
 });
@@ -460,13 +420,13 @@ function bootJobsPage() {
   cacheDom();
   runtimeState.adminBridgeWatcher = createAdminBridgeButtonWatcher({
     buttonEl: dom.adminPageBtn,
-    baseUrl: ADMIN_BRIDGE_BASE,
+    baseUrl: adminConfig.ADMIN_BRIDGE_BASE,
     fetchJson,
     applyState: applyJobsAdminBridgeState
   });
   runtimeState.desktopUpdateController = createJobsDesktopUpdateController({
     refs: dom,
-    baseUrl: ADMIN_BRIDGE_BASE,
+    baseUrl: adminConfig.ADMIN_BRIDGE_BASE,
     fetchJson,
     postJson,
     bindAsyncClick,

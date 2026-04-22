@@ -8,9 +8,11 @@ import hashlib
 import json
 import ssl
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from src.shared.json_io import read_json_object
+from src.shared.utils import now_iso
 
 root: Any | None = None
 
@@ -22,7 +24,7 @@ def _root() -> Any:
 
 
 def iso_now() -> str:
-    return datetime.now(UTC).isoformat()
+    return now_iso()
 
 
 def resolve_github_api_base() -> str:
@@ -102,13 +104,7 @@ def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
 
 
 def read_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
-    if not path.exists():
-        return dict(fallback or {})
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return dict(fallback or {})
-    return payload if isinstance(payload, dict) else dict(fallback or {})
+    return read_json_object(path, fallback)
 
 
 def compute_sha256(path: Path) -> str:
