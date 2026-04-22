@@ -93,7 +93,7 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 | Saved page runtime behavior | `frontend/saved/app/runtime/{composition,boot,phase-time,mutations,chrome,notes,activity-controller,attachments-controller,custom-job-controller,render-controller,auth-controller}.js`, `frontend/saved/app/admin-bridge-state.js` | `frontend/saved/app/runtime.js` only for page-entry wiring/export changes |
 | Shared/page CSS | `styles/{base,components,<page>}.css` | The owning HTML entrypoint only if stylesheet includes need to change |
 | Bridge/API | `src/bridge/*.py` | `src/bridge/routes/*.py`; for ops/report/live-task work start with `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, and `src/bridge/ops_live_payload.py` |
-| Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py` | `src/admin_bridge.py` only when the stable wrapper or root patch seam must change |
+| Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py` | `src/admin_bridge.py` only when the stable wrapper or root patch seam must change |
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
 | Registry sync / tombstones | `src/source_registry.py`, `src/bridge/registry_service.py`, `src/source_sync_snapshot.py`, `src/source_sync_config.py` | `src/bridge/registry_tombstones.py`, `src/source_sync_runtime.py`, `src/source_sync_crypto.py`, `src/source_sync.py` only for root-surface compatibility work, `src/bridge/routes/post_routes.py` |
 | Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, `src/jobs/state.py`, `src/jobs/state_incremental.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
@@ -105,7 +105,7 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 
 **Compatibility surfaces**:
 - `src/admin_bridge.py` is a stable thin entrypoint for bridge startup and compatibility wrappers; add new bridge logic in `src/bridge/*`.
-- Admin bridge runtime/path/session glue now lives in `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py`; use `src/admin_bridge.py` only for stable wrapper or monkeypatch-surface changes.
+- Admin bridge runtime/path/session/bootstrap glue now lives in `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`; use `src/admin_bridge.py` only for stable wrapper or monkeypatch-surface changes.
 - `src/source_discovery.py` is a stable thin CLI entrypoint; discovery logic belongs in `src/source_discovery/*`.
 - `src/ship/desktop_app/__init__.py` is now a thin facade; desktop runtime implementation belongs in the focused modules under `src/ship/desktop_app/`.
 - `src/packaged_desktop_smoke.py` is the stable packaged smoke entrypoint and monkeypatch surface; implementation belongs in `src/ship/packaged_smoke/{build_env,runtime,rehearsals}.py`.
@@ -119,7 +119,7 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 
 **Stable roots vs safe leaf targets**
 - Stable patch-safe roots stay thin: `src/admin_bridge.py`, `src/source_discovery.py`, `src/jobs_fetcher.py`, `src/jobs/adapters/static.py`, `src/packaged_desktop_smoke.py`, `src/ship/desktop_update.py`, `frontend/jobs/app/runtime.js`, `frontend/saved/app/runtime.js`, `frontend/admin/app/runtime.js`, `frontend/admin/app/registry.js`, and `frontend/admin/app/ops.js`.
-- Safe extraction targets are the owning leaves behind those roots: `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`, `src/source_sync_{config,runtime,snapshot,crypto}.py`, `src/jobs/adapters/static_listing_flow.py`, `src/jobs/state_incremental.py`, `frontend/jobs/app/runtime/{composition,boot,page-flow,events,feed-controller,list-view,pipeline-controller,query,startup-preview,auth-controller}.js`, `frontend/saved/app/runtime/{composition,boot,phase-time,mutations,chrome,notes,activity-controller,attachments-controller,custom-job-controller,render-controller,auth-controller}.js`, `frontend/admin/app/runtime/*.js`, `frontend/admin/app/registry/*.js`, and `frontend/admin/app/ops/*.js`.
+- Safe extraction targets are the owning leaves behind those roots: `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`, `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`, `src/source_sync_{config,runtime,snapshot,crypto}.py`, `src/jobs/adapters/static_listing_flow.py`, `src/jobs/state_incremental.py`, `frontend/jobs/app/runtime/{composition,boot,page-flow,events,feed-controller,list-view,pipeline-controller,query,startup-preview,auth-controller}.js`, `frontend/saved/app/runtime/{composition,boot,phase-time,mutations,chrome,notes,activity-controller,attachments-controller,custom-job-controller,render-controller,auth-controller}.js`, `frontend/admin/app/runtime/*.js`, `frontend/admin/app/registry/*.js`, and `frontend/admin/app/ops/*.js`.
 
 ---
 

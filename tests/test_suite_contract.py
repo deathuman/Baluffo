@@ -386,10 +386,14 @@ def test_sync_task_worker_logic_is_shared_between_admin_bridge_and_sync_service(
 
 def test_bridge_api_uses_sync_service_for_sync_status_wiring(repo_root: Path) -> None:
     admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    admin_entrypoint_api = (repo_root / "src" / "bridge" / "admin_entrypoint_api.py").read_text(
+        encoding="utf-8"
+    )
     bridge_bootstrap = (repo_root / "src" / "bridge" / "bootstrap.py").read_text(encoding="utf-8")
     bridge_api = (repo_root / "src" / "bridge" / "api.py").read_text(encoding="utf-8")
     sync_service = (repo_root / "src" / "bridge" / "sync_service.py").read_text(encoding="utf-8")
-    assert "return bridge_bootstrap.build_bridge_api(" in admin_bridge
+    assert "return admin_entrypoint_api_mod.build_bridge_api(config)" in admin_bridge
+    assert "return bridge_bootstrap.build_bridge_api(" in admin_entrypoint_api
     assert (
         "sync_config_status=lambda: source_sync_module.config_status(refresh_sync_config())"
         not in bridge_bootstrap
@@ -403,9 +407,13 @@ def test_bridge_api_uses_sync_service_for_sync_status_wiring(repo_root: Path) ->
 
 def test_bridge_api_exposes_route_facing_entrypoints(repo_root: Path) -> None:
     admin_bridge = (repo_root / "src" / "admin_bridge.py").read_text(encoding="utf-8")
+    admin_entrypoint_api = (repo_root / "src" / "bridge" / "admin_entrypoint_api.py").read_text(
+        encoding="utf-8"
+    )
     bridge_bootstrap = (repo_root / "src" / "bridge" / "bootstrap.py").read_text(encoding="utf-8")
     bridge_api = (repo_root / "src" / "bridge" / "api.py").read_text(encoding="utf-8")
-    assert "return bridge_bootstrap.build_bridge_api(" in admin_bridge
+    assert "return admin_entrypoint_api_mod.build_bridge_api(config)" in admin_bridge
+    assert "return bridge_bootstrap.build_bridge_api(" in admin_entrypoint_api
     assert "append_startup_metric=append_startup_metric" in bridge_bootstrap
     assert "persist_state_and_auto_sync=persist_state_and_auto_sync" in bridge_bootstrap
     assert "add_manual_source=add_manual_source" in bridge_bootstrap
@@ -466,23 +474,76 @@ def test_sharded_python_test_families_do_not_use_star_helper_imports(repo_root: 
 
 def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> None:
     target = repo_root / "src" / "admin_bridge.py"
+    tree = _module_tree(target)
     text = target.read_text(encoding="utf-8")
+    function_names = set(_top_level_function_names(tree))
 
+    assert "from src.bridge import admin_entrypoint_api as admin_entrypoint_api_mod" in text
     assert "from src.bridge import admin_entrypoint_runtime as admin_entrypoint_runtime_mod" in text
     assert (
         "from src.bridge import admin_entrypoint_services as admin_entrypoint_services_mod" in text
     )
     assert "from src.bridge import admin_registry_api as admin_registry_api_mod" in text
     assert "from src.bridge import admin_task_runtime as admin_task_runtime_mod" in text
+    assert "admin_entrypoint_api_mod.root = sys.modules[__name__]" in text
     assert "admin_entrypoint_runtime_mod.root = sys.modules[__name__]" in text
     assert "admin_entrypoint_services_mod.root = sys.modules[__name__]" in text
     assert "admin_registry_api_mod.root = sys.modules[__name__]" in text
     assert "admin_task_runtime_mod.root = sys.modules[__name__]" in text
     assert "def build_bridge_api(" in text
-    assert "return bridge_bootstrap.build_bridge_api(" in text
+    assert "return admin_entrypoint_api_mod.build_bridge_api(config)" in text
     assert "smoke_runtime: dict[str, Any]" not in text
     assert "find_existing_static_source_by_studio_domain(" not in text
-    assert len(text.splitlines()) <= 900, "admin bridge root drifted back toward monolith size"
+    assert function_names.isdisjoint(
+        {
+            "_get_sync_service",
+            "_get_sync_state",
+            "_get_registry_service",
+            "_get_discovery_service",
+            "_get_task_launch_api",
+            "_get_ops_api",
+            "_get_pipeline_service",
+            "_get_desktop_update_service",
+            "_log_enabled",
+            "bridge_log",
+            "configure_runtime_paths",
+            "startup_banner",
+            "append_startup_metric",
+            "read_startup_metrics",
+            "get_desktop_session_payload",
+            "update_desktop_session_lifecycle",
+            "owner_session_should_exit",
+            "parse_iso",
+            "pid_is_running",
+            "desktop_local_data_store",
+            "normalize_state",
+            "load_state",
+            "summarize_state",
+            "persist_state",
+            "persist_state_and_auto_sync",
+            "move_entries",
+            "build_manual_candidate",
+            "add_manual_source",
+            "check_static_source",
+            "_read_tasks_config",
+            "_set_sync_status",
+            "get_sync_status_payload",
+            "_sync_guard",
+            "sync_pull_sources",
+            "sync_push_sources",
+            "startup_sync_pull",
+            "sync_task_running",
+            "wait_for_sync_tasks",
+            "_mark_discovery_sync_finished",
+            "_maybe_trigger_auto_sync_push",
+            "_current_fetch_output_count",
+            "get_jobs_pipeline_status_payload",
+            "_wait_for_sync_completion",
+            "start_fetcher_task",
+            "start_jobs_pipeline_task",
+        }
+    )
+    assert len(text.splitlines()) <= 630, "admin bridge root drifted back toward monolith size"
 
 
 def test_admin_runtime_megatest_stays_split(repo_root: Path) -> None:

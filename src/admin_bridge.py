@@ -8,7 +8,6 @@ import subprocess
 import sys
 import threading
 import time as _time
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +28,9 @@ from src.baluffo_config import get_security_defaults as _get_security_defaults
 
 # Bridge service/runtime imports. Keep new bridge logic under `src.bridge.*`.
 from src.bridge import SYNC_STATE_LOCK as _SYNC_STATE_LOCK
-from src.bridge import SyncService, SyncState, report_normalizer
+from src.bridge import SyncService, report_normalizer
+from src.bridge import SyncState as _SyncState
+from src.bridge import admin_entrypoint_api as admin_entrypoint_api_mod
 from src.bridge import admin_entrypoint_runtime as admin_entrypoint_runtime_mod
 from src.bridge import admin_entrypoint_services as admin_entrypoint_services_mod
 from src.bridge import admin_registry_api as admin_registry_api_mod
@@ -37,7 +38,7 @@ from src.bridge import admin_task_runtime as admin_task_runtime_mod
 from src.bridge import bootstrap as bridge_bootstrap
 from src.bridge import config as bridge_config
 from src.bridge import html_extractor as _html_extractor_mod
-from src.bridge import ops_api as _ops_api
+from src.bridge import ops_api as _ops_api_mod
 from src.bridge import registry_sync_flow as _registry_sync_flow_mod
 from src.bridge import run_history_api as _run_history_api
 from src.bridge import source_check_api as _source_check_api_mod
@@ -45,7 +46,7 @@ from src.bridge import source_check_fetch as _source_check_fetch_mod
 from src.bridge import source_check_http as _source_check_http_mod
 from src.bridge import source_checker as _source_checker_mod
 from src.bridge import sync_task_flow as _sync_task_flow_mod
-from src.bridge import task_launch_api as _task_launch_api
+from src.bridge import task_launch_api as _task_launch_api_mod
 from src.bridge.admin_task_history import AdminTaskHistory
 from src.bridge.api import BridgeApi
 from src.bridge.discovery_service import (
@@ -66,7 +67,7 @@ from src.bridge.registry_tombstones import (
 from src.bridge.registry_tombstones import (
     load_tombstones as _load_tombstones,
 )
-from src.bridge.server import runtime_state as bridge_runtime_state
+from src.bridge.server import runtime_state as _bridge_runtime_state
 from src.bridge.source_helpers import (
     find_existing_source_by_url as _find_existing_source_by_url,
 )
@@ -84,19 +85,21 @@ from src.jobs.common.registry_defaults import (
 )
 from src.jobs.parsers import parse_jobpostings_from_html as _parse_jobpostings_from_html
 from src.jobs.transport import normalize_url as _normalize_job_url
-from src.local_data_store import LocalDataStore
+from src.shared.utils import now_iso as _now_iso
+from src.shared.utils import now_utc
 from src.ship.desktop_update import DesktopUpdateService
 from src.source_registry import (
     ACTIVE_PATH,
-    APPROVAL_STATE_PATH,
     DISCOVERY_CANDIDATES_PATH,
-    DISCOVERY_REPORT_PATH,
     PENDING_PATH,
     REJECTED_PATH,
     TOMBSTONES_PATH,
     load_json_array,
     load_json_object,
     save_json_atomic,
+)
+from src.source_registry import (
+    APPROVAL_STATE_PATH as _APPROVAL_STATE_PATH,
 )
 from src.source_registry import (
     REGISTRY_REASON_MANUAL_SOURCE as _REGISTRY_REASON_MANUAL_SOURCE,
@@ -126,17 +129,22 @@ source_url_fingerprint = source_registry_module.source_url_fingerprint
 os = _os
 time = _time
 discovery = _discovery_mod
+bridge_runtime_state = _bridge_runtime_state
 get_app_version = _get_app_version
 get_security_defaults = _get_security_defaults
 SCHEMA_VERSION = _SCHEMA_VERSION
 SYNC_STATE_LOCK = _SYNC_STATE_LOCK
+SyncState = _SyncState
+APPROVAL_STATE_PATH = _APPROVAL_STATE_PATH
 _html_extractor = _html_extractor_mod
+_ops_api = _ops_api_mod
 _registry_sync_flow = _registry_sync_flow_mod
 _source_check_api = _source_check_api_mod
 _source_check_fetch = _source_check_fetch_mod
 _source_check_http = _source_check_http_mod
 _source_checker = _source_checker_mod
 _sync_task_flow = _sync_task_flow_mod
+_task_launch_api = _task_launch_api_mod
 RegistryPaths = _RegistryPaths
 DiscoveryDeps = _DiscoveryDeps
 DiscoveryPaths = _DiscoveryPaths
@@ -155,11 +163,12 @@ source_identity = _source_identity
 unique_sources = _unique_sources
 REGISTRY_REASON_MANUAL_SOURCE = _REGISTRY_REASON_MANUAL_SOURCE
 REGISTRY_REASON_MANUAL_SOURCE_VARIANT = _REGISTRY_REASON_MANUAL_SOURCE_VARIANT
-from src.shared.utils import now_iso, now_utc
+now_iso = _now_iso
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
 OPS_ALERT_STATE_PATH = ROOT / "data" / "admin-alert-state.json"
 JOBS_FETCH_REPORT_PATH = ROOT / "data" / "jobs-fetch-report.json"
+DISCOVERY_REPORT_PATH = ROOT / "data" / "source-discovery-report.json"
 JOBS_FETCH_TASKS_PATH = ROOT / "data" / "jobs-fetch-tasks.json"
 TASKS_CONFIG_PATH = ROOT / ".vscode" / "tasks.json"
 TASK_STATE_PATH = ROOT / "data" / "admin-task-state.json"
@@ -212,36 +221,14 @@ _DESKTOP_UPDATE_SERVICE_DATA_DIR: Path | None = None
 _DESKTOP_UPDATE_SERVICE_LOCK = threading.RLock()
 
 
-def _get_sync_service() -> SyncService:
-    return admin_entrypoint_services_mod.get_sync_service()
-
-
-def _get_sync_state() -> SyncState:
-    return admin_entrypoint_services_mod.get_sync_state()
-
-
-def _get_registry_service() -> RegistryService:
-    return admin_entrypoint_services_mod.get_registry_service()
-
-
-def _get_discovery_service() -> DiscoveryService:
-    return admin_entrypoint_services_mod.get_discovery_service()
-
-
-def _get_task_launch_api() -> _task_launch_api.TaskLaunchApi:
-    return admin_entrypoint_services_mod.get_task_launch_api()
-
-
-def _get_ops_api() -> _ops_api.OpsApi:
-    return admin_entrypoint_services_mod.get_ops_api()
-
-
-def _get_pipeline_service() -> PipelineService:
-    return admin_entrypoint_services_mod.get_pipeline_service()
-
-
-def _get_desktop_update_service() -> DesktopUpdateService:
-    return admin_entrypoint_services_mod.get_desktop_update_service()
+_get_sync_service = admin_entrypoint_services_mod.get_sync_service
+_get_sync_state = admin_entrypoint_services_mod.get_sync_state
+_get_registry_service = admin_entrypoint_services_mod.get_registry_service
+_get_discovery_service = admin_entrypoint_services_mod.get_discovery_service
+_get_task_launch_api = admin_entrypoint_services_mod.get_task_launch_api
+_get_ops_api = admin_entrypoint_services_mod.get_ops_api
+_get_pipeline_service = admin_entrypoint_services_mod.get_pipeline_service
+_get_desktop_update_service = admin_entrypoint_services_mod.get_desktop_update_service
 
 
 RuntimeConfig = bridge_config.RuntimeConfig
@@ -262,6 +249,7 @@ RUNTIME_CONFIG = RuntimeConfig(
     owner_idle_timeout_s=0.0,
 )
 
+admin_entrypoint_api_mod.root = sys.modules[__name__]
 admin_entrypoint_runtime_mod.root = sys.modules[__name__]
 admin_entrypoint_services_mod.root = sys.modules[__name__]
 admin_registry_api_mod.root = sys.modules[__name__]
@@ -290,83 +278,22 @@ def resolve_runtime_config(
     )
 
 
-def _log_enabled(level: str) -> bool:
-    return admin_entrypoint_runtime_mod.log_enabled(level)
-
-
-def bridge_log(level: str, message: str, **fields: Any) -> None:
-    admin_entrypoint_runtime_mod.bridge_log(level, message, **fields)
-
-
-def configure_runtime_paths(config: RuntimeConfig) -> None:
-    admin_entrypoint_runtime_mod.configure_runtime_paths(config)
-
-
-def startup_banner(config: RuntimeConfig) -> None:
-    admin_entrypoint_runtime_mod.startup_banner(config)
+_log_enabled = admin_entrypoint_runtime_mod.log_enabled
+bridge_log = admin_entrypoint_runtime_mod.bridge_log
+configure_runtime_paths = admin_entrypoint_runtime_mod.configure_runtime_paths
+startup_banner = admin_entrypoint_runtime_mod.startup_banner
 
 
 def build_bridge_api(config: RuntimeConfig) -> BridgeApi:
-    # Keep the admin_bridge surface stable while bridge bootstrap ownership lives under `src.bridge.*`.
-    return bridge_bootstrap.build_bridge_api(
-        config=config,
-        registry=_get_registry_service(),
-        sync=_get_sync_service(),
-        pipeline=_get_pipeline_service(),
-        discovery=_get_discovery_service(),
-        normalize_fetch_report_contract=normalize_fetch_report_contract,
-        normalize_discovery_report_contract=normalize_discovery_report_contract,
-        discovery_report_path=DISCOVERY_REPORT_PATH,
-        jobs_fetch_report_path=JOBS_FETCH_REPORT_PATH,
-        approval_state_path=APPROVAL_STATE_PATH,
-        discovery_log_path=DISCOVERY_LOG_PATH,
-        fetcher_log_path=FETCHER_LOG_PATH,
-        startup_metrics_path=STARTUP_METRICS_PATH,
-        desktop_update_state_path=DESKTOP_UPDATE_STATE_PATH,
-        desktop_session_activity_at=bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
-        bridge_log=bridge_log,
-        now_iso=now_iso,
-        mark_desktop_session_activity=mark_desktop_session_activity,
-        get_desktop_session_payload=get_desktop_session_payload,
-        update_desktop_session_lifecycle=update_desktop_session_lifecycle,
-        desktop_local_data_store=desktop_local_data_store,
-        append_startup_metric=append_startup_metric,
-        read_startup_metrics=read_startup_metrics,
-        get_update_status_payload=lambda: _get_desktop_update_service().get_status_payload(),
-        check_for_update=lambda **kw: _get_desktop_update_service().check_for_update(**kw),
-        download_update=lambda: _get_desktop_update_service().download_update(),
-        install_update=lambda: _get_desktop_update_service().request_install(),
-        persist_state_and_auto_sync=persist_state_and_auto_sync,
-        add_manual_source=add_manual_source,
-        trigger_source_check=trigger_source_check,
-        load_json_object=load_json_object,
-        save_json_atomic=save_json_atomic,
-        start_fetcher_task=start_fetcher_task,
-        start_sync_task=start_sync_task,
-        get_discovery_config_payload=get_discovery_config_payload,
-        update_saved_discovery_settings=update_saved_discovery_settings,
-        compute_ops_health=compute_ops_health,
-        compute_fetcher_metrics=compute_fetcher_metrics,
-        sync_history_from_reports=sync_history_from_reports,
-        get_projected_run_history=_get_ops_api().get_projected_run_history,
-        get_task_live_payload=_get_ops_api().get_task_live_payload,
-        get_current_task_state_payload=_get_ops_api().get_current_task_state_payload,
-        should_exit_for_owner_timeout=owner_session_should_exit,
-        load_alert_state=load_alert_state,
-        save_alert_state=save_alert_state,
-    )
+    return admin_entrypoint_api_mod.build_bridge_api(config)
+
+
+append_startup_metric = admin_entrypoint_runtime_mod.append_startup_metric
+read_startup_metrics = admin_entrypoint_runtime_mod.read_startup_metrics
 
 
 def load_saved_sync_settings() -> dict[str, Any]:
     return _get_sync_service().load_saved_sync_settings()
-
-
-def append_startup_metric(event: str, payload: dict[str, Any] | None = None) -> None:
-    admin_entrypoint_runtime_mod.append_startup_metric(event, payload)
-
-
-def read_startup_metrics(limit: int = 200) -> list[dict[str, Any]]:
-    return admin_entrypoint_runtime_mod.read_startup_metrics(limit)
 
 
 # noqa: SLF001
@@ -376,6 +303,17 @@ def refresh_sync_config() -> source_sync_module.SyncConfig:
     global SYNC_CONFIG
     SYNC_CONFIG = _get_sync_service().refresh_sync_config()
     return SYNC_CONFIG
+
+
+normalize_state = admin_registry_api_mod.normalize_state
+load_state = admin_registry_api_mod.load_state
+summarize_state = admin_registry_api_mod.summarize_state
+persist_state = admin_registry_api_mod.persist_state
+persist_state_and_auto_sync = admin_registry_api_mod.persist_state_and_auto_sync
+move_entries = admin_registry_api_mod.move_entries
+build_manual_candidate = admin_registry_api_mod.build_manual_candidate
+add_manual_source = admin_registry_api_mod.add_manual_source
+check_static_source = admin_registry_api_mod.check_static_source
 
 
 def get_saved_sync_config_payload() -> dict[str, Any]:
@@ -412,48 +350,6 @@ def test_sync_config() -> dict[str, Any]:
 
 def ensure_active_registry() -> list[dict[str, Any]]:
     return _get_registry_service().ensure_active_registry()
-
-
-def normalize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
-    return admin_registry_api_mod.normalize_state(state)
-
-
-def load_state() -> dict[str, list[dict[str, Any]]]:
-    return admin_registry_api_mod.load_state()
-
-
-def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
-    return admin_registry_api_mod.summarize_state(state)
-
-
-def persist_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
-    return admin_registry_api_mod.persist_state(state)
-
-
-def persist_state_and_auto_sync(
-    state: dict[str, list[dict[str, Any]]], *, reason: str
-) -> dict[str, list[dict[str, Any]]]:
-    return admin_registry_api_mod.persist_state_and_auto_sync(state, reason=reason)
-
-
-def move_entries(
-    pending: list[dict[str, Any]], selected_ids: list[str]
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    return admin_registry_api_mod.move_entries(pending, selected_ids)
-
-
-def build_manual_candidate(normalized_url: str) -> dict[str, Any] | None:
-    return admin_registry_api_mod.build_manual_candidate(normalized_url)
-
-
-def add_manual_source(raw_url: str) -> dict[str, Any]:
-    return admin_registry_api_mod.add_manual_source(raw_url)
-
-
-def check_static_source(
-    row: dict[str, Any], timeout_s: int = 12
-) -> tuple[bool, int, str, bool, dict[str, Any]]:
-    return admin_registry_api_mod.check_static_source(row, timeout_s)
 
 
 def normalize_manual_static_studio_fields(row: dict[str, Any]) -> dict[str, Any]:
@@ -495,31 +391,11 @@ def mark_desktop_session_activity(path: str) -> None:
     return None
 
 
-def get_desktop_session_payload() -> dict[str, Any]:
-    return admin_entrypoint_runtime_mod.get_desktop_session_payload()
-
-
-def update_desktop_session_lifecycle(
-    *, owner_token: str, session_id: str, page_id: str, state: str
-) -> tuple[int, dict[str, Any]]:
-    return admin_entrypoint_runtime_mod.update_desktop_session_lifecycle(
-        owner_token=owner_token,
-        session_id=session_id,
-        page_id=page_id,
-        state=state,
-    )
-
-
-def owner_session_should_exit() -> bool:
-    return admin_entrypoint_runtime_mod.owner_session_should_exit()
-
-
-def parse_iso(value: Any) -> datetime | None:
-    return admin_entrypoint_runtime_mod.parse_iso(value)
-
-
-def pid_is_running(pid: int) -> bool:
-    return admin_entrypoint_runtime_mod.pid_is_running(pid)
+get_desktop_session_payload = admin_entrypoint_runtime_mod.get_desktop_session_payload
+update_desktop_session_lifecycle = admin_entrypoint_runtime_mod.update_desktop_session_lifecycle
+owner_session_should_exit = admin_entrypoint_runtime_mod.owner_session_should_exit
+parse_iso = admin_entrypoint_runtime_mod.parse_iso
+pid_is_running = admin_entrypoint_runtime_mod.pid_is_running
 
 
 load_run_history = _TASK_HISTORY.load
@@ -533,8 +409,7 @@ task_running_from_state = _TASK_HISTORY.task_running_from_state
 report_is_stale_in_progress = _TASK_HISTORY.report_is_stale_in_progress
 
 
-def _read_tasks_config() -> dict[str, Any]:
-    return admin_task_runtime_mod.read_tasks_config()
+_read_tasks_config = admin_task_runtime_mod.read_tasks_config
 
 
 def load_alert_state() -> dict[str, Any]:
@@ -577,57 +452,16 @@ def compute_fetcher_metrics(window_runs: int = 20) -> dict[str, Any]:
     return _get_ops_api().compute_fetcher_metrics(window_runs=window_runs)
 
 
-def _set_sync_status(
-    *,
-    action: str = "",
-    result: str = "",
-    error: str = "",
-    pulled: bool = False,
-    pushed: bool = False,
-) -> None:
-    admin_task_runtime_mod.set_sync_status(
-        action=action,
-        result=result,
-        error=error,
-        pulled=pulled,
-        pushed=pushed,
-    )
-
-
-def get_sync_status_payload() -> dict[str, Any]:
-    return admin_task_runtime_mod.get_sync_status_payload()
-
-
-def _sync_guard() -> dict[str, Any] | None:
-    return admin_task_runtime_mod.sync_guard()
-
-
-def sync_pull_sources() -> dict[str, Any]:
-    return admin_task_runtime_mod.sync_pull_sources()
-
-
-def sync_push_sources() -> dict[str, Any]:
-    return admin_task_runtime_mod.sync_push_sources()
-
-
-def startup_sync_pull() -> None:
-    admin_task_runtime_mod.startup_sync_pull()
-
-
-def sync_task_running() -> bool:
-    return admin_task_runtime_mod.sync_task_running()
-
-
-def wait_for_sync_tasks(timeout_s: float = 5.0) -> None:
-    admin_task_runtime_mod.wait_for_sync_tasks(timeout_s=float(timeout_s))
-
-
-def _mark_discovery_sync_finished(finished_at: str) -> None:
-    admin_task_runtime_mod.mark_discovery_sync_finished(finished_at)
-
-
-def _maybe_trigger_auto_sync_push(reason: str) -> bool:
-    return admin_task_runtime_mod.maybe_trigger_auto_sync_push(reason)
+_set_sync_status = admin_task_runtime_mod.set_sync_status
+get_sync_status_payload = admin_task_runtime_mod.get_sync_status_payload
+_sync_guard = admin_task_runtime_mod.sync_guard
+sync_pull_sources = admin_task_runtime_mod.sync_pull_sources
+sync_push_sources = admin_task_runtime_mod.sync_push_sources
+startup_sync_pull = admin_task_runtime_mod.startup_sync_pull
+sync_task_running = admin_task_runtime_mod.sync_task_running
+wait_for_sync_tasks = admin_task_runtime_mod.wait_for_sync_tasks
+_mark_discovery_sync_finished = admin_task_runtime_mod.mark_discovery_sync_finished
+_maybe_trigger_auto_sync_push = admin_task_runtime_mod.maybe_trigger_auto_sync_push
 
 
 def _run_sync_task_worker(
@@ -659,12 +493,8 @@ def trigger_discovery_task(
     )
 
 
-def _current_fetch_output_count() -> int:
-    return admin_task_runtime_mod.current_fetch_output_count()
-
-
-def get_jobs_pipeline_status_payload() -> dict[str, Any]:
-    return admin_task_runtime_mod.get_jobs_pipeline_status_payload()
+_current_fetch_output_count = admin_task_runtime_mod.current_fetch_output_count
+get_jobs_pipeline_status_payload = admin_task_runtime_mod.get_jobs_pipeline_status_payload
 
 
 def _wait_for_report_completion(
@@ -684,20 +514,10 @@ def _wait_for_report_completion(
     )
 
 
-def _wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> dict[str, Any]:
-    return admin_task_runtime_mod.wait_for_sync_completion(run_id, timeout_s=timeout_s)
-
-
-def start_fetcher_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    return admin_task_runtime_mod.start_fetcher_task(payload)
-
-
-def start_jobs_pipeline_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    return admin_task_runtime_mod.start_jobs_pipeline_task(payload)
-
-
-def desktop_local_data_store() -> LocalDataStore:
-    return admin_entrypoint_runtime_mod.desktop_local_data_store()
+_wait_for_sync_completion = admin_task_runtime_mod.wait_for_sync_completion
+start_fetcher_task = admin_task_runtime_mod.start_fetcher_task
+start_jobs_pipeline_task = admin_task_runtime_mod.start_jobs_pipeline_task
+desktop_local_data_store = admin_entrypoint_runtime_mod.desktop_local_data_store
 
 
 def parse_args(argv: list[str] | None = None) -> RuntimeConfig:

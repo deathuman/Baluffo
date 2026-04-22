@@ -26,7 +26,7 @@ Use these as entrypoints or shims only; route new logic to the owning modules th
 - `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and patch surface; implementation belongs in `src/ship/packaged_smoke/*`
 - `src/ship/desktop_update.py` - stable updater surface; implementation belongs in `src/ship/desktop_update_{shared,state,service}.py`
 - `src/admin_bridge.py` - stable thin entrypoint for bridge startup and compatibility wrappers
-- `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py` - admin bridge runtime/path/session/manual-source/task helpers behind the stable root surface
+- `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py` - admin bridge runtime/path/session/bootstrap/manual-source/task helpers behind the stable root surface
 - `src/source_discovery.py` - stable thin CLI entrypoint delegating to `src/source_discovery/*`
 - `src/jobs_fetcher.py` - stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`
 - `src/jobs/adapters/static.py` - stable static adapter surface; implementation belongs in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py` plus `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py`, while `static_helpers.py` stays a compatibility shim
@@ -36,6 +36,7 @@ Use these as entrypoints or shims only; route new logic to the owning modules th
 
 Current high-value leaf owners behind those surfaces:
 - `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`
+- `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`
 - `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/jobs/adapters/static_listing_flow.py`
 - `src/jobs/state_incremental.py`

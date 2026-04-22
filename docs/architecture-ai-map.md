@@ -121,11 +121,12 @@ src/ship/desktop_update.py (stable updater surface)
 - `ops_api.py` - stable OpsApi surface over `ops_history_projection.py`, `ops_task_live.py`, and `ops_live_payload.py`
 - `source_check_api.py` - source probe/check helpers
 
-**Still in `admin_bridge.py`:** bridge startup entrypoint, `build_bridge_api(...)`, stable compatibility wrappers, and root monkeypatch seams
+**Still in `admin_bridge.py`:** bridge startup entrypoint, one-line `build_bridge_api(...)` wrapper, stable compatibility exports, and root monkeypatch seams
 
 **Admin bridge entrypoint helpers:**
 - `admin_entrypoint_runtime.py` - bridge log emission, runtime-path rebinding, startup metrics, owner-session lifecycle helpers
 - `admin_entrypoint_services.py` - cached sync/registry/discovery/pipeline/updater/task-launch/ops builders
+- `admin_entrypoint_api.py` - `BridgeApi` bootstrap/dependency assembly behind the stable root wrapper
 - `admin_registry_api.py` - manual-source add/update flow, source-check glue, registry-state persistence helpers
 - `admin_task_runtime.py` - sync/task runtime helpers, report waits, fetch-task launch/runtime glue
 
@@ -199,7 +200,7 @@ See [`testing.md`](testing.md) for more commands.
 
 - `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and test patch surface; keep implementation in `src/ship/packaged_smoke/*.py`
 - `src/ship/desktop_update.py` - stable updater surface; keep implementation in `src/ship/desktop_update_{shared,state,service}.py`
-- `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py` or `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py`
+- `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py` or `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`
 - `src/source_discovery.py` - stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
 - `src/jobs_fetcher.py` - stable thin CLI facade; add pipeline logic to `src/jobs/*`
 - `src/jobs/adapters/static.py` - stable static adapter surface; keep generic listing/detail/runtime logic in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py`
