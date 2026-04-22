@@ -43,6 +43,7 @@ import "./local-data-domains.test.mjs";
 import "./local-data-runtime-contract.test.mjs";
 import "./local-data-services.test.mjs";
 import "./manifest-contract.test.mjs";
+import "./mcp-playwright-server.test.mjs";
 import "./playwright-smoke-runtime.test.mjs";
 import "./release-notes-dialog.test.mjs";
 import "./saved-admin-bridge-state.test.mjs";
