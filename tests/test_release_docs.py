@@ -119,9 +119,42 @@ def test_ai_bootstrap_sequence_is_single_path(repo_root: Path) -> None:
     assert "Boundary-charter docs stay in the repo as planning/history records" in index_text
 
     assert "README.md" not in read_order
+    assert "DOCS_WORKFLOW.md" not in read_order
     assert "architecture-ai-map.md" in read_order
     assert "AGENTS.md" in read_order
     assert "Do not load boundary-charter docs by default." in guide_text
+    assert "docs-first, not docs-only" in guide_text
+    assert "authoritative only for the surface they declare" in guide_text
+    assert "docs/wiki/" not in guide_text
+    assert "wiki > code" not in guide_text
+
+
+def test_docs_workflow_is_indexed_and_linked_for_contributors(repo_root: Path) -> None:
+    docs_dir = repo_root / "docs"
+    workflow_text = (docs_dir / "DOCS_WORKFLOW.md").read_text(encoding="utf-8")
+    index_text = (docs_dir / "INDEX.md").read_text(encoding="utf-8")
+    contributing_text = (repo_root / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    readme_text = (repo_root / "README.md").read_text(encoding="utf-8")
+
+    assert "docs-first, not docs-only" in workflow_text
+    assert "checked-in repo targets" in workflow_text
+    assert "generated or usually-absent artifact paths such as `_out/`" in workflow_text
+    assert "docs/CHANGELOG.md" not in workflow_text
+    assert "[`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md)" in index_text
+    assert "Documentation maintenance" in index_text
+    assert "docs/DOCS_WORKFLOW.md" in contributing_text
+    assert "docs/DOCS_WORKFLOW.md" in readme_text
+
+
+def test_docs_avoid_stale_archive_and_generated_artifact_links(repo_root: Path) -> None:
+    index_text = (repo_root / "docs" / "INDEX.md").read_text(encoding="utf-8")
+    changelog_text = (repo_root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "[`_out/`](../_out/)" not in index_text
+    assert "`_out/`" in index_text
+    assert "docs/archive/" not in changelog_text
+    assert "(archive/)" not in changelog_text
+    assert "scraping-pipeline-run-notes.md" in changelog_text
 
 
 def test_ai_docs_classify_compatibility_surfaces(repo_root: Path) -> None:

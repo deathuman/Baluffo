@@ -65,6 +65,7 @@ npm run dev:pipeline
 
 - [Docs Index](docs/INDEX.md) — navigation hub for the documentation set
 - [AI Assistant Guide](docs/AI_ASSISTANT_GUIDE.md) — AI coding workflow and edit routing
+- [Docs Workflow](docs/DOCS_WORKFLOW.md) — documentation ownership, freshness checks, and maintenance rules
 - [Architecture Map](docs/architecture-ai-map.md) — subsystem boundaries and file routing
 - [Testing Guide](docs/testing.md) — verification commands and fixture guidance
 - [Admin Bridge API](docs/admin-bridge-api.md) — endpoint reference

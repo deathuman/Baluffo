@@ -16,7 +16,7 @@ Run the balanced developer Python lane:
 npm run test:py
 ```
 
-This wrapper now uses the repo-local pytest temp root under `.tmp/pytest` (with `--basetemp=.tmp/pytest/basetemp`) so Windows temp-root ACL issues do not interfere with the suite. It excludes `slow`, `packaging`, and `release` tests so the default local loop stays focused on day-to-day development.
+This wrapper now uses the repo-local pytest temp root under `.tmp/pytest` (with `--basetemp=.tmp/pytest/basetemp`) and configures pytest cache under `.tmp/pytest/cache`. The repo disables pytest's cacheprovider by default because this Windows environment can leave unreadable `pytest-cache-files-*` temp directories behind. It excludes `slow`, `packaging`, and `release` tests so the default local loop stays focused on day-to-day development.
 
 Run the full Python suite when you need release-level confidence:
 
@@ -27,7 +27,7 @@ npm run test:py:extended
 **Direct local filtering:** To reproduce the developer lane directly from pytest:
 
 ```bash
-python -m pytest tests -q -m "not slow and not packaging and not release" --color=no
+python -m pytest tests -q -m "not slow and not packaging and not release" --color=no --basetemp=.tmp/pytest/basetemp
 ```
 
 Slow, packaging, and release tests stay in the extended lane. The timing lane still runs the full suite so performance regressions stay visible.
@@ -38,7 +38,7 @@ Run a quick timing sanity check (prints the slowest tests at the end):
 npm run test:py:timing
 ```
 
-This timing lane also uses the repo-local pytest temp root under `.tmp/pytest`, so Windows temp-root ACL issues do not push perf triage into `%LOCALAPPDATA%\\Temp`.
+This timing lane also uses the repo-local pytest temp root under `.tmp/pytest`, so Windows temp-root ACL issues and pytest cache noise do not push perf triage into `%LOCALAPPDATA%\\Temp`.
 
 Notes:
 - `--durations=25` prints the 25 slowest tests.
@@ -47,7 +47,7 @@ Notes:
 If you want a full per-test breakdown once (noisy):
 
 ```bash
-python -m pytest tests -q --durations=0 --color=no
+python -m pytest tests -q --durations=0 --color=no --basetemp=.tmp/pytest/basetemp
 ```
 
 ## Performance checks
@@ -99,7 +99,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Rebuild-backed packaged diagnostic | `npm run probe:desktop:startup:cold` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
-| Match developer lane directly | `python -m pytest tests -q -m "not slow and not packaging and not release" --color=no` |
+| Match developer lane directly | `python -m pytest tests -q -m "not slow and not packaging and not release" --color=no --basetemp=.tmp/pytest/basetemp` |
 
 Use `npm run release:preflight` when you are about to push a release commit, move a release tag, or publish release artifacts. It runs the pre-commit gate, the full Python lane, frontend unit tests, and the packaged desktop release lanes in canonical order.
 
@@ -115,6 +115,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 
 - Prefer repo-local temp fixtures such as `workspace_tmpdir(...)` and `admin_bridge_entrypoint_root` for new tests that write runtime state.
 - In this environment, direct pytest temp-root creation under `%LOCALAPPDATA%\\Temp` can hit Windows permission errors during setup/cleanup.
+- Keep pytest temp roots under `.tmp/pytest`; the repo disables pytest's cacheprovider by default so unreadable `pytest-cache-files-*` debris does not accumulate in the workspace.
 - If a narrow bridge test run fails before assertions with tmpdir/tempfile ACL errors, rerun it with a repo-local `--basetemp` or the existing repo-local tempdir shim rather than treating it as a product regression.
 
 ## Packaged artifact ownership

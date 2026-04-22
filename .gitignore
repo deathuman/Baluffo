@@ -5,8 +5,10 @@ playwright-report/
 dist/
 .codex-test-tmp/
 .tmp/
+.pytest_cache/
 .codex-pre-commit-home/
 .pre-commit-home/
+pytest-cache-files-*/
 support/
 logs/
 _out/

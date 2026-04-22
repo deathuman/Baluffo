@@ -104,9 +104,9 @@ These static sources failed with zero jobs extracted. Improvements to consider:
 
 **Generic improvements:**
 
-- In [src/jobs/adapters/static.py](src/jobs/adapters/static.py), ensure `try_playwright` is used for listing when `detect_js_shell` or 403/timeout occurs, and that the same HTML is then passed to `parse_jobpostings_from_html` and link extraction.
+- In [src/jobs/adapters/static.py](../src/jobs/adapters/static.py), ensure `try_playwright` is used for listing when `detect_js_shell` or 403/timeout occurs, and that the same HTML is then passed to `parse_jobpostings_from_html` and link extraction.
 - Consider logging when Playwright fallback is used and whether it yielded more links/jobs, to see which domains benefit.
-- In [src/jobs/adapters/plugins/static/](src/jobs/adapters/plugins/static/), add or extend plugins for high-value domains (e.g. Larian, Supercell, CDPR) with custom selectors or JSON-LD handling.
+- In [src/jobs/adapters/plugins/static/](../src/jobs/adapters/plugins/static/), add or extend plugins for high-value domains (e.g. Larian, Supercell, CDPR) with custom selectors or JSON-LD handling.
 
 ### 3.2 Scrapy path and browser queue
 
@@ -117,12 +117,12 @@ These static sources failed with zero jobs extracted. Improvements to consider:
 
 **Spider improvements (GenericCareersSpider):**
 
-- In [src/scrapers/spiders/generic_careers.py](src/scrapers/spiders/generic_careers.py), when `use_browser=True`, consider adding `playwright_page_methods` (e.g. wait for a common job-list selector) on listing requests so JS-rendered content is fully loaded before parsing.
-- Optionally add a small per-domain config (e.g. in [src/scrapers/domain_profiles.py](src/scrapers/domain_profiles.py)) to set “wait for selector” or longer timeouts for known heavy-JS career pages.
+- In [src/scrapers/spiders/generic_careers.py](../src/scrapers/spiders/generic_careers.py), when `use_browser=True`, consider adding `playwright_page_methods` (e.g. wait for a common job-list selector) on listing requests so JS-rendered content is fully loaded before parsing.
+- Optionally add a small per-domain config (e.g. in [src/scrapers/domain_profiles.py](../src/scrapers/domain_profiles.py)) to set “wait for selector” or longer timeouts for known heavy-JS career pages.
 
 ### 3.3 Ashby adapter
 
-- **ashby_sources:** “no jobs extracted from ashby board html” for Jagex and Scopely. Check [src/jobs/adapters/](src/jobs/adapters/) or provider-specific code for Ashby; confirm board URL and HTML structure haven’t changed and that the parser still matches the current markup. **Deferred:** Fix or deeper investigation left for a follow-up; if the board HTML or API has changed, a small parser update may be enough.
+- **ashby_sources:** “no jobs extracted from ashby board html” for Jagex and Scopely. Check [src/jobs/adapters/](../src/jobs/adapters/) or provider-specific code for Ashby; confirm board URL and HTML structure haven’t changed and that the parser still matches the current markup. **Deferred:** Fix or deeper investigation left for a follow-up; if the board HTML or API has changed, a small parser update may be enough.
 
 ---
 

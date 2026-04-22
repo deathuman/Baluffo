@@ -8,7 +8,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 
 | Source name | Adapter | Module / notes | Report key |
 |-------------|---------|----------------|------------|
-| google_sheets | csv | community ([`adapters/community/google_sheets.py`](src/jobs/adapters/community/google_sheets.py)) | adapter: csv, studio: community_sheet |
+| google_sheets | csv | community ([`adapters/community/google_sheets.py`](../src/jobs/adapters/community/google_sheets.py)) | adapter: csv, studio: community_sheet |
 | google_sheets_1er2oaxo | csv | community (mirror sheet) | adapter: csv |
 | google_sheets_1mvqhxat | csv | community (mirror sheet) | adapter: csv |
 | remote_ok | api | community | adapter: api, studio: remote_ok |

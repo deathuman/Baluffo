@@ -43,6 +43,12 @@
 
 **Do not load boundary-charter docs by default.** They are refactor/planning records, not the primary AI routing path. Use them only when you are intentionally working inside that specific cleanup lane and the canonical docs above are not enough.
 
+## Docs-first boundaries
+
+Baluffo is docs-first, not docs-only. Start with the smallest authoritative doc set, then read code for executable detail, verification, or when the docs do not own the question.
+
+Canonical docs are authoritative only for the surface they declare. Use the routing docs for edit location, contract docs for stable payload or API shape, and the codebase for implementation details and runtime truth outside those declared surfaces.
+
 ---
 
 ## Common wrong assumptions
@@ -145,10 +151,11 @@ For the narrowest verification matrix, fixture layout, and test-to-source map, s
 - Prefer leaf modules over composition roots
 - Treat `src/jobs/common/__init__.py` as a package marker, not a normal extension point
 - Update implementation + schemas + tests + docs together
+- When the task is documentation maintenance or doc ownership, follow [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md)
 - Follow task-to-files table before guessing
 - When uncertain about ownership after reading this guide, check [`architecture-ai-map.md`](architecture-ai-map.md)
 - Treat boundary-charter docs as supporting historical/planning context, not as the default routing source
 
 ---
 
-*Last updated: 2026-04-21*
+*Last updated: 2026-04-22*

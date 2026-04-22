@@ -76,6 +76,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 
 | Document | Scope | Use it when |
 |----------|-------|-------------|
+| [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`RELEASE.md`](RELEASE.md) | Build and release | You are changing packaging, versioning, release flow, or artifact expectations |
 | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Debugging help | You are investigating a known issue or checking common failure modes |
 | [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
@@ -143,19 +144,13 @@ This keeps context tight and reduces hallucinations from loading too many overla
 
 ## Documentation maintenance rules
 
+Use [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) for the canonical documentation-maintenance process.
+
 When adding or modifying documentation:
 
-1. **Update this index** with the correct category
-2. **Label authority clearly**:
-   - AI entrypoint
-   - Canonical contract
-   - Deep dive
-   - Operational
-   - Historical
-3. **Prefer small authoritative docs over broad overlapping prose**
-4. **Cross-link related source-of-truth docs**
-5. **Mark historical notes clearly** so they are not mistaken for current guidance
-6. **Keep `AI_ASSISTANT_GUIDE.md` aligned** with actual repo structure and existing file paths
+1. **Update this index** with the correct category and authority label
+2. **Prefer small authoritative docs** over broad overlapping prose or duplicate overview pages
+3. **Keep `AI_ASSISTANT_GUIDE.md` aligned** with actual repo structure and existing file paths
 
 ---
 
@@ -165,6 +160,6 @@ When adding or modifying documentation:
 - Frontend: [`frontend/`](../frontend/)
 - Tests: [`tests/`](../tests/)
 - Scripts: [`scripts/`](../scripts/)
-- Runtime data/artifacts: [`data/`](../data/), [`_out/`](../_out/)
+- Runtime data/artifacts: [`data/`](../data/), `_out/`
 
 ---
