@@ -39,7 +39,7 @@ Upstream references:
 Codex is a first-class client for this repo. Prefer Codex's MCP command flow instead of hand-editing config files:
 
 ```powershell
-codex mcp add serena -- serena start-mcp-server --context ide
+codex mcp add serena -- serena start-mcp-server --context=codex --project-from-cwd
 codex mcp list
 ```
 
@@ -49,6 +49,7 @@ codex mcp list
 
 OpenCode is the other first-class client for this repo.
 Baluffo already commits an `opencode.json` reference config that expects Serena on `PATH`.
+Use Serena's generic `ide` context here; upstream Serena does not publish an OpenCode-specific context today.
 
 Current repo launch shape:
 
@@ -57,7 +58,7 @@ Current repo launch shape:
   "mcp": {
     "serena": {
       "type": "local",
-      "command": ["serena", "start-mcp-server", "--context", "ide"],
+      "command": ["serena", "start-mcp-server", "--context", "ide", "--project-from-cwd"],
       "enabled": true
     }
   }
@@ -65,6 +66,24 @@ Current repo launch shape:
 ```
 
 Install Serena once, then run OpenCode from the repo root so it can use the committed repo config.
+
+## Baluffo Local Project Setup
+
+After installing Serena, create the repo-local project config from the repo root:
+
+```powershell
+serena project create --language python --language typescript
+serena project health-check
+```
+
+This creates `.serena/project.yml` as local-only state for this clone.
+Do not commit `.serena/`.
+
+Baluffo should use both `python` and `typescript` in Serena project config.
+There is no separate JavaScript Serena language key; use `typescript` for JavaScript and TypeScript files.
+
+Serena's managed TypeScript language-server flow requires Node.js and npm.
+Those are already present on this machine, so no extra repo dependency step is needed.
 
 ## Secondary Client Examples
 
@@ -76,7 +95,7 @@ Cursor, Cline, and Windsurf are supported examples, but they are not the repo's 
 {
   "name": "baluffo-serena",
   "command": "serena",
-  "args": ["start-mcp-server", "--context", "ide"],
+  "args": ["start-mcp-server", "--context", "ide", "--project-from-cwd"],
   "env": {}
 }
 ```
@@ -88,7 +107,7 @@ Cursor, Cline, and Windsurf are supported examples, but they are not the repo's 
   "mcpServers": {
     "baluffo-serena": {
       "command": "serena",
-      "args": ["start-mcp-server", "--context", "ide"]
+      "args": ["start-mcp-server", "--context", "ide", "--project-from-cwd"]
     }
   }
 }
@@ -103,7 +122,7 @@ Use the same command and args:
   "mcpServers": {
     "baluffo-serena": {
       "command": "serena",
-      "args": ["start-mcp-server", "--context", "ide"]
+      "args": ["start-mcp-server", "--context", "ide", "--project-from-cwd"]
     }
   }
 }

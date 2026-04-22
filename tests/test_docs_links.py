@@ -1,7 +1,6 @@
 import re
 from pathlib import Path
 
-
 MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]+\]\(([^)]+)\)")
 
 
