@@ -1,6 +1,6 @@
 # Runtime-First Cleanup Handoff
 
-> Operational handoff note for the runtime-first cleanup lane after the admin and jobs/saved follow-up waves landed on `main`.
+> Operational handoff note for the runtime-first cleanup lane after the admin, jobs/saved, and `source_sync` follow-up waves landed on `main`.
 > This is a practical pickup document, not a canonical contract doc and not part of the default AI read path.
 
 ## Purpose
@@ -9,12 +9,14 @@ Use this note to resume later cleanup work without rediscovering what is already
 
 ## Current Status
 
-As of April 22, 2026, the first runtime-first cleanup wave, the admin follow-up wave, and the jobs/saved runtime follow-up wave are already merged to remote `main`. This handoff note is still relevant because it records the landed cleanup state and the intentionally deferred next order; it is not replaced by the canonical routing docs.
+As of April 22, 2026, the first runtime-first cleanup wave, the admin follow-up wave, the jobs/saved runtime follow-up wave, and the backend `source_sync` follow-up wave are already merged to remote `main`. This handoff note is still relevant because it records the landed cleanup state and the intentionally deferred next order; it is not replaced by the canonical routing docs.
 
 This follow-up landed:
 
-- `src/source_sync.py` remains the stable sync facade and again re-exports `now_iso` from `src.shared.utils` so extracted leaves keep working through the root surface.
-- `tests/test_suite_contract.py` now locks that root-clock-helper exposure without depending on a brittle exact import line.
+- `src/source_sync.py` is now back to a thin stable sync facade under the root budget while preserving the current import surface for bridge, packaged smoke, and test callers.
+- `src/source_sync_snapshot.py` now owns snapshot transition backfill, canonicalization, and merge-ranking helpers directly instead of calling those helpers back through the root surface.
+- `src/source_sync.py` no longer carries dead duplicated ASN.1/PEM parser helpers; PEM parsing and JWT-signing internals stay owned by `src/source_sync_crypto.py`.
+- `tests/test_suite_contract.py` now enforces the `source_sync` thin-root budget, required leaf imports, root clock-helper exposure, and snapshot-helper ownership.
 - `frontend/admin/render.js` is now a thin stable re-export surface for leaf render modules under `frontend/admin/render/`.
 - `frontend/admin/domain.js` is now a thin stable re-export surface for leaf domain modules under `frontend/admin/domain/`.
 - `frontend/admin/app/runtime.js` now stays under the entrypoint budget and delegates controller assembly to `frontend/admin/app/runtime/composition.js`, while keeping boot/state/event-binding wrappers on the stable root.
@@ -39,18 +41,18 @@ That regression is fixed on `main` and covered by the suite-contract test noted 
 
 Verified in this follow-up session:
 
-- `node --test --test-reporter=dot tests/frontend/unit/jobs-runtime-events.test.mjs tests/frontend/unit/jobs-runtime-feed-controller.test.mjs tests/frontend/unit/jobs-runtime-jobs-list-events.test.mjs tests/frontend/unit/jobs-runtime-list-view.test.mjs tests/frontend/unit/jobs-runtime-query.test.mjs tests/frontend/unit/jobs-runtime-startup-preview.test.mjs tests/frontend/unit/jobs-runtime-state.test.mjs tests/frontend/unit/jobs-runtime-url-persistence.test.mjs tests/frontend/unit/saved-runtime-controllers.test.mjs tests/frontend/unit/saved-admin-bridge-state.test.mjs tests/frontend/unit/saved-phase-time.test.mjs tests/frontend/unit/saved-timeline.test.mjs tests/frontend/unit/structure-cleanup.test.mjs`
-- `npm run test:unit`
+- `python -m pytest tests/test_source_sync.py tests/admin/test_admin_bridge_ops_sync.py tests/admin/test_admin_bridge_thin_wrappers.py tests/test_build_ship_bundle.py tests/packaged_desktop/test_rehearsal_flows.py tests/test_suite_contract.py -q`
 - `npm run lint:precommit:changed`
 
 ## Deferred Follow-Up Order
 
 If another cleanup wave continues from here, keep the order narrow and compatibility-first:
 
-1. Keep backend compat-barrel work deferred to the next dedicated wave, especially `src/jobs_fetcher.py` and any deeper `src/source_sync.py` thinning beyond the stable facade.
-2. Continue backend helper dedup only where behavior is truly identical and existing root/module boundaries stay intact.
-3. Preserve the new frontend leaf boundaries if more cleanup continues: `frontend/jobs/app/runtime/{composition,boot,page-flow}.js`, `frontend/saved/app/runtime/{composition,boot,phase-time,mutations,chrome,notes}.js`, and the admin `runtime/`, `registry/`, `ops/`, `fetcher/`, and `discovery/` leaves.
-4. Do not reopen jobs/saved `types.js` extraction in the near term; the remaining ROI is low after the typedef cleanup already landed.
+1. Keep the remaining backend compat surfaces deferred to the next dedicated wave, especially `src/jobs_fetcher.py` and `src/admin_bridge.py`.
+2. Preserve the new `source_sync` ownership split: config in `src/source_sync_config.py`, runtime/auth/request state in `src/source_sync_runtime.py`, snapshot normalization/merge in `src/source_sync_snapshot.py`, and PEM/JWT internals in `src/source_sync_crypto.py`.
+3. Continue backend helper dedup only where behavior is truly identical and existing root/module boundaries stay intact.
+4. Preserve the new frontend leaf boundaries if more cleanup continues: `frontend/jobs/app/runtime/{composition,boot,page-flow}.js`, `frontend/saved/app/runtime/{composition,boot,phase-time,mutations,chrome,notes}.js`, and the admin `runtime/`, `registry/`, `ops/`, `fetcher/`, and `discovery/` leaves.
+5. Do not reopen jobs/saved `types.js` extraction in the near term; the remaining ROI is low after the typedef cleanup already landed.
 
 ## Resume Checklist
 
@@ -60,8 +62,7 @@ On another machine:
 2. Verify Python, Node, and repo test tooling are available.
 3. Review `git status --short` before making new changes.
 4. Re-run the cleanup verification baseline before extending the cleanup further:
-   - `node --test --test-reporter=dot tests/frontend/unit/jobs-runtime-events.test.mjs tests/frontend/unit/jobs-runtime-feed-controller.test.mjs tests/frontend/unit/jobs-runtime-jobs-list-events.test.mjs tests/frontend/unit/jobs-runtime-list-view.test.mjs tests/frontend/unit/jobs-runtime-query.test.mjs tests/frontend/unit/jobs-runtime-startup-preview.test.mjs tests/frontend/unit/jobs-runtime-state.test.mjs tests/frontend/unit/jobs-runtime-url-persistence.test.mjs tests/frontend/unit/saved-runtime-controllers.test.mjs tests/frontend/unit/saved-admin-bridge-state.test.mjs tests/frontend/unit/saved-phase-time.test.mjs tests/frontend/unit/saved-timeline.test.mjs tests/frontend/unit/structure-cleanup.test.mjs`
-   - `npm run test:unit`
+   - `python -m pytest tests/test_source_sync.py tests/admin/test_admin_bridge_ops_sync.py tests/admin/test_admin_bridge_thin_wrappers.py tests/test_build_ship_bundle.py tests/packaged_desktop/test_rehearsal_flows.py tests/test_suite_contract.py -q`
    - `npm run lint:precommit:changed`
 
 ## Related Docs

@@ -247,16 +247,61 @@ def test_jobs_fetcher_facade_stays_lazy_and_small(repo_root: Path) -> None:
     assert len(alias_lines) <= 3, "jobs_fetcher facade drifted back to bulk alias re-exports"
 
 
-def test_source_sync_root_exposes_clock_helpers_for_extracted_leaves(repo_root: Path) -> None:
+def test_source_sync_root_stays_thin_compat_surface(repo_root: Path) -> None:
     from src import source_sync
     from src.shared.utils import now_iso as shared_now_iso
     from src.shared.utils import now_utc as shared_now_utc
 
-    tree = _module_tree(repo_root / "src" / "source_sync.py")
+    target = repo_root / "src" / "source_sync.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+    top_level_imports = _top_level_imported_modules(tree)
+    function_names = set(_top_level_function_names(tree))
 
+    assert {
+        "src.source_sync_config",
+        "src.source_sync_crypto",
+        "src.source_sync_runtime",
+        "src.source_sync_snapshot",
+    } <= top_level_imports
     assert source_sync.now_iso is shared_now_iso
     assert source_sync.now_utc is shared_now_utc
-    assert "now_iso" not in _top_level_function_names(tree)
+    assert "now_iso" not in function_names
+    assert function_names.isdisjoint(
+        {
+            "_snapshot_transition_text",
+            "_backfill_snapshot_transition_metadata",
+            "_canonicalize_snapshot_rows",
+            "_row_transition_score",
+            "_row_bucket_rank",
+            "_row_merge_key",
+            "_choose_more_recent_row",
+            "_asn1_read_tlv",
+            "_asn1_read_children",
+            "_asn1_integer",
+            "_pem_to_der",
+            "_parse_rsa_private_key_der",
+        }
+    )
+    assert len(text.splitlines()) <= 560, "source_sync root drifted back toward monolith size"
+
+
+def test_source_sync_snapshot_leaf_owns_snapshot_merge_helpers(repo_root: Path) -> None:
+    target = repo_root / "src" / "source_sync_snapshot.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+
+    assert {
+        "_snapshot_transition_text",
+        "_backfill_snapshot_transition_metadata",
+        "_canonicalize_snapshot_rows",
+        "_row_transition_score",
+        "_row_bucket_rank",
+        "_row_merge_key",
+        "_choose_more_recent_row",
+    } <= set(_top_level_function_names(tree))
+    assert "module._canonicalize_snapshot_rows" not in text
+    assert "module._choose_more_recent_row" not in text
 
 
 def test_python_leaf_modules_do_not_import_root_compatibility_surfaces(repo_root: Path) -> None:

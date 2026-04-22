@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import base64
 import os
 import sys
 from collections.abc import Callable
@@ -29,11 +28,10 @@ from src.bridge.registry_tombstones import load_tombstones as _load_tombstones
 from src.shared.utils import now_iso as _now_iso
 from src.shared.utils import now_utc
 from src.source_registry import (
-    REGISTRY_MIGRATION_V2,
-    REGISTRY_REASON_PENDING_DEFAULT,
-    canonicalize_registry_row,
-    ensure_source_id,
-    sort_sources_by_identity,
+    REGISTRY_MIGRATION_V2 as _REGISTRY_MIGRATION_V2,
+)
+from src.source_registry import (
+    REGISTRY_REASON_PENDING_DEFAULT as _REGISTRY_REASON_PENDING_DEFAULT,
 )
 from src.source_registry import source_identity as _source_identity
 
@@ -49,6 +47,8 @@ source_identity = _source_identity
 # Re-exported for extracted leaves that still import clock helpers from the
 # stable sync facade.
 now_iso = _now_iso
+REGISTRY_MIGRATION_V2 = _REGISTRY_MIGRATION_V2
+REGISTRY_REASON_PENDING_DEFAULT = _REGISTRY_REASON_PENDING_DEFAULT
 SYNC_SCHEMA_VERSION = 2
 DEFAULT_BRANCH = str(_SYNC_DEFAULTS["default_branch"])
 DEFAULT_PATH = str(_SYNC_DEFAULTS["default_path"])
@@ -366,196 +366,6 @@ def _request_raw_json(
 
 def _parse_iso(value: Any) -> datetime | None:
     return _source_sync_runtime.parse_iso(value)
-
-
-def _snapshot_transition_text(*values: Any) -> str:
-    for value in values:
-        text = str(value or "").strip()
-        if text:
-            return text
-    return ""
-
-
-def _backfill_snapshot_transition_metadata(
-    row: dict[str, Any], *, bucket: str, generated_at: str
-) -> dict[str, Any]:
-    updated = dict(row)
-    bucket_token = str(bucket or "").strip().lower()
-    generated_at = str(generated_at or "").strip()
-    if bucket_token == "active":
-        state_changed_at = _snapshot_transition_text(
-            updated.get("stateChangedAt"),
-            updated.get("approvedAt"),
-            updated.get("liveAt"),
-            generated_at,
-        )
-        state_changed_by = _snapshot_transition_text(
-            updated.get("stateChangedBy"),
-            updated.get("approvedBy"),
-        )
-        if state_changed_at and not state_changed_by:
-            state_changed_by = REGISTRY_MIGRATION_V2
-        updated["stateChangedAt"] = state_changed_at
-        updated["stateChangedBy"] = state_changed_by
-        updated["pendingReason"] = ""
-        updated["lastPromotedAt"] = _snapshot_transition_text(
-            updated.get("lastPromotedAt"),
-            state_changed_at,
-        )
-        updated["approvedAt"] = _snapshot_transition_text(
-            updated.get("approvedAt"),
-            state_changed_at,
-        )
-        updated["approvedBy"] = _snapshot_transition_text(
-            updated.get("approvedBy"),
-            state_changed_by,
-        )
-        updated["liveAt"] = _snapshot_transition_text(updated.get("liveAt"), state_changed_at)
-    elif bucket_token == "pending":
-        state_changed_at = _snapshot_transition_text(
-            updated.get("stateChangedAt"),
-            updated.get("lastDemotedAt"),
-            updated.get("quarantinedAt"),
-            generated_at,
-        )
-        state_changed_by = _snapshot_transition_text(
-            updated.get("stateChangedBy"),
-            updated.get("quarantinedBy"),
-            updated.get("approvedBy"),
-        )
-        if state_changed_at and not state_changed_by:
-            state_changed_by = REGISTRY_MIGRATION_V2
-        updated["stateChangedAt"] = state_changed_at
-        updated["stateChangedBy"] = state_changed_by
-        updated["pendingReason"] = _snapshot_transition_text(
-            updated.get("pendingReason"),
-            updated.get("quarantineReason"),
-            updated.get("reason"),
-            REGISTRY_REASON_PENDING_DEFAULT,
-        )
-        updated["lastDemotedAt"] = _snapshot_transition_text(
-            updated.get("lastDemotedAt"),
-            state_changed_at,
-        )
-    return ensure_source_id(updated)
-
-
-def _canonicalize_snapshot_rows(
-    rows: list[dict[str, Any]], *, bucket: str, generated_at: str = ""
-) -> list[dict[str, Any]]:
-    canonical = [
-        _backfill_snapshot_transition_metadata(
-            canonicalize_registry_row(row, bucket=bucket),
-            bucket=bucket,
-            generated_at=generated_at,
-        )
-        for row in rows
-        if isinstance(row, dict)
-    ]
-    return sort_sources_by_identity(canonical)
-
-
-def _row_transition_score(row: dict[str, Any]) -> int:
-    timestamps = []
-    for key in (
-        "stateChangedAt",
-        "lastPromotedAt",
-        "lastDemotedAt",
-        "approvedAt",
-        "quarantinedAt",
-        "liveAt",
-    ):
-        dt = _parse_iso(row.get(key))
-        if dt is not None:
-            timestamps.append(int(dt.timestamp()))
-    return max(timestamps) if timestamps else 0
-
-
-def _row_bucket_rank(row: dict[str, Any]) -> int:
-    bucket = str(row.get("registryState") or "").strip().lower()
-    return {"active": 3, "pending": 2, "rejected": 1}.get(bucket, 0)
-
-
-def _row_merge_key(row: dict[str, Any]) -> tuple[int, int]:
-    return _row_transition_score(row), _row_bucket_rank(row)
-
-
-def _choose_more_recent_row(
-    local_row: dict[str, Any] | None,
-    remote_row: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    if local_row is None:
-        return remote_row
-    if remote_row is None:
-        return local_row
-    local_key = _row_merge_key(local_row)
-    remote_key = _row_merge_key(remote_row)
-    if remote_key > local_key:
-        return remote_row
-    return local_row
-
-
-def _asn1_read_tlv(raw: bytes, offset: int) -> tuple[int, bytes, int]:
-    if offset >= len(raw):
-        raise ValueError("ASN.1 offset out of range")
-    tag = raw[offset]
-    offset += 1
-    if offset >= len(raw):
-        raise ValueError("ASN.1 missing length")
-    first = raw[offset]
-    offset += 1
-    if first & 0x80:
-        count = first & 0x7F
-        if count <= 0 or offset + count > len(raw):
-            raise ValueError("ASN.1 invalid length")
-        length = int.from_bytes(raw[offset : offset + count], "big")
-        offset += count
-    else:
-        length = first
-    if offset + length > len(raw):
-        raise ValueError("ASN.1 truncated value")
-    value = raw[offset : offset + length]
-    return tag, value, offset + length
-
-
-def _asn1_read_children(raw: bytes) -> list[tuple[int, bytes]]:
-    children: list[tuple[int, bytes]] = []
-    offset = 0
-    while offset < len(raw):
-        tag, value, offset = _asn1_read_tlv(raw, offset)
-        children.append((tag, value))
-    return children
-
-
-def _asn1_integer(value: bytes) -> int:
-    raw = bytes(value)
-    while len(raw) > 1 and raw[0] == 0x00:
-        raw = raw[1:]
-    return int.from_bytes(raw, "big", signed=False)
-
-
-def _pem_to_der(private_key_pem: str) -> bytes:
-    lines = []
-    for raw in str(private_key_pem or "").strip().splitlines():
-        line = str(raw or "").strip()
-        if not line or line.startswith("-----BEGIN") or line.startswith("-----END"):
-            continue
-        lines.append(line)
-    if not lines:
-        raise RuntimeError("Missing PEM private key content")
-    return base64.b64decode("".join(lines))
-
-
-def _parse_rsa_private_key_der(der: bytes) -> tuple[int, int]:
-    tag, value, end = _asn1_read_tlv(der, 0)
-    if tag != 0x30 or end != len(der):
-        raise ValueError("Invalid RSA private key sequence")
-    children = _asn1_read_children(value)
-    if len(children) >= 9 and all(tag_value[0] == 0x02 for tag_value in children[:9]):
-        return _asn1_integer(children[1][1]), _asn1_integer(children[3][1])
-    if len(children) >= 3 and children[2][0] == 0x04:
-        return _parse_rsa_private_key_der(children[2][1])
-    raise ValueError("Unsupported RSA private key encoding")
 
 
 def _rsa_pkcs1_sign_sha256(message: bytes, private_key_pem: str) -> bytes:

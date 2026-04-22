@@ -84,7 +84,7 @@ src/ship/desktop_update.py (stable updater surface)
 | Bridge API | `src/bridge/*.py` | `src/bridge/routes/*.py` |
 | Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py` | `src/admin_bridge.py` only for root-surface compatibility work |
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
-| Bridge sync | `src/bridge/sync_service.py` | `src/source_sync.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py`, `src/source_sync_crypto.py`, `src/bridge/sync_state.py` |
+| Bridge sync | `src/bridge/sync_service.py`, `src/source_sync_{config,runtime,snapshot,crypto}.py` | `src/source_sync.py` only for root-surface compatibility work, plus `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
 | Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
 | Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py` | `src/jobs/adapters/static_helpers.py` only for shim/patch-surface compatibility and `src/jobs/adapters/static.py` only for root-surface compatibility work |
@@ -143,8 +143,11 @@ src/ship/desktop_update.py (stable updater surface)
 - `gamesmap.py`, `gamedevmap.py`, `gameprog.py`, `sheet_directory.py`, `web_search.py` - domain generators
 
 **Sync helpers:**
-- `source_sync.py` - compatibility and test patch surface
-- `source_sync_config.py`, `source_sync_snapshot.py`, `source_sync_crypto.py` - config resolution, snapshot I/O, and crypto/JWT helpers
+- `source_sync.py` - stable thin compatibility and test patch surface
+- `source_sync_config.py` - packaged config resolution, validation, and raw GitHub request setup
+- `source_sync_runtime.py` - runtime state, auth manager, rate limiting, DPAPI, and JSON request flow
+- `source_sync_snapshot.py` - snapshot normalization, transition backfill, merge ranking, and remote read/write helpers
+- `source_sync_crypto.py` - private-key encryption, PEM/ASN.1 parsing, and JWT signing helpers
 - `adapters/static.py` - root static adapter surface over `static_runtime.py`, `static_listing.py`, `static_listing_flow.py`, `static_detail.py`, `static_sources.py`, `static_runtime_support.py`, `static_detail_heuristics.py`, and the `static_helpers.py` compatibility shim
 
 ---
@@ -200,7 +203,7 @@ See [`testing.md`](testing.md) for more commands.
 - `src/source_discovery.py` - stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
 - `src/jobs_fetcher.py` - stable thin CLI facade; add pipeline logic to `src/jobs/*`
 - `src/jobs/adapters/static.py` - stable static adapter surface; keep generic listing/detail/runtime logic in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py`
-- `src/source_sync.py` - permanent thin sync integration surface; keep new sync logic in `src/source_sync_*` helpers
+- `src/source_sync.py` - permanent thin sync integration surface; keep new sync logic in `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/jobs/common/__init__.py` - package marker only; prefer `src.jobs.common.<leaf>` or package-submodule imports
 - `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`
 

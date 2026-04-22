@@ -30,12 +30,13 @@ Use these as entrypoints or shims only; route new logic to the owning modules th
 - `src/source_discovery.py` - stable thin CLI entrypoint delegating to `src/source_discovery/*`
 - `src/jobs_fetcher.py` - stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`
 - `src/jobs/adapters/static.py` - stable static adapter surface; implementation belongs in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py` plus `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py`, while `static_helpers.py` stays a compatibility shim
-- `src/source_sync.py` - permanent thin sync integration surface delegating to `src/source_sync_*`
+- `src/source_sync.py` - permanent thin sync integration surface; config/runtime/snapshot/crypto logic belongs in `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/jobs/common/__init__.py` - package marker only; import `src.jobs.common.<leaf>` or package-submodule helpers
 - `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`
 
 Current high-value leaf owners behind those surfaces:
 - `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`
+- `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/jobs/adapters/static_listing_flow.py`
 - `src/jobs/state_incremental.py`
 - `frontend/saved/app/runtime/*.js`

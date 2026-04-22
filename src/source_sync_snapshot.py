@@ -5,6 +5,143 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from src.source_registry import (
+    REGISTRY_MIGRATION_V2,
+    REGISTRY_REASON_PENDING_DEFAULT,
+    canonicalize_registry_row,
+    ensure_source_id,
+    sort_sources_by_identity,
+    source_identity,
+)
+from src.source_sync_runtime import parse_iso
+
+
+def _snapshot_transition_text(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _backfill_snapshot_transition_metadata(
+    row: dict[str, Any], *, bucket: str, generated_at: str
+) -> dict[str, Any]:
+    updated = dict(row)
+    bucket_token = str(bucket or "").strip().lower()
+    generated_at = str(generated_at or "").strip()
+    if bucket_token == "active":
+        state_changed_at = _snapshot_transition_text(
+            updated.get("stateChangedAt"),
+            updated.get("approvedAt"),
+            updated.get("liveAt"),
+            generated_at,
+        )
+        state_changed_by = _snapshot_transition_text(
+            updated.get("stateChangedBy"),
+            updated.get("approvedBy"),
+        )
+        if state_changed_at and not state_changed_by:
+            state_changed_by = REGISTRY_MIGRATION_V2
+        updated["stateChangedAt"] = state_changed_at
+        updated["stateChangedBy"] = state_changed_by
+        updated["pendingReason"] = ""
+        updated["lastPromotedAt"] = _snapshot_transition_text(
+            updated.get("lastPromotedAt"),
+            state_changed_at,
+        )
+        updated["approvedAt"] = _snapshot_transition_text(
+            updated.get("approvedAt"),
+            state_changed_at,
+        )
+        updated["approvedBy"] = _snapshot_transition_text(
+            updated.get("approvedBy"),
+            state_changed_by,
+        )
+        updated["liveAt"] = _snapshot_transition_text(updated.get("liveAt"), state_changed_at)
+    elif bucket_token == "pending":
+        state_changed_at = _snapshot_transition_text(
+            updated.get("stateChangedAt"),
+            updated.get("lastDemotedAt"),
+            updated.get("quarantinedAt"),
+            generated_at,
+        )
+        state_changed_by = _snapshot_transition_text(
+            updated.get("stateChangedBy"),
+            updated.get("quarantinedBy"),
+            updated.get("approvedBy"),
+        )
+        if state_changed_at and not state_changed_by:
+            state_changed_by = REGISTRY_MIGRATION_V2
+        updated["stateChangedAt"] = state_changed_at
+        updated["stateChangedBy"] = state_changed_by
+        updated["pendingReason"] = _snapshot_transition_text(
+            updated.get("pendingReason"),
+            updated.get("quarantineReason"),
+            updated.get("reason"),
+            REGISTRY_REASON_PENDING_DEFAULT,
+        )
+        updated["lastDemotedAt"] = _snapshot_transition_text(
+            updated.get("lastDemotedAt"),
+            state_changed_at,
+        )
+    return ensure_source_id(updated)
+
+
+def _canonicalize_snapshot_rows(
+    rows: list[dict[str, Any]], *, bucket: str, generated_at: str = ""
+) -> list[dict[str, Any]]:
+    canonical = [
+        _backfill_snapshot_transition_metadata(
+            canonicalize_registry_row(row, bucket=bucket),
+            bucket=bucket,
+            generated_at=generated_at,
+        )
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    return sort_sources_by_identity(canonical)
+
+
+def _row_transition_score(row: dict[str, Any]) -> int:
+    timestamps = []
+    for key in (
+        "stateChangedAt",
+        "lastPromotedAt",
+        "lastDemotedAt",
+        "approvedAt",
+        "quarantinedAt",
+        "liveAt",
+    ):
+        dt = parse_iso(row.get(key))
+        if dt is not None:
+            timestamps.append(int(dt.timestamp()))
+    return max(timestamps) if timestamps else 0
+
+
+def _row_bucket_rank(row: dict[str, Any]) -> int:
+    bucket = str(row.get("registryState") or "").strip().lower()
+    return {"active": 3, "pending": 2, "rejected": 1}.get(bucket, 0)
+
+
+def _row_merge_key(row: dict[str, Any]) -> tuple[int, int]:
+    return _row_transition_score(row), _row_bucket_rank(row)
+
+
+def _choose_more_recent_row(
+    local_row: dict[str, Any] | None,
+    remote_row: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if local_row is None:
+        return remote_row
+    if remote_row is None:
+        return local_row
+    local_key = _row_merge_key(local_row)
+    remote_key = _row_merge_key(remote_row)
+    if remote_key > local_key:
+        return remote_row
+    return local_row
+
 
 def normalize_snapshot(module: Any, payload: dict[str, Any]) -> dict[str, Any]:
     data = payload if isinstance(payload, dict) else {}
@@ -13,13 +150,13 @@ def normalize_snapshot(module: Any, payload: dict[str, Any]) -> dict[str, Any]:
         "schemaVersion": int(data.get("schemaVersion") or 1),
         "generatedAt": generated_at,
         "source": data.get("source") if isinstance(data.get("source"), dict) else {},
-        "active": module._canonicalize_snapshot_rows(
+        "active": _canonicalize_snapshot_rows(
             list(data.get("active") or []), bucket="active", generated_at=generated_at
         ),
-        "pending": module._canonicalize_snapshot_rows(
+        "pending": _canonicalize_snapshot_rows(
             list(data.get("pending") or []), bucket="pending", generated_at=generated_at
         ),
-        "rejected": module._canonicalize_snapshot_rows(
+        "rejected": _canonicalize_snapshot_rows(
             list(data.get("rejected") or []), bucket="rejected", generated_at=generated_at
         ),
     }
@@ -33,19 +170,19 @@ def merge_registry_state(
     generated_at = str(remote.get("generatedAt") or "")
     local = {
         "active": module.filter_tombstoned_rows(
-            module._canonicalize_snapshot_rows(
+            _canonicalize_snapshot_rows(
                 list(local_state.get("active") or []), bucket="active", generated_at=generated_at
             ),
             tombstones,
         ),
         "pending": module.filter_tombstoned_rows(
-            module._canonicalize_snapshot_rows(
+            _canonicalize_snapshot_rows(
                 list(local_state.get("pending") or []), bucket="pending", generated_at=generated_at
             ),
             tombstones,
         ),
         "rejected": module.filter_tombstoned_rows(
-            module._canonicalize_snapshot_rows(
+            _canonicalize_snapshot_rows(
                 list(local_state.get("rejected") or []),
                 bucket="rejected",
                 generated_at=generated_at,
@@ -54,33 +191,31 @@ def merge_registry_state(
         ),
     }
     local_rejected_ids = {
-        module.source_identity(row) for row in local["rejected"] if isinstance(row, dict)
+        source_identity(row) for row in local["rejected"] if isinstance(row, dict)
     }
     merged: dict[str, list[dict[str, Any]]] = {
         "active": [],
         "pending": [],
-        "rejected": module.sort_sources_by_identity(local["rejected"]),
+        "rejected": sort_sources_by_identity(local["rejected"]),
     }
     candidates: dict[str, dict[str, Any]] = {}
     for bucket in ("active", "pending"):
         for row in local[bucket]:
-            candidates[module.source_identity(row)] = dict(row)
+            candidates[source_identity(row)] = dict(row)
     for bucket in ("active", "pending"):
         for row in remote[bucket]:
-            row_id = module.source_identity(row)
+            row_id = source_identity(row)
             if row_id in local_rejected_ids:
                 continue
-            candidates[row_id] = dict(
-                module._choose_more_recent_row(candidates.get(row_id), row) or row
-            )
+            candidates[row_id] = dict(_choose_more_recent_row(candidates.get(row_id), row) or row)
     for row in candidates.values():
         bucket = str(row.get("registryState") or "").strip().lower()
         if bucket == "active":
-            merged["active"].append(module.ensure_source_id(row))
+            merged["active"].append(ensure_source_id(row))
         elif bucket == "pending":
-            merged["pending"].append(module.ensure_source_id(row))
-    merged["active"] = module.sort_sources_by_identity(merged["active"])
-    merged["pending"] = module.sort_sources_by_identity(merged["pending"])
+            merged["pending"].append(ensure_source_id(row))
+    merged["active"] = sort_sources_by_identity(merged["active"])
+    merged["pending"] = sort_sources_by_identity(merged["pending"])
     return merged
 
 
@@ -153,10 +288,10 @@ def build_snapshot(
         },
     )
     canonical_state = {
-        "active": module._canonicalize_snapshot_rows(
+        "active": _canonicalize_snapshot_rows(
             list(canonical_state.get("active") or []), bucket="active", generated_at=generated_at
         ),
-        "pending": module._canonicalize_snapshot_rows(
+        "pending": _canonicalize_snapshot_rows(
             list(canonical_state.get("pending") or []), bucket="pending", generated_at=generated_at
         ),
     }
