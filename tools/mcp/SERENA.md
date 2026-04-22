@@ -1,0 +1,117 @@
+# Serena MCP for Baluffo
+
+> Required AI development tooling for this repo. Codex CLI and OpenCode are the two first-class client paths.
+
+## What This Owns
+
+Use this guide when you are setting up Serena for Baluffo repo work.
+
+- Serena is the required AI dev tool for this repo's normal coding workflow.
+- This is a contributor-workflow standard only. It is not part of Baluffo runtime, packaging, release, or CI.
+- The repo docs stay canonical if Serena memory and repo docs ever diverge.
+- `.serena/` is local-only state and must stay untracked.
+
+For the repo's optional browser-driving MCP server, see [PLAYWRIGHT.md](PLAYWRIGHT.md).
+
+## Install Serena
+
+Follow Serena's official `uv`-managed install path rather than marketplace installs:
+
+1. Install `uv`: <https://docs.astral.sh/uv/getting-started/installation/>
+2. Install Serena:
+
+```powershell
+uv tool install -p 3.13 serena-agent@latest --prerelease=allow
+serena --help
+```
+
+If `serena` is not found after install, restart your shell so the `uv` tool path is available.
+
+Upstream references:
+- Serena upstream: <https://github.com/oraios/serena>
+- OpenAI Docs MCP / Codex MCP setup: <https://developers.openai.com/learn/docs-mcp>
+- Codex CLI getting started: <https://help.openai.com/en/articles/11096431-openai-codex-ci-getting-started>
+
+## First-Class Clients
+
+### Codex CLI
+
+Codex is a first-class client for this repo. Prefer Codex's MCP command flow instead of hand-editing config files:
+
+```powershell
+codex mcp add serena -- serena start-mcp-server --context ide
+codex mcp list
+```
+
+`codex mcp add` writes the user-global Codex MCP config for you. Keep that config user-local rather than committing a repo-managed Codex config file.
+
+### OpenCode
+
+OpenCode is the other first-class client for this repo.
+Baluffo already commits an `opencode.json` reference config that expects Serena on `PATH`.
+
+Current repo launch shape:
+
+```json
+{
+  "mcp": {
+    "serena": {
+      "type": "local",
+      "command": ["serena", "start-mcp-server", "--context", "ide"],
+      "enabled": true
+    }
+  }
+}
+```
+
+Install Serena once, then run OpenCode from the repo root so it can use the committed repo config.
+
+## Secondary Client Examples
+
+Cursor, Cline, and Windsurf are supported examples, but they are not the repo's primary standard.
+
+### Cursor
+
+```json
+{
+  "name": "baluffo-serena",
+  "command": "serena",
+  "args": ["start-mcp-server", "--context", "ide"],
+  "env": {}
+}
+```
+
+### Cline
+
+```json
+{
+  "mcpServers": {
+    "baluffo-serena": {
+      "command": "serena",
+      "args": ["start-mcp-server", "--context", "ide"]
+    }
+  }
+}
+```
+
+### Windsurf
+
+Use the same command and args:
+
+```json
+{
+  "mcpServers": {
+    "baluffo-serena": {
+      "command": "serena",
+      "args": ["start-mcp-server", "--context", "ide"]
+    }
+  }
+}
+```
+
+## Repo Rules
+
+- Start with [AI_ASSISTANT_GUIDE.md](../../docs/AI_ASSISTANT_GUIDE.md) and [INDEX.md](../../docs/INDEX.md) before relying on Serena memory.
+- Use Serena to accelerate symbol-aware navigation, cross-file reasoning, and refactors; use the repo's normal shell/file tools for small direct edits and verification.
+- If Serena memory and repo docs disagree, repo docs win.
+- Do not commit `.serena/`.

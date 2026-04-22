@@ -7,7 +7,8 @@ MARKDOWN_LINK_RE = re.compile(r"(?<!\!)\[[^\]]+\]\(([^)]+)\)")
 
 def _iter_doc_paths(repo_root: Path) -> list[Path]:
     docs = sorted((repo_root / "docs").rglob("*.md"))
-    return [repo_root / "README.md", repo_root / "CONTRIBUTING.md", *docs]
+    tools = sorted((repo_root / "tools").rglob("*.md"))
+    return [repo_root / "README.md", repo_root / "CONTRIBUTING.md", *docs, *tools]
 
 
 def _local_markdown_target(raw: str) -> str | None:

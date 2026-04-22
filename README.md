@@ -61,6 +61,12 @@ npm run dev:bridge
 npm run dev:pipeline
 ```
 
+### AI Tooling
+
+- Serena MCP is the required AI dev tool for Baluffo repo work.
+- Codex CLI and OpenCode are the first-class client paths.
+- Setup guide: [Serena MCP Setup](tools/mcp/SERENA.md)
+
 ### Documentation
 
 - [Docs Index](docs/INDEX.md) — navigation hub for the documentation set

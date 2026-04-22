@@ -1,5 +1,9 @@
 # Playwright MCP Server
 
+For the MCP tooling landing page, use [INDEX.md](INDEX.md).
+For the repo's required Serena setup, use [SERENA.md](SERENA.md).
+This page only covers the optional Playwright MCP server.
+
 This directory contains an optional local MCP server for driving a shared Playwright browser session during development.
 
 It is developer tooling only:

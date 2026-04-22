@@ -125,6 +125,7 @@ def test_ai_bootstrap_sequence_is_single_path(repo_root: Path) -> None:
     assert "Do not load boundary-charter docs by default." in guide_text
     assert "docs-first, not docs-only" in guide_text
     assert "authoritative only for the surface they declare" in guide_text
+    assert "Serena memory and repo docs ever diverge" in guide_text
     assert "docs/wiki/" not in guide_text
     assert "wiki > code" not in guide_text
 
@@ -144,6 +145,47 @@ def test_docs_workflow_is_indexed_and_linked_for_contributors(repo_root: Path) -
     assert "Documentation maintenance" in index_text
     assert "docs/DOCS_WORKFLOW.md" in contributing_text
     assert "docs/DOCS_WORKFLOW.md" in readme_text
+
+
+def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -> None:
+    docs_dir = repo_root / "docs"
+    serena_text = (repo_root / "tools" / "mcp" / "SERENA.md").read_text(encoding="utf-8")
+    mcp_index_text = (repo_root / "tools" / "mcp" / "INDEX.md").read_text(encoding="utf-8")
+    playwright_text = (repo_root / "tools" / "mcp" / "PLAYWRIGHT.md").read_text(encoding="utf-8")
+    index_text = (docs_dir / "INDEX.md").read_text(encoding="utf-8")
+    guide_text = (docs_dir / "AI_ASSISTANT_GUIDE.md").read_text(encoding="utf-8")
+    contributing_text = (repo_root / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    readme_text = (repo_root / "README.md").read_text(encoding="utf-8")
+    tools_text = (repo_root / "tools" / "README.md").read_text(encoding="utf-8")
+    opencode = json.loads((repo_root / "opencode.json").read_text(encoding="utf-8"))
+
+    assert "SERENA.md" in mcp_index_text
+    assert "PLAYWRIGHT.md" in mcp_index_text
+    assert "Conventions for Future MCP Docs" in mcp_index_text
+    assert "For the MCP tooling landing page, use [INDEX.md](INDEX.md)." in playwright_text
+    assert "[PLAYWRIGHT.md](PLAYWRIGHT.md)" in serena_text
+    assert "Codex CLI" in serena_text
+    assert "OpenCode" in serena_text
+    assert "repo docs stay canonical" in serena_text
+    assert ".serena/" in serena_text
+    assert "codex mcp add serena -- serena start-mcp-server --context ide" in serena_text
+    assert "tools/mcp/SERENA.md" in contributing_text
+    assert "tools/mcp/SERENA.md" in readme_text
+    assert "tools/mcp/README.md" not in contributing_text
+    assert "tools/mcp/README.md" not in readme_text
+    assert "tools/mcp/README.md" not in tools_text
+    assert "[`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md)" in index_text
+    assert "[`../tools/mcp/INDEX.md`](../tools/mcp/INDEX.md)" in index_text
+    assert "../tools/mcp/README.md" not in index_text
+    assert "Serena memory and repo docs ever diverge" in guide_text
+    assert "required Serena setup" in tools_text
+    assert "OpenCode" in tools_text
+    assert opencode["mcp"]["serena"]["command"] == [
+        "serena",
+        "start-mcp-server",
+        "--context",
+        "ide",
+    ]
 
 
 def test_docs_avoid_stale_archive_and_generated_artifact_links(repo_root: Path) -> None:

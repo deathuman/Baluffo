@@ -48,6 +48,7 @@
 Baluffo is docs-first, not docs-only. Start with the smallest authoritative doc set, then read code for executable detail, verification, or when the docs do not own the question.
 
 Canonical docs are authoritative only for the surface they declare. Use the routing docs for edit location, contract docs for stable payload or API shape, and the codebase for implementation details and runtime truth outside those declared surfaces.
+If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 
 ---
 
