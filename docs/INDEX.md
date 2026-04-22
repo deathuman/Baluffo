@@ -79,7 +79,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`../tools/mcp/INDEX.md`](../tools/mcp/INDEX.md) | MCP tooling index | You are choosing which MCP tooling doc to load under `tools/mcp/` |
 | [`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md) | AI dev tooling | You are setting up the required Serena MCP workflow for Codex CLI or OpenCode, or checking the repo's Serena-memory rules |
-| [`runtime-first-cleanup-handoff.md`](runtime-first-cleanup-handoff.md) | Cleanup handoff | You need to resume the runtime-first cleanup refactor on another machine with current status, verified commands, and next steps |
+| [`runtime-first-cleanup-handoff.md`](runtime-first-cleanup-handoff.md) | Cleanup handoff | You need to resume the runtime-first cleanup lane with the landed admin/jobs/saved state, verified commands, and remaining deferred work |
 | [`RELEASE.md`](RELEASE.md) | Build and release | You are changing packaging, versioning, release flow, or artifact expectations |
 | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Debugging help | You are investigating a known issue or checking common failure modes |
 | [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
@@ -118,8 +118,8 @@ Useful as context, but **not authoritative** for current implementation unless e
 | Understand the repo quickly | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
 | Understand product and top-level layout | [`README.md`](../README.md) | [`architecture-ai-map.md`](architecture-ai-map.md) |
 | Change frontend behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then task-specific source files |
-| Change jobs page runtime wiring | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `frontend/jobs/app/feed.js`, `frontend/jobs/app/runtime/*.js`, and `frontend/jobs/app/runtime.js` only if the page entrypoint must change |
-| Change saved page runtime wiring | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `frontend/saved/app/runtime/*.js`, `frontend/saved/app/admin-bridge-state.js`, and `frontend/saved/app/runtime.js` only if the page entrypoint must change |
+| Change jobs page runtime wiring | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `frontend/jobs/app/feed.js`, `frontend/jobs/app/runtime/{composition,boot,page-flow,...}.js`, and `frontend/jobs/app/runtime.js` only if the page entrypoint must change |
+| Change saved page runtime wiring | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `frontend/saved/app/runtime/{composition,boot,phase-time,mutations,chrome,notes,...}.js`, `frontend/saved/app/admin-bridge-state.js`, and `frontend/saved/app/runtime.js` only if the page entry/export root must change |
 | Change admin page runtime wiring | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `frontend/admin/app/runtime/*.js`, `frontend/admin/app/registry/*.js`, `frontend/admin/app/ops/*.js`, and `frontend/admin/app/runtime.js` only if the page entrypoint must change |
 | Change bridge/API behavior | [`architecture-ai-map.md`](architecture-ai-map.md) | [`admin-bridge-api.md`](admin-bridge-api.md) |
 | Change discovery behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/source_discovery/orchestrator*.py` or the relevant discovery leaf module |

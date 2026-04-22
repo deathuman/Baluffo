@@ -184,8 +184,8 @@ test("cleanup structure: app runtime helper modules stay slice-local", () => {
 
 test("cleanup structure: runtime entrypoints stay within the current size budget", () => {
   const budgets = {
-    jobs: 1920,
-    saved: 1920,
+    jobs: 360,
+    saved: 360,
     admin: 320
   };
 
@@ -198,6 +198,60 @@ test("cleanup structure: runtime entrypoints stay within the current size budget
       `frontend/${slice}/app/runtime.js is ${lines} lines, above the ${maxLines}-line budget`
     );
   }
+});
+
+test("cleanup structure: jobs runtime root delegates composition and page flow", () => {
+  const rel = path.join("frontend", "jobs", "app", "runtime.js");
+  const source = fs.readFileSync(repoPath(rel), "utf8");
+  const imports = readImports(rel);
+
+  assert.equal(
+    imports.includes("./runtime/composition.js"),
+    true,
+    "frontend/jobs/app/runtime.js must import ./runtime/composition.js"
+  );
+  assert.equal(
+    imports.includes("./runtime/boot.js"),
+    true,
+    "frontend/jobs/app/runtime.js must import ./runtime/boot.js"
+  );
+  assert.equal(
+    imports.includes("./runtime/page-flow.js"),
+    true,
+    "frontend/jobs/app/runtime.js must import ./runtime/page-flow.js"
+  );
+  assert.doesNotMatch(
+    source,
+    /\bcreateJobs(RuntimeState|FiltersController|AuthController|PipelineController|StartupPreviewController|EventsController|FeedController|UrlPersistence)\s*\(/,
+    "frontend/jobs/app/runtime.js must not recreate the jobs controller/runtime graph inline"
+  );
+});
+
+test("cleanup structure: saved runtime root delegates composition and leaf helpers", () => {
+  const rel = path.join("frontend", "saved", "app", "runtime.js");
+  const source = fs.readFileSync(repoPath(rel), "utf8");
+  const imports = readImports(rel);
+  const requiredImports = [
+    "./runtime/composition.js",
+    "./runtime/boot.js",
+    "./runtime/phase-time.js",
+    "./runtime/mutations.js",
+    "./runtime/chrome.js",
+    "./runtime/notes.js"
+  ];
+
+  for (const specifier of requiredImports) {
+    assert.equal(
+      imports.includes(specifier),
+      true,
+      `frontend/saved/app/runtime.js must import ${specifier}`
+    );
+  }
+  assert.doesNotMatch(
+    source,
+    /\bcreateSaved(PageState|ActivityController|AttachmentsController|CustomJobController|RenderController|AuthController)\s*\(/,
+    "frontend/saved/app/runtime.js must not recreate the saved controller/runtime graph inline"
+  );
 });
 
 test("cleanup structure: admin controller roots stay within the current size budget", () => {

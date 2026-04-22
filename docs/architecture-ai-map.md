@@ -18,7 +18,7 @@ jobs.html / saved.html / admin.html
   -> frontend/{jobs|saved|admin}/app.js
   -> frontend/{jobs|saved|admin}/app/runtime.js
       -> page modules (app/*.js + actions/services/render/domain/data-source)
-      -> saved runtime leaves (frontend/saved/app/runtime/*.js + admin-bridge-state.js)
+      -> runtime leaves (frontend/{jobs|saved|admin}/app/runtime/*.js + frontend/saved/app/admin-bridge-state.js)
       -> shared (frontend/shared/*, selectors.js, api-client.js, state-hub.js)
 
 src/dev_admin_supervisor.py (Baluffo launcher)
@@ -73,8 +73,9 @@ src/ship/desktop_update.py (stable updater surface)
 | Task | Start here | Then only if needed |
 |------|------------|---------------------|
 | Jobs filter/search | `frontend/jobs/app/filters.js`, `frontend/jobs/app/runtime/query.js` | `frontend/jobs/app/runtime.js` only for page-entry wiring/export changes |
-| Jobs page runtime wiring | `frontend/jobs/app/feed.js`, `frontend/jobs/app/runtime/{events,feed-controller,list-view,pipeline-controller,startup-preview,auth-controller}.js` | `frontend/jobs/app/runtime.js` only when the stable page-entry root must change |
+| Jobs page runtime wiring | `frontend/jobs/app/feed.js`, `frontend/jobs/app/runtime/{composition,boot,page-flow,events,feed-controller,list-view,pipeline-controller,startup-preview,auth-controller}.js` | `frontend/jobs/app/runtime.js` only when the stable page-entry root must change |
 | Jobs feed refresh | `frontend/jobs/app/feed.js` | `frontend/jobs/services.js` |
+| Saved page runtime wiring | `frontend/saved/app/runtime/{composition,boot,phase-time,mutations,chrome,notes,activity-controller,attachments-controller,custom-job-controller,render-controller,auth-controller}.js`, `frontend/saved/app/admin-bridge-state.js` | `frontend/saved/app/runtime.js` only when the stable page-entry/export root must change |
 | Saved notes | `frontend/saved/app/notes.js` | `frontend/saved/services.js` |
 | Saved attachments | `frontend/saved/app/attachments.js` | `frontend/saved/services.js` |
 | Admin runtime wiring | `frontend/admin/app/runtime/{composition,overview,events,state,view,effects,actions}.js` | `frontend/admin/app/runtime.js` only for page-entry wiring/export changes |
