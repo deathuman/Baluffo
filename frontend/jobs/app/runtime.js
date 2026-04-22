@@ -191,7 +191,8 @@ const jobsRuntime = composeJobsRuntime({
   rememberJobsUrl,
   jobsLastUrlKey: JOBS_LAST_URL_KEY,
   applyJobsAdminBridgeStateFromModule,
-  getJobKeyForJob
+  getJobKeyForJob,
+  normalizeLifecycleStatus
 });
 
 jobsPageFlow = createJobsPageFlow({

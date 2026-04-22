@@ -310,7 +310,7 @@ test("desktop jobs update toggle stays usable after Jobs to Admin to Jobs naviga
   await expectDesktopUpdateToggleUsable(page);
 });
 
-test("admin smoke: loads directly without a PIN gate", async ({ page }) => {
+test("admin smoke: direct admin load works without auth gating", async ({ page }) => {
   await seedBridgeRuntimeBase(page);
   await page.goto("/admin.html");
   await expect(page.locator("#admin-content")).toBeVisible();
