@@ -34,6 +34,16 @@ def _default_ignored_link_titles() -> set[str]:
     }
 
 
+def _as_dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_pages(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [clean_text(item) for item in value]
+
+
 @dataclass(frozen=True)
 class StaticRunDeps:
     fetch_text: Callable[[str, int], str]
@@ -91,7 +101,12 @@ class StaticSourceContext:
 
     @property
     def stats(self) -> dict[str, Any]:
-        return self.entry_report["stats"]
+        stats_value = self.entry_report.get("stats")
+        if isinstance(stats_value, dict):
+            return stats_value
+        stats: dict[str, Any] = {}
+        self.entry_report["stats"] = stats
+        return stats
 
     @property
     def source_state_rows(self) -> dict[str, dict[str, Any]]:
@@ -230,7 +245,7 @@ def build_static_source_context(
 ) -> StaticSourceContext:
     source_name = clean_text(source.get("name")) or "static_source"
     company = clean_text(source.get("company")) or source_name
-    pages = source.get("pages") if isinstance(source.get("pages"), list) else []
+    pages = _as_pages(source.get("pages"))
     entry_report = build_static_entry_report(
         source=source,
         source_name=source_name,
@@ -248,11 +263,7 @@ def build_static_source_context(
     entry_report["cacheDecisionReason"] = (
         clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
     )
-    state_entry = (
-        (run_deps.source_state_rows or {}).get(source_name)
-        if isinstance(run_deps.source_state_rows, dict)
-        else {}
-    )
+    state_entry = _as_dict((run_deps.source_state_rows or {}).get(source_name))
     return StaticSourceContext(
         run_deps=run_deps,
         runtime_config=runtime_config,
@@ -262,7 +273,7 @@ def build_static_source_context(
         company=company,
         pages=pages,
         entry_report=entry_report,
-        state_entry=state_entry if isinstance(state_entry, dict) else {},
+        state_entry=state_entry,
         selected_source_count=max(0, int(selected_source_count)),
         jobs=jobs,
         warnings=warnings,

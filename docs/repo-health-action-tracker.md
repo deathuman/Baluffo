@@ -20,8 +20,8 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src` -> `473 errors in 97 files (checked 312 source files)` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, and provider-helper scope. |
+| Broad type-check run | `python -m mypy src` -> `452 errors in 94 files (checked 312 source files)` |
+| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, and parser/static-runtime scope. |
 | ESLint | `137 warnings, 0 errors` |
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
@@ -39,10 +39,10 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 
 ### P0
 
-1. **Next staged mypy milestone: type the remaining jobs parser/static-helper cluster.**
-   The provider/plugin helper pass is now green. It normalized `greenhouse_runner` and `social_parsers`, replaced inference-heavy provider plugin builder lambdas with typed helpers in `json_feed` and `html_board`, widened the enforced gate from `30` files to `34` files, and dropped the broad audit from `480 errors in 99 files` to `473 errors in 97 files`.
-   The next coherent jobs target is the remaining parser/static-helper seam: `src/jobs/adapters/parsers/json_payloads.py`, `src/jobs/adapters/parsers/provider_html.py`, and `src/jobs/adapters/static_runtime.py`, plus any direct helper fallout those files expose while the jobs/provider typing wave is still active.
-   **Done when:** the enforced mypy scope expands beyond the current thirty-four-file gate to cover the parser/static-helper cluster, and those modules stop leaking `Any` through provider payload normalization, parser dict/list reads, and static-runtime helper boundaries.
+1. **Next staged mypy milestone: type the remaining static adapter/detail cluster.**
+   The parser/static-runtime pass is now green. It normalized the provider JSON parser boundary, fixed the Ashby HTML parser redefinition seam, made `static_runtime` use explicit page/state normalization, widened the enforced gate from `34` files to `37` files, and dropped the broad audit from `473 errors in 97 files` to `452 errors in 94 files`.
+   The next coherent jobs target is the remaining static adapter/detail cluster: `src/jobs/adapters/html_parsers.py`, `src/jobs/adapters/static_detail_heuristics.py`, and `src/jobs/adapters/static_listing.py`, plus any tiny adjacent helper fallout needed to make that seam checkable.
+   **Done when:** the enforced mypy scope expands beyond the current thirty-seven-file gate to cover the static adapter/detail cluster, and those modules stop leaking `Any` through HTML/detail parsing, listing-state dict reads, and static adapter helper boundaries.
 
 2. **In progress: resolve GitHub Dependabot high-severity vulnerabilities.**
    GitHub reported `6` high vulnerabilities on the default branch before the first Scrapy remediation, then `2` high vulnerabilities after `Scrapy==2.14.2` landed. The local Scrapy remediation now updates the direct dependency to latest released `Scrapy==2.15.0`, raises the `scrapy-playwright` source requirement floor to the latest published `>=0.0.46`, and regenerates `requirements-lock.txt`; if Dependabot still requires `>2.15.0`, the remaining alerts are upstream-blocked until a newer Scrapy release exists. The Scrapy-adjacent lock entries (`scrapy-playwright`, `twisted`, `cryptography`, `pyopenssl`, `lxml`, `parsel`, `w3lib`, and `queuelib`) remained stable, and `brotli` is not present in the lock. Validation so far: `python -c "import scrapy, scrapy_playwright; print(scrapy.__version__); print(scrapy_playwright.__version__)"` -> `2.15.0` / `0.0.46`, `python -m pip check` passed, focused Scrapy/runtime tests passed (`187 passed`), `cmd /c npm run test:refactor:changed` passed, `cmd /c npm run lint:precommit:changed` passed, and `python scripts/orchestrator.py build --force` passed with run `20260424_133557`. `uvx pip-audit -r requirements-lock.txt` reports one residual Scrapy advisory (`PYSEC-2017-83` / `GHSA-h7wm-ph43-c39p` / `CVE-2017-14158`) with no fix version; the affected Scrapy file-download storage path (`FilesPipeline` / `S3FilesStore`) is not used in `src/` or tests.

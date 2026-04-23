@@ -55,6 +55,14 @@ def _normalized_location_details(location_value: Any) -> dict[str, Any]:
     return normalize_location_details(location_value)
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _infer_workable_location_details(
     *,
     location_details_source: Any,
@@ -244,14 +252,15 @@ def parse_lever_jobs_payload(
         return []
     jobs: list[RawJob] = []
     company = clean_text(fallback_company) or account.replace("-", " ").title()
-    for row in payload:
-        if not isinstance(row, dict):
+    for row_value in payload:
+        if not isinstance(row_value, dict):
             continue
+        row = _as_dict(row_value)
         title = clean_text(row.get("text"))
         link = clean_text(row.get("hostedUrl") or row.get("applyUrl") or row.get("url"))
         if not title or not link:
             continue
-        categories = row.get("categories") if isinstance(row.get("categories"), dict) else {}
+        categories = _as_dict(row.get("categories"))
         location_text = clean_text(categories.get("location") or row.get("location"))
         city, country, work_type = parse_generic_location_fields(location_text)
         location_details = _normalized_location_details(location_text)
@@ -294,20 +303,22 @@ def parse_lever_jobs_payload(
 def parse_smartrecruiters_jobs_payload(
     payload: Any, company_id: str, fallback_company: str = ""
 ) -> list[RawJob]:
-    rows = payload.get("content") if isinstance(payload, dict) else None
-    if not isinstance(rows, list):
+    payload_dict = _as_dict(payload)
+    rows = _as_list(payload_dict.get("content"))
+    if not rows:
         return []
     jobs: list[RawJob] = []
     company = clean_text(fallback_company) or company_id
-    for row in rows:
-        if not isinstance(row, dict):
+    for row_value in rows:
+        if not isinstance(row_value, dict):
             continue
+        row = _as_dict(row_value)
         title = clean_text(row.get("name"))
         posting_id = clean_text(row.get("id") or row.get("ref"))
         link = _smartrecruiters_public_job_link(company_id, posting_id, row.get("ref"))
         if not title or not (posting_id or link):
             continue
-        location_obj = row.get("location") if isinstance(row.get("location"), dict) else {}
+        location_obj = _as_dict(row.get("location"))
         location_details = _normalized_location_details(location_obj)
         if (
             not clean_text(location_details.get("city"))
@@ -355,24 +366,22 @@ def parse_smartrecruiters_jobs_payload(
 def parse_workable_jobs_payload(
     payload: Any, account: str, fallback_company: str = ""
 ) -> list[RawJob]:
-    rows = payload.get("jobs") if isinstance(payload, dict) else None
-    if not isinstance(rows, list):
+    payload_dict = _as_dict(payload)
+    rows = _as_list(payload_dict.get("jobs"))
+    if not rows:
         return []
-    company = (
-        clean_text(payload.get("name") if isinstance(payload, dict) else "")
-        or clean_text(fallback_company)
-        or account
-    )
+    company = clean_text(payload_dict.get("name")) or clean_text(fallback_company) or account
     jobs: list[RawJob] = []
-    for row in rows:
-        if not isinstance(row, dict):
+    for row_value in rows:
+        if not isinstance(row_value, dict):
             continue
+        row = _as_dict(row_value)
         title = clean_text(row.get("title"))
         link = clean_text(row.get("url") or row.get("shortlink"))
         if link and not link.startswith("http"):
             link = urljoin(f"https://apply.workable.com/{account}/", link)
-        location = row.get("location") if isinstance(row.get("location"), dict) else {}
-        locations = row.get("locations") if isinstance(row.get("locations"), list) else []
+        location = _as_dict(row.get("location"))
+        locations = _as_list(row.get("locations"))
         description_text = clean_text(row.get("description"))
         raw_city = clean_text(location.get("city") or row.get("city"))
         raw_country = clean_text(
@@ -390,7 +399,7 @@ def parse_workable_jobs_payload(
         city, country, work_type = parse_generic_location_fields(
             ", ".join(part for part in [raw_city, raw_country] if part)
         )
-        location_details_source: Any = locations if locations else (location or {})
+        location_details_source: Any = locations if locations else location
         if not location_details_source and (raw_city or raw_country):
             location_details_source = {"city": raw_city, "country": raw_country}
         location_details = _infer_workable_location_details(
@@ -510,19 +519,21 @@ def parse_recruitee_jobs_payload(
     subdomain: str,
     fallback_company: str = "",
 ) -> list[RawJob]:
-    rows = payload.get("offers") if isinstance(payload, dict) else None
-    if not isinstance(rows, list):
+    payload_dict = _as_dict(payload)
+    rows = _as_list(payload_dict.get("offers"))
+    if not rows:
         return []
-    company_payload = payload.get("company") if isinstance(payload.get("company"), dict) else {}
+    company_payload = _as_dict(payload_dict.get("company"))
     company = (
         clean_text(company_payload.get("name"))
         or clean_text(fallback_company)
         or subdomain.replace("-", " ").title()
     )
     jobs: list[RawJob] = []
-    for row in rows:
-        if not isinstance(row, dict):
+    for row_value in rows:
+        if not isinstance(row_value, dict):
             continue
+        row = _as_dict(row_value)
         title = clean_text(row.get("title") or row.get("name"))
         link = clean_text(
             row.get("careers_url")
@@ -530,7 +541,7 @@ def parse_recruitee_jobs_payload(
             or row.get("url")
             or row.get("apply_url")
         )
-        location_obj = row.get("location") if isinstance(row.get("location"), dict) else {}
+        location_obj = _as_dict(row.get("location"))
         location_text = " ".join(
             [
                 clean_text(location_obj.get("city") or row.get("city")),
@@ -549,13 +560,10 @@ def parse_recruitee_jobs_payload(
             )
         if bool(row.get("remote")):
             city, country, work_type = "Remote", "Remote", "Remote"
+        department = _as_dict(row.get("department"))
         tags = " ".join(
             [
-                clean_text(
-                    (row.get("department") or {}).get("name")
-                    if isinstance(row.get("department"), dict)
-                    else row.get("department")
-                ),
+                clean_text(department.get("name") or row.get("department")),
                 clean_text(row.get("employment_type") or row.get("employment_type_text")),
                 clean_text(row.get("description")),
                 clean_text(row.get("requirements")),
@@ -593,19 +601,21 @@ def parse_pinpoint_jobs_payload(
     subdomain: str,
     fallback_company: str = "",
 ) -> list[RawJob]:
-    rows = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(rows, list):
+    payload_dict = _as_dict(payload)
+    rows = _as_list(payload_dict.get("data"))
+    if not rows:
         return []
     company = clean_text(fallback_company) or subdomain.replace("-", " ").title()
     jobs: list[RawJob] = []
-    for row in rows:
-        if not isinstance(row, dict):
+    for row_value in rows:
+        if not isinstance(row_value, dict):
             continue
+        row = _as_dict(row_value)
         title = clean_text(row.get("title"))
         link = clean_text(row.get("url"))
         if not title or not link:
             continue
-        location_obj = row.get("location") if isinstance(row.get("location"), dict) else {}
+        location_obj = _as_dict(row.get("location"))
         location_text = clean_text(location_obj.get("name"))
         city, country, work_type = parse_generic_location_fields(location_text)
         location_details = _normalized_location_details(location_text)
@@ -621,10 +631,8 @@ def parse_pinpoint_jobs_payload(
         )
         if "remote" in workplace_type_text.lower():
             city, country, work_type = "Remote", "Remote", "Remote"
-        job_obj = row.get("job") if isinstance(row.get("job"), dict) else {}
-        department = (
-            job_obj.get("department") if isinstance(job_obj.get("department"), dict) else {}
-        )
+        job_obj = _as_dict(row.get("job"))
+        department = _as_dict(job_obj.get("department"))
         tags = " ".join(
             [
                 clean_text(department.get("name")),
