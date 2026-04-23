@@ -527,6 +527,35 @@ test("cleanup structure: desktop local-data client stays a thin root", () => {
   );
 });
 
+test("cleanup structure: jobs desktop update root stays a thin export surface", () => {
+  const rel = path.join("frontend", "jobs", "app", "desktop-update.js");
+  const source = fs.readFileSync(repoPath(rel), "utf8");
+  const imports = readImports(rel);
+
+  assert.equal(
+    countLines(rel) <= 20,
+    true,
+    `frontend/jobs/app/desktop-update.js is ${countLines(rel)} lines, above the 20-line thin-surface budget`
+  );
+  assert.doesNotMatch(
+    source,
+    /\bfunction\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/,
+    "frontend/jobs/app/desktop-update.js must stay a re-export surface"
+  );
+  assert.doesNotMatch(
+    source,
+    /\bclass\s+[A-Za-z_][A-Za-z0-9_]*\s*/,
+    "frontend/jobs/app/desktop-update.js must not regain class ownership"
+  );
+  for (const specifier of imports) {
+    assert.match(
+      specifier,
+      /^\.\/desktop-update-(model|controller)\.js$/,
+      `Unexpected jobs desktop-update root dependency: ${specifier}`
+    );
+  }
+});
+
 test("cleanup structure: domain and render layers do not cross-import in feature slices", () => {
   const slices = ["jobs", "saved", "admin"];
   for (const slice of slices) {

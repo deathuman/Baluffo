@@ -25,6 +25,7 @@ Use these as entrypoints or shims only; route new logic to the owning modules th
 
 - `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and patch surface; implementation belongs in `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`
 - `src/ship/desktop_update.py` - stable updater surface; implementation belongs in `src/ship/desktop_update_{shared,state,service}.py`
+- `src/ship/desktop_updater.py` - stable updater helper executable and patch surface; implementation belongs in `src/ship/desktop_updater_{ui,release,install}.py`
 - `src/admin_bridge.py` - stable thin entrypoint for bridge startup and compatibility wrappers
 - `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py` - admin bridge runtime/path/session/bootstrap/manual-source/task helpers behind the stable root surface
 - `src/source_discovery.py` - stable thin CLI entrypoint delegating to `src/source_discovery/*`
@@ -34,6 +35,7 @@ Use these as entrypoints or shims only; route new logic to the owning modules th
 - `src/local_data_store.py` - stable desktop local-data store surface; implementation belongs in `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`
 - `src/jobs/common/__init__.py` - package marker only; import `src.jobs.common.<leaf>` or package-submodule helpers
 - `frontend/shared/local-data/desktop-client.js` - stable desktop local-data runtime root; implementation belongs in `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
+- `frontend/jobs/app/desktop-update.js` - stable Jobs desktop-update export surface; implementation belongs in `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 - `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`
 - `frontend/admin/render/ops.js` - thin compatibility render surface; ops summary/history rendering belongs in `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
 
@@ -44,6 +46,8 @@ Current high-value leaf owners behind those surfaces:
 - `src/jobs/fetcher_compat_{exports,runtime}.py`
 - `src/jobs/adapters/static_listing_flow.py`
 - `src/jobs/state_incremental.py`
+- `src/ship/desktop_updater_{ui,release,install}.py`
+- `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 - `frontend/saved/app/runtime/*.js`
 - `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
 
@@ -106,6 +110,7 @@ Planning/history records for major cleanup passes. Use them only after the canon
 | [`static-adapter-boundary-charter.md`](static-adapter-boundary-charter.md) | Refactor record | You are changing the static adapter boundary and need lane-specific compatibility assumptions |
 | [`jobs-fetcher-boundary-charter.md`](jobs-fetcher-boundary-charter.md) | Refactor record | You are changing the jobs fetcher facade boundary and need lane-specific compatibility assumptions |
 | [`local-data-boundary-charter.md`](local-data-boundary-charter.md) | Refactor record | You are changing the file-backed local-data store or shared desktop local-data runtime boundaries and need lane-specific compatibility assumptions |
+| [`desktop-update-cross-stack-boundary-charter.md`](desktop-update-cross-stack-boundary-charter.md) | Refactor record | You are changing the updater helper executable or Jobs desktop-update boundary and need lane-specific compatibility assumptions |
 | [`admin-bridge-boundary-charter.md`](admin-bridge-boundary-charter.md) | Refactor record | You are changing admin bridge startup/runtime boundaries and need lane-specific compatibility assumptions |
 | [`admin-ops-live-boundary-charter.md`](admin-ops-live-boundary-charter.md) | Refactor record | You are changing ops live-task payload assembly or admin ops renderer boundaries and need lane-specific compatibility assumptions |
 | [`desktop-runtime-refactor-charter.md`](desktop-runtime-refactor-charter.md) | Refactor record | You are changing desktop runtime package boundaries and need lane-specific compatibility assumptions |
@@ -135,6 +140,8 @@ Useful as context, but **not authoritative** for current implementation unless e
 | Change bridge/API behavior | [`architecture-ai-map.md`](architecture-ai-map.md) | [`admin-bridge-api.md`](admin-bridge-api.md) |
 | Change discovery behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/source_discovery/orchestrator*.py` or the relevant discovery leaf module |
 | Change jobs pipeline / fetcher behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/jobs/*` leaf modules |
+| Change Jobs desktop-update UI | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `frontend/jobs/app/desktop-update-{model,dom,controller}.js` |
+| Change updater helper executable | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`architecture-ai-map.md`](architecture-ai-map.md), then `src/ship/desktop_updater_{ui,release,install}.py` |
 | Change desktop local-data behavior | [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) | [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`LOCAL_SETUP.md`](LOCAL_SETUP.md), then `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py` or `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js` |
 | Change payload/schema shape | [`DATA_CONTRACT.md`](DATA_CONTRACT.md) | `src/core/*`, related tests, task-specific runtime docs |
 | Work on scraping/adapters | [`scraping-pipeline.md`](scraping-pipeline.md) | [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) |

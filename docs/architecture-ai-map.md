@@ -50,6 +50,8 @@ src/packaged_desktop_smoke.py (stable packaged smoke entrypoint / monkeypatch su
 
 src/ship/desktop_update.py (stable updater surface)
   -> src/ship/desktop_update_{shared,state,service}.py
+src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surface)
+  -> src/ship/desktop_updater_{ui,release,install}.py
 ```
 
 ---
@@ -76,6 +78,7 @@ src/ship/desktop_update.py (stable updater surface)
 |------|------------|---------------------|
 | Jobs filter/search | `frontend/jobs/app/filters.js`, `frontend/jobs/app/runtime/query.js` | `frontend/jobs/app/runtime.js` only for page-entry wiring/export changes |
 | Jobs page runtime wiring | `frontend/jobs/app/feed.js`, `frontend/jobs/app/runtime/{composition,boot,page-flow,events,feed-controller,list-view,pipeline-controller,startup-preview,auth-controller}.js` | `frontend/jobs/app/runtime.js` only when the stable page-entry root must change |
+| Jobs desktop-update UI | `frontend/jobs/app/desktop-update-{model,dom,controller}.js` | `frontend/jobs/app/desktop-update.js` only when the stable export surface must change |
 | Jobs feed refresh | `frontend/jobs/app/feed.js` | `frontend/jobs/services.js` |
 | Saved page runtime wiring | `frontend/saved/app/runtime/{composition,boot,phase-time,mutations,chrome,notes,activity-controller,attachments-controller,custom-job-controller,render-controller,auth-controller}.js`, `frontend/saved/app/admin-bridge-state.js` | `frontend/saved/app/runtime.js` only when the stable page-entry/export root must change |
 | Saved notes | `frontend/saved/app/notes.js` | `frontend/saved/services.js` |
@@ -94,6 +97,7 @@ src/ship/desktop_update.py (stable updater surface)
 | Desktop local-data runtime | `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js` | `frontend/shared/local-data/desktop-client.js` only for root bootstrap or `window.JobAppLocalData` wiring |
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
 | Desktop runtime | `src/ship/desktop_app/launcher.py` | `src/ship/desktop_app/{startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
+| Desktop updater helper executable | `src/ship/desktop_updater_{ui,release,install}.py` | `src/ship/desktop_updater.py` only for helper CLI/root patch-surface compatibility work |
 | Packaged smoke / updater | `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`, `src/ship/desktop_update_{shared,state,service}.py` | `src/packaged_desktop_smoke.py` and `src/ship/desktop_update.py` only for CLI/public-surface compatibility work |
 | UI selectors | `frontend/shared/ui/selectors.js` | - |
 
@@ -102,6 +106,7 @@ src/ship/desktop_update.py (stable updater surface)
 ## 4) Frontend topology
 
 **Jobs page:** `frontend/jobs/app.js` -> `runtime.js` -> `app/feed.js`, `app/filters.js`, `app/cache.js`, `app/pipeline.js`, `app/sources.js`, `runtime/{events,feed-controller,list-view,pipeline-controller,query,startup-preview,auth-controller}.js`
+  -> desktop update UI stays rooted at `frontend/jobs/app/desktop-update.js` over `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 
 **Saved page:** `frontend/saved/app.js` -> `runtime.js` -> `runtime/{state,events,auth-controller,activity-controller,attachments-controller,custom-job-controller,render-controller}.js`, `app/{notes,attachments,activity}.js`, `app/admin-bridge-state.js`, `app/view-state.js`
 
@@ -166,6 +171,12 @@ src/ship/desktop_update.py (stable updater surface)
 - `local_data_store_attachments.py` - attachment metadata and blob persistence helpers
 - `local_data_store_backup.py` - backup import/export plus admin overview/wipe helpers
 
+**Desktop updater helper:**
+- `desktop_updater.py` - stable helper executable and test patch surface
+- `desktop_updater_ui.py` - helper window, diagnostics, and native error-dialog helpers
+- `desktop_updater_release.py` - release lookup, manifest recovery, ZIP re-verification, and failure classification
+- `desktop_updater_install.py` - install handoff, rollback snapshot, relaunch verification, and success finalization
+
 ---
 
 ## 6) Data model
@@ -215,9 +226,11 @@ See [`testing.md`](testing.md) for more commands.
 
 - `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and test patch surface; keep implementation in `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`
 - `src/ship/desktop_update.py` - stable updater surface; keep implementation in `src/ship/desktop_update_{shared,state,service}.py`
+- `src/ship/desktop_updater.py` - stable updater helper executable and test patch surface; keep implementation in `src/ship/desktop_updater_{ui,release,install}.py`
 - `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py` or `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`
 - `src/source_discovery.py` - stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
 - `src/jobs_fetcher.py` - stable thin CLI facade; keep lazy export routing in `src/jobs/fetcher_compat_exports.py`, root-backed wrapper seams in `src/jobs/fetcher_compat_runtime.py`, and new pipeline logic in `src/jobs/*`
+- `frontend/jobs/app/desktop-update.js` - stable Jobs desktop-update export surface; keep implementation in `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 - `src/jobs/adapters/static.py` - stable static adapter surface; keep generic listing/detail/runtime logic in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py`
 - `src/source_sync.py` - permanent thin sync integration surface; keep new sync logic in `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/local_data_store.py` - stable local-data store surface; keep implementation in `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`

@@ -444,6 +444,29 @@ def test_packaged_desktop_smoke_root_stays_thin_compat_surface(repo_root: Path) 
     )
 
 
+def test_desktop_updater_root_stays_thin_compat_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "ship" / "desktop_updater.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+    function_names = set(_top_level_function_names(tree))
+
+    assert "from src.ship import desktop_updater_ui as desktop_updater_ui_mod" in text
+    assert "from src.ship import desktop_updater_release as desktop_updater_release_mod" in text
+    assert "from src.ship import desktop_updater_install as desktop_updater_install_mod" in text
+    assert "desktop_updater_ui_mod.root = sys.modules[__name__]" in text
+    assert "desktop_updater_release_mod.root = sys.modules[__name__]" in text
+    assert "desktop_updater_install_mod.root = sys.modules[__name__]" in text
+    assert "HelperProgressWindow = desktop_updater_ui_mod.HelperProgressWindow" in text
+    assert "run_install = desktop_updater_install_mod.run_install" in text
+    assert {"parse_args", "main"} <= function_names
+    assert "class HelperProgressWindow:" not in text
+    assert "archive.extractall(temp_extract)" not in text
+    assert "MessageBoxW(None" not in text
+    assert len(text.splitlines()) <= 260, (
+        "desktop_updater root drifted back toward monolith size"
+    )
+
+
 def test_python_leaf_modules_do_not_import_root_compatibility_surfaces(repo_root: Path) -> None:
     src_root = repo_root / "src"
     allowed_imports_by_path = {
@@ -464,6 +487,7 @@ def test_python_leaf_modules_do_not_import_root_compatibility_surfaces(repo_root
         "src.source_discovery",
         "src.packaged_desktop_smoke",
         "src.ship.desktop_update",
+        "src.ship.desktop_updater",
     }
 
     offenders: list[str] = []
