@@ -1,6 +1,6 @@
 # Runtime-First Cleanup Handoff
 
-> Operational handoff note for the runtime-first cleanup lane after the admin, jobs/saved, `source_sync`, `admin_bridge`, packaged-smoke, jobs-fetcher, and admin-ops follow-up waves landed on `main`.
+> Operational handoff note for the runtime-first cleanup lane after the admin, jobs/saved, `source_sync`, `admin_bridge`, packaged-smoke, jobs-fetcher, admin-ops, and source-discovery generator/reporting follow-up waves landed on `main`.
 > This is a practical pickup document, not a canonical contract doc and not part of the default AI read path.
 
 ## Purpose
@@ -9,10 +9,11 @@ Use this note to resume later cleanup work without rediscovering what is already
 
 ## Current Status
 
-As of April 23, 2026, the first runtime-first cleanup wave, the admin follow-up wave, the jobs/saved runtime follow-up wave, the backend `source_sync` and `admin_bridge` follow-up waves, the packaged smoke follow-up wave, the `jobs_fetcher` follow-up wave, and the admin ops live-payload follow-up wave are already merged to remote `main`. This handoff note is still relevant because it records the landed cleanup state and the intentionally deferred sequencing context; the canonical routing docs remain `AI_ASSISTANT_GUIDE.md`, `architecture-ai-map.md`, and `INDEX.md`.
+As of April 23, 2026, the first runtime-first cleanup wave, the admin follow-up wave, the jobs/saved runtime follow-up wave, the backend `source_sync` and `admin_bridge` follow-up waves, the packaged smoke follow-up wave, the `jobs_fetcher` follow-up wave, the admin ops live-payload follow-up wave, and the source-discovery generator/reporting follow-up wave are already merged to remote `main`. This handoff note is still relevant because it records the landed cleanup state and the intentionally deferred sequencing context; the canonical routing docs remain `AI_ASSISTANT_GUIDE.md`, `architecture-ai-map.md`, and `INDEX.md`.
 
 This follow-up landed:
 
+- `src/source_discovery/gamesmap.py`, `src/source_discovery/reporting.py`, and `src/source_discovery/web_search.py` are now stable thin compatibility surfaces backed by `gamesmap_{cache,parsing,candidates}.py`, `reporting_{progress,candidates,backlog}.py`, and `web_search_{fetch,extract,candidates}.py`.
 - `src/source_sync.py` is now back to a thin stable sync facade under the root budget while preserving the current import surface for bridge, packaged smoke, and test callers.
 - `src/source_sync_snapshot.py` now owns snapshot transition backfill, canonicalization, and merge-ranking helpers directly instead of calling those helpers back through the root surface.
 - `src/source_sync.py` no longer carries dead duplicated ASN.1/PEM parser helpers; PEM parsing and JWT-signing internals stay owned by `src/source_sync_crypto.py`.

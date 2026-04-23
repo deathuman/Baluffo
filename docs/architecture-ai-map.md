@@ -158,8 +158,14 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 
 **Discovery package (`src/source_discovery/`):**
 - `orchestrator.py` - public run flow and test patch surface over `orchestrator_{runtime,generation,probe,finalize}.py`
-- `runtime_metrics.py`, `stage_control.py`, `reporting.py` - runtime bookkeeping, stage toggles, report helpers
-- `gamesmap.py`, `gamedevmap.py`, `gameprog.py`, `sheet_directory.py`, `web_search.py` - domain generators
+- `runtime_metrics.py`, `stage_control.py` - runtime bookkeeping and stage toggles
+- `reporting.py` - stable discovery reporting compatibility surface
+- `reporting_{progress,candidates,backlog}.py` - progress/taskProgress assembly, candidate-stream staging/merge, and M5 backlog ownership
+- `gamesmap.py` - stable Gamesmap compatibility surface
+- `gamesmap_{cache,parsing,candidates}.py` - Gamesmap cache, parsing, and candidate generation ownership
+- `web_search.py` - stable discovery web-search compatibility surface
+- `web_search_{fetch,extract,candidates}.py` - web-search fetch, extraction, and candidate inference ownership
+- `gamedevmap.py`, `gameprog.py`, `sheet_directory.py` - other domain generators
 
 **Sync helpers:**
 - `source_sync.py` - stable thin compatibility and test patch surface

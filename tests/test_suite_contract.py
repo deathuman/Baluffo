@@ -245,6 +245,65 @@ def test_source_discovery_orchestrator_stays_split_by_phase(repo_root: Path) -> 
     assert "def write_progress_report(" not in text
 
 
+def test_source_discovery_gamesmap_root_stays_thin_compat_surface(repo_root: Path) -> None:
+    from src.source_discovery import gamesmap as gamesmap_module
+
+    target = repo_root / "src" / "source_discovery" / "gamesmap.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+
+    assert "from . import gamesmap_candidates as gamesmap_candidates_mod" in text
+    assert "from . import gamesmap_parsing as gamesmap_parsing_mod" in text
+    assert "gamesmap_candidates_mod.root = sys.modules[__name__]" in text
+    assert _top_level_function_names(tree) == []
+    assert callable(gamesmap_module.discover_gamesmap_candidates)
+    assert callable(gamesmap_module.gamesmap_matches_category)
+    assert callable(gamesmap_module.parse_gamesmap_detail_page)
+    assert callable(gamesmap_module.parse_gamesmap_index_entries)
+    assert callable(gamesmap_module._parse_gamesmap_index_entries_with_diagnostics)
+    assert len(text.splitlines()) <= 40, "source_discovery/gamesmap.py drifted back toward monolith size"
+
+
+def test_source_discovery_reporting_root_stays_thin_compat_surface(repo_root: Path) -> None:
+    from src.source_discovery import reporting as discovery_reporting
+
+    target = repo_root / "src" / "source_discovery" / "reporting.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+
+    assert "from .reporting_backlog import" in text
+    assert "from .reporting_candidates import" in text
+    assert "from .reporting_progress import (" in text
+    assert _top_level_function_names(tree) == []
+    assert callable(discovery_reporting.build_stage_summary)
+    assert callable(discovery_reporting.emit_log)
+    assert callable(discovery_reporting.merge_candidate_streams)
+    assert callable(discovery_reporting.build_m5_strategic_backlog)
+    assert len(text.splitlines()) <= 30, (
+        "source_discovery/reporting.py drifted back toward implementation ownership"
+    )
+
+
+def test_source_discovery_web_search_root_stays_thin_compat_surface(repo_root: Path) -> None:
+    from src.source_discovery import web_search as discovery_web_search
+
+    target = repo_root / "src" / "source_discovery" / "web_search.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+
+    assert "from .web_search_candidates import (" in text
+    assert "from .web_search_extract import (" in text
+    assert "from .web_search_fetch import (" in text
+    assert _top_level_function_names(tree) == []
+    assert callable(discovery_web_search.fetch_text)
+    assert callable(discovery_web_search.async_fetch_text_httpx)
+    assert callable(discovery_web_search.discover_web_search_candidates)
+    assert callable(discovery_web_search.infer_provider_candidates_from_html)
+    assert len(text.splitlines()) <= 40, (
+        "source_discovery/web_search.py drifted back toward implementation ownership"
+    )
+
+
 def test_jobs_fetcher_compat_exports_use_leaf_common_modules_not_root_symbol_barrel(
     repo_root: Path,
 ) -> None:
@@ -623,6 +682,36 @@ def test_jobs_contracts_reporting_helpers_do_not_import_jobs_roots(repo_root: Pa
             offenders.append(f"{relative_path} -> {', '.join(bad)}")
     assert not offenders, (
         "Jobs contracts/reporting helper leaves should not import compatibility roots directly:\n- "
+        + "\n- ".join(offenders)
+    )
+
+
+def test_source_discovery_helper_leaves_do_not_import_discovery_roots(repo_root: Path) -> None:
+    forbidden_imports = {
+        "src.source_discovery",
+        "src.source_discovery.orchestrator",
+        "src.source_discovery.gamesmap",
+        "src.source_discovery.reporting",
+        "src.source_discovery.web_search",
+    }
+    offenders: list[str] = []
+    for relative_path in (
+        "src/source_discovery/gamesmap_cache.py",
+        "src/source_discovery/gamesmap_parsing.py",
+        "src/source_discovery/gamesmap_candidates.py",
+        "src/source_discovery/reporting_progress.py",
+        "src/source_discovery/reporting_candidates.py",
+        "src/source_discovery/reporting_backlog.py",
+        "src/source_discovery/web_search_fetch.py",
+        "src/source_discovery/web_search_extract.py",
+        "src/source_discovery/web_search_candidates.py",
+    ):
+        imports = _imported_modules(_module_tree(repo_root / relative_path))
+        bad = sorted(imports & forbidden_imports)
+        if bad:
+            offenders.append(f"{relative_path} -> {', '.join(bad)}")
+    assert not offenders, (
+        "Source discovery helper leaves should not import discovery compatibility roots directly:\n- "
         + "\n- ".join(offenders)
     )
 

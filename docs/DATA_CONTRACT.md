@@ -288,7 +288,7 @@ Do not change signatures or remove without a dedicated plan:
 - `probe_candidate(...)`, `async_probe_candidate(...)`, `validate_candidate_for_probe(...)`
 - `parse_gamesmap_detail_page(...)`, `parse_gamesmap_index_entries(...)`, `build_static_candidate_from_page(...)`
 
-`src/source_discovery/orchestrator.py` remains the public run surface and test patch seam for `run_discovery(...)`; helper modules such as `orchestrator_runtime.py`, `orchestrator_generation.py`, `orchestrator_probe.py`, and `orchestrator_finalize.py` are implementation detail behind that contract.
+`src/source_discovery/orchestrator.py` remains the public run surface and test patch seam for `run_discovery(...)`; helper modules such as `orchestrator_runtime.py`, `orchestrator_generation.py`, `orchestrator_probe.py`, and `orchestrator_finalize.py` are implementation detail behind that contract. Gamesmap helper ownership now lives in `gamesmap_{cache,parsing,candidates}.py`, discovery reporting/helper ownership lives in `reporting_{progress,candidates,backlog}.py`, and web-search helper ownership lives in `web_search_{fetch,extract,candidates}.py`, with `gamesmap.py`, `reporting.py`, and `web_search.py` kept as stable import surfaces.
 
 ### Data contracts
 
