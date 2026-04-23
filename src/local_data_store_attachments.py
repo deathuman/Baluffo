@@ -14,12 +14,12 @@ from .local_data_store_profiles import require_current_user
 from .local_data_store_saved_jobs import add_activity, touch_attachment_count
 from .local_data_store_shared import (
     LOCK,
+    LocalDataPaths,
     _data_url_to_bytes,
     _hash_fnv1a,
     ensure_user_dirs,
     load_attachment_rows,
     save_attachment_rows,
-    LocalDataPaths,
 )
 
 
@@ -44,7 +44,9 @@ def add_attachment_for_job(
     with LOCK:
         ensure_user_dirs(paths, uid)
         mime, raw_bytes = _data_url_to_bytes(blob_data_url)
-        attachment_id = f"att_{_hash_fnv1a(str(file_meta.get('name') or 'file') + uuid.uuid4().hex)}"
+        attachment_id = (
+            f"att_{_hash_fnv1a(str(file_meta.get('name') or 'file') + uuid.uuid4().hex)}"
+        )
         file_name = str(file_meta.get("name") or "file")
         safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", file_name).strip("._") or "file"
         file_path = paths.attachment_dir(uid) / f"{attachment_id}-{safe_name}"

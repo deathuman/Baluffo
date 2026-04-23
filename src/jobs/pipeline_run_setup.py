@@ -35,6 +35,8 @@ from src.jobs.pipeline_runtime import (
     make_fetch_text_limited,
     make_progress_report_dispatcher,
     make_task_state_writer,
+)
+from src.jobs.pipeline_runtime import (
     write_progress_report as write_pipeline_progress_report,
 )
 from src.jobs.pipeline_stage_source_execution import (
@@ -42,8 +44,11 @@ from src.jobs.pipeline_stage_source_execution import (
     resolve_fetch_browser_fallback_helper,
 )
 from src.jobs.registry import STUDIO_SOURCE_REGISTRY
-from src.jobs.reporting import build_pipeline_summary, normalize_runtime_payload
-from src.jobs.reporting import normalize_fetch_report_payload
+from src.jobs.reporting import (
+    build_pipeline_summary,
+    normalize_fetch_report_payload,
+    normalize_runtime_payload,
+)
 from src.jobs.state_incremental import (
     get_incremental_cache_decision,
     should_skip_source_by_cadence,
@@ -56,9 +61,11 @@ from src.jobs.state_source_state import (
 from src.jobs.text_utils import clean_text
 from src.jobs.transport import (
     async_fetch_text_httpx,
-    build_redirect_resolver as transport_build_redirect_resolver,
     default_fetch_text,
     resolve_fetch_text_impl,
+)
+from src.jobs.transport import (
+    build_redirect_resolver as transport_build_redirect_resolver,
 )
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
 from src.pipeline_io import read_existing_output, write_hot_text_if_changed
@@ -169,9 +176,7 @@ def prepare_pipeline_run(
     reset_sector_quality_audit()
 
     started_at = clean_text(started_at_override) or now_iso()
-    source_reports = [
-        row for row in (selection_exclusions or []) if isinstance(row, dict)
-    ]
+    source_reports = [row for row in (selection_exclusions or []) if isinstance(row, dict)]
     canonical_rows: list[CanonicalJob] = []
 
     max_workers = max(1, int(max_workers or 1))

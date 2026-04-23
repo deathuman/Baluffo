@@ -261,7 +261,9 @@ def test_source_discovery_gamesmap_root_stays_thin_compat_surface(repo_root: Pat
     assert callable(gamesmap_module.parse_gamesmap_detail_page)
     assert callable(gamesmap_module.parse_gamesmap_index_entries)
     assert callable(gamesmap_module._parse_gamesmap_index_entries_with_diagnostics)
-    assert len(text.splitlines()) <= 40, "source_discovery/gamesmap.py drifted back toward monolith size"
+    assert len(text.splitlines()) <= 40, (
+        "source_discovery/gamesmap.py drifted back toward monolith size"
+    )
 
 
 def test_source_discovery_reporting_root_stays_thin_compat_surface(repo_root: Path) -> None:
@@ -480,9 +482,7 @@ def test_local_data_store_root_stays_thin_compat_surface(repo_root: Path) -> Non
     target = repo_root / "src" / "local_data_store.py"
     tree = _module_tree(target)
     text = target.read_text(encoding="utf-8")
-    class_defs = {
-        node.name: node for node in tree.body if isinstance(node, ast.ClassDef)
-    }
+    class_defs = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
     local_data_store_class = class_defs["LocalDataStore"]
     method_names = {
         node.name for node in local_data_store_class.body if isinstance(node, ast.FunctionDef)
@@ -556,9 +556,7 @@ def test_packaged_desktop_smoke_root_stays_thin_compat_surface(repo_root: Path) 
     text = target.read_text(encoding="utf-8")
     function_names = set(_top_level_function_names(tree))
 
-    assert (
-        "from src.ship.packaged_smoke import common as packaged_smoke_common_mod" in text
-    )
+    assert "from src.ship.packaged_smoke import common as packaged_smoke_common_mod" in text
     assert (
         "from src.ship.packaged_smoke import startup_metrics as packaged_smoke_startup_metrics_mod"
         in text
@@ -567,10 +565,7 @@ def test_packaged_desktop_smoke_root_stays_thin_compat_surface(repo_root: Path) 
         "from src.ship.packaged_smoke import orchestrator as packaged_smoke_orchestrator_mod"
         in text
     )
-    assert (
-        "from src.ship.packaged_smoke import rehearsals as packaged_smoke_rehearsals_mod"
-        in text
-    )
+    assert "from src.ship.packaged_smoke import rehearsals as packaged_smoke_rehearsals_mod" in text
     assert "packaged_smoke_orchestrator_mod.root = sys.modules[__name__]" in text
     assert "packaged_smoke_rehearsals_mod.root = sys.modules[__name__]" in text
     assert "return packaged_smoke_orchestrator_mod.run_packaged_smoke(args)" in text
@@ -601,9 +596,7 @@ def test_desktop_updater_root_stays_thin_compat_surface(repo_root: Path) -> None
     assert "class HelperProgressWindow:" not in text
     assert "archive.extractall(temp_extract)" not in text
     assert "MessageBoxW(None" not in text
-    assert len(text.splitlines()) <= 260, (
-        "desktop_updater root drifted back toward monolith size"
-    )
+    assert len(text.splitlines()) <= 260, "desktop_updater root drifted back toward monolith size"
 
 
 def test_python_leaf_modules_do_not_import_root_compatibility_surfaces(repo_root: Path) -> None:
@@ -868,7 +861,10 @@ def test_desktop_launcher_root_stays_thin_private_orchestration_surface(repo_roo
 
     assert "from .launcher_diagnostics import (" in text
     assert "from .launcher_flow import launch_desktop_app" in text
-    assert "from .launcher_recovery import _runtime_ports_need_retry, _should_retry_runtime_launch" in text
+    assert (
+        "from .launcher_recovery import _runtime_ports_need_retry, _should_retry_runtime_launch"
+        in text
+    )
     assert {"ensure_desktop_prerequisites", "parse_args", "main"} <= function_names
     assert "def _launch_runtime_children(" not in text
     assert "def _cleanup_runtime_processes(" not in text

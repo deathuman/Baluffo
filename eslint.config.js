@@ -62,6 +62,7 @@ export default [
         IDBKeyRange: "readonly",
         atob: "readonly",
         btoa: "readonly",
+        queueMicrotask: "readonly",
       },
     },
     rules: {
@@ -85,6 +86,7 @@ export default [
         afterEach: "readonly",
         global: "readonly",
         Blob: "readonly",
+        Buffer: "readonly",
         setImmediate: "readonly",
       },
     },
@@ -171,11 +173,32 @@ export default [
         fetch: "readonly",
         URL: "readonly",
         performance: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
       },
     },
     rules: {
       "no-unused-vars": "warn",
       "no-undef": "error",
+    },
+  },
+
+  {
+    files: ["tools/mcp/playwright-server.cjs"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "commonjs",
+      globals: {
+        Buffer: "readonly",
+        console: "readonly",
+        document: "readonly",
+        process: "readonly",
+      },
+    },
+    rules: {
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
+      "no-undef": "error",
+      "no-console": "off",
     },
   },
 ];

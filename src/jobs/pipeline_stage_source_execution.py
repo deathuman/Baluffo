@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from threading import BoundedSemaphore
 from typing import Any
 
-from src.jobs.common.config import SOURCE_DIAGNOSTICS
+from src.jobs.common.config import SOURCE_DIAGNOSTICS as _SOURCE_DIAGNOSTICS
 from src.jobs.common.taxonomy import (
     ClassificationContext,
     FailureBucket,
@@ -21,25 +21,28 @@ from src.jobs.common.taxonomy import (
     ZeroKeptClassification,
     assess_zero_extract,
 )
-from src.jobs.models import CanonicalJob
-from src.jobs.pipeline_runtime_summary import update_fetch_work_item_progress
+from src.jobs.pipeline_runtime_summary import (
+    update_fetch_work_item_progress as _update_fetch_work_item_progress,
+)
 from src.jobs.text_utils import clean_text, norm_text
-from src.shared.utils import now_iso
+from src.shared.utils import now_iso as _now_iso
 
 from . import pipeline_source_loop as pipeline_source_loop_mod
 from . import pipeline_source_progress as pipeline_source_progress_mod
 from . import pipeline_source_results as pipeline_source_results_mod
-from .state_source_browser import set_browser_fallback_state
-from .state_source_records import source_rows_fingerprint
+from .state_source_browser import set_browser_fallback_state as _set_browser_fallback_state
 
-FetchTextLimited = Callable[[str, int], str]
-WriteTaskStateFunc = Callable[..., None]
-WriteProgressReportFunc = Callable[..., None]
 TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 
 pipeline_source_loop_mod.root = sys.modules[__name__]
 pipeline_source_progress_mod.root = sys.modules[__name__]
 pipeline_source_results_mod.root = sys.modules[__name__]
+
+# Preserve the stable root-owned helpers that the focused leaf modules resolve through `root`.
+SOURCE_DIAGNOSTICS = _SOURCE_DIAGNOSTICS
+update_fetch_work_item_progress = _update_fetch_work_item_progress
+now_iso = _now_iso
+set_browser_fallback_state = _set_browser_fallback_state
 
 
 def resolve_fetch_browser_fallback_helper() -> TryPlaywrightFn | None:

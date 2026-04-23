@@ -194,7 +194,9 @@ def finalize_pipeline_run(
         )
 
     final_output_by_source: Counter[str] = Counter(
-        clean_text(row.get("source")) for row in deduped_payload_rows if clean_text(row.get("source"))
+        clean_text(row.get("source"))
+        for row in deduped_payload_rows
+        if clean_text(row.get("source"))
     )
     for report in source_reports:
         if not isinstance(report, dict):
@@ -366,7 +368,11 @@ def finalize_pipeline_run(
                 len(canonical_rows),
                 preserved_previous,
                 len(
-                    [row for row in STUDIO_SOURCE_REGISTRY if bool(row.get("enabledByDefault", True))]
+                    [
+                        row
+                        for row in STUDIO_SOURCE_REGISTRY
+                        if bool(row.get("enabledByDefault", True))
+                    ]
                 ),
                 len(common_sources.load_registry_from_file(paths.pending_registry_path, [])),
                 common_sources.read_approved_since_last_run(paths.approval_state_path),
@@ -423,12 +429,12 @@ def finalize_pipeline_run(
         "topSlowDomains": health_module.get_top_slow_sources(source_state_rows, limit=10),
         "quarantinedSources": health_module.get_quarantined_sources(source_state_rows),
         "siteChangedDiagnosedCount": count_site_changed_diagnosed_sources(source_reports),
-        "siteChangedMissingOldUrlCount": count_site_changed_missing_old_url_sources(
-            source_reports
-        ),
+        "siteChangedMissingOldUrlCount": count_site_changed_missing_old_url_sources(source_reports),
         "parserRegressionQueueCount": len(parser_regression_queue_rows),
     }
-    write_hot_text_if_changed(paths.report_path, json.dumps(report_payload, indent=2, ensure_ascii=False))
+    write_hot_text_if_changed(
+        paths.report_path, json.dumps(report_payload, indent=2, ensure_ascii=False)
+    )
     write_task_state(finished_at=finished_at, force=True)
     write_success_cache(paths.success_cache_path, source_reports)
     write_source_state(paths.source_state_path, source_state_rows)

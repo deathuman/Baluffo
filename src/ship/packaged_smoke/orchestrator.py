@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
-import time
 from pathlib import Path
 from typing import Any
 
@@ -486,7 +485,9 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 "playwright",
                 failed.get("error")
                 if isinstance(failed, dict) and failed.get("error")
-                else str(smoke_runner_result.get("runnerError") or "Packaged desktop smoke failed."),
+                else str(
+                    smoke_runner_result.get("runnerError") or "Packaged desktop smoke failed."
+                ),
                 category=str(smoke_runner_result.get("failureCategory") or ""),
             )
         else:

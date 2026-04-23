@@ -10,8 +10,6 @@ import queue
 import subprocess
 import sys
 import threading
-import time
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -301,9 +299,7 @@ def _launch_executable(executable_path: Path, *, clear_app_version_override: boo
     subprocess_mod = getattr(module, "subprocess", subprocess)
     os_mod = getattr(module, "os", os)
     creationflags = (
-        int(getattr(subprocess_mod, "CREATE_NEW_PROCESS_GROUP", 0))
-        if os_mod.name == "nt"
-        else 0
+        int(getattr(subprocess_mod, "CREATE_NEW_PROCESS_GROUP", 0)) if os_mod.name == "nt" else 0
     )
     env = None
     if clear_app_version_override:

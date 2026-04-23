@@ -6,13 +6,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 import threading
-import time
 import traceback
-import urllib.error
-import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -23,30 +19,6 @@ if str(ROOT) not in sys.path:
 from src.ship import desktop_updater_install as desktop_updater_install_mod
 from src.ship import desktop_updater_release as desktop_updater_release_mod
 from src.ship import desktop_updater_ui as desktop_updater_ui_mod
-from src.ship import update_manager
-from src.ship.desktop_update import (
-    DESKTOP_UPDATE_MANIFEST_ASSET,
-    DesktopUpdatePaths,
-    clear_handoff_request,
-    clear_success_marker,
-    compute_sha256,
-    desktop_update_public_key_candidate_paths,
-    download_file,
-    fetch_json,
-    install_stage_label,
-    iso_now,
-    load_desktop_update_public_keys,
-    load_status,
-    pid_is_running,
-    read_cached_manifest,
-    resolve_github_api_base,
-    resolve_release_repo,
-    save_status,
-    validate_desktop_manifest,
-    validate_install_plan,
-    verify_manifest_signature,
-    write_json_atomic,
-)
 
 DESKTOP_UPDATER_NO_DIALOG_ENV = "BALUFFO_DESKTOP_UPDATER_NO_DIALOG"
 DESKTOP_UPDATER_VERIFY_TIMEOUT_ENV = "BALUFFO_DESKTOP_UPDATER_VERIFY_TIMEOUT_S"

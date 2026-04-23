@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import state_incremental as _state_incremental
+from src.jobs.text_utils import clean_text
+
 from .state_source_browser import (
     apply_browser_escalation_state,
     browser_fallback_state_row,
@@ -34,7 +35,6 @@ from .state_source_records import (
     write_source_state,
     write_success_cache,
 )
-from src.jobs.text_utils import clean_text
 
 
 def _apply_report_to_entry(

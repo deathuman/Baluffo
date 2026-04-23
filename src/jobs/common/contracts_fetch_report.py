@@ -26,9 +26,7 @@ def _float_or_zero(value: Any) -> float:
 def _normalize_count_map(payload: Any) -> dict[str, int]:
     src = payload if isinstance(payload, dict) else {}
     return {
-        clean_text(key): _clamped_int(value, 0, 0)
-        for key, value in src.items()
-        if clean_text(key)
+        clean_text(key): _clamped_int(value, 0, 0) for key, value in src.items() if clean_text(key)
     }
 
 
@@ -242,9 +240,7 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         if social_summary_raw
         else {},
         "contaminationAudit": _normalize_contamination_audit(src.get("contaminationAudit")),
-        "locationQualityAudit": _normalize_location_quality_audit(
-            src.get("locationQualityAudit")
-        ),
+        "locationQualityAudit": _normalize_location_quality_audit(src.get("locationQualityAudit")),
         "cityGarbageAudit": _normalize_city_garbage_audit(src.get("cityGarbageAudit")),
         "sectorQualityAudit": _normalize_sector_quality_audit(src.get("sectorQualityAudit")),
         "sources": [

@@ -151,7 +151,7 @@ class LocalDataPaths:
     users: Path
 
     @staticmethod
-    def from_data_dir(data_dir: Path) -> "LocalDataPaths":
+    def from_data_dir(data_dir: Path) -> LocalDataPaths:
         root = data_dir / "local-user-data"
         return LocalDataPaths(
             root=root,

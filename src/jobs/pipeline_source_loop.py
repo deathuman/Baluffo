@@ -49,12 +49,12 @@ def run_source_execution_stage(
             current_output_count=0,
             show_progress=bool(config.show_progress),
         )
-    try_playwright = getattr(root, "resolve_fetch_browser_fallback_helper")()
+    try_playwright = root.resolve_fetch_browser_fallback_helper()
     browser_fallback_guard = BrowserFallbackCircuitBreaker.from_state(
         source_state_rows, cooldown_minutes=config.browser_fallback_cooldown_minutes
     )
     capped_try_playwright = (
-        getattr(root, "_build_capped_try_playwright")(
+        root._build_capped_try_playwright(
             try_playwright,
             max_concurrent=config.max_workers,
         )

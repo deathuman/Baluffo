@@ -74,7 +74,7 @@ function formatSyncCounts(counts, summary) {
   const pending = Math.max(0, Number(counts?.pendingCount ?? summary?.pendingCount ?? 0));
   const rejected = Math.max(0, Number(counts?.rejectedCount ?? summary?.rejectedCount ?? 0));
   const changed = Object.prototype.hasOwnProperty.call(counts || {}, "changed") || Object.prototype.hasOwnProperty.call(summary || {}, "changed")
-    ? ` | changed ${Boolean(counts?.changed ?? summary?.changed) ? "yes" : "no"}`
+    ? ` | changed ${(counts?.changed ?? summary?.changed) ? "yes" : "no"}`
     : "";
   return `active ${compactCount(active)} | pending ${compactCount(pending)} | rejected ${compactCount(rejected)}${changed}`;
 }

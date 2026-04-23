@@ -312,8 +312,7 @@ def _verify_rehearsal_local_data(data_dir: Path, expected: dict[str, Any]) -> No
         raise RuntimeError("Desktop update rehearsal did not preserve saved job notes.")
     attachments = store.list_attachments_for_job(uid, str(expected.get("jobKey") or ""))
     if not any(
-        str(row.get("id") or "") == str(expected.get("attachmentId") or "")
-        for row in attachments
+        str(row.get("id") or "") == str(expected.get("attachmentId") or "") for row in attachments
     ):
         raise RuntimeError("Desktop update rehearsal did not preserve job attachments.")
 

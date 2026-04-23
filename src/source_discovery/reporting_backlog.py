@@ -283,11 +283,11 @@ def _m5_structured_migration_comparison(
         "demotedAt": str(state_entry.get("structuredMigrationDemotedAt") or "").strip(),
         "rollbackChecklist": list(M5_STRUCTURED_MIGRATION_ROLLBACK_CHECKLIST),
     }
-    comparison["runtimeDeltaMs"] = (
-        int(comparison["after"]["durationMs"]) - int(comparison["before"]["durationMs"])
+    comparison["runtimeDeltaMs"] = int(comparison["after"]["durationMs"]) - int(
+        comparison["before"]["durationMs"]
     )
-    comparison["keptCountDelta"] = (
-        int(comparison["after"]["keptCount"]) - int(comparison["before"]["keptCount"])
+    comparison["keptCountDelta"] = int(comparison["after"]["keptCount"]) - int(
+        comparison["before"]["keptCount"]
     )
     if not any(
         [

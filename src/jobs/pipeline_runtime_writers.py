@@ -15,7 +15,6 @@ from src.shared.utils import now_iso
 
 from .pipeline_runtime_summary import (
     PipelineTaskRuntime,
-    append_fetch_runtime_event,
     build_active_pipeline_summary,
     build_active_source_rows,
     build_fetch_live_task_payload,

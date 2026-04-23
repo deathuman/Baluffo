@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .local_data_store_shared import LOCK, _hash_fnv1a, _read_json, _write_json, LocalDataPaths
+from .local_data_store_shared import LOCK, LocalDataPaths, _hash_fnv1a, _read_json, _write_json
 
 
 def load_profiles(paths: LocalDataPaths) -> list[dict[str, Any]]:

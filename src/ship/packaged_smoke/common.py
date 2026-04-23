@@ -88,9 +88,7 @@ def request_json(
             parsed = json.loads(raw or "{}")
         except json.JSONDecodeError:
             parsed = {"error": raw or str(exc)}
-        return int(getattr(exc, "code", 500) or 500), (
-            parsed if isinstance(parsed, dict) else {}
-        )
+        return int(getattr(exc, "code", 500) or 500), (parsed if isinstance(parsed, dict) else {})
 
 
 def post_json(

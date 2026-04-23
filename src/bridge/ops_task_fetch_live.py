@@ -257,7 +257,9 @@ def build_fetch_live_payload(
         else {}
     )
     task_counts = (
-        _ops_live_payload.fetch_progress_counts(fetch_tasks) if task_artifact_matches_current else {}
+        _ops_live_payload.fetch_progress_counts(fetch_tasks)
+        if task_artifact_matches_current
+        else {}
     )
     merged_counts = dict(merged_progress.get("counts") or {})
     for key in (

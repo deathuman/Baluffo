@@ -10,3 +10,14 @@ from .reporting_progress import (
     emit_log,
     write_discovery_progress_report,
 )
+
+__all__ = [
+    "build_discovery_task_progress",
+    "build_m5_strategic_backlog",
+    "build_stage_summary",
+    "emit_log",
+    "merge_candidate_streams",
+    "stage_curated_seed_candidates",
+    "update_candidate_review_metadata",
+    "write_discovery_progress_report",
+]

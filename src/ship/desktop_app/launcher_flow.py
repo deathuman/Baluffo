@@ -5,6 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from . import launcher_recovery as launcher_recovery_mod
 from ._compat import desktop_api
 from .config import (
     ACTIVE_WORK_RECOVERY_STOP_REASONS,
@@ -14,7 +15,6 @@ from .config import (
     STARTUP_PROBE_URL_READY_INTERVAL_S,
     DesktopRuntimeConfig,
 )
-from . import launcher_recovery as launcher_recovery_mod
 
 
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:

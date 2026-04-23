@@ -280,7 +280,9 @@ def snapshot_prior_source_state(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def apply_static_detail_stats(entry: dict[str, Any], report: dict[str, Any]) -> list[dict[str, Any]]:
+def apply_static_detail_stats(
+    entry: dict[str, Any], report: dict[str, Any]
+) -> list[dict[str, Any]]:
     details = report.get("details") if isinstance(report.get("details"), list) else []
     static_detail = details[0] if len(details) == 1 and isinstance(details[0], dict) else {}
     static_stats = (
@@ -383,7 +385,9 @@ def apply_errored_source_state(
         ).isoformat()
 
 
-def apply_excluded_source_state(entry: dict[str, Any], *, report: dict[str, Any], finished_at: str) -> None:
+def apply_excluded_source_state(
+    entry: dict[str, Any], *, report: dict[str, Any], finished_at: str
+) -> None:
     exclusion_reason = clean_text(report.get("exclusionReason")) or clean_text(
         report.get("cacheDecisionReason")
     )
@@ -394,7 +398,9 @@ def apply_excluded_source_state(entry: dict[str, Any], *, report: dict[str, Any]
             entry.pop(key, None)
 
 
-def refresh_next_eligible_check_at(entry: dict[str, Any], *, source_name: str, finished_at: str) -> None:
+def refresh_next_eligible_check_at(
+    entry: dict[str, Any], *, source_name: str, finished_at: str
+) -> None:
     entry["nextEligibleCheckAt"] = _state_incremental.compute_next_eligible_check_at(
         entry,
         adapter=_state_incremental.adapter_for_cache(source_name, entry),

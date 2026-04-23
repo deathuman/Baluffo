@@ -56,7 +56,9 @@ def apply_browser_escalation_state(
         ):
             entry.pop(key, None)
         return
-    entry["browserEscalationFailureCount"] = int(entry.get("browserEscalationFailureCount") or 0) + 1
+    entry["browserEscalationFailureCount"] = (
+        int(entry.get("browserEscalationFailureCount") or 0) + 1
+    )
     entry["browserEscalationLastFailureAt"] = finished_at
     entry["browserEscalationLastError"] = clean_text(report.get("error"))
     if circuit_breaker_cooldown_minutes > 0:

@@ -6,8 +6,8 @@ from src.bridge import run_history_api as _run_history_api
 from src.shared.live_task import (
     append_live_task_event,
     build_live_task_payload,
-    normalize_live_task_progress,
     normalize_live_task_payload,
+    normalize_live_task_progress,
 )
 
 from . import ops_task_projection as ops_task_projection_mod
@@ -186,7 +186,9 @@ def build_discovery_live_payload(
         task_state_entry=discovery_state,
         snapshot=discovery_snapshot,
     )
-    runtime = discovery_report.get("runtime") if isinstance(discovery_report.get("runtime"), dict) else {}
+    runtime = (
+        discovery_report.get("runtime") if isinstance(discovery_report.get("runtime"), dict) else {}
+    )
     lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
     payload = ops_task_projection_mod.normalize_projected_live_payload(
         context,

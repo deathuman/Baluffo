@@ -7,33 +7,55 @@ import contextlib
 import json
 import shutil
 import sys
-import time
+import time as _time
 import urllib.error
 import uuid
-import zipfile
+import zipfile as _zipfile
 from pathlib import Path
 from typing import Any
 
-from src.ship import update_manager
+from src.ship import update_manager as _update_manager
 from src.ship.desktop_update_shared import (
     DesktopUpdatePaths,
-    fetch_json,
-    install_stage_label,
-    iso_now,
-    pid_is_running,
+)
+from src.ship.desktop_update_shared import (
+    fetch_json as _fetch_json,
+)
+from src.ship.desktop_update_shared import (
+    install_stage_label as _install_stage_label,
+)
+from src.ship.desktop_update_shared import (
+    iso_now as _iso_now,
+)
+from src.ship.desktop_update_shared import (
+    pid_is_running as _pid_is_running,
 )
 from src.ship.desktop_update_state import (
-    clear_handoff_request,
-    clear_success_marker,
-    load_status,
-    save_status,
-    validate_install_plan,
+    clear_handoff_request as _clear_handoff_request,
 )
-from src.ship.desktop_updater_release import _classify_install_failure
+from src.ship.desktop_update_state import (
+    clear_success_marker as _clear_success_marker,
+)
+from src.ship.desktop_update_state import (
+    load_status as _load_status,
+)
+from src.ship.desktop_update_state import (
+    save_status as _save_status,
+)
+from src.ship.desktop_update_state import (
+    validate_install_plan as _validate_install_plan,
+)
+from src.ship.desktop_updater_release import (
+    _classify_install_failure as _classify_install_failure_impl,
+)
 from src.ship.desktop_updater_ui import (
-    NullProgressWindow,
-    _helper_relaunch_verify_timeout_s,
-    _launch_executable,
+    NullProgressWindow as _NullProgressWindow,
+)
+from src.ship.desktop_updater_ui import (
+    _helper_relaunch_verify_timeout_s as _helper_relaunch_verify_timeout_s_impl,
+)
+from src.ship.desktop_updater_ui import (
+    _launch_executable as _launch_executable_impl,
 )
 
 root: Any | None = None
@@ -48,6 +70,25 @@ MUTATING_INSTALL_STAGES = frozenset(
     }
 )
 SUCCESS_RECOVERY_STAGES = frozenset({"relaunching", "verifying"})
+
+# Preserve these names on the module root because the updater flow patches/accesses them through
+# `_module()` indirection rather than direct local references.
+time = _time
+zipfile = _zipfile
+update_manager = _update_manager
+fetch_json = _fetch_json
+install_stage_label = _install_stage_label
+iso_now = _iso_now
+pid_is_running = _pid_is_running
+clear_handoff_request = _clear_handoff_request
+clear_success_marker = _clear_success_marker
+load_status = _load_status
+save_status = _save_status
+validate_install_plan = _validate_install_plan
+_classify_install_failure = _classify_install_failure_impl
+NullProgressWindow = _NullProgressWindow
+_helper_relaunch_verify_timeout_s = _helper_relaunch_verify_timeout_s_impl
+_launch_executable = _launch_executable_impl
 
 
 def _module() -> Any:
@@ -285,9 +326,7 @@ def _recover_interrupted_install(
     return False
 
 
-def run_install(
-    plan_path: Path, progress: Any | None = None
-) -> dict[str, Any]:
+def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
     module = _module()
     plan = module.validate_install_plan(json.loads(plan_path.read_text(encoding="utf-8")))
     install_root = Path(str(plan.get("installRoot") or "")).expanduser().resolve()

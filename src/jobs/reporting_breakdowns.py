@@ -203,9 +203,11 @@ def build_unknown_static_breakdown(
     return _build_breakdown(
         source_reports,
         shapes=UNKNOWN_STATIC_BREAKDOWN_SHAPES,
-        include_report=lambda report: not (
-            int(report.get("keptCount") or 0) > 0
-            and norm_text(report.get("failureBucket")) not in {"unknown", ""}
+        include_report=lambda report: (
+            not (
+                int(report.get("keptCount") or 0) > 0
+                and norm_text(report.get("failureBucket")) not in {"unknown", ""}
+            )
         ),
         classify_shape=_classify_unknown_static_shape,
     )

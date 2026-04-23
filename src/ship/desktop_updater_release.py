@@ -8,23 +8,57 @@ from pathlib import Path
 from typing import Any
 
 from src.ship.desktop_update_shared import (
-    compute_sha256,
-    desktop_update_public_key_candidate_paths,
-    download_file,
-    fetch_json,
-    iso_now,
-    load_desktop_update_public_keys,
-    resolve_github_api_base,
-    resolve_release_repo,
-    validate_desktop_manifest,
-    verify_manifest_signature,
-    write_json_atomic,
+    compute_sha256 as _compute_sha256,
 )
-from src.ship.desktop_update_state import read_cached_manifest
+from src.ship.desktop_update_shared import (
+    desktop_update_public_key_candidate_paths as _desktop_update_public_key_candidate_paths,
+)
+from src.ship.desktop_update_shared import (
+    download_file as _download_file,
+)
+from src.ship.desktop_update_shared import (
+    fetch_json as _fetch_json,
+)
+from src.ship.desktop_update_shared import (
+    iso_now as _iso_now,
+)
+from src.ship.desktop_update_shared import (
+    load_desktop_update_public_keys as _load_desktop_update_public_keys,
+)
+from src.ship.desktop_update_shared import (
+    resolve_github_api_base as _resolve_github_api_base,
+)
+from src.ship.desktop_update_shared import (
+    resolve_release_repo as _resolve_release_repo,
+)
+from src.ship.desktop_update_shared import (
+    validate_desktop_manifest as _validate_desktop_manifest,
+)
+from src.ship.desktop_update_shared import (
+    verify_manifest_signature as _verify_manifest_signature,
+)
+from src.ship.desktop_update_shared import (
+    write_json_atomic as _write_json_atomic,
+)
+from src.ship.desktop_update_state import read_cached_manifest as _read_cached_manifest
 
 root: Any | None = None
 
 DESKTOP_UPDATE_MANIFEST_ASSET = "baluffo-desktop-update-manifest.json"
+
+# Preserve module-root helper names for updater code that resolves them through `_module()`.
+compute_sha256 = _compute_sha256
+desktop_update_public_key_candidate_paths = _desktop_update_public_key_candidate_paths
+download_file = _download_file
+fetch_json = _fetch_json
+iso_now = _iso_now
+load_desktop_update_public_keys = _load_desktop_update_public_keys
+resolve_github_api_base = _resolve_github_api_base
+resolve_release_repo = _resolve_release_repo
+validate_desktop_manifest = _validate_desktop_manifest
+verify_manifest_signature = _verify_manifest_signature
+write_json_atomic = _write_json_atomic
+read_cached_manifest = _read_cached_manifest
 
 
 def _module() -> Any:
@@ -110,7 +144,9 @@ def _recover_manifest_for_install(
     manifest_hash = str(artifact.get("sha256") or "").strip().lower()
     if expected_hash and manifest_hash and manifest_hash != expected_hash:
         raise RuntimeError("Recovered desktop manifest does not match the expected ZIP checksum.")
-    module.write_json_atomic(paths.manifest_cache_path, {"cachedAt": module.iso_now(), "manifest": manifest})
+    module.write_json_atomic(
+        paths.manifest_cache_path, {"cachedAt": module.iso_now(), "manifest": manifest}
+    )
     return manifest
 
 

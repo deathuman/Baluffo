@@ -11,6 +11,7 @@ from src.shared.utils import now_iso
 from .local_data_store_profiles import require_current_user
 from .local_data_store_shared import (
     LOCK,
+    LocalDataPaths,
     _normalize_iso,
     can_transition_phase,
     ensure_user_dirs,
@@ -23,7 +24,6 @@ from .local_data_store_shared import (
     sanitize_job_url,
     save_activity_rows,
     save_saved_job_rows,
-    LocalDataPaths,
 )
 
 
@@ -66,7 +66,9 @@ def normalize_saved_job(
         "country": str(source.get("country") or base.get("country") or "").strip(),
         "workType": str(source.get("workType") or base.get("workType") or "Onsite").strip()
         or "Onsite",
-        "contractType": str(source.get("contractType") or base.get("contractType") or "Unknown").strip()
+        "contractType": str(
+            source.get("contractType") or base.get("contractType") or "Unknown"
+        ).strip()
         or "Unknown",
         "jobLink": sanitize_job_url(str(source.get("jobLink") or base.get("jobLink") or "")),
         "profession": str(source.get("profession") or base.get("profession") or "").strip(),
@@ -184,7 +186,9 @@ def save_job_for_user(
             {
                 **dict(job or {}),
                 "jobKey": job_key,
-                "savedAt": str((existing or {}).get("savedAt") or job.get("savedAt") or current_iso),
+                "savedAt": str(
+                    (existing or {}).get("savedAt") or job.get("savedAt") or current_iso
+                ),
                 "updatedAt": current_iso,
             },
             existing,
@@ -209,7 +213,9 @@ def remove_saved_job_for_user(paths: LocalDataPaths, uid: str, job_key: str) -> 
     require_current_user(paths, uid)
     with LOCK:
         rows = load_saved_job_rows(paths, uid)
-        removed = next((row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None)
+        removed = next(
+            (row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None
+        )
         save_saved_job_rows(
             paths,
             uid,
@@ -237,14 +243,18 @@ def update_application_status(
     with LOCK:
         options = options or {}
         rows = load_saved_job_rows(paths, uid)
-        target = next((row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None)
+        target = next(
+            (row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None
+        )
         if not target:
             raise ValueError("Saved job not found.")
         previous_status = normalize_application_status(target.get("applicationStatus"))
         next_status = normalize_application_status(status)
         if previous_status == next_status:
             return
-        if not bool(options.get("override")) and not can_transition_phase(previous_status, next_status):
+        if not bool(options.get("override")) and not can_transition_phase(
+            previous_status, next_status
+        ):
             raise ValueError(
                 "Invalid phase transition. Use override for backward or skipped transitions."
             )
@@ -274,14 +284,18 @@ def update_job_notes(paths: LocalDataPaths, uid: str, job_key: str, notes: str) 
     require_current_user(paths, uid)
     with LOCK:
         rows = load_saved_job_rows(paths, uid)
-        target = next((row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None)
+        target = next(
+            (row for row in rows if str(row.get("jobKey") or "") == str(job_key or "")), None
+        )
         if not target:
             raise ValueError("Saved job not found.")
         target["notes"] = str(notes or "")
         save_saved_job_rows(paths, uid, rows)
 
 
-def list_activity_for_user(paths: LocalDataPaths, uid: str, limit: int = 300) -> list[dict[str, Any]]:
+def list_activity_for_user(
+    paths: LocalDataPaths, uid: str, limit: int = 300
+) -> list[dict[str, Any]]:
     require_current_user(paths, uid)
     with LOCK:
         return load_activity_rows(paths, uid)[: max(1, min(2000, int(limit or 300)))]

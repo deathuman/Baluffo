@@ -85,7 +85,7 @@ export function createAdminSyncController({
           : stateToken === "misconfigured"
             ? `Source sync cannot run yet.${missing.length ? ` Missing: ${missing.join(", ")}.` : ""}${configMessage ? ` ${configMessage}` : ""}`
             : `Connected to ${repo} and ready to keep the shared source registry in sync.`;
-    const liveSummary = Boolean(livePayload?.active)
+    const liveSummary = livePayload?.active
       ? formatTaskProgressDetail("sync", livePayload?.taskProgress, livePayload?.summary || {})
       : "";
     const meta = [

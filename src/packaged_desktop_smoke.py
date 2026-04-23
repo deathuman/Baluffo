@@ -6,12 +6,13 @@ from __future__ import annotations
 import argparse
 import ctypes as _ctypes
 import errno as _errno
-import os
-import shutil
-import subprocess
+import os as _os
+import shutil as _shutil
+import subprocess as _subprocess
 import sys
-import time
-from datetime import UTC, datetime
+import time as _time
+from datetime import UTC as _UTC
+from datetime import datetime as _datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,8 +24,8 @@ from src import source_sync as _source_sync_mod
 from src.local_data_store import LocalDataPaths as _LocalDataPaths
 from src.local_data_store import LocalDataStore as _LocalDataStore
 from src.python_version_guard import ensure_required_python
-from src.shared.utils import utc_now_iso
-from src.ship import desktop_app as desktop_app_mod
+from src.shared.utils import utc_now_iso as _utc_now_iso
+from src.ship import desktop_app as _desktop_app_mod
 from src.ship import desktop_update as _desktop_update_mod
 from src.ship.packaged_smoke import build_env as packaged_smoke_build_env_mod
 from src.ship.packaged_smoke import common as packaged_smoke_common_mod
@@ -36,16 +37,19 @@ from src.ship.packaged_smoke import rehearsals as packaged_smoke_rehearsals_mod
 from src.ship.packaged_smoke import runtime as packaged_smoke_runtime_mod
 from src.ship.packaged_smoke import startup_metrics as packaged_smoke_startup_metrics_mod
 from src.ship.startup_probe_policy import (
-    EMBEDDED_PAGE_PROBES,
-    STARTUP_REQUIRED_EVENTS,
-    classify_startup_probe_failure,
-    refine_startup_probe_summary,
-    startup_metric_fields,
-    startup_probe_browser_details,
-    startup_profile_required_events,
+    EMBEDDED_PAGE_PROBES as _EMBEDDED_PAGE_PROBES,
 )
 from src.ship.startup_probe_policy import (
     REQUIRED_STARTUP_PROBE_LAUNCH_MODE as _REQUIRED_STARTUP_PROBE_LAUNCH_MODE,
+)
+from src.ship.startup_probe_policy import (
+    STARTUP_REQUIRED_EVENTS as _STARTUP_REQUIRED_EVENTS,
+)
+from src.ship.startup_probe_policy import (
+    classify_startup_probe_failure as _classify_startup_probe_failure,
+)
+from src.ship.startup_probe_policy import (
+    refine_startup_probe_summary as _refine_startup_probe_summary,
 )
 from src.ship.startup_probe_policy import (
     required_startup_event_present as _required_startup_event_present_policy,
@@ -53,12 +57,25 @@ from src.ship.startup_probe_policy import (
 from src.ship.startup_probe_policy import (
     select_startup_probe_browser as _select_startup_probe_browser_policy,
 )
+from src.ship.startup_probe_policy import (
+    startup_metric_fields as _startup_metric_fields,
+)
+from src.ship.startup_probe_policy import (
+    startup_probe_browser_details as _startup_probe_browser_details,
+)
+from src.ship.startup_probe_policy import (
+    startup_profile_required_events as _startup_profile_required_events,
+)
 from src.ship.startup_profile import (
     render_startup_summary,
-    summarize_startup_metrics,
-    write_startup_summary,
 )
-from src.ship.startup_telemetry import read_startup_metrics as read_startup_metrics_file
+from src.ship.startup_profile import (
+    summarize_startup_metrics as _summarize_startup_metrics,
+)
+from src.ship.startup_profile import (
+    write_startup_summary as _write_startup_summary,
+)
+from src.ship.startup_telemetry import read_startup_metrics as _read_startup_metrics_file
 
 DEFAULT_EXE_PATH = ROOT / "dist" / "baluffo-portable" / "Baluffo.exe"
 DEFAULT_REPORT_PATH = ROOT / "data" / "packaged-desktop-smoke-report.json"
@@ -111,13 +128,31 @@ packaged_smoke_rehearsal_browser_mod.root = sys.modules[__name__]
 
 ctypes = _ctypes
 errno = _errno
+os = _os
+shutil = _shutil
+subprocess = _subprocess
+time = _time
+UTC = _UTC
+datetime = _datetime
 source_sync_mod = _source_sync_mod
 LocalDataPaths = _LocalDataPaths
 LocalDataStore = _LocalDataStore
+utc_now_iso = _utc_now_iso
+desktop_app_mod = _desktop_app_mod
 desktop_update_mod = _desktop_update_mod
+EMBEDDED_PAGE_PROBES = _EMBEDDED_PAGE_PROBES
+STARTUP_REQUIRED_EVENTS = _STARTUP_REQUIRED_EVENTS
+classify_startup_probe_failure = _classify_startup_probe_failure
+refine_startup_probe_summary = _refine_startup_probe_summary
+startup_metric_fields = _startup_metric_fields
+startup_probe_browser_details = _startup_probe_browser_details
+startup_profile_required_events = _startup_profile_required_events
 REQUIRED_STARTUP_PROBE_LAUNCH_MODE = _REQUIRED_STARTUP_PROBE_LAUNCH_MODE
 _required_startup_event_present = _required_startup_event_present_policy
 select_startup_probe_browser_policy = _select_startup_probe_browser_policy
+summarize_startup_metrics = _summarize_startup_metrics
+write_startup_summary = _write_startup_summary
+read_startup_metrics_file = _read_startup_metrics_file
 
 slugify_token = packaged_smoke_common_mod.slugify_token
 write_json = packaged_smoke_common_mod.write_json
@@ -187,7 +222,9 @@ build_failure_payload = packaged_smoke_runtime_mod.build_failure_payload
 run_warmup_launch = packaged_smoke_runtime_mod.run_warmup_launch
 
 _archive_portable_dir = packaged_smoke_rehearsals_mod._archive_portable_dir
-_inject_desktop_update_public_keys = packaged_smoke_rehearsals_mod._inject_desktop_update_public_keys
+_inject_desktop_update_public_keys = (
+    packaged_smoke_rehearsals_mod._inject_desktop_update_public_keys
+)
 _portable_current_version = packaged_smoke_rehearsals_mod._portable_current_version
 _portable_packaged_sync_config_path = (
     packaged_smoke_rehearsals_mod._portable_packaged_sync_config_path

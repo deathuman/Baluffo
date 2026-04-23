@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from src.bridge import ops_live_payload as _ops_live_payload
 from src.bridge import run_history_api as _run_history_api
@@ -226,7 +227,9 @@ def build_current_task_state_payload(
             return
         tasks.append(entry)
 
-    append_if_active(build_fetch_live_payload(context, projection=projection, task_state=task_state))
+    append_if_active(
+        build_fetch_live_payload(context, projection=projection, task_state=task_state)
+    )
     append_if_active(
         build_discovery_live_payload(context, projection=projection, task_state=task_state)
     )

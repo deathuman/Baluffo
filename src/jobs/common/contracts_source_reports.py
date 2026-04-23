@@ -85,9 +85,7 @@ def _normalize_loss(loss: Any) -> dict[str, Any]:
         "scrapyRunnerRejectedValidation": _clamped_int(
             payload.get("scrapyRunnerRejectedValidation"), 0, 0
         ),
-        "scrapyParentInvalidPayload": _clamped_int(
-            payload.get("scrapyParentInvalidPayload"), 0, 0
-        ),
+        "scrapyParentInvalidPayload": _clamped_int(payload.get("scrapyParentInvalidPayload"), 0, 0),
         "staticNonJobUrlRejected": _clamped_int(payload.get("staticNonJobUrlRejected"), 0, 0),
         "staticDuplicateLinkRejected": _clamped_int(
             payload.get("staticDuplicateLinkRejected"), 0, 0
@@ -182,9 +180,7 @@ def _normalize_detail_stats(stats: dict[str, Any]) -> dict[str, Any]:
         ),
         "redirect_resolve_ms": _clamped_int(stats.get("redirect_resolve_ms"), 0, 0),
         "jobs_rejected_validation": _clamped_int(stats.get("jobs_rejected_validation"), 0, 0),
-        "dead_listing_pages_rejected": _clamped_int(
-            stats.get("dead_listing_pages_rejected"), 0, 0
-        ),
+        "dead_listing_pages_rejected": _clamped_int(stats.get("dead_listing_pages_rejected"), 0, 0),
         "finish_reason": clean_text(stats.get("finish_reason")),
     }
 

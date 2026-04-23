@@ -21,3 +21,19 @@ from .web_search_fetch import (
     fetch_text,
     fetch_text_with_retry,
 )
+
+__all__ = [
+    "async_fetch_text_httpx",
+    "async_fetch_text_with_retry",
+    "build_web_search_queries",
+    "discover_seed_careers_page_candidates",
+    "discover_web_search_candidates",
+    "discovery_request_headers",
+    "extract_jobish_links",
+    "extract_links_from_html",
+    "fetch_text",
+    "fetch_text_with_retry",
+    "infer_provider_candidates_from_html",
+    "infer_web_candidate",
+    "is_blocked_generic_static_url",
+]

@@ -4,7 +4,12 @@ import sys
 import time
 from typing import Any
 
-from src.jobs.common.taxonomy import ClassificationContext, FailureBucket, classify_zero_kept, map_error_to_failure_bucket
+from src.jobs.common.taxonomy import (
+    ClassificationContext,
+    FailureBucket,
+    classify_zero_kept,
+    map_error_to_failure_bucket,
+)
 from src.jobs.pipeline_runtime_summary import (
     PipelineTaskRuntime,
     record_completed_source_report,
@@ -38,9 +43,7 @@ def fallback_error_report(source_name: str, exc: Exception) -> dict[str, Any]:
         "name": source_name,
         "status": "error",
         "adapter": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter")) or "custom",
-        "fetchStrategy": clean_text(
-            SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy")
-        )
+        "fetchStrategy": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy"))
         or "auto",
         "studio": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("studio")) or "",
         "fetchedCount": 0,
@@ -72,7 +75,7 @@ def fallback_error_report(source_name: str, exc: Exception) -> dict[str, Any]:
     zero_kept_classification = classify_zero_kept(cls_context)
     failure_bucket = map_error_to_failure_bucket(cls_context)
     if failure_bucket == FailureBucket.UNKNOWN:
-        failure_bucket = getattr(root, "_failure_bucket_from_zero_extract_context")(
+        failure_bucket = root._failure_bucket_from_zero_extract_context(
             cls_context,
             zero_kept_classification.value,
         )
@@ -143,9 +146,7 @@ def mark_task_finished(
     update_fetch_work_item_progress(
         task_runtime,
         source_name,
-        phase_key="completed_source"
-        if report_status in {"ok", "excluded"}
-        else "failed_source",
+        phase_key="completed_source" if report_status in {"ok", "excluded"} else "failed_source",
         phase_label="Completed"
         if report_status == "ok"
         else "Excluded"

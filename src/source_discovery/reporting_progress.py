@@ -117,7 +117,9 @@ def build_stage_summary(
         "suppressedStaticByStage": dict(suppressed_static_by_stage or {}),
         "queuedProviderCount": int(
             sum(
-                value for key, value in dict(queued_by_adapter or {}).items() if str(key) != "static"
+                value
+                for key, value in dict(queued_by_adapter or {}).items()
+                if str(key) != "static"
             )
         ),
         "queuedStaticCount": int(dict(queued_by_adapter or {}).get("static") or 0),

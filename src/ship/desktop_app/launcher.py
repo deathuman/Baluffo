@@ -6,15 +6,22 @@ from pathlib import Path
 from ._compat import desktop_api
 from .config import DEFAULT_OPEN_PATH, ROOT, WINDOW_TITLE
 from .launcher_diagnostics import (
-    _desktop_update_restart_snapshot,
-    _recoverable_active_work_browser_loss_result,
     _recoverable_browser_launch_result,
-    _trace_already_running_rejection,
     _write_launch_diagnostics,
-    show_native_message,
 )
 from .launcher_flow import launch_desktop_app
 from .launcher_recovery import _runtime_ports_need_retry, _should_retry_runtime_launch
+
+__all__ = [
+    "_recoverable_browser_launch_result",
+    "_runtime_ports_need_retry",
+    "_should_retry_runtime_launch",
+    "_write_launch_diagnostics",
+    "ensure_desktop_prerequisites",
+    "launch_desktop_app",
+    "main",
+    "parse_args",
+]
 
 
 def ensure_desktop_prerequisites() -> None:
@@ -107,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     config = api.create_runtime_config(args)
     try:
         api.ensure_desktop_prerequisites()
-        api.launch_desktop_app(config)
+        launch_desktop_app(config)
         return 0
     except Exception as exc:  # noqa: BLE001
         message = str(exc).strip() or "The Baluffo desktop app could not start."

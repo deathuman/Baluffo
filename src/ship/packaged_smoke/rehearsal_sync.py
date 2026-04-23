@@ -207,8 +207,8 @@ def run_packaged_sync_rehearsal(
     server = None
     server_thread = None
     try:
-        config_path, raw_payload, packaged_config = deps._load_portable_packaged_sync_rehearsal_config(
-            portable_root
+        config_path, raw_payload, packaged_config = (
+            deps._load_portable_packaged_sync_rehearsal_config(portable_root)
         )
         snapshot_payload = {
             "schemaVersion": deps.source_sync_mod.SYNC_SCHEMA_VERSION,

@@ -13,11 +13,11 @@ from src.shared.utils import now_iso
 
 from .local_data_store_profiles import (
     get_current_user,
+    load_profiles,
     profile_for_uid,
     require_current_user,
     save_profiles,
     save_session,
-    load_profiles,
 )
 from .local_data_store_saved_jobs import (
     merge_saved_job,
@@ -26,6 +26,7 @@ from .local_data_store_saved_jobs import (
 )
 from .local_data_store_shared import (
     LOCK,
+    LocalDataPaths,
     _bytes_to_data_url,
     _data_url_to_bytes,
     _normalize_iso,
@@ -36,14 +37,17 @@ from .local_data_store_shared import (
     save_activity_rows,
     save_attachment_rows,
     save_saved_job_rows,
-    LocalDataPaths,
 )
 
 
-def export_profile_data(paths: LocalDataPaths, uid: str, include_files: bool = False) -> dict[str, Any]:
+def export_profile_data(
+    paths: LocalDataPaths, uid: str, include_files: bool = False
+) -> dict[str, Any]:
     require_current_user(paths, uid)
     with LOCK:
-        saved_jobs = [normalize_saved_job(paths, uid, row) for row in load_saved_job_rows(paths, uid)]
+        saved_jobs = [
+            normalize_saved_job(paths, uid, row) for row in load_saved_job_rows(paths, uid)
+        ]
         attachments = []
         for row in load_attachment_rows(paths, uid):
             item = dict(row)
@@ -97,7 +101,9 @@ def _import_saved_jobs(
             skipped_invalid += 1
             warnings.append("Skipped malformed saved job (missing title/company).")
             continue
-        normalized = normalize_saved_job(paths, uid, row, saved_map.get(str(row.get("jobKey") or "")))
+        normalized = normalize_saved_job(
+            paths, uid, row, saved_map.get(str(row.get("jobKey") or ""))
+        )
         if not normalized.get("jobKey"):
             skipped_invalid += 1
             warnings.append("Skipped malformed saved job (missing jobKey).")
@@ -202,7 +208,9 @@ def _import_attachment_rows(
             continue
         seen_attachments.add(signature)
         attachment_id = str(row.get("id") or f"att_{uuid.uuid4().hex[:10]}")
-        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", str(row.get("name") or "file")).strip("._") or "file"
+        safe_name = (
+            re.sub(r"[^A-Za-z0-9._-]+", "_", str(row.get("name") or "file")).strip("._") or "file"
+        )
         file_name = ""
         blob_data_url = str(row.get("blobDataUrl") or "").strip()
         if blob_data_url:
@@ -236,7 +244,9 @@ def import_profile_data(paths: LocalDataPaths, uid: str, payload: dict[str, Any]
     warnings: list[str] = []
     with LOCK:
         ensure_user_dirs(paths, uid)
-        created, updated, skipped_invalid = _import_saved_jobs(paths, uid, payload, warnings=warnings)
+        created, updated, skipped_invalid = _import_saved_jobs(
+            paths, uid, payload, warnings=warnings
+        )
         history_added = _import_activity_rows(paths, uid, payload)
         attachments_added, attachments_hydrated = _import_attachment_rows(
             paths,
@@ -265,7 +275,9 @@ def get_admin_overview(paths: LocalDataPaths) -> dict[str, Any]:
             profile = profile_for_uid(paths, uid) or {"name": uid, "email": ""}
             saved_jobs = load_saved_job_rows(paths, uid)
             attachments = load_attachment_rows(paths, uid)
-            notes_bytes = sum(len(str(row.get("notes") or "").encode("utf-8")) for row in saved_jobs)
+            notes_bytes = sum(
+                len(str(row.get("notes") or "").encode("utf-8")) for row in saved_jobs
+            )
             attachments_bytes = 0
             for row in attachments:
                 file_path = paths.attachment_dir(uid) / str(row.get("path") or "")

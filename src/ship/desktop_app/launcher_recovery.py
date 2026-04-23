@@ -49,7 +49,9 @@ def acquire_runtime_instance_lock(config: DesktopRuntimeConfig, *, launcher_toke
     diagnosis = api.diagnose_instance_conflict(data_dir=config.data_dir)
     action = str(diagnosis.get("action") or "")
     if action == "active":
-        existing_session = diagnosis.get("session") if isinstance(diagnosis.get("session"), dict) else {}
+        existing_session = (
+            diagnosis.get("session") if isinstance(diagnosis.get("session"), dict) else {}
+        )
         api._append_startup_trace(
             config.data_dir,
             "desktop_session_reused",

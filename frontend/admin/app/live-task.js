@@ -101,7 +101,7 @@ function getTaskLiveRecentEvents(payload) {
 
 function hasTaskLivePayload(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
-  if (Boolean(payload.active)) return true;
+  if (payload.active) return true;
   if (String(payload.runId || "").trim()) return true;
   if (String(payload.startedAt || "").trim()) return true;
   if (String(payload.finishedAt || "").trim()) return true;
@@ -115,7 +115,7 @@ function hasTaskLivePayload(payload) {
 
 function hasMeaningfulTaskProgress(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
-  if (Boolean(payload.active)) return true;
+  if (payload.active) return true;
   if (String(payload.phaseKey || "").trim()) return true;
   if (String(payload.phaseLabel || "").trim()) return true;
   const counts = payload.counts && typeof payload.counts === "object" && !Array.isArray(payload.counts)

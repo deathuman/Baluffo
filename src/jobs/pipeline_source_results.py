@@ -6,12 +6,16 @@ from collections import Counter
 from typing import Any
 
 from src.jobs.canonicalize import CanonicalNormalizer
-from src.jobs.common.taxonomy import ClassificationContext, FailureBucket, classify_zero_kept, map_error_to_failure_bucket
+from src.jobs.common.taxonomy import (
+    ClassificationContext,
+    FailureBucket,
+    classify_zero_kept,
+    map_error_to_failure_bucket,
+)
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
 
-from .pipeline_source_progress import fallback_error_report
 from .reporting_summary import format_source_error
 from .state_source_records import source_rows_fingerprint
 
@@ -40,7 +44,7 @@ def execute_loader(
     report: dict[str, Any] = {
         "name": name,
         "status": "ok",
-        "adapter": getattr(root, "_default_adapter_for_loader")(name, base_meta),
+        "adapter": root._default_adapter_for_loader(name, base_meta),
         "fetchStrategy": clean_text(base_meta.get("fetchStrategy")) or "auto",
         "studio": clean_text(base_meta.get("studio")) or "",
         "fetchedCount": 0,
@@ -221,14 +225,14 @@ def execute_loader(
             ),
         )
 
-        current_fingerprint = source_rows_fingerprint(
-            [row.to_dict() for row in canonical_batch]
+        current_fingerprint = source_rows_fingerprint([row.to_dict() for row in canonical_batch])
+        previous_fingerprint = clean_text(
+            (source_state_rows.get(name) or {}).get("lastFingerprint")
         )
-        previous_fingerprint = clean_text((source_state_rows.get(name) or {}).get("lastFingerprint"))
         report["sourceFingerprint"] = current_fingerprint
         report["fingerprintChanged"] = bool(current_fingerprint != previous_fingerprint)
 
-        diag = getattr(root, "SOURCE_DIAGNOSTICS").get(name) or {}
+        diag = root.SOURCE_DIAGNOSTICS.get(name) or {}
         if clean_text(diag.get("adapter")):
             report["adapter"] = clean_text(diag.get("adapter"))
         if clean_text(diag.get("studio")):
@@ -240,7 +244,7 @@ def execute_loader(
         if isinstance(details, list) and details:
             report["details"] = details
         detail_rows = details if isinstance(details, list) else []
-        if detail_rows and getattr(root, "_is_provider_family_adapter")(clean_text(report.get("adapter"))):
+        if detail_rows and root._is_provider_family_adapter(clean_text(report.get("adapter"))):
             board_decision_counts = Counter(
                 clean_text(detail.get("cacheDecision"))
                 for detail in detail_rows
@@ -272,10 +276,11 @@ def execute_loader(
             report["boardRefreshedCount"] = sum(
                 1
                 for detail in detail_rows
-                if isinstance(detail, dict)
-                and norm_text(detail.get("status")) in {"ok", "error"}
+                if isinstance(detail, dict) and norm_text(detail.get("status")) in {"ok", "error"}
             )
-        if detail_rows and getattr(root, "_is_social_subsource_report")(name, clean_text(report.get("adapter"))):
+        if detail_rows and root._is_social_subsource_report(
+            name, clean_text(report.get("adapter"))
+        ):
             subsource_decision_counts = Counter(
                 clean_text(detail.get("cacheDecision"))
                 for detail in detail_rows
@@ -307,14 +312,11 @@ def execute_loader(
             report["subsourceRefreshedCount"] = sum(
                 1
                 for detail in detail_rows
-                if isinstance(detail, dict)
-                and norm_text(detail.get("status")) in {"ok", "error"}
+                if isinstance(detail, dict) and norm_text(detail.get("status")) in {"ok", "error"}
             )
 
         stage_timings = (
-            report.get("stageTimingsMs")
-            if isinstance(report.get("stageTimingsMs"), dict)
-            else {}
+            report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
         )
         stage_timings["fetchAndParse"] = int(fetch_and_parse_ms)
         if adapter_name == "static":
@@ -478,15 +480,11 @@ def execute_loader(
         and report["status"] != "excluded"
         and failure_bucket == FailureBucket.UNKNOWN
     ):
-        failure_bucket = getattr(root, "_failure_bucket_from_zero_extract_context")(
+        failure_bucket = root._failure_bucket_from_zero_extract_context(
             cls_context,
             zero_kept_classification.value,
         )
-    if (
-        report["status"] == "error"
-        or report.get("error")
-        or int(report.get("keptCount") or 0) == 0
-    ):
+    if report["status"] == "error" or report.get("error") or int(report.get("keptCount") or 0) == 0:
         report["failureBucket"] = failure_bucket.value
     if int(report.get("keptCount") or 0) == 0 and report["status"] != "excluded":
         report["zeroKeptClassification"] = zero_kept_classification.value
