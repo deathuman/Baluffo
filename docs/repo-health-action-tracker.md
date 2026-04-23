@@ -18,8 +18,8 @@ This page converts an external repository analysis into a repo-native action tra
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src` -> `868 errors in 124 files (checked 312 source files)` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged five-file scope (`src/python_version_guard.py`, `src/pipeline_io.py`, `src/bridge/report_normalizer.py`, `src/bridge/api.py`, `src/bridge/admin_registry_api.py`) |
+| Broad type-check run | `python -m mypy src` -> `835 errors in 121 files (checked 312 source files)` |
+| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged seven-file scope (`src/python_version_guard.py`, `src/pipeline_io.py`, `src/bridge/report_normalizer.py`, `src/bridge/api.py`, `src/bridge/admin_registry_api.py`, `src/bridge/admin_task_runtime.py`, `src/bridge/ops_live_payload.py`) |
 | ESLint | `137 warnings, 0 errors` |
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
@@ -36,9 +36,9 @@ This page converts an external repository analysis into a repo-native action tra
 
 ### P0
 
-1. **Next staged mypy milestone: expand from the bridge/admin leaf modules into the composition-root cluster.**
-   The first enforced bridge/admin leaf milestone is now green for `src/bridge/report_normalizer.py`, `src/bridge/api.py`, and `src/bridge/admin_registry_api.py`, and the broad audit dropped from `1010` to `868` errors. The next highest-value follow-up is `src/admin_bridge.py`, `src/bridge/admin_task_runtime.py`, and `src/bridge/ops_live_payload.py`, then the surrounding live-task/ops helpers.
-   **Done when:** the enforced mypy scope expands again to include at least one composition-root admin module without regressing the current five-file gate.
+1. **Next staged mypy milestone: type the `admin_bridge` composition root and its immediate helper boundary.**
+   The staged bridge/admin leaf pass is now green for `src/bridge/report_normalizer.py`, `src/bridge/api.py`, `src/bridge/admin_registry_api.py`, `src/bridge/admin_task_runtime.py`, and `src/bridge/ops_live_payload.py`. The broad audit dropped from `1010` to `868`, then to `835` errors. The next highest-value follow-up is `src/admin_bridge.py`, with the adjacent typed-service and runtime helper boundary in `src/bridge/admin_entrypoint_services.py` and `src/bridge/admin_entrypoint_runtime.py`.
+   **Done when:** the enforced mypy scope expands to include `src/admin_bridge.py` without regressing the current seven-file gate, and the surrounding service/runtime helper aliases stop leaking `Any` into the composition root.
 
 2. **Completed: add a Python dependency lock strategy for reproducible builds.**
    `requirements-lock.txt` is now the canonical Python lock artifact, and CI/release install surfaces consume it instead of floating `requirements.txt`.
@@ -84,7 +84,7 @@ This page converts an external repository analysis into a repo-native action tra
 - `TODO` / `FIXME` / `HACK` count in `src/` plus `frontend/` is currently `0`, not `3`.
 - `python -m vulture` does **not** work in the active interpreter, but the repo's pre-commit flow manages vulture separately; this is not the same as a broken repo gate.
 - The previous `data/source-approval-state.json` newline-only churn was real, but it is now fixed at the shared writer level rather than hidden from the local checks.
-- The type-safety claim still needs nuance: repo-wide mypy debt is large, but the enforced mypy scope now includes a first staged bridge/admin leaf milestone and remains green.
+- The type-safety claim still needs nuance: repo-wide mypy debt is large, but the enforced mypy scope now includes the second staged bridge/admin leaf milestone and remains green.
 - The original 1-10 score table and overall `7.5/10` rating were not retained here because they are subjective and partially stale relative to the current repo state.
 
 ## Not Locally Validated

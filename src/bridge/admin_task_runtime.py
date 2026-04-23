@@ -1,24 +1,147 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol, cast
 
 root: Any | None = None
 
+JsonObject = dict[str, Any]
 
-def _require_root() -> Any:
+
+class _SyncStateLike(Protocol):
+    def set_sync_status(
+        self,
+        *,
+        action: str = "",
+        result: str = "",
+        error: str = "",
+        pulled: bool = False,
+        pushed: bool = False,
+    ) -> None: ...
+
+    def save_sync_runtime_state(self, payload: JsonObject) -> None: ...
+
+
+class _SyncServiceLike(Protocol):
+    def get_sync_status_payload(self) -> JsonObject: ...
+    def _sync_guard(self) -> JsonObject | None: ...
+    def sync_pull_sources(self) -> JsonObject: ...
+    def sync_push_sources(self) -> JsonObject: ...
+    def startup_sync_pull(self) -> None: ...
+    def sync_task_running(self) -> bool: ...
+    def wait_for_sync_tasks(self, timeout_s: float = 5.0) -> None: ...
+
+
+class _RegistrySyncFlowLike(Protocol):
+    def maybe_trigger_auto_sync_push(
+        self,
+        *,
+        reason: str,
+        sync_guard: Callable[[], JsonObject | None],
+        sync_task_running: Callable[[], bool],
+        start_sync_task: Callable[..., JsonObject],
+    ) -> bool: ...
+
+
+class _SyncTaskFlowLike(Protocol):
+    def run_sync_task_worker(self, **kwargs: Any) -> None: ...
+
+
+class _RunHistoryApiLike(Protocol):
+    SyncHistoryDeps: Callable[..., Any]
+
+    def reconcile_sync_history_locked(self, deps: Any) -> None: ...
+
+
+class _PipelineServiceLike(Protocol):
+    def get_status_payload(self) -> JsonObject: ...
+
+    def wait_for_report_completion(
+        self,
+        *,
+        report_path: Any,
+        started_at: str,
+        timeout_s: float,
+        report_name: str,
+        load_json_object: Callable[..., JsonObject],
+        report_is_stale_in_progress: Callable[..., bool],
+        fail_on_stale: bool = False,
+    ) -> JsonObject: ...
+
+    def start_task(self, payload: JsonObject | None = None) -> JsonObject: ...
+
+
+class _TaskLaunchApiLike(Protocol):
+    def start_fetcher_task(
+        self, payload: JsonObject | None = None, **kwargs: Any
+    ) -> JsonObject: ...
+
+
+class _AdminTaskRuntimeRoot(Protocol):
+    TASKS_CONFIG_PATH: Path
+    OPS_STATE_LOCK: Any
+    SYNC_STATE_LOCK: Any
+    _run_history_api: _RunHistoryApiLike
+    _registry_sync_flow: _RegistrySyncFlowLike
+    _sync_task_flow: _SyncTaskFlowLike
+    SyncState: Any
+    parse_iso: Callable[[Any], Any]
+    now_iso: Callable[[], str]
+    now_utc: Callable[[], datetime]
+    load_run_history: Callable[..., Any]
+    save_run_history: Callable[..., Any]
+    save_json_atomic: Callable[..., Any]
+    prune_started_rows_for_type: Callable[..., Any]
+    clear_task_state: Callable[..., Any]
+    _clear_task_state_locked: Callable[..., Any]
+    upsert_run_history: Callable[..., Any]
+    task_running_from_state: Callable[..., bool]
+    report_is_stale_in_progress: Callable[..., bool]
+    load_json_object: Callable[..., JsonObject]
+    normalize_fetch_report_contract: Callable[[JsonObject], JsonObject]
+    normalize_discovery_report_contract: Callable[[JsonObject], JsonObject]
+    summarize_fetch_report: Callable[[JsonObject], JsonObject]
+    summarize_discovery_report: Callable[[JsonObject], JsonObject]
+    JOBS_FETCH_REPORT_PATH: Any
+    JOBS_FETCH_TASKS_PATH: Any
+    DISCOVERY_REPORT_PATH: Any
+    TASK_STATE_PATH: Any
+    _sync_guard: Callable[[], JsonObject | None]
+    sync_task_running: Callable[[], bool]
+    start_sync_task: Callable[..., JsonObject]
+    _set_sync_status: Callable[..., None]
+    bridge_log: Callable[..., Any]
+    SYNC_LIVE_TASK_PATH: Any
+    SCHEMA_VERSION: int
+    append_run_history: Callable[..., Any]
+    run_background_script: Callable[..., Any]
+    sync_history_from_reports: Callable[[], list[JsonObject]]
+    sync_pull_sources: Callable[[], JsonObject]
+    sync_push_sources: Callable[[], JsonObject]
+    threading: Any
+
+    def _get_sync_state(self) -> _SyncStateLike: ...
+    def _get_sync_service(self) -> _SyncServiceLike: ...
+    def _get_pipeline_service(self) -> _PipelineServiceLike: ...
+    def _get_task_launch_api(self) -> _TaskLaunchApiLike: ...
+
+
+def _require_root() -> _AdminTaskRuntimeRoot:
     if root is None:
         raise RuntimeError("admin bridge root is not bound")
-    return root
+    return cast(_AdminTaskRuntimeRoot, root)
 
 
-def read_tasks_config() -> dict[str, Any]:
+def read_tasks_config() -> JsonObject:
     root_mod = _require_root()
     try:
-        return json.loads(root_mod.TASKS_CONFIG_PATH.read_text(encoding="utf-8"))
+        parsed = json.loads(root_mod.TASKS_CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def set_sync_status(
@@ -39,19 +162,19 @@ def set_sync_status(
     )
 
 
-def get_sync_status_payload() -> dict[str, Any]:
+def get_sync_status_payload() -> JsonObject:
     return _require_root()._get_sync_service().get_sync_status_payload()
 
 
-def sync_guard() -> dict[str, Any] | None:
+def sync_guard() -> JsonObject | None:
     return _require_root()._get_sync_service()._sync_guard()  # noqa: SLF001
 
 
-def sync_pull_sources() -> dict[str, Any]:
+def sync_pull_sources() -> JsonObject:
     return _require_root()._get_sync_service().sync_pull_sources()
 
 
-def sync_push_sources() -> dict[str, Any]:
+def sync_push_sources() -> JsonObject:
     return _require_root()._get_sync_service().sync_push_sources()
 
 
@@ -153,7 +276,7 @@ def current_fetch_output_count() -> int:
     return int(summary.get("outputCount") or 0)
 
 
-def get_jobs_pipeline_status_payload() -> dict[str, Any]:
+def get_jobs_pipeline_status_payload() -> JsonObject:
     return _require_root()._get_pipeline_service().get_status_payload()
 
 
@@ -164,7 +287,7 @@ def wait_for_report_completion(
     timeout_s: float,
     report_name: str,
     fail_on_stale: bool = False,
-) -> dict[str, Any]:
+) -> JsonObject:
     root_mod = _require_root()
     return root_mod._get_pipeline_service().wait_for_report_completion(
         report_path=report_path,
@@ -177,7 +300,7 @@ def wait_for_report_completion(
     )
 
 
-def wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> dict[str, Any]:
+def wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> JsonObject:
     root_mod = _require_root()
     deadline = datetime.now(UTC) + timedelta(seconds=max(10.0, float(timeout_s)))
     while datetime.now(UTC) < deadline:
@@ -194,7 +317,7 @@ def wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> dict[str,
     raise TimeoutError("sync task did not finish within timeout")
 
 
-def start_fetcher_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def start_fetcher_task(payload: JsonObject | None = None) -> JsonObject:
     root_mod = _require_root()
     return root_mod._get_task_launch_api().start_fetcher_task(
         payload,
@@ -208,5 +331,5 @@ def start_fetcher_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     )
 
 
-def start_jobs_pipeline_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def start_jobs_pipeline_task(payload: JsonObject | None = None) -> JsonObject:
     return _require_root()._get_pipeline_service().start_task(payload)

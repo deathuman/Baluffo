@@ -2,11 +2,51 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 from src.bridge.server import runtime_state as bridge_runtime_state
 
 root: Any | None = None
+
+JsonObject = dict[str, Any]
+
+
+class _SyncStateLike(Protocol):
+    def set_sync_status(self, **kwargs: Any) -> None: ...
+    def save_sync_runtime_state(self, payload: JsonObject) -> None: ...
+
+
+class _SyncServiceLike(Protocol):
+    def get_sync_status_payload(self) -> JsonObject: ...
+    def sync_task_running(self) -> bool: ...
+    def sync_pull_sources(self) -> JsonObject: ...
+    def sync_push_sources(self) -> JsonObject: ...
+    def startup_sync_pull(self) -> None: ...
+    def wait_for_sync_tasks(self, timeout_s: float = 5.0) -> None: ...
+
+    _sync_state: _SyncStateLike
+
+
+class _TaskLaunchApiLike(Protocol):
+    def start_fetcher_task(
+        self, payload: JsonObject | None = None, **kwargs: Any
+    ) -> JsonObject: ...
+
+
+class _PipelineServiceLike(Protocol):
+    def get_status_payload(self) -> JsonObject: ...
+
+    def wait_for_report_completion(self, **kwargs: Any) -> JsonObject: ...
+
+    def start_task(self, payload: JsonObject | None = None) -> JsonObject: ...
+
+
+class _DesktopUpdateServiceLike(Protocol):
+    def get_status_payload(self) -> JsonObject: ...
+
+
+def _as_json_object(payload: Any) -> JsonObject:
+    return payload if isinstance(payload, dict) else {}
 
 
 def _require_root() -> Any:
@@ -15,12 +55,12 @@ def _require_root() -> Any:
     return root
 
 
-def get_sync_service() -> Any:
+def get_sync_service() -> _SyncServiceLike:
     root_mod = _require_root()
     data_dir = Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
     with root_mod._SYNC_SERVICE_LOCK:
         if root_mod._SYNC_SERVICE is not None and root_mod._SYNC_SERVICE_DATA_DIR == data_dir:
-            return root_mod._SYNC_SERVICE
+            return cast(_SyncServiceLike, root_mod._SYNC_SERVICE)
         root_mod._SYNC_SERVICE_DATA_DIR = data_dir
         root_mod._SYNC_SERVICE = root_mod.SyncService(
             data_dir=data_dir,
@@ -34,11 +74,11 @@ def get_sync_service() -> Any:
             get_security_defaults=root_mod.get_security_defaults,
             sync_state=root_mod.SyncState(data_dir=data_dir),
         )
-        return root_mod._SYNC_SERVICE
+        return cast(_SyncServiceLike, root_mod._SYNC_SERVICE)
 
 
-def get_sync_state() -> Any:
-    return get_sync_service()._sync_state  # noqa: SLF001
+def get_sync_state() -> _SyncStateLike:
+    return cast(_SyncStateLike, get_sync_service()._sync_state)  # noqa: SLF001
 
 
 def get_registry_service() -> Any:
@@ -113,33 +153,36 @@ def get_discovery_service() -> Any:
         return root_mod._DISCOVERY_SERVICE
 
 
-def get_task_launch_api() -> Any:
+def get_task_launch_api() -> _TaskLaunchApiLike:
     root_mod = _require_root()
-    return root_mod._task_launch_api.TaskLaunchApi(
-        runtime=root_mod._task_launch_api.TaskLaunchRuntime(
-            root=Path(root_mod.RUNTIME_CONFIG.root),
-            data_dir=Path(root_mod.RUNTIME_CONFIG.data_dir),
-        ),
-        paths=root_mod._task_launch_api.TaskLaunchPaths(
-            discovery_log=root_mod.DISCOVERY_LOG_PATH,
-            discovery_report=root_mod.DISCOVERY_REPORT_PATH,
-            fetcher_log=root_mod.FETCHER_LOG_PATH,
-            task_state=root_mod.TASK_STATE_PATH,
-            jobs_fetch_report=root_mod.JOBS_FETCH_REPORT_PATH,
-            approval_state=root_mod.APPROVAL_STATE_PATH,
-        ),
-        deps=root_mod._task_launch_api.TaskLaunchDeps(
-            now_iso=root_mod.now_iso,
-            bridge_log=root_mod.bridge_log,
-            load_json_object=root_mod.load_json_object,
-            save_json_atomic=root_mod.save_json_atomic,
-            task_state_lock=root_mod.OPS_STATE_LOCK,
-            default_source_loaders=root_mod.default_source_loaders,
-            failed_source_names_from_latest_report=lambda allowed: (
-                root_mod._failed_source_names_from_latest_report(allowed_names=allowed)
+    return cast(
+        _TaskLaunchApiLike,
+        root_mod._task_launch_api.TaskLaunchApi(
+            runtime=root_mod._task_launch_api.TaskLaunchRuntime(
+                root=Path(root_mod.RUNTIME_CONFIG.root),
+                data_dir=Path(root_mod.RUNTIME_CONFIG.data_dir),
             ),
-            safe_int=root_mod._safe_int,
-            pid_is_running=root_mod.pid_is_running,
+            paths=root_mod._task_launch_api.TaskLaunchPaths(
+                discovery_log=root_mod.DISCOVERY_LOG_PATH,
+                discovery_report=root_mod.DISCOVERY_REPORT_PATH,
+                fetcher_log=root_mod.FETCHER_LOG_PATH,
+                task_state=root_mod.TASK_STATE_PATH,
+                jobs_fetch_report=root_mod.JOBS_FETCH_REPORT_PATH,
+                approval_state=root_mod.APPROVAL_STATE_PATH,
+            ),
+            deps=root_mod._task_launch_api.TaskLaunchDeps(
+                now_iso=root_mod.now_iso,
+                bridge_log=root_mod.bridge_log,
+                load_json_object=root_mod.load_json_object,
+                save_json_atomic=root_mod.save_json_atomic,
+                task_state_lock=root_mod.OPS_STATE_LOCK,
+                default_source_loaders=root_mod.default_source_loaders,
+                failed_source_names_from_latest_report=lambda allowed: (
+                    root_mod._failed_source_names_from_latest_report(allowed_names=allowed)
+                ),
+                safe_int=root_mod._safe_int,
+                pid_is_running=root_mod.pid_is_running,
+            ),
         ),
     )
 
@@ -187,7 +230,7 @@ def get_ops_api() -> Any:
     )
 
 
-def get_pipeline_service() -> Any:
+def get_pipeline_service() -> _PipelineServiceLike:
     root_mod = _require_root()
     with root_mod._PIPELINE_SERVICE_LOCK:
         if root_mod._PIPELINE_SERVICE is None:
@@ -297,12 +340,7 @@ def get_pipeline_service() -> Any:
                     return False
 
                 task_state = pipeline_load_json_object(root_mod.TASK_STATE_PATH, {})
-                task_state_entry = (
-                    task_state.get(normalized_type)
-                    if isinstance(task_state, dict)
-                    and isinstance(task_state.get(normalized_type), dict)
-                    else {}
-                )
+                task_state_entry = _as_json_object(task_state.get(normalized_type))
                 if str(
                     task_state_entry.get("runId") or ""
                 ).strip() == normalized_run_id and root_mod.task_running_from_state(
@@ -321,12 +359,8 @@ def get_pipeline_service() -> Any:
                 if str(fetch_tasks.get("finishedAt") or "").strip():
                     return False
 
-                lifecycle = (
-                    fetch_tasks.get("runtime", {}).get("lifecycle")
-                    if isinstance(fetch_tasks.get("runtime"), dict)
-                    and isinstance((fetch_tasks.get("runtime") or {}).get("lifecycle"), dict)
-                    else {}
-                )
+                runtime_payload = _as_json_object(fetch_tasks.get("runtime"))
+                lifecycle = _as_json_object(runtime_payload.get("lifecycle"))
                 heartbeat_at = str(
                     lifecycle.get("heartbeatAt") or fetch_tasks.get("heartbeatAt") or ""
                 ).strip()
@@ -343,11 +377,7 @@ def get_pipeline_service() -> Any:
                     recent_artifact = (datetime.now(UTC) - artifact_mtime) <= timedelta(minutes=2)
                 except OSError:
                     recent_artifact = False
-                task_progress = (
-                    fetch_tasks.get("taskProgress")
-                    if isinstance(fetch_tasks.get("taskProgress"), dict)
-                    else {}
-                )
+                task_progress = _as_json_object(fetch_tasks.get("taskProgress"))
                 has_live_evidence = bool(
                     fetch_tasks.get("active")
                     or task_progress.get("active")
@@ -380,10 +410,10 @@ def get_pipeline_service() -> Any:
                 child_run_is_live=pipeline_child_run_is_live,
                 get_projected_run_history=root_mod._get_ops_api().get_projected_run_history,
             )
-        return root_mod._PIPELINE_SERVICE
+        return cast(_PipelineServiceLike, root_mod._PIPELINE_SERVICE)
 
 
-def get_desktop_update_service() -> Any:
+def get_desktop_update_service() -> _DesktopUpdateServiceLike:
     root_mod = _require_root()
     data_dir = Path(root_mod.RUNTIME_CONFIG.data_dir).resolve()
     with root_mod._DESKTOP_UPDATE_SERVICE_LOCK:
@@ -391,10 +421,10 @@ def get_desktop_update_service() -> Any:
             root_mod._DESKTOP_UPDATE_SERVICE is not None
             and root_mod._DESKTOP_UPDATE_SERVICE_DATA_DIR == data_dir
         ):
-            return root_mod._DESKTOP_UPDATE_SERVICE
+            return cast(_DesktopUpdateServiceLike, root_mod._DESKTOP_UPDATE_SERVICE)
         root_mod._DESKTOP_UPDATE_SERVICE_DATA_DIR = data_dir
         root_mod._DESKTOP_UPDATE_SERVICE = root_mod.DesktopUpdateService(
             data_dir=data_dir,
             current_version_getter=root_mod.get_app_version,
         )
-        return root_mod._DESKTOP_UPDATE_SERVICE
+        return cast(_DesktopUpdateServiceLike, root_mod._DESKTOP_UPDATE_SERVICE)

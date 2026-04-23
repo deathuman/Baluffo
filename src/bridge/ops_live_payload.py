@@ -9,6 +9,16 @@ from typing import Any
 
 from src.shared.live_task import normalize_live_task_progress
 
+JsonObject = dict[str, Any]
+
+
+def _as_dict(payload: Any) -> JsonObject:
+    return payload if isinstance(payload, dict) else {}
+
+
+def _as_list(payload: Any) -> list[Any]:
+    return payload if isinstance(payload, list) else []
+
 
 def coerce_non_negative_int(value: Any) -> int:
     try:
@@ -17,12 +27,12 @@ def coerce_non_negative_int(value: Any) -> int:
         return 0
 
 
-def fetch_progress_counts(payload: dict[str, Any]) -> dict[str, int]:
-    progress = normalize_live_task_progress(payload.get("taskProgress"))
-    counts = progress.get("counts") if isinstance(progress.get("counts"), dict) else {}
-    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
-    runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
-    sources = payload.get("sources") if isinstance(payload.get("sources"), list) else []
+def fetch_progress_counts(payload: JsonObject) -> dict[str, int]:
+    progress = normalize_live_task_progress(_as_dict(payload.get("taskProgress")))
+    counts = _as_dict(progress.get("counts"))
+    summary = _as_dict(payload.get("summary"))
+    runtime = _as_dict(payload.get("runtime"))
+    sources = _as_list(payload.get("sources"))
     status_counts = {
         "running": 0,
         "queued": 0,
@@ -85,15 +95,15 @@ def fetch_progress_counts(payload: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def count_present(counts: dict[str, Any], *keys: str) -> bool:
+def count_present(counts: JsonObject, *keys: str) -> bool:
     return any(key in counts for key in keys)
 
 
 def live_task_signal_is_recent(
     timestamp: str,
     *,
-    parse_iso: Callable[[Any], Any],
-    now_utc: Callable[[], Any],
+    parse_iso: Callable[[Any], datetime | None],
+    now_utc: Callable[[], datetime],
     max_idle_minutes: float = 2.0,
 ) -> bool:
     parsed = parse_iso(timestamp) if timestamp else None
@@ -108,7 +118,7 @@ def live_task_signal_is_recent(
 def live_task_artifact_recently_updated(
     path: Path,
     *,
-    now_utc: Any,
+    now_utc: datetime,
     max_idle_minutes: float = 2.0,
 ) -> bool:
     try:
@@ -121,9 +131,9 @@ def live_task_artifact_recently_updated(
         return False
 
 
-def live_task_heartbeat_at(payload: dict[str, Any]) -> str:
-    runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {}
-    lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
+def live_task_heartbeat_at(payload: JsonObject) -> str:
+    runtime = _as_dict(payload.get("runtime"))
+    lifecycle = _as_dict(runtime.get("lifecycle"))
     return str(
         lifecycle.get("heartbeatAt")
         or payload.get("heartbeatAt")
@@ -132,12 +142,11 @@ def live_task_heartbeat_at(payload: dict[str, Any]) -> str:
     ).strip()
 
 
-def build_pipeline_task_progress(payload: dict[str, Any]) -> dict[str, Any]:
-    progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
-    current_step = max(0, int(progress.get("currentStep") or 0))
-    total_steps = max(1, int(progress.get("totalSteps") or 1))
-    percent = max(0, min(100, int(progress.get("percent") or 0)))
-    ratio = max(0.0, min(1.0, percent / 100.0 if total_steps <= 0 else current_step / total_steps))
+def build_pipeline_task_progress(payload: JsonObject) -> JsonObject:
+    progress = _as_dict(payload.get("progress"))
+    current_step = coerce_non_negative_int(progress.get("currentStep"))
+    total_steps = max(1, coerce_non_negative_int(progress.get("totalSteps")))
+    ratio = max(0.0, min(1.0, current_step / total_steps))
     return {
         "active": bool(payload.get("active")),
         "phaseKey": str(payload.get("stage") or "").strip() or "pipeline",
@@ -149,7 +158,7 @@ def build_pipeline_task_progress(payload: dict[str, Any]) -> dict[str, Any]:
         "counts": {
             "currentStep": current_step,
             "totalSteps": total_steps,
-            "baselineOutputCount": int(payload.get("baselineOutputCount") or 0),
-            "finalOutputCount": int(payload.get("finalOutputCount") or 0),
+            "baselineOutputCount": coerce_non_negative_int(payload.get("baselineOutputCount")),
+            "finalOutputCount": coerce_non_negative_int(payload.get("finalOutputCount")),
         },
     }
