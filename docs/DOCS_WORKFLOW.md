@@ -55,6 +55,7 @@ Review the touched area and update docs in the same change when any of these mov
 - Historical or planning labels when a doc should be marked active, operational, historical, or refactor-record instead of leaving that status implicit
 - `Last updated` markers on active docs you touched
 - Archive links in [`INDEX.md`](INDEX.md) when a record moves under `docs/archive/`
+- Both the link target and any visible path text when an archive move changes how active docs or the changelog refer to `archive/` material
 
 ## Logging and History
 

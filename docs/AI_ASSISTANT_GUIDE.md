@@ -71,6 +71,7 @@ See [`testing.md`](testing.md) for the full verification matrix.
 - Prefer leaf modules over composition roots.
 - `src/jobs/common/__init__.py` is a package marker only.
 - `_runtime.facade()` is retired and should not be recreated.
+- Thin compatibility surfaces include their exported names and monkeypatch/root patch seams, not only their file boundaries or line budgets.
 - Update implementation, schemas, tests, and docs together when contracts or workflow move.
 - When the task is documentation maintenance or doc ownership, follow [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md).
 - Archived refactor/history docs are supporting context, not default routing sources.

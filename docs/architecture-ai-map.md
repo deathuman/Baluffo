@@ -8,6 +8,7 @@
 > - **Last updated:** 2026-04-23
 >
 > Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) first. Archived boundary-charter docs live under [`archive/refactor-records/`](archive/refactor-records/) and are not part of the default AI read path.
+> For any file described below as a stable thin surface, compatibility surface, or monkeypatch surface, preserve the root-level exported names that tests or leaf modules patch through that root unless the matching contract tests and docs are updated in the same change.
 
 ---
 

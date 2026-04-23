@@ -1,4 +1,5 @@
 import ast
+import importlib
 import re
 from pathlib import Path
 
@@ -853,6 +854,28 @@ def test_desktop_app_package_stays_lazy_compat_facade(repo_root: Path) -> None:
     assert "_COMPAT_MODULES = (" in text
 
 
+def test_desktop_app_package_exports_required_compatibility_names() -> None:
+    desktop_app = importlib.import_module("src.ship.desktop_app")
+    required_names = {
+        "_append_startup_trace",
+        "_desktop_update_restart_snapshot",
+        "_wait_for_browser_reveal",
+        "_write_launch_diagnostics",
+        "classify_desktop_startup_state",
+        "latest_browser_heartbeat_ts",
+        "show_native_message",
+        "wait_for_browser_heartbeat",
+        "wait_for_desktop_startup_ready",
+        "watch_browser_session",
+    }
+
+    missing = sorted(name for name in required_names if not hasattr(desktop_app, name))
+    assert not missing, (
+        "src.ship.desktop_app must preserve its root-level monkeypatch and orchestration "
+        f"surface during refactors; missing: {', '.join(missing)}"
+    )
+
+
 def test_desktop_launcher_root_stays_thin_private_orchestration_surface(repo_root: Path) -> None:
     target = repo_root / "src" / "ship" / "desktop_app" / "launcher.py"
     tree = _module_tree(target)
@@ -888,6 +911,86 @@ def test_desktop_startup_root_stays_thin_private_compat_surface(repo_root: Path)
     assert "def watch_browser_session(" not in text
     assert len(text.splitlines()) <= 80, (
         "desktop_app/startup.py drifted back toward implementation ownership"
+    )
+
+
+def test_desktop_updater_root_exports_required_compatibility_names() -> None:
+    desktop_updater = importlib.import_module("src.ship.desktop_updater")
+    required_names = {
+        "DESKTOP_UPDATE_MANIFEST_ASSET",
+        "DesktopUpdatePaths",
+        "HelperProgressWindow",
+        "_show_message",
+        "fetch_json",
+        "run_install",
+        "update_manager",
+        "validate_desktop_manifest",
+    }
+
+    missing = sorted(name for name in required_names if not hasattr(desktop_updater, name))
+    assert not missing, (
+        "src.ship.desktop_updater must keep its helper/install/release compatibility exports "
+        f"available at the root; missing: {', '.join(missing)}"
+    )
+
+
+def test_packaged_desktop_smoke_root_exports_required_compatibility_names() -> None:
+    packaged_smoke = importlib.import_module("src.packaged_desktop_smoke")
+    required_names = {
+        "fetch_json",
+        "read_startup_metrics_file",
+        "run_packaged_smoke",
+        "run_portable_build",
+        "select_startup_probe_browser",
+        "write_startup_summary",
+    }
+
+    missing = sorted(name for name in required_names if not hasattr(packaged_smoke, name))
+    assert not missing, (
+        "src.packaged_desktop_smoke must keep its stable smoke-runner surface intact during "
+        f"refactors; missing: {', '.join(missing)}"
+    )
+
+
+def test_source_discovery_compatibility_surfaces_export_required_names() -> None:
+    compatibility_surfaces = {
+        "src.source_discovery.reporting": {
+            "build_discovery_task_progress",
+            "build_m5_strategic_backlog",
+            "merge_candidate_streams",
+            "write_discovery_progress_report",
+        },
+        "src.source_discovery.web_search": {
+            "discover_web_search_candidates",
+            "extract_links_from_html",
+            "fetch_text",
+            "infer_web_candidate",
+        },
+    }
+
+    for module_name, required_names in compatibility_surfaces.items():
+        module = importlib.import_module(module_name)
+        exported = set(getattr(module, "__all__", ()))
+        assert required_names <= exported, (
+            f"{module_name} must keep an explicit compatibility export list for refactor safety."
+        )
+        missing = sorted(name for name in required_names if not hasattr(module, name))
+        assert not missing, f"{module_name} is missing required exports: {', '.join(missing)}"
+
+    gamesmap = importlib.import_module("src.source_discovery.gamesmap")
+    gamesmap_required_names = {
+        "discover_gamesmap_candidates",
+        "fetch_text",
+        "gamesmap_matches_category",
+        "infer_web_candidate",
+        "parse_gamesmap_detail_page",
+    }
+    gamesmap_missing = sorted(
+        name for name in gamesmap_required_names if not hasattr(gamesmap, name)
+    )
+    assert not gamesmap_missing, (
+        "src.source_discovery.gamesmap must preserve its stable compatibility exports during "
+        f"refactors; missing: {', '.join(gamesmap_missing)}"
     )
 
 

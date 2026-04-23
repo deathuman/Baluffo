@@ -15,6 +15,7 @@
     "lint:precommit:changed": "python scripts/precommit_gate.py --mode changed",
     "lint:precommit:all": "python scripts/precommit_gate.py --mode all",
     "lint:precommit:ci": "python scripts/precommit_gate.py --mode all --exclude-root data",
+    "test:refactor:changed": "python scripts/refactor_changed_gate.py",
     "release:preflight": "npm run lint:precommit && npm run test:py:extended && npm run test:frontend:unit && npm run test:frontend:packaged && npm run test:frontend:packaged:sync-rehearsal && npm run test:frontend:packaged:update-rehearsal && npm run test:frontend:packaged:orphan-reclaim-rehearsal && npm run test:frontend:packaged:browser-job-rehearsal && npm run test:frontend:packaged:jobs-pipeline",
     "build:frontend-runtime-config": "npm run check:python-version && python scripts/build_frontend_runtime_config.py",
     "check:test-manifest": "node scripts/sync_frontend_unit_manifest.mjs --check",

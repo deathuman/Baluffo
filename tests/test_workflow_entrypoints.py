@@ -66,6 +66,7 @@ def test_pre_push_hook_runs_python_and_smoke_gates() -> None:
 
     for expected_command in (
         "npm run lint:precommit:ci",
+        "npm run test:refactor:changed",
         "npm run test:py:extended",
         "npm run test:smoke",
     ):
@@ -89,6 +90,11 @@ def test_package_json_dev_pipeline_uses_module_entrypoint(repo_root: Path) -> No
     assert package["scripts"]["dev:pipeline"] == (
         "npm run check:python-version && python -m src.jobs.pipeline --force-refresh-all"
     )
+
+
+def test_package_json_exposes_refactor_changed_entrypoint(repo_root: Path) -> None:
+    package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
+    assert package["scripts"]["test:refactor:changed"] == "python scripts/refactor_changed_gate.py"
 
 
 def test_package_json_packaged_smoke_scripts_use_direct_dist_by_default(repo_root: Path) -> None:

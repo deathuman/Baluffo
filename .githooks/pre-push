@@ -22,6 +22,7 @@ if [ "$need_gate" -eq 1 ]; then
     fi
     echo "Running release-parity gates before pushing to main..."
     npm run lint:precommit:ci
+    npm run test:refactor:changed
     npm run test:py:extended
     npm run test:smoke
 fi

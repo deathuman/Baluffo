@@ -253,14 +253,28 @@ Equivalent direct command:
 python -m pytest tests -q -m "not slow" --cov=src --cov-report=term-missing --color=no
 ```
 
+## Refactor Guard
+
+Run the path-aware refactor lane when you change compatibility roots, archive/doc routing, or hook workflow wiring:
+
+```bash
+npm run test:refactor:changed
+```
+
+The lane inspects changed tracked files first. It runs only the matching contract/subsystem tests for narrow compatibility-surface changes, runs `tests/test_release_docs.py` for docs routing changes, and escalates to `npm run test:py:extended` for broad multi-subsystem or packaging/release refactors.
+
 ## Which command should I run?
 
 - Small Python logic change: `npm run test:py`
+- Compatibility root or monkeypatch-surface refactor (`src/ship/desktop_app/*`, `src/ship/desktop_updater.py`, `src/packaged_desktop_smoke.py`, `src/source_discovery/{gamesmap,reporting,web_search}.py`, `src/source_sync.py`, `src/admin_bridge.py`, `src/jobs_fetcher.py`, `src/jobs/{pipeline,state,reporting}.py`): `npm run test:refactor:changed`
+- Docs/archive move or routing cleanup (`docs/`, especially `docs/archive/`, `docs/INDEX.md`, `docs/CHANGELOG.md`): `npm run test:refactor:changed`
 - Perf-sensitive backend or packaging change: `npm run perf:py:timing`, then the nearest discovery/startup perf lane if relevant
 - Before pushing to `main` or preparing a release: `npm run test:py:extended`
 - Before merging a broad or risky backend change: `npm run test:py:extended` or `npm run verify`
 - JavaScript/frontend unit change: `npm run test:unit`
 - Browser or page-flow change: `npm run test:smoke`
 - Broad or risky change: `npm run verify`
+
+If you switch Python interpreters or recreate the local environment, run `npm run lint:precommit:changed` before starting refactor work. Hook setup also expects `python -m mypy --version` to succeed in the active interpreter.
 
 For the AI bootstrap and task-routing summary, see [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md).
