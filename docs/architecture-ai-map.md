@@ -104,6 +104,8 @@ src/ship/desktop_update.py (stable updater surface)
 **Saved page:** `frontend/saved/app.js` -> `runtime.js` -> `runtime/{state,events,auth-controller,activity-controller,attachments-controller,custom-job-controller,render-controller}.js`, `app/{notes,attachments,activity}.js`, `app/admin-bridge-state.js`, `app/view-state.js`
 
 **Admin page:** `frontend/admin/app.js` -> `runtime.js` -> `runtime/{composition,overview,events,state,view,effects,actions}.js`, `app/{auth,fetcher,discovery,sync}.js`, `app/registry/{ui,load,mutations}.js`, `app/ops/{format,task-state,health,bridge-status}.js`
+  -> render exports stay stable through `frontend/admin/render.js` -> `frontend/admin/render/ops.js`
+  -> ops renderer ownership lives in `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
 
 **Shared:** `frontend/shared/state-hub.js` (cross-module state), `frontend/shared/api-client.js` (bridge HTTP), `frontend/shared/config/admin-config.js` (frontend-safe runtime config), `frontend/shared/local-data/` (desktop/browser local-data clients)
 
@@ -120,7 +122,7 @@ src/ship/desktop_update.py (stable updater surface)
 - `discovery_service.py` - discovery task orchestration
 - `pipeline_service.py` - jobs pipeline task
 - `routes/get_routes.py`, `routes/post_routes.py` - HTTP handlers
-- `ops_api.py` - stable OpsApi surface over `ops_history_projection.py`, `ops_task_live.py`, and `ops_live_payload.py`
+- `ops_api.py` - stable OpsApi surface over `ops_history_projection.py`, `ops_task_live.py`, `ops_task_{fetch_live,discovery_live,projection}.py`, and `ops_live_payload.py`
 - `source_check_api.py` - source probe/check helpers
 
 **Still in `admin_bridge.py`:** bridge startup entrypoint, one-line `build_bridge_api(...)` wrapper, stable compatibility exports, and root monkeypatch seams
@@ -212,7 +214,8 @@ See [`testing.md`](testing.md) for more commands.
 - `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`
 
 **Leaf modules that are still safe extraction targets**
-- `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`
+- `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, `src/bridge/ops_live_payload.py`
+- `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
 - `src/jobs/fetcher_compat_{exports,runtime}.py`
 - `src/jobs/adapters/static_listing_flow.py`
 - `src/jobs/state_incremental.py`

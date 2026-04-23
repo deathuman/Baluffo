@@ -33,15 +33,17 @@ Use these as entrypoints or shims only; route new logic to the owning modules th
 - `src/source_sync.py` - permanent thin sync integration surface; config/runtime/snapshot/crypto logic belongs in `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/jobs/common/__init__.py` - package marker only; import `src.jobs.common.<leaf>` or package-submodule helpers
 - `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`
+- `frontend/admin/render/ops.js` - thin compatibility render surface; ops summary/history rendering belongs in `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
 
 Current high-value leaf owners behind those surfaces:
-- `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_live_payload.py`
+- `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, `src/bridge/ops_live_payload.py`
 - `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`
 - `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/jobs/fetcher_compat_{exports,runtime}.py`
 - `src/jobs/adapters/static_listing_flow.py`
 - `src/jobs/state_incremental.py`
 - `frontend/saved/app/runtime/*.js`
+- `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
 
 ---
 
@@ -102,6 +104,7 @@ Planning/history records for major cleanup passes. Use them only after the canon
 | [`static-adapter-boundary-charter.md`](static-adapter-boundary-charter.md) | Refactor record | You are changing the static adapter boundary and need lane-specific compatibility assumptions |
 | [`jobs-fetcher-boundary-charter.md`](jobs-fetcher-boundary-charter.md) | Refactor record | You are changing the jobs fetcher facade boundary and need lane-specific compatibility assumptions |
 | [`admin-bridge-boundary-charter.md`](admin-bridge-boundary-charter.md) | Refactor record | You are changing admin bridge startup/runtime boundaries and need lane-specific compatibility assumptions |
+| [`admin-ops-live-boundary-charter.md`](admin-ops-live-boundary-charter.md) | Refactor record | You are changing ops live-task payload assembly or admin ops renderer boundaries and need lane-specific compatibility assumptions |
 | [`desktop-runtime-refactor-charter.md`](desktop-runtime-refactor-charter.md) | Refactor record | You are changing desktop runtime package boundaries and need lane-specific compatibility assumptions |
 
 ---

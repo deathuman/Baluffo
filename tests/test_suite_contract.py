@@ -166,6 +166,38 @@ def test_bridge_mutable_module_state_stays_in_approved_runtime_modules() -> None
     )
 
 
+def test_ops_task_live_root_stays_split_by_task_type(repo_root: Path) -> None:
+    target = repo_root / "src" / "bridge" / "ops_task_live.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+    function_names = set(_top_level_function_names(tree))
+
+    assert "from src.bridge import ops_task_fetch_live as ops_task_fetch_live_mod" in text
+    assert "from src.bridge import ops_task_discovery_live as ops_task_discovery_live_mod" in text
+    assert "from src.bridge import ops_task_projection as ops_task_projection_mod" in text
+    assert "build_fetch_live_payload=ops_task_fetch_live_mod.build_fetch_live_payload" in text
+    assert (
+        "build_discovery_live_payload=ops_task_discovery_live_mod.build_discovery_live_payload"
+        in text
+    )
+    assert "def build_fetch_live_payload(" not in text
+    assert "def build_discovery_live_payload(" not in text
+    assert "def build_sync_live_payload(" not in text
+    assert "def resolve_projected_live_context(" not in text
+    assert {
+        "coerce_non_negative_int",
+        "fetch_progress_counts",
+        "count_present",
+        "live_task_signal_is_recent",
+        "live_task_artifact_recently_updated",
+        "live_task_heartbeat_at",
+        "build_pipeline_task_progress",
+        "build_current_task_state_payload",
+        "get_task_live_payload",
+    } <= function_names
+    assert len(text.splitlines()) <= 140, "ops_task_live.py drifted back toward monolith size"
+
+
 def test_admin_bridge_keeps_registry_autosync_and_sync_normalization_out_of_entrypoint(
     repo_root: Path,
 ) -> None:

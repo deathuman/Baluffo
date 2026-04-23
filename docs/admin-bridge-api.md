@@ -5,7 +5,7 @@
 > - **Canonical for:** endpoint surface, route naming, and high-level request intent
 > - **Not canonical for:** backend business logic internals or service ownership
 > - **Then inspect:** `src/bridge/routes/*`, `src/bridge/*.py`, `frontend/*/services.js`
-> - **Ownership note:** ops/task-state internals now compose through `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, and `src/bridge/ops_live_payload.py`
+> - **Ownership note:** ops/task-state internals now compose through `src/bridge/ops_api.py`, `src/bridge/ops_history_projection.py`, `src/bridge/ops_task_live.py`, `src/bridge/ops_task_{fetch_live,discovery_live,projection}.py`, and `src/bridge/ops_live_payload.py`
 
 Compact reference for AI coders. Endpoints are local-only (localhost).
 

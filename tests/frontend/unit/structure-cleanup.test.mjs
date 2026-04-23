@@ -428,6 +428,35 @@ test("cleanup structure: non-app modules never import slice app entry", () => {
   }
 });
 
+test("cleanup structure: admin ops render root stays a thin export surface", () => {
+  const rel = path.join("frontend", "admin", "render", "ops.js");
+  const source = fs.readFileSync(repoPath(rel), "utf8");
+  const imports = readImports(rel);
+
+  assert.equal(
+    countLines(rel) <= 20,
+    true,
+    `frontend/admin/render/ops.js is ${countLines(rel)} lines, above the 20-line thin-surface budget`
+  );
+  assert.doesNotMatch(
+    source,
+    /\bfunction\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/,
+    "frontend/admin/render/ops.js must stay a re-export surface"
+  );
+  assert.doesNotMatch(
+    source,
+    /\bclass\s+[A-Za-z_][A-Za-z0-9_]*\s*/,
+    "frontend/admin/render/ops.js must not regain class ownership"
+  );
+  for (const specifier of imports) {
+    assert.match(
+      specifier,
+      /^\.\/ops-(summary|history)\.js$/,
+      `Unexpected admin ops render dependency: ${specifier}`
+    );
+  }
+});
+
 test("cleanup structure: page slices reach local-data only through slice services", () => {
   const slices = ["jobs", "saved", "admin"];
   const allowedImport = "../local-data/services.js";
