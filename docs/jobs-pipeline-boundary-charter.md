@@ -6,6 +6,8 @@
 
 Jobs Pipeline and State Boundary Debloat
 
+Current routing note: this charter records the earlier root-thinning pass, but the later final leaf-closeout wave further split the heaviest jobs internals. For current edit routing, use [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and [`final-leaf-closeout-program.md`](final-leaf-closeout-program.md); `pipeline_runtime_{writers,summary}.py`, `pipeline_source_{loop,results,progress}.py`, and `state_source_{records,browser,migration}.py` now own the implementation behind the thin compatibility roots described here.
+
 ## Goal
 
 Reduce `src/jobs/pipeline.py` and `src/jobs/state.py` from implementation-heavy roots into stable compatibility surfaces over focused helper leaves without changing pipeline behavior, fetcher compatibility, persisted state semantics, or report contracts.

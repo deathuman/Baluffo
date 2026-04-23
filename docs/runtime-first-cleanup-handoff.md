@@ -5,11 +5,11 @@
 
 ## Purpose
 
-Use this note to resume later cleanup work without rediscovering what is already merged, which regressions were found during the follow-up, and which debt remains intentionally deferred.
+Use this note to resume older cleanup context without rediscovering what already landed, which regressions were found during the follow-up waves, and which debt remains intentionally deferred. The current stop-point for the cleanup campaign is [`final-leaf-closeout-program.md`](final-leaf-closeout-program.md); treat this handoff as sequencing history behind that end-state tracker.
 
 ## Current Status
 
-As of April 23, 2026, the first runtime-first cleanup wave, the admin follow-up wave, the jobs/saved runtime follow-up wave, the backend `source_sync` and `admin_bridge` follow-up waves, the packaged smoke follow-up wave, the `jobs_fetcher` follow-up wave, the admin ops live-payload follow-up wave, and the source-discovery generator/reporting follow-up wave are already merged to remote `main`. This handoff note is still relevant because it records the landed cleanup state and the intentionally deferred sequencing context; the canonical routing docs remain `AI_ASSISTANT_GUIDE.md`, `architecture-ai-map.md`, and `INDEX.md`.
+As of April 23, 2026, the first runtime-first cleanup wave, the admin follow-up wave, the jobs/saved runtime follow-up wave, the backend `source_sync` and `admin_bridge` follow-up waves, the packaged smoke follow-up wave, the `jobs_fetcher` follow-up wave, the admin ops live-payload follow-up wave, the source-discovery generator/reporting follow-up wave, and the final leaf-closeout wave are the current merged cleanup state for `main`. This handoff note remains useful as historical sequencing context, but the canonical routing docs stay `AI_ASSISTANT_GUIDE.md`, `architecture-ai-map.md`, `INDEX.md`, and the final closeout tracker.
 
 This follow-up landed:
 
@@ -63,7 +63,7 @@ If another cleanup wave continues from here, keep the order narrow and compatibi
 
 On another machine:
 
-1. Start from `main` or a descendant of the April 22, 2026 cleanup follow-up state; do not look for an unmerged “current working tree” version of this work.
+1. Start from `main` or a descendant of the April 22, 2026 cleanup follow-up state; do not look for an unmerged "current working tree" version of this work.
 2. Verify Python, Node, and repo test tooling are available.
 3. Review `git status --short` before making new changes.
 4. Re-run the cleanup verification baseline before extending the cleanup further:
@@ -74,5 +74,16 @@ On another machine:
 
 - [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md)
 - [`architecture-ai-map.md`](architecture-ai-map.md)
+- [`final-leaf-closeout-program.md`](final-leaf-closeout-program.md)
 - [`testing.md`](testing.md)
 - [`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md)
+
+## Intentionally Deferred Specialized Owners
+
+These remaining larger modules are acceptable to leave as-is for now. Treat them as specialized owners, not as the next default cleanup lane, unless future behavior work justifies reopening them.
+
+- `src/source_registry.py`
+- `src/ship/update_manager.py`
+- `src/jobs/adapters/social_parsers.py`
+- `src/source_discovery/core.py`
+- `src/ship/packaged_smoke/runtime.py`

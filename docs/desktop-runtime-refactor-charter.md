@@ -4,6 +4,8 @@
 
 Use this tracker for the `src/ship/desktop_app` modularization campaign.
 
+Current routing note: this charter records the earlier package split, but the later final leaf-closeout wave further thinned the runtime owners. For current edit routing, use [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and [`final-leaf-closeout-program.md`](final-leaf-closeout-program.md); `launcher_{flow,diagnostics,recovery}.py` and `startup_{ready,watchdog}.py` now own the implementation behind the thin `launcher.py` and `startup.py` roots.
+
 ## Title
 
 Desktop Runtime Package Modularization

@@ -663,6 +663,36 @@ def test_jobs_pipeline_state_helpers_do_not_import_jobs_roots(repo_root: Path) -
     )
 
 
+def test_jobs_leaf_closeout_helpers_do_not_import_jobs_roots(repo_root: Path) -> None:
+    forbidden_imports = {
+        "src.jobs_fetcher",
+        "src.jobs.pipeline",
+        "src.jobs.pipeline_runtime",
+        "src.jobs.state",
+        "src.jobs.reporting",
+        "src.jobs.common.contracts",
+    }
+    offenders: list[str] = []
+    for relative_path in (
+        "src/jobs/pipeline_source_loop.py",
+        "src/jobs/pipeline_source_results.py",
+        "src/jobs/pipeline_source_progress.py",
+        "src/jobs/pipeline_runtime_writers.py",
+        "src/jobs/pipeline_runtime_summary.py",
+        "src/jobs/state_source_records.py",
+        "src/jobs/state_source_browser.py",
+        "src/jobs/state_source_migration.py",
+    ):
+        imports = _imported_modules(_module_tree(repo_root / relative_path))
+        bad = sorted(imports & forbidden_imports)
+        if bad:
+            offenders.append(f"{relative_path} -> {', '.join(bad)}")
+    assert not offenders, (
+        "Jobs closeout helper leaves should not import jobs compatibility roots directly:\n- "
+        + "\n- ".join(offenders)
+    )
+
+
 def test_jobs_contracts_reporting_helpers_do_not_import_jobs_roots(repo_root: Path) -> None:
     forbidden_imports = {"src.jobs_fetcher", "src.jobs.common.contracts", "src.jobs.reporting"}
     offenders: list[str] = []
@@ -830,6 +860,41 @@ def test_desktop_app_package_stays_lazy_compat_facade(repo_root: Path) -> None:
     assert "_COMPAT_MODULES = (" in text
 
 
+def test_desktop_launcher_root_stays_thin_private_orchestration_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "ship" / "desktop_app" / "launcher.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+    function_names = set(_top_level_function_names(tree))
+
+    assert "from .launcher_diagnostics import (" in text
+    assert "from .launcher_flow import launch_desktop_app" in text
+    assert "from .launcher_recovery import _runtime_ports_need_retry, _should_retry_runtime_launch" in text
+    assert {"ensure_desktop_prerequisites", "parse_args", "main"} <= function_names
+    assert "def _launch_runtime_children(" not in text
+    assert "def _cleanup_runtime_processes(" not in text
+    assert "def _wait_for_bridge_readiness(" not in text
+    assert len(text.splitlines()) <= 160, (
+        "desktop_app/launcher.py drifted back toward implementation ownership"
+    )
+
+
+def test_desktop_startup_root_stays_thin_private_compat_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "ship" / "desktop_app" / "startup.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+    function_names = set(_top_level_function_names(tree))
+
+    assert "from .startup_ready import (" in text
+    assert "from .startup_watchdog import (" in text
+    assert function_names == set()
+    assert "def wait_for_desktop_startup_ready(" not in text
+    assert "def publish_success_marker_when_ready_async(" not in text
+    assert "def watch_browser_session(" not in text
+    assert len(text.splitlines()) <= 80, (
+        "desktop_app/startup.py drifted back toward implementation ownership"
+    )
+
+
 def test_sharded_python_test_families_do_not_use_star_helper_imports(repo_root: Path) -> None:
     for relative_path in (
         "tests/admin/test_admin_bridge_report_history.py",
@@ -920,6 +985,85 @@ def test_admin_bridge_root_stays_thin_entrypoint_surface(repo_root: Path) -> Non
         }
     )
     assert len(text.splitlines()) <= 630, "admin bridge root drifted back toward monolith size"
+
+
+def test_jobs_pipeline_stage_execution_root_stays_thin_private_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "pipeline_stage_source_execution.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+    function_names = set(_top_level_function_names(tree))
+
+    assert "from . import pipeline_source_loop as pipeline_source_loop_mod" in text
+    assert "from . import pipeline_source_progress as pipeline_source_progress_mod" in text
+    assert "from . import pipeline_source_results as pipeline_source_results_mod" in text
+    assert "pipeline_source_loop_mod.root = sys.modules[__name__]" in text
+    assert "pipeline_source_progress_mod.root = sys.modules[__name__]" in text
+    assert "pipeline_source_results_mod.root = sys.modules[__name__]" in text
+    assert {
+        "resolve_fetch_browser_fallback_helper",
+        "_build_capped_try_playwright",
+        "_default_adapter_for_loader",
+        "_is_provider_family_adapter",
+        "_is_social_subsource_report",
+        "_failure_bucket_from_zero_extract_context",
+    } <= function_names
+    assert "def emit_progress_line(" not in text
+    assert "def mark_task_started(" not in text
+    assert "def execute_loader(" not in text
+    assert len(text.splitlines()) <= 180, (
+        "pipeline_stage_source_execution.py drifted back toward implementation ownership"
+    )
+
+
+def test_jobs_pipeline_runtime_root_stays_thin_compat_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "pipeline_runtime.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+
+    assert "from .pipeline_runtime_summary import (" in text
+    assert "from .pipeline_runtime_writers import (" in text
+    assert _top_level_function_names(tree) == []
+    assert "def initialize_task_runtime(" not in text
+    assert "def build_active_pipeline_summary(" not in text
+    assert len(text.splitlines()) <= 80, (
+        "pipeline_runtime.py drifted back toward implementation ownership"
+    )
+
+
+def test_jobs_state_source_state_root_stays_thin_compat_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "state_source_state.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+    function_names = set(_top_level_function_names(tree))
+
+    assert "from .state_source_browser import (" in text
+    assert "from .state_source_migration import (" in text
+    assert "from .state_source_records import (" in text
+    assert {"_apply_report_to_entry", "update_source_state_rows"} <= function_names
+    assert "def normalize_source_state_payload(" not in text
+    assert "def apply_successful_source_state(" not in text
+    assert "def apply_browser_escalation_state(" not in text
+    assert len(text.splitlines()) <= 240, (
+        "state_source_state.py drifted back toward implementation ownership"
+    )
+
+
+def test_bridge_post_routes_root_stays_thin_registration_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "bridge" / "routes" / "post_routes.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+    function_names = set(_top_level_function_names(tree))
+
+    assert "from . import post_routes_admin as post_routes_admin_mod" in text
+    assert "from . import post_routes_local_data as post_routes_local_data_mod" in text
+    assert "from . import post_routes_update as post_routes_update_mod" in text
+    assert function_names == {"handle_post"}
+    assert "def _transition_registry_row(" not in text
+    assert "api.store.sign_in(" not in text
+    assert "api.desktop_update_service.get_status_payload(" not in text
+    assert len(text.splitlines()) <= 60, (
+        "bridge/routes/post_routes.py drifted back toward implementation ownership"
+    )
 
 
 def test_admin_runtime_megatest_stays_split(repo_root: Path) -> None:

@@ -4,7 +4,7 @@
 > - **Use this when:** changing packaged startup timing, probe orchestration, launcher timing, or startup metrics
 > - **Canonical for:** startup measurement ownership, event flow, command surface, and runtime-vs-probe boundaries
 > - **Not canonical for:** general testing guidance or release sequencing
-> - **Then inspect:** `src/ship/startup_telemetry.py`, `src/ship/desktop_app/launcher.py`, `src/ship/desktop_app/startup.py`, `src/ship/desktop_app/browser.py`, `src/ship/startup_probe_policy.py`, `src/packaged_desktop_smoke.py`, and `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`
+> - **Then inspect:** `src/ship/startup_telemetry.py`, `src/ship/desktop_app/{launcher_flow,launcher_diagnostics,launcher_recovery,startup_ready,startup_watchdog}.py`, `src/ship/desktop_app/{launcher,startup}.py`, `src/ship/desktop_app/browser.py`, `src/ship/startup_probe_policy.py`, `src/packaged_desktop_smoke.py`, and `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`
 
 This document is the single source of truth for Baluffo's packaged startup measurement architecture. Keep probe policy and startup-flow explanations here instead of repeating them in command docs or release notes.
 
@@ -32,7 +32,7 @@ Baluffo's startup measurement stack has three layers:
    - Lives in shipped code.
    - Owns site/bridge launch ordering, browser launch acceptance, handoff, reveal detection, and runtime readiness.
    - Should depend on small telemetry helpers, not probe-policy decisions.
-   - Primary code: `src/ship/desktop_app/launcher.py`, `src/ship/desktop_app/startup.py`, `src/ship/desktop_app/browser.py`.
+   - Primary code: `src/ship/desktop_app/{launcher_flow,launcher_diagnostics,launcher_recovery,startup_ready,startup_watchdog}.py`, `src/ship/desktop_app/{launcher,startup}.py`, `src/ship/desktop_app/browser.py`.
 
 3. **Startup probe policy + analysis**
    - Probe-only logic.

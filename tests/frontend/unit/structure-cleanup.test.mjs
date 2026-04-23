@@ -556,6 +556,35 @@ test("cleanup structure: jobs desktop update root stays a thin export surface", 
   }
 });
 
+test("cleanup structure: jobs domain root stays a thin export surface", () => {
+  const rel = path.join("frontend", "jobs", "domain.js");
+  const source = fs.readFileSync(repoPath(rel), "utf8");
+  const imports = readImports(rel);
+
+  assert.equal(
+    countLines(rel) <= 40,
+    true,
+    `frontend/jobs/domain.js is ${countLines(rel)} lines, above the 40-line thin-surface budget`
+  );
+  assert.doesNotMatch(
+    source,
+    /\bfunction\s+[A-Za-z_][A-Za-z0-9_]*\s*\(/,
+    "frontend/jobs/domain.js must stay a re-export surface"
+  );
+  assert.doesNotMatch(
+    source,
+    /\bclass\s+[A-Za-z_][A-Za-z0-9_]*\s*/,
+    "frontend/jobs/domain.js must not regain class ownership"
+  );
+  for (const specifier of imports) {
+    assert.match(
+      specifier,
+      /^\.\/domain\/(query|feed|view)\.js$/,
+      `Unexpected jobs domain root dependency: ${specifier}`
+    );
+  }
+});
+
 test("cleanup structure: domain and render layers do not cross-import in feature slices", () => {
   const slices = ["jobs", "saved", "admin"];
   for (const slice of slices) {

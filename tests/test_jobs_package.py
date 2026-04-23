@@ -241,6 +241,42 @@ def test_state_module_uses_package_private_helper_boundaries(repo_root: Path) ->
     assert "def apply_job_lifecycle_state(" not in text
 
 
+def test_pipeline_stage_execution_module_uses_package_private_helper_boundaries(
+    repo_root: Path,
+) -> None:
+    target = repo_root / "src" / "jobs" / "pipeline_stage_source_execution.py"
+    text = target.read_text(encoding="utf-8")
+    assert "from . import pipeline_source_loop as pipeline_source_loop_mod" in text
+    assert "from . import pipeline_source_progress as pipeline_source_progress_mod" in text
+    assert "from . import pipeline_source_results as pipeline_source_results_mod" in text
+    assert "pipeline_source_loop_mod.root = sys.modules[__name__]" in text
+    assert "pipeline_source_progress_mod.root = sys.modules[__name__]" in text
+    assert "pipeline_source_results_mod.root = sys.modules[__name__]" in text
+    assert "def emit_progress_line(" not in text
+    assert "def mark_task_started(" not in text
+    assert "def execute_loader(" not in text
+
+
+def test_pipeline_runtime_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "pipeline_runtime.py"
+    text = target.read_text(encoding="utf-8")
+    assert "from .pipeline_runtime_summary import (" in text
+    assert "from .pipeline_runtime_writers import (" in text
+    assert "def initialize_task_runtime(" not in text
+    assert "def build_active_pipeline_summary(" not in text
+
+
+def test_state_source_state_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "state_source_state.py"
+    text = target.read_text(encoding="utf-8")
+    assert "from .state_source_browser import (" in text
+    assert "from .state_source_migration import (" in text
+    assert "from .state_source_records import (" in text
+    assert "def normalize_source_state_payload(" not in text
+    assert "def apply_successful_source_state(" not in text
+    assert "def apply_browser_escalation_state(" not in text
+
+
 def test_jobs_contracts_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "common" / "contracts.py"
     text = target.read_text(encoding="utf-8")

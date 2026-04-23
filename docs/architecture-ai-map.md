@@ -40,8 +40,10 @@ src/source_discovery.py (stable thin CLI entrypoint)
   -> src/source_discovery/ (package)
 
 src/ship/desktop_app/ (desktop runtime package)
-  -> launcher.py orchestrates site + bridge + browser startup
-  -> startup.py owns readiness, handoff, heartbeat, and watchdog flow
+  -> launcher.py stays the package-private orchestration surface
+  -> launcher_{flow,diagnostics,recovery}.py own launch flow, diagnostics, and recovery helpers
+  -> startup.py stays the package-private readiness/watchdog surface
+  -> startup_{ready,watchdog}.py own readiness, handoff, heartbeat, and watchdog flow
   -> browser.py / session.py / _windows.py / config.py own focused helpers
 
 src/packaged_desktop_smoke.py (stable packaged smoke entrypoint / monkeypatch surface)
@@ -86,17 +88,18 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Admin runtime wiring | `frontend/admin/app/runtime/{composition,overview,events,state,view,effects,actions}.js` | `frontend/admin/app/runtime.js` only for page-entry wiring/export changes |
 | Admin registry | `frontend/admin/app/registry/{ui,load,mutations}.js` | `frontend/admin/app/registry.js` only for stable controller/export changes |
 | Admin ops | `frontend/admin/app/ops/{format,task-state,health,bridge-status}.js`, `frontend/admin/app/{auth,fetcher,discovery,sync}.js` | `frontend/admin/app/ops.js` only for stable controller/export changes |
-| Bridge API | `src/bridge/*.py` | `src/bridge/routes/*.py` |
-| Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,registry_api,task_runtime}.py` | `src/admin_bridge.py` only for root-surface compatibility work |
-| Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
+| Bridge API | `src/bridge/*.py` | `src/bridge/routes/{get_routes,post_routes,post_routes_admin,post_routes_local_data,post_routes_update}.py` |
+| Admin bridge entrypoint/runtime wiring | `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py` | `src/admin_bridge.py` only for root-surface compatibility work |
+| Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting_{progress,candidates,backlog}.py`, `gamesmap_{cache,parsing,candidates}.py`, `web_search_{fetch,extract,candidates}.py` | `src/source_discovery.py` only for CLI compatibility, and `gamesmap.py`, `reporting.py`, or `web_search.py` only for stable import-surface compatibility work |
 | Bridge sync | `src/bridge/sync_service.py`, `src/source_sync_{config,runtime,snapshot,crypto}.py` | `src/source_sync.py` only for root-surface compatibility work, plus `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
-| Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`, `src/jobs/pipeline_timing.py`, `src/jobs/state_{source_state,lifecycle,incremental}.py`, `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py`, `src/jobs/reporting_{summary,queues,breakdowns,social}.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
+| Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`, `src/jobs/pipeline_{runtime_writers,runtime_summary}.py`, `src/jobs/pipeline_stage_source_execution.py`, `src/jobs/pipeline_source_{loop,results,progress}.py`, `src/jobs/pipeline_timing.py`, `src/jobs/state_{source_state,lifecycle,incremental}.py`, `src/jobs/state_source_{records,browser,migration}.py`, `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py`, `src/jobs/reporting_{summary,queues,breakdowns,social}.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
+| Jobs domain helpers | `frontend/jobs/domain/{query,feed,view}.js` | `frontend/jobs/domain.js` only for stable export-surface changes |
 | Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py` | `src/jobs/adapters/static_helpers.py` only for shim/patch-surface compatibility and `src/jobs/adapters/static.py` only for root-surface compatibility work |
 | Local-data backend store | `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py` | `src/local_data_store.py` only for root-surface compatibility work |
 | Desktop local-data runtime | `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js` | `frontend/shared/local-data/desktop-client.js` only for root bootstrap or `window.JobAppLocalData` wiring |
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
-| Desktop runtime | `src/ship/desktop_app/launcher.py` | `src/ship/desktop_app/{startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
+| Desktop runtime | `src/ship/desktop_app/{launcher_flow,launcher_diagnostics,launcher_recovery,startup_ready,startup_watchdog}.py` | `src/ship/desktop_app/{launcher,startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
 | Desktop updater helper executable | `src/ship/desktop_updater_{ui,release,install}.py` | `src/ship/desktop_updater.py` only for helper CLI/root patch-surface compatibility work |
 | Packaged smoke / updater | `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`, `src/ship/desktop_update_{shared,state,service}.py` | `src/packaged_desktop_smoke.py` and `src/ship/desktop_update.py` only for CLI/public-surface compatibility work |
 | UI selectors | `frontend/shared/ui/selectors.js` | - |
@@ -105,7 +108,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 
 ## 4) Frontend topology
 
-**Jobs page:** `frontend/jobs/app.js` -> `runtime.js` -> `app/feed.js`, `app/filters.js`, `app/cache.js`, `app/pipeline.js`, `app/sources.js`, `runtime/{events,feed-controller,list-view,pipeline-controller,query,startup-preview,auth-controller}.js`
+**Jobs page:** `frontend/jobs/app.js` -> `runtime.js` -> `app/feed.js`, `app/filters.js`, `app/cache.js`, `app/pipeline.js`, `app/sources.js`, `domain/{query,feed,view}.js`, `runtime/{events,feed-controller,list-view,pipeline-controller,query,startup-preview,auth-controller}.js`
   -> desktop update UI stays rooted at `frontend/jobs/app/desktop-update.js` over `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 
 **Saved page:** `frontend/saved/app.js` -> `runtime.js` -> `runtime/{state,events,auth-controller,activity-controller,attachments-controller,custom-job-controller,render-controller}.js`, `app/{notes,attachments,activity}.js`, `app/admin-bridge-state.js`, `app/view-state.js`
@@ -128,7 +131,8 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `registry_tombstones.py` - local delete ledger and restore helpers
 - `discovery_service.py` - discovery task orchestration
 - `pipeline_service.py` - jobs pipeline task
-- `routes/get_routes.py`, `routes/post_routes.py` - HTTP handlers
+- `routes/get_routes.py`, `routes/post_routes.py` - GET handlers plus the thin POST registration root
+- `routes/post_routes_{admin,local_data,update}.py` - POST route-family ownership behind the thin registration root
 - `ops_api.py` - stable OpsApi surface over `ops_history_projection.py`, `ops_task_live.py`, `ops_task_{fetch_live,discovery_live,projection}.py`, and `ops_live_payload.py`
 - `source_check_api.py` - source probe/check helpers
 
@@ -144,9 +148,15 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 **Jobs package (`src/jobs/`):**
 - `pipeline.py` - stable pipeline entry flow
 - `pipeline_run_setup.py`, `pipeline_execution_flow.py` - runtime setup and source execution orchestration
+- `pipeline_runtime.py` - stable runtime/task-state compatibility surface
+- `pipeline_runtime_writers.py`, `pipeline_runtime_summary.py` - runtime writer setup and live/runtime summary ownership
+- `pipeline_stage_source_execution.py` - stable source-execution compatibility surface
+- `pipeline_source_{loop,results,progress}.py` - per-source execution loop, result/report accumulation, and progress/runtime accounting
 - `pipeline_timing.py`, `pipeline_finalize.py` - timing aggregation and late-stage output/report assembly
 - `state.py` - stable jobs-state compatibility surface
-- `state_source_state.py`, `state_lifecycle.py`, `state_incremental.py` - source-state persistence, lifecycle ownership, cadence, and incremental freshness helpers
+- `state_source_state.py` - stable source-state compatibility surface
+- `state_source_{records,browser,migration}.py` - source-state normalization/report persistence, browser-fallback helpers, and migration/progression ownership
+- `state_lifecycle.py`, `state_incremental.py` - lifecycle ownership plus cadence/incremental freshness helpers
 - `common/contracts.py` - stable jobs contract compatibility surface
 - `common/contracts_{runtime,source_reports,task_state,fetch_report}.py` - payload normalization ownership for runtime, source-report, task-state, and fetch-report assembly
 - `reporting.py` - stable jobs reporting compatibility surface
@@ -242,10 +252,12 @@ See [`testing.md`](testing.md) for more commands.
 - `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py` or `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`
 - `src/source_discovery.py` - stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
 - `src/jobs_fetcher.py` - stable thin CLI facade; keep lazy export routing in `src/jobs/fetcher_compat_exports.py`, root-backed wrapper seams in `src/jobs/fetcher_compat_runtime.py`, and new pipeline logic in `src/jobs/*`
-- `src/jobs/pipeline.py` - stable package entrypoint; keep runtime setup in `src/jobs/pipeline_run_setup.py`, source execution flow in `src/jobs/pipeline_execution_flow.py`, and late-stage output/report assembly in `src/jobs/pipeline_finalize.py`
+- `src/jobs/pipeline.py` - stable package entrypoint; keep runtime setup in `src/jobs/pipeline_run_setup.py`, runtime/task-state ownership in `src/jobs/pipeline_runtime_{writers,summary}.py`, source execution compatibility in `src/jobs/pipeline_stage_source_execution.py`, per-source execution logic in `src/jobs/pipeline_source_{loop,results,progress}.py`, and late-stage output/report assembly in `src/jobs/pipeline_finalize.py`
 - `frontend/jobs/app/desktop-update.js` - stable Jobs desktop-update export surface; keep implementation in `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 - `src/jobs/adapters/static.py` - stable static adapter surface; keep generic listing/detail/runtime logic in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py`
-- `src/jobs/state.py` - stable jobs-state compatibility surface; keep source-state persistence in `src/jobs/state_source_state.py`, lifecycle logic in `src/jobs/state_lifecycle.py`, and cadence/freshness policy in `src/jobs/state_incremental.py`
+- `src/jobs/state.py` - stable jobs-state compatibility surface; keep source-state compatibility in `src/jobs/state_source_state.py`, record/browser/migration ownership in `src/jobs/state_source_{records,browser,migration}.py`, lifecycle logic in `src/jobs/state_lifecycle.py`, and cadence/freshness policy in `src/jobs/state_incremental.py`
+- `src/bridge/routes/post_routes.py` - stable POST registration surface; keep route-family logic in `src/bridge/routes/post_routes_{admin,local_data,update}.py`
+- `frontend/jobs/domain.js` - stable Jobs domain export surface; keep query/feed/view ownership in `frontend/jobs/domain/{query,feed,view}.js`
 - `src/source_sync.py` - permanent thin sync integration surface; keep new sync logic in `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/local_data_store.py` - stable local-data store surface; keep implementation in `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`
 - `frontend/shared/local-data/desktop-client.js` - stable desktop local-data runtime root; keep implementation in `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
@@ -258,7 +270,14 @@ See [`testing.md`](testing.md) for more commands.
 - `src/jobs/fetcher_compat_{exports,runtime}.py`
 - `src/jobs/adapters/static_listing_flow.py`
 - `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`
+- `src/jobs/pipeline_runtime_{writers,summary}.py`
+- `src/jobs/pipeline_source_{loop,results,progress}.py`
 - `src/jobs/state_{source_state,lifecycle,incremental}.py`
+- `src/jobs/state_source_{records,browser,migration}.py`
+- `src/bridge/routes/post_routes_{admin,local_data,update}.py`
+- `src/ship/desktop_app/launcher_{flow,diagnostics,recovery}.py`
+- `src/ship/desktop_app/startup_{ready,watchdog}.py`
+- `frontend/jobs/domain/{query,feed,view}.js`
 - `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`
 - `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 - `frontend/saved/app/runtime/*.js`
