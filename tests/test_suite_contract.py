@@ -304,6 +304,39 @@ def test_source_sync_snapshot_leaf_owns_snapshot_merge_helpers(repo_root: Path) 
     assert "module._choose_more_recent_row" not in text
 
 
+def test_packaged_desktop_smoke_root_stays_thin_compat_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "packaged_desktop_smoke.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+    function_names = set(_top_level_function_names(tree))
+
+    assert (
+        "from src.ship.packaged_smoke import common as packaged_smoke_common_mod" in text
+    )
+    assert (
+        "from src.ship.packaged_smoke import startup_metrics as packaged_smoke_startup_metrics_mod"
+        in text
+    )
+    assert (
+        "from src.ship.packaged_smoke import orchestrator as packaged_smoke_orchestrator_mod"
+        in text
+    )
+    assert (
+        "from src.ship.packaged_smoke import rehearsals as packaged_smoke_rehearsals_mod"
+        in text
+    )
+    assert "packaged_smoke_orchestrator_mod.root = sys.modules[__name__]" in text
+    assert "packaged_smoke_rehearsals_mod.root = sys.modules[__name__]" in text
+    assert "return packaged_smoke_orchestrator_mod.run_packaged_smoke(args)" in text
+    assert "def _start_packaged_sync_rehearsal_server(" not in text
+    assert "def _wait_for_relaunched_runtime(" not in text
+    assert "class _DesktopUpdateReleaseHandler" not in text
+    assert {"run_packaged_smoke", "parse_args", "_print_failure_summary", "main"} <= function_names
+    assert len(text.splitlines()) <= 420, (
+        "packaged_desktop_smoke root drifted back toward monolith size"
+    )
+
+
 def test_python_leaf_modules_do_not_import_root_compatibility_surfaces(repo_root: Path) -> None:
     src_root = repo_root / "src"
     allowed_imports_by_path = {

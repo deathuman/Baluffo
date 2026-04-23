@@ -43,8 +43,9 @@ src/ship/desktop_app/ (desktop runtime package)
   -> startup.py owns readiness, handoff, heartbeat, and watchdog flow
   -> browser.py / session.py / _windows.py / config.py own focused helpers
 
-src/packaged_desktop_smoke.py (stable packaged smoke entrypoint)
-  -> src/ship/packaged_smoke/{build_env,runtime,rehearsals}.py
+src/packaged_desktop_smoke.py (stable packaged smoke entrypoint / monkeypatch surface)
+  -> src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals}.py
+  -> src/ship/packaged_smoke/rehearsal_{sync,update,browser}.py
 
 src/ship/desktop_update.py (stable updater surface)
   -> src/ship/desktop_update_{shared,state,service}.py
@@ -90,7 +91,7 @@ src/ship/desktop_update.py (stable updater surface)
 | Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py` | `src/jobs/adapters/static_helpers.py` only for shim/patch-surface compatibility and `src/jobs/adapters/static.py` only for root-surface compatibility work |
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
 | Desktop runtime | `src/ship/desktop_app/launcher.py` | `src/ship/desktop_app/{startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
-| Packaged smoke / updater | `src/ship/packaged_smoke/{build_env,runtime,rehearsals}.py`, `src/ship/desktop_update_{shared,state,service}.py` | `src/packaged_desktop_smoke.py` and `src/ship/desktop_update.py` only for CLI/public-surface compatibility work |
+| Packaged smoke / updater | `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`, `src/ship/desktop_update_{shared,state,service}.py` | `src/packaged_desktop_smoke.py` and `src/ship/desktop_update.py` only for CLI/public-surface compatibility work |
 | UI selectors | `frontend/shared/ui/selectors.js` | - |
 
 ---
@@ -198,7 +199,7 @@ See [`testing.md`](testing.md) for more commands.
 
 ## 9) Thin boundaries (don't move blindly)
 
-- `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and test patch surface; keep implementation in `src/ship/packaged_smoke/*.py`
+- `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and test patch surface; keep implementation in `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`
 - `src/ship/desktop_update.py` - stable updater surface; keep implementation in `src/ship/desktop_update_{shared,state,service}.py`
 - `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py` or `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`
 - `src/source_discovery.py` - stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`

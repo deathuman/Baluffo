@@ -80,7 +80,7 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 | **Backend** | `src/admin_bridge.py`, `src/jobs_fetcher.py` | `src/bridge/`, `src/jobs/`, `src/source_discovery/` |
 | **Static Adapter** | `src/jobs/adapters/static.py` | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py`, `src/jobs/adapters/static_helpers.py`, `src/jobs/adapters/plugins/static/` |
 | **Desktop** | `src/ship/desktop_app/launcher.py` | `src/ship/desktop_app/{startup,browser,session,_windows,config}.py`, `src/ship/`, `scripts/` |
-| **Packaged Smoke / Updater** | `src/packaged_desktop_smoke.py`, `src/ship/desktop_update.py` | `src/ship/packaged_smoke/{build_env,runtime,rehearsals}.py`, `src/ship/desktop_update_{shared,state,service}.py` |
+| **Packaged Smoke / Updater** | `src/packaged_desktop_smoke.py`, `src/ship/desktop_update.py` | `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`, `src/ship/desktop_update_{shared,state,service}.py` |
 
 ---
 
@@ -101,14 +101,14 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
 | Schema/contracts | `src/core/schemas.py` | `src/core/contracts.py`, `src/jobs/common/contracts.py` |
 | Desktop/runtime | `src/ship/desktop_app/launcher.py` | `src/ship/desktop_app/{startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
-| Packaged smoke / updater | `src/ship/packaged_smoke/{build_env,runtime,rehearsals}.py`, `src/ship/desktop_update_{shared,state,service}.py` | `src/packaged_desktop_smoke.py` and `src/ship/desktop_update.py` only when the root compatibility surfaces or CLI/public contracts must stay stable |
+| Packaged smoke / updater | `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`, `src/ship/desktop_update_{shared,state,service}.py` | `src/packaged_desktop_smoke.py` and `src/ship/desktop_update.py` only when the root compatibility surfaces or CLI/public contracts must stay stable |
 
 **Compatibility surfaces**:
 - `src/admin_bridge.py` is a stable thin entrypoint for bridge startup and compatibility wrappers; add new bridge logic in `src/bridge/*`.
 - Admin bridge runtime/path/session/bootstrap glue now lives in `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`; use `src/admin_bridge.py` only for stable wrapper or monkeypatch-surface changes.
 - `src/source_discovery.py` is a stable thin CLI entrypoint; discovery logic belongs in `src/source_discovery/*`.
 - `src/ship/desktop_app/__init__.py` is now a thin facade; desktop runtime implementation belongs in the focused modules under `src/ship/desktop_app/`.
-- `src/packaged_desktop_smoke.py` is the stable packaged smoke entrypoint and monkeypatch surface; implementation belongs in `src/ship/packaged_smoke/{build_env,runtime,rehearsals}.py`.
+- `src/packaged_desktop_smoke.py` is the stable packaged smoke entrypoint and monkeypatch surface; implementation belongs in `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`.
 - `src/ship/desktop_update.py` is the stable desktop updater surface; implementation belongs in `src/ship/desktop_update_{shared,state,service}.py`.
 - `src/source_sync.py` is a permanent thin sync integration surface; config lives in `src/source_sync_config.py`, runtime/auth/request flow lives in `src/source_sync_runtime.py`, snapshot merge/read-write logic lives in `src/source_sync_snapshot.py`, and crypto/PEM/JWT helpers live in `src/source_sync_crypto.py`.
 - `src/jobs_fetcher.py` is a stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`.
@@ -159,4 +159,4 @@ For the narrowest verification matrix, fixture layout, and test-to-source map, s
 
 ---
 
-*Last updated: 2026-04-22*
+*Last updated: 2026-04-23*

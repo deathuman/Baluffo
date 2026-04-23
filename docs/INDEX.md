@@ -23,7 +23,7 @@
 
 Use these as entrypoints or shims only; route new logic to the owning modules they point at.
 
-- `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and patch surface; implementation belongs in `src/ship/packaged_smoke/*`
+- `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and patch surface; implementation belongs in `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`
 - `src/ship/desktop_update.py` - stable updater surface; implementation belongs in `src/ship/desktop_update_{shared,state,service}.py`
 - `src/admin_bridge.py` - stable thin entrypoint for bridge startup and compatibility wrappers
 - `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py` - admin bridge runtime/path/session/bootstrap/manual-source/task helpers behind the stable root surface
@@ -96,6 +96,7 @@ Planning/history records for major cleanup passes. Use them only after the canon
 | Document | Status | Use it when |
 |----------|--------|-------------|
 | [`desktop-packaging-boundary-charter.md`](desktop-packaging-boundary-charter.md) | Refactor record | You are changing packaged smoke or desktop updater boundaries and need lane-specific compatibility assumptions |
+| [`packaged-smoke-rehearsal-boundary-charter.md`](packaged-smoke-rehearsal-boundary-charter.md) | Refactor record | You are changing the packaged smoke root or rehearsal helper family and need lane-specific compatibility assumptions |
 | [`discovery-orchestrator-boundary-charter.md`](discovery-orchestrator-boundary-charter.md) | Refactor record | You are changing discovery orchestration boundaries and need lane-specific compatibility assumptions |
 | [`static-adapter-boundary-charter.md`](static-adapter-boundary-charter.md) | Refactor record | You are changing the static adapter boundary and need lane-specific compatibility assumptions |
 | [`admin-bridge-boundary-charter.md`](admin-bridge-boundary-charter.md) | Refactor record | You are changing admin bridge startup/runtime boundaries and need lane-specific compatibility assumptions |
