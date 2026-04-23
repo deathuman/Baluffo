@@ -241,6 +241,32 @@ def test_state_module_uses_package_private_helper_boundaries(repo_root: Path) ->
     assert "def apply_job_lifecycle_state(" not in text
 
 
+def test_jobs_contracts_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "common" / "contracts.py"
+    text = target.read_text(encoding="utf-8")
+    assert "from .contracts_fetch_report import normalize_fetch_report_payload" in text
+    assert "from .contracts_runtime import normalize_runtime_payload" in text
+    assert "from .contracts_source_reports import normalize_source_report_row" in text
+    assert "from .contracts_task_state import normalize_task_state_payload" in text
+    assert "def normalize_runtime_payload(" not in text
+    assert "def normalize_source_report_row(" not in text
+    assert "def normalize_task_state_payload(" not in text
+    assert "def normalize_fetch_report_payload(" not in text
+
+
+def test_jobs_reporting_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "reporting.py"
+    text = target.read_text(encoding="utf-8")
+    assert "from .reporting_breakdowns import (" in text
+    assert "from .reporting_queues import (" in text
+    assert "from .reporting_social import (" in text
+    assert "from .reporting_summary import build_pipeline_summary, format_source_error" in text
+    assert "def build_pipeline_summary(" not in text
+    assert "def build_browser_fallback_queue(" not in text
+    assert "def build_parser_regression_queue(" not in text
+    assert "def build_social_experiment_review_sample(" not in text
+
+
 def test_static_adapter_uses_package_private_helper_boundary(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "adapters" / "static.py"
     text = target.read_text(encoding="utf-8")

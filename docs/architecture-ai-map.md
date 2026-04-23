@@ -91,7 +91,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
 | Bridge sync | `src/bridge/sync_service.py`, `src/source_sync_{config,runtime,snapshot,crypto}.py` | `src/source_sync.py` only for root-surface compatibility work, plus `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
-| Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`, `src/jobs/pipeline_timing.py`, `src/jobs/state_{source_state,lifecycle,incremental}.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
+| Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`, `src/jobs/pipeline_timing.py`, `src/jobs/state_{source_state,lifecycle,incremental}.py`, `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py`, `src/jobs/reporting_{summary,queues,breakdowns,social}.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
 | Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py` | `src/jobs/adapters/static_helpers.py` only for shim/patch-surface compatibility and `src/jobs/adapters/static.py` only for root-surface compatibility work |
 | Local-data backend store | `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py` | `src/local_data_store.py` only for root-surface compatibility work |
 | Desktop local-data runtime | `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js` | `frontend/shared/local-data/desktop-client.js` only for root bootstrap or `window.JobAppLocalData` wiring |
@@ -147,6 +147,10 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `pipeline_timing.py`, `pipeline_finalize.py` - timing aggregation and late-stage output/report assembly
 - `state.py` - stable jobs-state compatibility surface
 - `state_source_state.py`, `state_lifecycle.py`, `state_incremental.py` - source-state persistence, lifecycle ownership, cadence, and incremental freshness helpers
+- `common/contracts.py` - stable jobs contract compatibility surface
+- `common/contracts_{runtime,source_reports,task_state,fetch_report}.py` - payload normalization ownership for runtime, source-report, task-state, and fetch-report assembly
+- `reporting.py` - stable jobs reporting compatibility surface
+- `reporting_{summary,queues,breakdowns,social}.py` - summary, queue, breakdown, and social-review helper ownership
 - `fetcher_compat_exports.py`, `fetcher_compat_runtime.py` - lazy compatibility exports and root-backed wrapper seams behind `src/jobs_fetcher.py`
 - `adapters/` - static, provider_api, social fetchers
 - `canonicalize.py`, `dedup.py` - normalization

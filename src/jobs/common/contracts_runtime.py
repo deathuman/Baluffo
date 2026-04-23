@@ -1,0 +1,196 @@
+"""Runtime payload normalization helpers for jobs fetch reports."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from src.jobs.common.numbers import _clamped_int
+from src.jobs.text_utils import clean_text
+
+
+def _normalize_stage_totals(stage_totals: dict[str, Any]) -> dict[str, int]:
+    return {
+        "fetchAndParse": _clamped_int(stage_totals.get("fetchAndParse"), 0, 0),
+        "listingFetch": _clamped_int(stage_totals.get("listingFetch"), 0, 0),
+        "parseCsv": _clamped_int(stage_totals.get("parseCsv"), 0, 0),
+        "candidateExtraction": _clamped_int(stage_totals.get("candidateExtraction"), 0, 0),
+        "detailFetch": _clamped_int(stage_totals.get("detailFetch"), 0, 0),
+        "redirectResolve": _clamped_int(stage_totals.get("redirectResolve"), 0, 0),
+        "canonicalization": _clamped_int(stage_totals.get("canonicalization"), 0, 0),
+    }
+
+
+def _normalize_named_duration_rows(
+    rows: list[Any],
+    *,
+    name_key: str,
+    limit: int,
+    include_source_count: bool = False,
+    include_detail_yield: bool = False,
+    include_detail_fetch: bool = False,
+) -> list[dict[str, Any]]:
+    normalized_rows: list[dict[str, Any]] = []
+    for row in rows[:limit]:
+        if not isinstance(row, dict):
+            continue
+        name = clean_text(row.get(name_key))
+        if name_key == "stage" and not name:
+            continue
+        payload: dict[str, Any] = {
+            name_key: name or ("unknown" if name_key == "name" else "custom"),
+            "durationMs": _clamped_int(row.get("durationMs"), 0, 0),
+        }
+        if name_key != "stage":
+            payload["adapter"] = clean_text(row.get("adapter")) or "custom"
+            payload["keptCount"] = _clamped_int(row.get("keptCount"), 0, 0)
+        if include_source_count:
+            payload["sourceCount"] = _clamped_int(row.get("sourceCount"), 0, 0)
+            payload["medianDurationMs"] = _clamped_int(row.get("medianDurationMs"), 0, 0)
+            payload["fetchedCount"] = _clamped_int(row.get("fetchedCount"), 0, 0)
+            payload["errorCount"] = _clamped_int(row.get("errorCount"), 0, 0)
+            payload["zeroKeptCount"] = _clamped_int(row.get("zeroKeptCount"), 0, 0)
+        if include_detail_yield:
+            payload["detailPagesVisited"] = _clamped_int(row.get("detailPagesVisited"), 0, 0)
+            payload["detailYieldPct"] = min(100, _clamped_int(row.get("detailYieldPct"), 0, 0))
+        if include_detail_fetch:
+            payload["detailFetchMs"] = _clamped_int(row.get("detailFetchMs"), 0, 0)
+        normalized_rows.append(payload)
+    return normalized_rows
+
+
+def normalize_runtime_payload(
+    runtime: dict[str, Any], *, selected_source_count: int
+) -> dict[str, Any]:
+    src = runtime if isinstance(runtime, dict) else {}
+    lifecycle = src.get("lifecycle") if isinstance(src.get("lifecycle"), dict) else {}
+    payload = {
+        "selectedSourceCount": _clamped_int(
+            src.get("selectedSourceCount"), selected_source_count, 0
+        ),
+        "sourceTtlMinutes": _clamped_int(src.get("sourceTtlMinutes"), 0, 0),
+        "maxWorkers": _clamped_int(src.get("maxWorkers"), 1, 1),
+        "maxPerDomain": _clamped_int(src.get("maxPerDomain"), 1, 1),
+        "fetchStrategy": clean_text(src.get("fetchStrategy")) or "auto",
+        "fetchClient": clean_text(src.get("fetchClient")) or "urllib",
+        "adapterHttpConcurrency": _clamped_int(src.get("adapterHttpConcurrency"), 0, 1),
+        "staticDetailConcurrency": _clamped_int(src.get("staticDetailConcurrency"), 0, 1),
+        "googleSheetsRedirectConcurrency": _clamped_int(
+            src.get("googleSheetsRedirectConcurrency"), 0, 1
+        ),
+        "incrementalCacheEnabled": bool(src.get("incrementalCacheEnabled")),
+        "forceRefreshAll": bool(src.get("forceRefreshAll")),
+        "respectSourceCadence": bool(src.get("respectSourceCadence")),
+        "hotSourceCadenceMinutes": _clamped_int(src.get("hotSourceCadenceMinutes"), 0, 1),
+        "coldSourceCadenceMinutes": _clamped_int(src.get("coldSourceCadenceMinutes"), 0, 1),
+        "circuitBreakerFailures": _clamped_int(src.get("circuitBreakerFailures"), 0, 0),
+        "circuitBreakerCooldownMinutes": _clamped_int(
+            src.get("circuitBreakerCooldownMinutes"), 0, 0
+        ),
+        "browserFallbackCooldownMinutes": _clamped_int(
+            src.get("browserFallbackCooldownMinutes"), 0, 0
+        ),
+        "browserFallbackEnabled": bool(src.get("browserFallbackEnabled")),
+        "browserFallbackCap": _clamped_int(src.get("browserFallbackCap"), 0, 0),
+        "staticDomainGateWaitMs": _clamped_int(src.get("staticDomainGateWaitMs"), 0, 0),
+        "staticDetailBatchCount": _clamped_int(src.get("staticDetailBatchCount"), 0, 0),
+        "staticAdaptiveStops": _clamped_int(src.get("staticAdaptiveStops"), 0, 0),
+        "staticListingTimeoutStops": _clamped_int(src.get("staticListingTimeoutStops"), 0, 0),
+        "staticListingBrowserFallbacks": _clamped_int(
+            src.get("staticListingBrowserFallbacks"), 0, 0
+        ),
+        "ignoreCircuitBreaker": bool(src.get("ignoreCircuitBreaker")),
+        "socialEnabled": bool(src.get("socialEnabled")),
+        "socialLookbackMinutes": _clamped_int(src.get("socialLookbackMinutes"), 0, 1),
+        "socialMinConfidence": _clamped_int(src.get("socialMinConfidence"), 0, 0),
+        "staticDetailHeuristicsProfile": clean_text(src.get("staticDetailHeuristicsProfile")) or "",
+        "scrapyValidationStrict": bool(src.get("scrapyValidationStrict")),
+        "canonicalStrictUrl": bool(src.get("canonicalStrictUrl")),
+    }
+    if lifecycle:
+        payload["lifecycle"] = {
+            "owner": clean_text(lifecycle.get("owner")),
+            "heartbeatAt": clean_text(lifecycle.get("heartbeatAt")),
+        }
+
+    slowest_sources_raw = (
+        src.get("slowestSources") if isinstance(src.get("slowestSources"), list) else []
+    )
+    if slowest_sources_raw:
+        payload["slowestSources"] = _normalize_named_duration_rows(
+            slowest_sources_raw,
+            name_key="name",
+            limit=10,
+            include_detail_yield=True,
+        )
+
+    dead_listing_page_count = _clamped_int(src.get("deadListingPageCount"), 0, 0)
+    if dead_listing_page_count > 0:
+        payload["deadListingPageCount"] = dead_listing_page_count
+    dead_listing_page_examples = src.get("deadListingPageExamples")
+    if isinstance(dead_listing_page_examples, list):
+        cleaned_examples = [
+            clean_text(item) for item in dead_listing_page_examples if clean_text(item)
+        ]
+        if cleaned_examples:
+            payload["deadListingPageExamples"] = cleaned_examples[:5]
+
+    timing_summary_raw = (
+        src.get("timingSummary") if isinstance(src.get("timingSummary"), dict) else {}
+    )
+    if timing_summary_raw:
+        payload["timingSummary"] = {
+            "totalDurationMs": _clamped_int(timing_summary_raw.get("totalDurationMs"), 0, 0),
+            "wallClockDurationMs": _clamped_int(
+                timing_summary_raw.get("wallClockDurationMs"), 0, 0
+            ),
+            "medianSourceDurationMs": _clamped_int(
+                timing_summary_raw.get("medianSourceDurationMs"), 0, 0
+            ),
+            "p95SourceDurationMs": _clamped_int(
+                timing_summary_raw.get("p95SourceDurationMs"), 0, 0
+            ),
+            "stageTotalsMs": _normalize_stage_totals(
+                timing_summary_raw.get("stageTotalsMs")
+                if isinstance(timing_summary_raw.get("stageTotalsMs"), dict)
+                else {}
+            ),
+            "stageTop": _normalize_named_duration_rows(
+                timing_summary_raw.get("stageTop")
+                if isinstance(timing_summary_raw.get("stageTop"), list)
+                else [],
+                name_key="stage",
+                limit=5,
+            ),
+            "adapterTimings": _normalize_named_duration_rows(
+                timing_summary_raw.get("adapterTimings")
+                if isinstance(timing_summary_raw.get("adapterTimings"), list)
+                else [],
+                name_key="adapter",
+                limit=20,
+                include_source_count=True,
+            ),
+            "slowestAdapters": _normalize_named_duration_rows(
+                timing_summary_raw.get("slowestAdapters")
+                if isinstance(timing_summary_raw.get("slowestAdapters"), list)
+                else [],
+                name_key="adapter",
+                limit=5,
+                include_source_count=True,
+            ),
+            "highCostLowYieldSources": _normalize_named_duration_rows(
+                timing_summary_raw.get("highCostLowYieldSources")
+                if isinstance(timing_summary_raw.get("highCostLowYieldSources"), list)
+                else [],
+                name_key="name",
+                limit=5,
+            ),
+            "detailHeavySources": _normalize_named_duration_rows(
+                timing_summary_raw.get("detailHeavySources")
+                if isinstance(timing_summary_raw.get("detailHeavySources"), list)
+                else [],
+                name_key="name",
+                limit=10,
+                include_detail_fetch=True,
+            ),
+        }
+    return payload

@@ -333,6 +333,49 @@ def test_jobs_state_root_stays_thin_compat_surface(repo_root: Path) -> None:
     assert len(text.splitlines()) <= 140, "jobs state root drifted back toward monolith size"
 
 
+def test_jobs_common_contracts_root_stays_thin_compat_surface(repo_root: Path) -> None:
+    import src.jobs.common.contracts as jobs_contracts
+
+    target = repo_root / "src" / "jobs" / "common" / "contracts.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+
+    assert "from .contracts_fetch_report import normalize_fetch_report_payload" in text
+    assert "from .contracts_runtime import normalize_runtime_payload" in text
+    assert "from .contracts_source_reports import normalize_source_report_row" in text
+    assert "from .contracts_task_state import normalize_task_state_payload" in text
+    assert _top_level_function_names(tree) == []
+    assert callable(jobs_contracts.normalize_runtime_payload)
+    assert callable(jobs_contracts.normalize_source_report_row)
+    assert callable(jobs_contracts.normalize_task_state_payload)
+    assert callable(jobs_contracts.normalize_fetch_report_payload)
+    assert len(text.splitlines()) <= 40, (
+        "jobs/common/contracts.py drifted back toward implementation ownership"
+    )
+
+
+def test_jobs_reporting_root_stays_thin_compat_surface(repo_root: Path) -> None:
+    import src.jobs.reporting as jobs_reporting
+
+    target = repo_root / "src" / "jobs" / "reporting.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+
+    assert "from .reporting_breakdowns import (" in text
+    assert "from .reporting_queues import (" in text
+    assert "from .reporting_social import (" in text
+    assert "from .reporting_summary import build_pipeline_summary, format_source_error" in text
+    assert _top_level_function_names(tree) == []
+    assert callable(jobs_reporting.build_pipeline_summary)
+    assert callable(jobs_reporting.build_browser_fallback_queue)
+    assert callable(jobs_reporting.build_parser_regression_queue)
+    assert callable(jobs_reporting.build_social_experiment_review_sample)
+    assert callable(jobs_reporting.normalize_fetch_report_payload)
+    assert len(text.splitlines()) <= 80, (
+        "jobs/reporting.py drifted back toward implementation ownership"
+    )
+
+
 def test_source_sync_root_stays_thin_compat_surface(repo_root: Path) -> None:
     from src import source_sync
     from src.shared.utils import now_iso as shared_now_iso
@@ -557,6 +600,29 @@ def test_jobs_pipeline_state_helpers_do_not_import_jobs_roots(repo_root: Path) -
             offenders.append(f"{relative_path} -> {', '.join(bad)}")
     assert not offenders, (
         "Pipeline/state helper leaves should not import jobs compatibility roots directly:\n- "
+        + "\n- ".join(offenders)
+    )
+
+
+def test_jobs_contracts_reporting_helpers_do_not_import_jobs_roots(repo_root: Path) -> None:
+    forbidden_imports = {"src.jobs_fetcher", "src.jobs.common.contracts", "src.jobs.reporting"}
+    offenders: list[str] = []
+    for relative_path in (
+        "src/jobs/common/contracts_runtime.py",
+        "src/jobs/common/contracts_source_reports.py",
+        "src/jobs/common/contracts_task_state.py",
+        "src/jobs/common/contracts_fetch_report.py",
+        "src/jobs/reporting_breakdowns.py",
+        "src/jobs/reporting_summary.py",
+        "src/jobs/reporting_queues.py",
+        "src/jobs/reporting_social.py",
+    ):
+        imports = _imported_modules(_module_tree(repo_root / relative_path))
+        bad = sorted(imports & forbidden_imports)
+        if bad:
+            offenders.append(f"{relative_path} -> {', '.join(bad)}")
+    assert not offenders, (
+        "Jobs contracts/reporting helper leaves should not import compatibility roots directly:\n- "
         + "\n- ".join(offenders)
     )
 
