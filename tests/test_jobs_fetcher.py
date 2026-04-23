@@ -10,13 +10,10 @@ from tests.jobs_fetcher_helpers import (
     jf,
     jfr,
     jobs_registry,
-    patch_jobs_fetcher_aliases,
     source_detail_limit_for,
     source_detail_retries_for,
     static_helpers,
 )
-
-patch_jobs_fetcher_aliases()
 
 
 def test_jobs_fetcher_keeps_parser_compatibility_exports() -> None:

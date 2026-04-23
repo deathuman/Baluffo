@@ -12,10 +12,7 @@ from tests.jobs_fetcher_helpers import (
     jf,
     jobs_canonicalize,
     jobs_reporting,
-    patch_jobs_fetcher_aliases,
 )
-
-patch_jobs_fetcher_aliases()
 
 
 def _clear_contract_loader_caches() -> None:

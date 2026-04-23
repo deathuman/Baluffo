@@ -213,38 +213,55 @@ def test_source_discovery_orchestrator_stays_split_by_phase(repo_root: Path) -> 
     assert "def write_progress_report(" not in text
 
 
-def test_jobs_fetcher_facade_uses_leaf_common_modules_not_root_symbol_barrel(
+def test_jobs_fetcher_compat_exports_use_leaf_common_modules_not_root_symbol_barrel(
     repo_root: Path,
 ) -> None:
-    target = repo_root / "src" / "jobs_fetcher.py"
+    target = repo_root / "src" / "jobs" / "fetcher_compat_exports.py"
     text = target.read_text(encoding="utf-8")
 
     assert "from src.jobs import common as _common" not in text
-    assert "from src.jobs.common import config as _common_config" in text
-    assert "from src.jobs.common import diagnostics as _common_diagnostics" in text
-    assert "from src.jobs.common import fetch as _common_fetch" in text
+    assert "from src.jobs.common import config as common_config_mod" in text
+    assert "from src.jobs.common import diagnostics as common_diagnostics_mod" in text
+    assert "from src.jobs.common import fetch as common_fetch_mod" in text
 
 
 def test_jobs_fetcher_facade_stays_lazy_and_small(repo_root: Path) -> None:
+    from src import jobs_fetcher
+
     target = repo_root / "src" / "jobs_fetcher.py"
     tree = _module_tree(target)
     text = target.read_text(encoding="utf-8")
 
-    function_names = _top_level_function_names(tree)
-    assert "__getattr__" in function_names
-    assert "__dir__" in function_names
-    assert "_ensure_repo_on_path" in function_names
+    function_names = set(_top_level_function_names(tree))
+    assert "from src.jobs import fetcher_compat_exports as fetcher_compat_exports_mod" in text
+    assert "from src.jobs import fetcher_compat_runtime as fetcher_compat_runtime_mod" in text
+    assert "fetcher_compat_runtime_mod.root = sys.modules[__name__]" in text
+    assert {
+        "_ensure_repo_on_path",
+        "__getattr__",
+        "__dir__",
+        "parse_args",
+        "main",
+        "run_pipeline",
+        "run_scrapy_static_source",
+        "registry_entries",
+        "build_redirect_resolver",
+        "maybe_fetch_kojima_job_listing_html",
+    } <= function_names
     assert "_COMPAT_MODULE_EXPORTS" in text
+    assert "def _module_attr_exports(" not in text
     assert "parse_google_sheets_csv = _parsers.parse_google_sheets_csv" not in text
     assert "run_static_studio_pages_source = _static.run_static_studio_pages_source" not in text
     assert "raise SystemExit(main())" in text
-
-    alias_lines = [
-        line
-        for line in text.splitlines()
-        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*=\s*_[A-Za-z0-9_]+\.[A-Za-z0-9_]+$", line)
-    ]
-    assert len(alias_lines) <= 3, "jobs_fetcher facade drifted back to bulk alias re-exports"
+    assert len(text.splitlines()) <= 280, "jobs_fetcher root drifted back toward monolith size"
+    assert callable(jobs_fetcher.canonicalize_job)
+    assert callable(jobs_fetcher.canonicalize_job_with_reason)
+    assert callable(jobs_fetcher.canonicalize_google_sheets_rows)
+    assert callable(jobs_fetcher.deduplicate_jobs)
+    assert "canonicalize_job" not in jobs_fetcher.__all__
+    assert "canonicalize_job_with_reason" not in jobs_fetcher.__all__
+    assert "canonicalize_google_sheets_rows" not in jobs_fetcher.__all__
+    assert "deduplicate_jobs" not in jobs_fetcher.__all__
 
 
 def test_source_sync_root_stays_thin_compat_surface(repo_root: Path) -> None:

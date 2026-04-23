@@ -3,9 +3,7 @@ import json
 from pathlib import Path
 from unittest import mock
 
-from tests.jobs_fetcher_helpers import _fixture, jf, patch_jobs_fetcher_aliases, workspace_tmpdir
-
-patch_jobs_fetcher_aliases()
+from tests.jobs_fetcher_helpers import _fixture, jf, workspace_tmpdir
 
 
 def test_parse_google_sheets_csv_fixture() -> None:

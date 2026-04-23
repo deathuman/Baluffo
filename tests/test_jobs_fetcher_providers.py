@@ -11,10 +11,7 @@ from tests.jobs_fetcher_helpers import (
     _fixture,
     jf,
     jobs_registry,
-    patch_jobs_fetcher_aliases,
 )
-
-patch_jobs_fetcher_aliases()
 
 
 def test_parse_remote_ok_payload_filters_game_roles() -> None:

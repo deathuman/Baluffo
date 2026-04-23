@@ -1,11 +1,6 @@
 from unittest import mock
 
 from src import jobs_fetcher
-from src.jobs import canonicalize as jobs_canonicalize
-from src.jobs import dedup as jobs_dedup
-
-jobs_fetcher.canonicalize_job = jobs_canonicalize.canonicalize_job
-jobs_fetcher.deduplicate_jobs = jobs_dedup.deduplicate_jobs
 
 
 def test_pipeline_output_contract_preserves_camelcase_schema() -> None:

@@ -46,7 +46,6 @@ __all__ = [
     "jobs_reporting",
     "jfr",
     "jf",
-    "patch_jobs_fetcher_aliases",
     "scrapy_runner",
     "source_detail_limit_for",
     "source_detail_retries_for",
@@ -62,10 +61,3 @@ def _fixture(name: str) -> str:
 
 def _fixture_json(name: str):
     return json.loads(_fixture(name))
-
-
-def patch_jobs_fetcher_aliases() -> None:
-    jf.canonicalize_job = jobs_canonicalize.canonicalize_job
-    jf.canonicalize_job_with_reason = jobs_canonicalize.canonicalize_job_with_reason
-    jf.canonicalize_google_sheets_rows = jobs_canonicalize.canonicalize_google_sheets_rows
-    jf.deduplicate_jobs = jobs_dedup.deduplicate_jobs

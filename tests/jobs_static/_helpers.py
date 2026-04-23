@@ -36,7 +36,6 @@ from tests.jobs_fetcher_helpers import (
     jobs_dedup,
     jobs_registry,
     jobs_reporting,
-    patch_jobs_fetcher_aliases,
     scrapy_runner,
     source_detail_limit_for,
     source_detail_retries_for,
@@ -44,8 +43,6 @@ from tests.jobs_fetcher_helpers import (
     static_scrapy,
     workspace_tmpdir,
 )
-
-patch_jobs_fetcher_aliases()
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 
@@ -86,7 +83,6 @@ __all__ = [
     "jobs_reporting",
     "jfr",
     "kojima",
-    "patch_jobs_fetcher_aliases",
     "process_detail_link",
     "rendered_cards",
     "scrapy_runner",

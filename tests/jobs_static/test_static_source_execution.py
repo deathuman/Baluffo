@@ -42,7 +42,6 @@ from ._helpers import (
     jobs_registry,
     jobs_reporting,
     kojima,
-    patch_jobs_fetcher_aliases,
     process_detail_link,
     rendered_cards,
     scrapy_runner,

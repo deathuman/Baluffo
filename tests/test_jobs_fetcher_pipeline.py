@@ -13,11 +13,8 @@ from tests.jobs_fetcher_helpers import (
     _fixture,
     _fixture_json,
     jf,
-    patch_jobs_fetcher_aliases,
     workspace_tmpdir,
 )
-
-patch_jobs_fetcher_aliases()
 
 
 def test_run_pipeline_social_sources_report_and_output() -> None:
