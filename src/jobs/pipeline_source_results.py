@@ -3,7 +3,8 @@ from __future__ import annotations
 import inspect
 import time
 from collections import Counter
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, Protocol
 
 from src.jobs.canonicalize import CanonicalNormalizer
 from src.jobs.common.taxonomy import (
@@ -19,7 +20,60 @@ from src.jobs_fetcher_registry import SOURCE_REPORT_META
 from .reporting_summary import format_source_error
 from .state_source_records import source_rows_fingerprint
 
-root = None
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _as_dict_rows(value: Any) -> list[dict[str, Any]]:
+    return [item for item in _as_list(value) if isinstance(item, dict)]
+
+
+class _PipelineSourceResultsRoot(Protocol):
+    SOURCE_DIAGNOSTICS: Mapping[str, dict[str, Any]]
+
+    def _default_adapter_for_loader(self, name: str, base_meta: Mapping[str, Any]) -> str: ...
+
+    def now_iso(self) -> str: ...
+
+    def update_fetch_work_item_progress(
+        self,
+        task_runtime: Any,
+        source_name: str,
+        *,
+        phase_key: str = "",
+        phase_label: str = "",
+        counts: dict[str, Any] | None = None,
+        target_label: str = "",
+        target_url: str = "",
+        wait_reason: str = "",
+        emit_event: bool = False,
+        event_level: str = "muted",
+        event_message: str = "",
+    ) -> None: ...
+
+    def _is_provider_family_adapter(self, adapter_name: str) -> bool: ...
+
+    def _is_social_subsource_report(self, source_name: str, adapter_name: str) -> bool: ...
+
+    def _failure_bucket_from_zero_extract_context(
+        self,
+        context: ClassificationContext,
+        zero_kept_classification: str,
+    ) -> FailureBucket: ...
+
+
+root: _PipelineSourceResultsRoot | None = None
+
+
+def _require_root() -> _PipelineSourceResultsRoot:
+    if root is None:
+        raise RuntimeError("jobs.pipeline_source_results root is not bound")
+    return root
 
 
 def execute_loader(
@@ -39,12 +93,13 @@ def execute_loader(
     write_task_state,
     guarded_try_playwright,
 ) -> tuple[dict[str, Any], list[CanonicalJob]]:
+    root_module = _require_root()
     source_started = time.perf_counter()
-    base_meta = SOURCE_REPORT_META.get(name, {})
+    base_meta = _as_dict(SOURCE_REPORT_META.get(name))
     report: dict[str, Any] = {
         "name": name,
         "status": "ok",
-        "adapter": root._default_adapter_for_loader(name, base_meta),
+        "adapter": root_module._default_adapter_for_loader(name, base_meta),
         "fetchStrategy": clean_text(base_meta.get("fetchStrategy")) or "auto",
         "studio": clean_text(base_meta.get("studio")) or "",
         "fetchedCount": 0,
@@ -84,7 +139,7 @@ def execute_loader(
         with task_lock:
             row = task_rows.get(name)
             if isinstance(row, dict) and row.get("status") == "running":
-                row["heartbeatAt"] = root.now_iso()
+                row["heartbeatAt"] = root_module.now_iso()
         write_task_state(force=True)
 
     def loader_progress_callback(
@@ -98,7 +153,7 @@ def execute_loader(
         event_level: str = "muted",
         message: str = "",
     ) -> None:
-        root.update_fetch_work_item_progress(
+        root_module.update_fetch_work_item_progress(
             task_runtime,
             name,
             phase_key=phase_key,
@@ -171,7 +226,7 @@ def execute_loader(
         raw_rows = loader(**accepted_kwargs)
         fetch_and_parse_ms = int((time.perf_counter() - loader_started) * 1000)
         report["fetchedCount"] = len(raw_rows)
-        report_loss = report["loss"] if isinstance(report.get("loss"), dict) else {}
+        report_loss = _as_dict(report.get("loss"))
         report_loss["rawFetched"] = int(len(raw_rows))
         loader_progress_callback(
             phase_key="normalizing_rows",
@@ -190,7 +245,7 @@ def execute_loader(
             redirect_resolver=redirect_resolver,
             redirect_concurrency=config.google_sheets_redirect_concurrency,
         )
-        canonical_batch = normalizer.process(raw_rows)  # type: ignore[arg-type]
+        canonical_batch = normalizer.process(raw_rows)
         drop_reasons = normalizer.drop_reasons
 
         kept = len(canonical_batch)
@@ -232,7 +287,7 @@ def execute_loader(
         report["sourceFingerprint"] = current_fingerprint
         report["fingerprintChanged"] = bool(current_fingerprint != previous_fingerprint)
 
-        diag = root.SOURCE_DIAGNOSTICS.get(name) or {}
+        diag = _as_dict(root_module.SOURCE_DIAGNOSTICS.get(name))
         if clean_text(diag.get("adapter")):
             report["adapter"] = clean_text(diag.get("adapter"))
         if clean_text(diag.get("studio")):
@@ -243,8 +298,10 @@ def execute_loader(
         details = diag.get("details")
         if isinstance(details, list) and details:
             report["details"] = details
-        detail_rows = details if isinstance(details, list) else []
-        if detail_rows and root._is_provider_family_adapter(clean_text(report.get("adapter"))):
+        detail_rows = _as_dict_rows(details)
+        if detail_rows and root_module._is_provider_family_adapter(
+            clean_text(report.get("adapter"))
+        ):
             board_decision_counts = Counter(
                 clean_text(detail.get("cacheDecision"))
                 for detail in detail_rows
@@ -278,7 +335,7 @@ def execute_loader(
                 for detail in detail_rows
                 if isinstance(detail, dict) and norm_text(detail.get("status")) in {"ok", "error"}
             )
-        if detail_rows and root._is_social_subsource_report(
+        if detail_rows and root_module._is_social_subsource_report(
             name, clean_text(report.get("adapter"))
         ):
             subsource_decision_counts = Counter(
@@ -315,9 +372,7 @@ def execute_loader(
                 if isinstance(detail, dict) and norm_text(detail.get("status")) in {"ok", "error"}
             )
 
-        stage_timings = (
-            report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
-        )
+        stage_timings = _as_dict(report.get("stageTimingsMs"))
         stage_timings["fetchAndParse"] = int(fetch_and_parse_ms)
         if adapter_name == "static":
             listing_fetch_ms = 0
@@ -329,9 +384,7 @@ def execute_loader(
             static_detail_batch_count = 0
             static_detail_pages_skipped = 0
             for detail in detail_rows:
-                if not isinstance(detail, dict):
-                    continue
-                stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
+                stats = _as_dict(detail.get("stats"))
                 listing_fetch_ms += int(stats.get("listing_fetch_ms") or 0)
                 candidate_extraction_ms += int(stats.get("candidate_extraction_ms") or 0)
                 detail_fetch_ms += int(stats.get("detail_fetch_ms") or 0)
@@ -351,9 +404,7 @@ def execute_loader(
             )
             if detail_rows:
                 for detail in detail_rows:
-                    if not isinstance(detail, dict):
-                        continue
-                    stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
+                    stats = _as_dict(detail.get("stats"))
                     stats["domain_gate_wait_ms"] = int(static_domain_gate_wait_ms)
                     stats["domain_gate_wait_count"] = int(static_domain_gate_wait_count)
                     stats["listing_batch_count"] = int(static_listing_batch_count)
@@ -370,13 +421,9 @@ def execute_loader(
                     gate_wait_ms = 0
                     gate_wait_count = 0
             if detail_rows:
-                first_detail = detail_rows[0] if isinstance(detail_rows[0], dict) else None
+                first_detail = detail_rows[0] if detail_rows else None
                 if isinstance(first_detail, dict):
-                    first_stats = (
-                        first_detail.get("stats")
-                        if isinstance(first_detail.get("stats"), dict)
-                        else {}
-                    )
+                    first_stats = _as_dict(first_detail.get("stats"))
                     first_stats["domain_gate_wait_ms"] = int(gate_wait_ms)
                     first_stats["domain_gate_wait_count"] = int(gate_wait_count)
                     first_stats["listing_batch_count"] = int(static_listing_batch_count)
@@ -388,9 +435,7 @@ def execute_loader(
         if norm_text(report.get("adapter")) == "csv":
             parse_csv_ms = 0
             for detail in detail_rows:
-                if not isinstance(detail, dict):
-                    continue
-                stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
+                stats = _as_dict(detail.get("stats"))
                 parse_csv_ms += int(stats.get("parse_csv_ms") or 0)
                 if google_sheet_redirect_stats:
                     stats["redirect_candidates"] = int(
@@ -422,7 +467,7 @@ def execute_loader(
             report["stageTimingsMs"] = stage_timings
 
         partial_errors = [
-            clean_text(err) for err in (diag.get("partialErrors") or []) if clean_text(err)
+            clean_text(err) for err in _as_list(diag.get("partialErrors")) if clean_text(err)
         ]
         if partial_errors:
             report["error"] = "; ".join(
@@ -434,11 +479,9 @@ def execute_loader(
             runner_rejected = 0
             parent_invalid = 0
             for detail in detail_rows:
-                if not isinstance(detail, dict):
-                    continue
-                stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
+                stats = _as_dict(detail.get("stats"))
                 runner_rejected += int(stats.get("jobs_rejected_validation") or 0)
-                loss_detail = detail.get("loss") if isinstance(detail.get("loss"), dict) else {}
+                loss_detail = _as_dict(detail.get("loss"))
                 parent_invalid += int(loss_detail.get("scrapyParentInvalidPayload") or 0)
             report_loss["scrapyRunnerRejectedValidation"] = int(runner_rejected)
             report_loss["scrapyParentInvalidPayload"] = int(parent_invalid)
@@ -448,9 +491,7 @@ def execute_loader(
             static_dup = 0
             static_empty = 0
             for detail in detail_rows:
-                if not isinstance(detail, dict):
-                    continue
-                loss_detail = detail.get("loss") if isinstance(detail.get("loss"), dict) else {}
+                loss_detail = _as_dict(detail.get("loss"))
                 static_non_job += int(loss_detail.get("staticNonJobUrlRejected") or 0)
                 static_dup += int(loss_detail.get("staticDuplicateLinkRejected") or 0)
                 static_empty += int(loss_detail.get("staticDetailParseEmpty") or 0)
@@ -480,7 +521,7 @@ def execute_loader(
         and report["status"] != "excluded"
         and failure_bucket == FailureBucket.UNKNOWN
     ):
-        failure_bucket = root._failure_bucket_from_zero_extract_context(
+        failure_bucket = root_module._failure_bucket_from_zero_extract_context(
             cls_context,
             zero_kept_classification.value,
         )

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Protocol
 
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import RawJob
@@ -19,7 +19,29 @@ _STATIC_SHARD_SOURCE_NAMES = {
 }
 
 
-def _root_static_module():
+class _StaticRootModule(Protocol):
+    def run_static_studio_pages_source(
+        self,
+        *,
+        fetch_text: Callable[[str, int], str],
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+        heartbeat_callback: Callable[[], None] | None = None,
+        progress_callback: Callable[..., None] | None = None,
+        sources: list[dict[str, Any]] | None = None,
+        shard: str | None = None,
+        diagnostics_name: str = "",
+        static_detail_concurrency: int = common_config.DEFAULT_STATIC_DETAIL_CONCURRENCY,
+        source_state_rows: dict[str, dict[str, Any]] | None = None,
+        listing_async_fetch: Callable[[Any, dict[str, Any], str, int], Awaitable[str]]
+        | None = None,
+        try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+        force_refresh_all: bool = False,
+    ) -> list[RawJob]: ...
+
+
+def _root_static_module() -> _StaticRootModule:
     from src.jobs.adapters import static as static_root
 
     return static_root

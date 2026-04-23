@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 from xml.etree import ElementTree as ET
 
@@ -15,6 +15,56 @@ from src.jobs.common.config import DEFAULT_SOCIAL_MIN_CONFIDENCE, SOURCE_DIAGNOS
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
+
+
+def _as_dict(value: object) -> dict[str, object]:
+    return cast(dict[str, object], value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: object) -> list[object]:
+    return cast(list[object], value) if isinstance(value, list) else []
+
+
+def _bool_value(value: object, default: bool = False) -> bool:
+    return default if value is None else bool(value)
+
+
+def _int_value(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = clean_text(value)
+        if not text:
+            return default
+        try:
+            return int(text)
+        except ValueError:
+            return default
+    return default
+
+
+def _float_value(value: object, default: float) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = clean_text(value)
+        if not text:
+            return default
+        try:
+            return float(text)
+        except ValueError:
+            return default
+    return default
+
+
+def _text_items(value: object) -> list[str]:
+    return [text for item in _as_list(value) if (text := clean_text(item))]
 
 
 def set_source_diagnostics(
@@ -34,7 +84,7 @@ def set_source_diagnostics(
 
 
 _REGISTERED = False
-_SOCIAL_CONFIG: dict[str, Any] = {}
+_SOCIAL_CONFIG: dict[str, object] = {}
 
 
 def _run_reddit(
@@ -46,30 +96,25 @@ def _run_reddit(
     subreddits: list[str] | None = None,
     heartbeat_callback: Callable[[], None] | None = None,
 ) -> list[RawJob]:
-    social_config = _SOCIAL_CONFIG if isinstance(_SOCIAL_CONFIG, dict) else {}
-    cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
-    if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
+    social_config = _as_dict(_SOCIAL_CONFIG)
+    cfg = _as_dict(social_config.get("reddit"))
+    if not _bool_value(social_config.get("enabled")) or not _bool_value(cfg.get("enabled"), True):
         set_source_diagnostics(
             "social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[]
         )
         return []
-    subs = [
-        clean_text(item)
-        for item in (subreddits if subreddits is not None else (cfg.get("subreddits") or []))
-        if clean_text(item)
-    ]
-    max_posts = max(1, int(cfg.get("maxPostsPerSubreddit") or 50))
+    subs_source: object = subreddits if subreddits is not None else cfg.get("subreddits")
+    subs = _text_items(subs_source)
+    max_posts = max(1, _int_value(cfg.get("maxPostsPerSubreddit"), 50))
     min_conf = max(
-        0, min(100, int(social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE))
+        0, min(100, _int_value(social_config.get("minConfidence"), DEFAULT_SOCIAL_MIN_CONFIDENCE))
     )
-    reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
+    reject_for_hire = _bool_value(social_config.get("rejectForHirePosts"), True)
 
     # Enhanced Reddit-specific settings
-    rss_fallback = bool(cfg.get("rssFallback", True))
-    html_fallback = bool(cfg.get("htmlFallback", True))
-    rate_limit_delay = float(
-        cfg.get("rateLimitDelay", 2.0)
-    )  # Default 2 second delay between requests
+    rss_fallback = _bool_value(cfg.get("rssFallback"), True)
+    html_fallback = _bool_value(cfg.get("htmlFallback"), True)
+    rate_limit_delay = _float_value(cfg.get("rateLimitDelay"), 2.0)
     details: list[dict[str, Any]] = []
     errors: list[str] = []
     jobs: list[RawJob] = []
@@ -214,22 +259,22 @@ def _run_reddit(
 def _run_x(
     *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
 ) -> list[RawJob]:
-    social_config = _SOCIAL_CONFIG if isinstance(_SOCIAL_CONFIG, dict) else {}
-    cfg = social_config.get("x") if isinstance(social_config.get("x"), dict) else {}
-    if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
+    social_config = _as_dict(_SOCIAL_CONFIG)
+    cfg = _as_dict(social_config.get("x"))
+    if not _bool_value(social_config.get("enabled")) or not _bool_value(cfg.get("enabled"), True):
         set_source_diagnostics(
             "social_x", adapter="social", studio="x", details=[], partial_errors=[]
         )
         return []
 
-    queries = [clean_text(item) for item in (cfg.get("queries") or []) if clean_text(item)]
-    max_posts = max(1, int(cfg.get("maxPostsPerQuery") or 25))
+    queries = _text_items(cfg.get("queries"))
+    max_posts = max(1, _int_value(cfg.get("maxPostsPerQuery"), 25))
     min_conf = max(
-        0, min(100, int(social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE))
+        0, min(100, _int_value(social_config.get("minConfidence"), DEFAULT_SOCIAL_MIN_CONFIDENCE))
     )
-    reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
-    timeout_s = max(1, int(cfg.get("timeoutSeconds") or timeout_s))
-    retries = max(0, int(cfg.get("retries") or retries))
+    reject_for_hire = _bool_value(social_config.get("rejectForHirePosts"), True)
+    timeout_s = max(1, _int_value(cfg.get("timeoutSeconds"), timeout_s))
+    retries = max(0, _int_value(cfg.get("retries"), retries))
 
     details: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -273,7 +318,7 @@ def _run_x(
             error_messages.append(f"X API error: {exc}")
 
         # Try RSS fallback if available
-        rss_fallback = bool(cfg.get("rssFallback", False))
+        rss_fallback = _bool_value(cfg.get("rssFallback"))
         if not parsed_rows and rss_fallback:
             try:
                 # RSS fallback implementation would go here
@@ -320,23 +365,23 @@ def _run_x(
 def _run_mastodon(
     *, fetch_text: Callable[[str, int], str], timeout_s: int, retries: int, backoff_s: float
 ) -> list[RawJob]:
-    social_config = _SOCIAL_CONFIG if isinstance(_SOCIAL_CONFIG, dict) else {}
-    cfg = social_config.get("mastodon") if isinstance(social_config.get("mastodon"), dict) else {}
-    if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
+    social_config = _as_dict(_SOCIAL_CONFIG)
+    cfg = _as_dict(social_config.get("mastodon"))
+    if not _bool_value(social_config.get("enabled")) or not _bool_value(cfg.get("enabled"), True):
         set_source_diagnostics(
             "social_mastodon", adapter="social", studio="mastodon", details=[], partial_errors=[]
         )
         return []
 
-    instances = [clean_text(item) for item in (cfg.get("instances") or []) if clean_text(item)]
-    hashtags = [clean_text(item) for item in (cfg.get("hashtags") or []) if clean_text(item)]
-    max_posts = max(1, int(cfg.get("maxPostsPerTag") or 40))
+    instances = _text_items(cfg.get("instances"))
+    hashtags = _text_items(cfg.get("hashtags"))
+    max_posts = max(1, _int_value(cfg.get("maxPostsPerTag"), 40))
     min_conf = max(
-        0, min(100, int(social_config.get("minConfidence") or DEFAULT_SOCIAL_MIN_CONFIDENCE))
+        0, min(100, _int_value(social_config.get("minConfidence"), DEFAULT_SOCIAL_MIN_CONFIDENCE))
     )
-    reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
-    timeout_s = max(1, int(cfg.get("timeoutSeconds") or timeout_s))
-    retries = max(0, int(cfg.get("retries") or retries))
+    reject_for_hire = _bool_value(social_config.get("rejectForHirePosts"), True)
+    timeout_s = max(1, _int_value(cfg.get("timeoutSeconds"), timeout_s))
+    retries = max(0, _int_value(cfg.get("retries"), retries))
 
     details: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -411,7 +456,7 @@ def _run_mastodon(
 def ensure_registered(*, social_config: dict[str, Any]) -> None:
     global _REGISTERED
     global _SOCIAL_CONFIG
-    _SOCIAL_CONFIG = dict(social_config or {})
+    _SOCIAL_CONFIG = {str(key): value for key, value in dict(social_config or {}).items()}
     if _REGISTERED:
         return
     _REGISTERED = True

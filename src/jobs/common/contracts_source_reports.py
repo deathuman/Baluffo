@@ -16,6 +16,10 @@ from src.jobs.common.taxonomy import (
 from src.jobs.text_utils import clean_text, norm_text
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _float_or_zero(value: Any) -> float:
     try:
         return float(value)
@@ -48,9 +52,7 @@ def _normalize_dead_listing_fields(target: dict[str, Any], src: dict[str, Any]) 
 
 
 def _normalize_stage_timings(src: dict[str, Any]) -> dict[str, int]:
-    raw_stage_timings = (
-        src.get("stageTimingsMs") if isinstance(src.get("stageTimingsMs"), dict) else {}
-    )
+    raw_stage_timings = _as_dict(src.get("stageTimingsMs"))
     return {
         "fetchAndParse": _clamped_int(raw_stage_timings.get("fetchAndParse"), 0, 0),
         "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
@@ -63,12 +65,8 @@ def _normalize_stage_timings(src: dict[str, Any]) -> dict[str, int]:
 
 
 def _normalize_loss(loss: Any) -> dict[str, Any]:
-    payload = loss if isinstance(loss, dict) else {}
-    drop_reasons = (
-        payload.get("canonicalDropReasons")
-        if isinstance(payload.get("canonicalDropReasons"), dict)
-        else {}
-    )
+    payload = _as_dict(loss)
+    drop_reasons = _as_dict(payload.get("canonicalDropReasons"))
     return {
         "rawFetched": _clamped_int(payload.get("rawFetched"), 0, 0),
         "canonicalDropped": _clamped_int(payload.get("canonicalDropped"), 0, 0),

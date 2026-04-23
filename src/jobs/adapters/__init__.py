@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from src.jobs.adapters import community, provider_api, social, static
 from src.jobs.common.http import default_fetch_text as common_default_fetch_text
@@ -13,6 +14,10 @@ from src.jobs_fetcher_registry import DEFAULT_SOURCE_LOADER_NAMES
 
 from ..common import config as common_config
 from ..common import social as common_social
+
+
+def _run_loader_fetch_text(url: str, timeout_s: int) -> str:
+    return common_default_fetch_text(url, timeout_s, headers={})
 
 
 def default_source_loaders(
@@ -40,15 +45,15 @@ def default_source_loaders(
 
         def _loader(
             *,
-            fetch_text,
+            fetch_text: Callable[[str, int], str],
             timeout_s: int,
             retries: int,
             backoff_s: float,
             _sheet_id: str = sheet_id,
             _gid: str = gid,
             _source_name: str = source_name,
-            heartbeat_callback=None,
-        ):
+            heartbeat_callback: Callable[[], None] | None = None,
+        ) -> list[dict[str, Any]]:
             return community.run_google_sheets_source(
                 fetch_text=fetch_text,
                 timeout_s=timeout_s,
@@ -61,6 +66,15 @@ def default_source_loaders(
             )
 
         google_sheet_loaders[source_name] = _loader
+
+    def _run_social_reddit(**kwargs: Any) -> list[dict[str, Any]]:
+        return social.run_social_reddit_source(**kwargs, social_config=social_cfg)
+
+    def _run_social_x(**kwargs: Any) -> list[dict[str, Any]]:
+        return social.run_social_x_source(**kwargs, social_config=social_cfg)
+
+    def _run_social_mastodon(**kwargs: Any) -> list[dict[str, Any]]:
+        return social.run_social_mastodon_source(**kwargs, social_config=social_cfg)
 
     available: dict[str, SourceLoader] = {
         **google_sheet_loaders,
@@ -85,13 +99,9 @@ def default_source_loaders(
         "workday_sources": provider_api.run_workday_sources_source,
         "personio_sources": provider_api.run_personio_sources_source,
         "scrapy_static_sources": static.run_scrapy_static_source,
-        "social_reddit": lambda **kwargs: social.run_social_reddit_source(
-            **kwargs, social_config=social_cfg
-        ),
-        "social_x": lambda **kwargs: social.run_social_x_source(**kwargs, social_config=social_cfg),
-        "social_mastodon": lambda **kwargs: social.run_social_mastodon_source(
-            **kwargs, social_config=social_cfg
-        ),
+        "social_reddit": _run_social_reddit,
+        "social_x": _run_social_x,
+        "social_mastodon": _run_social_mastodon,
         "static_studio_pages_a_i": static.run_static_studio_pages_a_i_source,
         "static_studio_pages_j_r": static.run_static_studio_pages_j_r_source,
         "static_studio_pages_s_z": static.run_static_studio_pages_s_z_source,
@@ -156,7 +166,7 @@ EXTRACTED_ADAPTERS = {
 
 def run_loader(name: str, loader: SourceLoader, ctx: FetchContext) -> FetchResult:
     jobs = loader(
-        fetch_text=common_default_fetch_text,
+        fetch_text=_run_loader_fetch_text,
         timeout_s=ctx.request.timeout_s,
         retries=ctx.retries,
         backoff_s=ctx.backoff_s,

@@ -4,7 +4,7 @@ import json
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol, cast
 from urllib.parse import urlparse
 
 from src.jobs.models import CanonicalJob
@@ -23,6 +23,12 @@ from .pipeline_runtime_summary import (
     update_fetch_runtime_phase,
     update_fetch_work_item_progress,
 )
+
+
+class FetchTextLimited(Protocol):
+    _baluffo_gate_wait_stats: Callable[[str], dict[str, int]]
+
+    def __call__(self, url: str, timeout: int) -> str: ...
 
 
 def initialize_task_runtime(
@@ -146,7 +152,7 @@ def write_progress_report(
     runtime_payload: dict[str, Any],
     started_at: str,
     paths: PipelinePaths,
-    schema_version: int,
+    schema_version: str,
     studio_source_registry: list[dict[str, Any]],
     load_registry_from_file: Callable[..., list[dict[str, Any]]],
     read_approved_since_last_run: Callable[..., int],
@@ -267,7 +273,7 @@ def make_fetch_text_limited(
     gate_namespace: str = "default",
     wait_reason_label: str = "",
     collect_wait_stats: bool = False,
-) -> Callable[[str, int], str]:
+) -> FetchTextLimited:
     def fetch_text_limited(url: str, timeout: int) -> str:
         host = clean_text(urlparse(url).netloc).lower() or "_unknown"
         gate_key = f"{clean_text(gate_namespace) or 'default'}::{host}"
@@ -312,34 +318,30 @@ def make_fetch_text_limited(
                 now_mono = time.perf_counter()
                 if (now_mono - float(runtime.last_heartbeat_write.get(current) or 0.0)) >= 4.0:
                     with runtime.task_lock:
-                        if runtime.task_rows[current].get("status") == "running":
-                            runtime.task_rows[current]["heartbeatAt"] = now_iso()
-                            progress = (
-                                runtime.task_rows[current].get("progress")
-                                if isinstance(runtime.task_rows[current].get("progress"), dict)
-                                else {}
-                            )
+                        row = runtime.task_rows[current]
+                        if row.get("status") == "running":
+                            row["heartbeatAt"] = now_iso()
+                            progress_value = row.get("progress")
+                            progress = progress_value if isinstance(progress_value, dict) else {}
                             progress["targetUrl"] = str(url or "").strip()
                             progress["targetLabel"] = host
                             if wait_reason_label:
                                 progress["waitReason"] = ""
-                            progress["updatedAt"] = runtime.task_rows[current]["heartbeatAt"]
-                            runtime.task_rows[current]["progress"] = progress
-                            started_mono = float(
-                                runtime.task_rows[current].get("_startedMonotonic") or 0.0
-                            )
-                            warned = bool(runtime.task_rows[current].get("_slowWarned"))
+                            progress["updatedAt"] = row["heartbeatAt"]
+                            row["progress"] = progress
+                            started_mono = float(row.get("_startedMonotonic") or 0.0)
+                            warned = bool(row.get("_slowWarned"))
                             if (
                                 runtime.show_progress
                                 and started_mono > 0
                                 and not warned
                                 and (now_mono - started_mono) >= 20.0
                             ):
-                                runtime.task_rows[current]["_slowWarned"] = True
+                                row["_slowWarned"] = True
                                 runtime.recent_events = append_live_task_event(
                                     runtime.recent_events,
                                     {
-                                        "timestamp": runtime.task_rows[current]["heartbeatAt"],
+                                        "timestamp": row["heartbeatAt"],
                                         "level": "warn",
                                         "taskType": "fetch",
                                         "runId": runtime.run_id,
@@ -371,5 +373,6 @@ def make_fetch_text_limited(
                 "domainGateWaitCount": int(row.get("_staticDomainGateWaitCount") or 0),
             }
 
-    fetch_text_limited._baluffo_gate_wait_stats = _gate_wait_stats
-    return fetch_text_limited
+    typed_fetch_text_limited = cast(FetchTextLimited, fetch_text_limited)
+    typed_fetch_text_limited._baluffo_gate_wait_stats = _gate_wait_stats
+    return typed_fetch_text_limited

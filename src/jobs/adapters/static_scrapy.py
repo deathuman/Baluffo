@@ -8,9 +8,9 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.jobs.common.datetime_utils import to_iso
 from src.jobs.common.diagnostics import set_source_diagnostics
@@ -36,6 +36,18 @@ TIMEOUT_BUCKET_SOURCE_NAMES = {
 SCRAPY_STATIC_QUEUE_MAX_WORKERS = 4
 SCRAPY_STATIC_QUEUE_POLL_S = 0.5
 SCRAPY_STATIC_QUEUE_WAIT_PROGRESS_S = 5.0
+
+
+def _as_dict(value: object) -> dict[str, Any]:
+    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: object) -> list[Any]:
+    return cast(list[Any], value) if isinstance(value, list) else []
+
+
+def _page_text_list(value: object) -> list[str]:
+    return [text for item in _as_list(value) if (text := clean_text(item))]
 
 
 def _update_taxonomy_fields(source_detail: dict[str, Any]) -> dict[str, Any]:
@@ -86,10 +98,10 @@ def _base_detail(
 ) -> dict[str, Any]:
     source_name = clean_text(source_row.get("name")) or "unknown"
     studio_name = clean_text(source_row.get("studio")) or source_name
-    pages = source_row.get("pages") if isinstance(source_row.get("pages"), list) else []
+    pages = _page_text_list(source_row.get("pages"))
     source_id = clean_text(source_row.get("id"))
     if not source_id:
-        seed = "|".join([source_name, studio_name, *[clean_text(page) for page in pages]])
+        seed = "|".join([source_name, studio_name, *pages])
         source_id = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
     classification = "parse_error" if norm_text(status) == "error" else "ok_no_jobs"
     context = ClassificationContext(
@@ -120,7 +132,7 @@ def _base_detail(
         "browserFallbackRecommended": False,
         "signalQuality": clean_text(signal_quality) or "weak",
         "sourceId": source_id,
-        "pages": [clean_text(page) for page in pages if clean_text(page)],
+        "pages": pages,
         "loss": {
             "scrapyRunnerRejectedValidation": 0,
             "scrapyParentInvalidPayload": 0,
@@ -219,25 +231,24 @@ def _build_runner_config(
 ) -> tuple[dict[str, Any], bool]:
     source_name = clean_text(source.get("name")) or "unknown"
     studio_name = clean_text(source.get("studio")) or source_name
-    pages = source.get("pages") if isinstance(source.get("pages"), list) else []
-    config = {
-        "source": {
-            "name": source_name,
-            "studio": studio_name,
-            "pages": pages,
-            "nlPriority": bool(source.get("nlPriority", False)),
-        },
-        "runtime": {
-            "timeout_s": int(timeout_s),
-            "retries": int(retries),
-            "backoff_s": float(backoff_s),
-            "download_delay": 1.0,
-            "use_browser": True,
-        },
+    pages = _as_list(source.get("pages"))
+    source_config: dict[str, Any] = {
+        "name": source_name,
+        "studio": studio_name,
+        "pages": pages,
+        "nlPriority": bool(source.get("nlPriority", False)),
     }
+    runtime_config: dict[str, Any] = {
+        "timeout_s": int(timeout_s),
+        "retries": int(retries),
+        "backoff_s": float(backoff_s),
+        "download_delay": 1.0,
+        "use_browser": True,
+    }
+    config: dict[str, dict[str, Any]] = {"source": source_config, "runtime": runtime_config}
     timeout_bucket = source_name.lower() in TIMEOUT_BUCKET_SOURCE_NAMES
     if timeout_bucket:
-        config["runtime"]["timeout_s"] = min(int(timeout_s), 10)
+        runtime_config["timeout_s"] = min(int(timeout_s), 10)
     return config, timeout_bucket
 
 
@@ -285,7 +296,7 @@ def _run_scrapy_static_source_entry(
     backoff_s: float,
 ) -> tuple[list[RawJob], dict[str, Any], list[str]]:
     source_name = clean_text(source.get("name")) or "unknown"
-    pages = source.get("pages") if isinstance(source.get("pages"), list) else []
+    pages = _as_list(source.get("pages"))
     config, _ = _build_runner_config(
         source,
         timeout_s=timeout_s,
@@ -338,44 +349,36 @@ def _run_scrapy_static_source_entry(
             _update_taxonomy_fields(source_detail)
             return source_rows, source_detail, source_errors
 
-        envelope_details = envelope.get("details")
-        if isinstance(envelope_details, list) and envelope_details:
-            detail_0 = envelope_details[0]
-            if isinstance(detail_0, dict):
-                source_detail.update(
-                    {
-                        "status": "ok"
-                        if clean_text(detail_0.get("status")).lower() == "ok"
-                        else "error",
-                        "fetchedCount": _coerce_int(detail_0.get("fetchedCount")),
-                        "keptCount": _coerce_int(detail_0.get("keptCount")),
-                        "error": clean_text(detail_0.get("error")),
-                        "classification": clean_text(detail_0.get("classification"))
-                        or source_detail.get("classification"),
-                        "browserFallbackRecommended": bool(
-                            detail_0.get("browserFallbackRecommended")
-                        ),
-                        "top_reject_reasons": detail_0.get("top_reject_reasons")
-                        if isinstance(detail_0.get("top_reject_reasons"), list)
-                        else [],
-                        "deadListingPageCount": _coerce_int(detail_0.get("deadListingPageCount")),
-                        "deadListingPageExamples": detail_0.get("deadListingPageExamples")
-                        if isinstance(detail_0.get("deadListingPageExamples"), list)
-                        else [],
-                        "sourceId": clean_text(detail_0.get("sourceId"))
-                        or source_detail.get("sourceId"),
-                        "pages": detail_0.get("pages")
-                        if isinstance(detail_0.get("pages"), list)
-                        else source_detail.get("pages"),
-                    }
-                )
+        envelope_dict = _as_dict(envelope)
+        envelope_details = _as_list(envelope_dict.get("details"))
+        detail_0 = _as_dict(envelope_details[0]) if envelope_details else {}
+        if detail_0:
+            source_detail.update(
+                {
+                    "status": "ok"
+                    if clean_text(detail_0.get("status")).lower() == "ok"
+                    else "error",
+                    "fetchedCount": _coerce_int(detail_0.get("fetchedCount")),
+                    "keptCount": _coerce_int(detail_0.get("keptCount")),
+                    "error": clean_text(detail_0.get("error")),
+                    "classification": clean_text(detail_0.get("classification"))
+                    or source_detail.get("classification"),
+                    "browserFallbackRecommended": bool(detail_0.get("browserFallbackRecommended")),
+                    "top_reject_reasons": _as_list(detail_0.get("top_reject_reasons")),
+                    "deadListingPageCount": _coerce_int(detail_0.get("deadListingPageCount")),
+                    "deadListingPageExamples": _as_list(detail_0.get("deadListingPageExamples")),
+                    "sourceId": clean_text(detail_0.get("sourceId"))
+                    or source_detail.get("sourceId"),
+                    "pages": _page_text_list(detail_0.get("pages")) or source_detail.get("pages"),
+                }
+            )
 
-        partial_errors = _clean_errors(envelope.get("partialErrors"))
+        partial_errors = _clean_errors(envelope_dict.get("partialErrors"))
         for item in partial_errors:
             source_errors.append(f"{source_name}: {item}")
 
-        jobs = envelope.get("jobs")
-        if bool(envelope.get("ok")) and isinstance(jobs, list):
+        jobs = _as_list(envelope_dict.get("jobs"))
+        if bool(envelope_dict.get("ok")) and jobs:
             kept = 0
             parent_invalid_payload = 0
             for item in jobs:
@@ -386,9 +389,7 @@ def _run_scrapy_static_source_entry(
                 else:
                     parent_invalid_payload += 1
                     source_errors.append(f"{source_name}: dropped invalid job payload from runner")
-            source_detail_loss = (
-                source_detail.get("loss") if isinstance(source_detail.get("loss"), dict) else {}
-            )
+            source_detail_loss = _as_dict(source_detail.get("loss"))
             source_detail_loss["scrapyParentInvalidPayload"] = int(parent_invalid_payload)
             source_detail["loss"] = source_detail_loss
             source_detail["keptCount"] = max(int(source_detail.get("keptCount") or 0), kept)
@@ -403,9 +404,9 @@ def _run_scrapy_static_source_entry(
             source_detail["classification"] = "parse_error"
             source_errors.append(f"{source_name}: crawl failed")
 
-        stats = envelope.get("stats")
-        if isinstance(stats, dict):
-            source_detail["stats"] = {
+        stats = _as_dict(envelope_dict.get("stats"))
+        if stats:
+            stats_payload: dict[str, Any] = {
                 "downloader/request_count": _coerce_int(stats.get("downloader/request_count")),
                 "downloader/response_count": _coerce_int(stats.get("downloader/response_count")),
                 "downloader/response_status_count/200": _coerce_int(
@@ -419,9 +420,8 @@ def _run_scrapy_static_source_entry(
                 "jobs_rejected_validation": _coerce_int(stats.get("jobs_rejected_validation")),
                 "finish_reason": clean_text(stats.get("finish_reason")),
             }
-            source_detail_loss = (
-                source_detail.get("loss") if isinstance(source_detail.get("loss"), dict) else {}
-            )
+            source_detail["stats"] = stats_payload
+            source_detail_loss = _as_dict(source_detail.get("loss"))
             source_detail_loss["scrapyRunnerRejectedValidation"] = _coerce_int(
                 stats.get("jobs_rejected_validation")
             )
@@ -430,8 +430,8 @@ def _run_scrapy_static_source_entry(
             )
             source_detail["loss"] = source_detail_loss
             if int(source_detail.get("fetchedCount") or 0) <= 0:
-                source_detail["fetchedCount"] = int(
-                    source_detail["stats"]["downloader/response_count"]
+                source_detail["fetchedCount"] = _coerce_int(
+                    stats_payload.get("downloader/response_count")
                 )
 
         _update_taxonomy_fields(source_detail)
@@ -506,7 +506,7 @@ def run_scrapy_static_source(
     ordered_rows: list[list[RawJob] | None] = [None] * total_sources
     ordered_details: list[dict[str, Any] | None] = [None] * total_sources
     ordered_errors: list[list[str] | None] = [None] * total_sources
-    inflight: dict[Any, int] = {}
+    inflight: dict[Future[tuple[list[RawJob], dict[str, Any], list[str]]], int] = {}
     completed = 0
     error_count = 0
     last_wait_progress = 0.0
@@ -559,7 +559,7 @@ def run_scrapy_static_source(
         )
 
     def _submit_source(executor: ThreadPoolExecutor, source_index: int) -> None:
-        future = executor.submit(
+        future: Future[tuple[list[RawJob], dict[str, Any], list[str]]] = executor.submit(
             _run_scrapy_static_source_entry,
             sources[source_index],
             runner_path=runner_path,
@@ -569,7 +569,7 @@ def run_scrapy_static_source(
         )
         inflight[future] = source_index
         source = sources[source_index]
-        pages = source.get("pages") if isinstance(source.get("pages"), list) else []
+        pages = _as_list(source.get("pages"))
         _emit_progress(
             target_label=clean_text(source.get("name")),
             target_url=clean_text(pages[0]) if pages else "",
@@ -609,7 +609,7 @@ def run_scrapy_static_source(
                 source_index = inflight.pop(future)
                 source = sources[source_index]
                 source_name = clean_text(source.get("name")) or "unknown"
-                pages = source.get("pages") if isinstance(source.get("pages"), list) else []
+                pages = _as_list(source.get("pages"))
                 try:
                     rows, detail, errors = future.result()
                 except Exception as exc:  # noqa: BLE001

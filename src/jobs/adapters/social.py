@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
@@ -21,6 +21,44 @@ from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 
 from ..common import config as common_config
+
+
+def _as_dict(value: object) -> dict[str, Any]:
+    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: object) -> list[Any]:
+    return cast(list[Any], value) if isinstance(value, list) else []
+
+
+def _text_items(value: object) -> list[str]:
+    return [text for item in _as_list(value) if (text := clean_text(item))]
+
+
+def _diag_rows(value: object) -> list[dict[str, Any]]:
+    return [row for row in _as_list(value) if isinstance(row, dict)]
+
+
+def _diag_payload(source_name: str) -> dict[str, Any]:
+    return _as_dict(SOURCE_DIAGNOSTICS.get(source_name))
+
+
+def _coerce_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = clean_text(value)
+        if not text:
+            return default
+        try:
+            return int(text)
+        except ValueError:
+            return default
+    return default
 
 
 def _request_json_with_headers(
@@ -45,7 +83,7 @@ def run_social_reddit_source(
     heartbeat_callback: Callable[[], None] | None = None,
     progress_callback: Callable[..., None] | None = None,
 ) -> list[RawJob]:
-    cfg = social_config.get("reddit") if isinstance(social_config.get("reddit"), dict) else {}
+    cfg = _as_dict(social_config.get("reddit"))
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
         set_source_diagnostics(
             "social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[]
@@ -56,7 +94,7 @@ def run_social_reddit_source(
     plugin, _selection = default_registry.select(
         AdapterPluginContext(family="social", adapter_key="social_reddit")
     )
-    subs = [clean_text(item) for item in (cfg.get("subreddits") or []) if clean_text(item)]
+    subs = _text_items(cfg.get("subreddits"))
     if not subs:
         set_source_diagnostics(
             "social_reddit", adapter="social", studio="reddit", details=[], partial_errors=[]
@@ -96,17 +134,18 @@ def run_social_reddit_source(
     for sub in subs:
         subreddit_label = f"reddit/r/{sub}"
         subreddit_url = f"https://www.reddit.com/r/{sub}/new.json"
+        entry_name = f"reddit:r/{sub}"
         entry = {
             "adapter": "social",
             "studio": f"reddit/{sub}",
-            "name": f"reddit:r/{sub}",
+            "name": entry_name,
             "status": "ok",
             "fetchedCount": 0,
             "keptCount": 0,
             "error": "",
         }
         cache_decision = get_incremental_cache_decision(
-            entry["name"],
+            entry_name,
             source_state_rows or {},
             adapter="social",
             force_refresh_all=force_refresh_all,
@@ -164,15 +203,11 @@ def run_social_reddit_source(
             )
         details.append(entry)
 
-    plugin_diag = (
-        SOURCE_DIAGNOSTICS.get("social_reddit")
-        if isinstance(SOURCE_DIAGNOSTICS.get("social_reddit"), dict)
-        else {}
-    )
+    plugin_diag = _diag_payload("social_reddit")
     plugin_detail_by_name = {
         clean_text(item.get("name")): item
-        for item in (plugin_diag.get("details") or [])
-        if isinstance(item, dict) and clean_text(item.get("name"))
+        for item in _diag_rows(plugin_diag.get("details"))
+        if clean_text(item.get("name"))
     }
     for entry in details:
         plugin_detail = plugin_detail_by_name.get(clean_text(entry.get("name"))) or {}
@@ -183,8 +218,8 @@ def run_social_reddit_source(
     set_source_diagnostics(
         "social_reddit", adapter="social", studio="reddit", details=details, partial_errors=errors
     )
-    SOURCE_DIAGNOSTICS["social_reddit"]["lowConfidenceDropped"] = int(
-        plugin_diag.get("lowConfidenceDropped") or 0
+    SOURCE_DIAGNOSTICS["social_reddit"]["lowConfidenceDropped"] = _coerce_int(
+        plugin_diag.get("lowConfidenceDropped")
     )
     if rows:
         return rows
@@ -204,13 +239,13 @@ def run_social_x_source(
     force_refresh_all: bool = False,
     progress_callback: Callable[..., None] | None = None,
 ) -> list[RawJob]:
-    cfg = social_config.get("x") if isinstance(social_config.get("x"), dict) else {}
+    cfg = _as_dict(social_config.get("x"))
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
         set_source_diagnostics(
             "social_x", adapter="social", studio="x", details=[], partial_errors=[]
         )
         return []
-    queries = [clean_text(item) for item in (cfg.get("queries") or []) if clean_text(item)]
+    queries = _text_items(cfg.get("queries"))
     if not queries:
         return []
     max_posts = max(1, int(cfg.get("maxPostsPerQuery") or 25))
@@ -226,18 +261,14 @@ def run_social_x_source(
         ),
     )
     reject_for_hire = bool(social_config.get("rejectForHirePosts", True))
-    api_cfg = cfg.get("api") if isinstance(cfg.get("api"), dict) else {}
-    scraper_cfg = cfg.get("scraperFallback") if isinstance(cfg.get("scraperFallback"), dict) else {}
-    rss_cfg = cfg.get("rssFallback") if isinstance(cfg.get("rssFallback"), dict) else {}
+    api_cfg = _as_dict(cfg.get("api"))
+    scraper_cfg = _as_dict(cfg.get("scraperFallback"))
+    rss_cfg = _as_dict(cfg.get("rssFallback"))
     bearer_env = clean_text(api_cfg.get("bearerTokenEnv") or "BALUFFO_X_BEARER_TOKEN")
     bearer = clean_text(os.environ.get(bearer_env))
     endpoint = clean_text(api_cfg.get("endpoint"))
     scraper_endpoint = clean_text(scraper_cfg.get("endpoint"))
-    rss_instances = [
-        clean_text(item).rstrip("/")
-        for item in (rss_cfg.get("instances") or [])
-        if clean_text(item)
-    ]
+    rss_instances = [item.rstrip("/") for item in _text_items(rss_cfg.get("instances"))]
 
     details: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -268,17 +299,18 @@ def run_social_x_source(
 
     for query in queries:
         query_label = f"x:{query}"
+        entry_name = f"x:{query}"
         entry = {
             "adapter": "social",
             "studio": "x",
-            "name": f"x:{query}",
+            "name": entry_name,
             "status": "ok",
             "fetchedCount": 0,
             "keptCount": 0,
             "error": "",
         }
         cache_decision = get_incremental_cache_decision(
-            entry["name"],
+            entry_name,
             source_state_rows or {},
             adapter="social",
             force_refresh_all=force_refresh_all,
@@ -373,8 +405,9 @@ def run_social_x_source(
                 reject_for_hire_posts=reject_for_hire,
                 reject_reasons=reject_reason_counts,
             )
-            if isinstance(payload, dict) and isinstance(payload.get("data"), list):
-                entry["fetchedCount"] = len(payload.get("data") or [])
+            payload_data = _as_list(_as_dict(payload).get("data"))
+            if payload_data:
+                entry["fetchedCount"] = len(payload_data)
             else:
                 entry["fetchedCount"] = len(parsed_rows) + int(low_conf_query)
         except Exception as exc:  # noqa: BLE001
@@ -426,7 +459,7 @@ def run_social_mastodon_source(
     heartbeat_callback: Callable[[], None] | None = None,
     progress_callback: Callable[..., None] | None = None,
 ) -> list[RawJob]:
-    cfg = social_config.get("mastodon") if isinstance(social_config.get("mastodon"), dict) else {}
+    cfg = _as_dict(social_config.get("mastodon"))
     if not bool(social_config.get("enabled")) or not bool(cfg.get("enabled", True)):
         set_source_diagnostics(
             "social_mastodon",
@@ -436,12 +469,8 @@ def run_social_mastodon_source(
             partial_errors=[],
         )
         return []
-    instances = [
-        clean_text(item).rstrip("/") for item in (cfg.get("instances") or []) if clean_text(item)
-    ]
-    tags = [
-        clean_text(item).lstrip("#") for item in (cfg.get("hashtags") or []) if clean_text(item)
-    ]
+    instances = [item.rstrip("/") for item in _text_items(cfg.get("instances"))]
+    tags = [item.lstrip("#") for item in _text_items(cfg.get("hashtags"))]
     max_posts = max(1, int(cfg.get("maxPostsPerTag") or 40))
     min_conf = max(
         0,
@@ -487,11 +516,13 @@ def run_social_mastodon_source(
             timeline_url = (
                 f"{instance}/api/v1/timelines/tag/{quote(tag, safe='')}?limit={max_posts}"
             )
-            target_label = f"mastodon:{clean_text(urlparse(instance).netloc)}:#{tag}"
+            target_host = clean_text(urlparse(instance).netloc)
+            target_label = f"mastodon:{target_host}:#{tag}"
+            entry_name = target_label
             entry = {
                 "adapter": "social",
-                "studio": f"mastodon/{clean_text(urlparse(instance).netloc)}",
-                "name": f"mastodon:{clean_text(urlparse(instance).netloc)}:#{tag}",
+                "studio": f"mastodon/{target_host}",
+                "name": entry_name,
                 "status": "ok",
                 "fetchedCount": 0,
                 "keptCount": 0,
@@ -499,7 +530,7 @@ def run_social_mastodon_source(
             }
             reject_reason_counts: dict[str, int] = {}
             cache_decision = get_incremental_cache_decision(
-                entry["name"],
+                entry_name,
                 source_state_rows or {},
                 adapter="social",
                 force_refresh_all=force_refresh_all,
@@ -534,10 +565,9 @@ def run_social_mastodon_source(
                     reject_for_hire_posts=reject_for_hire,
                     reject_reasons=reject_reason_counts,
                 )
+                payload_rows = _as_list(payload)
                 entry["fetchedCount"] = (
-                    len(payload)
-                    if isinstance(payload, list)
-                    else len(parsed_rows) + int(low_conf_tag)
+                    len(payload_rows) if payload_rows else len(parsed_rows) + int(low_conf_tag)
                 )
                 entry["keptCount"] = len(parsed_rows)
                 if reject_reason_counts:

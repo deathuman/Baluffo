@@ -21,9 +21,14 @@ class AdapterPluginContext:
 
 
 class AdapterPlugin(Protocol):
-    name: str
-    family: str
-    priority: int
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def family(self) -> str: ...
+
+    @property
+    def priority(self) -> int: ...
 
     def can_handle(self, ctx: AdapterPluginContext) -> bool: ...
 

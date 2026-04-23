@@ -20,6 +20,18 @@ from . import state_incremental as _state_incremental
 from .state_source_migration import normalized_google_sheets_redirect_cache
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _as_dict_rows(value: Any) -> list[dict[str, Any]]:
+    return [item for item in _as_list(value) if isinstance(item, dict)]
+
+
 def source_rows_fingerprint(rows: Sequence[dict[str, Any]]) -> str:
     keys = []
     for row in rows:
@@ -34,156 +46,137 @@ def source_rows_fingerprint(rows: Sequence[dict[str, Any]]) -> str:
 def normalize_source_state_payload(
     payload: dict[str, Any], *, updated_at: str = ""
 ) -> dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
-    rows = src.get("sources")
+    src = _as_dict(payload)
+    rows = _as_dict(src.get("sources"))
     out_rows: dict[str, dict[str, Any]] = {}
-    if isinstance(rows, dict):
-        for raw_name, raw_entry in rows.items():
-            name = clean_text(raw_name)
-            if not name or not isinstance(raw_entry, dict):
-                continue
-            entry = {
-                "lastRunAt": clean_text(raw_entry.get("lastRunAt")),
-                "lastCheckedAt": clean_text(raw_entry.get("lastCheckedAt")),
-                "lastStatus": clean_text(raw_entry.get("lastStatus")),
-                "lastDurationMs": _clamped_int(raw_entry.get("lastDurationMs"), 0, 0),
-                "lastFetchedCount": _clamped_int(raw_entry.get("lastFetchedCount"), 0, 0),
-                "lastKeptCount": _clamped_int(raw_entry.get("lastKeptCount"), 0, 0),
-                "lastJobsFound": _clamped_int(raw_entry.get("lastJobsFound"), 0, 0),
-                "lastCandidateLinksFound": _clamped_int(
-                    raw_entry.get("lastCandidateLinksFound"), 0, 0
-                ),
-                "lastDetailPagesVisited": _clamped_int(
-                    raw_entry.get("lastDetailPagesVisited"), 0, 0
-                ),
-                "lastDetailYieldPct": _clamped_int(raw_entry.get("lastDetailYieldPct"), 0, 0),
-                "lastRedirectCandidates": _clamped_int(
-                    raw_entry.get("lastRedirectCandidates"), 0, 0
-                ),
-                "lastRedirectResolved": _clamped_int(raw_entry.get("lastRedirectResolved"), 0, 0),
-                "lastRedirectCacheHits": _clamped_int(raw_entry.get("lastRedirectCacheHits"), 0, 0),
-                "googleSheetsRedirectCache": normalized_google_sheets_redirect_cache(
-                    raw_entry.get("googleSheetsRedirectCache")
-                ),
-                "lastAdapter": clean_text(raw_entry.get("lastAdapter")),
-                "lastSuccessAt": clean_text(raw_entry.get("lastSuccessAt")),
-                "lastNonEmptyAt": clean_text(raw_entry.get("lastNonEmptyAt")),
-                "lastFingerprint": clean_text(raw_entry.get("lastFingerprint")),
-                "lastListingFingerprint": clean_text(raw_entry.get("lastListingFingerprint")),
-                "lastListingCheckedAt": clean_text(raw_entry.get("lastListingCheckedAt")),
-                "lastHttpEtag": clean_text(raw_entry.get("lastHttpEtag")),
-                "lastHttpLastModified": clean_text(raw_entry.get("lastHttpLastModified")),
-                "lastHttpStatus": _clamped_int(raw_entry.get("lastHttpStatus"), 0, 0),
-                "nextEligibleCheckAt": clean_text(raw_entry.get("nextEligibleCheckAt")),
-                "cacheDecision": clean_text(raw_entry.get("cacheDecision")),
-                "cacheDecisionReason": clean_text(raw_entry.get("cacheDecisionReason")),
-                "browserEscalationEligible": bool(raw_entry.get("browserEscalationEligible")),
-                "browserEscalationEligibleAt": clean_text(
-                    raw_entry.get("browserEscalationEligibleAt")
-                ),
-                "browserEscalationEligibilityReason": clean_text(
-                    raw_entry.get("browserEscalationEligibilityReason")
-                ),
-                "browserEscalationLastAttemptAt": clean_text(
-                    raw_entry.get("browserEscalationLastAttemptAt")
-                ),
-                "browserEscalationLastAttemptFingerprint": clean_text(
-                    raw_entry.get("browserEscalationLastAttemptFingerprint")
-                ),
-                "browserEscalationLastAttemptListingFingerprint": clean_text(
-                    raw_entry.get("browserEscalationLastAttemptListingFingerprint")
-                ),
-                "browserEscalationLastSuccessAt": clean_text(
-                    raw_entry.get("browserEscalationLastSuccessAt")
-                ),
-                "browserEscalationLastFailureAt": clean_text(
-                    raw_entry.get("browserEscalationLastFailureAt")
-                ),
-                "browserEscalationLastError": clean_text(
-                    raw_entry.get("browserEscalationLastError")
-                ),
-                "browserEscalationFailureCount": _clamped_int(
-                    raw_entry.get("browserEscalationFailureCount"), 0, 0
-                ),
-                "browserEscalationQuarantinedUntilAt": clean_text(
-                    raw_entry.get("browserEscalationQuarantinedUntilAt")
-                ),
-                "consecutiveFailures": _clamped_int(raw_entry.get("consecutiveFailures"), 0, 0),
-                "consecutiveZeroKept": _clamped_int(raw_entry.get("consecutiveZeroKept"), 0, 0),
-                "quarantinedUntilAt": clean_text(raw_entry.get("quarantinedUntilAt")),
-                "lastFailureAt": clean_text(raw_entry.get("lastFailureAt")),
-                "lastError": clean_text(raw_entry.get("lastError")),
-                "healthScore": _clamped_int(raw_entry.get("healthScore"), 0, 100),
-                "lastFailureBucket": clean_text(raw_entry.get("lastFailureBucket")),
-                "structuredMigrationTargetAdapter": clean_text(
-                    raw_entry.get("structuredMigrationTargetAdapter")
-                ),
-                "structuredMigrationBaselineCapturedAt": clean_text(
-                    raw_entry.get("structuredMigrationBaselineCapturedAt")
-                ),
-                "structuredMigrationBaselineDurationMs": _clamped_int(
-                    raw_entry.get("structuredMigrationBaselineDurationMs"), 0, 0
-                ),
-                "structuredMigrationBaselineStatus": clean_text(
-                    raw_entry.get("structuredMigrationBaselineStatus")
-                ),
-                "structuredMigrationBaselineError": clean_text(
-                    raw_entry.get("structuredMigrationBaselineError")
-                ),
-                "structuredMigrationBaselineFailureBucket": clean_text(
-                    raw_entry.get("structuredMigrationBaselineFailureBucket")
-                ),
-                "structuredMigrationBaselineKeptCount": _clamped_int(
-                    raw_entry.get("structuredMigrationBaselineKeptCount"), 0, 0
-                ),
-                "structuredMigrationShadowRunCount": _clamped_int(
-                    raw_entry.get("structuredMigrationShadowRunCount"), 0, 0
-                ),
-                "structuredMigrationHealthyRunCount": _clamped_int(
-                    raw_entry.get("structuredMigrationHealthyRunCount"), 0, 0
-                ),
-                "structuredMigrationPromotedAt": clean_text(
-                    raw_entry.get("structuredMigrationPromotedAt")
-                ),
-                "structuredMigrationDemotedAt": clean_text(
-                    raw_entry.get("structuredMigrationDemotedAt")
-                ),
-                "structuredMigrationLastDuplicateRate": float(
-                    raw_entry.get("structuredMigrationLastDuplicateRate") or 0.0
-                ),
-                "structuredMigrationLastKeptCount": _clamped_int(
-                    raw_entry.get("structuredMigrationLastKeptCount"), 0, 0
-                ),
-            }
-            raw_latencies = raw_entry.get("recentLatencies")
-            if isinstance(raw_latencies, list):
-                clean_latencies = [
-                    _clamped_int(x, 0, 2**31 - 1)
-                    for x in raw_latencies
-                    if isinstance(x, (int, float))
-                ]
-                if clean_latencies:
-                    entry["recentLatencies"] = clean_latencies
-            raw_stage_timings = (
-                raw_entry.get("lastStageTimingsMs")
-                if isinstance(raw_entry.get("lastStageTimingsMs"), dict)
-                else {}
-            )
-            clean_stage_timings = {
-                "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
-                "parseCsv": _clamped_int(raw_stage_timings.get("parseCsv"), 0, 0),
-                "candidateExtraction": _clamped_int(
-                    raw_stage_timings.get("candidateExtraction"), 0, 0
-                ),
-                "detailFetch": _clamped_int(raw_stage_timings.get("detailFetch"), 0, 0),
-                "redirectResolve": _clamped_int(raw_stage_timings.get("redirectResolve"), 0, 0),
-                "canonicalization": _clamped_int(raw_stage_timings.get("canonicalization"), 0, 0),
-            }
-            if any(clean_stage_timings.values()):
-                entry["lastStageTimingsMs"] = clean_stage_timings
-            out_rows[name] = {
-                key: value for key, value in entry.items() if value != "" and value is not None
-            }
+    for raw_name, raw_entry in rows.items():
+        name = clean_text(raw_name)
+        entry_src = _as_dict(raw_entry)
+        if not name or not entry_src:
+            continue
+        entry = {
+            "lastRunAt": clean_text(entry_src.get("lastRunAt")),
+            "lastCheckedAt": clean_text(entry_src.get("lastCheckedAt")),
+            "lastStatus": clean_text(entry_src.get("lastStatus")),
+            "lastDurationMs": _clamped_int(entry_src.get("lastDurationMs"), 0, 0),
+            "lastFetchedCount": _clamped_int(entry_src.get("lastFetchedCount"), 0, 0),
+            "lastKeptCount": _clamped_int(entry_src.get("lastKeptCount"), 0, 0),
+            "lastJobsFound": _clamped_int(entry_src.get("lastJobsFound"), 0, 0),
+            "lastCandidateLinksFound": _clamped_int(entry_src.get("lastCandidateLinksFound"), 0, 0),
+            "lastDetailPagesVisited": _clamped_int(entry_src.get("lastDetailPagesVisited"), 0, 0),
+            "lastDetailYieldPct": _clamped_int(entry_src.get("lastDetailYieldPct"), 0, 0),
+            "lastRedirectCandidates": _clamped_int(entry_src.get("lastRedirectCandidates"), 0, 0),
+            "lastRedirectResolved": _clamped_int(entry_src.get("lastRedirectResolved"), 0, 0),
+            "lastRedirectCacheHits": _clamped_int(entry_src.get("lastRedirectCacheHits"), 0, 0),
+            "googleSheetsRedirectCache": normalized_google_sheets_redirect_cache(
+                entry_src.get("googleSheetsRedirectCache")
+            ),
+            "lastAdapter": clean_text(entry_src.get("lastAdapter")),
+            "lastSuccessAt": clean_text(entry_src.get("lastSuccessAt")),
+            "lastNonEmptyAt": clean_text(entry_src.get("lastNonEmptyAt")),
+            "lastFingerprint": clean_text(entry_src.get("lastFingerprint")),
+            "lastListingFingerprint": clean_text(entry_src.get("lastListingFingerprint")),
+            "lastListingCheckedAt": clean_text(entry_src.get("lastListingCheckedAt")),
+            "lastHttpEtag": clean_text(entry_src.get("lastHttpEtag")),
+            "lastHttpLastModified": clean_text(entry_src.get("lastHttpLastModified")),
+            "lastHttpStatus": _clamped_int(entry_src.get("lastHttpStatus"), 0, 0),
+            "nextEligibleCheckAt": clean_text(entry_src.get("nextEligibleCheckAt")),
+            "cacheDecision": clean_text(entry_src.get("cacheDecision")),
+            "cacheDecisionReason": clean_text(entry_src.get("cacheDecisionReason")),
+            "browserEscalationEligible": bool(entry_src.get("browserEscalationEligible")),
+            "browserEscalationEligibleAt": clean_text(entry_src.get("browserEscalationEligibleAt")),
+            "browserEscalationEligibilityReason": clean_text(
+                entry_src.get("browserEscalationEligibilityReason")
+            ),
+            "browserEscalationLastAttemptAt": clean_text(
+                entry_src.get("browserEscalationLastAttemptAt")
+            ),
+            "browserEscalationLastAttemptFingerprint": clean_text(
+                entry_src.get("browserEscalationLastAttemptFingerprint")
+            ),
+            "browserEscalationLastAttemptListingFingerprint": clean_text(
+                entry_src.get("browserEscalationLastAttemptListingFingerprint")
+            ),
+            "browserEscalationLastSuccessAt": clean_text(
+                entry_src.get("browserEscalationLastSuccessAt")
+            ),
+            "browserEscalationLastFailureAt": clean_text(
+                entry_src.get("browserEscalationLastFailureAt")
+            ),
+            "browserEscalationLastError": clean_text(entry_src.get("browserEscalationLastError")),
+            "browserEscalationFailureCount": _clamped_int(
+                entry_src.get("browserEscalationFailureCount"), 0, 0
+            ),
+            "browserEscalationQuarantinedUntilAt": clean_text(
+                entry_src.get("browserEscalationQuarantinedUntilAt")
+            ),
+            "consecutiveFailures": _clamped_int(entry_src.get("consecutiveFailures"), 0, 0),
+            "consecutiveZeroKept": _clamped_int(entry_src.get("consecutiveZeroKept"), 0, 0),
+            "quarantinedUntilAt": clean_text(entry_src.get("quarantinedUntilAt")),
+            "lastFailureAt": clean_text(entry_src.get("lastFailureAt")),
+            "lastError": clean_text(entry_src.get("lastError")),
+            "healthScore": _clamped_int(entry_src.get("healthScore"), 0, 100),
+            "lastFailureBucket": clean_text(entry_src.get("lastFailureBucket")),
+            "structuredMigrationTargetAdapter": clean_text(
+                entry_src.get("structuredMigrationTargetAdapter")
+            ),
+            "structuredMigrationBaselineCapturedAt": clean_text(
+                entry_src.get("structuredMigrationBaselineCapturedAt")
+            ),
+            "structuredMigrationBaselineDurationMs": _clamped_int(
+                entry_src.get("structuredMigrationBaselineDurationMs"), 0, 0
+            ),
+            "structuredMigrationBaselineStatus": clean_text(
+                entry_src.get("structuredMigrationBaselineStatus")
+            ),
+            "structuredMigrationBaselineError": clean_text(
+                entry_src.get("structuredMigrationBaselineError")
+            ),
+            "structuredMigrationBaselineFailureBucket": clean_text(
+                entry_src.get("structuredMigrationBaselineFailureBucket")
+            ),
+            "structuredMigrationBaselineKeptCount": _clamped_int(
+                entry_src.get("structuredMigrationBaselineKeptCount"), 0, 0
+            ),
+            "structuredMigrationShadowRunCount": _clamped_int(
+                entry_src.get("structuredMigrationShadowRunCount"), 0, 0
+            ),
+            "structuredMigrationHealthyRunCount": _clamped_int(
+                entry_src.get("structuredMigrationHealthyRunCount"), 0, 0
+            ),
+            "structuredMigrationPromotedAt": clean_text(
+                entry_src.get("structuredMigrationPromotedAt")
+            ),
+            "structuredMigrationDemotedAt": clean_text(
+                entry_src.get("structuredMigrationDemotedAt")
+            ),
+            "structuredMigrationLastDuplicateRate": float(
+                entry_src.get("structuredMigrationLastDuplicateRate") or 0.0
+            ),
+            "structuredMigrationLastKeptCount": _clamped_int(
+                entry_src.get("structuredMigrationLastKeptCount"), 0, 0
+            ),
+        }
+        raw_latencies = _as_list(entry_src.get("recentLatencies"))
+        clean_latencies = [
+            _clamped_int(x, 0, 2**31 - 1) for x in raw_latencies if isinstance(x, (int, float))
+        ]
+        if clean_latencies:
+            entry["recentLatencies"] = clean_latencies
+        raw_stage_timings = _as_dict(entry_src.get("lastStageTimingsMs"))
+        clean_stage_timings = {
+            "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
+            "parseCsv": _clamped_int(raw_stage_timings.get("parseCsv"), 0, 0),
+            "candidateExtraction": _clamped_int(raw_stage_timings.get("candidateExtraction"), 0, 0),
+            "detailFetch": _clamped_int(raw_stage_timings.get("detailFetch"), 0, 0),
+            "redirectResolve": _clamped_int(raw_stage_timings.get("redirectResolve"), 0, 0),
+            "canonicalization": _clamped_int(raw_stage_timings.get("canonicalization"), 0, 0),
+        }
+        if any(clean_stage_timings.values()):
+            entry["lastStageTimingsMs"] = clean_stage_timings
+        out_rows[name] = {
+            key: value for key, value in entry.items() if value != "" and value is not None
+        }
     return {
         "schemaVersion": SCHEMA_VERSION,
         "updatedAt": clean_text(src.get("updatedAt")) or clean_text(updated_at) or now_iso(),
@@ -283,13 +276,9 @@ def snapshot_prior_source_state(entry: dict[str, Any]) -> dict[str, Any]:
 def apply_static_detail_stats(
     entry: dict[str, Any], report: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    details = report.get("details") if isinstance(report.get("details"), list) else []
-    static_detail = details[0] if len(details) == 1 and isinstance(details[0], dict) else {}
-    static_stats = (
-        static_detail.get("stats")
-        if isinstance(static_detail, dict) and isinstance(static_detail.get("stats"), dict)
-        else {}
-    )
+    details = _as_dict_rows(report.get("details"))
+    static_detail = details[0] if len(details) == 1 else {}
+    static_stats = _as_dict(static_detail.get("stats"))
     entry["lastCandidateLinksFound"] = int(static_stats.get("candidate_links_found") or 0)
     entry["lastDetailPagesVisited"] = int(static_stats.get("detail_pages_visited") or 0)
     entry["lastDetailYieldPct"] = int(static_stats.get("detail_yield_percent") or 0)
@@ -300,9 +289,7 @@ def apply_static_detail_stats(
 
 
 def apply_stage_timings(entry: dict[str, Any], report: dict[str, Any]) -> None:
-    stage_timings = (
-        report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
-    )
+    stage_timings = _as_dict(report.get("stageTimingsMs"))
     clean_stage_timings = {
         "listingFetch": int(stage_timings.get("listingFetch") or 0),
         "parseCsv": int(stage_timings.get("parseCsv") or 0),

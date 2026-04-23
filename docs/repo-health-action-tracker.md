@@ -7,7 +7,7 @@
 > - **Then inspect:** [`testing.md`](testing.md), [`../CONTRIBUTING.md`](../CONTRIBUTING.md), and [`RELEASE.md`](RELEASE.md)
 > - **Last updated:** 2026-04-24
 
-This page converts an external repository analysis into a repo-native action tracker. The source analysis was reviewed against the current repository state at `f722957`, and only validated claims are carried forward into strengths, gaps, and next steps.
+This page converts an external repository analysis into a repo-native action tracker. The source analysis was reviewed against the current repository state, and only validated claims are carried forward into strengths, gaps, and next steps.
 
 Completed items are archived in [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md) so this page stays focused on active repository-health work.
 
@@ -20,8 +20,8 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src --no-incremental` -> `607 errors in 106 files (checked 313 source files)` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini --no-incremental` passes on the staged 24-file scope (`src/python_version_guard.py`, `src/pipeline_io.py`, `src/bridge/report_normalizer.py`, `src/bridge/api.py`, `src/bridge/admin_registry_api.py`, `src/bridge/admin_task_runtime.py`, `src/bridge/ops_live_payload.py`, `src/admin_bridge.py`, `src/bridge/admin_entrypoint_services.py`, `src/bridge/admin_entrypoint_runtime.py`, `src/shared/json_shapes.py`, `src/shared/live_task.py`, `src/bridge/ops_task_fetch_live.py`, `src/bridge/ops_task_discovery_live.py`, `src/bridge/discovery_service.py`, `src/bridge/sync_service.py`, `src/bridge/sync_task_flow.py`, `src/bridge/ops_health.py`, `src/bridge/routes/post_routes_admin.py`, `src/fetcher_metrics.py`, `src/source_discovery/reporting_progress.py`, `src/source_discovery/runtime_metrics.py`, `src/pipeline_audit.py`, `src/source_audit_sweep.py`) |
+| Broad type-check run | `python -m mypy src` -> `480 errors in 99 files (checked 312 source files)` |
+| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, and jobs contracts/runtime/loader/plugin scope. |
 | ESLint | `137 warnings, 0 errors` |
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
@@ -39,9 +39,22 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 
 ### P0
 
-4. **In progress: resolve GitHub Dependabot high-severity vulnerabilities.**
+1. **Next staged mypy milestone: type the remaining provider/plugin helper cluster.**
+   The jobs adapter/plugin pass landed in two steps. Phase 1 corrected the plugin protocol, normalized taxonomy coercion, and made the provider/social registration seam checkable. Phase 2 normalized the social and `scrapy_static` adapter payload boundaries. That widened the enforced gate from `24` files to `30` files and dropped the broad audit from `557 errors in 105 files` to `480 errors in 99 files`.
+   The next coherent jobs target is the remaining provider/plugin helper surface rather than the already-green adapter registration seam: `src/jobs/adapters/plugins/provider_api/json_feed.py`, `src/jobs/adapters/plugins/provider_api/html_board.py`, `src/jobs/adapters/plugins/provider_api/greenhouse_runner.py`, and the direct adapter-helper fallout they still feed (`src/jobs/adapters/social_parsers.py` and any immediate parser/helper seams exposed by that pass).
+   **Done when:** the enforced mypy scope expands beyond the current thirty-file gate to cover the provider/plugin helper cluster, and those modules stop leaking `Any` through plugin builders, provider helper parsing, and direct adapter helper fallthrough paths.
+
+2. **In progress: resolve GitHub Dependabot high-severity vulnerabilities.**
    GitHub reported `6` high vulnerabilities on the default branch before the first Scrapy remediation, then `2` high vulnerabilities after `Scrapy==2.14.2` landed. The local Scrapy remediation now updates the direct dependency to latest released `Scrapy==2.15.0`, raises the `scrapy-playwright` source requirement floor to the latest published `>=0.0.46`, and regenerates `requirements-lock.txt`; if Dependabot still requires `>2.15.0`, the remaining alerts are upstream-blocked until a newer Scrapy release exists. The Scrapy-adjacent lock entries (`scrapy-playwright`, `twisted`, `cryptography`, `pyopenssl`, `lxml`, `parsel`, `w3lib`, and `queuelib`) remained stable, and `brotli` is not present in the lock. Validation so far: `python -c "import scrapy, scrapy_playwright; print(scrapy.__version__); print(scrapy_playwright.__version__)"` -> `2.15.0` / `0.0.46`, `python -m pip check` passed, focused Scrapy/runtime tests passed (`187 passed`), `cmd /c npm run test:refactor:changed` passed, `cmd /c npm run lint:precommit:changed` passed, and `python scripts/orchestrator.py build --force` passed with run `20260424_133557`. `uvx pip-audit -r requirements-lock.txt` reports one residual Scrapy advisory (`PYSEC-2017-83` / `GHSA-h7wm-ph43-c39p` / `CVE-2017-14158`) with no fix version; the affected Scrapy file-download storage path (`FilesPipeline` / `S3FilesStore`) is not used in `src/` or tests.
    **Done when:** Dependabot shows no unresolved high or critical vulnerabilities for the default branch, dependency lock files reflect the approved updates, and relevant Python/Node test gates pass.
+
+3. **Completed: add a Python dependency lock strategy for reproducible builds.**
+   `requirements-lock.txt` is now the canonical Python lock artifact, and CI/release install surfaces consume it instead of floating `requirements.txt`.
+   **Done when:** complete.
+
+4. **Completed: stop generated-file newline churn in `data/source-approval-state.json`.**
+   `save_json_atomic` now writes newline-terminated JSON, and targeted regression coverage protects the writer behavior used by the approval-state file.
+   **Done when:** complete.
 
 ### P1
 
@@ -83,7 +96,7 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 - `TODO` / `FIXME` / `HACK` count in `src/` plus `frontend/` is currently `0`, not `3`.
 - `python -m vulture` does **not** work in the active interpreter, but the repo's pre-commit flow manages vulture separately; this is not the same as a broken repo gate.
 - The previous `data/source-approval-state.json` newline-only churn was real, but it is now fixed at the shared writer level rather than hidden from the local checks.
-- The type-safety claim still needs nuance: repo-wide mypy debt is large, but the enforced mypy scope now includes the admin bridge composition-root milestone and remains green.
+- The type-safety claim still needs nuance: repo-wide mypy debt is still large, but the enforced mypy scope now covers the `admin_bridge` composition root, its immediate helper boundary, the bridge live payload pair, and the first jobs contracts/runtime/loader seam, and it remains green.
 - The original 1-10 score table and overall `7.5/10` rating were not retained here because they are subjective and partially stale relative to the current repo state.
 
 ## Not Locally Validated

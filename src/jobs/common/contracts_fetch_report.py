@@ -16,6 +16,14 @@ from .contracts_runtime import normalize_runtime_payload
 from .contracts_source_reports import normalize_source_report_row
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _float_or_zero(value: Any) -> float:
     try:
         return float(value)
@@ -24,14 +32,14 @@ def _float_or_zero(value: Any) -> float:
 
 
 def _normalize_count_map(payload: Any) -> dict[str, int]:
-    src = payload if isinstance(payload, dict) else {}
+    src = _as_dict(payload)
     return {
         clean_text(key): _clamped_int(value, 0, 0) for key, value in src.items() if clean_text(key)
     }
 
 
 def _normalize_social_channel_summary(payload: Any) -> dict[str, Any]:
-    src_channel = payload if isinstance(payload, dict) else {}
+    src_channel = _as_dict(payload)
     return {
         "keptCount": _clamped_int(src_channel.get("keptCount"), 0, 0),
         "uniqueKeptCount": _clamped_int(src_channel.get("uniqueKeptCount"), 0, 0),
@@ -45,7 +53,7 @@ def _normalize_social_channel_summary(payload: Any) -> dict[str, Any]:
 
 
 def _normalize_contamination_audit(payload: Any) -> dict[str, Any]:
-    contamination_audit = payload if isinstance(payload, dict) else {}
+    contamination_audit = _as_dict(payload)
     return {
         "totalRows": _clamped_int(contamination_audit.get("totalRows"), 0, 0),
         "contaminatedRows": _clamped_int(contamination_audit.get("contaminatedRows"), 0, 0),
@@ -58,24 +66,18 @@ def _normalize_contamination_audit(payload: Any) -> dict[str, Any]:
                 "jobLink": clean_text(item.get("jobLink")),
                 "fields": {
                     clean_text(key): clean_text(value)
-                    for key, value in (
-                        item.get("fields") if isinstance(item.get("fields"), dict) else {}
-                    ).items()
+                    for key, value in _as_dict(item.get("fields")).items()
                     if clean_text(key)
                 },
             }
-            for item in (
-                contamination_audit.get("examples")
-                if isinstance(contamination_audit.get("examples"), list)
-                else []
-            )[:20]
+            for item in _as_list(contamination_audit.get("examples"))[:20]
             if isinstance(item, dict)
         ],
     }
 
 
 def _normalize_location_quality_audit(payload: Any) -> dict[str, Any]:
-    location_quality_audit = payload if isinstance(payload, dict) else {}
+    location_quality_audit = _as_dict(payload)
     return {
         "totalRows": _clamped_int(location_quality_audit.get("totalRows"), 0, 0),
         "invalidLocationFieldCount": _clamped_int(
@@ -93,18 +95,14 @@ def _normalize_location_quality_audit(payload: Any) -> dict[str, Any]:
                 "reason": clean_text(item.get("reason")),
                 "value": clean_text(item.get("value")),
             }
-            for item in (
-                location_quality_audit.get("examples")
-                if isinstance(location_quality_audit.get("examples"), list)
-                else []
-            )[:20]
+            for item in _as_list(location_quality_audit.get("examples"))[:20]
             if isinstance(item, dict)
         ],
     }
 
 
 def _normalize_city_garbage_audit(payload: Any) -> dict[str, Any]:
-    city_garbage_audit = payload if isinstance(payload, dict) else {}
+    city_garbage_audit = _as_dict(payload)
     return {
         "totalRows": _clamped_int(city_garbage_audit.get("totalRows"), 0, 0),
         "garbageRows": _clamped_int(city_garbage_audit.get("garbageRows"), 0, 0),
@@ -116,20 +114,16 @@ def _normalize_city_garbage_audit(payload: Any) -> dict[str, Any]:
                 "title": clean_text(item.get("title")),
                 "source": clean_text(item.get("source")),
                 "jobLink": clean_text(item.get("jobLink")),
-                "fields": item.get("fields") if isinstance(item.get("fields"), dict) else {},
+                "fields": _as_dict(item.get("fields")),
             }
-            for item in (
-                city_garbage_audit.get("examples")
-                if isinstance(city_garbage_audit.get("examples"), list)
-                else []
-            )[:20]
+            for item in _as_list(city_garbage_audit.get("examples"))[:20]
             if isinstance(item, dict)
         ],
     }
 
 
 def _normalize_sector_quality_audit(payload: Any) -> dict[str, Any]:
-    sector_quality_audit = payload if isinstance(payload, dict) else {}
+    sector_quality_audit = _as_dict(payload)
     return {
         "totalRows": _clamped_int(sector_quality_audit.get("totalRows"), 0, 0),
         "downgradedGameSectorCount": _clamped_int(
@@ -144,19 +138,15 @@ def _normalize_sector_quality_audit(payload: Any) -> dict[str, Any]:
                 "rawSector": clean_text(item.get("rawSector")),
                 "normalizedSector": clean_text(item.get("normalizedSector")),
             }
-            for item in (
-                sector_quality_audit.get("examples")
-                if isinstance(sector_quality_audit.get("examples"), list)
-                else []
-            )[:20]
+            for item in _as_list(sector_quality_audit.get("examples"))[:20]
             if isinstance(item, dict)
         ],
     }
 
 
 def _normalize_outputs(payload: Any) -> dict[str, Any]:
-    outputs = payload if isinstance(payload, dict) else {}
-    changed = outputs.get("changed") if isinstance(outputs.get("changed"), dict) else {}
+    outputs = _as_dict(payload)
+    changed = _as_dict(outputs.get("changed"))
     return {
         "json": clean_text(outputs.get("json")),
         "csv": clean_text(outputs.get("csv")),
@@ -174,7 +164,7 @@ def _normalize_outputs(payload: Any) -> dict[str, Any]:
 
 
 def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
+    src = _as_dict(payload)
     live_task_payload = normalize_live_task_payload(
         src,
         task_type="fetch",
@@ -183,20 +173,12 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         finished_at=clean_text(src.get("finishedAt")),
     )
     live_task_fields = build_live_task_contract_fields(live_task_payload)
-    summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
-    source_rows_raw = src.get("sources")
-    source_rows = source_rows_raw if isinstance(source_rows_raw, list) else []
-    source_family_rows_raw = src.get("sourceFamilies")
-    source_family_rows = source_family_rows_raw if isinstance(source_family_rows_raw, list) else []
-    runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
-    social_summary_raw = (
-        src.get("socialSummary") if isinstance(src.get("socialSummary"), dict) else {}
-    )
-    social_channels_raw = (
-        social_summary_raw.get("channels")
-        if isinstance(social_summary_raw.get("channels"), dict)
-        else {}
-    )
+    summary = _as_dict(src.get("summary"))
+    source_rows = _as_list(src.get("sources"))
+    source_family_rows = _as_list(src.get("sourceFamilies"))
+    runtime = _as_dict(src.get("runtime"))
+    social_summary_raw = _as_dict(src.get("socialSummary"))
+    social_channels_raw = _as_dict(social_summary_raw.get("channels"))
 
     normalized_payload = {
         "schemaVersion": SCHEMA_VERSION,
@@ -249,9 +231,7 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "sourceFamilies": [
             normalize_source_report_row(row) for row in source_family_rows if isinstance(row, dict)
         ],
-        "healthSummary": dict(src.get("healthSummary"))
-        if isinstance(src.get("healthSummary"), dict)
-        else {},
+        "healthSummary": dict(_as_dict(src.get("healthSummary"))),
         "outputs": _normalize_outputs(src.get("outputs")),
     }
     return normalized_payload

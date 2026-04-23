@@ -6,8 +6,9 @@ import argparse
 import os
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.jobs.adapters import community as community_adapter
 from src.jobs.adapters.api import default_source_loaders as adapters_default_source_loaders
@@ -50,6 +51,14 @@ DEFAULT_SOCIAL_LOOKBACK_MINUTES = common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES
 load_social_config = common_social.load_social_config
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _pipeline_redirect_resolver_builder():
     return getattr(
         sys.modules[__name__],
@@ -66,13 +75,17 @@ def default_source_loaders(
     facade = sys.modules.get("src.jobs_fetcher")
     facade_loader = getattr(facade, "default_source_loaders", None) if facade is not None else None
     if callable(facade_loader) and facade_loader is not default_source_loaders:
+        typed_facade_loader = cast(
+            Callable[..., list[tuple[str, SourceLoader]]],
+            facade_loader,
+        )
         try:
-            return facade_loader(
+            return typed_facade_loader(
                 social_enabled=social_enabled,
                 social_config=social_config,
             )
         except TypeError:
-            return facade_loader()
+            return typed_facade_loader()
     try:
         return adapters_default_source_loaders(
             social_enabled=social_enabled,
@@ -457,19 +470,13 @@ def main() -> int:
         selection_exclusions=deduped_selection_exclusions,
         force_refresh_all=bool(args.force_refresh_all),
     )
-    summary = report.get("summary", {})
+    summary = _as_dict(report.get("summary"))
     output_count = int(summary.get("outputCount") or 0)
     failed_sources = int(summary.get("failedSources") or 0)
-    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    timing_summary = (
-        runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
-    )
-    stage_top = (
-        timing_summary.get("stageTop") if isinstance(timing_summary.get("stageTop"), list) else []
-    )
-    slowest_sources = (
-        runtime.get("slowestSources") if isinstance(runtime.get("slowestSources"), list) else []
-    )
+    runtime = _as_dict(report.get("runtime"))
+    timing_summary = _as_dict(runtime.get("timingSummary"))
+    stage_top = _as_list(timing_summary.get("stageTop"))
+    slowest_sources = _as_list(runtime.get("slowestSources"))
     print(
         f"Jobs fetch completed. Output jobs: {output_count}. "
         f"Failed sources: {failed_sources}. Report: {report['outputs']['report']}"

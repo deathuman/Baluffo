@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import cast
 
 
 class FailureBucket(StrEnum):
@@ -59,6 +60,28 @@ def _normalized_text(value: object) -> str:
     return str(value or "").strip().lower()
 
 
+def _as_dict(value: object) -> dict[str, object]:
+    return cast(dict[str, object], value) if isinstance(value, dict) else {}
+
+
+def _coerce_int(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = str(value).strip()
+        if not text:
+            return 0
+        try:
+            return int(text)
+        except ValueError:
+            return 0
+    return 0
+
+
 def _has_any(text: str, phrases: list[str] | tuple[str, ...]) -> bool:
     return any(phrase in text for phrase in phrases)
 
@@ -112,14 +135,26 @@ def _is_static_manual_no_jobs_error(error_lower: str) -> bool:
 def classification_context_from_source_detail(
     source_detail: dict[str, object],
 ) -> ClassificationContext:
-    stats = source_detail.get("stats") if isinstance(source_detail.get("stats"), dict) else {}
-    loss = source_detail.get("loss") if isinstance(source_detail.get("loss"), dict) else {}
+    stats = _as_dict(source_detail.get("stats"))
+    loss = _as_dict(source_detail.get("loss"))
+    http_status = _coerce_int(source_detail.get("httpStatus")) or None
+    fetched_count = _coerce_int(source_detail.get("fetchedCount"))
+    detail_pages_visited = _coerce_int(
+        source_detail.get("detailPagesVisited") or stats.get("detail_pages_visited")
+    )
+    candidate_links_found = _coerce_int(
+        source_detail.get("candidateLinksFound") or stats.get("candidate_links_found")
+    )
+    listing_jobs_found = _coerce_int(source_detail.get("listingJobsFound"))
+    detail_parse_empty_count = _coerce_int(
+        source_detail.get("detailParseEmptyCount") or loss.get("staticDetailParseEmpty")
+    )
     return ClassificationContext(
         status=_normalized_text(source_detail.get("status")),
         error=_normalized_text(source_detail.get("error")),
         classification=_normalized_text(source_detail.get("classification")),
-        http_status=int(source_detail.get("httpStatus") or 0) or None,
-        fetched_count=int(source_detail.get("fetchedCount") or 0),
+        http_status=http_status,
+        fetched_count=fetched_count,
         browser_fallback_recommended=bool(source_detail.get("browserFallbackRecommended")),
         empty_confirmed=bool(source_detail.get("emptyConfirmed")),
         listing_changed=bool(source_detail.get("listingChanged")),
@@ -128,16 +163,10 @@ def classification_context_from_source_detail(
             if "listingFingerprintChanged" in source_detail
             else source_detail.get("listingChanged")
         ),
-        detail_pages_visited=int(
-            source_detail.get("detailPagesVisited") or stats.get("detail_pages_visited") or 0
-        ),
-        candidate_links_found=int(
-            source_detail.get("candidateLinksFound") or stats.get("candidate_links_found") or 0
-        ),
-        listing_jobs_found=int(source_detail.get("listingJobsFound") or 0),
-        detail_parse_empty_count=int(
-            source_detail.get("detailParseEmptyCount") or loss.get("staticDetailParseEmpty") or 0
-        ),
+        detail_pages_visited=detail_pages_visited,
+        candidate_links_found=candidate_links_found,
+        listing_jobs_found=listing_jobs_found,
+        detail_parse_empty_count=detail_parse_empty_count,
         extractor_hint=_normalized_text(source_detail.get("extractorHint")),
         signal_quality=_normalized_text(source_detail.get("signalQuality")) or "strong",
     )
