@@ -335,6 +335,64 @@ def test_source_sync_root_stays_thin_compat_surface(repo_root: Path) -> None:
     assert len(text.splitlines()) <= 560, "source_sync root drifted back toward monolith size"
 
 
+def test_local_data_store_root_stays_thin_compat_surface(repo_root: Path) -> None:
+    from src import local_data_store
+
+    target = repo_root / "src" / "local_data_store.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+    class_defs = {
+        node.name: node for node in tree.body if isinstance(node, ast.ClassDef)
+    }
+    local_data_store_class = class_defs["LocalDataStore"]
+    method_names = {
+        node.name for node in local_data_store_class.body if isinstance(node, ast.FunctionDef)
+    }
+
+    assert "from src import local_data_store_profiles as local_data_store_profiles_mod" in text
+    assert "from src import local_data_store_saved_jobs as local_data_store_saved_jobs_mod" in text
+    assert (
+        "from src import local_data_store_attachments as local_data_store_attachments_mod" in text
+    )
+    assert "from src import local_data_store_backup as local_data_store_backup_mod" in text
+    assert "from src.local_data_store_shared import (" in text
+    assert "def normalize_saved_job(" not in text
+    assert "def merge_saved_job(" not in text
+    assert "def add_activity(" not in text
+    assert "def _import_saved_jobs(" not in text
+    assert "def _import_activity_rows(" not in text
+    assert {
+        "__init__",
+        "sign_in",
+        "sign_out",
+        "get_current_user",
+        "list_profiles",
+        "list_saved_jobs",
+        "get_saved_job_keys",
+        "save_job_for_user",
+        "remove_saved_job_for_user",
+        "update_application_status",
+        "update_job_notes",
+        "list_activity_for_user",
+        "list_attachments_for_job",
+        "add_attachment_for_job",
+        "get_attachment_blob",
+        "delete_attachment_for_job",
+        "export_profile_data",
+        "import_profile_data",
+        "get_admin_overview",
+        "wipe_account_admin",
+    } <= method_names
+    assert local_data_store.LocalDataPaths.__name__ == "LocalDataPaths"
+    assert local_data_store.LocalDataStore.__name__ == "LocalDataStore"
+    assert callable(local_data_store.sanitize_job_url)
+    assert callable(local_data_store.generate_job_key)
+    assert callable(local_data_store.normalize_application_status)
+    assert callable(local_data_store.can_transition_phase)
+    assert callable(local_data_store.normalize_sector_value)
+    assert len(text.splitlines()) <= 220, "local_data_store.py drifted back toward monolith size"
+
+
 def test_source_sync_snapshot_leaf_owns_snapshot_merge_helpers(repo_root: Path) -> None:
     target = repo_root / "src" / "source_sync_snapshot.py"
     tree = _module_tree(target)

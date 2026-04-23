@@ -90,6 +90,8 @@ src/ship/desktop_update.py (stable updater surface)
 | Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
 | Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
 | Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py` | `src/jobs/adapters/static_helpers.py` only for shim/patch-surface compatibility and `src/jobs/adapters/static.py` only for root-surface compatibility work |
+| Local-data backend store | `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py` | `src/local_data_store.py` only for root-surface compatibility work |
+| Desktop local-data runtime | `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js` | `frontend/shared/local-data/desktop-client.js` only for root bootstrap or `window.JobAppLocalData` wiring |
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
 | Desktop runtime | `src/ship/desktop_app/launcher.py` | `src/ship/desktop_app/{startup,browser,session,_windows,config}.py`, `src/ship/runtime_launcher.py` |
 | Packaged smoke / updater | `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`, `src/ship/desktop_update_{shared,state,service}.py` | `src/packaged_desktop_smoke.py` and `src/ship/desktop_update.py` only for CLI/public-surface compatibility work |
@@ -107,7 +109,7 @@ src/ship/desktop_update.py (stable updater surface)
   -> render exports stay stable through `frontend/admin/render.js` -> `frontend/admin/render/ops.js`
   -> ops renderer ownership lives in `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
 
-**Shared:** `frontend/shared/state-hub.js` (cross-module state), `frontend/shared/api-client.js` (bridge HTTP), `frontend/shared/config/admin-config.js` (frontend-safe runtime config), `frontend/shared/local-data/` (desktop/browser local-data clients)
+**Shared:** `frontend/shared/state-hub.js` (cross-module state), `frontend/shared/api-client.js` (bridge HTTP), `frontend/shared/config/admin-config.js` (frontend-safe runtime config), `frontend/shared/local-data/desktop-client.js` (stable desktop-local runtime root over `desktop/{api,lifecycle,navigation,state}.js`), `frontend/shared/local-data/browser-client.js` (browser-local runtime)
 
 **Styles:** `styles/base.css` owns tokens and page foundations, `styles/components.css` owns shared UI primitives, and `styles/{jobs,saved,admin}.css` own page-specific polish. Change shared styling in the shared layer first; only touch page CSS when the selector is clearly page-owned.
 
@@ -155,6 +157,14 @@ src/ship/desktop_update.py (stable updater surface)
 - `source_sync_snapshot.py` - snapshot normalization, transition backfill, merge ranking, and remote read/write helpers
 - `source_sync_crypto.py` - private-key encryption, PEM/ASN.1 parsing, and JWT signing helpers
 - `adapters/static.py` - root static adapter surface over `static_runtime.py`, `static_listing.py`, `static_listing_flow.py`, `static_detail.py`, `static_sources.py`, `static_runtime_support.py`, `static_detail_heuristics.py`, and the `static_helpers.py` compatibility shim
+
+**Local data:**
+- `local_data_store.py` - stable desktop local-data store facade
+- `local_data_store_shared.py` - shared file IO, normalization helpers, `LocalDataPaths`, and locking
+- `local_data_store_profiles.py` - profile/session ownership and sign-in helpers
+- `local_data_store_saved_jobs.py` - saved-job normalization, merge, activity, and mutation helpers
+- `local_data_store_attachments.py` - attachment metadata and blob persistence helpers
+- `local_data_store_backup.py` - backup import/export plus admin overview/wipe helpers
 
 ---
 
@@ -210,6 +220,8 @@ See [`testing.md`](testing.md) for more commands.
 - `src/jobs_fetcher.py` - stable thin CLI facade; keep lazy export routing in `src/jobs/fetcher_compat_exports.py`, root-backed wrapper seams in `src/jobs/fetcher_compat_runtime.py`, and new pipeline logic in `src/jobs/*`
 - `src/jobs/adapters/static.py` - stable static adapter surface; keep generic listing/detail/runtime logic in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py`
 - `src/source_sync.py` - permanent thin sync integration surface; keep new sync logic in `src/source_sync_{config,runtime,snapshot,crypto}.py`
+- `src/local_data_store.py` - stable local-data store surface; keep implementation in `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`
+- `frontend/shared/local-data/desktop-client.js` - stable desktop local-data runtime root; keep implementation in `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 - `src/jobs/common/__init__.py` - package marker only; prefer `src.jobs.common.<leaf>` or package-submodule imports
 - `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`
 
@@ -219,6 +231,8 @@ See [`testing.md`](testing.md) for more commands.
 - `src/jobs/fetcher_compat_{exports,runtime}.py`
 - `src/jobs/adapters/static_listing_flow.py`
 - `src/jobs/state_incremental.py`
+- `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`
+- `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 - `frontend/saved/app/runtime/*.js`
 
 ---

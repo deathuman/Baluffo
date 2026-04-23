@@ -1,6 +1,6 @@
 # Runtime-First Cleanup Handoff
 
-> Operational handoff note for the runtime-first cleanup lane after the admin, jobs/saved, `source_sync`, and `admin_bridge` follow-up waves landed on `main`.
+> Operational handoff note for the runtime-first cleanup lane after the admin, jobs/saved, `source_sync`, `admin_bridge`, packaged-smoke, jobs-fetcher, and admin-ops follow-up waves landed on `main`.
 > This is a practical pickup document, not a canonical contract doc and not part of the default AI read path.
 
 ## Purpose
@@ -9,7 +9,7 @@ Use this note to resume later cleanup work without rediscovering what is already
 
 ## Current Status
 
-As of April 23, 2026, the first runtime-first cleanup wave, the admin follow-up wave, the jobs/saved runtime follow-up wave, the backend `source_sync` follow-up wave, and the backend `admin_bridge` follow-up wave are already merged to remote `main`. This handoff note is still relevant because it records the landed cleanup state and the intentionally deferred next order; it is not replaced by the canonical routing docs.
+As of April 23, 2026, the first runtime-first cleanup wave, the admin follow-up wave, the jobs/saved runtime follow-up wave, the backend `source_sync` and `admin_bridge` follow-up waves, the packaged smoke follow-up wave, the `jobs_fetcher` follow-up wave, and the admin ops live-payload follow-up wave are already merged to remote `main`. This handoff note is still relevant because it records the landed cleanup state and the intentionally deferred sequencing context; the canonical routing docs remain `AI_ASSISTANT_GUIDE.md`, `architecture-ai-map.md`, and `INDEX.md`.
 
 This follow-up landed:
 
@@ -51,7 +51,7 @@ Verified in this follow-up session:
 
 If another cleanup wave continues from here, keep the order narrow and compatibility-first:
 
-1. Keep the remaining backend compat surfaces deferred to the next dedicated wave, especially `src/jobs_fetcher.py`.
+1. Pick the next cleanup hotspot fresh from the current compatibility-surface backlog; `src/jobs_fetcher.py` is already landed and should not be treated as the next pending wave.
 2. Preserve the new `admin_bridge` ownership split: entrypoint/runtime/session glue in `src/bridge/admin_entrypoint_runtime.py`, service/cache builders in `src/bridge/admin_entrypoint_services.py`, bridge bootstrap assembly in `src/bridge/admin_entrypoint_api.py`, registry/manual-source flow in `src/bridge/admin_registry_api.py`, and sync/task runtime flow in `src/bridge/admin_task_runtime.py`.
 3. Preserve the new `source_sync` ownership split: config in `src/source_sync_config.py`, runtime/auth/request state in `src/source_sync_runtime.py`, snapshot normalization/merge in `src/source_sync_snapshot.py`, and PEM/JWT internals in `src/source_sync_crypto.py`.
 4. Continue backend helper dedup only where behavior is truly identical and existing root/module boundaries stay intact.

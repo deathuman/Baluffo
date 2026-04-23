@@ -22,6 +22,12 @@
 - Per-user data lives under `data/local-user-data/users/<uid>/`.
 - Desktop pages read/write local data through `/desktop-local-data/*`, not browser IndexedDB/localStorage.
 
+## Code routing
+
+- `src/local_data_store.py` is the stable desktop local-data store surface; implementation belongs in `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`.
+- `frontend/shared/local-data/desktop-client.js` is the stable shared desktop-local runtime root; implementation belongs in `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`.
+- `frontend/local-data/services.js` remains a transitional local-data boundary. Feature slices should continue to call their own slice `services.js`, not import the shared desktop runtime directly.
+
 ## Sign-in behavior
 
 - Guest browsing works in Jobs, but seen/saved persistence requires signing in.
@@ -55,6 +61,7 @@
 
 ## Related docs
 
+- [`DATA_CONTRACT.md`](DATA_CONTRACT.md) - canonical local-data row, backup, and runtime contract shapes
 - [`admin-bridge-api.md`](admin-bridge-api.md) — current localhost route surface
 - [`testing.md`](testing.md) — canonical verification matrix
 - [`RELEASE.md`](RELEASE.md) — packaging, updater, and release workflow

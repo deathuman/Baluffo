@@ -48,7 +48,7 @@ class CanonicalJobSchema(BaseModel):
 
 
 class SavedJobSnapshotSchema(BaseModel):
-    """Subset of CanonicalJob for SavedJob.snapshot (display data)."""
+    """Legacy subset of CanonicalJob for older SavedJob.snapshot payloads."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -60,7 +60,7 @@ class SavedJobSnapshotSchema(BaseModel):
 
 
 class SavedJobSchema(BaseModel):
-    """Schema for a saved job (user bookmark or custom row)."""
+    """Lenient schema for `/desktop-local-data/saved-jobs/save` input payloads."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -68,15 +68,135 @@ class SavedJobSchema(BaseModel):
     snapshot: SavedJobSnapshotSchema | None = Field(
         default=None, description="Display subset: title, company, location, workType"
     )
-    createdAt: str = Field(default="", description="ISO 8601 when bookmark/custom row was created")
+    title: str = ""
+    company: str = ""
+    sector: str = ""
+    companyType: str = ""
+    city: str = ""
+    country: str = ""
+    workType: str = ""
+    contractType: str = ""
+    jobLink: str = ""
+    profession: str = ""
     updatedAt: str = Field(default="", description="ISO 8601 last modified")
-    status: str = Field(default="", description="User stage e.g. saved, applied, interviewing_1")
+    savedAt: str = ""
+    createdAt: str = Field(default="", description="ISO 8601 when bookmark/custom row was created")
+    status: str = Field(default="", description="Legacy user stage mirror")
+    applicationStatus: str = Field(default="", description="User stage e.g. bookmark, applied")
+    phaseTimestamps: dict[str, str] = Field(default_factory=dict)
     notes: str = ""
     isCustom: bool = False
     customSourceLabel: str = ""
     reminderAt: str = ""
+    contactedAt: str = ""
+    updatedBy: str = ""
+    attachmentsCount: int = 0
     attachments: int = 0
     signature: str = ""
+    keySalt: str = ""
+
+
+class LocalSavedJobRowSchema(BaseModel):
+    """Persisted local saved-job row stored under desktop local data."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    profileId: str = ""
+    jobKey: str = Field(default="", description="Primary key job_<hash>")
+    title: str = ""
+    company: str = ""
+    sector: str = ""
+    companyType: str = ""
+    city: str = ""
+    country: str = ""
+    workType: str = ""
+    contractType: str = ""
+    jobLink: str = ""
+    profession: str = ""
+    isCustom: bool = False
+    customSourceLabel: str = ""
+    reminderAt: str = ""
+    contactedAt: str = ""
+    updatedBy: str = ""
+    applicationStatus: str = ""
+    phaseTimestamps: dict[str, str] = Field(default_factory=dict)
+    notes: str = ""
+    attachmentsCount: int = 0
+    savedAt: str = ""
+    updatedAt: str = ""
+
+
+class LocalDataActivityRowSchema(BaseModel):
+    """Persisted local activity row for a desktop profile."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = ""
+    profileId: str = ""
+    type: str = ""
+    jobKey: str = ""
+    title: str = ""
+    company: str = ""
+    createdAt: str = ""
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class LocalDataAttachmentRowSchema(BaseModel):
+    """Persisted local attachment metadata row for a desktop profile."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = ""
+    profileId: str = ""
+    jobKey: str = ""
+    name: str = ""
+    type: str = ""
+    size: int = 0
+    createdAt: str = ""
+    path: str = ""
+
+
+class LocalDataBackupAttachmentSchema(LocalDataAttachmentRowSchema):
+    """Attachment row shape inside local-data backup payloads."""
+
+    blobDataUrl: str = ""
+
+
+class LocalDataBackupProfileSchema(BaseModel):
+    """Profile metadata stored in backup export payloads."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = ""
+    name: str = ""
+    email: str = ""
+
+
+class LocalDataBackupCountsSchema(BaseModel):
+    """Count summary for backup exports."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    savedJobs: int = 0
+    customJobs: int = 0
+    historyEvents: int = 0
+    attachments: int = 0
+
+
+class LocalDataBackupPayloadSchema(BaseModel):
+    """Backup export/import payload for desktop local data."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    version: int = 2
+    schemaVersion: int = 2
+    exportedAt: str = ""
+    includesFiles: bool = False
+    counts: LocalDataBackupCountsSchema = Field(default_factory=LocalDataBackupCountsSchema)
+    profile: LocalDataBackupProfileSchema = Field(default_factory=LocalDataBackupProfileSchema)
+    savedJobs: list[LocalSavedJobRowSchema] = Field(default_factory=list)
+    attachments: list[LocalDataBackupAttachmentSchema] = Field(default_factory=list)
+    activityLog: list[LocalDataActivityRowSchema] = Field(default_factory=list)
 
 
 class ManifestArtifactsSchema(BaseModel):

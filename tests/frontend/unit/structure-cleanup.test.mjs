@@ -488,6 +488,45 @@ test("cleanup structure: page slices reach local-data only through slice service
   }
 });
 
+test("cleanup structure: desktop local-data client stays a thin root", () => {
+  const rel = path.join("frontend", "shared", "local-data", "desktop-client.js");
+  const source = fs.readFileSync(repoPath(rel), "utf8");
+  const imports = readImports(rel);
+
+  assert.equal(
+    countLines(rel) <= 60,
+    true,
+    `frontend/shared/local-data/desktop-client.js is ${countLines(rel)} lines, above the 60-line thin-surface budget`
+  );
+  for (const specifier of [
+    "./desktop/api.js",
+    "./desktop/lifecycle.js",
+    "./desktop/navigation.js",
+    "./desktop/state.js"
+  ]) {
+    assert.equal(
+      imports.includes(specifier),
+      true,
+      `Expected desktop-client.js to delegate through ${specifier}`
+    );
+  }
+  assert.doesNotMatch(
+    source,
+    /\bcreateLocalDataRuntime\s*\(/,
+    "desktop-client.js must not rebuild the runtime implementation"
+  );
+  assert.doesNotMatch(
+    source,
+    /\brequestJson\s*\(/,
+    "desktop-client.js must not regain request helper ownership"
+  );
+  assert.doesNotMatch(
+    source,
+    /window\.addEventListener\(/,
+    "desktop-client.js must not regain lifecycle event wiring"
+  );
+});
+
 test("cleanup structure: domain and render layers do not cross-import in feature slices", () => {
   const slices = ["jobs", "saved", "admin"];
   for (const slice of slices) {

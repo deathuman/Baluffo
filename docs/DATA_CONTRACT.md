@@ -10,7 +10,7 @@ This document serves as the absolute boundary and source of truth for data struc
 
 **CRITICAL:** The frontend expects `camelCase` keys in all `data/*.json` files. The Python backend maps these explicitly in `src/jobs/common/contracts.py`.
 
-**Runtime source of truth:** `src/jobs/common/contracts.py` defines the canonical contracts used by the jobs pipeline. `src/core/schemas.py` defines Pydantic models (CanonicalJobSchema, SavedJobSchema, ManifestSchema) used for validation at pipeline and bridge boundaries. `src/core/contracts.py` uses these schemas to validate payloads before writing `jobs-unified.json` and at bridge saved-jobs/save. New fields or contract changes require updating this doc and the Pydantic schemas in `src/core/schemas.py`.
+**Runtime source of truth:** `src/jobs/common/contracts.py` defines the canonical contracts used by the jobs pipeline. `src/core/schemas.py` defines the Pydantic validation models used at pipeline, bridge, and local-data boundaries, including `CanonicalJobSchema`, `SavedJobSchema`, `LocalSavedJobRowSchema`, `LocalDataActivityRowSchema`, `LocalDataAttachmentRowSchema`, `LocalDataBackupPayloadSchema`, and `ManifestSchema`. `src/core/contracts.py` uses these schemas to validate pipeline payloads before writing `jobs-unified.json`, while bridge local-data routes keep save-input validation compatibility-lenient and validate persisted/output rows separately. New fields or contract changes require updating this doc and the Pydantic schemas in `src/core/schemas.py`.
 
 ## 1. CanonicalJob
 Represents a single job posting retrieved from the external sources.
@@ -45,22 +45,99 @@ Represents a single job posting retrieved from the external sources.
 | `adapter` | `string` | The Python adapter module used (e.g., `static`, `social`, `csv`). |
 | `studio` | `string` | The underlying pipeline configuration studio group. |
 
-## 2. SavedJob
-Represents a job the user has locally bookmarked or created entirely offline in their browser/desktop client.
+## 2. Desktop Local Data
+
+Desktop local data is file-backed under `data/local-user-data/`. `src/local_data_store.py` remains the stable import surface, while persisted row shapes are defined by the dedicated local-data schemas in `src/core/schemas.py`.
+
+### 2.1 Persisted saved-job row
+
+This is the canonical stored/output row shape returned by desktop local-data GET routes and used inside backup payloads.
 
 | Field | Type | Description |
 |---|---|---|
-| `jobKey` | `string` | Primary key `job_<hash>` combining title/company/city/country. |
-| `snapshot` | `CanonicalJob_Partial` | A flattened subset of `CanonicalJob` containing purely display data (Title, Company, Location, WorkType). |
-| `createdAt` | `string` (ISO 8601) | When the bookmark/custom row was created. |
-| `updatedAt` | `string` (ISO 8601) | When the local user state was last modified. |
-| `status` | `string` | The user's active stage (e.g., `saved`, `applied`, `interviewing_1`, `offer`). |
-| `notes` | `string` | User notepad text. |
-| `isCustom` | `boolean` | True if the user manually created this row rather than bookmarking an ATS row. |
-| `customSourceLabel` | `string` | A visual badge name (e.g. `Custom`, `LinkedIn`). |
-| `reminderAt` | `string` (ISO 8601) | User's local alarm/reminder target. |
-| `attachments` | `number` | Count of local files attached. |
-| `signature` | `string` | A unique signature based on core job fields. |
+| `profileId` | `string` | Owning local profile ID. |
+| `jobKey` | `string` | Primary key `job_<hash>` derived from normalized job identity. |
+| `title` | `string` | Job title. |
+| `company` | `string` | Company or studio name. |
+| `sector` | `string` | Normalized sector value. |
+| `companyType` | `string` | Company type such as `Game` or `Tech`. |
+| `city` | `string` | City display text. |
+| `country` | `string` | Country display text. |
+| `workType` | `string` | `Remote`, `Hybrid`, `Onsite`, or similar display value. |
+| `contractType` | `string` | Contract label such as `Full-time`, `Internship`, or `Unknown`. |
+| `jobLink` | `string` | Sanitized application URL. |
+| `profession` | `string` | Profession key or display label. |
+| `isCustom` | `boolean` | True for user-created local rows. |
+| `customSourceLabel` | `string` | User-facing badge/source label for custom rows. |
+| `reminderAt` | `string` (ISO 8601) | Optional reminder timestamp. |
+| `contactedAt` | `string` (ISO 8601) | Optional contacted timestamp. |
+| `updatedBy` | `string` | Optional user/editor marker. |
+| `applicationStatus` | `string` | Canonical local status such as `bookmark`, `applied`, or interview/offer phases. |
+| `phaseTimestamps` | `object<string, string>` | Phase-to-timestamp map; `bookmark` is always present after normalization. |
+| `notes` | `string` | Freeform local notes. |
+| `attachmentsCount` | `number` | Current count of persisted local attachments for the row. |
+| `savedAt` | `string` (ISO 8601) | Bookmark/create timestamp. |
+| `updatedAt` | `string` (ISO 8601) | Last mutation timestamp. |
+
+`/desktop-local-data/saved-jobs/save` remains compatibility-lenient: the POST input validator still accepts legacy fields such as `snapshot`, `status`, `attachments`, `signature`, and `keySalt` through `SavedJobSchema`. Those fields are accepted for input compatibility, but they are not the canonical persisted/output row contract.
+
+### 2.2 Persisted activity row
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `string` | Activity row ID, currently `log_<random>`. |
+| `profileId` | `string` | Owning local profile ID. |
+| `type` | `string` | Event type such as `job_saved`, `status_changed`, or attachment events. |
+| `jobKey` | `string` | Related saved-job key when present. |
+| `title` | `string` | Job title snapshot for history display. |
+| `company` | `string` | Company snapshot for history display. |
+| `createdAt` | `string` (ISO 8601) | Event timestamp. |
+| `details` | `object` | Event-specific metadata. |
+
+### 2.3 Persisted attachment row
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `string` | Attachment ID, currently `att_<random>` or imported ID. |
+| `profileId` | `string` | Owning local profile ID. |
+| `jobKey` | `string` | Related saved-job key. |
+| `name` | `string` | Original attachment filename. |
+| `type` | `string` | MIME type. |
+| `size` | `number` | Attachment size in bytes. |
+| `createdAt` | `string` (ISO 8601) | Attachment creation/import timestamp. |
+| `path` | `string` | Relative on-disk filename under the user attachment directory. |
+
+### 2.4 Backup export/import payload v2
+
+Desktop backup export/import uses schema version `2` and is profile-scoped.
+
+| Field | Type | Description |
+|---|---|---|
+| `version` | `number` | Always `2` for the current writer. |
+| `schemaVersion` | `number` | Always `2` for the current writer. |
+| `exportedAt` | `string` (ISO 8601) | Export timestamp. |
+| `includesFiles` | `boolean` | Whether attachment file contents were embedded. |
+| `counts.savedJobs` | `number` | Count of exported saved-job rows. |
+| `counts.customJobs` | `number` | Count of exported custom saved-job rows. |
+| `counts.historyEvents` | `number` | Count of exported activity rows. |
+| `counts.attachments` | `number` | Count of exported attachment rows. |
+| `profile` | `object` | Profile metadata with `id`, `name`, and `email`. |
+| `savedJobs` | `Array<LocalSavedJobRow>` | Saved-job rows using the canonical persisted shape above. |
+| `attachments` | `Array<LocalDataBackupAttachment>` | Attachment metadata rows; each row may include `blobDataUrl` when `includesFiles` is true. |
+| `activityLog` | `Array<LocalDataActivityRow>` | Activity/history rows. |
+
+`blobDataUrl` is additive inside backup attachment rows. It is only populated when the caller exports with files included, and importers must remain tolerant of metadata-only backups without file contents.
+
+### 2.5 Stable JS runtime contract
+
+The canonical browser/desktop local-data runtime surface is defined by `frontend/local-data/runtime-contract.js`. `window.JobAppLocalData` in desktop mode must satisfy `LOCAL_DATA_RUNTIME_METHODS` exactly.
+
+Stable method groups:
+
+- Auth/session: `isReady`, `getCurrentUser`, `onAuthStateChanged`, `signIn`, `signOut`
+- Saved jobs and status: `saveJobForUser`, `removeSavedJobForUser`, `getSavedJobKeys`, `subscribeSavedJobs`, `generateJobKey`, `canTransitionPhase`, `updateApplicationStatus`, `updateJobNotes`
+- Attachments: `buildAttachmentPath`, `listAttachmentsForJob`, `addAttachmentForJob`, `getAttachmentBlob`, `getAttachmentOpenUrl`, `getAttachmentDownloadUrl`, `deleteAttachmentForJob`
+- Activity/backup/admin: `listActivityForUser`, `exportProfileData`, `getBackupExportUrl`, `importProfileData`, `getAdminOverview`, `wipeAccountAdmin`
 
 ---
 

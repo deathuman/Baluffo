@@ -11,7 +11,7 @@ from typing import Any
 from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
-from src.core.schemas import SavedJobSchema
+from src.core.schemas import LocalSavedJobRowSchema
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
             rows = []
             for row in raw_rows:
                 try:
-                    SavedJobSchema.model_validate(row)
+                    LocalSavedJobRowSchema.model_validate(row)
                     rows.append(row)
                 except PydanticValidationError as exc:
                     logger.warning("Saved job row validation failed, skipping: %s", exc)
