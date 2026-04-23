@@ -72,11 +72,11 @@ On another machine:
 
 ## Related Docs
 
-- [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md)
-- [`architecture-ai-map.md`](architecture-ai-map.md)
+- [`AI_ASSISTANT_GUIDE.md`](../../AI_ASSISTANT_GUIDE.md)
+- [`architecture-ai-map.md`](../../architecture-ai-map.md)
 - [`final-leaf-closeout-program.md`](final-leaf-closeout-program.md)
-- [`testing.md`](testing.md)
-- [`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md)
+- [`testing.md`](../../testing.md)
+- [`../tools/mcp/SERENA.md`](../../../tools/mcp/SERENA.md)
 
 ## Intentionally Deferred Specialized Owners
 

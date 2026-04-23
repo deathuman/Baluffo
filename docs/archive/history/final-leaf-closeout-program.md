@@ -1,5 +1,7 @@
 # Final Leaf-Monolith Closeout Program
 
+> Historical cleanup tracker preserved for archive/reference use. Start with [`../../AI_ASSISTANT_GUIDE.md`](../../AI_ASSISTANT_GUIDE.md) and [`../../architecture-ai-map.md`](../../architecture-ai-map.md) for current routing before using this record.
+
 ## Goal
 
 Finish the long cleanup campaign with one compatibility-first closeout program aimed at the largest remaining leaf monoliths, not the already-thinned public roots. The stop condition is deliberate:
@@ -118,7 +120,7 @@ Finish the long cleanup campaign with one compatibility-first closeout program a
 - `docs/startup-probe-architecture.md`
 - `docs/scraping-pipeline.md`
 - `docs/admin-bridge-api.md`
-- `docs/runtime-first-cleanup-handoff.md`
+- `docs/archive/history/runtime-first-cleanup-handoff.md`
 - Adjacent review completed: `docs/testing.md` remains accurate and did not need changes
 
 ## Verification Matrix

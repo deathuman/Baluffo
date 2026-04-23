@@ -1,5 +1,12 @@
 # Fetcher Runtime and Admin Contracts
 
+> - **Status:** Active
+> - **Use this when:** changing jobs fetcher CLI flags, admin fetch presets, runtime files, or source-state and circuit-breaker behavior
+> - **Canonical for:** fetcher runtime options, admin preset wiring, and fetch-run artifacts consumed by admin flows
+> - **Not canonical for:** full jobs pipeline ownership or broad testing strategy
+> - **Then inspect:** `src/jobs_fetcher.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, `src/jobs/pipeline*.py`, `src/jobs/state*.py`, and [`testing.md`](testing.md)
+> - **Last updated:** 2026-04-23
+
 ## CLI runtime options
 
 - `--max-workers` (default `12`): max concurrent source loaders.

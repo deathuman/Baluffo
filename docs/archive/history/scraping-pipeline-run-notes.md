@@ -151,4 +151,4 @@ Then:
 - **Browser queue size:** `(Get-Content data\jobs-browser-fallback-queue.json | ConvertFrom-Json).Count`
 - **Failed sources:** In `data/jobs-fetch-report.json`, count `sources[]` with `status == "error"`.
 
-See [docs/scraping-pipeline.md](scraping-pipeline.md) for full flow and before/after comparison steps.
+See [docs/scraping-pipeline.md](../../scraping-pipeline.md) for full flow and before/after comparison steps.

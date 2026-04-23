@@ -1,6 +1,11 @@
 # Local Setup
 
-> Use this when you need the current local-first storage model, sign-in behavior, and the smallest command set. Keep release flow in [`RELEASE.md`](RELEASE.md) and verification flow in [`testing.md`](testing.md).
+> - **Status:** Active
+> - **Use this when:** you need the current local-first storage model, sign-in behavior, backup flow, or the smallest command set
+> - **Canonical for:** browser-local vs desktop-local behavior, local-data routing, and local runtime setup
+> - **Not canonical for:** release sequencing or the full verification matrix
+> - **Then inspect:** [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md), [`testing.md`](testing.md), and [`RELEASE.md`](RELEASE.md) as needed
+> - **Last updated:** 2026-04-23
 
 ## Local-first modes
 

@@ -1,10 +1,11 @@
 # Startup Probe Architecture
 
-> **AI usage**
+> - **Status:** Active
 > - **Use this when:** changing packaged startup timing, probe orchestration, launcher timing, or startup metrics
 > - **Canonical for:** startup measurement ownership, event flow, command surface, and runtime-vs-probe boundaries
 > - **Not canonical for:** general testing guidance or release sequencing
 > - **Then inspect:** `src/ship/startup_telemetry.py`, `src/ship/desktop_app/{launcher_flow,launcher_diagnostics,launcher_recovery,startup_ready,startup_watchdog}.py`, `src/ship/desktop_app/{launcher,startup}.py`, `src/ship/desktop_app/browser.py`, `src/ship/startup_probe_policy.py`, `src/packaged_desktop_smoke.py`, and `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`
+> - **Last updated:** 2026-04-23
 
 This document is the single source of truth for Baluffo's packaged startup measurement architecture. Keep probe policy and startup-flow explanations here instead of repeating them in command docs or release notes.
 

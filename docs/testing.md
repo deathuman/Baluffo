@@ -1,10 +1,11 @@
 # Testing
 
-> **AI usage**
+> - **Status:** Active
 > - **Use this when:** choosing the narrowest verification step, finding relevant test files, or understanding fixture layout
 > - **Canonical for:** test commands, targeted test routing, and fixture references
 > - **Not canonical for:** runtime architecture or data contracts
 > - **Then inspect:** the nearest `tests/` module for the subsystem you changed
+> - **Last updated:** 2026-04-23
 
 This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
 

@@ -1,6 +1,11 @@
 # Troubleshooting Guide
 
-> Common issues and solutions for the Baluffo project.
+> - **Status:** Active
+> - **Use this when:** diagnosing a known failure mode in the frontend, bridge, pipeline, discovery, desktop runtime, tests, or local data
+> - **Canonical for:** common issue triage steps, quick diagnostics, and known recovery paths
+> - **Not canonical for:** subsystem ownership, API contracts, or release policy
+> - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md), and the owning runtime docs for the affected subsystem
+> - **Last updated:** 2026-04-23
 
 ---
 
@@ -314,7 +319,3 @@ python -c "import json; r=json.load(open('data/source-discovery-report.json')); 
 2. **Architecture:** See [`architecture-ai-map.md`](architecture-ai-map.md) for system understanding
 3. **Data contracts:** See [`DATA_CONTRACT.md`](DATA_CONTRACT.md) for expected data formats
 4. **GitHub issues:** Search existing issues for similar problems
-
----
-
-*Last updated: 2026-04-18*

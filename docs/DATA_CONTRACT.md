@@ -1,9 +1,11 @@
 # Baluffo Data Contracts
 
-> **AI usage**
+> - **Status:** Active
 > - **Use this when:** changing payload shape, schema fields, saved-job structure, discovery output shape, or UI interaction handles
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
+> - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, `src/jobs/common/contracts.py`, relevant tests, and the owning runtime docs
+> - **Last updated:** 2026-04-23
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, `src/jobs/common/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` leaves, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).

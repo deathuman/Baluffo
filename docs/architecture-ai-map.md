@@ -1,11 +1,13 @@
 # Baluffo Architecture AI Map
 
-> **Use this when:** locating the correct subsystem, choosing edit boundaries, mapping task-to-files
-> **Canonical for:** system boundaries, task routing, verification matrix
-> **Not canonical for:** endpoint payloads, data schema details
-> **Then inspect:** the minimal source files listed in the task table, plus the matching contract doc if shape changes are involved
+> - **Status:** Active
+> - **Use this when:** locating the correct subsystem, choosing edit boundaries, or mapping task-to-files
+> - **Canonical for:** system boundaries, task routing, compatibility-surface detail, and the expanded verification matrix
+> - **Not canonical for:** endpoint payloads or data schema details
+> - **Then inspect:** the minimal source files listed in the task table, plus the matching contract doc if shape changes are involved
+> - **Last updated:** 2026-04-23
 >
-> Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) first. Boundary-charter docs are supporting historical/planning records, not part of the default AI read path.
+> Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) first. Archived boundary-charter docs live under [`archive/refactor-records/`](archive/refactor-records/) and are not part of the default AI read path.
 
 ---
 
@@ -289,7 +291,3 @@ See [`testing.md`](testing.md) for more commands.
 - **Playwright** - frontend smoke tests
 - **PyInstaller** - portable Windows executable
 - **Scrapy + Playwright** - scraping fallback
-
----
-
-*Last updated: 2026-04-23*
