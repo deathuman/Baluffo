@@ -6,90 +6,29 @@ import argparse
 import os
 import sys
 import time
-from collections import Counter
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from src.contracts import SCHEMA_VERSION
-from src.core.contracts import (
-    validate_canonical_jobs_payload as _validate_canonical_jobs_payload,
-)
-from src.jobs import canonicalize as canonicalize_pkg
-from src.jobs import contamination_audit as contamination_audit_pkg
-from src.jobs import dedup as dedup_pkg
-from src.jobs import pipeline_finalize as pipeline_finalize_pkg
-from src.jobs import pipeline_timing as pipeline_timing_pkg
-from src.jobs import reporting as reporting_pkg
-from src.jobs import state as state_pkg
-from src.jobs import transport as transport_pkg
 from src.jobs.adapters import community as community_adapter
-from src.jobs.adapters import static as static_adapter
 from src.jobs.adapters.api import default_source_loaders as adapters_default_source_loaders
 from src.jobs.common import config as common_config
-from src.jobs.common import health as _health_module
-from src.jobs.common.config import SOURCE_DIAGNOSTICS
-from src.jobs.common.contracts import normalize_task_state_payload
 from src.jobs.interfaces import SourceLoader
-from src.jobs.models import CanonicalJob
-from src.jobs.pipeline_bootstrap import build_pipeline_paths
-from src.jobs.pipeline_loader_selection import (
-    apply_incremental_cache_exclusions,
-    apply_source_cadence_exclusions,
-    build_excluded_source_report,
-    build_pipeline_runtime_payload,
-    select_pipeline_loaders,
-    sort_selected_loaders,
+from src.jobs.pipeline_loader_selection import build_excluded_source_report
+from src.jobs.state_incremental import should_skip_source_by_ttl
+from src.jobs.state_source_state import (
+    read_previously_successful_sources,
+    read_source_state,
+    read_success_cache,
 )
-from src.jobs.pipeline_runtime import (
-    build_detailed_source_rows as _build_detailed_source_rows,
-)
-from src.jobs.pipeline_runtime import (
-    build_fetch_task_progress_payload as _build_fetch_task_progress_payload,
-)
-from src.jobs.pipeline_runtime import (
-    initialize_task_runtime,
-    make_fetch_text_limited,
-    make_progress_report_dispatcher,
-    make_task_state_writer,
-)
-from src.jobs.pipeline_runtime import (
-    snapshot_task_rows as _snapshot_task_rows,
-)
-from src.jobs.pipeline_runtime import (
-    write_progress_report as write_pipeline_progress_report,
-)
-from src.jobs.pipeline_stage_source_execution import (
-    SourceExecutionStageConfig,
-    resolve_fetch_browser_fallback_helper,
-    run_source_execution_stage,
-)
-from src.jobs.registry import STUDIO_SOURCE_REGISTRY, registry_entries
-from src.jobs.text_utils import clean_text, norm_text, sanitize_location_text
+from src.jobs.text_utils import clean_text
+from src.jobs.transport import build_redirect_resolver as transport_build_redirect_resolver
+from src.jobs.transport import default_fetch_text
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
-from src.pipeline_io import (
-    read_existing_output as read_existing_output_from_file,
-)
-from src.pipeline_io import (
-    serialize_rows_for_csv as _serialize_rows_for_csv,
-)
-from src.pipeline_io import (
-    serialize_rows_for_json as _serialize_rows_for_json,
-)
-from src.pipeline_io import (
-    write_atomic_if_changed as _write_atomic_if_changed,
-)
-from src.pipeline_io import (
-    write_hot_text_if_changed,
-)
-from src.pipeline_io import (
-    write_text_if_changed as _write_text_if_changed,
-)
-from src.shared.utils import env_flag, now_iso
 
-from .common import config as common_config
+from . import pipeline_execution_flow as pipeline_execution_flow_mod
+from . import pipeline_finalize as pipeline_finalize_pkg
+from . import pipeline_run_setup as pipeline_run_setup_mod
 from .common import social as common_social
-from .common import sources as common_sources
 
 DEFAULT_OUTPUT_DIR = common_config.DEFAULT_OUTPUT_DIR
 DEFAULT_TIMEOUT_S = common_config.DEFAULT_TIMEOUT_S
@@ -107,141 +46,15 @@ DEFAULT_HOT_SOURCE_CADENCE_MINUTES = common_config.DEFAULT_HOT_SOURCE_CADENCE_MI
 DEFAULT_COLD_SOURCE_CADENCE_MINUTES = common_config.DEFAULT_COLD_SOURCE_CADENCE_MINUTES
 DEFAULT_SOCIAL_CONFIG_PATH = common_config.DEFAULT_SOCIAL_CONFIG_PATH
 DEFAULT_SOCIAL_LOOKBACK_MINUTES = common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES
-DEFAULT_SOCIAL_MIN_CONFIDENCE = common_config.DEFAULT_SOCIAL_MIN_CONFIDENCE
-DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE = common_config.DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE
-DEFAULT_SCRAPY_VALIDATION_STRICT = common_config.DEFAULT_SCRAPY_VALIDATION_STRICT
-DEFAULT_CANONICAL_STRICT_URL = common_config.DEFAULT_CANONICAL_STRICT_URL
-OUTPUT_FIELDS = common_config.OUTPUT_FIELDS
-LIGHTWEIGHT_OUTPUT_FIELDS = common_config.LIGHTWEIGHT_OUTPUT_FIELDS
 
 load_social_config = common_social.load_social_config
-build_detailed_source_rows = _build_detailed_source_rows
-default_fetch_text = transport_pkg.default_fetch_text
-async_fetch_text_httpx = transport_pkg.async_fetch_text_httpx
-resolve_fetch_text_impl = transport_pkg.resolve_fetch_text_impl
-build_redirect_resolver = transport_pkg.build_redirect_resolver
-load_registry_from_file = common_sources.load_registry_from_file
-read_approved_since_last_run = common_sources.read_approved_since_last_run
-
-# Compatibility surface for split helper modules that still call through module attributes.
-validate_canonical_jobs_payload = _validate_canonical_jobs_payload
-health_module = _health_module
-build_fetch_task_progress_payload = _build_fetch_task_progress_payload
-snapshot_task_rows = _snapshot_task_rows
-serialize_rows_for_csv = _serialize_rows_for_csv
-serialize_rows_for_json = _serialize_rows_for_json
-write_atomic_if_changed = _write_atomic_if_changed
-write_text_if_changed = _write_text_if_changed
-
-canonicalize_job = canonicalize_pkg.canonicalize_job
-CanonicalNormalizer = canonicalize_pkg.CanonicalNormalizer
-reset_location_quality_audit = canonicalize_pkg.reset_location_quality_audit
-reset_sector_quality_audit = canonicalize_pkg.reset_sector_quality_audit
-snapshot_sector_quality_audit = canonicalize_pkg.snapshot_sector_quality_audit
-build_public_text_quality_report = contamination_audit_pkg.build_public_text_quality_report
-CanonicalDeduplicator = dedup_pkg.CanonicalDeduplicator
-format_source_error = reporting_pkg.format_source_error
-build_pipeline_summary = reporting_pkg.build_pipeline_summary
-build_browser_fallback_queue = reporting_pkg.build_browser_fallback_queue
-build_parser_regression_queue = reporting_pkg.build_parser_regression_queue
-normalize_runtime_payload = reporting_pkg.normalize_runtime_payload
-normalize_fetch_report_payload = reporting_pkg.normalize_fetch_report_payload
-source_rows_fingerprint = state_pkg.source_rows_fingerprint
-read_source_state = state_pkg.read_source_state
-write_source_state = state_pkg.write_source_state
-read_job_lifecycle_state = state_pkg.read_job_lifecycle_state
-write_job_lifecycle_state = state_pkg.write_job_lifecycle_state
-lifecycle_counts = state_pkg.lifecycle_counts
-apply_job_lifecycle_state = state_pkg.apply_job_lifecycle_state
-read_previously_successful_sources = state_pkg.read_previously_successful_sources
-read_success_cache = state_pkg.read_success_cache
-write_success_cache = state_pkg.write_success_cache
-normalize_source_state_payload = state_pkg.normalize_source_state_payload
-should_skip_source_by_ttl = state_pkg.should_skip_source_by_ttl
-should_skip_source_by_cadence = state_pkg.should_skip_source_by_cadence
-get_incremental_cache_decision = state_pkg.get_incremental_cache_decision
-apply_circuit_breaker_exclusions = state_pkg.apply_circuit_breaker_exclusions
-append_excluded_default_sources = state_pkg.append_excluded_default_sources
-update_source_state_rows = state_pkg.update_source_state_rows
 
 
-def _apply_final_location_quality_guardrail(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    field_counts: Counter[str] = Counter()
-    reason_counts: Counter[str] = Counter()
-    examples: list[dict[str, Any]] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        city_value, city_reason = sanitize_location_text(row.get("city"), field_name="city")
-        if city_reason:
-            if len(examples) < 20:
-                examples.append(
-                    {
-                        "company": clean_text(row.get("company")),
-                        "title": clean_text(row.get("title")),
-                        "source": clean_text(row.get("source")),
-                        "jobLink": clean_text(row.get("jobLink")),
-                        "field": "city",
-                        "reason": city_reason,
-                        "value": clean_text(row.get("city")),
-                    }
-                )
-            row["city"] = city_value
-            field_counts["city"] += 1
-            reason_counts[city_reason] += 1
-        country_value, country_reason = sanitize_location_text(
-            row.get("country"), field_name="country"
-        )
-        if country_reason:
-            if len(examples) < 20:
-                examples.append(
-                    {
-                        "company": clean_text(row.get("company")),
-                        "title": clean_text(row.get("title")),
-                        "source": clean_text(row.get("source")),
-                        "jobLink": clean_text(row.get("jobLink")),
-                        "field": "country",
-                        "reason": country_reason,
-                        "value": clean_text(row.get("country")),
-                    }
-                )
-            row["country"] = country_value
-            field_counts["country"] += 1
-            reason_counts[country_reason] += 1
-    return {
-        "totalRows": len(rows),
-        "invalidLocationFieldCount": int(sum(field_counts.values())),
-        "fieldCounts": dict(field_counts),
-        "reasonCounts": dict(reason_counts),
-        "examples": examples,
-    }
-
-
-def _canonicalize_existing_output_row(
-    row: dict[str, Any], *, source: str, fetched_at: str
-) -> dict[str, Any] | None:
-    normalized = canonicalize_job(row, source=source, fetched_at=fetched_at)
-    if not normalized:
-        return None
-    payload = normalized.to_dict()
-    if clean_text(row.get("dedupKey")):
-        payload["dedupKey"] = clean_text(row.get("dedupKey"))
-    return payload
-
-
-def _percentile_ms(values: list[int], percentile: float) -> int:
-    return pipeline_timing_pkg.percentile_ms(values, percentile)
-
-
-def build_runtime_timing_summary(
-    source_reports: list[dict[str, Any]], *, wall_clock_duration_ms: int = 0
-) -> dict[str, Any]:
-    return pipeline_timing_pkg.build_runtime_timing_summary(
-        source_reports,
-        wall_clock_duration_ms=wall_clock_duration_ms,
-        clean_text_fn=clean_text,
-        norm_text_fn=norm_text,
-        percentile_ms_fn=_percentile_ms,
+def _pipeline_redirect_resolver_builder():
+    return getattr(
+        sys.modules[__name__],
+        "build_redirect_resolver",
+        transport_build_redirect_resolver,
     )
 
 
@@ -261,8 +74,6 @@ def default_source_loaders(
         except TypeError:
             return facade_loader()
     try:
-        # Prefer adapter public surface to avoid hopping between `jobs.common/*`
-        # and adapter internals while keeping the `jobs_fetcher` facade patch surface.
         return adapters_default_source_loaders(
             social_enabled=social_enabled,
             social_config=social_config,
@@ -280,7 +91,7 @@ def run_pipeline(
     retries: int = DEFAULT_RETRIES,
     backoff_s: float = DEFAULT_BACKOFF_S,
     preserve_previous_on_empty: bool = True,
-    fetch_text: Callable[[str, int], str] = default_fetch_text,
+    fetch_text=default_fetch_text,
     source_loaders: list[tuple[str, SourceLoader]] | None = None,
     seed_from_existing_output: bool = False,
     source_ttl_minutes: int = 0,
@@ -305,317 +116,66 @@ def run_pipeline(
     selection_exclusions: list[dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
 ) -> dict[str, Any]:
-    output_dir = Path(output_dir)
     run_started_mono = time.perf_counter()
-    paths = build_pipeline_paths(output_dir)
-    SOURCE_DIAGNOSTICS.clear()
-    reset_location_quality_audit()
-    reset_sector_quality_audit()
-
-    started_at = clean_text(started_at_override) or now_iso()
-    source_reports: list[dict[str, Any]] = []
-    if isinstance(selection_exclusions, list):
-        source_reports.extend([row for row in selection_exclusions if isinstance(row, dict)])
-    canonical_rows: list[CanonicalJob] = []
-    max_workers = max(1, int(max_workers or 1))
-    max_per_domain = max(1, int(max_per_domain or 1))
-    adapter_http_concurrency = max(1, int(adapter_http_concurrency or 1))
-    google_sheets_redirect_concurrency = max(1, int(google_sheets_redirect_concurrency or 1))
-    static_detail_concurrency = max(1, int(static_detail_concurrency or 1))
-    hot_source_cadence_minutes = max(1, int(hot_source_cadence_minutes or 1))
-    cold_source_cadence_minutes = max(1, int(cold_source_cadence_minutes or 1))
-    fetch_text_impl, fetch_client, async_fetcher = resolve_fetch_text_impl(
-        fetch_text=fetch_text,
-        fetch_strategy=fetch_strategy,
-        adapter_http_concurrency=adapter_http_concurrency,
-    )
-    static_listing_async_fetch = (
-        (lambda client, _job, url, timeout_s: async_fetch_text_httpx(client, url, timeout_s))
-        if fetch_client == "httpx_async"
-        else None
-    )
-    redirect_resolver = build_redirect_resolver(
-        timeout_s=timeout_s,
-        max_connections=google_sheets_redirect_concurrency,
-    )
-    source_state_rows = read_source_state(paths.source_state_path)
-    google_sheets_redirect_cache: dict[str, str] = {}
-    for _state in source_state_rows.values():
-        if not isinstance(_state, dict):
-            continue
-        raw_cache = _state.get("googleSheetsRedirectCache")
-        if not isinstance(raw_cache, dict) or not raw_cache:
-            continue
-        for _raw_url, _resolved_url in raw_cache.items():
-            _url = clean_text(_raw_url)
-            _resolved = clean_text(_resolved_url)
-            if _url and _resolved:
-                google_sheets_redirect_cache[_url] = _resolved
-    seed_redirect_cache = getattr(redirect_resolver, "seed_cache", None)
-    if callable(seed_redirect_cache) and google_sheets_redirect_cache:
-        seed_redirect_cache(google_sheets_redirect_cache)
-    lifecycle_rows = read_job_lifecycle_state(paths.lifecycle_state_path)
-    seed_existing_output_override = env_flag("BALUFFO_FETCH_SEED_EXISTING_OUTPUT", False)
-    incremental_cache_enabled = bool(not force_refresh_all and paths.json_path.exists())
-    effective_seed_from_existing_output = bool(
-        seed_from_existing_output or incremental_cache_enabled or seed_existing_output_override
-    )
-    if effective_seed_from_existing_output:
-        seeded_rows = read_existing_output_from_file(
-            paths.json_path,
-            started_at,
-            canonicalize_job=_canonicalize_existing_output_row,
-            clean_text=clean_text,
-        )
-        canonical_rows.extend(CanonicalJob.from_mapping(row) for row in seeded_rows)
-    runtime_payload: dict[str, Any] = {}
-
-    effective_social_config_path = (
-        Path(social_config_path)
-        if social_config_path
-        else (output_dir / "social-sources-config.json")
-    )
-    social_config = load_social_config(
-        config_path=effective_social_config_path,
-        enabled=bool(social_enabled),
-        lookback_minutes=social_lookback_minutes,
-    )
-
-    selected_loaders, using_default_loaders = select_pipeline_loaders(
-        source_loaders=source_loaders,
-        social_enabled=bool(social_enabled),
-        social_config=social_config,
-        default_source_loaders=default_source_loaders,
-    )
-    selected_loaders = sort_selected_loaders(
-        selected_loaders,
-        source_report_meta=SOURCE_REPORT_META,
-        source_state_rows=source_state_rows,
-    )
-    browser_fallback_helper = resolve_fetch_browser_fallback_helper()
-    browser_fallback_enabled = browser_fallback_helper is not None
-    browser_fallback_cap = max(1, int(max_workers or 1)) if browser_fallback_enabled else 0
-    runtime_payload = build_pipeline_runtime_payload(
-        selected_loaders=selected_loaders,
-        max_workers=max_workers,
-        max_per_domain=max_per_domain,
-        fetch_strategy=fetch_strategy,
-        fetch_client=fetch_client,
-        adapter_http_concurrency=adapter_http_concurrency,
-        static_detail_concurrency=static_detail_concurrency,
-        google_sheets_redirect_concurrency=google_sheets_redirect_concurrency,
-        seed_from_existing_output=effective_seed_from_existing_output,
-        incremental_cache_enabled=incremental_cache_enabled,
-        force_refresh_all=force_refresh_all,
-        source_ttl_minutes=source_ttl_minutes,
-        respect_source_cadence=respect_source_cadence,
-        hot_source_cadence_minutes=hot_source_cadence_minutes,
-        cold_source_cadence_minutes=cold_source_cadence_minutes,
-        circuit_breaker_failures=circuit_breaker_failures,
-        circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
-        browser_fallback_cooldown_minutes=browser_fallback_cooldown_minutes,
-        browser_fallback_enabled=browser_fallback_enabled,
-        browser_fallback_cap=browser_fallback_cap,
-        ignore_circuit_breaker=ignore_circuit_breaker,
-        social_enabled=bool(social_enabled),
-        effective_social_config_path=str(effective_social_config_path),
-        social_config=social_config,
-        default_social_lookback_minutes=DEFAULT_SOCIAL_LOOKBACK_MINUTES,
-        default_social_min_confidence=DEFAULT_SOCIAL_MIN_CONFIDENCE,
-        default_fetch_strategy=DEFAULT_FETCH_STRATEGY,
-        default_static_detail_heuristics_profile=DEFAULT_STATIC_DETAIL_HEURISTICS_PROFILE,
-        default_scrapy_validation_strict=DEFAULT_SCRAPY_VALIDATION_STRICT,
-        default_canonical_strict_url=DEFAULT_CANONICAL_STRICT_URL,
-        normalize_runtime_payload=normalize_runtime_payload,
-    )
-    selected_loaders, incremental_skipped = apply_incremental_cache_exclusions(
-        selected_loaders,
-        incremental_cache_enabled=incremental_cache_enabled,
-        force_refresh_all=force_refresh_all,
-        source_state_rows=source_state_rows,
-        get_incremental_cache_decision=get_incremental_cache_decision,
-        build_excluded_source_report=lambda name, reason: build_excluded_source_report(
-            name,
-            reason,
-            source_report_meta=SOURCE_REPORT_META,
-        ),
-        source_report_meta=SOURCE_REPORT_META,
-    )
-    if incremental_skipped:
-        source_reports.extend(incremental_skipped)
-        runtime_payload["selectedSourceCount"] = len(selected_loaders)
-    selected_loaders, cadence_skipped = apply_source_cadence_exclusions(
-        selected_loaders,
-        respect_source_cadence=respect_source_cadence,
-        source_state_rows=source_state_rows,
-        hot_source_cadence_minutes=hot_source_cadence_minutes,
-        cold_source_cadence_minutes=cold_source_cadence_minutes,
-        should_skip_source_by_cadence=should_skip_source_by_cadence,
-        build_excluded_source_report=lambda name, reason: build_excluded_source_report(
-            name,
-            reason,
-            source_report_meta=SOURCE_REPORT_META,
-        ),
-    )
-    if cadence_skipped:
-        source_reports.extend(cadence_skipped)
-        runtime_payload["selectedSourceCount"] = len(selected_loaders)
-
-    selected_loaders, excluded_by_circuit = apply_circuit_breaker_exclusions(
-        selected_loaders,
-        source_state_rows=source_state_rows,
-        circuit_breaker_failures=circuit_breaker_failures,
-        circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
-        ignore_circuit_breaker=ignore_circuit_breaker,
-    )
-    source_reports.extend(excluded_by_circuit)
-
-    task_runtime = initialize_task_runtime(
-        selected_loaders,
-        run_id=run_id,
-        started_at=started_at,
-        show_progress=show_progress,
-    )
-    if canonical_rows:
-        task_runtime.current_output_count = len(canonical_rows)
-    write_task_state = make_task_state_writer(
-        runtime=task_runtime,
-        run_id=run_id,
-        started_at=started_at,
-        report_path=str(paths.report_path),
-        task_state_path=paths.task_state_path,
-        normalize_task_state_payload=normalize_task_state_payload,
-        write_text_if_changed=write_hot_text_if_changed,
-    )
-    fetch_text_limited = make_fetch_text_limited(
-        runtime=task_runtime,
-        max_per_domain=max_per_domain,
-        fetch_text_impl=fetch_text_impl,
-        write_task_state=write_task_state,
-    )
-    fetch_text_static_limited = make_fetch_text_limited(
-        runtime=task_runtime,
-        max_per_domain=common_config.DEFAULT_STATIC_FETCH_MAX_PER_DOMAIN,
-        fetch_text_impl=fetch_text_impl,
-        write_task_state=write_task_state,
-        gate_namespace="static",
-        wait_reason_label="domain_gate",
-        collect_wait_stats=True,
-    )
-    progress_phase = {
-        "key": "selecting_sources",
-        "label": "Selecting sources",
-    }
-    write_progress_report_sync = lambda force=False: write_pipeline_progress_report(
-        runtime=task_runtime,
-        canonical_rows=canonical_rows,
-        lifecycle_rows=lifecycle_rows,
-        source_reports=source_reports,
-        runtime_payload=runtime_payload,
-        started_at=started_at,
-        paths=paths,
-        schema_version=SCHEMA_VERSION,
-        studio_source_registry=STUDIO_SOURCE_REGISTRY,
-        load_registry_from_file=load_registry_from_file,
-        read_approved_since_last_run=read_approved_since_last_run,
-        lifecycle_counts=lifecycle_counts,
-        build_pipeline_summary=build_pipeline_summary,
-        normalize_fetch_report_payload=normalize_fetch_report_payload,
-        write_text_if_changed=write_hot_text_if_changed,
-        phase_key=str(progress_phase["key"]),
-        phase_label=str(progress_phase["label"]),
-        run_id=run_id,
-        force=bool(force),
-    )
-    write_progress_report, stop_progress_reporter = make_progress_report_dispatcher(
-        runtime=task_runtime,
-        write_progress_report=write_progress_report_sync,
-    )
-    write_progress_report(force=True)
-
-    stage_config = SourceExecutionStageConfig(
-        max_workers=max_workers,
-        timeout_s=timeout_s,
-        retries=retries,
-        backoff_s=backoff_s,
-        static_detail_concurrency=static_detail_concurrency,
-        google_sheets_redirect_concurrency=google_sheets_redirect_concurrency,
-        started_at=started_at,
-        show_progress=show_progress,
-        force_refresh_all=force_refresh_all,
-        browser_fallback_cooldown_minutes=browser_fallback_cooldown_minutes,
-    )
-    progress_phase["key"] = "executing_sources"
-    progress_phase["label"] = "Executing sources"
+    setup: pipeline_run_setup_mod.PipelineRunSetup | None = None
     try:
-        try:
-            run_source_execution_stage(
-                config=stage_config,
-                selected_loaders=selected_loaders,
-                fetch_text_limited=fetch_text_limited,
-                fetch_text_static_limited=fetch_text_static_limited,
-                static_listing_async_fetch=static_listing_async_fetch,
-                source_state_rows=source_state_rows,
-                redirect_resolver=redirect_resolver,
-                task_runtime=task_runtime,
-                task_rows=task_runtime.task_rows,
-                task_lock=task_runtime.task_lock,
-                thread_local=task_runtime.thread_local,
-                write_task_state=write_task_state,
-                write_progress_report=write_progress_report,
-                canonical_rows=canonical_rows,
-                source_reports=source_reports,
-            )
-        finally:
-            if async_fetcher is not None:
-                async_fetcher.close()
-            close_redirect_resolver = getattr(redirect_resolver, "close", None)
-            if callable(close_redirect_resolver):
-                close_redirect_resolver()
-
-        if using_default_loaders:
-            append_excluded_default_sources(source_reports)
-
-        # Attach provenance for static sources (e.g. game_studios_sheet) so fetch report can filter by sourceDirectory
-        _static_name_to_row: dict[str, dict[str, Any]] = {}
-        for _row in registry_entries("static"):
-            _name = static_adapter.static_source_name_for_registry_row(_row)
-            _static_name_to_row[_name] = _row
-        for _report in source_reports:
-            if not isinstance(_report, dict):
-                continue
-            _name = clean_text(_report.get("name"))
-            _reg = _static_name_to_row.get(_name)
-            if _reg is not None:
-                if clean_text(_reg.get("sourceDirectory")):
-                    _report["sourceDirectory"] = clean_text(_reg.get("sourceDirectory"))
-                if clean_text(_reg.get("sourceDirectoryUrl")):
-                    _report["sourceDirectoryUrl"] = clean_text(_reg.get("sourceDirectoryUrl"))
-                if clean_text(_reg.get("listing_url")):
-                    _report["listingUrl"] = clean_text(_reg.get("listing_url"))
-
-        progress_phase["key"] = "merging_results"
-        progress_phase["label"] = "Merging results"
-        write_progress_report(force=True)
-        stop_progress_reporter()
+        setup = pipeline_run_setup_mod.prepare_pipeline_run(
+            output_dir=Path(output_dir),
+            run_id=run_id,
+            started_at_override=started_at_override,
+            timeout_s=timeout_s,
+            retries=retries,
+            backoff_s=backoff_s,
+            fetch_text=fetch_text,
+            source_loaders=source_loaders,
+            seed_from_existing_output=seed_from_existing_output,
+            source_ttl_minutes=source_ttl_minutes,
+            max_workers=max_workers,
+            max_per_domain=max_per_domain,
+            fetch_strategy=fetch_strategy,
+            adapter_http_concurrency=adapter_http_concurrency,
+            google_sheets_redirect_concurrency=google_sheets_redirect_concurrency,
+            respect_source_cadence=respect_source_cadence,
+            hot_source_cadence_minutes=hot_source_cadence_minutes,
+            cold_source_cadence_minutes=cold_source_cadence_minutes,
+            circuit_breaker_failures=circuit_breaker_failures,
+            circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+            browser_fallback_cooldown_minutes=browser_fallback_cooldown_minutes,
+            ignore_circuit_breaker=ignore_circuit_breaker,
+            social_enabled=social_enabled,
+            social_config_path=social_config_path,
+            social_lookback_minutes=social_lookback_minutes,
+            static_detail_concurrency=static_detail_concurrency,
+            show_progress=show_progress,
+            selection_exclusions=selection_exclusions,
+            force_refresh_all=force_refresh_all,
+            default_source_loaders=default_source_loaders,
+            build_redirect_resolver_fn=_pipeline_redirect_resolver_builder(),
+        )
+        setup.progress_phase["key"] = "executing_sources"
+        setup.progress_phase["label"] = "Executing sources"
+        pipeline_execution_flow_mod.execute_pipeline_sources(setup)
+        setup.progress_phase["key"] = "merging_results"
+        setup.progress_phase["label"] = "Merging results"
+        setup.write_progress_report(force=True)
+        setup.stop_progress_reporter()
         return pipeline_finalize_pkg.finalize_pipeline_run(
-            sys.modules[__name__],
-            paths=paths,
-            source_reports=source_reports,
-            canonical_rows=canonical_rows,
-            using_default_loaders=using_default_loaders,
-            selected_loaders=selected_loaders,
-            effective_seed_from_existing_output=effective_seed_from_existing_output,
+            paths=setup.paths,
+            source_reports=setup.source_reports,
+            canonical_rows=setup.canonical_rows,
+            using_default_loaders=setup.using_default_loaders,
+            selected_loaders=setup.selected_loaders,
+            effective_seed_from_existing_output=setup.effective_seed_from_existing_output,
             preserve_previous_on_empty=preserve_previous_on_empty,
-            source_state_rows=source_state_rows,
-            lifecycle_rows=lifecycle_rows,
-            runtime_payload=runtime_payload,
-            redirect_resolver=redirect_resolver,
-            task_runtime=task_runtime,
-            progress_phase=progress_phase,
-            write_progress_report=write_progress_report,
-            write_task_state=write_task_state,
-            started_at=started_at,
+            source_state_rows=setup.source_state_rows,
+            lifecycle_rows=setup.lifecycle_rows,
+            runtime_payload=setup.runtime_payload,
+            redirect_resolver=setup.redirect_resolver,
+            task_runtime=setup.task_runtime,
+            progress_phase=setup.progress_phase,
+            write_progress_report=setup.write_progress_report,
+            write_task_state=setup.write_task_state,
+            started_at=setup.started_at,
             run_started_mono=run_started_mono,
             run_id=run_id,
             circuit_breaker_failures=circuit_breaker_failures,
@@ -623,7 +183,8 @@ def run_pipeline(
             circuit_breaker_zero_kept=circuit_breaker_zero_kept,
         )
     finally:
-        stop_progress_reporter()
+        if setup is not None:
+            setup.stop_progress_reporter()
 
 
 def parse_args() -> argparse.Namespace:
@@ -844,7 +405,9 @@ def main() -> int:
         seed_from_existing_output = True
         if not args.quiet:
             print(
-                f"[jobs_fetcher] Incremental mode: skipping {len(successful)} previously successful sources; running {len(selected)}",
+                "[jobs_fetcher] Incremental mode: "
+                f"skipping {len(successful)} previously successful sources; "
+                f"running {len(selected)}",
                 flush=True,
             )
 
@@ -859,6 +422,7 @@ def main() -> int:
             continue
         seen_selection_exclusions.add(token)
         deduped_selection_exclusions.append(row)
+
     report = run_pipeline(
         output_dir=Path(args.output_dir),
         run_id=env_run_id,

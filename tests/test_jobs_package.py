@@ -226,10 +226,19 @@ def test_jobs_common_root_package_is_minimal_and_leaf_modules_remain_importable(
 def test_pipeline_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "pipeline.py"
     text = target.read_text(encoding="utf-8")
-    assert "from src.jobs.pipeline_bootstrap import" in text
-    assert "from src.jobs.pipeline_loader_selection import" in text
-    assert "from src.jobs.pipeline_runtime import" in text
+    assert "from . import pipeline_run_setup as pipeline_run_setup_mod" in text
+    assert "from . import pipeline_execution_flow as pipeline_execution_flow_mod" in text
     assert "from src.jobs import common as common" not in text
+
+
+def test_state_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "state.py"
+    text = target.read_text(encoding="utf-8")
+    assert "from . import state_incremental as state_incremental_mod" in text
+    assert "from . import state_lifecycle as state_lifecycle_mod" in text
+    assert "from . import state_source_state as state_source_state_mod" in text
+    assert "def normalize_source_state_payload(" not in text
+    assert "def apply_job_lifecycle_state(" not in text
 
 
 def test_static_adapter_uses_package_private_helper_boundary(repo_root: Path) -> None:

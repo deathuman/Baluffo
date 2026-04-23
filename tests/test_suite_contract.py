@@ -296,6 +296,43 @@ def test_jobs_fetcher_facade_stays_lazy_and_small(repo_root: Path) -> None:
     assert "deduplicate_jobs" not in jobs_fetcher.__all__
 
 
+def test_jobs_pipeline_root_stays_thin_orchestration_surface(repo_root: Path) -> None:
+    target = repo_root / "src" / "jobs" / "pipeline.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+    function_names = set(_top_level_function_names(tree))
+
+    assert "from . import pipeline_run_setup as pipeline_run_setup_mod" in text
+    assert "from . import pipeline_execution_flow as pipeline_execution_flow_mod" in text
+    assert {"default_source_loaders", "run_pipeline", "parse_args", "main"} <= function_names
+    assert "def _canonicalize_existing_output_row(" not in text
+    assert "def _apply_final_location_quality_guardrail(" not in text
+    assert "def build_runtime_timing_summary(" not in text
+    assert "resolve_fetch_text_impl(" not in text
+    assert "initialize_task_runtime(" not in text
+    assert len(text.splitlines()) <= 520, "jobs pipeline root drifted back toward monolith size"
+
+
+def test_jobs_state_root_stays_thin_compat_surface(repo_root: Path) -> None:
+    from src.jobs import state as jobs_state
+
+    target = repo_root / "src" / "jobs" / "state.py"
+    tree = _module_tree(target)
+    text = target.read_text(encoding="utf-8")
+
+    assert "from . import state_incremental as state_incremental_mod" in text
+    assert "from . import state_lifecycle as state_lifecycle_mod" in text
+    assert "from . import state_source_state as state_source_state_mod" in text
+    assert _top_level_function_names(tree) == []
+    assert "def normalize_source_state_payload(" not in text
+    assert "def apply_job_lifecycle_state(" not in text
+    assert jobs_state.BROWSER_FALLBACK_STATE_KEY
+    assert callable(jobs_state.normalize_source_state_payload)
+    assert callable(jobs_state.apply_job_lifecycle_state)
+    assert callable(jobs_state.get_incremental_cache_decision)
+    assert len(text.splitlines()) <= 140, "jobs state root drifted back toward monolith size"
+
+
 def test_source_sync_root_stays_thin_compat_surface(repo_root: Path) -> None:
     from src import source_sync
     from src.shared.utils import now_iso as shared_now_iso
@@ -500,6 +537,26 @@ def test_python_leaf_modules_do_not_import_root_compatibility_surfaces(repo_root
 
     assert not offenders, (
         "Leaf Python modules should not import root compatibility surfaces directly:\n- "
+        + "\n- ".join(offenders)
+    )
+
+
+def test_jobs_pipeline_state_helpers_do_not_import_jobs_roots(repo_root: Path) -> None:
+    forbidden_imports = {"src.jobs_fetcher", "src.jobs.pipeline", "src.jobs.state"}
+    offenders: list[str] = []
+    for relative_path in (
+        "src/jobs/pipeline_run_setup.py",
+        "src/jobs/pipeline_execution_flow.py",
+        "src/jobs/pipeline_finalize.py",
+        "src/jobs/state_source_state.py",
+        "src/jobs/state_lifecycle.py",
+    ):
+        imports = _imported_modules(_module_tree(repo_root / relative_path))
+        bad = sorted(imports & forbidden_imports)
+        if bad:
+            offenders.append(f"{relative_path} -> {', '.join(bad)}")
+    assert not offenders, (
+        "Pipeline/state helper leaves should not import jobs compatibility roots directly:\n- "
         + "\n- ".join(offenders)
     )
 

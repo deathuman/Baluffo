@@ -64,7 +64,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | `src/source_discovery.py` | Discover candidate sources (delegates to package) |
 | `src/dev_admin_supervisor.py` | Baluffo launcher (site + bridge + browser) |
 | `src/admin_bridge.py` | Bridge-only entry (expert/manual mode, wiring only) |
-| `src/jobs/pipeline.py` | Pipeline entry flow |
+| `src/jobs/pipeline.py` | Stable pipeline entry flow over `pipeline_{run_setup,execution_flow,finalize}.py` |
 | `src/source_discovery/` | Discovery package modules |
 | `src/packaged_desktop_smoke.py` | Packaged smoke CLI and rehearsal entry flow |
 | `scripts/build_ship_bundle.py` | Create ship bundle |
@@ -91,7 +91,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Discovery behavior | `src/source_discovery/orchestrator.py`, `orchestrator_{runtime,generation,probe,finalize}.py`, `runtime_metrics.py`, `stage_control.py`, `reporting.py` | `src/source_discovery.py` only for CLI compatibility |
 | Bridge sync | `src/bridge/sync_service.py`, `src/source_sync_{config,runtime,snapshot,crypto}.py` | `src/source_sync.py` only for root-surface compatibility work, plus `src/bridge/sync_state.py` |
 | Bridge registry | `src/bridge/registry_service.py` | `src/source_registry.py`, `src/bridge/registry_tombstones.py` |
-| Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_timing.py`, `src/jobs/pipeline_finalize.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
+| Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`, `src/jobs/pipeline_timing.py`, `src/jobs/state_{source_state,lifecycle,incremental}.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI or compatibility-surface changes |
 | Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py` | `src/jobs/adapters/static_helpers.py` only for shim/patch-surface compatibility and `src/jobs/adapters/static.py` only for root-surface compatibility work |
 | Local-data backend store | `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py` | `src/local_data_store.py` only for root-surface compatibility work |
 | Desktop local-data runtime | `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js` | `frontend/shared/local-data/desktop-client.js` only for root bootstrap or `window.JobAppLocalData` wiring |
@@ -142,9 +142,11 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `admin_task_runtime.py` - sync/task runtime helpers, report waits, fetch-task launch/runtime glue
 
 **Jobs package (`src/jobs/`):**
-- `pipeline.py` - pipeline entry flow
+- `pipeline.py` - stable pipeline entry flow
+- `pipeline_run_setup.py`, `pipeline_execution_flow.py` - runtime setup and source execution orchestration
 - `pipeline_timing.py`, `pipeline_finalize.py` - timing aggregation and late-stage output/report assembly
-- `state.py`, `state_incremental.py` - jobs state, cadence, and incremental freshness helpers
+- `state.py` - stable jobs-state compatibility surface
+- `state_source_state.py`, `state_lifecycle.py`, `state_incremental.py` - source-state persistence, lifecycle ownership, cadence, and incremental freshness helpers
 - `fetcher_compat_exports.py`, `fetcher_compat_runtime.py` - lazy compatibility exports and root-backed wrapper seams behind `src/jobs_fetcher.py`
 - `adapters/` - static, provider_api, social fetchers
 - `canonicalize.py`, `dedup.py` - normalization
@@ -230,8 +232,10 @@ See [`testing.md`](testing.md) for more commands.
 - `src/admin_bridge.py` - stable thin entrypoint; add new bridge logic to `src/bridge/*.py` or `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`
 - `src/source_discovery.py` - stable thin CLI entrypoint; add discovery logic to `src/source_discovery/*.py`
 - `src/jobs_fetcher.py` - stable thin CLI facade; keep lazy export routing in `src/jobs/fetcher_compat_exports.py`, root-backed wrapper seams in `src/jobs/fetcher_compat_runtime.py`, and new pipeline logic in `src/jobs/*`
+- `src/jobs/pipeline.py` - stable package entrypoint; keep runtime setup in `src/jobs/pipeline_run_setup.py`, source execution flow in `src/jobs/pipeline_execution_flow.py`, and late-stage output/report assembly in `src/jobs/pipeline_finalize.py`
 - `frontend/jobs/app/desktop-update.js` - stable Jobs desktop-update export surface; keep implementation in `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 - `src/jobs/adapters/static.py` - stable static adapter surface; keep generic listing/detail/runtime logic in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py`
+- `src/jobs/state.py` - stable jobs-state compatibility surface; keep source-state persistence in `src/jobs/state_source_state.py`, lifecycle logic in `src/jobs/state_lifecycle.py`, and cadence/freshness policy in `src/jobs/state_incremental.py`
 - `src/source_sync.py` - permanent thin sync integration surface; keep new sync logic in `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/local_data_store.py` - stable local-data store surface; keep implementation in `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`
 - `frontend/shared/local-data/desktop-client.js` - stable desktop local-data runtime root; keep implementation in `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
@@ -243,7 +247,8 @@ See [`testing.md`](testing.md) for more commands.
 - `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
 - `src/jobs/fetcher_compat_{exports,runtime}.py`
 - `src/jobs/adapters/static_listing_flow.py`
-- `src/jobs/state_incremental.py`
+- `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`
+- `src/jobs/state_{source_state,lifecycle,incremental}.py`
 - `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`
 - `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
 - `frontend/saved/app/runtime/*.js`

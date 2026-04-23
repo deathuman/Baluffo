@@ -1,0 +1,774 @@
+"""Source-state helpers for the jobs pipeline."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+from src.contracts import SCHEMA_VERSION
+from src.jobs.browser_fallback import (
+    BROWSER_FALLBACK_STATE_KEY,
+    BrowserFallbackCircuitBreaker,
+)
+from src.jobs.common.datetime_utils import parse_datetime
+from src.jobs.common.numbers import _clamped_int
+from src.jobs.common.registry import _migration_adapter_for_host
+from src.jobs.interfaces import SourceLoader
+from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.jobs_fetcher_registry import EXCLUDED_DEFAULT_SOURCES, SOURCE_REPORT_META
+from src.pipeline_io import write_text_if_changed
+from src.shared.utils import now_iso
+
+from . import state_incremental as _state_incremental
+from .common import url as common_url
+
+
+def source_rows_fingerprint(rows: Sequence[dict[str, Any]]) -> str:
+    keys = []
+    for row in rows:
+        link = normalize_url(row.get("jobLink"))
+        source_job_id = clean_text(row.get("sourceJobId"))
+        title = norm_text(row.get("title"))
+        keys.append(f"{source_job_id}|{link}|{title}")
+    keys.sort()
+    return hashlib.sha1("\n".join(keys).encode("utf-8")).hexdigest()
+
+
+def normalize_source_state_payload(
+    payload: dict[str, Any], *, updated_at: str = ""
+) -> dict[str, Any]:
+    src = payload if isinstance(payload, dict) else {}
+    rows = src.get("sources")
+    out_rows: dict[str, dict[str, Any]] = {}
+    if isinstance(rows, dict):
+        for raw_name, raw_entry in rows.items():
+            name = clean_text(raw_name)
+            if not name or not isinstance(raw_entry, dict):
+                continue
+            entry = {
+                "lastRunAt": clean_text(raw_entry.get("lastRunAt")),
+                "lastCheckedAt": clean_text(raw_entry.get("lastCheckedAt")),
+                "lastStatus": clean_text(raw_entry.get("lastStatus")),
+                "lastDurationMs": _clamped_int(raw_entry.get("lastDurationMs"), 0, 0),
+                "lastFetchedCount": _clamped_int(raw_entry.get("lastFetchedCount"), 0, 0),
+                "lastKeptCount": _clamped_int(raw_entry.get("lastKeptCount"), 0, 0),
+                "lastJobsFound": _clamped_int(raw_entry.get("lastJobsFound"), 0, 0),
+                "lastCandidateLinksFound": _clamped_int(
+                    raw_entry.get("lastCandidateLinksFound"), 0, 0
+                ),
+                "lastDetailPagesVisited": _clamped_int(
+                    raw_entry.get("lastDetailPagesVisited"), 0, 0
+                ),
+                "lastDetailYieldPct": _clamped_int(raw_entry.get("lastDetailYieldPct"), 0, 0),
+                "lastRedirectCandidates": _clamped_int(
+                    raw_entry.get("lastRedirectCandidates"), 0, 0
+                ),
+                "lastRedirectResolved": _clamped_int(raw_entry.get("lastRedirectResolved"), 0, 0),
+                "lastRedirectCacheHits": _clamped_int(raw_entry.get("lastRedirectCacheHits"), 0, 0),
+                "googleSheetsRedirectCache": _normalized_google_sheets_redirect_cache(
+                    raw_entry.get("googleSheetsRedirectCache")
+                ),
+                "lastAdapter": clean_text(raw_entry.get("lastAdapter")),
+                "lastSuccessAt": clean_text(raw_entry.get("lastSuccessAt")),
+                "lastNonEmptyAt": clean_text(raw_entry.get("lastNonEmptyAt")),
+                "lastFingerprint": clean_text(raw_entry.get("lastFingerprint")),
+                "lastListingFingerprint": clean_text(raw_entry.get("lastListingFingerprint")),
+                "lastListingCheckedAt": clean_text(raw_entry.get("lastListingCheckedAt")),
+                "lastHttpEtag": clean_text(raw_entry.get("lastHttpEtag")),
+                "lastHttpLastModified": clean_text(raw_entry.get("lastHttpLastModified")),
+                "lastHttpStatus": _clamped_int(raw_entry.get("lastHttpStatus"), 0, 0),
+                "nextEligibleCheckAt": clean_text(raw_entry.get("nextEligibleCheckAt")),
+                "cacheDecision": clean_text(raw_entry.get("cacheDecision")),
+                "cacheDecisionReason": clean_text(raw_entry.get("cacheDecisionReason")),
+                "browserEscalationEligible": bool(raw_entry.get("browserEscalationEligible")),
+                "browserEscalationEligibleAt": clean_text(
+                    raw_entry.get("browserEscalationEligibleAt")
+                ),
+                "browserEscalationEligibilityReason": clean_text(
+                    raw_entry.get("browserEscalationEligibilityReason")
+                ),
+                "browserEscalationLastAttemptAt": clean_text(
+                    raw_entry.get("browserEscalationLastAttemptAt")
+                ),
+                "browserEscalationLastAttemptFingerprint": clean_text(
+                    raw_entry.get("browserEscalationLastAttemptFingerprint")
+                ),
+                "browserEscalationLastAttemptListingFingerprint": clean_text(
+                    raw_entry.get("browserEscalationLastAttemptListingFingerprint")
+                ),
+                "browserEscalationLastSuccessAt": clean_text(
+                    raw_entry.get("browserEscalationLastSuccessAt")
+                ),
+                "browserEscalationLastFailureAt": clean_text(
+                    raw_entry.get("browserEscalationLastFailureAt")
+                ),
+                "browserEscalationLastError": clean_text(
+                    raw_entry.get("browserEscalationLastError")
+                ),
+                "browserEscalationFailureCount": _clamped_int(
+                    raw_entry.get("browserEscalationFailureCount"), 0, 0
+                ),
+                "browserEscalationQuarantinedUntilAt": clean_text(
+                    raw_entry.get("browserEscalationQuarantinedUntilAt")
+                ),
+                "consecutiveFailures": _clamped_int(raw_entry.get("consecutiveFailures"), 0, 0),
+                "consecutiveZeroKept": _clamped_int(raw_entry.get("consecutiveZeroKept"), 0, 0),
+                "quarantinedUntilAt": clean_text(raw_entry.get("quarantinedUntilAt")),
+                "lastFailureAt": clean_text(raw_entry.get("lastFailureAt")),
+                "lastError": clean_text(raw_entry.get("lastError")),
+                "healthScore": _clamped_int(raw_entry.get("healthScore"), 0, 100),
+                "lastFailureBucket": clean_text(raw_entry.get("lastFailureBucket")),
+                "structuredMigrationTargetAdapter": clean_text(
+                    raw_entry.get("structuredMigrationTargetAdapter")
+                ),
+                "structuredMigrationBaselineCapturedAt": clean_text(
+                    raw_entry.get("structuredMigrationBaselineCapturedAt")
+                ),
+                "structuredMigrationBaselineDurationMs": _clamped_int(
+                    raw_entry.get("structuredMigrationBaselineDurationMs"), 0, 0
+                ),
+                "structuredMigrationBaselineStatus": clean_text(
+                    raw_entry.get("structuredMigrationBaselineStatus")
+                ),
+                "structuredMigrationBaselineError": clean_text(
+                    raw_entry.get("structuredMigrationBaselineError")
+                ),
+                "structuredMigrationBaselineFailureBucket": clean_text(
+                    raw_entry.get("structuredMigrationBaselineFailureBucket")
+                ),
+                "structuredMigrationBaselineKeptCount": _clamped_int(
+                    raw_entry.get("structuredMigrationBaselineKeptCount"), 0, 0
+                ),
+                "structuredMigrationShadowRunCount": _clamped_int(
+                    raw_entry.get("structuredMigrationShadowRunCount"), 0, 0
+                ),
+                "structuredMigrationHealthyRunCount": _clamped_int(
+                    raw_entry.get("structuredMigrationHealthyRunCount"), 0, 0
+                ),
+                "structuredMigrationPromotedAt": clean_text(
+                    raw_entry.get("structuredMigrationPromotedAt")
+                ),
+                "structuredMigrationDemotedAt": clean_text(
+                    raw_entry.get("structuredMigrationDemotedAt")
+                ),
+                "structuredMigrationLastDuplicateRate": _structured_duplicate_rate(
+                    raw_entry.get("structuredMigrationLastDuplicateRate")
+                ),
+                "structuredMigrationLastKeptCount": _clamped_int(
+                    raw_entry.get("structuredMigrationLastKeptCount"), 0, 0
+                ),
+            }
+            raw_latencies = raw_entry.get("recentLatencies")
+            if isinstance(raw_latencies, list):
+                clean_latencies = [
+                    _clamped_int(x, 0, 2**31 - 1)
+                    for x in raw_latencies
+                    if isinstance(x, (int, float))
+                ]
+                if clean_latencies:
+                    entry["recentLatencies"] = clean_latencies
+            raw_stage_timings = (
+                raw_entry.get("lastStageTimingsMs")
+                if isinstance(raw_entry.get("lastStageTimingsMs"), dict)
+                else {}
+            )
+            clean_stage_timings = {
+                "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
+                "parseCsv": _clamped_int(raw_stage_timings.get("parseCsv"), 0, 0),
+                "candidateExtraction": _clamped_int(
+                    raw_stage_timings.get("candidateExtraction"), 0, 0
+                ),
+                "detailFetch": _clamped_int(raw_stage_timings.get("detailFetch"), 0, 0),
+                "redirectResolve": _clamped_int(raw_stage_timings.get("redirectResolve"), 0, 0),
+                "canonicalization": _clamped_int(raw_stage_timings.get("canonicalization"), 0, 0),
+            }
+            if any(clean_stage_timings.values()):
+                entry["lastStageTimingsMs"] = clean_stage_timings
+            out_rows[name] = {
+                key: value for key, value in entry.items() if value != "" and value is not None
+            }
+    return {
+        "schemaVersion": SCHEMA_VERSION,
+        "updatedAt": clean_text(src.get("updatedAt")) or clean_text(updated_at) or now_iso(),
+        "sources": out_rows,
+    }
+
+
+def _structured_duplicate_rate(value: Any) -> float:
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _normalized_google_sheets_redirect_cache(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict) or not value:
+        return {}
+    out: dict[str, str] = {}
+    for raw_key, raw_value in value.items():
+        key = clean_text(raw_key)
+        resolved = normalize_url(raw_value)
+        if not key or not resolved or not common_url.is_supported_redirect_url(key):
+            continue
+        out[key] = resolved
+    return out
+
+
+def _structured_source_host(source_row: dict[str, Any]) -> str:
+    pages = source_row.get("pages") if isinstance(source_row.get("pages"), list) else []
+    url = clean_text(source_row.get("listing_url")) or (clean_text(pages[0]) if pages else "")
+    if not url:
+        return ""
+    try:
+        host = (urlparse(url).netloc or "").strip().lower()
+    except Exception:  # noqa: BLE001
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def _structured_migration_target(source_row: dict[str, Any]) -> str:
+    return _migration_adapter_for_host(_structured_source_host(source_row))
+
+
+def should_skip_static_source_for_structured_migration(
+    source_name: str,
+    source_row: dict[str, Any],
+    source_state_rows: dict[str, dict[str, Any]] | None,
+) -> bool:
+    target = _structured_migration_target(source_row)
+    if target not in {"bamboohr", "workday"}:
+        return False
+    entry = (
+        (source_state_rows or {}).get(clean_text(source_name))
+        if isinstance(source_state_rows, dict)
+        else {}
+    )
+    if not isinstance(entry, dict):
+        return False
+    if clean_text(entry.get("structuredMigrationPromotedAt")):
+        return True
+    return int(entry.get("structuredMigrationHealthyRunCount") or 0) >= 3
+
+
+def read_source_state(state_path: Path) -> dict[str, dict[str, Any]]:
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    normalized = normalize_source_state_payload(payload)
+    rows = normalized.get("sources")
+    return rows if isinstance(rows, dict) else {}
+
+
+def write_source_state(state_path: Path, rows: dict[str, dict[str, Any]]) -> None:
+    payload = normalize_source_state_payload({"sources": rows}, updated_at=now_iso())
+    write_text_if_changed(state_path, json.dumps(payload, indent=2, ensure_ascii=False))
+
+
+def circuit_breaker_until(
+    source_name: str, state_rows: dict[str, dict[str, Any]], failure_threshold: int
+) -> datetime | None:
+    if failure_threshold <= 0:
+        return None
+    entry = state_rows.get(source_name)
+    if not isinstance(entry, dict):
+        return None
+    if int(entry.get("consecutiveFailures") or 0) < failure_threshold:
+        return None
+    return parse_datetime(entry.get("quarantinedUntilAt"))
+
+
+def _build_excluded_source_report(source_name: str, reason: str) -> dict[str, Any]:
+    return {
+        "name": source_name,
+        "status": "excluded",
+        "adapter": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("adapter")) or "custom",
+        "fetchStrategy": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("fetchStrategy"))
+        or "auto",
+        "studio": clean_text(SOURCE_REPORT_META.get(source_name, {}).get("studio")) or "",
+        "fetchedCount": 0,
+        "keptCount": 0,
+        "error": clean_text(reason),
+        "exclusionReason": clean_text(reason),
+        "durationMs": 0,
+    }
+
+
+def apply_circuit_breaker_exclusions(
+    selected_loaders: list[tuple[str, SourceLoader]],
+    *,
+    source_state_rows: dict[str, dict[str, Any]],
+    circuit_breaker_failures: int,
+    circuit_breaker_cooldown_minutes: int,
+    ignore_circuit_breaker: bool,
+) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]]]:
+    if (
+        ignore_circuit_breaker
+        or circuit_breaker_failures <= 0
+        or circuit_breaker_cooldown_minutes <= 0
+    ):
+        return list(selected_loaders), []
+    filtered: list[tuple[str, SourceLoader]] = []
+    excluded_rows: list[dict[str, Any]] = []
+    now_dt = datetime.now(UTC)
+    for name, loader in selected_loaders:
+        blocked_until = circuit_breaker_until(name, source_state_rows, circuit_breaker_failures)
+        if blocked_until and blocked_until > now_dt:
+            excluded_rows.append(
+                _build_excluded_source_report(
+                    name, f"circuit_breaker_active_until:{blocked_until.isoformat()}"
+                )
+            )
+            continue
+        filtered.append((name, loader))
+    return filtered, excluded_rows
+
+
+def append_excluded_default_sources(source_reports: list[dict[str, Any]]) -> None:
+    for source_name, reason in EXCLUDED_DEFAULT_SOURCES.items():
+        source_reports.append(_build_excluded_source_report(source_name, reason))
+
+
+def _snapshot_prior_source_state(entry: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "lastDurationMs": int(entry.get("lastDurationMs") or 0),
+        "lastStatus": clean_text(entry.get("lastStatus")),
+        "lastError": clean_text(entry.get("lastError")),
+        "lastFailureBucket": clean_text(entry.get("lastFailureBucket")),
+        "lastKeptCount": int(entry.get("lastKeptCount") or 0),
+    }
+
+
+def _apply_browser_escalation_state(
+    entry: dict[str, Any],
+    *,
+    report: dict[str, Any],
+    finished_at: str,
+    circuit_breaker_cooldown_minutes: int,
+) -> None:
+    browser_eligible = bool(report.get("browserEscalationEligible"))
+    browser_enabled = bool(report.get("browserEscalationEnabled"))
+    browser_reason = clean_text(report.get("browserEscalationEligibilityReason"))
+    if browser_eligible:
+        entry["browserEscalationEligible"] = True
+        entry["browserEscalationEligibleAt"] = finished_at
+        if browser_reason:
+            entry["browserEscalationEligibilityReason"] = browser_reason
+    elif entry.get("browserEscalationEligible"):
+        entry.pop("browserEscalationEligible", None)
+        entry.pop("browserEscalationEligibleAt", None)
+        entry.pop("browserEscalationEligibilityReason", None)
+
+    if not browser_enabled:
+        return
+    attempt_fingerprint = clean_text(report.get("sourceFingerprint")) or clean_text(
+        entry.get("lastFingerprint")
+    )
+    attempt_listing_fingerprint = clean_text(report.get("listingFingerprint")) or clean_text(
+        entry.get("lastListingFingerprint")
+    )
+    entry["browserEscalationLastAttemptAt"] = finished_at
+    if attempt_fingerprint:
+        entry["browserEscalationLastAttemptFingerprint"] = attempt_fingerprint
+    if attempt_listing_fingerprint:
+        entry["browserEscalationLastAttemptListingFingerprint"] = attempt_listing_fingerprint
+    if entry["lastStatus"] == "ok" and entry["lastKeptCount"] > 0:
+        entry["browserEscalationLastSuccessAt"] = finished_at
+        entry["browserEscalationFailureCount"] = 0
+        for key in (
+            "browserEscalationLastFailureAt",
+            "browserEscalationLastError",
+            "browserEscalationQuarantinedUntilAt",
+            "browserEscalationEligible",
+            "browserEscalationEligibleAt",
+            "browserEscalationEligibilityReason",
+        ):
+            entry.pop(key, None)
+        return
+    entry["browserEscalationFailureCount"] = int(entry.get("browserEscalationFailureCount") or 0) + 1
+    entry["browserEscalationLastFailureAt"] = finished_at
+    entry["browserEscalationLastError"] = clean_text(report.get("error"))
+    if circuit_breaker_cooldown_minutes > 0:
+        entry["browserEscalationQuarantinedUntilAt"] = (
+            datetime.now(UTC) + timedelta(minutes=circuit_breaker_cooldown_minutes)
+        ).isoformat()
+
+
+def _apply_static_detail_stats(entry: dict[str, Any], report: dict[str, Any]) -> list[dict[str, Any]]:
+    details = report.get("details") if isinstance(report.get("details"), list) else []
+    static_detail = details[0] if len(details) == 1 and isinstance(details[0], dict) else {}
+    static_stats = (
+        static_detail.get("stats")
+        if isinstance(static_detail, dict) and isinstance(static_detail.get("stats"), dict)
+        else {}
+    )
+    entry["lastCandidateLinksFound"] = int(static_stats.get("candidate_links_found") or 0)
+    entry["lastDetailPagesVisited"] = int(static_stats.get("detail_pages_visited") or 0)
+    entry["lastDetailYieldPct"] = int(static_stats.get("detail_yield_percent") or 0)
+    entry["lastRedirectCandidates"] = int(static_stats.get("redirect_candidates") or 0)
+    entry["lastRedirectResolved"] = int(static_stats.get("redirect_resolved") or 0)
+    entry["lastRedirectCacheHits"] = int(static_stats.get("redirect_cache_hits") or 0)
+    return details
+
+
+def _apply_stage_timings(entry: dict[str, Any], report: dict[str, Any]) -> None:
+    stage_timings = (
+        report.get("stageTimingsMs") if isinstance(report.get("stageTimingsMs"), dict) else {}
+    )
+    clean_stage_timings = {
+        "listingFetch": int(stage_timings.get("listingFetch") or 0),
+        "parseCsv": int(stage_timings.get("parseCsv") or 0),
+        "candidateExtraction": int(stage_timings.get("candidateExtraction") or 0),
+        "detailFetch": int(stage_timings.get("detailFetch") or 0),
+        "redirectResolve": int(stage_timings.get("redirectResolve") or 0),
+        "canonicalization": int(stage_timings.get("canonicalization") or 0),
+    }
+    if any(clean_stage_timings.values()):
+        entry["lastStageTimingsMs"] = clean_stage_timings
+    else:
+        entry.pop("lastStageTimingsMs", None)
+
+
+def _apply_successful_source_state(
+    entry: dict[str, Any],
+    *,
+    report: dict[str, Any],
+    source_name: str,
+    canonical_rows: list[dict[str, Any]],
+    finished_at: str,
+    circuit_breaker_cooldown_minutes: int,
+    circuit_breaker_zero_kept: int,
+) -> None:
+    entry["lastSuccessAt"] = finished_at
+    if entry["lastKeptCount"] > 0:
+        entry["lastNonEmptyAt"] = finished_at
+        entry["consecutiveZeroKept"] = 0
+    else:
+        zero_kept_count = int(entry.get("consecutiveZeroKept") or 0) + 1
+        entry["consecutiveZeroKept"] = zero_kept_count
+        if (
+            circuit_breaker_zero_kept > 0
+            and zero_kept_count >= circuit_breaker_zero_kept
+            and circuit_breaker_cooldown_minutes > 0
+        ):
+            entry["quarantinedUntilAt"] = (
+                datetime.now(UTC) + timedelta(minutes=circuit_breaker_cooldown_minutes)
+            ).isoformat()
+    reported_fingerprint = clean_text(report.get("sourceFingerprint"))
+    if not reported_fingerprint and entry["lastKeptCount"] > 0:
+        reported_fingerprint = source_rows_fingerprint(
+            [row for row in canonical_rows if clean_text(row.get("source")) == source_name]
+        )
+    previous_fingerprint = clean_text(entry.get("lastFingerprint"))
+    if reported_fingerprint:
+        entry["lastFingerprint"] = reported_fingerprint
+        if reported_fingerprint != previous_fingerprint:
+            entry["lastChangedAt"] = finished_at
+    entry["consecutiveFailures"] = 0
+    for key in ("quarantinedUntilAt", "lastFailureAt", "lastError"):
+        entry.pop(key, None)
+    failure_bucket = report.get("failureBucket")
+    if failure_bucket:
+        entry["lastFailureBucket"] = clean_text(failure_bucket)
+
+
+def _apply_errored_source_state(
+    entry: dict[str, Any],
+    *,
+    report: dict[str, Any],
+    finished_at: str,
+    circuit_breaker_failures: int,
+    circuit_breaker_cooldown_minutes: int,
+) -> None:
+    failure_count = int(entry.get("consecutiveFailures") or 0) + 1
+    entry["consecutiveFailures"] = failure_count
+    entry["lastFailureAt"] = finished_at
+    entry["lastError"] = clean_text(report.get("error"))
+    failure_bucket = report.get("failureBucket")
+    if failure_bucket:
+        entry["lastFailureBucket"] = clean_text(failure_bucket)
+    if (
+        circuit_breaker_failures > 0
+        and failure_count >= circuit_breaker_failures
+        and circuit_breaker_cooldown_minutes > 0
+    ):
+        entry["quarantinedUntilAt"] = (
+            datetime.now(UTC) + timedelta(minutes=circuit_breaker_cooldown_minutes)
+        ).isoformat()
+
+
+def _apply_excluded_source_state(entry: dict[str, Any], *, report: dict[str, Any], finished_at: str) -> None:
+    exclusion_reason = clean_text(report.get("exclusionReason")) or clean_text(
+        report.get("cacheDecisionReason")
+    )
+    if exclusion_reason == "not_modified_304":
+        entry["lastSuccessAt"] = finished_at
+        entry["consecutiveFailures"] = 0
+        for key in ("quarantinedUntilAt", "lastFailureAt", "lastError"):
+            entry.pop(key, None)
+
+
+def _refresh_next_eligible_check_at(entry: dict[str, Any], *, source_name: str, finished_at: str) -> None:
+    entry["nextEligibleCheckAt"] = _state_incremental.compute_next_eligible_check_at(
+        entry,
+        adapter=_state_incremental.adapter_for_cache(source_name, entry),
+        checked_at=finished_at,
+    )
+
+
+def _apply_structured_migration_state(
+    entry: dict[str, Any],
+    *,
+    report: dict[str, Any],
+    finished_at: str,
+    prior_state: dict[str, Any],
+) -> None:
+    adapter = clean_text(report.get("adapter"))
+    if adapter not in {"bamboohr", "workday"} or entry["lastStatus"] == "excluded":
+        return
+    entry["structuredMigrationTargetAdapter"] = adapter
+    if not clean_text(entry.get("structuredMigrationBaselineCapturedAt")):
+        entry["structuredMigrationBaselineCapturedAt"] = finished_at
+        entry["structuredMigrationBaselineDurationMs"] = prior_state["lastDurationMs"]
+        entry["structuredMigrationBaselineStatus"] = prior_state["lastStatus"]
+        entry["structuredMigrationBaselineError"] = prior_state["lastError"]
+        entry["structuredMigrationBaselineFailureBucket"] = prior_state["lastFailureBucket"]
+        entry["structuredMigrationBaselineKeptCount"] = prior_state["lastKeptCount"]
+    entry["structuredMigrationShadowRunCount"] = (
+        int(entry.get("structuredMigrationShadowRunCount") or 0) + 1
+    )
+    current_duplicate_rate = _structured_duplicate_rate(report.get("duplicateRate"))
+    previous_duplicate_rate = _structured_duplicate_rate(
+        entry.get("structuredMigrationLastDuplicateRate")
+    )
+    entry["structuredMigrationLastDuplicateRate"] = current_duplicate_rate
+    entry["structuredMigrationLastKeptCount"] = entry["lastKeptCount"]
+    healthy_run = (
+        entry["lastStatus"] == "ok"
+        and entry["lastKeptCount"] > 0
+        and current_duplicate_rate <= (previous_duplicate_rate + 0.01)
+    )
+    if healthy_run:
+        healthy_count = int(entry.get("structuredMigrationHealthyRunCount") or 0) + 1
+        entry["structuredMigrationHealthyRunCount"] = healthy_count
+        entry.pop("structuredMigrationDemotedAt", None)
+        if healthy_count >= 3 and not clean_text(entry.get("structuredMigrationPromotedAt")):
+            entry["structuredMigrationPromotedAt"] = finished_at
+        return
+    if clean_text(entry.get("structuredMigrationPromotedAt")):
+        entry["structuredMigrationDemotedAt"] = finished_at
+    entry["structuredMigrationHealthyRunCount"] = 0
+    entry.pop("structuredMigrationPromotedAt", None)
+
+
+def _apply_report_to_entry(
+    source_state_rows: dict[str, dict[str, Any]],
+    *,
+    source_name: str,
+    report: dict[str, Any],
+    canonical_rows: list[dict[str, Any]],
+    finished_at: str,
+    circuit_breaker_failures: int,
+    circuit_breaker_cooldown_minutes: int,
+    circuit_breaker_zero_kept: int,
+) -> None:
+    entry = dict(source_state_rows.get(source_name) or {})
+    prior_state = _snapshot_prior_source_state(entry)
+    entry["lastRunAt"] = finished_at
+    entry["lastCheckedAt"] = finished_at
+    entry["lastStatus"] = clean_text(report.get("status"))
+    entry["lastAdapter"] = clean_text(report.get("adapter")) or clean_text(entry.get("lastAdapter"))
+    entry["lastDurationMs"] = int(report.get("durationMs") or 0)
+    entry["lastFetchedCount"] = int(report.get("fetchedCount") or 0)
+    entry["lastKeptCount"] = int(report.get("keptCount") or 0)
+    entry["lastJobsFound"] = int(report.get("keptCount") or 0)
+    entry["cacheDecision"] = clean_text(report.get("cacheDecision")) or clean_text(
+        entry.get("cacheDecision")
+    )
+    entry["cacheDecisionReason"] = clean_text(report.get("cacheDecisionReason")) or clean_text(
+        entry.get("cacheDecisionReason")
+    )
+    if clean_text(report.get("listingFingerprint")):
+        entry["lastListingFingerprint"] = clean_text(report.get("listingFingerprint"))
+        entry["lastListingCheckedAt"] = clean_text(report.get("listingCheckedAt")) or finished_at
+    if clean_text(report.get("httpEtag")):
+        entry["lastHttpEtag"] = clean_text(report.get("httpEtag"))
+    if clean_text(report.get("httpLastModified")):
+        entry["lastHttpLastModified"] = clean_text(report.get("httpLastModified"))
+    if int(report.get("httpStatus") or 0) > 0:
+        entry["lastHttpStatus"] = int(report.get("httpStatus") or 0)
+
+    _apply_browser_escalation_state(
+        entry,
+        report=report,
+        finished_at=finished_at,
+        circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+    )
+    if entry["lastKeptCount"] > 0:
+        for key in (
+            "browserEscalationEligible",
+            "browserEscalationEligibleAt",
+            "browserEscalationEligibilityReason",
+        ):
+            entry.pop(key, None)
+
+    details = _apply_static_detail_stats(entry, report)
+    _apply_stage_timings(entry, report)
+
+    if entry["lastStatus"] == "ok":
+        _apply_successful_source_state(
+            entry,
+            report=report,
+            source_name=source_name,
+            canonical_rows=canonical_rows,
+            finished_at=finished_at,
+            circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+            circuit_breaker_zero_kept=circuit_breaker_zero_kept,
+        )
+        _refresh_next_eligible_check_at(entry, source_name=source_name, finished_at=finished_at)
+    elif entry["lastStatus"] == "error":
+        _apply_errored_source_state(
+            entry,
+            report=report,
+            finished_at=finished_at,
+            circuit_breaker_failures=circuit_breaker_failures,
+            circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+        )
+        _refresh_next_eligible_check_at(entry, source_name=source_name, finished_at=finished_at)
+    elif entry["lastStatus"] == "excluded":
+        _apply_excluded_source_state(entry, report=report, finished_at=finished_at)
+        _refresh_next_eligible_check_at(entry, source_name=source_name, finished_at=finished_at)
+
+    _apply_structured_migration_state(
+        entry,
+        report=report,
+        finished_at=finished_at,
+        prior_state=prior_state,
+    )
+    source_state_rows[source_name] = entry
+    for item in details:
+        detail_name = clean_text(item.get("name")) if isinstance(item, dict) else ""
+        if detail_name:
+            _apply_report_to_entry(
+                source_state_rows,
+                source_name=detail_name,
+                report=item,
+                canonical_rows=canonical_rows,
+                finished_at=finished_at,
+                circuit_breaker_failures=circuit_breaker_failures,
+                circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+                circuit_breaker_zero_kept=circuit_breaker_zero_kept,
+            )
+
+
+def update_source_state_rows(
+    *,
+    source_state_rows: dict[str, dict[str, Any]],
+    source_reports: list[dict[str, Any]],
+    canonical_rows: list[dict[str, Any]],
+    finished_at: str,
+    circuit_breaker_failures: int,
+    circuit_breaker_cooldown_minutes: int,
+    circuit_breaker_zero_kept: int = 3,
+) -> dict[str, dict[str, Any]]:
+    next_rows = dict(source_state_rows or {})
+    for report in source_reports:
+        source_name = clean_text(report.get("name")) if isinstance(report, dict) else ""
+        if not source_name:
+            continue
+        _apply_report_to_entry(
+            next_rows,
+            source_name=source_name,
+            report=report,
+            canonical_rows=canonical_rows,
+            finished_at=finished_at,
+            circuit_breaker_failures=circuit_breaker_failures,
+            circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+            circuit_breaker_zero_kept=circuit_breaker_zero_kept,
+        )
+    return next_rows
+
+
+def read_previously_successful_sources(report_path: Path) -> set[str]:
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    if not isinstance(payload, dict):
+        return set()
+    rows = payload.get("sources")
+    if not isinstance(rows, list):
+        return set()
+    successful: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = clean_text(row.get("name"))
+        if name and norm_text(row.get("status")) == "ok" and int(row.get("keptCount") or 0) > 0:
+            successful.add(name)
+    return successful
+
+
+def read_success_cache(cache_path: Path) -> set[str]:
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    if not isinstance(payload, dict):
+        return set()
+    rows = payload.get("successfulSources")
+    if not isinstance(rows, list):
+        return set()
+    return {clean_text(item) for item in rows if clean_text(item)}
+
+
+def browser_fallback_state_row(
+    source_state_rows: dict[str, dict[str, Any]] | None,
+) -> dict[str, Any]:
+    if not isinstance(source_state_rows, dict):
+        return {}
+    entry = source_state_rows.get(BROWSER_FALLBACK_STATE_KEY)
+    return dict(entry) if isinstance(entry, dict) else {}
+
+
+def build_browser_fallback_circuit_breaker(
+    source_state_rows: dict[str, dict[str, Any]] | None,
+    *,
+    cooldown_minutes: int,
+) -> BrowserFallbackCircuitBreaker:
+    return BrowserFallbackCircuitBreaker.from_state(
+        source_state_rows, cooldown_minutes=cooldown_minutes
+    )
+
+
+def set_browser_fallback_state(
+    source_state_rows: dict[str, dict[str, Any]],
+    browser_state: dict[str, Any],
+) -> None:
+    if not isinstance(source_state_rows, dict):
+        return
+    row = dict(browser_state or {})
+    if row:
+        source_state_rows[BROWSER_FALLBACK_STATE_KEY] = row
+    else:
+        source_state_rows.pop(BROWSER_FALLBACK_STATE_KEY, None)
+
+
+def write_success_cache(cache_path: Path, source_reports: Sequence[dict[str, Any]]) -> None:
+    successful = {
+        clean_text(row.get("name"))
+        for row in source_reports
+        if norm_text(row.get("status")) == "ok"
+        and int(row.get("keptCount") or 0) > 0
+        and clean_text(row.get("name"))
+    }
+    if not successful:
+        return
+    previous = read_success_cache(cache_path)
+    payload = {"updatedAt": now_iso(), "successfulSources": sorted(previous | successful)}
+    write_text_if_changed(cache_path, json.dumps(payload, indent=2, ensure_ascii=False))

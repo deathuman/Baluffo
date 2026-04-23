@@ -30,6 +30,8 @@ Use these as entrypoints or shims only; route new logic to the owning modules th
 - `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py` - admin bridge runtime/path/session/bootstrap/manual-source/task helpers behind the stable root surface
 - `src/source_discovery.py` - stable thin CLI entrypoint delegating to `src/source_discovery/*`
 - `src/jobs_fetcher.py` - stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`, while lazy export routing belongs in `src/jobs/fetcher_compat_exports.py` and root-backed wrapper seams belong in `src/jobs/fetcher_compat_runtime.py`
+- `src/jobs/pipeline.py` - stable package entrypoint; implementation belongs in `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`
+- `src/jobs/state.py` - stable jobs-state compatibility surface; implementation belongs in `src/jobs/state_{source_state,lifecycle,incremental}.py`
 - `src/jobs/adapters/static.py` - stable static adapter surface; implementation belongs in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py` plus `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py`, while `static_helpers.py` stays a compatibility shim
 - `src/source_sync.py` - permanent thin sync integration surface; config/runtime/snapshot/crypto logic belongs in `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/local_data_store.py` - stable desktop local-data store surface; implementation belongs in `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`
@@ -44,8 +46,9 @@ Current high-value leaf owners behind those surfaces:
 - `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py`
 - `src/source_sync_{config,runtime,snapshot,crypto}.py`
 - `src/jobs/fetcher_compat_{exports,runtime}.py`
+- `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`
+- `src/jobs/state_{source_state,lifecycle,incremental}.py`
 - `src/jobs/adapters/static_listing_flow.py`
-- `src/jobs/state_incremental.py`
 - `src/ship/desktop_updater_{ui,release,install}.py`
 - `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
 - `frontend/saved/app/runtime/*.js`
@@ -109,6 +112,7 @@ Planning/history records for major cleanup passes. Use them only after the canon
 | [`discovery-orchestrator-boundary-charter.md`](discovery-orchestrator-boundary-charter.md) | Refactor record | You are changing discovery orchestration boundaries and need lane-specific compatibility assumptions |
 | [`static-adapter-boundary-charter.md`](static-adapter-boundary-charter.md) | Refactor record | You are changing the static adapter boundary and need lane-specific compatibility assumptions |
 | [`jobs-fetcher-boundary-charter.md`](jobs-fetcher-boundary-charter.md) | Refactor record | You are changing the jobs fetcher facade boundary and need lane-specific compatibility assumptions |
+| [`jobs-pipeline-boundary-charter.md`](jobs-pipeline-boundary-charter.md) | Refactor record | You are changing jobs pipeline/state boundaries and need lane-specific compatibility assumptions |
 | [`local-data-boundary-charter.md`](local-data-boundary-charter.md) | Refactor record | You are changing the file-backed local-data store or shared desktop local-data runtime boundaries and need lane-specific compatibility assumptions |
 | [`desktop-update-cross-stack-boundary-charter.md`](desktop-update-cross-stack-boundary-charter.md) | Refactor record | You are changing the updater helper executable or Jobs desktop-update boundary and need lane-specific compatibility assumptions |
 | [`admin-bridge-boundary-charter.md`](admin-bridge-boundary-charter.md) | Refactor record | You are changing admin bridge startup/runtime boundaries and need lane-specific compatibility assumptions |
