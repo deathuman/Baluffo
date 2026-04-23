@@ -355,7 +355,10 @@ def save_json_atomic(path: Path, payload: Any) -> None:
     # Use a unique temp file per write to avoid collisions across threads/processes.
     tmp = path.with_suffix(path.suffix + f".{os.getpid()}.{time.time_ns()}.tmp")
     try:
-        tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
         last_error: Exception | None = None
         for attempt in range(18):
             try:

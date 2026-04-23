@@ -96,7 +96,7 @@ python src/admin_bridge.py --host 127.0.0.1 --port 8877
 |-------|----------|
 | "Module not found" | Ensure `PYTHONPATH` includes repo root |
 | "Config not found" | Check `baluffo.config.json` exists |
-| Import errors | Run `python -m pip install -r requirements.txt` |
+| Import errors | Run `python -m pip install -r requirements-lock.txt` |
 
 ### Sync operations fail
 
@@ -221,7 +221,7 @@ python -c "from src.bridge.source_check_api import trigger_source_check; print(t
 
 ```powershell
 # Ensure dependencies installed
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-lock.txt
 
 # Rebuild frontend config
 npm run build:frontend-runtime-config
@@ -236,7 +236,7 @@ npm run build:frontend-runtime-config
 | Solution | Command |
 |----------|---------|
 | Set PYTHONPATH | `set PYTHONPATH=%CD%` then run tests |
-| Install dev deps | `python -m pip install -r requirements.txt` |
+| Install dev deps | `python -m pip install -r requirements-lock.txt` |
 
 ### Playwright smoke tests fail
 

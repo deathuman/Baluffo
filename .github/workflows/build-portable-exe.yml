@@ -43,7 +43,7 @@ jobs:
           node-version: "22"
 
       - name: Install Python desktop dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt pytest
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-lock.txt pytest
 
       - name: Install Node dependencies
         run: npm ci

@@ -4,7 +4,20 @@ from __future__ import annotations
 
 import ast
 import json
+from collections.abc import Mapping
 from typing import Any
+
+JsonObject = dict[str, Any]
+
+
+def _as_dict(payload: Any) -> JsonObject:
+    if not isinstance(payload, Mapping):
+        return {}
+    return {str(key): value for key, value in payload.items()}
+
+
+def _as_list(payload: Any) -> list[Any]:
+    return payload if isinstance(payload, list) else []
 
 
 def safe_int(value: Any, default: int, minimum: int, maximum: int) -> int:
@@ -13,6 +26,13 @@ def safe_int(value: Any, default: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         parsed = int(default)
     return max(minimum, min(maximum, parsed))
+
+
+def safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
 
 
 def safe_schema_version(value: Any) -> int:
@@ -57,11 +77,11 @@ def coerce_fetch_report_detail_row(detail: Any) -> dict[str, Any] | None:
 def _normalize_task_progress(
     payload: Any, *, default_active_when_missing: bool = False
 ) -> dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
+    src = _as_dict(payload)
     mode = str(src.get("mode") or "").strip().lower()
     if mode not in {"determinate", "indeterminate"}:
         mode = "indeterminate"
-    counts_raw = src.get("counts") if isinstance(src.get("counts"), dict) else {}
+    counts_raw = _as_dict(src.get("counts"))
     counts: dict[str, Any] = {}
     for key, value in counts_raw.items():
         clean_key = str(key or "").strip()
@@ -75,10 +95,7 @@ def _normalize_task_progress(
             text = str(value or "").strip()
             if text:
                 counts[clean_key] = text
-    try:
-        ratio = float(src.get("ratio"))
-    except (TypeError, ValueError):
-        ratio = 0.0
+    ratio = safe_float(src.get("ratio"))
     if "active" in src:
         active = bool(src.get("active"))
     else:
@@ -152,7 +169,7 @@ def _derive_discovery_task_progress(src: dict[str, Any], summary: dict[str, Any]
     queued = safe_int(summary.get("queuedCandidateCount"), 0, 0, 1_000_000)
     deferred = safe_int(summary.get("discoverableButDeferredCount"), 0, 0, 1_000_000)
     failed = safe_int(summary.get("failedProbeCount"), 0, 0, 1_000_000)
-    loss = summary.get("lossAccounting") if isinstance(summary.get("lossAccounting"), dict) else {}
+    loss = _as_dict(summary.get("lossAccounting"))
     probe_total = max(
         0,
         safe_int(loss.get("generated"), 0, 0, 1_000_000)
@@ -239,26 +256,12 @@ def _discovery_summary_has_progress_signal(summary: dict[str, Any]) -> bool:
 
 
 def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
-    summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
-    runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
-    sources = src.get("sources")
-    if not isinstance(sources, list):
-        sources = []
-    source_families = src.get("sourceFamilies")
-    if not isinstance(source_families, list):
-        source_families = []
-    normalized_sources: list[dict[str, Any]] = []
-    normalized_source_families: list[dict[str, Any]] = []
-    social_summary_raw = (
-        src.get("socialSummary") if isinstance(src.get("socialSummary"), dict) else {}
-    )
-
-    def _safe_float(value: Any) -> float:
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return 0.0
+    src = _as_dict(payload)
+    summary = _as_dict(src.get("summary"))
+    runtime = _as_dict(src.get("runtime"))
+    sources = _as_list(src.get("sources"))
+    source_families = _as_list(src.get("sourceFamilies"))
+    social_summary_raw = _as_dict(src.get("socialSummary"))
 
     def _normalize_social_channel(payload: Any) -> dict[str, Any]:
         src_channel = payload if isinstance(payload, dict) else {}
@@ -269,7 +272,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
                 src_channel.get("officialBoardOverlapCount"), 0, 0, 1_000_000
             ),
             "duplicateCount": safe_int(src_channel.get("duplicateCount"), 0, 0, 1_000_000),
-            "duplicateRate": max(0.0, min(1.0, _safe_float(src_channel.get("duplicateRate")))),
+            "duplicateRate": max(0.0, min(1.0, safe_float(src_channel.get("duplicateRate")))),
             "lowConfidenceDropped": safe_int(
                 src_channel.get("lowConfidenceDropped"), 0, 0, 1_000_000
             ),
@@ -307,9 +310,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
 
     normalized_sources = _normalize_source_rows(sources)
     normalized_source_families = _normalize_source_rows(source_families)
-    slowest_sources_raw = (
-        runtime.get("slowestSources") if isinstance(runtime.get("slowestSources"), list) else []
-    )
+    slowest_sources_raw = _as_list(runtime.get("slowestSources"))
     slowest_sources: list[dict[str, Any]] = []
     for row in slowest_sources_raw[:10]:
         if not isinstance(row, dict):
@@ -324,35 +325,94 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
                 "detailYieldPct": safe_int(row.get("detailYieldPct"), 0, 0, 100),
             }
         )
-    timing_summary_raw = (
-        runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
+    timing_summary_raw = _as_dict(runtime.get("timingSummary"))
+    stage_totals_raw = _as_dict(timing_summary_raw.get("stageTotalsMs"))
+    stage_top_raw = _as_list(timing_summary_raw.get("stageTop"))
+    adapter_timings_raw = _as_list(timing_summary_raw.get("adapterTimings"))
+    slowest_adapters_raw = _as_list(timing_summary_raw.get("slowestAdapters"))
+    high_cost_raw = _as_list(timing_summary_raw.get("highCostLowYieldSources"))
+    normalized_summary = dict(summary)
+    normalized_runtime: JsonObject = {
+        **dict(runtime),
+        "slowestSources": slowest_sources,
+        "timingSummary": {
+            "totalDurationMs": safe_int(
+                timing_summary_raw.get("totalDurationMs"), 0, 0, 86_400_000
+            ),
+            "medianSourceDurationMs": safe_int(
+                timing_summary_raw.get("medianSourceDurationMs"), 0, 0, 86_400_000
+            ),
+            "p95SourceDurationMs": safe_int(
+                timing_summary_raw.get("p95SourceDurationMs"), 0, 0, 86_400_000
+            ),
+            "stageTotalsMs": {
+                "fetchAndParse": safe_int(stage_totals_raw.get("fetchAndParse"), 0, 0, 86_400_000),
+                "listingFetch": safe_int(stage_totals_raw.get("listingFetch"), 0, 0, 86_400_000),
+                "parseCsv": safe_int(stage_totals_raw.get("parseCsv"), 0, 0, 86_400_000),
+                "candidateExtraction": safe_int(
+                    stage_totals_raw.get("candidateExtraction"), 0, 0, 86_400_000
+                ),
+                "detailFetch": safe_int(stage_totals_raw.get("detailFetch"), 0, 0, 86_400_000),
+                "redirectResolve": safe_int(
+                    stage_totals_raw.get("redirectResolve"), 0, 0, 86_400_000
+                ),
+                "canonicalization": safe_int(
+                    stage_totals_raw.get("canonicalization"), 0, 0, 86_400_000
+                ),
+            },
+            "stageTop": [
+                {
+                    "stage": str(row.get("stage") or "").strip(),
+                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                }
+                for row in stage_top_raw[:5]
+                if isinstance(row, dict) and str(row.get("stage") or "").strip()
+            ],
+            "adapterTimings": [
+                {
+                    "adapter": str(row.get("adapter") or "").strip().lower(),
+                    "sourceCount": safe_int(row.get("sourceCount"), 0, 0, 1_000_000),
+                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                    "medianDurationMs": safe_int(row.get("medianDurationMs"), 0, 0, 86_400_000),
+                    "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
+                    "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
+                    "errorCount": safe_int(row.get("errorCount"), 0, 0, 1_000_000),
+                    "zeroKeptCount": safe_int(row.get("zeroKeptCount"), 0, 0, 1_000_000),
+                }
+                for row in adapter_timings_raw[:20]
+                if isinstance(row, dict)
+            ],
+            "slowestAdapters": [
+                {
+                    "adapter": str(row.get("adapter") or "").strip().lower(),
+                    "sourceCount": safe_int(row.get("sourceCount"), 0, 0, 1_000_000),
+                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                    "medianDurationMs": safe_int(row.get("medianDurationMs"), 0, 0, 86_400_000),
+                    "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
+                    "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
+                    "errorCount": safe_int(row.get("errorCount"), 0, 0, 1_000_000),
+                    "zeroKeptCount": safe_int(row.get("zeroKeptCount"), 0, 0, 1_000_000),
+                }
+                for row in slowest_adapters_raw[:5]
+                if isinstance(row, dict)
+            ],
+            "highCostLowYieldSources": [
+                {
+                    "name": str(row.get("name") or "").strip(),
+                    "adapter": str(row.get("adapter") or "").strip().lower(),
+                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                    "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
+                }
+                for row in high_cost_raw[:5]
+                if isinstance(row, dict)
+            ],
+        },
+    }
+    task_progress = _normalize_task_progress(
+        src.get("taskProgress"),
+        default_active_when_missing=not bool(str(src.get("finishedAt") or "").strip()),
     )
-    stage_totals_raw = (
-        timing_summary_raw.get("stageTotalsMs")
-        if isinstance(timing_summary_raw.get("stageTotalsMs"), dict)
-        else {}
-    )
-    stage_top_raw = (
-        timing_summary_raw.get("stageTop")
-        if isinstance(timing_summary_raw.get("stageTop"), list)
-        else []
-    )
-    adapter_timings_raw = (
-        timing_summary_raw.get("adapterTimings")
-        if isinstance(timing_summary_raw.get("adapterTimings"), list)
-        else []
-    )
-    slowest_adapters_raw = (
-        timing_summary_raw.get("slowestAdapters")
-        if isinstance(timing_summary_raw.get("slowestAdapters"), list)
-        else []
-    )
-    high_cost_raw = (
-        timing_summary_raw.get("highCostLowYieldSources")
-        if isinstance(timing_summary_raw.get("highCostLowYieldSources"), list)
-        else []
-    )
-    normalized = {
+    normalized: JsonObject = {
         "schemaVersion": safe_schema_version(src.get("schemaVersion")),
         "runId": str(src.get("runId") or "").strip(),
         "startedAt": str(src.get("startedAt") or "").strip(),
@@ -370,7 +430,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
             ),
             "duplicateCount": safe_int(social_summary_raw.get("duplicateCount"), 0, 0, 1_000_000),
             "duplicateRate": max(
-                0.0, min(1.0, _safe_float(social_summary_raw.get("duplicateRate")))
+                0.0, min(1.0, safe_float(social_summary_raw.get("duplicateRate")))
             ),
             "lowConfidenceDropped": safe_int(
                 social_summary_raw.get("lowConfidenceDropped"), 0, 0, 1_000_000
@@ -381,130 +441,42 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
                 social_summary_raw.get("falsePositiveCount"), 0, 0, 1_000_000
             ),
             "falsePositiveRate": max(
-                0.0, min(1.0, _safe_float(social_summary_raw.get("falsePositiveRate")))
+                0.0, min(1.0, safe_float(social_summary_raw.get("falsePositiveRate")))
             ),
             "reviewArtifactPath": str(social_summary_raw.get("reviewArtifactPath") or "").strip(),
             "channels": {
                 str(key).strip(): _normalize_social_channel(value)
-                for key, value in (
-                    social_summary_raw.get("channels")
-                    if isinstance(social_summary_raw.get("channels"), dict)
-                    else {}
-                ).items()
+                for key, value in _as_dict(social_summary_raw.get("channels")).items()
                 if str(key).strip()
             },
         }
         if social_summary_raw
         else {},
-        "runtime": {
-            **dict(runtime),
-            "slowestSources": slowest_sources,
-            "timingSummary": {
-                "totalDurationMs": safe_int(
-                    timing_summary_raw.get("totalDurationMs"), 0, 0, 86_400_000
-                ),
-                "medianSourceDurationMs": safe_int(
-                    timing_summary_raw.get("medianSourceDurationMs"), 0, 0, 86_400_000
-                ),
-                "p95SourceDurationMs": safe_int(
-                    timing_summary_raw.get("p95SourceDurationMs"), 0, 0, 86_400_000
-                ),
-                "stageTotalsMs": {
-                    "fetchAndParse": safe_int(
-                        stage_totals_raw.get("fetchAndParse"), 0, 0, 86_400_000
-                    ),
-                    "listingFetch": safe_int(
-                        stage_totals_raw.get("listingFetch"), 0, 0, 86_400_000
-                    ),
-                    "parseCsv": safe_int(stage_totals_raw.get("parseCsv"), 0, 0, 86_400_000),
-                    "candidateExtraction": safe_int(
-                        stage_totals_raw.get("candidateExtraction"), 0, 0, 86_400_000
-                    ),
-                    "detailFetch": safe_int(stage_totals_raw.get("detailFetch"), 0, 0, 86_400_000),
-                    "redirectResolve": safe_int(
-                        stage_totals_raw.get("redirectResolve"), 0, 0, 86_400_000
-                    ),
-                    "canonicalization": safe_int(
-                        stage_totals_raw.get("canonicalization"), 0, 0, 86_400_000
-                    ),
-                },
-                "stageTop": [
-                    {
-                        "stage": str(row.get("stage") or "").strip(),
-                        "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                    }
-                    for row in stage_top_raw[:5]
-                    if isinstance(row, dict) and str(row.get("stage") or "").strip()
-                ],
-                "adapterTimings": [
-                    {
-                        "adapter": str(row.get("adapter") or "").strip().lower(),
-                        "sourceCount": safe_int(row.get("sourceCount"), 0, 0, 1_000_000),
-                        "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                        "medianDurationMs": safe_int(row.get("medianDurationMs"), 0, 0, 86_400_000),
-                        "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
-                        "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
-                        "errorCount": safe_int(row.get("errorCount"), 0, 0, 1_000_000),
-                        "zeroKeptCount": safe_int(row.get("zeroKeptCount"), 0, 0, 1_000_000),
-                    }
-                    for row in adapter_timings_raw[:20]
-                    if isinstance(row, dict)
-                ],
-                "slowestAdapters": [
-                    {
-                        "adapter": str(row.get("adapter") or "").strip().lower(),
-                        "sourceCount": safe_int(row.get("sourceCount"), 0, 0, 1_000_000),
-                        "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                        "medianDurationMs": safe_int(row.get("medianDurationMs"), 0, 0, 86_400_000),
-                        "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
-                        "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
-                        "errorCount": safe_int(row.get("errorCount"), 0, 0, 1_000_000),
-                        "zeroKeptCount": safe_int(row.get("zeroKeptCount"), 0, 0, 1_000_000),
-                    }
-                    for row in slowest_adapters_raw[:5]
-                    if isinstance(row, dict)
-                ],
-                "highCostLowYieldSources": [
-                    {
-                        "name": str(row.get("name") or "").strip(),
-                        "adapter": str(row.get("adapter") or "").strip().lower(),
-                        "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                        "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
-                    }
-                    for row in high_cost_raw[:5]
-                    if isinstance(row, dict)
-                ],
-            },
-        },
-        "summary": dict(summary),
-        "taskProgress": _normalize_task_progress(
-            src.get("taskProgress"),
-            default_active_when_missing=not bool(str(src.get("finishedAt") or "").strip()),
-        ),
+        "runtime": normalized_runtime,
+        "summary": normalized_summary,
+        "taskProgress": task_progress,
         "sources": normalized_sources,
         "sourceFamilies": normalized_source_families,
-        "outputs": dict(src.get("outputs") or {}),
+        "outputs": _as_dict(src.get("outputs")),
     }
     finished_at = str(normalized.get("finishedAt") or "").strip()
     if finished_at:
-        normalized["taskProgress"] = _derive_fetch_task_progress(normalized, normalized["summary"])
-    elif not normalized["taskProgress"].get("phaseKey"):
+        task_progress = _derive_fetch_task_progress(normalized, normalized_summary)
+    elif not task_progress.get("phaseKey"):
         has_progress_evidence = bool(
             normalized["runId"]
             or normalized["startedAt"]
             or normalized["sources"]
             or any(
                 safe_int(summary_value, 0, 0, 1_000_000_000) > 0
-                for summary_value in normalized["summary"].values()
+                for summary_value in normalized_summary.values()
             )
-            or normalized["runtime"].get("heartbeatAt")
+            or normalized_runtime.get("heartbeatAt")
         )
         if has_progress_evidence:
-            normalized["taskProgress"] = _derive_fetch_task_progress(
-                normalized, normalized["summary"]
-            )
+            task_progress = _derive_fetch_task_progress(normalized, normalized_summary)
         else:
-            normalized["taskProgress"] = {
+            task_progress = {
                 "active": False,
                 "phaseKey": "",
                 "phaseLabel": "",
@@ -518,11 +490,17 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
                     "excludedSources": 0,
                 },
             }
+    normalized["taskProgress"] = task_progress
     return normalized
 
 
 def derive_discovery_queued_count(report: dict[str, Any], summary: dict[str, Any]) -> int:
-    queued = int(summary.get("queuedCandidateCount") or summary.get("newCandidateCount") or 0)
+    queued = safe_int(
+        summary.get("queuedCandidateCount") or summary.get("newCandidateCount"),
+        0,
+        0,
+        1_000_000,
+    )
     candidates = report.get("candidates")
     if not isinstance(candidates, list):
         return max(0, queued)
@@ -533,82 +511,78 @@ def derive_discovery_queued_count(report: dict[str, Any], summary: dict[str, Any
 
 
 def normalize_discovery_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
-    summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
-    runtime = src.get("runtime") if isinstance(src.get("runtime"), dict) else {}
-    candidates = src.get("candidates")
-    failures = src.get("failures")
-    top_failures = src.get("topFailures")
-    stage_timings_raw = (
-        runtime.get("stageTimingsMs") if isinstance(runtime.get("stageTimingsMs"), dict) else {}
+    src = _as_dict(payload)
+    summary = _as_dict(src.get("summary"))
+    runtime = _as_dict(src.get("runtime"))
+    candidates = _as_list(src.get("candidates"))
+    failures = _as_list(src.get("failures"))
+    top_failures = _as_list(src.get("topFailures"))
+    stage_timings_raw = _as_dict(runtime.get("stageTimingsMs"))
+    stage_top_raw = _as_list(runtime.get("stageTop"))
+    adapter_timings_raw = _as_list(runtime.get("adapterTimings"))
+    slowest_adapters_raw = _as_list(runtime.get("slowestAdapters"))
+    normalized_summary = dict(summary)
+    normalized_runtime: JsonObject = {
+        **dict(runtime),
+        "totalDurationMs": safe_int(runtime.get("totalDurationMs"), 0, 0, 86_400_000),
+        "stageTimingsMs": {
+            str(key): safe_int(value, 0, 0, 86_400_000) for key, value in stage_timings_raw.items()
+        },
+        "stageTop": [
+            {
+                "stage": str(row.get("stage") or "").strip(),
+                "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+            }
+            for row in stage_top_raw[:5]
+            if isinstance(row, dict) and str(row.get("stage") or "").strip()
+        ],
+        "adapterTimings": [
+            {
+                "adapter": str(row.get("adapter") or "").strip().lower(),
+                "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                "generatedCount": safe_int(row.get("generatedCount"), 0, 0, 1_000_000),
+                "failureCount": safe_int(row.get("failureCount"), 0, 0, 1_000_000),
+                "probedCount": safe_int(row.get("probedCount"), 0, 0, 1_000_000),
+                "healthyCount": safe_int(row.get("healthyCount"), 0, 0, 1_000_000),
+                "queuedCount": safe_int(row.get("queuedCount"), 0, 0, 1_000_000),
+            }
+            for row in adapter_timings_raw[:20]
+            if isinstance(row, dict)
+        ],
+        "slowestAdapters": [
+            {
+                "adapter": str(row.get("adapter") or "").strip().lower(),
+                "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                "generatedCount": safe_int(row.get("generatedCount"), 0, 0, 1_000_000),
+                "failureCount": safe_int(row.get("failureCount"), 0, 0, 1_000_000),
+                "probedCount": safe_int(row.get("probedCount"), 0, 0, 1_000_000),
+                "healthyCount": safe_int(row.get("healthyCount"), 0, 0, 1_000_000),
+                "queuedCount": safe_int(row.get("queuedCount"), 0, 0, 1_000_000),
+            }
+            for row in slowest_adapters_raw[:5]
+            if isinstance(row, dict)
+        ],
+    }
+    task_progress = _normalize_task_progress(
+        src.get("taskProgress"),
+        default_active_when_missing=not bool(str(src.get("finishedAt") or "").strip()),
     )
-    stage_top_raw = runtime.get("stageTop") if isinstance(runtime.get("stageTop"), list) else []
-    adapter_timings_raw = (
-        runtime.get("adapterTimings") if isinstance(runtime.get("adapterTimings"), list) else []
-    )
-    slowest_adapters_raw = (
-        runtime.get("slowestAdapters") if isinstance(runtime.get("slowestAdapters"), list) else []
-    )
-    normalized = {
+    normalized: JsonObject = {
         "schemaVersion": safe_schema_version(src.get("schemaVersion")),
         "runId": str(src.get("runId") or "").strip(),
         "mode": str(src.get("mode") or "").strip(),
         "startedAt": str(src.get("startedAt") or "").strip(),
         "finishedAt": str(src.get("finishedAt") or "").strip(),
-        "summary": dict(summary),
-        "runtime": {
-            **dict(runtime),
-            "totalDurationMs": safe_int(runtime.get("totalDurationMs"), 0, 0, 86_400_000),
-            "stageTimingsMs": {
-                str(key): safe_int(value, 0, 0, 86_400_000)
-                for key, value in stage_timings_raw.items()
-            },
-            "stageTop": [
-                {
-                    "stage": str(row.get("stage") or "").strip(),
-                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                }
-                for row in stage_top_raw[:5]
-                if isinstance(row, dict) and str(row.get("stage") or "").strip()
-            ],
-            "adapterTimings": [
-                {
-                    "adapter": str(row.get("adapter") or "").strip().lower(),
-                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                    "generatedCount": safe_int(row.get("generatedCount"), 0, 0, 1_000_000),
-                    "failureCount": safe_int(row.get("failureCount"), 0, 0, 1_000_000),
-                    "probedCount": safe_int(row.get("probedCount"), 0, 0, 1_000_000),
-                    "healthyCount": safe_int(row.get("healthyCount"), 0, 0, 1_000_000),
-                    "queuedCount": safe_int(row.get("queuedCount"), 0, 0, 1_000_000),
-                }
-                for row in adapter_timings_raw[:20]
-                if isinstance(row, dict)
-            ],
-            "slowestAdapters": [
-                {
-                    "adapter": str(row.get("adapter") or "").strip().lower(),
-                    "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
-                    "generatedCount": safe_int(row.get("generatedCount"), 0, 0, 1_000_000),
-                    "failureCount": safe_int(row.get("failureCount"), 0, 0, 1_000_000),
-                    "probedCount": safe_int(row.get("probedCount"), 0, 0, 1_000_000),
-                    "healthyCount": safe_int(row.get("healthyCount"), 0, 0, 1_000_000),
-                    "queuedCount": safe_int(row.get("queuedCount"), 0, 0, 1_000_000),
-                }
-                for row in slowest_adapters_raw[:5]
-                if isinstance(row, dict)
-            ],
-        },
-        "taskProgress": _normalize_task_progress(
-            src.get("taskProgress"),
-            default_active_when_missing=not bool(str(src.get("finishedAt") or "").strip()),
-        ),
-        "candidates": list(candidates) if isinstance(candidates, list) else [],
-        "failures": list(failures) if isinstance(failures, list) else [],
-        "topFailures": list(top_failures) if isinstance(top_failures, list) else [],
-        "outputs": dict(src.get("outputs") or {}),
+        "summary": normalized_summary,
+        "runtime": normalized_runtime,
+        "taskProgress": task_progress,
+        "candidates": list(candidates),
+        "failures": list(failures),
+        "topFailures": list(top_failures),
+        "outputs": _as_dict(src.get("outputs")),
     }
-    normalized["summary"]["queuedCandidateCount"] = derive_discovery_queued_count(
-        normalized, normalized["summary"]
+    normalized_summary["queuedCandidateCount"] = derive_discovery_queued_count(
+        normalized, normalized_summary
     )
     # Packaged ship seed is {"summary":{}, "candidates":[], "failures":[]} with no run
     # identity. Without this guard, missing finishedAt makes taskProgress look "active" and
@@ -620,16 +594,15 @@ def normalize_discovery_report_contract(payload: dict[str, Any]) -> dict[str, An
         and not normalized["candidates"]
         and not normalized["failures"]
         and not normalized["topFailures"]
-        and not _discovery_summary_has_progress_signal(normalized["summary"])
+        and not _discovery_summary_has_progress_signal(normalized_summary)
     )
     if ship_seed_placeholder:
-        normalized["taskProgress"] = _idle_discovery_task_progress(
-            queued=int(normalized["summary"].get("queuedCandidateCount") or 0),
+        task_progress = _idle_discovery_task_progress(
+            queued=safe_int(normalized_summary.get("queuedCandidateCount"), 0, 0, 1_000_000),
         )
-    elif not normalized["taskProgress"].get("phaseKey"):
-        normalized["taskProgress"] = _derive_discovery_task_progress(
-            normalized, normalized["summary"]
-        )
+    elif not task_progress.get("phaseKey"):
+        task_progress = _derive_discovery_task_progress(normalized, normalized_summary)
+    normalized["taskProgress"] = task_progress
     return normalized
 
 

@@ -1,35 +1,145 @@
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from typing import Any, Protocol, cast
 
 root: Any | None = None
 
+JsonObject = dict[str, Any]
+RegistryState = dict[str, list[JsonObject]]
+ExistingStaticMatch = tuple[str, int, JsonObject]
 
-def _require_root() -> Any:
+
+class _RegistryServiceLike(Protocol):
+    def normalize_state(self, state: RegistryState) -> RegistryState: ...
+    def load_state(self) -> RegistryState: ...
+    def persist_state(self, state: RegistryState) -> RegistryState: ...
+
+
+class _RegistryServiceClassLike(Protocol):
+    @staticmethod
+    def summarize_state(state: RegistryState) -> dict[str, int]: ...
+
+    @staticmethod
+    def move_entries(
+        pending: list[JsonObject], selected_ids: list[str]
+    ) -> tuple[list[JsonObject], list[JsonObject]]: ...
+
+
+class _RegistrySyncFlowLike(Protocol):
+    def persist_state_and_auto_sync(
+        self,
+        state: RegistryState,
+        *,
+        reason: str,
+        persist_state: Callable[[RegistryState], RegistryState],
+        maybe_trigger_auto_sync_push: Callable[..., Any],
+    ) -> RegistryState: ...
+
+
+class _DiscoveryLike(Protocol):
+    def infer_web_candidate(self, url: str, studio: str, *, nl_priority: bool) -> Any: ...
+    def fetch_text_with_retry(self, url: str, timeout_s: int, *, adapter: str) -> str: ...
+
+    compute_candidate_score: Any
+    normalize_candidate: Any
+    probe_candidate: Any
+
+
+class _SourceCheckFetchLike(Protocol):
+    def fetch_html_with_fallback(
+        self, url: str, timeout_s: int, **kwargs: Any
+    ) -> tuple[str, str, bool, bool]: ...
+    def html_has_extractable_job_data(
+        self, html: str, page_url: str, *, html_extractor: Any
+    ) -> bool: ...
+    def fetch_static_page_with_alternates(
+        self, page_url: str, timeout_s: int, **kwargs: Any
+    ) -> tuple[str, str, bool, bool, str]: ...
+
+
+class _SourceCheckHttpLike(Protocol):
+    looks_like_browser_challenge_page: Callable[..., bool]
+    try_fetch_with_playwright: Callable[..., Any]
+    is_http_forbidden_error: Callable[..., bool]
+    suggest_alternate_career_urls: Callable[..., Any]
+    discover_redirect_career_candidates: Callable[..., Any]
+    is_not_found_error_text: Callable[..., bool]
+    build_check_failure_details: Callable[..., JsonObject]
+
+
+class _SourceCheckerLike(Protocol):
+    def check_static_source(
+        self, row: JsonObject, timeout_s: int, **kwargs: Any
+    ) -> tuple[bool, int, str, bool, JsonObject]: ...
+
+
+class _SourceCheckApiLike(Protocol):
+    def normalize_manual_static_studio_fields(
+        self, row: JsonObject, **kwargs: Any
+    ) -> JsonObject: ...
+    def trigger_source_check(
+        self, source_id: str, *, timeout_s: int, **kwargs: Any
+    ) -> JsonObject: ...
+
+
+class _AdminBridgeRoot(Protocol):
+    def _get_registry_service(self) -> _RegistryServiceLike: ...
+
+    RegistryService: _RegistryServiceClassLike
+    _registry_sync_flow: _RegistrySyncFlowLike
+    persist_state: Callable[[RegistryState], RegistryState]
+    _maybe_trigger_auto_sync_push: Callable[..., Any]
+    infer_studio_name_from_host: Callable[[str], str]
+    discovery: _DiscoveryLike
+    ensure_source_id: Callable[[JsonObject], JsonObject]
+    now_iso: Callable[[], str]
+    load_tombstones: Callable[[], JsonObject]
+    is_tombstoned: Callable[[JsonObject, JsonObject], bool]
+    load_state: Callable[[], RegistryState]
+    find_existing_source_by_url: Callable[[RegistryState, str], JsonObject | None]
+    find_existing_static_source_by_studio_domain: Callable[..., ExistingStaticMatch | None]
+    source_identity: Callable[[JsonObject], str]
+    summarize_state: Callable[[RegistryState], dict[str, int]]
+    persist_state_and_auto_sync: Callable[..., RegistryState]
+    unique_sources: Callable[[list[JsonObject]], list[JsonObject]]
+    REGISTRY_REASON_MANUAL_SOURCE_VARIANT: str
+    REGISTRY_REASON_MANUAL_SOURCE: str
+    _source_check_fetch: _SourceCheckFetchLike
+    _source_check_http: _SourceCheckHttpLike
+    _html_extractor: Any
+    _source_checker: _SourceCheckerLike
+    parse_jobpostings_from_html: Any
+    normalize_job_url: Any
+    _source_check_api: _SourceCheckApiLike
+    normalize_source_url: Callable[[str], str]
+    normalize_manual_static_studio_fields: Callable[[JsonObject], JsonObject]
+    check_static_source: Callable[[JsonObject, int], tuple[bool, int, str, bool, JsonObject]]
+
+
+def _require_root() -> _AdminBridgeRoot:
     if root is None:
         raise RuntimeError("admin bridge root is not bound")
-    return root
+    return cast(_AdminBridgeRoot, root)
 
 
-def normalize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+def normalize_state(state: RegistryState) -> RegistryState:
     return _require_root()._get_registry_service().normalize_state(state)
 
 
-def load_state() -> dict[str, list[dict[str, Any]]]:
+def load_state() -> RegistryState:
     return _require_root()._get_registry_service().load_state()
 
 
-def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
+def summarize_state(state: RegistryState) -> dict[str, int]:
     return _require_root().RegistryService.summarize_state(state)
 
 
-def persist_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+def persist_state(state: RegistryState) -> RegistryState:
     return _require_root()._get_registry_service().persist_state(state)
 
 
-def persist_state_and_auto_sync(
-    state: dict[str, list[dict[str, Any]]], *, reason: str
-) -> dict[str, list[dict[str, Any]]]:
+def persist_state_and_auto_sync(state: RegistryState, *, reason: str) -> RegistryState:
     root_mod = _require_root()
     return root_mod._registry_sync_flow.persist_state_and_auto_sync(
         state,
@@ -40,12 +150,12 @@ def persist_state_and_auto_sync(
 
 
 def move_entries(
-    pending: list[dict[str, Any]], selected_ids: list[str]
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    pending: list[JsonObject], selected_ids: list[str]
+) -> tuple[list[JsonObject], list[JsonObject]]:
     return _require_root().RegistryService.move_entries(pending, selected_ids)
 
 
-def build_manual_candidate(normalized_url: str) -> dict[str, Any] | None:
+def build_manual_candidate(normalized_url: str) -> JsonObject | None:
     root_mod = _require_root()
     if not normalized_url:
         return None
@@ -79,7 +189,7 @@ def build_manual_candidate(normalized_url: str) -> dict[str, Any] | None:
     return row
 
 
-def add_manual_source(raw_url: str) -> dict[str, Any]:
+def add_manual_source(raw_url: str) -> JsonObject:
     root_mod = _require_root()
     normalized_url = root_mod.normalize_source_url(raw_url)
     if not normalized_url:
@@ -171,20 +281,25 @@ def add_manual_source(raw_url: str) -> dict[str, Any]:
 
 def fetch_html_with_fallback_bound(url: str, timeout_s: int) -> tuple[str, str, bool, bool]:
     root_mod = _require_root()
-    return root_mod._source_check_fetch.fetch_html_with_fallback(
-        url,
-        timeout_s,
-        fetch_text=lambda u, t: root_mod.discovery.fetch_text_with_retry(u, t, adapter="static"),
-        looks_like_challenge=root_mod._source_check_http.looks_like_browser_challenge_page,
-        has_extractable_job_data=lambda html, page_url: (
-            root_mod._source_check_fetch.html_has_extractable_job_data(
-                html,
-                page_url,
-                html_extractor=root_mod._html_extractor,
-            )
+    return cast(
+        tuple[str, str, bool, bool],
+        root_mod._source_check_fetch.fetch_html_with_fallback(
+            url,
+            timeout_s,
+            fetch_text=lambda u, t: root_mod.discovery.fetch_text_with_retry(
+                u, t, adapter="static"
+            ),
+            looks_like_challenge=root_mod._source_check_http.looks_like_browser_challenge_page,
+            has_extractable_job_data=lambda html, page_url: (
+                root_mod._source_check_fetch.html_has_extractable_job_data(
+                    html,
+                    page_url,
+                    html_extractor=root_mod._html_extractor,
+                )
+            ),
+            try_playwright=root_mod._source_check_http.try_fetch_with_playwright,
+            is_http_forbidden=root_mod._source_check_http.is_http_forbidden_error,
         ),
-        try_playwright=root_mod._source_check_http.try_fetch_with_playwright,
-        is_http_forbidden=root_mod._source_check_http.is_http_forbidden_error,
     )
 
 
@@ -192,63 +307,75 @@ def fetch_static_page_with_alternates_bound(
     page_url: str, timeout_s: int
 ) -> tuple[str, str, bool, bool, str]:
     root_mod = _require_root()
-    return root_mod._source_check_fetch.fetch_static_page_with_alternates(
-        page_url,
-        timeout_s,
-        fetch_html_with_fallback_fn=fetch_html_with_fallback_bound,
-        suggest_alternate_urls=root_mod._source_check_http.suggest_alternate_career_urls,
-        discover_redirect_career_candidates=(
-            root_mod._source_check_http.discover_redirect_career_candidates
+    return cast(
+        tuple[str, str, bool, bool, str],
+        root_mod._source_check_fetch.fetch_static_page_with_alternates(
+            page_url,
+            timeout_s,
+            fetch_html_with_fallback_fn=fetch_html_with_fallback_bound,
+            suggest_alternate_urls=root_mod._source_check_http.suggest_alternate_career_urls,
+            discover_redirect_career_candidates=(
+                root_mod._source_check_http.discover_redirect_career_candidates
+            ),
+            is_not_found_error_text=root_mod._source_check_http.is_not_found_error_text,
         ),
-        is_not_found_error_text=root_mod._source_check_http.is_not_found_error_text,
     )
 
 
 def check_static_source(
-    row: dict[str, Any], timeout_s: int = 12
-) -> tuple[bool, int, str, bool, dict[str, Any]]:
+    row: JsonObject, timeout_s: int = 12
+) -> tuple[bool, int, str, bool, JsonObject]:
     root_mod = _require_root()
-    return root_mod._source_checker.check_static_source(
-        row,
-        timeout_s,
-        fetch_page_with_alternates=fetch_static_page_with_alternates_bound,
-        fetch_page=fetch_html_with_fallback_bound,
-        fetch_text=lambda url, timeout: root_mod.discovery.fetch_text_with_retry(
-            url,
-            timeout,
-            adapter="static",
+    return cast(
+        tuple[bool, int, str, bool, JsonObject],
+        root_mod._source_checker.check_static_source(
+            row,
+            timeout_s,
+            fetch_page_with_alternates=fetch_static_page_with_alternates_bound,
+            fetch_page=fetch_html_with_fallback_bound,
+            fetch_text=lambda url, timeout: root_mod.discovery.fetch_text_with_retry(
+                url,
+                timeout,
+                adapter="static",
+            ),
+            html_extractor=root_mod._html_extractor,
+            parse_jobpostings_from_html=root_mod.parse_jobpostings_from_html,
+            normalize_job_url=root_mod.normalize_job_url,
+            source_identity=root_mod.source_identity,
+            suggest_alternate_career_urls=root_mod._source_check_http.suggest_alternate_career_urls,
         ),
-        html_extractor=root_mod._html_extractor,
-        parse_jobpostings_from_html=root_mod.parse_jobpostings_from_html,
-        normalize_job_url=root_mod.normalize_job_url,
-        source_identity=root_mod.source_identity,
-        suggest_alternate_career_urls=root_mod._source_check_http.suggest_alternate_career_urls,
     )
 
 
-def normalize_manual_static_studio_fields(row: dict[str, Any]) -> dict[str, Any]:
+def normalize_manual_static_studio_fields(row: JsonObject) -> JsonObject:
     root_mod = _require_root()
-    return root_mod._source_check_api.normalize_manual_static_studio_fields(
-        row,
-        normalize_source_url=root_mod.normalize_source_url,
-        infer_studio_name_from_host=root_mod.infer_studio_name_from_host,
+    return cast(
+        JsonObject,
+        root_mod._source_check_api.normalize_manual_static_studio_fields(
+            row,
+            normalize_source_url=root_mod.normalize_source_url,
+            infer_studio_name_from_host=root_mod.infer_studio_name_from_host,
+        ),
     )
 
 
-def trigger_source_check(source_id: str, timeout_s: int = 12) -> dict[str, Any]:
+def trigger_source_check(source_id: str, timeout_s: int = 12) -> JsonObject:
     root_mod = _require_root()
-    return root_mod._source_check_api.trigger_source_check(
-        source_id,
-        timeout_s=timeout_s,
-        load_state=root_mod.load_state,
-        source_identity=root_mod.source_identity,
-        normalize_manual_static_studio_fields_fn=root_mod.normalize_manual_static_studio_fields,
-        check_static_source_fn=root_mod.check_static_source,
-        now_iso=root_mod.now_iso,
-        compute_candidate_score=root_mod.discovery.compute_candidate_score,
-        normalize_candidate=root_mod.discovery.normalize_candidate,
-        probe_candidate=root_mod.discovery.probe_candidate,
-        persist_state_and_auto_sync=root_mod.persist_state_and_auto_sync,
-        normalize_source_url=root_mod.normalize_source_url,
-        build_check_failure_details=root_mod._source_check_http.build_check_failure_details,
+    return cast(
+        JsonObject,
+        root_mod._source_check_api.trigger_source_check(
+            source_id,
+            timeout_s=timeout_s,
+            load_state=root_mod.load_state,
+            source_identity=root_mod.source_identity,
+            normalize_manual_static_studio_fields_fn=root_mod.normalize_manual_static_studio_fields,
+            check_static_source_fn=root_mod.check_static_source,
+            now_iso=root_mod.now_iso,
+            compute_candidate_score=root_mod.discovery.compute_candidate_score,
+            normalize_candidate=root_mod.discovery.normalize_candidate,
+            probe_candidate=root_mod.discovery.probe_candidate,
+            persist_state_and_auto_sync=root_mod.persist_state_and_auto_sync,
+            normalize_source_url=root_mod.normalize_source_url,
+            build_check_failure_details=root_mod._source_check_http.build_check_failure_details,
+        ),
     )

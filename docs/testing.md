@@ -9,6 +9,12 @@
 
 This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
 
+Python dependency installs that need reproducible runtime parity should use `requirements-lock.txt`. Regenerate it from the human-edited `requirements.txt` with:
+
+```bash
+uv pip compile requirements.txt -o requirements-lock.txt
+```
+
 ## Python tests (pytest)
 
 Run the balanced developer Python lane:

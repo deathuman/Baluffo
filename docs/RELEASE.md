@@ -146,7 +146,7 @@ python scripts/extract_release_notes.py --version <version> --changelog docs/CHA
 Prerequisites:
 
 ```powershell
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-lock.txt
 ```
 
 Preferred build command:

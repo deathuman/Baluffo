@@ -32,6 +32,7 @@ def test_save_json_atomic_and_load_array() -> None:
         path = Path(tmp) / "registry.json"
         payload = [{"adapter": "smartrecruiters", "company_id": "Gameloft"}]
         sr.save_json_atomic(path, payload)
+        assert path.read_text(encoding="utf-8").endswith("\n")
         loaded = sr.load_json_array(path, [])
         assert len(loaded) == 1
         assert loaded[0]["company_id"] == "Gameloft"
