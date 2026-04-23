@@ -51,6 +51,7 @@ from . import _windows as _windows_module
 from . import browser as _browser_module
 from . import config as _config_module
 from . import launcher as _launcher_module
+from . import launcher_diagnostics as _launcher_diagnostics_module
 from . import process as _process_module
 from . import session as _session_module
 from . import startup as _startup_module
@@ -60,6 +61,7 @@ _COMPAT_MODULES = (
     _session_module,
     _process_module,
     _launcher_module,
+    _launcher_diagnostics_module,
     _config_module,
     _browser_module,
     _windows_module,

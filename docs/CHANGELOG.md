@@ -162,7 +162,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - City and country filter normalization was tightened to reject obvious non-location contamination
 - k-ID no longer needs a source-specific suppressor plugin; the shared dead-listing gate now handles it
 - Source sync now pushes only active and pending rows; rejected stays local and tombstones are never serialized remotely
-- Archived [`docs/scraping-pipeline-run-notes.md`](scraping-pipeline-run-notes.md) — Historical run notes from 2026-03-17 (outdated)
+- Archived [`archive/history/scraping-pipeline-run-notes.md`](archive/history/scraping-pipeline-run-notes.md) — Historical run notes from 2026-03-17 (outdated)
 
 ### Fixed
 - Legacy sync merge comparison no longer prefers stale remote rows when transition metadata is missing on the local side.
