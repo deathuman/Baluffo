@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from typing import Any
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import provider_parsers as _provider_parsers
-from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
+from src.jobs.adapters.plugins.types import AdapterPluginContext, SimpleAdapterPlugin
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
@@ -16,15 +17,19 @@ from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 from src.jobs.transport import conditional_revalidate_url
 
+ParsePayload = Callable[[dict[str, object], Any, str], list[RawJob]]
+BuildUrl = Callable[[dict[str, object]], str]
+PayloadCount = Callable[[Any, list[RawJob]], int]
+
 
 def _run_json_feed_sources(
     *,
     adapter_name: str,
     registry_adapter: str,
     default_error: str,
-    parse_payload,
-    build_url,
-    payload_count,
+    parse_payload: ParsePayload,
+    build_url: BuildUrl,
+    payload_count: PayloadCount,
     fetch_text: Callable[[str, int], str],
     timeout_s: int,
     retries: int,
@@ -129,112 +134,141 @@ def _run_json_feed_sources(
 
 def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
     registry_adapter = adapter_name
+    parse_payload: ParsePayload
+    build_url: BuildUrl
+    payload_count: PayloadCount
     if adapter_name == "smartrecruiters":
         default_error = "missing company_id/api_url"
-        parse_payload = lambda source, payload, studio: (
-            _provider_parsers.parse_smartrecruiters_jobs_payload(
-                payload, clean_text(source.get("company_id")), fallback_company=studio
+
+        def parse_payload(source: dict[str, object], payload: Any, studio: str) -> list[RawJob]:
+            return _provider_parsers.parse_smartrecruiters_jobs_payload(
+                payload,
+                clean_text(source.get("company_id")),
+                fallback_company=studio,
             )
-        )
-        build_url = lambda source: (
-            clean_text(source.get("api_url"))
-            or (
-                f"https://api.smartrecruiters.com/v1/companies/{clean_text(source.get('company_id'))}/postings"
-                if clean_text(source.get("company_id"))
-                else ""
-            )
-        )
-        payload_count = lambda payload, parsed: (
-            len(payload.get("content", [])) if isinstance(payload, dict) else len(parsed)
-        )
+
+        def build_url(source: dict[str, object]) -> str:
+            api_url = clean_text(source.get("api_url"))
+            if api_url:
+                return api_url
+            company_id = clean_text(source.get("company_id"))
+            if not company_id:
+                return ""
+            return f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings"
+
+        def payload_count(payload: Any, parsed: list[RawJob]) -> int:
+            if isinstance(payload, dict):
+                return len(payload.get("content", []))
+            return len(parsed)
+
     elif adapter_name == "workable":
         default_error = "missing account/api_url"
-        parse_payload = lambda source, payload, studio: (
-            _provider_parsers.parse_workable_jobs_payload(
-                payload, clean_text(source.get("account")), fallback_company=studio
+
+        def parse_payload(source: dict[str, object], payload: Any, studio: str) -> list[RawJob]:
+            return _provider_parsers.parse_workable_jobs_payload(
+                payload,
+                clean_text(source.get("account")),
+                fallback_company=studio,
             )
-        )
-        build_url = lambda source: (
-            clean_text(source.get("api_url"))
-            or (
-                f"https://apply.workable.com/api/v1/widget/accounts/{clean_text(source.get('account'))}?details=true"
-                if clean_text(source.get("account"))
-                else ""
-            )
-        )
-        payload_count = lambda payload, parsed: (
-            len(payload.get("jobs", [])) if isinstance(payload, dict) else len(parsed)
-        )
+
+        def build_url(source: dict[str, object]) -> str:
+            api_url = clean_text(source.get("api_url"))
+            if api_url:
+                return api_url
+            account = clean_text(source.get("account"))
+            if not account:
+                return ""
+            return f"https://apply.workable.com/api/v1/widget/accounts/{account}?details=true"
+
+        def payload_count(payload: Any, parsed: list[RawJob]) -> int:
+            if isinstance(payload, dict):
+                return len(payload.get("jobs", []))
+            return len(parsed)
+
     elif adapter_name == "recruitee":
         default_error = "missing subdomain/api_url"
-        parse_payload = lambda source, payload, studio: (
-            _provider_parsers.parse_recruitee_jobs_payload(
-                payload, clean_text(source.get("subdomain")), fallback_company=studio
+
+        def parse_payload(source: dict[str, object], payload: Any, studio: str) -> list[RawJob]:
+            return _provider_parsers.parse_recruitee_jobs_payload(
+                payload,
+                clean_text(source.get("subdomain")),
+                fallback_company=studio,
             )
-        )
-        build_url = lambda source: (
-            clean_text(source.get("api_url"))
-            or (
-                f"https://{clean_text(source.get('subdomain'))}/api/offers/"
-                if "." in clean_text(source.get("subdomain"))
-                else (
-                    f"https://{clean_text(source.get('subdomain'))}.recruitee.com/api/offers/"
-                    if clean_text(source.get("subdomain"))
-                    else ""
-                )
-            )
-        )
-        payload_count = lambda payload, parsed: (
-            len(payload.get("offers", [])) if isinstance(payload, dict) else len(parsed)
-        )
+
+        def build_url(source: dict[str, object]) -> str:
+            api_url = clean_text(source.get("api_url"))
+            if api_url:
+                return api_url
+            subdomain = clean_text(source.get("subdomain"))
+            if not subdomain:
+                return ""
+            if "." in subdomain:
+                return f"https://{subdomain}/api/offers/"
+            return f"https://{subdomain}.recruitee.com/api/offers/"
+
+        def payload_count(payload: Any, parsed: list[RawJob]) -> int:
+            if isinstance(payload, dict):
+                return len(payload.get("offers", []))
+            return len(parsed)
+
     elif adapter_name == "pinpoint":
         default_error = "missing subdomain/api_url"
-        parse_payload = lambda source, payload, studio: (
-            _provider_parsers.parse_pinpoint_jobs_payload(
-                payload, clean_text(source.get("subdomain")), fallback_company=studio
+
+        def parse_payload(source: dict[str, object], payload: Any, studio: str) -> list[RawJob]:
+            return _provider_parsers.parse_pinpoint_jobs_payload(
+                payload,
+                clean_text(source.get("subdomain")),
+                fallback_company=studio,
             )
-        )
-        build_url = lambda source: (
-            clean_text(source.get("api_url"))
-            or (
-                f"https://{clean_text(source.get('subdomain'))}/postings.json"
-                if "." in clean_text(source.get("subdomain"))
-                else (
-                    f"https://{clean_text(source.get('subdomain'))}.pinpointhq.com/postings.json"
-                    if clean_text(source.get("subdomain"))
-                    else ""
-                )
-            )
-        )
-        payload_count = lambda payload, parsed: (
-            len(payload.get("data", [])) if isinstance(payload, dict) else len(parsed)
-        )
+
+        def build_url(source: dict[str, object]) -> str:
+            api_url = clean_text(source.get("api_url"))
+            if api_url:
+                return api_url
+            subdomain = clean_text(source.get("subdomain"))
+            if not subdomain:
+                return ""
+            if "." in subdomain:
+                return f"https://{subdomain}/postings.json"
+            return f"https://{subdomain}.pinpointhq.com/postings.json"
+
+        def payload_count(payload: Any, parsed: list[RawJob]) -> int:
+            if isinstance(payload, dict):
+                return len(payload.get("data", []))
+            return len(parsed)
+
     else:
         # lever
         default_error = "missing account/api_url"
-        parse_payload = lambda source, payload, studio: _provider_parsers.parse_lever_jobs_payload(
-            payload, clean_text(source.get("account")), fallback_company=studio
-        )
-        build_url = lambda source: (
-            clean_text(source.get("api_url"))
-            or (
-                f"https://api.lever.co/v0/postings/{clean_text(source.get('account'))}?mode=json"
-                if clean_text(source.get("account"))
-                else ""
-            )
-        )
-        payload_count = lambda payload, parsed: (
-            len(payload) if isinstance(payload, list) else len(parsed)
-        )
 
-    return SimpleAdapterPlugin(
-        name=f"{adapter_name}_sources",
-        family="provider_api",
-        priority=50,
-        can_handle_fn=lambda ctx: (
-            ctx.family == "provider_api" and ctx.adapter_key == f"{adapter_name}_sources"
-        ),
-        run_fn=lambda **kwargs: _run_json_feed_sources(
+        def parse_payload(source: dict[str, object], payload: Any, studio: str) -> list[RawJob]:
+            return _provider_parsers.parse_lever_jobs_payload(
+                payload,
+                clean_text(source.get("account")),
+                fallback_company=studio,
+            )
+
+        def build_url(source: dict[str, object]) -> str:
+            api_url = clean_text(source.get("api_url"))
+            if api_url:
+                return api_url
+            account = clean_text(source.get("account"))
+            if not account:
+                return ""
+            return f"https://api.lever.co/v0/postings/{account}?mode=json"
+
+        def payload_count(payload: Any, parsed: list[RawJob]) -> int:
+            if isinstance(payload, list):
+                return len(payload)
+            return len(parsed)
+
+    adapter_key = f"{adapter_name}_sources"
+
+    def can_handle(ctx: AdapterPluginContext) -> bool:
+        return ctx.family == "provider_api" and ctx.adapter_key == adapter_key
+
+    def run_plugin(**kwargs: Any) -> list[RawJob]:
+        return _run_json_feed_sources(
             adapter_name=adapter_name,
             registry_adapter=registry_adapter,
             default_error=default_error,
@@ -242,5 +276,12 @@ def _json_feed_plugin(adapter_name: str) -> SimpleAdapterPlugin:
             build_url=build_url,
             payload_count=payload_count,
             **kwargs,
-        ),
+        )
+
+    return SimpleAdapterPlugin(
+        name=adapter_key,
+        family="provider_api",
+        priority=50,
+        can_handle_fn=can_handle,
+        run_fn=run_plugin,
     )

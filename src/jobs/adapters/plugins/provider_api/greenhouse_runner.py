@@ -17,6 +17,10 @@ from src.jobs.text_utils import clean_text
 from src.jobs.transport import conditional_revalidate_url
 
 
+def _as_dict(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
 def _run_greenhouse_boards(
     *,
     fetch_text: Callable[[str, int], str],
@@ -35,18 +39,19 @@ def _run_greenhouse_boards(
         if not slug:
             continue
         label = clean_text(board.get("name")) or clean_text(board.get("studio")) or slug
+        entry_name = clean_text(board.get("name")) or slug
         url = GREENHOUSE_JOBS_URL_TEMPLATE.format(slug=slug)
         entry_report = {
             "adapter": "greenhouse",
             "studio": clean_text(board.get("studio")) or label,
-            "name": clean_text(board.get("name")) or slug,
+            "name": entry_name,
             "status": "ok",
             "fetchedCount": 0,
             "keptCount": 0,
             "error": "",
         }
         cache_decision = get_incremental_cache_decision(
-            entry_report["name"],
+            entry_name,
             source_state_rows or {},
             adapter="greenhouse",
             force_refresh_all=force_refresh_all,
@@ -62,16 +67,12 @@ def _run_greenhouse_boards(
             details.append(entry_report)
             continue
         if entry_report["cacheDecision"] == "revalidate_only":
-            state_entry = (
-                (source_state_rows or {}).get(entry_report["name"])
-                if isinstance(source_state_rows, dict)
-                else {}
-            )
+            state_entry = _as_dict((source_state_rows or {}).get(entry_name))
             revalidate = conditional_revalidate_url(
                 url,
                 timeout_s,
-                etag=clean_text((state_entry or {}).get("lastHttpEtag")),
-                last_modified=clean_text((state_entry or {}).get("lastHttpLastModified")),
+                etag=clean_text(state_entry.get("lastHttpEtag")),
+                last_modified=clean_text(state_entry.get("lastHttpLastModified")),
             )
             entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
             if clean_text(revalidate.get("etag")):

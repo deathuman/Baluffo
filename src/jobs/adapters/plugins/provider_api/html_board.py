@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import provider_parsers as _provider_parsers
-from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
+from src.jobs.adapters.plugins.types import AdapterPluginContext, SimpleAdapterPlugin
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
@@ -15,6 +16,9 @@ from src.jobs.registry import registry_entries
 from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 from src.jobs.transport import conditional_revalidate_url
+
+ParseHtml = Callable[[str, str, str], list[RawJob]]
+BuildUrl = Callable[[dict[str, object]], str]
 
 
 def _normalize_ashby_board_url(url: str) -> str:
@@ -51,8 +55,8 @@ def _run_html_board_sources(
     adapter_name: str,
     registry_adapter: str,
     default_error: str,
-    parse_html,
-    build_url,
+    parse_html: ParseHtml,
+    build_url: BuildUrl,
     fetch_text: Callable[[str, int], str],
     timeout_s: int,
     retries: int,
@@ -171,32 +175,48 @@ def _run_html_board_sources(
 
 def _html_board_plugin(adapter_name: str) -> SimpleAdapterPlugin:
     registry_adapter = adapter_name
+    parse_html: ParseHtml
+    build_url: BuildUrl
     if adapter_name == "breezy":
         default_error = "missing board_url"
         parse_html = _provider_parsers.parse_breezy_jobs_html
-        build_url = lambda source: clean_text(source.get("board_url"))
+
+        def build_url(source: dict[str, object]) -> str:
+            return clean_text(source.get("board_url"))
+
     elif adapter_name == "ashby":
         default_error = "missing board_url"
         parse_html = _provider_parsers.parse_ashby_jobs_from_html
-        build_url = lambda source: _normalize_ashby_board_url(clean_text(source.get("board_url")))
+
+        def build_url(source: dict[str, object]) -> str:
+            return _normalize_ashby_board_url(clean_text(source.get("board_url")))
+
     else:
         default_error = "missing board_url"
         parse_html = _provider_parsers.parse_jazzhr_jobs_html
-        build_url = lambda source: clean_text(source.get("board_url"))
 
-    return SimpleAdapterPlugin(
-        name=f"{adapter_name}_sources",
-        family="provider_api",
-        priority=55,
-        can_handle_fn=lambda ctx: (
-            ctx.family == "provider_api" and ctx.adapter_key == f"{adapter_name}_sources"
-        ),
-        run_fn=lambda **kwargs: _run_html_board_sources(
+        def build_url(source: dict[str, object]) -> str:
+            return clean_text(source.get("board_url"))
+
+    adapter_key = f"{adapter_name}_sources"
+
+    def can_handle(ctx: AdapterPluginContext) -> bool:
+        return ctx.family == "provider_api" and ctx.adapter_key == adapter_key
+
+    def run_plugin(**kwargs: Any) -> list[RawJob]:
+        return _run_html_board_sources(
             adapter_name=adapter_name,
             registry_adapter=registry_adapter,
             default_error=default_error,
             parse_html=parse_html,
             build_url=build_url,
             **kwargs,
-        ),
+        )
+
+    return SimpleAdapterPlugin(
+        name=adapter_key,
+        family="provider_api",
+        priority=55,
+        can_handle_fn=can_handle,
+        run_fn=run_plugin,
     )

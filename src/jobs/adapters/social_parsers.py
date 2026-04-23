@@ -175,6 +175,14 @@ SOCIAL_CONTENT_ONLY_PATH_HINTS = (
 )
 
 
+def _as_dict(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
+
+
 def _clean_text(value: Any) -> str:
     return _clean_text_impl(value)
 
@@ -661,22 +669,22 @@ def parse_x_payload(
     reject_for_hire_posts: bool,
     reject_reasons: dict[str, int] | None = None,
 ) -> tuple[list[RawJob], int]:
-    rows = (
-        payload.get("data")
-        if isinstance(payload, dict) and isinstance(payload.get("data"), list)
-        else []
-    )
+    payload_dict = _as_dict(payload)
+    rows = _as_list(payload_dict.get("data"))
     out: list[RawJob] = []
     low_conf_count = 0
-    for row in rows:
-        if not isinstance(row, dict):
+    for row_value in rows:
+        if not isinstance(row_value, dict):
             continue
+        row = _as_dict(row_value)
         text = _clean_text(row.get("text"))
         post_id = _clean_text(row.get("id"))
-        entities = row.get("entities") if isinstance(row.get("entities"), dict) else {}
-        entity_urls = entities.get("urls") if isinstance(entities.get("urls"), list) else []
+        entities = _as_dict(row.get("entities"))
+        entity_urls = _as_list(entities.get("urls"))
         expanded_urls = [
-            _clean_text(item.get("expanded_url")) for item in entity_urls if isinstance(item, dict)
+            _clean_text(_as_dict(item).get("expanded_url"))
+            for item in entity_urls
+            if isinstance(item, dict)
         ]
         apply_url = social_extract_apply_url(text, " ".join(expanded_urls))
         keep, confidence, reject_reason = social_evaluate_post(
@@ -804,16 +812,17 @@ def parse_mastodon_payload(
     reject_for_hire_posts: bool,
     reject_reasons: dict[str, int] | None = None,
 ) -> tuple[list[RawJob], int]:
-    rows = payload if isinstance(payload, list) else []
+    rows = _as_list(payload)
     out: list[RawJob] = []
     low_conf_count = 0
-    for row in rows:
-        if not isinstance(row, dict):
+    for row_value in rows:
+        if not isinstance(row_value, dict):
             continue
+        row = _as_dict(row_value)
         html_text = _clean_text(row.get("content"))
         text = strip_html_text(unescape(html_text))
         post_url = normalize_url(row.get("url"))
-        card = row.get("card") if isinstance(row.get("card"), dict) else {}
+        card = _as_dict(row.get("card"))
         apply_url = social_extract_apply_url(text, _clean_text(card.get("url")))
         keep, confidence, reject_reason = social_evaluate_post(
             title=text,
@@ -827,7 +836,7 @@ def parse_mastodon_payload(
             _increment_reason(reject_reasons, reject_reason)
             continue
         post_id = _clean_text(row.get("id"))
-        account = row.get("account") if isinstance(row.get("account"), dict) else {}
+        account = _as_dict(row.get("account"))
         account_name = _clean_text(account.get("display_name") or account.get("acct"))
         company = social_infer_company(text, fallback=account_name)
         post_source_id = f"mastodon:{_clean_text(urlparse(instance).netloc)}:{post_id or hashlib.sha1((post_url or text).encode('utf-8')).hexdigest()[:12]}"
