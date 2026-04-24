@@ -9,8 +9,9 @@ import inspect
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
+from src.shared.json_shapes import as_json_object
 from src.shared.live_task import (
     append_live_task_event,
     build_live_task_payload,
@@ -22,10 +23,16 @@ RunSyncActionFunc = Callable[..., dict[str, Any]]
 SetSyncStatusFunc = Callable[..., None]
 RemoveActiveSyncRunFunc = Callable[[str], None]
 RemoveActiveSyncThreadFunc = Callable[[str], None]
-PruneStartedRowsFunc = Callable[[str, str], None]
-UpsertRunHistoryFunc = Callable[[dict[str, Any]], None]
 BridgeLogFunc = Callable[..., None]
 SaveJsonAtomicFunc = Callable[[Path, Any], None]
+
+
+class PruneStartedRowsFunc(Protocol):
+    def __call__(self, entry_type: str, *, finished_at: str) -> None: ...
+
+
+class UpsertRunHistoryFunc(Protocol):
+    def __call__(self, entry: dict[str, Any]) -> None: ...
 
 
 def _run_sync_action_with_optional_progress(
@@ -194,7 +201,7 @@ def run_sync_task_worker(
                     "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
                 }
             )
-            state_summary = result.get("summary") if isinstance(result.get("summary"), dict) else {}
+            state_summary = as_json_object(result.get("summary"))
             summary.update(
                 {
                     "activeCount": int(state_summary.get("activeCount") or 0),
@@ -215,7 +222,7 @@ def run_sync_task_worker(
                     "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
                 }
             )
-            counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+            counts = as_json_object(result.get("counts"))
             summary.update(
                 {
                     "activeCount": int(counts.get("active") or 0),

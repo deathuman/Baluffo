@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.bridge import ops_live_payload as _ops_live_payload
 from src.bridge import run_history_api as _run_history_api
+from src.shared.json_shapes import as_json_object, json_object_rows
 from src.shared.live_task import (
     append_live_task_event,
     build_live_task_payload,
@@ -21,13 +23,11 @@ def build_discovery_work_items(
     started_at: str,
     finished_at: str,
 ) -> list[dict[str, Any]]:
-    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
+    runtime = as_json_object(report.get("runtime"))
+    lifecycle = as_json_object(runtime.get("lifecycle"))
     heartbeat_at = str(lifecycle.get("heartbeatAt") or "").strip()
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
-    task_progress = (
-        report.get("taskProgress") if isinstance(report.get("taskProgress"), dict) else {}
-    )
+    summary = as_json_object(report.get("summary"))
+    task_progress = as_json_object(report.get("taskProgress"))
     phase_key = str(task_progress.get("phaseKey") or summary.get("phase") or "discovery").strip()
     phase_label = str(
         task_progress.get("phaseLabel")
@@ -35,20 +35,16 @@ def build_discovery_work_items(
         or summary.get("phase")
         or "Discovery running"
     ).strip()
-    adapter_rows = (
-        runtime.get("adapterTimings") if isinstance(runtime.get("adapterTimings"), list) else []
-    )
+    adapter_rows = json_object_rows(runtime.get("adapterTimings"))
     work_items: list[dict[str, Any]] = []
     for row in adapter_rows:
-        if not isinstance(row, dict):
-            continue
         adapter = str(row.get("adapter") or "").strip() or "unknown"
-        generated_count = max(0, int(row.get("generatedCount") or 0))
-        failure_count = max(0, int(row.get("failureCount") or 0))
-        probed_count = max(0, int(row.get("probedCount") or 0))
-        healthy_count = max(0, int(row.get("healthyCount") or 0))
-        queued_count = max(0, int(row.get("queuedCount") or 0))
-        duration_ms = max(0, int(row.get("durationMs") or 0))
+        generated_count = _ops_live_payload.coerce_non_negative_int(row.get("generatedCount"))
+        failure_count = _ops_live_payload.coerce_non_negative_int(row.get("failureCount"))
+        probed_count = _ops_live_payload.coerce_non_negative_int(row.get("probedCount"))
+        healthy_count = _ops_live_payload.coerce_non_negative_int(row.get("healthyCount"))
+        queued_count = _ops_live_payload.coerce_non_negative_int(row.get("queuedCount"))
+        duration_ms = _ops_live_payload.coerce_non_negative_int(row.get("durationMs"))
         item_status = "queued"
         if active and (duration_ms > 0 or generated_count > 0 or probed_count > 0):
             item_status = "running"
@@ -94,40 +90,34 @@ def build_discovery_recent_events(
     run_id: str,
     active: bool,
 ) -> list[dict[str, Any]]:
-    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
+    runtime = as_json_object(report.get("runtime"))
+    lifecycle = as_json_object(runtime.get("lifecycle"))
     heartbeat_at = str(lifecycle.get("heartbeatAt") or "").strip()
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    summary = as_json_object(report.get("summary"))
     task_progress = normalize_live_task_progress(report.get("taskProgress"))
-    counts = task_progress.get("counts") if isinstance(task_progress.get("counts"), dict) else {}
-    recent_events = (
-        report.get("recentEvents") if isinstance(report.get("recentEvents"), list) else []
-    )
-    normalized_events = [event for event in recent_events if isinstance(event, dict)]
+    counts = as_json_object(task_progress.get("counts"))
+    normalized_events = json_object_rows(report.get("recentEvents"))
     if normalized_events:
         return normalized_events
     events: list[dict[str, Any]] = []
     if heartbeat_at and active:
-        found = max(0, int(counts.get("foundEndpoints") or summary.get("foundEndpointCount") or 0))
-        probed = max(
-            0,
-            int(
-                counts.get("probedCandidates")
-                or summary.get("probedCandidateCount")
-                or summary.get("probedCount")
-                or 0
-            ),
+        found = _ops_live_payload.coerce_non_negative_int(
+            counts.get("foundEndpoints") or summary.get("foundEndpointCount")
         )
-        queued = max(
-            0, int(counts.get("queuedCandidates") or summary.get("queuedCandidateCount") or 0)
+        probed = _ops_live_payload.coerce_non_negative_int(
+            counts.get("probedCandidates")
+            or summary.get("probedCandidateCount")
+            or summary.get("probedCount")
         )
-        deferred = max(
-            0,
-            int(
-                counts.get("deferredCandidates") or summary.get("discoverableButDeferredCount") or 0
-            ),
+        queued = _ops_live_payload.coerce_non_negative_int(
+            counts.get("queuedCandidates") or summary.get("queuedCandidateCount")
         )
-        failed = max(0, int(counts.get("failedProbes") or summary.get("failedProbeCount") or 0))
+        deferred = _ops_live_payload.coerce_non_negative_int(
+            counts.get("deferredCandidates") or summary.get("discoverableButDeferredCount")
+        )
+        failed = _ops_live_payload.coerce_non_negative_int(
+            counts.get("failedProbes") or summary.get("failedProbeCount")
+        )
         events = append_live_task_event(
             events,
             {
@@ -142,10 +132,8 @@ def build_discovery_recent_events(
                 ),
             },
         )
-    failures = report.get("failures") if isinstance(report.get("failures"), list) else []
+    failures = json_object_rows(report.get("failures"))
     for failure in failures[:5]:
-        if not isinstance(failure, dict):
-            continue
         adapter = str(failure.get("adapter") or "").strip()
         stage = str(failure.get("stage") or "").strip()
         message = str(failure.get("error") or failure.get("message") or "").strip()
@@ -172,9 +160,7 @@ def build_discovery_live_payload(
     projection: _run_history_api.LifecycleProjection,
     task_state: dict[str, Any],
 ) -> dict[str, Any]:
-    discovery_state = (
-        task_state.get("discovery") if isinstance(task_state.get("discovery"), dict) else {}
-    )
+    discovery_state = as_json_object(task_state.get("discovery"))
     discovery_report = context.deps.normalize_discovery_report_contract(
         context.deps.load_json_object(context.paths.discovery_report, {})
     )
@@ -186,41 +172,45 @@ def build_discovery_live_payload(
         task_state_entry=discovery_state,
         snapshot=discovery_snapshot,
     )
-    runtime = (
-        discovery_report.get("runtime") if isinstance(discovery_report.get("runtime"), dict) else {}
-    )
-    lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
+    runtime = as_json_object(discovery_report.get("runtime"))
+    lifecycle = as_json_object(runtime.get("lifecycle"))
+    discovery_active = bool(discovery_context["active"])
+    discovery_run_id = str(discovery_context["runId"] or "")
+    discovery_started_at = str(discovery_context["startedAt"] or "")
+    discovery_finished_at = str(discovery_context["finishedAt"] or "")
+    discovery_outputs = as_json_object(discovery_report.get("outputs")) or {
+        "report": str(context.paths.discovery_report)
+    }
     payload = ops_task_projection_mod.normalize_projected_live_payload(
         context,
         task_type="discovery",
         live_source=build_live_task_payload(
             task_type="discovery",
-            active=discovery_context["active"],
-            run_id=discovery_context["runId"],
-            started_at=discovery_context["startedAt"],
-            finished_at=discovery_context["finishedAt"],
+            active=discovery_active,
+            run_id=discovery_run_id,
+            started_at=discovery_started_at,
+            finished_at=discovery_finished_at,
             heartbeat_at=str(lifecycle.get("heartbeatAt") or "").strip(),
             status=(
                 "running"
-                if discovery_context["active"]
+                if discovery_active
                 else str(discovery_report.get("status") or "").strip().lower()
             ),
-            task_progress=discovery_report.get("taskProgress"),
-            summary=discovery_report.get("summary"),
+            task_progress=as_json_object(discovery_report.get("taskProgress")),
+            summary=as_json_object(discovery_report.get("summary")),
             work_items=build_discovery_work_items(
                 discovery_report,
-                active=discovery_context["active"],
-                run_id=discovery_context["runId"],
-                started_at=discovery_context["startedAt"],
-                finished_at=discovery_context["finishedAt"],
+                active=discovery_active,
+                run_id=discovery_run_id,
+                started_at=discovery_started_at,
+                finished_at=discovery_finished_at,
             ),
             recent_events=build_discovery_recent_events(
                 discovery_report,
-                run_id=discovery_context["runId"],
-                active=discovery_context["active"],
+                run_id=discovery_run_id,
+                active=discovery_active,
             ),
-            outputs=discovery_report.get("outputs")
-            or {"report": str(context.paths.discovery_report)},
+            outputs=discovery_outputs,
         ),
         report_payload=discovery_report,
         task_state_entry=discovery_state,

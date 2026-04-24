@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.bridge.task_admission import build_duplicate_start_payload, get_active_task_metadata
+from src.shared.json_shapes import as_json_object
 from src.source_registry import (
     _pending_row_is_auto_approvable as registry_pending_row_is_auto_approvable,
 )
@@ -21,7 +22,7 @@ from src.source_registry import (
     apply_discovery_auto_approval,
 )
 
-BridgeLogFunc = Callable[[str, str], None]
+BridgeLogFunc = Callable[..., None]
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ class DiscoveryDeps:
     now_utc: Callable[[], Any]
     parse_iso: Callable[[Any], Any]
     pid_is_running: Callable[[int], bool]
-    bridge_log: Callable[[str, str], None] | Callable[..., None]
+    bridge_log: BridgeLogFunc
     load_json_object: Callable[[Any, Any], Any]
     save_json_atomic: Callable[[Any, Any], None]
     run_background_script: Callable[..., int]
@@ -172,7 +173,7 @@ class DiscoveryService:
             finished_dt = self._deps.parse_iso(finished_at)
             if not finished_dt or finished_dt < started_dt:
                 return
-            summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+            summary = as_json_object(report.get("summary"))
             self._finalize_discovery_run(
                 run_id=run_id,
                 started_at=started_at,

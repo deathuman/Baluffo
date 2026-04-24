@@ -4,6 +4,7 @@ from typing import Any
 
 from src.bridge import ops_live_payload as _ops_live_payload
 from src.bridge import run_history_api as _run_history_api
+from src.shared.json_shapes import as_json_object, copy_json_object, json_object_rows
 from src.shared.live_task import (
     append_live_task_event,
     normalize_live_task_payload,
@@ -21,17 +22,15 @@ def build_fetch_report_work_items(
     started_at: str,
     finished_at: str,
 ) -> list[dict[str, Any]]:
-    sources = report.get("sources") if isinstance(report.get("sources"), list) else []
-    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
+    sources = json_object_rows(report.get("sources"))
+    runtime = as_json_object(report.get("runtime"))
+    lifecycle = as_json_object(runtime.get("lifecycle"))
     heartbeat_at = str(lifecycle.get("heartbeatAt") or runtime.get("heartbeatAt") or "").strip()
     task_progress = normalize_live_task_progress(report.get("taskProgress"))
     phase_key = str(task_progress.get("phaseKey") or "executing_sources").strip()
     phase_label = str(task_progress.get("phaseLabel") or "Executing sources").strip()
     work_items: list[dict[str, Any]] = []
     for index, row in enumerate(sources):
-        if not isinstance(row, dict):
-            continue
         name = str(row.get("name") or "").strip() or f"source_{index + 1}"
         raw_status = str(row.get("status") or "").strip().lower()
         item_status = (
@@ -81,14 +80,11 @@ def build_fetch_report_recent_events(
     run_id: str,
     active: bool,
 ) -> list[dict[str, Any]]:
-    recent_events = (
-        report.get("recentEvents") if isinstance(report.get("recentEvents"), list) else []
-    )
-    normalized_events = [event for event in recent_events if isinstance(event, dict)]
+    normalized_events = json_object_rows(report.get("recentEvents"))
     if normalized_events:
         return normalized_events
-    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    lifecycle = runtime.get("lifecycle") if isinstance(runtime.get("lifecycle"), dict) else {}
+    runtime = as_json_object(report.get("runtime"))
+    lifecycle = as_json_object(runtime.get("lifecycle"))
     heartbeat_at = str(lifecycle.get("heartbeatAt") or runtime.get("heartbeatAt") or "").strip()
     task_progress = normalize_live_task_progress(report.get("taskProgress"))
     counts = _ops_live_payload.fetch_progress_counts(report)
@@ -130,7 +126,7 @@ def build_fetch_live_payload(
     projection: _run_history_api.LifecycleProjection,
     task_state: dict[str, Any],
 ) -> dict[str, Any]:
-    fetch_state = task_state.get("fetch") if isinstance(task_state.get("fetch"), dict) else {}
+    fetch_state = as_json_object(task_state.get("fetch"))
     fetch_report = context.deps.normalize_fetch_report_contract(
         context.deps.load_json_object(context.paths.jobs_fetch_report, {})
     )
@@ -145,27 +141,18 @@ def build_fetch_live_payload(
     current_run_id = str(projected.get("runId") or "").strip()
     fetch_tasks_raw = context.deps.load_json_object(context.paths.jobs_fetch_tasks, {})
     fetch_tasks = normalize_live_task_payload(
-        fetch_tasks_raw if isinstance(fetch_tasks_raw, dict) else {},
+        as_json_object(fetch_tasks_raw),
         task_type="fetch",
     )
-    task_counts_raw = (
-        dict((fetch_tasks.get("taskProgress") or {}).get("counts") or {})
-        if isinstance(fetch_tasks.get("taskProgress"), dict)
-        else {}
-    )
-    task_summary_raw = (
-        dict(fetch_tasks.get("summary") or {})
-        if isinstance(fetch_tasks.get("summary"), dict)
-        else {}
-    )
+    fetch_task_progress = as_json_object(fetch_tasks.get("taskProgress"))
+    task_counts_raw = copy_json_object(fetch_task_progress.get("counts"))
+    task_summary_raw = copy_json_object(fetch_tasks.get("summary"))
     task_artifact_matches_current = bool(
         str(fetch_tasks.get("runId") or "").strip()
         and current_run_id
         and str(fetch_tasks.get("runId") or "").strip() == current_run_id
     )
-    task_progress = (
-        fetch_tasks.get("taskProgress") if isinstance(fetch_tasks.get("taskProgress"), dict) else {}
-    )
+    task_progress = as_json_object(fetch_tasks.get("taskProgress"))
     task_artifact_recent = bool(
         _ops_live_payload.live_task_signal_is_recent(
             _ops_live_payload.live_task_heartbeat_at(fetch_tasks),
@@ -214,14 +201,8 @@ def build_fetch_live_payload(
             run_id=str(payload.get("runId") or current_run_id),
             active=bool(payload.get("active")),
         )
-    payload_task_progress = (
-        payload.get("taskProgress") if isinstance(payload.get("taskProgress"), dict) else {}
-    )
-    payload_task_progress_counts = (
-        dict(payload_task_progress.get("counts") or {})
-        if isinstance(payload_task_progress.get("counts"), dict)
-        else {}
-    )
+    payload_task_progress = as_json_object(payload.get("taskProgress"))
+    payload_task_progress_counts = copy_json_object(payload_task_progress.get("counts"))
     payload_task_progress_is_meaningful = bool(
         payload_task_progress.get("active")
         or str(payload_task_progress.get("phaseKey") or "").strip()
@@ -237,25 +218,21 @@ def build_fetch_live_payload(
         else (
             fetch_snapshot.task_progress
             if fetch_snapshot is not None
-            else fetch_report.get("taskProgress")
+            else as_json_object(fetch_report.get("taskProgress"))
         )
     )
     snapshot_counts = _ops_live_payload.fetch_progress_counts(
         {"taskProgress": fetch_snapshot.task_progress}
-        if fetch_snapshot is not None and isinstance(fetch_snapshot.task_progress, dict)
+        if fetch_snapshot is not None
         else {}
     )
     snapshot_counts_raw = (
-        dict((fetch_snapshot.task_progress or {}).get("counts") or {})
-        if fetch_snapshot is not None and isinstance(fetch_snapshot.task_progress, dict)
+        copy_json_object(as_json_object(fetch_snapshot.task_progress).get("counts"))
+        if fetch_snapshot is not None
         else {}
     )
     report_counts = _ops_live_payload.fetch_progress_counts(fetch_report)
-    report_counts_raw = (
-        dict((fetch_report.get("taskProgress") or {}).get("counts") or {})
-        if isinstance(fetch_report.get("taskProgress"), dict)
-        else {}
-    )
+    report_counts_raw = copy_json_object(as_json_object(fetch_report.get("taskProgress")).get("counts"))
     task_counts = (
         _ops_live_payload.fetch_progress_counts(fetch_tasks)
         if task_artifact_matches_current

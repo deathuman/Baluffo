@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.shared.json_shapes import (
+    as_json_object,
+    copy_json_object,
+    json_object_rows,
+    json_object_values,
+)
 from src.shared.text_utils import clean_text, norm_text
 
 
@@ -13,14 +19,14 @@ def _clamped_int(value: Any, default: int = 0) -> int:
 
 
 def normalize_live_task_progress(payload: dict[str, Any] | None) -> dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
+    src = as_json_object(payload)
     mode = clean_text(src.get("mode")).lower()
     if mode not in {"determinate", "indeterminate"}:
         mode = "indeterminate"
     wait_reason = clean_text(src.get("waitReason")).lower()
     if wait_reason not in {"domain_gate", "listing_batch", "detail_batch", "parsing"}:
         wait_reason = ""
-    counts_src = src.get("counts") if isinstance(src.get("counts"), dict) else {}
+    counts_src = as_json_object(src.get("counts"))
     counts: dict[str, Any] = {}
     for key, value in counts_src.items():
         clean_key = clean_text(key)
@@ -35,8 +41,9 @@ def normalize_live_task_progress(payload: dict[str, Any] | None) -> dict[str, An
         text = clean_text(value)
         if text:
             counts[clean_key] = text
+    ratio_value = src.get("ratio")
     try:
-        ratio = float(src.get("ratio"))
+        ratio = float(ratio_value) if ratio_value is not None else 0.0
     except (TypeError, ValueError):
         ratio = 0.0
     ratio = max(0.0, min(1.0, ratio))
@@ -55,7 +62,7 @@ def normalize_live_task_progress(payload: dict[str, Any] | None) -> dict[str, An
 
 
 def normalize_live_task_work_item(payload: dict[str, Any] | None) -> dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
+    src = as_json_object(payload)
     item_id = clean_text(src.get("id")) or clean_text(src.get("name"))
     return {
         "id": item_id,
@@ -76,7 +83,7 @@ def normalize_live_task_event(
     default_task_type: str = "",
     default_run_id: str = "",
 ) -> dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
+    src = as_json_object(payload)
     level = clean_text(src.get("level")).lower() or "info"
     if level not in {"debug", "muted", "info", "warn", "error", "success", "warning"}:
         level = "info"
@@ -99,31 +106,20 @@ def normalize_live_task_payload(
     started_at: str = "",
     finished_at: str = "",
 ) -> dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
+    src = as_json_object(payload)
     rows = src.get("workItems")
     if not isinstance(rows, list):
         rows = src.get("tasks")
     events = src.get("recentEvents")
-    normalized_rows = (
-        [normalize_live_task_work_item(row) for row in rows if isinstance(row, dict)]
-        if isinstance(rows, list)
-        else []
-    )
-    normalized_events = (
-        [
-            normalize_live_task_event(
-                row,
-                default_task_type=task_type or clean_text(src.get("taskType")),
-                default_run_id=run_id or clean_text(src.get("runId")),
-            )
-            for row in events
-            if isinstance(row, dict)
-        ]
-        if isinstance(events, list)
-        else []
-    )
-    summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
-    outputs = src.get("outputs") if isinstance(src.get("outputs"), dict) else {}
+    normalized_rows = [normalize_live_task_work_item(row) for row in json_object_rows(rows)]
+    normalized_events = [
+        normalize_live_task_event(
+            row,
+            default_task_type=task_type or clean_text(src.get("taskType")),
+            default_run_id=run_id or clean_text(src.get("runId")),
+        )
+        for row in json_object_rows(events)
+    ]
     return {
         "taskType": clean_text(src.get("taskType")) or clean_text(task_type),
         "status": norm_text(src.get("status")),
@@ -133,10 +129,10 @@ def normalize_live_task_payload(
         "finishedAt": clean_text(src.get("finishedAt")) or clean_text(finished_at),
         "heartbeatAt": clean_text(src.get("heartbeatAt")),
         "taskProgress": normalize_live_task_progress(src.get("taskProgress")),
-        "summary": dict(summary),
+        "summary": copy_json_object(src.get("summary")),
         "workItems": normalized_rows,
         "recentEvents": normalized_events,
-        "outputs": dict(outputs),
+        "outputs": copy_json_object(src.get("outputs")),
     }
 
 
@@ -144,10 +140,8 @@ def build_live_task_contract_fields(
     payload: dict[str, Any] | None,
 ) -> dict[str, Any]:
     normalized = normalize_live_task_payload(payload)
-    work_items = [dict(row) for row in (normalized.get("workItems") or []) if isinstance(row, dict)]
-    recent_events = [
-        dict(row) for row in (normalized.get("recentEvents") or []) if isinstance(row, dict)
-    ]
+    work_items = [dict(row) for row in json_object_rows(normalized.get("workItems"))]
+    recent_events = [dict(row) for row in json_object_rows(normalized.get("recentEvents"))]
     return {
         "heartbeatAt": clean_text(normalized.get("heartbeatAt")),
         "taskProgress": normalize_live_task_progress(normalized.get("taskProgress")),
@@ -159,13 +153,7 @@ def build_live_task_contract_fields(
 def snapshot_live_task_work_items(
     payload: dict[str, dict[str, Any]] | list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
-    if isinstance(payload, dict):
-        rows = payload.values()
-    elif isinstance(payload, list):
-        rows = payload
-    else:
-        rows = []
-    return [dict(row) for row in rows if isinstance(row, dict)]
+    return [dict(row) for row in json_object_values(payload)]
 
 
 def build_live_task_progress_payload(
@@ -265,7 +253,7 @@ def append_live_task_event(
     *,
     limit: int = 120,
 ) -> list[dict[str, Any]]:
-    current = [dict(item) for item in (events or []) if isinstance(item, dict)]
+    current = [dict(item) for item in json_object_rows(events)]
     normalized = normalize_live_task_event(event)
     if not normalized.get("message"):
         return current

@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.shared.json_io import read_json
+from src.shared.json_shapes import as_json_list, as_json_object, copy_json_object, json_object_rows
 from src.shared.utils import parse_iso
 
 
@@ -107,20 +108,16 @@ def summarize_run_history(rows: list[dict[str, Any]], window: int) -> dict[str, 
 def build_metrics(
     report: dict[str, Any], history: list[dict[str, Any]], window: int
 ) -> dict[str, Any]:
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
-    sources = report.get("sources") if isinstance(report.get("sources"), list) else []
+    summary = as_json_object(report.get("summary"))
+    sources = json_object_rows(report.get("sources"))
     input_count = int(summary.get("inputCount") or 0)
     output_count = int(summary.get("outputCount") or 0)
     merged = int(summary.get("mergedCount") or 0)
     duplicate_rate = round((merged / input_count), 4) if input_count > 0 else 0.0
     output_yield_rate = round((output_count / input_count), 4) if input_count > 0 else 0.0
-    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    timing_summary = (
-        runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
-    )
-    durations = [
-        max(0, int(row.get("durationMs") or 0)) for row in sources if isinstance(row, dict)
-    ]
+    runtime = as_json_object(report.get("runtime"))
+    timing_summary = as_json_object(runtime.get("timingSummary"))
+    durations = [max(0, int(row.get("durationMs") or 0)) for row in sources]
     return {
         "generatedAt": datetime.now(UTC).isoformat(),
         "latestRun": {
@@ -138,10 +135,12 @@ def build_metrics(
             "p95SourceDurationMs": int(
                 timing_summary.get("p95SourceDurationMs") or percentile(durations, 0.95)
             ),
-            "stageTotalsMs": dict(timing_summary.get("stageTotalsMs") or {}),
-            "stageTop": list(timing_summary.get("stageTop") or []),
-            "highCostLowYieldSources": list(timing_summary.get("highCostLowYieldSources") or []),
-            **summarize_source_rows([row for row in sources if isinstance(row, dict)]),
+            "stageTotalsMs": copy_json_object(timing_summary.get("stageTotalsMs")),
+            "stageTop": list(as_json_list(timing_summary.get("stageTop"))),
+            "highCostLowYieldSources": list(
+                as_json_list(timing_summary.get("highCostLowYieldSources"))
+            ),
+            **summarize_source_rows(sources),
         },
         "history": summarize_run_history(history, window=window),
     }
@@ -166,11 +165,11 @@ def main() -> int:
     history_path = data_dir / "admin-run-history.json"
     report = read_json(report_path, {})
     history = read_json(history_path, [])
-    if not isinstance(report, dict):
-        report = {}
-    if not isinstance(history, list):
-        history = []
-    metrics = build_metrics(report, history, window=max(1, int(args.window_runs or 1)))
+    metrics = build_metrics(
+        as_json_object(report),
+        json_object_rows(history),
+        window=max(1, int(args.window_runs or 1)),
+    )
     payload = json.dumps(metrics, indent=2, ensure_ascii=False)
     output = str(args.output or "").strip()
     if output:

@@ -15,10 +15,10 @@ from __future__ import annotations
 import os
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from src.bridge import sync_task_flow as _sync_task_flow
 from src.bridge.sync_state import (
@@ -28,6 +28,7 @@ from src.bridge.sync_state import (
     now_iso,
     now_utc,
 )
+from src.shared.json_shapes import as_json_object
 from src.source_registry import load_json_object, save_json_atomic
 
 
@@ -36,7 +37,7 @@ class SourceSyncModule(Protocol):
 
     def config_status(self, config: Any) -> dict[str, Any]: ...
     def resolve_sync_config(
-        self, settings: dict[str, Any] | None = None, env: dict[str, str] | None = None
+        self, settings: dict[str, Any] | None = None, env: Mapping[str, str] | None = None
     ) -> Any: ...
     def read_remote_snapshot(self, config: Any) -> dict[str, Any]: ...
     def pull_and_merge_sources(
@@ -79,7 +80,7 @@ class RunHistoryFuncs(Protocol):
         self, entry: dict[str, Any], *, dedupe_fields: tuple[str, ...]
     ) -> dict[str, Any]: ...
     def load(self) -> list[dict[str, Any]]: ...
-    def prune_started_rows_for_type(self, entry_type: str, finished_at: str) -> None: ...
+    def prune_started_rows_for_type(self, entry_type: str, *, finished_at: str) -> None: ...
 
 
 class SyncService:
@@ -327,11 +328,9 @@ class SyncService:
             message="Reading remote snapshot.",
         )
         result = self._source_sync.pull_and_merge_sources(self._sync_config, local_state)
-        merged_state = (
-            result.get("mergedState")
-            if isinstance(result.get("mergedState"), dict)
-            else local_state
-        )
+        merged_state = local_state
+        if isinstance(result.get("mergedState"), dict):
+            merged_state = cast(dict[str, list[dict[str, Any]]], result.get("mergedState"))
         emit_progress(
             phase_key="merge_apply",
             phase_label="Applying remote changes",
@@ -425,7 +424,7 @@ class SyncService:
             message="Writing remote snapshot.",
         )
         result = self._source_sync.push_sources_snapshot(self._sync_config, state)
-        snapshot = result.get("snapshot") if isinstance(result.get("snapshot"), dict) else {}
+        snapshot = as_json_object(result.get("snapshot"))
 
         self.set_sync_status(
             action="push",
@@ -473,14 +472,15 @@ class SyncService:
             return
         try:
             result = self.sync_pull_sources()
+            summary = as_json_object(result.get("summary"))
             self._bridge_log(
                 "info",
                 "sync_startup_pull_done",
                 changed=bool(result.get("changed")),
                 remoteFound=bool(result.get("remoteFound")),
-                active=int((result.get("summary") or {}).get("activeCount") or 0),
-                pending=int((result.get("summary") or {}).get("pendingCount") or 0),
-                rejected=int((result.get("summary") or {}).get("rejectedCount") or 0),
+                active=int(summary.get("activeCount") or 0),
+                pending=int(summary.get("pendingCount") or 0),
+                rejected=int(summary.get("rejectedCount") or 0),
             )
         except Exception as exc:  # noqa: BLE001
             self.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
@@ -551,6 +551,12 @@ class SyncService:
         reason: str = "",
         automatic: bool = False,
     ) -> None:
+        def prune_started_rows_for_type(entry_type: str, *, finished_at: str) -> None:
+            self._run_history.prune_started_rows_for_type(entry_type, finished_at=finished_at)
+
+        def upsert_run_history(entry: dict[str, Any]) -> None:
+            self._run_history.upsert(entry, dedupe_fields=("type", "finishedAt"))
+
         _sync_task_flow.run_sync_task_worker(
             run_id=run_id,
             action=action,
@@ -564,12 +570,8 @@ class SyncService:
             set_sync_status=self._sync_state.set_sync_status,
             remove_active_sync_run=self._sync_state.remove_active_sync_run,
             remove_active_sync_thread=self._sync_state.remove_active_sync_thread,
-            prune_started_rows_for_type=lambda entry_type, *, finished_at: (
-                self._run_history.prune_started_rows_for_type(entry_type, finished_at=finished_at)
-            ),
-            upsert_run_history=lambda entry: self._run_history.upsert(
-                entry, dedupe_fields=("type", "finishedAt")
-            ),
+            prune_started_rows_for_type=prune_started_rows_for_type,
+            upsert_run_history=upsert_run_history,
             bridge_log=self._bridge_log,
             save_json_atomic=save_json_atomic,
             live_task_path=self._sync_live_task_path,

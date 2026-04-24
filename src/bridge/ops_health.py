@@ -7,6 +7,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.shared.json_shapes import as_json_object, json_object_rows
+
 # Constants used by evaluate_alerts and compute_ops_health (mirror admin_bridge defaults)
 STALE_FETCH_HOURS = 12
 DEGRADED_FAILURE_RATIO = 0.25
@@ -123,16 +125,14 @@ def _safe_float(value: Any) -> float:
 
 
 def summarize_fetch_report(report: dict[str, Any]) -> dict[str, Any]:
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
+    summary = as_json_object(report.get("summary"))
     output = int(summary.get("outputCount") or summary.get("uniqueOutputCount") or 0)
     failed = int(summary.get("failedSources") or 0)
     source_count = int(summary.get("sourceCount") or 0)
     duration_ms = 0
-    sources = report.get("sources")
-    if isinstance(sources, list):
-        duration_ms = sum(
-            int(item.get("durationMs") or 0) for item in sources if isinstance(item, dict)
-        )
+    duration_ms = sum(
+        int(item.get("durationMs") or 0) for item in json_object_rows(report.get("sources"))
+    )
     status = "ok"
     if source_count > 0 and failed >= source_count:
         status = "error"
@@ -154,7 +154,7 @@ def summarize_discovery_report(
     parse_iso: Callable[[Any], datetime | None],
 ) -> tuple[dict[str, Any], str]:
     normalized = normalize_discovery_report_contract(report)
-    summary = normalized.get("summary") if isinstance(normalized.get("summary"), dict) else {}
+    summary = as_json_object(normalized.get("summary"))
     queued = int(summary.get("queuedCandidateCount") or 0)
     failed = int(summary.get("failedProbeCount") or 0)
     probed = int(summary.get("probedCandidateCount") or summary.get("probedCount") or 0)
@@ -330,11 +330,12 @@ def evaluate_alerts(
             }
         )
 
-    outputs = [
-        int((row.get("summary") or {}).get("outputCount") or 0)
-        for row in fetch_rows
-        if int((row.get("summary") or {}).get("outputCount") or 0) > 0
-    ]
+    outputs: list[int] = []
+    for row in fetch_rows:
+        summary = as_json_object(row.get("summary"))
+        output_count = int(summary.get("outputCount") or 0)
+        if output_count > 0:
+            outputs.append(output_count)
     if len(outputs) >= 4 and latest_fetch:
         baseline_values = outputs[:-1] if len(outputs) > 1 else outputs
         baseline = median([float(v) for v in baseline_values[-10:]])
@@ -351,11 +352,7 @@ def evaluate_alerts(
                 }
             )
 
-    source_rows = (
-        latest_fetch_report.get("sources")
-        if isinstance(latest_fetch_report.get("sources"), list)
-        else []
-    )
+    source_rows = json_object_rows(latest_fetch_report.get("sources"))
     social_rows = [
         row
         for row in source_rows
@@ -406,11 +403,7 @@ def evaluate_alerts(
                 }
             )
 
-    social_summary = (
-        latest_fetch_report.get("socialSummary")
-        if isinstance(latest_fetch_report.get("socialSummary"), dict)
-        else {}
-    )
+    social_summary = as_json_object(latest_fetch_report.get("socialSummary"))
     if social_summary:
         kept_count = int(social_summary.get("keptCount") or 0)
         unique_count = int(social_summary.get("uniqueKeptCount") or 0)
@@ -477,9 +470,9 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     now_iso, desktop_mode, desktop_last_activity_at, load_alert_state_fn, save_alert_state_fn,
     parse_schedule_metadata_fn, normalize_fetch_report_contract, parse_iso, now_utc.
     """
-    history = deps.get_history()
-    latest_fetch_report = deps.get_fetch_report()
-    state = deps.get_state()
+    history: list[dict[str, Any]] = deps.get_history()
+    latest_fetch_report: dict[str, Any] = deps.get_fetch_report()
+    state: dict[str, Any] = deps.get_state()
     schedule = populate_schedule_next_run(
         deps.parse_schedule_metadata_fn(), history, deps.parse_iso
     )
@@ -501,13 +494,10 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
 
     latest_run = history[-1] if history else {}
     severity = derive_ops_severity(alerts_meta["alerts"])
-    social_summary = (
-        latest_fetch_report.get("socialSummary")
-        if isinstance(latest_fetch_report.get("socialSummary"), dict)
-        else {}
-    )
-    owner_state = deps.owner_state if isinstance(getattr(deps, "owner_state", {}), dict) else {}
-    updater_status = (
+    social_summary = as_json_object(latest_fetch_report.get("socialSummary"))
+    social_channels = as_json_object(social_summary.get("channels"))
+    owner_state = as_json_object(getattr(deps, "owner_state", {}))
+    updater_status = as_json_object(
         deps.get_updater_status_payload()
         if callable(getattr(deps, "get_updater_status_payload", None))
         else {}
@@ -564,20 +554,24 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
                 "reviewArtifactPath": str(social_summary.get("reviewArtifactPath") or ""),
                 "channels": {
                     str(key): {
-                        "keptCount": int((value or {}).get("keptCount") or 0),
-                        "uniqueKeptCount": int((value or {}).get("uniqueKeptCount") or 0),
-                        "officialBoardOverlapCount": int(
-                            (value or {}).get("officialBoardOverlapCount") or 0
+                        "keptCount": int(as_json_object(value).get("keptCount") or 0),
+                        "uniqueKeptCount": int(
+                            as_json_object(value).get("uniqueKeptCount") or 0
                         ),
-                        "duplicateCount": int((value or {}).get("duplicateCount") or 0),
-                        "duplicateRate": round(_safe_float((value or {}).get("duplicateRate")), 4),
-                        "lowConfidenceDropped": int((value or {}).get("lowConfidenceDropped") or 0),
+                        "officialBoardOverlapCount": int(
+                            as_json_object(value).get("officialBoardOverlapCount") or 0
+                        ),
+                        "duplicateCount": int(
+                            as_json_object(value).get("duplicateCount") or 0
+                        ),
+                        "duplicateRate": round(
+                            _safe_float(as_json_object(value).get("duplicateRate")), 4
+                        ),
+                        "lowConfidenceDropped": int(
+                            as_json_object(value).get("lowConfidenceDropped") or 0
+                        ),
                     }
-                    for key, value in (
-                        social_summary.get("channels")
-                        if isinstance(social_summary.get("channels"), dict)
-                        else {}
-                    ).items()
+                    for key, value in social_channels.items()
                     if str(key).strip()
                 },
             },

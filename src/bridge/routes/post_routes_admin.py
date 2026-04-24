@@ -10,6 +10,12 @@ from src.bridge.registry_tombstones import (
     save_tombstones,
     tombstone_source_row,
 )
+from src.shared.json_shapes import (
+    as_json_list,
+    as_json_object,
+    copy_json_object,
+    json_object_rows,
+)
 from src.source_registry import (
     REGISTRY_REASON_APPROVE,
     REGISTRY_REASON_DELETE,
@@ -60,20 +66,21 @@ def _transition_registry_row(
 
 def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> bool:
     state = api.load_state()
+    data = as_json_object(payload)
 
     if path == "/sources/manual":
-        result = api.add_manual_source(str((payload or {}).get("url") or ""))
+        result = api.add_manual_source(str(data.get("url") or ""))
         handler._send_json(result)  # noqa: SLF001
         return True
 
     if path == "/discovery/check-source":
-        result = api.trigger_source_check(str((payload or {}).get("sourceId") or ""))
+        result = api.trigger_source_check(str(data.get("sourceId") or ""))
         status = 200 if bool(result.get("started")) else 400
         handler._send_json(result, status=status)  # noqa: SLF001
         return True
 
     if path == "/registry/approve":
-        ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
+        ids = as_json_list(data.get("ids"))
         moved, remaining = api.move_entries(state["pending"], [str(item) for item in ids])
         moved = [
             _transition_registry_row(
@@ -97,7 +104,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         return True
 
     if path == "/registry/reject":
-        ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
+        ids = as_json_list(data.get("ids"))
         moved, remaining = api.move_entries(state["pending"], [str(item) for item in ids])
         state["pending"] = remaining
         moved = [
@@ -117,7 +124,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         return True
 
     if path == "/registry/rollback":
-        ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
+        ids = as_json_list(data.get("ids"))
         selected = set(str(item) for item in ids)
         moved = []
         active_remaining = []
@@ -141,7 +148,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         return True
 
     if path == "/registry/demote-active":
-        ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
+        ids = as_json_list(data.get("ids"))
         selected = set(str(item) for item in ids)
         moved = []
         active_remaining = []
@@ -184,7 +191,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         return True
 
     if path == "/registry/restore-rejected":
-        ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
+        ids = as_json_list(data.get("ids"))
         moved, remaining = api.move_entries(state["rejected"], [str(item) for item in ids])
         state["rejected"] = remaining
         moved = [
@@ -203,8 +210,8 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         return True
 
     if path == "/registry/restore-deleted":
-        ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
-        urls = (payload or {}).get("urls") if isinstance((payload or {}).get("urls"), list) else []
+        ids = as_json_list(data.get("ids"))
+        urls = as_json_list(data.get("urls"))
         selected = {str(item).strip().lower() for item in ids if str(item).strip()}
         selected_urls = {
             api.normalize_source_url(str(item))
@@ -262,12 +269,12 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         return True
 
     if path == "/registry/delete":
-        ids = (payload or {}).get("ids") if isinstance((payload or {}).get("ids"), list) else []
-        if not ids and isinstance((payload or {}).get("selected"), list):
-            ids = list((payload or {}).get("selected") or [])
-        urls = (payload or {}).get("urls") if isinstance((payload or {}).get("urls"), list) else []
-        if not urls and isinstance((payload or {}).get("selectedUrls"), list):
-            urls = list((payload or {}).get("selectedUrls") or [])
+        ids = as_json_list(data.get("ids"))
+        if not ids:
+            ids = as_json_list(data.get("selected"))
+        urls = as_json_list(data.get("urls"))
+        if not urls:
+            urls = as_json_list(data.get("selectedUrls"))
         selected = {str(item).strip().lower() for item in ids if str(item).strip()}
         selected_urls = {
             api.normalize_source_url(str(item))
@@ -285,7 +292,11 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
             row_url = api.source_url_fingerprint(row)
             return row_id in selected or bool(row_url and row_url in selected_urls)
 
-        next_state = {"active": [], "pending": [], "rejected": []}
+        next_state: dict[str, list[dict[str, Any]]] = {
+            "active": [],
+            "pending": [],
+            "rejected": [],
+        }
         for bucket in ("active", "pending", "rejected"):
             for row in list(state.get(bucket, [])):
                 if not isinstance(row, dict):
@@ -310,7 +321,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
     if path == "/tasks/run-discovery":
         try:
             status_code, result = api.trigger_discovery_task(
-                payload=payload if isinstance(payload, dict) else {},
+                payload=data,
                 route_name=path,
             )
             try:
@@ -319,8 +330,8 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
                     "discovery_launch_response_sent",
                     route=path,
                     status=int(status_code),
-                    started=bool((result or {}).get("started")),
-                    runId=str((result or {}).get("runId") or ""),
+                    started=bool(result.get("started")),
+                    runId=str(result.get("runId") or ""),
                 )
             except Exception:  # noqa: BLE001
                 pass
@@ -341,7 +352,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         return True
 
     if path == "/tasks/run-jobs-pipeline":
-        result = api.start_jobs_pipeline_task(payload if isinstance(payload, dict) else {})
+        result = api.start_jobs_pipeline_task(data)
         status_code = 200 if bool(result.get("started")) else 409
         handler._send_json(result, status=status_code)  # noqa: SLF001
         return True
@@ -372,8 +383,8 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
 
     if path == "/tasks/run-fetcher":
         try:
-            result = api.start_fetcher_task(payload if isinstance(payload, dict) else {})
-            status_code = 409 if bool((result or {}).get("alreadyRunning")) else 200
+            result = api.start_fetcher_task(data)
+            status_code = 409 if bool(result.get("alreadyRunning")) else 200
             handler._send_json(result, status=status_code)  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json(
@@ -383,7 +394,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
 
     if path == "/discovery/config":
         try:
-            api.update_saved_discovery_settings(payload if isinstance(payload, dict) else {})
+            api.update_saved_discovery_settings(data)
             handler._send_json(api.get_discovery_config_payload())  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json(
@@ -397,7 +408,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         return True
 
     if path == "/ops/alerts/ack":
-        alert_id = str((payload or {}).get("id") or "").strip()
+        alert_id = str(data.get("id") or "").strip()
         if not alert_id:
             handler._send_json({"error": "Missing alert id"}, status=400)  # noqa: SLF001
             return True
@@ -405,8 +416,8 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         active_alert = next(
             (
                 row
-                for row in (health.get("alerts") or [])
-                if str((row or {}).get("id") or "").strip() == alert_id
+                for row in json_object_rows(health.get("alerts"))
+                if str(row.get("id") or "").strip() == alert_id
             ),
             None,
         )
@@ -414,7 +425,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
             handler._send_json({"acked": alert_id, "ignored": True, "ok": True})  # noqa: SLF001
             return True
         state_alert = api.load_alert_state()
-        acked = dict(state_alert.get("acked") or {})
+        acked = copy_json_object(state_alert.get("acked"))
         acked[alert_id] = api.now_iso()
         api.save_alert_state({"acked": acked})
         handler._send_json({"acked": alert_id, "ok": True})  # noqa: SLF001
@@ -422,7 +433,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
 
     if path == "/sync/config":
         try:
-            api.update_saved_sync_settings(payload if isinstance(payload, dict) else {})
+            api.update_saved_sync_settings(data)
             handler._send_json(api.get_sync_status_payload())  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
             handler._send_json(
