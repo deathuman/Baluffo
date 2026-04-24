@@ -109,14 +109,16 @@ def run(
                 detail_urls.append(link)
 
     for detail_url in detail_urls:
-        html = fetched_pages.get(detail_url)
-        if html is None:
+        cached_html = fetched_pages.get(detail_url)
+        if cached_html is None:
             try:
-                html = fetch_text(detail_url, timeout_s)
+                detail_html = fetch_text(detail_url, timeout_s)
             except Exception:
                 continue
+        else:
+            detail_html = cached_html
         parsed = parse_jobpostings_from_html(
-            html,
+            detail_html,
             base_url=detail_url,
             fallback_company=company,
             fallback_source_id_prefix=f"static:{source_id}",

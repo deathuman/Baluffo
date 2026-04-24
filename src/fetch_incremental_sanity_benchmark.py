@@ -9,6 +9,9 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Any, cast
+
+from src.jobs.interfaces import SourceLoader
 
 DEFAULT_BENCHMARK_SOURCES = [
     "greenhouse_boards",
@@ -58,23 +61,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _select_loaders(source_names: list[str]):
+def _as_list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _select_loaders(source_names: list[str]) -> tuple[list[tuple[str, SourceLoader]], list[str]]:
     from src.jobs import adapters as adapters_pkg
     from src.jobs.adapters import static as static_adapter
     from src.jobs.text_utils import clean_text
 
-    available: dict[str, object] = {
+    available: dict[str, SourceLoader] = {
         name: loader for name, loader in adapters_pkg.default_source_loaders(social_enabled=False)
     }
-    for name, loader in static_adapter.build_static_source_loaders():
-        available.setdefault(name, loader)
-    for name, loader in adapters_pkg.EXTRACTED_ADAPTERS.items():
-        available.setdefault(name, loader)
-    selected: list[tuple[str, object]] = []
+    for static_name, static_loader in static_adapter.build_static_source_loaders():
+        available.setdefault(static_name, static_loader)
+    for extracted_name, extracted_loader in adapters_pkg.EXTRACTED_ADAPTERS.items():
+        available.setdefault(extracted_name, cast(SourceLoader, extracted_loader))
+    selected: list[tuple[str, SourceLoader]] = []
     missing: list[str] = []
     for name in source_names:
         normalized_name = clean_text(name)
-        loader = available.get(name)
+        loader: SourceLoader | None = available.get(name)
         if loader is None and normalized_name:
             loader = next(
                 (
@@ -94,7 +101,7 @@ def _select_loaders(source_names: list[str]):
 def _family_summary(report: dict[str, object], source_names: list[str]) -> dict[str, object]:
     rows = [
         row
-        for row in (report.get("sources") or [])
+        for row in _as_list(report.get("sources"))
         if isinstance(row, dict) and str(row.get("name") or "") in source_names
     ]
     family: dict[str, object] = {}
@@ -125,7 +132,11 @@ def _family_summary(report: dict[str, object], source_names: list[str]) -> dict[
     return family
 
 
-def _run_pass(output_dir: Path, selected_loaders, args: argparse.Namespace):
+def _run_pass(
+    output_dir: Path,
+    selected_loaders: list[tuple[str, SourceLoader]],
+    args: argparse.Namespace,
+):
     from src.jobs.pipeline import run_pipeline
 
     return run_pipeline(

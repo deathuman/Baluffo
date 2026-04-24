@@ -26,8 +26,9 @@ DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY = community.DEFAULT_GOOGLE_SHEETS_RED
 DEFAULT_HTTP_HEADERS = dict(common_config.DEFAULT_HTTP_HEADERS)
 DEFAULT_REDIRECT_HEADERS = dict(common_config.DEFAULT_REDIRECT_HEADERS)
 SUPPORTED_REDIRECT_HOSTS = common_config.SUPPORTED_REDIRECT_HOSTS
+httpx: Any | None
 try:
-    import httpx  # type: ignore
+    import httpx as httpx
 except Exception:  # noqa: BLE001
     httpx = None
 
@@ -114,14 +115,15 @@ def conditional_revalidate_url(
                     "lastModified": str(response.headers.get("Last-Modified") or ""),
                 }
         except Exception as exc:  # noqa: BLE001
-            response = getattr(exc, "response", None)
-            if response is not None:
+            exc_response = getattr(exc, "response", None)
+            if exc_response is not None:
+                exc_headers = getattr(exc_response, "headers", {})
                 return {
                     "supported": True,
-                    "notModified": int(getattr(response, "status_code", 0) or 0) == 304,
-                    "statusCode": int(getattr(response, "status_code", 0) or 0),
-                    "etag": str(response.headers.get("ETag") or ""),
-                    "lastModified": str(response.headers.get("Last-Modified") or ""),
+                    "notModified": int(getattr(exc_response, "status_code", 0) or 0) == 304,
+                    "statusCode": int(getattr(exc_response, "status_code", 0) or 0),
+                    "etag": str(exc_headers.get("ETag") or ""),
+                    "lastModified": str(exc_headers.get("Last-Modified") or ""),
                 }
     return {
         "supported": False,
@@ -292,7 +294,8 @@ async def async_fetch_text_httpx(
 
 class AsyncHttpTextFetcher:
     def __init__(self, *, max_connections: int = DEFAULT_ADAPTER_HTTP_CONCURRENCY) -> None:
-        if httpx is None:
+        httpx_mod = httpx
+        if httpx_mod is None:
             raise RuntimeError("httpx is not installed")
         self._max_connections = max(1, int(max_connections or 1))
         self._loop = asyncio.new_event_loop()
@@ -305,10 +308,14 @@ class AsyncHttpTextFetcher:
 
     def _run_loop(self) -> None:
         asyncio.set_event_loop(self._loop)
-        self._client = httpx.AsyncClient(
+        httpx_mod = httpx
+        if httpx_mod is None:
+            self._ready.set()
+            return
+        self._client = httpx_mod.AsyncClient(
             follow_redirects=True,
             headers=DEFAULT_HTTP_HEADERS,
-            limits=httpx.Limits(
+            limits=httpx_mod.Limits(
                 max_keepalive_connections=self._max_connections,
                 max_connections=max(self._max_connections * 2, self._max_connections),
             ),

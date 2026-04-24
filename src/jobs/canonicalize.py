@@ -571,7 +571,7 @@ class CanonicalNormalizer(JobProcessor):
         canonical_started = time.perf_counter()
         for raw in raw_rows:
             normalized, drop_reason = canonicalize_job_with_reason(
-                raw,  # type: ignore
+                raw,
                 source=self.source,
                 fetched_at=self.fetched_at,
                 resolve_redirect_url=self.resolve_redirect_url,

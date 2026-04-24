@@ -38,6 +38,10 @@ This page stores completed items moved out of the active repository-health track
    The enforced mypy scope now includes `src/jobs/reporting_summary.py`, `src/jobs/reporting_social.py`, `src/jobs/location_bucket_manifest.py`, `src/jobs/page_gating.py`, `src/jobs/common/http.py`, and `src/jobs/text_utils.py`. This pass normalized optional report lists, tightened untyped text/HTTP return values, and made manifest/page-gating utility reads locally checkable without changing report payloads, page classification behavior, or persisted job data contracts. The broad audit dropped from `260` errors in `68` files to `253` errors in `62` files.
    **Done when:** complete.
 
+9. **Completed: type the jobs transport/canonicalization tail cluster.**
+   The enforced mypy scope now includes `src/jobs/transport.py`, `src/jobs/canonicalize.py`, `src/jobs/adapters/plugins/static/littlechicken.py`, and `src/fetch_incremental_sanity_benchmark.py`. This pass preserved the patchable transport `httpx` alias, removed stale canonicalization ignore noise, normalized Little Chicken detail HTML typing, and typed incremental benchmark loader selection without changing loader order, fetch behavior, parser output, or compatibility surfaces. The broad audit dropped from `253` errors in `62` files to `245` errors in `58` files.
+   **Done when:** complete.
+
 ## Completed P1 Items
 
 5. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**
