@@ -4,6 +4,7 @@ from collections import Counter
 from typing import Any
 
 from src.contracts import SCHEMA_VERSION
+from src.shared.json_shapes import as_json_object
 from src.shared.utils import now_iso
 
 from .runtime_metrics import build_discovery_runtime_payload
@@ -161,7 +162,7 @@ def build_discovery_task_progress(
     queued_count = int(summary.get("queuedCandidateCount") or 0)
     deferred_count = int(summary.get("discoverableButDeferredCount") or 0)
     failed_count = int(summary.get("failedProbeCount") or 0)
-    loss = summary.get("lossAccounting") if isinstance(summary.get("lossAccounting"), dict) else {}
+    loss = as_json_object(summary.get("lossAccounting"))
     probe_total = max(
         0,
         int(loss.get("generated") or 0)

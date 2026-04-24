@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from src.pipeline_audit import now_iso, read_json, safe_int, safe_text
+from src.shared.json_shapes import as_json_object, json_object_rows
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST_PATH = ROOT / "_out" / "LATEST_MANIFEST.json"
@@ -114,7 +115,7 @@ def _detail_duration_ms(detail: dict[str, Any], family_row: dict[str, Any]) -> i
         return safe_int(detail.get("durationMs"))
     if safe_int(family_row.get("durationMs")) > 0 and not detail.get("stats"):
         return safe_int(family_row.get("durationMs"))
-    stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
+    stats = as_json_object(detail.get("stats"))
     timing_keys = (
         "listing_fetch_ms",
         "candidate_extraction_ms",
@@ -131,8 +132,8 @@ def _family_name(
 ) -> str:
     name = safe_text(source_name)
     adapter_name = safe_text(adapter).lower()
-    registry_adapter = safe_text((registry_row or {}).get("adapter")).lower()
-    state_adapter = safe_text((state_row or {}).get("lastAdapter")).lower()
+    registry_adapter = safe_text(registry_row.get("adapter")).lower()
+    state_adapter = safe_text(state_row.get("lastAdapter")).lower()
 
     if name.startswith("google_sheets"):
         return "google_sheets"
@@ -154,19 +155,12 @@ def _family_name(
 
 def _aggregate_report_sources(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     aggregated: dict[str, dict[str, Any]] = {}
-    report_sources = (
-        report.get("sourceFamilies")
-        if isinstance(report.get("sourceFamilies"), list)
-        else report.get("sources")
-        if isinstance(report.get("sources"), list)
-        else []
-    )
+    source_families = json_object_rows(report.get("sourceFamilies"))
+    report_sources = source_families or json_object_rows(report.get("sources"))
     for family_row in report_sources:
-        if not isinstance(family_row, dict):
-            continue
         family_name = safe_text(family_row.get("name")) or "unknown"
         family_adapter = safe_text(family_row.get("adapter")) or "unknown"
-        details = [item for item in (family_row.get("details") or []) if isinstance(item, dict)]
+        details = json_object_rows(family_row.get("details"))
         source_rows = details or [family_row]
         for source_row in source_rows:
             source_name = (
@@ -205,7 +199,7 @@ def _aggregate_report_sources(report: dict[str, Any]) -> dict[str, dict[str, Any
             entry["reportDurationMs"] += _detail_duration_ms(source_row, family_row)
             entry["reportStatus"] = _merge_status(
                 entry["reportStatus"],
-                safe_text(source_row.get("status")) or family_row.get("status"),
+                safe_text(source_row.get("status")) or safe_text(family_row.get("status")),
             )
             for field, target in (
                 ("failureBucket", "reportFailureBuckets"),
@@ -281,17 +275,18 @@ def _classify_source(
     unified_count: int,
 ) -> tuple[str, str]:
     report_present = isinstance(report_row, dict)
+    report_data = as_json_object(report_row)
     report_status = safe_text(
-        (report_row or {}).get("reportStatus") or (report_row or {}).get("status")
+        report_data.get("reportStatus") or report_data.get("status")
     ).lower()
     state_status = safe_text(state_row.get("lastStatus")).lower()
-    report_kept = safe_int((report_row or {}).get("reportKeptCount"))
+    report_kept = safe_int(report_data.get("reportKeptCount"))
     state_kept = safe_int(state_row.get("lastKeptCount"))
     report_markers = {
-        safe_text((report_row or {}).get("reportFailureBucket")).lower(),
-        safe_text((report_row or {}).get("reportZeroKeptClassification")).lower(),
-        safe_text((report_row or {}).get("reportClassification")).lower(),
-        safe_text((report_row or {}).get("reportError")).lower(),
+        safe_text(report_data.get("reportFailureBucket")).lower(),
+        safe_text(report_data.get("reportZeroKeptClassification")).lower(),
+        safe_text(report_data.get("reportClassification")).lower(),
+        safe_text(report_data.get("reportError")).lower(),
         safe_text(state_row.get("lastFailureBucket")).lower(),
     }
     registry_state = safe_text(registry_row.get("candidateState")).lower()
@@ -347,8 +342,9 @@ def _normalize_sources(
         report_row = report_rows.get(source_name)
         registry_row = registry_map.get(source_name, {})
         state_row = source_state.get(source_name, {}) if isinstance(source_state, dict) else {}
+        report_data = as_json_object(report_row)
         adapter = (
-            safe_text((report_row or {}).get("adapter"))
+            safe_text(report_data.get("adapter"))
             or safe_text(registry_row.get("adapter"))
             or safe_text(state_row.get("lastAdapter"))
             or "unknown"
@@ -366,23 +362,19 @@ def _normalize_sources(
                 "family": family,
                 "adapter": adapter,
                 "reportPresent": bool(report_row),
-                "reportStatus": safe_text((report_row or {}).get("reportStatus"))
-                or safe_text((report_row or {}).get("status")).lower()
+                "reportStatus": safe_text(report_data.get("reportStatus"))
+                or safe_text(report_data.get("status")).lower()
                 or "unknown",
-                "reportSourceCount": safe_int((report_row or {}).get("reportSourceCount")),
-                "reportKeptCount": safe_int((report_row or {}).get("reportKeptCount")),
-                "reportFetchedCount": safe_int((report_row or {}).get("reportFetchedCount")),
-                "reportDurationMs": safe_int((report_row or {}).get("reportDurationMs")),
-                "reportClassification": safe_text(
-                    (report_row or {}).get("reportClassification")
-                ).lower(),
-                "reportFailureBucket": safe_text(
-                    (report_row or {}).get("reportFailureBucket")
-                ).lower(),
+                "reportSourceCount": safe_int(report_data.get("reportSourceCount")),
+                "reportKeptCount": safe_int(report_data.get("reportKeptCount")),
+                "reportFetchedCount": safe_int(report_data.get("reportFetchedCount")),
+                "reportDurationMs": safe_int(report_data.get("reportDurationMs")),
+                "reportClassification": safe_text(report_data.get("reportClassification")).lower(),
+                "reportFailureBucket": safe_text(report_data.get("reportFailureBucket")).lower(),
                 "reportZeroKeptClassification": safe_text(
-                    (report_row or {}).get("reportZeroKeptClassification")
+                    report_data.get("reportZeroKeptClassification")
                 ).lower(),
-                "reportError": safe_text((report_row or {}).get("reportError")),
+                "reportError": safe_text(report_data.get("reportError")),
                 "statePresent": bool(state_row),
                 "stateLastStatus": safe_text(state_row.get("lastStatus")).lower(),
                 "stateLastKeptCount": safe_int(state_row.get("lastKeptCount")),
@@ -396,7 +388,7 @@ def _normalize_sources(
                 "registryQuarantineReason": safe_text(registry_row.get("quarantineReason")),
                 "unifiedCount": int(unified_counts.get(source_name, 0)),
                 "materializationGap": int(unified_counts.get(source_name, 0))
-                - safe_int((report_row or {}).get("reportKeptCount")),
+                - safe_int(report_data.get("reportKeptCount")),
                 "classification": classification,
                 "reason": reason,
             }
@@ -450,7 +442,7 @@ def _summarize_families(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _issue_buckets(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    buckets = {
+    buckets: dict[str, list[dict[str, Any]]] = {
         "stale_materialization": [],
         "broken_source": [],
         "needs_review": [],
@@ -492,7 +484,8 @@ def build_report(
     fetch_run_id = safe_text(fetch_report.get("runId"))
     fetch_started_at = safe_text(fetch_report.get("startedAt"))
     fetch_finished_at = safe_text(fetch_report.get("finishedAt"))
-    manifest_run_id = safe_text((manifest or {}).get("lastRunId"))
+    manifest_summary = as_json_object(manifest)
+    manifest_run_id = safe_text(manifest_summary.get("lastRunId"))
     manifest_stale = bool(manifest_run_id and fetch_run_id and manifest_run_id != fetch_run_id)
     sources = _normalize_sources(
         report_rows=report_rows,
@@ -529,7 +522,10 @@ def build_report(
             1 for row in sources if row.get("reportPresent") and not row.get("registryPresent")
         ),
     }
-    manifest_summary = manifest or {}
+    report_source_count = len(
+        json_object_rows(fetch_report.get("sourceFamilies"))
+        or json_object_rows(fetch_report.get("sources"))
+    )
     report = {
         "generatedAt": now_iso(),
         "latestRun": {
@@ -544,10 +540,8 @@ def build_report(
             "fetchStartedAt": fetch_started_at,
             "fetchFinishedAt": fetch_finished_at,
             "manifestRunId": manifest_run_id,
-            "manifestRunTime": safe_text((manifest or {}).get("lastRunTime")),
-            "reportSourceCount": len(
-                fetch_report.get("sourceFamilies") or fetch_report.get("sources") or []
-            ),
+            "manifestRunTime": safe_text(manifest_summary.get("lastRunTime")),
+            "reportSourceCount": report_source_count,
             "registryActiveCount": len(registry_active),
             "sourceStateCount": len(source_state),
             "unifiedLightCount": len(unified_light),
@@ -600,10 +594,10 @@ def _family_display_name(family: str) -> str:
 
 
 def render_markdown(report: dict[str, Any]) -> str:
-    latest_run = report.get("latestRun") if isinstance(report.get("latestRun"), dict) else {}
-    manifest = report.get("manifest") if isinstance(report.get("manifest"), dict) else {}
-    totals = report.get("totals") if isinstance(report.get("totals"), dict) else {}
-    scope = report.get("scope") if isinstance(report.get("scope"), dict) else {}
+    latest_run = as_json_object(report.get("latestRun"))
+    manifest = as_json_object(report.get("manifest"))
+    totals = as_json_object(report.get("totals"))
+    scope = as_json_object(report.get("scope"))
     lines = [
         "# Active Source Audit Sweep",
         "",
@@ -658,9 +652,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             "--- | ---: | ---: | ---: | ---: | ---: | ---:",
         ]
     )
-    for row in report.get("families") or []:
-        if not isinstance(row, dict):
-            continue
+    for row in json_object_rows(report.get("families")):
         lines.append(
             f"{_family_display_name(safe_text(row.get('family')))} | {safe_int(row.get('sourceCount'))}"
             f" | {safe_int(row.get('workingCount'))}"
@@ -676,7 +668,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         ("needs_review", "Needs review"),
         ("dead_listing_page", "Dead listing pages"),
     ):
-        rows = report.get("issues", {}).get(bucket_name) or []
+        issues = as_json_object(report.get("issues"))
+        rows = json_object_rows(issues.get(bucket_name))
         lines.append("")
         lines.append(f"### {title}")
         if not rows:
@@ -725,21 +718,14 @@ def main(argv: list[str] | None = None) -> int:
     source_state_payload = _load_json(data_dir / "jobs-source-state.json", {})
     registry_active = _load_json(data_dir / "source-registry-active.json", [])
     unified_light = _load_json(data_dir / "jobs-unified-light.json", [])
-    if not isinstance(fetch_report, dict):
-        fetch_report = {}
-    if not isinstance(source_state_payload, dict):
-        source_state_payload = {}
-    if not isinstance(registry_active, list):
-        registry_active = []
-    if not isinstance(unified_light, list):
-        unified_light = []
-    source_state = (
-        source_state_payload.get("sources")
-        if isinstance(source_state_payload.get("sources"), dict)
-        else {}
-    )
-    if not isinstance(source_state, dict):
-        source_state = {}
+    fetch_report = as_json_object(fetch_report)
+    source_state_payload = as_json_object(source_state_payload)
+    registry_active = json_object_rows(registry_active)
+    unified_light = json_object_rows(unified_light)
+    source_state_raw = as_json_object(source_state_payload.get("sources"))
+    source_state: dict[str, dict[str, Any]] = {
+        str(key): value for key, value in source_state_raw.items() if isinstance(value, dict)
+    }
 
     report = build_report(
         fetch_report=fetch_report,

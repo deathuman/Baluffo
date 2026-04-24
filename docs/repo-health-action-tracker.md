@@ -18,12 +18,13 @@ This page converts an external repository analysis into a repo-native action tra
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src --no-incremental` -> `677 errors in 110 files (checked 313 source files)` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini --no-incremental` passes on the staged 20-file scope (`src/python_version_guard.py`, `src/pipeline_io.py`, `src/bridge/report_normalizer.py`, `src/bridge/api.py`, `src/bridge/admin_registry_api.py`, `src/bridge/admin_task_runtime.py`, `src/bridge/ops_live_payload.py`, `src/admin_bridge.py`, `src/bridge/admin_entrypoint_services.py`, `src/bridge/admin_entrypoint_runtime.py`, `src/shared/json_shapes.py`, `src/shared/live_task.py`, `src/bridge/ops_task_fetch_live.py`, `src/bridge/ops_task_discovery_live.py`, `src/bridge/discovery_service.py`, `src/bridge/sync_service.py`, `src/bridge/sync_task_flow.py`, `src/bridge/ops_health.py`, `src/bridge/routes/post_routes_admin.py`, `src/fetcher_metrics.py`) |
+| Broad type-check run | `python -m mypy src --no-incremental` -> `607 errors in 106 files (checked 313 source files)` |
+| Enforced type-check gate | `python -m mypy --config-file mypy.ini --no-incremental` passes on the staged 24-file scope (`src/python_version_guard.py`, `src/pipeline_io.py`, `src/bridge/report_normalizer.py`, `src/bridge/api.py`, `src/bridge/admin_registry_api.py`, `src/bridge/admin_task_runtime.py`, `src/bridge/ops_live_payload.py`, `src/admin_bridge.py`, `src/bridge/admin_entrypoint_services.py`, `src/bridge/admin_entrypoint_runtime.py`, `src/shared/json_shapes.py`, `src/shared/live_task.py`, `src/bridge/ops_task_fetch_live.py`, `src/bridge/ops_task_discovery_live.py`, `src/bridge/discovery_service.py`, `src/bridge/sync_service.py`, `src/bridge/sync_task_flow.py`, `src/bridge/ops_health.py`, `src/bridge/routes/post_routes_admin.py`, `src/fetcher_metrics.py`, `src/source_discovery/reporting_progress.py`, `src/source_discovery/runtime_metrics.py`, `src/pipeline_audit.py`, `src/source_audit_sweep.py`) |
 | ESLint | `137 warnings, 0 errors` |
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
 | Node lock file | `package-lock.json` present |
+| Dependabot alert signal | GitHub push reported `6` high vulnerabilities on the default branch; exact advisory/package details still need Dependabot dashboard validation |
 
 ## Confirmed Strengths Worth Protecting
 
@@ -48,39 +49,47 @@ This page converts an external repository analysis into a repo-native action tra
    `save_json_atomic` now writes newline-terminated JSON, and targeted regression coverage protects the writer behavior used by the approval-state file.
    **Done when:** complete.
 
+4. **Triage and resolve GitHub Dependabot high-severity vulnerabilities.**
+   GitHub reported `6` high vulnerabilities on the default branch during the latest push. Treat this as a P0 until the Dependabot dashboard is checked, affected packages are identified, fixes or mitigations are applied, and lock files are updated through the repo's normal install/test flow.
+   **Done when:** Dependabot shows no unresolved high or critical vulnerabilities for the default branch, dependency lock files reflect the approved updates, and relevant Python/Node test gates pass.
+
 ### P1
 
-4. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**
+5. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**
    The enforced mypy scope now includes the bridge/admin runtime surface that feeds task status, ops health, and report summaries, plus a shared internal JSON-shape helper. The lane covers `src/shared/json_shapes.py`, `src/shared/live_task.py`, `src/bridge/ops_task_fetch_live.py`, `src/bridge/ops_task_discovery_live.py`, `src/bridge/discovery_service.py`, `src/bridge/sync_service.py`, `src/bridge/sync_task_flow.py`, `src/bridge/ops_health.py`, `src/bridge/routes/post_routes_admin.py`, and `src/fetcher_metrics.py`. The broad audit dropped from `796` errors in `119` files to `677` errors in `110` files.
    **Done when:** complete.
 
-5. **Continue the mypy staged rollout through the remaining JSON-heavy runtime/report lanes.**
-   Repo-wide mypy is still not complete: the broad audit reports `677` errors in `110` files. The next related lanes appear to be JSON report/telemetry readers and runtime adapters outside the bridge gate, including `src/source_discovery/reporting_progress.py`, `src/source_discovery/runtime_metrics.py`, `src/pipeline_audit.py`, `src/source_audit_sweep.py`, and release/desktop update helpers. Keep using reusable narrowing helpers where they fit, but avoid pulling unrelated job-adapter protocol debt into the enforced gate until those adapter interfaces are addressed separately.
+6. **Completed: continue the mypy staged rollout through source/discovery audit JSON lanes.**
+   The enforced mypy scope now includes the JSON-heavy source/discovery reporting and audit helpers: `src/source_discovery/reporting_progress.py`, `src/source_discovery/runtime_metrics.py`, `src/pipeline_audit.py`, and `src/source_audit_sweep.py`. This lane reused shared JSON-shape narrowing without changing report payloads, markdown text, or CLI behavior. The broad audit dropped from `677` errors in `110` files to `607` errors in `106` files.
+   **Done when:** complete.
+
+7. **Continue the mypy staged rollout through job runtime/report contract helpers.**
+   Repo-wide mypy is still not complete: the broad audit reports `607` errors in `106` files. The next related non-release lane appears to be job runtime/report contract helpers, including `src/jobs/reporting_queues.py`, `src/jobs/pipeline_runtime_summary.py`, `src/jobs/common/contracts_task_state.py`, `src/jobs/common/contracts_source_reports.py`, `src/jobs/common/contracts_runtime.py`, and adjacent `src/source_registry.py` JSON normalization. Defer desktop updater and release-repeatability typing to a separate release-sensitive lane.
    **Done when:** the next cohesive lane is added to `mypy.ini`, focused tests for that lane remain green, and the broad audit count is re-recorded.
 
-6. **Raise coverage in the weakest validated modules.**
+8. **Raise coverage in the weakest validated modules.**
    Prioritize `src/source_sync_crypto.py` (`52%`), `src/source_discovery/stage_control.py` (`51%`), `src/source_discovery/probe.py` (`65%`), and `src/source_discovery/url_patches.py` (`71%`).
    **Done when:** each target module has a named test addition and reaches an agreed post-baseline coverage threshold.
 
-7. **Reduce JS hygiene noise before the next broad frontend refactor.**
+9. **Reduce JS hygiene noise before the next broad frontend refactor.**
    Fix or justify the `137` ESLint warnings and `20` `knip` unused exports, starting with the small number of production-file warnings before mass test-import cleanup.
    **Done when:** production-file ESLint warnings are eliminated and the unused-export list is either reduced or documented with explicit keep-alive reasons.
 
-8. **Add static security scanning to CI.**
+10. **Add static security scanning to CI.**
    Current workflows cover tests, lint, and release packaging, but not Python dependency/security scanning.
    **Done when:** CI runs at least one Python security/dependency scan (`bandit`, `pip-audit`, or equivalent) and documents failure ownership.
 
-9. **Evaluate a complexity gate after the first typing and hygiene pass.**
+11. **Evaluate a complexity gate after the first typing and hygiene pass.**
    Complexity enforcement is worthwhile, but it should not be added before the current typing and warning debt is under control.
    **Done when:** the repo adopts a complexity ceiling with an explicit allowlist or baseline strategy instead of freezing current hotspots.
 
 ### P2
 
-10. **Add real CI status badges to `README.md`.**
+12. **Add real CI status badges to `README.md`.**
    The README has product badges today, but no workflow status badges.
    **Done when:** README shows current workflow status badges for the maintained CI lanes.
 
-11. **Evaluate structured logging for support and ops diagnostics.**
+13. **Evaluate structured logging for support and ops diagnostics.**
    The repo already has strong observability hooks; structured logs would make support bundles and smoke artifacts easier to consume programmatically.
    **Done when:** one agreed logging surface adopts a structured format and demonstrates clear improvement over current ad hoc strings.
 
@@ -101,5 +110,5 @@ These claims were not confirmed from checked-in repo state alone and should not 
 
 - GitHub labels such as `good first issue`
 - External OSS discoverability or contributor conversion
-- Remote vulnerability dashboard state outside the checked-in workflows and config
+- Exact remote vulnerability dashboard details outside the push-time Dependabot summary
 - Any public reputation-style scoring that depends on live GitHub metadata rather than the repository contents

@@ -4,6 +4,8 @@ import time
 from collections import Counter
 from typing import Any
 
+from src.shared.json_shapes import as_json_object
+
 DISCOVERY_TIMING_STAGE_KEYS = [
     "curatedSeed",
     "sheetDirectory",
@@ -123,19 +125,20 @@ def build_discovery_runtime_payload(
         )
         if int(duration_ms) > 0
     ]
-    adapter_rows = [
-        {
-            "adapter": str(row.get("adapter") or "unknown"),
-            "durationMs": int(row.get("durationMs") or 0),
-            "generatedCount": int(row.get("generatedCount") or 0),
-            "failureCount": int(row.get("failureCount") or 0),
-            "probedCount": int(row.get("probedCount") or 0),
-            "healthyCount": int(row.get("healthyCount") or 0),
-            "queuedCount": int(row.get("queuedCount") or 0),
-        }
-        for row in adapter_runtime.values()
-        if isinstance(row, dict)
-    ]
+    adapter_rows: list[dict[str, Any]] = []
+    for value in adapter_runtime.values():
+        row = as_json_object(value)
+        adapter_rows.append(
+            {
+                "adapter": str(row.get("adapter") or "unknown"),
+                "durationMs": int(row.get("durationMs") or 0),
+                "generatedCount": int(row.get("generatedCount") or 0),
+                "failureCount": int(row.get("failureCount") or 0),
+                "probedCount": int(row.get("probedCount") or 0),
+                "healthyCount": int(row.get("healthyCount") or 0),
+                "queuedCount": int(row.get("queuedCount") or 0),
+            }
+        )
     adapter_rows.sort(key=lambda row: int(row.get("durationMs") or 0), reverse=True)
     return {
         "totalDurationMs": max(0, int(total_duration_ms or 0)),

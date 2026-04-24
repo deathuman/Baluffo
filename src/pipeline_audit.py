@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from src.shared.json_io import read_json
+from src.shared.json_shapes import as_json_object, json_object_rows
 from src.shared.utils import int_or_default, now_iso
 
 HIGH_COST_LOW_YIELD_MS = 20_000
@@ -48,15 +49,14 @@ def ratio_pct(numerator: int, denominator: int) -> float:
 
 
 def summarize_discovery(report: dict[str, Any]) -> dict[str, Any]:
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
-    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    failures = [row for row in (report.get("failures") or []) if isinstance(row, dict)]
-    candidates = [row for row in (report.get("candidates") or []) if isinstance(row, dict)]
-    adapter_timings = [
-        row for row in (runtime.get("adapterTimings") or []) if isinstance(row, dict)
-    ]
-    stage_top = [row for row in (runtime.get("stageTop") or []) if isinstance(row, dict)]
-    top_failures = [row for row in (report.get("topFailures") or []) if isinstance(row, dict)]
+    summary = as_json_object(report.get("summary"))
+    runtime = as_json_object(report.get("runtime"))
+    loss_accounting = as_json_object(summary.get("lossAccounting"))
+    failures = json_object_rows(report.get("failures"))
+    candidates = json_object_rows(report.get("candidates"))
+    adapter_timings = json_object_rows(runtime.get("adapterTimings"))
+    stage_top = json_object_rows(runtime.get("stageTop"))
+    top_failures = json_object_rows(report.get("topFailures"))
     failed_sources = [
         {
             "name": safe_text(row.get("name")) or safe_text(row.get("domain")) or "unknown",
@@ -74,7 +74,7 @@ def summarize_discovery(report: dict[str, Any]) -> dict[str, Any]:
         "failedProbeCount": safe_int(summary.get("failedProbeCount")),
         "probeMissCount": safe_int(summary.get("probeMissCount")),
         "discoverableButDeferredCount": safe_int(summary.get("discoverableButDeferredCount")),
-        "queueFilteredCount": safe_int((summary.get("lossAccounting") or {}).get("queueFiltered")),
+        "queueFilteredCount": safe_int(loss_accounting.get("queueFiltered")),
         "candidateCount": len(candidates),
         "failureCount": len(failures),
         "stageTop": stage_top[:5],
@@ -87,7 +87,7 @@ def summarize_discovery(report: dict[str, Any]) -> dict[str, Any]:
 def infer_detail_duration_ms(detail: dict[str, Any]) -> int:
     if safe_int(detail.get("durationMs")) > 0:
         return safe_int(detail.get("durationMs"))
-    stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
+    stats = as_json_object(detail.get("stats"))
     timing_keys = (
         "listing_fetch_ms",
         "candidate_extraction_ms",
@@ -101,12 +101,8 @@ def infer_detail_duration_ms(detail: dict[str, Any]) -> int:
 
 def flatten_fetch_detail_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for source_row in report.get("sources") or []:
-        if not isinstance(source_row, dict):
-            continue
-        for detail in source_row.get("details") or []:
-            if not isinstance(detail, dict):
-                continue
+    for source_row in json_object_rows(report.get("sources")):
+        for detail in json_object_rows(source_row.get("details")):
             fetched = max(0, safe_int(detail.get("fetchedCount")))
             kept = max(0, safe_int(detail.get("keptCount")))
             rows.append(
@@ -133,12 +129,12 @@ def flatten_fetch_detail_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[str, Any]:
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
-    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    timing_summary = (
-        runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
-    )
-    sources = [row for row in (report.get("sources") or []) if isinstance(row, dict)]
+    summary = as_json_object(report.get("summary"))
+    runtime = as_json_object(report.get("runtime"))
+    timing_summary = as_json_object(runtime.get("timingSummary"))
+    outputs = as_json_object(report.get("outputs"))
+    report_output_path = Path(str(outputs.get("report") or ""))
+    sources = json_object_rows(report.get("sources"))
     detail_rows = flatten_fetch_detail_rows(report)
     failed_sources = [
         {
@@ -175,7 +171,7 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
         "outputCount": safe_int(summary.get("outputCount")),
         "browserFallbackQueueCount": len(
             read_json(
-                Path(report.get("outputs", {}).get("report", "")).parent
+                report_output_path.parent
                 / "jobs-browser-fallback-queue.json",
                 [],
             )
@@ -196,10 +192,9 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
                 or (
                     isinstance(row.get("details"), list)
                     and any(
-                        isinstance(item, dict)
-                        and isinstance(item.get("pages"), list)
+                        isinstance(item.get("pages"), list)
                         and any(safe_text(page) for page in item.get("pages") or [])
-                        for item in row.get("details") or []
+                        for item in json_object_rows(row.get("details"))
                     )
                 )
                 or safe_text(row.get("providerUrl"))
@@ -207,29 +202,19 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
         ),
         "parserRegressionQueueCount": len(
             read_json(
-                Path(report.get("outputs", {}).get("report", "")).parent
+                report_output_path.parent
                 / "jobs-parser-regression-queue.json",
                 [],
             )
         ),
-        "stageTop": [
-            row for row in (timing_summary.get("stageTop") or []) if isinstance(row, dict)
-        ][:5],
-        "slowestAdapters": [
-            row for row in (timing_summary.get("slowestAdapters") or []) if isinstance(row, dict)
-        ][:5],
-        "slowestSourceLoaders": [
-            row for row in (runtime.get("slowestSources") or []) if isinstance(row, dict)
-        ][:10],
+        "stageTop": json_object_rows(timing_summary.get("stageTop"))[:5],
+        "slowestAdapters": json_object_rows(timing_summary.get("slowestAdapters"))[:5],
+        "slowestSourceLoaders": json_object_rows(runtime.get("slowestSources"))[:10],
         "slowestSourceEntries": detail_rows[:10],
-        "highCostLowYieldSources": [
-            row
-            for row in (timing_summary.get("highCostLowYieldSources") or [])
-            if isinstance(row, dict)
-        ][:10],
-        "detailHeavySources": [
-            row for row in (timing_summary.get("detailHeavySources") or []) if isinstance(row, dict)
-        ][:10],
+        "highCostLowYieldSources": json_object_rows(
+            timing_summary.get("highCostLowYieldSources")
+        )[:10],
+        "detailHeavySources": json_object_rows(timing_summary.get("detailHeavySources"))[:10],
         "productiveExpensiveSources": productive_expensive[:10],
         "failedSources": failed_sources[:25],
         "detailRows": detail_rows,
@@ -266,9 +251,7 @@ def build_issues(
     high_cost_low_yield: list[dict[str, Any]] = []
     coverage_risks: list[dict[str, Any]] = []
 
-    for row in raw_fetch_report.get("sources") or []:
-        if not isinstance(row, dict):
-            continue
+    for row in json_object_rows(raw_fetch_report.get("sources")):
         source_name = safe_text(row.get("name")) or "unknown"
         adapter = safe_text(row.get("adapter")) or "custom"
         status = safe_text(row.get("status")).lower()
@@ -300,7 +283,7 @@ def build_issues(
         ):
             coverage_risks.append({**base, "category": "low_yield"})
 
-    for row in fetch.get("detailRows") or []:
+    for row in json_object_rows(fetch.get("detailRows")):
         status = safe_text(row.get("status")).lower()
         classification = safe_text(row.get("classification")).lower()
         fetched = max(0, safe_int(row.get("fetchedCount")))
@@ -320,9 +303,7 @@ def build_issues(
         ):
             coverage_risks.append({**base, "category": "low_yield"})
 
-    for row in raw_discovery_report.get("failures") or []:
-        if not isinstance(row, dict):
-            continue
+    for row in json_object_rows(raw_discovery_report.get("failures")):
         stage = safe_text(row.get("dropStage") or row.get("stage"))
         item = {
             "sourceName": safe_text(row.get("name")) or safe_text(row.get("domain")) or "unknown",
@@ -370,14 +351,11 @@ def build_issues(
 
 def build_recommendations(report: dict[str, Any]) -> list[str]:
     recommendations: list[str] = []
-    fetch = report.get("fetch") if isinstance(report.get("fetch"), dict) else {}
-    discovery = report.get("discovery") if isinstance(report.get("discovery"), dict) else {}
-    issues = report.get("issues") if isinstance(report.get("issues"), dict) else {}
-    slow_adapter = (
-        (fetch.get("slowestAdapters") or [{}])[0]
-        if isinstance(fetch.get("slowestAdapters"), list) and fetch.get("slowestAdapters")
-        else {}
-    )
+    fetch = as_json_object(report.get("fetch"))
+    discovery = as_json_object(report.get("discovery"))
+    issues = as_json_object(report.get("issues"))
+    slow_adapters = json_object_rows(fetch.get("slowestAdapters"))
+    slow_adapter = slow_adapters[0] if slow_adapters else {}
     if safe_text(slow_adapter.get("adapter")):
         recommendations.append(
             f"Investigate {safe_text(slow_adapter.get('adapter'))} first for fetch-time wins; it is the slowest adapter family in the baseline."
@@ -436,9 +414,10 @@ def build_report(
 
 
 def render_markdown(report: dict[str, Any]) -> str:
-    discovery = report.get("discovery") if isinstance(report.get("discovery"), dict) else {}
-    fetch = report.get("fetch") if isinstance(report.get("fetch"), dict) else {}
-    issues = report.get("issues") if isinstance(report.get("issues"), dict) else {}
+    discovery = as_json_object(report.get("discovery"))
+    fetch = as_json_object(report.get("fetch"))
+    issues = as_json_object(report.get("issues"))
+    totals = as_json_object(report.get("totals"))
     lines = [
         "# Pipeline Audit Report",
         "",
@@ -448,36 +427,36 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Discovery duration: {safe_int(discovery.get('totalDurationMs'))} ms",
         f"- Fetch duration: {safe_int(fetch.get('totalDurationMs'))} ms",
         f"- Fetch wall-clock: {safe_int(fetch.get('wallClockDurationMs'))} ms",
-        f"- Total jobs: {safe_int((report.get('totals') or {}).get('totalJobs'))}",
-        f"- Top-level failed fetch sources: {safe_int((report.get('totals') or {}).get('topLevelFailedSources'))}",
-        f"- Top-level high-cost/low-yield sources: {safe_int((report.get('totals') or {}).get('topLevelHighCostLowYieldSources'))}",
-        f"- Issue inventory hard failures: {safe_int((report.get('totals') or {}).get('issueInventoryHardFailures'))}",
-        f"- Issue inventory soft failures: {safe_int((report.get('totals') or {}).get('issueInventorySoftFailures'))}",
-        f"- Issue inventory high-cost/low-yield: {safe_int((report.get('totals') or {}).get('issueInventoryHighCostLowYield'))}",
-        f"- Issue inventory coverage risks: {safe_int((report.get('totals') or {}).get('issueInventoryCoverageRisks'))}",
+        f"- Total jobs: {safe_int(totals.get('totalJobs'))}",
+        f"- Top-level failed fetch sources: {safe_int(totals.get('topLevelFailedSources'))}",
+        f"- Top-level high-cost/low-yield sources: {safe_int(totals.get('topLevelHighCostLowYieldSources'))}",
+        f"- Issue inventory hard failures: {safe_int(totals.get('issueInventoryHardFailures'))}",
+        f"- Issue inventory soft failures: {safe_int(totals.get('issueInventorySoftFailures'))}",
+        f"- Issue inventory high-cost/low-yield: {safe_int(totals.get('issueInventoryHighCostLowYield'))}",
+        f"- Issue inventory coverage risks: {safe_int(totals.get('issueInventoryCoverageRisks'))}",
         "",
         "## Slowest areas",
     ]
-    for row in (discovery.get("stageTop") or [])[:5]:
+    for row in json_object_rows(discovery.get("stageTop"))[:5]:
         lines.append(
             f"- Discovery stage `{safe_text(row.get('stage'))}`: {safe_int(row.get('durationMs'))} ms"
         )
-    for row in (fetch.get("slowestAdapters") or [])[:5]:
+    for row in json_object_rows(fetch.get("slowestAdapters"))[:5]:
         lines.append(
             f"- Fetch adapter `{safe_text(row.get('adapter'))}`: {safe_int(row.get('durationMs'))} ms across {safe_int(row.get('sourceCount'))} source(s)"
         )
-    for row in (fetch.get("slowestSourceLoaders") or [])[:5]:
+    for row in json_object_rows(fetch.get("slowestSourceLoaders"))[:5]:
         lines.append(
             f"- Loader `{safe_text(row.get('name'))}` ({safe_text(row.get('adapter'))}): {safe_int(row.get('durationMs'))} ms, kept {safe_int(row.get('keptCount'))}"
         )
-    for row in (fetch.get("slowestSourceEntries") or [])[:5]:
+    for row in json_object_rows(fetch.get("slowestSourceEntries"))[:5]:
         lines.append(
             f"- Source entry `{safe_text(row.get('name'))}` via `{safe_text(row.get('sourceName'))}`: {safe_int(row.get('durationMs'))} ms, kept {safe_int(row.get('keptCount'))}/{safe_int(row.get('fetchedCount'))}"
         )
     if fetch.get("productiveExpensiveSources"):
         lines.append("")
         lines.append("## Productive but expensive sources")
-        for row in (fetch.get("productiveExpensiveSources") or [])[:5]:
+        for row in json_object_rows(fetch.get("productiveExpensiveSources"))[:5]:
             lines.append(
                 f"- `{safe_text(row.get('name'))}` ({safe_text(row.get('adapter'))})"
                 f": {safe_int(row.get('durationMs'))} ms, kept {safe_int(row.get('keptCount'))}/{safe_int(row.get('fetchedCount'))}"
@@ -485,7 +464,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     if fetch.get("detailHeavySources"):
         lines.append("")
         lines.append("## Detail-fetch dominated sources")
-        for row in (fetch.get("detailHeavySources") or [])[:5]:
+        for row in json_object_rows(fetch.get("detailHeavySources"))[:5]:
             lines.append(
                 f"- `{safe_text(row.get('name'))}` ({safe_text(row.get('adapter'))})"
                 f": detailFetch={safe_int(row.get('detailFetchMs'))} ms, total={safe_int(row.get('durationMs'))} ms, kept {safe_int(row.get('keptCount'))}"
@@ -494,7 +473,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("## Failed or not properly acting sources")
     for section_name in ("hard_failures", "soft_failures", "high_cost_low_yield", "coverage_risks"):
         lines.append(f"### {section_name.replace('_', ' ').title()}")
-        rows = issues.get(section_name) or []
+        rows = json_object_rows(issues.get(section_name))
         if not rows:
             lines.append("- None")
             continue
@@ -534,13 +513,11 @@ def main() -> int:
     discovery_report = read_json(data_dir / "source-discovery-report.json", {})
     fetch_report = read_json(data_dir / "jobs-fetch-report.json", {})
     jobs = read_json(data_dir / "jobs-unified.json", [])
-    if not isinstance(discovery_report, dict):
-        discovery_report = {}
-    if not isinstance(fetch_report, dict):
-        fetch_report = {}
-    if not isinstance(jobs, list):
-        jobs = []
-    report = build_report(discovery_report, fetch_report, jobs)
+    report = build_report(
+        as_json_object(discovery_report),
+        as_json_object(fetch_report),
+        json_object_rows(jobs),
+    )
     json_output = (
         Path(args.output_json).resolve()
         if safe_text(args.output_json)
