@@ -26,6 +26,10 @@ This page stores completed items moved out of the active repository-health track
    The Scrapy remediation updated the direct dependency to the latest released `Scrapy==2.15.0`, raised the `scrapy-playwright` source requirement floor to `>=0.0.46`, and regenerated `requirements-lock.txt`. The remediation was validated with the dependency import/version check, `python -m pip check`, focused Scrapy/runtime tests, refactor and lint gates, and a forced orchestrator build; the remaining `pip-audit` Scrapy advisory had no fixed version and affected an unused Scrapy file-download storage path.
    **Done when:** complete.
 
+6. **Completed: type the static listing/detail runtime cluster.**
+   The enforced mypy scope now includes `src/jobs/adapters/static_listing_flow.py`, `src/jobs/adapters/static_detail.py`, `src/jobs/adapters/static.py`, and `src/jobs/adapters/plugins/static/_rendered_cards.py`. This pass preserved the static adapter compatibility roots while normalizing detail payload reads, listing candidate state, and rendered-card primary location typing.
+   **Done when:** complete.
+
 ## Completed P1 Items
 
 5. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**
@@ -34,4 +38,8 @@ This page stores completed items moved out of the active repository-health track
 
 6. **Completed: continue the mypy staged rollout through source/discovery audit JSON lanes.**
    The enforced mypy scope now includes the JSON-heavy source/discovery reporting and audit helpers: `src/source_discovery/reporting_progress.py`, `src/source_discovery/runtime_metrics.py`, `src/pipeline_audit.py`, and `src/source_audit_sweep.py`. This lane reused shared JSON-shape narrowing without changing report payloads, markdown text, or CLI behavior. The broad audit dropped from `677` errors in `110` files to `607` errors in `106` files.
+   **Done when:** complete.
+
+7. **Completed: continue the mypy staged rollout through jobs runtime/report contract helpers.**
+   The enforced mypy scope now includes `src/jobs/reporting_queues.py`, `src/jobs/common/contracts_runtime.py`, `src/jobs/pipeline_source_loop.py`, and `src/jobs/pipeline_finalize.py`. This pass normalized optional report queues and runtime timing payloads, replaced the source-loop fallback namespace with `PipelineTaskRuntime`, and passed typed social-review rows into the social experiment helpers. The broad audit dropped from `295` errors in `81` files to `273` errors in `73` files.
    **Done when:** complete.

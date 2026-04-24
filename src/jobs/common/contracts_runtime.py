@@ -8,6 +8,14 @@ from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _normalize_stage_totals(stage_totals: dict[str, Any]) -> dict[str, int]:
     return {
         "fetchAndParse": _clamped_int(stage_totals.get("fetchAndParse"), 0, 0),
@@ -134,10 +142,14 @@ def normalize_runtime_payload(
         if cleaned_examples:
             payload["deadListingPageExamples"] = cleaned_examples[:5]
 
-    timing_summary_raw = (
-        src.get("timingSummary") if isinstance(src.get("timingSummary"), dict) else {}
-    )
+    timing_summary_raw = _as_dict(src.get("timingSummary"))
     if timing_summary_raw:
+        stage_totals = _as_dict(timing_summary_raw.get("stageTotalsMs"))
+        stage_top = _as_list(timing_summary_raw.get("stageTop"))
+        adapter_timings = _as_list(timing_summary_raw.get("adapterTimings"))
+        slowest_adapters = _as_list(timing_summary_raw.get("slowestAdapters"))
+        high_cost_low_yield_sources = _as_list(timing_summary_raw.get("highCostLowYieldSources"))
+        detail_heavy_sources = _as_list(timing_summary_raw.get("detailHeavySources"))
         payload["timingSummary"] = {
             "totalDurationMs": _clamped_int(timing_summary_raw.get("totalDurationMs"), 0, 0),
             "wallClockDurationMs": _clamped_int(
@@ -149,45 +161,31 @@ def normalize_runtime_payload(
             "p95SourceDurationMs": _clamped_int(
                 timing_summary_raw.get("p95SourceDurationMs"), 0, 0
             ),
-            "stageTotalsMs": _normalize_stage_totals(
-                timing_summary_raw.get("stageTotalsMs")
-                if isinstance(timing_summary_raw.get("stageTotalsMs"), dict)
-                else {}
-            ),
+            "stageTotalsMs": _normalize_stage_totals(stage_totals),
             "stageTop": _normalize_named_duration_rows(
-                timing_summary_raw.get("stageTop")
-                if isinstance(timing_summary_raw.get("stageTop"), list)
-                else [],
+                stage_top,
                 name_key="stage",
                 limit=5,
             ),
             "adapterTimings": _normalize_named_duration_rows(
-                timing_summary_raw.get("adapterTimings")
-                if isinstance(timing_summary_raw.get("adapterTimings"), list)
-                else [],
+                adapter_timings,
                 name_key="adapter",
                 limit=20,
                 include_source_count=True,
             ),
             "slowestAdapters": _normalize_named_duration_rows(
-                timing_summary_raw.get("slowestAdapters")
-                if isinstance(timing_summary_raw.get("slowestAdapters"), list)
-                else [],
+                slowest_adapters,
                 name_key="adapter",
                 limit=5,
                 include_source_count=True,
             ),
             "highCostLowYieldSources": _normalize_named_duration_rows(
-                timing_summary_raw.get("highCostLowYieldSources")
-                if isinstance(timing_summary_raw.get("highCostLowYieldSources"), list)
-                else [],
+                high_cost_low_yield_sources,
                 name_key="name",
                 limit=5,
             ),
             "detailHeavySources": _normalize_named_duration_rows(
-                timing_summary_raw.get("detailHeavySources")
-                if isinstance(timing_summary_raw.get("detailHeavySources"), list)
-                else [],
+                detail_heavy_sources,
                 name_key="name",
                 limit=10,
                 include_detail_fetch=True,

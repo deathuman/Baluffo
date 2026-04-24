@@ -10,6 +10,10 @@ from src.jobs.text_utils import clean_text, norm_text
 from src.scrapers.domain_profiles import domain_profile_for_url, pick_canonical_listing_url
 
 
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def build_browser_fallback_queue(
     source_reports: Sequence[dict[str, Any]],
     *,
@@ -31,9 +35,7 @@ def build_browser_fallback_queue(
             name = clean_text(item.get("name"))
             studio = clean_text(item.get("studio"))
             clean_pages = [
-                clean_text(page)
-                for page in (item.get("pages") if isinstance(item.get("pages"), list) else [])
-                if clean_text(page)
+                clean_text(page) for page in _as_list(item.get("pages")) if clean_text(page)
             ]
             canonical = pick_canonical_listing_url(clean_pages) if clean_pages else None
             if not canonical:
@@ -83,13 +85,13 @@ def _parser_regression_pages(report: dict[str, Any]) -> list[str]:
     listing_url = clean_text(report.get("listingUrl"))
     if listing_url:
         pages.append(listing_url)
-    top_pages = report.get("pages") if isinstance(report.get("pages"), list) else []
+    top_pages = _as_list(report.get("pages"))
     pages.extend(clean_text(page) for page in top_pages if clean_text(page))
-    details = report.get("details") if isinstance(report.get("details"), list) else []
+    details = _as_list(report.get("details"))
     for item in details:
         if not isinstance(item, dict):
             continue
-        item_pages = item.get("pages") if isinstance(item.get("pages"), list) else []
+        item_pages = _as_list(item.get("pages"))
         pages.extend(clean_text(page) for page in item_pages if clean_text(page))
     provider_url = clean_text(report.get("providerUrl"))
     if provider_url:

@@ -15,7 +15,11 @@ from src.shared.http_batch import fetch_pages_batched
 
 from .static_runtime import StaticSourceContext
 
-root = None
+root: Any | None = None
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 @dataclass(frozen=True)
@@ -191,11 +195,7 @@ def run_detail_traversal(ctx: StaticSourceContext, plan: StaticDetailTraversalPl
             detail = clean_text(detail_result_row.get("url"))
             if not detail:
                 continue
-            detail_payload = (
-                detail_result_row.get("payload")
-                if isinstance(detail_result_row.get("payload"), dict)
-                else {}
-            )
+            detail_payload = _as_dict(detail_result_row.get("payload"))
             detail_title = clean_text(detail_payload.get("detailTitle"))
             ctx.stats["detail_pages_visited"] += 1
             ctx.emit_source_progress(

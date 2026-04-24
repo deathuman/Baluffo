@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from typing import Any
 from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import (
@@ -547,7 +548,7 @@ def extract_rendered_card_jobs(
                 if clean_text(item.get("city", "")) or clean_text(item.get("country", ""))
             )
             location_details = normalize_location_details(locations)
-            primary_location = next(
+            primary_location: dict[str, Any] = next(
                 (
                     item
                     for item in location_details.get("locations", [])

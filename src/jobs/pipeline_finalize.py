@@ -60,6 +60,10 @@ OUTPUT_FIELDS = common_config.OUTPUT_FIELDS
 LIGHTWEIGHT_OUTPUT_FIELDS = common_config.LIGHTWEIGHT_OUTPUT_FIELDS
 
 
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _apply_final_location_quality_guardrail(rows: list[dict[str, Any]]) -> dict[str, Any]:
     field_counts: Counter[str] = Counter()
     reason_counts: Counter[str] = Counter()
@@ -254,7 +258,7 @@ def finalize_pipeline_run(
 
     social_review_path = paths.output_dir / SOCIAL_EXPERIMENT_REVIEW_FILENAME
     social_review_candidates = build_social_experiment_review_sample(
-        deduped_payload_rows,
+        deduped_rows,
         sample_size=SOCIAL_EXPERIMENT_SAMPLE_SIZE,
     )
     existing_social_review_payload: dict[str, Any] = {}
@@ -265,11 +269,7 @@ def finalize_pipeline_run(
             loaded_review = {}
         if isinstance(loaded_review, dict):
             existing_social_review_payload = loaded_review
-    existing_review_rows = (
-        existing_social_review_payload.get("rows")
-        if isinstance(existing_social_review_payload.get("rows"), list)
-        else []
-    )
+    existing_review_rows = _as_list(existing_social_review_payload.get("rows"))
     review_rows_by_key = {
         clean_text(row.get("dedupKey")): row
         for row in existing_review_rows
@@ -346,7 +346,7 @@ def finalize_pipeline_run(
             },
             "socialSummary": summarize_social_experiment(
                 source_reports,
-                deduped_payload_rows,
+                deduped_rows,
                 pilot_window_start_at=started_at,
                 pilot_window_end_at=lifecycle_finished_at,
                 review_payload=social_review_payload,

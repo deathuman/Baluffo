@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
-from types import SimpleNamespace
-from typing import Any
+from typing import Any, Protocol, cast
 
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.models import CanonicalJob
@@ -18,6 +18,33 @@ from .pipeline_source_progress import (
 from .pipeline_source_results import execute_loader
 
 root = None
+
+
+class _RootLike(Protocol):
+    def resolve_fetch_browser_fallback_helper(
+        self,
+    ) -> Callable[[str, int], tuple[str, str]] | None: ...
+
+    def _build_capped_try_playwright(
+        self,
+        try_playwright: Callable[[str, int], tuple[str, str]],
+        *,
+        max_concurrent: int,
+    ) -> Callable[[str, int], tuple[str, str]]: ...
+
+    def set_browser_fallback_state(
+        self,
+        source_state_rows: dict[str, dict[str, Any]] | None,
+        state_row: dict[str, Any],
+    ) -> None: ...
+
+
+def _root_module() -> _RootLike:
+    if root is not None:
+        return cast(_RootLike, root)
+    from src import jobs_fetcher as jobs_fetcher_pkg
+
+    return cast(_RootLike, jobs_fetcher_pkg)
 
 
 def run_source_execution_stage(
@@ -39,22 +66,22 @@ def run_source_execution_stage(
     source_reports: list[dict[str, Any]],
 ) -> None:
     if task_runtime is None:
-        task_runtime = SimpleNamespace(
+        task_runtime = PipelineTaskRuntime(
             task_lock=task_lock,
             task_rows=task_rows,
-            recent_events=[],
-            run_id="",
+            thread_local=thread_local,
             current_phase_key="",
             current_phase_label="",
             current_output_count=0,
             show_progress=bool(config.show_progress),
         )
-    try_playwright = root.resolve_fetch_browser_fallback_helper()
+    root_mod = _root_module()
+    try_playwright = root_mod.resolve_fetch_browser_fallback_helper()
     browser_fallback_guard = BrowserFallbackCircuitBreaker.from_state(
         source_state_rows, cooldown_minutes=config.browser_fallback_cooldown_minutes
     )
     capped_try_playwright = (
-        root._build_capped_try_playwright(
+        root_mod._build_capped_try_playwright(
             try_playwright,
             max_concurrent=config.max_workers,
         )
@@ -135,4 +162,4 @@ def run_source_execution_stage(
     write_progress_report(force=True)
     write_task_state(force=True)
     run_stage()
-    root.set_browser_fallback_state(source_state_rows, browser_fallback_guard.to_state_row())
+    root_mod.set_browser_fallback_state(source_state_rows, browser_fallback_guard.to_state_row())

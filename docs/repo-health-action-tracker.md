@@ -20,8 +20,8 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src` -> `295 errors in 81 files (checked 313 source files)` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, parser/static-runtime, and static adapter/detail scope. |
+| Broad type-check run | `python -m mypy src` -> `273 errors in 73 files (checked 313 source files)` |
+| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, parser/static-runtime, static adapter/detail, and jobs runtime/report-helper scope. |
 | ESLint | `137 warnings, 0 errors` |
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
@@ -38,15 +38,11 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 
 ### P0
 
-1. **Next staged mypy milestone: type the remaining static listing/detail runtime cluster.**
-   The next coherent jobs target is the adjacent static runtime cluster surfaced by the broad audit: `src/jobs/adapters/static_listing_flow.py`, `src/jobs/adapters/static_detail.py`, `src/jobs/adapters/static.py`, and the direct static plugin helpers they feed, including `src/jobs/adapters/plugins/static/_rendered_cards.py` when needed.
-   **Done when:** the enforced mypy scope expands again to cover that static listing/detail runtime cluster, and those modules stop leaking `Any` through listing candidate state, detail traversal payloads, patchable root module references, and rendered-card location handling.
+1. **Next staged mypy milestone: type the jobs source-execution compatibility cluster.**
+   The next coherent jobs target surfaced by the broad audit is the source-execution compatibility layer: `src/jobs/pipeline_source_progress.py`, `src/jobs/pipeline_stage_source_execution.py`, `src/jobs/fetcher_compat_runtime.py`, and the direct task-state/timing helpers they feed.
+   **Done when:** the enforced mypy scope expands again to cover that source-execution cluster, and those modules stop leaking `Any` through patchable root module references, task-state payloads, timing payloads, and compatibility aliases.
 
 ### P1
-
-7. **Continue the mypy staged rollout through job runtime/report contract helpers.**
-   Repo-wide mypy is still not complete: the broad audit reports `295` errors in `81` files. After the static listing/detail runtime cluster, the next related non-release lane appears to be job runtime/report contract helpers, including `src/jobs/reporting_queues.py`, `src/jobs/common/contracts_runtime.py`, `src/jobs/pipeline_source_loop.py`, `src/jobs/pipeline_finalize.py`, and adjacent source-registry JSON normalization. Defer desktop updater and release-repeatability typing to a separate release-sensitive lane.
-   **Done when:** the next cohesive lane is added to `mypy.ini`, focused tests for that lane remain green, and the broad audit count is re-recorded.
 
 8. **Raise coverage in the weakest validated modules.**
    Prioritize `src/source_sync_crypto.py` (`52%`), `src/source_discovery/stage_control.py` (`51%`), `src/source_discovery/probe.py` (`65%`), and `src/source_discovery/url_patches.py` (`71%`).

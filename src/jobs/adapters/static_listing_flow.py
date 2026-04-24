@@ -31,7 +31,7 @@ from src.shared.regex import find_urls_in_text
 
 from .static_runtime import StaticSourceContext
 
-root = None
+root: Any | None = None
 
 
 @dataclass
@@ -400,7 +400,7 @@ def _extract_listing_candidates(
     listing_htmls: list[str],
 ) -> tuple[int, list[tuple[str, str]]]:
     detail_links: list[tuple[str, str]] = []
-    detail_seen = set()
+    detail_seen: set[str] = set()
     listing_jobs_found = 0
     for listing_html in listing_htmls:
         ctx.emit_heartbeat()

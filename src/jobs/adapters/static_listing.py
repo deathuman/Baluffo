@@ -34,7 +34,7 @@ from . import static_listing_flow as _static_listing_flow
 from .static_detail import StaticDetailTraversalPlan, run_detail_traversal
 from .static_runtime import StaticSourceContext
 
-root = None
+root: Any | None = None
 
 StaticListingStageState = _static_listing_flow.StaticListingStageState
 _complete_source_without_generic_flow = _static_listing_flow._complete_source_without_generic_flow
