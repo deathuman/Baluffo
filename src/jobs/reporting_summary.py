@@ -18,6 +18,10 @@ from .reporting_breakdowns import (
 TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
 
 
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def format_source_error(source_name: str, error: Any) -> str:
     message = clean_text(str(error))
     prefix = f"{clean_text(source_name)}:"
@@ -34,7 +38,7 @@ def _cache_rows(source_reports: Sequence[dict[str, Any]]) -> list[dict[str, Any]
         if not isinstance(row, dict):
             continue
         rows.append(row)
-        details = row.get("details") if isinstance(row.get("details"), list) else []
+        details = _as_list(row.get("details"))
         rows.extend([item for item in details if isinstance(item, dict)])
     return rows
 

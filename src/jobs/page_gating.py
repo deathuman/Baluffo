@@ -407,8 +407,8 @@ def _has_job_listing_anchor_evidence(html_text: str) -> bool:
     """True when a page contains multiple obvious job anchors from a known ATS."""
     hits = 0
     for anchor in iter_anchor_fragments(html_text or ""):
-        href = _lower(anchor.get("href"))
-        text = _lower(anchor.get("text"))
+        href = _lower(clean_text(anchor.get("href")))
+        text = _lower(clean_text(anchor.get("text")))
         if not href or not text:
             continue
         if not any(token in href for token in _JOB_LISTING_HREF_HINTS):

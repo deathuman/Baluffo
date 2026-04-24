@@ -279,7 +279,9 @@ def resolve_country_acceptance_value(value: Any) -> str:
     if not token:
         return ""
     contract = load_country_acceptance_contract()
-    return contract["aliasToCanonical"].get(token) or contract["exactLabelMap"].get(token, "")
+    alias_map = contract["aliasToCanonical"]
+    exact_map = contract["exactLabelMap"]
+    return str(alias_map.get(token) or exact_map.get(token, ""))
 
 
 def looks_like_country_token(value: Any) -> bool:

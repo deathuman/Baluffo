@@ -34,6 +34,10 @@ This page stores completed items moved out of the active repository-health track
    The enforced mypy scope now includes `src/jobs/pipeline_source_progress.py`, `src/jobs/pipeline_stage_source_execution.py`, `src/jobs/fetcher_compat_runtime.py`, `src/jobs/pipeline_timing.py`, and `src/jobs/common/contracts_task_state.py`. This pass preserved the patchable source-execution root assignments while normalizing task-state summary/output payloads, runtime timing/detail metrics, and compatibility runtime monkeypatch aliases. The broad audit dropped from `273` errors in `73` files to `260` errors in `68` files.
    **Done when:** complete.
 
+8. **Completed: type the jobs reporting/text utility tail cluster.**
+   The enforced mypy scope now includes `src/jobs/reporting_summary.py`, `src/jobs/reporting_social.py`, `src/jobs/location_bucket_manifest.py`, `src/jobs/page_gating.py`, `src/jobs/common/http.py`, and `src/jobs/text_utils.py`. This pass normalized optional report lists, tightened untyped text/HTTP return values, and made manifest/page-gating utility reads locally checkable without changing report payloads, page classification behavior, or persisted job data contracts. The broad audit dropped from `260` errors in `68` files to `253` errors in `62` files.
+   **Done when:** complete.
+
 ## Completed P1 Items
 
 5. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**

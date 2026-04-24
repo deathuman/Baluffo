@@ -20,8 +20,8 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src` -> `260 errors in 68 files (checked 313 source files)` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, parser/static-runtime, static adapter/detail, jobs runtime/report-helper, and source-execution compatibility scope. |
+| Broad type-check run | `python -m mypy src` -> `253 errors in 62 files (checked 313 source files)` |
+| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, parser/static-runtime, static adapter/detail, jobs runtime/report-helper, source-execution compatibility, and jobs reporting/text utility scope. |
 | ESLint | `137 warnings, 0 errors` |
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
@@ -38,9 +38,9 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 
 ### P0
 
-1. **Next staged mypy milestone: type the jobs reporting/text utility tail cluster.**
-   The next small jobs-side target surfaced by the broad audit is `src/jobs/reporting_summary.py`, `src/jobs/reporting_social.py`, `src/jobs/location_bucket_manifest.py`, `src/jobs/page_gating.py`, `src/jobs/common/http.py`, and `src/jobs/text_utils.py`.
-   **Done when:** the enforced mypy scope expands again to cover that jobs reporting/text utility cluster, and those modules stop leaking `Any` through optional list payloads, URL/text helpers, manifest rows, and nullable page-gating labels.
+1. **Next staged mypy milestone: type the jobs transport/canonicalization tail cluster.**
+   The next small jobs-side target surfaced by the broad audit is `src/jobs/transport.py`, `src/jobs/canonicalize.py`, `src/jobs/adapters/plugins/static/littlechicken.py`, and `src/fetch_incremental_sanity_benchmark.py`.
+   **Done when:** the enforced mypy scope expands again to cover that jobs transport/canonicalization tail cluster, and those modules stop leaking `Any` through HTTP transport aliases, canonicalization ignores, static plugin optional titles, and benchmark loader values.
 
 ### P1
 

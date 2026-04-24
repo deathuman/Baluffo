@@ -29,6 +29,10 @@ OFFICIAL_BOARD_SOURCE_ADAPTERS = {
 OFFICIAL_BOARD_SOURCE_NAMES = {"epic_games_careers"}
 
 
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _canonical_sort_key(row: dict[str, Any]) -> tuple[str, int, str, str, str]:
     dedup_key = clean_text(row.get("dedupKey"))
     row_id = int(row.get("id") or 0)
@@ -53,7 +57,7 @@ def _social_channel_for_source(source_name: Any) -> str:
 
 
 def _source_bundle_items(row: dict[str, Any]) -> list[dict[str, Any]]:
-    bundle = row.get("sourceBundle") if isinstance(row.get("sourceBundle"), list) else []
+    bundle = _as_list(row.get("sourceBundle"))
     return [item for item in bundle if isinstance(item, dict)]
 
 
@@ -129,7 +133,7 @@ def build_social_experiment_review_payload(
                 "jobLink": clean_text(row.get("jobLink")),
                 "channels": [
                     clean_text(item)
-                    for item in (row.get("channels") or [])
+                    for item in _as_list(row.get("channels"))
                     if clean_text(item) in {"reddit", "mastodon", "x"}
                 ],
                 "officialBoardOrigin": bool(row.get("officialBoardOrigin")),

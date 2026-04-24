@@ -106,7 +106,10 @@ def load_rows_from_csv(path: Path) -> list[dict[str, str]]:
 
 
 def load_manifest(path: Path) -> list[dict[str, Any]]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
 
 
 def check_manifest_against_csv(
