@@ -13,6 +13,7 @@ import contextlib
 import http.client
 import json
 import os
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -21,6 +22,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
+
+_STARTUP_TRACE_LOCK = threading.Lock()
 
 
 def startup_probe_enabled(env: dict[str, str] | None = None) -> bool:
@@ -49,16 +52,17 @@ def append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
     }
     path = Path(data_dir) / "desktop-startup-metrics.jsonl"
     payload = json.dumps(row, ensure_ascii=False) + "\n"
-    for attempt in range(3):
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(payload)
-            return
-        except OSError:
-            if attempt >= 2:
+    with _STARTUP_TRACE_LOCK:
+        for attempt in range(5):
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write(payload)
                 return
-            time.sleep(0.02 * (attempt + 1))
+            except OSError:
+                if attempt >= 4:
+                    return
+                time.sleep(0.02 * (attempt + 1))
 
 
 def append_runtime_startup_trace(event: str, **fields: object) -> None:
