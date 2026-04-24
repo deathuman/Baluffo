@@ -24,7 +24,7 @@ This page converts an external repository analysis into a repo-native action tra
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
 | Node lock file | `package-lock.json` present |
-| Dependabot alert signal | GitHub push reported `6` high vulnerabilities on the default branch; exact advisory/package details still need Dependabot dashboard validation |
+| Dependabot alert signal | GitHub push reported `6` high vulnerabilities on the default branch; local Scrapy remediation updated `Scrapy==2.12.0` to `Scrapy==2.14.2`, and exact alert closure still needs Dependabot dashboard validation after push |
 
 ## Confirmed Strengths Worth Protecting
 
@@ -49,8 +49,8 @@ This page converts an external repository analysis into a repo-native action tra
    `save_json_atomic` now writes newline-terminated JSON, and targeted regression coverage protects the writer behavior used by the approval-state file.
    **Done when:** complete.
 
-4. **Triage and resolve GitHub Dependabot high-severity vulnerabilities.**
-   GitHub reported `6` high vulnerabilities on the default branch during the latest push. Treat this as a P0 until the Dependabot dashboard is checked, affected packages are identified, fixes or mitigations are applied, and lock files are updated through the repo's normal install/test flow.
+4. **In progress: resolve GitHub Dependabot high-severity vulnerabilities.**
+   GitHub reported `6` high vulnerabilities on the default branch during the latest push. The local Scrapy remediation updates the direct dependency from `Scrapy==2.12.0` to `Scrapy==2.14.2` and regenerates `requirements-lock.txt`; the Scrapy-adjacent lock entries (`scrapy-playwright`, `twisted`, `cryptography`, `pyopenssl`, `lxml`, `parsel`, `w3lib`, and `queuelib`) remained stable, and `brotli` is not present in the lock. Validation so far: `python -c "import scrapy; print(scrapy.__version__)"` -> `2.14.2`, `python -m pip check` passed, focused Scrapy/runtime tests passed (`187 passed`), `cmd /c npm run test:refactor:changed` passed, `cmd /c npm run lint:precommit:changed` passed, and `python scripts/orchestrator.py build --force` passed with run `20260424_122828`. `uvx pip-audit -r requirements-lock.txt` reports one residual Scrapy advisory (`PYSEC-2017-83` / `GHSA-h7wm-ph43-c39p` / `CVE-2017-14158`) with no fix version; the affected Scrapy file-download storage path (`FilesPipeline` / `S3FilesStore`) is not used in `src/` or tests.
    **Done when:** Dependabot shows no unresolved high or critical vulnerabilities for the default branch, dependency lock files reflect the approved updates, and relevant Python/Node test gates pass.
 
 ### P1
