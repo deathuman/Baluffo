@@ -118,7 +118,7 @@ requests==2.33.1
     #   tldextract
 requests-file==3.0.1
     # via tldextract
-scrapy==2.14.2
+scrapy==2.15.0
     # via
     #   -r requirements.txt
     #   scrapy-playwright
