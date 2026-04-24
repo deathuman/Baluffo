@@ -48,12 +48,17 @@ def append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
         "fields": {key: value for key, value in fields.items()},
     }
     path = Path(data_dir) / "desktop-startup-metrics.jsonl"
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-    except OSError:
-        return
+    payload = json.dumps(row, ensure_ascii=False) + "\n"
+    for attempt in range(3):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(payload)
+            return
+        except OSError:
+            if attempt >= 2:
+                return
+            time.sleep(0.02 * (attempt + 1))
 
 
 def append_runtime_startup_trace(event: str, **fields: object) -> None:
