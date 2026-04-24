@@ -42,7 +42,7 @@ def normalize_packaged_payload(module: Any, payload: dict[str, Any]) -> dict[str
 
 
 def load_packaged_sync_config(module: Any, *, env: dict[str, str] | None = None) -> Any | None:
-    env_map = env if isinstance(env, dict) else os.environ
+    env_map: dict[str, str] = env if isinstance(env, dict) else dict(os.environ)
     path_raw = str(
         env_map.get(module.PACKAGED_SYNC_CONFIG_ENV) or module.DEFAULT_PACKAGED_SYNC_CONFIG_PATH
     ).strip()
@@ -148,7 +148,7 @@ def resolve_sync_config(
     module: Any, *, settings: dict[str, Any] | None = None, env: dict[str, str] | None = None
 ) -> Any:
     settings_map = settings if isinstance(settings, dict) else {}
-    env_map = env if isinstance(env, dict) else os.environ
+    env_map: dict[str, str] = env if isinstance(env, dict) else dict(os.environ)
     default_enabled = bool(
         module._SECURITY_DEFAULTS["github_app_enabled_default"]
         and module._SYNC_DEFAULTS["local_enabled_default"]

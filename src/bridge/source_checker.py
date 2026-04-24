@@ -8,6 +8,10 @@ from typing import Any
 from src.source_registry import normalize_source_url
 
 
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _looks_like_not_found_page(html: str) -> bool:
     low = str(html or "").lower()
     if not low:
@@ -34,7 +38,7 @@ def _extract_static_module_signals(html: str, page_url: str) -> list[str]:
 
 
 def _resolve_static_source_pages(row: dict[str, Any]) -> list[str]:
-    pages_raw = row.get("pages") if isinstance(row.get("pages"), list) else []
+    pages_raw = _as_list(row.get("pages"))
     pages = [normalize_source_url(page) for page in pages_raw if normalize_source_url(page)]
     if pages:
         return pages
@@ -177,7 +181,7 @@ def check_static_source(
             fallback_source_id_prefix=f"static:{source_id}",
         )
         for parsed in parsed_rows:
-            link = normalize_job_url(parsed.get("jobLink"))
+            link = normalize_job_url(str(parsed.get("jobLink") or ""))
             if link:
                 structured_links.add(link)
 
@@ -206,7 +210,7 @@ def check_static_source(
                 fallback_source_id_prefix=f"static:{source_id}",
             )
             for parsed in detail_rows:
-                parsed_link = normalize_job_url(parsed.get("jobLink"))
+                parsed_link = normalize_job_url(str(parsed.get("jobLink") or ""))
                 if parsed_link:
                     structured_links.add(parsed_link)
 

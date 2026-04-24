@@ -18,6 +18,9 @@ _RATE_LIMIT_LOCK = threading.RLock()
 _RATE_LIMIT_STATE: dict[str, Any] = {"calls": [], "strike": 0, "until": None}
 _AUTH_MANAGER_LOCK = threading.RLock()
 _AUTH_MANAGER: dict[str, Any] = {}
+_crypt_protect_data: Callable[..., bool] | None
+_crypt_unprotect_data: Callable[..., bool] | None
+_local_free: Callable[[Any], Any]
 
 
 class _DPAPI_BLOB(ctypes.Structure):
@@ -55,7 +58,7 @@ if os.name == "nt":
 else:
     _crypt_protect_data = None
     _crypt_unprotect_data = None
-    _local_free = lambda _x: None  # type: ignore[assignment]
+    _local_free = lambda _x: None
 
 
 def set_runtime_state(
@@ -113,17 +116,20 @@ def machine_fingerprint(root_mod: Any) -> str:
 def dpapi_protect(root_mod: Any, raw: bytes) -> str:
     if os.name != "nt":
         raise RuntimeError("DPAPI unavailable")
+    crypt_protect_data = _crypt_protect_data
+    if crypt_protect_data is None:
+        raise RuntimeError("DPAPI unavailable")
     data_in = ctypes.create_string_buffer(raw)
     blob_in = _DPAPI_BLOB(len(raw), ctypes.cast(data_in, ctypes.POINTER(ctypes.c_byte)))
     blob_out = _DPAPI_BLOB()
-    ok = _crypt_protect_data(
+    ok = crypt_protect_data(
         ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out)
     )
     if not ok:
         raise RuntimeError("CryptProtectData failed")
     try:
-        encrypted = ctypes.string_at(blob_out.pbData, blob_out.cbData)
-        return root_mod._base64url_encode(encrypted)
+        encrypted = bytes(ctypes.string_at(blob_out.pbData, blob_out.cbData))
+        return str(root_mod._base64url_encode(encrypted))
     finally:
         _local_free(blob_out.pbData)
 
@@ -131,17 +137,20 @@ def dpapi_protect(root_mod: Any, raw: bytes) -> str:
 def dpapi_unprotect(root_mod: Any, encoded: str) -> bytes:
     if os.name != "nt":
         raise RuntimeError("DPAPI unavailable")
+    crypt_unprotect_data = _crypt_unprotect_data
+    if crypt_unprotect_data is None:
+        raise RuntimeError("DPAPI unavailable")
     raw = root_mod._base64url_decode(encoded)
     data_in = ctypes.create_string_buffer(raw)
     blob_in = _DPAPI_BLOB(len(raw), ctypes.cast(data_in, ctypes.POINTER(ctypes.c_byte)))
     blob_out = _DPAPI_BLOB()
-    ok = _crypt_unprotect_data(
+    ok = crypt_unprotect_data(
         ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out)
     )
     if not ok:
         raise RuntimeError("CryptUnprotectData failed")
     try:
-        return ctypes.string_at(blob_out.pbData, blob_out.cbData)
+        return bytes(ctypes.string_at(blob_out.pbData, blob_out.cbData))
     finally:
         _local_free(blob_out.pbData)
 
@@ -231,9 +240,8 @@ def init_github_app_auth(auth: Any, packaged_config: Any) -> None:
 def github_app_auth_token_is_fresh(root_mod: Any, auth: Any) -> bool:
     if not auth._token or not auth._token_expires_at:
         return False
-    return (
-        auth._token_expires_at - root_mod.now_utc()
-    ).total_seconds() > root_mod.INSTALLATION_TOKEN_REFRESH_SKEW_SECONDS
+    seconds_remaining = (auth._token_expires_at - root_mod.now_utc()).total_seconds()
+    return bool(seconds_remaining > root_mod.INSTALLATION_TOKEN_REFRESH_SKEW_SECONDS)
 
 
 def github_app_auth_refresh_installation_token(
@@ -280,7 +288,7 @@ def github_app_auth_get_installation_token(
 ) -> str:
     with auth._lock:
         if not force_refresh and github_app_auth_token_is_fresh(root_mod, auth):
-            return auth._token
+            return str(auth._token)
         return github_app_auth_refresh_installation_token(root_mod, auth, opener=opener)
 
 
@@ -306,7 +314,7 @@ def get_auth_manager(root_mod: Any, config: Any) -> Any:
     with _AUTH_MANAGER_LOCK:
         manager = _AUTH_MANAGER.get(key)
         if manager is None:
-            manager = root_mod.GitHubAppAuth(config.packaged_config)  # type: ignore[arg-type]
+            manager = root_mod.GitHubAppAuth(config.packaged_config)
             _AUTH_MANAGER[key] = manager
         return manager
 
@@ -316,17 +324,20 @@ def rate_limit_retry_after_seconds(
 ) -> int:
     retry_after = str((headers or {}).get("retry-after") or "").strip()
     if retry_after.isdigit():
-        return max(1, min(root_mod.RATE_LIMIT_BACKOFF_MAX_S, int(retry_after)))
+        return max(1, min(int(root_mod.RATE_LIMIT_BACKOFF_MAX_S), int(retry_after)))
     reset_raw = str((headers or {}).get("x-ratelimit-reset") or "").strip()
     if reset_raw.isdigit():
         reset_at = int(reset_raw)
         delta = reset_at - int(root_mod.now_utc().timestamp())
         if delta > 0:
-            return max(1, min(root_mod.RATE_LIMIT_BACKOFF_MAX_S, delta))
+            return max(1, min(int(root_mod.RATE_LIMIT_BACKOFF_MAX_S), delta))
     msg = str((payload or {}).get("message") or "").lower()
     if "secondary rate limit" in msg:
-        return min(root_mod.RATE_LIMIT_BACKOFF_MAX_S, root_mod.RATE_LIMIT_BACKOFF_BASE_S * 5)
-    return root_mod.RATE_LIMIT_BACKOFF_BASE_S
+        return min(
+            int(root_mod.RATE_LIMIT_BACKOFF_MAX_S),
+            int(root_mod.RATE_LIMIT_BACKOFF_BASE_S) * 5,
+        )
+    return int(root_mod.RATE_LIMIT_BACKOFF_BASE_S)
 
 
 def rate_limit_preflight(root_mod: Any) -> None:

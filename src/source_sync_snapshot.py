@@ -16,6 +16,10 @@ from src.source_registry import (
 from src.source_sync_runtime import parse_iso
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _snapshot_transition_text(*values: Any) -> str:
     for value in values:
         text = str(value or "").strip()
@@ -367,7 +371,7 @@ def pull_and_merge_sources(
             "mergedState": canonical_local,
             "remoteSha": "",
         }
-    snapshot = remote.get("snapshot") if isinstance(remote.get("snapshot"), dict) else {}
+    snapshot = _as_dict(remote.get("snapshot"))
     merged_state = merge_registry_state(module, local_state, snapshot)
     changed = json.dumps(merged_state, sort_keys=True, ensure_ascii=False) != json.dumps(
         merge_registry_state(module, local_state, empty_remote),
@@ -391,8 +395,8 @@ def push_sources_snapshot(
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     remote = read_remote_snapshot(module, config, opener=opener)
-    remote_snapshot = remote.get("snapshot") if isinstance(remote.get("snapshot"), dict) else {}
-    merged_state = merge_registry_state(module, local_state, remote_snapshot or {})
+    remote_snapshot = _as_dict(remote.get("snapshot"))
+    merged_state = merge_registry_state(module, local_state, remote_snapshot)
     snapshot = build_snapshot(module, merged_state)
     write_result = write_remote_snapshot(
         module,

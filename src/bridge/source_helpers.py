@@ -114,11 +114,7 @@ def find_existing_static_source_by_studio_domain(
                 or row.get("api_url")
                 or row.get("feed_url")
                 or row.get("board_url")
-                or (
-                    row.get("pages")[0]
-                    if isinstance(row.get("pages"), list) and row.get("pages")
-                    else ""
-                )
+                or (pages[0] if (pages := row.get("pages")) and isinstance(pages, list) else "")
                 or ""
             )
             if _normalized_host_token(endpoint) == host_key:

@@ -20,8 +20,8 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src` -> `245 errors in 58 files (checked 313 source files)` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, parser/static-runtime, static adapter/detail, jobs runtime/report-helper, source-execution compatibility, jobs reporting/text utility, and jobs transport/canonicalization tail scope. |
+| Broad type-check run | `python -m mypy src` -> `211 errors in 49 files (checked 313 source files)` |
+| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, parser/static-runtime, static adapter/detail, jobs runtime/report-helper, source-execution compatibility, jobs reporting/text utility, jobs transport/canonicalization tail, source registry/checker, and source-sync boundary scope. |
 | ESLint | `137 warnings, 0 errors` |
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
@@ -38,9 +38,9 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 
 ### P0
 
-1. **Next staged mypy milestone: type the source registry/checker JSON-shape cluster.**
-   The next coherent target surfaced by the broad audit is `src/source_registry.py`, `src/bridge/source_checker.py`, and `src/bridge/source_helpers.py`, with `src/bridge/source_check_http.py` included only if its stale ignore is direct fallout.
-   **Done when:** the enforced mypy scope expands again to cover the source registry/checker boundary, and those modules stop leaking `Any | None` through registry detail rows, check result collections, and source-helper payload reads.
+1. **Next staged mypy milestone: type the desktop app launch/session cluster.**
+   The next high-impact cluster surfaced by the broad audit is `src/ship/desktop_app/_windows.py`, `src/ship/desktop_app/launcher_flow.py`, `src/ship/desktop_app/session.py`, `src/ship/desktop_app/browser.py`, and `src/ship/desktop_app/launcher_diagnostics.py`.
+   **Done when:** the enforced mypy scope expands again to cover the desktop app launch/session boundary, and those modules stop leaking `object`/`Any` through process metadata, Windows handle payloads, browser launch environments, and session state dictionaries.
 
 ### P1
 
@@ -78,7 +78,7 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 - `TODO` / `FIXME` / `HACK` count in `src/` plus `frontend/` is currently `0`, not `3`.
 - `python -m vulture` does **not** work in the active interpreter, but the repo's pre-commit flow manages vulture separately; this is not the same as a broken repo gate.
 - The previous `data/source-approval-state.json` newline-only churn was real, but it is now fixed at the shared writer level rather than hidden from the local checks.
-- The type-safety claim still needs nuance: repo-wide mypy debt is still large, but the enforced mypy scope now covers 75 staged files across the bridge/admin surface, source-discovery/audit helpers, and the jobs contracts/runtime/adapter/reporting/transport wave, and it remains green.
+- The type-safety claim still needs nuance: repo-wide mypy debt is still large, but the enforced mypy scope now covers 84 staged files across the bridge/admin surface, source-discovery/audit helpers, jobs contracts/runtime/adapter/reporting/transport wave, source registry/checker boundary, and source-sync compatibility/runtime boundary, and it remains green.
 - The original 1-10 score table and overall `7.5/10` rating were not retained here because they are subjective and partially stale relative to the current repo state.
 
 ## Not Locally Validated

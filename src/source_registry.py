@@ -56,6 +56,14 @@ def _coerce_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _first_text(*values: Any) -> str:
     for value in values:
         text = str(value or "").strip()
@@ -583,14 +591,10 @@ def apply_discovery_auto_approval(
         )
         for bucket in ("active", "pending", "rejected")
     }
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
-    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    runtime_auto = (
-        runtime.get("autoApproval") if isinstance(runtime.get("autoApproval"), dict) else {}
-    )
-    report_candidates = (
-        report.get("candidates") if isinstance(report.get("candidates"), list) else []
-    )
+    summary = _as_dict(report.get("summary"))
+    runtime = _as_dict(report.get("runtime"))
+    runtime_auto = _as_dict(runtime.get("autoApproval"))
+    report_candidates = _as_list(report.get("candidates"))
     report_candidates_by_id = {
         source_identity(row): row
         for row in report_candidates
@@ -640,7 +644,7 @@ def apply_discovery_auto_approval(
     report["runtime"] = runtime
 
     if report_candidates:
-        next_candidates: list[dict[str, Any]] = []
+        next_candidates: list[Any] = []
         for row in report_candidates:
             if not isinstance(row, dict):
                 next_candidates.append(row)

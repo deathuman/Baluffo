@@ -42,6 +42,10 @@ This page stores completed items moved out of the active repository-health track
    The enforced mypy scope now includes `src/jobs/transport.py`, `src/jobs/canonicalize.py`, `src/jobs/adapters/plugins/static/littlechicken.py`, and `src/fetch_incremental_sanity_benchmark.py`. This pass preserved the patchable transport `httpx` alias, removed stale canonicalization ignore noise, normalized Little Chicken detail HTML typing, and typed incremental benchmark loader selection without changing loader order, fetch behavior, parser output, or compatibility surfaces. The broad audit dropped from `253` errors in `62` files to `245` errors in `58` files.
    **Done when:** complete.
 
+10. **Completed: type the source registry/checker and source-sync boundary.**
+   The enforced mypy scope now includes `src/source_registry.py`, `src/bridge/source_checker.py`, `src/bridge/source_helpers.py`, `src/bridge/source_check_http.py`, `src/source_sync_crypto.py`, `src/source_sync_runtime.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py`, and `src/source_sync.py`. This pass normalized registry/checker JSON-shape reads, removed stale source-check ignore noise, typed sync crypto/runtime helpers, declared the sync root auth attributes, and kept the source-sync compatibility root thin. The broad audit dropped from `245` errors in `58` files to `211` errors in `49` files.
+   **Done when:** complete.
+
 ## Completed P1 Items
 
 5. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**

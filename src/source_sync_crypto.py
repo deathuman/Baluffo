@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from datetime import UTC, datetime
 
@@ -34,7 +35,7 @@ def stream_encrypt(raw: bytes, key: bytes) -> bytes:
     out = bytearray()
     counter = 0
     while len(out) < len(raw):
-        block = __import__("hashlib").sha256(key + counter.to_bytes(4, "big")).digest()
+        block = hashlib.sha256(key + counter.to_bytes(4, "big")).digest()
         out.extend(block)
         counter += 1
     return bytes(a ^ b for a, b in zip(raw, out[: len(raw)], strict=False))
@@ -52,7 +53,7 @@ def derive_private_key_binding_key(
             base64url_encode(salt),
         ]
     ).encode("utf-8")
-    return __import__("hashlib").sha256(material).digest()
+    return hashlib.sha256(material).digest()
 
 
 def encrypt_private_key_pem(
@@ -81,7 +82,7 @@ def derive_passphrase_key(
             str(passphrase or ""),
         ]
     ).encode("utf-8")
-    return __import__("hashlib").sha256(material).digest()
+    return hashlib.sha256(material).digest()
 
 
 def build_embedded_passphrase(*, hint: str, version: str = EMBEDDED_KEY_VERSION_DEFAULT) -> str:
@@ -94,12 +95,8 @@ def build_embedded_passphrase(*, hint: str, version: str = EMBEDDED_KEY_VERSION_
             "".join(_EMBEDDED_SECRET_PARTS),
         ]
     ).encode("utf-8")
-    d1 = __import__("hashlib").sha256(seed).hexdigest()
-    d2 = (
-        __import__("hashlib")
-        .sha256((d1 + "|" + str(hint or "").strip()).encode("utf-8"))
-        .hexdigest()
-    )
+    d1 = hashlib.sha256(seed).hexdigest()
+    d2 = hashlib.sha256((d1 + "|" + str(hint or "").strip()).encode("utf-8")).hexdigest()
     return f"{d1[:24]}{d2[8:40]}"
 
 
@@ -118,7 +115,7 @@ def local_key_cache_fingerprint(normalized: dict[str, str]) -> str:
             str(normalized.get("embeddedKeyVersion") or "").strip(),
         ]
     ).encode("utf-8")
-    return __import__("hashlib").sha256(material).hexdigest()
+    return hashlib.sha256(material).hexdigest()
 
 
 def _asn1_read_tlv(data: bytes, offset: int) -> tuple[int, bytes, int]:
@@ -182,7 +179,7 @@ def _parse_rsa_private_key_der(der: bytes) -> tuple[int, int]:
 
 def rsa_pkcs1_sign_sha256(message: bytes, private_key_pem: str) -> bytes:
     n, d = _parse_rsa_private_key_der(_pem_to_der(private_key_pem))
-    digest = __import__("hashlib").sha256(message).digest()
+    digest = hashlib.sha256(message).digest()
     digest_info = SHA256_DIGEST_INFO_PREFIX + digest
     modulus_len = max(1, (n.bit_length() + 7) // 8)
     padding_len = modulus_len - len(digest_info) - 3

@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.error import HTTPError as _HTTPError
 from urllib.error import URLError as _URLError
 from urllib.parse import quote
@@ -307,13 +307,19 @@ def _normalize_packaged_payload(payload: dict[str, Any]) -> dict[str, str]:
 def load_packaged_sync_config(
     *, env: dict[str, str] | None = None
 ) -> PackagedGitHubAppConfig | None:
-    return _source_sync_config.load_packaged_sync_config(_self_module(), env=env)
+    return cast(
+        PackagedGitHubAppConfig | None,
+        _source_sync_config.load_packaged_sync_config(_self_module(), env=env),
+    )
 
 
 def resolve_sync_config(
     *, settings: dict[str, Any] | None = None, env: dict[str, str] | None = None
 ) -> SyncConfig:
-    return _source_sync_config.resolve_sync_config(_self_module(), settings=settings, env=env)
+    return cast(
+        SyncConfig,
+        _source_sync_config.resolve_sync_config(_self_module(), settings=settings, env=env),
+    )
 
 
 def config_status(config: SyncConfig) -> dict[str, Any]:
@@ -386,6 +392,10 @@ def build_app_jwt(app_id: str, private_key_pem: str, *, issued_at: datetime | No
 
 class GitHubAppAuth:
     def __init__(self, packaged_config: PackagedGitHubAppConfig):
+        self.packaged_config: PackagedGitHubAppConfig = packaged_config
+        self._token: str = ""
+        self._token_expires_at: datetime | None = None
+        self._lock: Any = None
         _source_sync_runtime.init_github_app_auth(self, packaged_config)
 
     def _token_is_fresh(self) -> bool:
@@ -412,7 +422,7 @@ def _auth_manager_key(config: SyncConfig) -> str:
 
 
 def _get_auth_manager(config: SyncConfig) -> GitHubAppAuth:
-    return _source_sync_runtime.get_auth_manager(_self_module(), config)
+    return cast(GitHubAppAuth, _source_sync_runtime.get_auth_manager(_self_module(), config))
 
 
 def _rate_limit_retry_after_seconds(headers: dict[str, str], payload: dict[str, Any]) -> int:
