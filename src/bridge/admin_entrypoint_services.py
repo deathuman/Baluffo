@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from src.bridge import run_history_api as _run_history_api
 from src.bridge.server import runtime_state as bridge_runtime_state
 
 root: Any | None = None
@@ -13,21 +15,63 @@ JsonObject = dict[str, Any]
 
 class _SyncStateLike(Protocol):
     def set_sync_status(self, **kwargs: Any) -> None: ...
-    def save_sync_runtime_state(self, payload: JsonObject) -> None: ...
+    def load_sync_runtime_state(self) -> JsonObject: ...
+    def save_sync_runtime_state(self, payload: JsonObject) -> JsonObject: ...
 
 
 class _SyncServiceLike(Protocol):
+    def load_saved_sync_settings(self) -> JsonObject: ...
+    def refresh_sync_config(self) -> Any: ...
+    def get_saved_sync_config_payload(self) -> JsonObject: ...
+    def update_saved_sync_settings(self, payload: JsonObject) -> JsonObject: ...
+    def test_sync_config(self) -> JsonObject: ...
     def get_sync_status_payload(self) -> JsonObject: ...
     def sync_task_running(self) -> bool: ...
     def sync_pull_sources(self) -> JsonObject: ...
     def sync_push_sources(self) -> JsonObject: ...
     def startup_sync_pull(self) -> None: ...
     def wait_for_sync_tasks(self, timeout_s: float = 5.0) -> None: ...
+    def start_sync_task(
+        self, action: str, *, reason: str = "", automatic: bool = False
+    ) -> JsonObject: ...
 
     _sync_state: _SyncStateLike
 
 
+class _RegistryServiceLike(Protocol):
+    def ensure_active_registry(self) -> list[JsonObject]: ...
+
+
+class _DiscoveryServiceLike(Protocol):
+    def load_saved_discovery_settings(self) -> JsonObject: ...
+    def get_discovery_config_payload(self) -> JsonObject: ...
+    def update_saved_discovery_settings(self, payload: JsonObject) -> JsonObject: ...
+    def trigger_discovery_task(
+        self,
+        *,
+        route_name: str,
+        payload: JsonObject,
+        enable_auto_sync_watch: bool = True,
+    ) -> tuple[int, JsonObject]: ...
+
+
 class _TaskLaunchApiLike(Protocol):
+    def run_background_script(
+        self,
+        script_name: str,
+        args: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
+        *,
+        is_frozen: bool,
+        executable: str,
+        spawn_process: Callable[..., Any],
+        devnull: Any,
+        stdout_target: Any,
+        create_no_window: int = 0,
+    ) -> int: ...
+
+    def build_fetcher_args_from_payload(self, payload: JsonObject) -> tuple[list[str], str]: ...
+
     def start_fetcher_task(
         self, payload: JsonObject | None = None, **kwargs: Any
     ) -> JsonObject: ...
@@ -43,6 +87,23 @@ class _PipelineServiceLike(Protocol):
 
 class _DesktopUpdateServiceLike(Protocol):
     def get_status_payload(self) -> JsonObject: ...
+
+
+class _OpsApiLike(Protocol):
+    def failed_source_names_from_latest_report(
+        self, *, allowed_names: set[str] | None = None
+    ) -> list[str]: ...
+    def load_alert_state(self) -> JsonObject: ...
+    def save_alert_state(self, state: JsonObject) -> None: ...
+    def detect_task_interval_hours(self, task: JsonObject) -> float | None: ...
+    def parse_schedule_metadata(self) -> JsonObject: ...
+    def summarize_fetch_report(self, report: JsonObject) -> JsonObject: ...
+    def summarize_discovery_report(self, report: JsonObject) -> tuple[JsonObject, str]: ...
+    def sync_history_from_reports(self) -> list[JsonObject]: ...
+    def get_projected_run_history(self) -> _run_history_api.LifecycleProjection: ...
+    def compute_ops_health(self) -> JsonObject: ...
+    def get_current_task_state_payload(self) -> JsonObject: ...
+    def compute_fetcher_metrics(self, *, window_runs: int = 20) -> JsonObject: ...
 
 
 def _as_json_object(payload: Any) -> JsonObject:
@@ -81,7 +142,7 @@ def get_sync_state() -> _SyncStateLike:
     return cast(_SyncStateLike, get_sync_service()._sync_state)  # noqa: SLF001
 
 
-def get_registry_service() -> Any:
+def get_registry_service() -> _RegistryServiceLike:
     root_mod = _require_root()
     current_paths = (
         Path(root_mod.ACTIVE_PATH),
@@ -100,10 +161,10 @@ def get_registry_service() -> Any:
                 default_active=[dict(row) for row in root_mod.DEFAULT_STUDIO_SOURCE_REGISTRY],
                 normalize_manual_static=root_mod.normalize_manual_static_studio_fields,
             )
-        return root_mod._REGISTRY_SERVICE
+        return cast(_RegistryServiceLike, root_mod._REGISTRY_SERVICE)
 
 
-def get_discovery_service() -> Any:
+def get_discovery_service() -> _DiscoveryServiceLike:
     root_mod = _require_root()
     current_paths = (
         Path(root_mod.DISCOVERY_REPORT_PATH),
@@ -150,7 +211,7 @@ def get_discovery_service() -> Any:
                     task_state_lock=root_mod.OPS_STATE_LOCK,
                 ),
             )
-        return root_mod._DISCOVERY_SERVICE
+        return cast(_DiscoveryServiceLike, root_mod._DISCOVERY_SERVICE)
 
 
 def get_task_launch_api() -> _TaskLaunchApiLike:
@@ -187,45 +248,48 @@ def get_task_launch_api() -> _TaskLaunchApiLike:
     )
 
 
-def get_ops_api() -> Any:
+def get_ops_api() -> _OpsApiLike:
     root_mod = _require_root()
-    return root_mod._ops_api.OpsApi(
-        paths=root_mod._ops_api.OpsPaths(
-            ops_alert_state=root_mod.OPS_ALERT_STATE_PATH,
-            jobs_fetch_report=root_mod.JOBS_FETCH_REPORT_PATH,
-            jobs_fetch_tasks=root_mod.JOBS_FETCH_TASKS_PATH,
-            discovery_report=root_mod.DISCOVERY_REPORT_PATH,
-            sync_live_task=root_mod.SYNC_LIVE_TASK_PATH,
-            task_state=root_mod.TASK_STATE_PATH,
-        ),
-        deps=root_mod._ops_api.OpsDeps(
-            load_json_object=root_mod.load_json_object,
-            save_json_atomic=root_mod.save_json_atomic,
-            load_state=root_mod.load_state,
-            now_iso=root_mod.now_iso,
-            now_utc=root_mod.now_utc,
-            parse_iso=root_mod.parse_iso,
-            read_tasks_config=root_mod._read_tasks_config,
-            ops_state_lock=root_mod.OPS_STATE_LOCK,
-            load_run_history=root_mod.load_run_history,
-            save_run_history=root_mod.save_run_history,
-            prune_started_rows_for_type=root_mod.prune_started_rows_for_type,
-            clear_task_state=root_mod.clear_task_state,
-            clear_task_state_locked=root_mod._clear_task_state_locked,
-            upsert_run_history=root_mod.upsert_run_history,
-            task_running_from_state=root_mod.task_running_from_state,
-            report_is_stale_in_progress=root_mod.report_is_stale_in_progress,
-            get_active_sync_runs=root_mod.SyncState.get_active_sync_runs,
-            get_sync_status_payload=root_mod.get_sync_status_payload,
-            get_jobs_pipeline_status_payload=root_mod.get_jobs_pipeline_status_payload,
-            normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
-            normalize_discovery_report_contract=root_mod.normalize_discovery_report_contract,
-            desktop_mode=root_mod.RUNTIME_CONFIG.desktop_mode,
-            get_desktop_last_activity_at=lambda: bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
-            get_owner_state=bridge_runtime_state.get_owner_state,
-            ops_schema_version=root_mod.OPS_SCHEMA_VERSION,
-            get_updater_status_payload=lambda: get_desktop_update_service().get_status_payload(),
-            app_version=root_mod.get_app_version(),
+    return cast(
+        _OpsApiLike,
+        root_mod._ops_api.OpsApi(
+            paths=root_mod._ops_api.OpsPaths(
+                ops_alert_state=root_mod.OPS_ALERT_STATE_PATH,
+                jobs_fetch_report=root_mod.JOBS_FETCH_REPORT_PATH,
+                jobs_fetch_tasks=root_mod.JOBS_FETCH_TASKS_PATH,
+                discovery_report=root_mod.DISCOVERY_REPORT_PATH,
+                sync_live_task=root_mod.SYNC_LIVE_TASK_PATH,
+                task_state=root_mod.TASK_STATE_PATH,
+            ),
+            deps=root_mod._ops_api.OpsDeps(
+                load_json_object=root_mod.load_json_object,
+                save_json_atomic=root_mod.save_json_atomic,
+                load_state=root_mod.load_state,
+                now_iso=root_mod.now_iso,
+                now_utc=root_mod.now_utc,
+                parse_iso=root_mod.parse_iso,
+                read_tasks_config=root_mod._read_tasks_config,
+                ops_state_lock=root_mod.OPS_STATE_LOCK,
+                load_run_history=root_mod.load_run_history,
+                save_run_history=root_mod.save_run_history,
+                prune_started_rows_for_type=root_mod.prune_started_rows_for_type,
+                clear_task_state=root_mod.clear_task_state,
+                clear_task_state_locked=root_mod._clear_task_state_locked,
+                upsert_run_history=root_mod.upsert_run_history,
+                task_running_from_state=root_mod.task_running_from_state,
+                report_is_stale_in_progress=root_mod.report_is_stale_in_progress,
+                get_active_sync_runs=root_mod.SyncState.get_active_sync_runs,
+                get_sync_status_payload=root_mod.get_sync_status_payload,
+                get_jobs_pipeline_status_payload=root_mod.get_jobs_pipeline_status_payload,
+                normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
+                normalize_discovery_report_contract=root_mod.normalize_discovery_report_contract,
+                desktop_mode=root_mod.RUNTIME_CONFIG.desktop_mode,
+                get_desktop_last_activity_at=lambda: bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
+                get_owner_state=bridge_runtime_state.get_owner_state,
+                ops_schema_version=root_mod.OPS_SCHEMA_VERSION,
+                get_updater_status_payload=lambda: get_desktop_update_service().get_status_payload(),
+                app_version=root_mod.get_app_version(),
+            ),
         ),
     )
 

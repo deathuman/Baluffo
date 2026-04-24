@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.bridge.server import runtime_state as bridge_runtime_state
 from src.local_data_store import LocalDataPaths, LocalDataStore
@@ -24,7 +24,7 @@ def log_enabled(level: str) -> bool:
         root_mod._normalize_log_level(root_mod.RUNTIME_CONFIG.log_level), 20
     )
     target = root_mod.LOG_LEVEL_ORDER.get(root_mod._normalize_log_level(level), 20)
-    return target >= current
+    return bool(target >= current)
 
 
 def bridge_log(level: str, message: str, **fields: Any) -> None:
@@ -213,4 +213,4 @@ def pid_is_running(pid: int) -> bool:
 
 
 def desktop_local_data_store() -> LocalDataStore:
-    return bridge_runtime_state.get_desktop_local_data_store()
+    return cast(LocalDataStore, bridge_runtime_state.get_desktop_local_data_store())

@@ -8,8 +8,10 @@ import subprocess
 import sys
 import threading
 import time as _time
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -189,6 +191,8 @@ DESKTOP_UPDATE_STATE_PATH = ROOT / "data" / "updater" / "install-state.json"
 MAX_HISTORY_ROWS = 240
 OPS_SCHEMA_VERSION = 1
 OPS_STATE_LOCK = threading.RLock()
+parse_iso: Callable[[Any], datetime | None]
+pid_is_running: Callable[[int], bool]
 _TASK_HISTORY = AdminTaskHistory(
     history_path=lambda: OPS_HISTORY_PATH,
     task_state_path=lambda: TASK_STATE_PATH,
@@ -302,7 +306,7 @@ def load_saved_sync_settings() -> dict[str, Any]:
 def refresh_sync_config() -> source_sync_module.SyncConfig:
     global SYNC_CONFIG
     SYNC_CONFIG = _get_sync_service().refresh_sync_config()
-    return SYNC_CONFIG
+    return cast(source_sync_module.SyncConfig, SYNC_CONFIG)
 
 
 normalize_state = admin_registry_api_mod.normalize_state
