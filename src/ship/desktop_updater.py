@@ -83,6 +83,10 @@ zipfile = desktop_updater_install_mod.zipfile
 run_install = desktop_updater_install_mod.run_install
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Baluffo desktop updater helper.")
     parser.add_argument("--install-plan", required=True)
@@ -107,9 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         _append_helper_diagnostics(diagnostics_path, "helper_worker_started", pid=os.getpid())
         try:
             result_holder["result"] = run_install(plan_path, progress=progress)
-            result = (
-                result_holder.get("result") if isinstance(result_holder.get("result"), dict) else {}
-            )
+            result = _as_dict(result_holder.get("result"))
             _append_helper_diagnostics(
                 diagnostics_path,
                 "helper_worker_succeeded",
@@ -134,9 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         thread.join()
         if error_holder:
             raise RuntimeError(str(error_holder.get("error") or "Baluffo desktop update failed."))
-        result = (
-            result_holder.get("result") if isinstance(result_holder.get("result"), dict) else {}
-        )
+        result = _as_dict(result_holder.get("result"))
         _append_helper_diagnostics(
             diagnostics_path,
             "helper_main_succeeded",

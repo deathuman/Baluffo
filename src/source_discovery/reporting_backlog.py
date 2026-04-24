@@ -114,6 +114,13 @@ _M5_REGION_TOKENS = (
 )
 
 
+def _as_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def update_candidate_review_metadata(
     row: dict[str, Any],
     *,
@@ -214,12 +221,13 @@ def _m5_hard_exclusion_reason(
     *,
     exclusion_reason: str,
 ) -> str:
+    failure = failure_row if isinstance(failure_row, dict) else {}
     if exclusion_reason in M5_HARD_EXCLUSION_REASONS:
         return exclusion_reason
-    if str(failure_row.get("dropStage") or "").strip().lower() in M5_SUPPRESSION_STAGES:
+    if str(failure.get("dropStage") or "").strip().lower() in M5_SUPPRESSION_STAGES:
         if exclusion_reason:
             return exclusion_reason
-        return str(failure_row.get("dropReason") or failure_row.get("error") or "suppressed_static")
+        return str(failure.get("dropReason") or failure.get("error") or "suppressed_static")
     if str(row.get("dropStage") or "").strip().lower() in M5_SUPPRESSION_STAGES:
         if exclusion_reason:
             return exclusion_reason
@@ -260,47 +268,45 @@ def _m5_structured_migration_comparison(
     adapter = str(row.get("adapter") or "").strip().lower()
     if adapter not in M5_ALLOWED_M4_FAMILIES:
         return {}
-    comparison = {
-        "before": {
-            "durationMs": int(state_entry.get("structuredMigrationBaselineDurationMs") or 0),
-            "status": str(state_entry.get("structuredMigrationBaselineStatus") or "").strip(),
-            "error": str(state_entry.get("structuredMigrationBaselineError") or "").strip(),
-            "failureBucket": str(
-                state_entry.get("structuredMigrationBaselineFailureBucket") or ""
-            ).strip(),
-            "keptCount": int(state_entry.get("structuredMigrationBaselineKeptCount") or 0),
-        },
-        "after": {
-            "durationMs": int(state_entry.get("lastDurationMs") or 0),
-            "status": str(state_entry.get("lastStatus") or "").strip(),
-            "error": str(state_entry.get("lastError") or "").strip(),
-            "failureBucket": str(state_entry.get("lastFailureBucket") or "").strip(),
-            "keptCount": int(state_entry.get("lastKeptCount") or 0),
-        },
+    before: dict[str, Any] = {
+        "durationMs": _as_int(state_entry.get("structuredMigrationBaselineDurationMs")),
+        "status": str(state_entry.get("structuredMigrationBaselineStatus") or "").strip(),
+        "error": str(state_entry.get("structuredMigrationBaselineError") or "").strip(),
+        "failureBucket": str(
+            state_entry.get("structuredMigrationBaselineFailureBucket") or ""
+        ).strip(),
+        "keptCount": _as_int(state_entry.get("structuredMigrationBaselineKeptCount")),
+    }
+    after: dict[str, Any] = {
+        "durationMs": _as_int(state_entry.get("lastDurationMs")),
+        "status": str(state_entry.get("lastStatus") or "").strip(),
+        "error": str(state_entry.get("lastError") or "").strip(),
+        "failureBucket": str(state_entry.get("lastFailureBucket") or "").strip(),
+        "keptCount": _as_int(state_entry.get("lastKeptCount")),
+    }
+    comparison: dict[str, Any] = {
+        "before": before,
+        "after": after,
         "shadowRunCount": int(state_entry.get("structuredMigrationShadowRunCount") or 0),
         "healthyRunCount": int(state_entry.get("structuredMigrationHealthyRunCount") or 0),
         "promotedAt": str(state_entry.get("structuredMigrationPromotedAt") or "").strip(),
         "demotedAt": str(state_entry.get("structuredMigrationDemotedAt") or "").strip(),
         "rollbackChecklist": list(M5_STRUCTURED_MIGRATION_ROLLBACK_CHECKLIST),
     }
-    comparison["runtimeDeltaMs"] = int(comparison["after"]["durationMs"]) - int(
-        comparison["before"]["durationMs"]
-    )
-    comparison["keptCountDelta"] = int(comparison["after"]["keptCount"]) - int(
-        comparison["before"]["keptCount"]
-    )
+    comparison["runtimeDeltaMs"] = _as_int(after["durationMs"]) - _as_int(before["durationMs"])
+    comparison["keptCountDelta"] = _as_int(after["keptCount"]) - _as_int(before["keptCount"])
     if not any(
         [
-            comparison["before"]["durationMs"],
-            comparison["after"]["durationMs"],
-            comparison["before"]["status"],
-            comparison["after"]["status"],
-            comparison["before"]["error"],
-            comparison["after"]["error"],
-            comparison["before"]["failureBucket"],
-            comparison["after"]["failureBucket"],
-            comparison["before"]["keptCount"],
-            comparison["after"]["keptCount"],
+            before["durationMs"],
+            after["durationMs"],
+            before["status"],
+            after["status"],
+            before["error"],
+            after["error"],
+            before["failureBucket"],
+            after["failureBucket"],
+            before["keptCount"],
+            after["keptCount"],
             comparison["shadowRunCount"],
             comparison["healthyRunCount"],
             comparison["promotedAt"],

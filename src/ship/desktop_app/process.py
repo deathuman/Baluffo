@@ -6,6 +6,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from ._compat import desktop_api
 
@@ -14,7 +15,7 @@ def _entry_command() -> list[str]:
     api = desktop_api()
     if getattr(api.sys, "frozen", False):
         return [api.sys.executable]
-    return [api.sys.executable, str(Path(api.__file__).resolve())]
+    return [api.sys.executable, str(Path(str(api.__file__ or "")).resolve())]
 
 
 def build_child_command(
@@ -77,28 +78,36 @@ def start_child_process(
     job_handle: int | None = None,
 ) -> subprocess.Popen[str]:
     api = desktop_api()
-    popen_kwargs: dict[str, object] = {
-        "stdout": api.subprocess.DEVNULL,
-        "stderr": api.subprocess.DEVNULL,
-        "text": True,
-    }
+    env = None
     if extra_env:
         env = api.os.environ.copy()
         env.update({key: str(value) for key, value in extra_env.items()})
-        popen_kwargs["env"] = env
     if api.os.name == "nt":
-        popen_kwargs["creationflags"] = int(getattr(api.subprocess, "CREATE_NO_WINDOW", 0)) | int(
-            getattr(api.subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        proc = api.subprocess.Popen(
+            list(command),
+            stdout=api.subprocess.DEVNULL,
+            stderr=api.subprocess.DEVNULL,
+            text=True,
+            env=env,
+            creationflags=int(getattr(api.subprocess, "CREATE_NO_WINDOW", 0))
+            | int(getattr(api.subprocess, "CREATE_NEW_PROCESS_GROUP", 0)),
+            close_fds=True,
         )
-        popen_kwargs["close_fds"] = True
-    proc = api.subprocess.Popen(list(command), **popen_kwargs)
+    else:
+        proc = api.subprocess.Popen(
+            list(command),
+            stdout=api.subprocess.DEVNULL,
+            stderr=api.subprocess.DEVNULL,
+            text=True,
+            env=env,
+        )
     if job_handle and proc.pid:
         try:
             api._windows_try_assign_pid_to_job(job_handle, int(proc.pid))
         except OSError:
             api.terminate_process(proc)
             raise
-    return proc
+    return cast(subprocess.Popen[str], proc)
 
 
 def terminate_process(process: subprocess.Popen[str] | None) -> None:

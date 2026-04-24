@@ -17,12 +17,16 @@ def _root() -> Any:
     return root
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _record_rehearsal_artifacts(
     report: dict[str, Any],
     rehearsal: dict[str, Any],
     mappings: tuple[tuple[str, str], ...],
 ) -> None:
-    details = rehearsal.get("details") if isinstance(rehearsal.get("details"), dict) else {}
+    details = _as_dict(rehearsal.get("details"))
     for src_key, artifact_key in mappings:
         value = str(details.get(src_key) or "").strip()
         if value:

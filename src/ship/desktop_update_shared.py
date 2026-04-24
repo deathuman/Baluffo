@@ -7,9 +7,10 @@ import contextlib
 import hashlib
 import json
 import ssl
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.shared.json_io import read_json_object
 from src.shared.utils import now_iso
@@ -21,6 +22,18 @@ def _root() -> Any:
     if root is None:
         raise RuntimeError("desktop_update_shared.root is not configured")
     return root
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_bytes_dict(value: Any) -> dict[str, bytes]:
+    return (
+        {str(key): item for key, item in value.items() if isinstance(item, bytes)}
+        if isinstance(value, dict)
+        else {}
+    )
 
 
 def iso_now() -> str:
@@ -40,8 +53,11 @@ def _uses_github_https(url: str) -> bool:
 def _build_desktop_update_ssl_context() -> ssl.SSLContext:
     deps = _root()
     try:
-        return deps.build_github_ssl_context(
-            ca_bundle_envs=(deps.DESKTOP_UPDATE_CA_BUNDLE_ENV, deps.GITHUB_CA_BUNDLE_ENV)
+        return cast(
+            ssl.SSLContext,
+            deps.build_github_ssl_context(
+                ca_bundle_envs=(deps.DESKTOP_UPDATE_CA_BUNDLE_ENV, deps.GITHUB_CA_BUNDLE_ENV)
+            ),
         )
     except RuntimeError as exc:
         raise RuntimeError(f"Desktop update request failed: {exc}") from exc
@@ -117,7 +133,7 @@ def compute_sha256(path: Path) -> str:
 
 def compare_versions(left: str, right: str) -> int:
     deps = _root()
-    return deps.compare_baluffo_versions(left, right)
+    return int(deps.compare_baluffo_versions(left, right))
 
 
 def sort_json(value: Any) -> Any:
@@ -175,13 +191,13 @@ def load_desktop_update_public_keys(
                     continue
                 payload = deps.read_json(path, {})
                 if payload:
-                    return deps._decode_public_keys_payload(payload)
+                    return _as_bytes_dict(deps._decode_public_keys_payload(payload))
         return {}
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError("Invalid BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON payload.") from exc
-    return deps._decode_public_keys_payload(payload)
+    return _as_bytes_dict(deps._decode_public_keys_payload(payload))
 
 
 def verify_manifest_signature(
@@ -261,7 +277,7 @@ def _resolve_ship_current_version(ship_root: Path) -> str:
         state = update_manager.ensure_state(update_manager.ShipPaths.from_root(ship_root))
     except Exception:
         return ""
-    return str(state.get("current_version") or "").strip()
+    return str(_as_dict(state).get("current_version") or "").strip()
 
 
 def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
@@ -272,11 +288,11 @@ def resolve_release_repo(*, install_root: Path, ship_root: Path) -> str:
     current_version = deps._resolve_ship_current_version(ship_root)
     if current_version:
         packaging_dir = ship_root / "app" / "versions" / current_version / "packaging"
-        payload = deps.read_json(packaging_dir / deps.DESKTOP_UPDATE_CONFIG_FILE, {})
+        payload = _as_dict(deps.read_json(packaging_dir / deps.DESKTOP_UPDATE_CONFIG_FILE, {}))
         repo = str(payload.get("repo") or "").strip()
         if repo:
             return repo
-        payload = deps.read_json(packaging_dir / "github-app-sync-config.json", {})
+        payload = _as_dict(deps.read_json(packaging_dir / "github-app-sync-config.json", {}))
         repo = str(payload.get("repo") or "").strip()
         if repo:
             return repo
@@ -291,7 +307,7 @@ def _runtime_session_root_candidate_fallback() -> Path:
             / "BaluffoRuntime"
             / f"desktop-session-{deps.os.getpid()}-{deps.uuid.uuid4().hex[:8]}"
         ).resolve()
-    return deps._RUNTIME_SESSION_ROOT_FALLBACK
+    return Path(deps._RUNTIME_SESSION_ROOT_FALLBACK)
 
 
 def _resolve_desktop_session_root_fallback(env: dict[str, str] | None = None) -> Path:
@@ -329,8 +345,8 @@ def resolve_desktop_session_root(env: dict[str, str] | None = None) -> Path:
     except ModuleNotFoundError as exc:
         if not str(getattr(exc, "name", "") or "").startswith("src.ship.desktop_app"):
             raise
-        return deps._resolve_desktop_session_root_fallback(env)
-    return resolve_browser_session_root(env)
+        return Path(deps._resolve_desktop_session_root_fallback(env))
+    return Path(resolve_browser_session_root(env))
 
 
 def _looks_like_windows_absolute_path(value: str) -> bool:
@@ -349,7 +365,7 @@ def _resolve_runtime_path(value: Path | str) -> Path:
 
 def read_desktop_session_state(session_root: Path) -> dict[str, Any]:
     deps = _root()
-    return deps.read_json(Path(session_root) / "desktop-session.json", {})
+    return _as_dict(deps.read_json(Path(session_root) / "desktop-session.json", {}))
 
 
 def pid_is_running(pid: int) -> bool:
@@ -407,7 +423,7 @@ def download_file(
     url: str,
     target: Path,
     *,
-    on_progress: callable | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
     timeout_s: float = 300.0,
 ) -> Path:
     deps = _root()

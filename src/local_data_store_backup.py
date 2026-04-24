@@ -40,6 +40,13 @@ from .local_data_store_shared import (
 )
 
 
+def _as_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def export_profile_data(
     paths: LocalDataPaths, uid: str, include_files: bool = False
 ) -> dict[str, Any]:
@@ -295,14 +302,14 @@ def get_admin_overview(paths: LocalDataPaths) -> dict[str, Any]:
                     "totalBytes": notes_bytes + attachments_bytes,
                 }
             )
-        users.sort(key=lambda row: (-int(row["totalBytes"]), str(row["name"])))
+        users.sort(key=lambda row: (-_as_int(row["totalBytes"]), str(row["name"])))
         totals = {
             "usersCount": len(users),
-            "savedJobsCount": sum(int(row["savedJobsCount"]) for row in users),
-            "notesBytes": sum(int(row["notesBytes"]) for row in users),
-            "attachmentsCount": sum(int(row["attachmentsCount"]) for row in users),
-            "attachmentsBytes": sum(int(row["attachmentsBytes"]) for row in users),
-            "totalBytes": sum(int(row["totalBytes"]) for row in users),
+            "savedJobsCount": sum(_as_int(row["savedJobsCount"]) for row in users),
+            "notesBytes": sum(_as_int(row["notesBytes"]) for row in users),
+            "attachmentsCount": sum(_as_int(row["attachmentsCount"]) for row in users),
+            "attachmentsBytes": sum(_as_int(row["attachmentsBytes"]) for row in users),
+            "totalBytes": sum(_as_int(row["totalBytes"]) for row in users),
         }
         return {"users": users, "totals": totals}
 

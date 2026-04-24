@@ -48,7 +48,7 @@ def _default_portable_exe_stale(exe_path: Path) -> bool:
 
 def _exe_path_uses_default_dist(exe_path: Path) -> bool:
     deps = _root()
-    return Path(exe_path).expanduser().resolve() == deps.DEFAULT_EXE_PATH.resolve()
+    return bool(Path(exe_path).expanduser().resolve() == deps.DEFAULT_EXE_PATH.resolve())
 
 
 def _portable_exe_marker_staleness(exe_path: Path) -> str:
@@ -91,8 +91,8 @@ def run_portable_build(output_dir: Path | None = None) -> Path:
     subprocess.run(command, cwd=deps.ROOT, check=True)
     if target_dir is not None:
         deps.cleanup_portable_build_scratch(target_dir)
-        return target_dir / "Baluffo.exe"
-    return deps.DEFAULT_EXE_PATH
+        return Path(target_dir / "Baluffo.exe")
+    return Path(deps.DEFAULT_EXE_PATH)
 
 
 def cleanup_portable_build_scratch(output_dir: Path) -> list[Path]:
@@ -109,11 +109,14 @@ def cleanup_portable_build_scratch(output_dir: Path) -> list[Path]:
 def select_startup_probe_browser(env: dict[str, str] | None = None) -> dict[str, str]:
     deps = _root()
     env_map = env if env is not None else deps.os.environ
-    return deps.select_startup_probe_browser_policy(
-        deps.desktop_app_mod.resolve_chromium_browser_candidates(),
-        chromium_app_mode_supported=deps.desktop_app_mod.chromium_app_mode_supported,
-        env=env_map,
-    )
+    return {
+        str(key): str(value)
+        for key, value in deps.select_startup_probe_browser_policy(
+            deps.desktop_app_mod.resolve_chromium_browser_candidates(),
+            chromium_app_mode_supported=deps.desktop_app_mod.chromium_app_mode_supported,
+            env=env_map,
+        ).items()
+    }
 
 
 def prune_packaged_smoke_artifacts(
@@ -177,7 +180,7 @@ def packaged_desktop_local_appdata_root(
 ) -> Path:
     deps = _root()
     base = Path(artifacts_dir).expanduser().resolve() / "desktop-localappdata"
-    return base / deps.slugify_token(session_scope)
+    return Path(base / str(deps.slugify_token(session_scope)))
 
 
 def packaged_desktop_session_paths(env: dict[str, str] | None = None) -> dict[str, Path]:
@@ -384,4 +387,4 @@ def ensure_portable_exe(
     final = Path(built_exe).expanduser().resolve()
     if not final.is_file():
         raise RuntimeError(f"Packaged desktop executable not found: {final}")
-    return final
+    return Path(final)

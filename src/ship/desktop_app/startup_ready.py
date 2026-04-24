@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 
 from ._compat import desktop_api
@@ -13,6 +14,40 @@ from .config import (
     STARTUP_HANDOFF_GRACE_TIMEOUT_S,
     STARTUP_HANDOFF_POLL_INTERVAL_S,
 )
+
+
+def _as_dict(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_dict_rows(value: object) -> list[dict[str, object]]:
+    return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
+
+
+def _as_float(value: object, default: float = 0.0) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _as_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
 
 
 def _startup_handoff_signal_events() -> dict[str, str]:
@@ -45,8 +80,8 @@ def earliest_startup_handoff_signal(
         reason = signal_events.get(event, "")
         if not reason:
             continue
-        fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
-        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        fields = _as_dict(row.get("fields"))
+        payload = _as_dict(row.get("payload"))
         raw_elapsed_ms = fields.get("elapsedMs")
         if not isinstance(raw_elapsed_ms, (int, float)):
             raw_elapsed_ms = payload.get("elapsedMs")
@@ -69,11 +104,11 @@ def _find_reveal_handoff_window(
     api = desktop_api()
     matches = [
         match
-        for match in api._enumerate_visible_desktop_windows()
+        for match in _as_dict_rows(api._enumerate_visible_desktop_windows())
         if bool(match.get("matchesTitle")) or bool(match.get("isChromiumClass"))
     ]
     if require_new_window:
-        matches = [match for match in matches if int(match.get("hwnd") or 0) not in baseline_hwnds]
+        matches = [match for match in matches if _as_int(match.get("hwnd")) not in baseline_hwnds]
     if not matches:
         return None
     title_matches = [match for match in matches if bool(match.get("matchesTitle"))]
@@ -155,16 +190,14 @@ def _parse_metric_ts(value: object) -> float:
         return 0.0
 
 
-def api_datetime_fromisoformat(text: str):
-    from datetime import datetime
-
+def api_datetime_fromisoformat(text: str) -> datetime:
     return datetime.fromisoformat(text)
 
 
 def bridge_last_activity_ts(bridge_port: int) -> float:
     api = desktop_api()
     payload = api.get_baluffo_bridge_health(bridge_port, timeout_s=1.5)
-    return api._parse_metric_ts(payload.get("desktopLastActivityAt")) if payload else 0.0
+    return _as_float(api._parse_metric_ts(payload.get("desktopLastActivityAt"))) if payload else 0.0
 
 
 def latest_browser_heartbeat_ts(data_dir: Path) -> float:
@@ -173,15 +206,15 @@ def latest_browser_heartbeat_ts(data_dir: Path) -> float:
     for row in api.read_startup_metrics(data_dir, limit=400):
         if str(row.get("event") or "") != "desktop_browser_heartbeat":
             continue
-        latest = max(latest, api._parse_metric_ts(row.get("ts")))
+        latest = max(latest, _as_float(api._parse_metric_ts(row.get("ts"))))
     return latest
 
 
 def latest_browser_session_activity_ts(data_dir: Path, *, bridge_port: int) -> float:
     api = desktop_api()
     return max(
-        api.latest_browser_heartbeat_ts(data_dir),
-        api.bridge_last_activity_ts(bridge_port),
+        _as_float(api.latest_browser_heartbeat_ts(data_dir)),
+        _as_float(api.bridge_last_activity_ts(bridge_port)),
     )
 
 
@@ -202,8 +235,8 @@ def latest_startup_handoff_signal(
         reason = signal_events.get(event, "")
         if not reason:
             continue
-        fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
-        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        fields = _as_dict(row.get("fields"))
+        payload = _as_dict(row.get("payload"))
         raw_elapsed_ms = fields.get("elapsedMs")
         if not isinstance(raw_elapsed_ms, (int, float)):
             raw_elapsed_ms = payload.get("elapsedMs")

@@ -12,7 +12,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -361,8 +361,12 @@ def run_supervised_admin_session(config: DevAdminConfig) -> int:
                 time.sleep(1.0)
             return 0
         launch = launch_browser_for_url(_admin_url(config))
-        browser_process = launch.get("process") if isinstance(launch, dict) else None
-        started_mono = float(launch.get("windowShownAtMonotonic") or time.perf_counter())
+        process_obj = launch.get("process") if isinstance(launch, dict) else None
+        browser_process = cast(subprocess.Popen[str] | None, process_obj)
+        started_raw = launch.get("windowShownAtMonotonic") if isinstance(launch, dict) else None
+        started_mono = (
+            float(started_raw) if isinstance(started_raw, (int, float)) else time.perf_counter()
+        )
         if browser_process is not None:
             wait_for_local_browser_exit(browser_process)
         else:

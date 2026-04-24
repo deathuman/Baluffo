@@ -15,6 +15,29 @@ def _root() -> Any:
     return root
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_str_dict(value: Any) -> dict[str, str]:
+    return {str(key): str(item) for key, item in value.items()} if isinstance(value, dict) else {}
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
 def default_status_payload(*, current_version: str | None = None) -> dict[str, Any]:
     deps = _root()
     return {
@@ -67,17 +90,17 @@ def _load_credible_handoff_install_plan(paths: Any) -> dict[str, Any]:
         session_root = deps._resolve_runtime_path(session_root_raw)
     except Exception:
         return {}
-    session_state = deps.read_desktop_session_state(session_root)
-    if int(session_state.get("launcherPid") or 0) != launcher_pid:
+    session_state = _as_dict(deps.read_desktop_session_state(session_root))
+    if _as_int(session_state.get("launcherPid")) != launcher_pid:
         return {}
     if str(session_state.get("launcherToken") or "").strip() != launcher_token:
         return {}
-    return plan
+    return dict(plan)
 
 
 def _handoff_status_pending(status: dict[str, Any]) -> bool:
     deps = _root()
-    return (
+    return bool(
         str(status.get("installState") or "").strip().lower() in deps.HANDOFF_PENDING_INSTALL_STATES
     )
 
@@ -129,7 +152,7 @@ def _reconcile_handoff_status(
 def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, Any]:
     deps = _root()
     status = deps.default_status_payload(current_version=current_version)
-    status.update(deps.read_json(paths.install_state_path, {}))
+    status.update(_as_dict(deps.read_json(paths.install_state_path, {})))
     status["currentVersion"] = str(
         current_version or status.get("currentVersion") or deps.get_app_version()
     )
@@ -142,7 +165,7 @@ def load_status(paths: Any, *, current_version: str | None = None) -> dict[str, 
         status.get("installState"),
         status.get("installStage"),
     )
-    return status
+    return dict(status)
 
 
 def save_status(paths: Any, payload: dict[str, Any]) -> dict[str, Any]:
@@ -163,7 +186,7 @@ def updater_install_requested(data_dir: Path) -> bool:
         return False
     if credible_handoff_plan:
         return True
-    return deps._handoff_status_pending(state)
+    return bool(deps._handoff_status_pending(state))
 
 
 def clear_success_marker(paths: Any) -> None:
@@ -190,7 +213,7 @@ def clear_staged_helper(path: Path | None) -> None:
 
 def helper_runtime_tmpdir() -> Path:
     deps = _root()
-    return (
+    return Path(
         Path(deps.tempfile.gettempdir()).resolve() / deps.HELPER_RUNTIME_TMP_ROOT_NAME
     ).resolve()
 
@@ -243,7 +266,7 @@ def write_success_marker(
 
 def read_cached_manifest(paths: Any) -> dict[str, Any]:
     deps = _root()
-    return deps.read_json(paths.manifest_cache_path, {})
+    return _as_dict(deps.read_json(paths.manifest_cache_path, {}))
 
 
 def _normalize_release_notes_payload(
@@ -271,24 +294,18 @@ def _cached_release_notes(
     cached_manifest: dict[str, Any], *, target_version: str = "", manifest_url: str = ""
 ) -> dict[str, str]:
     deps = _root()
-    payload = (
-        cached_manifest.get("releaseNotes")
-        if isinstance(cached_manifest.get("releaseNotes"), dict)
-        else None
-    )
-    return deps._normalize_release_notes_payload(
-        payload,
-        fallback_url=manifest_url,
-        fallback_title=target_version,
+    payload = _as_dict(cached_manifest.get("releaseNotes"))
+    return _as_str_dict(
+        deps._normalize_release_notes_payload(
+            payload,
+            fallback_url=manifest_url,
+            fallback_title=target_version,
+        )
     )
 
 
 def _portable_artifact_name(manifest: dict[str, Any]) -> str:
-    artifact = (
-        manifest.get("portable_artifact")
-        if isinstance(manifest.get("portable_artifact"), dict)
-        else {}
-    )
+    artifact = _as_dict(manifest.get("portable_artifact"))
     url = str(artifact.get("url") or "").strip()
     token = url.rsplit("/", 1)[-1]
     return token or f"baluffo-portable-{str(manifest.get('version') or '').strip()}.zip"
@@ -362,11 +379,7 @@ def _reconcile_downloaded_artifact_status(
     deps = _root()
     next_status = dict(status)
     install_state = str(next_status.get("installState") or "").strip().lower()
-    artifact = (
-        manifest.get("portable_artifact")
-        if isinstance(manifest.get("portable_artifact"), dict)
-        else {}
-    )
+    artifact = _as_dict(manifest.get("portable_artifact"))
     artifact_path = paths.downloads_dir / deps._portable_artifact_name(manifest)
     expected_hash = str(artifact.get("sha256") or "").strip().lower()
     if artifact_path.is_file() and expected_hash:

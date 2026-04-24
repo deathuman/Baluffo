@@ -42,7 +42,8 @@ def iso_now() -> str:
 def read_json(path: Path, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
     if not path.exists():
         return dict(fallback or {})
-    return json.loads(path.read_text(encoding="utf-8"))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return dict(payload) if isinstance(payload, dict) else dict(fallback or {})
 
 
 def _write_atomic(path: Path, payload: str) -> None:

@@ -22,16 +22,21 @@ def safe_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
 def summarize_run(path: Path) -> dict[str, Any]:
     report = read_json(path, {})
-    if not isinstance(report, dict):
-        report = {}
-    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
-    timing_summary = (
-        runtime.get("timingSummary") if isinstance(runtime.get("timingSummary"), dict) else {}
-    )
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
-    sources = [row for row in (report.get("sources") or []) if isinstance(row, dict)]
+    report = as_dict(report)
+    runtime = as_dict(report.get("runtime"))
+    timing_summary = as_dict(runtime.get("timingSummary"))
+    summary = as_dict(report.get("summary"))
+    sources = [dict(row) for row in as_list(report.get("sources")) if isinstance(row, dict)]
     failed_sources = [
         {
             "name": safe_text(row.get("name")) or "unknown",
@@ -83,7 +88,7 @@ def build_source_volatility(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         statuses: list[str] = []
         errors: list[str] = []
         for run in runs:
-            source = (run.get("sources") or {}).get(name) or {}
+            source = as_dict(as_dict(run.get("sources")).get(name))
             kept = safe_int(source.get("keptCount"))
             status = safe_text(source.get("status")).lower() or "missing"
             error = safe_text(source.get("error"))
@@ -133,8 +138,8 @@ def build_gate(runs: list[dict[str, Any]], release_floor: int) -> dict[str, Any]
     output_counts = [safe_int(run.get("outputCount")) for run in runs]
     failed_counts = [safe_int(run.get("failedSources")) for run in runs]
     social_nonzero = any(
-        safe_int(((run.get("sources") or {}).get("social_mastodon") or {}).get("keptCount")) > 0
-        or safe_int(((run.get("sources") or {}).get("social_reddit") or {}).get("keptCount")) > 0
+        safe_int(as_dict(as_dict(run.get("sources")).get("social_mastodon")).get("keptCount")) > 0
+        or safe_int(as_dict(as_dict(run.get("sources")).get("social_reddit")).get("keptCount")) > 0
         for run in runs
     )
     return {
@@ -207,8 +212,8 @@ def build_recommendations(
 
 
 def render_markdown(report: dict[str, Any]) -> str:
-    totals = report.get("totals") if isinstance(report.get("totals"), dict) else {}
-    gate = report.get("gate") if isinstance(report.get("gate"), dict) else {}
+    totals = as_dict(report.get("totals"))
+    gate = as_dict(report.get("gate"))
     lines = [
         "# Release Repeatability Report",
         "",
@@ -225,7 +230,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         "## Runs",
     ]
-    for run in report.get("runs") or []:
+    for run in as_list(report.get("runs")):
+        if not isinstance(run, dict):
+            continue
         lines.append(
             f"- `{safe_text(run.get('label'))}`"
             f": output={safe_int(run.get('outputCount'))}, failed={safe_int(run.get('failedSources'))},"
@@ -233,11 +240,13 @@ def render_markdown(report: dict[str, Any]) -> str:
         )
     lines.append("")
     lines.append("## Volatile sources")
-    volatile = report.get("volatileSources") or []
+    volatile = as_list(report.get("volatileSources"))
     if not volatile:
         lines.append("- None")
     else:
         for row in volatile[:10]:
+            if not isinstance(row, dict):
+                continue
             lines.append(
                 f"- `{safe_text(row.get('name'))}` ({safe_text(row.get('adapter'))})"
                 f": kept swing={safe_int(row.get('keptCountSwing'))},"
@@ -247,7 +256,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             )
     lines.append("")
     lines.append("## Recommendations")
-    for item in report.get("recommendations") or []:
+    for item in as_list(report.get("recommendations")):
         lines.append(f"- {safe_text(item)}")
     lines.append("")
     return "\n".join(lines)

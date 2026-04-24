@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 root: Any | None = None
 
@@ -15,13 +16,18 @@ def _root() -> Any:
     return root
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _preferred_desktop_browser_env() -> dict[str, str]:
     try:
         from src.ship.desktop_app import resolve_chromium_browser_candidates
     except Exception:
         return {}
-    candidates = resolve_chromium_browser_candidates()
-    browser_path = str((candidates[0] or {}).get("path") or "").strip() if candidates else ""
+    candidates = cast(Callable[[], list[dict[str, Any]]], resolve_chromium_browser_candidates)()
+    first_candidate = _as_dict(candidates[0]) if candidates else {}
+    browser_path = str(first_candidate.get("path") or "").strip()
     return {"BALUFFO_DESKTOP_BROWSER_PATH": browser_path} if browser_path else {}
 
 

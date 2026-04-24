@@ -28,6 +28,14 @@ _GAMESMAP_CATEGORY_REFERENCE_RE = re.compile(
 )
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
 def _strip_html_tags(html: str) -> str:
     text = re.sub(r"(?is)<script[^>]*>.*?</script>", " ", str(html or ""))
     text = re.sub(r"(?is)<style[^>]*>.*?</style>", " ", text)
@@ -53,9 +61,10 @@ def _extract_gamesmap_js_data_container(markup: str) -> list[Any] | None:
             depth -= 1
             if depth == 0:
                 try:
-                    return json.loads(html[array_start : idx + 1])
+                    payload = json.loads(html[array_start : idx + 1])
                 except json.JSONDecodeError:
                     return None
+                return payload if isinstance(payload, list) else None
     return None
 
 
@@ -134,7 +143,7 @@ def _gamesmap_company_detail_url(slug: str, base_url: str, *, prefer_english: bo
 
 
 def _gamesmap_location_from_company(company: dict[str, Any]) -> str:
-    address = company.get("address") if isinstance(company.get("address"), dict) else {}
+    address = _as_dict(company.get("address"))
     parts: list[str] = []
     for raw in (address.get("city"), address.get("state")):
         token = str(raw or "").strip()
@@ -194,11 +203,7 @@ def _resolve_gamesmap_category_item(
         _gamesmap_increment_unresolved_reference(diagnostics)
         return []
     source_company = companies[company_idx]
-    categories_raw = (
-        source_company.get("categories")
-        if isinstance(source_company.get("categories"), list)
-        else []
-    )
+    categories_raw = _as_list(source_company.get("categories"))
     if category_idx < 0 or category_idx >= len(categories_raw):
         _gamesmap_increment_unresolved_reference(diagnostics)
         return []
@@ -216,9 +221,7 @@ def _gamesmap_categories_from_company(
     *,
     diagnostics: dict[str, int] | None = None,
 ) -> list[str]:
-    categories_raw = (
-        company.get("categories") if isinstance(company.get("categories"), list) else []
-    )
+    categories_raw = _as_list(company.get("categories"))
     out: list[str] = []
     for item in categories_raw:
         out.extend(
@@ -253,7 +256,7 @@ def _gamesmap_valid_website_url(value: str) -> str:
 
 
 def _gamesmap_website_from_company(company: dict[str, Any]) -> str:
-    websites = company.get("websites") if isinstance(company.get("websites"), list) else []
+    websites = _as_list(company.get("websites"))
     for item in websites:
         website = _gamesmap_valid_website_url(str(item or "").strip())
         if website:
@@ -339,10 +342,12 @@ def _parse_gamesmap_index_entries_with_diagnostics(
                 and isinstance(item[1], dict)
             ):
                 continue
-            points = item[1].get("points")
-            if not isinstance(points, dict):
+            item_payload = _as_dict(item[1])
+            points = _as_dict(item_payload.get("points"))
+            industry_points = _as_list(points.get("industry"))
+            if not industry_points:
                 continue
-            for point in points.get("industry") or []:
+            for point in industry_points:
                 if not isinstance(point, dict):
                     continue
                 slug = str(point.get("slug") or "").strip().strip("/")
@@ -353,7 +358,7 @@ def _parse_gamesmap_index_entries_with_diagnostics(
                     f"/en/detail/industry/{slug}" if prefer_english else f"/detail/industry/{slug}"
                 )
                 detail_url = urljoin(base_url.rstrip("/") + "/", detail_url.lstrip("/"))
-                province = point.get("province") if isinstance(point.get("province"), dict) else {}
+                province = _as_dict(point.get("province"))
                 location = str(
                     (province.get("nameEn") if prefer_english else province.get("name"))
                     or province.get("nameEn")

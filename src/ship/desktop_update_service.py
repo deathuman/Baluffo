@@ -15,6 +15,22 @@ def _root() -> Any:
     return root
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _as_bytes_dict(value: Any) -> dict[str, bytes]:
+    return (
+        {str(key): item for key, item in value.items() if isinstance(item, bytes)}
+        if isinstance(value, dict)
+        else {}
+    )
+
+
 class DesktopUpdateService:
     """App-side desktop updater state, fetch, download, and helper handoff service."""
 
@@ -49,13 +65,13 @@ class DesktopUpdateService:
             if isinstance(cached_manifest, dict)
             else deps.read_cached_manifest(self.paths)
         )
-        manifest = cached.get("manifest") if isinstance(cached.get("manifest"), dict) else {}
+        manifest = _as_dict(cached.get("manifest"))
         release_notes = deps._cached_release_notes(
             cached,
             target_version=str(manifest.get("version") or "").strip(),
             manifest_url=str(manifest.get("release_notes_url") or "").strip(),
         )
-        return cached, manifest, release_notes
+        return dict(cached), manifest, dict(release_notes)
 
     def _reconcile_status_locked(
         self,
@@ -124,8 +140,8 @@ class DesktopUpdateService:
         ):
             next_status.update(release_notes)
         if next_status != existing:
-            return deps.save_status(self.paths, next_status)
-        return next_status
+            return _as_dict(deps.save_status(self.paths, next_status))
+        return dict(next_status)
 
     def _download_failure_locked(
         self,
@@ -138,11 +154,15 @@ class DesktopUpdateService:
         deps = self._deps
         next_status = dict(status)
         if mutate_status:
-            next_status = deps.save_status(
-                self.paths,
-                deps._stale_download_failed_status(next_status, message=error),
+            next_status = _as_dict(
+                deps.save_status(
+                    self.paths,
+                    deps._stale_download_failed_status(next_status, message=error),
+                )
             )
-        return deps._failure_result(status=next_status, error=error, error_code=error_code)
+        return _as_dict(
+            deps._failure_result(status=next_status, error=error, error_code=error_code)
+        )
 
     def _install_failure_locked(
         self,
@@ -152,14 +172,18 @@ class DesktopUpdateService:
         error_code: str,
     ) -> dict[str, Any]:
         deps = self._deps
-        next_status = deps.save_status(
-            self.paths,
-            {
-                **dict(status),
-                "lastError": str(error or "").strip(),
-            },
+        next_status = _as_dict(
+            deps.save_status(
+                self.paths,
+                {
+                    **dict(status),
+                    "lastError": str(error or "").strip(),
+                },
+            )
         )
-        return deps._failure_result(status=next_status, error=error, error_code=error_code)
+        return _as_dict(
+            deps._failure_result(status=next_status, error=error, error_code=error_code)
+        )
 
     def _install_handoff_unconfirmed_locked(
         self,
@@ -173,25 +197,33 @@ class DesktopUpdateService:
         deps.clear_handoff_request(self.paths)
         deps.clear_install_plan(self.paths)
         deps.clear_staged_helper(temp_helper)
-        retryable_status = deps.save_status(
-            self.paths,
-            deps._retryable_install_status(status, zip_path=zip_path, error=error),
+        retryable_status = _as_dict(
+            deps.save_status(
+                self.paths,
+                deps._retryable_install_status(status, zip_path=zip_path, error=error),
+            )
         )
-        return deps._failure_result(
-            status=retryable_status,
-            error=error,
-            error_code="install_handoff_unconfirmed",
+        return _as_dict(
+            deps._failure_result(
+                status=retryable_status,
+                error=error,
+                error_code="install_handoff_unconfirmed",
+            )
         )
 
     def load_public_keys(self) -> dict[str, bytes]:
         deps = self._deps
-        return deps.load_desktop_update_public_keys(
-            candidate_paths=deps.desktop_update_public_key_candidate_paths(self.paths.ship_root),
+        return _as_bytes_dict(
+            deps.load_desktop_update_public_keys(
+                candidate_paths=deps.desktop_update_public_key_candidate_paths(
+                    self.paths.ship_root
+                ),
+            )
         )
 
     def get_status_payload(self) -> dict[str, Any]:
         with self._lock:
-            return self._reconcile_status_locked()
+            return dict(self._reconcile_status_locked())
 
     def _resolve_latest_release(self) -> dict[str, Any]:
         deps = self._deps
@@ -210,12 +242,12 @@ class DesktopUpdateService:
                 continue
             if bool(release.get("draft")) or bool(release.get("prerelease")):
                 continue
-            return release
+            return dict(release)
         raise RuntimeError("No stable GitHub release is available.")
 
     def _resolve_manifest_from_release(self, release: dict[str, Any]) -> dict[str, Any]:
         deps = self._deps
-        assets = release.get("assets") if isinstance(release.get("assets"), list) else []
+        assets = _as_list(release.get("assets"))
         manifest_asset = next(
             (
                 asset
@@ -237,7 +269,7 @@ class DesktopUpdateService:
         deps.verify_manifest_signature(manifest, public_keys=self.load_public_keys())
         if not str(manifest.get("release_notes_url") or "").strip():
             manifest["release_notes_url"] = str(release.get("html_url") or "").strip()
-        return manifest
+        return dict(manifest)
 
     def check_for_update(self, *, force: bool = False) -> dict[str, Any]:
         deps = self._deps
@@ -257,18 +289,20 @@ class DesktopUpdateService:
                     if age < deps.DEFAULT_RELEASE_CHECK_THROTTLE_SECONDS:
                         cached, manifest, release_notes = self._load_cached_manifest_parts()
                         if manifest:
-                            return deps.save_status(
-                                self.paths,
-                                self._reconcile_status_locked(
-                                    status=deps._manifest_to_status(
-                                        current_version=current_version,
+                            return _as_dict(
+                                deps.save_status(
+                                    self.paths,
+                                    self._reconcile_status_locked(
+                                        status=deps._manifest_to_status(
+                                            current_version=current_version,
+                                            manifest=manifest,
+                                            existing=status,
+                                            release_notes=release_notes,
+                                        ),
+                                        cached_manifest=cached,
                                         manifest=manifest,
-                                        existing=status,
-                                        release_notes=release_notes,
                                     ),
-                                    cached_manifest=cached,
-                                    manifest=manifest,
-                                ),
+                                )
                             )
             deps.save_status(self.paths, {**status, "availability": "checking", "lastError": ""})
         try:
@@ -296,30 +330,30 @@ class DesktopUpdateService:
                 release_notes=release_notes,
             )
             with self._lock:
-                return self._reconcile_status_locked(
-                    status=next_status,
-                    cached_manifest=deps.read_cached_manifest(self.paths),
-                    manifest=manifest,
+                return dict(
+                    self._reconcile_status_locked(
+                        status=next_status,
+                        cached_manifest=deps.read_cached_manifest(self.paths),
+                        manifest=manifest,
+                    )
                 )
         except Exception as exc:
-            return deps.save_status(
-                self.paths,
-                {
-                    **deps.load_status(self.paths, current_version=current_version),
-                    "lastCheckedAt": deps.iso_now(),
-                    "availability": "error",
-                    "updateAvailable": False,
-                    "lastError": str(exc),
-                },
+            return _as_dict(
+                deps.save_status(
+                    self.paths,
+                    {
+                        **deps.load_status(self.paths, current_version=current_version),
+                        "lastCheckedAt": deps.iso_now(),
+                        "availability": "error",
+                        "updateAvailable": False,
+                        "lastError": str(exc),
+                    },
+                )
             )
 
     def _run_download_worker(self, manifest: dict[str, Any]) -> None:
         deps = self._deps
-        artifact = (
-            manifest.get("portable_artifact")
-            if isinstance(manifest.get("portable_artifact"), dict)
-            else {}
-        )
+        artifact = _as_dict(manifest.get("portable_artifact"))
         target = self.paths.downloads_dir / deps._portable_artifact_name(manifest)
         last_reported_percent = -1
 
@@ -426,23 +460,20 @@ class DesktopUpdateService:
                 )
             try:
                 self.paths.downloads_dir.mkdir(parents=True, exist_ok=True)
-                state = deps.save_status(
-                    self.paths,
-                    {
-                        **status,
-                        "downloadState": "downloading",
-                        "downloadedBytes": 0,
-                        "totalBytes": int(
-                            (
-                                (manifest.get("portable_artifact") or {})
-                                if isinstance(manifest.get("portable_artifact"), dict)
-                                else {}
-                            ).get("size_bytes")
-                            or 0
-                        ),
-                        "downloadPercent": 0,
-                        "lastError": "",
-                    },
+                state = _as_dict(
+                    deps.save_status(
+                        self.paths,
+                        {
+                            **status,
+                            "downloadState": "downloading",
+                            "downloadedBytes": 0,
+                            "totalBytes": int(
+                                (_as_dict(manifest.get("portable_artifact"))).get("size_bytes") or 0
+                            ),
+                            "downloadPercent": 0,
+                            "lastError": "",
+                        },
+                    )
                 )
                 thread = deps.threading.Thread(
                     target=self._run_download_worker,
@@ -541,12 +572,7 @@ class DesktopUpdateService:
                     "manifestPath": str(self.paths.manifest_cache_path),
                     "downloadedZipPath": str(zip_path),
                     "expectedZipSha256": str(
-                        (
-                            (manifest.get("portable_artifact") or {})
-                            if isinstance(manifest.get("portable_artifact"), dict)
-                            else {}
-                        ).get("sha256")
-                        or ""
+                        _as_dict(manifest.get("portable_artifact")).get("sha256") or ""
                     ).strip(),
                     "manifestKeyId": str(manifest.get("key_id") or "").strip(),
                     "rollbackPath": str(rollback_path),

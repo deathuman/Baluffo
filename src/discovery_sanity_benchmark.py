@@ -9,6 +9,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 
 def _ensure_repo_on_path() -> Path:
@@ -36,6 +37,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def main(argv: list[str] | None = None) -> int:
     root = _ensure_repo_on_path()
     args = parse_args(argv)
@@ -61,11 +66,12 @@ def main(argv: list[str] | None = None) -> int:
         mode=str(args.mode),
         include_web_search=bool(args.include_web_search),
     )
-    summary = report.get("summary") if isinstance(report.get("summary"), dict) else {}
-    runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
+    summary = _as_dict(report.get("summary"))
+    runtime = _as_dict(report.get("runtime"))
+    outputs = _as_dict(report.get("outputs"))
     payload = {
         "outputDir": str(data_dir),
-        "reportPath": str((report.get("outputs") or {}).get("report")),
+        "reportPath": str(outputs.get("report")),
         "queuedCandidateCount": int(summary.get("queuedCandidateCount") or 0),
         "discoverableButDeferredCount": int(summary.get("discoverableButDeferredCount") or 0),
         "failedProbeCount": int(summary.get("failedProbeCount") or 0),

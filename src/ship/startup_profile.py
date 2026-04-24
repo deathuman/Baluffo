@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,14 @@ WINDOW_SHOWN_EVENT_REFS = (
 )
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
 def _parse_ts_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int | None:
     ts_value = str(row.get("ts") or "").strip()
     if not ts_value or launch_ts_ms is None:
@@ -53,7 +62,7 @@ def _parse_browser_ts_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int |
     if launch_ts_ms is None:
         return None
     top_level_value = row.get("browserTsMs")
-    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    payload = _as_dict(row.get("payload"))
     payload_value = payload.get("browserCreatedAtMs")
     for candidate in (top_level_value, payload_value):
         if isinstance(candidate, (int, float)):
@@ -62,8 +71,8 @@ def _parse_browser_ts_ms(row: dict[str, Any], launch_ts_ms: int | None) -> int |
 
 
 def _parse_payload_elapsed_ms(row: dict[str, Any]) -> int | None:
-    fields = row.get("fields") if isinstance(row.get("fields"), dict) else {}
-    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    fields = _as_dict(row.get("fields"))
+    payload = _as_dict(row.get("payload"))
     for source in (fields, payload):
         value = source.get("elapsedMs")
         if isinstance(value, (int, float)):
@@ -119,11 +128,11 @@ def _pick_first(events: dict[str, int], names: list[str]) -> tuple[str, int] | t
 
 
 def _resolve_stage_event(
-    events: dict[str, int], event_ref: str | list[str] | tuple[str, ...] | None
+    events: dict[str, int], event_ref: str | Sequence[str] | None
 ) -> tuple[str | None, int | None]:
     if event_ref is None:
         return None, None
-    if isinstance(event_ref, (list, tuple)):
+    if not isinstance(event_ref, str):
         return _pick_first(
             events, [str(name or "").strip() for name in event_ref if str(name or "").strip()]
         )
@@ -213,29 +222,29 @@ def summarize_startup_metrics(
                 ready_event,
             ),
         ]
-        stages: list[dict[str, Any]] = []
-        missing_events: list[str] = []
+        probe_stages: list[dict[str, Any]] = []
+        probe_missing_events: list[str] = []
         for key, label, start_ref, end_ref in stage_defs:
             start_event, start_ms = _resolve_stage_event(events, start_ref)
             end_event, end_ms = _resolve_stage_event(events, end_ref)
             threshold_ms = int(thresholds.get(key, 0))
             if start_ms is None:
                 if isinstance(start_ref, (list, tuple)):
-                    missing_events.extend([str(item) for item in start_ref])
+                    probe_missing_events.extend([str(item) for item in start_ref])
                 else:
-                    missing_events.append(str(start_event or ""))
+                    probe_missing_events.append(str(start_event or ""))
             if end_ms is None:
                 if isinstance(end_ref, (list, tuple)):
-                    missing_events.extend([str(item) for item in end_ref])
+                    probe_missing_events.extend([str(item) for item in end_ref])
                 else:
-                    missing_events.append(str(end_event or ""))
+                    probe_missing_events.append(str(end_event or ""))
             duration_ms = (
                 None if start_ms is None or end_ms is None else max(0, int(end_ms) - int(start_ms))
             )
             status = "missing"
             if duration_ms is not None:
                 status = "slow" if threshold_ms > 0 and duration_ms > threshold_ms else "passed"
-            stages.append(
+            probe_stages.append(
                 {
                     "key": key,
                     "label": label,
@@ -249,8 +258,8 @@ def summarize_startup_metrics(
                 }
             )
         classification = _classify_stages(
-            stages=stages,
-            missing_events=missing_events,
+            stages=probe_stages,
+            missing_events=probe_missing_events,
             classification_map={
                 "launch_to_site_ready": "bridge/site bootstrap delayed",
                 "site_ready_to_window_created": "browser launch / app-window creation delayed",
@@ -258,19 +267,19 @@ def summarize_startup_metrics(
                 "window_shown_to_page_loaded": "desktop page load delayed",
             },
         )
-        stage_statuses = [stage["status"] for stage in stages]
+        stage_statuses = [stage["status"] for stage in probe_stages]
         return {
             "page": safe_page,
             "profileMode": mode,
             "events": events,
-            "stages": stages,
+            "stages": probe_stages,
             "firstUsableEvent": ready_event if ready_event in events else "",
             "firstUsableMs": events.get(ready_event),
             "classification": classification,
             "status": "passed"
             if stage_statuses and all(status == "passed" for status in stage_statuses)
             else "failed",
-            "missingEvents": sorted({event for event in missing_events if event}),
+            "missingEvents": sorted({event for event in probe_missing_events if event}),
         }
 
     render_event, render_ms = _pick_first(events, [f"{safe_page}_first_render"])
@@ -426,7 +435,9 @@ def render_startup_summary(summary: dict[str, Any]) -> str:
         f"Startup Profile ({summary.get('profileMode', 'cold')}, page={summary.get('page', 'jobs')})",
         f"Bottleneck: {summary.get('classification', 'unknown')}",
     ]
-    for stage in summary.get("stages") or []:
+    for stage in _as_list(summary.get("stages")):
+        if not isinstance(stage, dict):
+            continue
         duration = stage.get("durationMs")
         duration_label = "missing" if duration is None else f"{int(duration)}ms"
         threshold = stage.get("thresholdMs")

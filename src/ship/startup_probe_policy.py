@@ -9,8 +9,8 @@ telemetry helpers needed to observe real startup behavior.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, Protocol
 
 STARTUP_REQUIRED_EVENTS = (
     "desktop_launch_start",
@@ -38,6 +38,10 @@ EMBEDDED_PAGE_PROBES = (
     },
     {"name": "Embedded Admin Ready", "openPath": "admin.html", "requiredEvents": ("admin_ready",)},
 )
+
+
+class ChromiumAppModeSupported(Protocol):
+    def __call__(self, candidate: dict[str, Any], *, env: dict[str, str] | None = None) -> bool: ...
 
 
 def startup_profile_required_events(page: str) -> tuple[str, ...]:
@@ -189,7 +193,7 @@ def refine_startup_probe_summary(
 def select_startup_probe_browser(
     candidates: Sequence[dict[str, Any]],
     *,
-    chromium_app_mode_supported: Callable[[dict[str, Any], dict[str, str] | None], bool],
+    chromium_app_mode_supported: ChromiumAppModeSupported,
     env: dict[str, str] | None = None,
 ) -> dict[str, str]:
     env_map = env if env is not None else None

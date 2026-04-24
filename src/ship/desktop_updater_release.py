@@ -65,6 +65,14 @@ def _module() -> Any:
     return root if root is not None else sys.modules[__name__]
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
 def _find_release_for_target_version(repo: str, target_version: str) -> dict[str, Any]:
     module = _module()
     url = f"{module.resolve_github_api_base()}/repos/{repo}/releases?per_page=10"
@@ -95,9 +103,7 @@ def _recover_manifest_for_install(
 ) -> dict[str, Any]:
     module = _module()
     cached_manifest = module.read_cached_manifest(paths)
-    manifest = (
-        cached_manifest.get("manifest") if isinstance(cached_manifest.get("manifest"), dict) else {}
-    )
+    manifest = _as_dict(cached_manifest.get("manifest"))
     if manifest:
         return manifest
     repo = module.resolve_release_repo(install_root=install_root, ship_root=ship_root)
@@ -106,7 +112,7 @@ def _recover_manifest_for_install(
             "Verified manifest cache is unavailable and desktop update repo is not configured."
         )
     release = module._find_release_for_target_version(repo, str(plan.get("targetVersion") or ""))
-    assets = release.get("assets") if isinstance(release.get("assets"), list) else []
+    assets = _as_list(release.get("assets"))
     manifest_asset = next(
         (
             asset
@@ -135,11 +141,7 @@ def _recover_manifest_for_install(
         raise RuntimeError("Recovered desktop manifest does not match the install target version.")
     if str(manifest.get("key_id") or "").strip() != str(plan.get("manifestKeyId") or "").strip():
         raise RuntimeError("Recovered desktop manifest does not match the expected signing key.")
-    artifact = (
-        manifest.get("portable_artifact")
-        if isinstance(manifest.get("portable_artifact"), dict)
-        else {}
-    )
+    artifact = _as_dict(manifest.get("portable_artifact"))
     expected_hash = str(plan.get("expectedZipSha256") or "").strip().lower()
     manifest_hash = str(artifact.get("sha256") or "").strip().lower()
     if expected_hash and manifest_hash and manifest_hash != expected_hash:
@@ -158,11 +160,7 @@ def _ensure_verified_zip_for_install(
 ) -> Path:
     module = _module()
     expected_hash = str(plan.get("expectedZipSha256") or "").strip().lower()
-    artifact = (
-        manifest.get("portable_artifact")
-        if isinstance(manifest.get("portable_artifact"), dict)
-        else {}
-    )
+    artifact = _as_dict(manifest.get("portable_artifact"))
     manifest_hash = str(artifact.get("sha256") or "").strip().lower()
     expected_hash = expected_hash or manifest_hash
     artifact_url = str(artifact.get("url") or "").strip()

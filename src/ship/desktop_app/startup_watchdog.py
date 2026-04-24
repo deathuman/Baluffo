@@ -16,6 +16,25 @@ from .config import (
 )
 
 
+def _as_dict(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
 def _attempt_active_work_browser_relaunch(
     *,
     config: DesktopRuntimeConfig,
@@ -37,21 +56,18 @@ def _attempt_active_work_browser_relaunch(
     last_activity_ts = api.bridge_last_activity_ts(config.bridge_port)
     browser_process: subprocess.Popen[str] | None = None
     try:
-        launch_result = api.launch_browser_for_url(
-            open_url,
-            preferred_browser_path=str(preferred_browser_path or "").strip(),
-            data_dir=config.data_dir,
-            started_mono=started_mono,
-            job_handle=desktop_job,
+        launch_result = _as_dict(
+            api.launch_browser_for_url(
+                open_url,
+                preferred_browser_path=str(preferred_browser_path or "").strip(),
+                data_dir=config.data_dir,
+                started_mono=started_mono,
+                job_handle=desktop_job,
+            )
         )
-        browser_process = (
-            launch_result.get("process")
-            if isinstance(launch_result.get("process"), subprocess.Popen)
-            else None
-        )
-        browser_pid = int(
-            launch_result.get("browserPid") or getattr(browser_process, "pid", 0) or 0
-        )
+        process_obj = launch_result.get("process")
+        browser_process = process_obj if isinstance(process_obj, subprocess.Popen) else None
+        browser_pid = _as_int(launch_result.get("browserPid") or getattr(browser_process, "pid", 0))
     except (OSError, RuntimeError) as exc:
         if browser_process is not None:
             api.terminate_process(browser_process)

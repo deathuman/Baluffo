@@ -36,7 +36,7 @@ def startup_probe_enabled(env: dict[str, str] | None = None) -> bool:
 def startup_trace_target(env: dict[str, str] | None = None) -> tuple[Path | None, bool]:
     env_map = env if env is not None else os.environ
     data_dir = str(env_map.get("BALUFFO_DATA_DIR") or "").strip()
-    if not startup_probe_enabled(env_map) or not data_dir:
+    if not startup_probe_enabled(dict(env_map)) or not data_dir:
         return None, False
     return Path(data_dir).expanduser().resolve(), True
 
@@ -114,7 +114,7 @@ def _build_readiness_probe(url: str, *, request_timeout_s: float) -> tuple[bool,
         host = str(parsed.hostname or "").strip() or "127.0.0.1"
         port = int(parsed.port or (443 if connection_type is http.client.HTTPSConnection else 80))
 
-        def _probe_once() -> int:
+        def _loopback_probe_once() -> int:
             connection = connection_type(host, port, timeout=request_timeout_s)
             try:
                 connection.request("GET", path)
@@ -125,19 +125,19 @@ def _build_readiness_probe(url: str, *, request_timeout_s: float) -> tuple[bool,
                 with contextlib.suppress(OSError, http.client.HTTPException):
                     connection.close()
 
-        return is_loopback, _probe_once
+        return is_loopback, _loopback_probe_once
 
     opener = build_opener(ProxyHandler())
     request = Request(url, method="GET")
 
-    def _probe_once() -> int:
+    def _http_probe_once() -> int:
         try:
             with opener.open(request, timeout=request_timeout_s) as response:  # noqa: S310
                 return int(getattr(response, "status", 200) or 200)
         except HTTPError as exc:
             return int(getattr(exc, "code", 0) or 0)
 
-    return is_loopback, _probe_once
+    return is_loopback, _http_probe_once
 
 
 def wait_for_url(

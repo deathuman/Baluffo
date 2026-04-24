@@ -95,6 +95,10 @@ def _module() -> Any:
     return root if root is not None else sys.modules[__name__]
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _status_for_stage(
     paths: DesktopUpdatePaths,
     *,
@@ -113,7 +117,7 @@ def _status_for_stage(
         }
     )
     status.update(extra)
-    return module.save_status(paths, status)
+    return _as_dict(module.save_status(paths, status))
 
 
 def _wait_for_launcher_exit(plan: dict[str, Any], *, timeout_s: float = 120.0) -> None:
@@ -181,10 +185,10 @@ def _sync_extract_to_install(install_root: Path, extracted_root: Path) -> None:
     for path in install_root.rglob("*"):
         if not path.is_file():
             continue
-        rel = path.relative_to(install_root).as_posix()
-        if rel.startswith("ship/data/"):
+        rel_text = path.relative_to(install_root).as_posix()
+        if rel_text.startswith("ship/data/"):
             continue
-        if rel not in target_paths:
+        if rel_text not in target_paths:
             with contextlib.suppress(OSError):
                 path.unlink()
     for path in extracted_root.rglob("*"):
@@ -212,7 +216,7 @@ def _verify_target_startup(plan: dict[str, Any], *, timeout_s: float = 90.0) -> 
             module.time.sleep(1.0)
             continue
         try:
-            session_state = json.loads(session_state_path.read_text(encoding="utf-8"))
+            session_state = _as_dict(json.loads(session_state_path.read_text(encoding="utf-8")))
         except (OSError, json.JSONDecodeError):
             module.time.sleep(1.0)
             continue
@@ -259,19 +263,21 @@ def _finalize_success(
     with contextlib.suppress(OSError):
         shutil.rmtree(rollback_root)
     module.clear_success_marker(paths)
-    return module._status_for_stage(
-        paths,
-        install_state="installed",
-        install_stage="installed",
-        downloadState="idle",
-        downloadedBytes=0,
-        totalBytes=0,
-        downloadPercent=0,
-        lastError="",
-        lastCheckedAt=module.iso_now(),
-        migrationBackupPath="",
-        rollbackPath="",
-        targetVersion=str(plan.get("targetVersion") or ""),
+    return _as_dict(
+        module._status_for_stage(
+            paths,
+            install_state="installed",
+            install_stage="installed",
+            downloadState="idle",
+            downloadedBytes=0,
+            totalBytes=0,
+            downloadPercent=0,
+            lastError="",
+            lastCheckedAt=module.iso_now(),
+            migrationBackupPath="",
+            rollbackPath="",
+            targetVersion=str(plan.get("targetVersion") or ""),
+        )
     )
 
 
@@ -404,7 +410,8 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             rollbackPath=str(rollback_root),
         )
         module._copy_install_snapshot(install_root, rollback_root)
-        if list(manifest.get("migration_plan") or []):
+        migration_plan = list(manifest.get("migration_plan") or [])
+        if migration_plan:
             module._status_for_stage(
                 paths,
                 install_state="installing",
@@ -429,7 +436,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             migrationBackupPath=str(backup_ref) if backup_ref is not None else "",
         )
         module._sync_extract_to_install(install_root, temp_extract)
-        if list(manifest.get("migration_plan") or []):
+        if migration_plan:
             module._status_for_stage(
                 paths,
                 install_state="installing",
@@ -439,7 +446,7 @@ def run_install(plan_path: Path, progress: Any | None = None) -> dict[str, Any]:
             )
             module.update_manager.run_migrations(
                 module.update_manager.ShipPaths.from_root(ship_root),
-                manifest.get("migration_plan") or [],
+                migration_plan,
                 backup_ref,
             )
         progress.update(module.install_stage_label("verifying", "relaunching"))

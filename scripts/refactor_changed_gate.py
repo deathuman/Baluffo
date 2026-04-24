@@ -6,6 +6,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from collections.abc import Callable
+from shutil import which
 
 try:
     from scripts import precommit_gate
@@ -14,6 +15,7 @@ except ImportError:  # pragma: no cover - direct script execution path
 
 PYTHON = sys.executable
 DIFF_FILTER = "--diff-filter=ACMRTUXB"
+NPM = which("npm") or "npm"
 DOCS_COMMAND = [PYTHON, "-m", "pytest", "tests/test_release_docs.py", "-q"]
 WORKFLOW_COMMAND = [
     PYTHON,
@@ -23,7 +25,7 @@ WORKFLOW_COMMAND = [
     "tests/test_workflow_entrypoints.py",
     "-q",
 ]
-EXTENDED_COMMAND = ["npm", "run", "test:py:extended"]
+EXTENDED_COMMAND = [NPM, "run", "test:py:extended"]
 
 
 def _resolve_diff_base() -> str | None:

@@ -20,8 +20,8 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src` -> `173 errors in 44 files (checked 313 source files)` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, parser/static-runtime, static adapter/detail, jobs runtime/report-helper, source-execution compatibility, jobs reporting/text utility, jobs transport/canonicalization tail, source registry/checker, source-sync boundary, and desktop app launch/session scope. |
+| Broad type-check run | `python -m mypy src` -> `40 errors in 19 files (checked 313 source files)` |
+| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on `114` staged files across the bridge/admin surface, source-discovery/audit helpers, jobs contracts/runtime/loader/plugin/provider/parser/static/reporting/transport wave, source registry/checker boundary, source-sync boundary, desktop app launch/session cluster, desktop updater boundary, packaged runtime/startup support, and high-yield source-discovery/local-data cleanup files. |
 | ESLint | `137 warnings, 0 errors` |
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
@@ -38,9 +38,9 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 
 ### P0
 
-1. **Next staged mypy milestone: type the desktop update/state/service cluster.**
-   The next high-impact cluster surfaced by the broad audit is the desktop updater and packaged runtime support boundary, centered on `src/ship/desktop_update_state.py`, `src/ship/desktop_update_service.py`, `src/ship/desktop_update_shared.py`, `src/ship/desktop_update.py`, `src/ship/desktop_updater_release.py`, `src/ship/desktop_updater_install.py`, and `src/ship/desktop_updater.py`, with tiny adjacent startup probe or packaged-smoke annotations only if needed.
-   **Done when:** the enforced mypy scope expands again to cover the desktop update boundary, and those modules stop leaking `Any` through status payloads, manifest/artifact maps, updater install/release helpers, and runtime path/config accessors.
+1. **Next staged mypy milestone: close the remaining broad mypy tail.**
+   The broad audit is now small enough for targeted cleanup. Prioritize the remaining bridge/runtime and source-discovery/scraper stragglers surfaced by the current run: `src/bridge/run_history_api.py`, `src/bridge/server/runtime_state.py`, `src/bridge/routes/*`, `src/source_discovery/*`, `src/local_data_store_saved_jobs.py`, and the small scraper helper files.
+   **Done when:** the broad audit drops below `20` errors and the newly green files are added to the staged mypy gate without weakening the current `114`-file scope.
 
 ### P1
 
@@ -76,9 +76,9 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 - `.github/ISSUE_TEMPLATE/` exists and currently includes `bug_report.md` and `feature_request.md`.
 - README has static product badges, but not CI status badges.
 - `TODO` / `FIXME` / `HACK` count in `src/` plus `frontend/` is currently `0`, not `3`.
-- `python -m vulture` does **not** work in the active interpreter, but the repo's pre-commit flow manages vulture separately; this is not the same as a broken repo gate.
+- `python -m vulture` now works in the active interpreter after local environment repair; the repo's pre-commit flow still manages its own vulture hook environment separately.
 - The previous `data/source-approval-state.json` newline-only churn was real, but it is now fixed at the shared writer level rather than hidden from the local checks.
-- The type-safety claim still needs nuance: repo-wide mypy debt is still large, but the enforced mypy scope now covers 89 staged files across the bridge/admin surface, source-discovery/audit helpers, jobs contracts/runtime/adapter/reporting/transport wave, source registry/checker boundary, source-sync compatibility/runtime boundary, and desktop app launch/session boundary, and it remains green.
+- The type-safety claim still needs nuance: repo-wide mypy debt is much smaller but not gone, and the enforced mypy scope now covers 114 staged files across the bridge/admin surface, source-discovery/audit helpers, jobs contracts/runtime/adapter/reporting/transport wave, source registry/checker boundary, source-sync compatibility/runtime boundary, desktop app launch/session boundary, desktop updater boundary, packaged runtime/startup support, and high-yield source-discovery/local-data cleanup files.
 - The original 1-10 score table and overall `7.5/10` rating were not retained here because they are subjective and partially stale relative to the current repo state.
 
 ## Not Locally Validated

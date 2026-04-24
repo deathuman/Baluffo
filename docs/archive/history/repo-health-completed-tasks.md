@@ -50,6 +50,10 @@ This page stores completed items moved out of the active repository-health track
    The enforced mypy scope now includes `src/ship/desktop_app/_windows.py`, `src/ship/desktop_app/launcher_flow.py`, `src/ship/desktop_app/session.py`, `src/ship/desktop_app/browser.py`, and `src/ship/desktop_app/launcher_diagnostics.py`. This pass normalized desktop runtime payload reads, typed browser launch subprocess/environment boundaries, and made Windows process/window metric reads checkable without changing launcher flow, session recovery, browser lifecycle, or stale-runtime reclaim behavior. The broad audit dropped from `211` errors in `49` files to `173` errors in `44` files.
    **Done when:** complete.
 
+12. **Completed: reduce the remaining mypy sweep debt below the current target.**
+   The enforced mypy scope now includes the desktop updater boundary, packaged runtime/startup support, release repeatability helper, desktop app startup process helpers, and high-yield source-discovery/local-data cleanup files. This pass also repaired the local active-interpreter vulture installation, kept the desktop app formatter check green, and reduced the broad audit from `173` errors in `44` files to `40` errors in `19` files without changing runtime behavior, updater compatibility roots, packaged smoke contracts, or persisted payload shapes.
+   **Done when:** complete.
+
 ## Completed P1 Items
 
 5. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**

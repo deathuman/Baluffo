@@ -54,7 +54,7 @@ def fetch_json(url: str, timeout_s: float = 2.5) -> dict[str, Any]:
 
 def fetch_text(url: str, timeout_s: float = 2.5) -> str:
     with urllib.request.urlopen(url, timeout=timeout_s) as response:
-        return response.read().decode("utf-8", errors="replace")
+        return str(response.read().decode("utf-8", errors="replace"))
 
 
 def request_json(

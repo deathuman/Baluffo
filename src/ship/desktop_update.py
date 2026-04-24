@@ -15,6 +15,7 @@ import uuid as _uuid
 from datetime import UTC as _UTC
 from datetime import datetime as _datetime
 from pathlib import Path
+from typing import Any
 from urllib.error import URLError as _URLError
 from urllib.request import Request as _Request
 from urllib.request import urlopen as _urlopen
@@ -36,17 +37,24 @@ from src.ship import desktop_update_state as desktop_update_state_mod
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
-        Ed25519PrivateKey,
-        Ed25519PublicKey,
+        Ed25519PrivateKey as _Ed25519PrivateKey,
+    )
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PublicKey as _Ed25519PublicKey,
     )
 except Exception:  # noqa: BLE001
-    Ed25519PrivateKey = None  # type: ignore[assignment]
-    Ed25519PublicKey = None  # type: ignore[assignment]
+    Ed25519PrivateKey: Any = None
+    Ed25519PublicKey: Any = None
+else:
+    Ed25519PrivateKey = _Ed25519PrivateKey
+    Ed25519PublicKey = _Ed25519PublicKey
 
 try:
-    import psutil
+    import psutil as _psutil
 except Exception:  # noqa: BLE001
-    psutil = None  # type: ignore[assignment]
+    psutil: Any = None
+else:
+    psutil = _psutil
 
 
 DESKTOP_UPDATE_SCHEMA_VERSION = 1

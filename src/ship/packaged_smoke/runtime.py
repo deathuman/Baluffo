@@ -7,7 +7,7 @@ import subprocess
 import time
 import urllib.error
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 root: Any | None = None
 
@@ -16,6 +16,14 @@ def _root() -> Any:
     if root is None:
         raise RuntimeError("packaged_smoke.runtime.root is not configured")
     return root
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
 
 
 def launch_packaged_exe(
@@ -129,12 +137,15 @@ def launch_packaged_desktop_child(
         ]
     else:
         raise ValueError(f"Unsupported packaged child mode: {mode}")
-    return deps.launch_packaged_command(
-        exe_path,
-        args=args,
-        stdout_path=stdout_path,
-        stderr_path=stderr_path,
-        env=env,
+    return cast(
+        tuple[subprocess.Popen[Any], Any, Any],
+        deps.launch_packaged_command(
+            exe_path,
+            args=args,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            env=env,
+        ),
     )
 
 
@@ -285,7 +296,11 @@ def wait_for_packaged_runtime(
         try:
             health = deps.fetch_json(f"{bridge_base_url}/ops/health")
             session = deps.fetch_json(f"{bridge_base_url}/desktop-local-data/session")
-            metrics_rows = deps.fetch_startup_metrics(bridge_base_url, limit=1000)
+            metrics_rows = [
+                dict(row)
+                for row in _as_list(deps.fetch_startup_metrics(bridge_base_url, limit=1000))
+                if isinstance(row, dict)
+            ]
             launch_mode = deps.startup_metric_launch_mode(metrics_rows)
             if require_managed_window and launch_mode:
                 if launch_mode != deps.REQUIRED_STARTUP_PROBE_LAUNCH_MODE:
@@ -348,7 +363,9 @@ def wait_for_packaged_runtime_with_port_pivot(
                 f"Packaged desktop executable exited before smoke runtime became ready (exit {exit_code})."
             )
         try:
-            session_state = deps.desktop_update_mod.read_desktop_session_state(session_root)
+            session_state = _as_dict(
+                deps.desktop_update_mod.read_desktop_session_state(session_root)
+            )
             data_dir = Path(str(session_state.get("dataDir") or "")).expanduser()
             if session_state and data_dir.resolve() == expected_data_dir.resolve():
                 session_site_port = int(session_state.get("sitePort") or 0)
@@ -365,7 +382,11 @@ def wait_for_packaged_runtime_with_port_pivot(
             bridge_base_url = f"http://127.0.0.1:{actual_bridge_port}"
             health = deps.fetch_json(f"{bridge_base_url}/ops/health")
             session = deps.fetch_json(f"{bridge_base_url}/desktop-local-data/session")
-            metrics_rows = deps.fetch_startup_metrics(bridge_base_url, limit=1000)
+            metrics_rows = [
+                dict(row)
+                for row in _as_list(deps.fetch_startup_metrics(bridge_base_url, limit=1000))
+                if isinstance(row, dict)
+            ]
             if deps.startup_metric_event_present(metrics_rows, "desktop_runtime_port_retry"):
                 retry_observed = True
             events = {str(row.get("event") or "") for row in metrics_rows if isinstance(row, dict)}
@@ -479,7 +500,11 @@ def wait_for_runtime_events(
     last_error = ""
     while deps.time.monotonic() < deadline:
         try:
-            rows = deps.fetch_startup_metrics(bridge_base_url, limit=1000)
+            rows = [
+                dict(row)
+                for row in _as_list(deps.fetch_startup_metrics(bridge_base_url, limit=1000))
+                if isinstance(row, dict)
+            ]
             last_events = {str(row.get("event") or "") for row in rows}
             if all(
                 deps._required_startup_event_present(last_events, event) for event in normalized
@@ -622,8 +647,8 @@ def parse_packaged_node_smoke_report(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     payload = json.loads(path.read_text(encoding="utf-8") or "{}")
-    rows = payload.get("scenarios") if isinstance(payload, dict) else []
-    return [row for row in rows if isinstance(row, dict)]
+    rows = _as_list(payload.get("scenarios")) if isinstance(payload, dict) else []
+    return [dict(row) for row in rows if isinstance(row, dict)]
 
 
 def read_packaged_node_smoke_payload(path: Path) -> dict[str, Any]:
