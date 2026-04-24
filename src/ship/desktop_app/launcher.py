@@ -65,7 +65,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.child_mode == "__child_site__":
         from src.ship.runtime_launcher import run_site_server
 
-        run_site_server(args.root or None, port=int(args.port))
+        run_site_server(
+            args.root or None,
+            port=int(args.port),
+            desktop_bridge_host=str(args.bridge_host or ""),
+            desktop_bridge_port=int(args.bridge_port or 0),
+        )
         return 0
     if args.child_mode == "__child_bridge__":
         from src.ship.runtime_launcher import run_bridge_server

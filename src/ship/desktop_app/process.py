@@ -23,6 +23,7 @@ def build_child_command(
     root: Path,
     port: int,
     bridge_host: str = "127.0.0.1",
+    bridge_port: int | None = None,
     data_dir: Path | None = None,
     desktop_runtime: bool = False,
     owner_mode: str = "",
@@ -39,6 +40,9 @@ def build_child_command(
         child_command = command + ["__child_site__", "--root", str(root), "--port", str(port)]
         if desktop_runtime:
             child_command.append("--desktop-runtime")
+            child_command.extend(["--bridge-host", str(bridge_host)])
+            if bridge_port is not None:
+                child_command.extend(["--bridge-port", str(int(bridge_port))])
         return child_command
     child_command = command + [
         "__child_bridge__",

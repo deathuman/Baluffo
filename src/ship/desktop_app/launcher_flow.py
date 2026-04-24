@@ -57,15 +57,25 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             sessionRoot=str(session_root),
             strategy=str(session_root_info.get("strategy") or ""),
         )
-        child_env = {"BALUFFO_DATA_DIR": str(config.data_dir), "BALUFFO_DESKTOP_MODE": "1"}
-        if bool(config.startup_probe):
-            child_env["BALUFFO_STARTUP_PROBE"] = "1"
+
+        def _child_env_for(current_config: DesktopRuntimeConfig) -> dict[str, str]:
+            env = {
+                "BALUFFO_DATA_DIR": str(current_config.data_dir),
+                "BALUFFO_DESKTOP_MODE": "1",
+                "BALUFFO_DESKTOP_BRIDGE_HOST": str(current_config.bridge_host),
+                "BALUFFO_DESKTOP_BRIDGE_PORT": str(int(current_config.bridge_port)),
+            }
+            if bool(current_config.startup_probe):
+                env["BALUFFO_STARTUP_PROBE"] = "1"
+            return env
+
         launch_result: dict[str, object] = {}
         port_retry_attempted = False
         open_url = ""
         site_ready_elapsed_ms = 0
         while True:
             try:
+                child_env = _child_env_for(config)
                 api.ensure_runtime_ports(config)
                 desktop_job = api._windows_create_kill_on_close_job()
                 api._append_startup_trace(
@@ -77,7 +87,12 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 )
                 site_process = api.start_child_process(
                     api.build_child_command(
-                        "site", root=config.ship_root, port=config.site_port, desktop_runtime=True
+                        "site",
+                        root=config.ship_root,
+                        port=config.site_port,
+                        bridge_host=config.bridge_host,
+                        bridge_port=config.bridge_port,
+                        desktop_runtime=True,
                     ),
                     extra_env=child_env,
                     job_handle=desktop_job,

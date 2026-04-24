@@ -25,7 +25,8 @@ export function initDesktopLocalDataClient() {
   if (!needsBootstrap) {
     return desktopApi;
   }
-  commitAuthState(null);
+  // Keep the persisted session hint until the bridge session refresh resolves.
+  desktopState.currentUser = null;
   bootstrapDesktopApi({
     refreshCurrentUser,
     commitAuthState,

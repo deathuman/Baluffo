@@ -124,6 +124,12 @@ def test_main_runtime_hidden_imports_preserve_packaged_browser_fallback_support(
     assert "src.admin_bridge" in MAIN_RUNTIME_HIDDEN_IMPORTS
     assert "tkinter" in MAIN_RUNTIME_HIDDEN_IMPORTS
     assert "src.shared.github_https" in MAIN_RUNTIME_HIDDEN_IMPORTS
+    assert "src.local_data_store_attachments" in MAIN_RUNTIME_HIDDEN_IMPORTS
+    assert "src.local_data_store_backup" in MAIN_RUNTIME_HIDDEN_IMPORTS
+    assert "src.local_data_store_profiles" in MAIN_RUNTIME_HIDDEN_IMPORTS
+    assert "src.local_data_store_saved_jobs" in MAIN_RUNTIME_HIDDEN_IMPORTS
+    assert "src.local_data_store_shared" in MAIN_RUNTIME_HIDDEN_IMPORTS
+    assert "src.source_sync_runtime" in MAIN_RUNTIME_HIDDEN_IMPORTS
 
 
 def test_main_runtime_collect_all_packages_include_scrapy_runtime_when_available() -> None:

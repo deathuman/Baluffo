@@ -294,6 +294,74 @@ def test_build_site_request_handler_serves_data_requests_from_runtime_data_dir()
         assert '"ok":true' in payload
 
 
+def test_build_site_request_handler_serves_legacy_root_data_aliases() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "site"
+        root.mkdir(parents=True, exist_ok=True)
+        data_dir = Path(tmp) / "data"
+        _write(data_dir / "jobs-fetch-report.json", '{"ok":true,"report":1}\n')
+        _write(data_dir / "source-registry-active.json", '[{"name":"Studio"}]\n')
+
+        handler = rl.build_site_request_handler(
+            root,
+            runtime_data_dir=data_dir,
+            static_data_dir=data_dir,
+            startup_probe=False,
+        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            with urlopen(f"{base}/jobs-fetch-report.json?t=1", timeout=2.0) as response:
+                report_payload = response.read().decode("utf-8")
+            with urlopen(f"{base}/source-registry-active.json?t=1", timeout=2.0) as response:
+                registry_payload = response.read().decode("utf-8")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        assert '"report":1' in report_payload
+        assert '"Studio"' in registry_payload
+
+
+def test_build_site_request_handler_serves_desktop_runtime_bridge_config() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        root = Path(tmp) / "site"
+        root.mkdir(parents=True, exist_ok=True)
+        _write(
+            root / "frontend-runtime-config.js",
+            "globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = { bridge: { port: 8877 } };\n",
+        )
+
+        handler = rl.build_site_request_handler(
+            root,
+            desktop_bridge_host="127.0.0.1",
+            desktop_bridge_port=61234,
+        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urlopen(
+                f"http://127.0.0.1:{server.server_address[1]}/frontend-runtime-config.js?v=2",
+                timeout=2.0,
+            ) as response:
+                payload = response.read().decode("utf-8")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        assert "BALUFFO_FRONTEND_RUNTIME_CONFIG" in payload
+        assert '"host": "127.0.0.1"' in payload
+        assert '"port": 61234' in payload
+        assert '"runtime": {' in payload
+        assert '"desktop": true' in payload
+        assert '"port": 8877' not in payload
+
+
 def test_wait_for_url_emits_timeout_diagnostics_for_startup_probe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

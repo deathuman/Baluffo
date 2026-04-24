@@ -26,9 +26,35 @@ const BALUFFO_RUNTIME_CONFIG = {
   }
 };
 
+function safeSetRuntimeBridgeBase(value) {
+  try {
+    window.sessionStorage.setItem(RUNTIME_BRIDGE_BASE_KEY, value);
+  } catch {
+    // Ignore storage write failures and use the resolved bridge for this page load.
+  }
+}
+
+function runtimeBridgeBaseFromConfig() {
+  if (!BALUFFO_RUNTIME_CONFIG?.runtime?.desktop) {
+    return "";
+  }
+  const host =
+    String(BALUFFO_RUNTIME_CONFIG?.bridge?.host || DEFAULT_CONFIG.bridge.host).trim() ||
+    DEFAULT_CONFIG.bridge.host;
+  const port = Number(BALUFFO_RUNTIME_CONFIG?.bridge?.port || 0);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    return "";
+  }
+  return `http://${host}:${port}`;
+}
+
 function resolveRuntimeBridgeBase() {
-  const defaultHost = String(BALUFFO_RUNTIME_CONFIG?.bridge?.host || DEFAULT_CONFIG.bridge.host).trim() || DEFAULT_CONFIG.bridge.host;
-  const defaultPort = Number(BALUFFO_RUNTIME_CONFIG?.bridge?.port || DEFAULT_CONFIG.bridge.port) || DEFAULT_CONFIG.bridge.port;
+  const defaultHost =
+    String(BALUFFO_RUNTIME_CONFIG?.bridge?.host || DEFAULT_CONFIG.bridge.host).trim() ||
+    DEFAULT_CONFIG.bridge.host;
+  const defaultPort =
+    Number(BALUFFO_RUNTIME_CONFIG?.bridge?.port || DEFAULT_CONFIG.bridge.port) ||
+    DEFAULT_CONFIG.bridge.port;
   const defaultBase = `http://${defaultHost}:${defaultPort}`;
   try {
     const url = new URL(window.location.href);
@@ -36,8 +62,13 @@ function resolveRuntimeBridgeBase() {
     const bridgeHost = String(url.searchParams.get("bridgeHost") || "").trim() || defaultHost;
     if (/^\d+$/.test(bridgePort)) {
       const runtimeBase = `http://${bridgeHost}:${bridgePort}`;
-      window.sessionStorage.setItem(RUNTIME_BRIDGE_BASE_KEY, runtimeBase);
+      safeSetRuntimeBridgeBase(runtimeBase);
       return runtimeBase;
+    }
+    const configBase = runtimeBridgeBaseFromConfig();
+    if (configBase) {
+      safeSetRuntimeBridgeBase(configBase);
+      return configBase;
     }
     const cached = String(window.sessionStorage.getItem(RUNTIME_BRIDGE_BASE_KEY) || "").trim();
     if (cached) {

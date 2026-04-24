@@ -1,6 +1,7 @@
 const RUNTIME_MODE_KEY = "baluffo_runtime_mode";
 const RUNTIME_BRIDGE_BASE_KEY = "baluffo_runtime_bridge_base";
 const STARTUP_PROBE_KEY = "baluffo_startup_probe_enabled";
+const DEFAULT_BRIDGE_HOST = "127.0.0.1";
 
 function resolveUrl(href, fallbackHref = "") {
   const rawHref = String(href || fallbackHref || "").trim();
@@ -28,6 +29,29 @@ function safeSetItem(storageObject, key, value) {
   }
 }
 
+function getFrontendRuntimeConfig() {
+  return globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG || {};
+}
+
+function resolveActiveDesktopRuntimeBridgeParams() {
+  const runtimeConfig = getFrontendRuntimeConfig();
+  if (!runtimeConfig?.runtime?.desktop) {
+    return {};
+  }
+  const explicitBridgePort = Number(runtimeConfig?.bridge?.port || 0);
+  if (
+    !Number.isInteger(explicitBridgePort) ||
+    explicitBridgePort <= 0 ||
+    explicitBridgePort > 65535
+  ) {
+    return {};
+  }
+  return {
+    bridgePort: String(explicitBridgePort),
+    bridgeHost: String(runtimeConfig?.bridge?.host || "").trim() || DEFAULT_BRIDGE_HOST
+  };
+}
+
 export function resolveDesktopRuntimeMode(
   href = window.location?.href || "",
   { sessionStorageObject = window.sessionStorage, persist = true } = {}
@@ -49,7 +73,8 @@ function resolveDesktopRuntimeBridgeParams(
 ) {
   const url = resolveUrl(href);
   const explicitBridgePort = String(url?.searchParams?.get("bridgePort") || "").trim();
-  const explicitBridgeHost = String(url?.searchParams?.get("bridgeHost") || "").trim() || "127.0.0.1";
+  const explicitBridgeHost =
+    String(url?.searchParams?.get("bridgeHost") || "").trim() || DEFAULT_BRIDGE_HOST;
   if (/^\d+$/.test(explicitBridgePort)) {
     if (persist) {
       safeSetItem(
@@ -62,6 +87,18 @@ function resolveDesktopRuntimeBridgeParams(
       bridgePort: explicitBridgePort,
       bridgeHost: explicitBridgeHost
     };
+  }
+
+  const activeRuntimeBridge = resolveActiveDesktopRuntimeBridgeParams();
+  if (activeRuntimeBridge.bridgePort && activeRuntimeBridge.bridgeHost) {
+    if (persist) {
+      safeSetItem(
+        sessionStorageObject,
+        RUNTIME_BRIDGE_BASE_KEY,
+        `http://${activeRuntimeBridge.bridgeHost}:${activeRuntimeBridge.bridgePort}`
+      );
+    }
+    return activeRuntimeBridge;
   }
 
   const cachedBase = safeGetItem(sessionStorageObject, RUNTIME_BRIDGE_BASE_KEY);

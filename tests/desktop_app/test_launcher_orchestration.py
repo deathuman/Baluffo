@@ -415,11 +415,17 @@ def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
         startup_probe=False,
     )
     call_log: list[str] = []
+    site_env: dict[str, str] = {}
 
     def _start_child_process(*args: object, **kwargs: object) -> SimpleNamespace:
         command = args[0]
         child_mode = str(command[2]) if isinstance(command, list) and len(command) > 2 else ""
         if child_mode == "__child_site__":
+            assert "--bridge-host" in command
+            assert command[command.index("--bridge-host") + 1] == "127.0.0.1"
+            assert "--bridge-port" in command
+            assert command[command.index("--bridge-port") + 1] == "8877"
+            site_env.update(kwargs.get("extra_env") or {})
             call_log.append("spawn_site")
             return SimpleNamespace(pid=101)
         if child_mode == "__child_bridge__":
@@ -468,6 +474,8 @@ def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
         desktop_app.launch_desktop_app(config)
 
     assert call_log == ["spawn_site", "wait_for_url", "spawn_bridge"]
+    assert site_env["BALUFFO_DESKTOP_BRIDGE_HOST"] == "127.0.0.1"
+    assert site_env["BALUFFO_DESKTOP_BRIDGE_PORT"] == "8877"
     event_names = [call.args[1] for call in trace_mock.call_args_list]
     assert "desktop_bridge_spawn_deferred_until_site_ready" in event_names
     assert event_names.index("desktop_site_ready") < event_names.index("desktop_bridge_spawned")

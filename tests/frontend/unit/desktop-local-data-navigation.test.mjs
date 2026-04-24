@@ -190,6 +190,22 @@ test("desktop lifecycle binds beforeunload, pagehide, and focus but not unload",
   assert.equal(eventListeners.has("unload"), false);
 });
 
+test("desktop bootstrap preserves persisted session hint while restoring auth", async () => {
+  setupDesktopGlobals();
+  window.localStorage.setItem("baluffo_current_profile_id", "local_packaged_smoke_user");
+  const { initDesktopLocalDataClient } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
+
+  initDesktopLocalDataClient();
+
+  assert.equal(
+    window.localStorage.getItem("baluffo_current_profile_id"),
+    "local_packaged_smoke_user"
+  );
+});
+
 test("desktop beforeunload prompts when update handoff or install is active", async () => {
   const { eventListeners, beaconCalls } = setupDesktopGlobals({
     updatePayload: {
@@ -245,6 +261,7 @@ test("approved desktop page navigation bypasses the unload prompt and still sign
 });
 
 test("approved desktop page navigation preserves desktop runtime query params", async () => {
+  delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
   const { locationState } = setupDesktopGlobals({
     locationHref: "http://127.0.0.1:4173/jobs.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1&startupProbe=1"
   });
@@ -266,7 +283,47 @@ test("approved desktop page navigation preserves desktop runtime query params", 
   assert.equal(nextUrl.searchParams.get("startupProbe"), "1");
 });
 
+test("approved desktop page navigation prefers active runtime config over stale cached bridge", async () => {
+  globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG = Object.freeze({
+    bridge: {
+      host: "127.0.0.1",
+      port: 61236
+    },
+    security: {
+      github_app_enabled_default: true
+    },
+    runtime: {
+      desktop: true
+    }
+  });
+  const { locationState } = setupDesktopGlobals({
+    locationHref: "http://127.0.0.1:4173/jobs.html?desktop=1"
+  });
+  window.sessionStorage.setItem("baluffo_runtime_bridge_base", "http://127.0.0.1:8877");
+  const { initDesktopLocalDataClient, navigateDesktopPage } = await importFresh(
+    "../../../frontend/shared/local-data/desktop-client.js",
+    { relativeTo: import.meta.url }
+  );
+  initDesktopLocalDataClient();
+  await flushMicrotasks();
+
+  navigateDesktopPage("saved.html", { locationObject: locationState, baseHref: locationState.href });
+
+  assert.equal(locationState.assignCalls.length, 1);
+  const nextUrl = new URL(locationState.assignCalls[0]);
+  assert.equal(nextUrl.pathname, "/saved.html");
+  assert.equal(nextUrl.searchParams.get("desktop"), "1");
+  assert.equal(nextUrl.searchParams.get("bridgePort"), "61236");
+  assert.equal(nextUrl.searchParams.get("bridgeHost"), "127.0.0.1");
+  assert.equal(
+    window.sessionStorage.getItem("baluffo_runtime_bridge_base"),
+    "http://127.0.0.1:61236"
+  );
+  delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
+});
+
 test("approved desktop page navigation preserves target query params while appending runtime params", async () => {
+  delete globalThis.BALUFFO_FRONTEND_RUNTIME_CONFIG;
   const { locationState } = setupDesktopGlobals({
     locationHref: "http://127.0.0.1:4173/admin.html?desktop=1&bridgePort=8877&bridgeHost=127.0.0.1"
   });
