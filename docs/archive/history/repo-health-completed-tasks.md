@@ -46,6 +46,10 @@ This page stores completed items moved out of the active repository-health track
    The enforced mypy scope now includes `src/source_registry.py`, `src/bridge/source_checker.py`, `src/bridge/source_helpers.py`, `src/bridge/source_check_http.py`, `src/source_sync_crypto.py`, `src/source_sync_runtime.py`, `src/source_sync_config.py`, `src/source_sync_snapshot.py`, and `src/source_sync.py`. This pass normalized registry/checker JSON-shape reads, removed stale source-check ignore noise, typed sync crypto/runtime helpers, declared the sync root auth attributes, and kept the source-sync compatibility root thin. The broad audit dropped from `245` errors in `58` files to `211` errors in `49` files.
    **Done when:** complete.
 
+11. **Completed: type the desktop app launch/session cluster.**
+   The enforced mypy scope now includes `src/ship/desktop_app/_windows.py`, `src/ship/desktop_app/launcher_flow.py`, `src/ship/desktop_app/session.py`, `src/ship/desktop_app/browser.py`, and `src/ship/desktop_app/launcher_diagnostics.py`. This pass normalized desktop runtime payload reads, typed browser launch subprocess/environment boundaries, and made Windows process/window metric reads checkable without changing launcher flow, session recovery, browser lifecycle, or stale-runtime reclaim behavior. The broad audit dropped from `211` errors in `49` files to `173` errors in `44` files.
+   **Done when:** complete.
+
 ## Completed P1 Items
 
 5. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**

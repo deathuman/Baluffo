@@ -6,6 +6,21 @@ from ._compat import desktop_api
 from .config import WINDOW_TITLE
 
 
+def _as_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
 def _write_launch_diagnostics(data_dir: Path, filename: str, content: str) -> None:
     try:
         path = Path(data_dir) / str(filename or "desktop-launch-diagnostics.txt")
@@ -152,8 +167,8 @@ def _trace_already_running_rejection(
         detection=str(detection or "").strip(),
         launcherToken=str(launcher_token or "").strip(),
         existingLauncherToken=str(session.get("launcherToken") or "").strip(),
-        existingLauncherPid=int(session.get("launcherPid") or 0),
-        bridgePort=int(session.get("bridgePort") or 0),
+        existingLauncherPid=_as_int(session.get("launcherPid")),
+        bridgePort=_as_int(session.get("bridgePort")),
         handoffRequestPresent=bool(update_snapshot.get("handoffRequestPresent")),
         updateInstallState=str(update_snapshot.get("updateInstallState") or "").strip(),
         updateInstallStage=str(update_snapshot.get("updateInstallStage") or "").strip(),

@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import time
 import webbrowser
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from ._compat import desktop_api
@@ -18,6 +18,36 @@ from .config import (
     CHROMIUM_PROCESS_READY_TIMEOUTS_S,
     STARTUP_PROFILE_MODE_ENV,
 )
+
+
+def _as_dict(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _as_float(value: object, default: float = 0.0) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    return default
 
 
 def resolve_registry_app_path(executable_name: str) -> str:
@@ -67,11 +97,11 @@ def chromium_app_mode_supported(
     candidate: dict[str, str], *, env: dict[str, str] | None = None
 ) -> bool:
     api = desktop_api()
-    env_map = env if env is not None else os.environ
+    env_map: Mapping[str, str] = env if env is not None else os.environ
     browser_name = str(candidate.get("name") or "").strip().lower()
     if browser_name != "msedge":
         return True
-    return api._truthy_env(env_map.get("BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE"))
+    return bool(api._truthy_env(env_map.get("BALUFFO_DESKTOP_ALLOW_EDGE_APP_MODE")))
 
 
 def build_browser_launch_command(browser_path: str, url: str, profile_dir: Path) -> list[str]:
@@ -110,8 +140,8 @@ def clear_browser_profile_caches(profile_dir: Path) -> None:
 
 def should_clear_browser_profile_caches(env: dict[str, str] | None = None) -> bool:
     api = desktop_api()
-    env_map = env if env is not None else os.environ
-    if not api._truthy_env(env_map.get("BALUFFO_STARTUP_PROBE")):
+    env_map: Mapping[str, str] = env if env is not None else os.environ
+    if not bool(api._truthy_env(env_map.get("BALUFFO_STARTUP_PROBE"))):
         return False
     profile_mode = str(env_map.get(STARTUP_PROFILE_MODE_ENV) or "").strip().lower()
     return profile_mode != "warm"
@@ -147,13 +177,15 @@ def launch_chromium_app(
     profile_dir.mkdir(parents=True, exist_ok=True)
     if clear_profile_caches:
         clear_browser_profile_caches(profile_dir)
-    popen_kwargs: dict[str, object] = {"text": True}
+    command = build_browser_launch_command(browser_path, url, profile_dir)
     if os.name == "nt":
-        popen_kwargs["creationflags"] = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-        popen_kwargs["close_fds"] = True
-    return subprocess.Popen(
-        build_browser_launch_command(browser_path, url, profile_dir), **popen_kwargs
-    )
+        return subprocess.Popen(
+            command,
+            text=True,
+            creationflags=int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)),
+            close_fds=True,
+        )
+    return subprocess.Popen(command, text=True)
 
 
 def wait_for_browser_process_ready(
@@ -272,26 +304,28 @@ def launch_browser_for_url(
                 launch_accepted_elapsed_ms = max(
                     0, int((float(launch_accepted_mono) - float(started_mono)) * 1000)
                 )
-            reveal_result = api._wait_for_browser_reveal(
-                browser_pid=browser_pid,
-                data_dir=data_dir,
-                launch_accepted_elapsed_ms=launch_accepted_elapsed_ms,
+            reveal_result = _as_dict(
+                api._wait_for_browser_reveal(
+                    browser_pid=browser_pid,
+                    data_dir=data_dir,
+                    launch_accepted_elapsed_ms=launch_accepted_elapsed_ms,
+                )
             )
             observed_window = reveal_result if bool(reveal_result.get("observed")) else None
-            window_shown_mono = float(
-                reveal_result.get("observedAtMonotonic") or launch_accepted_mono
+            window_shown_mono = _as_float(
+                reveal_result.get("observedAtMonotonic"), float(launch_accepted_mono)
             )
             shell_window_event = str(
                 reveal_result.get("event") or "desktop_shell_window_shown_inferred"
             )
             shell_window_event_emitted = observed_window is not None
             _trace("desktop_browser_launch_selected", window_shown_mono, **trace_common)
-            if shell_window_event_emitted:
+            if observed_window is not None:
                 _trace(
                     shell_window_event,
                     window_shown_mono,
                     observed=True,
-                    windowPid=int(observed_window.get("pid") or 0),
+                    windowPid=_as_int(observed_window.get("pid")),
                     windowTitle=str(observed_window.get("title") or ""),
                     handoffEvidence=str(reveal_result.get("handoffEvidence") or ""),
                     **trace_common,
@@ -310,12 +344,12 @@ def launch_browser_for_url(
                 "launchAcceptedAtMonotonic": launch_accepted_mono,
                 "windowShownAtMonotonic": window_shown_mono,
                 "windowShownObserved": observed_window is not None,
-                "windowPid": int(observed_window.get("pid") or 0) if observed_window else 0,
+                "windowPid": _as_int(observed_window.get("pid")) if observed_window else 0,
                 "windowTitle": str(observed_window.get("title") or "") if observed_window else "",
                 "launchTraceEventsEmitted": True,
                 "shellWindowEventEmitted": shell_window_event_emitted,
                 "shellWindowEvent": shell_window_event,
-                "windowShownElapsedMsOverride": int(reveal_result.get("inferredElapsedMsCap") or 0),
+                "windowShownElapsedMsOverride": _as_int(reveal_result.get("inferredElapsedMsCap")),
                 "revealHandoffEvidence": str(reveal_result.get("handoffEvidence") or ""),
                 "processReadyTimeoutMs": int(float(ready_timeout_s) * 1000),
                 "processReadyPollIntervalMs": int(float(poll_interval_s) * 1000),
@@ -342,27 +376,29 @@ def launch_browser_for_url(
                 launch_accepted_elapsed_ms = max(
                     0, int((float(launch_accepted_mono) - float(started_mono)) * 1000)
                 )
-            reveal_result = api._wait_for_browser_reveal(
-                browser_pid=browser_pid,
-                data_dir=data_dir,
-                launch_accepted_elapsed_ms=launch_accepted_elapsed_ms,
-                allow_title_fallback=True,
+            reveal_result = _as_dict(
+                api._wait_for_browser_reveal(
+                    browser_pid=browser_pid,
+                    data_dir=data_dir,
+                    launch_accepted_elapsed_ms=launch_accepted_elapsed_ms,
+                    allow_title_fallback=True,
+                )
             )
             observed_window = reveal_result if bool(reveal_result.get("observed")) else None
-            window_shown_mono = float(
-                reveal_result.get("observedAtMonotonic") or launch_accepted_mono
+            window_shown_mono = _as_float(
+                reveal_result.get("observedAtMonotonic"), float(launch_accepted_mono)
             )
             shell_window_event = str(
                 reveal_result.get("event") or "desktop_shell_window_shown_inferred"
             )
             shell_window_event_emitted = observed_window is not None
             _trace("desktop_browser_launch_selected", window_shown_mono, **trace_common)
-            if shell_window_event_emitted:
+            if observed_window is not None:
                 _trace(
                     shell_window_event,
                     window_shown_mono,
                     observed=True,
-                    windowPid=int(observed_window.get("pid") or 0),
+                    windowPid=_as_int(observed_window.get("pid")),
                     windowTitle=str(observed_window.get("title") or ""),
                     handoffEvidence=str(reveal_result.get("handoffEvidence") or ""),
                     detached=True,
@@ -378,12 +414,12 @@ def launch_browser_for_url(
                 "launchAcceptedAtMonotonic": launch_accepted_mono,
                 "windowShownAtMonotonic": window_shown_mono,
                 "windowShownObserved": observed_window is not None,
-                "windowPid": int(observed_window.get("pid") or 0) if observed_window else 0,
+                "windowPid": _as_int(observed_window.get("pid")) if observed_window else 0,
                 "windowTitle": str(observed_window.get("title") or "") if observed_window else "",
                 "launchTraceEventsEmitted": True,
                 "shellWindowEventEmitted": shell_window_event_emitted,
                 "shellWindowEvent": shell_window_event,
-                "windowShownElapsedMsOverride": int(reveal_result.get("inferredElapsedMsCap") or 0),
+                "windowShownElapsedMsOverride": _as_int(reveal_result.get("inferredElapsedMsCap")),
                 "revealHandoffEvidence": str(reveal_result.get("handoffEvidence") or ""),
                 "processReadyTimeoutMs": int(float(ready_timeout_s) * 1000),
                 "processReadyPollIntervalMs": int(float(poll_interval_s) * 1000),

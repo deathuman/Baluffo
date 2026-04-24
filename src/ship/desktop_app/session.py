@@ -24,6 +24,29 @@ class InstanceLock:
     created_at: str = ""
 
 
+def _as_dict(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
+
+
+def _as_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
 def load_session_state(env: dict[str, str] | None = None) -> dict[str, object]:
     api = desktop_api()
     path = api.resolve_session_state_path(env)
@@ -36,7 +59,7 @@ def load_session_state(env: dict[str, str] | None = None) -> dict[str, object]:
 
 def save_session_state(payload: dict[str, object], env: dict[str, str] | None = None) -> Path:
     api = desktop_api()
-    path = api.resolve_session_state_path(env)
+    path = Path(api.resolve_session_state_path(env))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
@@ -60,7 +83,7 @@ def _read_instance_lock_payload(path: Path) -> dict[str, object]:
         return {}
     if not isinstance(payload, dict):
         return {}
-    pid = int(payload.get("pid") or 0)
+    pid = _as_int(payload.get("pid"))
     if pid <= 0:
         return {}
     if not str(payload.get("createdAt") or "").strip():
@@ -104,7 +127,7 @@ def _write_lock_payload(path: Path, payload: dict[str, object]) -> None:
 
 def _process_identity_matches(lock_payload: dict[str, object]) -> bool:
     api = desktop_api()
-    pid = int(lock_payload.get("pid") or 0)
+    pid = _as_int(lock_payload.get("pid"))
     if pid <= 0 or not api.is_process_alive(pid):
         return False
     if os.name != "nt":
@@ -270,7 +293,7 @@ def _bridge_health_matches_owner_session(payload: dict[str, object], *, owner_to
         return False
     if not bool(payload.get("desktopMode")):
         return False
-    owner = payload.get("owner") if isinstance(payload.get("owner"), dict) else {}
+    owner = _as_dict(payload.get("owner"))
     return str(owner.get("token") or "").strip() == str(owner_token or "").strip()
 
 
@@ -280,8 +303,8 @@ def validate_session_state(
     expected_launcher_token: str = "",
 ) -> tuple[bool, str]:
     api = desktop_api()
-    launcher_pid = int(state.get("launcherPid") or 0)
-    bridge_port = int(state.get("bridgePort") or 0)
+    launcher_pid = _as_int(state.get("launcherPid"))
+    bridge_port = _as_int(state.get("bridgePort"))
     if launcher_pid <= 0:
         return False, "missing_launcher_pid"
     if bridge_port <= 0:
@@ -317,7 +340,7 @@ def get_valid_session_state(
     clear_invalid: bool = True,
 ) -> dict[str, object]:
     api = desktop_api()
-    state = api.load_session_state(env)
+    state = _as_dict(api.load_session_state(env))
     if not state:
         return {}
     ok, _reason = api.validate_session_state(
@@ -353,9 +376,11 @@ def _reclaim_stale_instance_artifacts(
     env: dict[str, str] | None = None,
 ) -> dict[str, object]:
     api = desktop_api()
-    reclaim_result = api._windows_reclaim_stale_runtime_children(
-        stale_state if isinstance(stale_state, dict) else {},
-        data_dir=data_dir,
+    reclaim_result = _as_dict(
+        api._windows_reclaim_stale_runtime_children(
+            stale_state if isinstance(stale_state, dict) else {},
+            data_dir=data_dir,
+        )
     )
     api._clear_stale_instance_artifacts(env=env)
     return reclaim_result
@@ -380,7 +405,7 @@ def _task_descriptor_is_active(task: dict[str, str], row: dict[str, object]) -> 
         return True
     if task["status"] in {"running", "pending"}:
         return True
-    if int(row.get("pid") or 0) > 0 and not str(row.get("finishedAt") or "").strip():
+    if _as_int(row.get("pid")) > 0 and not str(row.get("finishedAt") or "").strip():
         return True
     return False
 
@@ -399,7 +424,7 @@ def _load_active_critical_desktop_tasks(
         )
     except (OSError, ValueError, urllib.error.URLError, json.JSONDecodeError):
         payload = {}
-    rows = payload.get("tasks") if isinstance(payload.get("tasks"), list) else []
+    rows = _as_list(payload.get("tasks"))
     active_tasks: list[dict[str, str]] = []
     for row in rows:
         if not isinstance(row, dict):

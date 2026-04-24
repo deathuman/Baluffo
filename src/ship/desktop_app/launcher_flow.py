@@ -17,6 +17,21 @@ from .config import (
 )
 
 
+def _as_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
 def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
     api = desktop_api()
     launcher_token = uuid.uuid4().hex
@@ -209,10 +224,8 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                             if isinstance(launch_result.get("process"), api.subprocess.Popen)
                             else None
                         )
-                        browser_pid = int(
-                            launch_result.get("browserPid")
-                            or getattr(browser_process, "pid", 0)
-                            or 0
+                        browser_pid = _as_int(
+                            launch_result.get("browserPid") or getattr(browser_process, "pid", 0)
                         )
                     except (OSError, RuntimeError) as exc:
                         launch_result = api._recoverable_browser_launch_result(
@@ -275,9 +288,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             if isinstance(launch_result.get("process"), api.subprocess.Popen)
             else None
         )
-        browser_pid = int(
-            launch_result.get("browserPid") or getattr(browser_process, "pid", 0) or 0
-        )
+        browser_pid = _as_int(launch_result.get("browserPid") or getattr(browser_process, "pid", 0))
         shell_window_shown_elapsed_ms = int((api.time.perf_counter() - started_mono) * 1000)
         window_shown_at_mono = launch_result.get("windowShownAtMonotonic")
         if isinstance(window_shown_at_mono, (int, float)):
@@ -335,10 +346,10 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             browser=str(launch_result.get("browserName") or ""),
             browserPath=str(launch_result.get("browserPath") or ""),
             siteReadyToSpawnMs=max(0, int(spawn_elapsed_ms) - int(site_ready_elapsed_ms)),
-            spawnToAcceptMs=int(launch_result.get("spawnToAcceptMs") or 0),
+            spawnToAcceptMs=_as_int(launch_result.get("spawnToAcceptMs")),
             acceptToRevealMs=max(0, int(shell_window_shown_elapsed_ms) - int(accepted_elapsed_ms)),
-            processReadyTimeoutMs=int(launch_result.get("processReadyTimeoutMs") or 0),
-            processReadyPollIntervalMs=int(launch_result.get("processReadyPollIntervalMs") or 0),
+            processReadyTimeoutMs=_as_int(launch_result.get("processReadyTimeoutMs")),
+            processReadyPollIntervalMs=_as_int(launch_result.get("processReadyPollIntervalMs")),
             revealObserved=bool(launch_result.get("windowShownObserved")),
         )
         api.save_session_state(
@@ -395,7 +406,7 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                 browser=str(launch_result.get("browserName") or ""),
                 browserPath=str(launch_result.get("browserPath") or ""),
                 observed=bool(launch_result.get("windowShownObserved")),
-                windowPid=int(launch_result.get("windowPid") or 0),
+                windowPid=_as_int(launch_result.get("windowPid")),
                 windowTitle=str(launch_result.get("windowTitle") or ""),
                 handoffEvidence=str(launch_result.get("revealHandoffEvidence") or ""),
             )
@@ -461,8 +472,8 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                     if isinstance(launch_result.get("process"), api.subprocess.Popen)
                     else None
                 )
-                browser_pid = int(
-                    launch_result.get("browserPid") or getattr(browser_process, "pid", 0) or 0
+                browser_pid = _as_int(
+                    launch_result.get("browserPid") or getattr(browser_process, "pid", 0)
                 )
                 launch_accepted_at_mono = launch_result.get("launchAcceptedAtMonotonic")
                 if isinstance(launch_accepted_at_mono, (int, float)):

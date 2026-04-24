@@ -4,6 +4,7 @@ import contextlib
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 from ._compat import desktop_api
 from .config import CHROMIUM_WINDOW_CLASS_PREFIXES, WINDOW_TITLE
@@ -18,10 +19,31 @@ def _normalize_path_text(value: object) -> str:
     return text.lower()
 
 
+def _as_int(value: object, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
+
+def _as_dict_rows(value: object) -> list[dict[str, object]]:
+    return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
+
+
 def _current_exe_path() -> str:
     api = desktop_api()
     source = (
-        api.sys.executable if getattr(api.sys, "frozen", False) else Path(api.__file__).resolve()
+        str(api.sys.executable or "")
+        if getattr(api.sys, "frozen", False)
+        else str(api.__file__ or "")
     )
     return str(Path(source).resolve())
 
@@ -93,18 +115,18 @@ def _windows_terminate_process_tree_by_pid(pid: int) -> bool:
             timeout=10,
         )
     except OSError:
-        return not api.is_process_alive(pid)
-    return api._wait_for_process_exit_pid(pid, timeout_s=15.0)
+        return not bool(api.is_process_alive(pid))
+    return bool(api._wait_for_process_exit_pid(pid, timeout_s=15.0))
 
 
 def _windows_process_image_matches(pid: int, *, expected_exe_path: object) -> bool:
     api = desktop_api()
     if api.os.name != "nt" or int(pid or 0) <= 0:
         return False
-    expected = api._normalize_path_text(expected_exe_path)
+    expected = str(api._normalize_path_text(expected_exe_path) or "")
     if not expected:
         return False
-    actual = api._normalize_path_text(api._get_windows_process_image_path(int(pid)))
+    actual = str(api._normalize_path_text(api._get_windows_process_image_path(int(pid))) or "")
     return bool(actual) and actual == expected
 
 
@@ -204,6 +226,10 @@ def _get_windows_process_start_ts(pid: int) -> float:
     finally:
         api.ctypes.windll.kernel32.CloseHandle(handle)
 
+
+_IO_COUNTERS: type[Any] | None
+_JOBOBJECT_BASIC_LIMIT_INFORMATION: type[Any] | None
+_JOBOBJECT_EXTENDED_LIMIT_INFORMATION: type[Any] | None
 
 if os.name == "nt":
     import ctypes
@@ -421,16 +447,16 @@ def _find_baluffo_visible_window(
     api = desktop_api()
     if api.os.name != "nt":
         return {"pid": int(browser_pid or 0), "title": WINDOW_TITLE}
-    matches = api._enumerate_visible_desktop_windows()
+    matches = _as_dict_rows(api._enumerate_visible_desktop_windows())
     if not matches:
         return None
     expected_pid = int(browser_pid or 0)
     if expected_pid > 0:
         for match in matches:
-            if int(match.get("pid") or 0) == expected_pid and bool(match.get("matchesTitle")):
+            if _as_int(match.get("pid")) == expected_pid and bool(match.get("matchesTitle")):
                 return match
         for match in matches:
-            if int(match.get("pid") or 0) == expected_pid and bool(match.get("isChromiumClass")):
+            if _as_int(match.get("pid")) == expected_pid and bool(match.get("isChromiumClass")):
                 return match
         if not allow_title_fallback:
             return None
@@ -444,8 +470,8 @@ def _windows_try_reclaim_stale_bridge_process(
     data_dir: Path,
 ) -> dict[str, object]:
     api = desktop_api()
-    bridge_port = int(stale_state.get("bridgePort") or 0)
-    bridge_pid = int(stale_state.get("bridgePid") or 0)
+    bridge_port = _as_int(stale_state.get("bridgePort"))
+    bridge_pid = _as_int(stale_state.get("bridgePid"))
     owner_token = str(stale_state.get("desktopOwnerToken") or "").strip()
     session_exe_path = stale_state.get("exePath")
     if bridge_port <= 0:
@@ -576,8 +602,8 @@ def _windows_try_reclaim_stale_site_process(
     data_dir: Path,
 ) -> dict[str, object]:
     api = desktop_api()
-    site_port = int(stale_state.get("sitePort") or 0)
-    site_pid = int(stale_state.get("sitePid") or 0)
+    site_port = _as_int(stale_state.get("sitePort"))
+    site_pid = _as_int(stale_state.get("sitePid"))
     session_exe_path = stale_state.get("exePath")
     if site_port <= 0:
         result = _stale_runtime_reclaim_result(
@@ -714,8 +740,8 @@ def _windows_reclaim_stale_runtime_children(
     api._append_startup_trace(
         data_dir,
         "desktop_stale_runtime_reclaim_started",
-        bridgePort=int(stale_state.get("bridgePort") or 0),
-        sitePort=int(stale_state.get("sitePort") or 0),
+        bridgePort=_as_int(stale_state.get("bridgePort")),
+        sitePort=_as_int(stale_state.get("sitePort")),
     )
     bridge_result = api._windows_try_reclaim_stale_bridge_process(stale_state, data_dir=data_dir)
     if str(bridge_result.get("status") or "") == "failed":
