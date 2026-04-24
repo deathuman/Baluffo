@@ -1,6 +1,6 @@
 import { bindAsyncClick, showToast } from "../../../shared/ui/index.js";
 import { fetchJson, postJson } from "../../../shared/api-client.js";
-import { navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
+import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
 import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js";
 import { openReleaseNotesDialog } from "../../../shared/ui/release-notes-dialog.js";
 import { cacheJobsDom } from "../dom.js";
@@ -78,7 +78,8 @@ export function createJobsBoot(deps) {
       buttonEl: deps.dom.adminPageBtn,
       baseUrl: deps.adminBridgeBase,
       fetchJson,
-      applyState: deps.applyJobsAdminBridgeState
+      applyState: deps.applyJobsAdminBridgeState,
+      awaitBridgeReady: deps.isDesktopRuntimeMode() ? awaitDesktopBootstrap : async () => true
     });
     deps.runtimeState.desktopUpdateController = createJobsDesktopUpdateController({
       refs: deps.dom,
@@ -89,6 +90,7 @@ export function createJobsBoot(deps) {
       showToast,
       requestConfirmationDialog: deps.requestConfirmationDialog,
       isDesktopRuntimeMode: deps.isDesktopRuntimeMode,
+      awaitDesktopBootstrap,
       showReleaseNotesDialog: options => openReleaseNotesDialog(options),
       openExternalUrl: url => deps.openJobLinkInDefaultBrowser(url)
     });

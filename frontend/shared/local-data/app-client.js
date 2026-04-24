@@ -2,7 +2,7 @@ window.__baluffoModuleLoading = true;
 console.log("[baluffo] frontend/shared/local-data/app-client.js: module script loading...");
 
 import { initBrowserLocalDataClient } from "./browser-client.js";
-import { initDesktopLocalDataClient } from "./desktop-client.js";
+import { awaitDesktopBootstrap, initDesktopLocalDataClient } from "./desktop-client.js";
 import { hydrateDesktopVersionLabels } from "../app-version.js";
 import { resolveDesktopRuntimeMode } from "./runtime-context.js";
 import {
@@ -24,10 +24,19 @@ if (window.__baluffoDesktopMode) {
   emitStartupProbeMetric(`${page}_local_data_init_start`);
   try {
     initDesktopLocalDataClient();
-    hydrateDesktopVersionLabels().catch(() => {});
-    window.__baluffoLocalDataLoaded = true;
-    console.log("[baluffo] Desktop local data initialized successfully");
-    emitStartupProbeMetric(`${page}_local_data_init_ready`);
+    window.__baluffoLocalDataLoaded = false;
+    awaitDesktopBootstrap().then(ready => {
+      if (!ready) {
+        return;
+      }
+      window.__baluffoLocalDataLoaded = true;
+      console.log("[baluffo] Desktop local data initialized successfully");
+      emitStartupProbeMetric(`${page}_local_data_init_ready`);
+      hydrateDesktopVersionLabels().catch(() => {});
+    }).catch(err => {
+      console.error("[baluffo] Desktop local data init failed:", err);
+      window.__baluffoInitErrors.push(err);
+    });
   } catch (err) {
     console.error("[baluffo] Desktop local data init failed:", err);
     window.__baluffoInitErrors.push(err);

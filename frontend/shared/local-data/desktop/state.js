@@ -6,6 +6,8 @@ export const UPDATE_STATUS_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/app/update-st
 export const DESKTOP_SESSION_LIFECYCLE_URL = `${AdminConfig.ADMIN_BRIDGE_BASE}/app/desktop-session-lifecycle`;
 export const SESSION_KEY = "baluffo_current_profile_id";
 export const DESKTOP_LIFECYCLE_HEARTBEAT_MS = 5000;
+export const DESKTOP_BOOTSTRAP_RETRY_WINDOW_MS = 10_000;
+export const DESKTOP_BOOTSTRAP_RETRY_INTERVAL_MS = 250;
 export const DESKTOP_NAVIGATION_BYPASS_WINDOW_MS = 2000;
 export const APPROVED_DESKTOP_PAGE_PATHS = new Set(["/", "/index.html", "/jobs.html", "/saved.html", "/admin.html"]);
 export const AUTH_LISTENERS = new Set();
@@ -18,6 +20,8 @@ export const desktopState = {
   desktopApiInitialized: false,
   desktopApi: null,
   desktopBoundWindow: null,
+  desktopBootstrapPromise: null,
+  desktopBootstrapStatus: "idle",
   desktopSession: null,
   desktopPageId: "",
   desktopLifecycleHeartbeatTimer: 0,

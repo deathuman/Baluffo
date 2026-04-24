@@ -1,4 +1,6 @@
 import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
+import { awaitDesktopBootstrap } from "../../shared/local-data/desktop-client.js";
+import { resolveDesktopRuntimeMode } from "../../shared/local-data/runtime-context.js";
 import {
   showToast,
   setText
@@ -142,6 +144,13 @@ function postBridge(path, payload, options = {}) {
   return callBridge(() => postBridgeFromData(ADMIN_BRIDGE_BASE, path, payload, options));
 }
 
+async function waitForAdminBridgeReady() {
+  if (!resolveDesktopRuntimeMode()) {
+    return true;
+  }
+  return awaitDesktopBootstrap();
+}
+
 async function fetchJobsFetchReportJson(options = {}) {
   const bridgePath = options?.live ? "/ops/fetch-report?view=live" : "/ops/fetch-report";
   try {
@@ -280,7 +289,8 @@ function bootAdminPage() {
     jobsAutoRefreshSignalKey: JOBS_AUTO_REFRESH_SIGNAL_KEY,
     jobsFetcherCommand: JOBS_FETCHER_COMMAND,
     jobsFetcherTaskLabel: JOBS_FETCHER_TASK_LABEL,
-    requestConfirmationDialog
+    requestConfirmationDialog,
+    awaitBridgeReady: waitForAdminBridgeReady
   }));
   fetcherController.applyFetcherPresetMetadata();
   bindAdminRuntimeEvents({

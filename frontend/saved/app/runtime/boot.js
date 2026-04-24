@@ -1,7 +1,7 @@
 import { emitStartupMetric, markFirstInteractive } from "../../../shared/app-boot.js";
 import { fetchJson } from "../../../shared/api-client.js";
 import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js";
-import { navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
+import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
 import { set as stateHubSet } from "../../../shared/state-hub.js";
 import { bindAsyncClick, bindUi, showToast } from "../../../shared/ui/index.js";
 import { runExportBackup as runExportBackupFromModule, runImportBackup as runImportBackupFromModule } from "../backup.js";
@@ -85,7 +85,8 @@ export function createSavedBoot(deps) {
       buttonEl: deps.dom.adminPageBtnEl,
       baseUrl: deps.adminBridgeBase,
       fetchJson,
-      applyState: applySavedAdminBridgeState
+      applyState: applySavedAdminBridgeState,
+      awaitBridgeReady: deps.isDesktopRuntimeMode?.() ? awaitDesktopBootstrap : async () => true
     });
     deps.viewState.adminBridgeWatcher?.startAdminBridgeButtonWatch();
     bindSavedJobsListDelegation({

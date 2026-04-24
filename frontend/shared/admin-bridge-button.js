@@ -12,11 +12,20 @@
  * @param {Function} options.fetchJson - fetchJson utility function
  * @param {Function} options.applyState - Callback to apply page-specific presentation: ({ state, label, title, activeAlerts }) => void
  * @param {number} [options.intervalMs] - Polling interval in milliseconds (default: 5000)
+ * @param {Function} [options.awaitBridgeReady] - Optional startup gate before the first bridge poll
  * @returns {{ setAdminPageButtonState, pollAdminBridgeButtonState, startAdminBridgeButtonWatch, stopAdminBridgeButtonWatch }}
  */
-export function createAdminBridgeButtonWatcher({ buttonEl, baseUrl, fetchJson, applyState, intervalMs = 5000 }) {
+export function createAdminBridgeButtonWatcher({
+  buttonEl,
+  baseUrl,
+  fetchJson,
+  applyState,
+  intervalMs = 5000,
+  awaitBridgeReady = async () => true
+}) {
   let currentState = "checking";
   let pollTimer = null;
+  let initialBridgeReadyResolved = false;
 
   /**
    * Sets the admin bridge button state.
@@ -37,6 +46,13 @@ export function createAdminBridgeButtonWatcher({ buttonEl, baseUrl, fetchJson, a
    */
   async function pollAdminBridgeButtonState() {
     if (!buttonEl) return;
+    if (!initialBridgeReadyResolved) {
+      initialBridgeReadyResolved = true;
+      if (!(await awaitBridgeReady())) {
+        setAdminPageButtonState("offline", "Admin Offline", "Admin bridge is offline");
+        return;
+      }
+    }
     if (currentState !== "online") {
       setAdminPageButtonState("checking", "Admin Checking...", "Checking admin bridge status");
     }

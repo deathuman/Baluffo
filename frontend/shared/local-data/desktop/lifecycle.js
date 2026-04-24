@@ -1,6 +1,8 @@
 import { hasActiveTaskStateRows } from "../../live-task.js";
 import { consumeDesktopNavigationBypass } from "./navigation.js";
 import {
+  DESKTOP_BOOTSTRAP_RETRY_INTERVAL_MS,
+  DESKTOP_BOOTSTRAP_RETRY_WINDOW_MS,
   DESKTOP_LIFECYCLE_HEARTBEAT_MS,
   DESKTOP_SESSION_LIFECYCLE_URL,
   TASKS_URL,
@@ -53,6 +55,12 @@ async function fetchJsonWithOk(url) {
     throw new Error(String(payload?.error || response.statusText || "Request failed."));
   }
   return payload;
+}
+
+function waitForDelay(delayMs) {
+  return new Promise(resolve => {
+    globalThis.setTimeout(resolve, Math.max(0, Number(delayMs) || 0));
+  });
 }
 
 async function refreshDesktopActiveWorkSnapshot() {
@@ -197,24 +205,60 @@ export function startDesktopLifecycle(clearDesktopNavigationBypass) {
   }
 }
 
+export async function waitForDesktopBootstrap() {
+  if (desktopState.desktopBootstrapPromise) {
+    return desktopState.desktopBootstrapPromise;
+  }
+  return desktopState.desktopBootstrapStatus === "ready";
+}
+
 export async function bootstrapDesktopApi({
   refreshCurrentUser,
   commitAuthState,
   clearDesktopNavigationBypass,
-  toErrorMessage
+  toErrorMessage,
+  nowFn = Date.now,
+  waitFn = waitForDelay,
+  retryWindowMs = DESKTOP_BOOTSTRAP_RETRY_WINDOW_MS,
+  retryIntervalMs = DESKTOP_BOOTSTRAP_RETRY_INTERVAL_MS
 }) {
-  const bootstrapRevision = desktopState.authStateRevision;
-  try {
-    await refreshCurrentUser({ revision: bootstrapRevision });
-    desktopState.desktopClosingSignaled = false;
-    desktopState.desktopCloseAttemptPending = false;
-    clearDesktopNavigationBypass();
-    startDesktopLifecycle(clearDesktopNavigationBypass);
-  } catch (error) {
-    console.error(
-      "[desktop-local-data] bootstrap failed:",
-      toErrorMessage(error, "bootstrap failed")
-    );
-    commitAuthState(null, bootstrapRevision);
+  if (desktopState.desktopBootstrapPromise) {
+    return desktopState.desktopBootstrapPromise;
   }
+  if (desktopState.desktopBootstrapStatus === "ready") {
+    return true;
+  }
+  if (desktopState.desktopBootstrapStatus === "failed") {
+    return false;
+  }
+  const bootstrapRevision = desktopState.authStateRevision;
+  const deadlineMs = Number(nowFn()) + Math.max(0, Number(retryWindowMs) || 0);
+  desktopState.desktopBootstrapStatus = "pending";
+  desktopState.desktopBootstrapPromise = (async () => {
+    while (true) {
+      try {
+        await refreshCurrentUser({ revision: bootstrapRevision });
+        desktopState.desktopClosingSignaled = false;
+        desktopState.desktopCloseAttemptPending = false;
+        desktopState.desktopBootstrapStatus = "ready";
+        clearDesktopNavigationBypass();
+        startDesktopLifecycle(clearDesktopNavigationBypass);
+        return true;
+      } catch (error) {
+        if (Number(nowFn()) >= deadlineMs) {
+          desktopState.desktopBootstrapStatus = "failed";
+          console.error(
+            "[desktop-local-data] bootstrap failed:",
+            toErrorMessage(error, "bootstrap failed")
+          );
+          commitAuthState(null, bootstrapRevision);
+          return false;
+        }
+        await waitFn(Math.max(0, Number(retryIntervalMs) || 0));
+      }
+    }
+  })().finally(() => {
+    desktopState.desktopBootstrapPromise = null;
+  });
+  return desktopState.desktopBootstrapPromise;
 }

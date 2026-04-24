@@ -6,6 +6,7 @@ import logging
 import re
 import zipfile
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
@@ -33,6 +34,21 @@ def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any
         if isinstance(row, dict)
     ]
     return compact_payload
+
+
+def _read_utf8_log_text(path: Path) -> str:
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return ""
+    if not raw:
+        return ""
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        if exc.end == len(raw) and exc.reason == "unexpected end of data":
+            return raw[: exc.start].decode("utf-8")
+        return raw.decode("utf-8", errors="replace")
 
 
 def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list[str]]) -> bool:
@@ -281,10 +297,7 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
             offset = max(0, int(offset_raw))
         except ValueError:
             offset = 0
-        try:
-            text = api.DISCOVERY_LOG_PATH.read_text(encoding="utf-8")
-        except OSError:
-            text = ""
+        text = _read_utf8_log_text(api.DISCOVERY_LOG_PATH)
         chunk = text[offset:]
         next_offset = len(text)
         handler._send_json(
@@ -298,10 +311,7 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
             offset = max(0, int(offset_raw))
         except ValueError:
             offset = 0
-        try:
-            text = api.FETCHER_LOG_PATH.read_text(encoding="utf-8")
-        except OSError:
-            text = ""
+        text = _read_utf8_log_text(api.FETCHER_LOG_PATH)
         chunk = text[offset:]
         next_offset = len(text)
         handler._send_json(

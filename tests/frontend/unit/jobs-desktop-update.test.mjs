@@ -289,6 +289,81 @@ test("desktop update controller mounts, auto-checks, and starts a download from 
   );
 });
 
+test("desktop update controller waits for desktop bootstrap before the first status fetch", async () => {
+  const refs = buildRefs();
+  const fetchCalls = [];
+  let resolveBootstrap;
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async (_baseUrl, path) => {
+      fetchCalls.push(path);
+      return {
+        currentVersion: "0.0.15",
+        availability: "unknown",
+        downloadState: "idle",
+        installState: "idle",
+      };
+    },
+    postJson: async () => {
+      throw new Error("unexpected");
+    },
+    bindAsyncClick: () => {},
+    showToast: () => {},
+    requestConfirmationDialog: async () => true,
+    isDesktopRuntimeMode: () => true,
+    awaitDesktopBootstrap: () => new Promise(resolve => {
+      resolveBootstrap = resolve;
+    }),
+    setTimeoutFn: handler => ({ unref() {}, handler }),
+    clearTimeoutFn() {}
+  });
+
+  const mountPromise = controller.mount();
+  await Promise.resolve();
+
+  assert.deepEqual(fetchCalls, []);
+
+  resolveBootstrap(true);
+  await mountPromise;
+
+  assert.deepEqual(fetchCalls, ["/app/update-status"]);
+});
+
+test("desktop update controller stays quiet when desktop bootstrap never succeeds", async () => {
+  const refs = buildRefs();
+  const fetchCalls = [];
+  const postCalls = [];
+
+  const controller = createJobsDesktopUpdateController({
+    refs,
+    baseUrl: "http://127.0.0.1:8877",
+    fetchJson: async (_baseUrl, path) => {
+      fetchCalls.push(path);
+      return {};
+    },
+    postJson: async (_baseUrl, path) => {
+      postCalls.push(path);
+      return {};
+    },
+    bindAsyncClick: () => {},
+    showToast: () => {},
+    requestConfirmationDialog: async () => true,
+    isDesktopRuntimeMode: () => true,
+    awaitDesktopBootstrap: async () => false,
+    setTimeoutFn: handler => ({ unref() {}, handler }),
+    clearTimeoutFn() {}
+  });
+
+  await controller.mount();
+  await controller.startAutoCheck();
+
+  assert.deepEqual(fetchCalls, []);
+  assert.deepEqual(postCalls, []);
+  assert.equal(refs.desktopUpdateToggleBtn.classList.contains("hidden"), true);
+});
+
 test("desktop update controller keeps cached update errors hidden until a fresh check finishes", async () => {
   const refs = buildRefs();
   let fetchStatus = {

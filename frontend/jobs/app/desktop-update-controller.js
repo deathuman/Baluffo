@@ -29,6 +29,7 @@ export function createJobsDesktopUpdateController({
   requestConfirmationDialog,
   confirmFallback,
   isDesktopRuntimeMode,
+  awaitDesktopBootstrap = async () => true,
   showReleaseNotesDialog,
   openExternalUrl,
   setTimeoutFn = setTimeout,
@@ -186,6 +187,9 @@ export function createJobsDesktopUpdateController({
     autoOpenImportant = false,
     isFresh = true
   } = {}) {
+    if (!await awaitDesktopBootstrap()) {
+      return null;
+    }
     try {
       const payload = await fetchJson(baseUrl, "/app/update-status");
       applyStatus(payload, { openPanel, autoOpenImportant, isFresh });
@@ -204,6 +208,9 @@ export function createJobsDesktopUpdateController({
     openPanel = true,
     autoOpenImportant = false
   } = {}) {
+    if (!await awaitDesktopBootstrap()) {
+      return null;
+    }
     applyStatus({ ...state.status, availability: "checking", lastError: "" }, { openPanel });
     try {
       const payload = await postJson(baseUrl, "/app/check-for-update", { force: Boolean(force) });

@@ -1,5 +1,6 @@
 import { AdminConfig } from "./config/admin-config.js";
 import { fetchJson } from "./api-client.js";
+import { awaitDesktopBootstrap } from "./local-data/desktop-client.js";
 import { resolveDesktopRuntimeMode } from "./local-data/runtime-context.js";
 import { UI_TOKENS, ui } from "./ui/selectors.js";
 
@@ -10,6 +11,9 @@ export async function hydrateDesktopVersionLabels(doc = document) {
 
   const versionEls = Array.from(doc.querySelectorAll(ui(UI_TOKENS.global.appVersion)));
   if (!versionEls.length) {
+    return "";
+  }
+  if (!(await awaitDesktopBootstrap())) {
     return "";
   }
 

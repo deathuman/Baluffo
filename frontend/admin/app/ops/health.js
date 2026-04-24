@@ -36,9 +36,11 @@ export function createOpsHealthController({
   loadDiscoveryData,
   idlePollIntervalMs,
   taskStateController,
-  getBridgeStatus
+  getBridgeStatus,
+  awaitBridgeReady = async () => true
 }) {
   let lastDiscoveryRegistryRefreshAtMs = 0;
+  let initialBridgeReadyResolved = false;
 
   function setOpsPlaceholders(message = "Operations health unavailable.") {
     if (refs.adminSyncStatusEl) {
@@ -77,6 +79,13 @@ export function createOpsHealthController({
     if (state.adminBusyState.opsLoad) {
       if (options?.fromPoll) scheduleOpsHealthPolling(idlePollIntervalMs);
       return;
+    }
+    if (!initialBridgeReadyResolved) {
+      initialBridgeReadyResolved = true;
+      if (!(await awaitBridgeReady())) {
+        scheduleOpsHealthPolling(idlePollIntervalMs);
+        return;
+      }
     }
     setBusyFlag("opsLoad", true);
     const showLoadingState = !options?.fromPoll && !state.latestOpsHealthCache;

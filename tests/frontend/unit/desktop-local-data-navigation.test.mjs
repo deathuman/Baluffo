@@ -32,6 +32,25 @@ async function flushMicrotasks(count = 5) {
   await new Promise(resolve => setTimeout(resolve, 0));
 }
 
+function installImmediateTimeoutClock() {
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalDateNow = Date.now;
+  let fakeNow = 0;
+  globalThis.setTimeout = (handler, delay = 0, ...args) => {
+    fakeNow += Math.max(0, Number(delay) || 0);
+    handler(...args);
+    return fakeNow || 1;
+  };
+  globalThis.clearTimeout = () => {};
+  Date.now = () => fakeNow;
+  return () => {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    Date.now = originalDateNow;
+  };
+}
+
 function setupDesktopGlobals({
   locationHref = "http://127.0.0.1:4173/jobs.html?desktop=1",
   taskPayload = { tasks: [], count: 0 },
@@ -59,6 +78,7 @@ function setupDesktopGlobals({
     localStorage,
     sessionStorage,
     location: locationState,
+    __baluffoInitErrors: [],
     setInterval(handler) {
       intervalHandlers.push(handler);
       return intervalHandlers.length;
@@ -522,6 +542,117 @@ test("desktop sign-in cancels cleanly when profile loading fails and the user ab
 
   await assert.rejects(() => api.signIn(), /Sign-in cancelled\./);
   assert.equal(fetchCalls.filter(call => call.url.includes("/desktop-local-data/sign-in")).length, 0);
+});
+
+test("desktop bootstrap retries bridge startup and only fetches version status after session restore", async () => {
+  const restoreClock = installImmediateTimeoutClock();
+  const labels = [{ hidden: true, textContent: "" }];
+  const consoleErrors = [];
+  const originalConsoleError = console.error;
+  console.error = (...args) => {
+    consoleErrors.push(args.map(value => String(value)).join(" "));
+  };
+  try {
+    const { fetchCalls } = setupDesktopGlobals({
+      updatePayload: {
+        currentVersion: "0.1.33",
+        availability: "unknown",
+        downloadState: "idle",
+        installState: "idle"
+      }
+    });
+    global.document = {
+      querySelectorAll() {
+        return labels;
+      }
+    };
+    const requestOrder = [];
+    let sessionAttempts = 0;
+    const baseFetch = global.fetch;
+    global.fetch = async (url, options = {}) => {
+      requestOrder.push(String(url));
+      if (String(url).includes("/desktop-local-data/session")) {
+        sessionAttempts += 1;
+        if (sessionAttempts < 3) {
+          throw new Error("bridge unavailable");
+        }
+      }
+      return baseFetch(url, options);
+    };
+
+    await importFresh("../../../frontend/shared/local-data/app-client.js", {
+      relativeTo: import.meta.url
+    });
+    for (let index = 0; index < 20 && !window.__baluffoLocalDataLoaded; index += 1) {
+      await flushMicrotasks(5);
+    }
+    for (let index = 0; index < 20 && !labels[0].textContent; index += 1) {
+      await flushMicrotasks(5);
+    }
+
+    const firstUpdateIndex = requestOrder.findIndex(url => url.includes("/app/update-status"));
+    const lastSessionIndex = requestOrder.reduce(
+      (index, url, callIndex) => (url.includes("/desktop-local-data/session") ? callIndex : index),
+      -1
+    );
+
+    assert.equal(sessionAttempts, 3);
+    assert.ok(firstUpdateIndex > lastSessionIndex);
+    assert.equal(
+      requestOrder.slice(0, firstUpdateIndex).some(url => url.includes("/app/update-status")),
+      false
+    );
+    assert.equal(
+      fetchCalls.some(call => call.url.includes("/app/desktop-session-lifecycle")),
+      true
+    );
+    assert.equal(window.__baluffoLocalDataLoaded, true);
+    assert.deepEqual(labels.map(label => label.textContent), ["Version 0.1.33"]);
+    assert.ok(labels.every(label => label.hidden === false));
+    assert.equal(consoleErrors.length, 0);
+  } finally {
+    console.error = originalConsoleError;
+    restoreClock();
+  }
+});
+
+test("desktop bootstrap logs one final failure and never starts lifecycle when bridge stays unavailable", async () => {
+  const restoreClock = installImmediateTimeoutClock();
+  const consoleErrors = [];
+  const originalConsoleError = console.error;
+  console.error = (...args) => {
+    consoleErrors.push(args.map(value => String(value)).join(" "));
+  };
+  try {
+    const { fetchCalls, intervalHandlers } = setupDesktopGlobals();
+    global.document = { querySelectorAll() { return []; } };
+    global.fetch = async (url, options = {}) => {
+      fetchCalls.push({ url: String(url), options });
+      if (String(url).includes("/desktop-local-data/session")) {
+        throw new Error("bridge unavailable");
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    };
+
+    const { awaitDesktopBootstrap, initDesktopLocalDataClient } = await importFresh(
+      "../../../frontend/shared/local-data/desktop-client.js",
+      { relativeTo: import.meta.url }
+    );
+    const api = initDesktopLocalDataClient();
+    const ready = await awaitDesktopBootstrap();
+    await flushMicrotasks(6);
+
+    assert.equal(ready, false);
+    assert.equal(api.getCurrentUser(), null);
+    assert.equal(fetchCalls.some(call => call.url.includes("/app/desktop-session-lifecycle")), false);
+    assert.equal(intervalHandlers.length, 0);
+    assert.ok(fetchCalls.filter(call => call.url.includes("/desktop-local-data/session")).length > 1);
+    assert.equal(consoleErrors.length, 1);
+    assert.match(consoleErrors[0], /bootstrap failed/i);
+  } finally {
+    console.error = originalConsoleError;
+    restoreClock();
+  }
 });
 
 test("desktop version labels render the installed app version", async () => {

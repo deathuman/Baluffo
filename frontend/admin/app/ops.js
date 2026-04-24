@@ -31,7 +31,8 @@ export function createAdminOpsController({
   attachToActiveDiscoveryRun,
   loadLatestDiscoveryReport,
   bridgeStatusPollIntervalMs,
-  idlePollIntervalMs
+  idlePollIntervalMs,
+  awaitBridgeReady
 }) {
   const bridgeStatusController = createOpsBridgeStatusController({
     state,
@@ -73,7 +74,8 @@ export function createAdminOpsController({
     loadDiscoveryData,
     idlePollIntervalMs,
     taskStateController,
-    getBridgeStatus: bridgeStatusController.getBridgeStatus
+    getBridgeStatus: bridgeStatusController.getBridgeStatus,
+    awaitBridgeReady
   });
 
   return {
