@@ -221,7 +221,8 @@ def probe_and_recover(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> No
     reprobe_candidates: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
     for record in state.failed_probe_records:
         candidate = dict(record.get("candidate") or {})
-        failure_row = record.get("failure") if isinstance(record.get("failure"), dict) else {}
+        failure_value = record.get("failure")
+        failure_row = failure_value if isinstance(failure_value, dict) else {}
         error_text = str(failure_row.get("error") or "")
         if not should_attempt_patch_recovery(error_text):
             continue

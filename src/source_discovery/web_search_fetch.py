@@ -28,14 +28,14 @@ def fetch_text(url: str, timeout_s: int) -> str:
     req = Request(url, headers=discovery_request_headers())
     with urlopen(req, timeout=timeout_s) as resp:
         charset = resp.headers.get_content_charset() or "utf-8"
-        return resp.read().decode(charset, errors="replace")
+        return str(resp.read().decode(charset, errors="replace"))
 
 
 async def async_fetch_text_httpx(client: httpx.AsyncClient, url: str, timeout_s: int) -> str:
     resp = await client.get(url, headers=discovery_request_headers(), follow_redirects=True)
     resp.raise_for_status()
     resp.encoding = resp.encoding or "utf-8"
-    return resp.text
+    return str(resp.text)
 
 
 def _http_code_from_error(exc: Exception) -> int | None:
@@ -60,7 +60,7 @@ def fetch_text_with_retry(url: str, timeout_s: int, *, adapter: str, fetcher=fet
     last_exc: Exception | None = None
     for attempt in range(attempts):
         try:
-            return fetcher(url, timeout_s)
+            return str(fetcher(url, timeout_s))
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             if attempt >= FETCH_MAX_RETRIES or not _is_retryable_error(exc):
@@ -84,7 +84,7 @@ async def async_fetch_text_with_retry(
     last_exc: Exception | None = None
     for attempt in range(attempts):
         try:
-            return await fetcher(url, timeout_s)
+            return str(await fetcher(url, timeout_s))
         except Exception as exc:  # noqa: BLE001
             last_exc = exc if isinstance(exc, Exception) else Exception(str(exc))
             if attempt >= FETCH_MAX_RETRIES or not _is_retryable_error(last_exc):

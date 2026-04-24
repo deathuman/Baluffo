@@ -81,7 +81,8 @@ def fetch_directory_pages(
         if bool(row.get("ok")):
             row["failure"] = None
         else:
-            job = row.get("job") if isinstance(row.get("job"), dict) else {}
+            job_value = row.get("job")
+            job = job_value if isinstance(job_value, dict) else {}
             error = str(row.get("error") or "")
             row["failure"] = {
                 "name": str(job.get("name") or url),

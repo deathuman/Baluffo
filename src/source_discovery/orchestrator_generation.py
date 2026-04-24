@@ -481,8 +481,11 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
     _record_stage_timing(state.stage_timings_ms, "dedupeFilter", stage_started)
 
     state.filtered.sort(key=estimate_probe_priority, reverse=True)
-    state.source_state_rows = orchestrator.read_source_state(
+    raw_source_state_rows = orchestrator.read_source_state(
         source_registry_module.ACTIVE_PATH.parent / "jobs-source-state.json"
+    )
+    state.source_state_rows = (
+        dict(raw_source_state_rows) if isinstance(raw_source_state_rows, dict) else {}
     )
     state.filtered, sheet_static_suppressed = orchestrator.apply_sheet_directory_static_probe_cap(
         state.filtered,

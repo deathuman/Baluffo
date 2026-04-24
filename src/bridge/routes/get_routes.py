@@ -16,9 +16,17 @@ from src.core.schemas import LocalSavedJobRowSchema
 logger = logging.getLogger(__name__)
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
 def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     compact_payload = dict(payload or {})
-    sources = payload.get("sources") if isinstance(payload.get("sources"), list) else []
+    sources = _as_list(payload.get("sources"))
     compact_payload["sources"] = [
         {key: value for key, value in row.items() if key != "details"}
         for row in sources
@@ -59,7 +67,7 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
             except Exception:  # noqa: BLE001
                 pass
 
-            payload = report or {"summary": {}, "candidates": [], "failures": []}
+            payload = _as_dict(report) or {"summary": {}, "candidates": [], "failures": []}
             # Prefer the bytes-writing helper to bypass any unexpected issues
             # in `_send_json` for edge-case payloads.
             if hasattr(handler, "_send_bytes"):
@@ -69,7 +77,7 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
                 except UnicodeEncodeError:
                     text = json.dumps(payload, ensure_ascii=True, default=str)
                     body = text.encode("utf-8")
-                handler._send_bytes(  # type: ignore[attr-defined]  # noqa: SLF001
+                handler._send_bytes(  # noqa: SLF001
                     body,
                     content_type="application/json; charset=utf-8",
                     status=200,
@@ -89,7 +97,7 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
                 except UnicodeEncodeError:
                     text = json.dumps(payload, ensure_ascii=True, default=str)
                     body = text.encode("utf-8")
-                handler._send_bytes(  # type: ignore[attr-defined]  # noqa: SLF001
+                handler._send_bytes(  # noqa: SLF001
                     body,
                     content_type="application/json; charset=utf-8",
                     status=500,

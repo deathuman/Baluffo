@@ -57,7 +57,7 @@ def normalize_saved_job(
         "title": str(source.get("title") or base.get("title") or "").strip(),
         "company": str(source.get("company") or base.get("company") or "").strip(),
         "sector": normalize_sector_value(
-            source.get("sector") or base.get("sector"),
+            str(source.get("sector") or base.get("sector") or ""),
             source.get("companyType") or base.get("companyType") or "",
         ),
         "companyType": str(source.get("companyType") or base.get("companyType") or "Tech").strip()
@@ -82,7 +82,7 @@ def normalize_saved_job(
         "contactedAt": _normalize_iso(source.get("contactedAt") or base.get("contactedAt"), ""),
         "updatedBy": str(source.get("updatedBy") or base.get("updatedBy") or "").strip(),
         "applicationStatus": normalize_application_status(
-            source.get("applicationStatus") or base.get("applicationStatus")
+            str(source.get("applicationStatus") or base.get("applicationStatus") or "")
         ),
         "phaseTimestamps": phase_timestamps,
         "notes": str(
@@ -248,7 +248,7 @@ def update_application_status(
         )
         if not target:
             raise ValueError("Saved job not found.")
-        previous_status = normalize_application_status(target.get("applicationStatus"))
+        previous_status = normalize_application_status(str(target.get("applicationStatus") or ""))
         next_status = normalize_application_status(status)
         if previous_status == next_status:
             return

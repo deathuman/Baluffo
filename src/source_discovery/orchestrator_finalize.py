@@ -29,6 +29,10 @@ def _require_root() -> Any:
     return root
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[str, Any]:
     orchestrator = _require_root()
     queued_candidates, report_candidates, balancing_summary = apply_queue_balancing(
@@ -211,8 +215,10 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
             "urlPatches": str(source_registry_module.URL_PATCH_MANIFEST_PATH),
         },
     }
-    report["runtime"]["urlPatchStats"] = dict(state.url_patch_stats)
-    report["runtime"]["urlPatchRecoveredCount"] = int(state.recovered_count)
+    runtime_payload = _as_dict(report.get("runtime"))
+    runtime_payload["urlPatchStats"] = dict(state.url_patch_stats)
+    runtime_payload["urlPatchRecoveredCount"] = int(state.recovered_count)
+    report["runtime"] = runtime_payload
 
     registry_state = {
         "active": state.active,

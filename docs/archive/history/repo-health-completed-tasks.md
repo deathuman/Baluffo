@@ -54,6 +54,10 @@ This page stores completed items moved out of the active repository-health track
    The enforced mypy scope now includes the desktop updater boundary, packaged runtime/startup support, release repeatability helper, desktop app startup process helpers, and high-yield source-discovery/local-data cleanup files. This pass also repaired the local active-interpreter vulture installation, kept the desktop app formatter check green, and reduced the broad audit from `173` errors in `44` files to `40` errors in `19` files without changing runtime behavior, updater compatibility roots, packaged smoke contracts, or persisted payload shapes.
    **Done when:** complete.
 
+13. **Completed: finish the broad mypy sweep.**
+   Broad `python -m mypy src` now passes with `0` errors across `313` source files, and `mypy.ini` now enforces the full `src/` tree instead of a staged file list. The final pass cleared bridge run-history/runtime routes, source-discovery state-shape and JSON helpers, local saved-job normalization, scraper utility tails, optional HTTP aliases, and concrete string-return helpers without changing runtime behavior or payload contracts.
+   **Done when:** complete.
+
 ## Completed P1 Items
 
 5. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**

@@ -395,11 +395,19 @@ def _build_child_task_snapshot(
         )
         explicit_dead = age_minutes >= float(dead_age_minutes)
 
+    summary: dict[str, Any]
+    terminal_status: str
     if terminal_status_builder is not None:
-        summary = summary_builder(report)  # type: ignore[misc]
+        summary_result = summary_builder(report)
+        summary = dict(summary_result) if isinstance(summary_result, dict) else {}
         terminal_status = terminal_status_builder(summary)
     else:
-        summary, terminal_status = summary_builder(report)  # type: ignore[misc]
+        summary_result = summary_builder(report)
+        if isinstance(summary_result, tuple):
+            summary, terminal_status = summary_result
+        else:
+            summary = dict(summary_result)
+            terminal_status = ""
 
     return ChildTaskSnapshot(
         task_type=task_type,

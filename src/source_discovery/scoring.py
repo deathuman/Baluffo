@@ -67,7 +67,8 @@ def to_slug(value: str) -> str:
 
 def resolve_discovery_thresholds(config: dict[str, Any] | None) -> dict[str, int]:
     source = config if isinstance(config, dict) else {}
-    raw = source.get("thresholds") if isinstance(source.get("thresholds"), dict) else {}
+    raw_value = source.get("thresholds")
+    raw = raw_value if isinstance(raw_value, dict) else {}
     out: dict[str, int] = {}
     for key, default in DEFAULT_DISCOVERY_THRESHOLDS.items():
         value = raw.get(key, default)

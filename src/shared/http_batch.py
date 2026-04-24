@@ -8,9 +8,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 try:
-    import httpx
+    import httpx as httpx_mod
 except Exception:  # noqa: BLE001
-    httpx = None
+    httpx: Any | None = None
+else:
+    httpx = httpx_mod
 
 
 PageSyncFetch = Callable[[dict[str, Any], str, int], str]

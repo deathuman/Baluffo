@@ -82,7 +82,7 @@ class DiscoveryRunState:
     tombstones: Any = field(default_factory=list)
     prior_review_candidates_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
     ranking_registry_rows: list[dict[str, Any]] = field(default_factory=list)
-    source_state_rows: list[dict[str, Any]] = field(default_factory=list)
+    source_state_rows: dict[str, dict[str, Any]] = field(default_factory=dict)
     probe_inputs: list[dict[str, Any]] = field(default_factory=list)
     failed_probe_records: list[dict[str, Any]] = field(default_factory=list)
 

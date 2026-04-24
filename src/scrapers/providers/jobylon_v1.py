@@ -15,7 +15,7 @@ from src.scrapers.helpers import build_job, clean_text, safe_id
 def _http_text(url: str, *, timeout_s: int = 20) -> str:
     req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urlopen(req, timeout=max(1, int(timeout_s))) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+        return str(resp.read().decode("utf-8", errors="replace"))
 
 
 def extract_jobylon_company_id(html: str) -> str:

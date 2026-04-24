@@ -62,7 +62,8 @@ def _default_manifest(patches: dict[str, str] | None = None) -> dict[str, Any]:
 
 def load_url_patch_manifest(path: Path | None = None) -> dict[str, Any]:
     manifest = load_json_object(path or URL_PATCH_MANIFEST_PATH, _default_manifest())
-    patches = manifest.get("patches") if isinstance(manifest.get("patches"), dict) else {}
+    patches_value = manifest.get("patches")
+    patches = patches_value if isinstance(patches_value, dict) else {}
     normalized_patches: dict[str, str] = {}
     for raw_source, raw_target in patches.items():
         source = normalize_source_url(str(raw_source or ""))

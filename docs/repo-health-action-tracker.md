@@ -20,8 +20,8 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src` -> `40 errors in 19 files (checked 313 source files)` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on `114` staged files across the bridge/admin surface, source-discovery/audit helpers, jobs contracts/runtime/loader/plugin/provider/parser/static/reporting/transport wave, source registry/checker boundary, source-sync boundary, desktop app launch/session cluster, desktop updater boundary, packaged runtime/startup support, and high-yield source-discovery/local-data cleanup files. |
+| Broad type-check run | `python -m mypy src` -> `0 errors in 313 source files` |
+| Enforced type-check gate | `python -m mypy --config-file mypy.ini` covers the full `src/` tree and passes. |
 | ESLint | `137 warnings, 0 errors` |
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
@@ -38,9 +38,7 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 
 ### P0
 
-1. **Next staged mypy milestone: close the remaining broad mypy tail.**
-   The broad audit is now small enough for targeted cleanup. Prioritize the remaining bridge/runtime and source-discovery/scraper stragglers surfaced by the current run: `src/bridge/run_history_api.py`, `src/bridge/server/runtime_state.py`, `src/bridge/routes/*`, `src/source_discovery/*`, `src/local_data_store_saved_jobs.py`, and the small scraper helper files.
-   **Done when:** the broad audit drops below `20` errors and the newly green files are added to the staged mypy gate without weakening the current `114`-file scope.
+No active P0 repository-health item is open. The previous broad mypy sweep is complete and archived.
 
 ### P1
 
@@ -78,7 +76,7 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 - `TODO` / `FIXME` / `HACK` count in `src/` plus `frontend/` is currently `0`, not `3`.
 - `python -m vulture` now works in the active interpreter after local environment repair; the repo's pre-commit flow still manages its own vulture hook environment separately.
 - The previous `data/source-approval-state.json` newline-only churn was real, but it is now fixed at the shared writer level rather than hidden from the local checks.
-- The type-safety claim still needs nuance: repo-wide mypy debt is much smaller but not gone, and the enforced mypy scope now covers 114 staged files across the bridge/admin surface, source-discovery/audit helpers, jobs contracts/runtime/adapter/reporting/transport wave, source registry/checker boundary, source-sync compatibility/runtime boundary, desktop app launch/session boundary, desktop updater boundary, packaged runtime/startup support, and high-yield source-discovery/local-data cleanup files.
+- The type-safety claim is now materially different from the source analysis: broad `python -m mypy src` is green, and the enforced mypy gate covers the full `src/` tree.
 - The original 1-10 score table and overall `7.5/10` rating were not retained here because they are subjective and partially stale relative to the current repo state.
 
 ## Not Locally Validated

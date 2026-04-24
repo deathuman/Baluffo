@@ -60,7 +60,7 @@ class GenericCareersSpider(scrapy.Spider):
         self.source_name_value = source_name_value
         self.profile = profile or {}
         self._container = container
-        self._detail_seen = set()
+        self._detail_seen: set[str] = set()
         self._use_browser = bool(use_browser)
 
     def parse(self, response: scrapy.http.Response) -> Any:

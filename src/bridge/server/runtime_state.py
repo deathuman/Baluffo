@@ -10,10 +10,20 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 from src.bridge.pipeline_service import PipelineRuntime
+
+
+class LocalDataStoreLike(Protocol):
+    pass
+
+
+ParseIso = Callable[[Any], datetime | None]
+NowUtc = Callable[[], datetime]
 
 PIPELINE_STATE_LOCK = threading.RLock()
 PIPELINE_RUNTIME = PipelineRuntime()
@@ -102,7 +112,7 @@ def append_startup_metric(event: str, payload: dict[str, Any] | None, *, now_iso
     normalized_browser_created_at_ms = (
         int(browser_created_at_ms) if isinstance(browser_created_at_ms, (int, float)) else None
     )
-    row = {
+    row: dict[str, Any] = {
         "ts": str(now_iso() or ""),
         "event": str(event or "").strip() or "unknown",
         "payload": details,
@@ -184,7 +194,7 @@ def update_desktop_session_lifecycle(
         DESKTOP_SESSION_ACTIVITY_AT = activity_at
         OWNER_STATE["lastActivityAt"] = activity_at
         pages = (
-            DESKTOP_SESSION_STATE["pages"]
+            dict(DESKTOP_SESSION_STATE["pages"])
             if isinstance(DESKTOP_SESSION_STATE.get("pages"), dict)
             else {}
         )
@@ -217,8 +227,8 @@ def update_desktop_session_lifecycle(
 def _is_page_active(
     page_state: dict[str, Any],
     *,
-    parse_iso: Any,
-    now_utc: Any,
+    parse_iso: ParseIso,
+    now_utc: NowUtc,
     idle_timeout_seconds: float,
 ) -> bool:
     state = str(page_state.get("state") or "").strip().lower()
@@ -226,21 +236,21 @@ def _is_page_active(
         last_seen = parse_iso(page_state.get("lastSeenAt"))
         if last_seen is None:
             return False
-        return (now_utc() - last_seen).total_seconds() <= idle_timeout_seconds
+        return bool((now_utc() - last_seen).total_seconds() <= idle_timeout_seconds)
     if state == "closing":
         closing_since = parse_iso(page_state.get("closingSince"))
         if closing_since is None:
             return False
-        return (now_utc() - closing_since).total_seconds() <= DESKTOP_SESSION_CLOSING_GRACE_S
+        return bool((now_utc() - closing_since).total_seconds() <= DESKTOP_SESSION_CLOSING_GRACE_S)
     return False
 
 
 def _prune_desktop_pages(
-    *, parse_iso: Any, now_utc: Any, idle_timeout_seconds: float
+    *, parse_iso: ParseIso, now_utc: NowUtc, idle_timeout_seconds: float
 ) -> tuple[bool, bool]:
     with DESKTOP_SESSION_LOCK:
         pages = (
-            DESKTOP_SESSION_STATE["pages"]
+            dict(DESKTOP_SESSION_STATE["pages"])
             if isinstance(DESKTOP_SESSION_STATE.get("pages"), dict)
             else {}
         )
@@ -262,7 +272,7 @@ def _prune_desktop_pages(
         return had_pages, bool(active_pages)
 
 
-def owner_session_should_exit(*, parse_iso: Any, now_utc: Any) -> bool:
+def owner_session_should_exit(*, parse_iso: ParseIso, now_utc: NowUtc) -> bool:
     owner_mode = str(OWNER_STATE.get("ownerMode") or "").strip()
     if not owner_mode:
         return False
@@ -282,13 +292,13 @@ def owner_session_should_exit(*, parse_iso: Any, now_utc: Any) -> bool:
     if last_activity is None:
         return False
     idle_seconds = (now_utc() - last_activity).total_seconds()
-    return idle_seconds > timeout_seconds
+    return bool(idle_seconds > timeout_seconds)
 
 
-def get_desktop_local_data_store() -> Any:
+def get_desktop_local_data_store() -> LocalDataStoreLike:
     if DESKTOP_LOCAL_DATA_STORE is None:
         raise RuntimeError("Desktop local data API is unavailable.")
-    return DESKTOP_LOCAL_DATA_STORE
+    return cast(LocalDataStoreLike, DESKTOP_LOCAL_DATA_STORE)
 
 
 __all__ = [

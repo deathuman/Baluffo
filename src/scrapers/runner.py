@@ -214,12 +214,12 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
     runtime = validated["runtime"]
     source_name = _clean_text(source.get("name")) or "scrapy_source"
     studio = _clean_text(source.get("studio")) or "unknown"
-    pages = source.get("pages") or []
+    pages = [str(page) for page in source.get("pages") or []]
     source_id_value = _source_id(source_name, studio, list(pages))
     domain_profile = domain_profiles.domain_profile_for_url(_clean_text(pages[0]) if pages else "")
     partial_errors: list[str] = []
     jobs: list[dict[str, Any]] = []
-    seen_links = set()
+    seen_links: set[str] = set()
     reject_reasons: Counter[str] = Counter()
     extraction_stats: dict[str, int] = {
         "candidate_links_found": 0,
@@ -315,7 +315,7 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
             f"Scrapy import failed: {exc}", source_name=source_name, studio=studio
         )
 
-    settings_dict = dict(SCRAPY_SETTINGS_DEFAULTS)
+    settings_dict: dict[str, Any] = dict(SCRAPY_SETTINGS_DEFAULTS)
     if runtime.get("download_delay") is not None:
         settings_dict["DOWNLOAD_DELAY"] = runtime.get("download_delay")
     if runtime.get("timeout_s") is not None:
@@ -328,8 +328,8 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
         try:
             import scrapy_playwright  # noqa: F401
 
-            for key, value in SCRAPY_PLAYWRIGHT_SETTINGS.items():
-                settings_dict[key] = value
+            for setting_key, setting_value in SCRAPY_PLAYWRIGHT_SETTINGS.items():
+                settings_dict[setting_key] = setting_value
         except ImportError:
             use_browser = False
 
@@ -355,7 +355,7 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
         error_text = f"{source_name}: crawl failed: {exc}"
         partial_errors.append(error_text)
 
-    crawler_stats = crawler.stats.get_stats() if getattr(crawler, "stats", None) else {}
+    crawler_stats = crawler.stats.get_stats() if crawler.stats is not None else {}
     for key, value in extraction_stats.items():
         crawler_stats[key] = int(value)
     stats = _stats_subset(crawler_stats)

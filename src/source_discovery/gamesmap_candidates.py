@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from types import ModuleType
 from typing import Any
 
 from src.source_registry import unique_sources
@@ -14,7 +15,7 @@ from .scoring import unique_string_list
 from .static_candidates import build_known_careers_url_candidate
 from .web_search import fetch_text, infer_web_candidate
 
-root = None
+root: ModuleType | None = None
 
 
 def _root_attr(name: str, fallback: Any) -> Any:

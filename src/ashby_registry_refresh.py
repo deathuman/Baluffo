@@ -139,7 +139,7 @@ def _normalize_board_url(url: str) -> str:
 def _default_fetch_text(url: str, timeout_s: int) -> str:
     request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urlopen(request, timeout=timeout_s) as response:
-        return response.read().decode("utf-8", errors="replace")
+        return str(response.read().decode("utf-8", errors="replace"))
 
 
 def _probe_ashby_board(

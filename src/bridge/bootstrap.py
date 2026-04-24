@@ -8,6 +8,10 @@ from src.bridge.api import BridgeApi, RuntimeConfigLike
 from src.bridge.server import make_handler, run_http_server
 
 
+def _empty_task_live_payload(_task_type: str = "") -> dict[str, Any]:
+    return {}
+
+
 def build_bridge_api(
     *,
     config: RuntimeConfigLike,
@@ -54,7 +58,7 @@ def build_bridge_api(
     should_exit_for_owner_timeout: Callable[[], bool],
     load_alert_state: Callable[[], dict[str, Any]],
     save_alert_state: Callable[[dict[str, Any]], None],
-    get_task_live_payload: Callable[[str], dict[str, Any]] = lambda _task_type="": {},
+    get_task_live_payload: Callable[[str], dict[str, Any]] = _empty_task_live_payload,
 ) -> BridgeApi:
     return BridgeApi(
         runtime_config=config,
