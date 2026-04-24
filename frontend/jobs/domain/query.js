@@ -88,7 +88,7 @@ export function sanitizePublicText(value) {
   return normalized;
 }
 
-export function sanitizeCountryField(value) {
+function sanitizeCountryField(value) {
   const text = sanitizePublicText(value);
   if (!text) return "";
   if (text === "Remote") return "Remote";
@@ -260,40 +260,6 @@ export function buildJobLocationSummary(job) {
   const city = sanitizeLocationField(job?.city || "", "city");
   const country = sanitizeLocationField(job?.country || "", "country");
   return [city, country].filter(Boolean).join(", ");
-}
-
-export function getJobLocationCities(job) {
-  const locations = Array.isArray(job?.locations) ? job.locations : [];
-  const cities = [];
-  const seen = new Set();
-  for (const location of locations) {
-    const city = sanitizeLocationField(location?.city || "", "city");
-    if (!city || seen.has(city)) continue;
-    seen.add(city);
-    cities.push(city);
-  }
-  if (cities.length === 0) {
-    const fallbackCity = sanitizeLocationField(job?.city || "", "city");
-    if (fallbackCity) cities.push(fallbackCity);
-  }
-  return cities;
-}
-
-export function getJobLocationCountries(job) {
-  const locations = Array.isArray(job?.locations) ? job.locations : [];
-  const countries = [];
-  const seen = new Set();
-  for (const location of locations) {
-    const country = sanitizeLocationField(location?.country || "", "country");
-    if (!country || seen.has(country)) continue;
-    seen.add(country);
-    countries.push(country);
-  }
-  if (countries.length === 0) {
-    const fallbackCountry = sanitizeLocationField(job?.country || "", "country");
-    if (fallbackCountry) countries.push(fallbackCountry);
-  }
-  return countries;
 }
 
 export function parseTimestampMs(value) {

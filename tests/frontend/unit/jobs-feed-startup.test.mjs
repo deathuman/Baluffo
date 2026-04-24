@@ -8,7 +8,7 @@ import {
 } from "../../../frontend/jobs/app/feed.js";
 import { STARTUP_PREVIEW_JSON_URLS } from "../../../frontend/jobs/app/sources.js";
 import { createJobsAuthController } from "../../../frontend/jobs/app/runtime/auth-controller.js";
-import { createClassList, createElement } from "./helpers/jobs-runtime-helpers.mjs";
+import { createElement } from "./helpers/jobs-runtime-helpers.mjs";
 
 function createBaseDeps(overrides = {}) {
   const calls = {

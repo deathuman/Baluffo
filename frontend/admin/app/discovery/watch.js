@@ -17,7 +17,6 @@ import { deriveDiscoveryQueuedCount } from "../../domain/progress.js";
 
 export function createAdminDiscoveryWatchController({
   state,
-  refs,
   getBridge,
   setBusyFlag,
   showToast,
@@ -27,7 +26,6 @@ export function createAdminDiscoveryWatchController({
   syncSourceTablesAfterTaskCompletion,
   appendDiscoveryLog,
   loadDiscoveryLogChunk,
-  loadLatestDiscoveryReport,
   updateDiscoveryProgressFromReport,
   runProgressAppend,
   refreshDiscoveryDataIfNeeded,

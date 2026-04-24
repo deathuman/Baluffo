@@ -1,15 +1,9 @@
 import { escapeHtml } from "../shared/ui/index.js";
 import { renderJobRow as renderJobRowFromComponent } from "../shared/components/JobRow.js";
-import { renderLoadingState } from "../shared/components/LoadingState.js";
 import { renderErrorState } from "../shared/components/ErrorState.js";
 
 export function renderJobRowHtml(job, options = {}) {
   return renderJobRowFromComponent(job, options);
-}
-
-export function showJobsLoading(jobsListEl, text) {
-  if (!jobsListEl) return;
-  jobsListEl.innerHTML = renderLoadingState(text);
 }
 
 export function showJobsError(jobsListEl, paginationEl, message, onRetry) {

@@ -1,4 +1,4 @@
-export function toCanonicalCountry(value) {
+function toCanonicalCountry(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
   const upper = raw.toUpperCase();
@@ -8,7 +8,7 @@ export function toCanonicalCountry(value) {
   return raw.length === 2 ? upper : raw;
 }
 
-export function normalizeReminderInput(value) {
+function normalizeReminderInput(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
   const parsed = new Date(raw);

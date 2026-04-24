@@ -16,10 +16,8 @@ export {
   deriveDiscoveryLifecycleCounts,
   deriveDiscoveryProgressModel,
   deriveDiscoveryQueuedCount,
-  deriveDiscoveryTaskProgress,
   deriveFetcherFailureSummary,
-  deriveFetcherProgressModel,
-  deriveFetcherTaskProgress
+  deriveFetcherProgressModel
 } from "./domain/progress.js";
 export {
   deriveAdminRunsModel,

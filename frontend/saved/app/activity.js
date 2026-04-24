@@ -166,7 +166,7 @@ export function renderTimeline(deps) {
   renderActivityEntries(entries);
 }
 
-export function shouldPulseEntry(entry, lastActivityPulse) {
+function shouldPulseEntry(entry, lastActivityPulse) {
   const activePulse = clearExpiredPulse(lastActivityPulse);
   if (!activePulse) return false;
   const matchesJob = !activePulse.jobKey || String(entry?.jobKey || "").trim() === activePulse.jobKey;

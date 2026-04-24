@@ -71,3 +71,7 @@ This page stores completed items moved out of the active repository-health track
 7. **Completed: continue the mypy staged rollout through jobs runtime/report contract helpers.**
    The enforced mypy scope now includes `src/jobs/reporting_queues.py`, `src/jobs/common/contracts_runtime.py`, `src/jobs/pipeline_source_loop.py`, and `src/jobs/pipeline_finalize.py`. This pass normalized optional report queues and runtime timing payloads, replaced the source-loop fallback namespace with `PipelineTaskRuntime`, and passed typed social-review rows into the social experiment helpers. The broad audit dropped from `295` errors in `81` files to `273` errors in `73` files.
    **Done when:** complete.
+
+8. **Completed: reduce JS hygiene noise before the next broad frontend refactor.**
+   ESLint now reports `0 warnings, 0 errors`, and `knip` reports `0` unused JS exports. This pass removed production discovery/controller warning sources, pruned unused test imports, removed dead loading-render code, and narrowed internal-only frontend/test helper exports without changing runtime or UI behavior.
+   **Done when:** complete.

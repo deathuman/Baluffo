@@ -5,7 +5,7 @@
 > - **Canonical for:** validated repo-health findings and immediate improvement priorities
 > - **Not canonical for:** architecture ownership, contracts, or release procedure
 > - **Then inspect:** [`testing.md`](testing.md), [`../CONTRIBUTING.md`](../CONTRIBUTING.md), and [`RELEASE.md`](RELEASE.md)
-> - **Last updated:** 2026-04-24
+> - **Last updated:** 2026-04-25
 
 This page converts an external repository analysis into a repo-native action tracker. The source analysis was reviewed against the current repository state, and only validated claims are carried forward into strengths, gaps, and next steps.
 
@@ -22,8 +22,8 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
 | Broad type-check run | `python -m mypy src` -> `0 errors in 313 source files` |
 | Enforced type-check gate | `python -m mypy --config-file mypy.ini` covers the full `src/` tree and passes. |
-| ESLint | `137 warnings, 0 errors` |
-| `knip` | `20` unused JS exports |
+| ESLint | `0 warnings, 0 errors` |
+| `knip` | `0` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
 | Node lock file | `package-lock.json` present |
 
@@ -46,25 +46,21 @@ No active P0 repository-health item is open. The previous broad mypy sweep is co
    Prioritize `src/source_sync_crypto.py` (`52%`), `src/source_discovery/stage_control.py` (`51%`), `src/source_discovery/probe.py` (`65%`), and `src/source_discovery/url_patches.py` (`71%`).
    **Done when:** each target module has a named test addition and reaches an agreed post-baseline coverage threshold.
 
-9. **Reduce JS hygiene noise before the next broad frontend refactor.**
-   Fix or justify the `137` ESLint warnings and `20` `knip` unused exports, starting with the small number of production-file warnings before mass test-import cleanup.
-   **Done when:** production-file ESLint warnings are eliminated and the unused-export list is either reduced or documented with explicit keep-alive reasons.
-
-10. **Add static security scanning to CI.**
+9. **Add static security scanning to CI.**
    Current workflows cover tests, lint, and release packaging, but not Python dependency/security scanning.
    **Done when:** CI runs at least one Python security/dependency scan (`bandit`, `pip-audit`, or equivalent) and documents failure ownership.
 
-11. **Evaluate a complexity gate after the first typing and hygiene pass.**
+10. **Evaluate a complexity gate after the first typing and hygiene pass.**
    Complexity enforcement is worthwhile, but it should not be added before the current typing and warning debt is under control.
    **Done when:** the repo adopts a complexity ceiling with an explicit allowlist or baseline strategy instead of freezing current hotspots.
 
 ### P2
 
-12. **Add real CI status badges to `README.md`.**
+11. **Add real CI status badges to `README.md`.**
    The README has product badges today, but no workflow status badges.
    **Done when:** README shows current workflow status badges for the maintained CI lanes.
 
-13. **Evaluate structured logging for support and ops diagnostics.**
+12. **Evaluate structured logging for support and ops diagnostics.**
    The repo already has strong observability hooks; structured logs would make support bundles and smoke artifacts easier to consume programmatically.
    **Done when:** one agreed logging surface adopts a structured format and demonstrates clear improvement over current ad hoc strings.
 

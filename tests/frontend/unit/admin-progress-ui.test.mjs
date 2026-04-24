@@ -1,24 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createAdminAuthController } from "../../../frontend/admin/app/auth.js";
-import { createAdminDiscoveryController } from "../../../frontend/admin/app/discovery.js";
-import { createAdminFetcherController } from "../../../frontend/admin/app/fetcher.js";
-import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import { applyAdminTaskProgress } from "../../../frontend/admin/app/progress-ui.js";
-import { createAdminRegistryController } from "../../../frontend/admin/app/registry.js";
-import { createAdminSyncController } from "../../../frontend/admin/app/sync.js";
-import { createRestoreActiveRunWatches } from "../../../frontend/admin/app/live-task.js";
-import { appendAdminLogRow } from "../../../frontend/admin/render.js";
 import {
-  FakeInputElement,
   createClassList,
-  createDiscoveryControllerFixture,
   createElement,
-  createFetcherControllerFixture,
-  createRegistryControllerFixture,
-  stubDateNow,
-  stubScheduledTimers,
-  withDom
 } from "./helpers/admin-controller-test-helpers.mjs";
 
 test("shared admin task progress renderer resets indeterminate state before determinate fill", () => {

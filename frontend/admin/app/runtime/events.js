@@ -1,7 +1,7 @@
 import { bindAsyncClick, bindUi } from "../../../shared/ui/index.js";
 import { navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
 
-export function bindWindowResize(handler) {
+function bindWindowResize(handler) {
   window.addEventListener("resize", handler);
 }
 

@@ -1,4 +1,4 @@
-export function createClassList(initial = []) {
+function createClassList(initial = []) {
   const values = new Set(initial);
   return {
     add(...tokens) {

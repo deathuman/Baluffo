@@ -146,53 +146,6 @@ test("long-running fetch progress stays aligned across admin detailed view, ops 
       }
     ]
   };
-  const livePayload = {
-    taskType: "fetch",
-    active: true,
-    runId: "fetch_live_1",
-    startedAt: "2026-03-12T12:00:10.000Z",
-    taskProgress: {
-      active: true,
-      phaseKey: "executing_sources",
-      phaseLabel: "Executing sources",
-      mode: "determinate",
-      ratio: 0.5,
-      counts: sharedCounts
-    },
-    summary: {
-      outputCount: 42,
-      failedSources: 1,
-      sourceCount: 12
-    },
-    workItems: [
-      {
-        id: "source_1",
-        name: "Source 1",
-        status: "running",
-        durationMs: 120000,
-        heartbeatAt: "2026-03-12T12:07:00.000Z",
-        progress: {
-          active: true,
-          phaseKey: "executing_sources",
-          phaseLabel: "Executing sources",
-          mode: "determinate",
-          ratio: 0.5,
-          counts: sharedCounts,
-          targetLabel: "Source 1",
-          updatedAt: "2026-03-12T12:07:00.000Z"
-        }
-      }
-    ],
-    recentEvents: [
-      {
-        timestamp: "2026-03-12T12:07:00.000Z",
-        phaseKey: "executing_sources",
-        workItemId: "source_1",
-        message: "Executing sources"
-      }
-    ]
-  };
-
   const historyEl = makeContainer();
   const runModel = deriveAdminRunsModel(
     {

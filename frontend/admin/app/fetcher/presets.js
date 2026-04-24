@@ -52,7 +52,7 @@ export function getFetcherPresetMeta(preset) {
   return FETCHER_PRESET_META[key] || FETCHER_PRESET_META.default;
 }
 
-export function getFetcherPresetButtons(refs) {
+function getFetcherPresetButtons(refs) {
   return [
     { preset: "default", el: refs.adminRunFetcherBtnEl },
     { preset: "incremental", el: refs.adminRunFetcherIncrementalBtnEl },

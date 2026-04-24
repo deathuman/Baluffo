@@ -6,7 +6,7 @@ function getFileExtension(name) {
   return String(name).slice(idx + 1).toLowerCase();
 }
 
-export function formatFileSize(bytes) {
+function formatFileSize(bytes) {
   const value = Number(bytes) || 0;
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
@@ -20,7 +20,7 @@ function isImageAttachment(attachment) {
   return ext === "png" || ext === "jpg" || ext === "jpeg";
 }
 
-export function isAllowedAttachment(file) {
+function isAllowedAttachment(file) {
   const ext = getFileExtension(file?.name || "");
   if (ALLOWED_ATTACHMENT_EXTENSIONS.has(ext)) return true;
   const type = String(file?.type || "").toLowerCase();

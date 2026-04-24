@@ -1,10 +1,10 @@
 export const SAVED_FILTER_ALL = "all";
-export const SAVED_FILTER_CUSTOM = "custom";
-export const SAVED_FILTER_IMPORTED = "imported";
+const SAVED_FILTER_CUSTOM = "custom";
+const SAVED_FILTER_IMPORTED = "imported";
 export const SORT_UPDATED = "updated";
-export const SORT_SAVED = "saved";
-export const SORT_REMINDER = "reminder";
-export const SORT_PERSONAL = "personal";
+const SORT_SAVED = "saved";
+const SORT_REMINDER = "reminder";
+const SORT_PERSONAL = "personal";
 export const REMINDER_SOON_HOURS = 72;
 
 export function isCustomJob(job) {

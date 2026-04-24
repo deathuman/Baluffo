@@ -176,7 +176,7 @@ function bindDesktopLifecycleEvents(clearDesktopNavigationBypass) {
   });
 }
 
-export function startDesktopLifecycle(clearDesktopNavigationBypass) {
+function startDesktopLifecycle(clearDesktopNavigationBypass) {
   if (!desktopState.desktopSession) {
     return;
   }

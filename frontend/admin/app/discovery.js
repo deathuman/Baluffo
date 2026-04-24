@@ -1,8 +1,3 @@
-import {
-  isDiscoveryMobileViewport,
-  setDiscoveryLogOpen,
-  syncDiscoveryLogDisclosure
-} from "./discovery/disclosure.js";
 import { createAdminDiscoveryLogController } from "./discovery/logs.js";
 import { createAdminDiscoveryProgressController } from "./discovery/progress.js";
 import { createAdminDiscoveryWatchController } from "./discovery/watch.js";
