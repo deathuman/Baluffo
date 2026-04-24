@@ -3,6 +3,29 @@ from __future__ import annotations
 from typing import Any
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _first_dict(value: Any) -> dict[str, Any]:
+    for item in _as_list(value):
+        if isinstance(item, dict):
+            return item
+    return {}
+
+
+def _detail_stats(detail: dict[str, Any]) -> dict[str, Any]:
+    return _as_dict(detail.get("stats"))
+
+
+def _detail_stat_int(detail: dict[str, Any], key: str) -> int:
+    return max(0, int(_detail_stats(detail).get(key) or 0))
+
+
 def percentile_ms(values: list[int], percentile: float) -> int:
     if not values:
         return 0
@@ -34,9 +57,7 @@ def build_runtime_timing_summary(
     ]
     stage_totals: dict[str, int] = {key: 0 for key in stage_keys}
     for row in rows:
-        stage_timings = (
-            row.get("stageTimingsMs") if isinstance(row.get("stageTimingsMs"), dict) else {}
-        )
+        stage_timings = _as_dict(row.get("stageTimingsMs"))
         for key in stage_keys:
             stage_totals[key] += max(0, int(stage_timings.get(key) or 0))
     adapter_totals: dict[str, dict[str, int | str]] = {}
@@ -96,25 +117,11 @@ def build_runtime_timing_summary(
             "durationMs": max(0, int(row.get("durationMs") or 0)),
             "keptCount": max(0, int(row.get("keptCount") or 0)),
             "detailPagesVisited": int(
-                (
-                    (
-                        (row.get("details") or [{}])[0]
-                        if isinstance(row.get("details"), list) and row.get("details")
-                        else {}
-                    ).get("stats")
-                    or {}
-                ).get("detail_pages_visited")
+                _as_dict(_first_dict(row.get("details")).get("stats")).get("detail_pages_visited")
                 or 0
             ),
             "detailYieldPct": int(
-                (
-                    (
-                        (row.get("details") or [{}])[0]
-                        if isinstance(row.get("details"), list) and row.get("details")
-                        else {}
-                    ).get("stats")
-                    or {}
-                ).get("detail_yield_percent")
+                _as_dict(_first_dict(row.get("details")).get("stats")).get("detail_yield_percent")
                 or 0
             ),
         }
@@ -152,14 +159,7 @@ def build_runtime_timing_summary(
             "durationMs": max(0, int(row.get("durationMs") or 0)),
             "detailFetchMs": max(
                 0,
-                int(
-                    (
-                        (row.get("stageTimingsMs") or {})
-                        if isinstance(row.get("stageTimingsMs"), dict)
-                        else {}
-                    ).get("detailFetch")
-                    or 0
-                ),
+                int(_as_dict(row.get("stageTimingsMs")).get("detailFetch") or 0),
             ),
             "keptCount": max(0, int(row.get("keptCount") or 0)),
         }
@@ -169,83 +169,36 @@ def build_runtime_timing_summary(
                 for row in rows
                 if max(
                     0,
-                    int(
-                        (
-                            (row.get("stageTimingsMs") or {})
-                            if isinstance(row.get("stageTimingsMs"), dict)
-                            else {}
-                        ).get("detailFetch")
-                        or 0
-                    ),
+                    int(_as_dict(row.get("stageTimingsMs")).get("detailFetch") or 0),
                 )
                 > 0
             ],
-            key=lambda item: int(
-                (
-                    (item.get("stageTimingsMs") or {})
-                    if isinstance(item.get("stageTimingsMs"), dict)
-                    else {}
-                ).get("detailFetch")
-                or 0
-            ),
+            key=lambda item: int(_as_dict(item.get("stageTimingsMs")).get("detailFetch") or 0),
             reverse=True,
         )[:10]
     ]
     static_detail_rows = [
-        (row.get("details") or [])[0]
+        first_detail
         for row in rows
         if (clean_text_fn(row.get("adapter")) or "custom") == "static"
-        and isinstance(row.get("details"), list)
-        and row.get("details")
-        and isinstance((row.get("details") or [])[0], dict)
+        for first_detail in [_first_dict(row.get("details"))]
+        if first_detail
     ]
     static_domain_gate_wait_ms = sum(
-        max(
-            0,
-            int(
-                (detail.get("stats") if isinstance(detail.get("stats"), dict) else {}).get(
-                    "domain_gate_wait_ms"
-                )
-                or 0
-            ),
-        )
-        for detail in static_detail_rows
+        _detail_stat_int(detail, "domain_gate_wait_ms") for detail in static_detail_rows
     )
     static_detail_batch_count = sum(
-        max(
-            0,
-            int(
-                (detail.get("stats") if isinstance(detail.get("stats"), dict) else {}).get(
-                    "detail_batch_count"
-                )
-                or 0
-            ),
-        )
-        for detail in static_detail_rows
+        _detail_stat_int(detail, "detail_batch_count") for detail in static_detail_rows
     )
     static_adaptive_stops = sum(
         1
         for detail in static_detail_rows
-        if max(
-            0,
-            int(
-                (detail.get("stats") if isinstance(detail.get("stats"), dict) else {}).get(
-                    "detail_pages_skipped_by_adaptive_stop"
-                )
-                or 0
-            ),
-        )
-        > 0
+        if _detail_stat_int(detail, "detail_pages_skipped_by_adaptive_stop") > 0
     )
     static_listing_timeout_stops = sum(
         1
         for detail in static_detail_rows
-        if str(
-            (detail.get("stats") if isinstance(detail.get("stats"), dict) else {}).get(
-                "listing_terminal_reason"
-            )
-            or ""
-        ).strip()
+        if str(_detail_stats(detail).get("listing_terminal_reason") or "").strip()
         in {
             "listing_budget_exhausted",
             "listing_timeout",
@@ -253,16 +206,7 @@ def build_runtime_timing_summary(
         }
     )
     static_listing_browser_fallbacks = sum(
-        max(
-            0,
-            int(
-                (detail.get("stats") if isinstance(detail.get("stats"), dict) else {}).get(
-                    "listing_browser_fallbacks"
-                )
-                or 0
-            ),
-        )
-        for detail in static_detail_rows
+        _detail_stat_int(detail, "listing_browser_fallbacks") for detail in static_detail_rows
     )
     return {
         "totalDurationMs": int(sum(durations)),

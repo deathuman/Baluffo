@@ -17,8 +17,6 @@ from .pipeline_source_progress import (
 )
 from .pipeline_source_results import execute_loader
 
-root = None
-
 
 class _RootLike(Protocol):
     def resolve_fetch_browser_fallback_helper(
@@ -37,6 +35,9 @@ class _RootLike(Protocol):
         source_state_rows: dict[str, dict[str, Any]] | None,
         state_row: dict[str, Any],
     ) -> None: ...
+
+
+root: _RootLike | None = None
 
 
 def _root_module() -> _RootLike:

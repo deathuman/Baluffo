@@ -20,8 +20,8 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src` -> `273 errors in 73 files (checked 313 source files)` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, parser/static-runtime, static adapter/detail, and jobs runtime/report-helper scope. |
+| Broad type-check run | `python -m mypy src` -> `260 errors in 68 files (checked 313 source files)` |
+| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, parser/static-runtime, static adapter/detail, jobs runtime/report-helper, and source-execution compatibility scope. |
 | ESLint | `137 warnings, 0 errors` |
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
@@ -38,9 +38,9 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 
 ### P0
 
-1. **Next staged mypy milestone: type the jobs source-execution compatibility cluster.**
-   The next coherent jobs target surfaced by the broad audit is the source-execution compatibility layer: `src/jobs/pipeline_source_progress.py`, `src/jobs/pipeline_stage_source_execution.py`, `src/jobs/fetcher_compat_runtime.py`, and the direct task-state/timing helpers they feed.
-   **Done when:** the enforced mypy scope expands again to cover that source-execution cluster, and those modules stop leaking `Any` through patchable root module references, task-state payloads, timing payloads, and compatibility aliases.
+1. **Next staged mypy milestone: type the jobs reporting/text utility tail cluster.**
+   The next small jobs-side target surfaced by the broad audit is `src/jobs/reporting_summary.py`, `src/jobs/reporting_social.py`, `src/jobs/location_bucket_manifest.py`, `src/jobs/page_gating.py`, `src/jobs/common/http.py`, and `src/jobs/text_utils.py`.
+   **Done when:** the enforced mypy scope expands again to cover that jobs reporting/text utility cluster, and those modules stop leaking `Any` through optional list payloads, URL/text helpers, manifest rows, and nullable page-gating labels.
 
 ### P1
 

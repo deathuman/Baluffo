@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 import time
-from typing import Any
+from typing import Any, Protocol
 
 from src.jobs.common.taxonomy import (
     ClassificationContext,
@@ -21,7 +21,22 @@ from src.shared.utils import now_iso
 
 from .reporting_summary import format_source_error
 
-root = None
+
+class _PipelineSourceProgressRoot(Protocol):
+    def _failure_bucket_from_zero_extract_context(
+        self,
+        cls_context: ClassificationContext,
+        zero_kept_classification: str,
+    ) -> FailureBucket: ...
+
+
+root: _PipelineSourceProgressRoot | None = None
+
+
+def _require_root() -> _PipelineSourceProgressRoot:
+    if root is None:
+        raise RuntimeError("jobs.pipeline_source_progress root is not bound")
+    return root
 
 
 def console_safe_text(value: Any) -> str:
@@ -75,7 +90,7 @@ def fallback_error_report(source_name: str, exc: Exception) -> dict[str, Any]:
     zero_kept_classification = classify_zero_kept(cls_context)
     failure_bucket = map_error_to_failure_bucket(cls_context)
     if failure_bucket == FailureBucket.UNKNOWN:
-        failure_bucket = root._failure_bucket_from_zero_extract_context(
+        failure_bucket = _require_root()._failure_bucket_from_zero_extract_context(
             cls_context,
             zero_kept_classification.value,
         )

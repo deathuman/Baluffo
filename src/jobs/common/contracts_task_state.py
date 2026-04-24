@@ -13,6 +13,10 @@ from src.shared.live_task import (
 )
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def normalize_task_state_payload(
     payload: dict[str, Any],
     *,
@@ -30,7 +34,8 @@ def normalize_task_state_payload(
         finished_at=finished_at,
     )
     live_task_fields = build_live_task_contract_fields(normalized)
-    summary = src.get("summary") if isinstance(src.get("summary"), dict) else {}
+    summary = _as_dict(src.get("summary"))
+    outputs = _as_dict(normalized.get("outputs"))
     return {
         "schemaVersion": SCHEMA_VERSION,
         "taskType": clean_text(normalized.get("taskType")) or "fetch",
@@ -47,8 +52,5 @@ def normalize_task_state_payload(
             "error": _clamped_int(summary.get("error"), 0, 0),
             "excluded": _clamped_int(summary.get("excluded"), 0, 0),
         },
-        "outputs": {
-            "report": clean_text((normalized.get("outputs") or {}).get("report"))
-            or clean_text(report_path)
-        },
+        "outputs": {"report": clean_text(outputs.get("report")) or clean_text(report_path)},
     }

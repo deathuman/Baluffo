@@ -23,22 +23,22 @@ def run_pipeline(*args, **kwargs):
     root_mod = _root_mod()
     previous = getattr(pipeline_mod, "build_redirect_resolver", None)
     try:
-        pipeline_mod.build_redirect_resolver = root_mod.build_redirect_resolver  # type: ignore[assignment]
+        pipeline_mod.build_redirect_resolver = root_mod.build_redirect_resolver
         return pipeline_mod.run_pipeline(*args, **kwargs)
     finally:
         if previous is not None:
-            pipeline_mod.build_redirect_resolver = previous  # type: ignore[assignment]
+            pipeline_mod.build_redirect_resolver = previous
 
 
 def run_scrapy_static_source(*args, **kwargs):
     root_mod = _root_mod()
     previous = getattr(static_scrapy_mod, "registry_entries", None)
     try:
-        static_scrapy_mod.registry_entries = root_mod.registry_entries  # type: ignore[assignment]
+        static_scrapy_mod.registry_entries = root_mod.registry_entries
         return static_mod.run_scrapy_static_source(*args, **kwargs)
     finally:
         if previous is not None:
-            static_scrapy_mod.registry_entries = previous  # type: ignore[assignment]
+            static_scrapy_mod.registry_entries = previous
 
 
 def registry_entries(adapter: str, *, enabled_only: bool = True):

@@ -30,6 +30,10 @@ This page stores completed items moved out of the active repository-health track
    The enforced mypy scope now includes `src/jobs/adapters/static_listing_flow.py`, `src/jobs/adapters/static_detail.py`, `src/jobs/adapters/static.py`, and `src/jobs/adapters/plugins/static/_rendered_cards.py`. This pass preserved the static adapter compatibility roots while normalizing detail payload reads, listing candidate state, and rendered-card primary location typing.
    **Done when:** complete.
 
+7. **Completed: type the jobs source-execution compatibility cluster.**
+   The enforced mypy scope now includes `src/jobs/pipeline_source_progress.py`, `src/jobs/pipeline_stage_source_execution.py`, `src/jobs/fetcher_compat_runtime.py`, `src/jobs/pipeline_timing.py`, and `src/jobs/common/contracts_task_state.py`. This pass preserved the patchable source-execution root assignments while normalizing task-state summary/output payloads, runtime timing/detail metrics, and compatibility runtime monkeypatch aliases. The broad audit dropped from `273` errors in `73` files to `260` errors in `68` files.
+   **Done when:** complete.
+
 ## Completed P1 Items
 
 5. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**
