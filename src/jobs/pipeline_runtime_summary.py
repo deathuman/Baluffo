@@ -18,6 +18,10 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _runtime_non_negative_int(runtime: Any, attr_name: str) -> int:
+    return max(0, int(getattr(runtime, attr_name, 0) or 0))
+
+
 @dataclass
 class PipelineTaskRuntime:
     run_id: str = ""
@@ -246,15 +250,23 @@ def record_completed_source_report(
     report_copy = dict(report)
     report_copy["name"] = name
     with runtime.task_lock:
-        runtime.current_raw_fetched_count = max(
-            0, int(runtime.current_raw_fetched_count or 0)
+        runtime.current_raw_fetched_count = _runtime_non_negative_int(
+            runtime, "current_raw_fetched_count"
         ) + max(0, int(report_copy.get("fetchedCount") or 0))
-        runtime.current_output_count = max(0, int(runtime.current_output_count or 0)) + max(
-            0, int(report_copy.get("keptCount") or 0)
-        )
-        runtime.completed_source_reports[name] = report_copy
-        if name not in runtime.completed_source_order:
-            runtime.completed_source_order.append(name)
+        runtime.current_output_count = _runtime_non_negative_int(
+            runtime, "current_output_count"
+        ) + max(0, int(report_copy.get("keptCount") or 0))
+        completed_reports = getattr(runtime, "completed_source_reports", None)
+        if not isinstance(completed_reports, dict):
+            completed_reports = {}
+            runtime.completed_source_reports = completed_reports
+        completed_order = getattr(runtime, "completed_source_order", None)
+        if not isinstance(completed_order, list):
+            completed_order = []
+            runtime.completed_source_order = completed_order
+        completed_reports[name] = report_copy
+        if name not in completed_order:
+            completed_order.append(name)
 
 
 def build_fetch_live_task_payload(
