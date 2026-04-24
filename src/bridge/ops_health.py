@@ -555,15 +555,11 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
                 "channels": {
                     str(key): {
                         "keptCount": int(as_json_object(value).get("keptCount") or 0),
-                        "uniqueKeptCount": int(
-                            as_json_object(value).get("uniqueKeptCount") or 0
-                        ),
+                        "uniqueKeptCount": int(as_json_object(value).get("uniqueKeptCount") or 0),
                         "officialBoardOverlapCount": int(
                             as_json_object(value).get("officialBoardOverlapCount") or 0
                         ),
-                        "duplicateCount": int(
-                            as_json_object(value).get("duplicateCount") or 0
-                        ),
+                        "duplicateCount": int(as_json_object(value).get("duplicateCount") or 0),
                         "duplicateRate": round(
                             _safe_float(as_json_object(value).get("duplicateRate")), 4
                         ),

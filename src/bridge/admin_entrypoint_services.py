@@ -284,10 +284,14 @@ def get_ops_api() -> _OpsApiLike:
                 normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
                 normalize_discovery_report_contract=root_mod.normalize_discovery_report_contract,
                 desktop_mode=root_mod.RUNTIME_CONFIG.desktop_mode,
-                get_desktop_last_activity_at=lambda: bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT,
+                get_desktop_last_activity_at=lambda: (
+                    bridge_runtime_state.DESKTOP_SESSION_ACTIVITY_AT
+                ),
                 get_owner_state=bridge_runtime_state.get_owner_state,
                 ops_schema_version=root_mod.OPS_SCHEMA_VERSION,
-                get_updater_status_payload=lambda: get_desktop_update_service().get_status_payload(),
+                get_updater_status_payload=lambda: (
+                    get_desktop_update_service().get_status_payload()
+                ),
                 app_version=root_mod.get_app_version(),
             ),
         ),

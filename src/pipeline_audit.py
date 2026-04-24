@@ -171,8 +171,7 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
         "outputCount": safe_int(summary.get("outputCount")),
         "browserFallbackQueueCount": len(
             read_json(
-                report_output_path.parent
-                / "jobs-browser-fallback-queue.json",
+                report_output_path.parent / "jobs-browser-fallback-queue.json",
                 [],
             )
         ),
@@ -202,8 +201,7 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
         ),
         "parserRegressionQueueCount": len(
             read_json(
-                report_output_path.parent
-                / "jobs-parser-regression-queue.json",
+                report_output_path.parent / "jobs-parser-regression-queue.json",
                 [],
             )
         ),
@@ -211,9 +209,9 @@ def summarize_fetch(report: dict[str, Any], jobs: list[dict[str, Any]]) -> dict[
         "slowestAdapters": json_object_rows(timing_summary.get("slowestAdapters"))[:5],
         "slowestSourceLoaders": json_object_rows(runtime.get("slowestSources"))[:10],
         "slowestSourceEntries": detail_rows[:10],
-        "highCostLowYieldSources": json_object_rows(
-            timing_summary.get("highCostLowYieldSources")
-        )[:10],
+        "highCostLowYieldSources": json_object_rows(timing_summary.get("highCostLowYieldSources"))[
+            :10
+        ],
         "detailHeavySources": json_object_rows(timing_summary.get("detailHeavySources"))[:10],
         "productiveExpensiveSources": productive_expensive[:10],
         "failedSources": failed_sources[:25],

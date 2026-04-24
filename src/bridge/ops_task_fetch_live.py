@@ -222,9 +222,7 @@ def build_fetch_live_payload(
         )
     )
     snapshot_counts = _ops_live_payload.fetch_progress_counts(
-        {"taskProgress": fetch_snapshot.task_progress}
-        if fetch_snapshot is not None
-        else {}
+        {"taskProgress": fetch_snapshot.task_progress} if fetch_snapshot is not None else {}
     )
     snapshot_counts_raw = (
         copy_json_object(as_json_object(fetch_snapshot.task_progress).get("counts"))
@@ -232,7 +230,9 @@ def build_fetch_live_payload(
         else {}
     )
     report_counts = _ops_live_payload.fetch_progress_counts(fetch_report)
-    report_counts_raw = copy_json_object(as_json_object(fetch_report.get("taskProgress")).get("counts"))
+    report_counts_raw = copy_json_object(
+        as_json_object(fetch_report.get("taskProgress")).get("counts")
+    )
     task_counts = (
         _ops_live_payload.fetch_progress_counts(fetch_tasks)
         if task_artifact_matches_current

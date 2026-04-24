@@ -276,9 +276,7 @@ def _classify_source(
 ) -> tuple[str, str]:
     report_present = isinstance(report_row, dict)
     report_data = as_json_object(report_row)
-    report_status = safe_text(
-        report_data.get("reportStatus") or report_data.get("status")
-    ).lower()
+    report_status = safe_text(report_data.get("reportStatus") or report_data.get("status")).lower()
     state_status = safe_text(state_row.get("lastStatus")).lower()
     report_kept = safe_int(report_data.get("reportKeptCount"))
     state_kept = safe_int(state_row.get("lastKeptCount"))
