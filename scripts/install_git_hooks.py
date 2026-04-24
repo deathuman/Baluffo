@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -8,7 +9,14 @@ ROOT = Path(__file__).resolve().parents[1]
 HOOKS_PATH = ".githooks"
 
 
+def _is_ci_environment() -> bool:
+    return os.getenv("CI", "").strip().lower() == "true"
+
+
 def _verify_mypy_available() -> int:
+    if _is_ci_environment():
+        return 0
+
     completed = subprocess.run(
         [sys.executable, "-m", "mypy", "--version"],
         cwd=ROOT,

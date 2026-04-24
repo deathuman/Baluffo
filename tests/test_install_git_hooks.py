@@ -25,6 +25,7 @@ def test_install_git_hooks_fails_fast_when_mypy_is_missing(monkeypatch, capsys) 
         return Result()
 
     monkeypatch.setattr(install_git_hooks.subprocess, "run", fake_run)
+    monkeypatch.delenv("CI", raising=False)
 
     assert install_git_hooks.main() == 1
     assert calls == [[sys.executable, "-m", "mypy", "--version"]]
@@ -53,10 +54,43 @@ def test_install_git_hooks_sets_core_hooks_path_after_mypy_check(monkeypatch, ca
         return Result()
 
     monkeypatch.setattr(install_git_hooks.subprocess, "run", fake_run)
+    monkeypatch.delenv("CI", raising=False)
 
     assert install_git_hooks.main() == 0
     assert calls == [
         [sys.executable, "-m", "mypy", "--version"],
+        ["git", "config", "--local", "core.hooksPath", install_git_hooks.HOOKS_PATH],
+    ]
+    assert (
+        f"Configured git core.hooksPath to {install_git_hooks.HOOKS_PATH}"
+        in capsys.readouterr().out
+    )
+
+
+def test_install_git_hooks_skips_mypy_check_in_ci(monkeypatch, capsys) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(
+        command: list[str],
+        cwd=None,
+        check=False,
+        capture_output=False,
+        text=False,
+    ):  # type: ignore[no-untyped-def]
+        calls.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(install_git_hooks.subprocess, "run", fake_run)
+    monkeypatch.setenv("CI", "true")
+
+    assert install_git_hooks.main() == 0
+    assert calls == [
         ["git", "config", "--local", "core.hooksPath", install_git_hooks.HOOKS_PATH],
     ]
     assert (
