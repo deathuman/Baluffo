@@ -114,6 +114,7 @@ Archived historical notes live under `docs/archive/history/`. They are useful fo
 | Document | Status | Notes |
 |----------|--------|-------|
 | [`archive/history/final-leaf-closeout-program.md`](archive/history/final-leaf-closeout-program.md) | **Historical** | Final multi-wave cleanup tracker, verification history, and intentional stop list |
+| [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md) | **Historical** | Completed repository-health tracker items moved out of the active priority list |
 | [`archive/history/runtime-first-cleanup-handoff.md`](archive/history/runtime-first-cleanup-handoff.md) | **Historical** | Pickup note for the older runtime-first cleanup campaign after checking the active routing docs first |
 | [`archive/history/scraping-pipeline-run-notes.md`](archive/history/scraping-pipeline-run-notes.md) | **Historical** | Snapshot run notes from 2026-03-17; useful for context but should not override current code/contracts |
 

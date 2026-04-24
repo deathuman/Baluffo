@@ -9,6 +9,8 @@
 
 This page converts an external repository analysis into a repo-native action tracker. The source analysis was reviewed against the current repository state at `f722957`, and only validated claims are carried forward into strengths, gaps, and next steps.
 
+Completed items are archived in [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md) so this page stays focused on active repository-health work.
+
 ## Validation Snapshot
 
 | Metric | Current validated value |
@@ -37,31 +39,11 @@ This page converts an external repository analysis into a repo-native action tra
 
 ### P0
 
-1. **Completed: type the `admin_bridge` composition root and its immediate helper boundary.**
-   The enforced mypy scope now includes `src/admin_bridge.py`, `src/bridge/admin_entrypoint_services.py`, and `src/bridge/admin_entrypoint_runtime.py` alongside the prior seven-file bridge/admin leaf scope. The surrounding service/runtime helper aliases now expose typed facade protocols instead of leaking `Any` into the composition root, and the broad audit dropped from `835` to `796` errors.
-   **Done when:** complete.
-
-2. **Completed: add a Python dependency lock strategy for reproducible builds.**
-   `requirements-lock.txt` is now the canonical Python lock artifact, and CI/release install surfaces consume it instead of floating `requirements.txt`.
-   **Done when:** complete.
-
-3. **Completed: stop generated-file newline churn in `data/source-approval-state.json`.**
-   `save_json_atomic` now writes newline-terminated JSON, and targeted regression coverage protects the writer behavior used by the approval-state file.
-   **Done when:** complete.
-
 4. **In progress: resolve GitHub Dependabot high-severity vulnerabilities.**
    GitHub reported `6` high vulnerabilities on the default branch during the latest push. The local Scrapy remediation updates the direct dependency from `Scrapy==2.12.0` to `Scrapy==2.14.2` and regenerates `requirements-lock.txt`; the Scrapy-adjacent lock entries (`scrapy-playwright`, `twisted`, `cryptography`, `pyopenssl`, `lxml`, `parsel`, `w3lib`, and `queuelib`) remained stable, and `brotli` is not present in the lock. Validation so far: `python -c "import scrapy; print(scrapy.__version__)"` -> `2.14.2`, `python -m pip check` passed, focused Scrapy/runtime tests passed (`187 passed`), `cmd /c npm run test:refactor:changed` passed, `cmd /c npm run lint:precommit:changed` passed, and `python scripts/orchestrator.py build --force` passed with run `20260424_122828`. `uvx pip-audit -r requirements-lock.txt` reports one residual Scrapy advisory (`PYSEC-2017-83` / `GHSA-h7wm-ph43-c39p` / `CVE-2017-14158`) with no fix version; the affected Scrapy file-download storage path (`FilesPipeline` / `S3FilesStore`) is not used in `src/` or tests.
    **Done when:** Dependabot shows no unresolved high or critical vulnerabilities for the default branch, dependency lock files reflect the approved updates, and relevant Python/Node test gates pass.
 
 ### P1
-
-5. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**
-   The enforced mypy scope now includes the bridge/admin runtime surface that feeds task status, ops health, and report summaries, plus a shared internal JSON-shape helper. The lane covers `src/shared/json_shapes.py`, `src/shared/live_task.py`, `src/bridge/ops_task_fetch_live.py`, `src/bridge/ops_task_discovery_live.py`, `src/bridge/discovery_service.py`, `src/bridge/sync_service.py`, `src/bridge/sync_task_flow.py`, `src/bridge/ops_health.py`, `src/bridge/routes/post_routes_admin.py`, and `src/fetcher_metrics.py`. The broad audit dropped from `796` errors in `119` files to `677` errors in `110` files.
-   **Done when:** complete.
-
-6. **Completed: continue the mypy staged rollout through source/discovery audit JSON lanes.**
-   The enforced mypy scope now includes the JSON-heavy source/discovery reporting and audit helpers: `src/source_discovery/reporting_progress.py`, `src/source_discovery/runtime_metrics.py`, `src/pipeline_audit.py`, and `src/source_audit_sweep.py`. This lane reused shared JSON-shape narrowing without changing report payloads, markdown text, or CLI behavior. The broad audit dropped from `677` errors in `110` files to `607` errors in `106` files.
-   **Done when:** complete.
 
 7. **Continue the mypy staged rollout through job runtime/report contract helpers.**
    Repo-wide mypy is still not complete: the broad audit reports `607` errors in `106` files. The next related non-release lane appears to be job runtime/report contract helpers, including `src/jobs/reporting_queues.py`, `src/jobs/pipeline_runtime_summary.py`, `src/jobs/common/contracts_task_state.py`, `src/jobs/common/contracts_source_reports.py`, `src/jobs/common/contracts_runtime.py`, and adjacent `src/source_registry.py` JSON normalization. Defer desktop updater and release-repeatability typing to a separate release-sensitive lane.
