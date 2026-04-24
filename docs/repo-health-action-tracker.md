@@ -20,13 +20,12 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
 | Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src` -> `452 errors in 94 files (checked 312 source files)` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, and parser/static-runtime scope. |
+| Broad type-check run | `python -m mypy src` -> `295 errors in 81 files (checked 313 source files)` |
+| Enforced type-check gate | `python -m mypy --config-file mypy.ini` passes on the staged bridge/admin, source-discovery, audit, jobs contracts/runtime/loader/plugin, provider-helper, parser/static-runtime, and static adapter/detail scope. |
 | ESLint | `137 warnings, 0 errors` |
 | `knip` | `20` unused JS exports |
 | Python lock file | `requirements-lock.txt` present |
 | Node lock file | `package-lock.json` present |
-| Dependabot alert signal | GitHub push reported `2` high vulnerabilities on the default branch after the first Scrapy remediation; local Scrapy remediation now targets latest released `Scrapy==2.15.0` and the latest `scrapy-playwright` baseline `>=0.0.46`, and exact alert closure still needs Dependabot dashboard validation after push |
 
 ## Confirmed Strengths Worth Protecting
 
@@ -39,27 +38,14 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 
 ### P0
 
-1. **Next staged mypy milestone: type the remaining static adapter/detail cluster.**
-   The parser/static-runtime pass is now green. It normalized the provider JSON parser boundary, fixed the Ashby HTML parser redefinition seam, made `static_runtime` use explicit page/state normalization, widened the enforced gate from `34` files to `37` files, and dropped the broad audit from `473 errors in 97 files` to `452 errors in 94 files`.
-   The next coherent jobs target is the remaining static adapter/detail cluster: `src/jobs/adapters/html_parsers.py`, `src/jobs/adapters/static_detail_heuristics.py`, and `src/jobs/adapters/static_listing.py`, plus any tiny adjacent helper fallout needed to make that seam checkable.
-   **Done when:** the enforced mypy scope expands beyond the current thirty-seven-file gate to cover the static adapter/detail cluster, and those modules stop leaking `Any` through HTML/detail parsing, listing-state dict reads, and static adapter helper boundaries.
-
-2. **In progress: resolve GitHub Dependabot high-severity vulnerabilities.**
-   GitHub reported `6` high vulnerabilities on the default branch before the first Scrapy remediation, then `2` high vulnerabilities after `Scrapy==2.14.2` landed. The local Scrapy remediation now updates the direct dependency to latest released `Scrapy==2.15.0`, raises the `scrapy-playwright` source requirement floor to the latest published `>=0.0.46`, and regenerates `requirements-lock.txt`; if Dependabot still requires `>2.15.0`, the remaining alerts are upstream-blocked until a newer Scrapy release exists. The Scrapy-adjacent lock entries (`scrapy-playwright`, `twisted`, `cryptography`, `pyopenssl`, `lxml`, `parsel`, `w3lib`, and `queuelib`) remained stable, and `brotli` is not present in the lock. Validation so far: `python -c "import scrapy, scrapy_playwright; print(scrapy.__version__); print(scrapy_playwright.__version__)"` -> `2.15.0` / `0.0.46`, `python -m pip check` passed, focused Scrapy/runtime tests passed (`187 passed`), `cmd /c npm run test:refactor:changed` passed, `cmd /c npm run lint:precommit:changed` passed, and `python scripts/orchestrator.py build --force` passed with run `20260424_133557`. `uvx pip-audit -r requirements-lock.txt` reports one residual Scrapy advisory (`PYSEC-2017-83` / `GHSA-h7wm-ph43-c39p` / `CVE-2017-14158`) with no fix version; the affected Scrapy file-download storage path (`FilesPipeline` / `S3FilesStore`) is not used in `src/` or tests.
-   **Done when:** Dependabot shows no unresolved high or critical vulnerabilities for the default branch, dependency lock files reflect the approved updates, and relevant Python/Node test gates pass.
-
-3. **Completed: add a Python dependency lock strategy for reproducible builds.**
-   `requirements-lock.txt` is now the canonical Python lock artifact, and CI/release install surfaces consume it instead of floating `requirements.txt`.
-   **Done when:** complete.
-
-4. **Completed: stop generated-file newline churn in `data/source-approval-state.json`.**
-   `save_json_atomic` now writes newline-terminated JSON, and targeted regression coverage protects the writer behavior used by the approval-state file.
-   **Done when:** complete.
+1. **Next staged mypy milestone: type the remaining static listing/detail runtime cluster.**
+   The next coherent jobs target is the adjacent static runtime cluster surfaced by the broad audit: `src/jobs/adapters/static_listing_flow.py`, `src/jobs/adapters/static_detail.py`, `src/jobs/adapters/static.py`, and the direct static plugin helpers they feed, including `src/jobs/adapters/plugins/static/_rendered_cards.py` when needed.
+   **Done when:** the enforced mypy scope expands again to cover that static listing/detail runtime cluster, and those modules stop leaking `Any` through listing candidate state, detail traversal payloads, patchable root module references, and rendered-card location handling.
 
 ### P1
 
 7. **Continue the mypy staged rollout through job runtime/report contract helpers.**
-   Repo-wide mypy is still not complete: the broad audit reports `607` errors in `106` files. The next related non-release lane appears to be job runtime/report contract helpers, including `src/jobs/reporting_queues.py`, `src/jobs/pipeline_runtime_summary.py`, `src/jobs/common/contracts_task_state.py`, `src/jobs/common/contracts_source_reports.py`, `src/jobs/common/contracts_runtime.py`, and adjacent `src/source_registry.py` JSON normalization. Defer desktop updater and release-repeatability typing to a separate release-sensitive lane.
+   Repo-wide mypy is still not complete: the broad audit reports `295` errors in `81` files. After the static listing/detail runtime cluster, the next related non-release lane appears to be job runtime/report contract helpers, including `src/jobs/reporting_queues.py`, `src/jobs/common/contracts_runtime.py`, `src/jobs/pipeline_source_loop.py`, `src/jobs/pipeline_finalize.py`, and adjacent source-registry JSON normalization. Defer desktop updater and release-repeatability typing to a separate release-sensitive lane.
    **Done when:** the next cohesive lane is added to `mypy.ini`, focused tests for that lane remain green, and the broad audit count is re-recorded.
 
 8. **Raise coverage in the weakest validated modules.**

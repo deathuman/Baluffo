@@ -61,6 +61,10 @@ KNOWN_NON_JOB_DETAIL_PATH_TOKENS = (
 )
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def is_known_non_job_detail_url(url: str) -> bool:
     absolute = normalize_url(url) or clean_text(url)
     if not absolute:
@@ -103,9 +107,7 @@ def _source_tail_metrics(
     entry = (source_state_rows or {}).get(source_key) if isinstance(source_state_rows, dict) else {}
     if not isinstance(entry, dict):
         return {}
-    stage_timings = (
-        entry.get("lastStageTimingsMs") if isinstance(entry.get("lastStageTimingsMs"), dict) else {}
-    )
+    stage_timings = _as_dict(entry.get("lastStageTimingsMs"))
     return {
         "last_detail_pages": int(entry.get("lastDetailPagesVisited") or 0),
         "last_kept": int(entry.get("lastKeptCount") or 0),

@@ -45,6 +45,10 @@ _should_try_listing_browser_fallback = _static_listing_flow._should_try_listing_
 _extract_listing_candidates = _static_listing_flow._extract_listing_candidates
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def process_static_source(ctx: StaticSourceContext) -> None:
     _static_listing_flow.root = root
     if _handle_skip_and_revalidation(ctx):
@@ -119,10 +123,9 @@ def process_static_source(ctx: StaticSourceContext) -> None:
         def _fetch_listing_job(batch_job: dict[str, Any], url: str, _timeout_s: int) -> str:
             del _timeout_s
             fetch_started = time.perf_counter()
-            payload = batch_job.get("payload") if isinstance(batch_job, dict) else {}
+            payload = _as_dict(batch_job.get("payload") if isinstance(batch_job, dict) else {})
             source_budget_s = int(
-                (payload or {}).get("sourceBudgetS")
-                or ctx.runtime_config.static_source_time_budget_s
+                payload.get("sourceBudgetS") or ctx.runtime_config.static_source_time_budget_s
             )
             ctx.sync_source_deadline(source_budget_s)
             remaining_budget_s = ctx.remaining_budget_s()
@@ -183,10 +186,9 @@ def process_static_source(ctx: StaticSourceContext) -> None:
         ) -> str:
             del _timeout_s
             fetch_started = time.perf_counter()
-            payload = batch_job.get("payload") if isinstance(batch_job, dict) else {}
+            payload = _as_dict(batch_job.get("payload") if isinstance(batch_job, dict) else {})
             source_budget_s = int(
-                (payload or {}).get("sourceBudgetS")
-                or ctx.runtime_config.static_source_time_budget_s
+                payload.get("sourceBudgetS") or ctx.runtime_config.static_source_time_budget_s
             )
             ctx.sync_source_deadline(source_budget_s)
             remaining_budget_s = ctx.remaining_budget_s()
@@ -322,12 +324,9 @@ def process_static_source(ctx: StaticSourceContext) -> None:
                     f"for {ctx.source_name}."
                 ),
             )
-            payload = result.get("payload") if isinstance(result.get("payload"), dict) else {}
-            domain_profile = (
-                payload.get("domainProfile")
-                if isinstance(payload.get("domainProfile"), dict)
-                else domain_profile_for_url(page_url)
-            )
+            payload = _as_dict(result.get("payload"))
+            payload_domain_profile = _as_dict(payload.get("domainProfile"))
+            domain_profile = payload_domain_profile or domain_profile_for_url(page_url)
             source_budget_s = int(
                 payload.get("sourceBudgetS") or ctx.runtime_config.static_source_time_budget_s
             )

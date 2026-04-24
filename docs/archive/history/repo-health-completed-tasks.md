@@ -18,6 +18,14 @@ This page stores completed items moved out of the active repository-health track
    `save_json_atomic` now writes newline-terminated JSON, and targeted regression coverage protects the writer behavior used by the approval-state file.
    **Done when:** complete.
 
+4. **Completed: type the static adapter/detail parser cluster.**
+   The enforced mypy scope now includes `src/jobs/adapters/html_parsers.py`, `src/jobs/adapters/static_detail_heuristics.py`, and `src/jobs/adapters/static_listing.py`. This pass normalized JSON-LD organization/identifier reads, stage timing payloads, and listing batch payload/profile reads without changing parser output, traversal behavior, cache decisions, or progress payloads. The broad audit dropped from `452` errors in `94` files to `295` errors in `81` files.
+   **Done when:** complete.
+
+5. **Completed: resolve GitHub Dependabot high-severity vulnerabilities.**
+   The Scrapy remediation updated the direct dependency to the latest released `Scrapy==2.15.0`, raised the `scrapy-playwright` source requirement floor to `>=0.0.46`, and regenerated `requirements-lock.txt`. The remediation was validated with the dependency import/version check, `python -m pip check`, focused Scrapy/runtime tests, refactor and lint gates, and a forced orchestrator build; the remaining `pip-audit` Scrapy advisory had no fixed version and affected an unused Scrapy file-download storage path.
+   **Done when:** complete.
+
 ## Completed P1 Items
 
 5. **Completed: continue the mypy staged rollout through bridge live-payload and report JSON helpers.**

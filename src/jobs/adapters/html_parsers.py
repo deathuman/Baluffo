@@ -22,6 +22,10 @@ from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def extract_json_ld_blocks(html_text: str) -> list[str]:
     return re.findall(
         r'(?is)<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
@@ -339,11 +343,7 @@ def parse_gamesindustry_html(
             continue
         for row in iter_job_postings_from_jsonld(payload):
             title = clean_text(row.get("title"))
-            org = (
-                row.get("hiringOrganization")
-                if isinstance(row.get("hiringOrganization"), dict)
-                else {}
-            )
+            org = _as_dict(row.get("hiringOrganization"))
             company = clean_text(org.get("name"))
             location_details = parse_jobposting_location_details(row.get("jobLocation"))
             link = clean_text(row.get("url"))
@@ -351,7 +351,7 @@ def parse_gamesindustry_html(
                 link = urljoin(base_url, link)
             if not title or not company:
                 continue
-            identifier = row.get("identifier") if isinstance(row.get("identifier"), dict) else {}
+            identifier = _as_dict(row.get("identifier"))
             push_job(
                 {
                     "sourceJobId": clean_text(identifier.get("value")),
