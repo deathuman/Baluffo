@@ -41,6 +41,27 @@ STARTUP_METRIC_CATEGORIES = {
     "probe",
     "unknown",
 }
+STARTUP_METRIC_CATEGORY_PREFIXES = (
+    ("jobs_", "page"),
+    ("saved_", "page"),
+    ("admin_", "page"),
+)
+STARTUP_METRIC_CATEGORY_TOKENS = (
+    ("port_retry", "port_retry"),
+    ("handoff", "handoff"),
+    ("reclaim", "recovery"),
+    ("recovery", "recovery"),
+    ("lock_", "recovery"),
+    ("shutdown", "shutdown"),
+    ("window_closed", "shutdown"),
+    ("browser", "browser"),
+    ("bridge", "bridge"),
+    ("site", "site"),
+    ("window", "window"),
+    ("shell_window", "window"),
+    ("probe", "probe"),
+    ("launch", "launch"),
+)
 
 
 def startup_probe_enabled(env: dict[str, str] | None = None) -> bool:
@@ -73,30 +94,23 @@ def startup_metric_category(event: str) -> str:
     normalized = str(event or "").strip().lower()
     if not normalized:
         return STARTUP_METRIC_DEFAULT_CATEGORY
-    if normalized.startswith(("jobs_", "saved_", "admin_")):
-        category = "page"
-    elif "port_retry" in normalized:
-        category = "port_retry"
-    elif "handoff" in normalized:
-        category = "handoff"
-    elif "reclaim" in normalized or "recovery" in normalized or "lock_" in normalized:
-        category = "recovery"
-    elif "shutdown" in normalized or "window_closed" in normalized:
-        category = "shutdown"
-    elif "browser" in normalized:
-        category = "browser"
-    elif "bridge" in normalized:
-        category = "bridge"
-    elif "site" in normalized:
-        category = "site"
-    elif "window" in normalized or "shell_window" in normalized:
-        category = "window"
-    elif "probe" in normalized:
-        category = "probe"
-    elif "launch" in normalized:
-        category = "launch"
-    else:
-        category = STARTUP_METRIC_DEFAULT_CATEGORY
+    category = next(
+        (
+            candidate
+            for prefix, candidate in STARTUP_METRIC_CATEGORY_PREFIXES
+            if normalized.startswith(prefix)
+        ),
+        "",
+    )
+    if not category:
+        category = next(
+            (
+                candidate
+                for token, candidate in STARTUP_METRIC_CATEGORY_TOKENS
+                if token in normalized
+            ),
+            STARTUP_METRIC_DEFAULT_CATEGORY,
+        )
     return category if category in STARTUP_METRIC_CATEGORIES else STARTUP_METRIC_DEFAULT_CATEGORY
 
 
