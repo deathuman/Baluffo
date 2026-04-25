@@ -149,6 +149,11 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - `/app/update-status` is the desktop source of truth for installed app version and updater state. Jobs/Saved/Admin desktop chrome reads `currentVersion` from this payload.
 - `/ops/alerts/ack` does not persist acknowledgement for active non-dismissible alerts. The first-run `fetch_never_run` guidance remains visible until a successful fetch clears the condition.
 - `/ops/task-live/<taskType>` is the detailed live surface for fetch/discovery/sync. It emits `workItems`, `recentEvents`, `taskProgress`, and lifecycle fields; it does not emit a detailed `tasks` alias anymore.
+- `recentEvents` rows on `/ops/task-live/<taskType>` are normalized by `src/shared/live_task.py` and use the shared live task event envelope:
+  - `schemaVersion`: currently `1`.
+  - `event`: stable event token, preferring an explicit `event`, then `phaseKey`, then `live_task_event`.
+  - `timestamp`, `level`, `taskType`, `runId`, `workItemId`, `phaseKey`, and `message`: compatibility fields used by Admin Ops and support diagnostics.
+- `taskProgress`, `workItems`, and `recentEvents` are the support-ready live task contract for fetch/discovery/sync. They should be extended through the shared normalizers rather than by adding task-specific parallel event formats.
 - `/ops/task-state` is unchanged. Its top-level `tasks` array remains the compact current-task summary contract used by Ops and Jobs.
 - Saved-page bridge consumers should keep route calls inside slice-local `frontend/saved/services.js`; page behavior now fans out through `frontend/saved/app/runtime/*.js` and `frontend/saved/app/admin-bridge-state.js`, not through new root facades.
 - Long-running admin tasks are now **runId-owned**. `runId` is the only lifecycle identity for fetch, discovery, sync, and pipeline rows. Timestamp-only matching is not part of the runtime lifecycle model anymore.

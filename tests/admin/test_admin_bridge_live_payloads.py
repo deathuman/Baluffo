@@ -28,6 +28,25 @@ class _CurrentTaskStateCase:
     pid_is_running: bool | None = None
 
 
+def assert_live_task_event_envelope(
+    event: dict[str, object],
+    *,
+    task_type: str,
+    run_id: str,
+    event_name: str,
+    phase_key: str,
+) -> None:
+    assert event.get("schemaVersion") == 1
+    assert event.get("event") == event_name
+    assert event.get("taskType") == task_type
+    assert event.get("runId") == run_id
+    assert event.get("phaseKey") == phase_key
+    assert "timestamp" in event
+    assert "level" in event
+    assert "workItemId" in event
+    assert "message" in event
+
+
 def _setup_active_tasks_projection() -> Callable[[], None]:
     started_at = admin_bridge.now_iso()
     admin_bridge.save_json_atomic(
@@ -603,6 +622,13 @@ def test_get_task_live_payload_fetch_preserves_shared_contract() -> None:
     assert ((work_items[0].get("progress") or {}).get("counts") or {}).get("emittedJobs") == 3
     recent_events = payload.get("recentEvents") or []
     assert len(recent_events) == 1
+    assert_live_task_event_envelope(
+        recent_events[0],
+        task_type="fetch",
+        run_id=run_id,
+        event_name="details",
+        phase_key="details",
+    )
     assert recent_events[0].get("message") == "Fetching details"
 
 
@@ -893,6 +919,13 @@ def test_get_task_live_payload_discovery_preserves_shared_contract() -> None:
     assert ((work_items[0].get("progress") or {}).get("counts") or {}).get("healthyCount") == 3
     recent_events = payload.get("recentEvents") or []
     assert len(recent_events) == 1
+    assert_live_task_event_envelope(
+        recent_events[0],
+        task_type="discovery",
+        run_id=run_id,
+        event_name="probing_candidates",
+        phase_key="probing_candidates",
+    )
     assert recent_events[0].get("phaseKey") == "probing_candidates"
     assert "endpoints 4" in str(recent_events[0].get("message") or "")
     assert "queued 3" in str(recent_events[0].get("message") or "")
@@ -966,6 +999,13 @@ def test_get_task_live_payload_sync_preserves_active_live_contract() -> None:
     assert work_items[0].get("id") == "registry_pull"
     recent_events = payload.get("recentEvents") or []
     assert len(recent_events) == 1
+    assert_live_task_event_envelope(
+        recent_events[0],
+        task_type="sync",
+        run_id=run_id,
+        event_name="sync_pull",
+        phase_key="sync_pull",
+    )
     assert recent_events[0].get("message") == "Pulling remote registry"
 
 

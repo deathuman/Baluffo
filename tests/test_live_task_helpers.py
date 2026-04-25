@@ -1,8 +1,10 @@
 from src.jobs.pipeline_runtime import snapshot_task_rows
 from src.shared.live_task import (
+    append_live_task_event,
     build_live_task_contract_fields,
     build_live_task_payload,
     build_live_task_progress_payload,
+    normalize_live_task_event,
     normalize_live_task_payload,
 )
 
@@ -43,6 +45,8 @@ def test_build_live_task_contract_fields_emits_tasks_alias_without_shared_rows()
     assert fields["taskProgress"]["counts"] == {"sourceCount": 3, "runningTasks": 1}
     assert "tasks" not in fields
     assert fields["workItems"][0]["status"] == "running"
+    assert fields["recentEvents"][0]["schemaVersion"] == 1
+    assert fields["recentEvents"][0]["event"] == "execute_sources"
     assert fields["recentEvents"][0]["message"] == "Running source 1"
 
 
@@ -82,6 +86,75 @@ def test_normalize_live_task_payload_accepts_legacy_tasks_input() -> None:
     assert len(normalized["workItems"]) == 1
     assert normalized["workItems"][0]["id"] == "legacy_source_1"
     assert normalized["recentEvents"][0]["message"] == "Legacy event"
+    assert normalized["recentEvents"][0]["event"] == "live_task_event"
+
+
+def test_normalize_live_task_event_emits_versioned_event_envelope() -> None:
+    event = normalize_live_task_event(
+        {
+            "timestamp": "2026-03-08T10:00:02.000Z",
+            "level": "invalid",
+            "event": "source_started",
+            "phaseKey": "execute_sources",
+            "workItemId": "source_1",
+            "message": "Running source 1",
+        },
+        default_task_type="fetch",
+        default_run_id="fetch_live_1",
+    )
+
+    assert event == {
+        "schemaVersion": 1,
+        "timestamp": "2026-03-08T10:00:02.000Z",
+        "level": "info",
+        "event": "source_started",
+        "taskType": "fetch",
+        "runId": "fetch_live_1",
+        "workItemId": "source_1",
+        "phaseKey": "execute_sources",
+        "message": "Running source 1",
+    }
+
+
+def test_normalize_live_task_event_derives_stable_event_names() -> None:
+    phase_event = normalize_live_task_event(
+        {"phaseKey": "probing_candidates", "message": "Probing candidates"},
+        default_task_type="discovery",
+    )
+    default_event = normalize_live_task_event(
+        {"message": "Sync progress"},
+        default_task_type="sync",
+    )
+
+    assert phase_event["event"] == "probing_candidates"
+    assert phase_event["schemaVersion"] == 1
+    assert default_event["event"] == "live_task_event"
+    assert default_event["schemaVersion"] == 1
+
+
+def test_append_live_task_event_uses_shared_event_envelope() -> None:
+    events = append_live_task_event(
+        [],
+        {
+            "timestamp": "2026-03-08T10:00:02.000Z",
+            "phaseKey": "sync_pull",
+            "message": "Pulling remote registry",
+        },
+    )
+
+    assert events == [
+        {
+            "schemaVersion": 1,
+            "timestamp": "2026-03-08T10:00:02.000Z",
+            "level": "info",
+            "event": "sync_pull",
+            "taskType": "",
+            "runId": "",
+            "workItemId": "",
+            "phaseKey": "sync_pull",
+            "message": "Pulling remote registry",
+        }
+    ]
 
 
 def test_snapshot_task_rows_returns_public_copy_of_runtime_rows() -> None:

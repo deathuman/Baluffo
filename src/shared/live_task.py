@@ -10,6 +10,9 @@ from src.shared.json_shapes import (
 )
 from src.shared.text_utils import clean_text, norm_text
 
+LIVE_TASK_EVENT_SCHEMA_VERSION = 1
+LIVE_TASK_EVENT_DEFAULT_NAME = "live_task_event"
+
 
 def _clamped_int(value: Any, default: int = 0) -> int:
     try:
@@ -87,13 +90,17 @@ def normalize_live_task_event(
     level = clean_text(src.get("level")).lower() or "info"
     if level not in {"debug", "muted", "info", "warn", "error", "success", "warning"}:
         level = "info"
+    phase_key = clean_text(src.get("phaseKey"))
+    event = clean_text(src.get("event")) or phase_key or LIVE_TASK_EVENT_DEFAULT_NAME
     return {
+        "schemaVersion": LIVE_TASK_EVENT_SCHEMA_VERSION,
         "timestamp": clean_text(src.get("timestamp")),
         "level": level,
+        "event": event,
         "taskType": clean_text(src.get("taskType")) or clean_text(default_task_type),
         "runId": clean_text(src.get("runId")) or clean_text(default_run_id),
         "workItemId": clean_text(src.get("workItemId")),
-        "phaseKey": clean_text(src.get("phaseKey")),
+        "phaseKey": phase_key,
         "message": clean_text(src.get("message")),
     }
 

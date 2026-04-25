@@ -327,6 +327,9 @@ Fetcher and discovery reports may include a shared `taskProgress` object for the
 - The domain layer is responsible for mapping `taskProgress` into the rendered progress view.
 - The shared progress renderer only renders the derived view model; it must not infer phases or ratios from raw report counters.
 - Raw report counters remain useful for details, but the primary loading-bar state comes from `taskProgress`.
+- `/ops/task-live/<taskType>` is the detailed Admin Ops live task contract for fetch, discovery, and sync. Its `recentEvents` rows are normalized by `src/shared/live_task.py` and include `schemaVersion`, `event`, `timestamp`, `level`, `taskType`, `runId`, `workItemId`, `phaseKey`, and `message`.
+- The live task `event` token is additive and stable for diagnostics. It uses an explicit row `event` when present, then `phaseKey`, then `live_task_event`; existing consumers should continue to rely on the compatibility fields they already read.
+- Do not introduce task-specific parallel live event formats for fetch, discovery, or sync. Extend `taskProgress`, `workItems`, and `recentEvents` through the shared normalizers.
 
 ### Lifecycle identity contract
 

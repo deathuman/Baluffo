@@ -67,7 +67,7 @@ P2-11 and P2-12 are complete and archived; the remaining items below are the act
 14. **Evaluate structured logging for support and ops diagnostics.**
    The repo already has strong observability hooks; structured logs would make support bundles and smoke artifacts easier to consume programmatically. Treat this as a phased effort under one tracker item:
    - Phase 1 complete: retained admin bridge diagnostic events are written to `data/admin-bridge-events.jsonl` under the configured data directory with bounded retention and redaction, while existing console logging behavior is preserved.
-   - Remaining Phase 2: structured live task events for fetch, discovery, and sync payloads consumed by Admin Ops.
+   - Phase 2 complete: `/ops/task-live/<taskType>` now uses the shared `src/shared/live_task.py` event envelope for fetch, discovery, and sync `recentEvents`, with `schemaVersion`, `event`, lifecycle fields, support-value docs, and focused regression coverage.
    - Remaining Phase 3: structured startup diagnostics for desktop launch, recovery, and packaged support scenarios.
    **Done when:** all three surfaces have a structured format, documented support value, and focused regression coverage, or the remaining phases are intentionally split into separate tracker items.
 
