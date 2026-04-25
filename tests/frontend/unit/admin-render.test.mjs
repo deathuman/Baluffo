@@ -9,6 +9,12 @@ import {
   renderAdminOpsHistory,
   renderSourcesTableHtml
 } from "../../../frontend/admin/render.js";
+import {
+  deriveSourceApprovalStatus,
+  deriveSourceStatus,
+  getSourceDiscoveryJobsCount,
+  getSourceJobsFoundCount
+} from "../../../frontend/admin/domain.js";
 
 function makeEl() {
   return {
@@ -315,4 +321,67 @@ test("admin render: active excluded rows include a tooltip with the exclusion re
 
   assert.doesNotMatch(healthyHtml, /Excluded:/);
   assert.doesNotMatch(healthyHtml, /Error:/);
+});
+
+test("admin render: pending source table separates approval jobs from fetch health", () => {
+  const html = renderSourcesTableHtml(
+    [
+      {
+        id: "ashby:board_url:https://jobs.ashbyhq.com/scopely",
+        name: "Scopely (Ashby)",
+        adapter: "ashby",
+        studio: "Scopely",
+        jobsFound: 0,
+        sampleCount: 0,
+        _lastKeptCount: 179,
+        _lastStatus: "ok"
+      },
+      {
+        id: "static:listing_url:https://example.com/jobs",
+        name: "Example (Manual Website)",
+        adapter: "static",
+        studio: "Example",
+        jobsFound: 3,
+        _lastStatus: "ok"
+      }
+    ],
+    "pending",
+    row => {
+      const value = getSourceDiscoveryJobsCount(row);
+      return Number.isFinite(value) ? value.toLocaleString() : "N/A";
+    },
+    row => deriveSourceStatus(row),
+    (row, mode) => deriveSourceApprovalStatus(row, mode)
+  );
+
+  assert.match(html, /<div class="admin-cell" data-label="Jobs">0<\/div>/);
+  assert.match(html, /Blocked: 0 discovery jobs/);
+  assert.match(html, /<div class="admin-cell" data-label="Jobs">3<\/div>/);
+  assert.match(html, /Auto-approvable/);
+});
+
+test("admin render: active approval uses canonical stateChangedBy actor", () => {
+  const html = renderSourcesTableHtml(
+    [
+      {
+        id: "static:listing_url:https://careers.nintendo.com/jobs",
+        name: "Nintendo (Manual Website)",
+        adapter: "static",
+        studio: "Nintendo",
+        jobsFound: 12,
+        approvedBy: "registry_migration_v2",
+        stateChangedBy: "discovery_auto_approve"
+      }
+    ],
+    "active",
+    row => {
+      const value = getSourceJobsFoundCount(row);
+      return Number.isFinite(value) ? value.toLocaleString() : "N/A";
+    },
+    row => deriveSourceStatus(row),
+    (row, mode) => deriveSourceApprovalStatus(row, mode)
+  );
+
+  assert.match(html, /Live: discovery_auto_approve/);
+  assert.doesNotMatch(html, /Live: registry_migration_v2/);
 });

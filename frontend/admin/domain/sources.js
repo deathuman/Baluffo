@@ -13,6 +13,24 @@ export function getSourceJobsFoundCount(row) {
   return Number.isFinite(value) ? value : NaN;
 }
 
+export function getSourceDiscoveryJobsCount(row) {
+  const value = Number(row?.jobsFound ?? row?.sampleCount ?? NaN);
+  return Number.isFinite(value) ? value : NaN;
+}
+
+export function getSourceFetchJobsCount(row) {
+  const value = Number(
+    row?._lastKeptCount
+      ?? row?.keptCount
+      ?? row?.lastKeptCount
+      ?? row?._lastFetchedCount
+      ?? row?.fetchedCount
+      ?? row?.lastFetchedCount
+      ?? NaN
+  );
+  return Number.isFinite(value) ? value : NaN;
+}
+
 export function normalizeSourceStatusToken(value) {
   const token = String(value || "").trim().toLowerCase();
   if (!token) return "";
@@ -94,10 +112,69 @@ export function deriveSourceStatus(row) {
   const rowStatus = normalizeSourceStatusToken(row?.status);
   if (rowStatus) return rowStatus;
   if (String(row?.lastProbeError || "").trim()) return "error";
-  const jobsFound = getSourceJobsFoundCount(row);
+  const jobsFound = getSourceFetchJobsCount(row);
   if (Number.isFinite(jobsFound) && jobsFound > 0) return "ok";
   if (String(row?.lastProbedAt || "").trim()) return "warning";
   return "not_run";
+}
+
+export function deriveSourceApprovalStatus(row, mode = "pending") {
+  const registryState = String(row?.registryState || row?.candidateState || mode || "").trim().toLowerCase();
+  const stateChangedBy = String(row?.stateChangedBy || "").trim();
+
+  if (mode === "active" || registryState === "active" || registryState === "live") {
+    return {
+      label: stateChangedBy ? `Live: ${stateChangedBy}` : "Live",
+      title: stateChangedBy
+        ? `Active source. Last transition actor: ${stateChangedBy}.`
+        : "Active source.",
+      tone: "healthy"
+    };
+  }
+
+  if (mode === "rejected" || registryState === "rejected" || registryState === "quarantined") {
+    const reason = String(row?.quarantineReason || row?.pendingReason || row?.deferReason || "").trim();
+    return {
+      label: reason ? `Rejected: ${reason}` : "Rejected/quarantined",
+      title: reason ? `Not eligible because it is rejected or quarantined: ${reason}.` : "Not eligible because it is rejected or quarantined.",
+      tone: "critical"
+    };
+  }
+
+  const lastProbeError = String(row?.lastProbeError || row?.error || "").trim();
+  const status = normalizeSourceStatusToken(row?.status);
+  const discoveryJobs = getSourceDiscoveryJobsCount(row);
+
+  if (Boolean(row?.deferred)) {
+    const reason = String(row?.deferReason || row?.pendingReason || "").trim();
+    return {
+      label: "Deferred",
+      title: reason ? `Not auto-approved because this source is deferred: ${reason}.` : "Not auto-approved because this source is deferred.",
+      tone: "warning"
+    };
+  }
+
+  if (status === "error" || lastProbeError) {
+    return {
+      label: "Blocked: error",
+      title: lastProbeError ? `Not auto-approved because the source has an error: ${lastProbeError}.` : "Not auto-approved because the source status is error.",
+      tone: "critical"
+    };
+  }
+
+  if (Number.isFinite(discoveryJobs) && discoveryJobs > 0) {
+    return {
+      label: "Auto-approvable",
+      title: "Pending source has discovery job evidence and no blocking error.",
+      tone: "healthy"
+    };
+  }
+
+  return {
+    label: "Blocked: 0 discovery jobs",
+    title: "Not auto-approved because discovery found 0 jobs for this pending source.",
+    tone: "warning"
+  };
 }
 
 export function mergeSourceStatusFromReport(rows, report, mode) {

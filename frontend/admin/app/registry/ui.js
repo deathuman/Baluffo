@@ -72,7 +72,9 @@ function toggleSelectAllSources(refs, type, checkAll) {
 export function createRegistryUi({
   refs,
   getSourceJobsFoundCount,
+  getSourceDiscoveryJobsCount = getSourceJobsFoundCount,
   deriveSourceStatus,
+  deriveSourceApprovalStatus,
   renderSourcesTableHtml: renderSourcesTableHtmlImpl = renderSourcesTableHtml
 }) {
   function setManualSourceFeedback(message, level = "muted") {
@@ -88,9 +90,11 @@ export function createRegistryUi({
   function renderSourcesTable(container, rows, mode = "pending") {
     if (!container) return;
     container.innerHTML = renderSourcesTableHtmlImpl(rows, mode, row => {
-      const value = getSourceJobsFoundCount(row);
+      const value = mode === "pending"
+        ? getSourceDiscoveryJobsCount(row)
+        : getSourceJobsFoundCount(row);
       return Number.isFinite(value) && value >= 0 ? value.toLocaleString() : "N/A";
-    }, deriveSourceStatus);
+    }, deriveSourceStatus, deriveSourceApprovalStatus);
   }
 
   return {

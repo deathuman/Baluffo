@@ -3,8 +3,10 @@ import { createAdminDispatcher, ADMIN_ACTIONS } from "../../actions.js";
 import {
   applySourceFilter as applySourceFilterFromDomain,
   deriveAdminRunsModel as deriveAdminRunsModelFromDomain,
+  deriveSourceApprovalStatus as deriveSourceApprovalStatusFromDomain,
   deriveSourceStatus as deriveSourceStatusFromDomain,
   getOpsPollIntervalMs as getOpsPollIntervalMsFromDomain,
+  getSourceDiscoveryJobsCount as getSourceDiscoveryJobsCountFromDomain,
   getSourceJobsFoundCount as getSourceJobsFoundCountFromDomain,
   mergeSourceStatusFromReport as mergeSourceStatusFromDomain
 } from "../../domain.js";
@@ -182,7 +184,9 @@ export function composeAdminControllers({
     mergeSourceStatusFromReport: (...args) => mergeSourceStatusFromDomain(...args),
     applySourceFilter: rows => applySourceFilterFromDomain(rows, state.activeSourceFilter),
     getSourceJobsFoundCount: (...args) => getSourceJobsFoundCountFromDomain(...args),
+    getSourceDiscoveryJobsCount: (...args) => getSourceDiscoveryJobsCountFromDomain(...args),
     deriveSourceStatus: (...args) => deriveSourceStatusFromDomain(...args),
+    deriveSourceApprovalStatus: (...args) => deriveSourceApprovalStatusFromDomain(...args),
     readShowZeroJobs,
     normalizeSourceFilter,
     adminDispatch,

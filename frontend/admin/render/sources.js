@@ -1,6 +1,12 @@
 import { escapeHtml } from "../../shared/ui/index.js";
 
-export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolveSourceStatus) {
+export function renderSourcesTableHtml(
+  rows,
+  mode,
+  formatSourceJobsFound,
+  resolveSourceStatus,
+  resolveSourceApprovalStatus
+) {
   if (!Array.isArray(rows) || rows.length === 0) {
     const emptyText = mode === "pending"
       ? "No pending sources."
@@ -43,6 +49,7 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
         <div>Studio</div>
         <div>Status</div>
         <div>Jobs</div>
+        <div>Approval</div>
       </div>
     </div>
     <div class="jobs-table-body">
@@ -70,6 +77,18 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
               ? "warning"
               : "healthy";
         const jobsFound = formatSourceJobsFound(row);
+        const approvalStatus = typeof resolveSourceApprovalStatus === "function"
+          ? resolveSourceApprovalStatus(row, mode)
+          : null;
+        const approvalLabel = escapeHtml(String(approvalStatus?.label || ""));
+        const approvalTone = String(approvalStatus?.tone || "warning").toLowerCase();
+        const approvalClass = approvalTone === "critical"
+          ? "critical"
+          : approvalTone === "healthy"
+            ? "healthy"
+            : "warning";
+        const approvalTitleRaw = String(approvalStatus?.title || approvalStatus?.label || "").trim();
+        const approvalTitle = approvalTitleRaw ? ` title="${escapeHtml(approvalTitleRaw)}"` : "";
         const sourceUrl = escapeHtml(String(
           row.listing_url
           || row.api_url
@@ -96,6 +115,7 @@ export function renderSourcesTableHtml(rows, mode, formatSourceJobsFound, resolv
             <div class="admin-cell" data-label="Studio">${studio}</div>
             <div class="admin-cell" data-label="Status"><span class="admin-status-chip ${statusClass}"${statusTitle}>${status}</span></div>
             <div class="admin-cell" data-label="Jobs">${jobsFound}</div>
+            <div class="admin-cell" data-label="Approval"><span class="admin-status-chip ${approvalClass}"${approvalTitle}>${approvalLabel}</span></div>
           </div>
         `;
       }).join("")}

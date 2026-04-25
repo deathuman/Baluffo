@@ -10,6 +10,7 @@ export function createRegistryLoadController({
   mergeSourceStatusFromReport,
   applySourceFilter,
   getSourceJobsFoundCount,
+  getSourceDiscoveryJobsCount = getSourceJobsFoundCount,
   normalizeSourceFilter,
   readShowZeroJobs,
   adminDispatch,
@@ -98,9 +99,9 @@ export function createRegistryLoadController({
           rejected: rejectedRows
         });
         const filterState = toAdminFilterState();
-        const hiddenZeroJobsCount = pendingRows.filter(row => getSourceJobsFoundCount(row) === 0).length;
+        const hiddenZeroJobsCount = pendingRows.filter(row => getSourceDiscoveryJobsCount(row) === 0).length;
         const visiblePendingRows = applySourceFilter(
-          filterState.showZeroJobs ? pendingRows : pendingRows.filter(row => getSourceJobsFoundCount(row) !== 0)
+          filterState.showZeroJobs ? pendingRows : pendingRows.filter(row => getSourceDiscoveryJobsCount(row) !== 0)
         );
         const visibleActiveRows = applySourceFilter(activeRows);
         const visibleRejectedRows = applySourceFilter(rejectedRows);

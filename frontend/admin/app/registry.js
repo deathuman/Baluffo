@@ -11,7 +11,9 @@ export function createAdminRegistryController({
   mergeSourceStatusFromReport,
   applySourceFilter,
   getSourceJobsFoundCount,
+  getSourceDiscoveryJobsCount,
   deriveSourceStatus,
+  deriveSourceApprovalStatus,
   renderSourcesTableHtml: renderSourcesTableHtmlImpl,
   readShowZeroJobs,
   normalizeSourceFilter,
@@ -27,7 +29,9 @@ export function createAdminRegistryController({
   const ui = createRegistryUi({
     refs,
     getSourceJobsFoundCount,
+    getSourceDiscoveryJobsCount,
     deriveSourceStatus,
+    deriveSourceApprovalStatus,
     renderSourcesTableHtml: renderSourcesTableHtmlImpl
   });
 
@@ -39,6 +43,7 @@ export function createAdminRegistryController({
     mergeSourceStatusFromReport,
     applySourceFilter,
     getSourceJobsFoundCount,
+    getSourceDiscoveryJobsCount,
     normalizeSourceFilter,
     readShowZeroJobs,
     adminDispatch,

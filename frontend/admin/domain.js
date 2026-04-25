@@ -6,7 +6,10 @@ export {
 } from "./domain/logs.js";
 export {
   applySourceFilter,
+  deriveSourceApprovalStatus,
   deriveSourceStatus,
+  getSourceDiscoveryJobsCount,
+  getSourceFetchJobsCount,
   getSourceJobsFoundCount,
   mergeSourceStatusFromReport
 } from "./domain/sources.js";

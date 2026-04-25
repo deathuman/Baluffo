@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import {
   normalizeLogLevel,
   createLogEvent,
+  deriveSourceApprovalStatus,
   deriveSourceStatus,
   deriveFetcherFailureSummary,
   mergeSourceStatusFromReport,
   applySourceFilter,
+  getSourceDiscoveryJobsCount,
+  getSourceFetchJobsCount,
   getSourceJobsFoundCount,
   normalizeOpsRuns,
   applyOptimisticDiscoveryRun,
@@ -166,6 +169,28 @@ test("admin domain resolves jobs found from merged kept/fetched counters", () =>
   assert.equal(getSourceJobsFoundCount({ _lastKeptCount: 7 }), 7);
   assert.equal(getSourceJobsFoundCount({ _lastFetchedCount: 12 }), 12);
   assert.equal(getSourceJobsFoundCount({ keptCount: 3 }), 3);
+});
+
+test("admin domain separates discovery and fetch job counts", () => {
+  const row = { jobsFound: 0, sampleCount: 0, _lastKeptCount: 179, _lastStatus: "ok" };
+  assert.equal(getSourceDiscoveryJobsCount(row), 0);
+  assert.equal(getSourceFetchJobsCount(row), 179);
+  assert.equal(getSourceJobsFoundCount(row), 0);
+});
+
+test("admin domain derives pending approval status from discovery evidence", () => {
+  assert.equal(
+    deriveSourceApprovalStatus({ jobsFound: 0, _lastKeptCount: 179, _lastStatus: "ok" }, "pending").label,
+    "Blocked: 0 discovery jobs"
+  );
+  assert.equal(
+    deriveSourceApprovalStatus({ jobsFound: 2, _lastStatus: "ok" }, "pending").label,
+    "Auto-approvable"
+  );
+  assert.equal(
+    deriveSourceApprovalStatus({ jobsFound: 2, status: "error" }, "pending").label,
+    "Blocked: error"
+  );
 });
 
 test("admin domain derives not_run status when no probe/report data exists", () => {

@@ -103,7 +103,7 @@
 
 .admin-source-row-header,
 .admin-source-row {
-  grid-template-columns: 52px minmax(138px, 1fr) 96px minmax(108px, 1fr) 84px 68px 62px;
+  grid-template-columns: 52px minmax(138px, 1fr) 96px minmax(108px, 1fr) 84px 68px minmax(132px, 0.9fr);
 }
 
 .admin-source-row .admin-uid {
