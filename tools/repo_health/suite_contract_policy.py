@@ -3,6 +3,8 @@ import importlib
 import re
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
+
 
 def _module_tree(path: Path) -> ast.Module:
     return ast.parse(path.read_text(encoding="utf-8"))
@@ -86,7 +88,7 @@ def _has_name_main_guard(tree: ast.Module) -> bool:
 
 
 def test_discovered_python_test_files_define_real_tests() -> None:
-    root = Path(__file__).resolve().parent
+    root = ROOT / "tests"
     test_files = sorted(root.rglob("test_*.py"))
     pattern = re.compile(r"^(class\s+\w+|def\s+test_)", re.MULTILINE)
 
@@ -98,7 +100,7 @@ def test_discovered_python_test_files_define_real_tests() -> None:
 
 
 def test_frontend_test_patterns_reserve_generated_manifest_as_only_aggregator() -> None:
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = ROOT
     tests_root = repo_root / "tests"
     frontend_unit_root = tests_root / "frontend" / "unit"
     allowed_manifest = frontend_unit_root / "all.test.mjs"

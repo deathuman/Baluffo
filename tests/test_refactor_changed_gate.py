@@ -40,9 +40,10 @@ def test_build_verification_commands_routes_docs_changes_to_release_docs() -> No
 def test_build_verification_commands_routes_desktop_app_surface_to_contract_and_subsystem_tests() -> (
     None
 ):
-    assert refactor_changed_gate.build_verification_commands(
-        ["src/ship/desktop_app/startup.py"]
-    ) == [refactor_changed_gate.GROUP_COMMANDS["desktop_app"]]
+    assert (
+        refactor_changed_gate.build_verification_commands(["src/ship/desktop_app/startup.py"])
+        == refactor_changed_gate.GROUP_COMMANDS["desktop_app"]
+    )
 
 
 def test_build_verification_commands_escalates_packaging_changes() -> None:

@@ -101,6 +101,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Local pre-commit gate | `npm run lint:precommit:changed` |
 | Full pre-commit sweep | `npm run lint:precommit:all` |
 | CI pre-commit sweep | `npm run lint:precommit:ci` |
+| Repository policy guardrails | `npm run lint:repo-guardrails` |
 | Python dependency security audit | `npm run security:python` |
 | Build ship bundle | `npm run build:ship-bundle` |
 | Build portable EXE | `npm run build:portable-exe` |
@@ -157,6 +158,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 
 ## Test ownership rules
 
+- Repository policy checks belong in `tools/repo_health/repo_guardrails.py` and run through `npm run lint:repo-guardrails`, not pytest or frontend unit collection.
 - Real shard files must own real tests. Do not hide test functions inside giant imported `_cases.py` containers.
 - Shared helpers should stay local to the test family and helper-only. Prefer `_helpers.py`, `conftest.py`, or a focused helper module over a broad test utility barrel.
 - Before adding a new guard or smoke test, delete or merge any older test that already protects the same invariant.

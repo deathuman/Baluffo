@@ -44,6 +44,10 @@ This page stores completed items moved out of the active repository-health track
    `npm run security:python` now runs `pip-audit` against `requirements-lock.txt`, writes the JSON report under `.tmp/security/`, and the CI lint workflow runs it after the pre-commit guardrails. Known non-actionable findings must be recorded in `tools/security/pip-audit-allowlist.json` with advisory id, package, reason, owner, and review date; malformed or expired allowlist entries fail the gate.
    **Done when:** complete.
 
+6. **Completed: move structural guardrails out of pytest and frontend unit collection.**
+   Repository-policy guardrails now run through `npm run lint:repo-guardrails` and `tools/repo_health/repo_guardrails.py`, with grouped checks for docs, workflow, compatibility surfaces, frontend structure, repo-root layout, test shape, and test line budgets. The old pytest and frontend unit guard files were removed from collection, `scripts/precommit_gate.py` runs the repo-health guardrails before the complexity baseline, and `scripts/refactor_changed_gate.py` routes docs/workflow/compatibility checks through the repo-health entrypoint.
+   **Done when:** complete.
+
 ## Completed P2 Items
 
 1. **Completed: make Python import sorting explicit in the gate.**

@@ -7,21 +7,21 @@
 > - **Then inspect:** [`testing.md`](testing.md), [`../CONTRIBUTING.md`](../CONTRIBUTING.md), and [`RELEASE.md`](RELEASE.md)
 > - **Last updated:** 2026-04-25
 
-This page tracks active repository-health work after the broad type, lint, complexity, and dead-code cleanup passes. Completed items are archived in [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md); this active page now focuses on test-suite debloat plus the few remaining general health gaps.
+This page tracks active repository-health work after the broad type, lint, complexity, security, and guardrail-migration passes. Completed items are archived in [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md); this active page now focuses on helper/test debloat plus the few remaining general health gaps.
 
 ## Current Validation Snapshot
 
 | Metric | Current validated value |
 |--------|-------------------------|
 | Source Python files | `315` under `src/` |
-| Python test files | `101` |
+| Python test files | `99` |
 | Frontend JS files | `183` under `frontend/` |
-| Frontend unit test files | `59` under `tests/frontend/unit/` |
+| Frontend unit test files | `58` under `tests/frontend/unit/` |
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
-| Named structural guard-test targets | `2,421` lines across `9` current files |
+| Repository policy guardrails | `npm run lint:repo-guardrails` via `tools/repo_health/repo_guardrails.py` |
 | Named large inline-data / boilerplate targets | `6,399` lines across `4` current files |
 | Fixture files | `50` files under `tests/fixtures/` |
-| Frontend unit manifest tooling | `scripts/sync_frontend_unit_manifest.mjs` plus `tests/frontend/unit/all.test.mjs` are still active |
+| Frontend unit manifest tooling | `scripts/sync_frontend_unit_manifest.mjs` plus `tests/frontend/unit/all.test.mjs` are still active; structural cleanup policy is no longer collected as a frontend unit test |
 | Static security scanners | `pip-audit` is wired through `npm run security:python` and the CI lint workflow; `bandit`, `radon`, and `xenon` are not wired in `package.json`, `.pre-commit-config.yaml`, requirements files, scripts, or CI |
 
 The previous full-suite validation remains the last broad quality snapshot: coverage lane `1634 passed, 74 deselected`, total coverage `75%`; broad `python -m mypy src` green; enforced `mypy.ini` gate green; ESLint green; `knip` green; Ruff import and unused-import checks enforced by `ruff.toml`; source complexity enforced by `scripts/check_complexity_baseline.py`.
@@ -32,47 +32,9 @@ The previous full-suite validation remains the last broad quality snapshot: cove
 - **Thin compatibility-surface discipline:** stable roots and shims are protected by explicit contract tests and routing docs.
 - **Packaging and updater rehearsals:** packaged smoke, updater, sync rehearsal, orphan reclaim, and browser-job flows are covered by dedicated release-oriented verification lanes.
 - **Startup and performance instrumentation:** startup probes, timing lanes, and discovery/perf sanity scripts are maintained systems, not placeholder docs.
-- **Behavioral test coverage:** the expensive tests mostly protect real bridge, package, pipeline, discovery, and frontend runtime behavior. The bloat problem is concentrated in structural guardrails, helper indirection, and repeated inline setup.
+- **Behavioral test coverage:** the expensive tests mostly protect real bridge, package, pipeline, discovery, and frontend runtime behavior. The remaining bloat problem is concentrated in helper indirection and repeated inline setup.
 
 ## Active P1 Plan
-
-### P1-B. Move structural guardrails out of pytest and frontend unit collection
-
-The submitted debloat plan is directionally valid, but the current tree has different counts than the source audit. The active guard-test target is about `2,421` lines after including `tests/test_release_docs.py`, which is also a structural docs/script contract file. Reducing per-test context size is an explicit goal: keeping behavioral assertions visible within the model context improves AI editing accuracy and reduces drift.
-
-Current guard targets:
-
-| File | Lines | Current role |
-|------|-------|--------------|
-| `tests/test_suite_contract.py` | `1,089` | AST and string guardrails for compatibility surfaces, import boundaries, test shape, and file-size expectations |
-| `tests/frontend/unit/structure-cleanup.test.mjs` | `580` | Frontend structural checks via filesystem reads |
-| `tests/test_release_docs.py` | `317` | Docs, release-guide, package-script, and command-contract assertions |
-| `tests/test_workflow_entrypoints.py` | `198` | Workflow, `package.json`, and hook command assertions |
-| `tests/test_refactor_changed_gate.py` | `57` | Tests routing behavior for `scripts/refactor_changed_gate.py` |
-| `tests/test_install_git_hooks.py` | `76` | Tests hook installer behavior |
-| `tests/test_repo_root_structure.py` | `60` | Root layout and temp-root assertions |
-| `tests/test_docs_links.py` | `28` | Markdown link checks |
-| `tests/test_no_new_runtime_facade_usage.py` | `16` | Retired `_runtime.facade()` grep |
-
-**Validated constraints before changing:** `scripts/refactor_changed_gate.py` explicitly routes several changed-file families to `tests/test_suite_contract.py` and uses `tests/test_release_docs.py` for docs changes, `tests/test_workflow_entrypoints.py` asserts the current frontend unit manifest command, and `tests/frontend/unit/manifest-contract.test.mjs` tests the manifest generator. A guardrail move must update those compatibility checks in the same commit.
-
-**Implementation plan:**
-
-1. Create `tools/repo_health/repo_guardrails.py` as the single guardrail entrypoint.
-   It should absorb structural checks from the guard targets above and print concise grouped failures. Keep script/tool behavior tests in pytest only where they exercise script logic rather than repository policy.
-2. Add a soft test-file line-budget guard to `repo_guardrails.py`.
-   Start with warning-style or baseline-backed limits, such as `400` lines for focused unit tests and `800` lines for integration tests. Exclude packaged rehearsal tests and fixture data files. The goal is to prevent structural guard tests and behavioral mega-tests from regrowing silently.
-3. Add the guardrail entrypoint to `scripts/precommit_gate.py` after pre-commit and before `run_complexity_baseline()`.
-   The all-files lane should run it unconditionally. The changed-files lane can run it when touched files include `src/`, `frontend/`, `tests/`, `scripts/`, `.github/`, package metadata, or docs.
-4. Use a transition validation commit for the guard migration.
-   In the migration commit, run both the old pytest/Node guard collection and the new `repo_guardrails.py` script, and document that they produce the same pass/fail result. Delete the old pytest/Node guard files only after that parity check is green, preferably in the same PR after one CI cycle or in the next small commit.
-5. Remove pytest and Node unit collection of migrated structural checks.
-   Delete or shrink the migrated guard files, remove `structure-cleanup.test.mjs` from frontend unit collection, and update `scripts/refactor_changed_gate.py` routing away from `tests/test_suite_contract.py`.
-6. Update manifest/package/docs contracts in the same change.
-   If keeping explicit frontend unit aggregation, keep the manifest contract. If switching to direct Node discovery, remove `check:test-manifest`, `sync:test-manifest`, `all.test.mjs`, `scripts/sync_frontend_unit_manifest.mjs`, and `manifest-contract.test.mjs` together, then update `package.json`, `docs/testing.md`, and release-doc assertions.
-7. Verify with `npm run lint:precommit:ci`, `npm run test:py`, and `npm run test:frontend:unit`.
-
-**Done when:** pytest no longer collects repository-policy guard tests, frontend unit collection no longer spends a test file on structural cleanup policy, and the equivalent guardrails run through the repo-health/pre-commit path with actionable failure output.
 
 ### P1-C. Flatten test helper indirection without weakening route coverage
 

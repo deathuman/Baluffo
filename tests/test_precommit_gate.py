@@ -86,6 +86,7 @@ def test_collect_changed_files_excludes_generated_fetch_reports(tmp_path, monkey
 
 def test_run_all_executes_precommit_and_vulture_commands(monkeypatch) -> None:
     commands: list[list[str]] = []
+    guardrails_called = False
     complexity_called = False
 
     def fake_run(command: list[str]) -> int:
@@ -97,7 +98,14 @@ def test_run_all_executes_precommit_and_vulture_commands(monkeypatch) -> None:
         complexity_called = True
         return 0
 
+    def fake_guardrails(groups: tuple[str, ...] = ()) -> int:
+        nonlocal guardrails_called
+        assert groups == ()
+        guardrails_called = True
+        return 0
+
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
+    monkeypatch.setattr(precommit_gate, "run_repo_guardrails", fake_guardrails)
     monkeypatch.setattr(precommit_gate, "run_complexity_baseline", fake_complexity)
 
     assert precommit_gate.run_all() == 0
@@ -124,6 +132,7 @@ def test_run_all_executes_precommit_and_vulture_commands(monkeypatch) -> None:
             "pre-push",
         ],
     ]
+    assert guardrails_called is True
     assert complexity_called is True
 
 
@@ -152,6 +161,7 @@ def test_run_precommit_command_sets_repo_local_cache(tmp_path, monkeypatch) -> N
 
 def test_run_all_with_exclusions_uses_filtered_repo_files(monkeypatch) -> None:
     commands: list[list[str]] = []
+    guardrails_called = False
     complexity_called = False
 
     def fake_collect_repo_files(exclude_roots: tuple[str, ...] = ()) -> list[str]:
@@ -167,8 +177,15 @@ def test_run_all_with_exclusions_uses_filtered_repo_files(monkeypatch) -> None:
         complexity_called = True
         return 0
 
+    def fake_guardrails(groups: tuple[str, ...] = ()) -> int:
+        nonlocal guardrails_called
+        assert groups == ()
+        guardrails_called = True
+        return 0
+
     monkeypatch.setattr(precommit_gate, "collect_repo_files", fake_collect_repo_files)
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
+    monkeypatch.setattr(precommit_gate, "run_repo_guardrails", fake_guardrails)
     monkeypatch.setattr(precommit_gate, "run_complexity_baseline", fake_complexity)
 
     assert precommit_gate.run_all(("data",)) == 0
@@ -197,10 +214,12 @@ def test_run_all_with_exclusions_uses_filtered_repo_files(monkeypatch) -> None:
             "pre-push",
         ],
     ]
+    assert guardrails_called is True
     assert complexity_called is True
 
 
 def test_run_all_stops_before_complexity_when_precommit_fails(monkeypatch) -> None:
+    guardrails_called = False
     complexity_called = False
 
     def fake_run(command: list[str]) -> int:
@@ -211,10 +230,17 @@ def test_run_all_stops_before_complexity_when_precommit_fails(monkeypatch) -> No
         complexity_called = True
         return 0
 
+    def fake_guardrails(groups: tuple[str, ...] = ()) -> int:
+        nonlocal guardrails_called
+        guardrails_called = True
+        return 0
+
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
+    monkeypatch.setattr(precommit_gate, "run_repo_guardrails", fake_guardrails)
     monkeypatch.setattr(precommit_gate, "run_complexity_baseline", fake_complexity)
 
     assert precommit_gate.run_all() == 1
+    assert guardrails_called is False
     assert complexity_called is False
 
 
@@ -232,3 +258,21 @@ def test_run_changed_skips_when_no_files(monkeypatch, capsys) -> None:
     assert precommit_gate.run_changed() == 0
     assert called is False
     assert "No changed files found for pre-commit; skipping." in capsys.readouterr().out
+
+
+def test_run_changed_runs_repo_guardrails_for_policy_sensitive_files(monkeypatch) -> None:
+    guardrails_called = False
+
+    monkeypatch.setattr(precommit_gate, "collect_changed_files", lambda: ["src/app.py"])
+    monkeypatch.setattr(precommit_gate, "_run_precommit_command", lambda command: 0)
+
+    def fake_guardrails(groups: tuple[str, ...] = ()) -> int:
+        nonlocal guardrails_called
+        assert groups == ()
+        guardrails_called = True
+        return 0
+
+    monkeypatch.setattr(precommit_gate, "run_repo_guardrails", fake_guardrails)
+
+    assert precommit_gate.run_changed() == 0
+    assert guardrails_called is True

@@ -146,6 +146,29 @@ def build_all_commands(files: list[str] | None = None) -> list[list[str]]:
     ]
 
 
+def should_run_repo_guardrails(files: list[str]) -> bool:
+    watched_roots = ("src/", "frontend/", "tests/", "scripts/", ".github/", "docs/")
+    watched_exact = {
+        "AGENTS.md",
+        "CONTRIBUTING.md",
+        "README.md",
+        "package.json",
+        "package-lock.json",
+        ".pre-commit-config.yaml",
+        "ruff.toml",
+        "mypy.ini",
+    }
+    return any(path in watched_exact or path.startswith(watched_roots) for path in files)
+
+
+def run_repo_guardrails(groups: tuple[str, ...] = ()) -> int:
+    command = [PYTHON, "tools/repo_health/repo_guardrails.py"]
+    for group in groups:
+        command.extend(["--group", group])
+    completed = subprocess.run(command, cwd=ROOT, check=False)
+    return completed.returncode
+
+
 def run_complexity_baseline() -> int:
     completed = subprocess.run(
         [PYTHON, "scripts/check_complexity_baseline.py"],
@@ -160,7 +183,12 @@ def run_changed() -> int:
     if not files:
         print("No changed files found for pre-commit; skipping.")
         return 0
-    return _run_precommit_command(build_changed_command(files))
+    return_code = _run_precommit_command(build_changed_command(files))
+    if return_code != 0:
+        return return_code
+    if should_run_repo_guardrails(files):
+        return run_repo_guardrails()
+    return 0
 
 
 def run_all(exclude_roots: tuple[str, ...] = ()) -> int:
@@ -172,6 +200,9 @@ def run_all(exclude_roots: tuple[str, ...] = ()) -> int:
         return_code = _run_precommit_command(command)
         if return_code != 0:
             return return_code
+    return_code = run_repo_guardrails()
+    if return_code != 0:
+        return return_code
     return run_complexity_baseline()
 
 

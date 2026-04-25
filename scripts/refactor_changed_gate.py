@@ -16,16 +16,15 @@ except ImportError:  # pragma: no cover - direct script execution path
 PYTHON = sys.executable
 DIFF_FILTER = "--diff-filter=ACMRTUXB"
 NPM = which("npm") or "npm"
-DOCS_COMMAND = [PYTHON, "-m", "pytest", "tests/test_release_docs.py", "-q"]
+DOCS_COMMAND = [PYTHON, "tools/repo_health/repo_guardrails.py", "--group", "docs"]
 WORKFLOW_COMMAND = [
     PYTHON,
-    "-m",
-    "pytest",
-    "tests/test_precommit_gate.py",
-    "tests/test_workflow_entrypoints.py",
-    "-q",
+    "tools/repo_health/repo_guardrails.py",
+    "--group",
+    "workflow",
 ]
 EXTENDED_COMMAND = [NPM, "run", "test:py:extended"]
+COMPAT_COMMAND = [PYTHON, "tools/repo_health/repo_guardrails.py", "--group", "compat"]
 
 
 def _resolve_diff_base() -> str | None:
@@ -172,78 +171,52 @@ def _is_packaging_or_release_change(rel_path: str) -> bool:
     )
 
 
-GROUP_COMMANDS: dict[str, list[str]] = {
-    "workflow": WORKFLOW_COMMAND,
+GROUP_COMMANDS: dict[str, list[list[str]]] = {
+    "workflow": [WORKFLOW_COMMAND],
     "desktop_app": [
-        PYTHON,
-        "-m",
-        "pytest",
-        "tests/test_suite_contract.py",
-        "tests/desktop_app",
-        "-q",
+        COMPAT_COMMAND,
+        [PYTHON, "-m", "pytest", "tests/desktop_app", "-q"],
     ],
     "desktop_updater": [
-        PYTHON,
-        "-m",
-        "pytest",
-        "tests/test_suite_contract.py",
-        "tests/test_desktop_updater.py",
-        "-q",
+        COMPAT_COMMAND,
+        [PYTHON, "-m", "pytest", "tests/test_desktop_updater.py", "-q"],
     ],
     "desktop_update": [
-        PYTHON,
-        "-m",
-        "pytest",
-        "tests/test_suite_contract.py",
-        "tests/test_desktop_update.py",
-        "-q",
+        COMPAT_COMMAND,
+        [PYTHON, "-m", "pytest", "tests/test_desktop_update.py", "-q"],
     ],
     "packaged_smoke": [
-        PYTHON,
-        "-m",
-        "pytest",
-        "tests/test_suite_contract.py",
-        "tests/packaged_desktop",
-        "-q",
+        COMPAT_COMMAND,
+        [PYTHON, "-m", "pytest", "tests/packaged_desktop", "-q"],
     ],
     "discovery": [
-        PYTHON,
-        "-m",
-        "pytest",
-        "tests/test_suite_contract.py",
-        "tests/source_discovery",
-        "-q",
+        COMPAT_COMMAND,
+        [PYTHON, "-m", "pytest", "tests/source_discovery", "-q"],
     ],
     "source_sync": [
-        PYTHON,
-        "-m",
-        "pytest",
-        "tests/test_suite_contract.py",
-        "tests/test_source_sync.py",
-        "-q",
+        COMPAT_COMMAND,
+        [PYTHON, "-m", "pytest", "tests/test_source_sync.py", "-q"],
     ],
     "admin_bridge": [
-        PYTHON,
-        "-m",
-        "pytest",
-        "tests/test_suite_contract.py",
-        "tests/admin",
-        "-q",
+        COMPAT_COMMAND,
+        [PYTHON, "-m", "pytest", "tests/admin", "-q"],
     ],
     "jobs": [
-        PYTHON,
-        "-m",
-        "pytest",
-        "tests/test_suite_contract.py",
-        "tests/test_jobs_fetcher.py",
-        "tests/test_jobs_fetcher_google_sheets.py",
-        "tests/test_jobs_fetcher_parsing.py",
-        "tests/test_jobs_fetcher_pipeline.py",
-        "tests/test_jobs_fetcher_providers.py",
-        "tests/test_jobs_fetcher_quality.py",
-        "tests/test_jobs_package.py",
-        "tests/test_jobs_pipeline_guard.py",
-        "-q",
+        COMPAT_COMMAND,
+        [
+            PYTHON,
+            "-m",
+            "pytest",
+            "tests/test_jobs_fetcher.py",
+            "tests/test_jobs_fetcher_google_sheets.py",
+            "tests/test_jobs_fetcher_parsing.py",
+            "tests/test_jobs_fetcher_pipeline.py",
+            "tests/test_jobs_fetcher_providers.py",
+            "tests/test_jobs_fetcher_quality.py",
+            "tests/test_jobs_package.py",
+            "tests/test_jobs_pipeline_guard.py",
+            "-q",
+        ],
     ],
 }
 
@@ -283,7 +256,8 @@ def build_verification_commands(files: list[str]) -> list[list[str]]:
     commands: list[list[str]] = []
     if any(_is_docs_change(path) for path in files):
         commands.append(DOCS_COMMAND)
-    commands.extend(GROUP_COMMANDS[name] for name in groups)
+    for name in groups:
+        commands.extend(GROUP_COMMANDS[name])
     return commands
 
 
