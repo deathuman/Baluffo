@@ -5,7 +5,7 @@
 > - **Canonical for:** test commands, targeted test routing, and fixture references
 > - **Not canonical for:** runtime architecture or data contracts
 > - **Then inspect:** the nearest `tests/` module for the subsystem you changed
-> - **Last updated:** 2026-04-23
+> - **Last updated:** 2026-04-25
 
 This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
 
@@ -75,6 +75,18 @@ Notes:
 - `npm run perf:discovery:benchmark` is the default discovery perf entrypoint because it keeps artifacts under `_out/`; use `python scripts/benchmark_discovery_probe.py` separately when tuning discovery probe concurrency.
 - Do not add `pytest-benchmark` or `py-spy` by default here. If dependency approval happens later, benchmark deterministic Python leaf logic first and keep desktop startup analysis on the existing startup-trace pipeline.
 
+## Python dependency security audit
+
+Run the Python dependency vulnerability audit with:
+
+```bash
+npm run security:python
+```
+
+The audit scans the checked-in `requirements-lock.txt` with `pip-audit`, writes a JSON report to `.tmp/security/pip-audit.json`, and fails on any unallowlisted advisory. CI runs this lane after the pre-commit guardrails in the lint workflow.
+
+Known non-actionable findings must be listed in `tools/security/pip-audit-allowlist.json` with an advisory id, package, reason, owner, and `review_by` date. Expired or malformed allowlist entries are failures. Ownership defaults to the matching code owner; for repository-wide dependency findings, use the default owner from `CODEOWNERS`.
+
 ## Test layout and fixtures
 
 The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `def test_*` functions.
@@ -89,6 +101,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Local pre-commit gate | `npm run lint:precommit:changed` |
 | Full pre-commit sweep | `npm run lint:precommit:all` |
 | CI pre-commit sweep | `npm run lint:precommit:ci` |
+| Python dependency security audit | `npm run security:python` |
 | Build ship bundle | `npm run build:ship-bundle` |
 | Build portable EXE | `npm run build:portable-exe` |
 | Ship bundle leaf builder | `python scripts/build_ship_bundle.py --bundle-version <version>` |

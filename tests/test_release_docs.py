@@ -300,6 +300,7 @@ def test_testing_doc_owns_verification_matrix(repo_root: Path) -> None:
         "npm run test:py",
         "npm run test:py:extended",
         "npm run release:preflight",
+        "npm run security:python",
         "npm run build:ship-bundle",
         "npm run build:portable-exe",
         "python scripts/build_ship_bundle.py --bundle-version <version>",

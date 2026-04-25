@@ -33,7 +33,7 @@ jobs:
       - name: Install Python tooling
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-lock.txt pre-commit mypy
+          python -m pip install -r requirements-lock.txt pre-commit mypy pip-audit==2.10.0
 
       - name: Install Node tooling
         run: npm ci
@@ -48,3 +48,6 @@ jobs:
 
       - name: Run pre-commit guardrails
         run: npm run lint:precommit:ci
+
+      - name: Run Python dependency security audit
+        run: npm run security:python

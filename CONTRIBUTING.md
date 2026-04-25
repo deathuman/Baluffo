@@ -9,6 +9,7 @@
    - `npm run test:py` - Python/backend tests
    - `npm run test:unit` - Frontend unit tests
    - `npm run verify` - Full verification for risky or broad changes
+   - `npm run security:python` - Python dependency vulnerability audit after dependency changes
    - `npm run perf:py:timing` - Perf timing lane for slow-test visibility
    - `npm run perf:discovery:benchmark` / `npm run perf:startup:cold` - Discovery or packaged-startup perf checks when you touch those paths
    - For packaged startup architecture and command ownership, use [`docs/startup-probe-architecture.md`](docs/startup-probe-architecture.md)
@@ -20,6 +21,7 @@
 - Update docs when commands, contracts, or routing change
 - Add tests for new features in `tests/`
 - Keep PRs focused and describe your changes clearly
+- Dependency vulnerability findings fail CI unless an entry in `tools/security/pip-audit-allowlist.json` has an advisory id, package, reason, owner, and unexpired review date
 - Keep perf artifacts in repo-local paths such as `.tmp/` and `_out/`; avoid new workflows that depend on `%LOCALAPPDATA%\\Temp`
 
 ## Docs reference

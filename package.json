@@ -51,6 +51,7 @@
     "lint:py": "ruff check .",
     "format:py": "ruff format .",
     "lint:js": "eslint .",
+    "security:python": "python scripts/security_audit.py",
     "lint:deadcode:js": "knip"
   },
   "devDependencies": {

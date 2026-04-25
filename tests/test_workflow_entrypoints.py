@@ -58,8 +58,12 @@ def test_lint_workflow_uses_canonical_precommit_entrypoints() -> None:
     assert "--exclude-root data" in package_text, (
         f"{package_path.name} should route the CI pre-commit entrypoint through the data exclusion."
     )
-    assert "python -m pip install -r requirements-lock.txt pre-commit mypy" in workflow_text, (
-        f"{workflow_path.name} should install pinned Python tooling before running lint."
+    assert (
+        "python -m pip install -r requirements-lock.txt pre-commit mypy pip-audit==2.10.0"
+        in workflow_text
+    ), f"{workflow_path.name} should install pinned Python tooling before running lint."
+    assert "npm run security:python" in workflow_text, (
+        f"{workflow_path.name} should run the Python dependency security audit."
     )
     assert "ruff==0.15.9" in (root / "requirements-lock.txt").read_text(encoding="utf-8")
 
@@ -91,6 +95,14 @@ def test_lint_workflow_enforces_source_complexity_baseline() -> None:
     assert baseline["scope"] == ["src"]
     assert isinstance(baseline["entries"], dict)
     assert "run_complexity_baseline()" in precommit_gate
+
+
+def test_package_json_exposes_python_security_audit_entrypoint(repo_root: Path) -> None:
+    package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
+    allowlist = repo_root / "tools" / "security" / "pip-audit-allowlist.json"
+
+    assert package["scripts"]["security:python"] == "python scripts/security_audit.py"
+    assert allowlist.is_file()
 
 
 def test_pre_push_hook_runs_python_and_smoke_gates() -> None:

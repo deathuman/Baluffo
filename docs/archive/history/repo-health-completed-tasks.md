@@ -40,6 +40,10 @@ This page stores completed items moved out of the active repository-health track
    `README.md` now includes workflow status badges for `tests`, `lint`, and `build-portable-exe`, closing the P1-10 repo-health gap around CI visibility without changing runtime behavior.
    **Done when:** complete.
 
+5. **Completed: add Python dependency security scanning to CI.**
+   `npm run security:python` now runs `pip-audit` against `requirements-lock.txt`, writes the JSON report under `.tmp/security/`, and the CI lint workflow runs it after the pre-commit guardrails. Known non-actionable findings must be recorded in `tools/security/pip-audit-allowlist.json` with advisory id, package, reason, owner, and review date; malformed or expired allowlist entries fail the gate.
+   **Done when:** complete.
+
 ## Completed P2 Items
 
 1. **Completed: make Python import sorting explicit in the gate.**

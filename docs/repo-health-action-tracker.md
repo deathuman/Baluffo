@@ -7,79 +7,151 @@
 > - **Then inspect:** [`testing.md`](testing.md), [`../CONTRIBUTING.md`](../CONTRIBUTING.md), and [`RELEASE.md`](RELEASE.md)
 > - **Last updated:** 2026-04-25
 
-This page converts an external repository analysis into a repo-native action tracker. The source analysis was reviewed against the current repository state, and only validated claims are carried forward into strengths, gaps, and next steps.
+This page tracks active repository-health work after the broad type, lint, complexity, and dead-code cleanup passes. Completed items are archived in [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md); this active page now focuses on test-suite debloat plus the few remaining general health gaps.
 
-Completed items are archived in [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md) so this page stays focused on active repository-health work.
-
-## Validation Snapshot
+## Current Validation Snapshot
 
 | Metric | Current validated value |
 |--------|-------------------------|
-| Python files | `313` |
-| Frontend JS files | `184` |
+| Source Python files | `315` under `src/` |
+| Python test files | `101` |
+| Frontend JS files | `183` under `frontend/` |
+| Frontend unit test files | `59` under `tests/frontend/unit/` |
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
-| Python test files | `97` |
-| Coverage lane | `1634 passed, 74 deselected`, total coverage `75%` |
-| Broad type-check run | `python -m mypy src` -> `0 errors in 313 source files` |
-| Enforced type-check gate | `python -m mypy --config-file mypy.ini` covers the full `src/` tree and passes. |
-| ESLint | `0 warnings, 0 errors` |
-| `knip` | `0` unused JS exports |
-| Python import sorting / unused import check | Enforced by `ruff.toml` (`F` and `I` selected) through `npm run lint:precommit:ci`; `python -m ruff check --select I,F401 src tests` also passes |
-| Python source complexity | Enforced by `scripts/check_complexity_baseline.py` through `npm run lint:precommit:ci`; Ruff `C901` uses threshold `10` against the checked-in `src/` baseline |
-| Static security scanners | `bandit`, `pip-audit`, `radon`, and `xenon` are not installed locally and are not wired in CI/pre-commit |
-| Python lock file | `requirements-lock.txt` present |
-| Node lock file | `package-lock.json` present |
+| Named structural guard-test targets | `2,421` lines across `9` current files |
+| Named large inline-data / boilerplate targets | `6,399` lines across `4` current files |
+| Fixture files | `50` files under `tests/fixtures/` |
+| Frontend unit manifest tooling | `scripts/sync_frontend_unit_manifest.mjs` plus `tests/frontend/unit/all.test.mjs` are still active |
+| Static security scanners | `pip-audit` is wired through `npm run security:python` and the CI lint workflow; `bandit`, `radon`, and `xenon` are not wired in `package.json`, `.pre-commit-config.yaml`, requirements files, scripts, or CI |
+
+The previous full-suite validation remains the last broad quality snapshot: coverage lane `1634 passed, 74 deselected`, total coverage `75%`; broad `python -m mypy src` green; enforced `mypy.ini` gate green; ESLint green; `knip` green; Ruff import and unused-import checks enforced by `ruff.toml`; source complexity enforced by `scripts/check_complexity_baseline.py`.
 
 ## Confirmed Strengths Worth Protecting
 
 - **Docs/wiki structure:** [`INDEX.md`](INDEX.md), [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) form a clear routing stack and are actively maintained.
-- **Thin compatibility-surface discipline:** the repo consistently protects stable roots and shims with explicit contract tests and routing docs instead of letting refactors collapse back into monoliths.
+- **Thin compatibility-surface discipline:** stable roots and shims are protected by explicit contract tests and routing docs.
 - **Packaging and updater rehearsals:** packaged smoke, updater, sync rehearsal, orphan reclaim, and browser-job flows are covered by dedicated release-oriented verification lanes.
-- **Startup and performance instrumentation:** startup probes, timing lanes, and discovery/perf sanity scripts are real maintained systems, not placeholder docs.
+- **Startup and performance instrumentation:** startup probes, timing lanes, and discovery/perf sanity scripts are maintained systems, not placeholder docs.
+- **Behavioral test coverage:** the expensive tests mostly protect real bridge, package, pipeline, discovery, and frontend runtime behavior. The bloat problem is concentrated in structural guardrails, helper indirection, and repeated inline setup.
 
-## Confirmed Gaps Worth Acting On
+## Active P1 Plan
 
-### P0
+### P1-B. Move structural guardrails out of pytest and frontend unit collection
 
-No active P0 repository-health item is open. The previous broad mypy sweep is complete and archived.
+The submitted debloat plan is directionally valid, but the current tree has different counts than the source audit. The active guard-test target is about `2,421` lines after including `tests/test_release_docs.py`, which is also a structural docs/script contract file. Reducing per-test context size is an explicit goal: keeping behavioral assertions visible within the model context improves AI editing accuracy and reduces drift.
 
-### P1
+Current guard targets:
 
-P1-8 is complete and archived; the remaining items below are the active P1 gaps.
+| File | Lines | Current role |
+|------|-------|--------------|
+| `tests/test_suite_contract.py` | `1,089` | AST and string guardrails for compatibility surfaces, import boundaries, test shape, and file-size expectations |
+| `tests/frontend/unit/structure-cleanup.test.mjs` | `580` | Frontend structural checks via filesystem reads |
+| `tests/test_release_docs.py` | `317` | Docs, release-guide, package-script, and command-contract assertions |
+| `tests/test_workflow_entrypoints.py` | `198` | Workflow, `package.json`, and hook command assertions |
+| `tests/test_refactor_changed_gate.py` | `57` | Tests routing behavior for `scripts/refactor_changed_gate.py` |
+| `tests/test_install_git_hooks.py` | `76` | Tests hook installer behavior |
+| `tests/test_repo_root_structure.py` | `60` | Root layout and temp-root assertions |
+| `tests/test_docs_links.py` | `28` | Markdown link checks |
+| `tests/test_no_new_runtime_facade_usage.py` | `16` | Retired `_runtime.facade()` grep |
 
-9. **Add static security scanning to CI.**
-   Current workflows cover tests, lint, and release packaging, but not Python dependency/security scanning.
-   `bandit` and `pip-audit` are not currently installed or wired. Adding them requires explicit dependency approval and should include an allowlist/baseline policy for known non-actionable findings.
-   **Done when:** CI runs at least one Python security/dependency scan (`bandit`, `pip-audit`, or equivalent) and documents failure ownership.
+**Validated constraints before changing:** `scripts/refactor_changed_gate.py` explicitly routes several changed-file families to `tests/test_suite_contract.py` and uses `tests/test_release_docs.py` for docs changes, `tests/test_workflow_entrypoints.py` asserts the current frontend unit manifest command, and `tests/frontend/unit/manifest-contract.test.mjs` tests the manifest generator. A guardrail move must update those compatibility checks in the same commit.
 
-### P2
+**Implementation plan:**
 
-P2-11, P2-12, and P2-14 are complete and archived; the remaining item below is the active P2 gap.
+1. Create `tools/repo_health/repo_guardrails.py` as the single guardrail entrypoint.
+   It should absorb structural checks from the guard targets above and print concise grouped failures. Keep script/tool behavior tests in pytest only where they exercise script logic rather than repository policy.
+2. Add a soft test-file line-budget guard to `repo_guardrails.py`.
+   Start with warning-style or baseline-backed limits, such as `400` lines for focused unit tests and `800` lines for integration tests. Exclude packaged rehearsal tests and fixture data files. The goal is to prevent structural guard tests and behavioral mega-tests from regrowing silently.
+3. Add the guardrail entrypoint to `scripts/precommit_gate.py` after pre-commit and before `run_complexity_baseline()`.
+   The all-files lane should run it unconditionally. The changed-files lane can run it when touched files include `src/`, `frontend/`, `tests/`, `scripts/`, `.github/`, package metadata, or docs.
+4. Use a transition validation commit for the guard migration.
+   In the migration commit, run both the old pytest/Node guard collection and the new `repo_guardrails.py` script, and document that they produce the same pass/fail result. Delete the old pytest/Node guard files only after that parity check is green, preferably in the same PR after one CI cycle or in the next small commit.
+5. Remove pytest and Node unit collection of migrated structural checks.
+   Delete or shrink the migrated guard files, remove `structure-cleanup.test.mjs` from frontend unit collection, and update `scripts/refactor_changed_gate.py` routing away from `tests/test_suite_contract.py`.
+6. Update manifest/package/docs contracts in the same change.
+   If keeping explicit frontend unit aggregation, keep the manifest contract. If switching to direct Node discovery, remove `check:test-manifest`, `sync:test-manifest`, `all.test.mjs`, `scripts/sync_frontend_unit_manifest.mjs`, and `manifest-contract.test.mjs` together, then update `package.json`, `docs/testing.md`, and release-doc assertions.
+7. Verify with `npm run lint:precommit:ci`, `npm run test:py`, and `npm run test:frontend:unit`.
 
-13. **Raise coverage in the remaining weak runtime/security modules.**
-   The validated coverage lane still reports `source_sync_runtime.py` at `76%` and `source_discovery/web_search_candidates.py` at `75%`. The previously cited `source_discovery/probe.py` is no longer a weak module; it reports `93%`.
-   **Done when:** the remaining named modules reach the agreed module-level target or have a documented reason to stay below it.
+**Done when:** pytest no longer collects repository-policy guard tests, frontend unit collection no longer spends a test file on structural cleanup policy, and the equivalent guardrails run through the repo-health/pre-commit path with actionable failure output.
 
-## Corrections to the Source Analysis
+### P1-C. Flatten test helper indirection without weakening route coverage
 
-- `CONTRIBUTING.md` exists and should not be treated as missing.
-- `.github/ISSUE_TEMPLATE/` exists and currently includes `bug_report.md` and `feature_request.md`.
-- README has static product badges, but not CI status badges.
-- `TODO` / `FIXME` / `HACK` count in `src/` plus `frontend/` is currently `0`, not `3`.
-- `python -m vulture` now works in the active interpreter after local environment repair; the repo's pre-commit flow still manages its own vulture hook environment separately.
-- The previous `data/source-approval-state.json` newline-only churn was real, but it is now fixed at the shared writer level rather than hidden from the local checks.
-- The type-safety claim is now materially different from the source analysis: broad `python -m mypy src` is green, and the enforced mypy gate covers the full `src/` tree.
-- The submitted "1 ESLint error" claim is stale; current validation found `2` `no-extra-boolean-cast` errors in `frontend/admin/domain/sources.js`.
-- The submitted weak-coverage list is partially stale; `source_discovery/probe.py` now reports `93%`, while `source_sync_runtime.py` and `source_discovery/web_search_candidates.py` remain below `80%`.
-- The submitted unused-import gate claim is stale; Ruff's default `F` rules cover `F401`, and import sorting (`I`) is selected in `ruff.toml` and enforced by the pre-commit/CI lane.
-- The submitted complexity-gate gap is now closed with a Ruff `C901` baseline gate for `src/`, avoiding new complexity-specific dependencies while preventing new or worsened source hotspots.
-- The original 1-10 score table and overall `7.5/10` rating were not retained here because they are subjective and partially stale relative to the current repo state.
+Current helper bloat is validated, but some proposed replacements need care. `tests/helpers/bridge_api.py` is `283` lines and owns reusable bridge API fakes. `tests/bridge/conftest.py` is only a re-export layer and can be removed. `tests/admin/conftest.py` is `85` lines and patches a broad set of `admin_bridge` module constants for admin tests. `tests/jobs_fetcher_helpers.py` is `55` lines and is imported by multiple jobs tests plus `tests/jobs_static/_helpers.py`.
+
+**Implementation plan:**
+
+1. Remove `tests/bridge/conftest.py` and update bridge tests to import `BridgeRuntimeConfigStub`, `FakeDesktopLocalDataStore`, `FakeHandler`, and `make_stub_bridge_api` directly from `tests.helpers.bridge_api`.
+2. Flatten `tests/admin/conftest.py` gradually.
+   Replace the monolithic `admin_bridge_entrypoint_root` fixture with helper factories in `tests/admin/_helpers.py` that return a small path namespace and apply only the patches each test family needs. Preserve the cleanup of active sync state and services while removing the implicit contract where adding a new `admin_bridge.py` path constant forces every admin fixture setup to change.
+3. Replace broad `tests/jobs_fetcher_helpers.py` imports with direct source imports and a small local fixture helper where needed.
+   Keep `_fixture()` / `_fixture_json()` close to the tests or move them into a narrowly named helper under the jobs test family.
+4. Consolidate temp-root creation behind one implementation.
+   `make_test_root` is the pytest fixture API and `workspace_tmpdir(prefix)` is still widely used, including script-level checks. Do not blindly delete either surface; make them share one cleanup/root-allocation helper, then migrate tests toward the fixture form where it improves readability.
+5. Simplify `FakeDesktopLocalDataStore` only after route tests are updated.
+   Do not replace it with a bare `defaultdict` object unless the fake still exposes the method contract the route layer expects (`sign_in`, saved-job mutations, attachment lookup, and profile/session reads).
+6. Replace broad `make_stub_bridge_api` defaults with `MagicMock(spec=BridgeApi)` only where the route tests do not need real method behavior. Prefer explicit overrides per test family.
+7. Move `source_sync_test_root` out of root `tests/conftest.py` after updating `docs/testing.md`, because it is only used by `tests/test_source_sync.py`.
+
+**Done when:** bridge, admin, jobs, and temp-root helpers are owned by their nearest test families or one shared temp-root helper, root fixture scope only contains universal fixtures, and route contract tests remain readable without re-exporting conftest layers.
+
+### P1-D. Extract repeated inline data and setup from the largest behavioral tests
+
+The current largest high-value bloat targets are:
+
+| File | Lines | Debloat focus |
+|------|-------|---------------|
+| `tests/test_jobs_fetcher_pipeline.py` | `1,966` | Social configs, Reddit/Mastodon payloads, repeated pipeline setup |
+| `tests/desktop_app/test_launcher_orchestration.py` | `1,609` | Repeated `DesktopRuntimeConfig(...)`, session dictionaries, broad autouse patching |
+| `tests/source_discovery/test_run_discovery_flow.py` | `1,395` | Discovery configs, stage toggles, repeated runtime setup |
+| `tests/frontend/unit/admin-fetcher-controller.test.mjs` | `1,429` | Repeated state, refs, calls, toasts, logs, and controller construction |
+
+**Implementation plan:**
+
+1. Move large JSON-like social payloads into `tests/fixtures/payloads/` and load them with small fixture helpers.
+2. Add a minimal desktop runtime config helper in `tests/desktop_app/_helpers.py` instead of repeating full config objects.
+3. Move discovery stage-control fixtures into `tests/fixtures/discovery/` only when the fixture content is genuinely reused or obscures the assertion.
+4. Add frontend factory helpers for admin fetcher controller tests in `tests/frontend/unit/helpers/admin-controller-test-helpers.mjs`.
+5. Audit `tests/fixtures/` for orphaned files before adding new payload fixtures.
+   A lightweight `repo_guardrails.py` check can require each fixture file to be referenced by at least one test or helper via a path/name string. Keep an allowlist for intentionally external/manual fixtures if any exist.
+6. Remove the autouse launcher patch only where tests can name the required patch set without making the file harder to audit.
+
+**Done when:** the named files are materially smaller, assertions remain local and obvious, extracted fixtures hold data rather than reimplementing production behavior, and fixture files do not accumulate without references.
+
+## Active P2 Plan
+
+### P2-A. Raise coverage in the remaining weak runtime/security modules
+
+The last coverage snapshot still named `source_sync_runtime.py` and `source_discovery/web_search_candidates.py` as below `80%`; `source_discovery/probe.py` was no longer weak at `93%`.
+
+**Done when:** the remaining named modules reach the agreed module-level target or have a documented reason to stay below it.
+
+### P2-B. Simplify frontend unit test discovery and merge small adjacent files
+
+The submitted merge list is mostly plausible, but direct Node glob execution should be verified on the active Node version before deleting manifest tooling. The current package script still runs `npm run check:test-manifest && node --test --test-reporter=dot tests/frontend/unit/all.test.mjs`.
+
+**Implementation plan:**
+
+1. Verify a direct Node test discovery command works on the supported runtime before removing the generated manifest.
+2. If direct discovery is stable, delete `scripts/sync_frontend_unit_manifest.mjs`, `tests/frontend/unit/all.test.mjs`, and `tests/frontend/unit/manifest-contract.test.mjs` together.
+3. Merge only tightly related small files where setup overlap is real:
+   `admin-live-task*` with `admin-progress-ui`, `admin-render*`, `jobs-runtime-events/state`, and `saved-phase-time/timeline`.
+4. Keep independent runtime-controller tests split when their fixture setup or failure messages become less clear after merging.
+
+**Done when:** adding a frontend unit test no longer requires manifest regeneration, related tiny files are consolidated, and frontend unit failures still point at a focused behavioral area.
+
+## Explicit Non-Goals For Test Debloat
+
+- Do not delete packaged rehearsal tests under `tests/packaged_desktop/`; they are release guarantees.
+- Do not weaken bridge route tests under `tests/bridge/test_routes_*.py`; simplify their helpers instead.
+- Do not remove `tests/source_discovery/test_coverage_targets.py`; it is fast, behavioral, and still protects the recent coverage push.
+- Do not replace production behavior with helper logic in tests. Extract payloads and setup, not parallel implementations.
+- Do not add new Python or Node dependencies for this cleanup without explicit approval.
 
 ## Not Locally Validated
 
-These claims were not confirmed from checked-in repo state alone and should not drive immediate work without revalidation:
+These claims should not drive immediate work without live revalidation:
 
 - GitHub labels such as `good first issue`
 - External OSS discoverability or contributor conversion
-- Exact remote vulnerability dashboard details outside the push-time Dependabot summary
-- Any public reputation-style scoring that depends on live GitHub metadata rather than the repository contents
+- Remote vulnerability dashboard state outside checked-in repo configuration
+- Any public reputation-style scoring that depends on live GitHub metadata rather than repository contents

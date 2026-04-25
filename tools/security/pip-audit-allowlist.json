@@ -1,0 +1,11 @@
+{
+  "allowlist": [
+    {
+      "id": "PYSEC-2017-83",
+      "package": "scrapy",
+      "reason": "Baluffo does not use Scrapy's affected file-download storage path; the advisory has no fixed version for Scrapy 2.15.0.",
+      "owner": "@deathuman",
+      "review_by": "2026-07-24"
+    }
+  ]
+}
