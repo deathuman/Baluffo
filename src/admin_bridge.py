@@ -39,6 +39,7 @@ from src.bridge import admin_registry_api as admin_registry_api_mod
 from src.bridge import admin_task_runtime as admin_task_runtime_mod
 from src.bridge import bootstrap as bridge_bootstrap
 from src.bridge import config as bridge_config
+from src.bridge import diagnostic_events as _diagnostic_events
 from src.bridge import html_extractor as _html_extractor_mod
 from src.bridge import ops_api as _ops_api_mod
 from src.bridge import registry_sync_flow as _registry_sync_flow_mod
@@ -132,6 +133,7 @@ os = _os
 time = _time
 discovery = _discovery_mod
 bridge_runtime_state = _bridge_runtime_state
+diagnostic_events = _diagnostic_events
 get_app_version = _get_app_version
 get_security_defaults = _get_security_defaults
 SCHEMA_VERSION = _SCHEMA_VERSION
@@ -177,6 +179,7 @@ TASK_STATE_PATH = ROOT / "data" / "admin-task-state.json"
 SYNC_LIVE_TASK_PATH = ROOT / "data" / "sync-live-task.json"
 DISCOVERY_LOG_PATH = ROOT / "data" / "source-discovery.log"
 FETCHER_LOG_PATH = ROOT / "data" / "jobs-fetcher.log"
+ADMIN_BRIDGE_EVENTS_PATH = ROOT / "data" / "admin-bridge-events.jsonl"
 SYNC_CONFIG_PATH = SYNC_CONFIG_PATH_DEFAULT
 DISCOVERY_CONFIG_PATH = ROOT / "data" / "source-discovery-config.json"
 SYNC_RUNTIME_PATH = SYNC_RUNTIME_PATH_DEFAULT

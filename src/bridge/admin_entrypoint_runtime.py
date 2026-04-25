@@ -38,6 +38,16 @@ def bridge_log(level: str, message: str, **fields: Any) -> None:
         "message": str(message or ""),
         **{key: value for key, value in fields.items() if value is not None and value != ""},
     }
+    try:
+        event = root_mod.diagnostic_events.build_bridge_event(
+            normalized_level,
+            str(message or ""),
+            fields,
+            payload["ts"],
+        )
+        root_mod.diagnostic_events.append_bridge_event(root_mod.ADMIN_BRIDGE_EVENTS_PATH, event)
+    except Exception:
+        pass
     if root_mod._normalize_log_format(root_mod.RUNTIME_CONFIG.log_format) == "jsonl":
         try:
             print(json.dumps(payload, ensure_ascii=False), flush=True)
@@ -70,6 +80,7 @@ def configure_runtime_paths(config: Any) -> None:
     root_mod.SYNC_LIVE_TASK_PATH = data_dir / "sync-live-task.json"
     root_mod.DISCOVERY_LOG_PATH = data_dir / "source-discovery.log"
     root_mod.FETCHER_LOG_PATH = data_dir / "jobs-fetcher.log"
+    root_mod.ADMIN_BRIDGE_EVENTS_PATH = data_dir / "admin-bridge-events.jsonl"
     root_mod.SYNC_CONFIG_PATH = data_dir / root_mod.SYNC_CONFIG_PATH_DEFAULT.name
     root_mod.DISCOVERY_CONFIG_PATH = data_dir / "source-discovery-config.json"
     root_mod.SYNC_RUNTIME_PATH = data_dir / root_mod.SYNC_RUNTIME_PATH_DEFAULT.name

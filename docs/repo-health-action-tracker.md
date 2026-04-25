@@ -65,8 +65,11 @@ P2-11 and P2-12 are complete and archived; the remaining items below are the act
    **Done when:** the remaining named modules reach the agreed module-level target or have a documented reason to stay below it.
 
 14. **Evaluate structured logging for support and ops diagnostics.**
-   The repo already has strong observability hooks; structured logs would make support bundles and smoke artifacts easier to consume programmatically.
-   **Done when:** one agreed logging surface adopts a structured format and demonstrates clear improvement over current ad hoc strings.
+   The repo already has strong observability hooks; structured logs would make support bundles and smoke artifacts easier to consume programmatically. Treat this as a phased effort under one tracker item:
+   - Phase 1 complete: retained admin bridge diagnostic events are written to `data/admin-bridge-events.jsonl` under the configured data directory with bounded retention and redaction, while existing console logging behavior is preserved.
+   - Remaining Phase 2: structured live task events for fetch, discovery, and sync payloads consumed by Admin Ops.
+   - Remaining Phase 3: structured startup diagnostics for desktop launch, recovery, and packaged support scenarios.
+   **Done when:** all three surfaces have a structured format, documented support value, and focused regression coverage, or the remaining phases are intentionally split into separate tracker items.
 
 ## Corrections to the Source Analysis
 

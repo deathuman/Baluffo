@@ -198,9 +198,10 @@ def test_resolve_runtime_config_uses_precedence_matrix(
 
 
 def test_bridge_log_jsonl_output_is_valid_json(admin_bridge_entrypoint_root):
+    data_dir = admin_bridge_entrypoint_root / "runtime-data"
     cfg = admin_bridge.RuntimeConfig(
         root=admin_bridge_entrypoint_root,
-        data_dir=admin_bridge_entrypoint_root,
+        data_dir=data_dir,
         host="127.0.0.1",
         port=8877,
         log_format="jsonl",
@@ -216,6 +217,112 @@ def test_bridge_log_jsonl_output_is_valid_json(admin_bridge_entrypoint_root):
     assert str(payload.get("message") or "") == "hello_bridge"
     assert str(payload.get("runId") or "") == "abc123"
     assert str(payload.get("level") or "") == "info"
+    assert "schemaVersion" not in payload
+    assert "fields" not in payload
+
+    retained_rows = admin_bridge.diagnostic_events.read_bridge_events(
+        data_dir / "admin-bridge-events.jsonl"
+    )
+    assert len(retained_rows) == 1
+    assert retained_rows[0]["schemaVersion"] == 1
+    assert retained_rows[0]["event"] == "hello_bridge"
+    assert retained_rows[0]["fields"]["runId"] == "abc123"
+
+
+def test_bridge_log_human_output_still_writes_retained_event(admin_bridge_entrypoint_root):
+    data_dir = admin_bridge_entrypoint_root / "runtime-data"
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=data_dir,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        admin_bridge.bridge_log("info", "hello_bridge", runId="abc123")
+
+    assert buf.getvalue().strip() == "[admin_bridge][INFO] hello_bridge runId=abc123"
+    retained_rows = admin_bridge.diagnostic_events.read_bridge_events(
+        data_dir / "admin-bridge-events.jsonl"
+    )
+    assert retained_rows[0]["event"] == "hello_bridge"
+    assert retained_rows[0]["fields"]["runId"] == "abc123"
+
+
+def test_bridge_log_respects_log_level_for_retained_events(admin_bridge_entrypoint_root):
+    data_dir = admin_bridge_entrypoint_root / "runtime-data"
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=data_dir,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="warn",
+        quiet_requests=False,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        admin_bridge.bridge_log("info", "debug_only", runId="abc123")
+
+    assert buf.getvalue() == ""
+    assert not (data_dir / "admin-bridge-events.jsonl").exists()
+
+
+def test_bridge_log_retained_write_failure_does_not_break_console_output(
+    admin_bridge_entrypoint_root,
+):
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=admin_bridge_entrypoint_root / "runtime-data",
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    buf = io.StringIO()
+    with (
+        mock.patch.object(
+            admin_bridge.diagnostic_events,
+            "append_bridge_event",
+            side_effect=OSError("diagnostic write failed"),
+        ),
+        redirect_stdout(buf),
+    ):
+        admin_bridge.bridge_log("info", "hello_bridge", runId="abc123")
+
+    assert buf.getvalue().strip() == "[admin_bridge][INFO] hello_bridge runId=abc123"
+
+
+def test_startup_banner_redacts_owner_token_in_retained_events(admin_bridge_entrypoint_root):
+    data_dir = admin_bridge_entrypoint_root / "runtime-data"
+    cfg = admin_bridge.RuntimeConfig(
+        root=admin_bridge_entrypoint_root,
+        data_dir=data_dir,
+        host="127.0.0.1",
+        port=8877,
+        log_format="human",
+        log_level="info",
+        quiet_requests=False,
+        owner_mode="desktop-window",
+        owner_token="owner-secret",
+        desktop_session_id="session-123",
+        started_by="unit-test",
+    )
+    admin_bridge.configure_runtime_paths(cfg)
+    with redirect_stdout(io.StringIO()):
+        admin_bridge.startup_banner(cfg)
+
+    rows = admin_bridge.diagnostic_events.read_bridge_events(data_dir / "admin-bridge-events.jsonl")
+    started = next(row for row in rows if row["event"] == "admin_bridge_started")
+    assert started["fields"]["owner_token"] == "[redacted]"
+    assert started["fields"]["desktop_session_id"] == "session-123"
 
 
 def test_bridge_log_swallows_broken_windows_pipe(admin_bridge_entrypoint_root):
@@ -249,6 +356,7 @@ def test_configure_runtime_paths_updates_bridge_paths(admin_bridge_entrypoint_ro
     admin_bridge.configure_runtime_paths(cfg)
     assert admin_bridge.ACTIVE_PATH == data_dir / "source-registry-active.json"
     assert admin_bridge.TASK_STATE_PATH == data_dir / "admin-task-state.json"
+    assert admin_bridge.ADMIN_BRIDGE_EVENTS_PATH == data_dir / "admin-bridge-events.jsonl"
     assert admin_bridge.source_registry_module.DATA_DIR == data_dir.resolve()
 
 

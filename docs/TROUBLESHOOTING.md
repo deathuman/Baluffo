@@ -5,7 +5,7 @@
 > - **Canonical for:** common issue triage steps, quick diagnostics, and known recovery paths
 > - **Not canonical for:** subsystem ownership, API contracts, or release policy
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md), and the owning runtime docs for the affected subsystem
-> - **Last updated:** 2026-04-23
+> - **Last updated:** 2026-04-25
 
 ---
 
@@ -97,6 +97,15 @@ python src/admin_bridge.py --host 127.0.0.1 --port 8877
 | "Module not found" | Ensure `PYTHONPATH` includes repo root |
 | "Config not found" | Check `baluffo.config.json` exists |
 | Import errors | Run `python -m pip install -r requirements-lock.txt` |
+
+### Bridge diagnostics are needed for support
+
+| Artifact | Use |
+|----------|-----|
+| `data/admin-bridge-events.jsonl` | Structured retained bridge lifecycle/task events with bounded retention and token redaction |
+| Console output | Human or JSONL stdout controlled by `--log-format` / `BALUFFO_BRIDGE_LOG_FORMAT`; retained artifacts do not change this output |
+
+Use the retained event file when console logs are unavailable or too noisy. The file is written under the configured data directory, so custom `BALUFFO_DATA_DIR` runs keep diagnostics beside the rest of that run's data.
 
 ### Sync operations fail
 
