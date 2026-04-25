@@ -7,6 +7,8 @@ dist/
 .tmp/
 .pytest_cache/
 .coverage
+.coverage.*
+htmlcov/
 .codex-pre-commit-home/
 .pre-commit-home/
 pytest-cache-files-*/

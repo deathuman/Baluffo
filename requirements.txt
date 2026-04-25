@@ -3,3 +3,4 @@ Scrapy==2.15.0
 scrapy-playwright>=0.0.46
 httpx==0.28.1
 pydantic>=2.0.0
+ruff==0.15.9

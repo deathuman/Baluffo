@@ -86,12 +86,19 @@ def test_collect_changed_files_excludes_generated_fetch_reports(tmp_path, monkey
 
 def test_run_all_executes_precommit_and_vulture_commands(monkeypatch) -> None:
     commands: list[list[str]] = []
+    complexity_called = False
 
     def fake_run(command: list[str]) -> int:
         commands.append(command)
         return 0
 
+    def fake_complexity() -> int:
+        nonlocal complexity_called
+        complexity_called = True
+        return 0
+
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", fake_complexity)
 
     assert precommit_gate.run_all() == 0
     assert commands == [
@@ -117,6 +124,7 @@ def test_run_all_executes_precommit_and_vulture_commands(monkeypatch) -> None:
             "pre-push",
         ],
     ]
+    assert complexity_called is True
 
 
 def test_run_precommit_command_sets_repo_local_cache(tmp_path, monkeypatch) -> None:
@@ -144,6 +152,7 @@ def test_run_precommit_command_sets_repo_local_cache(tmp_path, monkeypatch) -> N
 
 def test_run_all_with_exclusions_uses_filtered_repo_files(monkeypatch) -> None:
     commands: list[list[str]] = []
+    complexity_called = False
 
     def fake_collect_repo_files(exclude_roots: tuple[str, ...] = ()) -> list[str]:
         assert exclude_roots == ("data",)
@@ -153,8 +162,14 @@ def test_run_all_with_exclusions_uses_filtered_repo_files(monkeypatch) -> None:
         commands.append(command)
         return 0
 
+    def fake_complexity() -> int:
+        nonlocal complexity_called
+        complexity_called = True
+        return 0
+
     monkeypatch.setattr(precommit_gate, "collect_repo_files", fake_collect_repo_files)
     monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", fake_complexity)
 
     assert precommit_gate.run_all(("data",)) == 0
     assert commands == [
@@ -182,6 +197,25 @@ def test_run_all_with_exclusions_uses_filtered_repo_files(monkeypatch) -> None:
             "pre-push",
         ],
     ]
+    assert complexity_called is True
+
+
+def test_run_all_stops_before_complexity_when_precommit_fails(monkeypatch) -> None:
+    complexity_called = False
+
+    def fake_run(command: list[str]) -> int:
+        return 1
+
+    def fake_complexity() -> int:
+        nonlocal complexity_called
+        complexity_called = True
+        return 0
+
+    monkeypatch.setattr(precommit_gate, "_run_precommit_command", fake_run)
+    monkeypatch.setattr(precommit_gate, "run_complexity_baseline", fake_complexity)
+
+    assert precommit_gate.run_all() == 1
+    assert complexity_called is False
 
 
 def test_run_changed_skips_when_no_files(monkeypatch, capsys) -> None:

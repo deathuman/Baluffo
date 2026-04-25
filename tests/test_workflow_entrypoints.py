@@ -58,6 +58,10 @@ def test_lint_workflow_uses_canonical_precommit_entrypoints() -> None:
     assert "--exclude-root data" in package_text, (
         f"{package_path.name} should route the CI pre-commit entrypoint through the data exclusion."
     )
+    assert "python -m pip install -r requirements-lock.txt pre-commit mypy" in workflow_text, (
+        f"{workflow_path.name} should install pinned Python tooling before running lint."
+    )
+    assert "ruff==0.15.9" in (root / "requirements-lock.txt").read_text(encoding="utf-8")
 
 
 def test_lint_workflow_enforces_ruff_import_sorting() -> None:
@@ -68,9 +72,25 @@ def test_lint_workflow_enforces_ruff_import_sorting() -> None:
 
     assert "I" in ruff_config["lint"]["select"]
     assert "id: ruff-check" in pre_commit_text
+    assert "rev: v0.15.9" in pre_commit_text
     assert package["scripts"]["lint:precommit:ci"] == (
         "python scripts/precommit_gate.py --mode all --exclude-root data"
     )
+
+
+def test_lint_workflow_enforces_source_complexity_baseline() -> None:
+    root = Path(__file__).resolve().parents[1]
+    baseline = json.loads(
+        (root / "scripts" / "complexity_baseline.json").read_text(encoding="utf-8")
+    )
+    precommit_gate = (root / "scripts" / "precommit_gate.py").read_text(encoding="utf-8")
+
+    assert baseline["ruff_version"] == "0.15.9"
+    assert baseline["rule"] == "C901"
+    assert baseline["threshold"] == 10
+    assert baseline["scope"] == ["src"]
+    assert isinstance(baseline["entries"], dict)
+    assert "run_complexity_baseline()" in precommit_gate
 
 
 def test_pre_push_hook_runs_python_and_smoke_gates() -> None:

@@ -33,7 +33,7 @@ jobs:
       - name: Install Python tooling
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pre-commit mypy
+          python -m pip install -r requirements-lock.txt pre-commit mypy
 
       - name: Install Node tooling
         run: npm ci

@@ -25,6 +25,7 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | ESLint | `0 warnings, 0 errors` |
 | `knip` | `0` unused JS exports |
 | Python import sorting / unused import check | Enforced by `ruff.toml` (`F` and `I` selected) through `npm run lint:precommit:ci`; `python -m ruff check --select I,F401 src tests` also passes |
+| Python source complexity | Enforced by `scripts/check_complexity_baseline.py` through `npm run lint:precommit:ci`; Ruff `C901` uses threshold `10` against the checked-in `src/` baseline |
 | Static security scanners | `bandit`, `pip-audit`, `radon`, and `xenon` are not installed locally and are not wired in CI/pre-commit |
 | Python lock file | `requirements-lock.txt` present |
 | Node lock file | `package-lock.json` present |
@@ -57,11 +58,7 @@ P1-8 is complete and archived; the remaining items below are the active P1 gaps.
 
 ### P2
 
-P2-11 is complete and archived; the remaining items below are the active P2 gaps.
-
-12. **Evaluate a complexity gate after the current lint debt is closed.**
-   Complexity enforcement is worthwhile, but `radon` and `xenon` are not installed or wired today and would add dependencies. The gate should not be added before the current ESLint errors are fixed.
-   **Done when:** the repo adopts a complexity ceiling with an explicit allowlist or baseline strategy instead of freezing current hotspots.
+P2-11 and P2-12 are complete and archived; the remaining items below are the active P2 gaps.
 
 13. **Raise coverage in the remaining weak runtime/security modules.**
    The validated coverage lane still reports `source_sync_runtime.py` at `76%` and `source_discovery/web_search_candidates.py` at `75%`. The previously cited `source_discovery/probe.py` is no longer a weak module; it reports `93%`.
@@ -83,6 +80,7 @@ P2-11 is complete and archived; the remaining items below are the active P2 gaps
 - The submitted "1 ESLint error" claim is stale; current validation found `2` `no-extra-boolean-cast` errors in `frontend/admin/domain/sources.js`.
 - The submitted weak-coverage list is partially stale; `source_discovery/probe.py` now reports `93%`, while `source_sync_runtime.py` and `source_discovery/web_search_candidates.py` remain below `80%`.
 - The submitted unused-import gate claim is stale; Ruff's default `F` rules cover `F401`, and import sorting (`I`) is selected in `ruff.toml` and enforced by the pre-commit/CI lane.
+- The submitted complexity-gate gap is now closed with a Ruff `C901` baseline gate for `src/`, avoiding new complexity-specific dependencies while preventing new or worsened source hotspots.
 - The original 1-10 score table and overall `7.5/10` rating were not retained here because they are subjective and partially stale relative to the current repo state.
 
 ## Not Locally Validated

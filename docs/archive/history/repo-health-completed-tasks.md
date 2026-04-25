@@ -41,3 +41,7 @@ This page stores completed items moved out of the active repository-health track
 1. **Completed: make Python import sorting explicit in the gate.**
    Confirmed `ruff.toml` selects both `F` and `I`, CI routes through `npm run lint:precommit:ci`, and the pre-commit configuration runs `ruff-check`. A workflow regression test now protects that wiring so import sorting cannot silently drop out of the enforced gate.
    **Done when:** complete.
+
+2. **Completed: add a source complexity baseline gate.**
+   Ruff `C901` now runs through `scripts/check_complexity_baseline.py` in the CI pre-commit lane with an explicit `src/` baseline, rule, threshold, and Ruff version. The gate allows current complexity hotspots to improve but fails new or worsened source hotspots without adding a new complexity-specific dependency.
+   **Done when:** complete.

@@ -146,6 +146,15 @@ def build_all_commands(files: list[str] | None = None) -> list[list[str]]:
     ]
 
 
+def run_complexity_baseline() -> int:
+    completed = subprocess.run(
+        [PYTHON, "scripts/check_complexity_baseline.py"],
+        cwd=ROOT,
+        check=False,
+    )
+    return completed.returncode
+
+
 def run_changed() -> int:
     files = collect_changed_files()
     if not files:
@@ -163,7 +172,7 @@ def run_all(exclude_roots: tuple[str, ...] = ()) -> int:
         return_code = _run_precommit_command(command)
         if return_code != 0:
             return return_code
-    return 0
+    return run_complexity_baseline()
 
 
 def main() -> int:
