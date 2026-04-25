@@ -16,12 +16,12 @@ This page tracks active repository-health work after the broad type, lint, compl
 | Source Python files | `315` under `src/` |
 | Python test files | `99` |
 | Frontend JS files | `183` under `frontend/` |
-| Frontend unit test files | `58` under `tests/frontend/unit/` |
+| Frontend unit test files | `52` under `tests/frontend/unit/` |
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Repository policy guardrails | `npm run lint:repo-guardrails` via `tools/repo_health/repo_guardrails.py` |
 | Fixture reference guardrail | `npm run lint:repo-guardrails` fails unreferenced `tests/fixtures/**` files unless explicitly allowlisted with a reason |
 | Fixture files | `50` files under `tests/fixtures/` |
-| Frontend unit manifest tooling | `scripts/sync_frontend_unit_manifest.mjs` plus `tests/frontend/unit/all.test.mjs` are still active; structural cleanup policy is no longer collected as a frontend unit test |
+| Frontend unit discovery | `npm run test:frontend:unit` runs Node directly against `tests/frontend/unit/*.test.mjs`; generated frontend unit aggregators are blocked by repo guardrails |
 | Static security scanners | `pip-audit` is wired through `npm run security:python` and the CI lint workflow; `bandit`, `radon`, and `xenon` are not wired in `package.json`, `.pre-commit-config.yaml`, requirements files, scripts, or CI |
 
 The previous full-suite validation remains the last broad quality snapshot: coverage lane `1634 passed, 74 deselected`, total coverage `75%`; broad `python -m mypy src` green; enforced `mypy.ini` gate green; ESLint green; `knip` green; Ruff import and unused-import checks enforced by `ruff.toml`; source complexity enforced by `scripts/check_complexity_baseline.py`.
@@ -46,19 +46,7 @@ The last coverage snapshot still named `source_sync_runtime.py` and `source_disc
 
 **Done when:** the remaining named modules reach the agreed module-level target or have a documented reason to stay below it.
 
-### P2-B. Simplify frontend unit test discovery and merge small adjacent files
-
-The submitted merge list is mostly plausible, but direct Node glob execution should be verified on the active Node version before deleting manifest tooling. The current package script still runs `npm run check:test-manifest && node --test --test-reporter=dot tests/frontend/unit/all.test.mjs`.
-
-**Implementation plan:**
-
-1. Verify a direct Node test discovery command works on the supported runtime before removing the generated manifest.
-2. If direct discovery is stable, delete `scripts/sync_frontend_unit_manifest.mjs`, `tests/frontend/unit/all.test.mjs`, and `tests/frontend/unit/manifest-contract.test.mjs` together.
-3. Merge only tightly related small files where setup overlap is real:
-   `admin-live-task*` with `admin-progress-ui`, `admin-render*`, `jobs-runtime-events/state`, and `saved-phase-time/timeline`.
-4. Keep independent runtime-controller tests split when their fixture setup or failure messages become less clear after merging.
-
-**Done when:** adding a frontend unit test no longer requires manifest regeneration, related tiny files are consolidated, and frontend unit failures still point at a focused behavioral area.
+No other active P2 repository-health items remain after P2-B. Keep new P2 findings triaged here before promoting them into implementation work.
 
 ## Explicit Non-Goals For Test Debloat
 

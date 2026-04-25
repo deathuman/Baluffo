@@ -99,23 +99,24 @@ def test_discovered_python_test_files_define_real_tests() -> None:
         )
 
 
-def test_frontend_test_patterns_reserve_generated_manifest_as_only_aggregator() -> None:
+def test_frontend_test_patterns_disallow_generated_manifest_aggregators() -> None:
     repo_root = ROOT
     tests_root = repo_root / "tests"
     frontend_unit_root = tests_root / "frontend" / "unit"
-    allowed_manifest = frontend_unit_root / "all.test.mjs"
     aggregator_paths = sorted(tests_root.rglob("all.test.mjs"))
-    assert aggregator_paths == [allowed_manifest], (
-        "tests/frontend/unit/all.test.mjs must remain the only all.test.mjs-style test aggregator."
+    assert aggregator_paths == [], (
+        "Generated all.test.mjs aggregators are retired; frontend unit tests run through direct Node discovery."
     )
 
+    sync_script_import = "scripts/sync_frontend_unit_manifest.mjs"
     real_frontend_test_pattern = re.compile(r"\btest\s*\(")
     for path in sorted(frontend_unit_root.glob("*.test.mjs")):
-        if path == allowed_manifest:
-            continue
         text = path.read_text(encoding="utf-8")
         assert real_frontend_test_pattern.search(text), (
             f"{path.relative_to(repo_root)} matches the frontend discovered test pattern but does not define a real test."
+        )
+        assert sync_script_import not in text, (
+            f"{path.relative_to(repo_root)} should not import retired frontend unit manifest tooling."
         )
 
 

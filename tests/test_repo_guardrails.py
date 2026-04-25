@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tools.repo_health import repo_guardrails
+import pytest
+
+from tools.repo_health import repo_guardrails, suite_contract_policy
 
 
 def test_repo_guardrails_group_selection_runs_only_requested_group(monkeypatch) -> None:
@@ -139,3 +141,37 @@ def test_fixture_reference_allowlist_requires_reason(tmp_path: Path, monkeypatch
         encoding="utf-8",
     )
     assert repo_guardrails.check_fixture_references() == []
+
+
+def test_frontend_unit_shape_rejects_generated_manifest(tmp_path: Path, monkeypatch) -> None:
+    frontend_unit_root = tmp_path / "tests" / "frontend" / "unit"
+    frontend_unit_root.mkdir(parents=True)
+    (frontend_unit_root / "real.test.mjs").write_text(
+        'import test from "node:test";\ntest("real", () => {});\n',
+        encoding="utf-8",
+    )
+    (frontend_unit_root / "all.test.mjs").write_text(
+        'import "./real.test.mjs";\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(suite_contract_policy, "ROOT", tmp_path)
+
+    with pytest.raises(AssertionError, match="all.test.mjs aggregators are retired"):
+        suite_contract_policy.test_frontend_test_patterns_disallow_generated_manifest_aggregators()
+
+
+def test_frontend_unit_shape_rejects_manifest_tool_import(tmp_path: Path, monkeypatch) -> None:
+    frontend_unit_root = tmp_path / "tests" / "frontend" / "unit"
+    frontend_unit_root.mkdir(parents=True)
+    (frontend_unit_root / "real.test.mjs").write_text(
+        'import test from "node:test";\n'
+        'import "../../../scripts/sync_frontend_unit_manifest.mjs";\n'
+        'test("real", () => {});\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(suite_contract_policy, "ROOT", tmp_path)
+
+    with pytest.raises(AssertionError, match="retired frontend unit manifest tooling"):
+        suite_contract_policy.test_frontend_test_patterns_disallow_generated_manifest_aggregators()

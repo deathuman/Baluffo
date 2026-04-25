@@ -102,6 +102,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Full pre-commit sweep | `npm run lint:precommit:all` |
 | CI pre-commit sweep | `npm run lint:precommit:ci` |
 | Repository policy guardrails | `npm run lint:repo-guardrails` |
+| Frontend unit tests | `npm run test:frontend:unit` |
 | Python dependency security audit | `npm run security:python` |
 | Build ship bundle | `npm run build:ship-bundle` |
 | Build portable EXE | `npm run build:portable-exe` |
@@ -164,6 +165,8 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 ## Test ownership rules
 
 - Repository policy checks belong in `tools/repo_health/repo_guardrails.py` and run through `npm run lint:repo-guardrails`, not pytest or frontend unit collection.
+- Frontend unit tests are discovered directly by Node through `npm run test:frontend:unit`; new files only need to live under `tests/frontend/unit/` and match `*.test.mjs`.
+- Do not add generated frontend unit aggregators or manifest-sync scripts.
 - Real shard files must own real tests. Do not hide test functions inside giant imported `_cases.py` containers.
 - Shared helpers should stay local to the test family and helper-only. Prefer `_helpers.py`, `conftest.py`, or a focused helper module over a broad test utility barrel.
 - Do not add root pytest fixtures for single-family setup. Keep source-sync, admin, bridge, jobs, and static-adapter helpers in their nearest test family unless they are truly universal.

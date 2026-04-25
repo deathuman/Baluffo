@@ -3,8 +3,7 @@
   "integration_budget": 800,
   "excluded_globs": [
     "tests/packaged_desktop/**",
-    "tests/fixtures/**",
-    "tests/frontend/unit/all.test.mjs"
+    "tests/fixtures/**"
   ],
   "integration_globs": [
     "tests/admin/**",

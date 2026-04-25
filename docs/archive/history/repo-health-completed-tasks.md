@@ -69,3 +69,7 @@ This page stores completed items moved out of the active repository-health track
 3. **Completed: standardize structured diagnostics for support and ops.**
    P2-14 closed as a phased structured diagnostics effort. Phase 1 added retained admin bridge diagnostic events at `data/admin-bridge-events.jsonl` with bounded retention and redaction while preserving console logs. Phase 2 hardened `/ops/task-live/<taskType>` so fetch, discovery, and sync `recentEvents` share the versioned `src/shared/live_task.py` envelope. Phase 3 versioned `data/desktop-startup-metrics.jsonl` rows with support categories while preserving existing startup metric event names, bridge routes, `payload` / `fields` compatibility, and packaged smoke startup snapshots.
    **Done when:** complete.
+
+4. **Completed: simplify frontend unit discovery and merge small adjacent files.**
+   Frontend unit tests now run through direct Node discovery with `npm run test:frontend:unit`, using the quoted `tests/frontend/unit/*.test.mjs` glob instead of a generated manifest. The retired manifest sync script, generated aggregator, and manifest contract test were removed; the release workflow no longer regenerates the manifest; and test-shape guardrails now block generated frontend unit aggregators. Small adjacent admin live-task, Jobs runtime, and saved activity test files were merged, while `admin-render*` stayed split to preserve the default line-budget rule.
+   **Done when:** complete.

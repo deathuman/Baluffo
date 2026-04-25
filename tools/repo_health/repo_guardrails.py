@@ -356,7 +356,7 @@ def run_workflow_group() -> list[GuardFailure]:
 def run_compat_group() -> list[GuardFailure]:
     excluded = {
         "test_discovered_python_test_files_define_real_tests",
-        "test_frontend_test_patterns_reserve_generated_manifest_as_only_aggregator",
+        "test_frontend_test_patterns_disallow_generated_manifest_aggregators",
     }
     module = importlib.import_module("suite_contract_policy")
     checks = [
@@ -398,7 +398,7 @@ def run_test_shape_group() -> list[GuardFailure]:
         ("suite_contract_policy", "test_discovered_python_test_files_define_real_tests"),
         (
             "suite_contract_policy",
-            "test_frontend_test_patterns_reserve_generated_manifest_as_only_aggregator",
+            "test_frontend_test_patterns_disallow_generated_manifest_aggregators",
         ),
     ]
     return _run_python_checks("test-shape", checks)

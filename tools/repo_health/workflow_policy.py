@@ -32,6 +32,9 @@ def test_release_workflow_uses_canonical_test_entrypoints() -> None:
 
     for forbidden_command in (
         "node tests/frontend/unit/all.test.mjs",
+        "Sync test manifest",
+        "npm run sync:test-manifest",
+        "scripts/sync_frontend_unit_manifest.mjs",
         'py -3.13 -m unittest discover -s tests -p "test_*.py" -v',
         "scripts\\run_py_tests.cmd",
         "py -3.13 scripts/packaged_desktop_smoke.py",
@@ -109,6 +112,33 @@ def test_package_json_exposes_repo_guardrails_entrypoint(repo_root: Path) -> Non
     )
     assert "tests/test_suite_contract.py" not in refactor_gate
     assert "tools/repo_health/repo_guardrails.py" in refactor_gate
+
+
+def test_package_json_uses_direct_frontend_unit_discovery(repo_root: Path) -> None:
+    package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
+    package_text = (repo_root / "package.json").read_text(encoding="utf-8")
+    workflow_text = (repo_root / ".github" / "workflows" / "build-portable-exe.yml").read_text(
+        encoding="utf-8"
+    )
+    frontend_workflow_text = (repo_root / ".github" / "workflows" / "test.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert package["scripts"]["test:frontend:unit"] == (
+        'node --test --test-reporter=dot "tests/frontend/unit/*.test.mjs"'
+    )
+    assert package["scripts"]["test:unit"] == "npm run test:frontend:unit"
+    for stale_token in (
+        "check:test-manifest",
+        "sync:test-manifest",
+        "scripts/sync_frontend_unit_manifest.mjs",
+        "tests/frontend/unit/all.test.mjs",
+        "tests/frontend/unit/manifest-contract.test.mjs",
+    ):
+        assert stale_token not in package_text
+        assert stale_token not in workflow_text
+    assert "Sync test manifest" not in workflow_text
+    assert "node-version: '22'" in frontend_workflow_text
 
 
 def test_package_json_exposes_python_security_audit_entrypoint(repo_root: Path) -> None:
