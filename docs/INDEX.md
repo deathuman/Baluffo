@@ -79,7 +79,6 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Document | Scope | Use it when |
 |----------|-------|-------------|
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
-| [`repo-health-action-tracker.md`](repo-health-action-tracker.md) | Validated repo health tracker | You are reviewing near-term maintenance priorities or correcting an external repo audit against current repo state |
 | [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) | Time-bound failure snapshot | You are picking up the discovery/fetch failures observed in the 2026-04-25 fresh build runs |
 | [`../tools/mcp/INDEX.md`](../tools/mcp/INDEX.md) | MCP tooling index | You are choosing which MCP tooling doc to load under `tools/mcp/` |
 | [`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md) | AI dev tooling | You are setting up the required Serena MCP workflow for Codex CLI or OpenCode, or checking the repo's Serena-memory rules |
@@ -115,7 +114,7 @@ Archived historical notes live under `docs/archive/history/`. They are useful fo
 | Document | Status | Notes |
 |----------|--------|-------|
 | [`archive/history/final-leaf-closeout-program.md`](archive/history/final-leaf-closeout-program.md) | **Historical** | Final multi-wave cleanup tracker, verification history, and intentional stop list |
-| [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md) | **Historical** | Completed repository-health tracker items moved out of the active priority list |
+| [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md) | **Retired record** | Completed repository-health plan history after all tracked P0/P1/P2 items closed |
 | [`archive/history/runtime-first-cleanup-handoff.md`](archive/history/runtime-first-cleanup-handoff.md) | **Historical** | Pickup note for the older runtime-first cleanup campaign after checking the active routing docs first |
 | [`archive/history/scraping-pipeline-run-notes.md`](archive/history/scraping-pipeline-run-notes.md) | **Historical** | Snapshot run notes from 2026-03-17; useful for context but should not override current code/contracts |
 

@@ -1,8 +1,8 @@
 # Repository Health Completed Tasks
 
-> Historical repo-health completion record preserved for archive/reference use. Start with [`../../repo-health-action-tracker.md`](../../repo-health-action-tracker.md) for current priorities before using this record.
+> Canonical retired repo-health completion record. All tracked P0, P1, and P2 repository-health items are complete as of P2-A.
 
-This page stores completed items moved out of the active repository-health tracker so [`../../repo-health-action-tracker.md`](../../repo-health-action-tracker.md) can stay focused on work that still needs attention.
+This page stores the completed repository-health plan history after retirement of the active tracker. Future repository-health work should start from a fresh validated finding and a new plan, not by reopening these retired items.
 
 ## Completed P0 Items
 
@@ -72,4 +72,8 @@ This page stores completed items moved out of the active repository-health track
 
 4. **Completed: simplify frontend unit discovery and merge small adjacent files.**
    Frontend unit tests now run through direct Node discovery with `npm run test:frontend:unit`, using the quoted `tests/frontend/unit/*.test.mjs` glob instead of a generated manifest. The retired manifest sync script, generated aggregator, and manifest contract test were removed; the release workflow no longer regenerates the manifest; and test-shape guardrails now block generated frontend unit aggregators. Small adjacent admin live-task, Jobs runtime, and saved activity test files were merged, while `admin-render*` stayed split to preserve the default line-budget rule.
+   **Done when:** complete.
+
+5. **Completed: raise coverage in the remaining weak runtime/security modules.**
+   Added focused leaf coverage for `src/source_sync_runtime.py` and `src/source_discovery/web_search_candidates.py` without changing runtime behavior. The targeted coverage lane now reports `86%` and `94%` respectively, clearing the agreed `80%` per-module threshold.
    **Done when:** complete.
