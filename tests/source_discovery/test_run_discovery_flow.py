@@ -1,6 +1,7 @@
 # ruff: noqa: F401
 from ._helpers import (
     FIXTURES_DIR,
+    GENERATOR_DISABLED_DISCOVERY_CONFIG,
     DiscoveryReportSummarySchema,
     Path,
     _fixture_json,
@@ -10,6 +11,7 @@ from ._helpers import (
     asyncio,
     classify_probe_failure_stage,
     discovery_config_module,
+    discovery_config_without_generator_stages,
     discovery_orchestrator,
     discovery_url_patches,
     gamesmap_adapter,
@@ -19,6 +21,7 @@ from ._helpers import (
     os,
     override_discovery_config,
     override_discovery_runtime,
+    patch_empty_generator_stages,
     sd,
     sr,
     sys,
@@ -136,7 +139,7 @@ def test_discovery_report_snapshot_contract() -> None:
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                 fetcher=fake_fetch,
             )
             DiscoveryReportSummarySchema.model_validate(report["summary"])
@@ -200,10 +203,7 @@ def test_run_discovery_applies_existing_url_patches_before_probe() -> None:
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={
-                        "gamesmap": {"enabled": False},
-                        "gameprog": {"enabled": False},
-                    },
+                    discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                     fetcher=fake_fetch,
                 )
             assert "https://old.example/jobs" not in seen_urls
@@ -516,7 +516,7 @@ def test_run_discovery_dynamic_tracks_stage_metrics_and_queue_contract() -> None
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                 fetcher=fake_fetch,
             )
             summary = report["summary"]
@@ -548,10 +548,7 @@ def test_run_discovery_emits_phase_logs_for_candidate_generation() -> None:
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={
-                        "gamesmap": {"enabled": False},
-                        "gameprog": {"enabled": False},
-                    },
+                    discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                     fetcher=lambda *_: "",
                 )
 
@@ -614,10 +611,8 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
 def test_run_discovery_gamedevmap_candidates_flow_into_report_and_queue() -> None:
     with workspace_tmpdir("source-discovery-gamedevmap") as root:
         with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]) as paths:
-            config = {
-                "gamesmap": {"enabled": False},
-                "gameprog": {"enabled": False},
-                "gamedevmap": {
+            config = discovery_config_without_generator_stages(
+                gamedevmap={
                     "enabled": True,
                     "csvUrl": "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv",
                     "indexUrl": "https://www.gamedevmap.com/index.php",
@@ -626,7 +621,7 @@ def test_run_discovery_gamedevmap_candidates_flow_into_report_and_queue() -> Non
                     "maxRows": 0,
                     "maxHomepageFetches": 0,
                 },
-            }
+            )
             payloads = {
                 "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv": _fixture_text(
                     "gamedevmap_data.csv"
@@ -728,11 +723,9 @@ def test_run_discovery_does_not_auto_approve_weak_pending_only_rows() -> None:
                     preset="uncapped",
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={
-                        "autoApproveHealthyPendingOnComplete": True,
-                        "gamesmap": {"enabled": False},
-                        "gameprog": {"enabled": False},
-                    },
+                    discovery_config=discovery_config_without_generator_stages(
+                        autoApproveHealthyPendingOnComplete=True
+                    ),
                     fetcher=lambda *args, **kwargs: "",
                 )
 
@@ -988,10 +981,7 @@ def test_run_discovery_persists_deferred_candidates_in_candidates_file() -> None
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={
-                        "gamesmap": {"enabled": False},
-                        "gameprog": {"enabled": False},
-                    },
+                    discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                     fetcher=fake_fetch,
                 )
 
@@ -1048,10 +1038,7 @@ def test_run_discovery_refreshes_url_patches_and_reprobes_candidate() -> None:
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={
-                        "gamesmap": {"enabled": False},
-                        "gameprog": {"enabled": False},
-                    },
+                    discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                     fetcher=fake_fetch,
                 )
 
@@ -1101,7 +1088,7 @@ x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                 fetcher=fake_fetch,
             )
             assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
@@ -1150,7 +1137,7 @@ def test_run_discovery_suppresses_blocked_static_domains_before_probe() -> None:
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                 fetcher=lambda *args, **kwargs: calls.append((args, kwargs)) or "",
             )
             assert not any(
@@ -1185,7 +1172,7 @@ def test_run_discovery_tracks_probe_miss_separately_from_failures() -> None:
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                 fetcher=lambda *_a, **_k: (_ for _ in ()).throw(
                     RuntimeError("HTTP Error 404: Not Found")
                 ),
@@ -1287,10 +1274,7 @@ def test_run_discovery_uses_previous_deferred_review_history_in_ranking() -> Non
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={
-                        "gamesmap": {"enabled": False},
-                        "gameprog": {"enabled": False},
-                    },
+                    discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                     fetcher=fake_fetch,
                 )
 
@@ -1327,7 +1311,7 @@ def test_run_discovery_uses_seed_careers_pages_without_web_search() -> None:
                 top_n=0,
                 mode="dynamic",
                 include_web_search=False,
-                discovery_config={"gamesmap": {"enabled": False}, "gameprog": {"enabled": False}},
+                discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                 fetcher=fake_fetch,
             )
             assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
@@ -1466,10 +1450,7 @@ def test_run_discovery_writes_phase_progress_before_probe() -> None:
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
-                    discovery_config={
-                        "gamesmap": {"enabled": False},
-                        "gameprog": {"enabled": False},
-                    },
+                    discovery_config=GENERATOR_DISABLED_DISCOVERY_CONFIG,
                     fetcher=lambda *_: json.dumps([{"id": 1}]),
                 )
 

@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TOOLS_ROOT = Path(__file__).resolve().parent
 BASELINE_PATH = TOOLS_ROOT / "test_line_budget_baseline.json"
 FRONTEND_GUARDRAILS = TOOLS_ROOT / "frontend_structure_guardrails.mjs"
+FIXTURE_REFERENCE_ALLOWLIST_PATH = TOOLS_ROOT / "fixture_reference_allowlist.json"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -29,6 +30,7 @@ GROUPS = (
     "frontend",
     "repo-root",
     "test-shape",
+    "fixtures",
     "line-budget",
 )
 
@@ -225,6 +227,74 @@ def check_line_budget() -> list[str]:
     return failures
 
 
+def _load_fixture_reference_allowlist() -> tuple[set[str], list[str]]:
+    if not FIXTURE_REFERENCE_ALLOWLIST_PATH.exists():
+        return set(), []
+    try:
+        entries = json.loads(FIXTURE_REFERENCE_ALLOWLIST_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return set(), [f"fixture allowlist is not valid JSON: {exc}"]
+    if not isinstance(entries, list):
+        return set(), ["fixture allowlist must be a JSON list."]
+
+    allowed: set[str] = set()
+    failures: list[str] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            failures.append(f"fixture allowlist entry {index} must be an object.")
+            continue
+        path = str(entry.get("path") or "").strip().replace("\\", "/")
+        reason = str(entry.get("reason") or "").strip()
+        if not path or not reason:
+            failures.append(
+                f"fixture allowlist entry {index} must include non-empty path and reason."
+            )
+            continue
+        allowed.add(path)
+    return allowed, failures
+
+
+def _iter_fixture_reference_sources() -> Iterable[Path]:
+    source_roots = ("tests", "tools", "src", "frontend", "scripts")
+    suffixes = {".py", ".mjs", ".js", ".json", ".md", ".yml", ".yaml", ".toml"}
+    excluded_parts = {".git", ".tmp", "node_modules", "__pycache__", "dist", "_out"}
+    for root_name in source_roots:
+        root = ROOT / root_name
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix not in suffixes:
+                continue
+            rel_parts = set(path.relative_to(ROOT).parts)
+            if rel_parts & excluded_parts:
+                continue
+            if path.is_relative_to(ROOT / "tests" / "fixtures"):
+                continue
+            yield path
+
+
+def check_fixture_references() -> list[str]:
+    allowed, failures = _load_fixture_reference_allowlist()
+    reference_texts = [
+        path.read_text(encoding="utf-8", errors="ignore")
+        for path in _iter_fixture_reference_sources()
+    ]
+    combined_text = "\n".join(reference_texts)
+
+    for fixture_path in sorted((ROOT / "tests" / "fixtures").rglob("*")):
+        if not fixture_path.is_file():
+            continue
+        rel_path = fixture_path.relative_to(ROOT).as_posix()
+        if rel_path in allowed:
+            continue
+        rel_from_fixtures = fixture_path.relative_to(ROOT / "tests" / "fixtures").as_posix()
+        tokens = {rel_path, rel_path.replace("/", "\\"), rel_from_fixtures, fixture_path.name}
+        if not any(token in combined_text for token in tokens):
+            failures.append(f"{rel_path} is not referenced by any test, helper, or source file.")
+
+    return failures
+
+
 def _failure_from_messages(group: str, name: str, messages: list[str]) -> GuardFailure | None:
     if messages:
         return GuardFailure(group, name, "\n".join(messages))
@@ -334,6 +404,13 @@ def run_test_shape_group() -> list[GuardFailure]:
     return _run_python_checks("test-shape", checks)
 
 
+def run_fixtures_group() -> list[GuardFailure]:
+    failure = _failure_from_messages(
+        "fixtures", "check_fixture_references", check_fixture_references()
+    )
+    return [failure] if failure else []
+
+
 def run_line_budget_group() -> list[GuardFailure]:
     failure = _failure_from_messages("line-budget", "check_line_budget", check_line_budget())
     return [failure] if failure else []
@@ -346,6 +423,7 @@ GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
     "frontend": run_frontend_group,
     "repo-root": run_repo_root_group,
     "test-shape": run_test_shape_group,
+    "fixtures": run_fixtures_group,
     "line-budget": run_line_budget_group,
 }
 

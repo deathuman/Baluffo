@@ -8,6 +8,11 @@ import pytest
 from src.app_version import APP_VERSION
 from src.ship import desktop_app
 from src.ship.desktop_app import launcher_flow
+from tests.desktop_app._helpers import (
+    desktop_runtime_config,
+    launcher_session,
+    stale_launcher_session,
+)
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -74,23 +79,8 @@ def test_main_child_script_mode_runs_script_with_forwarded_args() -> None:
 
 
 def test_launch_desktop_app_fails_when_active_session_exists_without_spawning_children() -> None:
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
-        data_dir=Path("C:/tmp/baluffo-ship/data"),
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
-    )
-    session = {
-        "launcherPid": 1234,
-        "launcherToken": "existing-launcher-token",
-        "bridgePort": 8877,
-        "url": "http://127.0.0.1:8080/jobs.html?desktop=1",
-        "browserPath": "C:/Edge/msedge.exe",
-    }
+    config = desktop_runtime_config()
+    session = launcher_session()
 
     with (
         mock.patch.object(desktop_app, "get_valid_session_state", return_value=session),
@@ -129,16 +119,7 @@ def test_launch_desktop_app_fails_when_active_session_exists_without_spawning_ch
 
 
 def test_launch_desktop_app_raises_when_stale_runtime_cleanup_is_blocked() -> None:
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
-        data_dir=Path("C:/tmp/baluffo-ship/data"),
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
-    )
+    config = desktop_runtime_config()
 
     with (
         mock.patch.object(desktop_app, "acquire_instance_lock", return_value=None),
@@ -156,31 +137,12 @@ def test_launch_desktop_app_raises_when_stale_runtime_cleanup_is_blocked() -> No
 
 
 def test_launch_desktop_app_reclaims_stale_session_before_resolving_explicit_ports() -> None:
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
-        data_dir=Path("C:/tmp/baluffo-ship/data"),
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
+    config = desktop_runtime_config(
         site_port_explicit=True,
         bridge_port_explicit=True,
     )
     call_order: list[str] = []
-    stale_session = {
-        "launcherPid": 321,
-        "launcherToken": "stale-launcher-token",
-        "desktopSessionId": "stale-session",
-        "desktopOwnerToken": "stale-owner",
-        "launcherStartedAt": "2026-04-20T05:00:00+00:00",
-        "sitePort": 8080,
-        "bridgePort": 8877,
-        "bridgeHost": "127.0.0.1",
-        "exePath": "C:/tmp/Baluffo.exe",
-        "dataDir": "C:/tmp/baluffo-ship/data",
-    }
+    stale_session = stale_launcher_session()
 
     def _resolve_runtime_ports(
         current: desktop_app.DesktopRuntimeConfig,
@@ -246,15 +208,8 @@ def test_launch_desktop_app_reclaims_stale_session_before_resolving_explicit_por
 
 def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
     fake_browser_process = mock.Mock(spec=subprocess.Popen)
 
@@ -330,16 +285,7 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
 def test_publish_success_marker_when_ready_async_writes_marker_after_startup_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
-        data_dir=Path("C:/tmp/baluffo-ship/data"),
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
-    )
+    config = desktop_runtime_config()
     write_marker = mock.Mock()
 
     class ImmediateThread:
@@ -374,15 +320,9 @@ def test_publish_success_marker_when_ready_async_records_classified_timeout(
 ) -> None:
     with workspace_tmpdir("desktop-startup-timeout") as tmp:
         data_dir = Path(tmp) / "ship" / "data"
-        config = desktop_app.DesktopRuntimeConfig(
+        config = desktop_runtime_config(
             ship_root=Path(tmp) / "ship",
-            site_port=8080,
-            bridge_port=8877,
-            bridge_host="127.0.0.1",
             data_dir=data_dir,
-            open_path="jobs.html",
-            title="Baluffo",
-            startup_probe=False,
         )
         trace_mock = mock.Mock()
 
@@ -426,15 +366,8 @@ def test_publish_success_marker_when_ready_async_records_classified_timeout(
 
 def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
     call_log: list[str] = []
     site_env: dict[str, str] = {}
@@ -509,15 +442,8 @@ def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
 
 def test_launch_desktop_app_emits_window_created_before_shell_window_shown() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
 
     with (
@@ -581,15 +507,8 @@ def test_launch_desktop_app_emits_inferred_shell_window_event_when_visibility_no
     None
 ):
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
 
     with (
@@ -641,15 +560,8 @@ def test_launch_desktop_app_emits_inferred_shell_window_event_when_visibility_no
 
 def test_launch_desktop_app_launches_browser_before_bridge_ready_diagnostic() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
 
     with (
@@ -698,14 +610,8 @@ def test_launch_desktop_app_launches_browser_before_bridge_ready_diagnostic() ->
 
 def test_launch_desktop_app_uses_tighter_site_ready_polling_for_startup_probe() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
         startup_probe=True,
     )
 
@@ -757,15 +663,8 @@ def test_launch_desktop_app_uses_tighter_site_ready_polling_for_startup_probe() 
 
 def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
         no_browser=True,
     )
 
@@ -821,17 +720,10 @@ def test_launch_desktop_app_can_skip_browser_launch_for_packaged_rehearsal() -> 
 
 def test_launch_desktop_app_retries_default_ports_after_bind_race() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    original_config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    original_config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
-    retried_config = desktop_app.DesktopRuntimeConfig(
+    retried_config = desktop_runtime_config(
         ship_root=original_config.ship_root,
         site_port=18080,
         bridge_port=18877,
@@ -839,7 +731,6 @@ def test_launch_desktop_app_retries_default_ports_after_bind_race() -> None:
         data_dir=data_dir,
         open_path=original_config.open_path,
         title=original_config.title,
-        startup_probe=False,
     )
     start_child_process = mock.Mock(
         side_effect=[
@@ -912,15 +803,7 @@ def test_launch_desktop_app_retries_default_ports_after_bind_race() -> None:
 
 
 def test_launch_desktop_app_keeps_explicit_ports_fail_fast_after_bind_race() -> None:
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
-        data_dir=Path("C:/tmp/baluffo-ship/data"),
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
+    config = desktop_runtime_config(
         site_port_explicit=True,
         bridge_port_explicit=True,
     )
@@ -959,15 +842,8 @@ def test_launch_desktop_app_keeps_explicit_ports_fail_fast_after_bind_race() -> 
 
 def test_launch_desktop_app_spawns_update_helper_from_launcher_on_install_request() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
 
     with (
@@ -1020,15 +896,8 @@ def test_launch_desktop_app_spawns_update_helper_from_launcher_on_install_reques
 
 def test_launch_desktop_app_does_not_recover_to_default_browser_after_process_exit() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
     fake_browser_process = mock.Mock(spec=subprocess.Popen)
 
@@ -1093,15 +962,8 @@ def test_launch_desktop_app_attempts_one_browser_relaunch_when_active_work_loses
     None
 ):
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
     fake_browser_process = mock.Mock(spec=subprocess.Popen)
     fake_browser_process.pid = 303
@@ -1185,15 +1047,8 @@ def test_launch_desktop_app_attempts_one_browser_relaunch_when_active_work_loses
 
 def test_launch_desktop_app_enters_background_recovery_after_recovery_budget_is_exhausted() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
     fake_browser_process = mock.Mock(spec=subprocess.Popen)
     fake_browser_process.pid = 303
@@ -1270,15 +1125,8 @@ def test_launch_desktop_app_enters_background_recovery_after_recovery_budget_is_
 
 def test_launch_desktop_app_enters_background_recovery_for_process_exit() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
     fake_browser_process = mock.Mock(spec=subprocess.Popen)
     fake_browser_process.pid = 303
@@ -1353,15 +1201,8 @@ def test_launch_desktop_app_enters_background_recovery_for_process_exit() -> Non
 
 def test_launch_desktop_app_still_shows_fatal_message_when_bridge_health_is_lost() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
     fake_browser_process = mock.Mock(spec=subprocess.Popen)
     fake_browser_process.pid = 303
@@ -1437,15 +1278,8 @@ def test_launch_desktop_app_still_shows_fatal_message_when_bridge_health_is_lost
 
 def test_launch_desktop_app_keeps_runtime_alive_when_browser_launch_fails() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
     open_url = desktop_app.build_open_url(config)
     trace_mock = mock.Mock()
@@ -1507,15 +1341,8 @@ def test_launch_desktop_app_keeps_runtime_alive_when_browser_launch_fails() -> N
 
 def test_launch_desktop_app_fails_when_bridge_attach_fails() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
     site_process = mock.Mock(spec=subprocess.Popen)
     site_process.pid = 101
@@ -1556,15 +1383,8 @@ def test_launch_desktop_app_fails_when_bridge_attach_fails() -> None:
 
 def test_launch_desktop_app_recovers_when_initial_browser_attach_fails() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
     open_url = desktop_app.build_open_url(config)
     site_process = mock.Mock(spec=subprocess.Popen)
@@ -1635,15 +1455,8 @@ def test_launch_desktop_app_recovers_when_initial_browser_attach_fails() -> None
 
 def test_attempt_active_work_browser_relaunch_returns_none_when_job_attach_fails() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
+    config = desktop_runtime_config(
         data_dir=data_dir,
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
     )
     trace_mock = mock.Mock()
 
@@ -1679,23 +1492,8 @@ def test_attempt_active_work_browser_relaunch_returns_none_when_job_attach_fails
 
 
 def test_launch_desktop_app_fails_when_instance_lock_is_contended_and_session_exists() -> None:
-    config = desktop_app.DesktopRuntimeConfig(
-        ship_root=Path("C:/tmp/baluffo-ship"),
-        site_port=8080,
-        bridge_port=8877,
-        bridge_host="127.0.0.1",
-        data_dir=Path("C:/tmp/baluffo-ship/data"),
-        open_path="jobs.html",
-        title="Baluffo",
-        startup_probe=False,
-    )
-    session = {
-        "launcherPid": 1234,
-        "launcherToken": "existing-launcher-token",
-        "bridgePort": 8877,
-        "url": "http://127.0.0.1:8080/jobs.html?desktop=1",
-        "browserPath": "C:/Edge/msedge.exe",
-    }
+    config = desktop_runtime_config()
+    session = launcher_session()
 
     with (
         mock.patch.object(desktop_app, "acquire_instance_lock", return_value=None),

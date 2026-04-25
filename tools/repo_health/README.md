@@ -30,7 +30,7 @@ python tools/repo_health/bin/analyze_repo.py
 # Analyze refactorability
 python tools/repo_health/bin/analyze_refactorability.py
 
-# Run repository policy guardrails
+# Run repository policy guardrails, including fixture references
 npm run lint:repo-guardrails
 
 # With verification (slower, runs actual commands)
@@ -44,4 +44,4 @@ python tools/repo_health/bin/analyze_repo.py -o maturity.json
 
 - **Readiness/Maturity**: How ready the repo is for AI work - testing, docs, build, security
 - **Refactorability**: How safely AI can modify the repo without causing issues - boundary isolation, hotspots, contracts
-- **Repo guardrails**: Checked-in repository policy checks for docs, workflow, compatibility surfaces, frontend structure, repo-root layout, test shape, and test line budgets
+- **Repo guardrails**: Checked-in repository policy checks for docs, workflow, compatibility surfaces, frontend structure, repo-root layout, test shape, fixture references, and test line budgets

@@ -52,6 +52,10 @@ This page stores completed items moved out of the active repository-health track
    Bridge route tests now import their fakes directly from `tests.helpers.bridge_api`, the bridge conftest re-export layer was removed, jobs fetcher tests use direct source imports plus a narrow fixture loader, and temp-root creation is shared by `make_test_root` and `workspace_tmpdir`. Admin bridge setup moved into admin-local helper factories, and the source-sync-only fixture moved out of root pytest scope.
    **Done when:** complete.
 
+8. **Completed: extract repeated inline data and setup from the largest behavioral tests.**
+   Social jobs payloads moved into `tests/fixtures/payloads/`, desktop launcher tests now use narrow runtime config/session factories, source-discovery tests share generator-disabled config helpers, and admin fetcher-controller tests reuse the frontend controller fixture instead of rebuilding state/ref scaffolding. The four P1-D target files dropped from `6,840` to `6,433` total lines, and `npm run lint:repo-guardrails` now blocks unreferenced fixture files unless they are allowlisted with a reason.
+   **Done when:** complete.
+
 ## Completed P2 Items
 
 1. **Completed: make Python import sorting explicit in the gate.**

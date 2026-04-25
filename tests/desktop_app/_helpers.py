@@ -1,8 +1,54 @@
 import contextlib
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 from src.ship import desktop_app
+
+
+def desktop_runtime_config(**overrides: object) -> desktop_app.DesktopRuntimeConfig:
+    ship_root = Path(overrides.pop("ship_root", "C:/tmp/baluffo-ship"))
+    values = {
+        "ship_root": ship_root,
+        "site_port": 8080,
+        "bridge_port": 8877,
+        "bridge_host": "127.0.0.1",
+        "data_dir": ship_root / "data",
+        "open_path": "jobs.html",
+        "title": "Baluffo",
+        "startup_probe": False,
+    }
+    values.update(overrides)
+    return desktop_app.DesktopRuntimeConfig(**values)
+
+
+def launcher_session(**overrides: object) -> dict[str, object]:
+    values: dict[str, object] = {
+        "launcherPid": 1234,
+        "launcherToken": "existing-launcher-token",
+        "bridgePort": 8877,
+        "url": "http://127.0.0.1:8080/jobs.html?desktop=1",
+        "browserPath": "C:/Edge/msedge.exe",
+    }
+    values.update(overrides)
+    return values
+
+
+def stale_launcher_session(**overrides: object) -> dict[str, object]:
+    values: dict[str, object] = {
+        "launcherPid": 321,
+        "launcherToken": "stale-launcher-token",
+        "desktopSessionId": "stale-session",
+        "desktopOwnerToken": "stale-owner",
+        "launcherStartedAt": "2026-04-20T05:00:00+00:00",
+        "sitePort": 8080,
+        "bridgePort": 8877,
+        "bridgeHost": "127.0.0.1",
+        "exePath": "C:/tmp/Baluffo.exe",
+        "dataDir": "C:/tmp/baluffo-ship/data",
+    }
+    values.update(overrides)
+    return values
 
 
 @contextlib.contextmanager

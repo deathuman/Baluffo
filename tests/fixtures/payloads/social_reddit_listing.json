@@ -1,0 +1,18 @@
+{
+  "data": {
+    "children": [
+      {
+        "data": {
+          "id": "abc123",
+          "title": "We're hiring a Technical Artist at Nebula Games",
+          "selftext": "Apply https://jobs.nebula.dev/ta",
+          "link_flair_text": "Hiring",
+          "permalink": "/r/gamedev/comments/abc123/test/",
+          "url": "https://www.reddit.com/r/gamedev/comments/abc123/test/",
+          "created_utc": 1700000000,
+          "author": "nebula_hr"
+        }
+      }
+    ]
+  }
+}

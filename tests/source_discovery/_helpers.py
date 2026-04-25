@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import importlib
 import json
 import os
@@ -24,6 +25,10 @@ from tests.helpers.discovery_runtime import (
 from tests.helpers.temp_paths import workspace_tmpdir
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
+GENERATOR_DISABLED_DISCOVERY_CONFIG = {
+    "gamesmap": {"enabled": False},
+    "gameprog": {"enabled": False},
+}
 
 
 def _fixture_json(name: str):
@@ -43,9 +48,49 @@ def _gamesmap_next_payload_html(companies: list[dict[str, object]]) -> str:
     )
 
 
+def discovery_config_without_generator_stages(**overrides: object) -> dict[str, object]:
+    config = dict(GENERATOR_DISABLED_DISCOVERY_CONFIG)
+    config.update(overrides)
+    return config
+
+
+@contextlib.contextmanager
+def patch_empty_generator_stages(*, probe):
+    with (
+        mock.patch.object(
+            discovery_orchestrator,
+            "discover_game_studio_sheet_candidates",
+            return_value=([], [], []),
+        ),
+        mock.patch.object(
+            discovery_orchestrator,
+            "discover_gamesmap_candidates",
+            return_value=([], [], []),
+        ),
+        mock.patch.object(
+            discovery_orchestrator,
+            "discover_gameprog_candidates",
+            return_value=([], [], []),
+        ),
+        mock.patch.object(
+            discovery_orchestrator,
+            "discover_web_search_candidates",
+            return_value=([], []),
+        ),
+        mock.patch.object(
+            discovery_orchestrator,
+            "discover_seed_careers_page_candidates",
+            return_value=([], [], []),
+        ),
+        mock.patch.object(discovery_orchestrator, "async_probe_candidate", side_effect=probe),
+    ):
+        yield
+
+
 __all__ = [
     "DiscoveryReportSummarySchema",
     "FIXTURES_DIR",
+    "GENERATOR_DISABLED_DISCOVERY_CONFIG",
     "Path",
     "_fixture_json",
     "_fixture_text",
@@ -53,6 +98,7 @@ __all__ = [
     "async_fetch_text_httpx",
     "asyncio",
     "classify_probe_failure_stage",
+    "discovery_config_without_generator_stages",
     "discovery_config_module",
     "discovery_orchestrator",
     "discovery_url_patches",
@@ -63,6 +109,7 @@ __all__ = [
     "os",
     "override_discovery_config",
     "override_discovery_runtime",
+    "patch_empty_generator_stages",
     "sd",
     "sr",
     "sys",

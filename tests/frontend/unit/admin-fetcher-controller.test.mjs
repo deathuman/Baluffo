@@ -58,55 +58,13 @@ test("admin fetcher controller stores optimistic run metadata while fetch watch 
 });
 
 test("admin fetcher controller attaches to an already-running bridge task on conflict", async () => {
-  const logs = [];
-  const toasts = [];
-  const scheduled = [];
-  const previousSetTimeout = global.setTimeout;
-  const previousClearTimeout = global.clearTimeout;
+  const timerStub = stubScheduledTimers();
   let controller;
-  global.setTimeout = callback => {
-    scheduled.push(callback);
-    return scheduled.length;
-  };
-  global.clearTimeout = () => {};
 
   try {
-    const state = {
-      latestFetcherReportCache: null,
-      fetcherLaunchAtMs: 0,
-      fetcherLogRemoteOffset: 0,
-      fetcherCompletionPollTimer: null,
-      fetcherLogPollTimer: null,
-      fetcherLiveProgressState: null,
-      fetchOptimisticRun: null,
-      adminBusyState: {
-        fetcherRun: false,
-        fetcherWatch: false,
-        fetcherReportLoad: false,
-        liveFetchRunning: false
-      }
-    };
-    const refs = {
-      adminFetcherLogEl: createElement(),
-      adminRunFetcherBtnEl: createElement(),
-      adminRunFetcherIncrementalBtnEl: createElement(),
-      adminRunFetcherUncappedBtnEl: createElement(),
-      adminRunFetcherForceBtnEl: createElement(),
-      adminRetryFailedBtnEl: createElement()
-    };
-    const calls = [];
-    controller = createAdminFetcherController({
-      state,
-      refs,
-      getBridge: async path => {
-        calls.push(path);
-        if (String(path).startsWith("/fetcher/log?offset=")) {
-          return { text: "", nextOffset: 0 };
-        }
-        return {};
-      },
-      postBridge: async path => {
-        calls.push(path);
+    const fixture = createFetcherControllerFixture();
+    fixture.options.postBridge = async path => {
+      fixture.calls.push(path);
         return {
           status: 409,
           data: {
@@ -120,142 +78,57 @@ test("admin fetcher controller attaches to an already-running bridge task on con
             status: "running"
           }
         };
-      },
-      fetchJobsFetchReportJson: async () => ({}),
-      writeJobsAutoRefreshSignal() {},
-      showToast(message, level) {
-        toasts.push({ message, level });
-      },
-      getErrorMessage: err => String(err?.message || err || "unknown"),
-      logAdminError() {},
-      setBusyFlag(key, value) {
-        state.adminBusyState[key] = value;
-      },
-      getSourceStatusSetter: () => () => {},
-      loadOpsHealthData: async () => {
-        calls.push("loadOpsHealthData");
-      },
-      jobsAutoRefreshSignalKey: "k",
-      jobsFetcherCommand: "python -m src.jobs_fetcher",
-      jobsFetcherTaskLabel: "Run jobs fetcher",
-      createLogEvent(scope, message, level) {
-        return { scope, message, level, timestamp: "2026-03-08T10:01:00.000Z" };
-      },
-      appendLogRow(_container, event) {
-        logs.push(String(event.message || ""));
-      }
-    });
+    };
+    controller = createAdminFetcherController(fixture.options);
 
     await controller.triggerJobsFetcherTask({ preset: "default" });
 
-    assert.deepEqual(state.fetchOptimisticRun, {
+    assert.deepEqual(fixture.state.fetchOptimisticRun, {
       runId: "fetch_live_1",
       startedAt: "2026-03-08T10:01:00.000Z"
     });
-    assert.equal(state.adminBusyState.fetcherWatch, true);
-    assert.ok(calls.includes("/tasks/run-fetcher"));
-    assert.ok(calls.includes("loadOpsHealthData"));
-    assert.ok(logs.some(line => /fetcher already running; attached/i.test(line)));
-    assert.ok(toasts.some(item => item.message === "Fetcher already running. Attached to active run." && item.level === "info"));
-    assert.ok(scheduled.length >= 2);
+    assert.equal(fixture.state.adminBusyState.fetcherWatch, true);
+    assert.ok(fixture.calls.includes("/tasks/run-fetcher"));
+    assert.ok(fixture.calls.includes("loadOpsHealthData"));
+    assert.ok(fixture.logs.some(line => /fetcher already running; attached/i.test(line)));
+    assert.ok(fixture.toasts.some(item => item.message === "Fetcher already running. Attached to active run." && item.level === "info"));
+    assert.ok(timerStub.scheduled.length >= 2);
   } finally {
     controller?.stopFetcherCompletionWatch?.();
-    global.setTimeout = previousSetTimeout;
-    global.clearTimeout = previousClearTimeout;
+    timerStub.restore();
   }
 });
 
 test("admin fetcher controller starts live progress watching for an explicit bridge-launched fetch", async () => {
-  const logs = [];
-  const scheduled = [];
-  const previousSetTimeout = global.setTimeout;
-  const previousClearTimeout = global.clearTimeout;
-  global.setTimeout = callback => {
-    scheduled.push(callback);
-    return scheduled.length;
+  const timerStub = stubScheduledTimers();
+  const activeReport = {
+    startedAt: "2026-03-08T10:00:00.000Z",
+    finishedAt: "",
+    taskProgress: {
+      active: true,
+      phaseKey: "executing_sources",
+      phaseLabel: "Executing sources",
+      mode: "indeterminate",
+      ratio: 0,
+      counts: {}
+    },
+    runtime: {},
+    summary: {},
+    sources: []
   };
-  global.clearTimeout = () => {};
-
-  const state = {
-    latestFetcherReportCache: null,
-    fetcherLaunchAtMs: 0,
-    fetcherLogRemoteOffset: 0,
-    fetcherCompletionPollTimer: null,
-    fetcherLogPollTimer: null,
-    fetcherLiveProgressState: null,
-    fetchOptimisticRun: null,
-    adminBusyState: {
-      fetcherRun: false,
-      fetcherWatch: false,
-      fetcherReportLoad: false,
-      liveFetchRunning: false
-    }
-  };
-  const refs = {
-    adminFetcherLogEl: createElement(),
-    adminFetcherProgressEl: createElement({ style: {}, classList: createClassList(["hidden"]) }),
-    adminFetcherProgressBarEl: createElement({ style: {} }),
-    adminFetcherProgressLabelEl: createElement()
-  };
-  const controller = createAdminFetcherController({
-    state,
-    refs,
-    getBridge: async path => {
+  const fixture = createFetcherControllerFixture({
+    options: {
+      getBridge: async path => {
       if (String(path).startsWith("/fetcher/log?offset=")) {
         return { text: "", nextOffset: 0 };
       }
       if (path === "/ops/health") return {};
-      return {
-        startedAt: "2026-03-08T10:00:00.000Z",
-        finishedAt: "",
-        taskProgress: {
-          active: true,
-          phaseKey: "executing_sources",
-          phaseLabel: "Executing sources",
-          mode: "indeterminate",
-          ratio: 0,
-          counts: {}
-        },
-        runtime: {},
-        summary: {},
-        sources: []
-      };
+      return activeReport;
     },
-    postBridge: async () => ({}),
-    fetchJobsFetchReportJson: async () => ({
-      startedAt: "2026-03-08T10:00:00.000Z",
-      finishedAt: "",
-      taskProgress: {
-        active: true,
-        phaseKey: "executing_sources",
-        phaseLabel: "Executing sources",
-        mode: "indeterminate",
-        ratio: 0,
-        counts: {}
-      },
-      runtime: {},
-      summary: {},
-      sources: []
-    }),
-    writeJobsAutoRefreshSignal() {},
-    showToast() {},
-    getErrorMessage: err => String(err?.message || err || "unknown"),
-    logAdminError() {},
-    setBusyFlag(key, value) {
-      state.adminBusyState[key] = value;
-    },
-    getSourceStatusSetter: () => () => {},
-    loadOpsHealthData: async () => {},
-    jobsAutoRefreshSignalKey: "k",
-    jobsFetcherCommand: "python -m src.jobs_fetcher",
-    jobsFetcherTaskLabel: "Run jobs fetcher",
-    createLogEvent(scope, message, level) {
-      return { scope, message, level, timestamp: "2026-03-08T10:00:00.000Z" };
-    },
-    appendLogRow(_container, event) {
-      logs.push(String(event.message || ""));
+      fetchJobsFetchReportJson: async () => activeReport
     }
   });
+  const controller = createAdminFetcherController(fixture.options);
 
   try {
     controller.attachToActiveFetchRun({
@@ -263,31 +136,27 @@ test("admin fetcher controller starts live progress watching for an explicit bri
       startedAt: "2026-03-08T10:00:00.000Z"
     });
 
-    assert.equal(state.adminBusyState.fetcherWatch, true);
-    assert.equal(state.adminBusyState.liveFetchRunning, false);
-    assert.deepEqual(state.fetchOptimisticRun, {
+    assert.equal(fixture.state.adminBusyState.fetcherWatch, true);
+    assert.equal(fixture.state.adminBusyState.liveFetchRunning, false);
+    assert.deepEqual(fixture.state.fetchOptimisticRun, {
       runId: "fetch_123",
       startedAt: "2026-03-08T10:00:00.000Z"
     });
-    assert.ok(logs.some(line => /fetcher started\. watching live progress/i.test(line)));
-    assert.ok(!logs.some(line => /timeout window/i.test(line)));
-    assert.equal(refs.adminFetcherProgressEl.classList.contains("hidden"), false);
-    assert.equal(refs.adminFetcherProgressEl.classList.contains("indeterminate"), true);
-    assert.ok(scheduled.length >= 2);
+    assert.ok(fixture.logs.some(line => /fetcher started\. watching live progress/i.test(line)));
+    assert.ok(!fixture.logs.some(line => /timeout window/i.test(line)));
+    assert.equal(fixture.refs.adminFetcherProgressEl.classList.contains("hidden"), false);
+    assert.equal(fixture.refs.adminFetcherProgressEl.classList.contains("indeterminate"), true);
+    assert.ok(timerStub.scheduled.length >= 2);
   } finally {
     controller?.stopFetcherCompletionWatch?.();
-    global.setTimeout = previousSetTimeout;
-    global.clearTimeout = previousClearTimeout;
+    timerStub.restore();
   }
 });
 
 test("admin fetcher controller can restore a live watch from local state when the latest report is stale", async () => {
-  const state = {
-    latestFetcherReportCache: null,
+  const fixture = createFetcherControllerFixture({
+    state: {
     fetcherLaunchAtMs: Date.parse("2026-03-08T10:00:00.000Z"),
-    fetcherLogRemoteOffset: 0,
-    fetcherCompletionPollTimer: null,
-    fetcherLogPollTimer: null,
     fetcherLiveProgressState: {
       summarySignature: "",
       sourceSignatures: new Map(),
@@ -308,25 +177,9 @@ test("admin fetcher controller can restore a live watch from local state when th
       fetcherReportLoad: false,
       liveFetchRunning: false
     }
-  };
-  const refs = {
-    adminFetcherLogEl: createElement(),
-    adminFetcherProgressEl: createElement({ style: {}, classList: createClassList(["hidden"]) }),
-    adminFetcherProgressBarEl: createElement({ style: {} }),
-    adminFetcherProgressLabelEl: createElement()
-  };
-  const scheduled = [];
-  const previousSetTimeout = global.setTimeout;
-  const previousClearTimeout = global.clearTimeout;
-  global.setTimeout = callback => {
-    scheduled.push(callback);
-    return scheduled.length;
-  };
-  global.clearTimeout = () => {};
-  const controller = createAdminFetcherController({
-    state,
-    refs,
-    getBridge: async path => {
+    },
+    options: {
+      getBridge: async path => {
       if (String(path).startsWith("/fetcher/log?offset=")) {
         return { text: "", nextOffset: 0 };
       }
@@ -347,8 +200,7 @@ test("admin fetcher controller can restore a live watch from local state when th
         sources: []
       };
     },
-    postBridge: async () => ({}),
-    fetchJobsFetchReportJson: async () => ({
+      fetchJobsFetchReportJson: async () => ({
       runId: "fetch_stale_2",
       startedAt: "2026-03-08T10:00:00.000Z",
       finishedAt: "",
@@ -363,27 +215,11 @@ test("admin fetcher controller can restore a live watch from local state when th
       runtime: {},
       summary: {},
       sources: []
-    }),
-    writeJobsAutoRefreshSignal() {},
-    showToast() {},
-    getErrorMessage: err => String(err?.message || err || "unknown"),
-    logAdminError() {},
-    setBusyFlag(key, value) {
-      state.adminBusyState[key] = value;
-    },
-    getSourceStatusSetter: () => () => {},
-    loadOpsHealthData: async () => {},
-    jobsAutoRefreshSignalKey: "k",
-    jobsFetcherCommand: "python -m src.jobs_fetcher",
-    jobsFetcherTaskLabel: "Run jobs fetcher",
-    createLogEvent(scope, message, level) {
-      return { scope, message, level, timestamp: "2026-03-08T10:00:00.000Z" };
-    },
-    appendLogRow(_container, event) {
-      // Intentionally unused in this regression.
-      void event;
+    })
     }
   });
+  const timerStub = stubScheduledTimers();
+  const controller = createAdminFetcherController(fixture.options);
 
   try {
     const meta = controller.getRestorableFetcherRunMeta({
@@ -400,15 +236,14 @@ test("admin fetcher controller can restore a live watch from local state when th
 
     controller.restartFetcherCompletionWatch(meta);
 
-    assert.equal(state.adminBusyState.fetcherWatch, true);
-    assert.equal(state.adminBusyState.liveFetchRunning, false);
-    assert.equal(refs.adminFetcherProgressEl.classList.contains("hidden"), false);
-    assert.equal(refs.adminFetcherProgressEl.classList.contains("indeterminate"), true);
-    assert.ok(scheduled.length >= 2);
+    assert.equal(fixture.state.adminBusyState.fetcherWatch, true);
+    assert.equal(fixture.state.adminBusyState.liveFetchRunning, false);
+    assert.equal(fixture.refs.adminFetcherProgressEl.classList.contains("hidden"), false);
+    assert.equal(fixture.refs.adminFetcherProgressEl.classList.contains("indeterminate"), true);
+    assert.ok(timerStub.scheduled.length >= 2);
   } finally {
     controller?.stopFetcherCompletionWatch?.();
-    global.setTimeout = previousSetTimeout;
-    global.clearTimeout = previousClearTimeout;
+    timerStub.restore();
   }
 });
 

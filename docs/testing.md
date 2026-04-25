@@ -132,6 +132,10 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 | `admin_bridge_entrypoint_root` | `tests/admin/conftest.py`, backed by `tests/admin/_helpers.py` |
 | `source_sync_test_root` | `tests/source_sync_helpers.py` |
 | `workspace_tmpdir(prefix)`, shared temp-root allocation/cleanup helpers | `tests/helpers/temp_paths.py` |
+| Job payload fixture loaders | `tests/helpers/job_fixtures.py`, with reusable data under `tests/fixtures/` |
+| Desktop launcher config/session factories | `tests/desktop_app/_helpers.py` |
+| Source-discovery local config/runtime helpers | `tests/source_discovery/_helpers.py` |
+| Frontend admin controller factories | `tests/frontend/unit/helpers/admin-controller-test-helpers.mjs` |
 
 **Temp directory note (Windows sandbox):**
 
@@ -163,6 +167,8 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - Real shard files must own real tests. Do not hide test functions inside giant imported `_cases.py` containers.
 - Shared helpers should stay local to the test family and helper-only. Prefer `_helpers.py`, `conftest.py`, or a focused helper module over a broad test utility barrel.
 - Do not add root pytest fixtures for single-family setup. Keep source-sync, admin, bridge, jobs, and static-adapter helpers in their nearest test family unless they are truly universal.
+- Large fixture files under `tests/fixtures/` must be referenced by at least one test or helper, or explicitly listed with a reason in `tools/repo_health/fixture_reference_allowlist.json`; `npm run lint:repo-guardrails` treats unreferenced fixtures as failures.
+- Extract data and repeated setup into helpers, but keep behavioral assertions in the owning test file unless the assertion itself is duplicated across multiple tests.
 - Before adding a new guard or smoke test, delete or merge any older test that already protects the same invariant.
 - Prefer seam-patched unit checks for selection, normalization, and routing logic. Keep only one intentionally slow smoke test when full execution is the behavior under test.
 

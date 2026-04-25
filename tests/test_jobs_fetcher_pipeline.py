@@ -14,8 +14,8 @@ from tests.helpers.job_fixtures import _fixture, _fixture_json
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
-def test_run_pipeline_social_sources_report_and_output() -> None:
-    social_cfg = {
+def _social_source_config() -> dict[str, object]:
+    return {
         "enabled": True,
         "minConfidence": 20,
         "rejectForHirePosts": True,
@@ -48,39 +48,18 @@ def test_run_pipeline_social_sources_report_and_output() -> None:
         },
     }
 
+
+def test_run_pipeline_social_sources_report_and_output() -> None:
+    social_cfg = _social_source_config()
+
     def social_reddit_loader(**kwargs):
         return jf.run_social_reddit_source(**kwargs, social_config=social_cfg)
 
     def social_mastodon_loader(**kwargs):
         return jf.run_social_mastodon_source(**kwargs, social_config=social_cfg)
 
-    reddit_payload = {
-        "data": {
-            "children": [
-                {
-                    "data": {
-                        "id": "abc123",
-                        "title": "We're hiring a Technical Artist at Nebula Games",
-                        "selftext": "Apply https://jobs.nebula.dev/ta",
-                        "link_flair_text": "Hiring",
-                        "permalink": "/r/gamedev/comments/abc123/test/",
-                        "url": "https://www.reddit.com/r/gamedev/comments/abc123/test/",
-                        "created_utc": 1700000000,
-                        "author": "nebula_hr",
-                    }
-                }
-            ]
-        }
-    }
-    mastodon_payload = [
-        {
-            "id": "m1",
-            "content": "<p>Hiring gameplay programmer at Aurora Games https://careers.aurora.dev/gp</p>",
-            "created_at": "2026-03-09T11:05:00Z",
-            "url": "https://mastodon.gamedev.place/@aurora/111",
-            "account": {"display_name": "Aurora Games"},
-        }
-    ]
+    reddit_payload = _fixture_json("payloads/social_reddit_listing.json")
+    mastodon_payload = _fixture_json("payloads/social_mastodon_timeline.json")
 
     def fake_fetch(url: str, _: int) -> str:
         if "reddit.com/r/gamedev/new.json" in url:
