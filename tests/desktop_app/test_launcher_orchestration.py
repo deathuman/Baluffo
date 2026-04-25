@@ -7,7 +7,29 @@ import pytest
 
 from src.app_version import APP_VERSION
 from src.ship import desktop_app
+from src.ship.desktop_app import launcher_flow
 from tests.helpers.temp_paths import workspace_tmpdir
+
+
+@pytest.fixture(autouse=True)
+def _isolate_desktop_startup_side_effects(request, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        desktop_app, "_windows_create_kill_on_close_job", mock.Mock(return_value=None)
+    )
+    monkeypatch.setattr(desktop_app, "_windows_close_desktop_job", mock.Mock())
+    monkeypatch.setattr(desktop_app, "get_baluffo_bridge_health", mock.Mock(return_value={}))
+    monkeypatch.setattr(
+        desktop_app, "_load_active_critical_desktop_tasks", mock.Mock(return_value=[])
+    )
+    monkeypatch.setattr(desktop_app, "load_session_state", mock.Mock(return_value={}))
+    monkeypatch.setattr(
+        desktop_app,
+        "_reclaim_stale_instance_artifacts",
+        mock.Mock(side_effect=AssertionError("unexpected stale runtime reclaim")),
+    )
+    if request.node.name.startswith("test_publish_success_marker_when_ready_async"):
+        return
+    monkeypatch.setattr(desktop_app, "publish_success_marker_when_ready_async", mock.Mock())
 
 
 def test_main_surfaces_native_error_without_installer_prompt() -> None:
@@ -465,14 +487,18 @@ def test_launch_desktop_app_defers_bridge_spawn_until_site_ready() -> None:
             },
         ),
         mock.patch.object(desktop_app, "save_session_state"),
-        mock.patch.object(desktop_app, "watch_browser_session", return_value="heartbeat_timeout"),
+        mock.patch.object(desktop_app, "watch_browser_session", return_value="window_closed"),
         mock.patch.object(desktop_app, "write_success_marker"),
         mock.patch.object(desktop_app, "clear_session_state"),
         mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(
+            launcher_flow.launcher_recovery_mod, "cleanup_runtime_launch"
+        ) as cleanup_mock,
         mock.patch.object(desktop_app, "_append_startup_trace") as trace_mock,
     ):
         desktop_app.launch_desktop_app(config)
 
+    cleanup_mock.assert_called_once()
     assert call_log == ["spawn_site", "wait_for_url", "spawn_bridge"]
     assert site_env["BALUFFO_DESKTOP_BRIDGE_HOST"] == "127.0.0.1"
     assert site_env["BALUFFO_DESKTOP_BRIDGE_PORT"] == "8877"

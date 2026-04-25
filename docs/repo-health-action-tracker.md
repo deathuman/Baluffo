@@ -42,25 +42,21 @@ No active P0 repository-health item is open. The previous broad mypy sweep is co
 
 ### P1
 
-8. **Raise coverage in the weakest validated modules.**
-   Prioritize `src/source_sync_crypto.py` (`52%`), `src/source_discovery/stage_control.py` (`51%`), `src/source_discovery/probe.py` (`65%`), and `src/source_discovery/url_patches.py` (`71%`).
-   **Done when:** each target module has a named test addition and reaches an agreed post-baseline coverage threshold.
-
-9. **Add static security scanning to CI.**
+8. **Add static security scanning to CI.**
    Current workflows cover tests, lint, and release packaging, but not Python dependency/security scanning.
    **Done when:** CI runs at least one Python security/dependency scan (`bandit`, `pip-audit`, or equivalent) and documents failure ownership.
 
-10. **Evaluate a complexity gate after the first typing and hygiene pass.**
+9. **Evaluate a complexity gate after the first typing and hygiene pass.**
    Complexity enforcement is worthwhile, but it should not be added before the current typing and warning debt is under control.
    **Done when:** the repo adopts a complexity ceiling with an explicit allowlist or baseline strategy instead of freezing current hotspots.
 
 ### P2
 
-11. **Add real CI status badges to `README.md`.**
+10. **Add real CI status badges to `README.md`.**
    The README has product badges today, but no workflow status badges.
    **Done when:** README shows current workflow status badges for the maintained CI lanes.
 
-12. **Evaluate structured logging for support and ops diagnostics.**
+11. **Evaluate structured logging for support and ops diagnostics.**
    The repo already has strong observability hooks; structured logs would make support bundles and smoke artifacts easier to consume programmatically.
    **Done when:** one agreed logging surface adopts a structured format and demonstrates clear improvement over current ad hoc strings.
 

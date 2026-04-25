@@ -370,7 +370,9 @@ def test_watch_browser_session_times_out_when_handoff_window_disappears_without_
             "wait_for_startup_handoff_signal",
             return_value=("visible_window", 980),
         ) as handoff_mock,
+        mock.patch.object(desktop_app, "updater_install_requested", return_value=False),
         mock.patch.object(desktop_app, "latest_browser_heartbeat_ts", return_value=0.0),
+        mock.patch.object(desktop_app, "latest_browser_session_activity_ts", return_value=0.0),
         mock.patch.object(
             desktop_app, "_is_baluffo_browser_window_open", return_value=False
         ) as window_mock,

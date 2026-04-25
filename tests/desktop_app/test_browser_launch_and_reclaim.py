@@ -211,15 +211,29 @@ def test_diagnose_instance_conflict_reclaims_stale_owner() -> None:
             json.dumps({"launcherPid": 999, "bridgePort": 8877}), encoding="utf-8"
         )
 
+        def _fake_reclaim_stale_instance_artifacts(*, data_dir, stale_state, env=None):
+            assert data_dir == root
+            assert stale_state == {"launcherPid": 999, "bridgePort": 8877}
+            assert env is None
+            lock_path.unlink()
+            session_path.unlink()
+            return {"blocked": False}
+
         with (
             mock.patch.object(desktop_app, "resolve_instance_lock_path", return_value=lock_path),
             mock.patch.object(desktop_app, "resolve_session_state_path", return_value=session_path),
             mock.patch.object(desktop_app, "_process_identity_matches", return_value=False),
+            mock.patch.object(
+                desktop_app,
+                "_reclaim_stale_instance_artifacts",
+                side_effect=_fake_reclaim_stale_instance_artifacts,
+            ) as reclaim_mock,
             mock.patch.object(desktop_app, "_append_startup_trace"),
         ):
             result = desktop_app.diagnose_instance_conflict(data_dir=root, timeout_s=0.5)
 
         assert result.get("action") == "reclaimed"
+        reclaim_mock.assert_called_once()
         assert not (lock_path.exists())
         assert not (session_path.exists())
 
