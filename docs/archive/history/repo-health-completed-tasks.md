@@ -2,7 +2,7 @@
 
 > Canonical retired repo-health completion record. All tracked P0, P1, and P2 repository-health items are complete as of P2-A.
 
-This page stores the completed repository-health plan history after retirement of the active tracker. Future repository-health work should start from a fresh validated finding and a new plan, not by reopening these retired items.
+This page stores the completed repository-health plan history after the tracked cleanup plan was retired. Future repository-health work should start from a fresh validated finding and a new plan, not by reopening these retired items.
 
 ## Completed P0 Items
 

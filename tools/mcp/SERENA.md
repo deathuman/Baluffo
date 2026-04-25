@@ -47,12 +47,12 @@ codex mcp get serena
 ```
 
 `codex mcp add` writes the user-global Codex MCP config for you. Keep that config user-local rather than committing a repo-managed Codex config file.
-Codex resolves and stores the Serena executable path for you. In the verified Baluffo setup on
-2026-04-22, `codex mcp get serena` reported:
+Codex resolves and stores the Serena executable path for you. A working `codex mcp get serena`
+registration should report:
 
 - `enabled: true`
 - `transport: stdio`
-- `command: C:\Users\AMolino\.local\bin\serena.exe`
+- `command: $env:USERPROFILE\.local\bin\serena.exe` or another user-local Serena executable path
 - `args: start-mcp-server --context=codex --project-from-cwd`
 - `env: SERENA_HOME=...`
 
@@ -102,17 +102,17 @@ There is no separate JavaScript Serena language key; use `typescript` for JavaSc
 Serena's managed TypeScript language-server flow requires Node.js and npm.
 Those are already present on this machine, so no extra repo dependency step is needed.
 
-## Verified Working Baseline
+## Setup Health Check
 
-This repo's Serena setup was re-verified from a fresh Codex session on 2026-04-22.
+Use this section to verify the current clone and client session after installing Serena.
 
-### Verified Codex Session State
+### Expected Codex Session State
 
 - Serena MCP tools loaded successfully after rebooting the Codex session.
 - The Serena project was visible as `Baluffo`, but the session still needed an explicit project activation on first use.
 - One-time Serena onboarding had not been completed yet for this clone; after onboarding, `check_onboarding_performed` reported 5 project memories.
 
-### Verified Commands
+### Verification Commands
 
 Use these checks when you want to confirm the local Serena setup is actually working:
 
@@ -121,9 +121,9 @@ codex mcp get serena
 & "$env:USERPROFILE\.local\bin\serena.exe" project health-check
 ```
 
-Observed working results in this repo:
+Expected working results in this repo:
 
-- `codex mcp get serena` showed a live stdio MCP registration using `C:\Users\AMolino\.local\bin\serena.exe`.
+- `codex mcp get serena` shows a live stdio MCP registration using a user-local Serena executable, typically `$env:USERPROFILE\.local\bin\serena.exe`.
 - `serena.exe project health-check` passed successfully.
 - The health check started both configured language servers:
   - Python via Pyright

@@ -5,7 +5,7 @@
 > - **Canonical for:** system boundaries, task routing, compatibility-surface detail, and the expanded verification matrix
 > - **Not canonical for:** endpoint payloads or data schema details
 > - **Then inspect:** the minimal source files listed in the task table, plus the matching contract doc if shape changes are involved
-> - **Last updated:** 2026-04-23
+> - **Last updated:** 2026-04-25
 >
 > Start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) first. Archived boundary-charter docs live under [`archive/refactor-records/`](archive/refactor-records/) and are not part of the default AI read path.
 > For any file described below as a stable thin surface, compatibility surface, or monkeypatch surface, preserve the root-level exported names that tests or leaf modules patch through that root unless the matching contract tests and docs are updated in the same change.
@@ -236,7 +236,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Change area | Fastest verification |
 |-------------|----------------------|
 | Frontend syntax | `node --check frontend/jobs/app.js` |
-| Frontend unit | `npm run test:unit` |
+| Frontend unit | `npm run test:frontend:unit` |
 | Bridge behavior | `python -m pytest tests/admin/ -q` |
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Desktop launcher | `python -m pytest tests/desktop_app/ -q` |

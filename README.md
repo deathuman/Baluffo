@@ -117,7 +117,7 @@ npm run dev:pipeline
 ```powershell
 npm run verify        # Full build + test suite
 npm run test:py      # Python tests
-npm run test:unit    # Frontend unit tests
+npm run test:frontend:unit  # Frontend unit tests
 ```
 
 ### Configuration

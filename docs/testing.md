@@ -303,7 +303,7 @@ The lane inspects changed tracked files first. It runs only the matching contrac
 - Perf-sensitive backend or packaging change: `npm run perf:py:timing`, then the nearest discovery/startup perf lane if relevant
 - Before pushing to `main` or preparing a release: `npm run test:py:extended`
 - Before merging a broad or risky backend change: `npm run test:py:extended` or `npm run verify`
-- JavaScript/frontend unit change: `npm run test:unit`
+- JavaScript/frontend unit change: `npm run test:frontend:unit`
 - Browser or page-flow change: `npm run test:smoke`
 - Broad or risky change: `npm run verify`
 
