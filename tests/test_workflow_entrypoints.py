@@ -2,6 +2,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -56,6 +57,19 @@ def test_lint_workflow_uses_canonical_precommit_entrypoints() -> None:
     )
     assert "--exclude-root data" in package_text, (
         f"{package_path.name} should route the CI pre-commit entrypoint through the data exclusion."
+    )
+
+
+def test_lint_workflow_enforces_ruff_import_sorting() -> None:
+    root = Path(__file__).resolve().parents[1]
+    ruff_config = tomllib.loads((root / "ruff.toml").read_text(encoding="utf-8"))
+    pre_commit_text = (root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    package = json.loads((root / "package.json").read_text(encoding="utf-8"))
+
+    assert "I" in ruff_config["lint"]["select"]
+    assert "id: ruff-check" in pre_commit_text
+    assert package["scripts"]["lint:precommit:ci"] == (
+        "python scripts/precommit_gate.py --mode all --exclude-root data"
     )
 
 

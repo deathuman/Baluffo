@@ -199,7 +199,7 @@ export function deriveSourceApprovalStatus(row, mode = "pending") {
   const isCapDeferred = ["adapter_cap", "domain_cap", "top_n_cap"].includes(deferReason);
   const hasExistingMatch = rankReasons.has("existing_registry_match") || rankReasons.has("existing_family_match");
 
-  if (Boolean(row?.deferred)) {
+  if (row?.deferred) {
     if (Number.isFinite(discoveryJobs) && discoveryJobs > 0 && isCapDeferred) {
       if (status === "error" || lastProbeError) {
         return {
@@ -215,7 +215,7 @@ export function deriveSourceApprovalStatus(row, mode = "pending") {
           tone: "warning"
         };
       }
-      if (Boolean(row?.weakSignal)) {
+      if (row?.weakSignal) {
         return {
           label: "Deferred: weak signal",
           title: "Not auto-approved because this cap-deferred candidate is marked as a weak signal.",

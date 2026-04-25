@@ -19,11 +19,13 @@ Completed items are archived in [`archive/history/repo-health-completed-tasks.md
 | Frontend JS files | `184` |
 | Top-level HTML entry points | `4` (`admin.html`, `index.html`, `jobs.html`, `saved.html`) |
 | Python test files | `97` |
-| Coverage lane | `1606 passed, 74 deselected`, total coverage `75%` |
+| Coverage lane | `1634 passed, 74 deselected`, total coverage `75%` |
 | Broad type-check run | `python -m mypy src` -> `0 errors in 313 source files` |
 | Enforced type-check gate | `python -m mypy --config-file mypy.ini` covers the full `src/` tree and passes. |
 | ESLint | `0 warnings, 0 errors` |
 | `knip` | `0` unused JS exports |
+| Python import sorting / unused import check | Enforced by `ruff.toml` (`F` and `I` selected) through `npm run lint:precommit:ci`; `python -m ruff check --select I,F401 src tests` also passes |
+| Static security scanners | `bandit`, `pip-audit`, `radon`, and `xenon` are not installed locally and are not wired in CI/pre-commit |
 | Python lock file | `requirements-lock.txt` present |
 | Node lock file | `package-lock.json` present |
 
@@ -42,21 +44,30 @@ No active P0 repository-health item is open. The previous broad mypy sweep is co
 
 ### P1
 
-8. **Add static security scanning to CI.**
+P1-8 is complete and archived; the remaining items below are the active P1 gaps.
+
+9. **Add static security scanning to CI.**
    Current workflows cover tests, lint, and release packaging, but not Python dependency/security scanning.
+   `bandit` and `pip-audit` are not currently installed or wired. Adding them requires explicit dependency approval and should include an allowlist/baseline policy for known non-actionable findings.
    **Done when:** CI runs at least one Python security/dependency scan (`bandit`, `pip-audit`, or equivalent) and documents failure ownership.
-
-9. **Evaluate a complexity gate after the first typing and hygiene pass.**
-   Complexity enforcement is worthwhile, but it should not be added before the current typing and warning debt is under control.
-   **Done when:** the repo adopts a complexity ceiling with an explicit allowlist or baseline strategy instead of freezing current hotspots.
-
-### P2
 
 10. **Add real CI status badges to `README.md`.**
    The README has product badges today, but no workflow status badges.
    **Done when:** README shows current workflow status badges for the maintained CI lanes.
 
-11. **Evaluate structured logging for support and ops diagnostics.**
+### P2
+
+P2-11 is complete and archived; the remaining items below are the active P2 gaps.
+
+12. **Evaluate a complexity gate after the current lint debt is closed.**
+   Complexity enforcement is worthwhile, but `radon` and `xenon` are not installed or wired today and would add dependencies. The gate should not be added before the current ESLint errors are fixed.
+   **Done when:** the repo adopts a complexity ceiling with an explicit allowlist or baseline strategy instead of freezing current hotspots.
+
+13. **Raise coverage in the remaining weak runtime/security modules.**
+   The validated coverage lane still reports `source_sync_runtime.py` at `76%` and `source_discovery/web_search_candidates.py` at `75%`. The previously cited `source_discovery/probe.py` is no longer a weak module; it reports `93%`.
+   **Done when:** the remaining named modules reach the agreed module-level target or have a documented reason to stay below it.
+
+14. **Evaluate structured logging for support and ops diagnostics.**
    The repo already has strong observability hooks; structured logs would make support bundles and smoke artifacts easier to consume programmatically.
    **Done when:** one agreed logging surface adopts a structured format and demonstrates clear improvement over current ad hoc strings.
 
@@ -69,6 +80,9 @@ No active P0 repository-health item is open. The previous broad mypy sweep is co
 - `python -m vulture` now works in the active interpreter after local environment repair; the repo's pre-commit flow still manages its own vulture hook environment separately.
 - The previous `data/source-approval-state.json` newline-only churn was real, but it is now fixed at the shared writer level rather than hidden from the local checks.
 - The type-safety claim is now materially different from the source analysis: broad `python -m mypy src` is green, and the enforced mypy gate covers the full `src/` tree.
+- The submitted "1 ESLint error" claim is stale; current validation found `2` `no-extra-boolean-cast` errors in `frontend/admin/domain/sources.js`.
+- The submitted weak-coverage list is partially stale; `source_discovery/probe.py` now reports `93%`, while `source_sync_runtime.py` and `source_discovery/web_search_candidates.py` remain below `80%`.
+- The submitted unused-import gate claim is stale; Ruff's default `F` rules cover `F401`, and import sorting (`I`) is selected in `ruff.toml` and enforced by the pre-commit/CI lane.
 - The original 1-10 score table and overall `7.5/10` rating were not retained here because they are subjective and partially stale relative to the current repo state.
 
 ## Not Locally Validated

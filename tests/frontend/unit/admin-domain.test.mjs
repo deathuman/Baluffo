@@ -203,6 +203,13 @@ test("admin domain derives pending approval status from discovery evidence", () 
     ).label,
     "Skipped: existing source"
   );
+  assert.equal(
+    deriveSourceApprovalStatus(
+      { jobsFound: 2, deferred: true, deferReason: "adapter_cap", weakSignal: true },
+      "pending"
+    ).label,
+    "Deferred: weak signal"
+  );
 });
 
 test("admin domain derives not_run status when no probe/report data exists", () => {

@@ -31,3 +31,13 @@ This page stores completed items moved out of the active repository-health track
 2. **Completed: raise coverage in the weakest validated modules.**
    Added focused coverage shards for `src/source_sync_crypto.py`, `src/source_discovery/stage_control.py`, `src/source_discovery/probe.py`, and `src/source_discovery/url_patches.py` without changing runtime behavior. The targeted coverage lane now reports `97%`, `100%`, `93%`, and `99%` respectively, clearing the agreed `80%` per-module threshold.
    **Done when:** complete.
+
+3. **Completed: clear the remaining ESLint boolean-cast noise.**
+   Removed the redundant `Boolean(...)` wrappers in `frontend/admin/domain/sources.js`, added regression coverage for the weak-signal approval branch, and restored a clean `npm run lint:js` run without changing the admin approval ladder behavior.
+   **Done when:** complete.
+
+## Completed P2 Items
+
+1. **Completed: make Python import sorting explicit in the gate.**
+   Confirmed `ruff.toml` selects both `F` and `I`, CI routes through `npm run lint:precommit:ci`, and the pre-commit configuration runs `ruff-check`. A workflow regression test now protects that wiring so import sorting cannot silently drop out of the enforced gate.
+   **Done when:** complete.
