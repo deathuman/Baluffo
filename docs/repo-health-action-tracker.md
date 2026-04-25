@@ -52,10 +52,6 @@ P1-8 is complete and archived; the remaining items below are the active P1 gaps.
    `bandit` and `pip-audit` are not currently installed or wired. Adding them requires explicit dependency approval and should include an allowlist/baseline policy for known non-actionable findings.
    **Done when:** CI runs at least one Python security/dependency scan (`bandit`, `pip-audit`, or equivalent) and documents failure ownership.
 
-10. **Add real CI status badges to `README.md`.**
-   The README has product badges today, but no workflow status badges.
-   **Done when:** README shows current workflow status badges for the maintained CI lanes.
-
 ### P2
 
 P2-11, P2-12, and P2-14 are complete and archived; the remaining item below is the active P2 gap.

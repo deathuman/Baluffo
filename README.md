@@ -1,6 +1,6 @@
 # Baluffo
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) ![Platform](https://img.shields.io/badge/Platform-Windows-blue) ![Tech](https://img.shields.io/badge/Tech-Python%2BJS-orange)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Tests](https://github.com/deathuman/Baluffo/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/deathuman/Baluffo/actions/workflows/test.yml) [![Lint](https://github.com/deathuman/Baluffo/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/deathuman/Baluffo/actions/workflows/lint.yml) [![Build Portable EXE](https://github.com/deathuman/Baluffo/actions/workflows/build-portable-exe.yml/badge.svg)](https://github.com/deathuman/Baluffo/actions/workflows/build-portable-exe.yml) ![Platform](https://img.shields.io/badge/Platform-Windows-blue) ![Tech](https://img.shields.io/badge/Tech-Python%2BJS-orange)
 
 ## What is Baluffo? 🚀
 

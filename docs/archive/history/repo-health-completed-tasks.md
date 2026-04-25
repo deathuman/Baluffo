@@ -36,6 +36,10 @@ This page stores completed items moved out of the active repository-health track
    Removed the redundant `Boolean(...)` wrappers in `frontend/admin/domain/sources.js`, added regression coverage for the weak-signal approval branch, and restored a clean `npm run lint:js` run without changing the admin approval ladder behavior.
    **Done when:** complete.
 
+4. **Completed: add maintained CI status badges to README.**
+   `README.md` now includes workflow status badges for `tests`, `lint`, and `build-portable-exe`, closing the P1-10 repo-health gap around CI visibility without changing runtime behavior.
+   **Done when:** complete.
+
 ## Completed P2 Items
 
 1. **Completed: make Python import sorting explicit in the gate.**
