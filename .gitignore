@@ -6,6 +6,7 @@ dist/
 .codex-test-tmp/
 .tmp/
 .pytest_cache/
+.coverage
 .codex-pre-commit-home/
 .pre-commit-home/
 pytest-cache-files-*/
