@@ -376,30 +376,15 @@ def test_legacy_runners_module_is_retired(repo_root: Path) -> None:
 
 
 def test_fetcher_test_helpers_do_not_reintroduce_helper_barrel_patterns(repo_root: Path) -> None:
-    helper_path = repo_root / "tests" / "jobs_fetcher_helpers.py"
-    helper_text = helper_path.read_text(encoding="utf-8")
-    for retired_export in (
-        '"subprocess"',
-        '"sys"',
-        '"threading"',
-        '"time"',
-        '"json"',
-        '"os"',
-        '"mock"',
-        '"pytest"',
-        '"Path"',
-    ):
-        assert retired_export not in helper_text.split("__all__ = [", 1)[1].split("]", 1)[0]
-
     offenders: list[str] = []
     for target in (repo_root / "tests").rglob("*.py"):
         if target.resolve() == Path(__file__).resolve():
             continue
         text = target.read_text(encoding="utf-8")
-        if "from tests.jobs_fetcher_helpers import *" in text:
+        if "tests.jobs_fetcher_helpers" in text:
             offenders.append(str(target.relative_to(repo_root)))
-    assert not offenders, (
-        "Found retired tests.jobs_fetcher_helpers star imports:\n- " + "\n- ".join(offenders)
+    assert not offenders, "Found retired tests.jobs_fetcher_helpers imports:\n- " + "\n- ".join(
+        offenders
     )
 
     jobs_static_helper = repo_root / "tests" / "jobs_static" / "_helpers.py"

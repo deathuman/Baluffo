@@ -6,12 +6,10 @@ from unittest import mock
 
 import pytest
 
-from tests.jobs_fetcher_helpers import (
-    AdapterValidationError,
-    _fixture,
-    jf,
-    jobs_registry,
-)
+from src import jobs_fetcher as jf
+from src.exceptions import AdapterValidationError
+from src.jobs import registry as jobs_registry
+from tests.helpers.job_fixtures import _fixture
 
 
 def test_parse_remote_ok_payload_filters_game_roles() -> None:

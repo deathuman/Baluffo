@@ -7,8 +7,10 @@ from unittest import mock
 
 import pytest
 
+from src import jobs_fetcher as jf
 from src.jobs.adapters.html_parsers import parse_jobposting_location_details
-from tests.jobs_fetcher_helpers import _fixture, jf, scrapy_runner
+from src.scrapers import runner as scrapy_runner
+from tests.helpers.job_fixtures import _fixture
 
 
 def test_scrapy_runner_emit_envelope_tolerates_non_json_safe_values(

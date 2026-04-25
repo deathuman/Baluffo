@@ -8,8 +8,6 @@ poison the entire test process.
 from __future__ import annotations
 
 import os
-import shutil
-import uuid
 from collections.abc import Callable
 
 _BALUFFO_RUNTIME_ISOLATION_KEYS = (
@@ -25,25 +23,26 @@ _BALUFFO_RUNTIME_ISOLATION_KEYS = (
 for _key in _BALUFFO_RUNTIME_ISOLATION_KEYS:
     os.environ.pop(_key, None)
 
-import json
 from pathlib import Path
 
 import pytest
 
+from tests.helpers.temp_paths import (
+    TEST_TMP_ROOT,
+    cleanup_stale_workspace_tmpdirs,
+    make_workspace_tmpdir,
+    remove_workspace_tmpdir,
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CODEX_TMP_ROOT = REPO_ROOT / ".tmp" / "pytest"
+CODEX_TMP_ROOT = TEST_TMP_ROOT
 CODEX_TMP_ROOT.mkdir(parents=True, exist_ok=True)
 
-for _stale_root in (
+cleanup_stale_workspace_tmpdirs(
     REPO_ROOT / ".codex-test-tmp",
     REPO_ROOT / ".codex-tmp-tests",
     CODEX_TMP_ROOT,
-):
-    if not _stale_root.exists():
-        continue
-    for _child in _stale_root.iterdir():
-        if _child.is_dir() and _child.name.startswith("pytest-"):
-            shutil.rmtree(_child, ignore_errors=True)
+)
 
 
 @pytest.fixture(autouse=True)
@@ -83,53 +82,11 @@ def make_test_root(codex_tmp_root: Path):
     created: list[Path] = []
 
     def _make(prefix: str) -> Path:
-        root = codex_tmp_root / f"{prefix}-{uuid.uuid4().hex}"
-        root.mkdir(parents=True, exist_ok=True)
+        root = make_workspace_tmpdir(prefix, root=codex_tmp_root)
         created.append(root)
         return root
 
     yield _make
 
     for root in created:
-        shutil.rmtree(root, ignore_errors=True)
-
-
-@pytest.fixture()
-def source_sync_test_root(make_test_root):
-    """Temp root for source_sync tests: clears runtime state, provides config_path and env."""
-    from src import source_sync as sync
-
-    root = make_test_root("source-sync")
-    config_path = root / "github-app-sync-config.json"
-    env = {sync.PACKAGED_SYNC_CONFIG_ENV: str(config_path)}
-    sync._clear_runtime_state()  # noqa: SLF001
-    with sync._RATE_LIMIT_LOCK:  # noqa: SLF001
-        sync._RATE_LIMIT_STATE["calls"] = []  # noqa: SLF001
-        sync._RATE_LIMIT_STATE["strike"] = 0  # noqa: SLF001
-        sync._RATE_LIMIT_STATE["until"] = None  # noqa: SLF001
-
-    def write_packaged_config(payload: dict | None = None) -> None:
-        base = {
-            "schemaVersion": 1,
-            "appId": "123456",
-            "installationId": "999999",
-            "repo": "owner/repo",
-            "branch": "main",
-            "path": "baluffo/source-sync.json",
-            "privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----",
-        }
-        if payload:
-            base.update(payload)
-        config_path.write_text(json.dumps(base), encoding="utf-8")
-
-    class _Root:
-        pass
-
-    out = _Root()
-    out.root = root
-    out.config_path = config_path
-    out.env = env
-    out.write_packaged_config = write_packaged_config
-    yield out
-
-    sync._clear_runtime_state()  # noqa: SLF001
+        remove_workspace_tmpdir(root)

@@ -128,13 +128,14 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 
 | Fixture | Location |
 |---------|----------|
-| `repo_root`, `codex_tmp_root`, `make_test_root`, `source_sync_test_root` | `tests/conftest.py` |
-| `admin_bridge_entrypoint_root` | `tests/admin/conftest.py` |
-| `workspace_tmpdir(prefix)` (context manager) | `tests/helpers/temp_paths.py` |
+| `repo_root`, `codex_tmp_root`, `make_test_root` | `tests/conftest.py` |
+| `admin_bridge_entrypoint_root` | `tests/admin/conftest.py`, backed by `tests/admin/_helpers.py` |
+| `source_sync_test_root` | `tests/source_sync_helpers.py` |
+| `workspace_tmpdir(prefix)`, shared temp-root allocation/cleanup helpers | `tests/helpers/temp_paths.py` |
 
 **Temp directory note (Windows sandbox):**
 
-- Prefer repo-local temp fixtures such as `workspace_tmpdir(...)` and `admin_bridge_entrypoint_root` for new tests that write runtime state.
+- Prefer repo-local temp fixtures such as `workspace_tmpdir(...)`, `make_test_root(...)`, and local family fixtures for new tests that write runtime state.
 - In this environment, direct pytest temp-root creation under `%LOCALAPPDATA%\\Temp` can hit Windows permission errors during setup/cleanup.
 - Keep pytest temp roots under `.tmp/pytest`; the repo disables pytest's cacheprovider by default so unreadable `pytest-cache-files-*` debris does not accumulate in the workspace.
 - If a narrow bridge test run fails before assertions with tmpdir/tempfile ACL errors, rerun it with a repo-local `--basetemp` or the existing repo-local tempdir shim rather than treating it as a product regression.
@@ -161,6 +162,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - Repository policy checks belong in `tools/repo_health/repo_guardrails.py` and run through `npm run lint:repo-guardrails`, not pytest or frontend unit collection.
 - Real shard files must own real tests. Do not hide test functions inside giant imported `_cases.py` containers.
 - Shared helpers should stay local to the test family and helper-only. Prefer `_helpers.py`, `conftest.py`, or a focused helper module over a broad test utility barrel.
+- Do not add root pytest fixtures for single-family setup. Keep source-sync, admin, bridge, jobs, and static-adapter helpers in their nearest test family unless they are truly universal.
 - Before adding a new guard or smoke test, delete or merge any older test that already protects the same invariant.
 - Prefer seam-patched unit checks for selection, normalization, and routing logic. Keep only one intentionally slow smoke test when full execution is the behavior under test.
 

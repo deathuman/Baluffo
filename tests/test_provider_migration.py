@@ -12,7 +12,7 @@ from src.jobs.adapters import provider_structured_listing as provider_structured
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from tests.jobs_fetcher_helpers import _fixture
+from tests.helpers.job_fixtures import _fixture
 
 
 class _FakeDeps:

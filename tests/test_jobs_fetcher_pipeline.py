@@ -7,14 +7,11 @@ from unittest import mock
 import pytest
 
 import src.jobs.text_utils as jobs_text_utils
+from src import jobs_fetcher as jf
 from src.jobs.adapters import static as static_adapter
 from src.jobs.pipeline_runtime import PipelineTaskRuntime, make_task_state_writer
-from tests.jobs_fetcher_helpers import (
-    _fixture,
-    _fixture_json,
-    jf,
-    workspace_tmpdir,
-)
+from tests.helpers.job_fixtures import _fixture, _fixture_json
+from tests.helpers.temp_paths import workspace_tmpdir
 
 
 def test_run_pipeline_social_sources_report_and_output() -> None:

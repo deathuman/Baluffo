@@ -7,7 +7,7 @@
 > - **Then inspect:** [`testing.md`](testing.md), [`../CONTRIBUTING.md`](../CONTRIBUTING.md), and [`RELEASE.md`](RELEASE.md)
 > - **Last updated:** 2026-04-25
 
-This page tracks active repository-health work after the broad type, lint, complexity, security, and guardrail-migration passes. Completed items are archived in [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md); this active page now focuses on helper/test debloat plus the few remaining general health gaps.
+This page tracks active repository-health work after the broad type, lint, complexity, security, guardrail-migration, and helper-indirection passes. Completed items are archived in [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md); this active page now focuses on repeated inline test setup plus the few remaining general health gaps.
 
 ## Current Validation Snapshot
 
@@ -32,29 +32,9 @@ The previous full-suite validation remains the last broad quality snapshot: cove
 - **Thin compatibility-surface discipline:** stable roots and shims are protected by explicit contract tests and routing docs.
 - **Packaging and updater rehearsals:** packaged smoke, updater, sync rehearsal, orphan reclaim, and browser-job flows are covered by dedicated release-oriented verification lanes.
 - **Startup and performance instrumentation:** startup probes, timing lanes, and discovery/perf sanity scripts are maintained systems, not placeholder docs.
-- **Behavioral test coverage:** the expensive tests mostly protect real bridge, package, pipeline, discovery, and frontend runtime behavior. The remaining bloat problem is concentrated in helper indirection and repeated inline setup.
+- **Behavioral test coverage:** the expensive tests mostly protect real bridge, package, pipeline, discovery, and frontend runtime behavior. The remaining bloat problem is concentrated in repeated inline setup and large payloads.
 
 ## Active P1 Plan
-
-### P1-C. Flatten test helper indirection without weakening route coverage
-
-Current helper bloat is validated, but some proposed replacements need care. `tests/helpers/bridge_api.py` is `283` lines and owns reusable bridge API fakes. `tests/bridge/conftest.py` is only a re-export layer and can be removed. `tests/admin/conftest.py` is `85` lines and patches a broad set of `admin_bridge` module constants for admin tests. `tests/jobs_fetcher_helpers.py` is `55` lines and is imported by multiple jobs tests plus `tests/jobs_static/_helpers.py`.
-
-**Implementation plan:**
-
-1. Remove `tests/bridge/conftest.py` and update bridge tests to import `BridgeRuntimeConfigStub`, `FakeDesktopLocalDataStore`, `FakeHandler`, and `make_stub_bridge_api` directly from `tests.helpers.bridge_api`.
-2. Flatten `tests/admin/conftest.py` gradually.
-   Replace the monolithic `admin_bridge_entrypoint_root` fixture with helper factories in `tests/admin/_helpers.py` that return a small path namespace and apply only the patches each test family needs. Preserve the cleanup of active sync state and services while removing the implicit contract where adding a new `admin_bridge.py` path constant forces every admin fixture setup to change.
-3. Replace broad `tests/jobs_fetcher_helpers.py` imports with direct source imports and a small local fixture helper where needed.
-   Keep `_fixture()` / `_fixture_json()` close to the tests or move them into a narrowly named helper under the jobs test family.
-4. Consolidate temp-root creation behind one implementation.
-   `make_test_root` is the pytest fixture API and `workspace_tmpdir(prefix)` is still widely used, including script-level checks. Do not blindly delete either surface; make them share one cleanup/root-allocation helper, then migrate tests toward the fixture form where it improves readability.
-5. Simplify `FakeDesktopLocalDataStore` only after route tests are updated.
-   Do not replace it with a bare `defaultdict` object unless the fake still exposes the method contract the route layer expects (`sign_in`, saved-job mutations, attachment lookup, and profile/session reads).
-6. Replace broad `make_stub_bridge_api` defaults with `MagicMock(spec=BridgeApi)` only where the route tests do not need real method behavior. Prefer explicit overrides per test family.
-7. Move `source_sync_test_root` out of root `tests/conftest.py` after updating `docs/testing.md`, because it is only used by `tests/test_source_sync.py`.
-
-**Done when:** bridge, admin, jobs, and temp-root helpers are owned by their nearest test families or one shared temp-root helper, root fixture scope only contains universal fixtures, and route contract tests remain readable without re-exporting conftest layers.
 
 ### P1-D. Extract repeated inline data and setup from the largest behavioral tests
 

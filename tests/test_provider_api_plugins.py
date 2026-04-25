@@ -12,7 +12,7 @@ from src.jobs.adapters.plugins.provider_api import greenhouse_runner, teamtailor
 from src.jobs.adapters.plugins.provider_api import html_board as html_board_runner
 from src.jobs.adapters.plugins.provider_api import json_feed as json_feed_runner
 from src.jobs.common.config import GREENHOUSE_JOBS_URL_TEMPLATE
-from tests.jobs_fetcher_helpers import _fixture
+from tests.helpers.job_fixtures import _fixture
 
 
 class _FakeDeps:

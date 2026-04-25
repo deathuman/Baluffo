@@ -3,16 +3,16 @@ import json
 import pytest
 
 import src.jobs.text_utils as jobs_text_utils
-from src.jobs.text_utils import load_city_noise_contract
-from tests.jobs_fetcher_helpers import (
+from src import jobs_fetcher as jf
+from src.jobs import canonicalize as jobs_canonicalize
+from src.jobs import reporting as jobs_reporting
+from src.jobs.contamination_audit import (
     build_city_garbage_report,
     build_contamination_report,
     build_location_quality_report,
     build_public_text_quality_report,
-    jf,
-    jobs_canonicalize,
-    jobs_reporting,
 )
+from src.jobs.text_utils import load_city_noise_contract
 
 
 def _clear_contract_loader_caches() -> None:

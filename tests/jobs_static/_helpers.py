@@ -4,6 +4,15 @@ from pathlib import Path
 
 from scrapy.http import HtmlResponse, Request
 
+from src import jobs_fetcher as jf
+from src import jobs_fetcher_registry as jfr
+from src.jobs import canonicalize as jobs_canonicalize
+from src.jobs import dedup as jobs_dedup
+from src.jobs import registry as jobs_registry
+from src.jobs import reporting as jobs_reporting
+from src.jobs.adapters import static_helpers, static_scrapy
+from src.jobs.adapters.plugins import default_registry
+from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.static import (
     ats_wrappers,
     frontier,
@@ -17,32 +26,24 @@ from src.jobs.adapters.plugins.static._rendered_cards import (
     extract_rendered_card_jobs,
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.static_helpers import process_detail_link
+from src.jobs.adapters.static_helpers import (
+    process_detail_link,
+    source_detail_limit_for,
+    source_detail_retries_for,
+)
 from src.jobs.common import config as jobs_common_config
 from src.jobs.common import registry as jobs_common_registry
-from src.jobs.page_gating import classify_job_page
-from src.scrapers.spiders.generic_careers import GenericCareersSpider
-from tests.jobs_fetcher_helpers import (
-    _fixture,
+from src.jobs.contamination_audit import (
     build_city_garbage_report,
     build_contamination_report,
     build_location_quality_report,
     build_public_text_quality_report,
-    default_registry,
-    ensure_provider_plugins,
-    jf,
-    jfr,
-    jobs_canonicalize,
-    jobs_dedup,
-    jobs_registry,
-    jobs_reporting,
-    scrapy_runner,
-    source_detail_limit_for,
-    source_detail_retries_for,
-    static_helpers,
-    static_scrapy,
-    workspace_tmpdir,
 )
+from src.jobs.page_gating import classify_job_page
+from src.scrapers import runner as scrapy_runner
+from src.scrapers.spiders.generic_careers import GenericCareersSpider
+from tests.helpers.job_fixtures import _fixture
+from tests.helpers.temp_paths import workspace_tmpdir
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 

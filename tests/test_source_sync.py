@@ -9,6 +9,7 @@ import pytest
 
 from src import source_sync as sync
 from src.shared import github_https
+from tests.source_sync_helpers import source_sync_test_root  # noqa: F401
 
 
 class _FakeResponse:

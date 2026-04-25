@@ -48,6 +48,10 @@ This page stores completed items moved out of the active repository-health track
    Repository-policy guardrails now run through `npm run lint:repo-guardrails` and `tools/repo_health/repo_guardrails.py`, with grouped checks for docs, workflow, compatibility surfaces, frontend structure, repo-root layout, test shape, and test line budgets. The old pytest and frontend unit guard files were removed from collection, `scripts/precommit_gate.py` runs the repo-health guardrails before the complexity baseline, and `scripts/refactor_changed_gate.py` routes docs/workflow/compatibility checks through the repo-health entrypoint.
    **Done when:** complete.
 
+7. **Completed: flatten test helper indirection without weakening route coverage.**
+   Bridge route tests now import their fakes directly from `tests.helpers.bridge_api`, the bridge conftest re-export layer was removed, jobs fetcher tests use direct source imports plus a narrow fixture loader, and temp-root creation is shared by `make_test_root` and `workspace_tmpdir`. Admin bridge setup moved into admin-local helper factories, and the source-sync-only fixture moved out of root pytest scope.
+   **Done when:** complete.
+
 ## Completed P2 Items
 
 1. **Completed: make Python import sorting explicit in the gate.**

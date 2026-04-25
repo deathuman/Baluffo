@@ -3,17 +3,14 @@ import sys
 from pathlib import Path
 from unittest import mock
 
-from tests.jobs_fetcher_helpers import (
-    AdapterPluginContext,
-    default_registry,
-    ensure_provider_plugins,
-    jf,
-    jfr,
-    jobs_registry,
-    source_detail_limit_for,
-    source_detail_retries_for,
-    static_helpers,
-)
+from src import jobs_fetcher as jf
+from src import jobs_fetcher_registry as jfr
+from src.jobs import registry as jobs_registry
+from src.jobs.adapters import static_helpers
+from src.jobs.adapters.plugins import default_registry
+from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
+from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.static_helpers import source_detail_limit_for, source_detail_retries_for
 
 
 def test_jobs_fetcher_keeps_parser_compatibility_exports() -> None:

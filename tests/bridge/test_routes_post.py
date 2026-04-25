@@ -10,7 +10,7 @@ import pytest
 
 from src.bridge import registry_tombstones
 from src.bridge.routes.post_routes import handle_post
-from tests.bridge.conftest import _FakeDesktopLocalDataStore, _FakeHandler, _make_api
+from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
 
 @pytest.mark.parametrize(
@@ -27,10 +27,10 @@ def test_sign_in(
     expected_status: int,
     expected_user_name: str | None,
 ) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -49,11 +49,11 @@ def test_sign_in(
 
 def test_sign_out_success(tmp_path: Path) -> None:
     """Test successful sign-out."""
-    store = _FakeDesktopLocalDataStore()
+    store = FakeDesktopLocalDataStore()
     store.sign_in("Test User")
-    api = _make_api(tmp_path, store)
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -68,11 +68,11 @@ def test_sign_out_success(tmp_path: Path) -> None:
 
 def test_save_job_success(tmp_path: Path) -> None:
     """Test saving a job successfully."""
-    store = _FakeDesktopLocalDataStore()
+    store = FakeDesktopLocalDataStore()
     store.sign_in("Test User")
-    api = _make_api(tmp_path, store)
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -96,10 +96,10 @@ def test_save_job_success(tmp_path: Path) -> None:
 
 def test_save_job_empty_job(tmp_path: Path) -> None:
     """Test saving with empty job."""
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -112,12 +112,12 @@ def test_save_job_empty_job(tmp_path: Path) -> None:
 
 def test_remove_job_success(tmp_path: Path) -> None:
     """Test removing a saved job."""
-    store = _FakeDesktopLocalDataStore()
+    store = FakeDesktopLocalDataStore()
     store.sign_in("Test User")
     store.save_job_for_user("user_123", {"title": "Test"}, {})
-    api = _make_api(tmp_path, store)
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -132,12 +132,12 @@ def test_remove_job_success(tmp_path: Path) -> None:
 
 def test_update_status_success(tmp_path: Path) -> None:
     """Test updating job status."""
-    store = _FakeDesktopLocalDataStore()
+    store = FakeDesktopLocalDataStore()
     store.sign_in("Test User")
     store.save_job_for_user("user_123", {"title": "Test"}, {})
-    api = _make_api(tmp_path, store)
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -156,12 +156,12 @@ def test_update_status_success(tmp_path: Path) -> None:
 
 def test_update_notes_success(tmp_path: Path) -> None:
     """Test updating job notes."""
-    store = _FakeDesktopLocalDataStore()
+    store = FakeDesktopLocalDataStore()
     store.sign_in("Test User")
     store.save_job_for_user("user_123", {"title": "Test"}, {})
-    api = _make_api(tmp_path, store)
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -179,10 +179,10 @@ def test_update_notes_success(tmp_path: Path) -> None:
 
 def test_delete_by_id(tmp_path: Path) -> None:
     """Test deleting sources by ID."""
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -200,10 +200,10 @@ def test_delete_creates_tombstone_and_restore_deleted_reinstates_row(
     tombstone_path = tmp_path / "source-registry-tombstones.json"
     monkeypatch.setattr(registry_tombstones, "TOMBSTONES_PATH", tombstone_path)
 
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -232,10 +232,10 @@ def test_delete_creates_tombstone_and_restore_deleted_reinstates_row(
 
 def test_delete_by_url(tmp_path: Path) -> None:
     """Test deleting sources by URL fingerprint."""
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -249,10 +249,10 @@ def test_delete_by_url(tmp_path: Path) -> None:
 
 def test_run_discovery(tmp_path: Path) -> None:
     """Test triggering discovery task."""
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -266,8 +266,8 @@ def test_run_discovery(tmp_path: Path) -> None:
 
 
 def test_run_discovery_conflict_returns_409(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
     api.trigger_discovery_task = lambda **_kwargs: (
         409,
         {
@@ -282,7 +282,7 @@ def test_run_discovery_conflict_returns_409(tmp_path: Path) -> None:
         },
     )
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -296,8 +296,8 @@ def test_run_discovery_conflict_returns_409(tmp_path: Path) -> None:
 
 
 def test_check_for_update(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
     api.check_for_update = lambda **kw: {
         "currentVersion": "0.1.0",
         "latestVersion": "0.2.0",
@@ -309,7 +309,7 @@ def test_check_for_update(tmp_path: Path) -> None:
         "releaseNotesPublishedAt": "2026-04-15T10:00:00Z",
     }
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(handler, api=api, path="/app/check-for-update", payload={"force": True})
 
     assert result is True
@@ -319,11 +319,11 @@ def test_check_for_update(tmp_path: Path) -> None:
 
 
 def test_download_update(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
     api.download_update = lambda: {"started": True, "status": {"downloadState": "downloading"}}
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(handler, api=api, path="/app/download-update", payload={})
 
     assert result is True
@@ -332,8 +332,8 @@ def test_download_update(tmp_path: Path) -> None:
 
 
 def test_download_update_failure_returns_structured_payload(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
     api.download_update = lambda: {
         "started": False,
         "status": {"downloadState": "downloaded", "installState": "ready"},
@@ -341,7 +341,7 @@ def test_download_update_failure_returns_structured_payload(tmp_path: Path) -> N
         "errorCode": "update_ready_to_install",
     }
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(handler, api=api, path="/app/download-update", payload={})
 
     assert result is True
@@ -352,8 +352,8 @@ def test_download_update_failure_returns_structured_payload(tmp_path: Path) -> N
 
 
 def test_install_update_conflict(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
     api.install_update = lambda: {
         "started": False,
         "status": {"downloadState": "idle", "installState": "idle"},
@@ -361,7 +361,7 @@ def test_install_update_conflict(tmp_path: Path) -> None:
         "errorCode": "install_not_ready",
     }
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(handler, api=api, path="/app/install-update", payload={})
 
     assert result is True
@@ -370,10 +370,10 @@ def test_install_update_conflict(tmp_path: Path) -> None:
 
 
 def test_desktop_session_lifecycle_accepts_valid_payload(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -392,14 +392,14 @@ def test_desktop_session_lifecycle_accepts_valid_payload(tmp_path: Path) -> None
 
 
 def test_desktop_session_lifecycle_rejects_invalid_payload(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
     api.update_desktop_session_lifecycle = lambda **_kw: (
         403,
         {"ok": False, "error": "Desktop session lifecycle token mismatch."},
     )
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -420,14 +420,14 @@ def test_desktop_session_lifecycle_rejects_invalid_payload(tmp_path: Path) -> No
 def test_run_discovery_response_write_failure_is_logged_and_returns_error_json(
     tmp_path: Path,
 ) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
     log_calls: list[tuple[str, dict[str, Any]]] = []
 
     def bridge_log(level: str, message: str, **fields: Any) -> None:
         log_calls.append((message, {"level": level, **fields}))
 
-    class _FlakyHandler(_FakeHandler):
+    class _FlakyHandler(FakeHandler):
         def __init__(self) -> None:
             super().__init__()
             self._first = True
@@ -457,9 +457,9 @@ def test_run_discovery_response_write_failure_is_logged_and_returns_error_json(
 
 
 def test_registry_approve_stamps_live_lifecycle_metadata(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
-    handler = _FakeHandler()
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    handler = FakeHandler()
 
     result = handle_post(
         handler,
@@ -478,9 +478,9 @@ def test_registry_approve_stamps_live_lifecycle_metadata(tmp_path: Path) -> None
 
 
 def test_registry_reject_and_restore_update_candidate_lifecycle(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
-    handler = _FakeHandler()
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    handler = FakeHandler()
 
     result = handle_post(
         handler,
@@ -511,9 +511,9 @@ def test_registry_reject_and_restore_update_candidate_lifecycle(tmp_path: Path) 
 
 
 def test_registry_rollback_resets_live_row_to_validated(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
-    handler = _FakeHandler()
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    handler = FakeHandler()
 
     api.persist_state_and_auto_sync(
         {
@@ -550,10 +550,10 @@ def test_registry_rollback_resets_live_row_to_validated(tmp_path: Path) -> None:
 
 def test_run_jobs_pipeline(tmp_path: Path) -> None:
     """Test triggering jobs pipeline."""
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -566,10 +566,10 @@ def test_run_jobs_pipeline(tmp_path: Path) -> None:
 
 def test_run_sync_pull(tmp_path: Path) -> None:
     """Test triggering sync pull."""
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -583,10 +583,10 @@ def test_run_sync_pull(tmp_path: Path) -> None:
 
 def test_run_sync_push(tmp_path: Path) -> None:
     """Test triggering sync push."""
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -600,10 +600,10 @@ def test_run_sync_push(tmp_path: Path) -> None:
 
 def test_run_fetcher(tmp_path: Path) -> None:
     """Test triggering fetcher task."""
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -616,8 +616,8 @@ def test_run_fetcher(tmp_path: Path) -> None:
 
 
 def test_run_fetcher_conflict_returns_409(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
     api.start_fetcher_task = lambda _payload: {
         "started": False,
         "alreadyRunning": True,
@@ -629,7 +629,7 @@ def test_run_fetcher_conflict_returns_409(tmp_path: Path) -> None:
         "status": "running",
     }
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -643,8 +643,8 @@ def test_run_fetcher_conflict_returns_409(tmp_path: Path) -> None:
 
 
 def test_save_discovery_config_persists_and_returns_saved_payload(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
     saved_payloads: list[dict[str, Any]] = []
 
     def update_saved_discovery_settings(payload: dict[str, Any]) -> dict[str, Any]:
@@ -662,7 +662,7 @@ def test_save_discovery_config_persists_and_returns_saved_payload(tmp_path: Path
         "savedConfig": saved_payloads[-1],
     }
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -680,10 +680,10 @@ def test_save_discovery_config_persists_and_returns_saved_payload(tmp_path: Path
 
 
 def test_open_url_uses_default_browser(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     with mock.patch(
         "src.bridge.routes.post_routes.webbrowser.open", return_value=True
     ) as open_mock:
@@ -701,10 +701,10 @@ def test_open_url_uses_default_browser(tmp_path: Path) -> None:
 
 
 def test_open_url_reports_failure_when_browser_cannot_open(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     with mock.patch("src.bridge.routes.post_routes.webbrowser.open", return_value=False):
         result = handle_post(
             handler,
@@ -720,8 +720,8 @@ def test_open_url_reports_failure_when_browser_cannot_open(tmp_path: Path) -> No
 
 def test_ack_alert_success(tmp_path: Path) -> None:
     """Test acknowledging an alert."""
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
     alert_state = {"acked": {}}
     api.load_alert_state = lambda: {"acked": dict(alert_state["acked"])}
     api.save_alert_state = lambda payload: alert_state.update(
@@ -729,7 +729,7 @@ def test_ack_alert_success(tmp_path: Path) -> None:
     )
     api.now_iso = lambda: "2026-04-18T10:00:00Z"
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
@@ -743,15 +743,15 @@ def test_ack_alert_success(tmp_path: Path) -> None:
 
 
 def test_ack_alert_ignores_non_dismissible_alert(tmp_path: Path) -> None:
-    store = _FakeDesktopLocalDataStore()
-    api = _make_api(tmp_path, store)
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
     alert_state = {"acked": {}}
     saved_payloads: list[dict[str, Any]] = []
     api.load_alert_state = lambda: {"acked": dict(alert_state["acked"])}
     api.save_alert_state = lambda payload: saved_payloads.append(dict(payload or {}))
     api.compute_ops_health = lambda: {"alerts": [{"id": "fetch_never_run", "dismissible": False}]}
 
-    handler = _FakeHandler()
+    handler = FakeHandler()
     result = handle_post(
         handler,
         api=api,
