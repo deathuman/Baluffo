@@ -45,3 +45,7 @@ This page stores completed items moved out of the active repository-health track
 2. **Completed: add a source complexity baseline gate.**
    Ruff `C901` now runs through `scripts/check_complexity_baseline.py` in the CI pre-commit lane with an explicit `src/` baseline, rule, threshold, and Ruff version. The gate allows current complexity hotspots to improve but fails new or worsened source hotspots without adding a new complexity-specific dependency.
    **Done when:** complete.
+
+3. **Completed: standardize structured diagnostics for support and ops.**
+   P2-14 closed as a phased structured diagnostics effort. Phase 1 added retained admin bridge diagnostic events at `data/admin-bridge-events.jsonl` with bounded retention and redaction while preserving console logs. Phase 2 hardened `/ops/task-live/<taskType>` so fetch, discovery, and sync `recentEvents` share the versioned `src/shared/live_task.py` envelope. Phase 3 versioned `data/desktop-startup-metrics.jsonl` rows with support categories while preserving existing startup metric event names, bridge routes, `payload` / `fields` compatibility, and packaged smoke startup snapshots.
+   **Done when:** complete.

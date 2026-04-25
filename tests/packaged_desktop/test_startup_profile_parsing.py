@@ -48,14 +48,30 @@ def test_read_startup_metrics_file_reads_jsonl_rows() -> None:
         metrics_path.write_text(
             "\n".join(
                 [
-                    json.dumps({"event": "desktop_launch_start", "fields": {"elapsedMs": 0}}),
-                    json.dumps({"event": "desktop_window_shown", "fields": {"elapsedMs": 10}}),
+                    "{invalid json",
+                    json.dumps(
+                        {
+                            "schemaVersion": 1,
+                            "event": "desktop_launch_start",
+                            "category": "launch",
+                            "fields": {"elapsedMs": 0},
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "schemaVersion": 1,
+                            "event": "desktop_window_shown",
+                            "category": "window",
+                            "fields": {"elapsedMs": 10},
+                        }
+                    ),
                 ]
             ),
             encoding="utf-8",
         )
         rows = smoke.read_startup_metrics_file(metrics_path.parent, limit=10)
         assert [row["event"] for row in rows] == ["desktop_launch_start", "desktop_window_shown"]
+        assert [row["schemaVersion"] for row in rows] == [1, 1]
 
 
 def test_inject_desktop_update_public_keys_writes_packaged_trust_files(tmp_path: Path) -> None:

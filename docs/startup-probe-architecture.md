@@ -77,6 +77,22 @@ Important event families:
 - browser/page events: `jobs_*`, `saved_*`, `admin_*`
 - report outputs: `startup-profile-summary.json`, packaged smoke `report.json`
 
+## Startup Metric Schema
+
+Startup diagnostics are retained as JSONL rows in `data/desktop-startup-metrics.jsonl` under the configured runtime data directory. The same rows are exposed by `GET /desktop-local-data/startup-metrics?limit=` and captured by packaged smoke as `startup-metrics.json`.
+
+Rows are versioned support artifacts:
+
+- `schemaVersion`: currently `1`.
+- `ts`: bridge/runtime timestamp for the row.
+- `event`: stable event name; this remains the compatibility key for required-event checks and startup summaries.
+- `category`: support-oriented grouping derived from `event`.
+- `fields`: runtime launcher trace details for `desktop_*` events written by shipped startup telemetry.
+- `payload`: browser/page metric details for bridge POST rows from `jobs_*`, `saved_*`, and `admin_*` pages.
+- `browserTsMs`: optional top-level browser-created timestamp preserved from `browserCreatedAtMs`.
+
+Current categories are `launch`, `browser`, `port_retry`, `bridge`, `site`, `window`, `handoff`, `recovery`, `shutdown`, `page`, `probe`, and `unknown`. Categories are additive diagnostics only; do not use them to replace stable event names.
+
 ## Artifact and Reporting Rules
 
 - Use repo-local artifact roots only:

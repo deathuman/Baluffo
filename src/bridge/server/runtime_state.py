@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from src.bridge.pipeline_service import PipelineRuntime
+from src.ship.startup_telemetry import build_startup_metric_row
 
 
 class LocalDataStoreLike(Protocol):
@@ -108,17 +109,12 @@ def configure_runtime_paths(
 
 def append_startup_metric(event: str, payload: dict[str, Any] | None, *, now_iso: Any) -> None:
     details = payload if isinstance(payload, dict) else {}
-    browser_created_at_ms = details.get("browserCreatedAtMs")
-    normalized_browser_created_at_ms = (
-        int(browser_created_at_ms) if isinstance(browser_created_at_ms, (int, float)) else None
+    row = build_startup_metric_row(
+        event,
+        details,
+        ts=str(now_iso() or ""),
+        value_container="payload",
     )
-    row: dict[str, Any] = {
-        "ts": str(now_iso() or ""),
-        "event": str(event or "").strip() or "unknown",
-        "payload": details,
-    }
-    if normalized_browser_created_at_ms is not None:
-        row["browserTsMs"] = normalized_browser_created_at_ms
     with STARTUP_METRICS_LOCK:
         try:
             STARTUP_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)

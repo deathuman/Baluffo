@@ -21,6 +21,44 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def test_append_startup_trace_writes_versioned_fields_row() -> None:
+    with workspace_tmpdir("runtime-launcher") as tmp:
+        data_dir = Path(tmp) / "data"
+        telemetry.append_startup_trace(
+            data_dir,
+            "desktop_browser_watchdog_handoff_confirmed",
+            evidence="startup_metric",
+            path=data_dir,
+        )
+
+        rows = [
+            json.loads(line)
+            for line in (data_dir / "desktop-startup-metrics.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+            if line.strip()
+        ]
+
+    assert rows == [
+        {
+            "schemaVersion": 1,
+            "ts": rows[0]["ts"],
+            "event": "desktop_browser_watchdog_handoff_confirmed",
+            "category": "handoff",
+            "fields": {"evidence": "startup_metric", "path": str(data_dir)},
+        }
+    ]
+
+
+def test_startup_metric_category_classifies_support_events() -> None:
+    assert telemetry.startup_metric_category("desktop_browser_watchdog_handoff_confirmed") == (
+        "handoff"
+    )
+    assert telemetry.startup_metric_category("desktop_stale_runtime_reclaim_result") == "recovery"
+    assert telemetry.startup_metric_category("desktop_runtime_port_retry") == "port_retry"
+    assert telemetry.startup_metric_category("jobs_first_interactive") == "page"
+
+
 def _seed_ship_root(root: Path, version: str = "1.2.3") -> None:
     _write(root / "app" / "current.txt", f"{version}\n")
     _write(

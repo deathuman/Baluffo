@@ -136,6 +136,106 @@ def test_wait_for_runtime_events_accepts_inferred_shell_window_event_alias() -> 
     assert result == rows
 
 
+def test_capture_runtime_snapshot_preserves_versioned_startup_metrics() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        artifacts_dir = Path(tmp) / "artifacts"
+        metrics_payload = {
+            "ok": True,
+            "rows": [
+                {
+                    "schemaVersion": 1,
+                    "ts": "2026-04-17T09:00:00+00:00",
+                    "event": "desktop_browser_watchdog_handoff_confirmed",
+                    "category": "handoff",
+                    "fields": {"evidence": "startup_metric"},
+                }
+            ],
+        }
+        with mock.patch.object(
+            smoke,
+            "fetch_json",
+            side_effect=[
+                {"ok": True, "detail": "healthy"},
+                {"ok": True, "desktopSession": {}},
+                metrics_payload,
+            ],
+        ):
+            snapshots = smoke.capture_runtime_snapshot("http://127.0.0.1:8877", artifacts_dir)
+
+        saved = json.loads(Path(snapshots["startupMetricsSnapshot"]).read_text(encoding="utf-8"))
+        assert saved == metrics_payload
+        assert saved["rows"][0]["schemaVersion"] == 1
+        assert saved["rows"][0]["category"] == "handoff"
+
+
+def test_run_embedded_runtime_probe_writes_versioned_startup_metrics_snapshot() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        artifacts_root = root / "artifacts"
+        process = mock.Mock()
+        process.pid = 123
+        process.poll.return_value = None
+        stdout_handle = mock.Mock()
+        stderr_handle = mock.Mock()
+        metrics_rows = [
+            {
+                "schemaVersion": 1,
+                "ts": "2026-04-17T09:00:00+00:00",
+                "event": "desktop_browser_watchdog_handoff_confirmed",
+                "category": "handoff",
+                "fields": {"evidence": "startup_metric"},
+            },
+            {
+                "schemaVersion": 1,
+                "ts": "2026-04-17T09:00:01+00:00",
+                "event": "jobs_first_interactive",
+                "category": "page",
+                "payload": {"elapsedMs": 1000},
+            },
+        ]
+        with (
+            mock.patch.object(smoke, "choose_free_port", side_effect=[52001, 52002]),
+            mock.patch.object(smoke, "packaged_runtime_env_overrides", return_value={}),
+            mock.patch.object(smoke, "clear_packaged_desktop_session_state"),
+            mock.patch.object(
+                smoke, "launch_packaged_exe", return_value=(process, stdout_handle, stderr_handle)
+            ),
+            mock.patch.object(smoke, "wait_for_packaged_runtime", return_value={}),
+            mock.patch.object(smoke, "wait_for_runtime_events", return_value=metrics_rows),
+            mock.patch.object(
+                smoke,
+                "startup_profile_required_events",
+                return_value=("desktop_browser_watchdog_handoff_confirmed",),
+            ),
+            mock.patch.object(
+                smoke,
+                "summarize_startup_metrics",
+                return_value={"status": "passed", "classification": "ok"},
+            ) as summarize_mock,
+            mock.patch.object(smoke, "write_startup_summary"),
+            mock.patch.object(smoke, "terminate_process_tree"),
+            mock.patch.object(smoke, "cleanup_orphaned_desktop_ports_nt"),
+        ):
+            result = smoke.run_embedded_runtime_probe(
+                exe_path=exe_path,
+                probe={"name": "Startup Probe", "openPath": "jobs.html"},
+                artifacts_root=artifacts_root,
+                runtime_timeout_s=5.0,
+                startup_probe=True,
+                profile_mode="cold",
+            )
+
+        saved = json.loads(
+            (artifacts_root / "startup-probe" / "startup-metrics.json").read_text(encoding="utf-8")
+        )
+        assert result["status"] == "passed"
+        assert saved["rows"] == metrics_rows
+        assert saved["rows"][0]["category"] == "handoff"
+        summarize_mock.assert_called_once_with(metrics_rows, page="jobs", profile_mode="cold")
+
+
 def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None:
     with workspace_tmpdir("packaged-smoke") as tmp:
         root = Path(tmp)

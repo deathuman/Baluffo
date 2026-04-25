@@ -112,6 +112,43 @@ def test_app_update_status(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["releaseNotesTitle"] == "Baluffo v0.2.0"
 
 
+def test_startup_metrics_endpoint_returns_versioned_rows(tmp_path: Path) -> None:
+    store = _FakeDesktopLocalDataStore()
+    api = _make_api(tmp_path, store)
+    api.read_startup_metrics = lambda limit: [
+        {
+            "schemaVersion": 1,
+            "ts": "2026-04-17T09:00:00+00:00",
+            "event": "desktop_site_ready",
+            "category": "site",
+            "fields": {"elapsedMs": 400},
+        }
+    ]
+
+    handler = _FakeHandler()
+    result = handle_get(
+        handler,
+        api=api,
+        path="/desktop-local-data/startup-metrics",
+        query={"limit": ["25"]},
+    )
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"] == {
+        "ok": True,
+        "rows": [
+            {
+                "schemaVersion": 1,
+                "ts": "2026-04-17T09:00:00+00:00",
+                "event": "desktop_site_ready",
+                "category": "site",
+                "fields": {"elapsedMs": 400},
+            }
+        ],
+    }
+
+
 @pytest.mark.parametrize(
     "path,expected_key",
     [

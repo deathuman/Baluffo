@@ -24,6 +24,23 @@ from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 
 _STARTUP_TRACE_LOCK = threading.Lock()
+STARTUP_METRIC_SCHEMA_VERSION = 1
+STARTUP_METRIC_DEFAULT_EVENT = "unknown"
+STARTUP_METRIC_DEFAULT_CATEGORY = "unknown"
+STARTUP_METRIC_CATEGORIES = {
+    "launch",
+    "browser",
+    "port_retry",
+    "bridge",
+    "site",
+    "window",
+    "handoff",
+    "recovery",
+    "shutdown",
+    "page",
+    "probe",
+    "unknown",
+}
 
 
 def startup_probe_enabled(env: dict[str, str] | None = None) -> bool:
@@ -44,12 +61,77 @@ def startup_trace_target(env: dict[str, str] | None = None) -> tuple[Path | None
     return Path(data_dir).expanduser().resolve(), True
 
 
-def append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
-    row = {
-        "ts": datetime.now(UTC).isoformat(),
-        "event": str(event or "").strip() or "unknown",
-        "fields": {key: value for key, value in fields.items()},
+def _json_safe_value(value: object) -> object:
+    try:
+        json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(value)
+    return value
+
+
+def startup_metric_category(event: str) -> str:
+    normalized = str(event or "").strip().lower()
+    if not normalized:
+        return STARTUP_METRIC_DEFAULT_CATEGORY
+    if normalized.startswith(("jobs_", "saved_", "admin_")):
+        category = "page"
+    elif "port_retry" in normalized:
+        category = "port_retry"
+    elif "handoff" in normalized:
+        category = "handoff"
+    elif "reclaim" in normalized or "recovery" in normalized or "lock_" in normalized:
+        category = "recovery"
+    elif "shutdown" in normalized or "window_closed" in normalized:
+        category = "shutdown"
+    elif "browser" in normalized:
+        category = "browser"
+    elif "bridge" in normalized:
+        category = "bridge"
+    elif "site" in normalized:
+        category = "site"
+    elif "window" in normalized or "shell_window" in normalized:
+        category = "window"
+    elif "probe" in normalized:
+        category = "probe"
+    elif "launch" in normalized:
+        category = "launch"
+    else:
+        category = STARTUP_METRIC_DEFAULT_CATEGORY
+    return category if category in STARTUP_METRIC_CATEGORIES else STARTUP_METRIC_DEFAULT_CATEGORY
+
+
+def build_startup_metric_row(
+    event: str,
+    values: dict[str, object] | None,
+    *,
+    ts: str,
+    value_container: str,
+) -> dict[str, object]:
+    event_name = str(event or "").strip() or STARTUP_METRIC_DEFAULT_EVENT
+    container = "payload" if str(value_container or "").strip() == "payload" else "fields"
+    details = values if isinstance(values, dict) else {}
+    row: dict[str, object] = {
+        "schemaVersion": STARTUP_METRIC_SCHEMA_VERSION,
+        "ts": str(ts or ""),
+        "event": event_name,
+        "category": startup_metric_category(event_name),
+        container: {str(key): _json_safe_value(value) for key, value in details.items()},
     }
+    browser_created_at_ms = details.get("browserCreatedAtMs")
+    if isinstance(browser_created_at_ms, (int, float)) and not isinstance(
+        browser_created_at_ms, bool
+    ):
+        row["browserTsMs"] = int(browser_created_at_ms)
+    return row
+
+
+def append_startup_trace(data_dir: Path, event: str, **fields: object) -> None:
+    row = build_startup_metric_row(
+        event,
+        fields,
+        ts=datetime.now(UTC).isoformat(),
+        value_container="fields",
+    )
     path = Path(data_dir) / "desktop-startup-metrics.jsonl"
     payload = json.dumps(row, ensure_ascii=False) + "\n"
     with _STARTUP_TRACE_LOCK:
