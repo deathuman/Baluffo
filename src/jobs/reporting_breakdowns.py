@@ -126,6 +126,21 @@ def _classify_blank_residue_shape(report: dict[str, Any]) -> str:
     return _classify_needs_review_shape(report)
 
 
+def _has_needs_review_marker(report: dict[str, Any]) -> bool:
+    return (
+        norm_text(report.get("classification")) == "needs_review"
+        or norm_text(report.get("failureBucket")) == "needs_review"
+        or norm_text(report.get("zeroKeptClassification")) == "needs_review"
+    )
+
+
+def _include_needs_review_report(report: dict[str, Any]) -> bool:
+    return int(report.get("keptCount") or 0) == 0 and (
+        norm_text(report.get("failureBucket")) in {"needs_review", ""}
+        or norm_text(report.get("zeroKeptClassification")) in {"needs_review", ""}
+    )
+
+
 def _build_breakdown(
     source_reports: Sequence[dict[str, Any]],
     *,
@@ -216,18 +231,23 @@ def build_unknown_static_breakdown(
 def build_needs_review_breakdown(
     source_reports: Sequence[dict[str, Any]],
 ) -> dict[str, Any]:
-    return _build_breakdown(
+    breakdown = _build_breakdown(
         source_reports,
         shapes=NEEDS_REVIEW_BREAKDOWN_SHAPES,
-        include_report=lambda report: (
-            int(report.get("keptCount") or 0) == 0
-            and (
-                norm_text(report.get("failureBucket")) in {"needs_review", ""}
-                or norm_text(report.get("zeroKeptClassification")) in {"needs_review", ""}
-            )
-        ),
+        include_report=_include_needs_review_report,
         classify_shape=_classify_needs_review_shape,
     )
+    breakdown["rawMarkerCount"] = sum(
+        1
+        for report in source_reports
+        if isinstance(report, dict) and _has_needs_review_marker(report)
+    )
+    breakdown["includedCount"] = sum(
+        int(values.get("count") or 0)
+        for values in (breakdown.get("byShape") or {}).values()
+        if isinstance(values, dict)
+    )
+    return breakdown
 
 
 def build_blank_residue_breakdown(

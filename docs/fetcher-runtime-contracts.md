@@ -5,7 +5,7 @@
 > - **Canonical for:** fetcher runtime options, admin preset wiring, and fetch-run artifacts consumed by admin flows
 > - **Not canonical for:** full jobs pipeline ownership or broad testing strategy
 > - **Then inspect:** `src/jobs_fetcher.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, `src/jobs/pipeline*.py`, `src/jobs/state*.py`, and [`testing.md`](testing.md)
-> - **Last updated:** 2026-04-23
+> - **Last updated:** 2026-04-26
 
 ## CLI runtime options
 
@@ -71,6 +71,7 @@ Optional overrides:
 - `data/jobs-fetch-report.json`
   - contract keys: `runtime`, `summary`, `sources`.
   - includes output file paths under `outputs`.
+  - `summary.needsReviewBreakdown` includes both shaped static diagnostic counts and raw comparison counters: `rawMarkerCount` and `includedCount`.
 - `data/jobs-source-state.json`
   - per-source state for TTL and circuit breaker decisions.
   - includes `consecutiveFailures`, `lastSuccessAt`, `quarantinedUntilAt`.

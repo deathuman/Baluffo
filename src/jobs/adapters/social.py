@@ -237,6 +237,7 @@ def run_social_x_source(
     social_config: dict[str, Any],
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
+    heartbeat_callback: Callable[[], None] | None = None,
     progress_callback: Callable[..., None] | None = None,
 ) -> list[RawJob]:
     cfg = _as_dict(social_config.get("x"))
@@ -274,6 +275,10 @@ def run_social_x_source(
     errors: list[str] = []
     jobs: list[RawJob] = []
     low_conf_total = 0
+
+    def tick() -> None:
+        if heartbeat_callback:
+            heartbeat_callback()
 
     def emit_progress(
         *,
@@ -339,6 +344,7 @@ def run_social_x_source(
             payload: Any = {}
             if bool(api_cfg.get("enabled", True)) and bearer and endpoint:
                 url = f"{endpoint}?query={quote(query, safe='')}&max_results={max_posts}&tweet.fields=created_at,entities"
+                tick()
                 payload = _request_json_with_headers(
                     url,
                     timeout_s=timeout_s,
@@ -346,7 +352,14 @@ def run_social_x_source(
                 )
             elif bool(scraper_cfg.get("enabled")) and scraper_endpoint:
                 url = f"{scraper_endpoint}?q={quote(query, safe='')}&limit={max_posts}"
-                text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+                text = fetch_with_retries(
+                    url,
+                    fetch_text,
+                    timeout_s,
+                    retries,
+                    backoff_s,
+                    heartbeat_callback=heartbeat_callback,
+                )
                 payload = json.loads(text)
             elif bool(rss_cfg.get("enabled", True)) and rss_instances:
                 rss_errors: list[str] = []
@@ -355,7 +368,12 @@ def run_social_x_source(
                     rss_url = f"{instance}/search/rss?f=tweets&q={quote(query, safe='')}"
                     try:
                         rss_payload_text = fetch_with_retries(
-                            rss_url, fetch_text, timeout_s, retries, backoff_s
+                            rss_url,
+                            fetch_text,
+                            timeout_s,
+                            retries,
+                            backoff_s,
+                            heartbeat_callback=heartbeat_callback,
                         )
                         break
                     except Exception as rss_exc:  # noqa: BLE001

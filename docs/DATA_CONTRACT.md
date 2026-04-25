@@ -5,7 +5,7 @@
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
 > - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, `src/jobs/common/contracts.py`, relevant tests, and the owning runtime docs
-> - **Last updated:** 2026-04-23
+> - **Last updated:** 2026-04-26
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, `src/jobs/common/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` leaves, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
@@ -354,7 +354,21 @@ Fetcher and discovery reports may include a shared `taskProgress` object for the
 
 ---
 
-## 9. Social experiment report contract
+## 9. Fetch report diagnostic breakdowns
+
+`summary.needsReviewBreakdown` is the shaped zero-kept static diagnostic view. It does not promise to equal every raw `needs_review` marker in `sources`.
+
+| Field | Type | Description |
+|---|---|---|
+| `byShape` | `object` | Counts and examples by diagnostic shape. |
+| `topByWallTime` | `array` | Slowest included static rows. |
+| `topByFrequency` | `array` | Shapes ordered by frequency and duration. |
+| `rawMarkerCount` | `number` | Count of source rows where `classification`, `failureBucket`, or `zeroKeptClassification` is `needs_review`. |
+| `includedCount` | `number` | Count of rows included in the shaped zero-kept static breakdown. |
+
+---
+
+## 10. Social experiment report contract
 
 The fetch report may include a top-level `socialSummary` block for the M6 social/community pilot.
 
@@ -402,7 +416,7 @@ The bridge ops health payload mirrors a compact `kpis.socialExperiment` view fro
 
 ---
 
-## 10. Fetch regression reconciliation contract
+## 11. Fetch regression reconciliation contract
 
 The fetch report may include a top-level `healthSummary` reconciliation pair for the parser-regression lane.
 

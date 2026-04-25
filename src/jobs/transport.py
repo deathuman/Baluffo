@@ -9,6 +9,7 @@ from typing import Any
 
 from src.jobs.adapters import community
 from src.jobs.common.fetch import fetch_with_retries as common_fetch_with_retries
+from src.jobs.common.http import HttpStatusError
 from src.jobs.common.http import default_fetch_text as common_default_fetch_text
 from src.jobs.models import RequestConfig
 from src.jobs.text_utils import norm_text
@@ -287,7 +288,8 @@ async def async_fetch_text_httpx(
         return str(response.text)
     except httpx.HTTPStatusError as exc:
         code = int(getattr(exc.response, "status_code", 0) or 0)
-        raise RuntimeError(f"HTTP {code} for {url}") from exc
+        location = str(exc.response.headers.get("Location") or "")
+        raise HttpStatusError(code, url, location=location) from exc
     except httpx.HTTPError as exc:
         raise RuntimeError(f"Network error for {url}: {exc}") from exc
 

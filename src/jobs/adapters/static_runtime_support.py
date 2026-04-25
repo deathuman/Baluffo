@@ -7,8 +7,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 from src.jobs.common.fetch import fetch_with_retries
+from src.jobs.common.http import HttpStatusError
 from src.jobs.common.taxonomy import (
     assess_zero_extract,
     classification_context_from_source_detail,
@@ -42,6 +44,8 @@ class StaticHtmlFetchRequest:
 
 
 class StaticHtmlFetcher:
+    _REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+
     def __init__(
         self,
         *,
@@ -89,6 +93,27 @@ class StaticHtmlFetcher:
             retries=effective_retries,
         )
 
+    def _safe_redirect_url(self, source_url: str, location: str) -> str:
+        clean_location = clean_text(location)
+        if not clean_location:
+            raise RuntimeError(f"HTTP redirect missing Location for {source_url}")
+        target = normalize_url(urljoin(source_url, clean_location))
+        if not target:
+            raise RuntimeError(f"HTTP redirect target is invalid for {source_url}")
+        source = urlparse(normalize_url(source_url) or source_url)
+        parsed = urlparse(target)
+        if parsed.scheme not in {"http", "https"}:
+            raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")
+        if parsed.username or parsed.password:
+            raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")
+        if (source.hostname or "").lower() != (parsed.hostname or "").lower():
+            raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")
+        if source.scheme == "https" and parsed.scheme != "https":
+            raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")
+        if target == (normalize_url(source_url) or source_url):
+            raise RuntimeError(f"Static redirect loop for {source_url}")
+        return target
+
     def fetch_html_cached(
         self,
         url: str,
@@ -107,13 +132,40 @@ class StaticHtmlFetcher:
             cached = self._fetch_cache.get(request.normalized_url)
         if cached is not None:
             return cached, True
-        text = fetch_with_retries(
-            request.fetch_url,
-            self._fetch_text,
-            request.timeout_s,
-            request.retries,
-            self._backoff_s,
-        )
+        try:
+            text = fetch_with_retries(
+                request.fetch_url,
+                self._fetch_text,
+                request.timeout_s,
+                request.retries,
+                self._backoff_s,
+            )
+        except HttpStatusError as exc:
+            if int(exc.code) not in self._REDIRECT_STATUS_CODES:
+                raise
+            redirect_url = self._safe_redirect_url(request.fetch_url, exc.location)
+            with self._fetch_cache_lock:
+                cached_redirect = self._fetch_cache.get(redirect_url)
+            if cached_redirect is not None:
+                with self._fetch_cache_lock:
+                    self._fetch_cache[request.normalized_url] = cached_redirect
+                return cached_redirect, True
+            try:
+                text = fetch_with_retries(
+                    redirect_url,
+                    self._fetch_text,
+                    request.timeout_s,
+                    request.retries,
+                    self._backoff_s,
+                )
+            except HttpStatusError as redirect_exc:
+                if int(redirect_exc.code) in self._REDIRECT_STATUS_CODES:
+                    raise RuntimeError(
+                        f"Static redirect chain exceeded for {request.fetch_url}"
+                    ) from redirect_exc
+                raise
+            with self._fetch_cache_lock:
+                self._fetch_cache[redirect_url] = text
         with self._fetch_cache_lock:
             self._fetch_cache[request.normalized_url] = text
         return text, False

@@ -9,6 +9,8 @@
 
 This is a time-bound handoff note for later triage. It records what the current fresh build produced, not what the system should guarantee after fixes.
 
+Follow-up prioritization and validation status live in [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md). Use that tracker before picking implementation order, then return here for the original observed counts.
+
 ## Source Reports
 
 | Run | File | Run ID | Fresh build timestamp |

@@ -33,4 +33,6 @@ def fetch_with_retries(
                     time.sleep(max(float(backoff_s) * float(2**attempt), 8.0 * float(attempt + 1)))
                 else:
                     time.sleep(float(backoff_s) * float(2**attempt))
+    if isinstance(last_error, RuntimeError):
+        raise last_error
     raise RuntimeError(str(last_error) if last_error else f"Unknown fetch error for {url}")
