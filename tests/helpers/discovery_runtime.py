@@ -8,6 +8,7 @@ from unittest import mock
 
 from src import source_registry as source_registry_module
 from src.source_discovery import config as discovery_config_module
+from src.source_discovery import orchestrator as discovery_orchestrator_module
 
 _UNSET = object()
 
@@ -18,6 +19,7 @@ class DiscoveryRuntimePaths:
     pending_path: Path
     rejected_path: Path
     discovery_candidates_path: Path
+    approval_state_path: Path
     discovery_report_path: Path
     url_patch_manifest_path: Path
     m5_strategic_backlog_path: Path
@@ -76,6 +78,7 @@ def override_discovery_runtime(
         pending_path=root / "pending.json",
         rejected_path=root / "rejected.json",
         discovery_candidates_path=root / "candidates.json",
+        approval_state_path=root / "source-approval-state.json",
         discovery_report_path=root / "report.json",
         url_patch_manifest_path=root / "url-patch-manifest.json",
         m5_strategic_backlog_path=root / "m5-strategic-backlog.json",
@@ -95,6 +98,20 @@ def override_discovery_runtime(
                 source_registry_module,
                 "DISCOVERY_CANDIDATES_PATH",
                 paths.discovery_candidates_path,
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                source_registry_module,
+                "APPROVAL_STATE_PATH",
+                paths.approval_state_path,
+            )
+        )
+        stack.enter_context(
+            mock.patch.object(
+                discovery_orchestrator_module,
+                "DEFAULT_APPROVAL_STATE_PATH",
+                paths.approval_state_path,
             )
         )
         stack.enter_context(

@@ -539,7 +539,7 @@ def _pending_row_is_auto_approvable(
 ) -> bool:
     """Return True when a pending discovery row has concrete approval evidence.
 
-    Advisory signals like weakSignal and promotionReason are intentionally ignored here.
+    weakSignal rows remain review-only even when they have job evidence.
     Report-side queue throttles such as domain_cap do not override a clean pending row.
     """
     if not isinstance(row, dict):

@@ -334,7 +334,7 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
                         "deferred": False,
                         "jobsFound": 3,
                         "sampleCount": 3,
-                        "weakSignal": True,
+                        "weakSignal": False,
                         "evidenceScore": 24,
                         "confidence": "medium",
                         "rankScore": 24,
@@ -366,7 +366,7 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
                 "name": "Healthy Pending",
                 "jobsFound": 3,
                 "sampleCount": 3,
-                "weakSignal": True,
+                "weakSignal": False,
                 "evidenceScore": 24,
                 "confidence": "medium",
                 "rankScore": 24,
@@ -471,8 +471,8 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     assert state["active"][1]["approvedBy"] == "discovery_auto_approve"
     assert state["active"][1]["approvedAt"] == "2026-03-20T12:06:00Z"
     assert state["active"][1]["liveAt"] == "2026-03-20T12:06:00Z"
-    assert state["active"][1]["weakSignal"] is True
-    assert state["active"][1]["promotionReason"] == "weak_candidate"
+    assert state["active"][1]["weakSignal"] is False
+    assert state["active"][1]["promotionReason"] == "structured_batch_family"
     approval_state = json.loads(approval_state_path.read_text(encoding="utf-8"))
     assert int(approval_state["approvedSinceLastRun"]) == 1
     saved_report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -485,7 +485,7 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     )
     assert int((saved_report.get("summary") or {}).get("approvedCandidateCount") or 0) == 1
     assert int((saved_report.get("summary") or {}).get("liveCandidateCount") or 0) == 1
-    assert (saved_report.get("candidates") or [])[0]["promotionReason"] == "weak_candidate"
+    assert (saved_report.get("candidates") or [])[0]["promotionReason"] == "structured_batch_family"
     assert sync_calls == ["discovery_completed"]
     assert marked == ["2026-03-20T12:05:00Z"]
     assert cleared_tasks == ["discovery"]

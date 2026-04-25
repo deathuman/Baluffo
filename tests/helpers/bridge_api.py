@@ -272,6 +272,7 @@ def build_admin_bridge_api(config: Any | None = None) -> BridgeApi:
         normalize_fetch_report_contract=admin_bridge.normalize_fetch_report_contract,
         normalize_discovery_report_contract=admin_bridge.normalize_discovery_report_contract,
         discovery_report_path=admin_bridge.DISCOVERY_REPORT_PATH,
+        discovery_candidates_path=admin_bridge.DISCOVERY_CANDIDATES_PATH,
         jobs_fetch_report_path=admin_bridge.JOBS_FETCH_REPORT_PATH,
         approval_state_path=admin_bridge.APPROVAL_STATE_PATH,
         discovery_log_path=admin_bridge.DISCOVERY_LOG_PATH,

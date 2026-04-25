@@ -660,7 +660,7 @@ def test_run_discovery_gamedevmap_candidates_flow_into_report_and_queue() -> Non
             assert str(queued[0].get("sourceDirectory") or "") == "gamedevmap"
 
 
-def test_run_discovery_leaves_pending_only_rows_unapproved() -> None:
+def test_run_discovery_does_not_auto_approve_weak_pending_only_rows() -> None:
     with workspace_tmpdir("source-discovery-auto-approval") as root:
         prev_approval_state_path = discovery_orchestrator.DEFAULT_APPROVAL_STATE_PATH
         prev_sheet = discovery_orchestrator.discover_game_studio_sheet_candidates
@@ -736,8 +736,8 @@ def test_run_discovery_leaves_pending_only_rows_unapproved() -> None:
                     fetcher=lambda *args, **kwargs: "",
                 )
 
-                assert int((report.get("summary") or {}).get("approvedCandidateCount") or 0) == 1
-                assert int((report.get("summary") or {}).get("liveCandidateCount") or 0) == 1
+                assert int((report.get("summary") or {}).get("approvedCandidateCount") or 0) == 0
+                assert int((report.get("summary") or {}).get("liveCandidateCount") or 0) == 0
                 assert (
                     int(
                         (
@@ -747,16 +747,13 @@ def test_run_discovery_leaves_pending_only_rows_unapproved() -> None:
                         )
                         or 0
                     )
-                    == 1
+                    == 0
                 )
                 active = json.loads(paths.active_path.read_text(encoding="utf-8"))
                 pending = json.loads(paths.pending_path.read_text(encoding="utf-8"))
-                assert [row["id"] for row in active] == ["pending-ok"]
-                assert bool(active[0].get("weakSignal"))
-                assert pending == []
-                assert json.loads(
-                    (root / "source-approval-state.json").read_text(encoding="utf-8")
-                ) == {"approvedSinceLastRun": 1}
+                assert active == []
+                assert [row["id"] for row in pending] == ["pending-ok"]
+                assert not (root / "source-approval-state.json").exists()
         finally:
             discovery_orchestrator.DEFAULT_APPROVAL_STATE_PATH = prev_approval_state_path
             discovery_orchestrator.discover_game_studio_sheet_candidates = prev_sheet

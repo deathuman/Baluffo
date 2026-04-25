@@ -18,6 +18,22 @@ def admin_bridge_entrypoint_root(make_test_root, monkeypatch) -> Path:
     monkeypatch.setattr(
         admin_bridge, "DISCOVERY_REPORT_PATH", root / "source-discovery-report.json"
     )
+    monkeypatch.setattr(
+        admin_bridge,
+        "DISCOVERY_CANDIDATES_PATH",
+        root / "source-discovery-candidates.json",
+    )
+    monkeypatch.setattr(admin_bridge, "APPROVAL_STATE_PATH", root / "source-approval-state.json")
+    monkeypatch.setattr(
+        admin_bridge.source_registry_module,
+        "DISCOVERY_CANDIDATES_PATH",
+        root / "source-discovery-candidates.json",
+    )
+    monkeypatch.setattr(
+        admin_bridge.source_registry_module,
+        "APPROVAL_STATE_PATH",
+        root / "source-approval-state.json",
+    )
     monkeypatch.setattr(admin_bridge, "ACTIVE_PATH", root / "source-registry-active.json")
     monkeypatch.setattr(admin_bridge, "PENDING_PATH", root / "source-registry-pending.json")
     monkeypatch.setattr(admin_bridge, "REJECTED_PATH", root / "source-registry-rejected.json")
