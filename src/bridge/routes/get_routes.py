@@ -13,6 +13,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
 from src.core.schemas import LocalSavedJobRowSchema
+from src.source_registry import is_hidden_from_default
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,30 @@ def _normalize_pending_discovery_job_counts(rows: list[dict[str, Any]]) -> list[
         updated["sampleCount"] = 0
         normalized.append(updated)
     return normalized
+
+
+def _include_hidden_registry_rows(query: dict[str, list[str]]) -> bool:
+    return str((query.get("includeHidden") or [""])[0] or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def _pending_registry_payload(api: BridgeApi, query: dict[str, list[str]]) -> dict[str, Any]:
+    state = api.load_state()
+    pending_rows = _normalize_pending_discovery_job_counts(
+        _overlay_discovery_candidate_fields(
+            state["pending"],
+            _read_discovery_candidate_rows(api),
+        )
+    )
+    hidden_pending_count = sum(1 for row in pending_rows if is_hidden_from_default(row))
+    if not _include_hidden_registry_rows(query):
+        pending_rows = [row for row in pending_rows if not is_hidden_from_default(row)]
+    summary = api.summarize_state(state)
+    summary["hiddenPendingCount"] = hidden_pending_count
+    return {"sources": pending_rows, "summary": summary}
 
 
 def _read_utf8_log_text(path: Path) -> str:
@@ -403,14 +428,7 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
         return True
 
     if path == "/registry/pending":
-        state = api.load_state()
-        pending_rows = _normalize_pending_discovery_job_counts(
-            _overlay_discovery_candidate_fields(
-                state["pending"],
-                _read_discovery_candidate_rows(api),
-            )
-        )
-        handler._send_json({"sources": pending_rows, "summary": api.summarize_state(state)})  # noqa: SLF001
+        handler._send_json(_pending_registry_payload(api, query))  # noqa: SLF001
         return True
 
     if path == "/registry/rejected":

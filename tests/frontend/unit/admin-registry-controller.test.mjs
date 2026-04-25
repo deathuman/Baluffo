@@ -244,7 +244,7 @@ test("admin registry controller syncs source tables once per completed task sign
         }
       };
     }
-    if (path === "/registry/pending") return { sources: [{ id: "pending_1", name: "Pending" }], summary: { pendingCount: 1 } };
+    if (String(path).startsWith("/registry/pending")) return { sources: [{ id: "pending_1", name: "Pending" }], summary: { pendingCount: 1 } };
     if (path === "/registry/active") return { sources: [{ id: "active_1", name: "Active" }], summary: { activeCount: 1 } };
     if (path === "/registry/rejected") return { sources: [], summary: { rejectedCount: 0 } };
     throw new Error(`unexpected path ${path}`);

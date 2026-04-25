@@ -191,6 +191,8 @@ export function deriveSourceApprovalStatus(row, mode = "pending") {
   const status = normalizeSourceStatusToken(row?.status);
   const discoveryJobs = getSourceDiscoveryJobsCount(row);
   const deferReason = String(row?.deferReason || row?.dropReason || "").trim();
+  const hiddenReason = String(row?.pendingReason || row?.deferReason || "").trim();
+  const hiddenFromDefault = Boolean(row?.hiddenFromDefault) || registryState === "hidden";
   const rankReasons = new Set(
     (Array.isArray(row?.rankReasons) ? row.rankReasons : (Array.isArray(row?.reasons) ? row.reasons : []))
       .map(item => String(item || "").trim())
@@ -198,6 +200,14 @@ export function deriveSourceApprovalStatus(row, mode = "pending") {
   );
   const isCapDeferred = ["adapter_cap", "domain_cap", "top_n_cap"].includes(deferReason);
   const hasExistingMatch = rankReasons.has("existing_registry_match") || rankReasons.has("existing_family_match");
+
+  if (hiddenFromDefault) {
+    return {
+      label: hiddenReason ? `Hidden: ${hiddenReason}` : "Hidden",
+      title: hiddenReason ? `Hidden from default review because: ${hiddenReason}.` : "Hidden from default review.",
+      tone: "warning"
+    };
+  }
 
   if (row?.deferred) {
     if (Number.isFinite(discoveryJobs) && discoveryJobs > 0 && isCapDeferred) {

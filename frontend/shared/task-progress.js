@@ -49,11 +49,13 @@ function formatFetcherCounts(counts, progress) {
   const output = Math.max(0, Number(counts?.outputCount || 0));
   const failed = Math.max(0, Number(counts?.failedSources || counts?.error || 0));
   const excluded = Math.max(0, Number(counts?.excludedSources || counts?.excluded || 0));
+  const okWarnings = Math.max(0, Number(counts?.okWithWarningSources || 0));
   const showTotal = String(progress?.mode || "").toLowerCase() === "determinate" && total > 0;
   const resolvedLabel = showTotal
     ? `${compactCount(resolved)}/${compactCount(total)} sources resolved`
     : `${compactCount(resolved)} sources resolved`;
-  return `${resolvedLabel} | running ${compactCount(running)} | queued ${compactCount(queued)} | output ${compactCount(output)} | failed ${compactCount(failed)} | excluded ${compactCount(excluded)}`;
+  const warningLabel = okWarnings > 0 ? ` | ok warnings ${compactCount(okWarnings)}` : "";
+  return `${resolvedLabel} | running ${compactCount(running)} | queued ${compactCount(queued)} | output ${compactCount(output)} | failed ${compactCount(failed)} | excluded ${compactCount(excluded)}${warningLabel}`;
 }
 
 function formatDiscoveryCounts(counts, progress) {

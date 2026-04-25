@@ -228,6 +228,68 @@ def run_social_reddit_source(
     return []
 
 
+def _load_x_query_payload(
+    *,
+    query: str,
+    max_posts: int,
+    api_cfg: dict[str, Any],
+    scraper_cfg: dict[str, Any],
+    rss_cfg: dict[str, Any],
+    bearer: str,
+    endpoint: str,
+    scraper_endpoint: str,
+    rss_instances: list[str],
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    heartbeat_callback: Callable[[], None] | None,
+) -> tuple[str, Any]:
+    if bool(api_cfg.get("enabled", True)) and bearer and endpoint:
+        url = f"{endpoint}?query={quote(query, safe='')}&max_results={max_posts}&tweet.fields=created_at,entities"
+        if heartbeat_callback:
+            heartbeat_callback()
+        return (
+            "api",
+            _request_json_with_headers(
+                url,
+                timeout_s=timeout_s,
+                headers={"Authorization": f"Bearer {bearer}", "Accept": "application/json"},
+            ),
+        )
+    if bool(scraper_cfg.get("enabled")) and scraper_endpoint:
+        url = f"{scraper_endpoint}?q={quote(query, safe='')}&limit={max_posts}"
+        text = fetch_with_retries(
+            url,
+            fetch_text,
+            timeout_s,
+            retries,
+            backoff_s,
+            heartbeat_callback=heartbeat_callback,
+        )
+        return "api", json.loads(text)
+    if bool(rss_cfg.get("enabled", True)) and rss_instances:
+        rss_errors: list[str] = []
+        for instance in rss_instances:
+            rss_url = f"{instance}/search/rss?f=tweets&q={quote(query, safe='')}"
+            try:
+                return (
+                    "rss",
+                    fetch_with_retries(
+                        rss_url,
+                        fetch_text,
+                        timeout_s,
+                        retries,
+                        backoff_s,
+                        heartbeat_callback=heartbeat_callback,
+                    ),
+                )
+            except Exception as rss_exc:  # noqa: BLE001
+                rss_errors.append(f"{instance}: {rss_exc}")
+        raise AdapterValidationError.from_errors(rss_errors)
+    return "missing", {}
+
+
 def run_social_x_source(
     *,
     fetch_text: Callable[[str, int], str],
@@ -275,10 +337,6 @@ def run_social_x_source(
     errors: list[str] = []
     jobs: list[RawJob] = []
     low_conf_total = 0
-
-    def tick() -> None:
-        if heartbeat_callback:
-            heartbeat_callback()
 
     def emit_progress(
         *,
@@ -341,51 +399,25 @@ def run_social_x_source(
                 counts={"maxPosts": max_posts},
                 message=f"Scanning {query_label}.",
             )
-            payload: Any = {}
-            if bool(api_cfg.get("enabled", True)) and bearer and endpoint:
-                url = f"{endpoint}?query={quote(query, safe='')}&max_results={max_posts}&tweet.fields=created_at,entities"
-                tick()
-                payload = _request_json_with_headers(
-                    url,
-                    timeout_s=timeout_s,
-                    headers={"Authorization": f"Bearer {bearer}", "Accept": "application/json"},
-                )
-            elif bool(scraper_cfg.get("enabled")) and scraper_endpoint:
-                url = f"{scraper_endpoint}?q={quote(query, safe='')}&limit={max_posts}"
-                text = fetch_with_retries(
-                    url,
-                    fetch_text,
-                    timeout_s,
-                    retries,
-                    backoff_s,
-                    heartbeat_callback=heartbeat_callback,
-                )
-                payload = json.loads(text)
-            elif bool(rss_cfg.get("enabled", True)) and rss_instances:
-                rss_errors: list[str] = []
-                rss_payload_text = ""
-                for instance in rss_instances:
-                    rss_url = f"{instance}/search/rss?f=tweets&q={quote(query, safe='')}"
-                    try:
-                        rss_payload_text = fetch_with_retries(
-                            rss_url,
-                            fetch_text,
-                            timeout_s,
-                            retries,
-                            backoff_s,
-                            heartbeat_callback=heartbeat_callback,
-                        )
-                        break
-                    except Exception as rss_exc:  # noqa: BLE001
-                        rss_errors.append(f"{instance}: {rss_exc}")
-                if not rss_payload_text:
-                    raise (
-                        AdapterValidationError.from_errors(rss_errors)
-                        if rss_errors
-                        else AdapterValidationError("x rss fallback failed")
-                    )
+            payload_kind, payload = _load_x_query_payload(
+                query=query,
+                max_posts=max_posts,
+                api_cfg=api_cfg,
+                scraper_cfg=scraper_cfg,
+                rss_cfg=rss_cfg,
+                bearer=bearer,
+                endpoint=endpoint,
+                scraper_endpoint=scraper_endpoint,
+                rss_instances=rss_instances,
+                fetch_text=fetch_text,
+                timeout_s=timeout_s,
+                retries=retries,
+                backoff_s=backoff_s,
+                heartbeat_callback=heartbeat_callback,
+            )
+            if payload_kind == "rss":
                 parsed_rows, low_conf_query = _social_parsers.parse_x_rss_payload(
-                    rss_payload_text,
+                    str(payload),
                     query_label=query,
                     min_confidence=min_conf,
                     reject_for_hire_posts=reject_for_hire,
@@ -409,7 +441,7 @@ def run_social_x_source(
                 )
                 details.append(entry)
                 continue
-            else:
+            if payload_kind == "missing":
                 entry["status"] = "error"
                 entry["error"] = "missing x api credentials and fallbacks disabled"
                 errors.append(f"x:{query}: {entry['error']}")

@@ -211,6 +211,8 @@ Registry rows are normalized around these canonical fields:
 | `stateChangedBy` | `string` | Actor or route that performed the transition |
 | `lastPromotedAt` | `string` (ISO 8601) | Last time the row was promoted into `active` |
 | `lastDemotedAt` | `string` (ISO 8601) | Last time the row was demoted into `pending` or `rejected` |
+| `hiddenFromDefault` | `boolean` | Optional pending-row flag for recoverable rows hidden from default review views |
+| `duplicateOfSourceId` | `string` | Optional pointer to the active winner when a duplicate-family row is demoted |
 
 Legacy lifecycle fields such as `candidateState`, `approvedAt`, `approvedBy`, `liveAt`, `quarantinedAt`, and `quarantineReason` remain populated for compatibility, but they should be treated as compatibility mirrors rather than the canonical source of truth.
 
@@ -301,6 +303,7 @@ Do not change signatures or remove without a dedicated plan:
 - **Candidates file semantics:** `data/source-discovery-candidates.json` is the persisted discovery review queue. It may contain both queued candidates and deferred review rows; consumers must use `deferred` / `deferReason` instead of assuming every row is queue-ready.
 - **M5 review snapshot:** `data/m5-strategic-backlog.json` is a derived review artifact built from discovery output. It is additive and must not replace `data/source-discovery-candidates.json` as the canonical discovery ledger.
 - **Additive candidate metadata** may include lifecycle and ranking fields such as `candidateState`, `rankScore`, `rankReasons`, `promotionLane`, `approvedAt`, `approvedBy`, `liveAt`, `quarantinedAt`, `quarantineReason`, `deferCount`, `firstDeferredAt`, and `lastDeferredAt`.
+- **Hidden pending rows** remain recoverable pending rows. `candidateState="hidden"` / `hiddenFromDefault=true` means default review views may omit them; explicit review views may request them.
 - **Candidates** and **failures** objects must retain the fields asserted in `test_discovery_report_snapshot_contract`.
 - Any contract change requires: updated snapshot fixture (`tests/fixtures/source_discovery_report_snapshot.json`), doc update, and a focused PR.
 
@@ -357,6 +360,8 @@ Fetcher and discovery reports may include a shared `taskProgress` object for the
 ## 9. Fetch report diagnostic breakdowns
 
 `summary.needsReviewBreakdown` is the shaped zero-kept static diagnostic view. It does not promise to equal every raw `needs_review` marker in `sources`.
+
+`summary.okCleanSources` and `summary.okWithWarningSources` are additive counters over source-report rows whose `status` remains `ok`. They distinguish clean successful sources from successful sources carrying warning/error diagnostic text without changing source status semantics.
 
 | Field | Type | Description |
 |---|---|---|

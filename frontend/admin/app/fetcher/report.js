@@ -96,9 +96,11 @@ export function createAdminFetcherReportController({
       const outputCount = Math.max(0, Number(counts.outputCount ?? summary.outputCount ?? 0));
       const failedSourceCount = Math.max(0, Number(counts.failedSources ?? summary.failedSources ?? 0));
       const excludedSourceCount = Math.max(0, Number(counts.excludedSources ?? summary.excludedSources ?? 0));
+      const okWithWarningCount = Math.max(0, Number(counts.okWithWarningSources ?? summary.okWithWarningSources ?? 0));
+      const warningSuffix = okWithWarningCount > 0 ? `, ok with warnings ${okWithWarningCount}` : "";
       appendFetcherLog(
-        `Fetcher summary: ${totalSources > 0 ? `${resolvedSources}/${totalSources} sources resolved` : `${resolvedSources} sources resolved`}, output ${outputCount.toLocaleString()}, failed ${failedSourceCount}, excluded ${excludedSourceCount}.`,
-        failedSourceCount > 0 ? "warn" : "success"
+        `Fetcher summary: ${totalSources > 0 ? `${resolvedSources}/${totalSources} sources resolved` : `${resolvedSources} sources resolved`}, output ${outputCount.toLocaleString()}, failed ${failedSourceCount}, excluded ${excludedSourceCount}${warningSuffix}.`,
+        failedSourceCount > 0 || okWithWarningCount > 0 ? "warn" : "success"
       );
 
       const sources = Array.isArray(report?.sources) ? report.sources : [];
@@ -214,6 +216,8 @@ export function createAdminFetcherReportController({
     const queuedSources = Math.max(0, Number(counts.queuedTasks ?? counts.queued ?? summary.queued ?? 0));
     const failedSources = Math.max(0, Number(counts.failedSources ?? summary.failedSources ?? 0));
     const excludedSources = Math.max(0, Number(counts.excludedSources ?? summary.excludedSources ?? 0));
+    const okWithWarningSources = Math.max(0, Number(counts.okWithWarningSources ?? summary.okWithWarningSources ?? 0));
+    const okWarningSuffix = okWithWarningSources > 0 ? `, ok with warnings ${okWithWarningSources}` : "";
     const resolvedSources = Math.max(
       0,
       Number(
@@ -231,6 +235,7 @@ export function createAdminFetcherReportController({
       queuedSources,
       failedSources,
       excludedSources,
+      okWithWarningSources,
       fallbackTailBadge
     ].join("|");
     appendLiveTaskActivity({
@@ -243,8 +248,8 @@ export function createAdminFetcherReportController({
       workItemSignature: buildTaskWorkItemActivitySignature(report),
       onSummaryChange: () => {
         appendFetcherLog(
-          `Fetcher: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}, failed ${failedSources}, excluded ${excludedSources}${fallbackTailSuffix}.`,
-          failedSources > 0 ? "warn" : "info"
+          `Fetcher: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}, failed ${failedSources}, excluded ${excludedSources}${okWarningSuffix}${fallbackTailSuffix}.`,
+          failedSources > 0 || okWithWarningSources > 0 ? "warn" : "info"
         );
       },
       onHeartbeat: () => {

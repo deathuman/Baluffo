@@ -89,10 +89,12 @@ export function createRegistryLoadController({
     setBusyFlag("discoveryLoad", true);
     state.discoveryLoadPromise = (async () => {
       try {
+        const filterState = toAdminFilterState();
+        const pendingPath = filterState.showZeroJobs ? "/registry/pending?includeHidden=1" : "/registry/pending";
         const [report, discoveryCandidates, pending, active, rejected, latestFetchReport] = await Promise.all([
           getBridge("/discovery/report"),
           getBridge("/discovery/candidates").catch(() => ({ candidates: [] })),
-          getBridge("/registry/pending"),
+          getBridge(pendingPath),
           getBridge("/registry/active"),
           getBridge("/registry/rejected"),
           resolveLatestFetchReport(options)
@@ -133,8 +135,10 @@ export function createRegistryLoadController({
           active: activeRows,
           rejected: rejectedRows
         });
-        const filterState = toAdminFilterState();
-        const hiddenZeroJobsCount = pendingRows.filter(row => getSourceDiscoveryJobsCount(row) === 0).length;
+        const hiddenZeroJobsCount = Math.max(
+          Number(pending?.summary?.hiddenPendingCount || 0),
+          pendingRows.filter(row => getSourceDiscoveryJobsCount(row) === 0).length
+        );
         const visiblePendingRows = applySourceFilter(
           filterState.showZeroJobs ? pendingRows : pendingRows.filter(row => getSourceDiscoveryJobsCount(row) !== 0)
         );

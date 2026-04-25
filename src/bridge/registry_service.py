@@ -13,7 +13,9 @@ from typing import Any
 from src.bridge.registry_tombstones import filter_tombstoned_rows
 from src.source_registry import (
     canonicalize_registry_row,
+    demote_duplicate_active_variants,
     ensure_source_id,
+    hide_repeated_zero_job_pending,
     load_json_array,
     normalize_source_url,
     save_json_atomic,
@@ -72,6 +74,8 @@ class RegistryService:
                 if str(row.get("adapter") or "").strip().lower() == "static":
                     row = self._normalize_manual_static(row)
                 row = canonicalize_registry_row(row, bucket=bucket)
+                if bucket == "pending":
+                    row = hide_repeated_zero_job_pending(row)
                 key = source_identity(row)
                 if key in seen:
                     continue
@@ -138,6 +142,23 @@ class RegistryService:
     @staticmethod
     def normalize_source_url(url: str) -> str:
         return normalize_source_url(url)
+
+    @staticmethod
+    def demote_duplicate_active_variants(
+        active_rows: list[dict[str, Any]],
+        *,
+        target_families: list[str] | None = None,
+        source_state: Any = None,
+        actor: str = "registry_noise_cleanup",
+        at: str | None = None,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        return demote_duplicate_active_variants(
+            active_rows,
+            target_families=target_families,
+            source_state=source_state,
+            actor=actor,
+            at=at,
+        )
 
 
 __all__ = ["RegistryPaths", "RegistryService"]

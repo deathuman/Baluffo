@@ -104,6 +104,7 @@ function deriveLegacyFetcherTaskProgress(report, { running = false } = {}) {
   const runtimeSelectedSourceCount = Math.max(0, Number(runtime.selectedSourceCount || 0));
   const summarySourceCount = Math.max(0, Number(summary.sourceCount || 0));
   const successfulSources = Math.max(0, Number(summary.successfulSources || 0));
+  const okWithWarningSources = Math.max(0, Number(summary.okWithWarningSources || 0));
   const failedSources = Math.max(0, Number(summary.failedSources || 0));
   const excludedSources = Math.max(0, Number(summary.excludedSources || 0));
   const resolvedSources = successfulSources + failedSources + excludedSources;
@@ -129,6 +130,7 @@ function deriveLegacyFetcherTaskProgress(report, { running = false } = {}) {
       resolvedSources,
       sourceCount: totalSources || summarySourceCount || resolvedSources,
       outputCount,
+      okWithWarningSources,
       failedSources,
       excludedSources
     }

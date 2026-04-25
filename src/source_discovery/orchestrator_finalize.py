@@ -7,7 +7,7 @@ from src import source_registry as source_registry_module
 from src.bridge.registry_tombstones import filter_tombstoned_rows
 from src.contracts import SCHEMA_VERSION
 from src.shared.utils import now_iso
-from src.source_registry import source_identity, unique_sources
+from src.source_registry import hide_repeated_zero_job_pending, source_identity, unique_sources
 
 from .core import apply_queue_balancing
 from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
@@ -78,10 +78,13 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
         root=orchestrator,
     )
 
-    pending_rows = filter_tombstoned_rows(
-        unique_sources([*queued_candidates, *state.pending_existing]),
-        state.tombstones,
-    )
+    pending_rows = [
+        hide_repeated_zero_job_pending(row, at=review_timestamp)
+        for row in filter_tombstoned_rows(
+            unique_sources([*queued_candidates, *state.pending_existing]),
+            state.tombstones,
+        )
+    ]
     orchestrator.save_json_atomic(source_registry_module.PENDING_PATH, pending_rows)
     orchestrator.save_json_atomic(
         source_registry_module.DISCOVERY_CANDIDATES_PATH, report_candidates
@@ -222,9 +225,7 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
 
     registry_state = {
         "active": state.active,
-        "pending": filter_tombstoned_rows(
-            [*queued_candidates, *state.pending_existing], state.tombstones
-        ),
+        "pending": pending_rows,
         "rejected": state.rejected,
     }
     auto_approve_enabled = bool(

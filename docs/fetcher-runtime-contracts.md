@@ -71,6 +71,7 @@ Optional overrides:
 - `data/jobs-fetch-report.json`
   - contract keys: `runtime`, `summary`, `sources`.
   - includes output file paths under `outputs`.
+  - `summary.okCleanSources` and `summary.okWithWarningSources` are additive success diagnostics; source rows still use `status: "ok"` for both.
   - `summary.needsReviewBreakdown` includes both shaped static diagnostic counts and raw comparison counters: `rawMarkerCount` and `includedCount`.
 - `data/jobs-source-state.json`
   - per-source state for TTL and circuit breaker decisions.

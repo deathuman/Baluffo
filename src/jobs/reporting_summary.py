@@ -43,6 +43,19 @@ def _cache_rows(source_reports: Sequence[dict[str, Any]]) -> list[dict[str, Any]
     return rows
 
 
+def _has_ok_warning(row: dict[str, Any]) -> bool:
+    if norm_text(row.get("status")) != "ok":
+        return False
+    for key in ("warning", "error", "diagnostic", "message"):
+        if clean_text(row.get(key)):
+            return True
+    for key in ("warnings", "errors", "partialErrors"):
+        values = row.get(key)
+        if isinstance(values, list) and any(clean_text(item) for item in values):
+            return True
+    return False
+
+
 def build_pipeline_summary(
     dedup_stats: dict[str, int],
     deduped_rows: Sequence[CanonicalJob],
@@ -83,6 +96,8 @@ def build_pipeline_summary(
     canonical_dropped = max(0, raw_fetched - canonical_kept)
     dedup_merged = int(dedup_stats.get("mergedCount") or 0)
     final_output = len(deduped_payload)
+    ok_source_count = sum(1 for row in source_count_rows if row["status"] == "ok")
+    ok_with_warning_count = sum(1 for row in source_count_rows if _has_ok_warning(row))
     return {
         **dedup_stats,
         "rawFetched": raw_fetched,
@@ -118,7 +133,9 @@ def build_pipeline_summary(
         ),
         "preservedPreviousOutput": preserved_previous,
         "sourceCount": len(source_count_rows),
-        "successfulSources": sum(1 for row in source_count_rows if row["status"] == "ok"),
+        "successfulSources": ok_source_count,
+        "okCleanSources": max(0, ok_source_count - ok_with_warning_count),
+        "okWithWarningSources": ok_with_warning_count,
         "failedSources": sum(1 for row in source_count_rows if row["status"] == "error"),
         "excludedSources": sum(1 for row in source_count_rows if row["status"] == "excluded"),
         "cacheSkippedCount": sum(
