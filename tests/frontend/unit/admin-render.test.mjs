@@ -118,7 +118,7 @@ test("admin render: schedule/trends/history render deterministic core text", () 
   assert.match(historyEl.innerHTML, /running/);
   assert.match(historyEl.innerHTML, /critical/);
   assert.match(historyEl.innerHTML, />42</);
-  assert.match(historyEl.innerHTML, /Queued \(new\): 5/);
+  assert.match(historyEl.innerHTML, /Review queue: 5/);
   assert.match(historyEl.innerHTML, /Sync pull/i);
 });
 

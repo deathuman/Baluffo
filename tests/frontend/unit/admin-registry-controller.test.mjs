@@ -45,6 +45,15 @@ test("admin registry controller loads filtered discovery state and dispatches re
           topFailures: [{ key: "dns_error", count: 2 }]
         };
       }
+      if (path === "/discovery/candidates") {
+        return {
+          candidates: [
+            { id: "p2", jobsFound: 1, status: "ok" },
+            { id: "d1", jobsFound: 3, deferred: true, deferReason: "adapter_cap" },
+            { id: "d2", jobsFound: 0, deferred: true, deferReason: "domain_cap" }
+          ]
+        };
+      }
       if (path === "/registry/pending") {
         return {
           summary: { pendingCount: 2 },
@@ -70,6 +79,10 @@ test("admin registry controller loads filtered discovery state and dispatches re
     },
     postBridge: async () => ({}),
     fetchJobsFetchReportJson: async () => ({ sources: [] }),
+    mergeSourceDiscoveryCandidates: (rows, payload) => rows.map(row => {
+      const match = (payload.candidates || []).find(candidate => candidate.id === row.id);
+      return match ? { ...row, ...match } : row;
+    }),
     mergeSourceStatusFromReport: rows => rows,
     applySourceFilter: rows => rows,
     getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
@@ -100,17 +113,54 @@ test("admin registry controller loads filtered discovery state and dispatches re
 
   await controller.loadDiscoveryData();
 
-  assert.match(refs.adminDiscoverySummaryEl.textContent, /Found 4 \| Probed 3 \| Queued \(new\) 2/);
+  assert.match(refs.adminDiscoverySummaryEl.textContent, /Found 4 \| Probed 3 \| Review queue 2/);
   assert.match(refs.adminDiscoverySummaryEl.textContent, /Deferred review 1/);
+  assert.match(refs.adminDiscoverySummaryEl.textContent, /Deferred by caps 2/);
+  assert.match(refs.adminDiscoverySummaryEl.textContent, /Job-positive deferred 1/);
+  assert.match(refs.adminDiscoverySummaryEl.textContent, /Auto-approved this run 0/);
+  assert.match(refs.adminDiscoverySummaryEl.textContent, /Active registry 1/);
   assert.match(refs.adminDiscoverySummaryEl.textContent, /Validated 3/);
-  assert.match(refs.adminDiscoverySummaryEl.textContent, /Live 2/);
-  assert.match(refs.adminDiscoverySummaryEl.textContent, /Hidden zero-jobs 1/);
-  assert.equal(refs.adminPendingSourcesEl.innerHTML, "One");
+  assert.match(refs.adminDiscoverySummaryEl.textContent, /Hidden zero-jobs 0/);
+  assert.equal(refs.adminPendingSourcesEl.innerHTML, "One|Zero");
   assert.equal(refs.adminActiveSourcesEl.innerHTML, "Active");
   assert.equal(refs.adminRejectedSourcesEl.innerHTML, "Rejected");
   assert.deepEqual(dispatched.map(item => item.type), ["discovery/refreshed"]);
   assert.ok(logs.some(line => /source discovery data loaded/i.test(line)));
+  assert.ok(logs.some(line => /review queue 2/i.test(line)));
   assert.deepEqual(busyTransitions, ["discoveryLoad:true", "discoveryLoad:false"]);
+});
+
+test("admin registry controller explains hidden zero-job pending rows", async () => {
+  const fixture = createRegistryControllerFixture({
+    options: {
+      getBridge: async path => {
+        if (path === "/discovery/report") return { summary: { queuedCandidateCount: 0 } };
+        if (path === "/discovery/candidates") return { candidates: [] };
+        if (path === "/registry/pending") {
+          return {
+            summary: { pendingCount: 2 },
+            sources: [
+              { id: "p1", name: "Zero One", jobsFound: 0 },
+              { id: "p2", name: "Zero Two", sampleCount: 0 }
+            ]
+          };
+        }
+        if (path === "/registry/active") return { summary: { activeCount: 0 }, sources: [] };
+        if (path === "/registry/rejected") return { summary: { rejectedCount: 0 }, sources: [] };
+        throw new Error(`unexpected path ${path}`);
+      },
+      readShowZeroJobs: () => false,
+      renderSourcesTableHtml: rows => rows.map(row => row.name).join("|")
+    }
+  });
+  const controller = createAdminRegistryController(fixture.options);
+
+  await controller.loadDiscoveryData();
+
+  assert.match(
+    fixture.refs.adminPendingSourcesEl.innerHTML,
+    /2 pending sources have 0 discovery jobs and are hidden/
+  );
 });
 
 test("admin registry controller only logs discovery refreshes when the registry snapshot changes", async () => {

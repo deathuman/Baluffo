@@ -189,7 +189,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       outputOrQueuedText: (row?.isLive && liveRunDetail)
         ? liveRunDetail
         : row?.type === "discovery"
-          ? `Queued (new): ${Number(summary?.queuedCandidateCount || 0).toLocaleString()}`
+          ? `Review queue: ${Number(summary?.queuedCandidateCount || 0).toLocaleString()}`
           : row?.type === "sync"
             ? `${syncLabel} (${syncCounts})`
             : Number(summary?.outputCount || 0).toLocaleString(),
@@ -271,7 +271,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
           <div>Type</div>
           <div>Status</div>
           <div>Duration</div>
-          <div>Output / Queued (new)</div>
+          <div>Output / Review queue</div>
           <div>Failed</div>
           <div>Finished</div>
         </div>

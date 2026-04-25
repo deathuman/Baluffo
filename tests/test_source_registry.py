@@ -113,7 +113,7 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
                     "name": "Healthy Pending",
                     "jobsFound": 3,
                     "sampleCount": 3,
-                    "weakSignal": True,
+                    "weakSignal": False,
                     "evidenceScore": 24,
                     "confidence": "medium",
                     "rankScore": 24,
@@ -160,7 +160,7 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
                     "name": "Healthy Pending",
                     "jobsFound": 3,
                     "sampleCount": 3,
-                    "weakSignal": True,
+                    "weakSignal": False,
                     "evidenceScore": 24,
                     "confidence": "medium",
                     "rankScore": 24,
@@ -206,7 +206,7 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
             "pending-static",
             "pending-bamboo",
         ]
-        assert next_state["active"][1]["weakSignal"] is True
+        assert next_state["active"][1]["weakSignal"] is False
         assert [row["id"] for row in next_state["pending"]] == []
         assert report["summary"]["approvedCandidateCount"] == 3
         assert report["summary"]["liveCandidateCount"] == 3
@@ -214,7 +214,7 @@ def test_apply_discovery_auto_approval_updates_state_report_and_is_idempotent() 
         assert report["candidates"][0]["candidateState"] == "live"
         assert report["candidates"][0]["approvedBy"] == "discovery_auto_approve"
         assert report["candidates"][0]["liveAt"] == "2026-03-20T12:06:00Z"
-        assert report["candidates"][0]["promotionReason"] == "weak_candidate"
+        assert report["candidates"][0]["promotionReason"] == "structured_batch_family"
         assert report["candidates"][1]["candidateState"] == "live"
         assert report["candidates"][1]["approvedBy"] == "discovery_auto_approve"
         assert report["candidates"][1]["liveAt"] == "2026-03-20T12:06:00Z"
@@ -240,7 +240,7 @@ def test_apply_discovery_auto_approval_ignores_report_domain_cap_deferral_for_cl
                     "name": "Velan Studios, Inc. (Workable)",
                     "jobsFound": 9,
                     "sampleCount": 9,
-                    "weakSignal": True,
+                    "weakSignal": False,
                     "status": "healthy",
                     "candidateState": "validated",
                 }
@@ -261,7 +261,7 @@ def test_apply_discovery_auto_approval_ignores_report_domain_cap_deferral_for_cl
                     "name": "Velan Studios, Inc. (Workable)",
                     "jobsFound": 3,
                     "sampleCount": 3,
-                    "weakSignal": True,
+                    "weakSignal": False,
                     "deferred": True,
                     "deferReason": "domain_cap",
                     "dropReason": "domain_cap",
@@ -291,6 +291,169 @@ def test_apply_discovery_auto_approval_ignores_report_domain_cap_deferral_for_cl
         assert report["candidates"][0]["approvedBy"] == "discovery_auto_approve"
         assert report["candidates"][0]["liveAt"] == "2026-03-20T12:06:00Z"
         assert json.loads(approval_path.read_text(encoding="utf-8")) == {"approvedSinceLastRun": 1}
+
+
+def test_apply_discovery_auto_approval_approves_cap_deferred_job_positive_candidate() -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        approval_path = Path(tmp) / "source-approval-state.json"
+        state = {"active": [], "pending": [], "rejected": []}
+        report = {
+            "summary": {
+                "queuedCandidateCount": 1,
+                "approvedCandidateCount": 0,
+                "liveCandidateCount": 0,
+            },
+            "runtime": {},
+            "candidates": [
+                {
+                    "id": "static:listing_url:https://tinybullstudios.com/careers/",
+                    "adapter": "static",
+                    "name": "Tiny Bull Studios (Gameprog)",
+                    "studio": "Tiny Bull Studios",
+                    "jobsFound": 3,
+                    "sampleCount": 3,
+                    "deferred": True,
+                    "deferReason": "adapter_cap",
+                    "status": "healthy",
+                    "weakSignal": False,
+                    "rankReasons": ["medium_confidence", "jobs_found_bonus"],
+                }
+            ],
+        }
+
+        next_state, approved = sr.apply_discovery_auto_approval(
+            state,
+            report,
+            auto_approve_enabled=True,
+            approval_state_path=approval_path,
+            now_iso_fn=lambda: "2026-04-25T10:30:00Z",
+        )
+
+        assert approved == 1
+        assert [row["id"] for row in next_state["active"]] == [
+            "static:listing_url:https://tinybullstudios.com/careers/"
+        ]
+        assert next_state["active"][0]["stateChangedBy"] == "discovery_auto_approve"
+        assert next_state["active"][0]["promotionReason"] == "cap_deferred_jobs_found"
+        assert next_state["pending"] == []
+        assert report["summary"]["approvedCandidateCount"] == 1
+        assert report["summary"]["liveCandidateCount"] == 1
+        assert report["runtime"]["autoApproval"] == {"enabled": True, "approvedCount": 1}
+        assert report["candidates"][0]["candidateState"] == "live"
+        assert report["candidates"][0]["approvedBy"] == "discovery_auto_approve"
+        assert json.loads(approval_path.read_text(encoding="utf-8")) == {"approvedSinceLastRun": 1}
+
+
+def test_apply_discovery_auto_approval_blocks_unsafe_cap_deferred_candidates() -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        approval_path = Path(tmp) / "source-approval-state.json"
+        state = {"active": [], "pending": [], "rejected": []}
+
+        def candidate(candidate_id: str, **overrides: object) -> dict[str, object]:
+            row: dict[str, object] = {
+                "id": candidate_id,
+                "adapter": "static",
+                "name": candidate_id,
+                "jobsFound": 2,
+                "sampleCount": 2,
+                "deferred": True,
+                "deferReason": "adapter_cap",
+                "status": "healthy",
+                "weakSignal": False,
+                "rankReasons": ["jobs_found_bonus"],
+            }
+            row.update(overrides)
+            return row
+
+        report = {
+            "summary": {
+                "queuedCandidateCount": 6,
+                "approvedCandidateCount": 0,
+                "liveCandidateCount": 0,
+            },
+            "runtime": {},
+            "candidates": [
+                candidate("zero-jobs", jobsFound=0, sampleCount=0),
+                candidate("errored", status="error"),
+                candidate("weak", weakSignal=True),
+                candidate("rejected", candidateState="rejected"),
+                candidate("non-cap", deferReason="manual_review"),
+                candidate(
+                    "existing-family", rankReasons=["jobs_found_bonus", "existing_family_match"]
+                ),
+                candidate(
+                    "existing-registry", rankReasons=["jobs_found_bonus", "existing_registry_match"]
+                ),
+            ],
+        }
+
+        next_state, approved = sr.apply_discovery_auto_approval(
+            state,
+            report,
+            auto_approve_enabled=True,
+            approval_state_path=approval_path,
+            now_iso_fn=lambda: "2026-04-25T10:30:00Z",
+        )
+
+        assert approved == 0
+        assert next_state["active"] == []
+        assert report["summary"]["approvedCandidateCount"] == 0
+        assert report["summary"]["liveCandidateCount"] == 0
+        assert report["runtime"]["autoApproval"] == {"enabled": True, "approvedCount": 0}
+        assert report["candidates"][-2]["promotionReason"] == "skipped_existing_family_match"
+        assert report["candidates"][-1]["promotionReason"] == "skipped_existing_family_match"
+        assert not approval_path.exists()
+
+
+def test_apply_discovery_auto_approval_live_shaped_cap_deferred_fixture() -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        approval_path = Path(tmp) / "source-approval-state.json"
+        state = {"active": [], "pending": [], "rejected": []}
+        candidates = []
+        for index in range(18):
+            rank_reasons = ["medium_confidence", "jobs_found_bonus", "evidence_rank_bonus"]
+            if index in {9, 11}:
+                rank_reasons.append("existing_family_match")
+            candidates.append(
+                {
+                    "id": f"static:listing_url:https://example.com/studio-{index}/careers",
+                    "adapter": "static",
+                    "name": f"Studio {index} (Gameprog)",
+                    "jobsFound": 3 if index < 10 else 1,
+                    "sampleCount": 3 if index < 10 else 1,
+                    "deferred": True,
+                    "deferReason": "adapter_cap",
+                    "status": "healthy",
+                    "weakSignal": False,
+                    "confidence": "medium",
+                    "rankReasons": rank_reasons,
+                    "promotionLane": "manual_review",
+                }
+            )
+        report = {
+            "summary": {
+                "queuedCandidateCount": 113,
+                "approvedCandidateCount": 0,
+                "liveCandidateCount": 0,
+            },
+            "runtime": {"autoApproval": {"enabled": True, "approvedCount": 0}},
+            "candidates": candidates,
+        }
+
+        next_state, approved = sr.apply_discovery_auto_approval(
+            state,
+            report,
+            auto_approve_enabled=True,
+            approval_state_path=approval_path,
+            now_iso_fn=lambda: "2026-04-25T10:30:00Z",
+        )
+
+        assert approved == 16
+        assert len(next_state["active"]) == 16
+        assert report["summary"]["approvedCandidateCount"] == 16
+        assert report["summary"]["liveCandidateCount"] == 16
+        assert report["runtime"]["autoApproval"] == {"enabled": True, "approvedCount": 16}
+        assert json.loads(approval_path.read_text(encoding="utf-8")) == {"approvedSinceLastRun": 16}
 
 
 def test_apply_discovery_auto_approval_keeps_failed_or_deferred_candidates_pending() -> None:

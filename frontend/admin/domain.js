@@ -11,6 +11,7 @@ export {
   getSourceDiscoveryJobsCount,
   getSourceFetchJobsCount,
   getSourceJobsFoundCount,
+  mergeSourceDiscoveryCandidates,
   mergeSourceStatusFromReport
 } from "./domain/sources.js";
 export {

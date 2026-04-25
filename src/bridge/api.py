@@ -238,6 +238,7 @@ class BridgeApi:
     DISCOVERY_LOG_PATH: Path
     FETCHER_LOG_PATH: Path
     STARTUP_METRICS_PATH: Path
+    DISCOVERY_CANDIDATES_PATH: Path | None = None
     DESKTOP_UPDATE_STATE_PATH: Path | None = None
 
     # Grouped services (optional during migration).

@@ -27,6 +27,7 @@ def build_bridge_api(config: Any) -> BridgeApi:
         normalize_fetch_report_contract=root_mod.normalize_fetch_report_contract,
         normalize_discovery_report_contract=root_mod.normalize_discovery_report_contract,
         discovery_report_path=root_mod.DISCOVERY_REPORT_PATH,
+        discovery_candidates_path=root_mod.DISCOVERY_CANDIDATES_PATH,
         jobs_fetch_report_path=root_mod.JOBS_FETCH_REPORT_PATH,
         approval_state_path=root_mod.APPROVAL_STATE_PATH,
         discovery_log_path=root_mod.DISCOVERY_LOG_PATH,

@@ -36,6 +36,103 @@ def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any
     return compact_payload
 
 
+def _source_match_tokens(row: dict[str, Any]) -> set[str]:
+    tokens: set[str] = set()
+    for key in (
+        "id",
+        "sourceId",
+        "url",
+        "sourceUrl",
+        "source_url",
+        "listingUrl",
+        "listing_url",
+        "careersUrl",
+        "careers_url",
+        "feed_url",
+        "board_url",
+    ):
+        value = str(row.get(key) or "").strip().lower().rstrip("/")
+        if value:
+            tokens.add(f"{key.lower()}:{value}")
+            if key.endswith("url") or key.endswith("_url") or key in {"url", "sourceUrl"}:
+                tokens.add(f"url:{value}")
+    name = str(row.get("name") or "").strip().lower()
+    studio = str(row.get("studio") or "").strip().lower()
+    adapter = str(row.get("adapter") or "").strip().lower()
+    if name and adapter:
+        tokens.add(f"name_adapter:{name}|{adapter}")
+    if studio and adapter:
+        tokens.add(f"studio_adapter:{studio}|{adapter}")
+    return tokens
+
+
+def _read_discovery_candidate_rows(api: BridgeApi) -> list[dict[str, Any]]:
+    candidates_path = getattr(api, "DISCOVERY_CANDIDATES_PATH", None)
+    if candidates_path is None:
+        return []
+    try:
+        raw = json.loads(Path(candidates_path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return []
+    rows = _as_list(raw)
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _overlay_discovery_candidate_fields(
+    rows: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    by_token: dict[str, dict[str, Any]] = {}
+    for candidate in candidates:
+        for token in _source_match_tokens(candidate):
+            by_token.setdefault(token, candidate)
+
+    evidence_fields = (
+        "jobsFound",
+        "sampleCount",
+        "status",
+        "lastProbeError",
+        "error",
+        "lastProbedAt",
+        "deferred",
+        "pendingReason",
+        "deferReason",
+        "quarantineReason",
+        "weakSignal",
+        "candidateState",
+        "confidence",
+        "rankScore",
+        "rankReasons",
+    )
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        match = next(
+            (by_token[token] for token in _source_match_tokens(row) if token in by_token), None
+        )
+        if not match:
+            out.append(row)
+            continue
+        merged = dict(row)
+        for field in evidence_fields:
+            if field in match:
+                merged[field] = match[field]
+        out.append(merged)
+    return out
+
+
+def _normalize_pending_discovery_job_counts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        if row.get("jobsFound") is not None or row.get("sampleCount") is not None:
+            normalized.append(row)
+            continue
+        updated = dict(row)
+        updated["jobsFound"] = 0
+        updated["sampleCount"] = 0
+        normalized.append(updated)
+    return normalized
+
+
 def _read_utf8_log_text(path: Path) -> str:
     try:
         raw = path.read_bytes()
@@ -120,6 +217,30 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
                 )
             else:
                 handler._send_json(payload, status=500)  # noqa: SLF001
+        return True
+
+    if path == "/discovery/candidates":
+        candidates_path = getattr(api, "DISCOVERY_CANDIDATES_PATH", None)
+        try:
+            if candidates_path is None:
+                payload = {"candidates": [], "count": 0}
+            else:
+                try:
+                    raw = json.loads(Path(candidates_path).read_text(encoding="utf-8"))
+                except FileNotFoundError:
+                    raw = []
+                candidates = [row for row in _as_list(raw) if isinstance(row, dict)]
+                payload = {"candidates": candidates, "count": len(candidates)}
+            handler._send_json(payload)  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            try:
+                api.bridge_log("error", "discovery_candidates_route_failed", error=str(exc))
+            except Exception:  # noqa: BLE001
+                pass
+            handler._send_json(  # noqa: SLF001
+                {"error": "failed_to_load_discovery_candidates", "detail": str(exc)},
+                status=500,
+            )
         return True
 
     if path == "/desktop-local-data/session":
@@ -283,7 +404,13 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
 
     if path == "/registry/pending":
         state = api.load_state()
-        handler._send_json({"sources": state["pending"], "summary": api.summarize_state(state)})  # noqa: SLF001
+        pending_rows = _normalize_pending_discovery_job_counts(
+            _overlay_discovery_candidate_fields(
+                state["pending"],
+                _read_discovery_candidate_rows(api),
+            )
+        )
+        handler._send_json({"sources": pending_rows, "summary": api.summarize_state(state)})  # noqa: SLF001
         return True
 
     if path == "/registry/rejected":

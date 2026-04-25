@@ -29,6 +29,10 @@ APPROVAL_STATE_PATH = DATA_DIR / "source-approval-state.json"
 TOMBSTONES_PATH = DATA_DIR / "source-registry-tombstones.json"
 AUTO_APPROVAL_STRONG_ADAPTERS = frozenset({"greenhouse", "lever", "ashby"})
 AUTO_APPROVAL_SECONDARY_ADAPTERS = frozenset({"bamboohr", "workday"})
+AUTO_APPROVAL_CAP_DEFER_REASONS = frozenset({"adapter_cap", "domain_cap", "top_n_cap"})
+AUTO_APPROVAL_EXISTING_MATCH_REASONS = frozenset(
+    {"existing_registry_match", "existing_family_match"}
+)
 REGISTRY_STATE_ACTIVE = "active"
 REGISTRY_STATE_PENDING = "pending"
 REGISTRY_STATE_REJECTED = "rejected"
@@ -475,6 +479,61 @@ def _normalize_discovery_health_status(value: Any) -> str:
     return token
 
 
+def _discovery_jobs_count(row: dict[str, Any], report: dict[str, Any] | None = None) -> int:
+    report_row = report if isinstance(report, dict) else {}
+    for value in (
+        row.get("jobsFound"),
+        row.get("sampleCount"),
+        report_row.get("jobsFound"),
+        report_row.get("sampleCount"),
+    ):
+        try:
+            numeric = int(value or 0)
+        except (TypeError, ValueError):
+            numeric = 0
+        if numeric > 0:
+            return numeric
+    return 0
+
+
+def _discovery_row_has_blocking_error(
+    row: dict[str, Any], report: dict[str, Any] | None = None
+) -> bool:
+    report_row = report if isinstance(report, dict) else {}
+    last_probe_error = str(
+        report_row.get("lastProbeError") or row.get("lastProbeError") or ""
+    ).strip()
+    if last_probe_error:
+        return True
+    status = _normalize_discovery_health_status(
+        report_row.get("_lastStatus")
+        or report_row.get("status")
+        or row.get("_lastStatus")
+        or row.get("status")
+    )
+    return status == "error"
+
+
+def _discovery_row_has_blocking_state(
+    row: dict[str, Any], report: dict[str, Any] | None = None
+) -> bool:
+    report_row = report if isinstance(report, dict) else {}
+    candidate_state = str(row.get("candidateState") or "").strip().lower()
+    report_candidate_state = str(report_row.get("candidateState") or "").strip().lower()
+    return candidate_state in {"quarantined", "rejected"} or report_candidate_state in {
+        "quarantined",
+        "rejected",
+    }
+
+
+def _rank_reason_tokens(row: dict[str, Any]) -> set[str]:
+    return {
+        str(item or "").strip()
+        for item in (row.get("rankReasons") or row.get("reasons") or [])
+        if str(item or "").strip()
+    }
+
+
 def _pending_row_is_auto_approvable(
     row: dict[str, Any], *, report_row: dict[str, Any] | None = None
 ) -> bool:
@@ -488,38 +547,34 @@ def _pending_row_is_auto_approvable(
     report = report_row if isinstance(report_row, dict) else {}
     if bool(row.get("deferred")):
         return False
-    candidate_state = str(row.get("candidateState") or "").strip().lower()
-    report_candidate_state = str(report.get("candidateState") or "").strip().lower()
-    if candidate_state in {"quarantined", "rejected"} or report_candidate_state in {
-        "quarantined",
-        "rejected",
-    }:
+    if bool(row.get("weakSignal")) or bool(report.get("weakSignal")):
         return False
-    jobs_found = row.get("jobsFound")
-    sample_count = row.get("sampleCount")
-    report_jobs_found = report.get("jobsFound")
-    report_sample_count = report.get("sampleCount")
-    jobs_count = 0
-    for value in (jobs_found, sample_count, report_jobs_found, report_sample_count):
-        try:
-            numeric = int(value or 0)
-        except (TypeError, ValueError):
-            numeric = 0
-        if numeric > 0:
-            jobs_count = numeric
-            break
-    if jobs_count <= 0:
+    if _discovery_row_has_blocking_state(row, report):
         return False
-    last_probe_error = str(report.get("lastProbeError") or row.get("lastProbeError") or "").strip()
-    if last_probe_error:
+    if _discovery_jobs_count(row, report) <= 0:
         return False
-    status = _normalize_discovery_health_status(
-        report.get("_lastStatus")
-        or report.get("status")
-        or row.get("_lastStatus")
-        or row.get("status")
-    )
-    if status == "error":
+    if _discovery_row_has_blocking_error(row, report):
+        return False
+    return True
+
+
+def _cap_deferred_candidate_is_auto_approvable(row: dict[str, Any]) -> bool:
+    if not isinstance(row, dict):
+        return False
+    if not bool(row.get("deferred")):
+        return False
+    defer_reason = str(row.get("deferReason") or row.get("dropReason") or "").strip()
+    if defer_reason not in AUTO_APPROVAL_CAP_DEFER_REASONS:
+        return False
+    if bool(row.get("weakSignal")):
+        return False
+    if _discovery_row_has_blocking_state(row):
+        return False
+    if _discovery_jobs_count(row) <= 0:
+        return False
+    if _discovery_row_has_blocking_error(row):
+        return False
+    if _rank_reason_tokens(row) & AUTO_APPROVAL_EXISTING_MATCH_REASONS:
         return False
     return True
 
@@ -551,6 +606,12 @@ def _promotion_reason_for_candidate(row: dict[str, Any]) -> str:
     }
 
     if bool(row.get("deferred")):
+        defer_reason = str(row.get("deferReason") or row.get("dropReason") or "").strip()
+        if defer_reason in AUTO_APPROVAL_CAP_DEFER_REASONS:
+            if rank_reasons & AUTO_APPROVAL_EXISTING_MATCH_REASONS:
+                return "skipped_existing_family_match"
+            if jobs_found > 0:
+                return "cap_deferred_jobs_found"
         return "deferred_candidate"
     if bool(row.get("weakSignal")):
         return "weak_candidate"
@@ -604,6 +665,9 @@ def apply_discovery_auto_approval(
     moved: list[dict[str, Any]] = []
     remaining: list[dict[str, Any]] = []
     moved_ids: set[str] = set()
+    active_ids = {
+        source_identity(row) for row in normalized_state["active"] if source_identity(row)
+    }
 
     if auto_approve_enabled:
         for row in normalized_state["pending"]:
@@ -623,6 +687,25 @@ def apply_discovery_auto_approval(
                 )
             else:
                 remaining.append(dict(row))
+        for row in report_candidates:
+            if not isinstance(row, dict):
+                continue
+            row_id = source_identity(row)
+            if not row_id or row_id in active_ids or row_id in moved_ids:
+                continue
+            if not _cap_deferred_candidate_is_auto_approvable(row):
+                continue
+            promotion_reason = _promotion_reason_for_candidate(row)
+            moved_ids.add(row_id)
+            moved.append(
+                _stamp_live_transition(
+                    row,
+                    approved_by="discovery_auto_approve",
+                    approved_at=approved_at,
+                    promotion_reason=promotion_reason,
+                )
+            )
+        remaining = [row for row in remaining if source_identity(row) not in moved_ids]
         next_state = {
             "active": unique_sources([*normalized_state["active"], *moved]),
             "pending": unique_sources(remaining),

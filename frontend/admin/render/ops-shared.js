@@ -50,7 +50,7 @@ export function buildRunStatusTooltip(row) {
     const queued = Number(summary?.queuedCandidateCount || 0);
     parts.push(`Failed probes: ${failed}`);
     if (probed > 0) parts.push(`Probed: ${probed}`);
-    if (queued >= 0) parts.push(`Queued (new): ${queued}`);
+    if (queued >= 0) parts.push(`Review queue: ${queued}`);
   } else {
     const failed = Number(summary?.failedSources || 0);
     const sourceCount = Number(summary?.sourceCount || 0);

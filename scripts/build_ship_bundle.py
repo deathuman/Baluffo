@@ -38,6 +38,7 @@ APP_RUNTIME_FILES = (
     "desktop-probe.html",
     "desktop-probe-head.html",
     "desktop-probe-inline.html",
+    "favicon.ico",
     "index.html",
     "jobs.html",
     "saved.html",

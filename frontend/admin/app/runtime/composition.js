@@ -8,6 +8,7 @@ import {
   getOpsPollIntervalMs as getOpsPollIntervalMsFromDomain,
   getSourceDiscoveryJobsCount as getSourceDiscoveryJobsCountFromDomain,
   getSourceJobsFoundCount as getSourceJobsFoundCountFromDomain,
+  mergeSourceDiscoveryCandidates as mergeSourceDiscoveryCandidatesFromDomain,
   mergeSourceStatusFromReport as mergeSourceStatusFromDomain
 } from "../../domain.js";
 import {
@@ -181,6 +182,7 @@ export function composeAdminControllers({
     getBridge,
     postBridge,
     fetchJobsFetchReportJson,
+    mergeSourceDiscoveryCandidates: (...args) => mergeSourceDiscoveryCandidatesFromDomain(...args),
     mergeSourceStatusFromReport: (...args) => mergeSourceStatusFromDomain(...args),
     applySourceFilter: rows => applySourceFilterFromDomain(rows, state.activeSourceFilter),
     getSourceJobsFoundCount: (...args) => getSourceJobsFoundCountFromDomain(...args),

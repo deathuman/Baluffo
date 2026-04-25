@@ -14,7 +14,7 @@ export function getSourceJobsFoundCount(row) {
 }
 
 export function getSourceDiscoveryJobsCount(row) {
-  const value = Number(row?.jobsFound ?? row?.sampleCount ?? NaN);
+  const value = Number(row?.jobsFound ?? row?.sampleCount ?? 0);
   return Number.isFinite(value) ? value : NaN;
 }
 
@@ -85,13 +85,59 @@ function toSourceMatchKeys(row) {
   const studio = String(row?.studio || "").trim().toLowerCase();
   const name = String(row?.name || "").trim().toLowerCase();
   const id = String(row?.id || "").trim().toLowerCase();
+  const sourceId = String(row?.sourceId || "").trim().toLowerCase();
+  const url = String(
+    row?.url
+      || row?.sourceUrl
+      || row?.source_url
+      || row?.listingUrl
+      || row?.listing_url
+      || row?.careersUrl
+      || row?.careers_url
+      || row?.feed_url
+      || row?.board_url
+      || ""
+  ).trim().toLowerCase().replace(/\/+$/, "");
   const loaderSourceId = extractSourceIdFromLoaderName(name);
   if (id) out.add(id);
+  if (sourceId) out.add(sourceId);
+  if (url) out.add(url);
   if (studio) out.add(studio);
   if (name) out.add(name);
   if (loaderSourceId) out.add(loaderSourceId);
   if (studio && name) out.add(`${studio}|${name}`);
   return Array.from(out);
+}
+
+function buildSourceCandidateMap(candidates) {
+  const byKey = new Map();
+  (Array.isArray(candidates) ? candidates : []).forEach(candidate => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return;
+    toSourceMatchKeys(candidate).forEach(key => {
+      if (!byKey.has(key)) byKey.set(key, candidate);
+    });
+  });
+  return byKey;
+}
+
+function discoveryOverlayFromCandidate(candidate) {
+  const overlay = {};
+  [
+    "jobsFound",
+    "sampleCount",
+    "status",
+    "lastProbeError",
+    "error",
+    "lastProbedAt",
+    "deferred",
+    "pendingReason",
+    "deferReason",
+    "quarantineReason",
+    "weakSignal"
+  ].forEach(key => {
+    if (candidate?.[key] !== undefined) overlay[key] = candidate[key];
+  });
+  return overlay;
 }
 
 function shouldTryGroupErrorMatch(group) {
@@ -144,8 +190,44 @@ export function deriveSourceApprovalStatus(row, mode = "pending") {
   const lastProbeError = String(row?.lastProbeError || row?.error || "").trim();
   const status = normalizeSourceStatusToken(row?.status);
   const discoveryJobs = getSourceDiscoveryJobsCount(row);
+  const deferReason = String(row?.deferReason || row?.dropReason || "").trim();
+  const rankReasons = new Set(
+    (Array.isArray(row?.rankReasons) ? row.rankReasons : (Array.isArray(row?.reasons) ? row.reasons : []))
+      .map(item => String(item || "").trim())
+      .filter(Boolean)
+  );
+  const isCapDeferred = ["adapter_cap", "domain_cap", "top_n_cap"].includes(deferReason);
+  const hasExistingMatch = rankReasons.has("existing_registry_match") || rankReasons.has("existing_family_match");
 
   if (Boolean(row?.deferred)) {
+    if (Number.isFinite(discoveryJobs) && discoveryJobs > 0 && isCapDeferred) {
+      if (status === "error" || lastProbeError) {
+        return {
+          label: "Blocked: error",
+          title: lastProbeError ? `Not auto-approved because the source has an error: ${lastProbeError}.` : "Not auto-approved because the source status is error.",
+          tone: "critical"
+        };
+      }
+      if (hasExistingMatch) {
+        return {
+          label: "Skipped: existing source",
+          title: "Not auto-approved because this cap-deferred candidate matches an existing active source family.",
+          tone: "warning"
+        };
+      }
+      if (Boolean(row?.weakSignal)) {
+        return {
+          label: "Deferred: weak signal",
+          title: "Not auto-approved because this cap-deferred candidate is marked as a weak signal.",
+          tone: "warning"
+        };
+      }
+      return {
+        label: "Auto-approvable",
+        title: "Cap-deferred candidate has discovery job evidence and no blocking duplicate signal.",
+        tone: "healthy"
+      };
+    }
     const reason = String(row?.deferReason || row?.pendingReason || "").trim();
     return {
       label: "Deferred",
@@ -208,6 +290,26 @@ export function mergeSourceStatusFromReport(rows, report, mode) {
       _lastFetchedCount: Number(matched?.fetchedCount || 0),
       _lastKeptCount: Number(matched?.keptCount || 0),
       _mode: mode
+    };
+  });
+}
+
+export function mergeSourceDiscoveryCandidates(rows, candidatePayload) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const candidates = Array.isArray(candidatePayload)
+    ? candidatePayload
+    : candidatePayload?.candidates;
+  const byKey = buildSourceCandidateMap(candidates);
+  return sourceRows.map(row => {
+    const matched = toSourceMatchKeys(row).map(key => byKey.get(key)).find(Boolean);
+    if (!matched) return row;
+    return {
+      ...row,
+      ...discoveryOverlayFromCandidate(matched),
+      id: row?.id,
+      sourceId: row?.sourceId,
+      registryState: row?.registryState,
+      candidateState: row?.candidateState
     };
   });
 }

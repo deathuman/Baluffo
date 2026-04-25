@@ -176,6 +176,7 @@ test("admin domain separates discovery and fetch job counts", () => {
   assert.equal(getSourceDiscoveryJobsCount(row), 0);
   assert.equal(getSourceFetchJobsCount(row), 179);
   assert.equal(getSourceJobsFoundCount(row), 0);
+  assert.equal(getSourceDiscoveryJobsCount({ name: "Missing discovery evidence" }), 0);
 });
 
 test("admin domain derives pending approval status from discovery evidence", () => {
@@ -190,6 +191,17 @@ test("admin domain derives pending approval status from discovery evidence", () 
   assert.equal(
     deriveSourceApprovalStatus({ jobsFound: 2, status: "error" }, "pending").label,
     "Blocked: error"
+  );
+  assert.equal(
+    deriveSourceApprovalStatus({ jobsFound: 2, deferred: true, deferReason: "adapter_cap" }, "pending").label,
+    "Auto-approvable"
+  );
+  assert.equal(
+    deriveSourceApprovalStatus(
+      { jobsFound: 2, deferred: true, deferReason: "adapter_cap", rankReasons: ["existing_family_match"] },
+      "pending"
+    ).label,
+    "Skipped: existing source"
   );
 });
 

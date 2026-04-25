@@ -117,6 +117,87 @@ def test_get_routes_smoke_ops_health_and_registry_summary(tmp_path: Path) -> Non
     assert int(payload["summary"]["activeCount"]) == 1
 
 
+def test_get_routes_pending_registry_overlays_discovery_candidate_fields(tmp_path: Path) -> None:
+    api = _make_api(tmp_path)
+    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"
+    handler = _FakeHandler()
+
+    def load_state() -> dict[str, list[dict[str, Any]]]:
+        return {
+            "active": [],
+            "pending": [
+                {
+                    "id": "static:listing_url:https://www.epicgames.com/site/careers/jobs",
+                    "name": "Epic Games (Manual Website)",
+                    "studio": "Epic Games",
+                    "adapter": "static",
+                    "registryState": "pending",
+                    "listing_url": "https://www.epicgames.com/site/careers/jobs",
+                }
+            ],
+            "rejected": [],
+        }
+
+    api.load_state = load_state  # type: ignore[assignment]
+    api.DISCOVERY_CANDIDATES_PATH.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "static:listing_url:https://www.epicgames.com/site/careers/jobs",
+                    "name": "Epic Games (Manual Website)",
+                    "studio": "Epic Games",
+                    "adapter": "static",
+                    "jobsFound": 0,
+                    "sampleCount": 0,
+                    "lastProbedAt": "2026-04-25T10:00:00+02:00",
+                    "lastProbeError": "HTTP Error 404: Not Found",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert handle_get(handler, api=api, path="/registry/pending", query={}) is True
+    row = handler.sent[-1]["payload"]["sources"][0]
+    assert row["jobsFound"] == 0
+    assert row["sampleCount"] == 0
+    assert row["lastProbeError"] == "HTTP Error 404: Not Found"
+    assert row["registryState"] == "pending"
+
+
+def test_get_routes_pending_registry_defaults_missing_discovery_jobs_to_zero(
+    tmp_path: Path,
+) -> None:
+    api = _make_api(tmp_path)
+    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"
+    handler = _FakeHandler()
+
+    def load_state() -> dict[str, list[dict[str, Any]]]:
+        return {
+            "active": [],
+            "pending": [
+                {
+                    "id": "personio:feed_url:https://innogames.jobs.personio.de/xml",
+                    "name": "InnoGames (Personio)",
+                    "studio": "InnoGames",
+                    "adapter": "personio",
+                    "registryState": "pending",
+                    "feed_url": "https://innogames.jobs.personio.de/xml",
+                }
+            ],
+            "rejected": [],
+        }
+
+    api.load_state = load_state  # type: ignore[assignment]
+    api.DISCOVERY_CANDIDATES_PATH.write_text("[]", encoding="utf-8")
+
+    assert handle_get(handler, api=api, path="/registry/pending", query={}) is True
+    row = handler.sent[-1]["payload"]["sources"][0]
+    assert row["jobsFound"] == 0
+    assert row["sampleCount"] == 0
+    assert row["registryState"] == "pending"
+
+
 def test_get_routes_discovery_report_success_and_json_serializable(tmp_path: Path) -> None:
     api = _make_api(tmp_path)
     handler = _FakeHandler()
@@ -149,6 +230,29 @@ def test_get_routes_discovery_report_success_and_json_serializable(tmp_path: Pat
     assert handler.sent[-1]["status"] == 200
     # Ensure we can JSON-encode whatever the route returned.
     json.dumps(handler.sent[-1]["payload"])
+
+
+def test_get_routes_discovery_candidates_returns_persisted_rows(tmp_path: Path) -> None:
+    api = _make_api(tmp_path)
+    api.DISCOVERY_CANDIDATES_PATH = tmp_path / "source-discovery-candidates.json"
+    handler = _FakeHandler()
+
+    api.DISCOVERY_CANDIDATES_PATH.write_text(
+        json.dumps(
+            [
+                {"id": "p1", "name": "One", "jobsFound": 2},
+                "ignored",
+                {"id": "p2", "name": "Two", "jobsFound": 0},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert handle_get(handler, api=api, path="/discovery/candidates", query={}) is True
+    assert handler.sent[-1]["status"] == 200
+    payload = handler.sent[-1]["payload"]
+    assert payload["count"] == 2
+    assert payload["candidates"][0]["id"] == "p1"
 
 
 def test_get_routes_discovery_report_never_drops_connection_on_error(tmp_path: Path) -> None:

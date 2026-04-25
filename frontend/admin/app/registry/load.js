@@ -1,12 +1,26 @@
 import { deriveDiscoveryLifecycleCounts, deriveDiscoveryQueuedCount } from "../../domain.js";
 
 const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
+const CAP_DEFER_REASONS = new Set(["adapter_cap", "domain_cap", "top_n_cap"]);
+
+function getDiscoveryCandidatesRows(payload) {
+  return Array.isArray(payload?.candidates) ? payload.candidates : [];
+}
+
+function countCapDeferredCandidates(rows) {
+  return rows.filter(row => row?.deferred && CAP_DEFER_REASONS.has(String(row?.deferReason || row?.dropReason || ""))).length;
+}
+
+function countJobPositiveDeferredCandidates(rows) {
+  return rows.filter(row => row?.deferred && Number(row?.jobsFound ?? row?.sampleCount ?? 0) > 0).length;
+}
 
 export function createRegistryLoadController({
   state,
   refs,
   getBridge,
   fetchJobsFetchReportJson,
+  mergeSourceDiscoveryCandidates = rows => rows,
   mergeSourceStatusFromReport,
   applySourceFilter,
   getSourceJobsFoundCount,
@@ -75,8 +89,9 @@ export function createRegistryLoadController({
     setBusyFlag("discoveryLoad", true);
     state.discoveryLoadPromise = (async () => {
       try {
-        const [report, pending, active, rejected, latestFetchReport] = await Promise.all([
+        const [report, discoveryCandidates, pending, active, rejected, latestFetchReport] = await Promise.all([
           getBridge("/discovery/report"),
+          getBridge("/discovery/candidates").catch(() => ({ candidates: [] })),
           getBridge("/registry/pending"),
           getBridge("/registry/active"),
           getBridge("/registry/rejected"),
@@ -90,9 +105,29 @@ export function createRegistryLoadController({
         const lifecycleCounts = deriveDiscoveryLifecycleCounts(report);
         const skippedCount = Number(summary.skippedDuplicateCount || 0);
         const failedCount = Number(summary.failedProbeCount || 0);
-        const pendingRows = mergeSourceStatusFromReport(Array.isArray(pending?.sources) ? pending.sources : [], latestFetchReport, "pending");
-        const activeRows = mergeSourceStatusFromReport(Array.isArray(active?.sources) ? active.sources : [], latestFetchReport, "active");
-        const rejectedRows = mergeSourceStatusFromReport(Array.isArray(rejected?.sources) ? rejected.sources : [], latestFetchReport, "rejected");
+        const discoveryCandidateRows = getDiscoveryCandidatesRows(discoveryCandidates);
+        const capDeferredCount = countCapDeferredCandidates(discoveryCandidateRows);
+        const jobPositiveDeferredCount = countJobPositiveDeferredCandidates(discoveryCandidateRows);
+        const runtimeAutoApproval = report?.runtime?.autoApproval && typeof report.runtime.autoApproval === "object"
+          ? report.runtime.autoApproval
+          : {};
+        const autoApprovedCount = Number(summary.approvedCandidateCount ?? runtimeAutoApproval.approvedCount ?? 0);
+        const activeRegistryCount = Number(active?.summary?.activeCount || 0);
+        const pendingRows = mergeSourceStatusFromReport(
+          mergeSourceDiscoveryCandidates(Array.isArray(pending?.sources) ? pending.sources : [], discoveryCandidates),
+          latestFetchReport,
+          "pending"
+        );
+        const activeRows = mergeSourceStatusFromReport(
+          mergeSourceDiscoveryCandidates(Array.isArray(active?.sources) ? active.sources : [], discoveryCandidates),
+          latestFetchReport,
+          "active"
+        );
+        const rejectedRows = mergeSourceStatusFromReport(
+          mergeSourceDiscoveryCandidates(Array.isArray(rejected?.sources) ? rejected.sources : [], discoveryCandidates),
+          latestFetchReport,
+          "rejected"
+        );
         const registrySignature = buildDiscoveryRegistrySignature({
           pending: pendingRows,
           active: activeRows,
@@ -108,9 +143,17 @@ export function createRegistryLoadController({
 
         if (refs.adminDiscoverySummaryEl) {
           refs.adminDiscoverySummaryEl.textContent =
-            `Found ${foundCount} | Probed ${probedCount} | Queued (new) ${queuedCount} | Deferred review ${deferredCount} | Validated ${lifecycleCounts.validated} | Live ${lifecycleCounts.live} | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Active ${Number(active?.summary?.activeCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
+            `Found ${foundCount} | Probed ${probedCount} | Review queue ${queuedCount} | Deferred review ${deferredCount} | Deferred by caps ${capDeferredCount} | Job-positive deferred ${jobPositiveDeferredCount} | Validated ${lifecycleCounts.validated} | Auto-approved this run ${autoApprovedCount} | Active registry ${activeRegistryCount} | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
         }
         renderSourcesTable(refs.adminPendingSourcesEl, visiblePendingRows, "pending");
+        if (
+          refs.adminPendingSourcesEl
+          && !filterState.showZeroJobs
+          && visiblePendingRows.length === 0
+          && hiddenZeroJobsCount > 0
+        ) {
+          refs.adminPendingSourcesEl.innerHTML = `<div class="no-results">${hiddenZeroJobsCount.toLocaleString()} pending sources have 0 discovery jobs and are hidden. Enable "Show zero-jobs pending sources" to view them.</div>`;
+        }
         renderSourcesTable(refs.adminActiveSourcesEl, visibleActiveRows, "active");
         renderSourcesTable(refs.adminRejectedSourcesEl, visibleRejectedRows, "rejected");
         const registryChanged = registrySignature !== String(state.discoveryRegistrySignature || "");
@@ -118,7 +161,7 @@ export function createRegistryLoadController({
         if (registryChanged && options?.logChanges !== false) {
           appendDiscoveryLog("Loading source discovery report and registries...");
           appendDiscoveryLog(
-            `Discovery summary: found ${foundCount}, probed ${probedCount}, queued (new) ${queuedCount}, failed ${failedCount}, skipped duplicates ${skippedCount}.`,
+            `Discovery summary: found ${foundCount}, probed ${probedCount}, review queue ${queuedCount}, auto-approved ${autoApprovedCount}, failed ${failedCount}, skipped duplicates ${skippedCount}.`,
             "info"
           );
           const topFailures = Array.isArray(report?.topFailures) ? report.topFailures : [];
