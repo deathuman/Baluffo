@@ -88,6 +88,7 @@ APP_RUNTIME_SHIP_FILES = (
     "desktop_update_service.py",
     "desktop_update_shared.py",
     "desktop_update_state.py",
+    "startup_telemetry.py",
 )
 APP_TOOLING_SHIP_FILES = APP_RUNTIME_SHIP_FILES + ("desktop_updater.py",)
 APP_RUNTIME_ASSET_DIRS = ("probes", "styles")

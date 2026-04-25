@@ -96,6 +96,7 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
         assert (version_root / "src" / "source_sync_runtime.py").exists()
         assert (version_root / "src" / "source_sync_snapshot.py").exists()
         assert (version_root / "src" / "ship" / "desktop_update.py").exists()
+        assert (version_root / "src" / "ship" / "startup_telemetry.py").exists()
         # Required by admin_bridge → jobs.common and bridge routes (packaged desktop must resolve src.shared, src.core).
         assert (version_root / "src" / "shared" / "regex.py").exists()
         assert (version_root / "src" / "shared" / "utils.py").exists()
