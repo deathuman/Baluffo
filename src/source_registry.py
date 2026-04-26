@@ -3,853 +3,118 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
-import re
-import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
+from importlib import reload as _reload
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, urlunsplit
 
-from src.baluffo_config import get_storage_defaults
+from src import source_registry_auto_approval as _auto
+from src import source_registry_canonicalize as _canonicalize
+from src import source_registry_identity as _identity
+from src import source_registry_io as _io
+from src import source_registry_policy as _policy
+from src import source_registry_state as _state
 from src.shared.utils import now_iso
 
-_STORAGE_DEFAULTS = get_storage_defaults()
-_DEFAULT_DATA_DIR = _STORAGE_DEFAULTS["data_dir"]
-DATA_DIR = Path(os.getenv("BALUFFO_DATA_DIR") or _DEFAULT_DATA_DIR).expanduser().resolve()
-ACTIVE_PATH = DATA_DIR / "source-registry-active.json"
-PENDING_PATH = DATA_DIR / "source-registry-pending.json"
-REJECTED_PATH = DATA_DIR / "source-registry-rejected.json"
-DISCOVERY_REPORT_PATH = DATA_DIR / "source-discovery-report.json"
-DISCOVERY_CANDIDATES_PATH = DATA_DIR / "source-discovery-candidates.json"
-M5_STRATEGIC_BACKLOG_PATH = DATA_DIR / "m5-strategic-backlog.json"
-URL_PATCH_MANIFEST_PATH = DATA_DIR / "url-patch-manifest.json"
-APPROVAL_STATE_PATH = DATA_DIR / "source-approval-state.json"
-TOMBSTONES_PATH = DATA_DIR / "source-registry-tombstones.json"
-AUTO_APPROVAL_STRONG_ADAPTERS = frozenset({"greenhouse", "lever", "ashby"})
-AUTO_APPROVAL_SECONDARY_ADAPTERS = frozenset({"bamboohr", "workday"})
-AUTO_APPROVAL_CAP_DEFER_REASONS = frozenset({"adapter_cap", "domain_cap", "top_n_cap"})
-AUTO_APPROVAL_EXISTING_MATCH_REASONS = frozenset(
-    {"existing_registry_match", "existing_family_match"}
-)
-REGISTRY_STATE_ACTIVE = "active"
-REGISTRY_STATE_PENDING = "pending"
-REGISTRY_STATE_REJECTED = "rejected"
-REGISTRY_STATES = frozenset(
-    {REGISTRY_STATE_ACTIVE, REGISTRY_STATE_PENDING, REGISTRY_STATE_REJECTED}
-)
-REGISTRY_REASON_MANUAL_SOURCE = "manual_source"
-REGISTRY_REASON_MANUAL_SOURCE_VARIANT = "manual_source_variant_added"
-REGISTRY_REASON_DISCOVERY_AUTO_APPROVE = "discovery_auto_approve"
-REGISTRY_REASON_ROLLBACK = "registry_rollback"
-REGISTRY_REASON_RESTORE_REJECTED = "registry_restore_rejected"
-REGISTRY_REASON_REJECT = "registry_reject"
-REGISTRY_REASON_APPROVE = "registry_approve"
-REGISTRY_REASON_DELETE = "registry_delete"
-REGISTRY_REASON_RESTORE_DELETED = "registry_restore_deleted"
-REGISTRY_REASON_FETCH_EMPTY_DEMOTE = "fetch_empty_demote"
-REGISTRY_REASON_FETCH_FAILURE_DEMOTE = "fetch_failure_demote"
-REGISTRY_REASON_DUPLICATE_FAMILY = "duplicate_family_weaker_variant"
-REGISTRY_REASON_REPEATED_ZERO_JOBS = "repeated_zero_jobs"
-REGISTRY_MIGRATION_V2 = "registry_migration_v2"
-ZERO_JOB_HIDDEN_DEFER_THRESHOLD = 3
+_io = _reload(_io)
+
+ACTIVE_PATH = _io.ACTIVE_PATH
+APPROVAL_STATE_PATH = _io.APPROVAL_STATE_PATH
+DATA_DIR = _io.DATA_DIR
+DISCOVERY_CANDIDATES_PATH = _io.DISCOVERY_CANDIDATES_PATH
+DISCOVERY_REPORT_PATH = _io.DISCOVERY_REPORT_PATH
+M5_STRATEGIC_BACKLOG_PATH = _io.M5_STRATEGIC_BACKLOG_PATH
+PENDING_PATH = _io.PENDING_PATH
+REJECTED_PATH = _io.REJECTED_PATH
+TOMBSTONES_PATH = _io.TOMBSTONES_PATH
+URL_PATCH_MANIFEST_PATH = _io.URL_PATCH_MANIFEST_PATH
+load_json_array = _io.load_json_array
+load_json_object = _io.load_json_object
+
+AUTO_APPROVAL_CAP_DEFER_REASONS = _auto.AUTO_APPROVAL_CAP_DEFER_REASONS
+AUTO_APPROVAL_EXISTING_MATCH_REASONS = _auto.AUTO_APPROVAL_EXISTING_MATCH_REASONS
+AUTO_APPROVAL_SECONDARY_ADAPTERS = _auto.AUTO_APPROVAL_SECONDARY_ADAPTERS
+AUTO_APPROVAL_STRONG_ADAPTERS = _auto.AUTO_APPROVAL_STRONG_ADAPTERS
+_cap_deferred_candidate_is_auto_approvable = _auto._cap_deferred_candidate_is_auto_approvable
+_discovery_jobs_count = _auto._discovery_jobs_count
+_discovery_row_has_blocking_error = _auto._discovery_row_has_blocking_error
+_discovery_row_has_blocking_state = _auto._discovery_row_has_blocking_state
+_normalize_discovery_health_status = _auto._normalize_discovery_health_status
+_pending_row_is_auto_approvable = _auto._pending_row_is_auto_approvable
+_promotion_reason_for_candidate = _auto._promotion_reason_for_candidate
+_rank_reason_tokens = _auto._rank_reason_tokens
+_stamp_live_transition = _auto._stamp_live_transition
+
+canonicalize_registry_row = _canonicalize.canonicalize_registry_row
+sort_sources_by_identity = _canonicalize.sort_sources_by_identity
+
+_clean_family_token = _identity._clean_family_token
+ensure_source_id = _identity.ensure_source_id
+normalize_source_url = _identity.normalize_source_url
+source_endpoint_url = _identity.source_endpoint_url
+source_family_key = _identity.source_family_key
+source_identity = _identity.source_identity
+source_url_fingerprint = _identity.source_url_fingerprint
+unique_sources = _identity.unique_sources
+
+_adapter_priority = _policy._adapter_priority
+_demote_duplicate_variant = _policy._demote_duplicate_variant
+_duplicate_winner_score = _policy._duplicate_winner_score
+_metadata_score = _policy._metadata_score
+_source_state_for_row = _policy._source_state_for_row
+_state_rows_by_key = _policy._state_rows_by_key
+demote_duplicate_active_variants = _policy.demote_duplicate_active_variants
+
+REGISTRY_MIGRATION_V2 = _state.REGISTRY_MIGRATION_V2
+REGISTRY_REASON_APPROVE = _state.REGISTRY_REASON_APPROVE
+REGISTRY_REASON_DELETE = _state.REGISTRY_REASON_DELETE
+REGISTRY_REASON_DISCOVERY_AUTO_APPROVE = _state.REGISTRY_REASON_DISCOVERY_AUTO_APPROVE
+REGISTRY_REASON_DUPLICATE_FAMILY = _state.REGISTRY_REASON_DUPLICATE_FAMILY
+REGISTRY_REASON_FETCH_EMPTY_DEMOTE = _state.REGISTRY_REASON_FETCH_EMPTY_DEMOTE
+REGISTRY_REASON_FETCH_FAILURE_DEMOTE = _state.REGISTRY_REASON_FETCH_FAILURE_DEMOTE
+REGISTRY_REASON_MANUAL_SOURCE = _state.REGISTRY_REASON_MANUAL_SOURCE
+REGISTRY_REASON_MANUAL_SOURCE_VARIANT = _state.REGISTRY_REASON_MANUAL_SOURCE_VARIANT
+REGISTRY_REASON_PENDING_DEFAULT = _state.REGISTRY_REASON_PENDING_DEFAULT
+REGISTRY_REASON_REJECT = _state.REGISTRY_REASON_REJECT
+REGISTRY_REASON_REPEATED_ZERO_JOBS = _state.REGISTRY_REASON_REPEATED_ZERO_JOBS
+REGISTRY_REASON_RESTORE_DELETED = _state.REGISTRY_REASON_RESTORE_DELETED
+REGISTRY_REASON_RESTORE_REJECTED = _state.REGISTRY_REASON_RESTORE_REJECTED
+REGISTRY_REASON_ROLLBACK = _state.REGISTRY_REASON_ROLLBACK
+REGISTRY_STATE_ACTIVE = _state.REGISTRY_STATE_ACTIVE
+REGISTRY_STATE_PENDING = _state.REGISTRY_STATE_PENDING
+REGISTRY_STATE_REJECTED = _state.REGISTRY_STATE_REJECTED
+REGISTRY_STATES = _state.REGISTRY_STATES
+ZERO_JOB_HIDDEN_DEFER_THRESHOLD = _state.ZERO_JOB_HIDDEN_DEFER_THRESHOLD
+_apply_registry_legacy_fields = _state._apply_registry_legacy_fields
+_as_dict = _state._as_dict
+_as_list = _state._as_list
+_coerce_int = _state._coerce_int
+_coerce_state = _state._coerce_state
+_first_text = _state._first_text
+_infer_pending_reason = _state._infer_pending_reason
+_infer_registry_state = _state._infer_registry_state
+_infer_state_changed_at = _state._infer_state_changed_at
+_infer_state_changed_by = _state._infer_state_changed_by
+_transition_state_metadata = _state._transition_state_metadata
+hide_repeated_zero_job_pending = _state.hide_repeated_zero_job_pending
+is_hidden_from_default = _state.is_hidden_from_default
+transition_registry_to_active = _state.transition_registry_to_active
+transition_registry_to_pending = _state.transition_registry_to_pending
+transition_registry_to_rejected = _state.transition_registry_to_rejected
 
 
-def _coerce_int(value: Any, default: int = 0) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return int(default)
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
-
-
-def _first_text(*values: Any) -> str:
-    for value in values:
-        text = str(value or "").strip()
-        if text:
-            return text
-    return ""
-
-
-def _coerce_state(value: Any, default: str = REGISTRY_STATE_PENDING) -> str:
-    token = str(value or "").strip().lower()
-    if token in REGISTRY_STATES:
-        return token
-    return default
-
-
-def _infer_registry_state(row: dict[str, Any], *, bucket: str = "") -> str:
-    bucket_token = str(bucket or "").strip().lower()
-    if bucket_token in REGISTRY_STATES:
-        return bucket_token
-    registry_state = _coerce_state(row.get("registryState"), "")
-    if registry_state:
-        return registry_state
-    candidate_state = str(row.get("candidateState") or "").strip().lower()
-    if candidate_state == "live" or bool(row.get("enabledByDefault")):
-        return REGISTRY_STATE_ACTIVE
-    if candidate_state == "quarantined":
-        return REGISTRY_STATE_REJECTED
-    if candidate_state == "validated":
-        return REGISTRY_STATE_PENDING
-    pending_reason = str(row.get("pendingReason") or "").strip().lower()
-    if pending_reason:
-        return REGISTRY_STATE_PENDING
-    quarantine_reason = str(row.get("quarantineReason") or "").strip().lower()
-    if quarantine_reason:
-        return REGISTRY_STATE_REJECTED
-    return REGISTRY_STATE_PENDING
-
-
-def _infer_pending_reason(row: dict[str, Any], *, registry_state: str, bucket: str = "") -> str:
-    current = str(row.get("pendingReason") or "").strip()
-    if current:
-        return current
-    if registry_state == REGISTRY_STATE_ACTIVE:
-        return ""
-    if registry_state == REGISTRY_STATE_REJECTED:
-        return _first_text(
-            row.get("quarantineReason"),
-            row.get("pendingReason"),
-            row.get("reason"),
-            REGISTRY_REASON_REJECT,
-        )
-    bucket_token = str(bucket or "").strip().lower()
-    if bucket_token == REGISTRY_STATE_PENDING:
-        return _first_text(
-            row.get("pendingReason"),
-            row.get("discoveryMethod"),
-            row.get("manualFallback"),
-            REGISTRY_REASON_PENDING_DEFAULT,
-        )
-    return ""
-
-
-def _infer_state_changed_at(row: dict[str, Any], *, registry_state: str) -> str:
-    return _first_text(
-        row.get("stateChangedAt"),
-        row.get("approvedAt") if registry_state == REGISTRY_STATE_ACTIVE else "",
-        row.get("quarantinedAt") if registry_state == REGISTRY_STATE_REJECTED else "",
-        row.get("lastPromotedAt") if registry_state == REGISTRY_STATE_ACTIVE else "",
-        row.get("lastDemotedAt") if registry_state != REGISTRY_STATE_ACTIVE else "",
-        row.get("manualAddedAt"),
-        row.get("discoveredAt"),
-        row.get("firstDeferredAt"),
-        row.get("lastProbedAt"),
-        row.get("updatedAt"),
-        row.get("createdAt"),
-    )
-
-
-def _infer_state_changed_by(row: dict[str, Any]) -> str:
-    return _first_text(
-        row.get("stateChangedBy"),
-        row.get("approvedBy"),
-        row.get("quarantinedBy"),
-        row.get("manualAddedBy"),
-        row.get("discoveredBy"),
-    )
-
-
-def _apply_registry_legacy_fields(
-    updated: dict[str, Any],
-    *,
-    registry_state: str,
-    state_changed_at: str,
-    state_changed_by: str,
-    reason: str,
-) -> dict[str, Any]:
-    updated["registryState"] = registry_state
-    updated["pendingReason"] = reason if registry_state != REGISTRY_STATE_ACTIVE else ""
-    updated["stateChangedAt"] = state_changed_at
-    updated["stateChangedBy"] = state_changed_by
-    updated["lastPromotedAt"] = str(updated.get("lastPromotedAt") or "")
-    updated["lastDemotedAt"] = str(updated.get("lastDemotedAt") or "")
-    if registry_state == REGISTRY_STATE_ACTIVE:
-        updated["candidateState"] = "live"
-        updated["enabledByDefault"] = True
-        updated["approvedAt"] = str(updated.get("approvedAt") or state_changed_at)
-        updated["approvedBy"] = str(updated.get("approvedBy") or state_changed_by or "")
-        updated["liveAt"] = str(updated.get("liveAt") or state_changed_at)
-        updated["quarantinedAt"] = ""
-        updated["quarantineReason"] = ""
-        updated["lastPromotedAt"] = str(updated.get("lastPromotedAt") or state_changed_at)
-    elif registry_state == REGISTRY_STATE_PENDING:
-        prior_candidate_state = str(updated.get("candidateState") or "").strip().lower()
-        updated["candidateState"] = (
-            "hidden"
-            if prior_candidate_state == "hidden" or bool(updated.get("hiddenFromDefault"))
-            else "validated"
-        )
-        updated["enabledByDefault"] = False
-        updated["approvedAt"] = ""
-        updated["approvedBy"] = ""
-        updated["liveAt"] = ""
-        updated["quarantinedAt"] = ""
-        updated["quarantineReason"] = ""
-        updated["lastDemotedAt"] = str(updated.get("lastDemotedAt") or state_changed_at)
-    else:
-        updated["candidateState"] = "quarantined"
-        updated["enabledByDefault"] = False
-        updated["approvedAt"] = ""
-        updated["approvedBy"] = ""
-        updated["liveAt"] = ""
-        updated["quarantinedAt"] = str(updated.get("quarantinedAt") or state_changed_at)
-        updated["quarantineReason"] = str(
-            updated.get("quarantineReason") or reason or REGISTRY_REASON_REJECT
-        )
-        updated["lastDemotedAt"] = str(updated.get("lastDemotedAt") or state_changed_at)
-    return updated
-
-
-def canonicalize_registry_row(row: dict[str, Any], *, bucket: str = "") -> dict[str, Any]:
-    normalized = dict(row)
-    normalized = ensure_source_id(normalized)
-    registry_state = _infer_registry_state(normalized, bucket=bucket)
-    state_changed_at = _infer_state_changed_at(normalized, registry_state=registry_state)
-    state_changed_by = _infer_state_changed_by(normalized)
-    if state_changed_at and not state_changed_by:
-        state_changed_by = REGISTRY_MIGRATION_V2
-    reason = _infer_pending_reason(normalized, registry_state=registry_state, bucket=bucket)
-    normalized = _apply_registry_legacy_fields(
-        normalized,
-        registry_state=registry_state,
-        state_changed_at=state_changed_at,
-        state_changed_by=state_changed_by,
-        reason=reason,
-    )
-    normalized["registryState"] = registry_state
-    normalized["pendingReason"] = reason if registry_state != REGISTRY_STATE_ACTIVE else ""
-    normalized["stateChangedAt"] = state_changed_at
-    normalized["stateChangedBy"] = state_changed_by
-    if (
-        registry_state == REGISTRY_STATE_ACTIVE
-        and not str(normalized.get("lastPromotedAt") or "").strip()
-    ):
-        normalized["lastPromotedAt"] = state_changed_at
-    if (
-        registry_state != REGISTRY_STATE_ACTIVE
-        and not str(normalized.get("lastDemotedAt") or "").strip()
-    ):
-        normalized["lastDemotedAt"] = state_changed_at
-    return normalized
-
-
-def sort_sources_by_identity(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    return sorted(
-        (ensure_source_id(dict(row)) for row in rows if isinstance(row, dict)),
-        key=lambda row: (
-            source_identity(row),
-            str(row.get("stateChangedAt") or ""),
-            str(row.get("lastPromotedAt") or ""),
-            str(row.get("lastDemotedAt") or ""),
-        ),
-    )
-
-
-def _transition_state_metadata(
-    row: dict[str, Any],
-    *,
-    registry_state: str,
-    reason: str,
-    actor: str,
-    at: str,
-) -> dict[str, Any]:
-    updated = canonicalize_registry_row(row, bucket=registry_state)
-    updated["registryState"] = registry_state
-    updated["pendingReason"] = reason if registry_state != REGISTRY_STATE_ACTIVE else ""
-    updated["stateChangedAt"] = at
-    updated["stateChangedBy"] = str(actor or "").strip()
-    if registry_state == REGISTRY_STATE_ACTIVE:
-        updated["lastPromotedAt"] = at
-        updated["lastDemotedAt"] = str(updated.get("lastDemotedAt") or "")
-        updated["candidateState"] = "live"
-        updated["enabledByDefault"] = True
-        updated["approvedAt"] = str(updated.get("approvedAt") or at)
-        updated["approvedBy"] = str(updated.get("approvedBy") or actor or "")
-        updated["liveAt"] = str(updated.get("liveAt") or at)
-        updated["quarantinedAt"] = ""
-        updated["quarantineReason"] = ""
-    elif registry_state == REGISTRY_STATE_PENDING:
-        updated["lastDemotedAt"] = at
-        prior_candidate_state = str(updated.get("candidateState") or "").strip().lower()
-        updated["candidateState"] = (
-            "hidden"
-            if prior_candidate_state == "hidden" or bool(updated.get("hiddenFromDefault"))
-            else "validated"
-        )
-        updated["enabledByDefault"] = False
-        updated["approvedAt"] = ""
-        updated["approvedBy"] = ""
-        updated["liveAt"] = ""
-        updated["quarantinedAt"] = ""
-        updated["quarantineReason"] = ""
-    else:
-        updated["lastDemotedAt"] = at
-        updated["candidateState"] = "quarantined"
-        updated["enabledByDefault"] = False
-        updated["approvedAt"] = ""
-        updated["approvedBy"] = ""
-        updated["liveAt"] = ""
-        updated["quarantinedAt"] = at
-        updated["quarantineReason"] = reason or REGISTRY_REASON_REJECT
-    return ensure_source_id(updated)
-
-
-def transition_registry_to_active(
-    row: dict[str, Any], *, reason: str, actor: str, at: str | None = None
-) -> dict[str, Any]:
-    return _transition_state_metadata(
-        row,
-        registry_state=REGISTRY_STATE_ACTIVE,
-        reason=reason,
-        actor=actor,
-        at=str(at or now_iso()),
-    )
-
-
-def transition_registry_to_pending(
-    row: dict[str, Any], *, reason: str, actor: str, at: str | None = None
-) -> dict[str, Any]:
-    return _transition_state_metadata(
-        row,
-        registry_state=REGISTRY_STATE_PENDING,
-        reason=reason,
-        actor=actor,
-        at=str(at or now_iso()),
-    )
-
-
-def transition_registry_to_rejected(
-    row: dict[str, Any], *, reason: str, actor: str, at: str | None = None
-) -> dict[str, Any]:
-    return _transition_state_metadata(
-        row,
-        registry_state=REGISTRY_STATE_REJECTED,
-        reason=reason,
-        actor=actor,
-        at=str(at or now_iso()),
-    )
-
-
-REGISTRY_REASON_PENDING_DEFAULT = REGISTRY_REASON_MANUAL_SOURCE
+def _sync_io_paths() -> None:
+    _io.DATA_DIR = DATA_DIR
 
 
 def ensure_data_dir() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def load_json_array(
-    path: Path, default: list[dict[str, Any]] | None = None
-) -> list[dict[str, Any]]:
-    fallback = default or []
-    try:
-        if not path.exists():
-            return [dict(row) for row in fallback]
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(payload, list):
-            return [dict(row) for row in fallback]
-        return [row for row in payload if isinstance(row, dict)]
-    except (OSError, json.JSONDecodeError):
-        return [dict(row) for row in fallback]
-
-
-def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
-    fallback = dict(default or {})
-    try:
-        if not path.exists():
-            return fallback
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload if isinstance(payload, dict) else fallback
-    except (OSError, json.JSONDecodeError):
-        return fallback
+    _sync_io_paths()
+    _io.ensure_data_dir()
 
 
 def save_json_atomic(path: Path, payload: Any) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    ensure_data_dir()
-    # Use a unique temp file per write to avoid collisions across threads/processes.
-    tmp = path.with_suffix(path.suffix + f".{os.getpid()}.{time.time_ns()}.tmp")
-    try:
-        tmp.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-        last_error: Exception | None = None
-        for attempt in range(18):
-            try:
-                os.replace(tmp, path)
-                last_error = None
-                break
-            except PermissionError as exc:
-                last_error = exc
-                # Windows can transiently lock the destination while another thread replaces it.
-                time.sleep(0.012 * (attempt + 1))
-        if last_error is not None:
-            raise last_error
-    finally:
-        try:
-            if tmp.exists():
-                tmp.unlink()
-        except OSError:
-            pass
-
-
-def source_identity(row: dict[str, Any]) -> str:
-    adapter = str(row.get("adapter") or "").strip().lower()
-    explicit_id = str(row.get("id") or "").strip()
-    if explicit_id:
-        return explicit_id.lower()
-    for key in (
-        "id",
-        "slug",
-        "account",
-        "company_id",
-        "api_url",
-        "feed_url",
-        "board_url",
-        "listing_url",
-        "name",
-    ):
-        value = str(row.get(key) or "").strip().lower()
-        if value:
-            return f"{adapter}:{key}:{value}"
-    digest = hashlib.sha1(
-        json.dumps(row, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    ).hexdigest()
-    return f"{adapter}:unknown:{digest}"
-
-
-def ensure_source_id(row: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(row)
-    normalized["id"] = source_identity(normalized)
-    return normalized
-
-
-def normalize_source_url(raw_url: str) -> str:
-    text = str(raw_url or "").strip()
-    if not text:
-        return ""
-    try:
-        parsed = urlparse(text)
-    except ValueError:
-        return ""
-    scheme = (parsed.scheme or "").lower()
-    host = (parsed.netloc or "").strip().lower()
-    if scheme not in {"http", "https"} or not host:
-        return ""
-    path = (parsed.path or "").rstrip("/")
-    return urlunsplit((scheme, host, path, "", ""))
-
-
-def source_endpoint_url(row: dict[str, Any]) -> str:
-    for key in ("api_url", "feed_url", "board_url", "listing_url"):
-        value = str(row.get(key) or "").strip()
-        if value:
-            return value
-    pages = row.get("pages")
-    if isinstance(pages, list):
-        for value in pages:
-            text = str(value or "").strip()
-            if text:
-                return text
-    return ""
-
-
-def source_url_fingerprint(row: dict[str, Any]) -> str:
-    return normalize_source_url(source_endpoint_url(row))
-
-
-def _clean_family_token(value: Any) -> str:
-    text = str(value or "").strip().lower()
-    text = re.sub(r"\([^)]*\)", " ", text)
-    text = re.sub(r"[^a-z0-9]+", " ", text)
-    return " ".join(text.split())
-
-
-def source_family_key(row: dict[str, Any]) -> str:
-    studio = _clean_family_token(row.get("studio"))
-    if studio:
-        return studio
-    return _clean_family_token(row.get("name"))
-
-
-def _state_rows_by_key(source_state: Any) -> dict[str, dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    if isinstance(source_state, dict):
-        for key, value in source_state.items():
-            if isinstance(value, dict):
-                row = dict(value)
-                row.setdefault("name", key)
-                rows.append(row)
-    elif isinstance(source_state, list):
-        rows = [row for row in source_state if isinstance(row, dict)]
-    by_key: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        for key in (
-            str(row.get("id") or "").strip().lower(),
-            str(row.get("sourceId") or "").strip().lower(),
-            str(row.get("name") or "").strip().lower(),
-        ):
-            if key:
-                by_key[key] = row
-    return by_key
-
-
-def _source_state_for_row(
-    row: dict[str, Any], source_state_by_key: dict[str, dict[str, Any]]
-) -> dict[str, Any]:
-    for key in (
-        source_identity(row),
-        str(row.get("sourceId") or "").strip().lower(),
-        str(row.get("name") or "").strip().lower(),
-    ):
-        if key and key in source_state_by_key:
-            return source_state_by_key[key]
-    return {}
-
-
-def _adapter_priority(row: dict[str, Any]) -> int:
-    adapter = str(row.get("adapter") or "").strip().lower()
-    if adapter in {"greenhouse", "lever", "ashby", "teamtailor"}:
-        return 4
-    if adapter in {"workable", "smartrecruiters", "bamboohr", "personio", "recruitee"}:
-        return 3
-    if adapter and adapter != "static":
-        return 2
-    if adapter == "static":
-        return 1
-    return 0
-
-
-def _metadata_score(row: dict[str, Any]) -> int:
-    keys = ("api_url", "feed_url", "board_url", "listing_url", "careersUrl", "url")
-    score = sum(1 for key in keys if str(row.get(key) or "").strip())
-    pages = row.get("pages")
-    if isinstance(pages, list) and any(str(item or "").strip() for item in pages):
-        score += 1
-    return score
-
-
-def _duplicate_winner_score(
-    row: dict[str, Any], source_state_by_key: dict[str, dict[str, Any]]
-) -> tuple[int, int, int, int, int, int, str]:
-    state = _source_state_for_row(row, source_state_by_key)
-    row_status = str(row.get("status") or state.get("lastStatus") or "").strip().lower()
-    candidate_state = str(row.get("candidateState") or "").strip().lower()
-    quarantined = candidate_state in {"quarantined", "rejected"} or bool(
-        row.get("quarantineReason")
-    )
-    return (
-        0 if quarantined else 1,
-        _coerce_int(state.get("lastKeptCount"), 0),
-        1 if row_status in {"ok", "success", "healthy"} else 0,
-        _adapter_priority(row),
-        _coerce_int(row.get("rankScore") or row.get("score"), 0),
-        _metadata_score(row),
-        source_identity(row),
-    )
-
-
-def _demote_duplicate_variant(
-    row: dict[str, Any],
-    *,
-    winner: dict[str, Any],
-    family_key: str,
-    actor: str,
-    at: str,
-) -> dict[str, Any]:
-    updated = transition_registry_to_pending(
-        row,
-        reason=REGISTRY_REASON_DUPLICATE_FAMILY,
-        actor=actor,
-        at=at,
-    )
-    updated["candidateState"] = "hidden"
-    updated["hiddenFromDefault"] = True
-    updated["pendingReason"] = REGISTRY_REASON_DUPLICATE_FAMILY
-    updated["duplicateFamilyKey"] = family_key
-    updated["duplicateOfSourceId"] = source_identity(winner)
-    if str(winner.get("name") or "").strip():
-        updated["duplicateOfSourceName"] = str(winner.get("name") or "").strip()
-    return ensure_source_id(updated)
-
-
-def demote_duplicate_active_variants(
-    active_rows: Iterable[dict[str, Any]],
-    *,
-    target_families: Iterable[str] | None = None,
-    source_state: Any = None,
-    actor: str = "registry_noise_cleanup",
-    at: str | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    timestamp = str(at or now_iso())
-    target_keys = {
-        _clean_family_token(item) for item in (target_families or []) if _clean_family_token(item)
-    }
-    rows = [ensure_source_id(dict(row)) for row in active_rows if isinstance(row, dict)]
-    source_state_by_key = _state_rows_by_key(source_state)
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        family_key = source_family_key(row)
-        if not family_key:
-            continue
-        if target_keys and family_key not in target_keys:
-            continue
-        grouped.setdefault(family_key, []).append(row)
-
-    demoted_ids: set[str] = set()
-    demoted_rows: list[dict[str, Any]] = []
-    for family_key, family_rows in grouped.items():
-        if len(family_rows) < 2:
-            continue
-        winner = max(family_rows, key=lambda row: _duplicate_winner_score(row, source_state_by_key))
-        winner_id = source_identity(winner)
-        for row in family_rows:
-            row_id = source_identity(row)
-            if row_id == winner_id:
-                continue
-            demoted_ids.add(row_id)
-            demoted_rows.append(
-                _demote_duplicate_variant(
-                    row,
-                    winner=winner,
-                    family_key=family_key,
-                    actor=actor,
-                    at=timestamp,
-                )
-            )
-
-    remaining_active = [row for row in rows if source_identity(row) not in demoted_ids]
-    return unique_sources(remaining_active), unique_sources(demoted_rows)
-
-
-def is_hidden_from_default(row: dict[str, Any]) -> bool:
-    return (
-        bool(row.get("hiddenFromDefault"))
-        or str(row.get("candidateState") or "").strip().lower() == "hidden"
-    )
-
-
-def hide_repeated_zero_job_pending(
-    row: dict[str, Any],
-    *,
-    threshold: int = ZERO_JOB_HIDDEN_DEFER_THRESHOLD,
-    actor: str = "discovery_zero_job_policy",
-    at: str | None = None,
-) -> dict[str, Any]:
-    updated = ensure_source_id(dict(row))
-    registry_state = _infer_registry_state(updated, bucket=REGISTRY_STATE_PENDING)
-    if registry_state == REGISTRY_STATE_ACTIVE:
-        return updated
-    jobs_found = max(
-        0,
-        _coerce_int(updated.get("jobsFound"), 0),
-        _coerce_int(updated.get("sampleCount"), 0),
-    )
-    if jobs_found > 0 or _coerce_int(updated.get("deferCount"), 0) < int(threshold):
-        return updated
-    timestamp = str(at or now_iso())
-    updated["registryState"] = REGISTRY_STATE_PENDING
-    updated["candidateState"] = "hidden"
-    updated["hiddenFromDefault"] = True
-    updated["pendingReason"] = REGISTRY_REASON_REPEATED_ZERO_JOBS
-    updated["stateChangedAt"] = str(updated.get("stateChangedAt") or timestamp)
-    updated["stateChangedBy"] = str(updated.get("stateChangedBy") or actor)
-    updated["lastDemotedAt"] = str(updated.get("lastDemotedAt") or timestamp)
-    return updated
-
-
-def unique_sources(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    seen = set()
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        key = source_identity(row)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(ensure_source_id(row))
-    return out
-
-
-def _normalize_discovery_health_status(value: Any) -> str:
-    token = str(value or "").strip().lower()
-    if token in {"healthy", "success"}:
-        return "ok"
-    if token in {"failed", "failure"}:
-        return "error"
-    return token
-
-
-def _discovery_jobs_count(row: dict[str, Any], report: dict[str, Any] | None = None) -> int:
-    report_row = report if isinstance(report, dict) else {}
-    for value in (
-        row.get("jobsFound"),
-        row.get("sampleCount"),
-        report_row.get("jobsFound"),
-        report_row.get("sampleCount"),
-    ):
-        try:
-            numeric = int(value or 0)
-        except (TypeError, ValueError):
-            numeric = 0
-        if numeric > 0:
-            return numeric
-    return 0
-
-
-def _discovery_row_has_blocking_error(
-    row: dict[str, Any], report: dict[str, Any] | None = None
-) -> bool:
-    report_row = report if isinstance(report, dict) else {}
-    last_probe_error = str(
-        report_row.get("lastProbeError") or row.get("lastProbeError") or ""
-    ).strip()
-    if last_probe_error:
-        return True
-    status = _normalize_discovery_health_status(
-        report_row.get("_lastStatus")
-        or report_row.get("status")
-        or row.get("_lastStatus")
-        or row.get("status")
-    )
-    return status == "error"
-
-
-def _discovery_row_has_blocking_state(
-    row: dict[str, Any], report: dict[str, Any] | None = None
-) -> bool:
-    report_row = report if isinstance(report, dict) else {}
-    candidate_state = str(row.get("candidateState") or "").strip().lower()
-    report_candidate_state = str(report_row.get("candidateState") or "").strip().lower()
-    return candidate_state in {"quarantined", "rejected"} or report_candidate_state in {
-        "quarantined",
-        "rejected",
-    }
-
-
-def _rank_reason_tokens(row: dict[str, Any]) -> set[str]:
-    return {
-        str(item or "").strip()
-        for item in (row.get("rankReasons") or row.get("reasons") or [])
-        if str(item or "").strip()
-    }
-
-
-def _pending_row_is_auto_approvable(
-    row: dict[str, Any], *, report_row: dict[str, Any] | None = None
-) -> bool:
-    """Return True when a pending discovery row has concrete approval evidence.
-
-    weakSignal rows remain review-only even when they have job evidence.
-    Report-side queue throttles such as domain_cap do not override a clean pending row.
-    """
-    if not isinstance(row, dict):
-        return False
-    report = report_row if isinstance(report_row, dict) else {}
-    if bool(row.get("deferred")):
-        return False
-    if bool(row.get("weakSignal")) or bool(report.get("weakSignal")):
-        return False
-    if _discovery_row_has_blocking_state(row, report):
-        return False
-    if _discovery_jobs_count(row, report) <= 0:
-        return False
-    if _discovery_row_has_blocking_error(row, report):
-        return False
-    return True
-
-
-def _cap_deferred_candidate_is_auto_approvable(row: dict[str, Any]) -> bool:
-    if not isinstance(row, dict):
-        return False
-    if not bool(row.get("deferred")):
-        return False
-    defer_reason = str(row.get("deferReason") or row.get("dropReason") or "").strip()
-    if defer_reason not in AUTO_APPROVAL_CAP_DEFER_REASONS:
-        return False
-    if bool(row.get("weakSignal")):
-        return False
-    if _discovery_row_has_blocking_state(row):
-        return False
-    if _discovery_jobs_count(row) <= 0:
-        return False
-    if _discovery_row_has_blocking_error(row):
-        return False
-    if _rank_reason_tokens(row) & AUTO_APPROVAL_EXISTING_MATCH_REASONS:
-        return False
-    return True
-
-
-def _stamp_live_transition(
-    row: dict[str, Any], *, approved_by: str, approved_at: str, promotion_reason: str = ""
-) -> dict[str, Any]:
-    updated = transition_registry_to_active(
-        row,
-        reason=promotion_reason or REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
-        actor=approved_by,
-        at=approved_at,
-    )
-    if promotion_reason:
-        updated["promotionReason"] = str(promotion_reason)
-    return updated
-
-
-def _promotion_reason_for_candidate(row: dict[str, Any]) -> str:
-    adapter = str(row.get("adapter") or "").strip().lower()
-    confidence = str(row.get("confidence") or "").strip().lower()
-    promotion_lane = str(row.get("promotionLane") or "").strip().lower()
-    evidence_score = max(0, int(row.get("evidenceScore") or 0))
-    jobs_found = max(0, int(row.get("jobsFound") or row.get("sampleCount") or 0))
-    rank_reasons = {
-        str(item or "").strip()
-        for item in (row.get("rankReasons") or row.get("reasons") or [])
-        if str(item or "").strip()
-    }
-
-    if bool(row.get("deferred")):
-        defer_reason = str(row.get("deferReason") or row.get("dropReason") or "").strip()
-        if defer_reason in AUTO_APPROVAL_CAP_DEFER_REASONS:
-            if rank_reasons & AUTO_APPROVAL_EXISTING_MATCH_REASONS:
-                return "skipped_existing_family_match"
-            if jobs_found > 0:
-                return "cap_deferred_jobs_found"
-        return "deferred_candidate"
-    if bool(row.get("weakSignal")):
-        return "weak_candidate"
-
-    if adapter in AUTO_APPROVAL_STRONG_ADAPTERS:
-        if (
-            promotion_lane == "structured_batch"
-            and confidence in {"high", "medium"}
-            and jobs_found > 0
-            and "structured_batch_family" in rank_reasons
-        ):
-            return "structured_batch_family"
-        return "structured_batch_gate"
-
-    if adapter in AUTO_APPROVAL_SECONDARY_ADAPTERS:
-        if (
-            jobs_found > 0
-            and "structured_family" in rank_reasons
-            and (confidence == "high" or evidence_score >= 26)
-        ):
-            return "structured_family_high_confidence"
-        return "structured_family_gate"
-
-    return "manual_review_only"
+    _sync_io_paths()
+    _io.save_json_atomic(path, payload)
 
 
 def apply_discovery_auto_approval(
@@ -857,115 +122,21 @@ def apply_discovery_auto_approval(
     report: dict[str, Any],
     *,
     auto_approve_enabled: bool,
-    approval_state_path: Path = APPROVAL_STATE_PATH,
+    approval_state_path: Path | None = None,
     now_iso_fn: Callable[[], str] | None = now_iso,
 ) -> tuple[dict[str, list[dict[str, Any]]], int]:
-    normalized_state = {
-        bucket: unique_sources(
-            dict(row) for row in list(state.get(bucket) or []) if isinstance(row, dict)
-        )
-        for bucket in ("active", "pending", "rejected")
-    }
-    summary = _as_dict(report.get("summary"))
-    runtime = _as_dict(report.get("runtime"))
-    runtime_auto = _as_dict(runtime.get("autoApproval"))
-    report_candidates = _as_list(report.get("candidates"))
-    report_candidates_by_id = {
-        source_identity(row): row
-        for row in report_candidates
-        if isinstance(row, dict) and source_identity(row)
-    }
-    approved_at = str(now_iso_fn() if callable(now_iso_fn) else now_iso())
-    moved: list[dict[str, Any]] = []
-    remaining: list[dict[str, Any]] = []
-    moved_ids: set[str] = set()
-    active_ids = {
-        source_identity(row) for row in normalized_state["active"] if source_identity(row)
-    }
+    return _auto.apply_discovery_auto_approval(
+        state,
+        report,
+        auto_approve_enabled=auto_approve_enabled,
+        approval_state_path=Path(approval_state_path or APPROVAL_STATE_PATH),
+        now_iso_fn=now_iso_fn,
+    )
 
-    if auto_approve_enabled:
-        for row in normalized_state["pending"]:
-            row_id = source_identity(row)
-            report_row = report_candidates_by_id.get(row_id)
-            merged_row = dict(report_row or row)
-            promotion_reason = _promotion_reason_for_candidate(merged_row)
-            if _pending_row_is_auto_approvable(row, report_row=report_row):
-                moved_ids.add(row_id)
-                moved.append(
-                    _stamp_live_transition(
-                        row,
-                        approved_by="discovery_auto_approve",
-                        approved_at=approved_at,
-                        promotion_reason=promotion_reason,
-                    )
-                )
-            else:
-                remaining.append(dict(row))
-        for row in report_candidates:
-            if not isinstance(row, dict):
-                continue
-            row_id = source_identity(row)
-            if not row_id or row_id in active_ids or row_id in moved_ids:
-                continue
-            if not _cap_deferred_candidate_is_auto_approvable(row):
-                continue
-            promotion_reason = _promotion_reason_for_candidate(row)
-            moved_ids.add(row_id)
-            moved.append(
-                _stamp_live_transition(
-                    row,
-                    approved_by="discovery_auto_approve",
-                    approved_at=approved_at,
-                    promotion_reason=promotion_reason,
-                )
-            )
-        remaining = [row for row in remaining if source_identity(row) not in moved_ids]
-        next_state = {
-            "active": unique_sources([*normalized_state["active"], *moved]),
-            "pending": unique_sources(remaining),
-            "rejected": unique_sources(normalized_state["rejected"]),
-        }
-    else:
-        next_state = normalized_state
 
-    approved_count = max(int(summary.get("approvedCandidateCount") or 0), len(moved))
-    summary["approvedCandidateCount"] = approved_count
-    summary["liveCandidateCount"] = max(int(summary.get("liveCandidateCount") or 0), approved_count)
-    report["summary"] = summary
-
-    runtime_auto = dict(runtime_auto)
-    runtime_auto["enabled"] = bool(auto_approve_enabled)
-    runtime_auto["approvedCount"] = max(int(runtime_auto.get("approvedCount") or 0), approved_count)
-    runtime = dict(runtime)
-    runtime["autoApproval"] = runtime_auto
-    report["runtime"] = runtime
-
-    if report_candidates:
-        next_candidates: list[Any] = []
-        for row in report_candidates:
-            if not isinstance(row, dict):
-                next_candidates.append(row)
-                continue
-            row_id = source_identity(row)
-            promotion_reason = _promotion_reason_for_candidate(row)
-            updated_row = dict(row)
-            if promotion_reason:
-                updated_row["promotionReason"] = promotion_reason
-            if row_id in moved_ids or _pending_row_is_auto_approvable(updated_row):
-                updated_row = _stamp_live_transition(
-                    updated_row,
-                    approved_by="discovery_auto_approve",
-                    approved_at=approved_at,
-                    promotion_reason=promotion_reason,
-                )
-            next_candidates.append(updated_row)
-        report["candidates"] = next_candidates
-
-    if auto_approve_enabled and moved:
-        approval_state = load_json_object(approval_state_path, {"approvedSinceLastRun": 0})
-        approval_state["approvedSinceLastRun"] = int(
-            approval_state.get("approvedSinceLastRun") or 0
-        ) + len(moved)
-        save_json_atomic(approval_state_path, approval_state)
-
-    return next_state, approved_count
+__all__ = [
+    name
+    for name in globals()
+    if not name.startswith("__")
+    and name not in {"_auto", "_canonicalize", "_identity", "_io", "_policy", "_reload", "_state"}
+]

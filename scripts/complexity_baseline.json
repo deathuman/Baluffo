@@ -146,7 +146,7 @@
     "src/source_discovery/sheet_directory.py::discover_game_studio_sheet_candidates": 17,
     "src/source_discovery/sheet_directory.py::parse_game_studio_sheet_csv": 16,
     "src/source_discovery/web_search_candidates.py::_provider_candidate": 23,
-    "src/source_registry.py::apply_discovery_auto_approval": 14,
+    "src/source_registry_auto_approval.py::apply_discovery_auto_approval": 14,
     "src/source_sync_config.py::config_status": 12,
     "src/source_sync_config.py::load_packaged_sync_config": 16
   }

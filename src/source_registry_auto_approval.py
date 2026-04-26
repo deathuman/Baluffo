@@ -1,0 +1,311 @@
+"""Discovery auto-approval policy for source registry candidates."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+
+from src.shared.utils import now_iso
+from src.source_registry_identity import source_identity, unique_sources
+from src.source_registry_io import load_json_object, save_json_atomic
+from src.source_registry_state import (
+    REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
+    _as_dict,
+    _as_list,
+    transition_registry_to_active,
+)
+
+AUTO_APPROVAL_STRONG_ADAPTERS = frozenset({"greenhouse", "lever", "ashby"})
+AUTO_APPROVAL_SECONDARY_ADAPTERS = frozenset({"bamboohr", "workday"})
+AUTO_APPROVAL_CAP_DEFER_REASONS = frozenset({"adapter_cap", "domain_cap", "top_n_cap"})
+AUTO_APPROVAL_EXISTING_MATCH_REASONS = frozenset(
+    {"existing_registry_match", "existing_family_match"}
+)
+
+
+def _normalize_discovery_health_status(value: Any) -> str:
+    token = str(value or "").strip().lower()
+    if token in {"healthy", "success"}:
+        return "ok"
+    if token in {"failed", "failure"}:
+        return "error"
+    return token
+
+
+def _discovery_jobs_count(row: dict[str, Any], report: dict[str, Any] | None = None) -> int:
+    report_row = report if isinstance(report, dict) else {}
+    for value in (
+        row.get("jobsFound"),
+        row.get("sampleCount"),
+        report_row.get("jobsFound"),
+        report_row.get("sampleCount"),
+    ):
+        try:
+            numeric = int(value or 0)
+        except (TypeError, ValueError):
+            numeric = 0
+        if numeric > 0:
+            return numeric
+    return 0
+
+
+def _discovery_row_has_blocking_error(
+    row: dict[str, Any], report: dict[str, Any] | None = None
+) -> bool:
+    report_row = report if isinstance(report, dict) else {}
+    last_probe_error = str(
+        report_row.get("lastProbeError") or row.get("lastProbeError") or ""
+    ).strip()
+    if last_probe_error:
+        return True
+    status = _normalize_discovery_health_status(
+        report_row.get("_lastStatus")
+        or report_row.get("status")
+        or row.get("_lastStatus")
+        or row.get("status")
+    )
+    return status == "error"
+
+
+def _discovery_row_has_blocking_state(
+    row: dict[str, Any], report: dict[str, Any] | None = None
+) -> bool:
+    report_row = report if isinstance(report, dict) else {}
+    candidate_state = str(row.get("candidateState") or "").strip().lower()
+    report_candidate_state = str(report_row.get("candidateState") or "").strip().lower()
+    return candidate_state in {"quarantined", "rejected"} or report_candidate_state in {
+        "quarantined",
+        "rejected",
+    }
+
+
+def _rank_reason_tokens(row: dict[str, Any]) -> set[str]:
+    return {
+        str(item or "").strip()
+        for item in (row.get("rankReasons") or row.get("reasons") or [])
+        if str(item or "").strip()
+    }
+
+
+def _pending_row_is_auto_approvable(
+    row: dict[str, Any], *, report_row: dict[str, Any] | None = None
+) -> bool:
+    """Return True when a pending discovery row has concrete approval evidence.
+
+    weakSignal rows remain review-only even when they have job evidence.
+    Report-side queue throttles such as domain_cap do not override a clean pending row.
+    """
+    if not isinstance(row, dict):
+        return False
+    report = report_row if isinstance(report_row, dict) else {}
+    if bool(row.get("deferred")):
+        return False
+    if bool(row.get("weakSignal")) or bool(report.get("weakSignal")):
+        return False
+    if _discovery_row_has_blocking_state(row, report):
+        return False
+    if _discovery_jobs_count(row, report) <= 0:
+        return False
+    if _discovery_row_has_blocking_error(row, report):
+        return False
+    return True
+
+
+def _cap_deferred_candidate_is_auto_approvable(row: dict[str, Any]) -> bool:
+    if not isinstance(row, dict):
+        return False
+    if not bool(row.get("deferred")):
+        return False
+    defer_reason = str(row.get("deferReason") or row.get("dropReason") or "").strip()
+    if defer_reason not in AUTO_APPROVAL_CAP_DEFER_REASONS:
+        return False
+    if bool(row.get("weakSignal")):
+        return False
+    if _discovery_row_has_blocking_state(row):
+        return False
+    if _discovery_jobs_count(row) <= 0:
+        return False
+    if _discovery_row_has_blocking_error(row):
+        return False
+    if _rank_reason_tokens(row) & AUTO_APPROVAL_EXISTING_MATCH_REASONS:
+        return False
+    return True
+
+
+def _stamp_live_transition(
+    row: dict[str, Any], *, approved_by: str, approved_at: str, promotion_reason: str = ""
+) -> dict[str, Any]:
+    updated = transition_registry_to_active(
+        row,
+        reason=promotion_reason or REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
+        actor=approved_by,
+        at=approved_at,
+    )
+    if promotion_reason:
+        updated["promotionReason"] = str(promotion_reason)
+    return updated
+
+
+def _promotion_reason_for_candidate(row: dict[str, Any]) -> str:
+    adapter = str(row.get("adapter") or "").strip().lower()
+    confidence = str(row.get("confidence") or "").strip().lower()
+    promotion_lane = str(row.get("promotionLane") or "").strip().lower()
+    evidence_score = max(0, int(row.get("evidenceScore") or 0))
+    jobs_found = max(0, int(row.get("jobsFound") or row.get("sampleCount") or 0))
+    rank_reasons = {
+        str(item or "").strip()
+        for item in (row.get("rankReasons") or row.get("reasons") or [])
+        if str(item or "").strip()
+    }
+
+    if bool(row.get("deferred")):
+        defer_reason = str(row.get("deferReason") or row.get("dropReason") or "").strip()
+        if defer_reason in AUTO_APPROVAL_CAP_DEFER_REASONS:
+            if rank_reasons & AUTO_APPROVAL_EXISTING_MATCH_REASONS:
+                return "skipped_existing_family_match"
+            if jobs_found > 0:
+                return "cap_deferred_jobs_found"
+        return "deferred_candidate"
+    if bool(row.get("weakSignal")):
+        return "weak_candidate"
+
+    if adapter in AUTO_APPROVAL_STRONG_ADAPTERS:
+        if (
+            promotion_lane == "structured_batch"
+            and confidence in {"high", "medium"}
+            and jobs_found > 0
+            and "structured_batch_family" in rank_reasons
+        ):
+            return "structured_batch_family"
+        return "structured_batch_gate"
+
+    if adapter in AUTO_APPROVAL_SECONDARY_ADAPTERS:
+        if (
+            jobs_found > 0
+            and "structured_family" in rank_reasons
+            and (confidence == "high" or evidence_score >= 26)
+        ):
+            return "structured_family_high_confidence"
+        return "structured_family_gate"
+
+    return "manual_review_only"
+
+
+def apply_discovery_auto_approval(
+    state: dict[str, list[dict[str, Any]]],
+    report: dict[str, Any],
+    *,
+    auto_approve_enabled: bool,
+    approval_state_path: Path,
+    now_iso_fn: Callable[[], str] | None = now_iso,
+) -> tuple[dict[str, list[dict[str, Any]]], int]:
+    normalized_state = {
+        bucket: unique_sources(
+            dict(row) for row in list(state.get(bucket) or []) if isinstance(row, dict)
+        )
+        for bucket in ("active", "pending", "rejected")
+    }
+    summary = _as_dict(report.get("summary"))
+    runtime = _as_dict(report.get("runtime"))
+    runtime_auto = _as_dict(runtime.get("autoApproval"))
+    report_candidates = _as_list(report.get("candidates"))
+    report_candidates_by_id = {
+        source_identity(row): row
+        for row in report_candidates
+        if isinstance(row, dict) and source_identity(row)
+    }
+    approved_at = str(now_iso_fn() if callable(now_iso_fn) else now_iso())
+    moved: list[dict[str, Any]] = []
+    remaining: list[dict[str, Any]] = []
+    moved_ids: set[str] = set()
+    active_ids = {
+        source_identity(row) for row in normalized_state["active"] if source_identity(row)
+    }
+
+    if auto_approve_enabled:
+        for row in normalized_state["pending"]:
+            row_id = source_identity(row)
+            report_row = report_candidates_by_id.get(row_id)
+            merged_row = dict(report_row or row)
+            promotion_reason = _promotion_reason_for_candidate(merged_row)
+            if _pending_row_is_auto_approvable(row, report_row=report_row):
+                moved_ids.add(row_id)
+                moved.append(
+                    _stamp_live_transition(
+                        row,
+                        approved_by="discovery_auto_approve",
+                        approved_at=approved_at,
+                        promotion_reason=promotion_reason,
+                    )
+                )
+            else:
+                remaining.append(dict(row))
+        for row in report_candidates:
+            if not isinstance(row, dict):
+                continue
+            row_id = source_identity(row)
+            if not row_id or row_id in active_ids or row_id in moved_ids:
+                continue
+            if not _cap_deferred_candidate_is_auto_approvable(row):
+                continue
+            promotion_reason = _promotion_reason_for_candidate(row)
+            moved_ids.add(row_id)
+            moved.append(
+                _stamp_live_transition(
+                    row,
+                    approved_by="discovery_auto_approve",
+                    approved_at=approved_at,
+                    promotion_reason=promotion_reason,
+                )
+            )
+        remaining = [row for row in remaining if source_identity(row) not in moved_ids]
+        next_state = {
+            "active": unique_sources([*normalized_state["active"], *moved]),
+            "pending": unique_sources(remaining),
+            "rejected": unique_sources(normalized_state["rejected"]),
+        }
+    else:
+        next_state = normalized_state
+
+    approved_count = max(int(summary.get("approvedCandidateCount") or 0), len(moved))
+    summary["approvedCandidateCount"] = approved_count
+    summary["liveCandidateCount"] = max(int(summary.get("liveCandidateCount") or 0), approved_count)
+    report["summary"] = summary
+
+    runtime_auto = dict(runtime_auto)
+    runtime_auto["enabled"] = bool(auto_approve_enabled)
+    runtime_auto["approvedCount"] = max(int(runtime_auto.get("approvedCount") or 0), approved_count)
+    runtime = dict(runtime)
+    runtime["autoApproval"] = runtime_auto
+    report["runtime"] = runtime
+
+    if report_candidates:
+        next_candidates: list[Any] = []
+        for row in report_candidates:
+            if not isinstance(row, dict):
+                next_candidates.append(row)
+                continue
+            row_id = source_identity(row)
+            promotion_reason = _promotion_reason_for_candidate(row)
+            updated_row = dict(row)
+            if promotion_reason:
+                updated_row["promotionReason"] = promotion_reason
+            if row_id in moved_ids or _pending_row_is_auto_approvable(updated_row):
+                updated_row = _stamp_live_transition(
+                    updated_row,
+                    approved_by="discovery_auto_approve",
+                    approved_at=approved_at,
+                    promotion_reason=promotion_reason,
+                )
+            next_candidates.append(updated_row)
+        report["candidates"] = next_candidates
+
+    if auto_approve_enabled and moved:
+        approval_state = load_json_object(approval_state_path, {"approvedSinceLastRun": 0})
+        approval_state["approvedSinceLastRun"] = int(
+            approval_state.get("approvedSinceLastRun") or 0
+        ) + len(moved)
+        save_json_atomic(approval_state_path, approval_state)
+
+    return next_state, approved_count
