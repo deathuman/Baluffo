@@ -27,7 +27,7 @@ from typing import Any
 
 if os.name == "nt":
     import ctypes
-    import ctypes.wintypes  # noqa: F401
+    import ctypes.wintypes
     import winreg
 
 from src.app_version import get_app_version

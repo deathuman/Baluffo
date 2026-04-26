@@ -3,12 +3,16 @@ from __future__ import annotations
 import os
 import ssl
 from pathlib import Path
+from types import ModuleType
 from urllib.error import URLError
 
+certifi: ModuleType | None
 try:
-    import certifi
+    import certifi as _certifi
 except ImportError:  # pragma: no cover - optional dependency at runtime
-    certifi = None  # type: ignore[assignment]
+    certifi = None
+else:
+    certifi = _certifi
 
 
 GITHUB_CA_BUNDLE_ENV = "BALUFFO_GITHUB_CA_BUNDLE"

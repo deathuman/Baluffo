@@ -73,6 +73,34 @@ def test_lint_workflow_uses_canonical_precommit_entrypoints() -> None:
     assert "ruff==0.15.9" in (root / "requirements-lock.txt").read_text(encoding="utf-8")
 
 
+def test_github_workflows_use_project_node_runtime_and_readiness_checks(repo_root: Path) -> None:
+    workflows = sorted((repo_root / ".github" / "workflows").glob("*.yml"))
+    setup_node_workflows = [
+        path for path in workflows if "actions/setup-node" in path.read_text(encoding="utf-8")
+    ]
+    assert setup_node_workflows, "At least one workflow should configure Node."
+
+    for workflow_path in setup_node_workflows:
+        workflow_text = workflow_path.read_text(encoding="utf-8")
+        assert (
+            'node-version: "25.8.0"' in workflow_text or "node-version: '25.8.0'" in workflow_text
+        ), f"{workflow_path.relative_to(repo_root)} should pin project Node to 25.8.0."
+        assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true" in workflow_text, (
+            f"{workflow_path.relative_to(repo_root)} should keep GitHub JavaScript actions on Node 24."
+        )
+
+    test_workflow_text = (repo_root / ".github" / "workflows" / "test.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "sleep 15" not in test_workflow_text
+    assert "/ops/health" in test_workflow_text
+    assert "startupReady" in test_workflow_text
+    assert "/ops/fetcher-metrics" in test_workflow_text
+
+    package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
+    assert package["engines"]["node"] == "25.8.0"
+
+
 def test_lint_workflow_enforces_ruff_import_sorting() -> None:
     root = ROOT
     ruff_config = tomllib.loads((root / "ruff.toml").read_text(encoding="utf-8"))
@@ -138,7 +166,7 @@ def test_package_json_uses_direct_frontend_unit_discovery(repo_root: Path) -> No
         assert stale_token not in package_text
         assert stale_token not in workflow_text
     assert "Sync test manifest" not in workflow_text
-    assert "node-version: '22'" in frontend_workflow_text
+    assert 'node-version: "25.8.0"' in frontend_workflow_text
 
 
 def test_package_json_exposes_python_security_audit_entrypoint(repo_root: Path) -> None:

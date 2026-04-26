@@ -106,6 +106,16 @@ def test_get_storage_defaults_resolves_configured_paths() -> None:
         assert defaults["social_sources_config_path"] == root / "config" / "social.json"
 
 
+def test_committed_config_declares_runtime_storage_paths(repo_root: Path) -> None:
+    payload = json.loads((repo_root / "baluffo.config.json").read_text(encoding="utf-8"))
+    storage = payload["storage"]
+
+    assert storage["data_dir"] == "data"
+    assert storage["source_discovery_config_path"] == "data/source-discovery-config.json"
+    assert storage["source_discovery_log_path"] == "data/source-discovery.log"
+    assert storage["social_sources_config_path"] == "data/social-sources-config.json"
+
+
 def test_get_storage_defaults_honors_baluffo_data_dir_override_for_derived_paths() -> None:
     with workspace_tmpdir("baluffo-config") as tmp:
         root = Path(tmp)

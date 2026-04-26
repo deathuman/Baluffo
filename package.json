@@ -2,6 +2,9 @@
   "name": "baluffo-frontend",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "25.8.0"
+  },
   "scripts": {
     "dev:bridge": "npm run check:python-version && python src/dev_admin_supervisor.py",
     "dev:pipeline": "npm run check:python-version && python -m src.jobs.pipeline --force-refresh-all",
@@ -54,9 +57,9 @@
     "lint:deadcode:js": "knip"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.1",
-    "@playwright/test": "^1.52.0",
-    "eslint": "^9.39.1",
-    "knip": "^5.63.1"
+    "@eslint/js": "9.39.4",
+    "@playwright/test": "1.58.2",
+    "eslint": "9.39.4",
+    "knip": "5.88.1"
   }
 }

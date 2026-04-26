@@ -9,7 +9,7 @@ import time
 from collections import Counter
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any
+from typing import Any, cast
 
 from src.jobs.adapters import community
 from src.jobs.adapters.parsers.location import normalize_location_details
@@ -556,10 +556,10 @@ class CanonicalNormalizer(JobProcessor):
     def process(self, jobs: list[CanonicalJob], **options: Any) -> list[CanonicalJob]:
         # Implementation accepts RawJob masquerading as CanonicalJob initially
         # during the adapter -> pipeline boundary transition.
-        raw_rows = jobs
+        raw_rows = cast(list[RawJob], jobs)
         if self.source.startswith("google_sheets"):
             canonical_batch, self.drop_reasons, self.stats = canonicalize_google_sheets_rows(
-                raw_rows,  # type: ignore
+                raw_rows,
                 source=self.source,
                 fetched_at=self.fetched_at,
                 redirect_resolver=self.redirect_resolver,

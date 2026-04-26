@@ -147,6 +147,27 @@ def test_docs_workflow_is_indexed_and_linked_for_contributors(repo_root: Path) -
     assert "docs/DOCS_WORKFLOW.md" in readme_text
 
 
+def test_runtime_and_tool_configs_keep_separate_ownership(repo_root: Path) -> None:
+    runtime_config = json.loads((repo_root / "baluffo.config.json").read_text(encoding="utf-8"))
+    tool_config = json.loads((repo_root / "opencode.json").read_text(encoding="utf-8"))
+    data_contract_text = (repo_root / "docs" / "DATA_CONTRACT.md").read_text(encoding="utf-8")
+
+    runtime_sections = {"bridge", "storage", "security", "sync", "desktop"}
+    tool_sections = {"$schema", "plugin", "mcp"}
+    assert runtime_sections.issubset(runtime_config)
+    assert not tool_sections.intersection(runtime_config)
+    assert tool_sections.issubset(tool_config)
+    assert not runtime_sections.intersection(tool_config)
+
+    storage = runtime_config["storage"]
+    assert storage["data_dir"] == "data"
+    assert storage["source_discovery_config_path"] == "data/source-discovery-config.json"
+    assert storage["source_discovery_log_path"] == "data/source-discovery.log"
+    assert storage["social_sources_config_path"] == "data/social-sources-config.json"
+    assert "`opencode.json` remains separate" in data_contract_text
+    assert "do not move MCP/editor keys into" in data_contract_text
+
+
 def test_serena_tooling_is_first_class_for_codex_and_opencode(repo_root: Path) -> None:
     docs_dir = repo_root / "docs"
     serena_text = (repo_root / "tools" / "mcp" / "SERENA.md").read_text(encoding="utf-8")

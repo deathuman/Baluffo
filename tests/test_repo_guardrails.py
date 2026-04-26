@@ -170,6 +170,82 @@ def test_deferred_source_line_budget_requires_valid_metadata(tmp_path: Path, mon
     ]
 
 
+def test_source_suppression_budget_allows_current_budget(tmp_path: Path, monkeypatch) -> None:
+    budget = tmp_path / "suppressions.json"
+    budget.write_text(
+        json.dumps(
+            {
+                "scope": "src",
+                "max_total_comments": 2,
+                "max_by_code": {"BLE001": 1, "SLF001": 1},
+                "rationale": "Ratchet suppressions.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    source_file = tmp_path / "src" / "owner.py"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text(
+        "try:\n"
+        "    pass\n"
+        "except Exception:  # noqa: BLE001\n"
+        "    root._send_json({})  # noqa: SLF001\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(repo_guardrails, "ROOT", tmp_path)
+    monkeypatch.setattr(repo_guardrails, "SOURCE_SUPPRESSION_BUDGET_PATH", budget)
+
+    assert repo_guardrails.check_source_suppression_budget() == []
+
+
+def test_source_suppression_budget_fails_growth_and_new_codes(tmp_path: Path, monkeypatch) -> None:
+    budget = tmp_path / "suppressions.json"
+    budget.write_text(
+        json.dumps(
+            {
+                "scope": "src",
+                "max_total_comments": 1,
+                "max_by_code": {"BLE001": 1},
+                "rationale": "Ratchet suppressions.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    source_file = tmp_path / "src" / "owner.py"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text(
+        "except Exception:  # noqa: BLE001\nvalue = call()  # noqa: SLF001\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(repo_guardrails, "ROOT", tmp_path)
+    monkeypatch.setattr(repo_guardrails, "SOURCE_SUPPRESSION_BUDGET_PATH", budget)
+
+    assert repo_guardrails.check_source_suppression_budget() == [
+        "src has 2 suppression comments; budget is 1.",
+        "src has unbudgeted suppression code SLF001: 1.",
+    ]
+
+
+def test_source_suppression_budget_requires_valid_metadata(tmp_path: Path, monkeypatch) -> None:
+    budget = tmp_path / "suppressions.json"
+    budget.write_text(
+        json.dumps({"scope": "tests", "max_total_comments": -1, "max_by_code": {}}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(repo_guardrails, "ROOT", tmp_path)
+    monkeypatch.setattr(repo_guardrails, "SOURCE_SUPPRESSION_BUDGET_PATH", budget)
+
+    assert repo_guardrails.check_source_suppression_budget() == [
+        "source suppression budget scope must be `src`.",
+        "source suppression budget must include non-negative max_total_comments.",
+        "source suppression budget must include a non-empty max_by_code object.",
+        "source suppression budget must include a non-empty rationale.",
+    ]
+
+
 def test_fixture_reference_guard_allows_referenced_fixture(tmp_path: Path, monkeypatch) -> None:
     fixture_path = tmp_path / "tests" / "fixtures" / "referenced.json"
     fixture_path.parent.mkdir(parents=True)

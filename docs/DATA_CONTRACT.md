@@ -244,6 +244,10 @@ The Admin Bridge (`src/admin_bridge.py`) follows a strict precedence:
 3. `baluffo.config.local.json` (machine-local overrides)
 4. `baluffo.config.json` (committed defaults)
 
+`baluffo.config.json` is the committed app/runtime configuration owner. Tooling-specific
+configuration such as `opencode.json` remains separate; do not move MCP/editor keys into
+the runtime config or runtime keys into tool config.
+
 ---
 
 ## 7. Configuration Schema
@@ -258,6 +262,9 @@ The Admin Bridge (`src/admin_bridge.py`) follows a strict precedence:
 | **bridge.log_level** | `"info"` | Log level (`info` or `debug`) |
 | **bridge.quiet_requests** | `false` | Suppress request logging |
 | **storage.data_dir** | `"data"` | Runtime data directory |
+| **storage.source_discovery_config_path** | `"data/source-discovery-config.json"` | Source discovery settings path |
+| **storage.source_discovery_log_path** | `"data/source-discovery.log"` | Source discovery log path |
+| **storage.social_sources_config_path** | `"data/social-sources-config.json"` | Social source settings path |
 | **security.github_app_enabled_default** | `true` | GitHub App sync enabled by default |
 | **sync.packaged_config_path** | `"packaging/github-app-sync-config.json"` | GitHub App sync config |
 | **sync.local_enabled_default** | `true` | Source sync enabled by default |

@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 import sys
+from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ BASELINE_PATH = TOOLS_ROOT / "test_line_budget_baseline.json"
 DEFERRED_SOURCE_BUDGET_PATH = TOOLS_ROOT / "deferred_source_line_budget.json"
 FRONTEND_GUARDRAILS = TOOLS_ROOT / "frontend_structure_guardrails.mjs"
 FIXTURE_REFERENCE_ALLOWLIST_PATH = TOOLS_ROOT / "fixture_reference_allowlist.json"
+SOURCE_SUPPRESSION_BUDGET_PATH = TOOLS_ROOT / "source_suppression_budget.json"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -287,6 +289,77 @@ def check_deferred_source_line_budget() -> list[str]:
     return failures
 
 
+def _suppression_codes(line: str) -> list[str]:
+    if "# noqa:" in line:
+        raw_codes = line.split("# noqa:", 1)[1].strip().split()[0]
+        return [code.strip() for code in raw_codes.split(",") if code.strip()]
+    if "# noqa" in line:
+        return ["noqa-unspecified"]
+    if "# type: ignore" in line:
+        return ["type-ignore"]
+    if "# pyright:" in line:
+        return ["pyright"]
+    if "# mypy:" in line:
+        return ["mypy"]
+    return []
+
+
+def _count_source_suppressions() -> tuple[int, Counter[str]]:
+    total = 0
+    by_code: Counter[str] = Counter()
+    for path in sorted((ROOT / "src").rglob("*.py")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            codes = _suppression_codes(line)
+            if not codes:
+                continue
+            total += 1
+            by_code.update(codes)
+    return total, by_code
+
+
+def check_source_suppression_budget() -> list[str]:
+    failures: list[str] = []
+    try:
+        payload = json.loads(SOURCE_SUPPRESSION_BUDGET_PATH.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return [f"source suppression budget file is missing: {exc}"]
+    except json.JSONDecodeError as exc:
+        return [f"source suppression budget file is not valid JSON: {exc}"]
+
+    if not isinstance(payload, dict):
+        return ["source suppression budget must be a JSON object."]
+    if str(payload.get("scope") or "") != "src":
+        failures.append("source suppression budget scope must be `src`.")
+    max_total = payload.get("max_total_comments")
+    if not isinstance(max_total, int) or max_total < 0:
+        failures.append("source suppression budget must include non-negative max_total_comments.")
+        max_total = 0
+    max_by_code = payload.get("max_by_code")
+    if not isinstance(max_by_code, dict) or not max_by_code:
+        failures.append("source suppression budget must include a non-empty max_by_code object.")
+        max_by_code = {}
+    for code, budget in max_by_code.items():
+        if not isinstance(code, str) or not code.strip():
+            failures.append("source suppression budget codes must be non-empty strings.")
+        if not isinstance(budget, int) or budget < 0:
+            failures.append(f"source suppression budget for {code!r} must be non-negative.")
+    if not str(payload.get("rationale") or "").strip():
+        failures.append("source suppression budget must include a non-empty rationale.")
+    if failures:
+        return failures
+
+    total, by_code = _count_source_suppressions()
+    if total > max_total:
+        failures.append(f"src has {total} suppression comments; budget is {max_total}.")
+    for code, count in sorted(by_code.items()):
+        budget = int(max_by_code.get(code, -1))
+        if budget < 0:
+            failures.append(f"src has unbudgeted suppression code {code}: {count}.")
+        elif count > budget:
+            failures.append(f"src has {count} {code} suppressions; budget is {budget}.")
+    return failures
+
+
 def _load_fixture_reference_allowlist() -> tuple[set[str], list[str]]:
     if not FIXTURE_REFERENCE_ALLOWLIST_PATH.exists():
         return set(), []
@@ -370,6 +443,7 @@ def run_docs_group() -> list[GuardFailure]:
             "test_local_setup_points_to_canonical_commands_and_docs",
             "test_ai_bootstrap_sequence_is_single_path",
             "test_docs_workflow_is_indexed_and_linked_for_contributors",
+            "test_runtime_and_tool_configs_keep_separate_ownership",
             "test_serena_tooling_is_first_class_for_codex_and_opencode",
             "test_docs_avoid_stale_archive_and_generated_artifact_links",
             "test_ai_docs_classify_compatibility_surfaces",
@@ -398,6 +472,7 @@ def run_workflow_group() -> list[GuardFailure]:
         for name in (
             "test_release_workflow_uses_canonical_test_entrypoints",
             "test_lint_workflow_uses_canonical_precommit_entrypoints",
+            "test_github_workflows_use_project_node_runtime_and_readiness_checks",
             "test_lint_workflow_enforces_ruff_import_sorting",
             "test_lint_workflow_enforces_source_complexity_baseline",
             "test_package_json_exposes_repo_guardrails_entrypoint",
@@ -476,6 +551,7 @@ def run_line_budget_group() -> list[GuardFailure]:
     for name, messages in (
         ("check_line_budget", check_line_budget()),
         ("check_deferred_source_line_budget", check_deferred_source_line_budget()),
+        ("check_source_suppression_budget", check_source_suppression_budget()),
     ):
         failure = _failure_from_messages("line-budget", name, messages)
         if failure:

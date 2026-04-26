@@ -39,7 +39,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: "25.8.0"
           cache: 'npm'
 
       - name: Set up Python
@@ -60,18 +60,27 @@ jobs:
         run: npm run dev:bridge &
         shell: bash
 
-      - name: Wait for services
-        run: sleep 15
-
-      - name: Verify bridge is running
+      - name: Wait for bridge readiness
+        shell: bash
         run: |
-          for i in {1..6}; do
-            if curl -s http://127.0.0.1:8877/ops/fetcher-metrics | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('latestRun',{}).get('failedSources') is not None else 1)"; then
+          delay=1
+          for attempt in {1..7}; do
+            if curl -fsS http://127.0.0.1:8877/ops/health \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('service') == 'baluffo-bridge' and d.get('startupReady') is True else 1)" \
+              && curl -fsS http://127.0.0.1:8877/ops/fetcher-metrics \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('latestRun',{}).get('failedSources') is not None else 1)"; then
               echo "Bridge is ready"
-              break
+              exit 0
             fi
-            echo "Waiting for bridge... attempt $i"
-            sleep 5
+            if [ "$attempt" -eq 7 ]; then
+              echo "Bridge did not become ready"
+              exit 1
+            fi
+            echo "Waiting for bridge... attempt $attempt"
+            sleep "$delay"
+            if [ "$delay" -lt 16 ]; then
+              delay=$((delay * 2))
+            fi
           done
 
       - name: Run frontend unit tests
