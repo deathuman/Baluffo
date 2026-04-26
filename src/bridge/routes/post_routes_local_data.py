@@ -7,12 +7,17 @@ from urllib.parse import urlsplit
 from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
+from src.bridge.routes.error_boundary import run_route_boundary, send_json_boundary
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.core.schemas import SavedJobSchema
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _json_error(exc: Exception) -> dict[str, Any]:
+    return {"ok": False, "error": str(exc)}
 
 
 def handle_post(
@@ -25,23 +30,29 @@ def handle_post(
 ) -> bool:
     payload_dict = _as_dict(payload)
     if path == "/desktop-local-data/sign-in":
-        try:
-            user = api.desktop_local_data_store().sign_in(str(payload_dict.get("name") or ""))
-            handler.send_json({"ok": True, "user": user})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+        send_json_boundary(
+            handler,
+            lambda: {
+                "ok": True,
+                "user": api.desktop_local_data_store().sign_in(str(payload_dict.get("name") or "")),
+            },
+            error_status=400,
+            error_payload=_json_error,
+        )
         return True
 
     if path == "/desktop-local-data/sign-out":
-        try:
+
+        def _payload() -> dict[str, Any]:
             api.desktop_local_data_store().sign_out()
-            handler.send_json({"ok": True})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/saved-jobs/save":
-        try:
+
+        def _payload() -> dict[str, Any]:
             job = _as_dict(payload_dict.get("job"))
             if job:
                 SavedJobSchema.model_validate(job)
@@ -50,124 +61,133 @@ def handle_post(
                 job,
                 _as_dict(payload_dict.get("options")),
             )
-            handler.send_json({"ok": True, "jobKey": job_key})
-        except PydanticValidationError as exc:  # noqa: BLE001
-            details = exc.errors()
-            first_msg = details[0].get("msg", str(exc)) if details else str(exc)
-            handler.send_json(
-                {
+            return {"ok": True, "jobKey": job_key}
+
+        def _error(exc: Exception) -> dict[str, Any]:
+            if isinstance(exc, PydanticValidationError):
+                details = exc.errors()
+                first_msg = details[0].get("msg", str(exc)) if details else str(exc)
+                return {
                     "ok": False,
                     "error": f"Invalid saved job shape: {first_msg}",
                     "details": details,
-                },
-                status=400,
-            )
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+                }
+            return {"ok": False, "error": str(exc)}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_error)
         return True
 
     if path == "/desktop-local-data/saved-jobs/remove":
-        try:
+
+        def _payload() -> dict[str, Any]:
             api.desktop_local_data_store().remove_saved_job_for_user(
                 str(payload_dict.get("uid") or ""),
                 str(payload_dict.get("jobKey") or ""),
             )
-            handler.send_json({"ok": True})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/saved-jobs/status":
-        try:
+
+        def _payload() -> dict[str, Any]:
             api.desktop_local_data_store().update_application_status(
                 str(payload_dict.get("uid") or ""),
                 str(payload_dict.get("jobKey") or ""),
                 str(payload_dict.get("status") or ""),
                 _as_dict(payload_dict.get("options")),
             )
-            handler.send_json({"ok": True})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/saved-jobs/notes":
-        try:
+
+        def _payload() -> dict[str, Any]:
             api.desktop_local_data_store().update_job_notes(
                 str(payload_dict.get("uid") or ""),
                 str(payload_dict.get("jobKey") or ""),
                 str(payload_dict.get("notes") or ""),
             )
-            handler.send_json({"ok": True})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/attachments/add":
-        try:
+
+        def _payload() -> dict[str, Any]:
             attachment_id = api.desktop_local_data_store().add_attachment_for_job(
                 str(payload_dict.get("uid") or ""),
                 str(payload_dict.get("jobKey") or ""),
                 _as_dict(payload_dict.get("fileMeta")),
                 str(payload_dict.get("blobDataUrl") or ""),
             )
-            handler.send_json({"ok": True, "attachmentId": attachment_id})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True, "attachmentId": attachment_id}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/attachments/delete":
-        try:
+
+        def _payload() -> dict[str, Any]:
             api.desktop_local_data_store().delete_attachment_for_job(
                 str(payload_dict.get("uid") or ""),
                 str(payload_dict.get("jobKey") or ""),
                 str(payload_dict.get("attachmentId") or ""),
             )
-            handler.send_json({"ok": True})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/backup/export":
-        try:
+
+        def _payload() -> dict[str, Any]:
             result = api.desktop_local_data_store().export_profile_data(
                 str(payload_dict.get("uid") or ""),
                 bool(_as_dict(payload_dict.get("options")).get("includeFiles")),
             )
-            handler.send_json({"ok": True, "payload": result})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True, "payload": result}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/backup/import":
-        try:
+
+        def _payload() -> dict[str, Any]:
             result = api.desktop_local_data_store().import_profile_data(
                 str(payload_dict.get("uid") or ""),
                 _as_dict(payload_dict.get("payload")),
             )
-            handler.send_json({"ok": True, "result": result})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True, "result": result}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/admin/overview":
-        try:
-            handler.send_json(
-                {"ok": True, "overview": api.desktop_local_data_store().get_admin_overview()}
-            )
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+        send_json_boundary(
+            handler,
+            lambda: {
+                "ok": True,
+                "overview": api.desktop_local_data_store().get_admin_overview(),
+            },
+            error_status=400,
+            error_payload=_json_error,
+        )
         return True
 
     if path == "/desktop-local-data/admin/wipe":
-        try:
+
+        def _payload() -> dict[str, Any]:
             api.desktop_local_data_store().wipe_account_admin(
                 str(payload_dict.get("uid") or ""),
             )
-            handler.send_json(
-                {"ok": True, "user": api.desktop_local_data_store().get_current_user()}
-            )
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True, "user": api.desktop_local_data_store().get_current_user()}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/app/desktop-session-lifecycle":
@@ -181,31 +201,33 @@ def handle_post(
         return True
 
     if path == "/desktop-local-data/startup-metric":
-        try:
+
+        def _payload() -> dict[str, Any]:
             event = str(payload_dict.get("event") or "").strip() or "unknown"
             metric_payload = _as_dict(payload_dict.get("payload"))
             api.append_startup_metric(event, metric_payload)
-            handler.send_json({"ok": True})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/open-url":
-        try:
+
+        def _send_open_url() -> None:
             url = str(payload_dict.get("url") or "").strip()
             parsed = urlsplit(url)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 handler.send_json({"ok": False, "error": "Invalid URL"}, status=400)
-                return True
+                return
             if open_url(url):
                 handler.send_json({"ok": True})
-                return True
+                return
             handler.send_json(
                 {"ok": False, "error": "Unable to open the default browser"},
                 status=500,
             )
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+
+        run_route_boundary(handler, _send_open_url, error_status=400, error_payload=_json_error)
         return True
 
     return False

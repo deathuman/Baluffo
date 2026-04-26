@@ -10,6 +10,11 @@ from src.bridge.registry_tombstones import (
     save_tombstones,
     tombstone_source_row,
 )
+from src.bridge.routes.error_boundary import (
+    run_route_boundary,
+    safe_bridge_log,
+    send_json_boundary,
+)
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.shared.json_shapes import (
     as_json_list,
@@ -63,6 +68,10 @@ def _transition_registry_row(
             at=str(getattr(api, "now_iso", lambda: "")() or ""),
         )
     return dict(row)
+
+
+def _json_error(exc: Exception) -> dict[str, Any]:
+    return {"ok": False, "error": str(exc)}
 
 
 def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, payload: Any) -> bool:
@@ -320,37 +329,34 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         return True
 
     if path == "/tasks/run-discovery":
-        try:
+
+        def _send_discovery() -> None:
             status_code, result = api.trigger_discovery_task(
                 payload=data,
                 route_name=path,
             )
-            try:
-                api.bridge_log(
-                    "info",
-                    "discovery_launch_response_sent",
-                    route=path,
-                    status=int(status_code),
-                    started=bool(result.get("started")),
-                    runId=str(result.get("runId") or ""),
-                )
-            except Exception:  # noqa: BLE001
-                pass
-            handler.send_json(result, status=status_code)
-        except Exception as exc:  # noqa: BLE001
-            try:
-                api.bridge_log(
-                    "error",
-                    "discovery_launch_response_write_failed",
-                    route=path,
-                    error=str(exc),
-                )
-            except Exception:  # noqa: BLE001
-                pass
-            handler.send_json(
-                {"started": False, "task": "discovery", "error": str(exc)},
-                status=500,
+            safe_bridge_log(
+                api,
+                "info",
+                "discovery_launch_response_sent",
+                route=path,
+                status=int(status_code),
+                started=bool(result.get("started")),
+                runId=str(result.get("runId") or ""),
             )
+            handler.send_json(result, status=status_code)
+
+        def _error(exc: Exception) -> dict[str, Any]:
+            safe_bridge_log(
+                api,
+                "error",
+                "discovery_launch_response_write_failed",
+                route=path,
+                error=str(exc),
+            )
+            return {"started": False, "task": "discovery", "error": str(exc)}
+
+        run_route_boundary(handler, _send_discovery, error_status=500, error_payload=_error)
         return True
 
     if path == "/tasks/run-jobs-pipeline":
@@ -359,55 +365,68 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         handler.send_json(result, status=status_code)
         return True
 
-    if path == "/tasks/run-sync-pull":
-        try:
-            result = api.start_sync_task("pull", reason="manual_pull", automatic=False)
-            status_code = 200 if bool(result.get("started")) else 409
-            handler.send_json(result, status=status_code)
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json(
-                {"started": False, "task": "source_sync", "action": "pull", "error": str(exc)},
-                status=500,
-            )
-        return True
+    if path in {"/tasks/run-sync-pull", "/tasks/run-sync-push"}:
+        sync_action = "pull" if path.endswith("-pull") else "push"
 
-    if path == "/tasks/run-sync-push":
-        try:
-            result = api.start_sync_task("push", reason="manual_push", automatic=False)
-            status_code = 200 if bool(result.get("started")) else 409
-            handler.send_json(result, status=status_code)
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json(
-                {"started": False, "task": "source_sync", "action": "push", "error": str(exc)},
-                status=500,
+        def _payload() -> dict[str, Any]:
+            result = api.start_sync_task(
+                sync_action, reason=f"manual_{sync_action}", automatic=False
             )
+            status_code = 200 if bool(result.get("started")) else 409
+            return {"__status": status_code, "__payload": result}
+
+        def _send() -> None:
+            result = _payload()
+            handler.send_json(result["__payload"], status=int(result["__status"]))
+
+        run_route_boundary(
+            handler,
+            _send,
+            error_status=500,
+            error_payload=lambda exc: {
+                "started": False,
+                "task": "source_sync",
+                "action": sync_action,
+                "error": str(exc),
+            },
+        )
         return True
 
     if path == "/tasks/run-fetcher":
-        try:
+
+        def _send() -> None:
             result = api.start_fetcher_task(data)
             status_code = 409 if bool(result.get("alreadyRunning")) else 200
             handler.send_json(result, status=status_code)
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json(
-                {"started": False, "task": "jobs_fetcher", "error": str(exc)},
-                status=500,
-            )
+
+        run_route_boundary(
+            handler,
+            _send,
+            error_status=500,
+            error_payload=lambda exc: {
+                "started": False,
+                "task": "jobs_fetcher",
+                "error": str(exc),
+            },
+        )
         return True
 
     if path == "/discovery/config":
-        try:
+
+        def _payload() -> dict[str, Any]:
             api.update_saved_discovery_settings(data)
-            handler.send_json(api.get_discovery_config_payload())
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json(
-                {
-                    "ok": False,
-                    "error": str(exc),
-                    "savedConfig": api.get_discovery_config_payload().get("savedConfig", {}),
-                },
-                status=400,
-            )
+            return api.get_discovery_config_payload()
+
+        send_json_boundary(
+            handler,
+            _payload,
+            error_status=400,
+            error_payload=lambda exc: {
+                "ok": False,
+                "error": str(exc),
+                "savedConfig": api.get_discovery_config_payload().get("savedConfig", {}),
+            },
+        )
         return True
 
     if path == "/ops/alerts/ack":
@@ -435,45 +454,59 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         return True
 
     if path == "/sync/config":
-        try:
+
+        def _payload() -> dict[str, Any]:
             api.update_saved_sync_settings(data)
-            handler.send_json(api.get_sync_status_payload())
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json(
-                {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=400
-            )
+            return api.get_sync_status_payload()
+
+        send_json_boundary(
+            handler,
+            _payload,
+            error_status=400,
+            error_payload=lambda exc: {
+                "ok": False,
+                "error": str(exc),
+                "config": api.sync_config_status(),
+            },
+        )
         return True
 
     if path == "/sync/test":
-        try:
-            handler.send_json(api.test_sync_config())
-        except Exception as exc:  # noqa: BLE001
+
+        def _error(exc: Exception) -> dict[str, Any]:
             api.set_sync_status(
                 action="test", result="error", error=str(exc), pulled=False, pushed=False
             )
-            handler.send_json(
-                {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500
-            )
+            return {"ok": False, "error": str(exc), "config": api.sync_config_status()}
+
+        send_json_boundary(
+            handler,
+            api.test_sync_config,
+            error_status=500,
+            error_payload=_error,
+        )
         return True
 
-    if path == "/sync/pull":
-        try:
-            handler.send_json(api.sync_pull_sources())
-        except Exception as exc:  # noqa: BLE001
-            api.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
-            handler.send_json(
-                {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500
-            )
-        return True
+    if path in {"/sync/pull", "/sync/push"}:
+        sync_action = path.removeprefix("/sync/")
 
-    if path == "/sync/push":
-        try:
-            handler.send_json(api.sync_push_sources())
-        except Exception as exc:  # noqa: BLE001
-            api.set_sync_status(action="push", result="error", error=str(exc), pushed=False)
-            handler.send_json(
-                {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500
-            )
+        def _error(exc: Exception) -> dict[str, Any]:
+            if sync_action == "pull":
+                api.set_sync_status(
+                    action=sync_action, result="error", error=str(exc), pulled=False
+                )
+            else:
+                api.set_sync_status(
+                    action=sync_action, result="error", error=str(exc), pushed=False
+                )
+            return {"ok": False, "error": str(exc), "config": api.sync_config_status()}
+
+        send_json_boundary(
+            handler,
+            api.sync_pull_sources if sync_action == "pull" else api.sync_push_sources,
+            error_status=500,
+            error_payload=_error,
+        )
         return True
 
     return False

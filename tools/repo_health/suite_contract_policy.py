@@ -1181,6 +1181,24 @@ def test_bridge_routes_use_public_response_writer(repo_root: Path) -> None:
     )
 
 
+def test_bridge_route_ble001_suppressions_stay_in_boundary_helper(repo_root: Path) -> None:
+    route_root = repo_root / "src" / "bridge" / "routes"
+    target_files = (
+        route_root / "get_routes.py",
+        route_root / "post_routes_admin.py",
+        route_root / "post_routes_local_data.py",
+    )
+    offenders = [
+        str(path.relative_to(repo_root))
+        for path in target_files
+        if "# noqa: BLE001" in path.read_text(encoding="utf-8")
+    ]
+    assert not offenders, (
+        "Target bridge route modules must use src/bridge/routes/error_boundary.py for "
+        "controlled broad exception handling:\n- " + "\n- ".join(offenders)
+    )
+
+
 def test_admin_runtime_megatest_stays_split(repo_root: Path) -> None:
     legacy = repo_root / "tests" / "admin" / "test_admin_bridge_ops_runtime.py"
     assert not legacy.exists()

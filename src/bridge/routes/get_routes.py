@@ -12,6 +12,11 @@ from typing import Any
 from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
+from src.bridge.routes.error_boundary import (
+    run_route_boundary,
+    safe_bridge_log,
+    send_json_boundary,
+)
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.core.schemas import LocalSavedJobRowSchema
 from src.source_registry import is_hidden_from_default
@@ -174,6 +179,26 @@ def _read_utf8_log_text(path: Path) -> str:
         return raw.decode("utf-8", errors="replace")
 
 
+def _json_error(exc: Exception) -> dict[str, Any]:
+    return {"ok": False, "error": str(exc)}
+
+
+def _send_json_bytes(
+    handler: BridgeResponseWriter, payload: dict[str, Any], *, status: int
+) -> None:
+    try:
+        text = json.dumps(payload, ensure_ascii=False, default=str)
+        body = text.encode("utf-8")
+    except UnicodeEncodeError:
+        text = json.dumps(payload, ensure_ascii=True, default=str)
+        body = text.encode("utf-8")
+    handler.send_bytes(
+        body,
+        content_type="application/json; charset=utf-8",
+        status=status,
+    )
+
+
 def handle_get(
     handler: BridgeResponseWriter, *, api: BridgeApi, path: str, query: dict[str, list[str]]
 ) -> bool:
@@ -185,7 +210,7 @@ def handle_get(
     if path == "/discovery/report":
         # This route must never "silently" drop the connection; the admin UI
         # treats network errors as bridge-availability failures.
-        try:
+        def _send_discovery_report() -> None:
             load_fn = getattr(api, "load_json_object", None)
             raw = (
                 load_fn(getattr(api, "DISCOVERY_REPORT_PATH", None), {})
@@ -196,107 +221,96 @@ def handle_get(
             normalizer_fn = getattr(api, "normalize_discovery_report_contract", None)
             report = normalizer_fn(raw) if callable(normalizer_fn) else raw
 
-            try:
-                api.bridge_log(
-                    "info",
-                    "discovery_report_route_sending",
-                    reportType=type(report).__name__,
-                    summaryType=type((report or {}).get("summary", None)).__name__
-                    if isinstance(report, dict)
-                    else "",
-                )
-            except Exception:  # noqa: BLE001
-                pass
+            safe_bridge_log(
+                api,
+                "info",
+                "discovery_report_route_sending",
+                reportType=type(report).__name__,
+                summaryType=type((report or {}).get("summary", None)).__name__
+                if isinstance(report, dict)
+                else "",
+            )
 
             payload = _as_dict(report) or {"summary": {}, "candidates": [], "failures": []}
             # Prefer the bytes-writing helper to bypass any unexpected issues
             # in JSON response serialization for edge-case payloads.
             if hasattr(handler, "send_bytes"):
-                try:
-                    text = json.dumps(payload, ensure_ascii=False, default=str)
-                    body = text.encode("utf-8")
-                except UnicodeEncodeError:
-                    text = json.dumps(payload, ensure_ascii=True, default=str)
-                    body = text.encode("utf-8")
-                handler.send_bytes(
-                    body,
-                    content_type="application/json; charset=utf-8",
-                    status=200,
-                )
+                _send_json_bytes(handler, payload, status=200)
             else:
                 handler.send_json(payload)
-        except Exception as exc:  # noqa: BLE001
-            try:
-                api.bridge_log("error", "discovery_report_route_failed", error=str(exc))
-            except Exception:  # noqa: BLE001
-                pass
-            payload = {"error": "failed_to_load_discovery_report", "detail": str(exc)}
-            if hasattr(handler, "send_bytes"):
-                try:
-                    text = json.dumps(payload, ensure_ascii=False, default=str)
-                    body = text.encode("utf-8")
-                except UnicodeEncodeError:
-                    text = json.dumps(payload, ensure_ascii=True, default=str)
-                    body = text.encode("utf-8")
-                handler.send_bytes(
-                    body,
-                    content_type="application/json; charset=utf-8",
-                    status=500,
-                )
-            else:
-                handler.send_json(payload, status=500)
+
+        def _discovery_report_error(exc: Exception) -> dict[str, Any]:
+            safe_bridge_log(api, "error", "discovery_report_route_failed", error=str(exc))
+            return {"error": "failed_to_load_discovery_report", "detail": str(exc)}
+
+        if hasattr(handler, "send_bytes"):
+
+            def _send_error(exc: Exception) -> None:
+                _send_json_bytes(handler, _discovery_report_error(exc), status=500)
+
+            run_route_boundary(
+                handler,
+                _send_discovery_report,
+                error_status=500,
+                error_payload=_discovery_report_error,
+                error_sender=_send_error,
+            )
+        else:
+            run_route_boundary(
+                handler,
+                _send_discovery_report,
+                error_status=500,
+                error_payload=_discovery_report_error,
+            )
         return True
 
     if path == "/discovery/candidates":
         candidates_path = getattr(api, "DISCOVERY_CANDIDATES_PATH", None)
-        try:
+
+        def _payload() -> dict[str, Any]:
             if candidates_path is None:
-                payload = {"candidates": [], "count": 0}
+                return {"candidates": [], "count": 0}
             else:
                 try:
                     raw = json.loads(Path(candidates_path).read_text(encoding="utf-8"))
                 except FileNotFoundError:
                     raw = []
                 candidates = [row for row in _as_list(raw) if isinstance(row, dict)]
-                payload = {"candidates": candidates, "count": len(candidates)}
-            handler.send_json(payload)
-        except Exception as exc:  # noqa: BLE001
-            try:
-                api.bridge_log("error", "discovery_candidates_route_failed", error=str(exc))
-            except Exception:  # noqa: BLE001
-                pass
-            handler.send_json(
-                {"error": "failed_to_load_discovery_candidates", "detail": str(exc)},
-                status=500,
-            )
+                return {"candidates": candidates, "count": len(candidates)}
+
+        def _error(exc: Exception) -> dict[str, Any]:
+            safe_bridge_log(api, "error", "discovery_candidates_route_failed", error=str(exc))
+            return {"error": "failed_to_load_discovery_candidates", "detail": str(exc)}
+
+        send_json_boundary(handler, _payload, error_status=500, error_payload=_error)
         return True
 
     if path == "/desktop-local-data/session":
-        try:
+
+        def _payload() -> dict[str, Any]:
             desktop_session = api.get_desktop_session_payload()
-            handler.send_json(
-                {
-                    "ok": True,
-                    "user": api.desktop_local_data_store().get_current_user(),
-                    "lastActivityAt": str(api.DESKTOP_SESSION_ACTIVITY_AT or ""),
-                    "desktopSession": desktop_session,
-                }
-            )
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {
+                "ok": True,
+                "user": api.desktop_local_data_store().get_current_user(),
+                "lastActivityAt": str(api.DESKTOP_SESSION_ACTIVITY_AT or ""),
+                "desktopSession": desktop_session,
+            }
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/profiles":
-        try:
-            handler.send_json(
-                {"ok": True, "profiles": api.desktop_local_data_store().list_profiles()}
-            )
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+        send_json_boundary(
+            handler,
+            lambda: {"ok": True, "profiles": api.desktop_local_data_store().list_profiles()},
+            error_status=400,
+            error_payload=_json_error,
+        )
         return True
 
     if path == "/desktop-local-data/saved-jobs":
-        try:
+
+        def _payload() -> dict[str, Any]:
             uid = (query.get("uid") or [""])[0]
             raw_rows = api.desktop_local_data_store().list_saved_jobs(uid)
             rows = []
@@ -306,37 +320,36 @@ def handle_get(
                     rows.append(row)
                 except PydanticValidationError as exc:
                     logger.warning("Saved job row validation failed, skipping: %s", exc)
-            handler.send_json({"ok": True, "rows": rows})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True, "rows": rows}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/saved-job-keys":
-        try:
+
+        def _payload() -> dict[str, Any]:
             uid = (query.get("uid") or [""])[0]
-            handler.send_json(
-                {"ok": True, "keys": api.desktop_local_data_store().get_saved_job_keys(uid)}
-            )
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True, "keys": api.desktop_local_data_store().get_saved_job_keys(uid)}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/attachments":
-        try:
+
+        def _payload() -> dict[str, Any]:
             uid = (query.get("uid") or [""])[0]
             job_key = (query.get("jobKey") or [""])[0]
-            handler.send_json(
-                {
-                    "ok": True,
-                    "rows": api.desktop_local_data_store().list_attachments_for_job(uid, job_key),
-                }
-            )
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {
+                "ok": True,
+                "rows": api.desktop_local_data_store().list_attachments_for_job(uid, job_key),
+            }
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/attachments/content":
-        try:
+
+        def _send_attachment() -> None:
             uid = (query.get("uid") or [""])[0]
             job_key = (query.get("jobKey") or [""])[0]
             attachment_id = (query.get("attachmentId") or [""])[0]
@@ -350,12 +363,13 @@ def handle_get(
                 filename=filename,
                 disposition="attachment" if download_flag in {"1", "true", "yes"} else "inline",
             )
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+
+        run_route_boundary(handler, _send_attachment, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/backup/export-file":
-        try:
+
+        def _send_export_file() -> None:
             uid = (query.get("uid") or [""])[0]
             include_files_raw = str((query.get("includeFiles") or ["0"])[0]).strip().lower()
             include_files = include_files_raw in {"1", "true", "yes", "on"}
@@ -388,41 +402,43 @@ def handle_get(
                     filename=filename,
                     disposition="attachment",
                 )
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+
+        run_route_boundary(handler, _send_export_file, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/activity":
-        try:
+
+        def _payload() -> dict[str, Any]:
             uid = (query.get("uid") or [""])[0]
             limit = int((query.get("limit") or ["300"])[0])
-            handler.send_json(
-                {
-                    "ok": True,
-                    "rows": api.desktop_local_data_store().list_activity_for_user(uid, limit),
-                }
-            )
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {
+                "ok": True,
+                "rows": api.desktop_local_data_store().list_activity_for_user(uid, limit),
+            }
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/desktop-local-data/startup-metrics":
-        try:
+
+        def _payload() -> dict[str, Any]:
             limit_raw = (query.get("limit") or ["200"])[0]
             try:
                 limit = int(limit_raw)
             except ValueError:
                 limit = 200
-            handler.send_json({"ok": True, "rows": api.read_startup_metrics(limit)})
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=400)
+            return {"ok": True, "rows": api.read_startup_metrics(limit)}
+
+        send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)
         return True
 
     if path == "/app/update-status":
-        try:
-            handler.send_json(api.get_update_status_payload())
-        except Exception as exc:  # noqa: BLE001
-            handler.send_json({"ok": False, "error": str(exc)}, status=500)
+        send_json_boundary(
+            handler,
+            api.get_update_status_payload,
+            error_status=500,
+            error_payload=_json_error,
+        )
         return True
 
     if path == "/registry/active":

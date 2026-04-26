@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
+
+from src.bridge.api import BridgeApi
+from src.bridge.routes.response_writer import BridgeResponseWriter
+
+
+def safe_bridge_log(api: BridgeApi, level: str, event: str, **fields: Any) -> None:
+    try:
+        api.bridge_log(level, event, **fields)
+    except Exception:  # noqa: BLE001 - bridge diagnostics must not break route responses.
+        pass
+
+
+def send_json_boundary(
+    handler: BridgeResponseWriter,
+    action: Callable[[], Any],
+    *,
+    error_status: int,
+    error_payload: Callable[[Exception], dict[str, Any]],
+    success_status: int = 200,
+) -> None:
+    try:
+        handler.send_json(action(), status=success_status)
+    except Exception as exc:  # noqa: BLE001 - HTTP route boundary converts failures to JSON.
+        handler.send_json(error_payload(exc), status=error_status)
+
+
+def run_route_boundary(
+    handler: BridgeResponseWriter,
+    action: Callable[[], None],
+    *,
+    error_status: int,
+    error_payload: Callable[[Exception], dict[str, Any]],
+    error_sender: Callable[[Exception], None] | None = None,
+) -> None:
+    try:
+        action()
+    except Exception as exc:  # noqa: BLE001 - HTTP route boundary converts failures to JSON.
+        if error_sender is not None:
+            error_sender(exc)
+            return
+        handler.send_json(error_payload(exc), status=error_status)
