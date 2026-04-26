@@ -11,6 +11,56 @@ This is a time-bound handoff note for later triage. It records what the current 
 
 Follow-up prioritization and validation status live in [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md). Use that tracker before picking implementation order, then return here for the original observed counts.
 
+## Anti-Bot Browser Retry Validation - 2026-04-26
+
+The anti-bot/rate-limit pass kept the five scoped residual rows active and added opt-in browser retry coverage with `antiBotBrowserRetry=true`. Static rows can retry `HTTP 429` listing fetches through Playwright, and HTML-board provider rows can retry flagged `403`, `429`, and timeout failures before emitting browser-queue diagnostics.
+
+Validation artifacts were written under ignored `_out/static-antibot-validation/` and are not intended for commit.
+
+Commands:
+
+- First pass: `BALUFFO_DATA_DIR=_out/static-antibot-validation python src/jobs_fetcher.py --output-dir _out/static-antibot-validation --force-refresh-all --ignore-circuit-breaker --social-enabled --quiet`
+- Second pass against the same root: `BALUFFO_DATA_DIR=_out/static-antibot-validation python src/jobs_fetcher.py --output-dir _out/static-antibot-validation --force-refresh-all --ignore-circuit-breaker --social-enabled --quiet`
+
+Fresh fetch counters after the second pass:
+
+| Counter | Value |
+|---------|------:|
+| Sources attempted | 484 |
+| Successful sources | 483 |
+| Failed/error sources | 1 |
+| Clean `ok` sources | 453 |
+| `ok` sources with warnings | 30 |
+| Final output jobs | 29,747 |
+| `needsReviewBreakdown.rawMarkerCount` | 107 |
+| `needsReviewBreakdown.includedCount` | 101 |
+| Error rows containing `HTTP 301` | 0 |
+| Error rows containing `HTTP 302` | 0 |
+| Error rows containing `HTTP 308` | 0 |
+| Error rows containing `HTTP 404` | 8 |
+| Error rows containing `HTTP 429` | 2 |
+| Browser fallback queue rows | 11 |
+| Scoped anti-bot rows still in queue | 1 |
+| Active registry rows | 555 |
+| Pending registry rows | 62 |
+| Hidden pending rows | 62 |
+| Size guardrail exceeded | no |
+| `jobs-unified.json` bytes | 37,570,743 |
+| Light JSON bytes | 20,764,453 |
+| CSV bytes | 30,539,396 |
+
+Residual classifier output after validation:
+
+| Triage class | Count |
+|--------------|------:|
+| `anti_bot_or_rate_limited` | 1 |
+
+Closeout decision:
+
+- Keep this snapshot active as an external-access runbook rather than archiving it.
+- Resolved or reclassified in this pass: scoped static `429` rows for WorldWinner, Stairway Games, Creative Assembly, and Hadean no longer remain as failed source-level residuals.
+- Remaining scope: Lucky VR remains retry-exhausted in `jobs-browser-fallback-queue.json` after provider browser retry and second-pass `scrapy_static_sources`, and KumKuat Games surfaced as a new unscoped live `429` source-level failure.
+
 ## Browser-Required Static Follow-up Validation - 2026-04-26
 
 The browser-required pass migrated provider-covered static aliases, added scoped static parsing support for NCSoft/Rollic investigation, and hid rows that did not prove valid active jobs in a clean validation run.

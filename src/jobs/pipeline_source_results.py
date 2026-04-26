@@ -33,6 +33,50 @@ def _as_dict_rows(value: Any) -> list[dict[str, Any]]:
     return [item for item in _as_list(value) if isinstance(item, dict)]
 
 
+def _build_loader_kwargs(
+    *,
+    name: str,
+    adapter_name: str,
+    config: Any,
+    fetch_text_limited: Any,
+    fetch_text_static_limited: Any,
+    static_listing_async_fetch: Any,
+    source_state_rows: Any,
+    guarded_try_playwright: Any,
+) -> dict[str, Any]:
+    loader_kwargs: dict[str, Any] = {
+        "fetch_text": fetch_text_limited,
+        "timeout_s": config.timeout_s,
+        "retries": config.retries,
+        "backoff_s": config.backoff_s,
+        "source_state_rows": source_state_rows,
+        "force_refresh_all": config.force_refresh_all,
+    }
+    if adapter_name == "static":
+        loader_kwargs["fetch_text"] = fetch_text_static_limited or fetch_text_limited
+        loader_kwargs["static_detail_concurrency"] = config.static_detail_concurrency
+        if static_listing_async_fetch is not None:
+            loader_kwargs["listing_async_fetch"] = static_listing_async_fetch
+        if guarded_try_playwright is not None:
+            loader_kwargs["try_playwright"] = guarded_try_playwright
+    elif adapter_name in {"ashby", "breezy", "jazzhr"} and guarded_try_playwright is not None:
+        loader_kwargs["try_playwright"] = guarded_try_playwright
+    if name == "scrapy_static_sources":
+        loader_kwargs["max_workers"] = config.max_workers
+    return loader_kwargs
+
+
+def _accepted_loader_kwargs(loader: Any, loader_kwargs: dict[str, Any]) -> dict[str, Any]:
+    signature = inspect.signature(loader)
+    accepts_var_kwargs = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if accepts_var_kwargs:
+        return loader_kwargs
+    return {key: value for key, value in loader_kwargs.items() if key in signature.parameters}
+
+
 class _PipelineSourceResultsRoot(Protocol):
     SOURCE_DIAGNOSTICS: Mapping[str, dict[str, Any]]
 
@@ -172,41 +216,21 @@ def execute_loader(
         thread_local.source_name = name
         loader_started = time.perf_counter()
         adapter_name = norm_text(report.get("adapter"))
-        loader_kwargs: dict[str, Any] = {
-            "fetch_text": fetch_text_limited,
-            "timeout_s": config.timeout_s,
-            "retries": config.retries,
-            "backoff_s": config.backoff_s,
-            "source_state_rows": source_state_rows,
-            "force_refresh_all": config.force_refresh_all,
-        }
-        if adapter_name == "static":
-            loader_kwargs["fetch_text"] = fetch_text_static_limited or fetch_text_limited
-            loader_kwargs["static_detail_concurrency"] = config.static_detail_concurrency
-            if static_listing_async_fetch is not None:
-                loader_kwargs["listing_async_fetch"] = static_listing_async_fetch
-            if guarded_try_playwright is not None:
-                loader_kwargs["try_playwright"] = guarded_try_playwright
-        if name == "scrapy_static_sources":
-            loader_kwargs["max_workers"] = config.max_workers
+        loader_kwargs = _build_loader_kwargs(
+            name=name,
+            adapter_name=adapter_name,
+            config=config,
+            fetch_text_limited=fetch_text_limited,
+            fetch_text_static_limited=fetch_text_static_limited,
+            static_listing_async_fetch=static_listing_async_fetch,
+            source_state_rows=source_state_rows,
+            guarded_try_playwright=guarded_try_playwright,
+        )
         loader_kwargs["heartbeat_callback"] = loader_heartbeat_callback
         loader_kwargs["progress_callback"] = loader_progress_callback
 
         try:
-            signature = inspect.signature(loader)
-            accepts_var_kwargs = any(
-                parameter.kind == inspect.Parameter.VAR_KEYWORD
-                for parameter in signature.parameters.values()
-            )
-            accepted_kwargs = (
-                loader_kwargs
-                if accepts_var_kwargs
-                else {
-                    key: value
-                    for key, value in loader_kwargs.items()
-                    if key in signature.parameters
-                }
-            )
+            accepted_kwargs = _accepted_loader_kwargs(loader, loader_kwargs)
         except (TypeError, ValueError):
             accepted_kwargs = {
                 "fetch_text": loader_kwargs["fetch_text"],

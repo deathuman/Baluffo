@@ -37,6 +37,7 @@ def _dispatch_provider_api(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
     registry_entries_fn: Callable[[str], list[dict[str, Any]]] | None = None,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
 ) -> list[RawJob]:
     ensure_provider_plugins()
     plugin, _selection = default_registry.select(
@@ -52,6 +53,8 @@ def _dispatch_provider_api(
     )
     if registry_entries_fn is not None:
         run_kwargs["registry_entries_fn"] = registry_entries_fn
+    if try_playwright is not None:
+        run_kwargs["try_playwright"] = try_playwright
     rows = plugin.run(**run_kwargs)
     return list(rows)
 
@@ -204,6 +207,7 @@ def run_ashby_sources_source(
     backoff_s: float,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
 ) -> list[RawJob]:
     return _dispatch_provider_api(
         "ashby_sources",
@@ -213,6 +217,7 @@ def run_ashby_sources_source(
         backoff_s=backoff_s,
         source_state_rows=source_state_rows,
         force_refresh_all=force_refresh_all,
+        try_playwright=try_playwright,
     )
 
 
@@ -224,6 +229,7 @@ def run_breezy_sources_source(
     backoff_s: float,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
 ) -> list[RawJob]:
     return _dispatch_provider_api(
         "breezy_sources",
@@ -233,6 +239,7 @@ def run_breezy_sources_source(
         backoff_s=backoff_s,
         source_state_rows=source_state_rows,
         force_refresh_all=force_refresh_all,
+        try_playwright=try_playwright,
     )
 
 
@@ -244,6 +251,7 @@ def run_jazzhr_sources_source(
     backoff_s: float,
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
 ) -> list[RawJob]:
     return _dispatch_provider_api(
         "jazzhr_sources",
@@ -253,6 +261,7 @@ def run_jazzhr_sources_source(
         backoff_s=backoff_s,
         source_state_rows=source_state_rows,
         force_refresh_all=force_refresh_all,
+        try_playwright=try_playwright,
     )
 
 

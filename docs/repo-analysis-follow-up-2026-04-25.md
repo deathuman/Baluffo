@@ -18,10 +18,97 @@ This tracker now only owns future pickup order. The completed P0-P3 implementati
 | Narrow static/provider/browser follow-up | Complete | Focused cleanup reduced fresh isolated failures from `46` to `32`; stale/dead HTTP 404/500/522 rows are removed from default active fetches. |
 | Site-changed static failure follow-up | Complete | Focused cleanup reduced fresh isolated failures from `32` to `8`; no residual `site_changed` rows remain in the classifier split. |
 | Browser-required static follow-up | Complete | Focused cleanup reduced fresh isolated failures from `8` to `5`; no residual `browser_required` rows remain in the classifier split. |
-| Failure snapshot | Active external-access runbook | Fresh validation kept [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) active only for the remaining `5` anti-bot/rate-limit rows. |
+| Anti-bot/rate-limit follow-up | Complete with residual runbook | Scoped browser retry coverage reduced fresh isolated failures from `5` to `1`; the scoped static `429` rows no longer fail, while Lucky VR remains retry-exhausted in the browser queue and one new unscoped `429` row appeared. |
+| Failure snapshot | Active external-access runbook | Fresh validation kept [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) active only for the remaining external-access residuals. |
 | Deferred large modules | Guarded | Exact source line ceilings are enforced through `tools/repo_health/deferred_source_line_budget.json` and `npm run lint:repo-guardrails`. |
 
+## In Progress
+
+No active implementation item is in progress. Start with the pickup order below.
+
 ## Recently Completed
+
+### 2026-04-26 - Anti-bot/rate-limit browser retry follow-up
+
+Starting baseline from `_out/static-browser-required-validation-clean/jobs-fetch-report.json`:
+
+- `484` sources attempted.
+- `5` failed/error sources.
+- `450` clean `ok` sources and `29` `ok` sources with warnings.
+- `105` raw `needs_review` markers and `99` shaped included rows.
+- Error rows: `0` with `HTTP 301`, `0` with `HTTP 302`, `0` with `HTTP 308`, `0` with `HTTP 404`, and `4` with `HTTP 429`.
+- Residual classifier split: `5` `anti_bot_or_rate_limited`.
+- Scoped retry rows:
+  - `static:listing_url:https://corp.worldwinner.com/careers/`
+  - `static:listing_url:https://stairwaygames.com/careers`
+  - `static:listing_url:https://www.creative-assembly.com/careers`
+  - `breezy:board_url:https://lucky-vr.breezy.hr/`
+  - `static:listing_url:https://hadean.com/careers/`
+
+Chosen scope:
+
+- Keep the five rows active and add scoped browser/Scrapy retry coverage with `antiBotBrowserRetry=true`.
+- Preserve default behavior for non-flagged anti-bot/rate-limit sources.
+- Keep the April 25 failure snapshot active unless fresh validation removes unexpected static/provider/browser residuals.
+
+Completed changes:
+
+- Added `antiBotBrowserRetry=true` to the five scoped active source rows without hiding, demoting, deleting, or migrating them.
+- Static sources with this flag may use Playwright listing fallback for `HTTP 429` / "Too Many Requests"; non-flagged static `429` behavior remains unchanged.
+- HTML-board provider rows for Breezy/JazzHR/Ashby can receive the guarded Playwright helper and retry flagged `403`, `429`, and timeout failures before emitting queue-compatible anti-bot diagnostics.
+- Browser fallback queue classification now includes `anti_bot_or_challenge` and `rate_limited`, preserving the queue schema.
+
+Fresh validation from `_out/static-antibot-validation/jobs-fetch-report.json` used two fetch passes against the same isolated root so the second pass could consume the first-pass browser fallback queue:
+
+| Counter | Value |
+|---------|------:|
+| Sources attempted | 484 |
+| Successful sources | 483 |
+| Failed/error sources | 1 |
+| Clean `ok` sources | 453 |
+| `ok` sources with warnings | 30 |
+| Final output jobs | 29,747 |
+| `needsReviewBreakdown.rawMarkerCount` | 107 |
+| `needsReviewBreakdown.includedCount` | 101 |
+| Error rows containing `HTTP 301` | 0 |
+| Error rows containing `HTTP 302` | 0 |
+| Error rows containing `HTTP 308` | 0 |
+| Error rows containing `HTTP 404` | 8 |
+| Error rows containing `HTTP 429` | 2 |
+| Browser fallback queue rows | 11 |
+| Scoped anti-bot rows still in queue | 1 |
+| Active registry rows | 555 |
+| Pending registry rows | 62 |
+| Hidden pending rows | 62 |
+| Size guardrail exceeded | no |
+| `jobs-unified.json` bytes | 37,570,743 |
+| Light JSON bytes | 20,764,453 |
+| CSV bytes | 30,539,396 |
+
+Residual classifier output after the second validation pass:
+
+| Triage class | Count |
+|--------------|------:|
+| `anti_bot_or_rate_limited` | 1 |
+
+Residual details:
+
+- The only source-level failure is a new unscoped live `429` row: `static:listing_url:https://www.kumkuatgames.com/career`.
+- The scoped Lucky VR Breezy row remains in `jobs-browser-fallback-queue.json` after provider browser retry and the second-pass `scrapy_static_sources` attempt: `breezy:board_url:https://lucky-vr.breezy.hr/`.
+- The scoped static rows for WorldWinner, Stairway Games, Creative Assembly, and Hadean no longer remain as failed source-level residuals in the fresh validation.
+
+Verification:
+
+- `python -m pytest tests/jobs_static/test_antibot_browser_retry.py tests/jobs_static/test_browser_and_regression_queues.py tests/jobs_static/test_static_source_execution.py tests/jobs_static/test_scrapy_static_runtime.py -q`
+- `python -m pytest tests/test_provider_api_plugins.py tests/test_jobs_fetcher_providers.py tests/test_static_residual_failures_measurement.py tests/test_source_registry.py tests/test_source_registry_p1_operational_noise.py -q`
+- `python -m pytest tests/test_jobs_fetcher_*.py -q` equivalent via explicit PowerShell file expansion
+- `npm run lint:repo-guardrails`
+- `npm run lint:precommit`
+
+Closeout decision:
+
+- This anti-bot/rate-limit follow-up is complete because the scoped browser retry policy is implemented and the fresh source-level failure count fell from `5` to `1`.
+- Keep the April 25 failure snapshot active as an external-access runbook because Lucky VR remains retry-exhausted in the browser queue and KumKuat surfaced as a new unscoped live `429` residual.
 
 ### 2026-04-26 - Browser-required static follow-up
 
@@ -286,11 +373,12 @@ Closeout decision:
 
 ## Pickup Order
 
-1. **Decide anti-bot/rate-limit residual policy.**
-   - Start from `_out/static-browser-required-validation-clean/`, not the original April 25 counts.
-   - Baseline to preserve: `484` sources attempted, `5` failed/error sources, `450` clean `ok`, `29` `ok` with warnings, `105` raw `needs_review` markers, `99` shaped included rows, `0` error rows containing `HTTP 301`, `0` containing `HTTP 302`, `0` containing `HTTP 308`, `0` containing `HTTP 404`, and `4` containing `HTTP 429`.
-   - Goal: decide whether the remaining `5` `anti_bot_or_rate_limited` rows should be hidden as expected external-access limits, retried through a separate browser/Scrapy policy, or kept as an explicit runbook.
-   - Success condition: a fresh isolated run leaves no unexpected static/provider/browser residuals, allowing the April 25 snapshot to be archived or converted into a stable external-access note.
+1. **External-access residual closeout.**
+   - Start from `_out/static-antibot-validation/`, not the original April 25 counts.
+   - Baseline to preserve: `484` sources attempted, `1` failed/error source, `453` clean `ok`, `30` `ok` with warnings, `107` raw `needs_review` markers, `101` shaped included rows, classifier split `1` `anti_bot_or_rate_limited`, and `11` browser fallback queue rows.
+   - Inspect first: retry-exhausted Lucky VR queue evidence (`breezy:board_url:https://lucky-vr.breezy.hr/`) and the new unscoped KumKuat `429` source-level failure (`static:listing_url:https://www.kumkuatgames.com/career`).
+   - Goal: decide whether these are accepted external-access limits, need one more scoped retry flag, or should be hidden/demoted as non-viable static/provider rows.
+   - Success condition: a fresh isolated run leaves no unexpected source-level static/provider/browser failures, allowing the April 25 snapshot to be archived or converted into a short stable external-access note.
 
 2. **Behavior-tied adapter work only.**
    - Use [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) before changing provider, social, or static loader boundaries.

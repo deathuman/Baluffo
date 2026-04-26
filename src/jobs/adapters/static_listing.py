@@ -119,8 +119,15 @@ def process_static_source(ctx: StaticSourceContext) -> None:
             break
 
         stage_state.clear_batch_meta()
+        anti_bot_browser_retry = bool(ctx.source.get("antiBotBrowserRetry"))
 
-        def _fetch_listing_job(batch_job: dict[str, Any], url: str, _timeout_s: int) -> str:
+        def _fetch_listing_job(
+            batch_job: dict[str, Any],
+            url: str,
+            _timeout_s: int,
+            *,
+            anti_bot_browser_retry: bool = anti_bot_browser_retry,
+        ) -> str:
             del _timeout_s
             fetch_started = time.perf_counter()
             payload = _as_dict(batch_job.get("payload") if isinstance(batch_job, dict) else {})
@@ -142,7 +149,11 @@ def process_static_source(ctx: StaticSourceContext) -> None:
                 html = _fetch_listing_html_sync(url, effective_timeout_s=effective_timeout_s)
             except Exception as exc:  # noqa: BLE001
                 err_str = str(exc)
-                should_fallback, reason = _should_try_listing_browser_fallback(url, err_str)
+                should_fallback, reason = _should_try_listing_browser_fallback(
+                    url,
+                    err_str,
+                    anti_bot_browser_retry=anti_bot_browser_retry,
+                )
                 if ctx.run_deps.try_playwright and should_fallback:
                     browser_budget_s = effective_timeout_for_remaining_budget(
                         timeout_s=ctx.run_deps.timeout_s,
@@ -161,7 +172,10 @@ def process_static_source(ctx: StaticSourceContext) -> None:
                     )
                 if not html:
                     if browser_fallback_attempted:
-                        if "403" in err_str:
+                        if "403" in err_str or (
+                            anti_bot_browser_retry
+                            and ("429" in err_str or "too many requests" in err_str.lower())
+                        ):
                             stage_state.note_terminal_reason("blocked_after_browser_fallback", ctx)
                         else:
                             stage_state.note_terminal_reason("browser_fallback_empty", ctx)
@@ -183,6 +197,8 @@ def process_static_source(ctx: StaticSourceContext) -> None:
             batch_job: dict[str, Any],
             url: str,
             _timeout_s: int,
+            *,
+            anti_bot_browser_retry: bool = anti_bot_browser_retry,
         ) -> str:
             del _timeout_s
             fetch_started = time.perf_counter()
@@ -217,7 +233,11 @@ def process_static_source(ctx: StaticSourceContext) -> None:
                     )
             except Exception as exc:  # noqa: BLE001
                 err_str = str(exc)
-                should_fallback, reason = _should_try_listing_browser_fallback(url, err_str)
+                should_fallback, reason = _should_try_listing_browser_fallback(
+                    url,
+                    err_str,
+                    anti_bot_browser_retry=anti_bot_browser_retry,
+                )
                 if ctx.run_deps.try_playwright and should_fallback:
                     browser_budget_s = effective_timeout_for_remaining_budget(
                         timeout_s=ctx.run_deps.timeout_s,
@@ -238,7 +258,10 @@ def process_static_source(ctx: StaticSourceContext) -> None:
                         )
                 if not html:
                     if browser_fallback_attempted:
-                        if "403" in err_str:
+                        if "403" in err_str or (
+                            anti_bot_browser_retry
+                            and ("429" in err_str or "too many requests" in err_str.lower())
+                        ):
                             stage_state.note_terminal_reason("blocked_after_browser_fallback", ctx)
                         else:
                             stage_state.note_terminal_reason("browser_fallback_empty", ctx)

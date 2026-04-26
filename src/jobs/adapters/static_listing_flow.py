@@ -164,7 +164,19 @@ def _finish_generic_source(ctx: StaticSourceContext, stage_state: StaticListingS
         if terminal_reason in {"listing_timeout", "listing_timeout_after_browser_fallback"}:
             ctx.entry_report["classification"] = "timeout"
         elif terminal_reason in {"blocked_after_browser_fallback", "browser_fallback_empty"}:
-            ctx.entry_report["classification"] = "blocked_or_challenge"
+            ctx.entry_report["classification"] = (
+                "anti_bot_or_challenge"
+                if bool(ctx.source.get("antiBotBrowserRetry"))
+                else "blocked_or_challenge"
+            )
+        elif (
+            bool(ctx.source.get("antiBotBrowserRetry"))
+            and int(ctx.stats.get("listing_browser_fallbacks") or 0) > 0
+        ):
+            ctx.entry_report["classification"] = "anti_bot_or_challenge"
+            ctx.entry_report["error"] = (
+                "browser retry exhausted: no jobs extracted from source pages"
+            )
         if ctx.selected_source_count == 1:
             ctx.errors.append(f"static:{ctx.source_name}: no jobs extracted from source pages")
     ctx.emit_heartbeat()
@@ -380,12 +392,19 @@ def _run_plugin_fast_path(ctx: StaticSourceContext) -> bool:
         return False
 
 
-def _should_try_listing_browser_fallback(url: str, error_text: str) -> tuple[bool, str]:
+def _should_try_listing_browser_fallback(
+    url: str,
+    error_text: str,
+    *,
+    anti_bot_browser_retry: bool = False,
+) -> tuple[bool, str]:
     err_str = str(error_text or "")
     err_lower = err_str.lower()
     linked_in_throttle = "linkedin" in f"{url} {err_str}".lower()
     if "403" in err_str:
         return True, "403"
+    if anti_bot_browser_retry and ("429" in err_str or "too many requests" in err_lower):
+        return True, "429"
     if linked_in_throttle and "429" in err_str:
         return True, "429"
     if "timeout" in err_lower or "timed out" in err_lower:

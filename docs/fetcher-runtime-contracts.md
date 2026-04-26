@@ -85,6 +85,11 @@ Optional overrides:
   - redirects without `Location`, redirect chains beyond one hop, credentialed targets, non-HTTP(S) schemes, unrelated cross-host targets, and HTTPS downgrades remain source diagnostics rather than silently followed traffic.
   - static zero-extract rows with redirect/status evidence are diagnosed as `site_changed`; generic static/manual no-jobs rows without redirect evidence remain `js_required` for browser/static extraction follow-up.
   - static plugins that need custom listing/detail handling receive the shared fetch helper from the static adapter surface; direct `fetch_text` usage is only acceptable for non-static-provider paths that intentionally bypass static report semantics.
+- Scoped anti-bot browser retry policy:
+  - registry rows may opt into higher-cost browser retry with `antiBotBrowserRetry: true`.
+  - flagged static rows can retry listing fetches with Playwright for `HTTP 429` / "Too Many Requests"; non-flagged `429` rows keep the default HTTP failure behavior.
+  - flagged HTML-board provider rows for Breezy, JazzHR, and Ashby can retry `403`, `429`, and timeout failures with the guarded Playwright helper before emitting diagnostics.
+  - retry exhaustion keeps source status semantics unchanged, but diagnostics should include `classification: "anti_bot_or_challenge"`, `failureBucket: "anti_bot_or_challenge"` where source-report shaping supports it, `browserFallbackRecommended: true`, and queue-compatible `sourceId` / `pages` evidence.
 - `data/jobs-source-state.json`
   - per-source state for TTL and circuit breaker decisions.
   - includes `consecutiveFailures`, `lastSuccessAt`, `quarantinedUntilAt`.

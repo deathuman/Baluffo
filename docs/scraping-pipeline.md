@@ -31,7 +31,7 @@ Scrapy path (for scrapy_static sources from browser queue)
   Static extraction also runs a shared job-page gate so ordinary pages are rejected as `dead_listing_page` instead of becoming synthetic jobs or generic empty misses.
   Static listing/detail HTTP fetches use the shared redirect-aware cache helper. It can follow one same-site redirect, including `www.`/bare-host aliases and HTTP-to-HTTPS upgrades, but rejects unrelated cross-host redirects, redirect chains, credentialed targets, non-HTTP(S) schemes, and HTTPS downgrades.
   Template or malformed detail links, such as `{{...}}`, known placeholder tokens, and listing-page self-links, are skipped as non-job diagnostics before detail fetch so they do not become source-level fetch errors.
-- Browser fallback queue: Sources classified as `blocked_or_challenge` or `needs_review` with `browserFallbackRecommended: true` (and adapter `scrapy_static`) are written to `jobs-browser-fallback-queue.json`. The next pipeline run uses that list as the scrapy_static registry and runs them with Scrapy-Playwright (`use_browser=True`).
+- Browser fallback queue: Sources classified as `blocked_or_challenge`, `anti_bot_or_challenge`, `rate_limited`, or `needs_review` with `browserFallbackRecommended: true` (and adapter `scrapy_static`) are written to `jobs-browser-fallback-queue.json`. The next pipeline run uses that list as the scrapy_static registry and runs them with Scrapy-Playwright (`use_browser=True`).
 
 ## Static source triage
 
@@ -61,7 +61,7 @@ To see how much the job count changed after scraping improvements:
 
 Suggested comparison:
 
-- Before a run: note `len(jobs-unified.json)`, the size of `jobs-browser-fallback-queue.json`, and the number of sources with `classification` in `{blocked_or_challenge, needs_review}` in the last fetch report.
+- Before a run: note `len(jobs-unified.json)`, the size of `jobs-browser-fallback-queue.json`, and the number of sources with `classification` in `{blocked_or_challenge, anti_bot_or_challenge, rate_limited, needs_review}` in the last fetch report.
 - After a run (with Playwright fallbacks and Scrapy-Playwright enabled): compare the same metrics. Higher unified count, a smaller browser queue, and fewer blocked / needs_review sources indicate improvement.
 
 See also: `docs/DATA_CONTRACT.md` for report shapes and `docs/architecture-ai-map.md` for static adapter and Scrapy path. For static adapter edits, keep `src/jobs/adapters/static.py` as the compatibility surface and route implementation changes to the focused `static_{runtime,listing,detail,sources}.py` helpers. For pipeline/state edits, keep `src/jobs/pipeline.py` and `src/jobs/state.py` as stable roots and route implementation changes to `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`, `src/jobs/pipeline_runtime_{writers,summary}.py`, `src/jobs/pipeline_source_{loop,results,progress}.py`, and `src/jobs/state_source_{records,browser,migration}.py`. For payload/report shaping edits, keep `src/jobs/common/contracts.py` and `src/jobs/reporting.py` as stable surfaces and route implementation changes to `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` and `src/jobs/reporting_{summary,queues,breakdowns,social}.py`.

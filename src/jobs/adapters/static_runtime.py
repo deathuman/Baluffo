@@ -204,11 +204,18 @@ class StaticSourceContext:
     def record_static_fetch_failure(self, *, target_url: str, exc: Exception | str) -> None:
         msg = str(exc)
         linked_in_throttle = "linkedin" in f"{target_url} {msg}".lower()
-        if "HTTP 403" in msg or (
-            linked_in_throttle and ("HTTP 429" in msg or "Too Many Requests" in msg)
+        anti_bot_retry_rate_limited = bool(self.source.get("antiBotBrowserRetry")) and (
+            "HTTP 429" in msg or "Too Many Requests" in msg
+        )
+        if (
+            "HTTP 403" in msg
+            or anti_bot_retry_rate_limited
+            or (linked_in_throttle and ("HTTP 429" in msg or "Too Many Requests" in msg))
         ):
             self.entry_report["status"] = "error"
-            self.entry_report["classification"] = "blocked_or_challenge"
+            self.entry_report["classification"] = (
+                "anti_bot_or_challenge" if anti_bot_retry_rate_limited else "blocked_or_challenge"
+            )
             self.entry_report["browserFallbackRecommended"] = True
             self.entry_report["error"] = msg
             self.warnings.append(f"static:{self.source_name}:{target_url}: {msg}")

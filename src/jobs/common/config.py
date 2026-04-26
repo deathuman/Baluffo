@@ -72,7 +72,9 @@ SCRAPY_BROWSER_QUEUE_PATH = DEFAULT_OUTPUT_DIR / "jobs-browser-fallback-queue.js
 # Keep in sync with plugins/static/_heuristics.py CLASSIFICATION_* constants.
 STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE: frozenset = frozenset(
     {
+        "anti_bot_or_challenge",
         "blocked_or_challenge",
+        "rate_limited",
         "timeout",
     }
 )

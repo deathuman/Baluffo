@@ -9871,6 +9871,7 @@
     "studio": "Hadean",
     "company": "Hadean",
     "adapter": "static",
+    "antiBotBrowserRetry": true,
     "pages": [
       "https://hadean.com/careers/"
     ],
@@ -18930,6 +18931,7 @@
     "studio": "Lucky VR",
     "company": "Lucky VR",
     "adapter": "breezy",
+    "antiBotBrowserRetry": true,
     "pages": [
       "https://lucky-vr.breezy.hr/"
     ],
@@ -24712,6 +24714,7 @@
     "studio": "Stairway Games",
     "company": "Stairway Games",
     "adapter": "static",
+    "antiBotBrowserRetry": true,
     "pages": [
       "https://stairwaygames.com/careers"
     ],
@@ -26823,6 +26826,7 @@
     "studio": "Creative Assembly",
     "company": "Creative Assembly",
     "adapter": "static",
+    "antiBotBrowserRetry": true,
     "pages": [
       "https://www.creative-assembly.com/careers"
     ],
@@ -32139,6 +32143,7 @@
     "studio": "Worldwinner",
     "company": "Worldwinner",
     "adapter": "static",
+    "antiBotBrowserRetry": true,
     "pages": [
       "https://corp.worldwinner.com/careers/"
     ],

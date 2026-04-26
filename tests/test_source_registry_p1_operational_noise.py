@@ -101,6 +101,14 @@ BROWSER_REQUIRED_STATIC_IDS = {
     "static:listing_url:https://www.rollicgames.com/jobs",
 }
 
+ANTI_BOT_BROWSER_RETRY_IDS = {
+    "static:listing_url:https://corp.worldwinner.com/careers/",
+    "static:listing_url:https://stairwaygames.com/careers",
+    "static:listing_url:https://www.creative-assembly.com/careers",
+    "breezy:board_url:https://lucky-vr.breezy.hr/",
+    "static:listing_url:https://hadean.com/careers/",
+}
+
 
 def test_demote_duplicate_active_variants_keeps_best_family_winner() -> None:
     active = [
@@ -298,3 +306,20 @@ def test_browser_required_unresolved_static_rows_are_hidden_pending() -> None:
         assert hidden["pendingReason"] == "browser_required_static_source"
         assert hidden["residualFailureClass"] == "browser_required"
         assert hidden["residualFailureEvidence"]
+
+
+def test_anti_bot_residual_rows_remain_active_with_scoped_browser_retry_flag() -> None:
+    active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
+    pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+
+    active_by_id = {row["id"]: row for row in active}
+    pending_by_id = {row["id"]: row for row in pending}
+
+    assert ANTI_BOT_BROWSER_RETRY_IDS <= active_by_id.keys()
+    assert ANTI_BOT_BROWSER_RETRY_IDS.isdisjoint(pending_by_id)
+    for source_id in ANTI_BOT_BROWSER_RETRY_IDS:
+        row = active_by_id[source_id]
+        assert row["registryState"] == "active"
+        assert row["candidateState"] == "live"
+        assert row["enabledByDefault"] is True
+        assert row["antiBotBrowserRetry"] is True
