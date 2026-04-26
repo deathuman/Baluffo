@@ -73,7 +73,9 @@ def test_lint_workflow_uses_canonical_precommit_entrypoints() -> None:
     assert "ruff==0.15.9" in (root / "requirements-lock.txt").read_text(encoding="utf-8")
 
 
-def test_github_workflows_use_project_node_runtime_and_readiness_checks(repo_root: Path) -> None:
+def test_github_workflows_use_project_node_runtime_and_playwright_bridge_owner(
+    repo_root: Path,
+) -> None:
     workflows = sorted((repo_root / ".github" / "workflows").glob("*.yml"))
     setup_node_workflows = [
         path for path in workflows if "actions/setup-node" in path.read_text(encoding="utf-8")
@@ -93,9 +95,12 @@ def test_github_workflows_use_project_node_runtime_and_readiness_checks(repo_roo
         encoding="utf-8"
     )
     assert "sleep 15" not in test_workflow_text
-    assert "/ops/health" in test_workflow_text
-    assert "startupReady" in test_workflow_text
-    assert "/ops/fetcher-metrics" in test_workflow_text
+    assert "npm run dev:bridge &" not in test_workflow_text
+    assert "Wait for bridge readiness" not in test_workflow_text
+    assert "npm run test:smoke" in test_workflow_text
+    playwright_config = (repo_root / "playwright.config.js").read_text(encoding="utf-8")
+    assert 'globalSetup: "./tests/frontend/global-setup.js"' in playwright_config
+    assert 'globalTeardown: "./tests/frontend/global-teardown.js"' in playwright_config
 
     package = json.loads((repo_root / "package.json").read_text(encoding="utf-8"))
     assert package["engines"]["node"] == "25.8.0"

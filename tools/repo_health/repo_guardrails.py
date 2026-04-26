@@ -472,7 +472,7 @@ def run_workflow_group() -> list[GuardFailure]:
         for name in (
             "test_release_workflow_uses_canonical_test_entrypoints",
             "test_lint_workflow_uses_canonical_precommit_entrypoints",
-            "test_github_workflows_use_project_node_runtime_and_readiness_checks",
+            "test_github_workflows_use_project_node_runtime_and_playwright_bridge_owner",
             "test_lint_workflow_enforces_ruff_import_sorting",
             "test_lint_workflow_enforces_source_complexity_baseline",
             "test_package_json_exposes_repo_guardrails_entrypoint",
