@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tools.repo_health import repo_guardrails, suite_contract_policy
+from tools.repo_health.suppression_inventory import collect_suppressions
 
 
 def test_repo_guardrails_group_selection_runs_only_requested_group(monkeypatch) -> None:
@@ -226,6 +227,52 @@ def test_source_suppression_budget_fails_growth_and_new_codes(tmp_path: Path, mo
         "src has 2 suppression comments; budget is 1.",
         "src has unbudgeted suppression code SLF001: 1.",
     ]
+
+
+def test_source_suppression_budget_fails_type_ignore_regression(
+    tmp_path: Path, monkeypatch
+) -> None:
+    budget = tmp_path / "suppressions.json"
+    budget.write_text(
+        json.dumps(
+            {
+                "scope": "src",
+                "max_total_comments": 0,
+                "max_by_code": {"BLE001": 0},
+                "rationale": "Ratchet suppressions.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    source_file = tmp_path / "src" / "owner.py"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text(
+        "value = dynamic_call()  # type: ignore[attr-defined]\n", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(repo_guardrails, "ROOT", tmp_path)
+    monkeypatch.setattr(repo_guardrails, "SOURCE_SUPPRESSION_BUDGET_PATH", budget)
+
+    assert repo_guardrails.check_source_suppression_budget() == [
+        "src has 1 suppression comments; budget is 0.",
+        "src has unbudgeted suppression code type-ignore: 1.",
+    ]
+
+
+def test_suppression_inventory_reports_code_file_hotspots(tmp_path: Path) -> None:
+    source_file = tmp_path / "src" / "owner.py"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text(
+        "except Exception:  # noqa: BLE001\nvalue = call()  # noqa: SLF001\n",
+        encoding="utf-8",
+    )
+
+    inventory = collect_suppressions(tmp_path)
+
+    assert inventory.total == 2
+    assert inventory.by_code == {"BLE001": 1, "SLF001": 1}
+    assert inventory.by_file == {"src/owner.py": 2}
+    assert inventory.by_code_file[("BLE001", "src/owner.py")] == 1
 
 
 def test_source_suppression_budget_requires_valid_metadata(tmp_path: Path, monkeypatch) -> None:

@@ -49,6 +49,22 @@ ignore = [
 "src/ship/desktop_app/__init__.py" = [
   "F821",  # ROOT may be dynamically defined
 ]
+"src/bridge/server/handler.py" = [
+  "A003",  # BaseHTTPRequestHandler requires the `format` parameter name in log_message.
+  "N802",  # BaseHTTPRequestHandler requires do_GET/do_POST/do_OPTIONS method names.
+]
+"src/ship/runtime_launcher.py" = [
+  "A003",  # BaseHTTPRequestHandler requires the `format` parameter name in log_message.
+  "N802",  # BaseHTTPRequestHandler requires do_GET/end_headers method names.
+]
+"src/ship/packaged_smoke/rehearsal_sync.py" = [
+  "A003",  # BaseHTTPRequestHandler requires the `format` parameter name in log_message.
+  "N802",  # BaseHTTPRequestHandler requires do_GET/do_POST method names.
+]
+"src/ship/packaged_smoke/rehearsal_update.py" = [
+  "A003",  # BaseHTTPRequestHandler requires the `format` parameter name in log_message.
+  "N802",  # BaseHTTPRequestHandler requires do_GET method names.
+]
 "src/source_discovery/gameprog.py" = [
   "B007",  # unused loop variable in legacy code
 ]

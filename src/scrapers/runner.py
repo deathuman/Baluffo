@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import sys
@@ -325,12 +326,10 @@ def _run_scrapy(validated: dict[str, Any]) -> dict[str, Any]:
 
     use_browser = bool(runtime.get("use_browser", False))
     if use_browser:
-        try:
-            import scrapy_playwright  # noqa: F401
-
+        if importlib.util.find_spec("scrapy_playwright") is not None:
             for setting_key, setting_value in SCRAPY_PLAYWRIGHT_SETTINGS.items():
                 settings_dict[setting_key] = setting_value
-        except ImportError:
+        else:
             use_browser = False
 
     settings = Settings(settings_dict)

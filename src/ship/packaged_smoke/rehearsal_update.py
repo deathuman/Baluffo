@@ -107,7 +107,7 @@ class _DesktopUpdateReleaseHandler(http.server.BaseHTTPRequestHandler):
         self._portable_zip = portable_zip
         super().__init__(*args, **kwargs)
 
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+    def log_message(self, format: str, *args: Any) -> None:
         return
 
     def _send_json(self, payload: Any, *, status: int = 200) -> None:
@@ -130,7 +130,7 @@ class _DesktopUpdateReleaseHandler(http.server.BaseHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         if self.path.startswith("/repos/local/baluffo-smoke/releases"):
             self._send_json(self._release_payload)
             return

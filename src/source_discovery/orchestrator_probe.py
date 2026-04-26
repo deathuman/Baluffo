@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import suppress
 from typing import Any
 from urllib.parse import urlparse
 
@@ -123,15 +124,13 @@ async def _run_probe_batch(
 def probe_and_recover(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> None:
     orchestrator = _require_root()
     try_playwright = None
-    try:
+    with suppress(Exception):
         from src.bridge.source_check_http import try_fetch_with_playwright as _try_pw
 
         browser_fallback_guard = BrowserFallbackCircuitBreaker.from_state(
             state.source_state_rows, cooldown_minutes=30
         )
         try_playwright = browser_fallback_guard.wrap(_try_pw)
-    except Exception:  # noqa: S110
-        browser_fallback_guard = None
     playwright_semaphore = asyncio.Semaphore(5) if try_playwright else None
 
     completed = 0

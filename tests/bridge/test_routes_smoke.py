@@ -31,7 +31,7 @@ class _FakeHandler:
     def __init__(self) -> None:
         self.sent: list[dict[str, Any]] = []
 
-    def _send_json(self, payload: Any, status: int = 200) -> None:  # noqa: SLF001
+    def send_json(self, payload: Any, status: int = 200) -> None:
         self.sent.append({"status": int(status), "payload": payload})
 
 

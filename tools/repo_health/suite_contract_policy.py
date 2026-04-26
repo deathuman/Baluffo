@@ -1168,6 +1168,19 @@ def test_bridge_post_routes_root_stays_thin_registration_surface(repo_root: Path
     )
 
 
+def test_bridge_routes_use_public_response_writer(repo_root: Path) -> None:
+    route_root = repo_root / "src" / "bridge" / "routes"
+    offenders: list[str] = []
+    for path in sorted(route_root.glob("*_routes*.py")):
+        text = path.read_text(encoding="utf-8")
+        if "handler._send_json" in text or "handler._send_bytes" in text:
+            offenders.append(path.relative_to(repo_root).as_posix())
+    assert not offenders, (
+        "Bridge route modules must use the public BridgeResponseWriter surface, "
+        "not private handler send methods:\n- " + "\n- ".join(offenders)
+    )
+
+
 def test_admin_runtime_megatest_stays_split(repo_root: Path) -> None:
     legacy = repo_root / "tests" / "admin" / "test_admin_bridge_ops_runtime.py"
     assert not legacy.exists()

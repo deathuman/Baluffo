@@ -29,10 +29,38 @@ class FakeHandler:
         self.sent: list[dict[str, Any]] = []
         self.bytes_sent: list[dict[str, Any]] = []
 
+    def send_json(self, payload: Any, status: int = 200) -> None:
+        self._send_json(payload, status=status)
+
     def _send_json(self, payload: Any, status: int = 200) -> None:
         self.sent.append({"status": status, "payload": payload})
 
-    def _send_bytes(self, body: bytes, content_type: str, status: int = 200) -> None:
+    def send_bytes(
+        self,
+        body: bytes,
+        *,
+        content_type: str,
+        filename: str = "",
+        disposition: str = "inline",
+        status: int = 200,
+    ) -> None:
+        self._send_bytes(
+            body,
+            content_type=content_type,
+            filename=filename,
+            disposition=disposition,
+            status=status,
+        )
+
+    def _send_bytes(
+        self,
+        body: bytes,
+        *,
+        content_type: str,
+        filename: str = "",
+        disposition: str = "inline",
+        status: int = 200,
+    ) -> None:
         self.bytes_sent.append({"status": status, "body": body, "content_type": content_type})
 
 

@@ -56,7 +56,7 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
         def _route_query(self) -> dict[str, list[str]]:
             return parse_qs(urlparse(self.path).query)
 
-        def _send_json(self, payload: Any, status: int = 200) -> None:
+        def send_json(self, payload: Any, status: int = 200) -> None:
             # Some payloads may contain lone surrogates or other encoding edge
             # cases; retry with `ensure_ascii=True` so we can always respond.
             try:
@@ -78,7 +78,10 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
                     return
                 raise
 
-        def _send_bytes(
+        def _send_json(self, payload: Any, status: int = 200) -> None:
+            self.send_json(payload, status=status)
+
+        def send_bytes(
             self,
             body: bytes,
             *,
@@ -108,7 +111,24 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
                     return
                 raise
 
-        def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+        def _send_bytes(
+            self,
+            body: bytes,
+            *,
+            content_type: str,
+            filename: str = "",
+            disposition: str = "inline",
+            status: int = 200,
+        ) -> None:
+            self.send_bytes(
+                body,
+                content_type=content_type,
+                filename=filename,
+                disposition=disposition,
+                status=status,
+            )
+
+        def log_message(self, format: str, *args: Any) -> None:
             runtime_config = getattr(api, "runtime_config", None)
             if runtime_config is not None and bool(
                 getattr(runtime_config, "quiet_requests", False)
@@ -116,7 +136,7 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
                 return
             try:
                 message = format % args
-            except Exception:  # noqa: BLE001
+            except (TypeError, ValueError):
                 message = format
             api.bridge_log(
                 "debug",
@@ -126,33 +146,29 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
                 detail=message,
             )
 
-        def do_OPTIONS(self) -> None:  # noqa: N802
-            self._send_json({"ok": True})
+        def do_OPTIONS(self) -> None:
+            self.send_json({"ok": True})
 
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             path = ""
             try:
                 path = self._route_path()
                 query = self._route_query()
-                try:
+                with suppress(Exception):
                     api.bridge_log(
                         "info", "http_get_route", rawPath=getattr(self, "path", ""), routePath=path
                     )
-                except Exception:
-                    pass
 
                 from src.bridge.routes.get_routes import handle_get
 
                 if handle_get(self, api=api, path=path, query=query):
                     return
-                self._send_json({"error": "Not found"}, status=404)
+                self.send_json({"error": "Not found"}, status=404)
             except Exception as exc:  # noqa: BLE001
                 # Logging must never prevent the error response from being sent.
-                try:
+                with suppress(Exception):
                     api.bridge_log("error", "http_get_handler_failed", path=path, error=str(exc))
-                except Exception:  # noqa: BLE001
-                    pass
-                self._send_json(
+                self.send_json(
                     {
                         "error": "Internal server error",
                         "detail": str(exc),
@@ -161,7 +177,7 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
                     status=500,
                 )
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             path = self._route_path()
             payload = read_json_from_request(self)
             from src.bridge.routes.post_routes import handle_post
@@ -169,10 +185,10 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
             try:
                 if handle_post(self, api=api, path=path, payload=payload):
                     return
-                self._send_json({"error": "Not found"}, status=404)
+                self.send_json({"error": "Not found"}, status=404)
             except BaseException as exc:  # noqa: BLE001
                 # Logging must never prevent the error response from being sent.
-                try:
+                with suppress(Exception):
                     api.bridge_log(
                         "error",
                         "http_post_handler_failed",
@@ -180,9 +196,7 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
                         error=str(exc),
                         detail=traceback.format_exc(),
                     )
-                except Exception:  # noqa: BLE001
-                    pass
-                self._send_json(
+                self.send_json(
                     {
                         "error": "Internal server error",
                         "detail": str(exc),

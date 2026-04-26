@@ -1,17 +1,12 @@
 {
   "scope": "src",
-  "max_total_comments": 325,
+  "max_total_comments": 185,
   "max_by_code": {
-    "A003": 4,
-    "BLE001": 185,
-    "E501": 6,
-    "F401": 2,
-    "N802": 8,
+    "BLE001": 176,
     "PLC2701": 1,
-    "S110": 3,
     "S310": 2,
     "S603": 1,
-    "SLF001": 119
+    "SLF001": 5
   },
   "rationale": "Ratchet after the first suppression cleanup tranche. Future suppressions must be removed or this budget must be updated explicitly with the same change."
 }

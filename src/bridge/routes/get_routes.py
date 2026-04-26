@@ -12,6 +12,7 @@ from typing import Any
 from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
+from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.core.schemas import LocalSavedJobRowSchema
 from src.source_registry import is_hidden_from_default
 
@@ -173,7 +174,9 @@ def _read_utf8_log_text(path: Path) -> str:
         return raw.decode("utf-8", errors="replace")
 
 
-def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list[str]]) -> bool:
+def handle_get(
+    handler: BridgeResponseWriter, *, api: BridgeApi, path: str, query: dict[str, list[str]]
+) -> bool:
     """Handle GET routes for the admin bridge.
 
     Important: `api` must be the currently running BridgeApi instance.
@@ -207,41 +210,41 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
 
             payload = _as_dict(report) or {"summary": {}, "candidates": [], "failures": []}
             # Prefer the bytes-writing helper to bypass any unexpected issues
-            # in `_send_json` for edge-case payloads.
-            if hasattr(handler, "_send_bytes"):
+            # in JSON response serialization for edge-case payloads.
+            if hasattr(handler, "send_bytes"):
                 try:
                     text = json.dumps(payload, ensure_ascii=False, default=str)
                     body = text.encode("utf-8")
                 except UnicodeEncodeError:
                     text = json.dumps(payload, ensure_ascii=True, default=str)
                     body = text.encode("utf-8")
-                handler._send_bytes(  # noqa: SLF001
+                handler.send_bytes(
                     body,
                     content_type="application/json; charset=utf-8",
                     status=200,
                 )
             else:
-                handler._send_json(payload)  # noqa: SLF001
+                handler.send_json(payload)
         except Exception as exc:  # noqa: BLE001
             try:
                 api.bridge_log("error", "discovery_report_route_failed", error=str(exc))
             except Exception:  # noqa: BLE001
                 pass
             payload = {"error": "failed_to_load_discovery_report", "detail": str(exc)}
-            if hasattr(handler, "_send_bytes"):
+            if hasattr(handler, "send_bytes"):
                 try:
                     text = json.dumps(payload, ensure_ascii=False, default=str)
                     body = text.encode("utf-8")
                 except UnicodeEncodeError:
                     text = json.dumps(payload, ensure_ascii=True, default=str)
                     body = text.encode("utf-8")
-                handler._send_bytes(  # noqa: SLF001
+                handler.send_bytes(
                     body,
                     content_type="application/json; charset=utf-8",
                     status=500,
                 )
             else:
-                handler._send_json(payload, status=500)  # noqa: SLF001
+                handler.send_json(payload, status=500)
         return True
 
     if path == "/discovery/candidates":
@@ -256,13 +259,13 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
                     raw = []
                 candidates = [row for row in _as_list(raw) if isinstance(row, dict)]
                 payload = {"candidates": candidates, "count": len(candidates)}
-            handler._send_json(payload)  # noqa: SLF001
+            handler.send_json(payload)
         except Exception as exc:  # noqa: BLE001
             try:
                 api.bridge_log("error", "discovery_candidates_route_failed", error=str(exc))
             except Exception:  # noqa: BLE001
                 pass
-            handler._send_json(  # noqa: SLF001
+            handler.send_json(
                 {"error": "failed_to_load_discovery_candidates", "detail": str(exc)},
                 status=500,
             )
@@ -271,7 +274,7 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
     if path == "/desktop-local-data/session":
         try:
             desktop_session = api.get_desktop_session_payload()
-            handler._send_json(  # noqa: SLF001
+            handler.send_json(
                 {
                     "ok": True,
                     "user": api.desktop_local_data_store().get_current_user(),
@@ -280,16 +283,16 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
                 }
             )
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+            handler.send_json({"ok": False, "error": str(exc)}, status=400)
         return True
 
     if path == "/desktop-local-data/profiles":
         try:
-            handler._send_json(
+            handler.send_json(
                 {"ok": True, "profiles": api.desktop_local_data_store().list_profiles()}
-            )  # noqa: SLF001
+            )
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+            handler.send_json({"ok": False, "error": str(exc)}, status=400)
         return True
 
     if path == "/desktop-local-data/saved-jobs":
@@ -303,33 +306,33 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
                     rows.append(row)
                 except PydanticValidationError as exc:
                     logger.warning("Saved job row validation failed, skipping: %s", exc)
-            handler._send_json({"ok": True, "rows": rows})  # noqa: SLF001
+            handler.send_json({"ok": True, "rows": rows})
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+            handler.send_json({"ok": False, "error": str(exc)}, status=400)
         return True
 
     if path == "/desktop-local-data/saved-job-keys":
         try:
             uid = (query.get("uid") or [""])[0]
-            handler._send_json(
+            handler.send_json(
                 {"ok": True, "keys": api.desktop_local_data_store().get_saved_job_keys(uid)}
-            )  # noqa: SLF001
+            )
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+            handler.send_json({"ok": False, "error": str(exc)}, status=400)
         return True
 
     if path == "/desktop-local-data/attachments":
         try:
             uid = (query.get("uid") or [""])[0]
             job_key = (query.get("jobKey") or [""])[0]
-            handler._send_json(
+            handler.send_json(
                 {
                     "ok": True,
                     "rows": api.desktop_local_data_store().list_attachments_for_job(uid, job_key),
                 }
-            )  # noqa: SLF001
+            )
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+            handler.send_json({"ok": False, "error": str(exc)}, status=400)
         return True
 
     if path == "/desktop-local-data/attachments/content":
@@ -341,14 +344,14 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
             body, content_type, filename = api.desktop_local_data_store().get_attachment_blob(
                 uid, job_key, attachment_id
             )
-            handler._send_bytes(  # noqa: SLF001
+            handler.send_bytes(
                 body,
                 content_type=content_type,
                 filename=filename,
                 disposition="attachment" if download_flag in {"1", "true", "yes"} else "inline",
             )
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+            handler.send_json({"ok": False, "error": str(exc)}, status=400)
         return True
 
     if path == "/desktop-local-data/backup/export-file":
@@ -370,37 +373,37 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
                     zf.writestr("backup.json", backup_json)
                 body = buffer.getvalue()
                 filename = f"baluffo-backup-{safe_uid}-{date_token}.zip"
-                handler._send_bytes(
+                handler.send_bytes(
                     body,
                     content_type="application/zip",
                     filename=filename,
                     disposition="attachment",
-                )  # noqa: SLF001
+                )
             else:
                 body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
                 filename = f"baluffo-backup-{safe_uid}-{date_token}.json"
-                handler._send_bytes(
+                handler.send_bytes(
                     body,
                     content_type="application/json; charset=utf-8",
                     filename=filename,
                     disposition="attachment",
-                )  # noqa: SLF001
+                )
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+            handler.send_json({"ok": False, "error": str(exc)}, status=400)
         return True
 
     if path == "/desktop-local-data/activity":
         try:
             uid = (query.get("uid") or [""])[0]
             limit = int((query.get("limit") or ["300"])[0])
-            handler._send_json(
+            handler.send_json(
                 {
                     "ok": True,
                     "rows": api.desktop_local_data_store().list_activity_for_user(uid, limit),
                 }
-            )  # noqa: SLF001
+            )
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+            handler.send_json({"ok": False, "error": str(exc)}, status=400)
         return True
 
     if path == "/desktop-local-data/startup-metrics":
@@ -410,30 +413,30 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
                 limit = int(limit_raw)
             except ValueError:
                 limit = 200
-            handler._send_json({"ok": True, "rows": api.read_startup_metrics(limit)})  # noqa: SLF001
+            handler.send_json({"ok": True, "rows": api.read_startup_metrics(limit)})
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc)}, status=400)  # noqa: SLF001
+            handler.send_json({"ok": False, "error": str(exc)}, status=400)
         return True
 
     if path == "/app/update-status":
         try:
-            handler._send_json(api.get_update_status_payload())  # noqa: SLF001
+            handler.send_json(api.get_update_status_payload())
         except Exception as exc:  # noqa: BLE001
-            handler._send_json({"ok": False, "error": str(exc)}, status=500)  # noqa: SLF001
+            handler.send_json({"ok": False, "error": str(exc)}, status=500)
         return True
 
     if path == "/registry/active":
         state = api.load_state()
-        handler._send_json({"sources": state["active"], "summary": api.summarize_state(state)})  # noqa: SLF001
+        handler.send_json({"sources": state["active"], "summary": api.summarize_state(state)})
         return True
 
     if path == "/registry/pending":
-        handler._send_json(_pending_registry_payload(api, query))  # noqa: SLF001
+        handler.send_json(_pending_registry_payload(api, query))
         return True
 
     if path == "/registry/rejected":
         state = api.load_state()
-        handler._send_json({"sources": state["rejected"], "summary": api.summarize_state(state)})  # noqa: SLF001
+        handler.send_json({"sources": state["rejected"], "summary": api.summarize_state(state)})
         return True
 
     if path == "/discovery/log":
@@ -445,9 +448,9 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
         text = _read_utf8_log_text(api.DISCOVERY_LOG_PATH)
         chunk = text[offset:]
         next_offset = len(text)
-        handler._send_json(
+        handler.send_json(
             {"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False}
-        )  # noqa: SLF001
+        )
         return True
 
     if path == "/fetcher/log":
@@ -459,18 +462,18 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
         text = _read_utf8_log_text(api.FETCHER_LOG_PATH)
         chunk = text[offset:]
         next_offset = len(text)
-        handler._send_json(
+        handler.send_json(
             {"text": chunk, "offset": offset, "nextOffset": next_offset, "hasMore": False}
-        )  # noqa: SLF001
+        )
         return True
 
     if path == "/registry/summary":
         state = api.load_state()
-        handler._send_json({"summary": api.summarize_state(state)})  # noqa: SLF001
+        handler.send_json({"summary": api.summarize_state(state)})
         return True
 
     if path == "/ops/health":
-        handler._send_json(api.compute_ops_health())  # noqa: SLF001
+        handler.send_json(api.compute_ops_health())
         return True
 
     if path == "/ops/history":
@@ -485,26 +488,26 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
             rows = list(getattr(projection, "rows", []) or [])
         else:
             rows = api.sync_history_from_reports()
-        handler._send_json({"runs": rows[-limit:], "count": len(rows)})  # noqa: SLF001
+        handler.send_json({"runs": rows[-limit:], "count": len(rows)})
         return True
 
     if path == "/discovery/config":
-        handler._send_json(api.get_discovery_config_payload())  # noqa: SLF001
+        handler.send_json(api.get_discovery_config_payload())
         return True
 
     if path == "/ops/task-state":
-        handler._send_json(api.get_current_task_state_payload())  # noqa: SLF001
+        handler.send_json(api.get_current_task_state_payload())
         return True
 
     if path.startswith("/ops/task-live/"):
         task_type = path.removeprefix("/ops/task-live/").strip().lower()
         if task_type not in {"fetch", "discovery", "sync"}:
-            handler._send_json(
+            handler.send_json(
                 {"ok": False, "error": f"unsupported task type: {task_type or 'unknown'}"},
                 status=404,
-            )  # noqa: SLF001
+            )
             return True
-        handler._send_json(api.get_task_live_payload(task_type))  # noqa: SLF001
+        handler.send_json(api.get_task_live_payload(task_type))
         return True
 
     if path == "/ops/fetcher-metrics":
@@ -513,7 +516,7 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
             window_runs = max(1, min(200, int(window_raw)))
         except ValueError:
             window_runs = 20
-        handler._send_json(api.compute_fetcher_metrics(window_runs=window_runs))  # noqa: SLF001
+        handler.send_json(api.compute_fetcher_metrics(window_runs=window_runs))
         return True
 
     if path == "/ops/fetch-report":
@@ -523,15 +526,15 @@ def handle_get(handler: Any, *, api: BridgeApi, path: str, query: dict[str, list
         )
         if view == "live" and isinstance(payload, dict):
             payload = _compact_live_fetch_report_payload(payload)
-        handler._send_json(payload)  # noqa: SLF001
+        handler.send_json(payload)
         return True
 
     if path == "/sync/status":
-        handler._send_json(api.get_sync_status_payload())  # noqa: SLF001
+        handler.send_json(api.get_sync_status_payload())
         return True
 
     if path == "/tasks/run-jobs-pipeline-status":
-        handler._send_json(api.get_jobs_pipeline_status_payload())  # noqa: SLF001
+        handler.send_json(api.get_jobs_pipeline_status_payload())
         return True
 
     return False

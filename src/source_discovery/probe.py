@@ -224,7 +224,7 @@ def probe_candidate(
                         flush=True,
                     )
                     return True, max(0, int(count)), ""
-                except Exception:  # noqa: S110
+                except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
                     continue
     return False, 0, last_error
 
@@ -276,7 +276,7 @@ async def async_probe_candidate(
                             flush=True,
                         )
                         return True, max(0, int(count)), ""
-                    except Exception:  # noqa: S110
+                    except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
                         pass
             finally:
                 if sem is not None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Callable
+from contextlib import suppress
 from typing import Any
 
 from src.jobs.adapters import community
@@ -30,7 +31,7 @@ SUPPORTED_REDIRECT_HOSTS = common_config.SUPPORTED_REDIRECT_HOSTS
 httpx: Any | None
 try:
     import httpx as httpx
-except Exception:  # noqa: BLE001
+except ImportError:
     httpx = None
 
 
@@ -247,10 +248,8 @@ class PooledRedirectResolver:
         self._client = None
         if client is None:
             return
-        try:
+        with suppress(Exception):
             client.close()
-        except Exception:  # noqa: BLE001
-            pass
 
 
 def build_redirect_resolver(
@@ -326,10 +325,8 @@ class AsyncHttpTextFetcher:
         try:
             self._loop.run_forever()
         finally:
-            try:
+            with suppress(Exception):
                 self._loop.run_until_complete(self._loop.shutdown_asyncgens())
-            except Exception:  # noqa: BLE001
-                pass
             asyncio.set_event_loop(None)
             self._loop.close()
 
@@ -351,15 +348,11 @@ class AsyncHttpTextFetcher:
         if self._closed:
             return
         self._closed = True
-        try:
+        with suppress(Exception):
             future = asyncio.run_coroutine_threadsafe(self._aclose(), self._loop)
             future.result(timeout=5)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
+        with suppress(Exception):
             self._loop.call_soon_threadsafe(self._loop.stop)
-        except Exception:  # noqa: BLE001
-            pass
         self._thread.join(timeout=2)
 
 
@@ -404,10 +397,8 @@ def resolve_fetch_text_impl(
     if fetch_text is not default_fetch_text and fetch_text is not common_default_fetch_text:
         return fetch_text, "custom", async_fetcher
     if strategy in {"http", "auto"} and httpx is not None:
-        try:
+        with suppress(Exception):
             async_fetcher = AsyncHttpTextFetcher(max_connections=adapter_http_concurrency)
             chosen = "httpx_async"
             return async_fetcher.fetch_text, chosen, async_fetcher
-        except Exception:  # noqa: BLE001
-            pass
     return default_fetch_text, chosen, async_fetcher

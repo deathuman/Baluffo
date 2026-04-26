@@ -31,7 +31,9 @@ from src.ship.startup_telemetry import (
 )
 from src.ship.startup_telemetry import (
     startup_probe_enabled,
-    wait_for_url,  # noqa: F401
+)
+from src.ship.startup_telemetry import (
+    wait_for_url as wait_for_url,
 )
 
 BRIDGE_DEFAULTS = get_bridge_defaults()
@@ -75,7 +77,7 @@ class RuntimeLayout:
 
 
 class QuietSimpleHTTPRequestHandler(SimpleHTTPRequestHandler):
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A003
+    def log_message(self, format: str, *args: object) -> None:
         return
 
     def handle_one_request(self) -> None:
@@ -160,14 +162,14 @@ def build_site_request_handler(
                 return str((self._static_data_dir.joinpath(*safe_parts)).resolve())
             return super().translate_path(path)
 
-        def end_headers(self):  # noqa: N802
+        def end_headers(self):
             # Desktop runtime should always load the latest local bundle assets.
             self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
             self.send_header("Pragma", "no-cache")
             self.send_header("Expires", "0")
             return super().end_headers()
 
-        def do_GET(self):  # noqa: N802
+        def do_GET(self):
             trace_enabled = bool(startup_probe and self._runtime_data_dir)
             path_only = str(getattr(self, "path", "") or "").split("?", 1)[0]
             trace_path = path_only.lstrip("/")

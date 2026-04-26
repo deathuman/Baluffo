@@ -98,7 +98,7 @@ class _PackagedSyncRehearsalHandler(http.server.BaseHTTPRequestHandler):
         self._stats = stats
         super().__init__(*args, **kwargs)
 
-    def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+    def log_message(self, format: str, *args: Any) -> None:
         return
 
     def _send_json(self, payload: dict[str, Any], status: int = 200) -> None:
@@ -109,7 +109,7 @@ class _PackagedSyncRehearsalHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         parsed = urlsplit(self.path)
         expected_path = f"/app/installations/{self._installation_id}/access_tokens"
         if parsed.path != expected_path:
@@ -128,7 +128,7 @@ class _PackagedSyncRehearsalHandler(http.server.BaseHTTPRequestHandler):
             }
         )
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         parsed = urlsplit(self.path)
         expected_prefix = f"/repos/{self._repo}/contents/"
         if not parsed.path.startswith(expected_prefix):

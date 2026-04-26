@@ -370,7 +370,7 @@ def test_status_endpoint_returns_current_state(payload, expected, tmp_path: Path
         def __init__(self):
             self.sent = []
 
-        def _send_json(self, payload, status=200):
+        def send_json(self, payload, status=200):
             self.sent.append({"status": status, "payload": payload})
 
     class FakeApi:
@@ -489,7 +489,7 @@ class TestAdminPanelTaskDisplay:
             def __init__(self):
                 self.sent = []
 
-            def _send_json(self, payload, status=200):
+            def send_json(self, payload, status=200):
                 self.sent.append({"status": status, "payload": payload})
 
         class FakeApi:
@@ -699,7 +699,7 @@ def test_pipeline_status_matches_frontend_contract(tmp_path: Path) -> None:
         def __init__(self):
             self.sent = []
 
-        def _send_json(self, payload, status=200):
+        def send_json(self, payload, status=200):
             self.sent.append({"status": status, "payload": payload})
 
     class FakeApi:

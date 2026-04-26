@@ -10,6 +10,7 @@ from src.bridge.registry_tombstones import (
     save_tombstones,
     tombstone_source_row,
 )
+from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.shared.json_shapes import (
     as_json_list,
     as_json_object,
@@ -64,19 +65,19 @@ def _transition_registry_row(
     return dict(row)
 
 
-def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> bool:
+def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, payload: Any) -> bool:
     state = api.load_state()
     data = as_json_object(payload)
 
     if path == "/sources/manual":
         result = api.add_manual_source(str(data.get("url") or ""))
-        handler._send_json(result)  # noqa: SLF001
+        handler.send_json(result)
         return True
 
     if path == "/discovery/check-source":
         result = api.trigger_source_check(str(data.get("sourceId") or ""))
         status = 200 if bool(result.get("started")) else 400
-        handler._send_json(result, status=status)  # noqa: SLF001
+        handler.send_json(result, status=status)
         return True
 
     if path == "/registry/approve":
@@ -100,7 +101,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
             moved
         )
         api.save_json_atomic(api.APPROVAL_STATE_PATH, approval)
-        handler._send_json({"approved": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
+        handler.send_json({"approved": len(moved), "summary": api.summarize_state(state)})
         return True
 
     if path == "/registry/reject":
@@ -120,7 +121,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         ]
         state["rejected"] = api.unique_sources([*state["rejected"], *moved])
         state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_REJECT)
-        handler._send_json({"rejected": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
+        handler.send_json({"rejected": len(moved), "summary": api.summarize_state(state)})
         return True
 
     if path == "/registry/rollback":
@@ -144,7 +145,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         state["active"] = active_remaining
         state["pending"] = api.unique_sources([*state["pending"], *moved])
         state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_ROLLBACK)
-        handler._send_json({"rolledBack": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
+        handler.send_json({"rolledBack": len(moved), "summary": api.summarize_state(state)})
         return True
 
     if path == "/registry/demote-active":
@@ -187,7 +188,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         state["active"] = active_remaining
         state["pending"] = api.unique_sources([*state["pending"], *moved])
         state = api.persist_state_and_auto_sync(state, reason=demote_reason)
-        handler._send_json({"demoted": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
+        handler.send_json({"demoted": len(moved), "summary": api.summarize_state(state)})
         return True
 
     if path == "/registry/restore-rejected":
@@ -206,7 +207,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
         ]
         state["pending"] = api.unique_sources([*state["pending"], *moved])
         state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_RESTORE_REJECTED)
-        handler._send_json({"restored": len(moved), "summary": api.summarize_state(state)})  # noqa: SLF001
+        handler.send_json({"restored": len(moved), "summary": api.summarize_state(state)})
         return True
 
     if path == "/registry/restore-deleted":
@@ -227,7 +228,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
             if selected_urls and str(record.get("sourceUrlFingerprint") or "") in selected_urls:
                 matched.append((source_id, record))
         if not matched:
-            handler._send_json({"restored": 0, "summary": api.summarize_state(state)})  # noqa: SLF001
+            handler.send_json({"restored": 0, "summary": api.summarize_state(state)})
             return True
         for source_id, _record in matched:
             row = tombstone_source_row(tombstones.get(source_id))
@@ -265,7 +266,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
             tombstones, _removed = remove_tombstone(source_id, tombstones)
         save_tombstones(tombstones)
         state = api.persist_state_and_auto_sync(state, reason=REGISTRY_REASON_RESTORE_DELETED)
-        handler._send_json({"restored": len(matched), "summary": api.summarize_state(state)})  # noqa: SLF001
+        handler.send_json({"restored": len(matched), "summary": api.summarize_state(state)})
         return True
 
     if path == "/registry/delete":
@@ -282,7 +283,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
             if api.normalize_source_url(str(item))
         }
         if not selected and not selected_urls:
-            handler._send_json({"deleted": 0, "summary": api.summarize_state(state)})  # noqa: SLF001
+            handler.send_json({"deleted": 0, "summary": api.summarize_state(state)})
             return True
         tombstones = load_tombstones()
         deleted_count = 0
@@ -315,7 +316,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
                 next_state[bucket].append(row)
         save_tombstones(tombstones)
         state = api.persist_state_and_auto_sync(next_state, reason=REGISTRY_REASON_DELETE)
-        handler._send_json({"deleted": deleted_count, "summary": api.summarize_state(state)})  # noqa: SLF001
+        handler.send_json({"deleted": deleted_count, "summary": api.summarize_state(state)})
         return True
 
     if path == "/tasks/run-discovery":
@@ -335,7 +336,7 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
                 )
             except Exception:  # noqa: BLE001
                 pass
-            handler._send_json(result, status=status_code)  # noqa: SLF001
+            handler.send_json(result, status=status_code)
         except Exception as exc:  # noqa: BLE001
             try:
                 api.bridge_log(
@@ -346,71 +347,73 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
                 )
             except Exception:  # noqa: BLE001
                 pass
-            handler._send_json(
-                {"started": False, "task": "discovery", "error": str(exc)}, status=500
-            )  # noqa: SLF001,E501
+            handler.send_json(
+                {"started": False, "task": "discovery", "error": str(exc)},
+                status=500,
+            )
         return True
 
     if path == "/tasks/run-jobs-pipeline":
         result = api.start_jobs_pipeline_task(data)
         status_code = 200 if bool(result.get("started")) else 409
-        handler._send_json(result, status=status_code)  # noqa: SLF001
+        handler.send_json(result, status=status_code)
         return True
 
     if path == "/tasks/run-sync-pull":
         try:
             result = api.start_sync_task("pull", reason="manual_pull", automatic=False)
             status_code = 200 if bool(result.get("started")) else 409
-            handler._send_json(result, status=status_code)  # noqa: SLF001
+            handler.send_json(result, status=status_code)
         except Exception as exc:  # noqa: BLE001
-            handler._send_json(
+            handler.send_json(
                 {"started": False, "task": "source_sync", "action": "pull", "error": str(exc)},
                 status=500,
-            )  # noqa: SLF001,E501
+            )
         return True
 
     if path == "/tasks/run-sync-push":
         try:
             result = api.start_sync_task("push", reason="manual_push", automatic=False)
             status_code = 200 if bool(result.get("started")) else 409
-            handler._send_json(result, status=status_code)  # noqa: SLF001
+            handler.send_json(result, status=status_code)
         except Exception as exc:  # noqa: BLE001
-            handler._send_json(
+            handler.send_json(
                 {"started": False, "task": "source_sync", "action": "push", "error": str(exc)},
                 status=500,
-            )  # noqa: SLF001,E501
+            )
         return True
 
     if path == "/tasks/run-fetcher":
         try:
             result = api.start_fetcher_task(data)
             status_code = 409 if bool(result.get("alreadyRunning")) else 200
-            handler._send_json(result, status=status_code)  # noqa: SLF001
+            handler.send_json(result, status=status_code)
         except Exception as exc:  # noqa: BLE001
-            handler._send_json(
-                {"started": False, "task": "jobs_fetcher", "error": str(exc)}, status=500
-            )  # noqa: SLF001,E501
+            handler.send_json(
+                {"started": False, "task": "jobs_fetcher", "error": str(exc)},
+                status=500,
+            )
         return True
 
     if path == "/discovery/config":
         try:
             api.update_saved_discovery_settings(data)
-            handler._send_json(api.get_discovery_config_payload())  # noqa: SLF001
+            handler.send_json(api.get_discovery_config_payload())
         except Exception as exc:  # noqa: BLE001
-            handler._send_json(
+            handler.send_json(
                 {
                     "ok": False,
                     "error": str(exc),
                     "savedConfig": api.get_discovery_config_payload().get("savedConfig", {}),
                 },
                 status=400,
-            )  # noqa: SLF001,E501
+            )
         return True
 
     if path == "/ops/alerts/ack":
         alert_id = str(data.get("id") or "").strip()
         if not alert_id:
-            handler._send_json({"error": "Missing alert id"}, status=400)  # noqa: SLF001
+            handler.send_json({"error": "Missing alert id"}, status=400)
             return True
         health = api.compute_ops_health()
         active_alert = next(
@@ -422,55 +425,55 @@ def handle_post(handler: Any, *, api: BridgeApi, path: str, payload: Any) -> boo
             None,
         )
         if active_alert is not None and not bool(active_alert.get("dismissible", True)):
-            handler._send_json({"acked": alert_id, "ignored": True, "ok": True})  # noqa: SLF001
+            handler.send_json({"acked": alert_id, "ignored": True, "ok": True})
             return True
         state_alert = api.load_alert_state()
         acked = copy_json_object(state_alert.get("acked"))
         acked[alert_id] = api.now_iso()
         api.save_alert_state({"acked": acked})
-        handler._send_json({"acked": alert_id, "ok": True})  # noqa: SLF001
+        handler.send_json({"acked": alert_id, "ok": True})
         return True
 
     if path == "/sync/config":
         try:
             api.update_saved_sync_settings(data)
-            handler._send_json(api.get_sync_status_payload())  # noqa: SLF001
+            handler.send_json(api.get_sync_status_payload())
         except Exception as exc:  # noqa: BLE001
-            handler._send_json(
+            handler.send_json(
                 {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=400
-            )  # noqa: SLF001
+            )
         return True
 
     if path == "/sync/test":
         try:
-            handler._send_json(api.test_sync_config())  # noqa: SLF001
+            handler.send_json(api.test_sync_config())
         except Exception as exc:  # noqa: BLE001
             api.set_sync_status(
                 action="test", result="error", error=str(exc), pulled=False, pushed=False
             )
-            handler._send_json(
+            handler.send_json(
                 {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500
-            )  # noqa: SLF001
+            )
         return True
 
     if path == "/sync/pull":
         try:
-            handler._send_json(api.sync_pull_sources())  # noqa: SLF001
+            handler.send_json(api.sync_pull_sources())
         except Exception as exc:  # noqa: BLE001
             api.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
-            handler._send_json(
+            handler.send_json(
                 {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500
-            )  # noqa: SLF001
+            )
         return True
 
     if path == "/sync/push":
         try:
-            handler._send_json(api.sync_push_sources())  # noqa: SLF001
+            handler.send_json(api.sync_push_sources())
         except Exception as exc:  # noqa: BLE001
             api.set_sync_status(action="push", result="error", error=str(exc), pushed=False)
-            handler._send_json(
+            handler.send_json(
                 {"ok": False, "error": str(exc), "config": api.sync_config_status()}, status=500
-            )  # noqa: SLF001
+            )
         return True
 
     return False
