@@ -11,7 +11,7 @@ Historical record for the completed P0-P3 work that came from [`../../repo-analy
 | P2 | Refreshed [`../../adapter-plugin-inventory.md`](../../adapter-plugin-inventory.md) to match current provider, social, and static plugin ownership. |
 | P3 item 11 | Compact serialized unified JSON outputs and replaced the previous hard-coded size rule with named per-artifact guardrails. |
 | P3 item 12 | Ran isolated fresh discovery/fetch validation and kept the April 25 failure snapshot active because residual static failures remain material. |
-| P3 item 13 | Added exact source line ceilings for the five intentionally deferred large modules through repo guardrails. |
+| P3 item 13 | Added exact source line ceilings for the five intentionally deferred large modules through repo guardrails; a later 2026-04-26 refactor split those roots and emptied the active deferred-budget list. |
 
 ## Important Outcomes
 
@@ -20,7 +20,7 @@ Historical record for the completed P0-P3 work that came from [`../../repo-analy
 - `summary.needsReviewBreakdown` now exposes `rawMarkerCount` and `includedCount`.
 - Fetch summaries now expose additive `okCleanSources` and `okWithWarningSources`.
 - Output-size reporting now exposes additive `summary.sizeGuardrails`.
-- Deferred large module budgets are enforced by `npm run lint:repo-guardrails`.
+- Deferred large module budget guardrails remain available, but the active budget list is empty after the later thin-facade refactor.
 
 ## Fresh Validation From P3 Item 12
 

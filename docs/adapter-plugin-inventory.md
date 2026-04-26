@@ -109,13 +109,13 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 - **`src/jobs/adapters/plugins/social/register.py`**
   Registers `social_reddit`, `social_x`, and `social_mastodon` as social-family plugins. The Reddit loader currently delegates through registry selection; X and Mastodon plugin code is present, but the stable surface still owns compatibility orchestration that should not be changed as cleanup-only work.
 
-- **`src/jobs/adapters/social_parsers.py` (~811 LOC)**
-  Specialized parser owner for Reddit, X, and Mastodon payloads. Leave this file alone unless social parsing behavior changes.
+- **`src/jobs/adapters/social_parsers.py`**
+  Thin parser compatibility facade. Reddit, X, Mastodon, and shared signal parsing now live under `src/jobs/adapters/social_parser/`; keep existing imports through this facade unless behavior work needs the leaf owner directly.
 
 ### Future extraction guidance
 
 - Provider plugin extraction is no longer a first-wave task; most provider lanes already dispatch through registered plugins. Future provider work should start in the owning plugin module unless a stable loader compatibility change is required.
-- Social extraction should only proceed with behavior work or an explicit refactor charter. Start by auditing `social.py`, `plugins/social/register.py`, and the pipeline loader registration so cache-skip, heartbeat, progress, diagnostics, and fallback behavior remain compatible.
+- Social behavior work should start in `social.py`, `plugins/social/register.py`, or the relevant `social_parser/` leaf. Audit pipeline loader registration so cache-skip, heartbeat, progress, diagnostics, and fallback behavior remain compatible.
 - The root `static.py` surface is split behind focused helper modules. New static-adapter work should start in the helper or static plugin that owns the behavior, not in the root surface.
 
 ### Static plugins (current)

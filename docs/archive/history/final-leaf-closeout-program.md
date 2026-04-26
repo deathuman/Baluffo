@@ -179,17 +179,19 @@ cmd /c npm run test:frontend:unit
   - `cmd /c npm run test:py` -> `1569 passed, 98 deselected`
   - `cmd /c npm run test:frontend:unit` -> passed
 
-## Intentionally Deferred Specialized Owners
+## Deferred Specialized Owners - Closed 2026-04-26
 
-These modules are acceptable to leave as-is for now. They are specialized owners, not the next cleanup defaults.
+This historical closeout originally left five specialized roots intentionally deferred.
+Those roots were later split into focused leaf modules and now remain as compatibility
+facades under 500 LOC.
 
-| Module | Current lines | Rationale |
-|--------|---------------|-----------|
-| `src/source_registry.py` | 667 | Specialized source policy/registry owner with broad runtime reach |
-| `src/ship/update_manager.py` | 676 | Release-critical capability owner; avoid reopening without behavior work |
-| `src/jobs/adapters/social_parsers.py` | 860 | Specialized parser family with broad format coverage |
-| `src/source_discovery/core.py` | 548 | Discovery core policy owner; not a good final closeout lane without behavior work |
-| `src/ship/packaged_smoke/runtime.py` | 792 | Specialized packaged-smoke runtime owner tied to release-critical flows |
+| Former deferred root | Current ownership shape |
+|----------------------|-------------------------|
+| `src/source_registry.py` | Facade for identity, IO, state, canonicalization, policy, and auto-approval leaves |
+| `src/ship/update_manager.py` | Public updater API/CLI facade over paths, state, validation, bootstrap, apply, recovery, and CLI leaves |
+| `src/jobs/adapters/social_parsers.py` | Parser compatibility facade over social parser leaves |
+| `src/source_discovery/core.py` | Discovery compatibility facade over identity, thresholds, queue, and scoring leaves |
+| `src/ship/packaged_smoke/runtime.py` | Root-backed smoke runtime facade over process, wait, snapshot, and node-smoke leaves |
 
 ## Closeout Standard
 
@@ -198,4 +200,4 @@ The cleanup program is considered complete when:
 1. the verification matrix is green
 2. docs point future edits to the new owners
 3. guardrails enforce thin roots and no-root-import helper boundaries
-4. the deferred list is explicit enough that future work reopens these areas only for real behavior reasons
+4. former deferred roots remain thin compatibility facades, with new behavior routed to the owning leaf modules

@@ -17,7 +17,7 @@ This tracker owns only current and future pickup work. Completed implementation 
 | Static/provider/browser triage | Complete | Broad static failures, stale/dead rows, site-changed rows, and browser-required rows have been reduced or reclassified through fresh isolated validation. |
 | Anti-bot/rate-limit follow-up | Complete with residual runbook | Scoped browser retry coverage reduced fresh isolated failures from `5` to `1`; scoped static `429` rows no longer fail. |
 | Failure snapshot | Active external-access runbook | [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) now tracks only current external-access residuals. |
-| Deferred large modules | Guarded | Exact source line ceilings are enforced through `tools/repo_health/deferred_source_line_budget.json` and `npm run lint:repo-guardrails`. |
+| Deferred large modules | Closed | The five former deferred roots are now thin compatibility facades under 500 LOC; `tools/repo_health/deferred_source_line_budget.json` has no active entries. |
 
 ## Active Residuals
 
@@ -54,9 +54,9 @@ Known residuals:
    - Provider plugin extraction is no longer a default task; most provider lanes already dispatch through registered plugins.
    - Social or parser extraction should only happen with behavior work or a separate explicit refactor charter.
 
-3. **Deferred large-module budget maintenance.**
-   - If real behavior work changes one of the five deferred modules, update `tools/repo_health/deferred_source_line_budget.json` in the same change with the new exact line count and rationale.
-   - Do not grow those modules for cleanup-only work.
+3. **Thin-facade maintenance.**
+   - Keep `src/source_registry.py`, `src/ship/update_manager.py`, `src/jobs/adapters/social_parsers.py`, `src/source_discovery/core.py`, and `src/ship/packaged_smoke/runtime.py` as compatibility surfaces.
+   - New behavior should land in the focused leaf owner unless the public facade contract itself is changing.
 
 ## Rebaseline Checklist
 

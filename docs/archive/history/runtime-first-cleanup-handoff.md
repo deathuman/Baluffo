@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Use this note to resume older cleanup context without rediscovering what already landed, which regressions were found during the follow-up waves, and which debt remains intentionally deferred. The current stop-point for the cleanup campaign is [`final-leaf-closeout-program.md`](final-leaf-closeout-program.md); treat this handoff as sequencing history behind that end-state tracker.
+Use this note to resume older cleanup context without rediscovering what already landed, which regressions were found during the follow-up waves, and which debt was intentionally deferred at that time. The current stop-point for the cleanup campaign is [`final-leaf-closeout-program.md`](final-leaf-closeout-program.md); treat this handoff as sequencing history behind that end-state tracker.
 
 ## Current Status
 
@@ -78,9 +78,10 @@ On another machine:
 - [`testing.md`](../../testing.md)
 - [`../tools/mcp/SERENA.md`](../../../tools/mcp/SERENA.md)
 
-## Intentionally Deferred Specialized Owners
+## Former Deferred Specialized Owners
 
-These remaining larger modules are acceptable to leave as-is for now. Treat them as specialized owners, not as the next default cleanup lane, unless future behavior work justifies reopening them.
+This handoff is historical. The five roots that were intentionally deferred here were
+later split into focused leaf modules and are now compatibility facades under 500 LOC:
 
 - `src/source_registry.py`
 - `src/ship/update_manager.py`
