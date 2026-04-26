@@ -1,0 +1,238 @@
+from __future__ import annotations
+
+"""Discovery candidate scoring, ranking, and normalization."""
+
+import os
+from datetime import UTC, datetime
+from typing import Any
+
+from src.source_registry import source_identity
+
+from .config import DISCOVERY_STAGES, FOCUS_KEYWORDS
+from .core_identity import queue_family_key
+from .io_runtime import endpoint_url
+from .scoring import unique_string_list
+
+STRUCTURED_BATCH_ADAPTERS = frozenset({"greenhouse", "lever", "ashby"})
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def classify_probe_failure_stage(error: str) -> str:
+    text = str(error or "").lower()
+    if (
+        "http error 404" in text
+        or "http error 410" in text
+        or "404 not found" in text
+        or "410 gone" in text
+        or "client error '404" in text
+        or "client error '410" in text
+    ):
+        return "probe_miss"
+    if "not well-formed (invalid token)" in text:
+        return "probe_miss"
+    if "expecting value" in text and "line 1 column 1" in text:
+        return "probe_miss"
+    return "probe"
+
+
+def compute_candidate_score(candidate: dict[str, Any], jobs_found: int) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
+    label = f"{candidate.get('name', '')} {candidate.get('studio', '')}".lower()
+    if any(token in label for token in FOCUS_KEYWORDS):
+        score += 35
+        reasons.append("target_role_signal")
+    if bool(candidate.get("nlPriority")):
+        score += 25
+        reasons.append("nl_priority")
+    evidence = int(candidate.get("evidenceScore") or 0)
+    if evidence > 0:
+        score += min(25, evidence // 2)
+        reasons.append("strong_evidence" if evidence >= 50 else "evidence_signal")
+    if jobs_found > 0:
+        score += min(25, jobs_found)
+        reasons.append("live_jobs_detected")
+    return min(100, score), reasons
+
+
+def compute_candidate_rank(
+    candidate: dict[str, Any],
+    *,
+    existing_rows: list[dict[str, Any]] | None = None,
+    prior_candidate: dict[str, Any] | None = None,
+    ranked_at: str = "",
+) -> tuple[int, list[str], str]:
+    rank = max(0, int(candidate.get("score") or 0))
+    reasons: list[str] = []
+    adapter = str(candidate.get("adapter") or "").strip().lower()
+    confidence = str(candidate.get("confidence") or "").strip().lower()
+    jobs_found = max(0, int(candidate.get("jobsFound") or candidate.get("sampleCount") or 0))
+    evidence = max(0, int(candidate.get("evidenceScore") or 0))
+    discovery_stage = str(candidate.get("discoveryStage") or "").strip().lower()
+    existing = [row for row in (existing_rows or []) if isinstance(row, dict)]
+
+    confidence_bonus = {"high": 18, "medium": 10}.get(confidence, 0)
+    if confidence_bonus:
+        rank += confidence_bonus
+        reasons.append(f"{confidence}_confidence")
+
+    if jobs_found > 0:
+        jobs_bonus = min(12, jobs_found * 3)
+        rank += jobs_bonus
+        reasons.append("jobs_found_bonus")
+
+    evidence_bonus = min(10, evidence // 8) if evidence > 0 else 0
+    if evidence_bonus:
+        rank += evidence_bonus
+        reasons.append("evidence_rank_bonus")
+
+    if adapter in STRUCTURED_BATCH_ADAPTERS:
+        rank += 10
+        reasons.append("structured_batch_family")
+    elif adapter != "static":
+        rank += 4
+        reasons.append("structured_family")
+
+    if bool(candidate.get("nlPriority")):
+        rank += 5
+        reasons.append("nl_priority")
+
+    if discovery_stage == "curated_seed":
+        rank += 4
+        reasons.append("curated_seed")
+
+    candidate_id = source_identity(candidate)
+    candidate_family = queue_family_key(candidate)
+    exact_match = any(source_identity(row) == candidate_id for row in existing)
+    family_match = bool(
+        candidate_family and any(queue_family_key(row) == candidate_family for row in existing)
+    )
+    if exact_match:
+        rank -= 20
+        reasons.append("existing_registry_match")
+    elif family_match:
+        rank -= 8
+        reasons.append("existing_family_match")
+
+    prior = prior_candidate if isinstance(prior_candidate, dict) else {}
+    prior_defer_count = max(0, int(prior.get("deferCount") or 0))
+    ranked_dt = _parse_iso_datetime(ranked_at)
+    first_deferred_dt = _parse_iso_datetime(
+        prior.get("firstDeferredAt") or prior.get("lastDeferredAt")
+    )
+    if ranked_dt and first_deferred_dt and prior_defer_count > 0:
+        age_days = max(0, int((ranked_dt - first_deferred_dt).total_seconds() // 86400))
+        age_bonus = min(15, 2 + prior_defer_count + (age_days // 3))
+        rank += age_bonus
+        reasons.append("deferred_backlog_age")
+
+    promotion_lane = "manual_review"
+    if adapter in STRUCTURED_BATCH_ADAPTERS and confidence != "low":
+        promotion_lane = "structured_batch"
+
+    return max(0, rank), unique_string_list(reasons), promotion_lane
+
+
+def compute_confidence(candidate: dict[str, Any], jobs_found: int) -> str:
+    adapter = str(candidate.get("adapter") or "").strip().lower()
+    evidence = int(candidate.get("evidenceScore") or 0)
+    if jobs_found >= 5:
+        return "high"
+    if jobs_found >= 1:
+        return "medium"
+    if adapter in {
+        "lever",
+        "greenhouse",
+        "smartrecruiters",
+        "workable",
+        "teamtailor",
+        "ashby",
+        "recruitee",
+        "pinpoint",
+        "personio",
+    }:
+        return "low" if evidence < 40 else "medium"
+    return "low"
+
+
+def normalize_candidate(
+    candidate: dict[str, Any],
+    score: int,
+    reasons: list[str],
+    jobs_found: int,
+    *,
+    probed_at: str,
+) -> dict[str, Any]:
+    row = dict(candidate)
+    row["score"] = int(score)
+    row["reasons"] = unique_string_list(reasons)
+    row["sampleCount"] = int(jobs_found)
+    row["jobsFound"] = int(jobs_found)
+    row["confidence"] = compute_confidence(row, jobs_found)
+    row["discoveredAt"] = str(row.get("discoveredAt") or probed_at)
+    row["lastProbedAt"] = probed_at
+    row["discoveryMethod"] = str(row.get("discoveryMethod") or "seed")
+    row["discoveryStage"] = str(row.get("discoveryStage") or "provider_pattern")
+    row["evidenceScore"] = int(row.get("evidenceScore") or 0)
+    row["evidenceTypes"] = unique_string_list(row.get("evidenceTypes") or [])
+    row["evidenceSource"] = str(
+        row.get("evidenceSource") or row.get("discoveryMethod") or "unknown"
+    )
+    row["careersUrl"] = str(row.get("careersUrl") or endpoint_url(row) or "")
+    row["weakSignal"] = bool(row.get("weakSignal"))
+    row["deferred"] = bool(row.get("deferred"))
+    row["candidateState"] = str(row.get("candidateState") or "validated")
+    row["rankScore"] = int(row.get("rankScore") or row.get("score") or 0)
+    row["rankReasons"] = unique_string_list(row.get("rankReasons") or row.get("reasons") or [])
+    row["promotionLane"] = str(row.get("promotionLane") or "manual_review")
+    row["approvedAt"] = str(row.get("approvedAt") or "")
+    row["approvedBy"] = str(row.get("approvedBy") or "")
+    row["liveAt"] = str(row.get("liveAt") or "")
+    row["quarantinedAt"] = str(row.get("quarantinedAt") or "")
+    row["quarantineReason"] = str(row.get("quarantineReason") or "")
+    row["deferCount"] = max(0, int(row.get("deferCount") or 0))
+    row["firstDeferredAt"] = str(row.get("firstDeferredAt") or "")
+    row["lastDeferredAt"] = str(row.get("lastDeferredAt") or "")
+    return row
+
+
+def probe_concurrency_defaults() -> dict[str, int]:
+    def _env_int(name: str, default: int) -> int:
+        raw = str(os.getenv(name) or "").strip()
+        try:
+            return max(1, int(raw)) if raw else int(default)
+        except ValueError:
+            return int(default)
+
+    return {
+        "total": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TOTAL", 40),
+        "static": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_STATIC", 16),
+        "provider": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_PROVIDER", 40),
+        "teamtailor": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TEAMTAILOR", 15),
+    }
+
+
+def probe_bucket_for(candidate: dict[str, Any]) -> str:
+    adapter = str(candidate.get("adapter") or "").strip().lower()
+    if adapter == "static":
+        return "static"
+    if adapter == "teamtailor":
+        return "teamtailor"
+    return "provider"
+
+
+def init_stage_counter() -> dict[str, int]:
+    return {stage: 0 for stage in DISCOVERY_STAGES}

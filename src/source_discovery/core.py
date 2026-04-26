@@ -1,548 +1,63 @@
 from __future__ import annotations
 
-"""Core scoring, queueing, and normalization primitives for discovery."""
+"""Compatibility surface for discovery scoring, queueing, and normalization."""
 
-import os
-from collections import Counter
-from datetime import UTC, datetime
-from typing import Any
-from urllib.parse import urlparse
-
-from src.source_registry import source_identity
-
-from .config import (
-    ADAPTER_QUEUE_CAPS,
-    DEFAULT_DISCOVERY_THRESHOLDS,
-    DISCOVERY_STAGES,
-    DOMAIN_QUEUE_CAP_DEFAULT,
-    FOCUS_KEYWORDS,
-    MIN_PROVIDER_EVIDENCE_TO_PROBE,
-    MIN_PROVIDER_EVIDENCE_TO_QUEUE,
-    MIN_STATIC_EVIDENCE_TO_PROBE,
-    MIN_STATIC_EVIDENCE_TO_QUEUE,
-    PATTERN_PROVIDER_PROBE_THRESHOLD,
-    PATTERN_PROVIDER_QUEUE_THRESHOLD,
+from .core_identity import adapter_domain_fingerprint, queue_family_key, root_domain
+from .core_queue import (
+    _queue_balancing_order,
+    _sort_candidate_key,
+    apply_queue_balancing,
+    apply_sheet_directory_static_probe_cap,
+    is_google_sheet_candidate,
+    provider_queue_target,
+    sheet_directory_static_probe_cap,
 )
-from .io_runtime import endpoint_url
-from .scoring import clean_token, unique_string_list
-
-STATIC_STRONG_EVIDENCE_TYPES = frozenset({"structured_job_links", "jobposting_jsonld"})
-STRUCTURED_BATCH_ADAPTERS = frozenset({"greenhouse", "lever", "ashby"})
-
-
-def _parse_iso_datetime(value: Any) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    normalized = text.replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
-
-
-def adapter_domain_fingerprint(candidate: dict[str, Any]) -> str:
-    adapter = str(candidate.get("adapter") or "").strip().lower()
-    url = endpoint_url(candidate)
-    if not adapter or not url:
-        return ""
-    try:
-        parsed = urlparse(url)
-        domain = (parsed.netloc or "").lower().strip()
-        path = (parsed.path or "").rstrip("/").lower()
-    except ValueError:
-        domain = ""
-        path = ""
-    if not domain:
-        return ""
-    return f"{adapter}:{domain}:{path}"
-
-
-def root_domain(host: str) -> str:
-    token = str(host or "").strip().lower()
-    if not token:
-        return ""
-    parts = [part for part in token.split(".") if part]
-    if len(parts) >= 2:
-        return ".".join(parts[-2:])
-    return token
-
-
-def queue_family_key(candidate: dict[str, Any]) -> str:
-    url = endpoint_url(candidate) or str(candidate.get("careersUrl") or "")
-    try:
-        host = (urlparse(url).netloc or "").lower()
-    except ValueError:
-        host = ""
-    adapter = str(candidate.get("adapter") or "").strip().lower()
-    studio = clean_token(str(candidate.get("studio") or candidate.get("name") or ""))
-    domain_key = root_domain(host) or studio or "unknown"
-    return f"{adapter}:{domain_key}"
-
-
-def estimate_probe_priority(candidate: dict[str, Any]) -> int:
-    return int(candidate.get("evidenceScore") or 0) + (
-        20 if str(candidate.get("discoveryStage") or "") == "curated_seed" else 0
-    )
-
-
-def _evidence_threshold_for_probe(
-    candidate: dict[str, Any], thresholds: dict[str, int] | None = None
-) -> int:
-    t = thresholds if isinstance(thresholds, dict) else DEFAULT_DISCOVERY_THRESHOLDS
-    if str(candidate.get("discoveryStage") or "") == "provider_pattern":
-        return int(t.get("patternProviderProbeThreshold", PATTERN_PROVIDER_PROBE_THRESHOLD))
-    return (
-        int(t.get("minStaticEvidenceToProbe", MIN_STATIC_EVIDENCE_TO_PROBE))
-        if str(candidate.get("adapter") or "") == "static"
-        else int(t.get("minProviderEvidenceToProbe", MIN_PROVIDER_EVIDENCE_TO_PROBE))
-    )
-
-
-def _evidence_threshold_for_queue(
-    candidate: dict[str, Any], thresholds: dict[str, int] | None = None
-) -> int:
-    t = thresholds if isinstance(thresholds, dict) else DEFAULT_DISCOVERY_THRESHOLDS
-    if str(candidate.get("discoveryStage") or "") == "provider_pattern":
-        return int(t.get("patternProviderQueueThreshold", PATTERN_PROVIDER_QUEUE_THRESHOLD))
-    return (
-        int(t.get("minStaticEvidenceToQueue", MIN_STATIC_EVIDENCE_TO_QUEUE))
-        if str(candidate.get("adapter") or "") == "static"
-        else int(t.get("minProviderEvidenceToQueue", MIN_PROVIDER_EVIDENCE_TO_QUEUE))
-    )
-
-
-def should_queue_candidate(
-    candidate: dict[str, Any], jobs_found: int, thresholds: dict[str, int] | None = None
-) -> bool:
-    return jobs_found > 0 or int(
-        candidate.get("evidenceScore") or 0
-    ) >= _evidence_threshold_for_queue(candidate, thresholds)
-
-
-def _sort_candidate_key(row: dict[str, Any]) -> tuple[int, int, int, str]:
-    return (
-        int(row.get("score") or 0),
-        int(row.get("evidenceScore") or 0),
-        int(row.get("jobsFound") or 0),
-        str(row.get("name") or ""),
-    )
-
-
-def _queue_balancing_order(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    providers = [
-        row for row in candidates if str(row.get("adapter") or "").strip().lower() != "static"
-    ]
-    static_rows = [
-        row for row in candidates if str(row.get("adapter") or "").strip().lower() == "static"
-    ]
-    providers.sort(key=_sort_candidate_key, reverse=True)
-    static_rows.sort(key=_sort_candidate_key, reverse=True)
-    return [*providers, *static_rows]
-
-
-def is_google_sheet_candidate(candidate: dict[str, Any]) -> bool:
-    return str(candidate.get("sourceDirectory") or "").strip().lower() == "game_studios_sheet"
-
-
-def classify_static_suppression(
-    candidate: dict[str, Any],
-    *,
-    source_state_rows: dict[str, dict[str, Any]] | None = None,
-    thresholds: dict[str, int] | None = None,
-) -> str:
-    if str(candidate.get("adapter") or "").strip().lower() != "static":
-        return ""
-    if str(candidate.get("discoveryStage") or "") == "curated_seed":
-        return ""
-
-    evidence_types = {str(item or "").strip() for item in (candidate.get("evidenceTypes") or [])}
-    if evidence_types & STATIC_STRONG_EVIDENCE_TYPES:
-        return ""
-
-    state_rows = source_state_rows if isinstance(source_state_rows, dict) else {}
-    state = state_rows.get(str(candidate.get("name") or "").strip())
-    state = state if isinstance(state, dict) else {}
-    if int(state.get("lastKeptCount") or 0) > 0:
-        return ""
-
-    evidence_score = int(candidate.get("evidenceScore") or 0)
-    probe_threshold = _evidence_threshold_for_probe(candidate, thresholds)
-    queue_threshold = _evidence_threshold_for_queue(candidate, thresholds)
-    weak_signal = bool(candidate.get("weakSignal"))
-    manual_only = bool(candidate.get("manualOnly"))
-    prior_duration_ms = int(state.get("lastDurationMs") or 0)
-    prior_kept = int(state.get("lastKeptCount") or 0)
-    prior_detail_pages = int(state.get("lastDetailPagesVisited") or 0)
-    prior_detail_yield = int(state.get("lastDetailYieldPct") or 0)
-    prior_candidate_links = int(state.get("lastCandidateLinksFound") or 0)
-    historical_low_yield = (
-        prior_duration_ms > 0
-        and prior_kept <= 0
-        and (
-            prior_duration_ms >= 15000
-            or prior_detail_pages >= 8
-            or (prior_detail_pages > 0 and prior_detail_yield <= 3)
-            or prior_candidate_links >= 8
-        )
-    )
-    if manual_only and historical_low_yield and evidence_score < queue_threshold:
-        return "manual_only_repeat_low_yield"
-    if weak_signal and historical_low_yield and evidence_score <= (probe_threshold + 4):
-        return "weak_signal_repeat_low_yield"
-    return ""
-
-
-def sheet_directory_static_probe_cap(top_n: int) -> int:
-    bounded = max(0, int(top_n or 0))
-    if bounded <= 0:
-        return 0
-    static_backfill_target = max(1, bounded - provider_queue_target(bounded))
-    return min(int(ADAPTER_QUEUE_CAPS.get("static", 8) or 8), bounded, static_backfill_target + 4)
-
-
-def apply_sheet_directory_static_probe_cap(
-    candidates: list[dict[str, Any]],
-    *,
-    top_n: int,
-    bypass_cap: bool = False,
-    source_state_rows: dict[str, dict[str, Any]] | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    if bool(bypass_cap):
-        return list(candidates), []
-    cap = sheet_directory_static_probe_cap(top_n)
-    if cap <= 0:
-        return list(candidates), []
-
-    state_rows = source_state_rows if isinstance(source_state_rows, dict) else {}
-    sheet_static_rows: list[dict[str, Any]] = []
-    other_rows: list[dict[str, Any]] = []
-    for row in candidates:
-        if (
-            str(row.get("adapter") or "").strip().lower() == "static"
-            and str(row.get("discoveryStage") or "").strip().lower() == "sheet_directory"
-        ):
-            sheet_static_rows.append(row)
-        else:
-            other_rows.append(row)
-    if len(sheet_static_rows) <= cap:
-        return list(candidates), []
-
-    def _sheet_priority(row: dict[str, Any]) -> tuple[int, int, int, int]:
-        state = state_rows.get(str(row.get("name") or "").strip())
-        state = state if isinstance(state, dict) else {}
-        prior_kept = int(state.get("lastKeptCount") or 0)
-        prior_jobs = int(state.get("lastJobsFound") or 0)
-        prior_duration_ms = int(state.get("lastDurationMs") or 0)
-        return (1 if prior_kept > 0 else 0, prior_kept, prior_jobs, -prior_duration_ms)
-
-    ordered_sheet_rows = sorted(
-        sheet_static_rows,
-        key=lambda row: (_sheet_priority(row), _sort_candidate_key(row)),
-        reverse=True,
-    )
-    kept_rows = ordered_sheet_rows[:cap]
-    suppressed_rows = ordered_sheet_rows[cap:]
-    combined_rows = [*other_rows, *kept_rows]
-    combined_rows.sort(key=estimate_probe_priority, reverse=True)
-    return combined_rows, suppressed_rows
-
-
-def provider_queue_target(top_n: int) -> int:
-    bounded = max(0, int(top_n or 0))
-    if bounded <= 0:
-        return 0
-    if bounded <= 2:
-        return bounded
-    return max(1, bounded - 2)
-
-
-def apply_queue_balancing(
-    candidates: list[dict[str, Any]],
-    top_n: int,
-    *,
-    domain_cap: int = DOMAIN_QUEUE_CAP_DEFAULT,
-    adapter_caps: dict[str, int] | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
-    queued: list[dict[str, Any]] = []
-    all_rows: list[dict[str, Any]] = []
-    deferred_counts: Counter[str] = Counter()
-    adapter_counts: Counter[str] = Counter()
-    family_counts: Counter[str] = Counter()
-    queued_by_adapter: Counter[str] = Counter()
-    deferred_by_adapter: Counter[str] = Counter()
-    healthy_but_deferred_by_adapter: Counter[str] = Counter()
-    effective_adapter_caps = adapter_caps if isinstance(adapter_caps, dict) else ADAPTER_QUEUE_CAPS
-    effective_domain_cap = max(0, int(domain_cap or 0))
-    provider_target = provider_queue_target(top_n)
-    provider_rows = [
-        row
-        for row in _queue_balancing_order(candidates)
-        if str(row.get("adapter") or "").strip().lower() != "static"
-    ]
-    static_rows = [
-        row
-        for row in _queue_balancing_order(candidates)
-        if str(row.get("adapter") or "").strip().lower() == "static"
-    ]
-
-    def _process(rows: list[dict[str, Any]], *, enforce_provider_reservation: bool) -> None:
-        for row in rows:
-            adapter = str(row.get("adapter") or "unknown")
-            family = queue_family_key(row)
-            defer_reason = ""
-            bypass_adapter_cap = is_google_sheet_candidate(row)
-            if top_n > 0 and len(queued) >= top_n:
-                defer_reason = "top_n_cap"
-            elif (
-                enforce_provider_reservation
-                and provider_target > 0
-                and len(queued) < provider_target
-            ):
-                defer_reason = "provider_reservation"
-            elif not bypass_adapter_cap and adapter_counts[adapter] >= effective_adapter_caps.get(
-                adapter, 3
-            ):
-                defer_reason = "adapter_cap"
-            elif family and family_counts[family] >= effective_domain_cap:
-                defer_reason = "domain_cap"
-            normalized = dict(row)
-            if defer_reason:
-                normalized["deferred"] = True
-                normalized["deferReason"] = defer_reason
-                deferred_counts[defer_reason] += 1
-                deferred_by_adapter[adapter] += 1
-                healthy_but_deferred_by_adapter[adapter] += 1
-            else:
-                normalized["deferred"] = False
-                queued.append(normalized)
-                adapter_counts[adapter] += 1
-                queued_by_adapter[adapter] += 1
-                if family:
-                    family_counts[family] += 1
-            all_rows.append(normalized)
-
-    _process(provider_rows, enforce_provider_reservation=False)
-    _process(static_rows, enforce_provider_reservation=True)
-    return (
-        queued,
-        all_rows,
-        {
-            "deferredReasons": dict(deferred_counts),
-            "queuedByAdapter": dict(queued_by_adapter),
-            "deferredByAdapter": dict(deferred_by_adapter),
-            "healthyButDeferredByAdapter": dict(healthy_but_deferred_by_adapter),
-            "providerTarget": int(provider_target),
-        },
-    )
-
-
-def classify_probe_failure_stage(error: str) -> str:
-    text = str(error or "").lower()
-    if (
-        "http error 404" in text
-        or "http error 410" in text
-        or "404 not found" in text
-        or "410 gone" in text
-        or "client error '404" in text
-        or "client error '410" in text
-    ):
-        return "probe_miss"
-    if "not well-formed (invalid token)" in text:
-        return "probe_miss"
-    if "expecting value" in text and "line 1 column 1" in text:
-        return "probe_miss"
-    return "probe"
-
-
-def compute_candidate_score(candidate: dict[str, Any], jobs_found: int) -> tuple[int, list[str]]:
-    score = 0
-    reasons: list[str] = []
-    label = f"{candidate.get('name', '')} {candidate.get('studio', '')}".lower()
-    if any(token in label for token in FOCUS_KEYWORDS):
-        score += 35
-        reasons.append("target_role_signal")
-    if bool(candidate.get("nlPriority")):
-        score += 25
-        reasons.append("nl_priority")
-    evidence = int(candidate.get("evidenceScore") or 0)
-    if evidence > 0:
-        score += min(25, evidence // 2)
-        reasons.append("strong_evidence" if evidence >= 50 else "evidence_signal")
-    if jobs_found > 0:
-        score += min(25, jobs_found)
-        reasons.append("live_jobs_detected")
-    return min(100, score), reasons
-
-
-def compute_candidate_rank(
-    candidate: dict[str, Any],
-    *,
-    existing_rows: list[dict[str, Any]] | None = None,
-    prior_candidate: dict[str, Any] | None = None,
-    ranked_at: str = "",
-) -> tuple[int, list[str], str]:
-    rank = max(0, int(candidate.get("score") or 0))
-    reasons: list[str] = []
-    adapter = str(candidate.get("adapter") or "").strip().lower()
-    confidence = str(candidate.get("confidence") or "").strip().lower()
-    jobs_found = max(0, int(candidate.get("jobsFound") or candidate.get("sampleCount") or 0))
-    evidence = max(0, int(candidate.get("evidenceScore") or 0))
-    discovery_stage = str(candidate.get("discoveryStage") or "").strip().lower()
-    existing = [row for row in (existing_rows or []) if isinstance(row, dict)]
-
-    confidence_bonus = {"high": 18, "medium": 10}.get(confidence, 0)
-    if confidence_bonus:
-        rank += confidence_bonus
-        reasons.append(f"{confidence}_confidence")
-
-    if jobs_found > 0:
-        jobs_bonus = min(12, jobs_found * 3)
-        rank += jobs_bonus
-        reasons.append("jobs_found_bonus")
-
-    evidence_bonus = min(10, evidence // 8) if evidence > 0 else 0
-    if evidence_bonus:
-        rank += evidence_bonus
-        reasons.append("evidence_rank_bonus")
-
-    if adapter in STRUCTURED_BATCH_ADAPTERS:
-        rank += 10
-        reasons.append("structured_batch_family")
-    elif adapter != "static":
-        rank += 4
-        reasons.append("structured_family")
-
-    if bool(candidate.get("nlPriority")):
-        rank += 5
-        reasons.append("nl_priority")
-
-    if discovery_stage == "curated_seed":
-        rank += 4
-        reasons.append("curated_seed")
-
-    candidate_id = source_identity(candidate)
-    candidate_family = queue_family_key(candidate)
-    exact_match = any(source_identity(row) == candidate_id for row in existing)
-    family_match = bool(
-        candidate_family and any(queue_family_key(row) == candidate_family for row in existing)
-    )
-    if exact_match:
-        rank -= 20
-        reasons.append("existing_registry_match")
-    elif family_match:
-        rank -= 8
-        reasons.append("existing_family_match")
-
-    prior = prior_candidate if isinstance(prior_candidate, dict) else {}
-    prior_defer_count = max(0, int(prior.get("deferCount") or 0))
-    ranked_dt = _parse_iso_datetime(ranked_at)
-    first_deferred_dt = _parse_iso_datetime(
-        prior.get("firstDeferredAt") or prior.get("lastDeferredAt")
-    )
-    if ranked_dt and first_deferred_dt and prior_defer_count > 0:
-        age_days = max(0, int((ranked_dt - first_deferred_dt).total_seconds() // 86400))
-        age_bonus = min(15, 2 + prior_defer_count + (age_days // 3))
-        rank += age_bonus
-        reasons.append("deferred_backlog_age")
-
-    promotion_lane = "manual_review"
-    if adapter in STRUCTURED_BATCH_ADAPTERS and confidence != "low":
-        promotion_lane = "structured_batch"
-
-    return max(0, rank), unique_string_list(reasons), promotion_lane
-
-
-def compute_confidence(candidate: dict[str, Any], jobs_found: int) -> str:
-    adapter = str(candidate.get("adapter") or "").strip().lower()
-    evidence = int(candidate.get("evidenceScore") or 0)
-    if jobs_found >= 5:
-        return "high"
-    if jobs_found >= 1:
-        return "medium"
-    if adapter in {
-        "lever",
-        "greenhouse",
-        "smartrecruiters",
-        "workable",
-        "teamtailor",
-        "ashby",
-        "recruitee",
-        "pinpoint",
-        "personio",
-    }:
-        return "low" if evidence < 40 else "medium"
-    return "low"
-
-
-def normalize_candidate(
-    candidate: dict[str, Any],
-    score: int,
-    reasons: list[str],
-    jobs_found: int,
-    *,
-    probed_at: str,
-) -> dict[str, Any]:
-    row = dict(candidate)
-    row["score"] = int(score)
-    row["reasons"] = unique_string_list(reasons)
-    row["sampleCount"] = int(jobs_found)
-    row["jobsFound"] = int(jobs_found)
-    row["confidence"] = compute_confidence(row, jobs_found)
-    row["discoveredAt"] = str(row.get("discoveredAt") or probed_at)
-    row["lastProbedAt"] = probed_at
-    row["discoveryMethod"] = str(row.get("discoveryMethod") or "seed")
-    row["discoveryStage"] = str(row.get("discoveryStage") or "provider_pattern")
-    row["evidenceScore"] = int(row.get("evidenceScore") or 0)
-    row["evidenceTypes"] = unique_string_list(row.get("evidenceTypes") or [])
-    row["evidenceSource"] = str(
-        row.get("evidenceSource") or row.get("discoveryMethod") or "unknown"
-    )
-    row["careersUrl"] = str(row.get("careersUrl") or endpoint_url(row) or "")
-    row["weakSignal"] = bool(row.get("weakSignal"))
-    row["deferred"] = bool(row.get("deferred"))
-    row["candidateState"] = str(row.get("candidateState") or "validated")
-    row["rankScore"] = int(row.get("rankScore") or row.get("score") or 0)
-    row["rankReasons"] = unique_string_list(row.get("rankReasons") or row.get("reasons") or [])
-    row["promotionLane"] = str(row.get("promotionLane") or "manual_review")
-    row["approvedAt"] = str(row.get("approvedAt") or "")
-    row["approvedBy"] = str(row.get("approvedBy") or "")
-    row["liveAt"] = str(row.get("liveAt") or "")
-    row["quarantinedAt"] = str(row.get("quarantinedAt") or "")
-    row["quarantineReason"] = str(row.get("quarantineReason") or "")
-    row["deferCount"] = max(0, int(row.get("deferCount") or 0))
-    row["firstDeferredAt"] = str(row.get("firstDeferredAt") or "")
-    row["lastDeferredAt"] = str(row.get("lastDeferredAt") or "")
-    return row
-
-
-def probe_concurrency_defaults() -> dict[str, int]:
-    def _env_int(name: str, default: int) -> int:
-        raw = str(os.getenv(name) or "").strip()
-        try:
-            return max(1, int(raw)) if raw else int(default)
-        except ValueError:
-            return int(default)
-
-    return {
-        "total": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TOTAL", 40),
-        "static": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_STATIC", 16),
-        "provider": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_PROVIDER", 40),
-        "teamtailor": _env_int("BALUFFO_DISCOVERY_PROBE_CONCURRENCY_TEAMTAILOR", 15),
-    }
-
-
-def probe_bucket_for(candidate: dict[str, Any]) -> str:
-    adapter = str(candidate.get("adapter") or "").strip().lower()
-    if adapter == "static":
-        return "static"
-    if adapter == "teamtailor":
-        return "teamtailor"
-    return "provider"
-
-
-def init_stage_counter() -> dict[str, int]:
-    return {stage: 0 for stage in DISCOVERY_STAGES}
+from .core_scoring import (
+    STRUCTURED_BATCH_ADAPTERS,
+    _parse_iso_datetime,
+    classify_probe_failure_stage,
+    compute_candidate_rank,
+    compute_candidate_score,
+    compute_confidence,
+    init_stage_counter,
+    normalize_candidate,
+    probe_bucket_for,
+    probe_concurrency_defaults,
+)
+from .core_thresholds import (
+    STATIC_STRONG_EVIDENCE_TYPES,
+    _evidence_threshold_for_probe,
+    _evidence_threshold_for_queue,
+    classify_static_suppression,
+    estimate_probe_priority,
+    should_queue_candidate,
+)
+
+__all__ = [
+    "STATIC_STRONG_EVIDENCE_TYPES",
+    "STRUCTURED_BATCH_ADAPTERS",
+    "_evidence_threshold_for_probe",
+    "_evidence_threshold_for_queue",
+    "_parse_iso_datetime",
+    "_queue_balancing_order",
+    "_sort_candidate_key",
+    "adapter_domain_fingerprint",
+    "apply_queue_balancing",
+    "apply_sheet_directory_static_probe_cap",
+    "classify_probe_failure_stage",
+    "classify_static_suppression",
+    "compute_candidate_rank",
+    "compute_candidate_score",
+    "compute_confidence",
+    "estimate_probe_priority",
+    "init_stage_counter",
+    "is_google_sheet_candidate",
+    "normalize_candidate",
+    "probe_bucket_for",
+    "probe_concurrency_defaults",
+    "provider_queue_target",
+    "queue_family_key",
+    "root_domain",
+    "sheet_directory_static_probe_cap",
+    "should_queue_candidate",
+]

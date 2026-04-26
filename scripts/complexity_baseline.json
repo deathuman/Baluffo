@@ -126,7 +126,7 @@
     "src/ship/packaged_smoke/rehearsal_update.py::run_desktop_update_rehearsal": 21,
     "src/ship/startup_profile.py::summarize_startup_metrics": 15,
     "src/source_audit_sweep.py::_classify_source": 13,
-    "src/source_discovery/core.py::compute_candidate_rank": 12,
+    "src/source_discovery/core_scoring.py::compute_candidate_rank": 12,
     "src/source_discovery/gamedevmap.py::discover_gamedevmap_candidates": 16,
     "src/source_discovery/gameprog.py::discover_gameprog_candidates": 17,
     "src/source_discovery/gamesmap_candidates.py::discover_gamesmap_candidates": 23,
