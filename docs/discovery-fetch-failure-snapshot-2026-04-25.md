@@ -1,15 +1,110 @@
 # Discovery and Fetch Failure Snapshot - 2026-04-25
 
-> - **Status:** Active investigation snapshot
+> - **Status:** Active external-access runbook
 > - **Use this when:** picking up the unresolved discovery and fetch issues from the fresh Baluffo build generated on 2026-04-25
 > - **Canonical for:** the observed failure/counter state of the 2026-04-25 discovery and fetch runs only
 > - **Not canonical for:** discovery contracts, fetch contracts, bridge APIs, or long-term source-registry policy
 > - **Then inspect:** [`scraping-pipeline.md`](scraping-pipeline.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), and the referenced `_out/latest/build/portable/ship/data/` reports
 > - **Last updated:** 2026-04-26
 
-This is a time-bound handoff note for later triage. It records what the current fresh build produced, not what the system should guarantee after fixes.
+This is a time-bound handoff note for later triage. It records what the current fresh build produced, not what the system should guarantee after fixes. The original broad April 25 failure surface has been reduced to external-access residuals.
 
 Follow-up prioritization and validation status live in [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md). Use that tracker before picking implementation order, then return here for the original observed counts.
+
+## Browser-Required Static Follow-up Validation - 2026-04-26
+
+The browser-required pass migrated provider-covered static aliases, added scoped static parsing support for NCSoft/Rollic investigation, and hid rows that did not prove valid active jobs in a clean validation run.
+
+Validation artifacts were written under ignored `_out/static-browser-required-validation-clean/` and are not intended for commit.
+
+Command:
+
+- `BALUFFO_DATA_DIR=_out/static-browser-required-validation-clean python src/jobs_fetcher.py --output-dir _out/static-browser-required-validation-clean --force-refresh-all --ignore-circuit-breaker --social-enabled --quiet`
+
+Fresh fetch counters after the browser-required static pass:
+
+| Counter | Value |
+|---------|------:|
+| Sources attempted | 484 |
+| Successful sources | 479 |
+| Failed/error sources | 5 |
+| Clean `ok` sources | 450 |
+| `ok` sources with warnings | 29 |
+| Final output jobs | 29,834 |
+| `needsReviewBreakdown.rawMarkerCount` | 105 |
+| `needsReviewBreakdown.includedCount` | 99 |
+| Error rows containing `HTTP 301` | 0 |
+| Error rows containing `HTTP 302` | 0 |
+| Error rows containing `HTTP 308` | 0 |
+| Error rows containing `HTTP 404` | 0 |
+| Error rows containing `HTTP 429` | 4 |
+| Active registry rows | 555 |
+| Pending registry rows | 62 |
+| Hidden pending rows | 62 |
+| Size guardrail exceeded | no |
+| `jobs-unified.json` bytes | 37,606,383 |
+| Light JSON bytes | 20,792,655 |
+| CSV bytes | 30,541,971 |
+
+Residual classifier output after validation:
+
+| Triage class | Count |
+|--------------|------:|
+| `anti_bot_or_rate_limited` | 5 |
+
+Closeout decision:
+
+- Keep this snapshot active as an external-access runbook rather than a broad failure snapshot.
+- Resolved or reclassified in this pass: the scoped NCSoft, KRAFTON, and Rollic browser-required rows no longer appear in default active failures. Santa Monica Studio was also hidden as a provider-covered browser-required alias after it resurfaced in validation.
+- Remaining scope: `5` anti-bot/rate-limit rows. No `site_changed` or `browser_required` rows remain in the clean residual classifier split.
+
+## Site-Changed Static Follow-up Validation - 2026-04-26
+
+The site-changed pass hid high-confidence static rows where the validation report showed redirect status evidence plus zero extraction. It preserved source rows as hidden pending records and did not add new provider families.
+
+Validation artifacts were written under ignored `_out/static-site-changed-validation/` and are not intended for commit.
+
+Command:
+
+- `BALUFFO_DATA_DIR=_out/static-site-changed-validation python src/jobs_fetcher.py --output-dir _out/static-site-changed-validation --force-refresh-all --ignore-circuit-breaker --social-enabled --quiet`
+
+Fresh fetch counters after the site-changed static pass:
+
+| Counter | Value |
+|---------|------:|
+| Sources attempted | 488 |
+| Successful sources | 480 |
+| Failed/error sources | 8 |
+| Clean `ok` sources | 446 |
+| `ok` sources with warnings | 34 |
+| Final output jobs | 29,757 |
+| `needsReviewBreakdown.rawMarkerCount` | 106 |
+| `needsReviewBreakdown.includedCount` | 100 |
+| Error rows containing `HTTP 301` | 0 |
+| Error rows containing `HTTP 302` | 0 |
+| Error rows containing `HTTP 308` | 0 |
+| Error rows containing `HTTP 404` | 0 |
+| Error rows containing `HTTP 429` | 4 |
+| Active registry rows | 555 |
+| Pending registry rows | 58 |
+| Hidden pending rows | 58 |
+| Size guardrail exceeded | no |
+| `jobs-unified.json` bytes | 37,499,551 |
+| Light JSON bytes | 20,749,667 |
+| CSV bytes | 30,456,676 |
+
+Residual classifier output after validation:
+
+| Triage class | Count |
+|--------------|------:|
+| `anti_bot_or_rate_limited` | 5 |
+| `browser_required` | 3 |
+
+Closeout decision:
+
+- Keep this snapshot active as a narrow residual runbook rather than a broad failure snapshot.
+- Resolved or reclassified in this pass: all `site_changed` rows from the `_out/static-narrow-validation/` classifier split were removed from default active fetches.
+- Remaining scope: `5` anti-bot/rate-limit rows and `3` browser-required rows. These are intentionally separate from the site-changed cleanup and should be handled by a focused external-access/browser follow-up or documented as expected limits before archival.
 
 ## Fresh Validation After P0-P3 Item 11 - 2026-04-26
 

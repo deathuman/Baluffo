@@ -41,6 +41,7 @@ from . import (
     littlechicken,
     milestone,
     naconstudiomilan,
+    ncsoft,
     nintendo_csod,
     remedy,
     rendered_cards,
@@ -95,6 +96,7 @@ def register_static_plugins() -> None:
         (larian, "larian", 90),
         (littlechicken, "littlechicken", 90),
         (rendered_cards, "rendered_cards", 90),
+        (ncsoft, "ncsoft", 90),
         (nintendo_csod, "nintendo_csod", 90),
         (sheet_studios, "sheet_studios", 90),
     ]:

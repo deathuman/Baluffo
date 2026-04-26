@@ -83,6 +83,7 @@ Optional overrides:
   - static listing and detail fetches should go through the shared `fetch_html_cached` path so cache, per-domain throttling, and redirect handling stay consistent.
   - one redirect hop is allowed for 301/302/303/307/308 when the target is HTTP(S), contains no credentials, does not downgrade HTTPS to HTTP, and stays on the same host or a `www.`/bare-host alias.
   - redirects without `Location`, redirect chains beyond one hop, credentialed targets, non-HTTP(S) schemes, unrelated cross-host targets, and HTTPS downgrades remain source diagnostics rather than silently followed traffic.
+  - static zero-extract rows with redirect/status evidence are diagnosed as `site_changed`; generic static/manual no-jobs rows without redirect evidence remain `js_required` for browser/static extraction follow-up.
   - static plugins that need custom listing/detail handling receive the shared fetch helper from the static adapter surface; direct `fetch_text` usage is only acceptable for non-static-provider paths that intentionally bypass static report semantics.
 - `data/jobs-source-state.json`
   - per-source state for TTL and circuit breaker decisions.

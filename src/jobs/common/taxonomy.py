@@ -132,6 +132,24 @@ def _is_static_manual_no_jobs_error(error_lower: str) -> bool:
     )
 
 
+def _has_site_changed_signal(error_lower: str) -> bool:
+    return _has_any(
+        error_lower,
+        [
+            "site changed",
+            "moved permanently",
+            "301",
+            "302",
+            "303",
+            "307",
+            "308",
+            "redirect",
+            "not found",
+            "404",
+        ],
+    )
+
+
 def classification_context_from_source_detail(
     source_detail: dict[str, object],
 ) -> ClassificationContext:
@@ -267,27 +285,10 @@ def assess_zero_extract(context: ClassificationContext) -> ZeroExtractAssessment
     if js_signals and not (signal_quality == "weak" and not explicit_js):
         return ZeroExtractAssessment(ZeroExtractDiagnosis.JS_REQUIRED, True)
 
-    if _is_named_static_no_jobs_offender(error_lower):
-        return ZeroExtractAssessment(ZeroExtractDiagnosis.JS_REQUIRED, False)
-
-    if _is_static_manual_no_jobs_error(error_lower):
-        return ZeroExtractAssessment(ZeroExtractDiagnosis.JS_REQUIRED, False)
-
     site_changed_signals = (
         context.listing_changed
         or context.listing_fingerprint_changed
-        or _has_any(
-            error_lower,
-            [
-                "site changed",
-                "moved permanently",
-                "301",
-                "302",
-                "redirect",
-                "not found",
-                "404",
-            ],
-        )
+        or _has_site_changed_signal(error_lower)
         or explicit_site_changed
     )
     if site_changed_signals and not (
@@ -297,6 +298,12 @@ def assess_zero_extract(context: ClassificationContext) -> ZeroExtractAssessment
         )
     ):
         return ZeroExtractAssessment(ZeroExtractDiagnosis.SITE_CHANGED, False)
+
+    if _is_named_static_no_jobs_offender(error_lower):
+        return ZeroExtractAssessment(ZeroExtractDiagnosis.JS_REQUIRED, False)
+
+    if _is_static_manual_no_jobs_error(error_lower):
+        return ZeroExtractAssessment(ZeroExtractDiagnosis.JS_REQUIRED, False)
 
     if (
         context.empty_confirmed
@@ -367,10 +374,8 @@ def map_error_to_failure_bucket(context: ClassificationContext) -> FailureBucket
     if _is_linkedin_throttle_error(error_lower):
         return FailureBucket.ANTI_BOT_OR_CHALLENGE
 
-    if _is_named_static_no_jobs_offender(error_lower) or _is_static_manual_no_jobs_error(
-        error_lower
-    ):
-        return FailureBucket.JS_REQUIRED
+    if _has_site_changed_signal(error_lower):
+        return FailureBucket.SITE_CHANGED
 
     if any(
         phrase in error_lower
@@ -386,19 +391,10 @@ def map_error_to_failure_bucket(context: ClassificationContext) -> FailureBucket
     ):
         return FailureBucket.JS_REQUIRED
 
-    if any(
-        phrase in error_lower
-        for phrase in [
-            "site changed",
-            "moved permanently",
-            "301",
-            "302",
-            "redirect",
-            "not found",
-            "404",
-        ]
+    if _is_named_static_no_jobs_offender(error_lower) or _is_static_manual_no_jobs_error(
+        error_lower
     ):
-        return FailureBucket.SITE_CHANGED
+        return FailureBucket.JS_REQUIRED
 
     if "invalid" in error_lower or "seed" in error_lower:
         return FailureBucket.SEED_INVALID

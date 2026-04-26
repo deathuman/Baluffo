@@ -59,6 +59,8 @@ _HOSTS = frozenset(
         "www.purebang.com",
         "ultra-factory.com",
         "www.ultra-factory.com",
+        "rollicgames.com",
+        "www.rollicgames.com",
     }
 )
 
@@ -66,6 +68,44 @@ _HOSTS = frozenset(
 def can_handle(ctx: AdapterPluginContext) -> bool:
     identity = (ctx.source_identity or "").strip().lower()
     return identity in _HOSTS
+
+
+def _fetch_listing_html(
+    *,
+    fetch_text: Callable[[str, int], str],
+    try_playwright: Callable[[str, int], tuple[str, str]] | None,
+    page_url: str,
+    timeout_s: int,
+    source_row: dict[str, Any],
+) -> str:
+    try:
+        return fetch_text(page_url, timeout_s)
+    except Exception as exc:  # noqa: BLE001
+        classification, recommend = _heuristics.classify_fetch_exception(exc)
+        if callable(try_playwright) and recommend:
+            html, _ = try_playwright(page_url, max(3, min(timeout_s, 25)))
+            if html:
+                source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+                    _heuristics.CLASSIFICATION_JS_REQUIRED,
+                    browser_fallback_recommended=True,
+                    extractor_hint="fetch_failed_browser_rendered",
+                    error=str(exc),
+                )
+                return html
+            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+                classification,
+                browser_fallback_recommended=True,
+                extractor_hint="fetch_failed_browser_empty",
+                error=str(exc),
+            )
+            return ""
+        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
+            classification,
+            browser_fallback_recommended=bool(recommend),
+            extractor_hint="fetch_failed",
+            error=str(exc),
+        )
+        return ""
 
 
 def run(
@@ -91,16 +131,14 @@ def run(
     )
     source_id = (source_row.get("id") or "").strip() or "rendered_cards"
 
-    try:
-        html = fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
-        classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-            classification,
-            browser_fallback_recommended=bool(recommend),
-            extractor_hint="fetch_failed",
-            error=str(exc),
-        )
+    html = _fetch_listing_html(
+        fetch_text=fetch_text,
+        try_playwright=try_playwright,
+        page_url=page_url,
+        timeout_s=timeout_s,
+        source_row=source_row,
+    )
+    if not html:
         return []
 
     rows = extract_rendered_card_jobs(

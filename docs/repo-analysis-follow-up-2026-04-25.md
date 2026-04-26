@@ -16,10 +16,144 @@ This tracker now only owns future pickup order. The completed P0-P3 implementati
 | P0-P3 numbered items | Complete | `social_x`, safe static redirects, needs-review counters, operational-noise policy, adapter inventory refresh, output-size policy, failure-snapshot validation, and deferred-module budgets are implemented. |
 | Residual static-failure triage | Complete | High-yield cleanup reduced fresh isolated failures from `73` to `46`; remaining failures are narrower static/provider/browser triage, not the original broad residual bucket. |
 | Narrow static/provider/browser follow-up | Complete | Focused cleanup reduced fresh isolated failures from `46` to `32`; stale/dead HTTP 404/500/522 rows are removed from default active fetches. |
-| Failure snapshot | Active | Fresh validation kept [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) active because `32` static/provider/browser failures remain material. |
+| Site-changed static failure follow-up | Complete | Focused cleanup reduced fresh isolated failures from `32` to `8`; no residual `site_changed` rows remain in the classifier split. |
+| Browser-required static follow-up | Complete | Focused cleanup reduced fresh isolated failures from `8` to `5`; no residual `browser_required` rows remain in the classifier split. |
+| Failure snapshot | Active external-access runbook | Fresh validation kept [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) active only for the remaining `5` anti-bot/rate-limit rows. |
 | Deferred large modules | Guarded | Exact source line ceilings are enforced through `tools/repo_health/deferred_source_line_budget.json` and `npm run lint:repo-guardrails`. |
 
 ## Recently Completed
+
+### 2026-04-26 - Browser-required static follow-up
+
+Starting baseline from `_out/static-site-changed-validation/jobs-fetch-report.json`:
+
+- `488` sources attempted.
+- `8` failed/error sources.
+- Residual classifier split: `5` `anti_bot_or_rate_limited` and `3` `browser_required`.
+- Scoped `browser_required` rows:
+  - `static:listing_url:https://nca.ncsoft.com/en-us/careers`
+  - `static:listing_url:https://krafton.com/en/careers/jobs/`
+  - `static:listing_url:https://www.rollicgames.com/jobs`
+- Out of scope for this pass: the `5` anti-bot/rate-limit rows.
+
+Completed changes:
+
+- Added active Greenhouse provider rows for verified KRAFTON boards: `krafton`, `studiokraftonboard`, `kraftonamericas`, and `kraftonindia`.
+- Hid the KRAFTON static row and a nondeterministically resurfaced Santa Monica Studio static alias as provider-covered browser-required rows.
+- Added a focused NCSoft static plugin and extended the rendered-card static plugin so Rollic can use Playwright after a blocked first fetch.
+- Hid NCSoft and Rollic static rows as `browser_required_static_source` because clean validation did not prove valid active jobs after the plugin attempts.
+
+Fresh validation from clean root `_out/static-browser-required-validation-clean/jobs-fetch-report.json`:
+
+| Counter | Value |
+|---------|------:|
+| Sources attempted | 484 |
+| Successful sources | 479 |
+| Failed/error sources | 5 |
+| Clean `ok` sources | 450 |
+| `ok` sources with warnings | 29 |
+| Final output jobs | 29,834 |
+| `needsReviewBreakdown.rawMarkerCount` | 105 |
+| `needsReviewBreakdown.includedCount` | 99 |
+| Error rows containing `HTTP 301` | 0 |
+| Error rows containing `HTTP 302` | 0 |
+| Error rows containing `HTTP 308` | 0 |
+| Error rows containing `HTTP 404` | 0 |
+| Error rows containing `HTTP 429` | 4 |
+| Active registry rows | 555 |
+| Pending registry rows | 62 |
+| Hidden pending rows | 62 |
+| Size guardrail exceeded | no |
+| `jobs-unified.json` bytes | 37,606,383 |
+| Light JSON bytes | 20,792,655 |
+| CSV bytes | 30,541,971 |
+
+Residual classifier output after validation:
+
+| Triage class | Count |
+|--------------|------:|
+| `anti_bot_or_rate_limited` | 5 |
+
+Verification:
+
+- `python -m pytest tests/test_static_residual_failures_measurement.py tests/test_source_registry.py tests/test_source_registry_p1_operational_noise.py -q`
+- `python -m pytest tests/jobs_static/ -q`
+- `python -m pytest tests/test_jobs_fetcher_*.py -q` equivalent via explicit PowerShell file expansion
+- `npm run lint:repo-guardrails`
+- `npm run lint:precommit`
+
+Closeout decision:
+
+- This browser-required follow-up is complete because no `browser_required` rows remain in the fresh residual classifier split.
+- Keep the April 25 failure snapshot active as an external-access runbook for the remaining anti-bot/rate-limit rows only.
+
+### 2026-04-26 - Site-changed static failure follow-up
+
+Starting baseline from `_out/static-narrow-validation/jobs-fetch-report.json`:
+
+- `510` sources attempted.
+- `32` failed/error sources.
+- Residual classifier split: `22` `site_changed`, `6` `anti_bot_or_rate_limited`, and `4` `browser_required`.
+- `442` clean `ok` sources and `36` `ok` sources with warnings.
+- `105` raw `needs_review` markers and `99` shaped included rows.
+- Error rows: `21` with `HTTP 301`, `0` with `HTTP 302`, `1` with `HTTP 308`, `0` with `HTTP 404`, and `5` with `HTTP 429`.
+
+Chosen scope:
+
+- Act only on rows classified by `tools/measurements/pipeline/static_residual_failures.py` as `site_changed`.
+- Preserve anti-bot/rate-limit and browser-required rows as baseline-only residuals for a separate follow-up.
+- Preserve source rows during registry cleanup by hiding, demoting, or canonicalizing; do not delete rows or infer new provider families.
+
+Completed changes:
+
+- Hid `22` active static rows with `pendingReason="site_changed_static_source"` and `residualFailureClass="site_changed"` after validation showed redirect status evidence plus zero extraction.
+- Preserved the source rows in `data/source-registry-pending.json`; no site-changed rows were deleted and no new provider families were inferred.
+- Updated taxonomy so static zero-extract rows with redirect/status evidence are diagnosed as `site_changed`; generic static/manual no-jobs rows without redirect evidence remain `js_required`.
+
+Fresh validation from `_out/static-site-changed-validation/jobs-fetch-report.json`:
+
+| Counter | Value |
+|---------|------:|
+| Sources attempted | 488 |
+| Successful sources | 480 |
+| Failed/error sources | 8 |
+| Clean `ok` sources | 446 |
+| `ok` sources with warnings | 34 |
+| Final output jobs | 29,757 |
+| `needsReviewBreakdown.rawMarkerCount` | 106 |
+| `needsReviewBreakdown.includedCount` | 100 |
+| Error rows containing `HTTP 301` | 0 |
+| Error rows containing `HTTP 302` | 0 |
+| Error rows containing `HTTP 308` | 0 |
+| Error rows containing `HTTP 404` | 0 |
+| Error rows containing `HTTP 429` | 4 |
+| Active registry rows | 555 |
+| Pending registry rows | 58 |
+| Hidden pending rows | 58 |
+| Size guardrail exceeded | no |
+| `jobs-unified.json` bytes | 37,499,551 |
+| Light JSON bytes | 20,749,667 |
+| CSV bytes | 30,456,676 |
+
+Residual classifier output after validation:
+
+| Triage class | Count |
+|--------------|------:|
+| `anti_bot_or_rate_limited` | 5 |
+| `browser_required` | 3 |
+
+Verification:
+
+- `python -m pytest tests/test_static_residual_failures_measurement.py tests/test_source_registry.py tests/test_source_registry_p1_operational_noise.py tests/jobs_static/test_static_site_changed_taxonomy.py -q`
+- `python -m pytest tests/jobs_static/ -q`
+- `python -m pytest tests/test_jobs_fetcher_*.py -q` equivalent via explicit PowerShell file expansion
+- `npm run lint:repo-guardrails`
+- `npm run lint:precommit`
+
+Closeout decision:
+
+- This site-changed follow-up is complete because no `site_changed` rows remain in the fresh residual classifier split.
+- Keep the April 25 failure snapshot active as a narrow residual runbook for the remaining anti-bot/rate-limit and browser-required rows only.
 
 ### 2026-04-26 - Residual static-failure triage
 
@@ -152,11 +286,11 @@ Closeout decision:
 
 ## Pickup Order
 
-1. **Narrow remaining static/provider/browser failures.**
-   - Start from `_out/static-narrow-validation/`, not the original April 25 counts.
-   - Baseline to preserve: `510` sources attempted, `32` failed/error sources, `442` clean `ok`, `36` `ok` with warnings, `105` raw `needs_review` markers, `99` shaped included rows, `21` error rows containing `HTTP 301`, `0` containing `HTTP 302`, `1` containing `HTTP 308`, `0` containing `HTTP 404`, and `5` containing `HTTP 429`.
-   - Goal: resolve or document the remaining `22` `site_changed`, `6` `anti_bot_or_rate_limited`, and `4` `browser_required` rows.
-   - Success condition: a fresh isolated run proves the remaining failures are small enough to archive the April 25 snapshot or convert it into a stable runbook.
+1. **Decide anti-bot/rate-limit residual policy.**
+   - Start from `_out/static-browser-required-validation-clean/`, not the original April 25 counts.
+   - Baseline to preserve: `484` sources attempted, `5` failed/error sources, `450` clean `ok`, `29` `ok` with warnings, `105` raw `needs_review` markers, `99` shaped included rows, `0` error rows containing `HTTP 301`, `0` containing `HTTP 302`, `0` containing `HTTP 308`, `0` containing `HTTP 404`, and `4` containing `HTTP 429`.
+   - Goal: decide whether the remaining `5` `anti_bot_or_rate_limited` rows should be hidden as expected external-access limits, retried through a separate browser/Scrapy policy, or kept as an explicit runbook.
+   - Success condition: a fresh isolated run leaves no unexpected static/provider/browser residuals, allowing the April 25 snapshot to be archived or converted into a stable external-access note.
 
 2. **Behavior-tied adapter work only.**
    - Use [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) before changing provider, social, or static loader boundaries.

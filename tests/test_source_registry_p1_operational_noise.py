@@ -56,6 +56,51 @@ REDUNDANT_STATIC_COVERAGE = {
     ),
 }
 
+SITE_CHANGED_STATIC_IDS = {
+    "static:listing_url:https://careers.nintendo.com/jobs",
+    "static:listing_url:https://digitalbros.com/careers",
+    "static:listing_url:http://www.astragon.de/unternehmen/jobs",
+    "static:listing_url:https://www.trace-studio.com/career",
+    "static:listing_url:https://www.series.inc/careers",
+    "static:listing_url:https://coffeestain.com/careers/",
+    "static:listing_url:https://fusegames.com/careers",
+    "static:listing_url:https://www.digitalbros.com/careers",
+    "static:listing_url:https://hangar13games.com/jobs-gaming/",
+    "static:listing_url:https://bulkhead.com/careers",
+    "static:listing_url:http://www.ahoiii.com/jobs",
+    "static:listing_url:https://www.paxiegames.com/jobs/",
+    "static:listing_url:https://playground-games.com/careers/",
+    "static:listing_url:https://urbangames.com/career/",
+    "static:listing_url:https://www.limbic-entertainment.de/jobs",
+    "static:listing_url:https://www.movingstonedigital.com/careers",
+    "static:listing_url:https://www.thecoalitionstudio.com/careers",
+    "static:listing_url:https://emplois.reflectorentertainment.com/l/en",
+    "static:listing_url:https://blindsquirrelentertainment.com/careers",
+    "static:listing_url:https://www.jokergame.net/jobs/",
+    "static:listing_url:https://thirdkindgames.com/careers",
+    "static:listing_url:https://34bigthings.com/careers",
+}
+
+KRAFTON_GREENHOUSE_IDS = {
+    "greenhouse:slug:krafton",
+    "greenhouse:slug:studiokraftonboard",
+    "greenhouse:slug:kraftonamericas",
+    "greenhouse:slug:kraftonindia",
+}
+
+KRAFTON_STATIC_BROWSER_REQUIRED_ID = "static:listing_url:https://krafton.com/en/careers/jobs/"
+BROWSER_REQUIRED_PROVIDER_MIGRATIONS = {
+    KRAFTON_STATIC_BROWSER_REQUIRED_ID: "greenhouse:slug:krafton",
+    "static:listing_url:https://sms.playstation.com/careers": (
+        "greenhouse:slug:sonyinteractiveentertainmentglobal"
+    ),
+}
+
+BROWSER_REQUIRED_STATIC_IDS = {
+    "static:listing_url:https://nca.ncsoft.com/en-us/careers",
+    "static:listing_url:https://www.rollicgames.com/jobs",
+}
+
 
 def test_demote_duplicate_active_variants_keeps_best_family_winner() -> None:
     active = [
@@ -184,3 +229,72 @@ def test_static_narrow_cleanup_preserves_dead_and_redundant_rows_as_hidden() -> 
         assert row["pendingReason"] == "redundant_static_stronger_coverage"
         assert row["residualFailureClass"] == "redundant_provider_coverage"
         assert row["duplicateOfSourceId"] == winner_id
+
+
+def test_static_site_changed_cleanup_preserves_rows_as_hidden_pending() -> None:
+    active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
+    pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+
+    active_by_id = {row["id"]: row for row in active}
+    pending_by_id = {row["id"]: row for row in pending}
+
+    assert SITE_CHANGED_STATIC_IDS.isdisjoint(active_by_id)
+    assert SITE_CHANGED_STATIC_IDS <= pending_by_id.keys()
+    for source_id in SITE_CHANGED_STATIC_IDS:
+        row = pending_by_id[source_id]
+        assert row["registryState"] == "pending"
+        assert row["candidateState"] == "hidden"
+        assert row["hiddenFromDefault"] is True
+        assert row["enabledByDefault"] is False
+        assert row["pendingReason"] == "site_changed_static_source"
+        assert row["residualFailureClass"] == "site_changed"
+        assert row["residualFailureEvidence"]
+
+
+def test_browser_required_static_aliases_migrate_to_provider_sources() -> None:
+    active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
+    pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+
+    active_by_id = {row["id"]: row for row in active}
+    pending_by_id = {row["id"]: row for row in pending}
+
+    assert set(BROWSER_REQUIRED_PROVIDER_MIGRATIONS).isdisjoint(active_by_id)
+    assert KRAFTON_GREENHOUSE_IDS <= active_by_id.keys()
+    for source_id in KRAFTON_GREENHOUSE_IDS:
+        row = active_by_id[source_id]
+        assert row["adapter"] == "greenhouse"
+        assert row["registryState"] == "active"
+        assert row["candidateState"] == "live"
+        assert row["enabledByDefault"] is True
+        assert row["slug"]
+
+    for source_id, winner_id in BROWSER_REQUIRED_PROVIDER_MIGRATIONS.items():
+        hidden = pending_by_id[source_id]
+        assert hidden["registryState"] == "pending"
+        assert hidden["candidateState"] == "hidden"
+        assert hidden["hiddenFromDefault"] is True
+        assert hidden["enabledByDefault"] is False
+        assert hidden["pendingReason"] == "browser_required_provider_migration"
+        assert hidden["residualFailureClass"] == "browser_required"
+        assert hidden["duplicateOfSourceId"] == winner_id
+        assert hidden["residualFailureEvidence"]
+
+
+def test_browser_required_unresolved_static_rows_are_hidden_pending() -> None:
+    active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
+    pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+
+    active_by_id = {row["id"]: row for row in active}
+    pending_by_id = {row["id"]: row for row in pending}
+
+    assert BROWSER_REQUIRED_STATIC_IDS.isdisjoint(active_by_id)
+    assert BROWSER_REQUIRED_STATIC_IDS <= pending_by_id.keys()
+    for source_id in BROWSER_REQUIRED_STATIC_IDS:
+        hidden = pending_by_id[source_id]
+        assert hidden["registryState"] == "pending"
+        assert hidden["candidateState"] == "hidden"
+        assert hidden["hiddenFromDefault"] is True
+        assert hidden["enabledByDefault"] is False
+        assert hidden["pendingReason"] == "browser_required_static_source"
+        assert hidden["residualFailureClass"] == "browser_required"
+        assert hidden["residualFailureEvidence"]
