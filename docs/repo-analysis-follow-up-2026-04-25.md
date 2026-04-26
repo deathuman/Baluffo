@@ -24,10 +24,32 @@ When work from this tracker is started or completed, update this file in the sam
 |----------|-------|--------|--------------|
 | P0 | Restore diagnostic trust and live fetch health | Complete | Implemented 2026-04-26; targeted verification passed. |
 | P1 | Reduce operational noise | Complete | Implemented 2026-04-26; duplicate active variants were demoted, repeated zero-job pending rows are hidden by policy, and ok-with-warning diagnostics are additive. |
-| P2 | Update architecture inventory before more refactor work | Not started | Provider/social plugin facts need inventory refresh before extraction work. |
+| P2 | Update architecture inventory before more refactor work | Complete | Implemented 2026-04-26; adapter plugin inventory now reflects current provider/social/static plugin boundaries. |
 | P3 | Guardrails and cleanup decisions | Not started | Size policy and snapshot archival depend on later fresh-run evidence. |
 
 ## Completed Work Log
+
+### 2026-04-26 - P2 adapter-plugin inventory refresh
+
+Current local rebaseline before edits:
+
+- `src/jobs/adapters/provider_api.py`: approximately 282 LOC; now a stable dispatch surface over provider plugins.
+- `src/jobs/adapters/plugins/provider_api/register.py`: registers Greenhouse, Teamtailor, JSON-feed providers, Personio, BambooHR, Workday, and HTML-board providers.
+- `src/jobs/adapters/social.py`: approximately 620 LOC; remains the stable social loader compatibility surface and still owns orchestration for X/Mastodon plus Reddit wrapping.
+- `src/jobs/adapters/plugins/social/register.py`: registers Reddit, X, and Mastodon social plugins.
+- `src/jobs/adapters/social_parsers.py`: approximately 811 LOC; remains a specialized parser owner and is not part of this P2 implementation wave.
+
+Completed:
+
+- Refreshed [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) as an active doc with current ownership metadata.
+- Replaced stale first-wave extraction wording with current provider dispatch, social plugin registration, and behavior-tied future extraction guidance.
+- Updated the static plugin inventory with currently registered modules including Amanotes, ATS wrappers, Frontier, Nintendo CSOD, and rendered-card support.
+- Left runtime code, source registry data, and parser behavior unchanged.
+
+Verification:
+
+- `npm run lint:repo-guardrails` -> passed
+- `npm run lint:precommit` -> passed
 
 ### 2026-04-26 - P1 operational-noise follow-up
 
@@ -107,8 +129,8 @@ Verification:
 | `needs_review` source rows and summary breakdown differ | Completed 2026-04-26 | `needsReviewBreakdown` now reports `rawMarkerCount` and `includedCount` so raw markers and shaped zero-kept diagnostics can be reconciled without changing bucket semantics. |
 | Duplicate registry entries for Scopely, Nintendo, and Paradox | Completed 2026-04-26 | Weaker active variants were demoted to hidden pending rows with `duplicate_family_weaker_variant`; no rows were deleted. |
 | Greenhouse stale slugs such as `guerrillagames` and `larian-studios` | Completed 2026-04-26 for local stale placeholders | No-URL/stale local placeholders were demoted through the duplicate-family policy. Future provider URL replacement still requires current provider evidence. |
-| Provider API plugin extraction is still entirely pending | Partially stale | `src/jobs/adapters/plugins/provider_api/` now exists and registers provider plugins. Future work should update the inventory and continue extraction only where behavior work justifies it. |
-| Social plugin extraction is still entirely pending | Partially stale | `src/jobs/adapters/plugins/social/register.py` exists, but the stable social surface still contains provider logic. Treat this as an inventory/update task before any new extraction wave. |
+| Provider API plugin extraction status | Corrected 2026-04-26 | `adapter-plugin-inventory.md` now records provider plugin registration and dispatch boundaries; future provider work should start in the owning plugin module unless a compatibility surface must change. |
+| Social plugin extraction status | Corrected 2026-04-26 | `adapter-plugin-inventory.md` now records social plugin registration and the remaining stable `social.py` compatibility surface; future extraction requires behavior work or a refactor charter. |
 | Five deferred closeout modules remain acceptable large owners | Confirmed as historical context | `docs/archive/history/final-leaf-closeout-program.md` marks them intentionally deferred, not default refactor lanes. Reopen only for real behavior work. |
 
 ## Priority Work
@@ -147,16 +169,16 @@ Verification:
    - Status: Complete 2026-04-26.
    - Result: Fetch summaries include additive `okCleanSources` and `okWithWarningSources`; admin diagnostics display ok-with-warning counts without changing success status semantics.
 
-### P2 - Update Architecture Inventory Before More Refactor Work - Not started
+### P2 - Update Architecture Inventory Before More Refactor Work - Complete
 
 8. **Refresh `adapter-plugin-inventory.md`.**
-   - Status: Not started.
-   - Record the current provider plugin files and social plugin registration state.
-   - Replace stale "not rolled out" wording with current boundaries and remaining gaps.
+   - Status: Complete 2026-04-26.
+   - Result: The inventory now records current provider plugin files, social plugin registration state, and static plugin modules.
+   - Result: Stale "first-wave extraction" wording was replaced with current boundaries and remaining gaps.
 
 9. **Continue provider/social plugin extraction only when tied to behavior work.**
-   - Status: Not started.
-   - Provider plugins already cover more than the analysis implied.
+   - Status: Standing guidance after P2 refresh.
+   - Provider plugins already cover most provider lanes.
    - Social extraction should start with a compatibility audit of `social.py`, `plugins/social/register.py`, and loader registration.
 
 10. **Leave `social_parsers.py` alone unless parser behavior changes.**
@@ -182,8 +204,8 @@ Verification:
 
 ## Pickup Order
 
-1. P2 documentation: refresh `adapter-plugin-inventory.md` after P1 confirms current source-family behavior.
-2. P3 decisions: decide output size policy and snapshot archival/promotion after fresh-run evidence exists.
+1. P3 decisions: decide output size policy and snapshot archival/promotion after fresh-run evidence exists.
+2. Future behavior-tied adapter work: use the refreshed plugin inventory before changing provider or social loader boundaries.
 3. Future fresh-run validation: compare active/pending counts, hidden pending rows, ok-with-warning counts, and remaining provider failures against the original 2026-04-25 snapshot.
 
 ## Rebaseline Checklist

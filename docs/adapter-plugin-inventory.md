@@ -1,6 +1,13 @@
-## Adapter plugin inventory (2026-04-21)
+# Adapter Plugin Inventory
 
-This note captures the initial inventory for the **adapter plugin framework** rollout.
+> - **Status:** Active
+> - **Use this when:** adding or changing a source family, adapter plugin, loader path, or plugin ownership boundary
+> - **Canonical for:** adapter plugin inventory, source-loader family routing, and future extraction guidance
+> - **Not canonical for:** data payload contracts, admin API contracts, or live registry contents
+> - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`scraping-pipeline.md`](scraping-pipeline.md), and the owning adapter source files
+> - **Last updated:** 2026-04-26
+
+This note captures the current inventory for the **adapter plugin framework** and the stable loader surfaces that still wrap it.
 
 ### Source loaders map (jobs pipeline)
 
@@ -18,23 +25,23 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 | 8bitplay | html | community board loader | adapter: html, studio: 8bitplay |
 | gracklehq | html | community board loader | adapter: html, studio: gracklehq |
 | epic_games_careers | api | community | adapter: api, studio: epic_games |
-| greenhouse_boards | greenhouse | provider_api (registry) | adapter: greenhouse, studio: multiple |
-| teamtailor_sources | teamtailor | provider_api (registry) | adapter: teamtailor |
-| lever_sources | lever | provider_api (registry) | adapter: lever |
-| smartrecruiters_sources | smartrecruiters | provider_api (registry) | adapter: smartrecruiters |
-| workable_sources | workable | provider_api (registry) | adapter: workable |
-| recruitee_sources | recruitee | provider_api (registry) | adapter: recruitee |
-| pinpoint_sources | pinpoint | provider_api (registry) | adapter: pinpoint |
-| ashby_sources | ashby | provider_api (registry) | adapter: ashby |
-| bamboohr_sources | bamboohr | provider_api (registry) | adapter: bamboohr |
-| breezy_sources | breezy | provider_api (registry) | adapter: breezy |
-| jazzhr_sources | jazzhr | provider_api (registry) | adapter: jazzhr |
+| greenhouse_boards | greenhouse | provider_api dispatch -> Greenhouse plugin | adapter: greenhouse, studio: multiple |
+| teamtailor_sources | teamtailor | provider_api dispatch -> Teamtailor plugin | adapter: teamtailor |
+| lever_sources | lever | provider_api dispatch -> JSON-feed plugin | adapter: lever |
+| smartrecruiters_sources | smartrecruiters | provider_api dispatch -> JSON-feed plugin | adapter: smartrecruiters |
+| workable_sources | workable | provider_api dispatch -> JSON-feed plugin | adapter: workable |
+| recruitee_sources | recruitee | provider_api dispatch -> JSON-feed plugin | adapter: recruitee |
+| pinpoint_sources | pinpoint | provider_api dispatch -> JSON-feed plugin | adapter: pinpoint |
+| ashby_sources | ashby | provider_api dispatch -> HTML-board plugin | adapter: ashby |
+| bamboohr_sources | bamboohr | provider_api dispatch -> structured-listing plugin | adapter: bamboohr |
+| breezy_sources | breezy | provider_api dispatch -> HTML-board plugin | adapter: breezy |
+| jazzhr_sources | jazzhr | provider_api dispatch -> HTML-board plugin | adapter: jazzhr |
 | personio_sources | personio | provider_api entrypoint and provider plugin registration | adapter: personio |
-| workday_sources | workday | provider_api (registry) | adapter: workday |
+| workday_sources | workday | provider_api dispatch -> structured-listing plugin | adapter: workday |
 | scrapy_static_sources | scrapy_static | static (Scrapy subprocess) | adapter: scrapy_static |
-| social_reddit | social | social (config-driven) | adapter: social, studio: reddit |
-| social_x | social | social (config-driven) | adapter: social, studio: x |
-| social_mastodon | social | social (config-driven) | adapter: social, studio: mastodon |
+| social_reddit | social | social stable loader -> registered Reddit plugin | adapter: social, studio: reddit |
+| social_x | social | social stable loader; X plugin is registered for framework path | adapter: social, studio: x |
+| social_mastodon | social | social stable loader; Mastodon plugin is registered for framework path | adapter: social, studio: mastodon |
 | static_studio_pages_* | static | static (registry entries, sharded a_i / j_r / s_z) | adapter: static |
 
 **Excluded by default:** `wellfound` (in `EXCLUDED_DEFAULT_SOURCES`) — disabled due to anti-bot restrictions unless browser fetch is used.
@@ -67,15 +74,23 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 - **`src/jobs/fetcher_compat_runtime.py`**
   Root-backed runtime wrappers for `run_pipeline`, `run_scrapy_static_source`, `registry_entries`, `build_redirect_resolver`, and `maybe_fetch_kojima_job_listing_html`.
 
-### Existing “family-like” clusters (good early plugin families)
+### Current provider and social plugin boundaries
 
-- **`src/jobs/adapters/provider_api.py` (~356 LOC)**
-  Already segmented by provider, each with its own registry key and parsing strategy:
-  - `greenhouse` (boards JSON)
-  - `teamtailor` (listing HTML + detail parsing)
-  - `lever`, `smartrecruiters`, `workable` (similar registry-driven flow)
-  - `recruitee`, `pinpoint` (registry-driven JSON feeds)
-  - `ashby`, `bamboohr`, `breezy`, `jazzhr`, `personio`, `workday` (provider-specific HTML/XML board flows and structured listing loaders; BambooHR/Workday share `src/jobs/adapters/provider_structured_listing.py`)
+- **`src/jobs/adapters/provider_api.py` (~282 LOC)**
+  Stable provider loader surface only. It calls `ensure_registered()`, selects a `provider_api` plugin by adapter key, and preserves compatibility exports such as the Personio rate-limit helpers.
+
+- **`src/jobs/adapters/plugins/provider_api/register.py`**
+  Registers the current provider plugins:
+  - direct runner plugins: `greenhouse_boards`, `teamtailor_sources`
+  - JSON-feed plugins: `lever_sources`, `workable_sources`, `smartrecruiters_sources`, `recruitee_sources`, `pinpoint_sources`
+  - structured/migration plugins: `personio_sources`, `bamboohr_sources`, `workday_sources`
+  - HTML-board plugins: `breezy_sources`, `jazzhr_sources`, `ashby_sources`
+
+- **Provider plugin implementation owners**
+  - `greenhouse_runner.py` and `teamtailor_runner.py` own the two direct runners.
+  - `json_feed.py` owns shared JSON feed providers.
+  - `html_board.py` owns shared HTML board providers.
+  - `provider_personio.py` and `provider_structured_listing.py` remain specialized provider owners behind registered plugin entries.
 
 - **`src/jobs/adapters/community/__init__.py`**
   Community-board loaders now include:
@@ -88,37 +103,35 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
   - `gracklehq`
   - `epic_games_careers`
 
-- **`src/jobs/adapters/social.py` (~269 LOC)**
-  Already segmented by provider:
-  - reddit
-  - x
-  - mastodon
+- **`src/jobs/adapters/social.py` (~620 LOC)**
+  Stable social loader surface and compatibility owner. It keeps the public loader functions used by pipeline dispatch, handles cache/progress/diagnostic behavior, and wraps or coordinates registered social plugin paths.
 
-### Initial extraction slices (first wave)
+- **`src/jobs/adapters/plugins/social/register.py`**
+  Registers `social_reddit`, `social_x`, and `social_mastodon` as social-family plugins. The Reddit loader currently delegates through registry selection; X and Mastodon plugin code is present, but the stable surface still owns compatibility orchestration that should not be changed as cleanup-only work.
 
-To prove the architecture with minimal risk, start with the provider family that is already naturally sliced:
+- **`src/jobs/adapters/social_parsers.py` (~811 LOC)**
+  Specialized parser owner for Reddit, X, and Mastodon payloads. Leave this file alone unless social parsing behavior changes.
 
-- **Family**: `provider_api`
-  - **Plugins (3–5 slices)**: `greenhouse`, `teamtailor`, `lever`, `workable`, `smartrecruiters`
+### Future extraction guidance
 
-Then validate framework generality on a second family:
-
-- **Family**: `social`
-  - **Plugins**: `reddit`, `x` (optionally `mastodon`)
-
-The root `static.py` surface is now split behind focused helper modules. New static-adapter work should start in the helper that owns the behavior, not in the root surface.
+- Provider plugin extraction is no longer a first-wave task; most provider lanes already dispatch through registered plugins. Future provider work should start in the owning plugin module unless a stable loader compatibility change is required.
+- Social extraction should only proceed with behavior work or an explicit refactor charter. Start by auditing `social.py`, `plugins/social/register.py`, and the pipeline loader registration so cache-skip, heartbeat, progress, diagnostics, and fallback behavior remain compatible.
+- The root `static.py` surface is split behind focused helper modules. New static-adapter work should start in the helper or static plugin that owns the behavior, not in the root surface.
 
 ### Static plugins (current)
 
 | Plugin | Host(s) | Purpose |
 |--------|--------|---------|
 | activision | careers.activision.com | Activision careers (HTML-first; browser escalation when needed) |
+| amanotes | careers.amanotes.com, www.careers.amanotes.com | Amanotes careers |
+| ats_wrappers | naughtydog.com, www.naughtydog.com, jobs.zenimax.com | Thin careers pages that mainly point to ATS destinations |
 | blizzard | careers.blizzard.com, www.careers.blizzard.com | Blizzard Entertainment careers (HTML-first; browser escalation when needed) |
 | cdprojektred | cdprojektred.com, www.cdprojektred.com | CD Projekt RED careers (HTML-first; Playwright fallback when JS shell detected) |
 | climax | www.climaxstudios.com | Climax Studios careers |
 | embark | careers.embark-studios.com | Embark Studios careers |
 | example_com | example.com | Demo / tests |
 | example_org | example.org | Demo / tests |
+| frontier | frontier.co.uk, www.frontier.co.uk | Frontier careers |
 | globalstep | globalstep.com | GlobalStep careers |
 | hrmos | hrmos.co | HRMOS-powered career pages |
 | jobvite | amberstudiocareers (partial) | Jobvite-based studio careers |
@@ -128,7 +141,9 @@ The root `static.py` surface is now split behind focused helper modules. New sta
 | littlechicken | littlechicken.nl, www.littlechicken.nl | Little Chicken careers |
 | milestone | milestone.it, www.milestone.it | Milestone careers (HTML-first; browser escalation when needed) |
 | naconstudiomilan | www.naconstudiomilan.com, naconstudiomilan.com | NACON Studio Milan careers |
+| nintendo_csod | jobs.nintendo.de, nintendoeurope.csod.com | Nintendo Europe CSOD careers |
 | remedy | remedygames.com, www.remedygames.com | Remedy careers (HTML-first; browser escalation when needed) |
+| rendered_cards | workwithindies.com, romerogames.com, starbreeze.com, stepico.com, mobge.net, and similar card/list careers pages | Shared rendered-card/list extractor for static pages |
 | riot | www.riotgames.com | Riot Games careers |
 | sheet_studios | coolgames.com, gismart.com, aspyr.com, 10chambers.com, careers.10chambers.com, 24bitgames.com, 4jstudios.com, blacksnow.tv, napsteam.com, area35east.com, chubbypixel.com, bonfirestudios.com, bandainamcostudios.my | Sheet-sourced / indie studio career pages (shared heuristics; empty-confirmed or browser fallback when extract fails) |
 | static_pilot | (none) | Placeholder; fallback used for all hosts |
@@ -172,4 +187,4 @@ When a studio’s jobs are already covered by a provider adapter (e.g. SmartRecr
 - **Static studio site:** (1) Add a static plugin if the site needs custom parsing (see Static plugins above). (2) Add a registry entry with `"adapter": "static"`, `pages` (listing URL(s)), and `company`/`name`. The pipeline will pick the plugin by host from the first page URL.
 - **New CSV/Google Sheet:** Add an entry to `GOOGLE_SHEETS_SOURCES` in `src/jobs/adapters/community/google_sheets.py` (or import from `src.jobs.adapters.community`) with `name`, `sheetId`, `gid`. Add the same `name` to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`.
 - **New community board / aggregator:** Add the parser and loader in `src/jobs/adapters/community/__init__.py`, export the parser through `src/jobs/parsers.py`, and only touch `src/jobs_fetcher.py` if a legacy CLI compatibility re-export must stay available. Lazy compatibility export routing lives in `src/jobs/fetcher_compat_exports.py`, and root-backed wrapper seams live in `src/jobs/fetcher_compat_runtime.py`. Then add the loader name to `DEFAULT_SOURCE_LOADER_NAMES` and `SOURCE_REPORT_META` in `src/jobs_fetcher_registry.py`. Recent examples: `gamejobs`, `workwithindies`, `8bitplay`, `gracklehq`.
-- **Social (Reddit/X/Mastodon):** Enable via `--social-enabled` or runtime config. To add a new social provider, implement the loader in `src/jobs/adapters/social.py` and register it in `default_source_loaders` and `SOURCE_REPORT_META`.
+- **Social (Reddit/X/Mastodon):** Enable via `--social-enabled` or runtime config. To add a new public social source, register the plugin path under `src/jobs/adapters/plugins/social/`, preserve or add the stable loader in `src/jobs/adapters/social.py`, and register the source in `default_source_loaders` and `SOURCE_REPORT_META`.
