@@ -59,6 +59,12 @@ APP_RUNTIME_SCRIPTS = (
     "jobs_fetcher_registry.py",
     "pipeline_io.py",
     "source_discovery.py",
+    "source_registry_auto_approval.py",
+    "source_registry_canonicalize.py",
+    "source_registry_identity.py",
+    "source_registry_io.py",
+    "source_registry_policy.py",
+    "source_registry_state.py",
     "source_registry.py",
     "source_sync_config.py",
     "source_sync_crypto.py",
@@ -88,7 +94,17 @@ APP_RUNTIME_SHIP_FILES = (
     "desktop_update_service.py",
     "desktop_update_shared.py",
     "desktop_update_state.py",
+    "migrations.py",
+    "runtime_launcher.py",
     "startup_telemetry.py",
+    "update_manager.py",
+    "update_manager_apply.py",
+    "update_manager_bootstrap.py",
+    "update_manager_cli.py",
+    "update_manager_paths.py",
+    "update_manager_recovery.py",
+    "update_manager_state.py",
+    "update_manager_validation.py",
 )
 APP_TOOLING_SHIP_FILES = APP_RUNTIME_SHIP_FILES + ("desktop_updater.py",)
 APP_RUNTIME_ASSET_DIRS = ("probes", "styles")
@@ -109,6 +125,10 @@ APP_RUNTIME_DATA_FILES = APP_VERSION_CONTRACT_FILES + (
     "source-discovery-config.json",
 )
 STARTUP_PREVIEW_LIMIT = 240
+APP_VERSION_IMPORT_CHECK_MODULES = (
+    "src.admin_bridge",
+    "src.ship.runtime_launcher",
+)
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -636,6 +656,30 @@ def _copy_app_version(version_dir: Path) -> None:
         )
 
 
+def validate_app_version_python_imports(version_dir: Path) -> None:
+    imports = "; ".join(f"import {module}" for module in APP_VERSION_IMPORT_CHECK_MODULES)
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONPATH"] = str(version_dir)
+    result = subprocess.run(
+        [sys.executable, "-c", imports],
+        cwd=version_dir,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return
+    details = "\n".join(
+        part for part in (result.stdout.strip(), result.stderr.strip()) if part
+    ).strip()
+    raise RuntimeError(
+        "Ship bundle Python import validation failed for "
+        f"{version_dir}: {details or f'exit code {result.returncode}'}"
+    )
+
+
 def _generate_startup_preview(data_dir: Path) -> None:
     light_path = data_dir / "jobs-unified-light.json"
     startup_path = data_dir / "jobs-unified-startup.json"
@@ -669,6 +713,7 @@ def build_bundle(output_dir: Path, version: str) -> Path:
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     _copy_app_version(version_dir)
+    validate_app_version_python_imports(version_dir)
     _seed_version_contract_data(version_dir / "data")
     if not (version_dir / "src" / "admin_bridge.py").exists():
         raise RuntimeError(

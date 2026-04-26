@@ -1,5 +1,4 @@
 import json
-import shutil
 from pathlib import Path
 from unittest import mock
 
@@ -9,6 +8,7 @@ from scripts import build_ship_bundle
 from scripts.build_ship_bundle import STARTUP_PREVIEW_LIMIT, build_bundle
 from src import source_sync
 from src.app_version import APP_VERSION
+from tests.helpers.ship_bundle import copy_minimal_app_version
 from tests.helpers.temp_paths import workspace_tmpdir
 
 pytestmark = pytest.mark.packaging
@@ -32,24 +32,6 @@ def _build_with_temp_packaged_config(
         mock.patch.dict("os.environ", env or {}, clear=False),
     ):
         return build_bundle(temp_root / "dist" / "baluffo-ship", "1.2.3")
-
-
-def _copy_minimal_app_version(version_dir: Path) -> None:
-    packaged_sync_config = build_ship_bundle._resolve_packaged_sync_config()
-    desktop_update_repo = build_ship_bundle._resolve_desktop_update_repo()
-
-    (version_dir / "src").mkdir(parents=True, exist_ok=True)
-    (version_dir / "packaging").mkdir(parents=True, exist_ok=True)
-    (version_dir / "src" / "admin_bridge.py").write_text("# test stub\n", encoding="utf-8")
-    if packaged_sync_config is not None:
-        shutil.copy2(
-            packaged_sync_config, version_dir / "packaging" / "github-app-sync-config.json"
-        )
-    if desktop_update_repo:
-        (version_dir / "packaging" / build_ship_bundle.DESKTOP_UPDATE_CONFIG_FILE).write_text(
-            json.dumps({"repo": desktop_update_repo}, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
 
 
 def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
@@ -223,7 +205,8 @@ def test_bundle_generates_packaged_sync_config_from_build_env() -> None:
             ),
             mock.patch("scripts.build_ship_bundle._validate_private_key_pem"),
             mock.patch(
-                "scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version
+                "scripts.build_ship_bundle._copy_app_version",
+                side_effect=copy_minimal_app_version,
             ),
             mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
         ):
@@ -270,7 +253,8 @@ def test_bundle_embeds_desktop_update_public_keys_from_build_env() -> None:
         )
         with (
             mock.patch(
-                "scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version
+                "scripts.build_ship_bundle._copy_app_version",
+                side_effect=copy_minimal_app_version,
             ),
             mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
         ):
@@ -319,7 +303,8 @@ def test_bundle_writes_desktop_update_repo_config_from_build_env() -> None:
         )
         with (
             mock.patch(
-                "scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version
+                "scripts.build_ship_bundle._copy_app_version",
+                side_effect=copy_minimal_app_version,
             ),
             mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
         ):
@@ -381,7 +366,8 @@ def test_bundle_restores_packaged_sync_config_from_local_env_path() -> None:
         source_config_path.write_text(json.dumps(source_payload), encoding="utf-8")
         with (
             mock.patch(
-                "scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version
+                "scripts.build_ship_bundle._copy_app_version",
+                side_effect=copy_minimal_app_version,
             ),
             mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
         ):
@@ -424,7 +410,8 @@ def test_bundle_normalizes_machine_bound_packaged_sync_config_for_portable_build
         config_path.write_text(json.dumps(source_payload), encoding="utf-8")
         with (
             mock.patch(
-                "scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version
+                "scripts.build_ship_bundle._copy_app_version",
+                side_effect=copy_minimal_app_version,
             ),
             mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
         ):
@@ -517,7 +504,8 @@ def test_bundle_derives_desktop_update_repo_from_git_remote() -> None:
                 ),
             ),
             mock.patch(
-                "scripts.build_ship_bundle._copy_app_version", side_effect=_copy_minimal_app_version
+                "scripts.build_ship_bundle._copy_app_version",
+                side_effect=copy_minimal_app_version,
             ),
             mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
         ):
