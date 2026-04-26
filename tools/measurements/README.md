@@ -8,6 +8,7 @@ Tools that run Baluffo or its pipeline and measure outputs, timing, yield, quali
 measurements/
   pipeline/
     job_discovery_increment_measurement.py  # Measure pipeline discovery gains
+    static_residual_failures.py             # Classify residual failed source rows
 
   sources/
     social_sources_monitoring.py   # Monitor social source performance
@@ -25,6 +26,18 @@ python tools/measurements/pipeline/latest_run_report.py
 ```
 
 Add `--json` when you want a machine-readable summary for automation.
+
+### Static Residual Failure Classification
+
+Use this after a validation fetch run to split failed static/provider/browser rows into
+narrow follow-up buckets:
+
+```bash
+python tools/measurements/pipeline/static_residual_failures.py \
+  --fetch-report _out/static-residual-validation/jobs-fetch-report.json \
+  --active-registry data/source-registry-active.json \
+  --json
+```
 
 ### Pipeline Measurements
 

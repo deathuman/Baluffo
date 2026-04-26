@@ -108,6 +108,58 @@ Closeout decision:
 - Still material: `46` source-level failures remain, dominated by static `js_required` / broken extraction rows with residual HTTP status text.
 - Next action: continue from [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md) pickup order with a narrower static/provider/browser triage lane.
 
+## Narrow Static/Provider/Browser Validation - 2026-04-26
+
+The second residual pass added a local measurement classifier, hid high-confidence stale/dead rows, and suppressed redundant static aliases when a stronger active source remained.
+
+Validation artifacts were written under ignored `_out/static-narrow-validation/` and are not intended for commit.
+
+Command:
+
+- `BALUFFO_DATA_DIR=_out/static-narrow-validation python src/jobs_fetcher.py --output-dir _out/static-narrow-validation --force-refresh-all --ignore-circuit-breaker --social-enabled --quiet`
+
+Fresh fetch counters after the narrow static/provider/browser pass:
+
+| Counter | Value |
+|---------|------:|
+| Sources attempted | 510 |
+| Successful sources | 478 |
+| Failed/error sources | 32 |
+| Clean `ok` sources | 442 |
+| `ok` sources with warnings | 36 |
+| Final output jobs | 29,743 |
+| `needsReviewBreakdown.rawMarkerCount` | 105 |
+| `needsReviewBreakdown.includedCount` | 99 |
+| Error rows containing `HTTP 301` | 21 |
+| Error rows containing `HTTP 302` | 0 |
+| Error rows containing `HTTP 308` | 1 |
+| Error rows containing `HTTP 404` | 0 |
+| Error rows containing `HTTP 429` | 5 |
+| Error rows containing `HTTP 500` | 0 |
+| Error rows containing `HTTP 522` | 0 |
+| Active registry rows | 577 |
+| Pending registry rows | 36 |
+| Hidden pending rows | 36 |
+| Size guardrail exceeded | no |
+| `jobs-unified.json` bytes | 37,469,006 |
+| Light JSON bytes | 20,742,497 |
+| CSV bytes | 30,428,339 |
+
+Residual classifier output after validation:
+
+| Triage class | Count |
+|--------------|------:|
+| `site_changed` | 22 |
+| `anti_bot_or_rate_limited` | 6 |
+| `browser_required` | 4 |
+
+Closeout decision:
+
+- Keep this snapshot active rather than archiving it.
+- Resolved or reclassified in this pass: stale/dead HTTP 404/500/522 rows and redundant active static aliases.
+- Still material: `32` source-level failures remain, now narrowed to site-change redirects, anti-bot/rate-limit cases, and browser-required extraction gaps.
+- Next action: continue from [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md) pickup order with a smaller runbook focused on those three triage classes.
+
 ## Source Reports
 
 | Run | File | Run ID | Fresh build timestamp |

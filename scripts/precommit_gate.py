@@ -38,6 +38,7 @@ EXCLUDED_ROOT_PREFIXES = (
     "dist",
     "tmp",
 )
+MAX_PRECOMMIT_FILES_PER_COMMAND = 200
 
 
 def _git_lines(*args: str) -> list[str]:
@@ -133,17 +134,28 @@ def build_changed_command(files: list[str]) -> list[str]:
 
 
 def build_all_commands(files: list[str] | None = None) -> list[list[str]]:
-    file_args = ["--files", *files] if files else ["--all-files"]
-    return [
-        [*_precommit_base_command(), *file_args],
+    commands: list[list[str]] = []
+    if files:
+        for index in range(0, len(files), MAX_PRECOMMIT_FILES_PER_COMMAND):
+            commands.append(
+                [
+                    *_precommit_base_command(),
+                    "--files",
+                    *files[index : index + MAX_PRECOMMIT_FILES_PER_COMMAND],
+                ]
+            )
+    else:
+        commands.append([*_precommit_base_command(), "--all-files"])
+    commands.append(
         [
             *_precommit_base_command(),
             "vulture",
             "--all-files",
             "--hook-stage",
             "pre-push",
-        ],
-    ]
+        ]
+    )
+    return commands
 
 
 def should_run_repo_guardrails(files: list[str]) -> bool:

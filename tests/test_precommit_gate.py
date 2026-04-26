@@ -218,6 +218,48 @@ def test_run_all_with_exclusions_uses_filtered_repo_files(monkeypatch) -> None:
     assert complexity_called is True
 
 
+def test_build_all_commands_chunks_filtered_repo_files(monkeypatch) -> None:
+    monkeypatch.setattr(precommit_gate, "MAX_PRECOMMIT_FILES_PER_COMMAND", 2)
+
+    commands = precommit_gate.build_all_commands(["a.py", "b.py", "c.py"])
+
+    assert commands == [
+        [
+            precommit_gate.PYTHON,
+            "-m",
+            "pre_commit",
+            "run",
+            "--show-diff-on-failure",
+            "--color=always",
+            "--files",
+            "a.py",
+            "b.py",
+        ],
+        [
+            precommit_gate.PYTHON,
+            "-m",
+            "pre_commit",
+            "run",
+            "--show-diff-on-failure",
+            "--color=always",
+            "--files",
+            "c.py",
+        ],
+        [
+            precommit_gate.PYTHON,
+            "-m",
+            "pre_commit",
+            "run",
+            "--show-diff-on-failure",
+            "--color=always",
+            "vulture",
+            "--all-files",
+            "--hook-stage",
+            "pre-push",
+        ],
+    ]
+
+
 def test_run_all_stops_before_complexity_when_precommit_fails(monkeypatch) -> None:
     guardrails_called = False
     complexity_called = False

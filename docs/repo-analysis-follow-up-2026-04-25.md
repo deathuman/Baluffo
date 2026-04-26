@@ -15,7 +15,8 @@ This tracker now only owns future pickup order. The completed P0-P3 implementati
 |------|--------|--------------|
 | P0-P3 numbered items | Complete | `social_x`, safe static redirects, needs-review counters, operational-noise policy, adapter inventory refresh, output-size policy, failure-snapshot validation, and deferred-module budgets are implemented. |
 | Residual static-failure triage | Complete | High-yield cleanup reduced fresh isolated failures from `73` to `46`; remaining failures are narrower static/provider/browser triage, not the original broad residual bucket. |
-| Failure snapshot | Active | Fresh validation kept [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) active because `46` static/provider failures remain material. |
+| Narrow static/provider/browser follow-up | Complete | Focused cleanup reduced fresh isolated failures from `46` to `32`; stale/dead HTTP 404/500/522 rows are removed from default active fetches. |
+| Failure snapshot | Active | Fresh validation kept [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) active because `32` static/provider/browser failures remain material. |
 | Deferred large modules | Guarded | Exact source line ceilings are enforced through `tools/repo_health/deferred_source_line_budget.json` and `npm run lint:repo-guardrails`. |
 
 ## Recently Completed
@@ -84,13 +85,78 @@ Closeout decision:
 - This broad residual triage item is complete because the high-yield buckets were reduced or reclassified with fresh evidence.
 - Keep the April 25 failure snapshot active; the remaining `46` failures are still material and should be handled as narrower source/provider/browser triage instead of reopening this broad pass.
 
+### 2026-04-26 - Narrow static/provider/browser follow-up
+
+Starting baseline from `_out/static-residual-validation/jobs-fetch-report.json`:
+
+- `521` sources attempted.
+- `46` failed/error sources.
+- `442` clean `ok` sources and `33` `ok` sources with warnings.
+- `103` raw `needs_review` markers and `98` shaped included rows.
+- Error rows: `26` with `HTTP 301`, `2` with `HTTP 302`, `1` with `HTTP 308`, `5` with `HTTP 404`, and `4` with `HTTP 429`.
+
+Completed changes:
+
+- Added `tools/measurements/pipeline/static_residual_failures.py` to classify failed rows into narrow follow-up classes without changing the public fetch-report schema.
+- Hid `7` stale/dead static rows with `pendingReason="stale_or_dead_static_source"` after validation showed HTTP 404/500/522 or stale detail URL failures.
+- Hid `8` redundant static aliases with `pendingReason="redundant_static_stronger_coverage"` and `duplicateOfSourceId` pointing at the retained stronger source.
+- Fixed the Windows command-length failure in `scripts/precommit_gate.py` by chunking filtered full-repo `--files` pre-commit runs.
+
+Fresh validation from `_out/static-narrow-validation/jobs-fetch-report.json`:
+
+| Counter | Value |
+|---------|------:|
+| Sources attempted | 510 |
+| Successful sources | 478 |
+| Failed/error sources | 32 |
+| Clean `ok` sources | 442 |
+| `ok` sources with warnings | 36 |
+| Final output jobs | 29,743 |
+| `needsReviewBreakdown.rawMarkerCount` | 105 |
+| `needsReviewBreakdown.includedCount` | 99 |
+| Error rows containing `HTTP 301` | 21 |
+| Error rows containing `HTTP 302` | 0 |
+| Error rows containing `HTTP 308` | 1 |
+| Error rows containing `HTTP 404` | 0 |
+| Error rows containing `HTTP 429` | 5 |
+| Error rows containing `HTTP 500` | 0 |
+| Error rows containing `HTTP 522` | 0 |
+| Active registry rows | 577 |
+| Pending registry rows | 36 |
+| Hidden pending rows | 36 |
+| Size guardrail exceeded | no |
+| `jobs-unified.json` bytes | 37,469,006 |
+| Light JSON bytes | 20,742,497 |
+| CSV bytes | 30,428,339 |
+
+Residual classifier output after validation:
+
+| Triage class | Count |
+|--------------|------:|
+| `site_changed` | 22 |
+| `anti_bot_or_rate_limited` | 6 |
+| `browser_required` | 4 |
+
+Verification:
+
+- `python -m pytest tests/test_static_residual_failures_measurement.py tests/test_source_registry.py tests/test_source_registry_p1_operational_noise.py -q`
+- `python -m pytest tests/jobs_static/ -q`
+- `python -m pytest tests/test_jobs_fetcher_*.py -q` equivalent via explicit PowerShell file expansion
+- `npm run lint:repo-guardrails`
+- `npm run lint:precommit`
+
+Closeout decision:
+
+- This narrow follow-up is complete because stale/dead and redundant coverage rows were removed from default active fetches and the remaining failures now fit a smaller runbook.
+- Keep the April 25 failure snapshot active; the remaining `32` failures are still material and are mostly site-change redirects, anti-bot/rate-limit cases, or browser-required extraction gaps.
+
 ## Pickup Order
 
 1. **Narrow remaining static/provider/browser failures.**
-   - Start from the fresh validation counters in [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md), not the original April 25 counts.
-   - Baseline to preserve: `521` sources attempted, `46` failed/error sources, `442` clean `ok`, `33` `ok` with warnings, `103` raw `needs_review` markers, `98` shaped included rows, `26` error rows containing `HTTP 301`, `2` containing `HTTP 302`, `1` containing `HTTP 308`, `5` containing `HTTP 404`, and `4` containing `HTTP 429`.
-   - Goal: classify the remaining failures into source registry cleanup, existing-provider migration, static plugin behavior work, browser/Scrapy handling, anti-bot/rate-limit policy, or no-op documentation.
-   - Success condition: a fresh isolated run proves the remaining `46` failures are materially reduced or converted into a narrow runbook suitable for archiving the April 25 snapshot.
+   - Start from `_out/static-narrow-validation/`, not the original April 25 counts.
+   - Baseline to preserve: `510` sources attempted, `32` failed/error sources, `442` clean `ok`, `36` `ok` with warnings, `105` raw `needs_review` markers, `99` shaped included rows, `21` error rows containing `HTTP 301`, `0` containing `HTTP 302`, `1` containing `HTTP 308`, `0` containing `HTTP 404`, and `5` containing `HTTP 429`.
+   - Goal: resolve or document the remaining `22` `site_changed`, `6` `anti_bot_or_rate_limited`, and `4` `browser_required` rows.
+   - Success condition: a fresh isolated run proves the remaining failures are small enough to archive the April 25 snapshot or convert it into a stable runbook.
 
 2. **Behavior-tied adapter work only.**
    - Use [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) before changing provider, social, or static loader boundaries.
