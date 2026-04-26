@@ -81,6 +81,95 @@ def test_line_budget_allows_existing_file_until_baseline_growth(
     ]
 
 
+def test_deferred_source_line_budget_allows_exact_current_budget(
+    tmp_path: Path, monkeypatch
+) -> None:
+    budget = tmp_path / "deferred.json"
+    budget.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "path": "src/deferred_owner.py",
+                        "max_lines": 3,
+                        "rationale": "Intentional specialized owner.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    source_file = tmp_path / "src" / "deferred_owner.py"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text("\n".join(["x = 1"] * 3), encoding="utf-8")
+
+    monkeypatch.setattr(repo_guardrails, "ROOT", tmp_path)
+    monkeypatch.setattr(repo_guardrails, "DEFERRED_SOURCE_BUDGET_PATH", budget)
+
+    assert repo_guardrails.check_deferred_source_line_budget() == []
+
+
+def test_deferred_source_line_budget_fails_growth_over_budget(tmp_path: Path, monkeypatch) -> None:
+    budget = tmp_path / "deferred.json"
+    budget.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "path": "src/deferred_owner.py",
+                        "max_lines": 3,
+                        "rationale": "Intentional specialized owner.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    source_file = tmp_path / "src" / "deferred_owner.py"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text("\n".join(["x = 1"] * 4), encoding="utf-8")
+
+    monkeypatch.setattr(repo_guardrails, "ROOT", tmp_path)
+    monkeypatch.setattr(repo_guardrails, "DEFERRED_SOURCE_BUDGET_PATH", budget)
+
+    assert repo_guardrails.check_deferred_source_line_budget() == [
+        "src/deferred_owner.py has 4 lines; deferred source budget is 3."
+    ]
+
+
+def test_deferred_source_line_budget_requires_valid_metadata(tmp_path: Path, monkeypatch) -> None:
+    budget = tmp_path / "deferred.json"
+    budget.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {"path": "src/missing_rationale.py", "max_lines": 3},
+                    {
+                        "path": "src/bad_budget.py",
+                        "max_lines": 0,
+                        "rationale": "Intentional specialized owner.",
+                    },
+                    {
+                        "path": "src/missing_file.py",
+                        "max_lines": 3,
+                        "rationale": "Intentional specialized owner.",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(repo_guardrails, "ROOT", tmp_path)
+    monkeypatch.setattr(repo_guardrails, "DEFERRED_SOURCE_BUDGET_PATH", budget)
+
+    assert repo_guardrails.check_deferred_source_line_budget() == [
+        "deferred source budget entry 0 for src/missing_rationale.py must include a non-empty rationale.",
+        "deferred source budget entry 1 for src/bad_budget.py must include a positive integer max_lines.",
+        "src/missing_file.py is listed in deferred source budget but does not exist.",
+    ]
+
+
 def test_fixture_reference_guard_allows_referenced_fixture(tmp_path: Path, monkeypatch) -> None:
     fixture_path = tmp_path / "tests" / "fixtures" / "referenced.json"
     fixture_path.parent.mkdir(parents=True)

@@ -5,11 +5,63 @@
 > - **Canonical for:** the observed failure/counter state of the 2026-04-25 discovery and fetch runs only
 > - **Not canonical for:** discovery contracts, fetch contracts, bridge APIs, or long-term source-registry policy
 > - **Then inspect:** [`scraping-pipeline.md`](scraping-pipeline.md), [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md), and the referenced `_out/latest/build/portable/ship/data/` reports
-> - **Last updated:** 2026-04-25
+> - **Last updated:** 2026-04-26
 
 This is a time-bound handoff note for later triage. It records what the current fresh build produced, not what the system should guarantee after fixes.
 
 Follow-up prioritization and validation status live in [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md). Use that tracker before picking implementation order, then return here for the original observed counts.
+
+## Fresh Validation After P0-P3 Item 11 - 2026-04-26
+
+P3 item 12 used a fresh isolated validation run instead of the placeholder-sized local reports under `data/` and `_out/latest/`.
+
+Validation artifacts were written under ignored `_out/p3-item-12-validation/` and are not intended for commit.
+
+Commands:
+
+- `BALUFFO_DATA_DIR=_out/p3-item-12-validation python src/source_discovery.py --preset default --top 0`
+- `BALUFFO_DATA_DIR=_out/p3-item-12-validation python src/jobs_fetcher.py --output-dir _out/p3-item-12-validation --force-refresh-all --ignore-circuit-breaker --social-enabled --quiet`
+
+Fresh discovery counters:
+
+| Counter | Value |
+|---------|------:|
+| Endpoints generated | 887 |
+| Candidates probed | 323 |
+| Validated candidates | 181 |
+| Review queue candidates | 108 |
+| Deferred by caps | 73 |
+| Probe failures/misses | 139 |
+| Auto-approved/live candidates | 27 |
+| Active registry after run | 632 |
+| Pending registry after run | 99 |
+| Hidden pending rows after run | 1 |
+
+Fresh fetch counters:
+
+| Counter | Value |
+|---------|------:|
+| Sources attempted | 557 |
+| Successful sources | 484 |
+| Failed/error sources | 73 |
+| Clean `ok` sources | 449 |
+| `ok` sources with warnings | 35 |
+| Final output jobs | 29,825 |
+| `needsReviewBreakdown.rawMarkerCount` | 104 |
+| `needsReviewBreakdown.includedCount` | 99 |
+| `ambiguous_review` shaped rows | 95 |
+| `transport_network` shaped rows | 4 |
+| Size guardrail exceeded | no |
+| `jobs-unified.json` bytes | 37,601,189 |
+| Light JSON bytes | 20,788,387 |
+| CSV bytes | 30,538,766 |
+
+Closeout decision:
+
+- Keep this snapshot active rather than archiving it.
+- Resolved or reclassified: the `social_x` heartbeat signature mismatch is gone, explicit `HTTP redirect not followed/accepted` buckets are gone, raw/included `needsReviewBreakdown` counters exist, and output size guardrails are no longer exceeded.
+- Still material: `73` static source-level errors remain. The fresh report still has `36` error rows containing `HTTP 301` text and `5` containing `HTTP 302` text inside broader static extraction failures.
+- Next action: open a separate static-failure triage lane for the remaining extraction failures before this snapshot can be archived.
 
 ## Source Reports
 

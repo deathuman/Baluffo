@@ -1,0 +1,29 @@
+{
+  "files": [
+    {
+      "path": "src/source_registry.py",
+      "max_lines": 971,
+      "rationale": "Specialized source policy and registry owner with broad runtime reach; reopen only for behavior work."
+    },
+    {
+      "path": "src/ship/update_manager.py",
+      "max_lines": 677,
+      "rationale": "Release-critical update capability owner; avoid cleanup-only churn without a behavior reason."
+    },
+    {
+      "path": "src/jobs/adapters/social_parsers.py",
+      "max_lines": 869,
+      "rationale": "Specialized social parser family with broad format coverage; split only when parser behavior changes."
+    },
+    {
+      "path": "src/source_discovery/core.py",
+      "max_lines": 548,
+      "rationale": "Discovery core policy owner; not a cleanup-only refactor lane without behavior work."
+    },
+    {
+      "path": "src/ship/packaged_smoke/runtime.py",
+      "max_lines": 817,
+      "rationale": "Specialized packaged-smoke runtime owner tied to release-critical validation flows."
+    }
+  ]
+}

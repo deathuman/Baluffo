@@ -15,6 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TOOLS_ROOT = Path(__file__).resolve().parent
 BASELINE_PATH = TOOLS_ROOT / "test_line_budget_baseline.json"
+DEFERRED_SOURCE_BUDGET_PATH = TOOLS_ROOT / "deferred_source_line_budget.json"
 FRONTEND_GUARDRAILS = TOOLS_ROOT / "frontend_structure_guardrails.mjs"
 FIXTURE_REFERENCE_ALLOWLIST_PATH = TOOLS_ROOT / "fixture_reference_allowlist.json"
 
@@ -227,6 +228,65 @@ def check_line_budget() -> list[str]:
     return failures
 
 
+def _load_deferred_source_budget() -> dict[str, object]:
+    return json.loads(DEFERRED_SOURCE_BUDGET_PATH.read_text(encoding="utf-8"))
+
+
+def check_deferred_source_line_budget() -> list[str]:
+    failures: list[str] = []
+    try:
+        payload = _load_deferred_source_budget()
+    except OSError as exc:
+        return [f"deferred source budget file is missing: {exc}"]
+    except json.JSONDecodeError as exc:
+        return [f"deferred source budget file is not valid JSON: {exc}"]
+
+    entries = payload.get("files") if isinstance(payload, dict) else None
+    if not isinstance(entries, list):
+        return ["deferred source budget must be an object with a `files` list."]
+
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            failures.append(f"deferred source budget entry {index} must be an object.")
+            continue
+
+        rel_path = str(entry.get("path") or "").strip().replace("\\", "/")
+        max_lines = entry.get("max_lines")
+        rationale = str(entry.get("rationale") or "").strip()
+
+        if not rel_path:
+            failures.append(f"deferred source budget entry {index} must include a path.")
+            continue
+        if Path(rel_path).is_absolute() or ".." in Path(rel_path).parts:
+            failures.append(
+                f"deferred source budget entry {index} path must be repo-relative: {rel_path}"
+            )
+            continue
+        if not isinstance(max_lines, int) or max_lines <= 0:
+            failures.append(
+                f"deferred source budget entry {index} for {rel_path} must include a positive integer max_lines."
+            )
+            continue
+        if not rationale:
+            failures.append(
+                f"deferred source budget entry {index} for {rel_path} must include a non-empty rationale."
+            )
+            continue
+
+        path = ROOT / rel_path
+        if not path.is_file():
+            failures.append(f"{rel_path} is listed in deferred source budget but does not exist.")
+            continue
+
+        line_count = _line_count(path)
+        if line_count > max_lines:
+            failures.append(
+                f"{rel_path} has {line_count} lines; deferred source budget is {max_lines}."
+            )
+
+    return failures
+
+
 def _load_fixture_reference_allowlist() -> tuple[set[str], list[str]]:
     if not FIXTURE_REFERENCE_ALLOWLIST_PATH.exists():
         return set(), []
@@ -412,8 +472,15 @@ def run_fixtures_group() -> list[GuardFailure]:
 
 
 def run_line_budget_group() -> list[GuardFailure]:
-    failure = _failure_from_messages("line-budget", "check_line_budget", check_line_budget())
-    return [failure] if failure else []
+    failures: list[GuardFailure] = []
+    for name, messages in (
+        ("check_line_budget", check_line_budget()),
+        ("check_deferred_source_line_budget", check_deferred_source_line_budget()),
+    ):
+        failure = _failure_from_messages("line-budget", name, messages)
+        if failure:
+            failures.append(failure)
+    return failures
 
 
 GROUP_RUNNERS: dict[str, Callable[[], list[GuardFailure]]] = {
