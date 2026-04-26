@@ -70,7 +70,7 @@
     "src/jobs/adapters/social.py::run_social_mastodon_source": 13,
     "src/jobs/adapters/social.py::run_social_reddit_source": 14,
     "src/jobs/adapters/social.py::run_social_x_source": 20,
-    "src/jobs/adapters/social_parsers.py::parse_reddit_html_payload": 11,
+    "src/jobs/adapters/social_parser/reddit_parser.py::parse_reddit_html_payload": 11,
     "src/jobs/adapters/static_detail.py::run_detail_traversal": 27,
     "src/jobs/adapters/static_detail_heuristics.py::_infer_detail_page_fields": 30,
     "src/jobs/adapters/static_detail_heuristics.py::choose_detail_traversal_mode": 12,
