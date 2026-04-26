@@ -5,7 +5,7 @@
 > - **Canonical for:** task routing, minimal read order, common repo misconceptions, and AI editing rules
 > - **Not canonical for:** data contracts, endpoint payloads, or deep subsystem ownership detail
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md) for task-to-files routing, plus one matching contract or workflow doc
-> - **Last updated:** 2026-04-23
+> - **Last updated:** 2026-04-26
 
 Read this first. Then load only the smallest additional docs needed.
 
@@ -31,7 +31,7 @@ This is not a React/Vite app and not a cloud backend.
    - [`LOCAL_SETUP.md`](LOCAL_SETUP.md)
 4. [`AGENTS.md`](../AGENTS.md) only for repo guardrails and prompt-routing rules
 
-**Do not load boundary-charter docs by default.** They are refactor/planning records, not the primary AI routing path. Use them only when you are intentionally working inside a specific archived cleanup lane and the active docs are not enough.
+Do not load archive docs by default. Retired cleanup/refactor detail now lives primarily in git history; the active routing docs are the primary source for current ownership.
 
 ## Docs-First Boundaries
 
@@ -74,4 +74,4 @@ See [`testing.md`](testing.md) for the full verification matrix.
 - Thin compatibility surfaces include their exported names and monkeypatch/root patch seams, not only their file boundaries or line budgets.
 - Update implementation, schemas, tests, and docs together when contracts or workflow move.
 - When the task is documentation maintenance or doc ownership, follow [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md).
-- Archived refactor/history docs are supporting context, not default routing sources.
+- Archive notes and git history are supporting context, not default routing sources.

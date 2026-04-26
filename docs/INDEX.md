@@ -7,11 +7,11 @@
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
 > - **Last updated:** 2026-04-26
 
-Use this page as the wiki home. Start here, load the minimum active docs you need, and keep archived refactor/history material out of default prompt context unless the task is explicitly about those older cleanup records.
+Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
 For AI coding tasks, start with [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md) and only add [`architecture-ai-map.md`](architecture-ai-map.md) when you need routing, ownership details, or compatibility-surface classification.
 
-Boundary-charter docs stay in the repo as planning/history records. They are not part of the default AI read path.
+Historical archive detail is intentionally trimmed for this personal project. [`archive/README.md`](archive/README.md) records what was retired and where to look next.
 
 ## Start Here
 
@@ -24,29 +24,7 @@ Boundary-charter docs stay in the repo as planning/history records. They are not
 
 ## Compatibility Surfaces
 
-Use these as entrypoints or shims only; route new logic to the owning modules they point at.
-
-- `src/packaged_desktop_smoke.py` - stable packaged smoke entrypoint and patch surface; implementation belongs in `src/ship/packaged_smoke/{common,startup_metrics,orchestrator,build_env,runtime,rehearsals,rehearsal_*}.py`
-- `src/ship/desktop_update.py` - stable updater surface; implementation belongs in `src/ship/desktop_update_{shared,state,service}.py`
-- `src/ship/desktop_updater.py` - stable updater helper executable and patch surface; implementation belongs in `src/ship/desktop_updater_{ui,release,install}.py`
-- `src/admin_bridge.py` - stable thin entrypoint for bridge startup and compatibility wrappers
-- `src/bridge/admin_entrypoint_{runtime,services,api,registry_api,task_runtime}.py` - admin bridge runtime/path/session/bootstrap/manual-source/task helpers behind the stable root surface
-- `src/source_discovery.py` - stable thin CLI entrypoint delegating to `src/source_discovery/*`
-- `src/jobs_fetcher.py` - stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`, while lazy export routing belongs in `src/jobs/fetcher_compat_exports.py` and root-backed wrapper seams belong in `src/jobs/fetcher_compat_runtime.py`
-- `src/jobs/pipeline.py` - stable package entrypoint; implementation belongs in `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py` plus `src/jobs/pipeline_runtime_{writers,summary}.py` and `src/jobs/pipeline_source_{loop,results,progress}.py`
-- `src/jobs/state.py` - stable jobs-state compatibility surface; implementation belongs in `src/jobs/state_{source_state,lifecycle,incremental}.py` plus `src/jobs/state_source_{records,browser,migration}.py`
-- `src/jobs/common/contracts.py` - stable jobs contract surface; implementation belongs in `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py`
-- `src/jobs/reporting.py` - stable jobs reporting surface; implementation belongs in `src/jobs/reporting_{summary,queues,breakdowns,social}.py`
-- `src/jobs/adapters/static.py` - stable static adapter surface; implementation belongs in `src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py` plus `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py`, while `static_helpers.py` stays a compatibility shim
-- `src/bridge/routes/post_routes.py` - stable POST registration surface; implementation belongs in `src/bridge/routes/post_routes_{admin,local_data,update}.py`
-- `src/source_sync.py` - permanent thin sync integration surface; config/runtime/snapshot/crypto logic belongs in `src/source_sync_{config,runtime,snapshot,crypto}.py`
-- `src/local_data_store.py` - stable desktop local-data store surface; implementation belongs in `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py`
-- `src/jobs/common/__init__.py` - package marker only; import `src.jobs.common.<leaf>` or package-submodule helpers
-- `frontend/shared/local-data/desktop-client.js` - stable desktop local-data runtime root; implementation belongs in `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js`
-- `frontend/jobs/app/desktop-update.js` - stable Jobs desktop-update export surface; implementation belongs in `frontend/jobs/app/desktop-update-{model,dom,controller}.js`
-- `frontend/jobs/domain.js` - stable Jobs domain export surface; implementation belongs in `frontend/jobs/domain/{query,feed,view}.js`
-- `frontend/local-data/services.js` - transitional local-data boundary; page code should go through slice-local `services.js`
-- `frontend/admin/render/ops.js` - thin compatibility render surface; ops summary/history rendering belongs in `frontend/admin/render/{ops-summary,ops-history,ops-shared}.js`
+Use compatibility roots as entrypoints or shims only. For the current root-to-leaf routing table, use [`architecture-ai-map.md`](architecture-ai-map.md). This index intentionally does not duplicate that table.
 
 ## Canonical Contracts
 
@@ -80,7 +58,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 |----------|-------|-------------|
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) | Time-bound failure snapshot | You are picking up the discovery/fetch failures observed in the 2026-04-25 fresh build runs |
-| [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md) | Active follow-up tracker | You are picking the next residual follow-up after the completed 2026-04-25 repo-analysis P0-P3 closeout |
+| [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md) | Active follow-up tracker | You are picking the next residual follow-up after the completed 2026-04-25 repo-analysis closeout |
 | [`../tools/mcp/INDEX.md`](../tools/mcp/INDEX.md) | MCP tooling index | You are choosing which MCP tooling doc to load under `tools/mcp/` |
 | [`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md) | AI dev tooling | You are setting up the required Serena MCP workflow for Codex CLI or OpenCode, or checking the repo's Serena-memory rules |
 | [`RELEASE.md`](RELEASE.md) | Build and release | You are changing packaging, versioning, release flow, or artifact expectations |
@@ -88,37 +66,11 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
 | [`refactor-charter-template.md`](refactor-charter-template.md) | Planning template | You are drafting a structured refactor proposal without loading archived refactor records |
 
-## Refactor Charters (Archive)
-
-Archived refactor records live under `docs/archive/refactor-records/`. They remain searchable and linkable, but they are not part of the default AI context path.
-
-| Document | Status | Use it when |
-|----------|--------|-------------|
-| [`archive/refactor-records/desktop-packaging-boundary-charter.md`](archive/refactor-records/desktop-packaging-boundary-charter.md) | Refactor record | You are changing packaged smoke or desktop updater boundaries and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/packaged-smoke-rehearsal-boundary-charter.md`](archive/refactor-records/packaged-smoke-rehearsal-boundary-charter.md) | Refactor record | You are changing the packaged smoke root or rehearsal helper family and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/discovery-orchestrator-boundary-charter.md`](archive/refactor-records/discovery-orchestrator-boundary-charter.md) | Refactor record | You are changing discovery orchestration boundaries and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/static-adapter-boundary-charter.md`](archive/refactor-records/static-adapter-boundary-charter.md) | Refactor record | You are changing the static adapter boundary and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/jobs-fetcher-boundary-charter.md`](archive/refactor-records/jobs-fetcher-boundary-charter.md) | Refactor record | You are changing the jobs fetcher facade boundary and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/jobs-pipeline-boundary-charter.md`](archive/refactor-records/jobs-pipeline-boundary-charter.md) | Refactor record | You are changing jobs pipeline/state boundaries and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/jobs-contracts-reporting-boundary-charter.md`](archive/refactor-records/jobs-contracts-reporting-boundary-charter.md) | Refactor record | You are changing jobs contract/reporting boundaries and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/source-discovery-generators-reporting-boundary-charter.md`](archive/refactor-records/source-discovery-generators-reporting-boundary-charter.md) | Refactor record | You are changing Gamesmap, discovery reporting, or web-search boundaries and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/local-data-boundary-charter.md`](archive/refactor-records/local-data-boundary-charter.md) | Refactor record | You are changing the file-backed local-data store or shared desktop local-data runtime boundaries and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/desktop-update-cross-stack-boundary-charter.md`](archive/refactor-records/desktop-update-cross-stack-boundary-charter.md) | Refactor record | You are changing the updater helper executable or Jobs desktop-update boundary and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/admin-bridge-boundary-charter.md`](archive/refactor-records/admin-bridge-boundary-charter.md) | Refactor record | You are changing admin bridge startup/runtime boundaries and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/admin-ops-live-boundary-charter.md`](archive/refactor-records/admin-ops-live-boundary-charter.md) | Refactor record | You are changing ops live-task payload assembly or admin ops renderer boundaries and need lane-specific compatibility assumptions |
-| [`archive/refactor-records/desktop-runtime-refactor-charter.md`](archive/refactor-records/desktop-runtime-refactor-charter.md) | Refactor record | You are changing desktop runtime package boundaries and need lane-specific compatibility assumptions |
-
-## Historical / Archive-like Docs
-
-Archived historical notes live under `docs/archive/history/`. They are useful for time-bound cleanup context but are not authoritative for current behavior without revalidation.
+## Archive
 
 | Document | Status | Notes |
 |----------|--------|-------|
-| [`archive/history/final-leaf-closeout-program.md`](archive/history/final-leaf-closeout-program.md) | **Historical** | Final multi-wave cleanup tracker, verification history, and intentional stop list |
-| [`archive/history/repo-analysis-follow-up-completed-2026-04-26.md`](archive/history/repo-analysis-follow-up-completed-2026-04-26.md) | **Historical** | Completed P0-P3 repo-analysis follow-up implementation record and fresh validation counters |
-| [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md) | **Retired record** | Completed repository-health plan history after all tracked P0/P1/P2 items closed |
-| [`archive/history/runtime-first-cleanup-handoff.md`](archive/history/runtime-first-cleanup-handoff.md) | **Historical** | Pickup note for the older runtime-first cleanup campaign after checking the active routing docs first |
-| [`archive/history/scraping-pipeline-run-notes.md`](archive/history/scraping-pipeline-run-notes.md) | **Historical** | Snapshot run notes from 2026-03-17; useful for context but should not override current code/contracts |
+| [`archive/README.md`](archive/README.md) | Archive index | Short note for retired cleanup/refactor records; use git history for detailed provenance |
 
 ## Quick Routing by Goal
 
@@ -153,7 +105,7 @@ When adding or modifying documentation:
 1. Update this index with the correct category and authority label
 2. Prefer small authoritative docs over broad overlapping prose or duplicate overview pages
 3. Keep `AI_ASSISTANT_GUIDE.md` aligned with actual repo structure and existing file paths
-4. Keep archived refactor/history records linked from here, but out of the default AI read path
+4. Keep archive routing short; use git history instead of long retired planning logs
 
 ## Related Code Areas
 

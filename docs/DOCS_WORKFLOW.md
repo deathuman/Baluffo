@@ -5,7 +5,7 @@
 > - **Canonical for:** documentation discovery, ownership, freshness checks, and maintenance workflow
 > - **Not canonical for:** subsystem behavior, data contracts, release notes, or runtime behavior outside this guide's process scope
 > - **Then inspect:** [`INDEX.md`](INDEX.md), then the smallest authoritative doc set for the task
-> - **Last updated:** 2026-04-23
+> - **Last updated:** 2026-04-26
 
 ## Core Rules
 
@@ -35,7 +35,7 @@ Active docs should start with a compact metadata block using this order:
 5. `Then inspect`
 6. `Last updated`
 
-Archived docs do not need the full active-doc header, but they should clearly say they are historical or refactor records and point readers back to the active routing docs instead of duplicating the live wiki path.
+Archive docs should stay rare and short. Use [`archive/README.md`](archive/README.md) for retired cleanup/refactor context and git history for detailed provenance instead of reintroducing long historical logs.
 
 ## Gap Handling
 
@@ -54,8 +54,8 @@ Review the touched area and update docs in the same change when any of these mov
 - Data, API, or runtime contracts in the owning canonical contract doc plus the matching schemas or tests
 - Historical or planning labels when a doc should be marked active, operational, historical, or refactor-record instead of leaving that status implicit
 - `Last updated` markers on active docs you touched
-- Archive links in [`INDEX.md`](INDEX.md) when a record moves under `docs/archive/`
-- Both the link target and any visible path text when an archive move changes how active docs or the changelog refer to `archive/` material
+- Archive links in [`INDEX.md`](INDEX.md) when the archive index changes
+- Both the link target and any visible path text when an archive move changes how active docs or the changelog refer to archive material
 
 ## Logging and History
 

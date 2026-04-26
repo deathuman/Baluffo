@@ -4,10 +4,10 @@
 > - **Use this when:** picking the next work after the 2026-04-25 repo-analysis follow-up
 > - **Canonical for:** current pickup order, rebaseline expectations, and boundaries for future work from this analysis pass
 > - **Not canonical for:** completed implementation history, long-term data contracts, source-registry policy, adapter implementation details, or release requirements
-> - **Then inspect:** [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md), [`scraping-pipeline.md`](scraping-pipeline.md), [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md), and [`archive/history/repo-analysis-follow-up-completed-2026-04-26.md`](archive/history/repo-analysis-follow-up-completed-2026-04-26.md)
+> - **Then inspect:** [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md), [`scraping-pipeline.md`](scraping-pipeline.md), and [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md)
 > - **Last updated:** 2026-04-26
 
-This tracker owns only current and future pickup work. Completed implementation history lives in [`archive/history/repo-analysis-follow-up-completed-2026-04-26.md`](archive/history/repo-analysis-follow-up-completed-2026-04-26.md), while current runtime behavior belongs in the contract docs linked above.
+This tracker owns only current and future pickup work. Completed implementation history lives in git history, while current runtime behavior belongs in the contract docs linked above.
 
 ## Current State
 

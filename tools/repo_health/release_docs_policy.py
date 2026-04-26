@@ -116,13 +116,13 @@ def test_ai_bootstrap_sequence_is_single_path(repo_root: Path) -> None:
     assert "testing.md" in sequence
     assert "README.md" not in sequence
     assert "../AGENTS.md" not in sequence
-    assert "Boundary-charter docs stay in the repo as planning/history records" in index_text
+    assert "Historical archive detail is intentionally trimmed" in index_text
 
     assert "README.md" not in read_order
     assert "DOCS_WORKFLOW.md" not in read_order
     assert "architecture-ai-map.md" in read_order
     assert "AGENTS.md" in read_order
-    assert "Do not load boundary-charter docs by default." in guide_text
+    assert "Do not load archive docs by default." in guide_text
     assert "docs-first, not docs-only" in guide_text
     assert "authoritative only for the surface they declare" in guide_text
     assert "Serena memory and repo docs ever diverge" in guide_text
@@ -216,14 +216,13 @@ def test_ai_docs_classify_compatibility_surfaces(repo_root: Path) -> None:
     )
 
     assert "## Compatibility Surfaces" in index_text
-    assert "stable thin entrypoint for bridge startup and compatibility wrappers" in index_text
-    assert "stable thin CLI entrypoint delegating to `src/source_discovery/*`" in index_text
-    assert "stable thin CLI facade; new pipeline logic belongs in `src/jobs/*`" in index_text
-    assert "permanent thin sync integration surface" in index_text
-    assert "`src/jobs/common/__init__.py` is a package marker only" in guide_text
-    assert "_runtime.facade()` is retired" in guide_text
+    assert "This index intentionally does not duplicate that table." in index_text
+    assert "stable thin entrypoint for bridge startup and compatibility wrappers" not in index_text
+    assert "src/admin_bridge.py (stable thin entrypoint / wiring-only composition root)" in map_text
     assert "stable thin CLI entrypoint" in map_text
     assert "stable thin CLI facade" in map_text
+    assert "`src/jobs/common/__init__.py` is a package marker only" in guide_text
+    assert "_runtime.facade()` is retired" in guide_text
     assert "package marker only" in map_text
     assert "transitional local-data boundary" in map_text
     assert (
@@ -364,13 +363,21 @@ def test_active_docs_avoid_stale_runtime_and_test_guidance(repo_root: Path) -> N
 
 def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
     index_text = (repo_root / "docs" / "INDEX.md").read_text(encoding="utf-8")
+    archive_files = sorted(
+        path.relative_to(repo_root).as_posix()
+        for path in (repo_root / "docs" / "archive").rglob("*")
+        if path.is_file()
+    )
 
     assert "historical-debt-roadmap.md" not in index_text
     assert "quality-improvement-roadmap.md" not in index_text
     assert "quality-follow-up.md" not in index_text
     assert "startup-probe-architecture.md" in index_text
-    assert "## Refactor Charters" in index_text
-    assert "Refactor record" in index_text
+    assert "## Archive" in index_text
+    assert "archive/README.md" in index_text
+    assert "## Refactor Charters" not in index_text
+    assert "Refactor record" not in index_text
+    assert archive_files == ["docs/archive/README.md"]
 
 
 def test_contributing_points_startup_perf_changes_to_canonical_architecture_doc(
