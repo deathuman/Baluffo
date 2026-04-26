@@ -65,6 +65,18 @@ def _needs_rendered_detail_resolution(row: dict[str, Any]) -> bool:
     return False
 
 
+def _fetch_static_html(
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    fetch_html_cached: Callable[..., tuple[str, bool]] | None,
+    url: str,
+    **kwargs: Any,
+) -> tuple[str, bool]:
+    if callable(fetch_html_cached):
+        return fetch_html_cached(url, **kwargs)
+    return fetch_text(url, timeout_s), False
+
+
 def _sanitize_row_locations(
     row: dict[str, Any],
     *,
@@ -155,6 +167,7 @@ def run(
     source_row: dict[str, Any],
     try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
     parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]] | None = None,
+    fetch_html_cached: Callable[..., tuple[str, bool]] | None = None,
     **kwargs: Any,
 ) -> list[RawJob]:
     _ = (retries, backoff_s, kwargs)
@@ -171,7 +184,7 @@ def run(
     source_id = (source_row.get("id") or "").strip() or "sheet_studio"
 
     try:
-        html = fetch_text(page_url, timeout_s)
+        html, _ = _fetch_static_html(fetch_text, timeout_s, fetch_html_cached, page_url)
     except Exception as exc:  # noqa: BLE001
         classification, recommend = _heuristics.classify_fetch_exception(exc)
         source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
@@ -245,7 +258,9 @@ def run(
                         detail_title=title,
                         source_started=time.perf_counter(),
                         static_source_time_budget_s=max(5, int(timeout_s) * 2),
-                        fetch_html_cached=lambda url, **kwargs: (fetch_text(url, timeout_s), False),
+                        fetch_html_cached=lambda url, **kwargs: _fetch_static_html(
+                            fetch_text, timeout_s, fetch_html_cached, url, **kwargs
+                        ),
                         timeout_s=timeout_s,
                         detail_retries=max(0, int(retries)),
                         company=company,
@@ -275,7 +290,9 @@ def run(
                     detail_title=title,
                     source_started=time.perf_counter(),
                     static_source_time_budget_s=max(5, int(timeout_s) * 2),
-                    fetch_html_cached=lambda url, **kwargs: (fetch_text(url, timeout_s), False),
+                    fetch_html_cached=lambda url, **kwargs: _fetch_static_html(
+                        fetch_text, timeout_s, fetch_html_cached, url, **kwargs
+                    ),
                     timeout_s=timeout_s,
                     detail_retries=max(0, int(retries)),
                     company=company,

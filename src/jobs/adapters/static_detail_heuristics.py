@@ -59,6 +59,14 @@ KNOWN_NON_JOB_DETAIL_PATH_TOKENS = (
     "/privacy",
     "/terms",
 )
+MALFORMED_DETAIL_URL_TOKENS = (
+    "{{",
+    "}}",
+    "%7b%7b",
+    "%7d%7d",
+    "cvdhreftext",
+    "company.website",
+)
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -81,6 +89,34 @@ def is_known_non_job_detail_url(url: str) -> bool:
         return True
     path_and_query = f"{parsed.path or ''}?{parsed.query or ''}".lower()
     return any(token in path_and_query for token in KNOWN_NON_JOB_DETAIL_PATH_TOKENS)
+
+
+def is_malformed_or_self_detail_url(url: str, *, page_url: str = "") -> bool:
+    candidate = clean_text(url)
+    if not candidate:
+        return True
+    lowered = candidate.lower()
+    if lowered.startswith(("javascript:", "mailto:", "tel:")):
+        return True
+    if any(token in lowered for token in MALFORMED_DETAIL_URL_TOKENS):
+        return True
+    absolute = normalize_url(urljoin(page_url, candidate)) if page_url else normalize_url(candidate)
+    if not absolute:
+        return True
+    parsed = urlparse(absolute)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return True
+    if page_url:
+        current = normalize_url(page_url) or clean_text(page_url)
+        current_parsed = urlparse(current)
+        if (
+            current_parsed.scheme == parsed.scheme
+            and current_parsed.netloc.lower() == parsed.netloc.lower()
+            and (current_parsed.path or "/").rstrip("/") == (parsed.path or "/").rstrip("/")
+            and current_parsed.query == parsed.query
+        ):
+            return True
+    return False
 
 
 def source_detail_concurrency_for(
@@ -318,9 +354,15 @@ def add_detail_link(
     default_query_keys: list[str],
 ) -> None:
     candidate = clean_text(candidate_url).rstrip("\\")
+    if is_malformed_or_self_detail_url(candidate, page_url=page_url):
+        link_rejections["dead_listing_page"] += 1
+        return
     absolute = normalize_url(urljoin(page_url, candidate))
     if not absolute:
         link_rejections["non_job_url"] += 1
+        return
+    if is_malformed_or_self_detail_url(absolute, page_url=page_url):
+        link_rejections["dead_listing_page"] += 1
         return
     parsed = urlparse(absolute)
     host = parsed.netloc.lower()
@@ -730,6 +772,16 @@ def process_detail_link(
     ignored_link_titles: set[str],
 ) -> dict[str, Any]:
     fetch_started = time.perf_counter()
+    if is_malformed_or_self_detail_url(detail):
+        return {
+            "rows": [],
+            "parseEmpty": False,
+            "fetchMs": 0,
+            "parseMs": 0,
+            "cacheHit": False,
+            "rejectedClassification": "dead_listing_page",
+            "rejectedExample": f"{detail} | {detail_title}" if detail_title else detail,
+        }
     source_started_mono = float(source_started or 0.0)
     if source_started_mono <= 0.0:
         source_started_mono = fetch_started

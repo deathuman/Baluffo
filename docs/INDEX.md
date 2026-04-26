@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-04-25
+> - **Last updated:** 2026-04-26
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and keep archived refactor/history material out of default prompt context unless the task is explicitly about those older cleanup records.
 
@@ -80,7 +80,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 |----------|-------|-------------|
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) | Time-bound failure snapshot | You are picking up the discovery/fetch failures observed in the 2026-04-25 fresh build runs |
-| [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md) | Active follow-up tracker | You are turning the 2026-04-25 repo-analysis findings into validated implementation order |
+| [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md) | Active follow-up tracker | You are picking the next residual follow-up after the completed 2026-04-25 repo-analysis P0-P3 closeout |
 | [`../tools/mcp/INDEX.md`](../tools/mcp/INDEX.md) | MCP tooling index | You are choosing which MCP tooling doc to load under `tools/mcp/` |
 | [`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md) | AI dev tooling | You are setting up the required Serena MCP workflow for Codex CLI or OpenCode, or checking the repo's Serena-memory rules |
 | [`RELEASE.md`](RELEASE.md) | Build and release | You are changing packaging, versioning, release flow, or artifact expectations |
@@ -115,6 +115,7 @@ Archived historical notes live under `docs/archive/history/`. They are useful fo
 | Document | Status | Notes |
 |----------|--------|-------|
 | [`archive/history/final-leaf-closeout-program.md`](archive/history/final-leaf-closeout-program.md) | **Historical** | Final multi-wave cleanup tracker, verification history, and intentional stop list |
+| [`archive/history/repo-analysis-follow-up-completed-2026-04-26.md`](archive/history/repo-analysis-follow-up-completed-2026-04-26.md) | **Historical** | Completed P0-P3 repo-analysis follow-up implementation record and fresh validation counters |
 | [`archive/history/repo-health-completed-tasks.md`](archive/history/repo-health-completed-tasks.md) | **Retired record** | Completed repository-health plan history after all tracked P0/P1/P2 items closed |
 | [`archive/history/runtime-first-cleanup-handoff.md`](archive/history/runtime-first-cleanup-handoff.md) | **Historical** | Pickup note for the older runtime-first cleanup campaign after checking the active routing docs first |
 | [`archive/history/scraping-pipeline-run-notes.md`](archive/history/scraping-pipeline-run-notes.md) | **Historical** | Snapshot run notes from 2026-03-17; useful for context but should not override current code/contracts |

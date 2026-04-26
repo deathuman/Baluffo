@@ -273,6 +273,7 @@ def _run_plugin_fast_path(ctx: StaticSourceContext) -> bool:
                 pages=ctx.pages,
                 source_row=ctx.source,
                 parse_jobpostings_from_html=parse_jobpostings_from_html,
+                fetch_html_cached=ctx.html_fetcher.fetch_html_cached,
                 maybe_fetch_kojima_job_listing_html=maybe_fetch_kojima_job_listing_html,
                 try_playwright=ctx.run_deps.try_playwright,
             )

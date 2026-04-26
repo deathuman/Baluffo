@@ -63,6 +63,51 @@ Closeout decision:
 - Still material: `73` static source-level errors remain. The fresh report still has `36` error rows containing `HTTP 301` text and `5` containing `HTTP 302` text inside broader static extraction failures.
 - Next action: open a separate static-failure triage lane for the remaining extraction failures before this snapshot can be archived.
 
+## Residual Static-Failure Triage Validation - 2026-04-26
+
+The first residual static-failure pass targeted high-yield buckets only. It did not attempt to repair every static source.
+
+Validation artifacts were written under ignored `_out/static-residual-validation/` and are not intended for commit.
+
+Command:
+
+- `BALUFFO_DATA_DIR=_out/static-residual-validation python src/jobs_fetcher.py --output-dir _out/static-residual-validation --force-refresh-all --ignore-circuit-breaker --social-enabled --quiet`
+
+Fresh fetch counters after the residual static pass:
+
+| Counter | Value |
+|---------|------:|
+| Sources attempted | 521 |
+| Successful sources | 475 |
+| Failed/error sources | 46 |
+| Clean `ok` sources | 442 |
+| `ok` sources with warnings | 33 |
+| Final output jobs | 29,759 |
+| `needsReviewBreakdown.rawMarkerCount` | 103 |
+| `needsReviewBreakdown.includedCount` | 98 |
+| Error rows containing `HTTP 301` | 26 |
+| Error rows containing `HTTP 302` | 2 |
+| Error rows containing `HTTP 308` | 1 |
+| Error rows containing `HTTP 404` | 5 |
+| Error rows containing `HTTP 429` | 4 |
+| LinkedIn `HTTP 999` rows | 0 |
+| Invalid/template detail URL rows | 0 |
+| Plain no-jobs extraction failures without HTTP/template markers | 0 |
+| Active registry rows | 592 |
+| Pending registry rows | 21 |
+| Hidden pending rows | 21 |
+| Size guardrail exceeded | no |
+| `jobs-unified.json` bytes | 37,522,320 |
+| Light JSON bytes | 20,756,135 |
+| CSV bytes | 30,481,113 |
+
+Closeout decision:
+
+- Keep this snapshot active rather than archiving it.
+- Resolved or reclassified in this pass: unsupported LinkedIn static rows, unsupported third-party/provider-hosted static rows, invalid/template detail URL failures, plugin fast-path redirect bypass, and safe `www.`/bare-host plus HTTP-to-HTTPS redirect aliases.
+- Still material: `46` source-level failures remain, dominated by static `js_required` / broken extraction rows with residual HTTP status text.
+- Next action: continue from [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md) pickup order with a narrower static/provider/browser triage lane.
+
 ## Source Reports
 
 | Run | File | Run ID | Fresh build timestamp |

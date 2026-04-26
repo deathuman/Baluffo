@@ -106,7 +106,11 @@ class StaticHtmlFetcher:
             raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")
         if parsed.username or parsed.password:
             raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")
-        if (source.hostname or "").lower() != (parsed.hostname or "").lower():
+        source_host = (source.hostname or "").lower()
+        target_host = (parsed.hostname or "").lower()
+        source_site = source_host[4:] if source_host.startswith("www.") else source_host
+        target_site = target_host[4:] if target_host.startswith("www.") else target_host
+        if not source_site or source_site != target_site:
             raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")
         if source.scheme == "https" and parsed.scheme != "https":
             raise RuntimeError(f"Unsafe static redirect from {source_url} to {target}")

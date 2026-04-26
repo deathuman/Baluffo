@@ -29,7 +29,15 @@ Scrapy path (for scrapy_static sources from browser queue)
 - M5 review snapshot: Discovery also writes `data/m5-strategic-backlog.json` as a derived review artifact. It is built from the canonical discovery ledger and should not be treated as the source of truth for discovery state.
 - Static adapter: Only the listing page fetch per source can use Playwright fallback; detail pages stay HTTP. If the pipeline has Playwright available, it injects `try_playwright` into static loaders.
   Static extraction also runs a shared job-page gate so ordinary pages are rejected as `dead_listing_page` instead of becoming synthetic jobs or generic empty misses.
+  Static listing/detail HTTP fetches use the shared redirect-aware cache helper. It can follow one same-site redirect, including `www.`/bare-host aliases and HTTP-to-HTTPS upgrades, but rejects unrelated cross-host redirects, redirect chains, credentialed targets, non-HTTP(S) schemes, and HTTPS downgrades.
+  Template or malformed detail links, such as `{{...}}`, known placeholder tokens, and listing-page self-links, are skipped as non-job diagnostics before detail fetch so they do not become source-level fetch errors.
 - Browser fallback queue: Sources classified as `blocked_or_challenge` or `needs_review` with `browserFallbackRecommended: true` (and adapter `scrapy_static`) are written to `jobs-browser-fallback-queue.json`. The next pipeline run uses that list as the scrapy_static registry and runs them with Scrapy-Playwright (`use_browser=True`).
+
+## Static source triage
+
+- Preserve registry rows when a static source is no longer viable. Move unsupported static entries to hidden pending with an explicit `pendingReason` instead of deleting them.
+- LinkedIn profile/search/post pages and generic third-party aggregators are not viable static career boards. They should stay out of default active fetches unless a supported provider/social adapter owns them.
+- Provider-hosted pages should be migrated to an existing provider adapter only when the repo already supports that provider and the source row has enough local evidence to map it safely. Otherwise, hide the static row and document the unsupported provider family as future work.
 
 ## 2) Where Playwright is used
 
