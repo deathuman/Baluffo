@@ -25,9 +25,46 @@ When work from this tracker is started or completed, update this file in the sam
 | P0 | Restore diagnostic trust and live fetch health | Complete | Implemented 2026-04-26; targeted verification passed. |
 | P1 | Reduce operational noise | Complete | Implemented 2026-04-26; duplicate active variants were demoted, repeated zero-job pending rows are hidden by policy, and ok-with-warning diagnostics are additive. |
 | P2 | Update architecture inventory before more refactor work | Complete | Implemented 2026-04-26; adapter plugin inventory now reflects current provider/social/static plugin boundaries. |
-| P3 | Guardrails and cleanup decisions | Not started | Size policy and snapshot archival depend on later fresh-run evidence. |
+| P3 | Guardrails and cleanup decisions | In progress | Item 11 output-size policy is implemented; snapshot archival still depends on later fresh-run evidence. |
 
 ## Completed Work Log
+
+### 2026-04-26 - P3 item 11 output-size policy
+
+Current local rebaseline before edits:
+
+- `data/jobs-unified.json`: `41,800,270` bytes.
+- Compact full JSON estimate from the current local payload: `32,500,126` bytes.
+- `data/jobs-unified-light.json`: `20,349,544` bytes.
+- `data/jobs-unified.csv`: `23,475,837` bytes.
+
+Historical snapshot baseline preserved from 2026-04-25:
+
+- `jobs-unified.json`: `79,136,607` bytes.
+- Light JSON: `54,626,176` bytes.
+- CSV: `46,495,593` bytes.
+
+Chosen policy:
+
+- Keep all current output files and fields.
+- Compact unified JSON outputs.
+- Replace the hard-coded 50 MB JSON/CSV rule with documented per-artifact thresholds.
+- Leave package-time behavior for a separate future decision.
+
+Completed:
+
+- Compact serialized `jobs-unified.json` and `jobs-unified-light.json`; report/debug JSON remains pretty-printed.
+- Added named output-size thresholds: full JSON `80_000_000`, light JSON `60_000_000`, CSV `50_000_000`.
+- Preserved `summary.sizeGuardrailExceeded` and added `summary.sizeGuardrails` with per-artifact bytes, limits, and exceeded flags.
+- Documented the additive summary payload and clarified that packaging still ships full JSON, light JSON, CSV, and startup preview.
+
+Verification:
+
+- `python -m pytest tests/test_jobs_fetcher_pipeline.py tests/test_latest_run_report.py -q` -> `44 passed`
+- `python -m pytest tests/jobs_static/test_needs_review_breakdown_counters.py -q` -> `3 passed`
+- `python -m pytest tests/test_jobs_fetcher_pipeline.py tests/test_latest_run_report.py tests/test_pipeline_io.py tests/jobs_static/test_needs_review_breakdown_counters.py -q` -> `47 passed`
+- `npm run lint:repo-guardrails` -> passed
+- `npm run lint:precommit` -> passed
 
 ### 2026-04-26 - P2 adapter-plugin inventory refresh
 
@@ -185,12 +222,13 @@ Verification:
     - Status: Standing guidance.
     - It remains an intentionally large specialized owner from the closeout stop list.
 
-### P3 - Guardrails and Cleanup Decisions - Not started
+### P3 - Guardrails and Cleanup Decisions - In progress
 
 11. **Decide the `jobs-unified.json` size policy.**
-    - Status: Not started.
-    - The snapshot records a 79 MB unified JSON output and a size-guardrail breach.
-    - Decide whether the correct fix is a raised guardrail, smaller payload, compression, or package-time behavior.
+    - Status: Complete 2026-04-26.
+    - Result: Unified JSON outputs are compact serialized with no row-field pruning.
+    - Result: `summary.sizeGuardrailExceeded` now derives from named per-artifact thresholds exposed in additive `summary.sizeGuardrails`.
+    - Result: Package-time output selection remains unchanged and is a separate future decision.
 
 12. **Close out the failure snapshot when P0/P1 are resolved.**
     - Status: Blocked on P1 and fresh-run evidence.
@@ -204,7 +242,7 @@ Verification:
 
 ## Pickup Order
 
-1. P3 decisions: decide output size policy and snapshot archival/promotion after fresh-run evidence exists.
+1. P3 decisions: decide snapshot archival/promotion after fresh-run evidence exists.
 2. Future behavior-tied adapter work: use the refreshed plugin inventory before changing provider or social loader boundaries.
 3. Future fresh-run validation: compare active/pending counts, hidden pending rows, ok-with-warning counts, and remaining provider failures against the original 2026-04-25 snapshot.
 

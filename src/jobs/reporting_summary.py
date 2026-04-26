@@ -16,10 +16,21 @@ from .reporting_breakdowns import (
 )
 
 TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
+OUTPUT_SIZE_GUARDRAIL_LIMITS = common_config.OUTPUT_SIZE_GUARDRAIL_LIMITS
 
 
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _size_guardrail_row(bytes_value: int, limit_bytes: int) -> dict[str, Any]:
+    size_bytes = int(bytes_value)
+    limit = int(limit_bytes)
+    return {
+        "bytes": size_bytes,
+        "limitBytes": limit,
+        "exceeded": bool(size_bytes > limit),
+    }
 
 
 def format_source_error(source_name: str, error: Any) -> str:
@@ -98,6 +109,13 @@ def build_pipeline_summary(
     final_output = len(deduped_payload)
     ok_source_count = sum(1 for row in source_count_rows if row["status"] == "ok")
     ok_with_warning_count = sum(1 for row in source_count_rows if _has_ok_warning(row))
+    size_guardrails = {
+        "json": _size_guardrail_row(json_bytes, OUTPUT_SIZE_GUARDRAIL_LIMITS["json"]),
+        "lightJson": _size_guardrail_row(
+            light_json_bytes, OUTPUT_SIZE_GUARDRAIL_LIMITS["lightJson"]
+        ),
+        "csv": _size_guardrail_row(csv_bytes, OUTPUT_SIZE_GUARDRAIL_LIMITS["csv"]),
+    }
     return {
         **dedup_stats,
         "rawFetched": raw_fetched,
@@ -165,7 +183,8 @@ def build_pipeline_summary(
         "jsonBytes": int(json_bytes),
         "csvBytes": int(csv_bytes),
         "lightJsonBytes": int(light_json_bytes),
-        "sizeGuardrailExceeded": bool(json_bytes > 50_000_000 or csv_bytes > 50_000_000),
+        "sizeGuardrails": size_guardrails,
+        "sizeGuardrailExceeded": any(bool(row.get("exceeded")) for row in size_guardrails.values()),
         "recordGuardrailExceeded": bool(len(deduped_payload) > 100_000),
         "lifecycleActiveCount": int(lifecycle.get("active") or 0),
         "lifecycleLikelyRemovedCount": int(lifecycle.get("likelyRemoved") or 0),

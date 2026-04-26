@@ -73,6 +73,12 @@ Optional overrides:
   - includes output file paths under `outputs`.
   - `summary.okCleanSources` and `summary.okWithWarningSources` are additive success diagnostics; source rows still use `status: "ok"` for both.
   - `summary.needsReviewBreakdown` includes both shaped static diagnostic counts and raw comparison counters: `rawMarkerCount` and `includedCount`.
+  - `summary.sizeGuardrails` reports per-artifact byte counts and limits for `json`, `lightJson`, and `csv`; `summary.sizeGuardrailExceeded` remains the aggregate compatibility flag.
+- Output size policy:
+  - `jobs-unified.json` and `jobs-unified-light.json` are compact serialized to reduce byte size without changing row fields.
+  - report/debug JSON remains pretty-printed for operator readability.
+  - warning limits are `80_000_000` bytes for full JSON, `60_000_000` bytes for light JSON, and `50_000_000` bytes for CSV.
+  - packaging still ships full JSON, light JSON, CSV, and the generated startup preview; changing package-time output selection is a separate decision.
 - `data/jobs-source-state.json`
   - per-source state for TTL and circuit breaker decisions.
   - includes `consecutiveFailures`, `lastSuccessAt`, `quarantinedUntilAt`.

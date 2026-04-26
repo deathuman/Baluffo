@@ -363,6 +363,22 @@ Fetcher and discovery reports may include a shared `taskProgress` object for the
 
 `summary.okCleanSources` and `summary.okWithWarningSources` are additive counters over source-report rows whose `status` remains `ok`. They distinguish clean successful sources from successful sources carrying warning/error diagnostic text without changing source status semantics.
 
+`summary.sizeGuardrails` is an additive output-size diagnostic. It does not change the output file contract: `jobs-unified.json`, `jobs-unified-light.json`, and `jobs-unified.csv` are still written with the same row fields. Unified JSON files are compact serialized; report/debug JSON remains pretty-printed.
+
+| Field | Type | Description |
+|---|---|---|
+| `json.bytes` | `number` | Current `jobs-unified.json` byte size. |
+| `json.limitBytes` | `number` | Full JSON warning limit, currently `80_000_000`. |
+| `json.exceeded` | `boolean` | True when the full JSON byte size is over its limit. |
+| `lightJson.bytes` | `number` | Current `jobs-unified-light.json` byte size. |
+| `lightJson.limitBytes` | `number` | Light JSON warning limit, currently `60_000_000`. |
+| `lightJson.exceeded` | `boolean` | True when the light JSON byte size is over its limit. |
+| `csv.bytes` | `number` | Current `jobs-unified.csv` byte size. |
+| `csv.limitBytes` | `number` | CSV warning limit, currently `50_000_000`. |
+| `csv.exceeded` | `boolean` | True when the CSV byte size is over its limit. |
+
+`summary.sizeGuardrailExceeded` remains the aggregate compatibility flag and is true when any `summary.sizeGuardrails.*.exceeded` value is true.
+
 | Field | Type | Description |
 |---|---|---|
 | `byShape` | `object` | Counts and examples by diagnostic shape. |

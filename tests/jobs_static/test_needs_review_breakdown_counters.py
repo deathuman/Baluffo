@@ -73,3 +73,26 @@ def test_pipeline_summary_counts_clean_ok_and_ok_with_warnings_separately() -> N
     assert summary["okCleanSources"] == 1
     assert summary["okWithWarningSources"] == 1
     assert summary["failedSources"] == 1
+
+
+def test_pipeline_summary_reports_output_size_guardrails() -> None:
+    summary = jobs_reporting.build_pipeline_summary(
+        {},
+        [],
+        [{"name": "clean", "status": "ok", "fetchedCount": 1, "keptCount": 1}],
+        0,
+        False,
+        1,
+        0,
+        0,
+        json_bytes=80_000_001,
+        light_json_bytes=60_000_001,
+        csv_bytes=50_000_001,
+    )
+
+    assert summary["sizeGuardrailExceeded"] is True
+    assert summary["sizeGuardrails"] == {
+        "json": {"bytes": 80_000_001, "limitBytes": 80_000_000, "exceeded": True},
+        "lightJson": {"bytes": 60_000_001, "limitBytes": 60_000_000, "exceeded": True},
+        "csv": {"bytes": 50_000_001, "limitBytes": 50_000_000, "exceeded": True},
+    }

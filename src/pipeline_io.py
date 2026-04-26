@@ -53,7 +53,7 @@ def read_existing_output(
 
 def serialize_rows_for_json(rows: Sequence[RawJob], fields: Sequence[str]) -> str:
     payload = [{field: row.get(field, "") for field in fields} for row in rows]
-    return json.dumps(payload, indent=2, ensure_ascii=False)
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 def serialize_rows_for_csv(rows: Sequence[RawJob], fields: Sequence[str]) -> str:

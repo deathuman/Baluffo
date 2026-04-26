@@ -130,6 +130,12 @@ LIGHTWEIGHT_OUTPUT_FIELDS = [
     "sourceBundleCount",
 ]
 
+OUTPUT_SIZE_GUARDRAIL_LIMITS = {
+    "json": 80_000_000,
+    "lightJson": 60_000_000,
+    "csv": 50_000_000,
+}
+
 SUPPORTED_REDIRECT_HOSTS = {"gracklehq.com", "www.gracklehq.com"}
 DEFAULT_HTTP_HEADERS = {
     "User-Agent": "BaluffoJobsFetcher/1.0 (+https://github.com/)",
