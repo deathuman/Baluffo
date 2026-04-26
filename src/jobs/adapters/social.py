@@ -14,6 +14,7 @@ from src.jobs.adapters import social_parsers as _social_parsers
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.social.register import ensure_registered as ensure_social_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
+from src.jobs.adapters.recovery import run_recoverable_adapter_attempt
 from src.jobs.common.diagnostics import SOURCE_DIAGNOSTICS, set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
@@ -272,8 +273,8 @@ def _load_x_query_payload(
         rss_errors: list[str] = []
         for instance in rss_instances:
             rss_url = f"{instance}/search/rss?f=tweets&q={quote(query, safe='')}"
-            try:
-                return (
+            result = run_recoverable_adapter_attempt(
+                lambda rss_url=rss_url: (
                     "rss",
                     fetch_with_retries(
                         rss_url,
@@ -283,9 +284,11 @@ def _load_x_query_payload(
                         backoff_s,
                         heartbeat_callback=heartbeat_callback,
                     ),
-                )
-            except Exception as rss_exc:  # noqa: BLE001
-                rss_errors.append(f"{instance}: {rss_exc}")
+                ),
+                lambda exc, instance=instance: rss_errors.append(f"{instance}: {exc}"),
+            )
+            if result is not None:
+                return result
         raise AdapterValidationError.from_errors(rss_errors)
     return "missing", {}
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
+from functools import partial
 from typing import Any, cast
 from urllib.parse import quote
 from xml.etree import ElementTree as ET
@@ -11,6 +12,7 @@ from src.exceptions import AdapterValidationError
 from src.jobs.adapters import social_parsers as _social_parsers
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
+from src.jobs.adapters.recovery import run_recoverable_adapter_attempt
 from src.jobs.common.config import DEFAULT_SOCIAL_MIN_CONFIDENCE, SOURCE_DIAGNOSTICS
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
@@ -45,6 +47,10 @@ def _int_value(value: object, default: int) -> int:
         except ValueError:
             return default
     return default
+
+
+def _append_adapter_error(errors: list[str], label: str, exc: Exception) -> None:
+    errors.append(f"{label}: {exc}")
 
 
 def _float_value(value: object, default: float) -> float:
@@ -85,6 +91,102 @@ def set_source_diagnostics(
 
 _REGISTERED = False
 _SOCIAL_CONFIG: dict[str, object] = {}
+
+
+def _parse_reddit_json_result(
+    text: str,
+    *,
+    subreddit: str,
+    min_confidence: float,
+    reject_for_hire_posts: bool,
+    reject_reason_counts: dict[str, int],
+    entry: dict[str, object],
+) -> tuple[list[RawJob], int, str]:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as json_exc:
+        return [], 0, f"JSON decode error: {json_exc}"
+    parsed_rows, low_conf_sub = _social_parsers.parse_reddit_json_payload(
+        payload,
+        subreddit=subreddit,
+        min_confidence=min_confidence,
+        reject_for_hire_posts=reject_for_hire_posts,
+        reject_reasons=reject_reason_counts,
+    )
+    entry["fetchedCount"] = len(
+        (
+            ((payload.get("data") or {}).get("children"))
+            if isinstance(payload, dict) and isinstance(payload.get("data"), dict)
+            else []
+        )
+        or []
+    )
+    return parsed_rows, int(low_conf_sub), ""
+
+
+def _parse_reddit_rss_result(
+    text: str,
+    *,
+    subreddit: str,
+    min_confidence: float,
+    reject_for_hire_posts: bool,
+    reject_reason_counts: dict[str, int],
+) -> tuple[list[RawJob], int, str]:
+    try:
+        parsed_rows, low_conf_sub = _social_parsers.parse_reddit_rss_payload(
+            text,
+            subreddit=subreddit,
+            min_confidence=min_confidence,
+            reject_for_hire_posts=reject_for_hire_posts,
+            reject_reasons=reject_reason_counts,
+        )
+    except ET.ParseError as rss_exc:
+        return [], 0, f"RSS parse error: {rss_exc}"
+    return parsed_rows, int(low_conf_sub), ""
+
+
+def _run_reddit_html_fallback(
+    *,
+    subreddit: str,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    heartbeat_callback: Callable[[], None] | None,
+    min_confidence: float,
+    reject_for_hire_posts: bool,
+    reject_reason_counts: dict[str, int],
+    error_messages: list[str],
+    tick: Callable[[], None],
+) -> tuple[list[RawJob], int, bool]:
+    def _html_attempt() -> tuple[list[RawJob], int]:
+        html_url = f"https://old.reddit.com/r/{quote(subreddit, safe='')}/new/"
+        tick()
+        html_text = fetch_with_retries(
+            html_url,
+            fetch_text,
+            timeout_s,
+            retries,
+            backoff_s,
+            heartbeat_callback=heartbeat_callback,
+        )
+        parsed, low_conf = _social_parsers.parse_reddit_html_payload(
+            html_text,
+            subreddit=subreddit,
+            min_confidence=min_confidence,
+            reject_for_hire_posts=reject_for_hire_posts,
+            reject_reasons=reject_reason_counts,
+        )
+        return parsed, int(low_conf)
+
+    html_result = run_recoverable_adapter_attempt(
+        _html_attempt,
+        partial(_append_adapter_error, error_messages, "HTML fetch error"),
+    )
+    if html_result is None:
+        return [], 0, False
+    parsed_rows, low_conf_sub = html_result
+    return parsed_rows, low_conf_sub, True
 
 
 def _run_reddit(
@@ -146,92 +248,78 @@ def _run_reddit(
         if i > 0:
             time.sleep(rate_limit_delay)
         # Try JSON API first
-        try:
-            tick()
-            text = fetch_with_retries(
+        text = run_recoverable_adapter_attempt(
+            lambda json_url=json_url: fetch_with_retries(
                 json_url,
                 fetch_text,
                 timeout_s,
                 retries,
                 backoff_s,
                 heartbeat_callback=heartbeat_callback,
-            )
-            payload = json.loads(text)
-            parsed_rows, low_conf_sub = _social_parsers.parse_reddit_json_payload(
-                payload,
+            ),
+            partial(_append_adapter_error, error_messages, "JSON API error"),
+        )
+        if text is not None:
+            tick()
+            parsed_rows, low_conf_sub, parse_error = _parse_reddit_json_result(
+                text,
                 subreddit=sub,
                 min_confidence=min_conf,
                 reject_for_hire_posts=reject_for_hire,
-                reject_reasons=reject_reason_counts,
+                reject_reason_counts=reject_reason_counts,
+                entry=entry,
             )
-            entry["fetchedCount"] = len(
-                (
-                    ((payload.get("data") or {}).get("children"))
-                    if isinstance(payload, dict) and isinstance(payload.get("data"), dict)
-                    else []
-                )
-                or []
-            )
-            tick()
-
-        except json.JSONDecodeError as json_exc:
-            error_messages.append(f"JSON decode error: {json_exc}")
-        except Exception as exc:  # noqa: BLE001
-            error_messages.append(f"JSON API error: {exc}")
+            if parse_error:
+                error_messages.append(parse_error)
+            else:
+                tick()
 
         # Try RSS fallback if enabled and JSON failed
         if not parsed_rows and rss_fallback:
-            try:
-                tick()
-                rss_text = fetch_with_retries(
+            rss_text = run_recoverable_adapter_attempt(
+                lambda rss_url=rss_url: fetch_with_retries(
                     rss_url,
                     fetch_text,
                     timeout_s,
                     retries,
                     backoff_s,
                     heartbeat_callback=heartbeat_callback,
-                )
-                parsed_rows, low_conf_sub = _social_parsers.parse_reddit_rss_payload(
+                ),
+                partial(_append_adapter_error, error_messages, "RSS fetch error"),
+            )
+            if rss_text is not None:
+                tick()
+                parsed_rows, low_conf_sub, parse_error = _parse_reddit_rss_result(
                     rss_text,
                     subreddit=sub,
                     min_confidence=min_conf,
                     reject_for_hire_posts=reject_for_hire,
-                    reject_reasons=reject_reason_counts,
+                    reject_reason_counts=reject_reason_counts,
                 )
-                entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
-                tick()
-
-            except ET.ParseError as rss_exc:
-                error_messages.append(f"RSS parse error: {rss_exc}")
-            except Exception as rss_exc:  # noqa: BLE001
-                error_messages.append(f"RSS fetch error: {rss_exc}")
+                if parse_error:
+                    error_messages.append(parse_error)
+                else:
+                    entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
+                    tick()
 
         # Try HTML fallback if enabled and both JSON and RSS failed
         if not parsed_rows and html_fallback:
-            try:
-                # Fetch HTML content
-                html_url = f"https://old.reddit.com/r/{quote(sub, safe='')}/new/"
-                tick()
-                html_text = fetch_with_retries(
-                    html_url,
-                    fetch_text,
-                    timeout_s,
-                    retries,
-                    backoff_s,
-                    heartbeat_callback=heartbeat_callback,
-                )
-                parsed_rows, low_conf_sub = _social_parsers.parse_reddit_html_payload(
-                    html_text,
-                    subreddit=sub,
-                    min_confidence=min_conf,
-                    reject_for_hire_posts=reject_for_hire,
-                    reject_reasons=reject_reason_counts,
-                )
+            parsed_rows, low_conf_sub, html_parsed = _run_reddit_html_fallback(
+                subreddit=sub,
+                fetch_text=fetch_text,
+                timeout_s=timeout_s,
+                retries=retries,
+                backoff_s=backoff_s,
+                heartbeat_callback=heartbeat_callback,
+                min_confidence=min_conf,
+                reject_for_hire_posts=reject_for_hire,
+                reject_reason_counts=reject_reason_counts,
+                error_messages=error_messages,
+                tick=tick,
+            )
+            if html_parsed:
                 entry["fetchedCount"] = len(parsed_rows) + int(low_conf_sub)
                 tick()
-
-            except Exception as html_exc:  # noqa: BLE001
-                error_messages.append(f"HTML fetch error: {html_exc}")
 
         # Set status and error information
         if error_messages and not parsed_rows:
@@ -314,7 +402,7 @@ def _run_x(
 
         except json.JSONDecodeError as json_exc:
             error_messages.append(f"JSON decode error: {json_exc}")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - social plugin boundary keeps per-query diagnostics.
             error_messages.append(f"X API error: {exc}")
 
         # Try RSS fallback if available

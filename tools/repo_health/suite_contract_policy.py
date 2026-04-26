@@ -1199,6 +1199,16 @@ def test_bridge_route_ble001_suppressions_stay_in_boundary_helper(repo_root: Pat
     )
 
 
+def test_community_adapter_ble001_suppressions_stay_in_recovery_helper(
+    repo_root: Path,
+) -> None:
+    target = repo_root / "src" / "jobs" / "adapters" / "community" / "__init__.py"
+    assert "# noqa: BLE001" not in target.read_text(encoding="utf-8"), (
+        "Community adapter URL fallback attempts must use "
+        "src/jobs/adapters/recovery.py instead of local broad exception suppressions."
+    )
+
+
 def test_admin_runtime_megatest_stays_split(repo_root: Path) -> None:
     legacy = repo_root / "tests" / "admin" / "test_admin_bridge_ops_runtime.py"
     assert not legacy.exists()

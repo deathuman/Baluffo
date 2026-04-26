@@ -16,6 +16,7 @@ from src.jobs.adapters.provider_parsers import (
     parse_epic_games_jobs_payload,
     parse_generic_location_fields,
 )
+from src.jobs.adapters.recovery import run_recoverable_adapter_attempt
 from src.jobs.common.config import (
     EPIC_CAREERS_API_URL,
     GAMES_INDUSTRY_URLS,
@@ -62,7 +63,8 @@ def run_google_sheets_source(
     errors: list[str] = []
     details: list[dict[str, Any]] = []
     for url in google_sheet_candidate_urls(sheet_id, gid):
-        try:
+
+        def _attempt(url: str = url) -> list[RawJob]:
             if heartbeat_callback:
                 heartbeat_callback()
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
@@ -92,11 +94,15 @@ def run_google_sheets_source(
                     )
                 return jobs
             errors.append(f"{url}: empty/invalid CSV")
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{url}: {exc}")
-        finally:
-            if heartbeat_callback:
-                heartbeat_callback()
+            return []
+
+        jobs = run_recoverable_adapter_attempt(
+            _attempt, lambda exc, url=url: errors.append(f"{url}: {exc}")
+        )
+        if jobs:
+            return jobs
+        if heartbeat_callback:
+            heartbeat_callback()
     if diagnostics_name:
         set_source_diagnostics(
             diagnostics_name,
@@ -117,7 +123,8 @@ def run_remote_ok_source(
 ) -> list[RawJob]:
     errors: list[str] = []
     for url in REMOTE_OK_URLS:
-        try:
+
+        def _attempt(url: str = url) -> list[RawJob]:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             parsed = _parse_remote_ok_payload(
                 json.loads(text), looks_like_game_job=looks_like_game_job
@@ -125,8 +132,13 @@ def run_remote_ok_source(
             if parsed:
                 return parsed
             errors.append(f"{url}: empty/invalid payload")
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{url}: {exc}")
+            return []
+
+        parsed = run_recoverable_adapter_attempt(
+            _attempt, lambda exc, url=url: errors.append(f"{url}: {exc}")
+        )
+        if parsed:
+            return parsed
     raise (
         AdapterValidationError.from_errors(errors)
         if errors
@@ -144,11 +156,16 @@ def run_gamesindustry_source(
     jobs: list[RawJob] = []
     errors: list[str] = []
     for url in GAMES_INDUSTRY_URLS:
-        try:
+
+        def _attempt(url: str = url) -> list[RawJob]:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            jobs.extend(parse_gamesindustry_html(text, base_url=url))
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{url}: {exc}")
+            return parse_gamesindustry_html(text, base_url=url)
+
+        parsed = run_recoverable_adapter_attempt(
+            _attempt, lambda exc, url=url: errors.append(f"{url}: {exc}")
+        )
+        if parsed:
+            jobs.extend(parsed)
     if jobs:
         return jobs
     if errors:
@@ -401,6 +418,23 @@ def run_epic_games_careers_source(
     return jobs
 
 
+def _append_unique_source_jobs(
+    parsed: list[RawJob],
+    jobs: list[RawJob],
+    seen_source_ids: set[str],
+) -> int:
+    new_rows = 0
+    for row in parsed:
+        source_job_id = clean_text(row.get("sourceJobId"))
+        if source_job_id and source_job_id in seen_source_ids:
+            continue
+        if source_job_id:
+            seen_source_ids.add(source_job_id)
+        jobs.append(row)
+        new_rows += 1
+    return new_rows
+
+
 def run_gamejobs_source(
     *,
     fetch_text: Callable[[str, int], str],
@@ -416,24 +450,21 @@ def run_gamejobs_source(
         [f"{GAMEJOBS_SEARCH_URL}?page={page}" for page in range(2, GAMEJOBS_MAX_PAGES + 1)]
     )
     for index, url in enumerate(gamejobs_urls):
-        try:
+
+        def _attempt(url: str = url) -> int:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             parsed = parse_gamejobs_html(text, base_url=url)
-            new_rows = 0
-            for row in parsed:
-                source_job_id = clean_text(row.get("sourceJobId"))
-                if source_job_id and source_job_id in seen_source_ids:
-                    continue
-                if source_job_id:
-                    seen_source_ids.add(source_job_id)
-                jobs.append(row)
-                new_rows += 1
-            if index > 0 and new_rows <= 0:
-                break
-        except Exception as exc:  # noqa: BLE001
+            return _append_unique_source_jobs(parsed, jobs, seen_source_ids)
+
+        new_rows = run_recoverable_adapter_attempt(
+            _attempt, lambda exc, url=url: errors.append(f"{url}: {exc}")
+        )
+        if new_rows is None:
             if jobs and index > 0:
                 break
-            errors.append(f"{url}: {exc}")
+            continue
+        if index > 0 and new_rows <= 0:
+            break
     if jobs:
         return jobs
     if errors:
@@ -451,11 +482,16 @@ def run_workwithindies_source(
     jobs: list[RawJob] = []
     errors: list[str] = []
     for url in WORKWITHINDIES_URLS:
-        try:
+
+        def _attempt(url: str = url) -> list[RawJob]:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            jobs.extend(parse_workwithindies_html(text, base_url=url))
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{url}: {exc}")
+            return parse_workwithindies_html(text, base_url=url)
+
+        parsed = run_recoverable_adapter_attempt(
+            _attempt, lambda exc, url=url: errors.append(f"{url}: {exc}")
+        )
+        if parsed:
+            jobs.extend(parsed)
     if jobs:
         return jobs
     if errors:
@@ -481,24 +517,21 @@ def run_8bitplay_source(
         ]
     )
     for index, url in enumerate(eightbit_urls):
-        try:
+
+        def _attempt(url: str = url) -> int:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             parsed = parse_8bitplay_html(text, base_url=url)
-            new_rows = 0
-            for row in parsed:
-                source_job_id = clean_text(row.get("sourceJobId"))
-                if source_job_id and source_job_id in seen_source_ids:
-                    continue
-                if source_job_id:
-                    seen_source_ids.add(source_job_id)
-                jobs.append(row)
-                new_rows += 1
-            if index > 0 and new_rows <= 0:
-                break
-        except Exception as exc:  # noqa: BLE001
+            return _append_unique_source_jobs(parsed, jobs, seen_source_ids)
+
+        new_rows = run_recoverable_adapter_attempt(
+            _attempt, lambda exc, url=url: errors.append(f"{url}: {exc}")
+        )
+        if new_rows is None:
             if jobs and index > 0:
                 break
-            errors.append(f"{url}: {exc}")
+            continue
+        if index > 0 and new_rows <= 0:
+            break
     if jobs:
         return jobs
     if errors:
@@ -524,18 +557,11 @@ def run_gracklehq_source(
         if current_url in seen_page_urls:
             break
         seen_page_urls.add(current_url)
-        try:
+
+        def _attempt(current_url: str = current_url) -> str:
             text = fetch_with_retries(current_url, fetch_text, timeout_s, retries, backoff_s)
             parsed = parse_gracklehq_html(text, base_url=current_url)
-            new_rows = 0
-            for row in parsed:
-                source_job_id = clean_text(row.get("sourceJobId"))
-                if source_job_id and source_job_id in seen_source_ids:
-                    continue
-                if source_job_id:
-                    seen_source_ids.add(source_job_id)
-                jobs.append(row)
-                new_rows += 1
+            new_rows = _append_unique_source_jobs(parsed, jobs, seen_source_ids)
             next_match = re.search(
                 r'(?is)<a[^>]+href=["\'](?P<href>\./jobs\?pageidx=\d+)["\'][^>]*>\s*Next\s*</a>',
                 text,
@@ -550,12 +576,17 @@ def run_gracklehq_source(
                 if candidate_next_url and candidate_next_url not in seen_page_urls
                 else ""
             )
-            page_count += 1
-        except Exception as exc:  # noqa: BLE001
+            return next_url
+
+        next_candidate = run_recoverable_adapter_attempt(
+            _attempt, lambda exc, current_url=current_url: errors.append(f"{current_url}: {exc}")
+        )
+        if next_candidate is None:
             if jobs and page_count > 0:
                 break
-            errors.append(f"{current_url}: {exc}")
             break
+        next_url = next_candidate
+        page_count += 1
     if jobs:
         return jobs
     if errors:
@@ -569,11 +600,16 @@ def run_wellfound_source(
     jobs: list[RawJob] = []
     errors: list[str] = []
     for url in WELLFOUND_URLS:
-        try:
+
+        def _attempt(url: str = url) -> list[RawJob]:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            jobs.extend(parse_wellfound_html(text, base_url=url))
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{url}: {exc}")
+            return parse_wellfound_html(text, base_url=url)
+
+        parsed = run_recoverable_adapter_attempt(
+            _attempt, lambda exc, url=url: errors.append(f"{url}: {exc}")
+        )
+        if parsed:
+            jobs.extend(parsed)
     if jobs:
         return jobs
     if errors:
