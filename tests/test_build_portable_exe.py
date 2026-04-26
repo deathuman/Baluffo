@@ -8,6 +8,7 @@ import pytest
 from scripts import build_ship_bundle
 from scripts.build_portable_exe import (
     DEFAULT_BUNDLE_VERSION,
+    DEFAULT_ICON_PATH,
     MAIN_RUNTIME_COLLECT_ALL_PACKAGES,
     MAIN_RUNTIME_COLLECT_DATA_PACKAGES,
     MAIN_RUNTIME_HIDDEN_IMPORTS,
@@ -17,7 +18,6 @@ from scripts.build_portable_exe import (
     UPDATER_HELPER_HIDDEN_IMPORTS,
     build_portable_layout,
     create_zip,
-    generate_icon_file,
     parse_args,
     resolve_icon_path,
 )
@@ -98,20 +98,18 @@ def test_parse_args_defaults_to_shared_app_version() -> None:
     assert args.bundle_version == APP_VERSION
 
 
-def test_generate_icon_file_writes_valid_ico_header() -> None:
-    with workspace_tmpdir("build-portable-exe") as tmp:
-        icon_path = generate_icon_file(Path(tmp) / "Baluffo.ico")
-        payload = icon_path.read_bytes()
-        assert payload.startswith(b"\x00\x00\x01\x00\x01\x00")
-        assert len(payload) > 1024
+def test_resolve_icon_path_defaults_to_checked_in_favicon() -> None:
+    icon_path = resolve_icon_path()
+    assert icon_path == DEFAULT_ICON_PATH
+    assert icon_path.exists()
+    assert icon_path.suffix.lower() == ".ico"
 
 
-def test_resolve_icon_path_generates_default_icon() -> None:
+def test_resolve_icon_path_rejects_missing_explicit_icon() -> None:
     with workspace_tmpdir("build-portable-exe") as tmp:
-        output = Path(tmp) / "dist" / "baluffo-portable"
-        icon_path = resolve_icon_path(output, exe_name="Baluffo")
-        assert icon_path.exists()
-        assert icon_path.suffix.lower() == ".ico"
+        missing_icon = Path(tmp) / "missing.ico"
+        with pytest.raises(RuntimeError, match="Icon file not found"):
+            resolve_icon_path(str(missing_icon))
 
 
 def test_helper_hidden_imports_include_tkinter_progress_ui_modules() -> None:

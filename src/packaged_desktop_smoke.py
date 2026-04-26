@@ -108,7 +108,6 @@ DESKTOP_SESSION_STATE_FILE = "desktop-session.json"
 DESKTOP_INSTANCE_LOCK_FILE = "desktop-instance.lock"
 DESKTOP_BROWSER_PROFILE_DIR = "desktop-browser-profile"
 PORTABLE_BUILD_SCRATCH_NAMES = (
-    ".pyinstaller-assets",
     ".pyinstaller-dist",
     ".pyinstaller-work",
     ".pyinstaller-spec",

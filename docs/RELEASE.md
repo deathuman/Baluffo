@@ -161,6 +161,10 @@ Direct Python entrypoint for operator/debug use:
 python scripts/build_portable_exe.py --bundle-version <version>
 ```
 
+Default icon:
+
+- Portable EXE builds use the checked-in root `favicon.ico` for both `Baluffo.exe` and `BaluffoUpdater.exe`.
+
 Optional icon override:
 
 ```powershell

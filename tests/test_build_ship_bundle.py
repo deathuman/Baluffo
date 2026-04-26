@@ -112,13 +112,10 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
         assert (version_root / "frontend" / "jobs" / "state.js").exists()
         assert (version_root / "frontend" / "jobs" / "parsing-utils.js").exists()
         assert (version_root / "frontend" / "saved" / "zip-utils.js").exists()
-        assert (version_root / "desktop-probe-css.html").exists()
-        assert (version_root / "desktop-probe.html").exists()
-        assert (version_root / "desktop-probe-head.html").exists()
-        assert (version_root / "desktop-probe-inline.html").exists()
-        assert (version_root / "startup-probe.js").exists()
-        assert (version_root / "packaging" / "README.md").exists()
-        assert (version_root / "packaging" / "github-app-sync-config.template.json").exists()
+        # fmt: off
+        runtime_assets = ("desktop-probe-css.html", "desktop-probe.html", "desktop-probe-head.html", "desktop-probe-inline.html", "favicon.ico", "startup-probe.js", "packaging/README.md", "packaging/github-app-sync-config.template.json")
+        # fmt: on
+        assert all((version_root / rel_path).exists() for rel_path in runtime_assets)
         version_contract_dir = version_root / "data"
         expected_version_contract_files = {
             version_contract_dir / rel_path
