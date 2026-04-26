@@ -305,6 +305,7 @@ Do not change signatures or remove without a dedicated plan:
 
 - **source-discovery-report.json** and **source-discovery-candidates.json** must remain shape-compatible.
 - **source-discovery-report.json** now includes top-level `runId` for lifecycle ownership. The same `runId` must also appear in the matching `data/admin-task-state.json` discovery entry while the task is active.
+- **GameDevMap audit metadata** may appear as top-level `gamedevmapAuditSummary` and `summary.gamedevmapAudit`. These are additive report diagnostics for the resumable GameDevMap audit/cache path, including cache hit, timing, active split, recovered/browser counts, artifact size, and failure buckets. They are not candidate registry fields and must not be copied into active, pending, or rejected source rows.
 - **Report summary** must retain: counts, stage maps (`generatedCountByStage`, `survivedDedupeCountByStage`, `probedCountByStage`, `queuedCountByStage`), `lossAccounting`, `adapterCounts`, `methodCounts`.
 - **Runtime lifecycle metadata:** discovery runtime may include `runtime.lifecycle.owner` and `runtime.lifecycle.heartbeatAt`. These fields are additive and used by the bridge to project Current Runs without mutating the report.
 - **Candidates file semantics:** `data/source-discovery-candidates.json` is the persisted discovery review queue. It may contain both queued candidates and deferred review rows; consumers must use `deferred` / `deferReason` instead of assuming every row is queue-ready.

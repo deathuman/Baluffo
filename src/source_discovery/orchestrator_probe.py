@@ -51,7 +51,8 @@ def _queue_healthy_candidate(
     adjust_runtime: bool = False,
 ) -> None:
     score, reasons = compute_candidate_score(candidate, jobs_found)
-    normalized = normalize_candidate(candidate, score, reasons, jobs_found, probed_at=now_iso())
+    probed_at = str(candidate.get("lastProbedAt") or now_iso())
+    normalized = normalize_candidate(candidate, score, reasons, jobs_found, probed_at=probed_at)
     prior_candidate = state.prior_review_candidates_by_id.get(source_identity(normalized))
     rank_score, rank_reasons, promotion_lane = compute_candidate_rank(
         normalized,
@@ -74,6 +75,16 @@ def _queue_healthy_candidate(
         )
     state.adapter_counter[str(normalized.get("adapter") or "unknown")] += 1
     state.method_counter[str(normalized.get("discoveryMethod") or "unknown")] += 1
+
+
+def _queue_prevalidated_candidates(*, state: DiscoveryRunState) -> None:
+    for raw in state.prevalidated_probe_inputs:
+        stage = str(raw.get("discoveryStage") or "provider_pattern")
+        jobs_found = max(0, int(raw.get("jobsFound") or raw.get("sampleCount") or 0))
+        state.probed += 1
+        state.probed_count_by_stage[stage] += 1
+        _increment_adapter_runtime(state.adapter_runtime, raw.get("adapter"), probed=1)
+        _queue_healthy_candidate(raw, jobs_found, state=state)
 
 
 async def _run_probe_batch(
@@ -135,6 +146,7 @@ def probe_and_recover(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> No
 
     completed = 0
     probe_stage_started = time.perf_counter()
+    _queue_prevalidated_candidates(state=state)
     for raw, ok, jobs_found, error, probe_duration_ms in asyncio.run(
         _run_probe_batch(
             state.probe_inputs,

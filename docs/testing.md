@@ -5,7 +5,7 @@
 > - **Canonical for:** test commands, targeted test routing, and fixture references
 > - **Not canonical for:** runtime architecture or data contracts
 > - **Then inspect:** the nearest `tests/` module for the subsystem you changed
-> - **Last updated:** 2026-04-25
+> - **Last updated:** 2026-04-26
 
 This document owns the verification matrix for Baluffo. Keep build, test, and fixture guidance here instead of repeating command tables in routing docs.
 
@@ -121,6 +121,7 @@ The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `
 | Rebuild-backed packaged diagnostic | `npm run probe:desktop:startup:cold` |
 | One file | `python -m pytest tests/<path/to/test_*.py> -q` |
 | Admin bridge | `python -m pytest tests/admin/ -q` |
+| GameDevMap discovery lane | `python -m pytest -q tests/source_discovery -k gamedevmap`, then `python -m pytest -q tests/source_discovery`, then `npm run lint:precommit` |
 | Match developer lane directly | `python -m pytest tests -q -m "not slow and not packaging and not release" --color=no --basetemp=.tmp/pytest/basetemp` |
 
 Use `npm run release:preflight` when you are about to push a release commit, move a release tag, or publish release artifacts. It runs the pre-commit gate, the full Python lane, frontend unit tests, and the packaged desktop release lanes in canonical order.
@@ -136,6 +137,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 | Job payload fixture loaders | `tests/helpers/job_fixtures.py`, with reusable data under `tests/fixtures/` |
 | Desktop launcher config/session factories | `tests/desktop_app/_helpers.py` |
 | Source-discovery local config/runtime helpers | `tests/source_discovery/_helpers.py` |
+| Focused GameDevMap source-discovery helpers | `tests/source_discovery/gamedevmap_test_helpers.py` |
 | Frontend admin controller factories | `tests/frontend/unit/helpers/admin-controller-test-helpers.mjs` |
 
 **Temp directory note (Windows sandbox):**

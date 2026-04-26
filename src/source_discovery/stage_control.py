@@ -29,7 +29,9 @@ def apply_discovery_cli_args_to_config(
         gamedevmap_cfg = dict(cfg.get("gamedevmap") or {})
         gamedevmap_cfg["maxHomepageFetches"] = int(args.gamedevmap_max_homepage_fetches)
         cfg["gamedevmap"] = gamedevmap_cfg
-    if bool(getattr(args, "only_gamedevmap", False)):
+    if bool(getattr(args, "only_gamedevmap", False)) or bool(
+        getattr(args, "gamedevmap_active_dry_run", False)
+    ):
         cfg["stageToggles"] = {
             "curatedSeed": False,
             "sheetDirectory": False,

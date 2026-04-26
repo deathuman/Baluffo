@@ -178,7 +178,9 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `gamesmap_{cache,parsing,candidates}.py` - Gamesmap cache, parsing, and candidate generation ownership
 - `web_search.py` - stable discovery web-search compatibility surface
 - `web_search_{fetch,extract,candidates}.py` - web-search fetch, extraction, and candidate inference ownership
-- `gamedevmap.py`, `gameprog.py`, `sheet_directory.py` - other domain generators
+- `gamedevmap.py` - stable GameDevMap adapter compatibility surface; routes default discovery through the active-source audit/recovery engine
+- `gamedevmap_active_dry_run.py` - GameDevMap resumable audit/recovery engine shared by default discovery, dry-run audit CLI, lost-recovery comparison, and explicit browser recovery
+- `gameprog.py`, `sheet_directory.py` - other domain generators
 
 **Sync helpers:**
 - `source_sync.py` - stable thin compatibility and test patch surface

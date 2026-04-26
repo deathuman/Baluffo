@@ -285,7 +285,7 @@ def test_run_discovery_default_and_uncapped_report_runtime_cap_bypass_flags() ->
     def fake_probe(row, timeout_s, fetcher=None, try_playwright=None, playwright_semaphore=None):
         return True, 2, ""
 
-    config = sd.load_discovery_config()
+    config = discovery_config_without_generator_stages()
 
     def run_preset(preset: str) -> dict:
         with workspace_tmpdir(f"source-discovery-{preset}") as tmp:
@@ -573,9 +573,8 @@ def test_run_discovery_gamesmap_candidates_flow_into_report_and_queue() -> None:
                     "allowedCategoryTokens": ["developer", "publisher", "pc", "console"],
                     "blockedCategoryTokens": ["association", "education"],
                 },
-                "gameprog": {
-                    "enabled": False,
-                },
+                "gameprog": {"enabled": False},
+                "gamedevmap": {"enabled": False},
             }
             payloads = {
                 "https://www.gamesmap.de/en": _fixture_text("gamesmap_index_next_payload.html"),
@@ -1397,7 +1396,7 @@ def test_run_discovery_writes_m5_backlog_snapshot() -> None:
                     preset="uncapped",
                     mode="static",
                     include_web_search=False,
-                    discovery_config=sd.load_discovery_config(),
+                    discovery_config=discovery_config_without_generator_stages(),
                     fetcher=lambda *args, **kwargs: "",
                 )
 

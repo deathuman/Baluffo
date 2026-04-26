@@ -28,6 +28,7 @@ FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 GENERATOR_DISABLED_DISCOVERY_CONFIG = {
     "gamesmap": {"enabled": False},
     "gameprog": {"enabled": False},
+    "gamedevmap": {"enabled": False},
 }
 
 

@@ -84,7 +84,9 @@ class DiscoveryRunState:
     ranking_registry_rows: list[dict[str, Any]] = field(default_factory=list)
     source_state_rows: dict[str, dict[str, Any]] = field(default_factory=dict)
     probe_inputs: list[dict[str, Any]] = field(default_factory=list)
+    prevalidated_probe_inputs: list[dict[str, Any]] = field(default_factory=list)
     failed_probe_records: list[dict[str, Any]] = field(default_factory=list)
+    gamedevmap_audit_summary: dict[str, Any] = field(default_factory=dict)
 
     def total_duration_ms(self, deps: DiscoveryRunDeps) -> int:
         import time

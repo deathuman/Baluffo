@@ -58,6 +58,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 |----------|-------|-------------|
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) | Time-bound failure snapshot | You are picking up the discovery/fetch failures observed in the 2026-04-25 fresh build runs |
+| [`source-discovery-adapter-follow-ups.md`](source-discovery-adapter-follow-ups.md) | Active follow-up tracker | You are evaluating reusable adapter improvements after the GameDevMap audit migration |
 | [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md) | Active follow-up tracker | You are picking the next residual follow-up after the completed 2026-04-25 repo-analysis closeout |
 | [`../tools/mcp/INDEX.md`](../tools/mcp/INDEX.md) | MCP tooling index | You are choosing which MCP tooling doc to load under `tools/mcp/` |
 | [`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md) | AI dev tooling | You are setting up the required Serena MCP workflow for Codex CLI or OpenCode, or checking the repo's Serena-memory rules |

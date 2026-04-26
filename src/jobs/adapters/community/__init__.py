@@ -84,6 +84,8 @@ def run_google_sheets_source(
                 }
             )
             if jobs:
+                if heartbeat_callback:
+                    heartbeat_callback()
                 if diagnostics_name:
                     set_source_diagnostics(
                         diagnostics_name,

@@ -46,6 +46,12 @@ from .config import (
 )
 from .core import apply_sheet_directory_static_probe_cap as _apply_sheet_directory_static_probe_cap
 from .gamedevmap import discover_gamedevmap_candidates as _discover_gamedevmap_candidates
+from .gamedevmap_active_dry_run import (
+    run_gamedevmap_active_source_dry_run as _run_gamedevmap_active_source_dry_run,
+)
+from .gamedevmap_active_dry_run import (
+    run_gamedevmap_browser_recovery as _run_gamedevmap_browser_recovery,
+)
 from .gameprog import discover_gameprog_candidates as _discover_gameprog_candidates
 from .gamesmap import discover_gamesmap_candidates as _discover_gamesmap_candidates
 from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
@@ -96,6 +102,8 @@ apply_discovery_auto_approval = _apply_discovery_auto_approval
 read_source_state = _read_source_state
 apply_sheet_directory_static_probe_cap = _apply_sheet_directory_static_probe_cap
 discover_gamedevmap_candidates = _discover_gamedevmap_candidates
+run_gamedevmap_active_source_dry_run = _run_gamedevmap_active_source_dry_run
+run_gamedevmap_browser_recovery = _run_gamedevmap_browser_recovery
 discover_gameprog_candidates = _discover_gameprog_candidates
 discover_gamesmap_candidates = _discover_gamesmap_candidates
 async_probe_candidate = _async_probe_candidate
@@ -170,6 +178,49 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Run only the GameDevMap discovery stage and skip other candidate-generation stages.",
     )
     parser.add_argument(
+        "--gamedevmap-active-dry-run",
+        action="store_true",
+        help=(
+            "Run an exhaustive GameDevMap-only active-source dry run without queue defers "
+            "or registry mutation."
+        ),
+    )
+    parser.add_argument(
+        "--gamedevmap-dry-run-batch-size",
+        type=int,
+        default=1000,
+        help="GameDevMap active dry-run homepage batch size.",
+    )
+    parser.add_argument(
+        "--gamedevmap-dry-run-reset",
+        action="store_true",
+        help="Reset the saved GameDevMap active dry-run artifact before running.",
+    )
+    parser.add_argument(
+        "--gamedevmap-dry-run-max-batches",
+        type=int,
+        default=0,
+        help="Maximum GameDevMap active dry-run batches for this invocation; 0 = until complete.",
+    )
+    parser.add_argument(
+        "--gamedevmap-dry-run-rerun-reasons",
+        default="",
+        help=(
+            "Comma-separated GameDevMap active dry-run rejection reasons to reprocess "
+            "(homepage_fetch_failed,no_careers_evidence,probe_failed,zero_jobs)."
+        ),
+    )
+    parser.add_argument(
+        "--gamedevmap-dry-run-compare-artifact",
+        default="",
+        help="Optional prior GameDevMap audit artifact to compare recovered active sources against.",
+    )
+    parser.add_argument(
+        "--gamedevmap-browser-recovery",
+        action="store_true",
+        help="Run browser-rendered recovery only for saved GameDevMap browser candidates.",
+    )
+    parser.add_argument(
         "--gameprog-enabled",
         action="store_true",
         help="Enable Gameprog directory scanning.",
@@ -208,17 +259,42 @@ def run_discovery(
         f"Discovery worker run_discovery() begin runId={run_id!r} "
         f"report_path={discovery_report_write_path()!s}"
     )
-    _prime_bridge_discovery_report(
-        run_id=run_id,
-        started_at=started_at,
-        mode=str(mode or "dynamic"),
-    )
 
     effective_config = (
         discovery_config if isinstance(discovery_config, dict) else load_discovery_config()
     )
     if cli_args is not None:
         effective_config = _apply_discovery_cli_args_to_config(effective_config, cli_args)
+    if bool(getattr(cli_args, "gamedevmap_active_dry_run", False)):
+        return run_gamedevmap_active_source_dry_run(
+            timeout_s=timeout_s,
+            config=effective_config,
+            fetcher=fetcher,
+            run_id=run_id,
+            started_at=started_at,
+            batch_size=int(getattr(cli_args, "gamedevmap_dry_run_batch_size", 250) or 250),
+            reset=bool(getattr(cli_args, "gamedevmap_dry_run_reset", False)),
+            max_batches=int(getattr(cli_args, "gamedevmap_dry_run_max_batches", 0) or 0),
+            rerun_reasons=str(getattr(cli_args, "gamedevmap_dry_run_rerun_reasons", "") or ""),
+            compare_artifact_path=str(
+                getattr(cli_args, "gamedevmap_dry_run_compare_artifact", "") or ""
+            )
+            or None,
+        )
+    if bool(getattr(cli_args, "gamedevmap_browser_recovery", False)):
+        return run_gamedevmap_browser_recovery(
+            timeout_s=timeout_s,
+            config=effective_config,
+            fetcher=fetcher,
+            run_id=run_id,
+            started_at=started_at,
+        )
+
+    _prime_bridge_discovery_report(
+        run_id=run_id,
+        started_at=started_at,
+        mode=str(mode or "dynamic"),
+    )
     thresholds = resolve_discovery_thresholds(effective_config)
 
     preset_name = str(preset or "default").strip().lower() or "default"

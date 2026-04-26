@@ -62,6 +62,69 @@ def _record_stage_runtime(
             _increment_adapter_runtime(state.adapter_runtime, row.get("adapter"), failures=1)
 
 
+def _is_prevalidated_discovery_candidate(row: dict[str, Any]) -> bool:
+    if str(row.get("probeStatus") or "").strip().lower() != "ok":
+        return False
+    if not bool(row.get("prevalidatedDiscovery")):
+        return False
+    try:
+        jobs_found = int(row.get("jobsFound") or row.get("sampleCount") or 0)
+    except (TypeError, ValueError):
+        return False
+    return jobs_found > 0
+
+
+def _route_valid_probe_candidate(
+    raw: dict[str, Any],
+    *,
+    deps: DiscoveryRunDeps,
+    state: DiscoveryRunState,
+    stage: str,
+    low_evidence_probes_used: int,
+) -> tuple[bool, int]:
+    if _is_prevalidated_discovery_candidate(raw):
+        state.prevalidated_probe_inputs.append(raw)
+        return True, low_evidence_probes_used
+
+    evidence_score = int(raw.get("evidenceScore") or 0)
+    threshold = _evidence_threshold_for_probe(raw, deps.thresholds)
+    if evidence_score >= threshold:
+        return False, low_evidence_probes_used
+    if stage == "provider_pattern":
+        state.skipped_low_evidence_probe_count += 1
+        state.failures.append(
+            {
+                "name": raw.get("name"),
+                "adapter": raw.get("adapter"),
+                "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                "error": (
+                    f"pattern evidence score {evidence_score} below probe threshold {threshold}"
+                ),
+                "stage": "probe_skipped",
+                "dropStage": "low_evidence_skipped",
+                "dropReason": "probe_threshold",
+            }
+        )
+        return True, low_evidence_probes_used
+    if low_evidence_probes_used >= int(
+        deps.thresholds.get("lowEvidenceProbeLimit", LOW_EVIDENCE_PROBE_LIMIT)
+    ):
+        state.skipped_low_evidence_probe_count += 1
+        state.failures.append(
+            {
+                "name": raw.get("name"),
+                "adapter": raw.get("adapter"),
+                "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
+                "error": f"evidence score {evidence_score} below probe threshold {threshold}",
+                "stage": "probe_skipped",
+                "dropStage": "low_evidence_skipped",
+                "dropReason": "low_evidence_probe_cap",
+            }
+        )
+        return True, low_evidence_probes_used
+    return False, low_evidence_probes_used + 1
+
+
 def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> None:
     orchestrator = _require_root()
     stage_enabled = {
@@ -338,6 +401,12 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
                     fetcher=deps.fetcher,
                 )
             )
+            from .gamedevmap_active_dry_run import latest_gamedevmap_audit_report_summary
+
+            gamedevmap_cfg = deps.effective_config.get("gamedevmap")
+            gamedevmap_cfg = gamedevmap_cfg if isinstance(gamedevmap_cfg, dict) else {}
+            if bool(gamedevmap_cfg.get("activeAuditEnabled", True)):
+                state.gamedevmap_audit_summary = latest_gamedevmap_audit_report_summary()
             gamedevmap_stage_rows = [
                 *provider_gamedevmap_candidates,
                 *static_gamedevmap_candidates,
@@ -603,41 +672,13 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
                 }
             )
             continue
-        evidence_score = int(raw.get("evidenceScore") or 0)
-        threshold = _evidence_threshold_for_probe(raw, deps.thresholds)
-        if evidence_score < threshold:
-            if stage == "provider_pattern":
-                state.skipped_low_evidence_probe_count += 1
-                state.failures.append(
-                    {
-                        "name": raw.get("name"),
-                        "adapter": raw.get("adapter"),
-                        "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
-                        "error": (
-                            f"pattern evidence score {evidence_score} below probe threshold "
-                            f"{threshold}"
-                        ),
-                        "stage": "probe_skipped",
-                        "dropStage": "low_evidence_skipped",
-                        "dropReason": "probe_threshold",
-                    }
-                )
-                continue
-            if low_evidence_probes_used >= int(
-                deps.thresholds.get("lowEvidenceProbeLimit", LOW_EVIDENCE_PROBE_LIMIT)
-            ):
-                state.skipped_low_evidence_probe_count += 1
-                state.failures.append(
-                    {
-                        "name": raw.get("name"),
-                        "adapter": raw.get("adapter"),
-                        "domain": (urlparse(endpoint_url(raw)).netloc or "").lower(),
-                        "error": f"evidence score {evidence_score} below probe threshold {threshold}",
-                        "stage": "probe_skipped",
-                        "dropStage": "low_evidence_skipped",
-                        "dropReason": "low_evidence_probe_cap",
-                    }
-                )
-                continue
-            low_evidence_probes_used += 1
+        routed, low_evidence_probes_used = _route_valid_probe_candidate(
+            raw,
+            deps=deps,
+            state=state,
+            stage=stage,
+            low_evidence_probes_used=low_evidence_probes_used,
+        )
+        if routed:
+            continue
         state.probe_inputs.append(raw)

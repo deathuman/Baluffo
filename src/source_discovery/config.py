@@ -32,7 +32,8 @@ DISCOVERY_STAGES: tuple[str, ...] = (
 # - Note: "sheet_directory" is intentionally both a stage name and an evidence type.
 # - Evidence type families:
 #   - gamedevmap_*: gamedevmap_directory, gamedevmap_category, gamedevmap_ai_reviewed,
-#     gamedevmap_homepage_fetch, gamedevmap_direct_url, gamedevmap_careers_url
+#     gamedevmap_homepage_fetch, gamedevmap_direct_url, gamedevmap_careers_url,
+#     gamedevmap_recovery_page
 #   - gamesmap_*: gamesmap_directory, gamesmap_category_match, gamesmap_website, gamesmap_website_only,
 #     gamesmap_manual_website_only, gamesmap_careers_url, gamesmap_location, gamesmap_website_fetch
 #   - sheet_*: sheet_directory, sheet_row, sheet_roles_open_yes/no/speculative/unknown
@@ -56,6 +57,7 @@ EVIDENCE_TYPES: tuple[str, ...] = (
     "gamedevmap_homepage_fetch",
     "gamedevmap_direct_url",
     "gamedevmap_careers_url",
+    "gamedevmap_recovery_page",
     # Gamesmap evidence
     "gamesmap_directory",
     "gamesmap_category_match",
@@ -264,11 +266,25 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "perHostConcurrency": 3,
     },
     "gamedevmap": {
-        "enabled": False,
+        "enabled": True,
         "csvUrl": "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv",
         "indexUrl": "https://www.gamedevmap.com/index.php",
         "cachePath": "data/gamedevmap-discovery-cache.json",
         "cacheTtlMinutes": 360,
+        "activeAuditEnabled": True,
+        "activeAuditTtlMinutes": 360,
+        "activeAuditBatchSize": 1000,
+        "activeAuditMaxBatchesPerDiscoveryRun": 0,
+        "activeAuditHomepageFetchConcurrency": 32,
+        "activeAuditRecoveryFetchConcurrency": 72,
+        "activeAuditRecoveryPerHostConcurrency": 4,
+        "activeAuditRecoveryTimeoutSeconds": 5,
+        "activeAuditBrowserRecoveryConcurrency": 2,
+        "activeAuditBrowserRecoveryTimeoutSeconds": 15,
+        "activeAuditBrowserRecoveryLimit": 0,
+        "promoteValidatedStatic": True,
+        "validatedStaticQueueCap": 500,
+        "validatedStaticDomainCap": 8,
         "maxRows": 0,
         "maxHomepageFetches": 60,
         "allowedCategories": [

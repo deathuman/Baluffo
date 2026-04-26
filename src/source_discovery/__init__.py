@@ -91,6 +91,18 @@ from .gamedevmap import (
     parse_gamedevmap_csv,
     select_gamedevmap_representative_rows,
 )
+from .gamedevmap_active_dry_run import (
+    apply_gamedevmap_lost_recovery_audit,
+    compare_gamedevmap_recovered_sources,
+    discover_gamedevmap_audit_candidates,
+    gamedevmap_active_dry_run_path,
+    gamedevmap_audit_report_summary,
+    gamedevmap_validated_candidates_from_artifact,
+    latest_gamedevmap_audit_report_summary,
+    run_gamedevmap_active_source_dry_run,
+    run_gamedevmap_browser_recovery,
+    run_gamedevmap_source_audit,
+)
 from .gameprog import (
     discover_gameprog_candidates,
     parse_gameprog_teams_json,

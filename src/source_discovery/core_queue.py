@@ -31,6 +31,35 @@ def _queue_balancing_order(candidates: list[dict[str, Any]]) -> list[dict[str, A
     return [*providers, *static_rows]
 
 
+def _positive_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _row_adapter_cap(
+    row: dict[str, Any],
+    adapter: str,
+    effective_adapter_caps: dict[str, int],
+) -> int:
+    configured = int(effective_adapter_caps.get(adapter, 3) or 3)
+    override = _positive_int(row.get("queueAdapterCapOverride"))
+    return max(configured, override) if override > 0 else configured
+
+
+def _row_domain_cap(row: dict[str, Any], effective_domain_cap: int) -> int:
+    override = _positive_int(row.get("queueDomainCapOverride"))
+    return max(effective_domain_cap, override) if override > 0 else effective_domain_cap
+
+
+def _strip_queue_internal_fields(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    normalized.pop("queueAdapterCapOverride", None)
+    normalized.pop("queueDomainCapOverride", None)
+    return normalized
+
+
 def is_google_sheet_candidate(candidate: dict[str, Any]) -> bool:
     return str(candidate.get("sourceDirectory") or "").strip().lower() == "game_studios_sheet"
 
@@ -142,13 +171,15 @@ def apply_queue_balancing(
                 and len(queued) < provider_target
             ):
                 defer_reason = "provider_reservation"
-            elif not bypass_adapter_cap and adapter_counts[adapter] >= effective_adapter_caps.get(
-                adapter, 3
+            elif not bypass_adapter_cap and adapter_counts[adapter] >= _row_adapter_cap(
+                row,
+                adapter,
+                effective_adapter_caps,
             ):
                 defer_reason = "adapter_cap"
-            elif family and family_counts[family] >= effective_domain_cap:
+            elif family and family_counts[family] >= _row_domain_cap(row, effective_domain_cap):
                 defer_reason = "domain_cap"
-            normalized = dict(row)
+            normalized = _strip_queue_internal_fields(row)
             if defer_reason:
                 normalized["deferred"] = True
                 normalized["deferReason"] = defer_reason

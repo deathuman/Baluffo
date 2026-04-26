@@ -22,6 +22,7 @@ from src.source_registry import normalize_source_url, unique_sources
 from .config import DEFAULT_DISCOVERY_CONFIG
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .page_analysis import analyze_fetched_page
+from .reporting import emit_log
 from .scoring import unique_string_list
 from .static_candidates import build_known_careers_url_candidate
 from .web_search import (
@@ -70,6 +71,21 @@ def _gamedevmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "csvUrl": str(cfg.get("csvUrl") or "").strip(),
         "indexUrl": str(cfg.get("indexUrl") or "").strip(),
+        "activeAuditEnabled": bool(cfg.get("activeAuditEnabled", True)),
+        "promoteValidatedStatic": bool(cfg.get("promoteValidatedStatic", True)),
+        "activeAuditBatchSize": max(1, int(cfg.get("activeAuditBatchSize") or 1000)),
+        "activeAuditHomepageFetchConcurrency": max(
+            0, int(cfg.get("activeAuditHomepageFetchConcurrency") or 0)
+        ),
+        "activeAuditRecoveryFetchConcurrency": max(
+            0, int(cfg.get("activeAuditRecoveryFetchConcurrency") or 0)
+        ),
+        "activeAuditRecoveryPerHostConcurrency": max(
+            0, int(cfg.get("activeAuditRecoveryPerHostConcurrency") or 0)
+        ),
+        "activeAuditRecoveryTimeoutSeconds": max(
+            0, int(cfg.get("activeAuditRecoveryTimeoutSeconds") or 0)
+        ),
         "maxRows": max(0, int(cfg.get("maxRows") or 0)),
         "maxHomepageFetches": max(0, int(cfg.get("maxHomepageFetches") or 0)),
         "allowedCategories": list(cfg.get("allowedCategories") or []),
@@ -340,20 +356,45 @@ def _apply_gamedevmap_provenance(
     return enriched
 
 
+def _gamedevmap_initial_result(
+    timeout_s: int,
+    *,
+    config: dict[str, Any] | None,
+    cfg: dict[str, Any],
+    fetcher,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
+    if not bool(cfg.get("enabled")):
+        emit_log("GameDevMap directory disabled, skipping.")
+        return [], [], []
+    if not bool(cfg.get("activeAuditEnabled", True)):
+        return None
+
+    from .gamedevmap_active_dry_run import discover_gamedevmap_audit_candidates
+
+    return discover_gamedevmap_audit_candidates(
+        timeout_s,
+        config=config,
+        fetcher=fetcher,
+    )
+
+
 def discover_gamedevmap_candidates(
     timeout_s: int,
     *,
     config: dict[str, Any] | None = None,
     fetcher=fetch_text,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    from .reporting import emit_log
-
     cfg = dict(
         _gamedevmap_config_value(config, "gamedevmap", DEFAULT_DISCOVERY_CONFIG["gamedevmap"])
     )
-    if not bool(cfg.get("enabled")):
-        emit_log("GameDevMap directory disabled, skipping.")
-        return [], [], []
+    initial_result = _gamedevmap_initial_result(
+        timeout_s,
+        config=config,
+        cfg=cfg,
+        fetcher=fetcher,
+    )
+    if initial_result is not None:
+        return initial_result
     cached = _load_gamedevmap_cache(config, cfg, fetcher=fetcher)
     if cached is not None:
         return cached
