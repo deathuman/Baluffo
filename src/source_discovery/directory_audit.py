@@ -11,10 +11,11 @@ from typing import Any
 
 from src.source_registry import unique_sources
 
-from . import audit_ledger
+from . import audit_ledger, audit_report_summary
 
 DirectoryAuditRows = tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]
 DirectoryAuditScan = Callable[[int], dict[str, Any]]
+_LATEST_DIRECTORY_AUDIT_SUMMARIES: dict[str, dict[str, Any]] = {}
 
 
 def load_directory_audit_artifact(path: Path) -> dict[str, Any] | None:
@@ -36,6 +37,67 @@ def directory_audit_rows(artifact: dict[str, Any]) -> DirectoryAuditRows:
     if not isinstance(failures, list):
         failures = []
     return unique_sources(provider_rows), unique_sources(static_rows), list(failures)
+
+
+def directory_audit_report_summary(
+    artifact: dict[str, Any],
+    *,
+    adapter: str,
+    cache_hit: bool,
+    output_path: Path | None = None,
+) -> dict[str, Any]:
+    summary = audit_report_summary.as_dict(artifact.get("summary"))
+    runtime = audit_report_summary.as_dict(artifact.get("runtime"))
+    progress = audit_report_summary.as_dict(artifact.get("progress"))
+    timings = audit_report_summary.as_dict(artifact.get("timings"))
+    timing_totals = {
+        str(key): audit_report_summary.safe_int(value)
+        for key, value in audit_report_summary.as_dict(timings.get("totalsMs")).items()
+    }
+    report_summary: dict[str, Any] = {
+        "adapter": str(adapter),
+        "cacheHit": bool(cache_hit),
+        "complete": bool(progress.get("complete")),
+        "auditDurationMs": audit_report_summary.safe_int(timing_totals.get("totalMs")),
+        "providerCandidates": audit_report_summary.safe_int(summary.get("providerCandidates")),
+        "staticCandidates": audit_report_summary.safe_int(summary.get("staticCandidates")),
+        "failures": audit_report_summary.safe_int(summary.get("failures")),
+        "artifactSizeBytes": audit_report_summary.artifact_size_bytes(
+            summary=summary,
+            runtime=runtime,
+        ),
+        "timingTotalsMs": timing_totals,
+        "topFailureBuckets": audit_report_summary.top_failure_buckets(
+            rejected_reason_detail_counts=None,
+            failure_counts=artifact.get("failureCounts"),
+        ),
+    }
+    if output_path is not None:
+        report_summary["outputPath"] = str(output_path)
+    for key, value in summary.items():
+        if key in report_summary:
+            continue
+        if isinstance(value, bool):
+            report_summary[str(key)] = bool(value)
+        elif isinstance(value, int | float | str) or value is None:
+            report_summary[str(key)] = audit_report_summary.safe_int(value)
+        elif isinstance(value, dict):
+            report_summary[str(key)] = dict(value)
+        elif isinstance(value, list):
+            report_summary[str(key)] = list(value)
+        else:
+            report_summary[str(key)] = value
+    return report_summary
+
+
+def latest_directory_audit_summaries() -> dict[str, dict[str, Any]]:
+    return {
+        adapter: dict(summary) for adapter, summary in _LATEST_DIRECTORY_AUDIT_SUMMARIES.items()
+    }
+
+
+def clear_directory_audit_summaries() -> None:
+    _LATEST_DIRECTORY_AUDIT_SUMMARIES.clear()
 
 
 def initial_directory_audit_artifact(
@@ -98,6 +160,12 @@ def run_directory_audit(
     ):
         if emit_log is not None:
             emit_log(f"{adapter} directory audit cache hit: {output_path}.")
+        _LATEST_DIRECTORY_AUDIT_SUMMARIES[str(adapter)] = directory_audit_report_summary(
+            existing,
+            adapter=adapter,
+            cache_hit=True,
+            output_path=output_path,
+        )
         return existing, True
 
     artifact = initial_directory_audit_artifact(
@@ -135,4 +203,10 @@ def run_directory_audit(
     artifact["finishedAt"] = datetime.now(UTC).isoformat()
     artifact["updatedAt"] = artifact["finishedAt"]
     audit_ledger.save_artifact_atomic(artifact, output_path)
+    _LATEST_DIRECTORY_AUDIT_SUMMARIES[str(adapter)] = directory_audit_report_summary(
+        artifact,
+        adapter=adapter,
+        cache_hit=False,
+        output_path=output_path,
+    )
     return artifact, False

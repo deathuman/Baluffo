@@ -132,6 +132,7 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
         phase_label="Discovery completed",
     )
     summary["gamedevmapAudit"] = dict(state.gamedevmap_audit_summary)
+    summary["directoryAudits"] = dict(state.directory_audit_summaries)
     task_progress = build_discovery_task_progress(summary=summary, finished=True)
 
     failure_counter: Counter[str] = Counter()
@@ -213,6 +214,7 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
         "suppressionSummary": suppression_summary,
         "sheetDirectorySummary": sheet_directory_summary,
         "gamedevmapAuditSummary": dict(state.gamedevmap_audit_summary),
+        "directoryAuditSummaries": dict(state.directory_audit_summaries),
         "outputs": {
             "report": str(orchestrator._discovery_report_write_path()),
             "candidates": str(source_registry_module.DISCOVERY_CANDIDATES_PATH),

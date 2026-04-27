@@ -148,3 +148,89 @@ def test_directory_audit_rows_normalize_candidates_and_failures() -> None:
     assert len(rows[0]) == 1
     assert len(rows[1]) == 1
     assert rows[2] == [{"stage": "fetch"}]
+
+
+def test_directory_audit_report_summary_normalizes_counts_and_boundaries() -> None:
+    summary = directory_audit.directory_audit_report_summary(
+        {
+            "adapter": "gameprog",
+            "progress": {"complete": True},
+            "summary": {
+                "providerCandidates": "2",
+                "staticCandidates": None,
+                "failures": "bad",
+                "teamsRows": "7",
+                "websiteFetchJobs": 3,
+                "artifactSizeBytes": 0,
+            },
+            "runtime": {"artifactSizeBytes": 456},
+            "timings": {"totalsMs": {"totalMs": "123", "teamsFetchMs": "4", "label": "skip"}},
+            "failureCounts": {"website_fetch": "5", "directory_index_fetch": 1},
+        },
+        adapter="gameprog",
+        cache_hit=True,
+    )
+
+    assert summary["adapter"] == "gameprog"
+    assert summary["cacheHit"] is True
+    assert summary["complete"] is True
+    assert summary["auditDurationMs"] == 123
+    assert summary["providerCandidates"] == 2
+    assert summary["staticCandidates"] == 0
+    assert summary["failures"] == 0
+    assert summary["artifactSizeBytes"] == 456
+    assert summary["timingTotalsMs"]["teamsFetchMs"] == 4
+    assert summary["teamsRows"] == 7
+    assert summary["websiteFetchJobs"] == 3
+    assert summary["topFailureBuckets"] == [
+        {"key": "website_fetch", "count": 5},
+        {"key": "directory_index_fetch", "count": 1},
+    ]
+
+
+def test_directory_audit_tracks_latest_summaries_for_fresh_and_cached_runs() -> None:
+    with workspace_tmpdir("directory-audit-latest-summary") as root:
+        output_path = root / "audit.json"
+        directory_audit.clear_directory_audit_summaries()
+
+        first_artifact, first_cache_hit = directory_audit.run_directory_audit(
+            adapter="test_adapter",
+            schema_version=1,
+            output_path=output_path,
+            ttl_minutes=60,
+            signature={"config": "same"},
+            timeout_s=5,
+            scan=lambda _timeout_s: {
+                "providerCandidates": [],
+                "staticCandidates": [{"adapter": "static", "name": "Studio"}],
+                "failures": [{"stage": "website_fetch", "error": "timeout"}],
+                "summary": {"eligibleRows": 1, "websiteFetchJobs": 1},
+                "batchTiming": {"fetchMs": 3},
+                "progress": {"complete": True, "cursor": 1},
+            },
+        )
+        first_summary = directory_audit.latest_directory_audit_summaries()["test_adapter"]
+
+        second_artifact, second_cache_hit = directory_audit.run_directory_audit(
+            adapter="test_adapter",
+            schema_version=1,
+            output_path=output_path,
+            ttl_minutes=60,
+            signature={"config": "same"},
+            timeout_s=5,
+            scan=lambda *_args: (_ for _ in ()).throw(
+                AssertionError("fresh artifact should bypass scan")
+            ),
+        )
+        second_summary = directory_audit.latest_directory_audit_summaries()["test_adapter"]
+
+        assert first_cache_hit is False
+        assert second_cache_hit is True
+        assert second_artifact == first_artifact
+        assert first_summary["cacheHit"] is False
+        assert second_summary["cacheHit"] is True
+        assert second_summary["staticCandidates"] == 1
+        assert second_summary["websiteFetchJobs"] == 1
+
+        directory_audit.clear_directory_audit_summaries()
+        assert directory_audit.latest_directory_audit_summaries() == {}

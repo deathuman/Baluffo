@@ -127,6 +127,9 @@ def _route_valid_probe_candidate(
 
 def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> None:
     orchestrator = _require_root()
+    from .directory_audit import clear_directory_audit_summaries, latest_directory_audit_summaries
+
+    clear_directory_audit_summaries()
     stage_enabled = {
         "curatedSeed": _discovery_stage_enabled(deps.effective_config, "curatedSeed"),
         "sheetDirectory": _discovery_stage_enabled(deps.effective_config, "sheetDirectory"),
@@ -466,6 +469,8 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
             state.streams.append(("generic_static", static_search_candidates))
         elif deps.include_web_search:
             orchestrator.emit_log("Web-search stage disabled, skipping.")
+
+    state.directory_audit_summaries = latest_directory_audit_summaries()
 
     stage_started = time.perf_counter()
     discovered = orchestrator.merge_candidate_streams(state.streams)
