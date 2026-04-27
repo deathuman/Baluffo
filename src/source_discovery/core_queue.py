@@ -8,6 +8,13 @@ from typing import Any
 from .config import ADAPTER_QUEUE_CAPS, DOMAIN_QUEUE_CAP_DEFAULT
 from .core_identity import queue_family_key
 from .core_thresholds import estimate_probe_priority
+from .prevalidated_queue_policy import (
+    effective_adapter_cap,
+    strip_internal_queue_fields,
+)
+from .prevalidated_queue_policy import (
+    effective_domain_cap as prevalidated_effective_domain_cap,
+)
 
 
 def _sort_candidate_key(row: dict[str, Any]) -> tuple[int, int, int, str]:
@@ -29,35 +36,6 @@ def _queue_balancing_order(candidates: list[dict[str, Any]]) -> list[dict[str, A
     providers.sort(key=_sort_candidate_key, reverse=True)
     static_rows.sort(key=_sort_candidate_key, reverse=True)
     return [*providers, *static_rows]
-
-
-def _positive_int(value: Any) -> int:
-    try:
-        return max(0, int(value or 0))
-    except (TypeError, ValueError):
-        return 0
-
-
-def _row_adapter_cap(
-    row: dict[str, Any],
-    adapter: str,
-    effective_adapter_caps: dict[str, int],
-) -> int:
-    configured = int(effective_adapter_caps.get(adapter, 3) or 3)
-    override = _positive_int(row.get("queueAdapterCapOverride"))
-    return max(configured, override) if override > 0 else configured
-
-
-def _row_domain_cap(row: dict[str, Any], effective_domain_cap: int) -> int:
-    override = _positive_int(row.get("queueDomainCapOverride"))
-    return max(effective_domain_cap, override) if override > 0 else effective_domain_cap
-
-
-def _strip_queue_internal_fields(row: dict[str, Any]) -> dict[str, Any]:
-    normalized = dict(row)
-    normalized.pop("queueAdapterCapOverride", None)
-    normalized.pop("queueDomainCapOverride", None)
-    return normalized
 
 
 def is_google_sheet_candidate(candidate: dict[str, Any]) -> bool:
@@ -144,7 +122,7 @@ def apply_queue_balancing(
     deferred_by_adapter: Counter[str] = Counter()
     healthy_but_deferred_by_adapter: Counter[str] = Counter()
     effective_adapter_caps = adapter_caps if isinstance(adapter_caps, dict) else ADAPTER_QUEUE_CAPS
-    effective_domain_cap = max(0, int(domain_cap or 0))
+    effective_domain_cap_value = max(0, int(domain_cap or 0))
     provider_target = provider_queue_target(top_n)
     provider_rows = [
         row
@@ -171,15 +149,17 @@ def apply_queue_balancing(
                 and len(queued) < provider_target
             ):
                 defer_reason = "provider_reservation"
-            elif not bypass_adapter_cap and adapter_counts[adapter] >= _row_adapter_cap(
+            elif not bypass_adapter_cap and adapter_counts[adapter] >= effective_adapter_cap(
                 row,
                 adapter,
                 effective_adapter_caps,
             ):
                 defer_reason = "adapter_cap"
-            elif family and family_counts[family] >= _row_domain_cap(row, effective_domain_cap):
+            elif family and family_counts[family] >= prevalidated_effective_domain_cap(
+                row, effective_domain_cap_value
+            ):
                 defer_reason = "domain_cap"
-            normalized = _strip_queue_internal_fields(row)
+            normalized = strip_internal_queue_fields(row)
             if defer_reason:
                 normalized["deferred"] = True
                 normalized["deferReason"] = defer_reason

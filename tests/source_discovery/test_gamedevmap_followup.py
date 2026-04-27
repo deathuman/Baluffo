@@ -146,6 +146,21 @@ def test_gamedevmap_validated_static_queue_cap_override_expands_default_static_c
     assert int((report["summary"].get("queuedByAdapter") or {}).get("static") or 0) == 20
     assert int((report["summary"].get("deferredByAdapter") or {}).get("static") or 0) == 0
     assert all("queueAdapterCapOverride" not in row for row in report["candidates"])
+    assert all("queueDomainCapOverride" not in row for row in report["candidates"])
+
+
+def test_gamedevmap_validated_static_promotion_can_be_disabled() -> None:
+    artifact = {"activeCandidates": [_validated_static_candidate(1)]}
+
+    provider_rows, static_rows = dry_run.gamedevmap_validated_candidates_from_artifact(
+        artifact,
+        promote_validated_static=False,
+        validated_static_queue_cap=25,
+        validated_static_domain_cap=8,
+    )
+
+    assert provider_rows == []
+    assert static_rows == []
 
 
 def test_gamedevmap_audit_summary_is_written_to_discovery_report() -> None:

@@ -38,6 +38,7 @@ from .gamedevmap import (
 )
 from .io_runtime import endpoint_url
 from .page_analysis import analyze_fetched_page
+from .prevalidated_queue_policy import apply_prevalidated_queue_overrides
 from .probe import async_probe_candidate, parse_probe_count
 from .reporting import emit_log
 from .static_candidates import build_known_careers_url_candidate
@@ -1056,11 +1057,11 @@ def _validated_static_audit_candidate(
 ) -> dict[str, Any] | None:
     if not promote_validated_static:
         return None
-    if validated_static_queue_cap > 0:
-        row["queueAdapterCapOverride"] = int(validated_static_queue_cap)
-    if validated_static_domain_cap > 0:
-        row["queueDomainCapOverride"] = int(validated_static_domain_cap)
-    return row
+    return apply_prevalidated_queue_overrides(
+        row,
+        adapter_cap=validated_static_queue_cap,
+        domain_cap=validated_static_domain_cap,
+    )
 
 
 def _html_url_candidates(html: str) -> list[str]:
