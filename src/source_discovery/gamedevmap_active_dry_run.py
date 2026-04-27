@@ -15,6 +15,7 @@ from src.source_registry import unique_sources
 
 from . import audit_ledger, audit_report_summary, recovery_url_planner
 from . import browser_recovery as browser_recovery_helpers
+from . import directory_page_recovery as directory_recovery_helpers
 from .config import DEFAULT_DISCOVERY_CONFIG
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .gamedevmap import (
@@ -53,7 +54,7 @@ from .probe_runtime import (
 from .probe_runtime import (
     rendered_static_probe_result,
 )
-from .provider_inference_filters import bad_provider_inference_detail
+from .provider_inference_filters import split_bad_provider_inferences
 from .reporting import emit_log
 from .web_search import (
     extract_jobish_links,
@@ -1182,19 +1183,19 @@ def _recovery_job(
     recovery_source: str,
     wave: int,
 ) -> dict[str, Any]:
-    return {
-        "url": recovery_url,
-        "payload": {
+    return directory_recovery_helpers.build_recovery_fetch_job(
+        recovery_url=recovery_url,
+        payload={
             "row": row,
             "homepageUrl": homepage_url,
             "homepageReasonDetail": reason_detail,
             "recoverySource": recovery_source,
             "recoveryWave": int(wave),
         },
-        "name": f"{str(row.get('studio') or '').strip()} recovery {recovery_url}",
-        "adapter": "gamedevmap",
-        "failureStage": "gamedevmap_recovery_fetch",
-    }
+        name=f"{str(row.get('studio') or '').strip()} recovery {recovery_url}",
+        adapter="gamedevmap",
+        failure_stage="gamedevmap_recovery_fetch",
+    )
 
 
 def _queue_no_careers_recovery(
@@ -1370,63 +1371,8 @@ def _extract_candidates_from_homepages(
     )
 
 
-def _dedupe_recovery_jobs(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_url: dict[str, dict[str, Any]] = {}
-    for job in jobs:
-        if not isinstance(job, dict):
-            continue
-        url = str(job.get("url") or "").strip()
-        if not url:
-            continue
-        payload = _as_dict(job.get("payload"))
-        existing = by_url.get(url)
-        if existing is None:
-            existing = {
-                **dict(job),
-                "payload": {
-                    "requests": [payload],
-                    "dedupeCount": 1,
-                },
-            }
-            by_url[url] = existing
-        else:
-            existing_payload = _as_dict(existing.get("payload"))
-            requests = _as_list(existing_payload.get("requests"))
-            requests.append(payload)
-            existing_payload["requests"] = requests
-            existing_payload["dedupeCount"] = len(requests)
-            existing["payload"] = existing_payload
-    return list(by_url.values())
-
-
 def _requests_from_recovery_result(result: dict[str, Any]) -> list[dict[str, Any]]:
-    payload = _as_dict(result.get("payload"))
-    requests = [item for item in _as_list(payload.get("requests")) if isinstance(item, dict)]
-    return requests or [payload]
-
-
-def _recovery_cache_result(
-    cached: dict[str, Any],
-    job: dict[str, Any],
-) -> dict[str, Any]:
-    result = {
-        "job": job,
-        "payload": job.get("payload"),
-        "url": str(job.get("url") or cached.get("url") or ""),
-        "ok": bool(cached.get("ok")),
-        "text": str(cached.get("text") or ""),
-        "error": str(cached.get("error") or ""),
-    }
-    if bool(result["ok"]):
-        result["failure"] = None
-    else:
-        result["failure"] = {
-            "name": str(job.get("name") or result["url"]),
-            "adapter": str(job.get("adapter") or ""),
-            "error": str(result["error"] or ""),
-            "stage": str(job.get("failureStage") or ""),
-        }
-    return result
+    return directory_recovery_helpers.recovery_requests_from_result(result)
 
 
 def _fetch_recovery_jobs(
@@ -1439,35 +1385,16 @@ def _fetch_recovery_jobs(
     progress_label: str,
     recovery_cache: dict[str, dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], int, int]:
-    deduped_jobs = _dedupe_recovery_jobs(jobs)
-    cached_results: list[dict[str, Any]] = []
-    fetch_jobs: list[dict[str, Any]] = []
-    for job in deduped_jobs:
-        url = str(job.get("url") or "").strip()
-        cached = recovery_cache.get(url)
-        if cached is not None:
-            cached_results.append(_recovery_cache_result(cached, job))
-        else:
-            fetch_jobs.append(job)
-    fetched_results = fetch_directory_pages(
+    return directory_recovery_helpers.fetch_recovery_jobs(
         timeout_s,
-        fetch_jobs,
+        jobs,
         fetcher=fetcher,
         total_concurrency=total_concurrency,
         per_host_concurrency=per_host_concurrency,
         progress_label=progress_label,
+        recovery_cache=recovery_cache,
+        fetch_pages=fetch_directory_pages,
     )
-    for result in fetched_results:
-        url = str(result.get("url") or "").strip()
-        if not url:
-            continue
-        recovery_cache[url] = {
-            "url": url,
-            "ok": bool(result.get("ok")),
-            "text": str(result.get("text") or ""),
-            "error": _error_text(result),
-        }
-    return [*cached_results, *fetched_results], len(deduped_jobs), len(fetch_jobs)
 
 
 def _apply_recovery_payload_to_group(
@@ -1587,21 +1514,18 @@ def _apply_recovery_results(
 def _filter_bad_provider_inferences(
     candidates: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    good: list[dict[str, Any]] = []
-    rejected: list[dict[str, Any]] = []
-    for candidate in candidates:
-        detail = bad_provider_inference_detail(candidate)
-        if detail:
-            rejected.append(
-                _rejection(
-                    reason="bad_provider_inference",
-                    candidate=candidate,
-                    reason_detail=detail,
-                )
+    good, bad = split_bad_provider_inferences(candidates)
+    return (
+        good,
+        [
+            _rejection(
+                reason="bad_provider_inference",
+                candidate=candidate,
+                reason_detail=str(candidate.get("reasonDetail") or ""),
             )
-            continue
-        good.append(candidate)
-    return good, rejected
+            for candidate in bad
+        ],
+    )
 
 
 def _parse_rerun_reasons(value: str | list[str] | tuple[str, ...] | None) -> set[str]:

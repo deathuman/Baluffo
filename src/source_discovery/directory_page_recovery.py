@@ -118,6 +118,140 @@ def plan_recovery_urls(
     )
 
 
+def build_recovery_fetch_job(
+    *,
+    recovery_url: str,
+    payload: dict[str, Any],
+    name: str,
+    adapter: str,
+    failure_stage: str,
+) -> dict[str, Any]:
+    return {
+        "url": recovery_url,
+        "payload": payload,
+        "name": name,
+        "adapter": adapter,
+        "failureStage": failure_stage,
+    }
+
+
+def dedupe_recovery_fetch_jobs(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_url: dict[str, dict[str, Any]] = {}
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        url = str(job.get("url") or "").strip()
+        if not url:
+            continue
+        payload = dict(job.get("payload")) if isinstance(job.get("payload"), dict) else {}
+        existing = by_url.get(url)
+        if existing is None:
+            existing = {
+                **dict(job),
+                "payload": {
+                    "requests": [payload],
+                    "dedupeCount": 1,
+                },
+            }
+            by_url[url] = existing
+        else:
+            existing_payload = (
+                dict(existing.get("payload")) if isinstance(existing.get("payload"), dict) else {}
+            )
+            requests = [
+                item
+                for item in list(existing_payload.get("requests") or [])
+                if isinstance(item, dict)
+            ]
+            requests.append(payload)
+            existing_payload["requests"] = requests
+            existing_payload["dedupeCount"] = len(requests)
+            existing["payload"] = existing_payload
+    return list(by_url.values())
+
+
+def recovery_requests_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
+    payload = dict(result.get("payload")) if isinstance(result.get("payload"), dict) else {}
+    requests = [item for item in list(payload.get("requests") or []) if isinstance(item, dict)]
+    return requests or [payload]
+
+
+def recovery_fetch_error_text(result: dict[str, Any]) -> str:
+    error = str(result.get("error") or "").strip()
+    if error:
+        return error
+    failure = result.get("failure")
+    if isinstance(failure, dict):
+        return str(failure.get("error") or "").strip()
+    return ""
+
+
+def recovery_cache_result(
+    cached: dict[str, Any],
+    job: dict[str, Any],
+) -> dict[str, Any]:
+    result = {
+        "job": job,
+        "payload": job.get("payload"),
+        "url": str(job.get("url") or cached.get("url") or ""),
+        "ok": bool(cached.get("ok")),
+        "text": str(cached.get("text") or ""),
+        "error": str(cached.get("error") or ""),
+    }
+    if bool(result["ok"]):
+        result["failure"] = None
+    else:
+        result["failure"] = {
+            "name": str(job.get("name") or result["url"]),
+            "adapter": str(job.get("adapter") or ""),
+            "error": str(result["error"] or ""),
+            "stage": str(job.get("failureStage") or ""),
+        }
+    return result
+
+
+def fetch_recovery_jobs(
+    timeout_s: int,
+    jobs: list[dict[str, Any]],
+    *,
+    fetcher: Any,
+    total_concurrency: int,
+    per_host_concurrency: int,
+    progress_label: str,
+    recovery_cache: dict[str, dict[str, Any]],
+    fetch_pages: Any = fetch_directory_pages,
+) -> tuple[list[dict[str, Any]], int, int]:
+    deduped_jobs = dedupe_recovery_fetch_jobs(jobs)
+    cached_results: list[dict[str, Any]] = []
+    fetch_jobs: list[dict[str, Any]] = []
+    for job in deduped_jobs:
+        url = str(job.get("url") or "").strip()
+        cached = recovery_cache.get(url)
+        if cached is not None:
+            cached_results.append(recovery_cache_result(cached, job))
+        else:
+            fetch_jobs.append(job)
+    fetched_results = fetch_pages(
+        timeout_s,
+        fetch_jobs,
+        fetcher=fetcher,
+        total_concurrency=total_concurrency,
+        per_host_concurrency=per_host_concurrency,
+        progress_label=progress_label,
+    )
+    for result in fetched_results:
+        url = str(result.get("url") or "").strip()
+        if not url:
+            continue
+        recovery_cache[url] = {
+            "url": url,
+            "ok": bool(result.get("ok")),
+            "text": str(result.get("text") or ""),
+            "error": recovery_fetch_error_text(result),
+        }
+    return [*cached_results, *fetched_results], len(deduped_jobs), len(fetch_jobs)
+
+
 def _dedupe_jobs(
     requests: list[DirectoryRecoveryRequest],
     *,

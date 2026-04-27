@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
+from src.source_discovery.directory_page_recovery import dedupe_recovery_fetch_jobs
 
 from ._helpers import (
     discovery_config_without_generator_stages,
@@ -255,7 +256,7 @@ def test_gamedevmap_recovery_dedupe_fans_out_result_to_requesters() -> None:
             wave=1,
         ),
     ]
-    deduped = dry_run._dedupe_recovery_jobs(jobs)
+    deduped = dedupe_recovery_fetch_jobs(jobs)
     result = {
         "payload": deduped[0]["payload"],
         "url": "https://shared.example.com/jobs",

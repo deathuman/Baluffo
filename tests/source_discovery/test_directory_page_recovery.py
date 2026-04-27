@@ -3,8 +3,12 @@ from __future__ import annotations
 from src.source_discovery.directory_page_recovery import (
     DirectoryRecoveryRequest,
     browser_recovery_candidate,
+    build_recovery_fetch_job,
+    dedupe_recovery_fetch_jobs,
+    fetch_recovery_jobs,
     looks_like_js_shell,
     plan_recovery_urls,
+    recovery_cache_result,
     run_directory_page_recovery,
 )
 from src.source_discovery.provider_inference_filters import split_bad_provider_inferences
@@ -106,6 +110,158 @@ def test_directory_recovery_marks_js_shell_browser_candidate() -> None:
     }
     assert row["reasonDetail"] == "js_shell"
     assert row["url"] == request.page_url
+
+
+def test_recovery_fetch_job_builder_preserves_payload_and_failure_stage() -> None:
+    payload = {"row": {"studio": "Studio"}, "homepageUrl": "https://studio.example"}
+
+    job = build_recovery_fetch_job(
+        recovery_url="https://studio.example/careers",
+        payload=payload,
+        name="Studio recovery",
+        adapter="gamedevmap",
+        failure_stage="gamedevmap_recovery_fetch",
+    )
+
+    assert job == {
+        "url": "https://studio.example/careers",
+        "payload": payload,
+        "name": "Studio recovery",
+        "adapter": "gamedevmap",
+        "failureStage": "gamedevmap_recovery_fetch",
+    }
+
+
+def test_dedupe_recovery_fetch_jobs_fans_out_payloads() -> None:
+    jobs = [
+        build_recovery_fetch_job(
+            recovery_url="https://shared.example/jobs",
+            payload={"row": {"studio": "One"}},
+            name="One recovery",
+            adapter="gamedevmap",
+            failure_stage="gamedevmap_recovery_fetch",
+        ),
+        build_recovery_fetch_job(
+            recovery_url="https://shared.example/jobs",
+            payload={"row": {"studio": "Two"}},
+            name="Two recovery",
+            adapter="gamedevmap",
+            failure_stage="gamedevmap_recovery_fetch",
+        ),
+    ]
+
+    deduped = dedupe_recovery_fetch_jobs(jobs)
+
+    assert len(deduped) == 1
+    assert deduped[0]["url"] == "https://shared.example/jobs"
+    assert deduped[0]["payload"] == {
+        "requests": [{"row": {"studio": "One"}}, {"row": {"studio": "Two"}}],
+        "dedupeCount": 2,
+    }
+
+
+def test_recovery_cache_result_reconstructs_success_and_failure_shape() -> None:
+    job = build_recovery_fetch_job(
+        recovery_url="https://studio.example/jobs",
+        payload={"row": {"studio": "Studio"}},
+        name="Studio recovery",
+        adapter="gamedevmap",
+        failure_stage="gamedevmap_recovery_fetch",
+    )
+
+    assert recovery_cache_result({"ok": True, "text": "<html></html>"}, job) == {
+        "job": job,
+        "payload": job["payload"],
+        "url": "https://studio.example/jobs",
+        "ok": True,
+        "text": "<html></html>",
+        "error": "",
+        "failure": None,
+    }
+    assert recovery_cache_result({"ok": False, "error": "timeout"}, job) == {
+        "job": job,
+        "payload": job["payload"],
+        "url": "https://studio.example/jobs",
+        "ok": False,
+        "text": "",
+        "error": "timeout",
+        "failure": {
+            "name": "Studio recovery",
+            "adapter": "gamedevmap",
+            "error": "timeout",
+            "stage": "gamedevmap_recovery_fetch",
+        },
+    }
+
+
+def test_fetch_recovery_jobs_uses_cache_and_updates_uncached_results() -> None:
+    cached_job = build_recovery_fetch_job(
+        recovery_url="https://cached.example/jobs",
+        payload={"row": {"studio": "Cached"}},
+        name="Cached recovery",
+        adapter="gamedevmap",
+        failure_stage="gamedevmap_recovery_fetch",
+    )
+    uncached_job = build_recovery_fetch_job(
+        recovery_url="https://fresh.example/jobs",
+        payload={"row": {"studio": "Fresh"}},
+        name="Fresh recovery",
+        adapter="gamedevmap",
+        failure_stage="gamedevmap_recovery_fetch",
+    )
+    cache = {
+        "https://cached.example/jobs": {
+            "url": "https://cached.example/jobs",
+            "ok": True,
+            "text": "cached text",
+            "error": "",
+        }
+    }
+    fetched_jobs: list[dict[str, object]] = []
+
+    def fake_fetch_pages(_timeout_s, jobs, **_kwargs):
+        fetched_jobs.extend(jobs)
+        return [
+            {
+                "job": jobs[0],
+                "payload": jobs[0]["payload"],
+                "url": jobs[0]["url"],
+                "ok": False,
+                "text": "",
+                "error": "down",
+                "failure": {
+                    "name": jobs[0]["name"],
+                    "adapter": jobs[0]["adapter"],
+                    "stage": jobs[0]["failureStage"],
+                    "error": "down",
+                },
+            }
+        ]
+
+    results, unique_count, network_count = fetch_recovery_jobs(
+        5,
+        [cached_job, uncached_job],
+        fetcher=lambda *_args: "",
+        total_concurrency=2,
+        per_host_concurrency=1,
+        progress_label="Test recovery",
+        recovery_cache=cache,
+        fetch_pages=fake_fetch_pages,
+    )
+
+    assert unique_count == 2
+    assert network_count == 1
+    assert [job["url"] for job in fetched_jobs] == ["https://fresh.example/jobs"]
+    assert [row["url"] for row in results] == [
+        "https://cached.example/jobs",
+        "https://fresh.example/jobs",
+    ]
+    assert cache["https://fresh.example/jobs"] == {
+        "url": "https://fresh.example/jobs",
+        "ok": False,
+        "text": "",
+        "error": "down",
+    }
 
 
 def test_bad_provider_inference_filter_rejects_generic_hosts_and_slugs() -> None:
