@@ -3,7 +3,6 @@ from __future__ import annotations
 """Resumable GameDevMap active-source dry-run reporting."""
 
 import asyncio
-import time
 from pathlib import Path
 from typing import Any
 
@@ -1502,6 +1501,219 @@ def _apply_probe_results(
     )
 
 
+def _prepare_gamedevmap_active_batch_rows(
+    rows: list[dict[str, Any]],
+    *,
+    index_url: str,
+) -> active_audit_runtime.ActiveAuditPreparedRows:
+    direct_provider_rows: list[dict[str, Any]] = []
+    homepage_rows: list[dict[str, Any]] = []
+    rejected_missing: list[dict[str, Any]] = []
+    for row in rows:
+        studio = str(row.get("studio") or "").strip()
+        target_url = _row_url(row)
+        if not studio or not target_url:
+            rejected_missing.append(
+                _rejection(
+                    reason="missing_studio_or_url",
+                    row=row,
+                    reason_detail="missing_studio_or_url",
+                )
+            )
+            continue
+        inferred = infer_web_candidate(
+            target_url,
+            studio,
+            nl_priority=False,
+            discovery_method="gamedevmap",
+        )
+        if inferred:
+            inferred["careersUrl"] = target_url
+            direct_provider_rows.append(
+                _apply_gamedevmap_provenance(
+                    inferred,
+                    row,
+                    index_url=index_url,
+                    include_direct_url=True,
+                )
+            )
+        else:
+            homepage_rows.append(row)
+    return active_audit_runtime.ActiveAuditPreparedRows(
+        direct_provider_candidates=direct_provider_rows,
+        homepage_rows=homepage_rows,
+        rejected_rows=rejected_missing,
+    )
+
+
+def _fetch_gamedevmap_active_homepages(
+    rows: list[dict[str, Any]],
+    *,
+    timeout_s: int,
+    fetcher,
+    total_concurrency: int,
+    per_host_concurrency: int,
+) -> list[dict[str, Any]]:
+    return fetch_directory_pages(
+        timeout_s,
+        [
+            {
+                "url": _row_url(row),
+                "payload": row,
+                "name": _row_url(row),
+                "adapter": "gamedevmap",
+                "failureStage": "homepage_fetch",
+            }
+            for row in rows
+        ],
+        fetcher=fetcher,
+        total_concurrency=total_concurrency,
+        per_host_concurrency=per_host_concurrency,
+        progress_label="GameDevMap active dry run homepage fetch",
+    )
+
+
+def _analyze_gamedevmap_active_homepages(
+    homepage_fetch_results: list[dict[str, Any]],
+    *,
+    index_url: str,
+) -> active_audit_runtime.ActiveHomepageBatchResult:
+    (
+        provider_rows,
+        static_rows,
+        rejected_rows,
+        primary_recovery_jobs,
+        secondary_recovery_jobs,
+        browser_recovery_rows,
+        homepages_fetched,
+    ) = _extract_candidates_from_homepages(
+        batch_rows=[],
+        homepage_fetch_results=homepage_fetch_results,
+        index_url=index_url,
+    )
+    return active_audit_runtime.ActiveHomepageBatchResult(
+        provider_candidates=provider_rows,
+        static_candidates=static_rows,
+        rejected_rows=rejected_rows,
+        primary_recovery_jobs=primary_recovery_jobs,
+        secondary_recovery_jobs=secondary_recovery_jobs,
+        browser_recovery_candidates=browser_recovery_rows,
+        homepages_fetched=homepages_fetched,
+    )
+
+
+def _fetch_gamedevmap_active_recovery(
+    jobs: list[dict[str, Any]],
+    progress_label: str,
+    *,
+    timeout_s: int,
+    fetcher,
+    total_concurrency: int,
+    per_host_concurrency: int,
+    recovery_cache: dict[str, dict[str, Any]],
+) -> active_audit_runtime.ActiveAuditRecoveryFetchResult:
+    results, unique_jobs, network_jobs = _fetch_recovery_jobs(
+        timeout_s=timeout_s,
+        jobs=jobs,
+        fetcher=fetcher,
+        total_concurrency=total_concurrency,
+        per_host_concurrency=per_host_concurrency,
+        progress_label=progress_label,
+        recovery_cache=recovery_cache,
+    )
+    return active_audit_runtime.ActiveAuditRecoveryFetchResult(
+        results=results,
+        unique_jobs=unique_jobs,
+        network_jobs=network_jobs,
+    )
+
+
+def _apply_gamedevmap_active_recovery(
+    recovery_fetch_results: list[dict[str, Any]],
+    grouped: dict[str, Any] | None,
+    finalize: bool,
+    *,
+    index_url: str,
+) -> active_audit_runtime.ActiveAuditRecoveryApplicationResult:
+    (
+        recovery_provider_rows,
+        recovery_static_rows,
+        recovery_rejected_rows,
+        recovery_failures,
+        recovery_pages_fetched,
+        recovery_groups,
+        recovered_homepages,
+    ) = _apply_recovery_results(
+        recovery_fetch_results=recovery_fetch_results,
+        index_url=index_url,
+        grouped=grouped,
+        finalize=finalize,
+    )
+    return active_audit_runtime.ActiveAuditRecoveryApplicationResult(
+        provider_candidates=recovery_provider_rows,
+        static_candidates=recovery_static_rows,
+        rejected_rows=recovery_rejected_rows,
+        failures=recovery_failures,
+        pages_fetched=recovery_pages_fetched,
+        grouped_state=recovery_groups,
+        recovered_homepages=recovered_homepages,
+    )
+
+
+def _merge_gamedevmap_active_batch_candidates(
+    direct_provider_rows: list[dict[str, Any]],
+    provider_rows: list[dict[str, Any]],
+    static_rows: list[dict[str, Any]],
+    recovery_provider_rows: list[dict[str, Any]],
+    recovery_static_rows: list[dict[str, Any]],
+) -> active_audit_runtime.ActiveAuditCandidateMergeResult:
+    all_candidates = unique_sources(
+        [
+            *direct_provider_rows,
+            *provider_rows,
+            *static_rows,
+            *recovery_provider_rows,
+            *recovery_static_rows,
+        ]
+    )
+    all_candidates, bad_provider_rejections = _filter_bad_provider_inferences(all_candidates)
+    return active_audit_runtime.ActiveAuditCandidateMergeResult(
+        candidates=all_candidates,
+        rejected_rows=bad_provider_rejections,
+    )
+
+
+def _merge_gamedevmap_active_batch_artifact_updates(
+    artifact: dict[str, Any],
+    all_candidates: list[dict[str, Any]],
+    browser_recovery_rows: list[dict[str, Any]],
+    homepage_failures: list[dict[str, Any]],
+    recovery_failures: list[dict[str, Any]],
+    rejected_rows: list[dict[str, Any]],
+) -> None:
+    artifact["allCandidates"] = _merge_unique_rows(artifact.get("allCandidates"), all_candidates)
+    artifact["browserRecoveryCandidates"] = _merge_unique_rows(
+        artifact.get("browserRecoveryCandidates"), browser_recovery_rows
+    )
+    _record_failures(artifact, homepage_failures)
+    _record_failures(artifact, recovery_failures)
+    active_audit_runtime.append_artifact_rows(
+        artifact,
+        "rejectedForActivation",
+        rejected_rows,
+    )
+
+
+def _update_gamedevmap_active_batch_summary(
+    artifact: dict[str, Any],
+    batch_counts: dict[str, Any],
+) -> None:
+    summary = _as_dict(artifact.get("summary"))
+    for key, value in batch_counts.items():
+        summary[key] = _safe_int(summary.get(key)) + int(value or 0)
+    artifact["summary"] = summary
+
+
 def run_gamedevmap_active_source_dry_run(
     *,
     timeout_s: int,
@@ -1637,231 +1849,61 @@ def run_gamedevmap_active_source_dry_run(
             "GameDevMap active-source dry run: "
             f"batch={batches_run + 1}, rows={len(batch_rows)}, cursor={cursor}."
         )
-        batch_started = time.perf_counter()
-        batch_timing: dict[str, Any] = {
-            "batch": _safe_int(progress.get("batchesCompleted")) + 1,
-            "rows": len(batch_rows),
-            "cursor": int(cursor),
-        }
-        direct_provider_rows: list[dict[str, Any]] = []
-        homepage_rows: list[dict[str, Any]] = []
-        rejected_missing: list[dict[str, Any]] = []
-        direct_started = time.perf_counter()
-        for row in batch_rows:
-            studio = str(row.get("studio") or "").strip()
-            target_url = _row_url(row)
-            if not studio or not target_url:
-                rejected_missing.append(
-                    _rejection(
-                        reason="missing_studio_or_url",
-                        row=row,
-                        reason_detail="missing_studio_or_url",
-                    )
-                )
-                continue
-            inferred = infer_web_candidate(
-                target_url,
-                studio,
-                nl_priority=False,
-                discovery_method="gamedevmap",
-            )
-            if inferred:
-                inferred["careersUrl"] = target_url
-                direct_provider_rows.append(
-                    _apply_gamedevmap_provenance(
-                        inferred,
-                        row,
-                        index_url=index_url,
-                        include_direct_url=True,
-                    )
-                )
-            else:
-                homepage_rows.append(row)
-        batch_timing["directInferenceMs"] = _duration_ms(direct_started)
 
-        homepage_fetch_started = time.perf_counter()
-        homepage_fetch_results = fetch_directory_pages(
-            timeout_s,
-            [
-                {
-                    "url": _row_url(row),
-                    "payload": row,
-                    "name": _row_url(row),
-                    "adapter": "gamedevmap",
-                    "failureStage": "homepage_fetch",
-                }
-                for row in homepage_rows
-            ],
-            fetcher=fetcher,
-            total_concurrency=homepage_fetch_concurrency,
-            per_host_concurrency=per_host_concurrency,
-            progress_label="GameDevMap active dry run homepage fetch",
+        active_audit_runtime.run_active_audit_batch(
+            artifact=artifact,
+            batch_rows=batch_rows,
+            cursor=cursor,
+            batch_number=_safe_int(progress.get("batchesCompleted")) + 1,
+            prepare_rows=lambda rows: _prepare_gamedevmap_active_batch_rows(
+                rows,
+                index_url=index_url,
+            ),
+            fetch_homepages=lambda rows: _fetch_gamedevmap_active_homepages(
+                rows,
+                timeout_s=timeout_s,
+                fetcher=fetcher,
+                total_concurrency=homepage_fetch_concurrency,
+                per_host_concurrency=per_host_concurrency,
+            ),
+            analyze_homepages=lambda results: _analyze_gamedevmap_active_homepages(
+                results,
+                index_url=index_url,
+            ),
+            fetch_recovery=lambda jobs, label: _fetch_gamedevmap_active_recovery(
+                jobs,
+                label,
+                timeout_s=recovery_timeout_s,
+                fetcher=fetcher,
+                total_concurrency=recovery_fetch_concurrency,
+                per_host_concurrency=recovery_per_host_concurrency,
+                recovery_cache=recovery_cache,
+            ),
+            apply_recovery=lambda results, grouped, finalize: _apply_gamedevmap_active_recovery(
+                results,
+                grouped,
+                finalize,
+                index_url=index_url,
+            ),
+            recovery_homepage_key=lambda job: str(
+                _as_dict(job.get("payload")).get("homepageUrl") or ""
+            ).strip(),
+            merge_candidates=_merge_gamedevmap_active_batch_candidates,
+            merge_artifact_updates=lambda *args: _merge_gamedevmap_active_batch_artifact_updates(
+                artifact, *args
+            ),
+            update_summary=lambda batch_counts: _update_gamedevmap_active_batch_summary(
+                artifact, batch_counts
+            ),
+            probe_candidates=lambda all_candidates: asyncio.run(
+                _probe_candidates_async(all_candidates, timeout_s=timeout_s, fetcher=fetcher)
+            ),
+            apply_probe_results=lambda probe_results: _apply_probe_results(artifact, probe_results),
+            row_identity=_row_url,
+            completed_identities=completed_urls,
+            append_timing=lambda batch_timing: _append_batch_timing(artifact, batch_timing),
         )
-        batch_timing["homepageFetchMs"] = _duration_ms(homepage_fetch_started)
-        homepage_analysis_started = time.perf_counter()
-        (
-            provider_rows,
-            static_rows,
-            rejected_rows,
-            primary_recovery_jobs,
-            secondary_recovery_jobs,
-            browser_recovery_rows,
-            homepages_fetched,
-        ) = _extract_candidates_from_homepages(
-            batch_rows=[],
-            homepage_fetch_results=homepage_fetch_results,
-            index_url=index_url,
-        )
-        batch_timing["homepageAnalysisMs"] = _duration_ms(homepage_analysis_started)
-
-        recovery_wave1_fetch_started = time.perf_counter()
-        recovery_wave1_results, wave1_unique_jobs, wave1_network_jobs = _fetch_recovery_jobs(
-            timeout_s=recovery_timeout_s,
-            jobs=primary_recovery_jobs,
-            fetcher=fetcher,
-            total_concurrency=recovery_fetch_concurrency,
-            per_host_concurrency=recovery_per_host_concurrency,
-            progress_label="GameDevMap active dry run careers recovery fetch wave 1",
-            recovery_cache=recovery_cache,
-        )
-        batch_timing["recoveryWave1FetchMs"] = _duration_ms(recovery_wave1_fetch_started)
-        recovery_wave1_analysis_started = time.perf_counter()
-        (
-            recovery_provider_rows_1,
-            recovery_static_rows_1,
-            _recovery_rejected_rows_1,
-            recovery_failures_1,
-            recovery_pages_fetched_1,
-            recovery_groups,
-            recovered_homepages_1,
-        ) = _apply_recovery_results(
-            recovery_fetch_results=recovery_wave1_results,
-            index_url=index_url,
-            finalize=False,
-        )
-        batch_timing["recoveryWave1AnalysisMs"] = _duration_ms(recovery_wave1_analysis_started)
-
-        secondary_jobs_to_fetch = [
-            job
-            for job in secondary_recovery_jobs
-            if str(_as_dict(job.get("payload")).get("homepageUrl") or "").strip()
-            not in recovered_homepages_1
-        ]
-        recovery_wave2_fetch_started = time.perf_counter()
-        recovery_wave2_results, wave2_unique_jobs, wave2_network_jobs = _fetch_recovery_jobs(
-            timeout_s=recovery_timeout_s,
-            jobs=secondary_jobs_to_fetch,
-            fetcher=fetcher,
-            total_concurrency=recovery_fetch_concurrency,
-            per_host_concurrency=recovery_per_host_concurrency,
-            progress_label="GameDevMap active dry run careers recovery fetch wave 2",
-            recovery_cache=recovery_cache,
-        )
-        batch_timing["recoveryWave2FetchMs"] = _duration_ms(recovery_wave2_fetch_started)
-        recovery_wave2_analysis_started = time.perf_counter()
-        (
-            recovery_provider_rows_2,
-            recovery_static_rows_2,
-            recovery_rejected_rows,
-            recovery_failures_2,
-            recovery_pages_fetched_2,
-            _recovery_groups,
-            recovered_homepages_2,
-        ) = _apply_recovery_results(
-            recovery_fetch_results=recovery_wave2_results,
-            index_url=index_url,
-            grouped=recovery_groups,
-            finalize=True,
-        )
-        batch_timing["recoveryWave2AnalysisMs"] = _duration_ms(recovery_wave2_analysis_started)
-        recovery_provider_rows = [*recovery_provider_rows_1, *recovery_provider_rows_2]
-        recovery_static_rows = [*recovery_static_rows_1, *recovery_static_rows_2]
-        recovery_failures = [*recovery_failures_1, *recovery_failures_2]
-        recovery_pages_fetched = recovery_pages_fetched_1 + recovery_pages_fetched_2
-        recovery_jobs = [*primary_recovery_jobs, *secondary_jobs_to_fetch]
-        batch_timing["primaryRecoveryJobs"] = len(primary_recovery_jobs)
-        batch_timing["secondaryRecoveryJobs"] = len(secondary_jobs_to_fetch)
-        batch_timing["recoveryUniqueJobs"] = wave1_unique_jobs + wave2_unique_jobs
-        batch_timing["recoveryNetworkJobs"] = wave1_network_jobs + wave2_network_jobs
-        batch_timing["recoverySkippedByWave1"] = len(secondary_recovery_jobs) - len(
-            secondary_jobs_to_fetch
-        )
-        batch_timing["recoveryRecoveredHomepages"] = len(
-            recovered_homepages_1 | recovered_homepages_2
-        )
-        merge_started = time.perf_counter()
-        all_candidates = unique_sources(
-            [
-                *direct_provider_rows,
-                *provider_rows,
-                *static_rows,
-                *recovery_provider_rows,
-                *recovery_static_rows,
-            ]
-        )
-        all_candidates, bad_provider_rejections = _filter_bad_provider_inferences(all_candidates)
-        artifact["allCandidates"] = _merge_unique_rows(
-            artifact.get("allCandidates"), all_candidates
-        )
-        artifact["browserRecoveryCandidates"] = _merge_unique_rows(
-            artifact.get("browserRecoveryCandidates"), browser_recovery_rows
-        )
-        _record_failures(
-            artifact,
-            [
-                dict(result.get("failure"))
-                for result in homepage_fetch_results
-                if isinstance(result.get("failure"), dict)
-            ],
-        )
-        _record_failures(artifact, recovery_failures)
-        active_audit_runtime.append_artifact_rows(
-            artifact,
-            "rejectedForActivation",
-            [
-                *rejected_missing,
-                *rejected_rows,
-                *recovery_rejected_rows,
-                *bad_provider_rejections,
-            ],
-        )
-        summary = _as_dict(artifact.get("summary"))
-        summary["homepageFetchAttempts"] = _safe_int(summary.get("homepageFetchAttempts")) + len(
-            homepage_rows
-        )
-        summary["homepagesFetched"] = _safe_int(summary.get("homepagesFetched")) + int(
-            homepages_fetched
-        )
-        summary["recoveryFetchAttempts"] = _safe_int(summary.get("recoveryFetchAttempts")) + len(
-            recovery_jobs
-        )
-        summary["recoveryUniqueFetchAttempts"] = _safe_int(
-            summary.get("recoveryUniqueFetchAttempts")
-        ) + int(wave1_unique_jobs + wave2_unique_jobs)
-        summary["recoveryNetworkFetchAttempts"] = _safe_int(
-            summary.get("recoveryNetworkFetchAttempts")
-        ) + int(wave1_network_jobs + wave2_network_jobs)
-        summary["recoveryPagesFetched"] = _safe_int(summary.get("recoveryPagesFetched")) + int(
-            recovery_pages_fetched
-        )
-        artifact["summary"] = summary
-        batch_timing["mergeMs"] = _duration_ms(merge_started)
-
-        probe_started = time.perf_counter()
-        probe_results = asyncio.run(
-            _probe_candidates_async(all_candidates, timeout_s=timeout_s, fetcher=fetcher)
-        )
-        _apply_probe_results(artifact, probe_results)
-        batch_timing["probeMs"] = _duration_ms(probe_started)
-
-        completed_urls.update(_row_url(row) for row in batch_rows if _row_url(row))
-        progress = _as_dict(artifact.get("progress"))
-        progress["batchesCompleted"] = _safe_int(progress.get("batchesCompleted")) + 1
-        artifact["progress"] = progress
         batches_run += 1
-        batch_timing["totalMs"] = _duration_ms(batch_started)
-        batch_timing["artifactWriteMs"] = 0
-        _append_batch_timing(artifact, batch_timing)
         apply_gamedevmap_lost_recovery_audit(
             artifact,
             compare_artifact_path=compare_artifact_path,

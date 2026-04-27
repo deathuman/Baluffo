@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Shared runtime mechanics for active-source audit batches."""
 
+import time
 from collections import Counter
 from collections.abc import Callable
 from contextlib import suppress
@@ -64,6 +65,45 @@ class ActiveAuditArtifactCounts:
     lost_recovered_active_count: int
 
 
+@dataclass
+class ActiveAuditPreparedRows:
+    direct_provider_candidates: list[dict[str, Any]] = field(default_factory=list)
+    homepage_rows: list[dict[str, Any]] = field(default_factory=list)
+    rejected_rows: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class ActiveAuditRecoveryFetchResult:
+    results: list[dict[str, Any]] = field(default_factory=list)
+    unique_jobs: int = 0
+    network_jobs: int = 0
+
+
+@dataclass
+class ActiveAuditRecoveryApplicationResult:
+    provider_candidates: list[dict[str, Any]] = field(default_factory=list)
+    static_candidates: list[dict[str, Any]] = field(default_factory=list)
+    rejected_rows: list[dict[str, Any]] = field(default_factory=list)
+    failures: list[dict[str, Any]] = field(default_factory=list)
+    pages_fetched: int = 0
+    grouped_state: dict[str, Any] = field(default_factory=dict)
+    recovered_homepages: set[str] = field(default_factory=set)
+
+
+@dataclass
+class ActiveAuditCandidateMergeResult:
+    candidates: list[dict[str, Any]] = field(default_factory=list)
+    rejected_rows: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class ActiveAuditBatchResult:
+    timing: dict[str, Any]
+    candidates: list[dict[str, Any]]
+    recovery_jobs: list[dict[str, Any]]
+    recovered_homepages: set[str]
+
+
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
@@ -85,6 +125,10 @@ def _safe_int(value: Any) -> int:
 
 def _dict_rows(value: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in _as_list(value) if isinstance(row, dict)]
+
+
+def _duration_ms(started: float) -> int:
+    return max(0, int((time.perf_counter() - started) * 1000))
 
 
 def create_active_audit_artifact(
@@ -556,3 +600,174 @@ def run_active_homepage_batch(
         result.rejected_rows.extend(no_candidate.rejected_rows)
 
     return result
+
+
+def run_active_audit_batch(
+    *,
+    artifact: dict[str, Any],
+    batch_rows: list[dict[str, Any]],
+    cursor: int,
+    batch_number: int,
+    prepare_rows: Callable[[list[dict[str, Any]]], ActiveAuditPreparedRows],
+    fetch_homepages: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],
+    analyze_homepages: Callable[[list[dict[str, Any]]], ActiveHomepageBatchResult],
+    fetch_recovery: Callable[[list[dict[str, Any]], str], ActiveAuditRecoveryFetchResult],
+    apply_recovery: Callable[
+        [list[dict[str, Any]], dict[str, Any] | None, bool],
+        ActiveAuditRecoveryApplicationResult,
+    ],
+    recovery_homepage_key: Callable[[dict[str, Any]], str],
+    merge_candidates: Callable[
+        [
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+        ],
+        ActiveAuditCandidateMergeResult,
+    ],
+    merge_artifact_updates: Callable[
+        [
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+        ],
+        None,
+    ],
+    update_summary: Callable[[dict[str, Any]], None],
+    probe_candidates: Callable[[list[dict[str, Any]]], Any],
+    apply_probe_results: Callable[[Any], None],
+    row_identity: Callable[[dict[str, Any]], str],
+    completed_identities: set[str],
+    append_timing: Callable[[dict[str, Any]], None],
+) -> ActiveAuditBatchResult:
+    batch_started = time.perf_counter()
+    batch_timing: dict[str, Any] = {
+        "batch": int(batch_number),
+        "rows": len(batch_rows),
+        "cursor": int(cursor),
+    }
+
+    direct_started = time.perf_counter()
+    prepared = prepare_rows(batch_rows)
+    batch_timing["directInferenceMs"] = _duration_ms(direct_started)
+
+    homepage_fetch_started = time.perf_counter()
+    homepage_fetch_results = fetch_homepages(prepared.homepage_rows)
+    batch_timing["homepageFetchMs"] = _duration_ms(homepage_fetch_started)
+
+    homepage_analysis_started = time.perf_counter()
+    homepage_result = analyze_homepages(homepage_fetch_results)
+    batch_timing["homepageAnalysisMs"] = _duration_ms(homepage_analysis_started)
+
+    recovery_wave1_fetch_started = time.perf_counter()
+    wave1_fetch = fetch_recovery(
+        homepage_result.primary_recovery_jobs,
+        "GameDevMap active dry run careers recovery fetch wave 1",
+    )
+    batch_timing["recoveryWave1FetchMs"] = _duration_ms(recovery_wave1_fetch_started)
+
+    recovery_wave1_analysis_started = time.perf_counter()
+    wave1_apply = apply_recovery(wave1_fetch.results, None, False)
+    batch_timing["recoveryWave1AnalysisMs"] = _duration_ms(recovery_wave1_analysis_started)
+
+    secondary_jobs_to_fetch = [
+        job
+        for job in homepage_result.secondary_recovery_jobs
+        if recovery_homepage_key(job) not in wave1_apply.recovered_homepages
+    ]
+
+    recovery_wave2_fetch_started = time.perf_counter()
+    wave2_fetch = fetch_recovery(
+        secondary_jobs_to_fetch,
+        "GameDevMap active dry run careers recovery fetch wave 2",
+    )
+    batch_timing["recoveryWave2FetchMs"] = _duration_ms(recovery_wave2_fetch_started)
+
+    recovery_wave2_analysis_started = time.perf_counter()
+    wave2_apply = apply_recovery(wave2_fetch.results, wave1_apply.grouped_state, True)
+    batch_timing["recoveryWave2AnalysisMs"] = _duration_ms(recovery_wave2_analysis_started)
+
+    recovery_provider_rows = [
+        *wave1_apply.provider_candidates,
+        *wave2_apply.provider_candidates,
+    ]
+    recovery_static_rows = [
+        *wave1_apply.static_candidates,
+        *wave2_apply.static_candidates,
+    ]
+    recovery_failures = [*wave1_apply.failures, *wave2_apply.failures]
+    recovery_pages_fetched = wave1_apply.pages_fetched + wave2_apply.pages_fetched
+    recovery_jobs = [*homepage_result.primary_recovery_jobs, *secondary_jobs_to_fetch]
+    recovered_homepages = wave1_apply.recovered_homepages | wave2_apply.recovered_homepages
+
+    batch_timing["primaryRecoveryJobs"] = len(homepage_result.primary_recovery_jobs)
+    batch_timing["secondaryRecoveryJobs"] = len(secondary_jobs_to_fetch)
+    batch_timing["recoveryUniqueJobs"] = wave1_fetch.unique_jobs + wave2_fetch.unique_jobs
+    batch_timing["recoveryNetworkJobs"] = wave1_fetch.network_jobs + wave2_fetch.network_jobs
+    batch_timing["recoverySkippedByWave1"] = len(homepage_result.secondary_recovery_jobs) - len(
+        secondary_jobs_to_fetch
+    )
+    batch_timing["recoveryRecoveredHomepages"] = len(recovered_homepages)
+
+    merge_started = time.perf_counter()
+    merged = merge_candidates(
+        prepared.direct_provider_candidates,
+        homepage_result.provider_candidates,
+        homepage_result.static_candidates,
+        recovery_provider_rows,
+        recovery_static_rows,
+    )
+    homepage_failures = [
+        dict(result.get("failure"))
+        for result in homepage_fetch_results
+        if isinstance(result.get("failure"), dict)
+    ]
+    merge_artifact_updates(
+        merged.candidates,
+        homepage_result.browser_recovery_candidates,
+        homepage_failures,
+        recovery_failures,
+        [
+            *prepared.rejected_rows,
+            *homepage_result.rejected_rows,
+            *wave2_apply.rejected_rows,
+            *merged.rejected_rows,
+        ],
+    )
+    update_summary(
+        {
+            "homepageFetchAttempts": len(prepared.homepage_rows),
+            "homepagesFetched": int(homepage_result.homepages_fetched),
+            "recoveryFetchAttempts": len(recovery_jobs),
+            "recoveryUniqueFetchAttempts": int(wave1_fetch.unique_jobs + wave2_fetch.unique_jobs),
+            "recoveryNetworkFetchAttempts": int(
+                wave1_fetch.network_jobs + wave2_fetch.network_jobs
+            ),
+            "recoveryPagesFetched": int(recovery_pages_fetched),
+        }
+    )
+    batch_timing["mergeMs"] = _duration_ms(merge_started)
+
+    probe_started = time.perf_counter()
+    probe_results = probe_candidates(merged.candidates)
+    apply_probe_results(probe_results)
+    batch_timing["probeMs"] = _duration_ms(probe_started)
+
+    completed_identities.update(row_identity(row) for row in batch_rows if row_identity(row))
+    progress = _as_dict(artifact.get("progress"))
+    progress["batchesCompleted"] = _safe_int(progress.get("batchesCompleted")) + 1
+    artifact["progress"] = progress
+    batch_timing["totalMs"] = _duration_ms(batch_started)
+    batch_timing["artifactWriteMs"] = 0
+    append_timing(batch_timing)
+
+    return ActiveAuditBatchResult(
+        timing=batch_timing,
+        candidates=merged.candidates,
+        recovery_jobs=recovery_jobs,
+        recovered_homepages=recovered_homepages,
+    )
