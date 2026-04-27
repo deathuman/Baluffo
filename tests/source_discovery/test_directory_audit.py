@@ -133,6 +133,98 @@ def test_directory_audit_writes_counts_timings_failures_and_size() -> None:
         assert output_path.exists()
 
 
+def test_directory_audit_spec_preserves_fresh_cache_reuse_and_report_summary() -> None:
+    with workspace_tmpdir("directory-audit-spec-reuse") as root:
+        output_path = root / "audit.json"
+        artifact = directory_audit.initial_directory_audit_artifact(
+            adapter="spec_adapter",
+            schema_version=1,
+            timeout_s=5,
+            signature={"config": "same"},
+            runtime={"mode": "spec"},
+            summary={"eligibleRows": 2},
+        )
+        artifact["progress"] = {"complete": True}
+        artifact["updatedAt"] = datetime.now(UTC).isoformat()
+        artifact["providerCandidates"] = [{"adapter": "greenhouse", "slug": "studio"}]
+        output_path.write_text(json.dumps(artifact), encoding="utf-8")
+        directory_audit.clear_directory_audit_summaries()
+
+        loaded, cache_hit = directory_audit.run_directory_audit_spec(
+            directory_audit.DirectoryAuditRunSpec(
+                adapter="spec_adapter",
+                schema_version=1,
+                output_path=output_path,
+                ttl_minutes=60,
+                signature={"config": "same"},
+                timeout_s=5,
+                scan=lambda *_args: (_ for _ in ()).throw(
+                    AssertionError("fresh artifact should bypass scan")
+                ),
+                runtime={"mode": "ignored"},
+                summary={"eligibleRows": 0},
+            )
+        )
+
+        summaries = directory_audit.latest_directory_audit_summaries()
+        assert cache_hit is True
+        assert loaded["providerCandidates"] == [{"adapter": "greenhouse", "slug": "studio"}]
+        assert summaries["spec_adapter"]["cacheHit"] is True
+        assert summaries["spec_adapter"]["adapter"] == "spec_adapter"
+
+
+def test_directory_audit_spec_preserves_scan_write_runtime_summary_and_failures() -> None:
+    with workspace_tmpdir("directory-audit-spec-write") as root:
+        output_path = root / "audit.json"
+        failures = [
+            {"stage": "website_fetch", "error": "timeout", "name": "a"},
+            {"stage": "index_fetch", "error": "boom", "name": "b"},
+        ]
+        directory_audit.clear_directory_audit_summaries()
+
+        artifact, cache_hit = directory_audit.run_directory_audit_spec(
+            directory_audit.DirectoryAuditRunSpec(
+                adapter="spec_adapter",
+                schema_version=1,
+                output_path=output_path,
+                ttl_minutes=60,
+                signature={"config": "same"},
+                timeout_s=5,
+                scan=lambda _timeout_s: {
+                    "providerCandidates": [{"adapter": "greenhouse", "slug": "studio"}],
+                    "staticCandidates": [{"adapter": "static", "name": "Studio"}],
+                    "browserRecoveryCandidates": [{"url": "https://studio.example"}],
+                    "failures": failures,
+                    "summary": {"eligibleRows": 2, "customMetric": 7},
+                    "batchTiming": {"fetchMs": 3},
+                    "progress": {"complete": True, "cursor": 2},
+                },
+                runtime={"mode": "spec"},
+                summary={"eligibleRows": 0, "customMetric": 0},
+                sample_limit=1,
+            )
+        )
+
+        summaries = directory_audit.latest_directory_audit_summaries()
+        assert cache_hit is False
+        assert artifact["runtime"]["mode"] == "spec"
+        assert artifact["summary"]["eligibleRows"] == 2
+        assert artifact["summary"]["customMetric"] == 7
+        assert artifact["summary"]["providerCandidates"] == 1
+        assert artifact["summary"]["staticCandidates"] == 1
+        assert artifact["summary"]["failures"] == 2
+        assert artifact["failureCounts"] == {"website_fetch": 1, "index_fetch": 1}
+        assert artifact["failureSamples"] == [
+            {"stage": "website_fetch", "error": "timeout", "name": "a"}
+        ]
+        assert artifact["browserRecoveryCandidates"] == [{"url": "https://studio.example"}]
+        assert artifact["timings"]["totalsMs"]["fetchMs"] == 3
+        assert artifact["progress"]["cursor"] == 2
+        assert output_path.exists()
+        assert summaries["spec_adapter"]["cacheHit"] is False
+        assert summaries["spec_adapter"]["customMetric"] == 7
+
+
 def test_directory_audit_rows_normalize_candidates_and_failures() -> None:
     rows = directory_audit.directory_audit_rows(
         {

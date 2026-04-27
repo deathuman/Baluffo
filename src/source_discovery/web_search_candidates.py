@@ -25,7 +25,11 @@ from .config import (
     MAX_SEARCH_LINKS_PER_QUERY,
     WEB_SEARCH_QUERY_SUFFIX,
 )
-from .directory_audit import discover_directory_scan_candidates, run_directory_audit
+from .directory_audit import (
+    DirectoryAuditRunSpec,
+    discover_directory_scan_candidates,
+    run_directory_audit_spec,
+)
 from .directory_fetch_jobs import build_directory_fetch_job
 from .directory_page_recovery import (
     DEFAULT_RECOVERY_URL_LIMIT,
@@ -1314,38 +1318,40 @@ def run_web_search_directory_audit(
             },
         }
 
-    return run_directory_audit(
-        adapter="web_search",
-        schema_version=WEB_SEARCH_AUDIT_SCHEMA_VERSION,
-        output_path=_web_search_audit_path(config),
-        ttl_minutes=_web_search_audit_ttl_minutes(config),
-        signature=_web_search_audit_signature(
-            studio_seeds=studio_seeds,
-            include_seed_careers=include_seed_careers,
-            include_web_search=include_web_search,
-            max_queries=configured_max_queries,
-            max_links_per_query=max_links_per_query,
-            recovery_enabled=recovery_enabled,
-            recovery_url_limit=recovery_url_limit,
-        ),
-        timeout_s=timeout_s,
-        scan=_scan,
-        runtime={
-            "includeSeedCareers": bool(include_seed_careers),
-            "includeWebSearch": bool(include_web_search),
-            "maxQueries": configured_max_queries,
-            "maxLinksPerQuery": max_links_per_query,
-            "activeAuditRecoveryEnabled": recovery_enabled,
-        },
-        summary={
-            "seedCareersEnabled": bool(include_seed_careers),
-            "webSearchEnabled": bool(include_web_search),
-            "seedRows": len(studio_seeds),
-            "maxQueries": configured_max_queries,
-            "maxLinksPerQuery": max_links_per_query,
-        },
-        sample_limit=WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT,
-        emit_log=emit_log,
+    return run_directory_audit_spec(
+        DirectoryAuditRunSpec(
+            adapter="web_search",
+            schema_version=WEB_SEARCH_AUDIT_SCHEMA_VERSION,
+            output_path=_web_search_audit_path(config),
+            ttl_minutes=_web_search_audit_ttl_minutes(config),
+            signature=_web_search_audit_signature(
+                studio_seeds=studio_seeds,
+                include_seed_careers=include_seed_careers,
+                include_web_search=include_web_search,
+                max_queries=configured_max_queries,
+                max_links_per_query=max_links_per_query,
+                recovery_enabled=recovery_enabled,
+                recovery_url_limit=recovery_url_limit,
+            ),
+            timeout_s=timeout_s,
+            scan=_scan,
+            runtime={
+                "includeSeedCareers": bool(include_seed_careers),
+                "includeWebSearch": bool(include_web_search),
+                "maxQueries": configured_max_queries,
+                "maxLinksPerQuery": max_links_per_query,
+                "activeAuditRecoveryEnabled": recovery_enabled,
+            },
+            summary={
+                "seedCareersEnabled": bool(include_seed_careers),
+                "webSearchEnabled": bool(include_web_search),
+                "seedRows": len(studio_seeds),
+                "maxQueries": configured_max_queries,
+                "maxLinksPerQuery": max_links_per_query,
+            },
+            sample_limit=WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT,
+            emit_log=emit_log,
+        )
     )
 
 

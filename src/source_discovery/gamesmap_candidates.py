@@ -17,7 +17,11 @@ from .directory_adapter_templates import (
     empty_directory_scan_result,
     run_directory_entry_selection_scan,
 )
-from .directory_audit import discover_directory_adapter_candidates, run_directory_audit
+from .directory_audit import (
+    DirectoryAuditRunSpec,
+    discover_directory_adapter_candidates,
+    run_directory_audit_spec,
+)
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .directory_page_recovery import (
     DEFAULT_RECOVERY_URL_LIMIT,
@@ -694,46 +698,48 @@ def run_gamesmap_directory_audit(
     fetch_limits = _root_attr("resolve_directory_fetch_limits", resolve_directory_fetch_limits)
     fetch_concurrency, per_host_concurrency = fetch_limits(cfg)
     recovery_url_limit = resolve_recovery_url_limit(cfg)
-    return run_directory_audit(
-        adapter="gamesmap",
-        schema_version=GAMESMAP_AUDIT_SCHEMA_VERSION,
-        output_path=_gamesmap_audit_path(cfg),
-        ttl_minutes=_gamesmap_audit_ttl_minutes(config, cfg),
-        signature=gamesmap_cache_signature(cfg),
-        timeout_s=timeout_s,
-        scan=lambda scan_timeout_s: _gamesmap_scan(
-            scan_timeout_s,
-            cfg=cfg,
-            fetcher=fetcher,
+    return run_directory_audit_spec(
+        DirectoryAuditRunSpec(
+            adapter="gamesmap",
+            schema_version=GAMESMAP_AUDIT_SCHEMA_VERSION,
+            output_path=_gamesmap_audit_path(cfg),
+            ttl_minutes=_gamesmap_audit_ttl_minutes(config, cfg),
+            signature=gamesmap_cache_signature(cfg),
+            timeout_s=timeout_s,
+            scan=lambda scan_timeout_s: _gamesmap_scan(
+                scan_timeout_s,
+                cfg=cfg,
+                fetcher=fetcher,
+                emit_log=emit_log,
+                enable_recovery=bool(cfg.get("activeAuditRecoveryEnabled", True)),
+                recovery_url_limit=recovery_url_limit,
+            ),
+            runtime={
+                "fetchConcurrency": fetch_concurrency,
+                "perHostConcurrency": per_host_concurrency,
+                "indexUrls": [
+                    str(item).strip() for item in (cfg.get("indexUrls") or []) if str(item).strip()
+                ],
+            },
+            summary={
+                "indexUrls": 0,
+                "parsedRows": 0,
+                "rowsWithWebsite": 0,
+                "eligibleRows": 0,
+                "websiteFetchJobs": 0,
+                "websiteFetchFailures": 0,
+                "unresolvedCategoryRefs": 0,
+                "recoveryFetchAttempts": 0,
+                "recoveryPagesFetched": 0,
+                "recoveredProviderCandidates": 0,
+                "recoveredStaticCandidates": 0,
+                "recoveryFailures": 0,
+                "browserRecoveryCandidates": 0,
+                "badProviderInferences": 0,
+            },
+            sample_limit=GAMESMAP_AUDIT_FAILURE_SAMPLE_LIMIT,
             emit_log=emit_log,
-            enable_recovery=bool(cfg.get("activeAuditRecoveryEnabled", True)),
-            recovery_url_limit=recovery_url_limit,
-        ),
-        runtime={
-            "fetchConcurrency": fetch_concurrency,
-            "perHostConcurrency": per_host_concurrency,
-            "indexUrls": [
-                str(item).strip() for item in (cfg.get("indexUrls") or []) if str(item).strip()
-            ],
-        },
-        summary={
-            "indexUrls": 0,
-            "parsedRows": 0,
-            "rowsWithWebsite": 0,
-            "eligibleRows": 0,
-            "websiteFetchJobs": 0,
-            "websiteFetchFailures": 0,
-            "unresolvedCategoryRefs": 0,
-            "recoveryFetchAttempts": 0,
-            "recoveryPagesFetched": 0,
-            "recoveredProviderCandidates": 0,
-            "recoveredStaticCandidates": 0,
-            "recoveryFailures": 0,
-            "browserRecoveryCandidates": 0,
-            "badProviderInferences": 0,
-        },
-        sample_limit=GAMESMAP_AUDIT_FAILURE_SAMPLE_LIMIT,
-        emit_log=emit_log,
+        )
     )
 
 

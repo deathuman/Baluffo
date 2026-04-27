@@ -23,7 +23,11 @@ from .directory_adapter_templates import (
     empty_directory_scan_result,
     run_directory_entry_selection_scan,
 )
-from .directory_audit import discover_directory_adapter_candidates, run_directory_audit
+from .directory_audit import (
+    DirectoryAuditRunSpec,
+    discover_directory_adapter_candidates,
+    run_directory_audit_spec,
+)
 from .directory_cache import load_directory_cache, write_directory_cache
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .directory_page_recovery import (
@@ -585,42 +589,44 @@ def run_gameprog_directory_audit(
     cfg = _gameprog_config_section(config)
     fetch_concurrency, per_host_concurrency = resolve_directory_fetch_limits(cfg)
     recovery_url_limit = resolve_recovery_url_limit(cfg)
-    return run_directory_audit(
-        adapter="gameprog",
-        schema_version=GAMEPROG_AUDIT_SCHEMA_VERSION,
-        output_path=_gameprog_audit_path(config),
-        ttl_minutes=_gameprog_audit_ttl_minutes(config),
-        signature=_gameprog_cache_signature(cfg),
-        timeout_s=timeout_s,
-        scan=lambda scan_timeout_s: _gameprog_scan(
-            scan_timeout_s,
-            cfg=cfg,
-            fetcher=fetcher,
+    return run_directory_audit_spec(
+        DirectoryAuditRunSpec(
+            adapter="gameprog",
+            schema_version=GAMEPROG_AUDIT_SCHEMA_VERSION,
+            output_path=_gameprog_audit_path(config),
+            ttl_minutes=_gameprog_audit_ttl_minutes(config),
+            signature=_gameprog_cache_signature(cfg),
+            timeout_s=timeout_s,
+            scan=lambda scan_timeout_s: _gameprog_scan(
+                scan_timeout_s,
+                cfg=cfg,
+                fetcher=fetcher,
+                emit_log=emit_log,
+                enable_recovery=bool(cfg.get("activeAuditRecoveryEnabled", True)),
+                recovery_url_limit=recovery_url_limit,
+            ),
+            runtime={
+                "fetchConcurrency": fetch_concurrency,
+                "perHostConcurrency": per_host_concurrency,
+                "teamsUrl": str(cfg.get("teamsUrl") or GAMEPROG_TEAMS_URL).strip(),
+            },
+            summary={
+                "teamsRows": 0,
+                "parsedRows": 0,
+                "eligibleRows": 0,
+                "websiteFetchJobs": 0,
+                "websiteFetchFailures": 0,
+                "recoveryFetchAttempts": 0,
+                "recoveryPagesFetched": 0,
+                "recoveredProviderCandidates": 0,
+                "recoveredStaticCandidates": 0,
+                "recoveryFailures": 0,
+                "browserRecoveryCandidates": 0,
+                "badProviderInferences": 0,
+            },
+            sample_limit=GAMEPROG_AUDIT_FAILURE_SAMPLE_LIMIT,
             emit_log=emit_log,
-            enable_recovery=bool(cfg.get("activeAuditRecoveryEnabled", True)),
-            recovery_url_limit=recovery_url_limit,
-        ),
-        runtime={
-            "fetchConcurrency": fetch_concurrency,
-            "perHostConcurrency": per_host_concurrency,
-            "teamsUrl": str(cfg.get("teamsUrl") or GAMEPROG_TEAMS_URL).strip(),
-        },
-        summary={
-            "teamsRows": 0,
-            "parsedRows": 0,
-            "eligibleRows": 0,
-            "websiteFetchJobs": 0,
-            "websiteFetchFailures": 0,
-            "recoveryFetchAttempts": 0,
-            "recoveryPagesFetched": 0,
-            "recoveredProviderCandidates": 0,
-            "recoveredStaticCandidates": 0,
-            "recoveryFailures": 0,
-            "browserRecoveryCandidates": 0,
-            "badProviderInferences": 0,
-        },
-        sample_limit=GAMEPROG_AUDIT_FAILURE_SAMPLE_LIMIT,
-        emit_log=emit_log,
+        )
     )
 
 

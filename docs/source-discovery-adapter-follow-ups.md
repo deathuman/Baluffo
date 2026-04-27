@@ -19,7 +19,7 @@ The discovery adapters now have enough shared infrastructure to stop treating re
 
 ## Reusable Platform Already Built
 
-- **Audit and reporting:** `audit_ledger`, `audit_config`, `audit_report_summary`, and `directory_audit` own freshness, signatures, timing totals, failure aggregation, artifact size stamping, audit execution, report summaries, and scan-row extraction.
+- **Audit and reporting:** `audit_ledger`, `audit_config`, `audit_report_summary`, and `directory_audit` own freshness, signatures, timing totals, failure aggregation, artifact size stamping, audit execution, report summaries, scan-row extraction, and `DirectoryAuditRunSpec` runner assembly.
 - **Fetch, cache, and scan seams:** `directory_cache`, `directory_fetch_jobs`, `directory_fetch`, `directory_adapter_templates`, shared directory adapter wrappers, and scan-stage orchestration own common cache shape, fetch-job shape, static/provenance row templates, cache-compatible discovery wrappers, and provider/static/failure stage plumbing.
 - **Candidate, probe, and queue mechanics:** `candidate_collections`, `probe_runtime`, and `prevalidated_queue_policy` own provider/static row normalization, append-with-dedupe, bounded async probing, rendered static shortcuts, and internal queue-cap override fields.
 - **Page and recovery classification:** `page_outcomes`, `page_diagnostics`, `recovery_url_planner`, `directory_page_recovery`, and `provider_inference_filters` own provider-first page classification, explicit/static fallback ordering, JS-shell diagnostics, same-site recovery planning, HTTP-only recovery fetches, and bad provider inference filtering.
@@ -84,6 +84,11 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - Completed default-recovery slice: web-derived audits run shared HTTP-only same-site recovery by default; `webSearch.activeAuditRecoveryEnabled=false` remains the rollback.
 - Completed recovery-budget slice: `webSearch.activeAuditRecoveryUrlLimit` defaults to `6`, falls back to `6` for invalid/non-positive values, and participates in audit signatures.
 - Evidence snapshot: [`source-discovery-http-recovery-evidence-2026-04-27.md`](source-discovery-http-recovery-evidence-2026-04-27.md) supports default-enabling both sheet-directory and web-derived HTTP recovery.
+
+### P1: Directory Audit Runner Assembly
+
+- Completed audit-spec slice: Gameprog, Gamesmap, sheet-directory, and web-derived audit runners now build `DirectoryAuditRunSpec` objects and call shared audit assembly instead of repeating long `run_directory_audit(...)` argument lists.
+- Remaining local audit code should be source-specific scan setup, signatures, runtime metadata values, and rollback seams.
 
 ### P1: Sheet-Directory Manual Implementations
 

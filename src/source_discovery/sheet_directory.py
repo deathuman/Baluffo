@@ -20,7 +20,11 @@ from .directory_adapter_templates import (
     apply_directory_provenance,
     build_known_directory_entry_candidate,
 )
-from .directory_audit import discover_directory_scan_candidates, run_directory_audit
+from .directory_audit import (
+    DirectoryAuditRunSpec,
+    discover_directory_scan_candidates,
+    run_directory_audit_spec,
+)
 from .directory_index_scan import run_directory_index_scan
 from .directory_page_recovery import (
     DEFAULT_RECOVERY_URL_LIMIT,
@@ -631,43 +635,45 @@ def run_sheet_directory_audit(
     gid = str(gid or GAME_STUDIOS_SHEET_GID)
     recovery_enabled = _sheet_directory_recovery_enabled(config)
     recovery_url_limit = _sheet_directory_recovery_url_limit(config)
-    return run_directory_audit(
-        adapter="sheet_directory",
-        schema_version=SHEET_DIRECTORY_AUDIT_SCHEMA_VERSION,
-        output_path=_sheet_directory_audit_path(config),
-        ttl_minutes=_sheet_directory_audit_ttl_minutes(config),
-        signature=_sheet_directory_audit_signature(
-            sheet_id=sheet_id,
-            gid=gid,
-            recovery_enabled=recovery_enabled,
-            recovery_url_limit=recovery_url_limit,
-        ),
-        timeout_s=timeout_s,
-        scan=lambda scan_timeout_s: _sheet_directory_scan(
-            scan_timeout_s,
-            sheet_id=sheet_id,
-            gid=gid,
-            fetcher=fetcher,
+    return run_directory_audit_spec(
+        DirectoryAuditRunSpec(
+            adapter="sheet_directory",
+            schema_version=SHEET_DIRECTORY_AUDIT_SCHEMA_VERSION,
+            output_path=_sheet_directory_audit_path(config),
+            ttl_minutes=_sheet_directory_audit_ttl_minutes(config),
+            signature=_sheet_directory_audit_signature(
+                sheet_id=sheet_id,
+                gid=gid,
+                recovery_enabled=recovery_enabled,
+                recovery_url_limit=recovery_url_limit,
+            ),
+            timeout_s=timeout_s,
+            scan=lambda scan_timeout_s: _sheet_directory_scan(
+                scan_timeout_s,
+                sheet_id=sheet_id,
+                gid=gid,
+                fetcher=fetcher,
+                emit_log=emit_log,
+                enable_recovery=recovery_enabled,
+                recovery_url_limit=recovery_url_limit,
+            ),
+            runtime={
+                "sheetId": sheet_id,
+                "gid": gid,
+                "sheetUrl": GAME_STUDIOS_SHEET_URL,
+            },
+            summary={
+                "csvUrlAttempts": 0,
+                "selectedCsvUrl": "",
+                "rawRows": 0,
+                "eligibleRows": 0,
+                "invalidUrls": 0,
+                "csvFetchFailures": 0,
+                "parseFailures": 0,
+            },
+            sample_limit=SHEET_DIRECTORY_AUDIT_FAILURE_SAMPLE_LIMIT,
             emit_log=emit_log,
-            enable_recovery=recovery_enabled,
-            recovery_url_limit=recovery_url_limit,
-        ),
-        runtime={
-            "sheetId": sheet_id,
-            "gid": gid,
-            "sheetUrl": GAME_STUDIOS_SHEET_URL,
-        },
-        summary={
-            "csvUrlAttempts": 0,
-            "selectedCsvUrl": "",
-            "rawRows": 0,
-            "eligibleRows": 0,
-            "invalidUrls": 0,
-            "csvFetchFailures": 0,
-            "parseFailures": 0,
-        },
-        sample_limit=SHEET_DIRECTORY_AUDIT_FAILURE_SAMPLE_LIMIT,
-        emit_log=emit_log,
+        )
     )
 
 

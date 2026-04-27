@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,21 @@ DirectoryDiscoverySummaryLog = Callable[
     str | None,
 ]
 _LATEST_DIRECTORY_AUDIT_SUMMARIES: dict[str, dict[str, Any]] = {}
+
+
+@dataclass(frozen=True)
+class DirectoryAuditRunSpec:
+    adapter: str
+    schema_version: int
+    output_path: Path
+    ttl_minutes: int
+    signature: Any
+    timeout_s: int
+    scan: DirectoryAuditScan
+    runtime: dict[str, Any] | None = None
+    summary: dict[str, Any] | None = None
+    sample_limit: int = 100
+    emit_log: Callable[[str], None] | None = None
 
 
 def load_directory_audit_artifact(path: Path) -> dict[str, Any] | None:
@@ -283,3 +299,19 @@ def run_directory_audit(
         output_path=output_path,
     )
     return artifact, False
+
+
+def run_directory_audit_spec(spec: DirectoryAuditRunSpec) -> tuple[dict[str, Any], bool]:
+    return run_directory_audit(
+        adapter=spec.adapter,
+        schema_version=spec.schema_version,
+        output_path=spec.output_path,
+        ttl_minutes=spec.ttl_minutes,
+        signature=spec.signature,
+        timeout_s=spec.timeout_s,
+        scan=spec.scan,
+        runtime=spec.runtime,
+        summary=spec.summary,
+        sample_limit=spec.sample_limit,
+        emit_log=spec.emit_log,
+    )
