@@ -17,6 +17,12 @@ from src.source_registry import source_identity, unique_sources
 
 from . import audit_ledger
 from . import browser_recovery as browser_recovery_helpers
+from .audit_config import (
+    audit_artifact_path,
+    audit_ttl_minutes,
+    config_section,
+    int_config_value,
+)
 from .config import (
     DEFAULT_DISCOVERY_CONFIG,
     DUCKDUCKGO_HTML_SEARCH,
@@ -499,81 +505,76 @@ def _browser_recovery_summary(
 
 
 def _web_search_config_section(config: dict[str, Any] | None) -> dict[str, Any]:
-    defaults = dict(DEFAULT_DISCOVERY_CONFIG.get("webSearch") or {})
-    source = config if isinstance(config, dict) else {}
-    section = source.get("webSearch")
-    if isinstance(section, dict):
-        defaults.update(section)
-        return defaults
-    defaults.update(source)
-    return defaults
+    return config_section(
+        config,
+        "webSearch",
+        defaults=dict(DEFAULT_DISCOVERY_CONFIG.get("webSearch") or {}),
+    )
 
 
 def _web_search_audit_path(config: dict[str, Any] | None) -> Path:
     cfg = _web_search_config_section(config)
-    raw = str(cfg.get("activeAuditPath") or "").strip()
-    if raw:
-        return Path(raw)
-    return Path(__file__).resolve().parents[2] / "data" / "web-search-discovery-audit.json"
+    return audit_artifact_path(
+        cfg,
+        default_filename="web-search-discovery-audit.json",
+    )
 
 
 def _web_search_audit_ttl_minutes(config: dict[str, Any] | None) -> int:
-    raw = _web_search_config_section(config).get("activeAuditTtlMinutes", 360)
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 360
+    return audit_ttl_minutes(_web_search_config_section(config))
 
 
 def _web_search_max_queries(config: dict[str, Any] | None) -> int:
-    raw = _web_search_config_section(config).get("maxQueries", 24)
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 24
+    return int_config_value(
+        _web_search_config_section(config),
+        "maxQueries",
+        default=24,
+    )
 
 
 def _web_search_max_links_per_query(config: dict[str, Any] | None) -> int:
-    raw = _web_search_config_section(config).get("maxLinksPerQuery", 8)
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 8
+    return int_config_value(
+        _web_search_config_section(config),
+        "maxLinksPerQuery",
+        default=8,
+    )
 
 
 def _web_search_browser_recovery_batch_size(config: dict[str, Any] | None) -> int:
-    raw = _web_search_config_section(config).get("browserRecoveryBatchSize", 50)
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 50
+    return int_config_value(
+        _web_search_config_section(config),
+        "browserRecoveryBatchSize",
+        default=50,
+    )
 
 
 def _web_search_browser_recovery_max_batches(config: dict[str, Any] | None) -> int:
-    raw = _web_search_config_section(config).get("browserRecoveryMaxBatchesPerRun", 1)
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 1
+    return int_config_value(
+        _web_search_config_section(config),
+        "browserRecoveryMaxBatchesPerRun",
+        default=1,
+    )
 
 
 def _web_search_browser_recovery_concurrency(config: dict[str, Any] | None) -> int:
-    raw = _web_search_config_section(config).get("browserRecoveryConcurrency", 2)
-    try:
-        return max(1, int(raw))
-    except (TypeError, ValueError):
-        return 2
+    return int_config_value(
+        _web_search_config_section(config),
+        "browserRecoveryConcurrency",
+        default=2,
+        minimum=1,
+    )
 
 
 def _web_search_browser_recovery_timeout_s(
     config: dict[str, Any] | None,
     timeout_s: int,
 ) -> int:
-    raw = _web_search_config_section(config).get("browserRecoveryTimeoutSeconds", 15)
-    try:
-        configured = max(1, int(raw))
-    except (TypeError, ValueError):
-        configured = 15
+    configured = int_config_value(
+        _web_search_config_section(config),
+        "browserRecoveryTimeoutSeconds",
+        default=15,
+        minimum=1,
+    )
     return max(1, min(max(1, int(timeout_s)), configured))
 
 
@@ -669,43 +670,15 @@ def _scan_seed_careers_page_candidates(
     analysis_started = time.perf_counter()
     fetched_pages = 0
     for result in page_fetch_results:
-        if not bool(result.get("ok")):
-            failure = result.get("failure")
-            if isinstance(failure, dict):
-                failures.append(failure)
-                payload = dict(result.get("payload") or {})
-                error = str(failure.get("error") or "")
-                if _browser_recoverable_error(error):
-                    _append_browser_recovery_candidate(
-                        browser_recovery_candidates,
-                        url=str(result.get("url") or ""),
-                        studio=str(payload.get("studio") or ""),
-                        nl_priority=bool(payload.get("nlPriority")),
-                        discovery_method="seed_careers_page",
-                        reason_detail="browser_recovery_fetch_failed",
-                        error=error,
-                    )
-            continue
-        fetched_pages += 1
-        payload = dict(result.get("payload") or {})
-        found_candidate = _append_page_analysis_outcome(
-            page_url=str(result.get("url") or "").strip(),
-            page_html=str(result.get("text") or ""),
-            studio=str(payload.get("studio") or "").strip(),
-            nl_priority=bool(payload.get("nlPriority")),
+        fetched_delta, _failure_delta = _record_web_page_result(
+            result=result,
             discovery_method="seed_careers_page",
             provider_candidates=provider_candidates,
             static_candidates=static_candidates,
+            failures=failures,
+            browser_recovery_candidates=browser_recovery_candidates,
         )
-        if not found_candidate and _looks_like_js_shell(str(result.get("text") or "")):
-            _append_browser_recovery_candidate(
-                browser_recovery_candidates,
-                url=str(result.get("url") or ""),
-                studio=str(payload.get("studio") or ""),
-                nl_priority=bool(payload.get("nlPriority")),
-                discovery_method="seed_careers_page",
-                reason_detail="js_shell",
-            )
+        fetched_pages += fetched_delta
     provider_rows = collapse_competing_candidates(provider_candidates)
     static_rows = unique_sources(static_candidates)
     return {
@@ -782,26 +755,28 @@ def _queue_web_search_link(
     return "page_job", False
 
 
-def _record_web_search_page_result(
+def _record_web_page_result(
     *,
     result: dict[str, Any],
+    discovery_method: str,
     provider_candidates: list[dict[str, Any]],
     static_candidates: list[dict[str, Any]],
     failures: list[dict[str, Any]],
     browser_recovery_candidates: list[dict[str, Any]],
-    web_failure_samples: list[dict[str, Any]],
+    failure_samples: list[dict[str, Any]] | None = None,
 ) -> tuple[int, int]:
     if not bool(result.get("ok")):
         failure = result.get("failure")
         if isinstance(failure, dict):
-            _append_bounded_sample(
-                web_failure_samples,
-                {
-                    "stage": str(failure.get("stage") or "page_fetch"),
-                    "name": str(failure.get("name") or ""),
-                    "error": str(failure.get("error") or ""),
-                },
-            )
+            if failure_samples is not None:
+                _append_bounded_sample(
+                    failure_samples,
+                    {
+                        "stage": str(failure.get("stage") or "page_fetch"),
+                        "name": str(failure.get("name") or ""),
+                        "error": str(failure.get("error") or ""),
+                    },
+                )
             failures.append(failure)
             payload = dict(result.get("payload") or {})
             error = str(failure.get("error") or "")
@@ -811,7 +786,7 @@ def _record_web_search_page_result(
                     url=str(result.get("url") or ""),
                     studio=str(payload.get("studio") or ""),
                     nl_priority=bool(payload.get("nlPriority")),
-                    discovery_method="web_search",
+                    discovery_method=discovery_method,
                     reason_detail="browser_recovery_fetch_failed",
                     error=error,
                 )
@@ -823,7 +798,7 @@ def _record_web_search_page_result(
         page_html=str(result.get("text") or ""),
         studio=str(payload.get("studio") or "").strip(),
         nl_priority=bool(payload.get("nlPriority")),
-        discovery_method="web_search",
+        discovery_method=discovery_method,
         provider_candidates=provider_candidates,
         static_candidates=static_candidates,
     )
@@ -833,7 +808,7 @@ def _record_web_search_page_result(
             url=str(result.get("url") or ""),
             studio=str(payload.get("studio") or ""),
             nl_priority=bool(payload.get("nlPriority")),
-            discovery_method="web_search",
+            discovery_method=discovery_method,
             reason_detail="js_shell",
         )
     return 1, 0
@@ -924,13 +899,14 @@ def _scan_web_search_candidates(
     fetched_pages = 0
     page_fetch_failures = 0
     for result in page_fetch_results:
-        fetched_delta, failure_delta = _record_web_search_page_result(
+        fetched_delta, failure_delta = _record_web_page_result(
             result=result,
+            discovery_method="web_search",
             provider_candidates=provider_candidates,
             static_candidates=static_candidates,
             failures=failures,
             browser_recovery_candidates=browser_recovery_candidates,
-            web_failure_samples=web_failure_samples,
+            failure_samples=web_failure_samples,
         )
         fetched_pages += fetched_delta
         page_fetch_failures += failure_delta

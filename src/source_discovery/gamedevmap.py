@@ -11,8 +11,6 @@ Responsibilities:
 
 import csv
 import io
-import json
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -20,6 +18,7 @@ from urllib.parse import urlencode
 from src.source_registry import normalize_source_url, unique_sources
 
 from .config import DEFAULT_DISCOVERY_CONFIG
+from .directory_cache import load_directory_cache, write_directory_cache
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .page_analysis import analyze_fetched_page
 from .reporting import emit_log
@@ -99,38 +98,15 @@ def _load_gamedevmap_cache(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
     cache_path = _gamedevmap_cache_path(config)
     ttl_minutes = _gamedevmap_cache_ttl_minutes(config)
-    if ttl_minutes <= 0 or cache_path is None:
-        return None
     source = config if isinstance(config, dict) else {}
     if isinstance(source.get("gamedevmap"), dict):
         source = source.get("gamedevmap") or {}
-    if fetcher is not fetch_text and not str(source.get("cachePath") or "").strip():
-        return None
-    try:
-        payload = json.loads(cache_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    updated_at_raw = str(payload.get("updatedAt") or "").strip()
-    if not updated_at_raw:
-        return None
-    try:
-        updated_at = datetime.fromisoformat(updated_at_raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if datetime.now(UTC) - updated_at > timedelta(minutes=ttl_minutes):
-        return None
-    if payload.get("configSignature") != _gamedevmap_cache_signature(cfg):
-        return None
-    provider_rows = payload.get("providerCandidates")
-    static_rows = payload.get("staticCandidates")
-    failures = payload.get("failures")
-    if (
-        not isinstance(provider_rows, list)
-        or not isinstance(static_rows, list)
-        or not isinstance(failures, list)
-    ):
-        return None
-    return unique_sources(provider_rows), unique_sources(static_rows), failures
+    return load_directory_cache(
+        cache_path,
+        ttl_minutes=ttl_minutes,
+        expected_signature=_gamedevmap_cache_signature(cfg),
+        use_cache=fetcher is fetch_text or bool(str(source.get("cachePath") or "").strip()),
+    )
 
 
 def _write_gamedevmap_cache(
@@ -141,21 +117,13 @@ def _write_gamedevmap_cache(
     static_candidates: list[dict[str, Any]],
     failures: list[dict[str, Any]],
 ) -> None:
-    cache_path = _gamedevmap_cache_path(config)
-    if cache_path is None:
-        return
-    payload = {
-        "updatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "configSignature": _gamedevmap_cache_signature(cfg),
-        "providerCandidates": unique_sources(provider_candidates),
-        "staticCandidates": unique_sources(static_candidates),
-        "failures": failures,
-    }
-    try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    except OSError:
-        return
+    write_directory_cache(
+        _gamedevmap_cache_path(config),
+        signature=_gamedevmap_cache_signature(cfg),
+        provider_candidates=provider_candidates,
+        static_candidates=static_candidates,
+        failures=failures,
+    )
 
 
 def _clean_csv_value(value: Any) -> str:

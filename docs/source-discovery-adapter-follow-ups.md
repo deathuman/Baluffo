@@ -31,16 +31,19 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Added web-search audit tuning and diagnostics. The default audit now supports `webSearch.maxQueries` / `webSearch.maxLinksPerQuery`, prioritizes seed careers-host queries, and reports link/query diagnostics plus bounded samples.
 - 2026-04-27: Extracted shared browser-recovery mechanics for processed-key tracking, bounded candidate selection, async browser fetch, and recovery state/sample bookkeeping. GameDevMap and web-derived discovery share these mechanics while keeping adapter-specific analysis local.
 - 2026-04-27: Added an explicit web-derived browser recovery lane. Default web discovery remains HTTP-only; `--web-search-browser-recovery` processes saved `browserRecoveryCandidates` and writes validated `jobsFound > 0` candidates back to the web-search audit artifact for normal discovery queueing.
+- 2026-04-27: Migrated the GameDevMap legacy rollback cache path onto the shared directory-cache helper. The fallback cache JSON shape and `activeAuditEnabled=false` behavior remain unchanged.
+- 2026-04-27: Extracted shared audit-config helpers for section merge, `activeAuditEnabled` defaults, audit artifact paths, TTL fallback, and positive integer coercion. Existing adapter-private wrappers remain in place to preserve test and monkeypatch seams.
+- 2026-04-27: Consolidated seed-careers and web-search fetched-page result handling behind one method-parameterized helper. Page-analysis, fetch-failure, browser-candidate, and web failure-sample behavior remains unchanged.
 
 ## Reusable Opportunities
 
 - Use default web-search and explicit browser-recovery evidence to decide whether deeper rendered-source tuning is worth adding.
 - Extend shared recovery URL planning only when another adapter adopts the same behavior; provider inference, browser-candidate classification, and adapter diagnostics remain adapter-owned for now.
 - Consider browser-recovery candidates for additional adapters only after each adapter can emit an HTTP-only candidate list without slowing default scans.
-- Extend shared directory-cache helpers only when another adapter has the same cache shape and bypass semantics.
 - Extend the shared prevalidated queue-cap policy only when another adapter produces candidates that already passed `jobsFound > 0`, while preserving dedupe, tombstones, pending/rejected state, and admin auto-approval gates.
 - Extend shared directory fetch-job builders only for additional adapters that already use the same `fetch_directory_pages` job shape.
 - Extend explicit browser-recovery lanes only to adapters that can first produce an HTTP-only `browserRecoveryCandidates` list and then run opt-in rendered recovery without slowing normal scans.
+- Revisit candidate merge/dedupe helpers only after isolating an identical pair of artifact-merge or browser-recovery merge semantics; current paths are intentionally adapter-owned.
 
 ## Audit Readiness Notes
 

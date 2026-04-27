@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from src.source_registry import unique_sources
 
 from . import audit_ledger
+from .audit_config import audit_artifact_path, audit_ttl_minutes, config_section
 from .config import (
     DEFAULT_DISCOVERY_CONFIG,
     GAME_STUDIOS_SHEET_GID,
@@ -99,30 +100,23 @@ def parse_game_studio_sheet_csv(csv_text: str) -> list[dict[str, Any]]:
 
 
 def _sheet_directory_config_section(config: dict[str, Any] | None) -> dict[str, Any]:
-    defaults = dict(DEFAULT_DISCOVERY_CONFIG.get("sheetDirectory") or {})
-    source = config if isinstance(config, dict) else {}
-    section = source.get("sheetDirectory")
-    if isinstance(section, dict):
-        defaults.update(section)
-        return defaults
-    defaults.update(source)
-    return defaults
+    return config_section(
+        config,
+        "sheetDirectory",
+        defaults=dict(DEFAULT_DISCOVERY_CONFIG.get("sheetDirectory") or {}),
+    )
 
 
 def _sheet_directory_audit_path(config: dict[str, Any] | None) -> Path:
     cfg = _sheet_directory_config_section(config)
-    raw = str(cfg.get("activeAuditPath") or "").strip()
-    if raw:
-        return Path(raw)
-    return Path(__file__).resolve().parents[2] / "data" / "sheet-directory-discovery-audit.json"
+    return audit_artifact_path(
+        cfg,
+        default_filename="sheet-directory-discovery-audit.json",
+    )
 
 
 def _sheet_directory_audit_ttl_minutes(config: dict[str, Any] | None) -> int:
-    raw = _sheet_directory_config_section(config).get("activeAuditTtlMinutes", 360)
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 360
+    return audit_ttl_minutes(_sheet_directory_config_section(config))
 
 
 def _sheet_directory_audit_signature(*, sheet_id: str, gid: str) -> dict[str, Any]:

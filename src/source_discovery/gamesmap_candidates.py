@@ -9,6 +9,7 @@ from typing import Any
 from src.source_registry import unique_sources
 
 from . import audit_ledger
+from .audit_config import audit_artifact_path, audit_enabled, audit_ttl_minutes
 from .config import DEFAULT_DISCOVERY_CONFIG
 from .directory_audit import directory_audit_rows, run_directory_audit
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
@@ -252,24 +253,15 @@ def _apply_gamesmap_static_provenance(
 
 
 def _gamesmap_audit_enabled(cfg: dict[str, Any]) -> bool:
-    return bool(cfg.get("activeAuditEnabled", True))
+    return audit_enabled(cfg)
 
 
 def _gamesmap_audit_path(cfg: dict[str, Any]) -> Path:
-    raw = str(cfg.get("activeAuditPath") or "").strip()
-    if raw:
-        return Path(raw)
-    return Path(__file__).resolve().parents[2] / "data" / "gamesmap-discovery-audit.json"
+    return audit_artifact_path(cfg, default_filename="gamesmap-discovery-audit.json")
 
 
 def _gamesmap_audit_ttl_minutes(config: dict[str, Any] | None, cfg: dict[str, Any]) -> int:
-    raw = cfg.get("activeAuditTtlMinutes", None)
-    if raw in {"", None}:
-        return gamesmap_cache_ttl_minutes(config)
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return gamesmap_cache_ttl_minutes(config)
+    return audit_ttl_minutes(cfg, fallback_ttl=gamesmap_cache_ttl_minutes(config))
 
 
 def _empty_gamesmap_scan_result(

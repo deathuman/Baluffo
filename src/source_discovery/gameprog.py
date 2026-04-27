@@ -16,6 +16,7 @@ from typing import Any
 from src.source_registry import unique_sources
 
 from . import audit_ledger
+from .audit_config import audit_artifact_path, audit_enabled, audit_ttl_minutes, config_section
 from .directory_audit import directory_audit_rows, run_directory_audit
 from .directory_cache import load_directory_cache, write_directory_cache
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
@@ -46,11 +47,7 @@ COMMON_CAREERS_PATTERNS = [
 
 
 def _gameprog_config_section(config: dict[str, Any] | None) -> dict[str, Any]:
-    source = config if isinstance(config, dict) else {}
-    gameprog_cfg = source.get("gameprog")
-    if isinstance(gameprog_cfg, dict):
-        return dict(gameprog_cfg)
-    return dict(source)
+    return config_section(config, "gameprog")
 
 
 def _gameprog_config_value(config: dict[str, Any] | None, key: str, default: Any) -> Any:
@@ -85,24 +82,23 @@ def _gameprog_cache_ttl_minutes(config: dict[str, Any] | None) -> int:
 
 
 def _gameprog_audit_enabled(config: dict[str, Any] | None) -> bool:
-    return bool(_gameprog_config_value(config, "activeAuditEnabled", True))
+    return audit_enabled(config, "gameprog")
 
 
 def _gameprog_audit_path(config: dict[str, Any] | None) -> Path:
-    raw = str(_gameprog_config_value(config, "activeAuditPath", "") or "").strip()
-    if raw:
-        return Path(raw)
-    return Path(__file__).resolve().parents[2] / "data" / "gameprog-discovery-audit.json"
+    return audit_artifact_path(
+        config,
+        "gameprog",
+        default_filename="gameprog-discovery-audit.json",
+    )
 
 
 def _gameprog_audit_ttl_minutes(config: dict[str, Any] | None) -> int:
-    raw = _gameprog_config_value(config, "activeAuditTtlMinutes", None)
-    if raw in {"", None}:
-        return _gameprog_cache_ttl_minutes(config)
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return _gameprog_cache_ttl_minutes(config)
+    return audit_ttl_minutes(
+        config,
+        "gameprog",
+        fallback_ttl=_gameprog_cache_ttl_minutes(config),
+    )
 
 
 def _gameprog_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:

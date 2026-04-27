@@ -9,6 +9,7 @@ from src.bridge.registry_tombstones import filter_tombstoned_rows, load_tombston
 from src.source_registry import load_json_array, source_identity
 
 from . import config as discovery_config_module
+from .audit_config import audit_enabled
 from .config import DISCOVERY_STAGES, LOW_EVIDENCE_PROBE_LIMIT
 from .core import (
     _evidence_threshold_for_probe,
@@ -127,9 +128,7 @@ def _route_valid_probe_candidate(
 
 
 def _web_search_audit_enabled(discovery_config: dict[str, Any]) -> bool:
-    cfg = discovery_config.get("webSearch")
-    cfg = cfg if isinstance(cfg, dict) else {}
-    return bool(cfg.get("activeAuditEnabled", True))
+    return audit_enabled(discovery_config, "webSearch", flat_fallback=False)
 
 
 def _load_web_search_audit_rows(
@@ -309,7 +308,7 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
         stage_started = time.perf_counter()
         sheet_cfg = deps.effective_config.get("sheetDirectory")
         sheet_cfg = sheet_cfg if isinstance(sheet_cfg, dict) else {}
-        if bool(sheet_cfg.get("activeAuditEnabled", True)):
+        if audit_enabled(sheet_cfg):
             from .directory_audit import directory_audit_rows
 
             sheet_artifact, _sheet_cache_hit = orchestrator.run_sheet_directory_audit(
@@ -523,7 +522,7 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
 
             gamedevmap_cfg = deps.effective_config.get("gamedevmap")
             gamedevmap_cfg = gamedevmap_cfg if isinstance(gamedevmap_cfg, dict) else {}
-            if bool(gamedevmap_cfg.get("activeAuditEnabled", True)):
+            if audit_enabled(gamedevmap_cfg):
                 state.gamedevmap_audit_summary = latest_gamedevmap_audit_report_summary()
             gamedevmap_stage_rows = [
                 *provider_gamedevmap_candidates,
