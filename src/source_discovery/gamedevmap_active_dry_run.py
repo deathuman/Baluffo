@@ -18,7 +18,7 @@ from src import source_registry as source_registry_module
 from src.shared.utils import now_iso
 from src.source_registry import source_identity, unique_sources
 
-from . import audit_ledger, recovery_url_planner
+from . import audit_ledger, audit_report_summary, recovery_url_planner
 from .config import DEFAULT_DISCOVERY_CONFIG
 from .core import (
     compute_candidate_score,
@@ -643,38 +643,38 @@ def gamedevmap_audit_report_summary(
     cache_hit: bool = False,
     output_path: Path | str | None = None,
 ) -> dict[str, Any]:
-    summary = _as_dict(artifact.get("summary"))
-    runtime = _as_dict(artifact.get("runtime"))
-    timings = _as_dict(artifact.get("timings"))
-    totals_ms = _as_dict(timings.get("totalsMs"))
-    adapter_counts = _as_dict(summary.get("activeAdapterCounts"))
-    active_static = _safe_int(adapter_counts.get("static"))
-    active_total = _safe_int(summary.get("activeCandidates"))
-    rejected_detail_counts = Counter(_as_dict(summary.get("rejectedReasonDetailCounts")))
-    failure_counts = Counter(_as_dict(artifact.get("failureCounts")))
-    top_failure_buckets = [
-        {"key": key, "count": int(count)}
-        for key, count in [*rejected_detail_counts.most_common(5), *failure_counts.most_common(5)]
-        if key and count
-    ][:5]
+    summary = audit_report_summary.as_dict(artifact.get("summary"))
+    runtime = audit_report_summary.as_dict(artifact.get("runtime"))
+    timings = audit_report_summary.as_dict(artifact.get("timings"))
+    totals_ms = audit_report_summary.as_dict(timings.get("totalsMs"))
+    active_split = audit_report_summary.active_candidate_split(summary)
     return {
         "cacheHit": bool(cache_hit),
-        "complete": bool(_as_dict(artifact.get("progress")).get("complete")),
-        "auditDurationMs": _safe_int(totals_ms.get("totalMs")),
-        "activeCandidates": active_total,
-        "activeProviderCandidates": max(0, active_total - active_static),
-        "activeStaticCandidates": active_static,
-        "recoveredActiveCandidates": _safe_int(summary.get("recoveredActiveCandidates")),
-        "browserRecoveryCandidates": _safe_int(summary.get("browserRecoveryCandidates")),
-        "browserRecoveredActiveCandidates": _safe_int(
+        "complete": bool(audit_report_summary.as_dict(artifact.get("progress")).get("complete")),
+        "auditDurationMs": audit_report_summary.safe_int(totals_ms.get("totalMs")),
+        "activeCandidates": active_split["activeCandidates"],
+        "activeProviderCandidates": active_split["activeProviderCandidates"],
+        "activeStaticCandidates": active_split["activeStaticCandidates"],
+        "recoveredActiveCandidates": audit_report_summary.safe_int(
+            summary.get("recoveredActiveCandidates")
+        ),
+        "browserRecoveryCandidates": audit_report_summary.safe_int(
+            summary.get("browserRecoveryCandidates")
+        ),
+        "browserRecoveredActiveCandidates": audit_report_summary.safe_int(
             summary.get("browserRecoveredActiveCandidates")
         ),
-        "artifactSizeBytes": _safe_int(
-            summary.get("artifactSizeBytes") or runtime.get("artifactSizeBytes")
+        "artifactSizeBytes": audit_report_summary.artifact_size_bytes(
+            summary=summary, runtime=runtime
         ),
         "timingTotalsMs": dict(totals_ms),
-        "topFailureBuckets": top_failure_buckets,
-        "lostRecoveredActiveCandidates": _safe_int(summary.get("lostRecoveredActiveCandidates")),
+        "topFailureBuckets": audit_report_summary.top_failure_buckets(
+            rejected_reason_detail_counts=summary.get("rejectedReasonDetailCounts"),
+            failure_counts=artifact.get("failureCounts"),
+        ),
+        "lostRecoveredActiveCandidates": audit_report_summary.safe_int(
+            summary.get("lostRecoveredActiveCandidates")
+        ),
         "outputPath": str(output_path or gamedevmap_active_dry_run_path()),
     }
 

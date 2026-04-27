@@ -198,6 +198,48 @@ def test_gamedevmap_audit_summary_is_written_to_discovery_report() -> None:
     assert report["summary"]["gamedevmapAudit"]["auditDurationMs"] == 123
 
 
+def test_gamedevmap_audit_report_summary_shape_stays_compatible() -> None:
+    summary = dry_run.gamedevmap_audit_report_summary(
+        {
+            "progress": {"complete": True},
+            "runtime": {"artifactSizeBytes": 222},
+            "timings": {"totalsMs": {"totalMs": 123, "probeMs": 45}},
+            "summary": {
+                "activeCandidates": 7,
+                "activeAdapterCounts": {"static": 3},
+                "recoveredActiveCandidates": 2,
+                "browserRecoveryCandidates": 4,
+                "browserRecoveredActiveCandidates": 1,
+                "lostRecoveredActiveCandidates": 5,
+                "rejectedReasonDetailCounts": {"js_shell": 9},
+            },
+            "failureCounts": {"homepage_fetch": 6},
+        },
+        cache_hit=True,
+        output_path="artifact.json",
+    )
+
+    assert summary == {
+        "cacheHit": True,
+        "complete": True,
+        "auditDurationMs": 123,
+        "activeCandidates": 7,
+        "activeProviderCandidates": 4,
+        "activeStaticCandidates": 3,
+        "recoveredActiveCandidates": 2,
+        "browserRecoveryCandidates": 4,
+        "browserRecoveredActiveCandidates": 1,
+        "artifactSizeBytes": 222,
+        "timingTotalsMs": {"totalMs": 123, "probeMs": 45},
+        "topFailureBuckets": [
+            {"key": "js_shell", "count": 9},
+            {"key": "homepage_fetch", "count": 6},
+        ],
+        "lostRecoveredActiveCandidates": 5,
+        "outputPath": "artifact.json",
+    }
+
+
 def test_gamedevmap_followup_cli_flags_parse() -> None:
     args = discovery_orchestrator.parse_args(
         [

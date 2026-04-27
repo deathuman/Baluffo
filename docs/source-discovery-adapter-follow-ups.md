@@ -17,12 +17,13 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Extracted shared prevalidated queue-cap policy helpers for internal adapter/domain cap overrides. GameDevMap remains the only producer; queue limits, candidate ordering, and registry behavior did not change.
 - 2026-04-27: Extracted shared directory fetch-job builders for Gamesmap/Gameprog website fetch jobs. This standardizes an audit-readiness seam without changing fetch, cache, probe, or queue behavior.
 - 2026-04-27: Extended shared directory fetch-job builders to seed-careers and web-search page fetches. Web-search still owns URL selection and analysis; only the `fetch_directory_pages` job shape is shared.
+- 2026-04-27: Extracted shared audit report-summary helpers for active split, top failure buckets, and artifact size fallback. GameDevMap remains the only caller; report fields did not change.
 
 ## Reusable Opportunities
 
 - Generalize the resumable audit engine for Gamesmap, Gameprog, sheet-directory, and web-search sources where a full scan has meaningful intermediate progress, timing, cache, and resume needs.
 - Extend shared recovery URL planning only when another adapter adopts the same behavior; provider inference, browser-candidate classification, and adapter diagnostics remain adapter-owned for now.
-- Extend the shared audit-ledger helpers only when a second adapter adopts them; report-summary logic remains adapter-owned for now.
+- Extend the shared audit-ledger and audit report-summary helpers only when a second adapter adopts resumable audit artifacts.
 - Extend shared directory-cache helpers only when another adapter has the same cache shape and bypass semantics.
 - Extend the shared prevalidated queue-cap policy only when another adapter produces candidates that already passed `jobsFound > 0`, while preserving dedupe, tombstones, pending/rejected state, and admin auto-approval gates.
 - Extend shared directory fetch-job builders only for additional adapters that already use the same `fetch_directory_pages` job shape.
