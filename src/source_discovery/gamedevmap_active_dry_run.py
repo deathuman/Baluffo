@@ -1220,14 +1220,14 @@ def _queue_no_careers_recovery(
     detail = _no_careers_reason_detail(target_url, html)
     if detail == "js_shell":
         browser_recovery_candidates.append(
-            {
-                "adapter": "gamedevmap",
-                "name": f"{studio} browser recovery",
-                "studio": studio,
-                "url": target_url,
-                "sourceDirectoryEntryUrl": str(row.get("sourceDirectoryEntryUrl") or "").strip(),
-                "reasonDetail": detail,
-            }
+            browser_recovery_helpers.browser_recovery_candidate_row(
+                adapter="gamedevmap",
+                name=f"{studio} browser recovery",
+                studio=studio,
+                url=target_url,
+                source_directory_entry_url=str(row.get("sourceDirectoryEntryUrl") or "").strip(),
+                reason_detail=detail,
+            )
         )
     row_provider_candidates = _provider_candidates_from_html_text(
         row=row,

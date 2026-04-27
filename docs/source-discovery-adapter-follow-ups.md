@@ -58,7 +58,7 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 
 - `web_search_candidates.py::_provider_candidate_base` and `_provider_candidate` hardcode provider URL parsing that overlaps `infer_web_candidate` and candidate-collapsing helpers. Migrate provider inference and competing-candidate collapsing to shared helpers.
 - Completed provider/page-outcome slice: `web_search_candidates.py::_append_page_analysis_outcome` now uses shared static page-outcome callback builders instead of local callback boilerplate.
-- `web_search_candidates.py::_web_browser_recovery_candidate` should move to a shared browser-recovery row factory or use the directory recovery candidate factory when the row contract matches.
+- Completed browser-row slice: `web_search_candidates.py::_web_browser_recovery_candidate`, GameDevMap JS-shell browser rows, and directory page recovery browser rows now share one browser-recovery row factory.
 - `web_search_candidates.py::_analyze_web_browser_recovery_fetches` should migrate to a shared analysis contract that accepts adapter-specific page-analysis and candidate-marking callbacks.
 - `web_search_candidates.py::_merge_web_browser_recovery_updates` should migrate to a shared merge contract for positive probe results, zero-job diagnostics, fetch failures, and processed-key state.
 - Completed diagnostics slice: `web_search_candidates.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
@@ -111,7 +111,7 @@ Sheet-directory now has a default audit path, but several small pieces remain ma
 
 ### P2: Promote Browser-Recovery Eligibility
 
-- Move browser-recovery candidate row construction and summary counting into a shared contract.
+- Browser-recovery candidate row construction is shared; summary counting still needs a shared contract.
 - Adopt it for GameDevMap, web-derived discovery, and any directory adapter that emits HTTP-only JS-shell or browser-recoverable fetch failures.
 - Keep rendered recovery commands explicit and artifact-only until a separate plan changes default behavior.
 

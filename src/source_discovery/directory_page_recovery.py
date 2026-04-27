@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from . import audit_ledger
+from .browser_recovery import browser_recovery_candidate_row
 from .directory_fetch import fetch_directory_pages
 from .page_diagnostics import (
     looks_like_js_shell as page_looks_like_js_shell,
@@ -87,16 +88,16 @@ def browser_recovery_candidate(
     *,
     reason_detail: str,
 ) -> dict[str, Any]:
-    return {
-        "adapter": request.adapter,
-        "discoveryMethod": request.discovery_method,
-        "name": request.name,
-        "studio": request.studio,
-        "url": request.page_url,
-        "sourceDirectoryEntryUrl": request.page_url,
-        "reason": "no_careers_evidence",
-        "reasonDetail": reason_detail,
-    }
+    return browser_recovery_candidate_row(
+        adapter=request.adapter,
+        discovery_method=request.discovery_method,
+        name=request.name,
+        studio=request.studio,
+        url=request.page_url,
+        source_directory_entry_url=request.page_url,
+        reason="no_careers_evidence",
+        reason_detail=reason_detail,
+    )
 
 
 def plan_recovery_urls(

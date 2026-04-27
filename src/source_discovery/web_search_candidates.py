@@ -409,18 +409,18 @@ def _web_browser_recovery_candidate(
     reason_detail: str,
     error: str = "",
 ) -> dict[str, Any]:
-    return {
-        "name": f"{studio} (Browser Recovery)",
-        "studio": studio,
-        "company": studio,
-        "url": str(url or "").strip(),
-        "sourceDirectoryEntryUrl": str(url or "").strip(),
-        "nlPriority": bool(nl_priority),
-        "discoveryMethod": discovery_method,
-        "adapter": discovery_method,
-        "reasonDetail": str(reason_detail or ""),
-        "error": str(error or ""),
-    }
+    return browser_recovery_helpers.browser_recovery_candidate_row(
+        adapter=discovery_method,
+        discovery_method=discovery_method,
+        name=f"{studio} (Browser Recovery)",
+        studio=studio,
+        company=studio,
+        url=url,
+        source_directory_entry_url=url,
+        nl_priority=nl_priority,
+        reason_detail=reason_detail,
+        error=error,
+    )
 
 
 def _append_browser_recovery_candidate(

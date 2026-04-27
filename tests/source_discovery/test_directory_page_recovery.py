@@ -94,6 +94,16 @@ def test_directory_recovery_marks_js_shell_browser_candidate() -> None:
     assert looks_like_js_shell(request.html) is True
     row = browser_recovery_candidate(request, reason_detail="js_shell")
 
+    assert row == {
+        "adapter": "gameprog",
+        "discoveryMethod": "gameprog",
+        "name": "Studio",
+        "studio": "Studio",
+        "url": request.page_url,
+        "sourceDirectoryEntryUrl": request.page_url,
+        "reason": "no_careers_evidence",
+        "reasonDetail": "js_shell",
+    }
     assert row["reasonDetail"] == "js_shell"
     assert row["url"] == request.page_url
 

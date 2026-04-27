@@ -61,6 +61,12 @@ def test_web_page_result_records_seed_and_web_recoverable_fetch_failures() -> No
         assert {row["reasonDetail"] for row in artifact["browserRecoveryCandidates"]} == {
             "browser_recovery_fetch_failed"
         }
+        assert {
+            row["sourceDirectoryEntryUrl"] for row in artifact["browserRecoveryCandidates"]
+        } == {
+            "https://seed.example/careers",
+            "https://search.example/careers",
+        }
 
 
 def test_web_page_result_records_seed_and_web_js_shell_candidates() -> None:

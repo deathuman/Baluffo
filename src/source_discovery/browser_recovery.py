@@ -53,6 +53,59 @@ def default_browser_fetcher():
     return try_fetch_with_playwright
 
 
+def browser_recovery_candidate_row(
+    *,
+    adapter: str,
+    name: str,
+    studio: str,
+    url: str,
+    reason_detail: str,
+    source_directory_entry_url: str | None = None,
+    discovery_method: str | None = None,
+    nl_priority: bool | None = None,
+    error: str | None = None,
+    company: str | None = None,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    cleaned_url = str(url or "").strip()
+    cleaned_studio = str(studio or "")
+    if company is not None:
+        row: dict[str, Any] = {
+            "name": str(name or ""),
+            "studio": cleaned_studio,
+            "company": str(company or ""),
+            "url": cleaned_url,
+        }
+        if source_directory_entry_url is not None:
+            row["sourceDirectoryEntryUrl"] = str(source_directory_entry_url or "").strip()
+        if nl_priority is not None:
+            row["nlPriority"] = bool(nl_priority)
+        if discovery_method is not None:
+            row["discoveryMethod"] = str(discovery_method or "")
+        row["adapter"] = str(adapter or "")
+    else:
+        row = {"adapter": str(adapter or "")}
+        if discovery_method is not None:
+            row["discoveryMethod"] = str(discovery_method or "")
+        row.update(
+            {
+                "name": str(name or ""),
+                "studio": cleaned_studio,
+                "url": cleaned_url,
+            }
+        )
+        if source_directory_entry_url is not None:
+            row["sourceDirectoryEntryUrl"] = str(source_directory_entry_url or "").strip()
+        if nl_priority is not None:
+            row["nlPriority"] = bool(nl_priority)
+    if reason is not None:
+        row["reason"] = str(reason or "")
+    row["reasonDetail"] = str(reason_detail or "")
+    if error is not None:
+        row["error"] = str(error or "")
+    return row
+
+
 def browser_recovery_processed_key(row: dict[str, Any]) -> str:
     url = str(row.get("url") or "").strip()
     if url:

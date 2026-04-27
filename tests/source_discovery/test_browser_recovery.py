@@ -23,6 +23,54 @@ def test_default_browser_fetcher_returns_fallback_when_bridge_unavailable(monkey
     assert error == "browser fallback unavailable (playwright helper is not importable)"
 
 
+def test_browser_recovery_candidate_row_reproduces_web_search_shape() -> None:
+    row = browser_recovery.browser_recovery_candidate_row(
+        adapter="web_search",
+        discovery_method="web_search",
+        name="Studio (Browser Recovery)",
+        studio="Studio",
+        company="Studio",
+        url=" https://studio.example/jobs ",
+        source_directory_entry_url=" https://studio.example/jobs ",
+        nl_priority=True,
+        reason_detail="js_shell",
+        error="",
+    )
+
+    assert row == {
+        "name": "Studio (Browser Recovery)",
+        "studio": "Studio",
+        "company": "Studio",
+        "url": "https://studio.example/jobs",
+        "sourceDirectoryEntryUrl": "https://studio.example/jobs",
+        "nlPriority": True,
+        "discoveryMethod": "web_search",
+        "adapter": "web_search",
+        "reasonDetail": "js_shell",
+        "error": "",
+    }
+
+
+def test_browser_recovery_candidate_row_reproduces_gamedevmap_shape() -> None:
+    row = browser_recovery.browser_recovery_candidate_row(
+        adapter="gamedevmap",
+        name="Studio browser recovery",
+        studio="Studio",
+        url="https://studio.example",
+        source_directory_entry_url="https://www.gamedevmap.com/profile/studio",
+        reason_detail="js_shell",
+    )
+
+    assert row == {
+        "adapter": "gamedevmap",
+        "name": "Studio browser recovery",
+        "studio": "Studio",
+        "url": "https://studio.example",
+        "sourceDirectoryEntryUrl": "https://www.gamedevmap.com/profile/studio",
+        "reasonDetail": "js_shell",
+    }
+
+
 def test_browser_recovery_processed_key_prefers_url_entry_then_name() -> None:
     assert (
         browser_recovery.browser_recovery_processed_key(
