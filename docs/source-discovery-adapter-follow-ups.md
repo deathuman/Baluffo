@@ -38,6 +38,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Reused the shared bounded probe-batch runner in normal discovery probing. Orchestrator queueing, URL-patch reprobe handling, runtime accounting, and Playwright fallback seams remain adapter/orchestrator-owned.
 - 2026-04-27: Extracted shared candidate collection helpers for safe provider/static row extraction, provider/static splitting, and append-with-dedupe artifact updates. Broader artifact merge semantics remain adapter-owned.
 - 2026-04-27: Reused candidate collection helpers inside the shared directory-cache load/write path while preserving strict cache validation and the existing cache JSON shape.
+- 2026-04-27: Consolidated provider/static scan-stage orchestration in the discovery orchestrator. Adapter scan callbacks, audit/direct rollback behavior, failure routing, progress labels, and stream routing remain unchanged.
 
 ## Reusable Opportunities
 
