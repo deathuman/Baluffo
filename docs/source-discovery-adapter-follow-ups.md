@@ -43,6 +43,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Shared directory scan-row extraction for audit-backed direct scanners and web-search audit method splitting. Raw scan results remain unnormalized, while audit artifact reads keep existing normalized row behavior.
 - 2026-04-27: Shared browser-recovery runtime orchestration for GameDevMap and web-derived discovery. Browser fetch, rendered-probe filtering, and bounded probing are centralized while adapter analysis and artifact merge semantics remain local.
 - 2026-04-27: Added shared HTTP-only directory page recovery for Gameprog/Gamesmap audit scans. Homepage misses now try bounded same-site jobish links plus common careers paths before legacy weak fallback, while recovery misses stay audit diagnostics and `activeAuditEnabled=false` preserves the old no-recovery cache path.
+- 2026-04-27: Shared fetched-page outcome classification for Gameprog, Gamesmap, and web-derived discovery. Provider-first, explicit careers, generic static, no-candidate recovery/fallback handoff, and page diagnostics are centralized while adapter provenance and GameDevMap active-audit probe/rejection semantics remain local.
 
 ## Reusable Opportunities
 
@@ -53,6 +54,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - Extend shared directory fetch-job builders only for additional adapters that already use the same `fetch_directory_pages` job shape.
 - Extend explicit browser-recovery lanes only to adapters that can first produce an HTTP-only `browserRecoveryCandidates` list and then run opt-in rendered recovery without slowing normal scans.
 - Revisit candidate merge/dedupe helpers only after isolating an identical pair of artifact-merge or browser-recovery merge semantics; current paths are intentionally adapter-owned.
+- Keep GameDevMap active-source page classification local until its probe/rejection semantics can be separated from audit artifact mutation without changing active-candidate behavior.
 
 ## Audit Readiness Notes
 

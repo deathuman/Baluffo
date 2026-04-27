@@ -27,7 +27,13 @@ from .config import (
 )
 from .directory_audit import discover_directory_scan_candidates, run_directory_audit
 from .directory_fetch_jobs import build_directory_fetch_job
-from .page_analysis import analyze_fetched_page
+from .page_diagnostics import (
+    browser_recoverable_error as shared_browser_recoverable_error,
+)
+from .page_diagnostics import (
+    looks_like_js_shell as shared_looks_like_js_shell,
+)
+from .page_outcomes import FetchedPageContext, classify_fetched_page
 from .probe_runtime import (
     candidate_with_probe_evidence as probe_candidate_with_probe_evidence,
 )
@@ -359,73 +365,59 @@ def _append_page_analysis_outcome(
 ) -> bool:
     from .static_candidates import build_known_careers_url_candidate
 
-    analyzed = analyze_fetched_page(
-        page_url,
-        page_html,
+    context = FetchedPageContext(
+        page_url=page_url,
+        html=page_html,
         studio=studio,
         nl_priority=nl_priority,
         discovery_method=discovery_method,
     )
-    page_provider_candidates = list(analyzed.get("provider_candidates") or [])
-    if page_provider_candidates:
-        provider_candidates.extend(page_provider_candidates)
-        return True
-    explicit_careers_url = str(analyzed.get("explicit_careers_url") or "").strip()
-    if explicit_careers_url:
-        static_candidates.append(
-            build_known_careers_url_candidate(
-                explicit_careers_url,
-                studio=studio,
-                name_suffix="Manual Website",
-                nl_priority=nl_priority,
-                discovery_method=discovery_method,
-                evidence_source="careers_page",
-                evidence_types=["careers_keyword"],
-                evidence_score=40,
-                enabled_by_default=False,
-            )
+
+    def _provider_rows(
+        rows: list[dict[str, Any]],
+        _context: FetchedPageContext,
+    ) -> list[dict[str, Any]]:
+        return rows
+
+    def _explicit_static(
+        explicit_careers_url: str,
+        explicit_context: FetchedPageContext,
+    ) -> dict[str, Any]:
+        return build_known_careers_url_candidate(
+            explicit_careers_url,
+            studio=explicit_context.studio,
+            name_suffix="Manual Website",
+            nl_priority=explicit_context.nl_priority,
+            discovery_method=explicit_context.discovery_method,
+            evidence_source="careers_page",
+            evidence_types=["careers_keyword"],
+            evidence_score=40,
+            enabled_by_default=False,
         )
-        return True
-    static_candidate = analyzed.get("generic_static_candidate")
-    if static_candidate:
-        static_candidates.append(static_candidate)
-        return True
-    return False
+
+    def _generic_static(
+        candidate: dict[str, Any],
+        _context: FetchedPageContext,
+    ) -> dict[str, Any]:
+        return candidate
+
+    outcome = classify_fetched_page(
+        context,
+        provider_rows=_provider_rows,
+        explicit_static=_explicit_static,
+        generic_static=_generic_static,
+    )
+    provider_candidates.extend(outcome.provider_candidates)
+    static_candidates.extend(outcome.static_candidates)
+    return outcome.found_candidates
 
 
 def _looks_like_js_shell(html: str) -> bool:
-    text = str(html or "")
-    lowered = text.lower()
-    if len(text.strip()) < 500 and "<script" in lowered:
-        return True
-    return bool(
-        ("<script" in lowered)
-        and (
-            'id="app"' in lowered
-            or "id='app'" in lowered
-            or 'id="root"' in lowered
-            or "id='root'" in lowered
-            or 'id="__next"' in lowered
-            or "id='__next'" in lowered
-        )
-    )
+    return shared_looks_like_js_shell(html)
 
 
 def _browser_recoverable_error(error: str) -> bool:
-    text = str(error or "").lower()
-    return any(
-        token in text
-        for token in (
-            "403",
-            "429",
-            "timeout",
-            "timed out",
-            "challenge",
-            "cloudflare",
-            "forbidden",
-            "too many requests",
-        )
-    )
+    return shared_browser_recoverable_error(error)
 
 
 def _web_browser_recovery_candidate(

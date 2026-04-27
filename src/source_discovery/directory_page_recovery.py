@@ -10,6 +10,7 @@ from typing import Any
 
 from . import audit_ledger
 from .directory_fetch import fetch_directory_pages
+from .page_diagnostics import looks_like_js_shell as page_looks_like_js_shell
 from .recovery_url_planner import host, host_in, recovery_urls, same_party_jobish_urls
 
 RECOVERY_LOGIC_VERSION = 1
@@ -63,21 +64,7 @@ RecoveryAnalyzer = Callable[
 
 
 def looks_like_js_shell(html: str) -> bool:
-    text = str(html or "")
-    lower = text.lower()
-    if "<script" not in lower:
-        return False
-    visible = lower.replace("\n", " ").replace("\t", " ")
-    if len(visible.strip()) < 700:
-        return True
-    return (
-        'id="root"' in lower
-        or "id='root'" in lower
-        or 'id="app"' in lower
-        or "id='app'" in lower
-        or 'id="__next"' in lower
-        or "id='__next'" in lower
-    )
+    return page_looks_like_js_shell(html, short_html_threshold=700)
 
 
 def no_candidate_reason_detail(page_url: str, html: str) -> str:

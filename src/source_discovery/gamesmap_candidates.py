@@ -27,7 +27,12 @@ from .gamesmap_cache import (
 )
 from .gamesmap_parsing import _parse_gamesmap_index_entries_with_diagnostics
 from .page_analysis import analyze_fetched_page
-from .provider_inference_filters import split_bad_provider_inferences
+from .page_outcomes import (
+    FetchedPageContext,
+    PageOutcome,
+    classify_fetched_page,
+    classify_recovery_page,
+)
 from .scoring import unique_string_list
 from .static_candidates import build_known_careers_url_candidate
 from .web_search import fetch_text, infer_web_candidate
@@ -311,133 +316,137 @@ def _gamesmap_homepage_result_candidates(
             "fetchFailed": True,
         }
 
-    analyzed = analyze_page(
+    context = FetchedPageContext(
         page_url=website_url,
         html=str(result.get("text") or ""),
         studio=studio,
         nl_priority=False,
         discovery_method="gamesmap",
+        payload=entry,
+        recovery_key=website_url,
     )
-    providers = list(analyzed.get("provider_candidates") or [])
-    bad_provider_count = 0
-    if providers:
-        providers, bad_providers = split_bad_provider_inferences(providers)
-        bad_provider_count = len(bad_providers)
-        if providers:
-            return {
-                "providerCandidates": [
-                    _apply_gamesmap_provider_provenance(
-                        inferred,
-                        detail_url=detail_url,
-                        website_url=website_url,
-                        categories=categories,
-                        location=location,
-                        fetched_website=True,
-                    )
-                    for inferred in providers
-                ],
-                "staticCandidates": [],
-                "failures": [],
-                "fetchFailed": False,
-                "badProviderInferences": bad_provider_count,
-            }
 
-    explicit_careers_url = str(analyzed.get("explicit_careers_url") or "").strip()
-    if explicit_careers_url:
-        static_candidate = build_gamesmap_static_candidate(
-            studio=studio,
-            target_url=explicit_careers_url,
-            nl_priority=False,
-            website_only=False,
-            detail_url=detail_url,
-            categories=categories,
-            location=location,
-        )
-        static_candidate["evidenceTypes"] = unique_string_list(
-            [*(static_candidate.get("evidenceTypes") or []), "gamesmap_website_fetch"]
-        )
-        static_candidates = [static_candidate]
-    elif analyzed.get("generic_static_candidate"):
-        static_candidates = [
-            _apply_gamesmap_static_provenance(
-                analyzed["generic_static_candidate"],
-                detail_url=detail_url,
-                website_url=website_url,
-                categories=categories,
-                location=location,
-                fetched_website=True,
-            )
-        ]
-    elif website_only_fallback:
-        static_candidate = build_gamesmap_static_candidate(
-            studio=studio,
+    def _fallback_static(fallback_context: FetchedPageContext) -> dict[str, Any] | None:
+        if not website_only_fallback:
+            return None
+        candidate = build_gamesmap_static_candidate(
+            studio=fallback_context.studio,
             target_url=website_url,
-            nl_priority=False,
+            nl_priority=fallback_context.nl_priority,
             website_only=True,
             detail_url=detail_url,
             categories=categories,
             location=location,
             manual_only=website_only_manual_only,
         )
-        static_candidate["evidenceTypes"] = unique_string_list(
-            [*(static_candidate.get("evidenceTypes") or []), "gamesmap_website_fetch"]
+        candidate["evidenceTypes"] = unique_string_list(
+            [*(candidate.get("evidenceTypes") or []), "gamesmap_website_fetch"]
         )
-        if enable_recovery and website_url:
-            return {
-                "providerCandidates": [],
-                "staticCandidates": [],
-                "failures": [],
-                "fetchFailed": False,
-                "recoveryRequests": [
-                    DirectoryRecoveryRequest(
-                        key=website_url,
-                        adapter="gamesmap",
-                        discovery_method="gamesmap",
-                        name=studio or website_url,
-                        studio=studio,
-                        page_url=website_url,
-                        html=str(result.get("text") or ""),
-                        payload=entry,
-                    )
-                ],
-                "fallbackStaticCandidates": [
-                    {
-                        "key": website_url,
-                        "candidate": static_candidate,
-                    }
-                ],
-                "badProviderInferences": bad_provider_count,
-            }
-        static_candidates = [static_candidate]
-    else:
-        if enable_recovery and website_url:
-            return {
-                "providerCandidates": [],
-                "staticCandidates": [],
-                "failures": [],
-                "fetchFailed": False,
-                "recoveryRequests": [
-                    DirectoryRecoveryRequest(
-                        key=website_url,
-                        adapter="gamesmap",
-                        discovery_method="gamesmap",
-                        name=studio or website_url,
-                        studio=studio,
-                        page_url=website_url,
-                        html=str(result.get("text") or ""),
-                        payload=entry,
-                    )
-                ],
-                "fallbackStaticCandidates": [],
-                "badProviderInferences": bad_provider_count,
-            }
-        static_candidates = []
+        return candidate
+
+    return _gamesmap_rows_from_outcome(
+        classify_fetched_page(
+            context,
+            provider_rows=_gamesmap_provider_rows,
+            explicit_static=_gamesmap_explicit_static,
+            generic_static=_gamesmap_generic_static,
+            fallback_static=_fallback_static,
+            recovery_request=_gamesmap_recovery_request,
+            enable_recovery=enable_recovery and bool(website_url),
+            filter_bad_providers=True,
+            analyze_page=analyze_page,
+        )
+    )
+
+
+def _gamesmap_source_page_url(context: FetchedPageContext) -> str:
+    return str(context.payload.get("sourcePageUrl") or context.page_url).strip()
+
+
+def _gamesmap_detail_url(context: FetchedPageContext) -> str:
+    return str(context.payload.get("detailUrl") or "").strip()
+
+
+def _gamesmap_categories(context: FetchedPageContext) -> list[Any]:
+    return list(context.payload.get("categories") or [])
+
+
+def _gamesmap_location(context: FetchedPageContext) -> str:
+    return str(context.payload.get("location") or "").strip()
+
+
+def _gamesmap_provider_rows(
+    providers: list[dict[str, Any]],
+    context: FetchedPageContext,
+) -> list[dict[str, Any]]:
+    return [
+        _apply_gamesmap_provider_provenance(
+            inferred,
+            detail_url=_gamesmap_detail_url(context),
+            website_url=_gamesmap_source_page_url(context),
+            categories=_gamesmap_categories(context),
+            location=_gamesmap_location(context),
+            fetched_website=True,
+        )
+        for inferred in providers
+    ]
+
+
+def _gamesmap_explicit_static(
+    explicit_careers_url: str,
+    context: FetchedPageContext,
+) -> dict[str, Any]:
+    candidate = build_gamesmap_static_candidate(
+        studio=context.studio,
+        target_url=explicit_careers_url,
+        nl_priority=context.nl_priority,
+        website_only=False,
+        detail_url=_gamesmap_detail_url(context),
+        categories=_gamesmap_categories(context),
+        location=_gamesmap_location(context),
+    )
+    candidate["evidenceTypes"] = unique_string_list(
+        [*(candidate.get("evidenceTypes") or []), "gamesmap_website_fetch"]
+    )
+    return candidate
+
+
+def _gamesmap_generic_static(
+    candidate: dict[str, Any],
+    context: FetchedPageContext,
+) -> dict[str, Any]:
+    return _apply_gamesmap_static_provenance(
+        candidate,
+        detail_url=_gamesmap_detail_url(context),
+        website_url=_gamesmap_source_page_url(context),
+        categories=_gamesmap_categories(context),
+        location=_gamesmap_location(context),
+        fetched_website=True,
+    )
+
+
+def _gamesmap_recovery_request(context: FetchedPageContext) -> DirectoryRecoveryRequest:
+    return DirectoryRecoveryRequest(
+        key=context.recovery_key or context.page_url,
+        adapter="gamesmap",
+        discovery_method=context.discovery_method,
+        name=context.studio or context.page_url,
+        studio=context.studio,
+        page_url=context.page_url,
+        html=context.html,
+        payload=dict(context.payload),
+    )
+
+
+def _gamesmap_rows_from_outcome(outcome: PageOutcome) -> dict[str, Any]:
     return {
-        "providerCandidates": [],
-        "staticCandidates": static_candidates,
+        "providerCandidates": outcome.provider_candidates,
+        "staticCandidates": outcome.static_candidates,
         "failures": [],
         "fetchFailed": False,
-        "badProviderInferences": bad_provider_count,
+        "recoveryRequests": outcome.recovery_requests,
+        "fallbackStaticCandidates": outcome.fallback_static_candidates,
+        "badProviderInferences": outcome.bad_provider_inferences,
     }
 
 
@@ -446,64 +455,24 @@ def _gamesmap_recovery_result_candidates(
     request: DirectoryRecoveryRequest,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     entry = dict(request.payload or {})
-    detail_url = str(entry.get("detailUrl") or "").strip()
-    categories = list(entry.get("categories") or [])
-    location = str(entry.get("location") or "").strip()
     recovery_url = str(result.get("url") or request.page_url or "").strip()
-    analyzed = analyze_fetched_page(
+    context = FetchedPageContext(
         page_url=recovery_url,
         html=str(result.get("text") or ""),
         studio=request.studio,
         nl_priority=False,
         discovery_method="gamesmap",
+        payload={**entry, "sourcePageUrl": request.page_url},
+        recovery_key=request.key,
     )
-    providers = list(analyzed.get("provider_candidates") or [])
-    providers, _bad_providers = split_bad_provider_inferences(providers)
-    if providers:
-        return (
-            [
-                _apply_gamesmap_provider_provenance(
-                    inferred,
-                    detail_url=detail_url,
-                    website_url=request.page_url,
-                    categories=categories,
-                    location=location,
-                    fetched_website=True,
-                )
-                for inferred in providers
-            ],
-            [],
-        )
-    explicit_careers_url = str(analyzed.get("explicit_careers_url") or "").strip()
-    if explicit_careers_url:
-        static_candidate = build_gamesmap_static_candidate(
-            studio=request.studio,
-            target_url=explicit_careers_url,
-            nl_priority=False,
-            website_only=False,
-            detail_url=detail_url,
-            categories=categories,
-            location=location,
-        )
-        static_candidate["evidenceTypes"] = unique_string_list(
-            [*(static_candidate.get("evidenceTypes") or []), "gamesmap_website_fetch"]
-        )
-        return [], [static_candidate]
-    if analyzed.get("generic_static_candidate"):
-        return (
-            [],
-            [
-                _apply_gamesmap_static_provenance(
-                    analyzed["generic_static_candidate"],
-                    detail_url=detail_url,
-                    website_url=request.page_url,
-                    categories=categories,
-                    location=location,
-                    fetched_website=True,
-                )
-            ],
-        )
-    return [], []
+    outcome = classify_recovery_page(
+        context,
+        provider_rows=_gamesmap_provider_rows,
+        explicit_static=_gamesmap_explicit_static,
+        generic_static=_gamesmap_generic_static,
+        filter_bad_providers=True,
+    )
+    return outcome.provider_candidates, outcome.static_candidates
 
 
 def _gamesmap_collect_detail_entries(
