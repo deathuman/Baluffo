@@ -312,25 +312,6 @@ def _load_or_initialize_artifact(
     )
 
 
-def _next_batch(
-    representative_rows: list[dict[str, Any]],
-    completed_urls: set[str],
-    batch_size: int,
-) -> tuple[list[dict[str, Any]], int]:
-    batch: list[dict[str, Any]] = []
-    cursor = len(representative_rows)
-    for index, row in enumerate(representative_rows):
-        url = _row_url(row)
-        if url and url in completed_urls:
-            continue
-        if not batch:
-            cursor = index
-        batch.append(row)
-        if len(batch) >= batch_size:
-            break
-    return batch, cursor
-
-
 def _merge_unique_rows(existing: Any, incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return active_audit_runtime.merge_unique_candidate_rows(
         existing,
@@ -1809,47 +1790,10 @@ def run_gamedevmap_active_source_dry_run(
         progress["completedUrlsCount"] = 0
         artifact["progress"] = progress
 
-    batches_run = 0
     recovery_cache: dict[str, dict[str, Any]] = {}
-    while True:
-        batch_rows, cursor = _next_batch(representative_rows, completed_urls, batch_size)
+
+    def _run_batch(batch_rows: list[dict[str, Any]], cursor: int, batch_number: int) -> None:
         progress = _as_dict(artifact.get("progress"))
-        progress["cursorPosition"] = int(cursor)
-        artifact["progress"] = progress
-        if not batch_rows:
-            apply_gamedevmap_lost_recovery_audit(
-                artifact,
-                compare_artifact_path=compare_artifact_path,
-            )
-            _write_artifact(
-                artifact,
-                output_path,
-                parsed_rows=parsed_rows,
-                representative_rows=representative_rows,
-                completed_urls=completed_urls,
-                complete=True,
-            )
-            break
-        if max_batches and batches_run >= max_batches:
-            apply_gamedevmap_lost_recovery_audit(
-                artifact,
-                compare_artifact_path=compare_artifact_path,
-            )
-            _write_artifact(
-                artifact,
-                output_path,
-                parsed_rows=parsed_rows,
-                representative_rows=representative_rows,
-                completed_urls=completed_urls,
-                complete=False,
-            )
-            break
-
-        emit_log(
-            "GameDevMap active-source dry run: "
-            f"batch={batches_run + 1}, rows={len(batch_rows)}, cursor={cursor}."
-        )
-
         active_audit_runtime.run_active_audit_batch(
             artifact=artifact,
             batch_rows=batch_rows,
@@ -1903,21 +1847,38 @@ def run_gamedevmap_active_source_dry_run(
             completed_identities=completed_urls,
             append_timing=lambda batch_timing: _append_batch_timing(artifact, batch_timing),
         )
-        batches_run += 1
+
+    def _before_write() -> None:
         apply_gamedevmap_lost_recovery_audit(
             artifact,
             compare_artifact_path=compare_artifact_path,
         )
+
+    def _write_current_artifact(complete: bool) -> None:
         _write_artifact(
             artifact,
             output_path,
             parsed_rows=parsed_rows,
             representative_rows=representative_rows,
             completed_urls=completed_urls,
-            complete=len(completed_urls) >= len(representative_rows),
+            complete=complete,
         )
-        if max_batches and batches_run >= max_batches:
-            break
+
+    active_audit_runtime.run_active_audit_loop(
+        artifact=artifact,
+        source_rows=representative_rows,
+        completed_identities=completed_urls,
+        batch_size=batch_size,
+        max_batches=max_batches,
+        row_identity=_row_url,
+        emit_batch_log=lambda batch_number, row_count, cursor: emit_log(
+            "GameDevMap active-source dry run: "
+            f"batch={batch_number}, rows={row_count}, cursor={cursor}."
+        ),
+        run_batch=_run_batch,
+        before_write=_before_write,
+        write_artifact=_write_current_artifact,
+    )
 
     emit_log(f"GameDevMap active-source dry run written to {output_path}.")
     return artifact

@@ -104,6 +104,13 @@ class ActiveAuditBatchResult:
     recovered_homepages: set[str]
 
 
+@dataclass
+class ActiveAuditLoopResult:
+    batches_run: int
+    completed_identities: set[str]
+    complete: bool
+
+
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
@@ -129,6 +136,26 @@ def _dict_rows(value: Any) -> list[dict[str, Any]]:
 
 def _duration_ms(started: float) -> int:
     return max(0, int((time.perf_counter() - started) * 1000))
+
+
+def _next_unprocessed_batch(
+    source_rows: list[dict[str, Any]],
+    completed_identities: set[str],
+    batch_size: int,
+    row_identity: Callable[[dict[str, Any]], str],
+) -> tuple[list[dict[str, Any]], int]:
+    batch: list[dict[str, Any]] = []
+    cursor = len(source_rows)
+    for index, row in enumerate(source_rows):
+        row_id = row_identity(row)
+        if row_id and row_id in completed_identities:
+            continue
+        if not batch:
+            cursor = index
+        batch.append(row)
+        if len(batch) >= batch_size:
+            break
+    return batch, cursor
 
 
 def create_active_audit_artifact(
@@ -771,3 +798,65 @@ def run_active_audit_batch(
         recovery_jobs=recovery_jobs,
         recovered_homepages=recovered_homepages,
     )
+
+
+def run_active_audit_loop(
+    *,
+    artifact: dict[str, Any],
+    source_rows: list[dict[str, Any]],
+    completed_identities: set[str],
+    batch_size: int,
+    max_batches: int,
+    row_identity: Callable[[dict[str, Any]], str],
+    emit_batch_log: Callable[[int, int, int], None],
+    run_batch: Callable[[list[dict[str, Any]], int, int], None],
+    before_write: Callable[[], None],
+    write_artifact: Callable[[bool], None],
+) -> ActiveAuditLoopResult:
+    batches_run = 0
+    effective_batch_size = max(1, int(batch_size or 1))
+    effective_max_batches = max(0, int(max_batches or 0))
+
+    while True:
+        batch_rows, cursor = _next_unprocessed_batch(
+            source_rows,
+            completed_identities,
+            effective_batch_size,
+            row_identity,
+        )
+        progress = _as_dict(artifact.get("progress"))
+        progress["cursorPosition"] = int(cursor)
+        artifact["progress"] = progress
+
+        if not batch_rows:
+            before_write()
+            write_artifact(True)
+            return ActiveAuditLoopResult(
+                batches_run=batches_run,
+                completed_identities=set(completed_identities),
+                complete=True,
+            )
+
+        if effective_max_batches and batches_run >= effective_max_batches:
+            before_write()
+            write_artifact(False)
+            return ActiveAuditLoopResult(
+                batches_run=batches_run,
+                completed_identities=set(completed_identities),
+                complete=False,
+            )
+
+        batch_number = batches_run + 1
+        emit_batch_log(batch_number, len(batch_rows), cursor)
+        run_batch(batch_rows, cursor, batch_number)
+        batches_run += 1
+
+        before_write()
+        complete = len(completed_identities) >= len(source_rows)
+        write_artifact(complete)
+        if effective_max_batches and batches_run >= effective_max_batches:
+            return ActiveAuditLoopResult(
+                batches_run=batches_run,
+                completed_identities=set(completed_identities),
+                complete=complete,
+            )

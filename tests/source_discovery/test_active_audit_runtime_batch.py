@@ -7,6 +7,7 @@ from src.source_discovery.active_audit_runtime import (
     ActiveAuditRecoveryFetchResult,
     ActiveHomepageBatchResult,
     run_active_audit_batch,
+    run_active_audit_loop,
 )
 
 
@@ -117,3 +118,64 @@ def test_active_audit_batch_sequences_recovery_probe_and_progress() -> None:
         {"reason": "recovery_miss"},
         {"reason": "bad_provider"},
     ]
+
+
+def test_active_audit_loop_writes_complete_when_no_rows_remain() -> None:
+    artifact: dict[str, object] = {"progress": {}}
+    order: list[str] = []
+
+    result = run_active_audit_loop(
+        artifact=artifact,
+        source_rows=[{"url": "https://one.example"}],
+        completed_identities={"https://one.example"},
+        batch_size=10,
+        max_batches=0,
+        row_identity=lambda row: str(row.get("url") or ""),
+        emit_batch_log=lambda batch, rows, cursor: order.append("emit"),
+        run_batch=lambda rows, cursor, batch: order.append("batch"),
+        before_write=lambda: order.append("before_write"),
+        write_artifact=lambda complete: order.append(f"write:{complete}"),
+    )
+
+    assert result.complete is True
+    assert result.batches_run == 0
+    assert artifact["progress"] == {"cursorPosition": 1}
+    assert order == ["before_write", "write:True"]
+
+
+def test_active_audit_loop_stops_after_max_batches_and_writes_incomplete() -> None:
+    artifact: dict[str, object] = {"progress": {}}
+    completed: set[str] = set()
+    order: list[str] = []
+    batch_calls: list[tuple[int, list[str], int]] = []
+
+    def _run_batch(rows: list[dict[str, object]], cursor: int, batch_number: int) -> None:
+        batch_calls.append((batch_number, [str(row["url"]) for row in rows], cursor))
+        completed.update(str(row["url"]) for row in rows)
+        order.append("batch")
+
+    result = run_active_audit_loop(
+        artifact=artifact,
+        source_rows=[
+            {"url": "https://one.example"},
+            {"url": "https://two.example"},
+            {"url": "https://three.example"},
+        ],
+        completed_identities=completed,
+        batch_size=2,
+        max_batches=1,
+        row_identity=lambda row: str(row.get("url") or ""),
+        emit_batch_log=lambda batch, rows, cursor: order.append(f"emit:{batch}:{rows}:{cursor}"),
+        run_batch=_run_batch,
+        before_write=lambda: order.append("before_write"),
+        write_artifact=lambda complete: order.append(f"write:{complete}"),
+    )
+
+    assert result.complete is False
+    assert result.batches_run == 1
+    assert result.completed_identities == {"https://one.example", "https://two.example"}
+    assert artifact["progress"] == {"cursorPosition": 0}
+    assert batch_calls == [
+        (1, ["https://one.example", "https://two.example"], 0),
+    ]
+    assert order == ["emit:1:2:0", "batch", "before_write", "write:False"]
