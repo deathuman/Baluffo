@@ -20,6 +20,10 @@ def _sheet_url(sheet_id: str = "sheet_test", gid: str = "1") -> str:
     return sd.game_studios_sheet_candidate_urls(sheet_id, gid)[0]
 
 
+def _sheet_urls(sheet_id: str = "sheet_test", gid: str = "1") -> list[str]:
+    return sd.game_studios_sheet_candidate_urls(sheet_id, gid)
+
+
 def _fetch_from(payloads: dict[str, str]):
     def fake_fetch(url: str, _: int) -> str:
         if url not in payloads:
@@ -94,6 +98,26 @@ def test_sheet_directory_audit_reuses_fresh_completed_artifact_without_fetch() -
         assert first_cache_hit is False
         assert second_cache_hit is True
         assert second_artifact == first_artifact
+
+
+def test_sheet_directory_csv_fetch_falls_back_to_next_candidate_url() -> None:
+    with workspace_tmpdir("sheet-directory-audit-url-fallback") as root:
+        audit_path = root / "sheet-audit.json"
+        urls = _sheet_urls()
+
+        artifact, cache_hit = sd.run_sheet_directory_audit(
+            5,
+            sheet_id="sheet_test",
+            gid="1",
+            config=_audit_config(str(audit_path)),
+            fetcher=_fetch_from({urls[1]: _sheet_csv()}),
+        )
+
+        assert cache_hit is False
+        assert artifact["summary"]["csvUrlAttempts"] == 2
+        assert artifact["summary"]["selectedCsvUrl"] == urls[1]
+        assert artifact["summary"]["providerCandidates"] == 1
+        assert artifact["summary"]["staticCandidates"] == 1
 
 
 def test_sheet_directory_audit_reruns_stale_wrong_schema_incomplete_or_signature_mismatch() -> None:

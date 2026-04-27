@@ -5,7 +5,9 @@ from types import SimpleNamespace
 from src.source_discovery.directory_adapter_templates import (
     apply_directory_provenance,
     build_directory_static_candidate,
+    build_known_directory_entry_candidate,
     empty_directory_scan_result,
+    empty_scan_result_payload,
     run_directory_website_scan,
 )
 
@@ -111,6 +113,73 @@ def test_apply_directory_provenance_preserves_candidate_and_adds_metadata() -> N
     assert row["sourceDirectoryCategories"] == ["Developer"]
 
 
+def test_build_known_directory_entry_candidate_prefers_provider_and_adds_metadata() -> None:
+    def infer_provider(_url, studio, *, nl_priority, discovery_method):
+        return {
+            "name": studio,
+            "studio": studio,
+            "adapter": "greenhouse",
+            "nlPriority": nl_priority,
+            "discoveryMethod": discovery_method,
+            "evidenceTypes": ["provider_url"],
+            "evidenceScore": 28,
+        }
+
+    row = build_known_directory_entry_candidate(
+        target_url="https://boards.greenhouse.io/example",
+        studio="Example Studio",
+        nl_priority=False,
+        discovery_method="sheet_directory",
+        discovery_stage="sheet_directory",
+        evidence_source="game_studios_sheet",
+        evidence_types=["sheet_directory", "sheet_row"],
+        evidence_score=46,
+        name_suffix="Sheet",
+        enabled_by_default=None,
+        weak_signal=False,
+        extra_fields={
+            "sourceDirectory": "game_studios_sheet",
+            "sourceDirectoryEntryUrl": "https://boards.greenhouse.io/example",
+        },
+        infer_provider=infer_provider,
+    )
+
+    assert row["adapter"] == "greenhouse"
+    assert row["discoveryStage"] == "sheet_directory"
+    assert row["evidenceTypes"] == ["provider_url", "sheet_directory", "sheet_row"]
+    assert row["evidenceScore"] == 46
+    assert row["careersUrl"] == "https://boards.greenhouse.io/example"
+    assert row["sourceDirectory"] == "game_studios_sheet"
+
+
+def test_build_known_directory_entry_candidate_falls_back_to_static_shape() -> None:
+    row = build_known_directory_entry_candidate(
+        target_url="https://example.com/careers",
+        studio="Example Studio",
+        nl_priority=False,
+        discovery_method="sheet_directory",
+        discovery_stage="sheet_directory",
+        evidence_source="game_studios_sheet",
+        evidence_types=["sheet_directory", "sheet_roles_open_speculative"],
+        evidence_score=18,
+        name_suffix="Sheet",
+        enabled_by_default=None,
+        weak_signal=True,
+        extra_fields={
+            "sourceDirectory": "game_studios_sheet",
+            "sourceDirectoryEntryUrl": "https://example.com/careers",
+        },
+        infer_provider=lambda *_args, **_kwargs: None,
+    )
+
+    assert row["name"] == "Example Studio (Sheet)"
+    assert row["adapter"] == "static"
+    assert "enabledByDefault" not in row
+    assert row["weakSignal"] is True
+    assert row["discoveryStage"] == "sheet_directory"
+    assert row["sourceDirectory"] == "game_studios_sheet"
+
+
 def test_empty_directory_scan_result_preserves_template_fields() -> None:
     failures = [{"adapter": "gameprog", "stage": "teams_fetch"}]
     summary = {"parsedRows": 0, "websiteFetchJobs": 0}
@@ -132,6 +201,28 @@ def test_empty_directory_scan_result_preserves_template_fields() -> None:
         "browserRecoveryCandidates": [],
         "batchTiming": batch_timing,
         "writeCache": False,
+    }
+
+
+def test_empty_scan_result_payload_preserves_minimal_shape() -> None:
+    failures = [{"adapter": "sheet_directory", "stage": "directory_index_fetch"}]
+    batch_timing = {"csvFetchMs": 2}
+    progress = {"complete": True, "cursor": 0, "completedUrlIdentities": []}
+
+    row = empty_scan_result_payload(
+        failures=failures,
+        summary={"csvUrlAttempts": 3},
+        progress=progress,
+        batch_timing=batch_timing,
+    )
+
+    assert row == {
+        "providerCandidates": [],
+        "staticCandidates": [],
+        "failures": failures,
+        "summary": {"csvUrlAttempts": 3},
+        "progress": progress,
+        "batchTiming": batch_timing,
     }
 
 

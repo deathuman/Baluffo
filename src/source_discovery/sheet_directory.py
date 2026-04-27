@@ -18,10 +18,13 @@ from .config import (
     GAME_STUDIOS_SHEET_ID,
     GAME_STUDIOS_SHEET_URL,
 )
+from .directory_adapter_templates import (
+    build_known_directory_entry_candidate,
+    empty_scan_result_payload,
+)
 from .directory_audit import discover_directory_scan_candidates, run_directory_audit
 from .io_runtime import collapse_competing_candidates
-from .scoring import unique_string_list
-from .static_candidates import build_known_careers_url_candidate
+from .multi_source_text import fetch_first_nonempty_text
 from .web_search import infer_web_candidate
 
 SHEET_DIRECTORY_AUDIT_SCHEMA_VERSION = 1
@@ -135,22 +138,18 @@ def _fetch_sheet_csv(
     gid: str,
     fetcher: Any,
 ) -> tuple[str, str, list[str], str, int]:
-    csv_text = ""
-    last_error = ""
-    attempted_urls: list[str] = []
-    selected_csv_url = ""
-    started = time.perf_counter()
-    for url in game_studios_sheet_candidate_urls(sheet_id, gid):
-        attempted_urls.append(url)
-        try:
-            csv_text = fetcher(url, timeout_s)
-            if str(csv_text or "").strip():
-                selected_csv_url = url
-                break
-        except Exception as exc:  # noqa: BLE001
-            last_error = str(exc)
-            continue
-    return csv_text, last_error, attempted_urls, selected_csv_url, audit_ledger.duration_ms(started)
+    result = fetch_first_nonempty_text(
+        game_studios_sheet_candidate_urls(sheet_id, gid),
+        timeout_s=timeout_s,
+        fetcher=fetcher,
+    )
+    return (
+        result.text,
+        result.last_error,
+        result.attempted_urls,
+        result.selected_url,
+        result.duration_ms,
+    )
 
 
 def _sheet_max_rows() -> int | None:
@@ -234,45 +233,50 @@ def _append_sheet_entry_candidate(
         return True
 
     evidence_types, evidence_score, weak_signal = _sheet_evidence_for_openings_flag(openings_flag)
-    inferred = infer_web_candidate(
-        careers_url, studio, nl_priority=False, discovery_method="sheet_directory"
+    row = build_known_directory_entry_candidate(
+        target_url=careers_url,
+        studio=studio,
+        nl_priority=False,
+        discovery_method="sheet_directory",
+        discovery_stage="sheet_directory",
+        evidence_source="game_studios_sheet",
+        evidence_types=evidence_types,
+        evidence_score=evidence_score,
+        name_suffix="Sheet",
+        enabled_by_default=None,
+        weak_signal=bool(weak_signal),
+        extra_fields={
+            "sourceDirectory": "game_studios_sheet",
+            "sourceDirectoryUrl": GAME_STUDIOS_SHEET_URL,
+            "sourceDirectoryEntryUrl": careers_url,
+        },
+        infer_provider=infer_web_candidate,
     )
-    if inferred:
-        inferred["discoveryStage"] = "sheet_directory"
-        inferred["discoveryMethod"] = "sheet_directory"
-        inferred["sourceDirectory"] = "game_studios_sheet"
-        inferred["sourceDirectoryUrl"] = GAME_STUDIOS_SHEET_URL
-        inferred["sourceDirectoryEntryUrl"] = careers_url
-        inferred["evidenceTypes"] = unique_string_list(
-            [*(inferred.get("evidenceTypes") or []), *evidence_types]
-        )
-        inferred["evidenceScore"] = max(int(inferred.get("evidenceScore") or 0), evidence_score)
-        inferred["weakSignal"] = bool(inferred.get("weakSignal")) or weak_signal
-        inferred["careersUrl"] = careers_url
-        provider_candidates.append(inferred)
-        return False
-
-    static_candidates.append(
-        build_known_careers_url_candidate(
-            careers_url,
-            studio=studio,
-            name_suffix="Sheet",
-            nl_priority=False,
-            discovery_method="sheet_directory",
-            discovery_stage="sheet_directory",
-            evidence_source="game_studios_sheet",
-            evidence_types=evidence_types,
-            evidence_score=int(evidence_score),
-            enabled_by_default=None,
-            weak_signal=bool(weak_signal),
-            extra_fields={
-                "sourceDirectory": "game_studios_sheet",
-                "sourceDirectoryUrl": GAME_STUDIOS_SHEET_URL,
-                "sourceDirectoryEntryUrl": careers_url,
-            },
-        )
-    )
+    if str(row.get("adapter") or "") == "static":
+        static_candidates.append(row)
+    else:
+        provider_candidates.append(row)
     return False
+
+
+def _empty_sheet_summary(
+    *,
+    attempted_urls: list[str],
+    selected_csv_url: str,
+    csv_fetch_failures: int,
+    parse_failures: int = 0,
+) -> dict[str, Any]:
+    summary = {
+        "csvUrlAttempts": len(attempted_urls),
+        "selectedCsvUrl": selected_csv_url,
+        "rawRows": 0,
+        "eligibleRows": 0,
+        "invalidUrls": 0,
+        "csvFetchFailures": csv_fetch_failures,
+    }
+    if parse_failures:
+        summary["parseFailures"] = parse_failures
+    return summary
 
 
 def _empty_sheet_scan_result(
@@ -281,22 +285,20 @@ def _empty_sheet_scan_result(
     batch_timing: dict[str, Any],
     attempted_urls: list[str],
     selected_csv_url: str = "",
+    parse_failures: int = 0,
+    csv_fetch_failures: int | None = None,
 ) -> dict[str, Any]:
-    return {
-        "providerCandidates": [],
-        "staticCandidates": [],
-        "failures": failures,
-        "summary": {
-            "csvUrlAttempts": len(attempted_urls),
-            "selectedCsvUrl": selected_csv_url,
-            "rawRows": 0,
-            "eligibleRows": 0,
-            "invalidUrls": 0,
-            "csvFetchFailures": len(failures),
-        },
-        "progress": {"complete": True, "cursor": 0, "completedUrlIdentities": []},
-        "batchTiming": batch_timing,
-    }
+    return empty_scan_result_payload(
+        failures=failures,
+        summary=_empty_sheet_summary(
+            attempted_urls=attempted_urls,
+            selected_csv_url=selected_csv_url,
+            csv_fetch_failures=len(failures) if csv_fetch_failures is None else csv_fetch_failures,
+            parse_failures=parse_failures,
+        ),
+        progress={"complete": True, "cursor": 0, "completedUrlIdentities": []},
+        batch_timing=batch_timing,
+    )
 
 
 def _sheet_directory_scan(
@@ -352,16 +354,9 @@ def _sheet_directory_scan(
             batch_timing=batch_timing,
             attempted_urls=attempted_urls,
             selected_csv_url=selected_csv_url,
+            csv_fetch_failures=0,
+            parse_failures=1,
         )
-        parse_result["summary"] = {
-            "csvUrlAttempts": len(attempted_urls),
-            "selectedCsvUrl": selected_csv_url,
-            "rawRows": 0,
-            "eligibleRows": 0,
-            "invalidUrls": 0,
-            "csvFetchFailures": 0,
-            "parseFailures": 1,
-        }
         return parse_result
 
     total_raw = len(raw_entries)

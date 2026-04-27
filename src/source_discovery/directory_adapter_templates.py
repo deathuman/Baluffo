@@ -9,6 +9,8 @@ from .directory_page_recovery import run_directory_page_recovery
 from .scoring import unique_string_list
 from .static_candidates import build_known_careers_url_candidate
 
+ProviderInferenceFn = Any
+
 
 def build_directory_static_candidate(
     *,
@@ -97,6 +99,59 @@ def build_directory_static_candidate(
     )
 
 
+def build_known_directory_entry_candidate(
+    *,
+    target_url: str,
+    studio: str,
+    nl_priority: bool,
+    discovery_method: str,
+    discovery_stage: str,
+    evidence_source: str,
+    evidence_types: list[str],
+    evidence_score: int,
+    name_suffix: str,
+    enabled_by_default: bool | None = False,
+    weak_signal: bool = False,
+    extra_fields: dict[str, Any] | None = None,
+    infer_provider: ProviderInferenceFn | None = None,
+) -> dict[str, Any]:
+    if infer_provider is not None:
+        inferred = infer_provider(
+            target_url,
+            studio,
+            nl_priority=nl_priority,
+            discovery_method=discovery_method,
+        )
+        if inferred:
+            row = dict(inferred)
+            row["discoveryStage"] = discovery_stage
+            row["discoveryMethod"] = discovery_method
+            row["evidenceTypes"] = unique_string_list(
+                [*(row.get("evidenceTypes") or []), *evidence_types]
+            )
+            row["evidenceScore"] = max(int(row.get("evidenceScore") or 0), int(evidence_score))
+            row["weakSignal"] = bool(row.get("weakSignal")) or bool(weak_signal)
+            row["careersUrl"] = target_url
+            if isinstance(extra_fields, dict):
+                row.update(extra_fields)
+            return row
+
+    return build_known_careers_url_candidate(
+        target_url,
+        studio=studio,
+        name_suffix=name_suffix,
+        nl_priority=nl_priority,
+        discovery_method=discovery_method,
+        discovery_stage=discovery_stage,
+        evidence_source=evidence_source,
+        evidence_types=evidence_types,
+        evidence_score=int(evidence_score),
+        enabled_by_default=enabled_by_default,
+        weak_signal=bool(weak_signal),
+        extra_fields=extra_fields,
+    )
+
+
 def apply_directory_provenance(
     candidate: dict[str, Any],
     *,
@@ -142,16 +197,38 @@ def empty_directory_scan_result(
     batch_timing: dict[str, Any],
     write_cache: bool,
 ) -> dict[str, Any]:
-    return {
+    return empty_scan_result_payload(
+        failures=failures,
+        summary=summary,
+        batch_timing=batch_timing,
+        extra_fields={
+            "websiteFetchJobs": [],
+            "browserRecoveryCandidates": [],
+            "writeCache": bool(write_cache),
+        },
+    )
+
+
+def empty_scan_result_payload(
+    *,
+    failures: list[dict[str, Any]],
+    summary: dict[str, Any],
+    batch_timing: dict[str, Any],
+    progress: dict[str, Any] | None = None,
+    extra_fields: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    row = {
         "providerCandidates": [],
         "staticCandidates": [],
         "failures": failures,
         "summary": summary,
-        "websiteFetchJobs": [],
-        "browserRecoveryCandidates": [],
-        "batchTiming": batch_timing,
-        "writeCache": bool(write_cache),
     }
+    if progress is not None:
+        row["progress"] = progress
+    row["batchTiming"] = batch_timing
+    if isinstance(extra_fields, dict):
+        row.update(extra_fields)
+    return row
 
 
 def run_directory_website_scan(

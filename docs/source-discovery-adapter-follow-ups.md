@@ -65,12 +65,12 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 
 ### P1: Sheet-Directory Manual Implementations
 
-Sheet-directory now has a default audit path, but several small pieces remain manually assembled.
+Sheet-directory now has a default audit path. Its low-level fetch and row templates are shared; the remaining duplication is scan orchestration.
 
-- `sheet_directory.py::_fetch_sheet_csv` implements multi-URL text fetch retry. This needs a shared multi-source text fetch helper, not `fetch_directory_pages`, because the contract is CSV/text selection rather than HTML page fetching.
-- `sheet_directory.py::_append_sheet_entry_candidate` manually builds static candidates from sheet rows. Extract a shared static row builder where source-directory evidence and openings-flag evidence can be supplied by callbacks.
-- `sheet_directory.py::_empty_sheet_scan_result` duplicates the empty scan template pattern and should use `directory_audit`.
-- `sheet_directory.py::_sheet_directory_scan` should be thinned toward a shared scan skeleton once CSV fetch, entry selection, candidate building, and summary callbacks are isolated.
+- Completed sheet-foundation slice: `sheet_directory.py::_fetch_sheet_csv` now delegates to a shared multi-source text fetch helper.
+- Completed sheet-foundation slice: `sheet_directory.py::_append_sheet_entry_candidate` now uses a shared provider-or-static directory entry builder while preserving sheet evidence and provider-first ordering.
+- Completed sheet-foundation slice: `sheet_directory.py::_empty_sheet_scan_result` now uses a shared minimal empty scan-result payload helper.
+- `sheet_directory.py::_sheet_directory_scan` should be thinned toward a shared scan skeleton once entry selection and summary callbacks are isolated.
 
 ### P2: Prevalidated Queue Policy Adoption
 
@@ -130,7 +130,7 @@ Sheet-directory now has a default audit path, but several small pieces remain ma
 
 - No duplicate `_default_browser_fetcher`.
 - No duplicate empty scan-result constructors.
-- No adapter-local multi-URL retry once a shared text-fetch helper exists.
+- No adapter-local multi-URL retry once `multi_source_text` can own the selection contract.
 - No adapter-local provider -> explicit careers -> generic static ordering when `page_outcomes` can own it.
 - No bounded probe batch outside `probe_runtime`.
 - No adapter-owned provider/static append-and-dedupe when `candidate_collections` can own it.
