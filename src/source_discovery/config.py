@@ -276,6 +276,8 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "activeAuditEnabled": True,
         "activeAuditPath": "data/web-search-discovery-audit.json",
         "activeAuditTtlMinutes": 360,
+        "maxQueries": 24,
+        "maxLinksPerQuery": 8,
     },
     "gamedevmap": {
         "enabled": True,

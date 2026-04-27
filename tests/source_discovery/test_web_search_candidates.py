@@ -88,7 +88,8 @@ def test_build_web_search_queries_skips_blank_seeds_adds_site_queries_and_caps_r
     capped = web_candidates.build_web_search_queries(seeds, max_queries=2)
 
     assert all(query for query, _seed in queries)
-    assert any(query == "Example Studio site:jobs.example.com jobs" for query, _seed in queries)
+    assert queries[0][0] == "Example Studio site:jobs.example.com jobs"
+    assert any(query == "Example Studio careers game studio" for query, _seed in queries)
     assert len(capped) == 2
     assert {seed["studio"] for _query, seed in capped} == {"Example Studio"}
 

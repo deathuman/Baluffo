@@ -115,6 +115,15 @@ def test_run_discovery_default_web_search_audit_reuses_artifact() -> None:
             assert first_summary["complete"] is True
             assert first_summary["seedCareersEnabled"] is True
             assert first_summary["webSearchEnabled"] is True
+            assert first_summary["maxQueries"] == 24
+            assert first_summary["maxLinksPerQuery"] == 8
+            assert first_summary["webQueriesPlanned"] == 3
+            assert first_summary["webSearchSuccesses"] == 3
+            assert first_summary["webLinksExtracted"] == 3
+            assert first_summary["webLinksConsidered"] == 3
+            assert first_summary["webJobishLinks"] == 3
+            assert first_summary["webDuplicatePageFetchUrls"] == 2
+            assert len(first_summary["webQuerySamples"]) == 3
             assert first_summary["providerCandidates"] >= 2
             assert audit_path.exists()
             queued = json.loads(paths.discovery_candidates_path.read_text(encoding="utf-8"))
@@ -140,6 +149,20 @@ def test_run_discovery_default_web_search_audit_reuses_artifact() -> None:
             )
 
             assert second_report["directoryAuditSummaries"]["web_search"]["cacheHit"] is True
+
+            config_with_changed_tuning = _stage_config(audit_path=str(audit_path))
+            config_with_changed_tuning["webSearch"]["maxLinksPerQuery"] = 4
+            third_report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=True,
+                discovery_config=config_with_changed_tuning,
+                fetcher=fake_fetch,
+            )
+
+            assert third_report["directoryAuditSummaries"]["web_search"]["cacheHit"] is False
+            assert third_report["directoryAuditSummaries"]["web_search"]["maxLinksPerQuery"] == 4
 
 
 def test_run_discovery_default_web_search_audit_respects_no_web_search() -> None:
@@ -182,3 +205,5 @@ def test_run_discovery_default_web_search_audit_respects_no_web_search() -> None
             assert summary["webSearchEnabled"] is False
             assert summary["seedProviderCandidates"] == 1
             assert int(summary.get("webProviderCandidates") or 0) == 0
+            assert int(summary.get("webQueriesPlanned") or 0) == 0
+            assert int(summary.get("webSearchSuccesses") or 0) == 0

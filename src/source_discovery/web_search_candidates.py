@@ -25,6 +25,7 @@ from .web_search_fetch import fetch_text
 
 WEB_SEARCH_AUDIT_SCHEMA_VERSION = 1
 WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT = 10_000
+WEB_SEARCH_AUDIT_SAMPLE_LIMIT = 25
 
 _PROVIDER_DISPLAY_NAMES = {
     "ashby": "Ashby",
@@ -301,13 +302,13 @@ def build_web_search_queries(
         studio = str(seed.get("studio") or "").strip()
         if not studio:
             continue
-        for suffix in WEB_SEARCH_QUERY_SUFFIX:
-            queries.append((f"{studio} {suffix} game studio", seed))
         careers_url = str(seed.get("careersUrl") or "").strip()
         if careers_url:
             host = (urlparse(careers_url).netloc or "").strip()
             if host:
                 queries.append((f"{studio} site:{host} jobs", seed))
+        for suffix in WEB_SEARCH_QUERY_SUFFIX:
+            queries.append((f"{studio} {suffix} game studio", seed))
         if len(queries) >= max_queries:
             break
     return queries[:max_queries]
@@ -402,6 +403,22 @@ def _web_search_audit_ttl_minutes(config: dict[str, Any] | None) -> int:
         return 360
 
 
+def _web_search_max_queries(config: dict[str, Any] | None) -> int:
+    raw = _web_search_config_section(config).get("maxQueries", 24)
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 24
+
+
+def _web_search_max_links_per_query(config: dict[str, Any] | None) -> int:
+    raw = _web_search_config_section(config).get("maxLinksPerQuery", 8)
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 8
+
+
 def _seed_catalog_signature(studio_seeds: list[dict[str, Any]]) -> dict[str, Any]:
     normalized = [
         {
@@ -424,12 +441,14 @@ def _web_search_audit_signature(
     include_seed_careers: bool,
     include_web_search: bool,
     max_queries: int,
+    max_links_per_query: int,
 ) -> dict[str, Any]:
     return {
         "parserVersion": WEB_SEARCH_AUDIT_SCHEMA_VERSION,
         "includeSeedCareers": bool(include_seed_careers),
         "includeWebSearch": bool(include_web_search),
         "maxQueries": max(0, int(max_queries)),
+        "maxLinksPerQuery": max(0, int(max_links_per_query)),
         "seedCatalog": _seed_catalog_signature(studio_seeds),
     }
 
@@ -536,12 +555,95 @@ def _scan_seed_careers_page_candidates(
     }
 
 
+def _sample_web_search_query(query: str, seed: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "query": query,
+        "studio": str(seed.get("studio") or "").strip(),
+    }
+
+
+def _append_bounded_sample(samples: list[dict[str, Any]], sample: dict[str, Any]) -> None:
+    if len(samples) < WEB_SEARCH_AUDIT_SAMPLE_LIMIT:
+        samples.append(sample)
+
+
+def _queue_web_search_link(
+    *,
+    link: str,
+    studio: str,
+    nl_priority: bool,
+    provider_candidates: list[dict[str, Any]],
+    page_jobs: list[dict[str, Any]],
+    queued_page_urls: set[str],
+) -> tuple[str, bool]:
+    inferred = infer_web_candidate(
+        link,
+        studio,
+        nl_priority=nl_priority,
+        discovery_method="web_search",
+    )
+    if inferred:
+        provider_candidates.append(inferred)
+        return "direct_provider", False
+    if not careers_keyword_count(link):
+        return "non_jobish", False
+    normalized_link = str(link or "").strip()
+    if normalized_link in queued_page_urls:
+        return "duplicate_page", True
+    queued_page_urls.add(normalized_link)
+    page_jobs.append(
+        _page_job(
+            url=normalized_link,
+            studio=studio,
+            nl_priority=nl_priority,
+            adapter="web_search",
+        )
+    )
+    return "page_job", False
+
+
+def _record_web_search_page_result(
+    *,
+    result: dict[str, Any],
+    provider_candidates: list[dict[str, Any]],
+    static_candidates: list[dict[str, Any]],
+    failures: list[dict[str, Any]],
+    web_failure_samples: list[dict[str, Any]],
+) -> tuple[int, int]:
+    if not bool(result.get("ok")):
+        failure = result.get("failure")
+        if isinstance(failure, dict):
+            _append_bounded_sample(
+                web_failure_samples,
+                {
+                    "stage": str(failure.get("stage") or "page_fetch"),
+                    "name": str(failure.get("name") or ""),
+                    "error": str(failure.get("error") or ""),
+                },
+            )
+            failures.append(failure)
+            return 0, 1
+        return 0, 0
+    payload = dict(result.get("payload") or {})
+    _append_page_analysis_outcome(
+        page_url=str(result.get("url") or "").strip(),
+        page_html=str(result.get("text") or ""),
+        studio=str(payload.get("studio") or "").strip(),
+        nl_priority=bool(payload.get("nlPriority")),
+        discovery_method="web_search",
+        provider_candidates=provider_candidates,
+        static_candidates=static_candidates,
+    )
+    return 1, 0
+
+
 def _scan_web_search_candidates(
     timeout_s: int,
     *,
     studio_seeds: list[dict[str, Any]],
     fetcher: Any,
     max_queries: int = 18,
+    max_links_per_query: int = MAX_SEARCH_LINKS_PER_QUERY,
 ) -> dict[str, Any]:
     from src.source_registry import unique_sources
 
@@ -556,12 +658,28 @@ def _scan_web_search_candidates(
     queries = build_web_search_queries(studio_seeds, max_queries=max_queries)
     search_started = time.perf_counter()
     search_successes = 0
+    search_failures = 0
+    links_extracted = 0
+    links_considered = 0
     direct_provider_links = 0
+    jobish_links = 0
+    non_jobish_links_skipped = 0
+    duplicate_page_fetch_urls = 0
+    queued_page_urls: set[str] = set()
+    web_query_samples: list[dict[str, Any]] = []
+    web_failure_samples: list[dict[str, Any]] = []
     for query, seed in queries:
         url = DUCKDUCKGO_HTML_SEARCH.format(query=quote_plus(query))
+        query_sample = _sample_web_search_query(query, seed)
+        _append_bounded_sample(web_query_samples, query_sample)
         try:
             html = fetcher(url, timeout_s)
         except Exception as exc:  # noqa: BLE001
+            search_failures += 1
+            _append_bounded_sample(
+                web_failure_samples,
+                {**query_sample, "stage": "search", "error": str(exc)},
+            )
             failures.append(
                 {"name": query, "adapter": "web_search", "error": str(exc), "stage": "search"}
             )
@@ -569,27 +687,27 @@ def _scan_web_search_candidates(
         search_successes += 1
         studio = str(seed.get("studio") or "")
         nl_priority = bool(seed.get("nlPriority"))
-        for link in extract_links_from_html(html)[:MAX_SEARCH_LINKS_PER_QUERY]:
-            inferred = infer_web_candidate(
-                link,
-                studio,
+        extracted_links = extract_links_from_html(html)
+        links_extracted += len(extracted_links)
+        for link in extracted_links[: max(0, int(max_links_per_query))]:
+            links_considered += 1
+            outcome, duplicate = _queue_web_search_link(
+                link=link,
+                studio=studio,
                 nl_priority=nl_priority,
-                discovery_method="web_search",
+                provider_candidates=provider_candidates,
+                page_jobs=page_jobs,
+                queued_page_urls=queued_page_urls,
             )
-            if inferred:
-                provider_candidates.append(inferred)
+            if outcome == "direct_provider":
                 direct_provider_links += 1
                 continue
-            if not careers_keyword_count(link):
+            if outcome == "non_jobish":
+                non_jobish_links_skipped += 1
                 continue
-            page_jobs.append(
-                _page_job(
-                    url=link,
-                    studio=studio,
-                    nl_priority=nl_priority,
-                    adapter="web_search",
-                )
-            )
+            jobish_links += 1
+            if duplicate:
+                duplicate_page_fetch_urls += 1
     search_ms = audit_ledger.duration_ms(search_started)
     page_fetch_started = time.perf_counter()
     page_fetch_results = fetch_directory_pages(
@@ -603,23 +721,17 @@ def _scan_web_search_candidates(
     page_fetch_ms = audit_ledger.duration_ms(page_fetch_started)
     analysis_started = time.perf_counter()
     fetched_pages = 0
+    page_fetch_failures = 0
     for result in page_fetch_results:
-        if not bool(result.get("ok")):
-            failure = result.get("failure")
-            if isinstance(failure, dict):
-                failures.append(failure)
-            continue
-        fetched_pages += 1
-        payload = dict(result.get("payload") or {})
-        _append_page_analysis_outcome(
-            page_url=str(result.get("url") or "").strip(),
-            page_html=str(result.get("text") or ""),
-            studio=str(payload.get("studio") or "").strip(),
-            nl_priority=bool(payload.get("nlPriority")),
-            discovery_method="web_search",
+        fetched_delta, failure_delta = _record_web_search_page_result(
+            result=result,
             provider_candidates=provider_candidates,
             static_candidates=static_candidates,
+            failures=failures,
+            web_failure_samples=web_failure_samples,
         )
+        fetched_pages += fetched_delta
+        page_fetch_failures += failure_delta
     provider_rows = collapse_competing_candidates(provider_candidates)
     static_rows = unique_sources(static_candidates)
     return {
@@ -629,12 +741,21 @@ def _scan_web_search_candidates(
         "summary": {
             "webQueriesPlanned": len(queries),
             "webSearchSuccesses": search_successes,
+            "webSearchFailures": search_failures,
+            "webLinksExtracted": links_extracted,
+            "webLinksConsidered": links_considered,
             "webDirectProviderLinks": direct_provider_links,
+            "webJobishLinks": jobish_links,
+            "webNonJobishLinksSkipped": non_jobish_links_skipped,
+            "webDuplicatePageFetchUrls": duplicate_page_fetch_urls,
             "webPageFetchJobs": len(page_jobs),
             "webPagesFetched": fetched_pages,
+            "webPageFetchFailures": page_fetch_failures,
             "webProviderCandidates": len(provider_rows),
             "webStaticCandidates": len(static_rows),
             "webFailures": len(failures),
+            "webQuerySamples": web_query_samples,
+            "webFailureSamples": web_failure_samples,
         },
         "batchTiming": {
             "webSearchFetchMs": search_ms,
@@ -726,6 +847,10 @@ def run_web_search_directory_audit(
     from .reporting import emit_log
 
     fetcher = fetcher or fetch_text
+    configured_max_queries = _web_search_max_queries(config)
+    if max_queries != 18:
+        configured_max_queries = max(0, int(max_queries))
+    max_links_per_query = _web_search_max_links_per_query(config)
 
     def _scan(scan_timeout_s: int) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
@@ -743,7 +868,8 @@ def run_web_search_directory_audit(
                     scan_timeout_s,
                     studio_seeds=studio_seeds,
                     fetcher=fetcher,
-                    max_queries=max_queries,
+                    max_queries=configured_max_queries,
+                    max_links_per_query=max_links_per_query,
                 )
             )
         merged = _merge_web_scan_results(results)
@@ -753,7 +879,8 @@ def run_web_search_directory_audit(
                 "seedCareersEnabled": bool(include_seed_careers),
                 "webSearchEnabled": bool(include_web_search),
                 "seedRows": len(studio_seeds),
-                "maxQueries": max(0, int(max_queries)),
+                "maxQueries": configured_max_queries,
+                "maxLinksPerQuery": max_links_per_query,
             }
         )
         return {
@@ -778,20 +905,23 @@ def run_web_search_directory_audit(
             studio_seeds=studio_seeds,
             include_seed_careers=include_seed_careers,
             include_web_search=include_web_search,
-            max_queries=max_queries,
+            max_queries=configured_max_queries,
+            max_links_per_query=max_links_per_query,
         ),
         timeout_s=timeout_s,
         scan=_scan,
         runtime={
             "includeSeedCareers": bool(include_seed_careers),
             "includeWebSearch": bool(include_web_search),
-            "maxQueries": max(0, int(max_queries)),
+            "maxQueries": configured_max_queries,
+            "maxLinksPerQuery": max_links_per_query,
         },
         summary={
             "seedCareersEnabled": bool(include_seed_careers),
             "webSearchEnabled": bool(include_web_search),
             "seedRows": len(studio_seeds),
-            "maxQueries": max(0, int(max_queries)),
+            "maxQueries": configured_max_queries,
+            "maxLinksPerQuery": max_links_per_query,
         },
         sample_limit=WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT,
         emit_log=emit_log,

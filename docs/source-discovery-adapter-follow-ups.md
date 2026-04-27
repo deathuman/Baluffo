@@ -28,10 +28,11 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Characterized seed-careers and web-search audit-readiness boundaries around page-fetch jobs, page-fetch failures, candidate analysis, and provider/static/failure provenance without adding audit artifacts.
 - 2026-04-27: Added an opt-in combined seed-careers/web-search audit pilot using the shared directory audit engine. Default web-derived discovery remains direct scanning; `webSearch.activeAuditEnabled=true` writes/reuses `data/web-search-discovery-audit.json` and reports metadata through `directoryAuditSummaries.web_search`.
 - 2026-04-27: Default-enabled the combined seed-careers/web-search audit when those stages are enabled. `webSearch.activeAuditEnabled=false` remains the rollback to the direct scanners.
+- 2026-04-27: Added web-search audit tuning and diagnostics. The default audit now supports `webSearch.maxQueries` / `webSearch.maxLinksPerQuery`, prioritizes seed careers-host queries, and reports link/query diagnostics plus bounded samples.
 
 ## Reusable Opportunities
 
-- Use default web-search audit evidence to tune query/page-fetch behavior and decide whether additional diagnostics are worth adding.
+- Use default web-search audit evidence to decide whether browser recovery or deeper search-source tuning is worth adding.
 - Extend shared recovery URL planning only when another adapter adopts the same behavior; provider inference, browser-candidate classification, and adapter diagnostics remain adapter-owned for now.
 - Consider browser-recovery candidates for web-derived discovery only after the HTTP-only web audit has enough runtime evidence.
 - Extend shared directory-cache helpers only when another adapter has the same cache shape and bypass semantics.

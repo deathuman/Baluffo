@@ -9,12 +9,24 @@ from src.source_discovery import directory_audit
 from ._helpers import workspace_tmpdir
 
 
-def _audit_config(audit_path: str) -> dict[str, object]:
+def _audit_config(
+    audit_path: str,
+    *,
+    max_queries: int | None = None,
+    max_links_per_query: int | None = None,
+) -> dict[str, object]:
+    web_search: dict[str, object] = {
+        "activeAuditEnabled": True,
+        "activeAuditPath": audit_path,
+        "activeAuditTtlMinutes": 60,
+    }
+    if max_queries is not None:
+        web_search["maxQueries"] = max_queries
+    if max_links_per_query is not None:
+        web_search["maxLinksPerQuery"] = max_links_per_query
     return {
         "webSearch": {
-            "activeAuditEnabled": True,
-            "activeAuditPath": audit_path,
-            "activeAuditTtlMinutes": 60,
+            **web_search,
         }
     }
 
@@ -68,7 +80,19 @@ def test_web_search_directory_audit_missing_artifact_runs_both_substages() -> No
         assert artifact["summary"]["seedRows"] == 2
         assert artifact["summary"]["seedPageFetchJobs"] == 1
         assert artifact["summary"]["webQueriesPlanned"] == 1
+        assert artifact["summary"]["maxQueries"] == 1
+        assert artifact["summary"]["maxLinksPerQuery"] == 8
         assert artifact["summary"]["webPageFetchJobs"] == 1
+        assert artifact["summary"]["webLinksExtracted"] == 1
+        assert artifact["summary"]["webLinksConsidered"] == 1
+        assert artifact["summary"]["webJobishLinks"] == 1
+        assert artifact["summary"]["webNonJobishLinksSkipped"] == 0
+        assert artifact["summary"]["webDuplicatePageFetchUrls"] == 0
+        assert artifact["summary"]["webPageFetchFailures"] == 0
+        assert artifact["summary"]["webQuerySamples"] == [
+            {"query": "Seed Studio site:seed.example jobs", "studio": "Seed Studio"}
+        ]
+        assert artifact["summary"]["webFailureSamples"] == []
         assert artifact["summary"]["providerCandidates"] == 2
         assert artifact["summary"]["staticCandidates"] == 0
         assert artifact["summary"]["failures"] == 0
@@ -107,6 +131,96 @@ def test_web_search_directory_audit_reuses_fresh_artifact_without_fetch() -> Non
         assert first_cache_hit is False
         assert second_cache_hit is True
         assert second_artifact == first_artifact
+
+
+def test_web_search_directory_audit_tuning_config_changes_signature() -> None:
+    with workspace_tmpdir("web-search-audit-tuning-signature") as root:
+        audit_path = root / "web-audit.json"
+        calls = {"count": 0}
+
+        def counting_fetch(url: str, _timeout_s: int) -> str:
+            calls["count"] += 1
+            if "duckduckgo.com" in url:
+                return '<a href="https://search.example/careers">Careers</a>'
+            if url == "https://search.example/careers":
+                return '<a href="https://boards.greenhouse.io/searchstudio/jobs/1">Role</a>'
+            raise RuntimeError(f"unexpected URL: {url}")
+
+        first_artifact, first_cache_hit = web_candidates.run_web_search_directory_audit(
+            5,
+            studio_seeds=[{"studio": "Search Studio"}],
+            include_seed_careers=False,
+            include_web_search=True,
+            config=_audit_config(str(audit_path), max_queries=1, max_links_per_query=1),
+            fetcher=counting_fetch,
+        )
+        calls_after_first = calls["count"]
+        second_artifact, second_cache_hit = web_candidates.run_web_search_directory_audit(
+            5,
+            studio_seeds=[{"studio": "Search Studio"}],
+            include_seed_careers=False,
+            include_web_search=True,
+            config=_audit_config(str(audit_path), max_queries=1, max_links_per_query=1),
+            fetcher=lambda *_args: (_ for _ in ()).throw(
+                AssertionError("matching web-search tuning should reuse the audit artifact")
+            ),
+        )
+        third_artifact, third_cache_hit = web_candidates.run_web_search_directory_audit(
+            5,
+            studio_seeds=[{"studio": "Search Studio"}],
+            include_seed_careers=False,
+            include_web_search=True,
+            config=_audit_config(str(audit_path), max_queries=1, max_links_per_query=2),
+            fetcher=counting_fetch,
+        )
+
+        assert first_cache_hit is False
+        assert second_cache_hit is True
+        assert third_cache_hit is False
+        assert second_artifact == first_artifact
+        assert third_artifact["runtime"]["configSignature"]["maxLinksPerQuery"] == 2
+        assert calls["count"] > calls_after_first
+
+
+def test_web_search_directory_audit_records_link_diagnostics_and_caps_samples() -> None:
+    with workspace_tmpdir("web-search-audit-link-diagnostics") as root:
+        audit_path = root / "web-audit.json"
+
+        def diagnostic_fetch(url: str, _timeout_s: int) -> str:
+            if "duckduckgo.com" in url:
+                return "".join(
+                    [
+                        '<a href="https://noise.example/about">About</a>',
+                        '<a href="https://search.example/careers">Careers</a>',
+                        '<a href="https://search.example/careers">Careers Duplicate</a>',
+                        '<a href="https://jobs.smartrecruiters.com/SearchStudio/123">Role</a>',
+                    ]
+                )
+            if url == "https://search.example/careers":
+                return '<a href="https://boards.greenhouse.io/searchstudio/jobs/1">Role</a>'
+            raise RuntimeError(f"unexpected URL: {url}")
+
+        artifact, _cache_hit = web_candidates.run_web_search_directory_audit(
+            5,
+            studio_seeds=[{"studio": f"Search Studio {index}"} for index in range(30)],
+            include_seed_careers=False,
+            include_web_search=True,
+            config=_audit_config(str(audit_path), max_queries=30, max_links_per_query=4),
+            fetcher=diagnostic_fetch,
+        )
+
+        summary = artifact["summary"]
+        assert summary["webQueriesPlanned"] == 30
+        assert summary["webSearchSuccesses"] == 30
+        assert summary["webLinksExtracted"] == 120
+        assert summary["webLinksConsidered"] == 120
+        assert summary["webDirectProviderLinks"] == 30
+        assert summary["webJobishLinks"] == 60
+        assert summary["webNonJobishLinksSkipped"] == 30
+        assert summary["webDuplicatePageFetchUrls"] == 59
+        assert summary["webPageFetchJobs"] == 1
+        assert len(summary["webQuerySamples"]) == 25
+        assert summary["webFailureSamples"] == []
 
 
 def test_web_search_directory_audit_reruns_stale_wrong_schema_incomplete_or_signature_mismatch() -> (
@@ -204,6 +318,9 @@ def test_web_search_directory_audit_records_search_and_page_fetch_failures() -> 
         assert artifact["failureCounts"] == {"page_fetch": 1, "search": 1}
         assert artifact["summary"]["seedFailures"] == 1
         assert artifact["summary"]["webFailures"] == 1
+        assert artifact["summary"]["webSearchFailures"] == 1
+        assert artifact["summary"]["webPageFetchFailures"] == 0
+        assert artifact["summary"]["webFailureSamples"][0]["stage"] == "search"
 
 
 def test_web_search_directory_audit_supports_seed_only_and_web_only() -> None:
