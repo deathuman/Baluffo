@@ -17,6 +17,11 @@ from src.source_registry import unique_sources
 
 from . import audit_ledger
 from .audit_config import audit_artifact_path, audit_enabled, audit_ttl_minutes, config_section
+from .directory_adapter_templates import (
+    apply_directory_provenance,
+    build_directory_static_candidate,
+    empty_directory_scan_result,
+)
 from .directory_audit import discover_directory_adapter_candidates, run_directory_audit
 from .directory_cache import load_directory_cache, write_directory_cache
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
@@ -33,8 +38,6 @@ from .page_outcomes import (
     classify_recovery_page,
 )
 from .recovery_url_planner import common_recovery_urls
-from .scoring import unique_string_list
-from .static_candidates import build_known_careers_url_candidate
 from .web_search import fetch_text
 
 GAMEPROG_TEAMS_URL = "https://gameprog.it/teams.json"
@@ -198,61 +201,29 @@ def build_gameprog_static_candidate(
     manual_only: bool = False,
     weak_signal: bool = False,
 ) -> dict[str, Any]:
-    evidence_types = ["gameprog_directory"]
-    if website_only:
-        evidence_score = 24
-        evidence_types.append("gameprog_website")
-        evidence_types.append("gameprog_website_only")
-        if manual_only:
-            evidence_types.append("gameprog_manual_website_only")
-        if location:
-            evidence_types.append("gameprog_location")
-        if weak_signal:
-            evidence_types.append("gameprog_no_current_openings")
-        return {
-            "name": f"{studio} (Gameprog)",
-            "studio": studio,
-            "company": studio,
-            "adapter": "static",
-            "pages": [target_url],
-            "listing_url": target_url,
-            "nlPriority": nl_priority,
-            "enabledByDefault": False,
-            "discoveryMethod": "gameprog",
-            "discoveryStage": "generic_static",
-            "careersUrl": "",
-            "evidenceSource": "gameprog",
-            "evidenceTypes": evidence_types,
-            "evidenceScore": evidence_score,
-            "weakSignal": True,
-            "sourceDirectory": "gameprog",
-            "sourceDirectoryUrl": GAMEPROG_BASE_URL,
-            "sourceDirectoryEntryUrl": detail_url,
-            "sourceDirectoryLocation": str(location or "").strip(),
-            "manualOnly": bool(manual_only),
-        }
-    evidence_types.append("gameprog_careers_url")
-    if location:
-        evidence_types.append("gameprog_location")
-    if weak_signal:
-        evidence_types.append("gameprog_no_current_openings")
-    return build_known_careers_url_candidate(
-        target_url,
+    return build_directory_static_candidate(
         studio=studio,
-        name_suffix="Gameprog",
+        target_url=target_url,
         nl_priority=nl_priority,
+        website_only=website_only,
+        name_suffix="Gameprog",
         discovery_method="gameprog",
         evidence_source="gameprog",
-        evidence_types=evidence_types,
-        evidence_score=40,
-        enabled_by_default=False,
-        extra_fields={
-            "sourceDirectory": "gameprog",
-            "sourceDirectoryUrl": GAMEPROG_BASE_URL,
-            "sourceDirectoryEntryUrl": detail_url,
-            "sourceDirectoryLocation": str(location or "").strip(),
-            "manualOnly": bool(manual_only),
-        },
+        evidence_types=["gameprog_directory"],
+        source_directory="gameprog",
+        source_directory_url=GAMEPROG_BASE_URL,
+        source_directory_entry_url=detail_url,
+        source_directory_location=location,
+        manual_only=manual_only,
+        weak_signal=weak_signal,
+        website_evidence_types=[
+            "gameprog_website",
+            "gameprog_website_only",
+            *(["gameprog_manual_website_only"] if manual_only else []),
+        ],
+        careers_evidence_type="gameprog_careers_url",
+        location_evidence_type="gameprog_location",
+        weak_signal_evidence_type="gameprog_no_current_openings",
     )
 
 
@@ -262,23 +233,20 @@ def _apply_gameprog_static_page_provenance(
     website_url: str,
     location: str,
 ) -> dict[str, Any]:
-    enriched = dict(candidate)
-    evidence_types = [
-        *(enriched.get("evidenceTypes") or []),
-        "gameprog_directory",
-        "gameprog_website_fetch",
-    ]
+    evidence_types = ["gameprog_directory", "gameprog_website_fetch"]
     if location:
         evidence_types.append("gameprog_location")
-    enriched["name"] = f"{str(enriched.get('studio') or '').strip()} (Gameprog)"
-    enriched["evidenceSource"] = "gameprog"
-    enriched["evidenceTypes"] = unique_string_list(evidence_types)
-    enriched["sourceDirectory"] = "gameprog"
-    enriched["sourceDirectoryUrl"] = GAMEPROG_BASE_URL
-    enriched["sourceDirectoryEntryUrl"] = website_url
-    enriched["sourceDirectoryLocation"] = str(location or "").strip()
-    enriched["careersUrl"] = str(enriched.get("careersUrl") or website_url).strip() or website_url
-    return enriched
+    return apply_directory_provenance(
+        candidate,
+        evidence_source="gameprog",
+        evidence_types=evidence_types,
+        source_directory="gameprog",
+        source_directory_url=GAMEPROG_BASE_URL,
+        source_directory_entry_url=website_url,
+        source_directory_location=location,
+        careers_url_fallback=website_url,
+        name_suffix="Gameprog",
+    )
 
 
 def _empty_gameprog_scan_result(
@@ -286,11 +254,9 @@ def _empty_gameprog_scan_result(
     failures: list[dict[str, Any]],
     batch_timing: dict[str, Any],
 ) -> dict[str, Any]:
-    return {
-        "providerCandidates": [],
-        "staticCandidates": [],
-        "failures": failures,
-        "summary": {
+    return empty_directory_scan_result(
+        failures=failures,
+        summary={
             "teamsRows": 0,
             "parsedRows": 0,
             "eligibleRows": 0,
@@ -304,11 +270,9 @@ def _empty_gameprog_scan_result(
             "browserRecoveryCandidates": 0,
             "badProviderInferences": 0,
         },
-        "websiteFetchJobs": [],
-        "browserRecoveryCandidates": [],
-        "batchTiming": batch_timing,
-        "writeCache": False,
-    }
+        batch_timing=batch_timing,
+        write_cache=False,
+    )
 
 
 def _apply_gameprog_provider_provenance(
@@ -318,19 +282,18 @@ def _apply_gameprog_provider_provenance(
     location: str,
 ) -> list[dict[str, Any]]:
     for inferred in providers:
-        inferred["evidenceSource"] = "gameprog"
-        inferred["evidenceTypes"] = unique_string_list(
-            [
-                *(inferred.get("evidenceTypes") or []),
-                "gameprog_directory",
-                "gameprog_website_fetch",
-            ]
+        enriched = apply_directory_provenance(
+            inferred,
+            evidence_source="gameprog",
+            evidence_types=["gameprog_directory", "gameprog_website_fetch"],
+            source_directory="gameprog",
+            source_directory_url=GAMEPROG_BASE_URL,
+            source_directory_entry_url=website_url,
+            source_directory_location=location,
+            evidence_score_floor=44,
         )
-        inferred["evidenceScore"] = max(int(inferred.get("evidenceScore") or 0), 44)
-        inferred["sourceDirectory"] = "gameprog"
-        inferred["sourceDirectoryUrl"] = GAMEPROG_BASE_URL
-        inferred["sourceDirectoryEntryUrl"] = website_url
-        inferred["sourceDirectoryLocation"] = location
+        inferred.clear()
+        inferred.update(enriched)
     return providers
 
 

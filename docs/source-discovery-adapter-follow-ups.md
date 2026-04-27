@@ -20,7 +20,7 @@ The discovery adapters now have enough shared infrastructure to stop treating re
 ## Reusable Platform Already Built
 
 - **Audit and reporting:** `audit_ledger`, `audit_config`, `audit_report_summary`, and `directory_audit` own freshness, signatures, timing totals, failure aggregation, artifact size stamping, audit execution, report summaries, and scan-row extraction.
-- **Fetch, cache, and scan seams:** `directory_cache`, `directory_fetch_jobs`, `directory_fetch`, shared directory adapter wrappers, and scan-stage orchestration own common cache shape, fetch-job shape, cache-compatible discovery wrappers, and provider/static/failure stage plumbing.
+- **Fetch, cache, and scan seams:** `directory_cache`, `directory_fetch_jobs`, `directory_fetch`, `directory_adapter_templates`, shared directory adapter wrappers, and scan-stage orchestration own common cache shape, fetch-job shape, static/provenance row templates, cache-compatible discovery wrappers, and provider/static/failure stage plumbing.
 - **Candidate, probe, and queue mechanics:** `candidate_collections`, `probe_runtime`, and `prevalidated_queue_policy` own provider/static row normalization, append-with-dedupe, bounded async probing, rendered static shortcuts, and internal queue-cap override fields.
 - **Page and recovery classification:** `page_outcomes`, `page_diagnostics`, `recovery_url_planner`, `directory_page_recovery`, and `provider_inference_filters` own provider-first page classification, explicit/static fallback ordering, JS-shell diagnostics, same-site recovery planning, HTTP-only recovery fetches, and bad provider inference filtering.
 - **Browser recovery:** `browser_recovery` owns processed-key selection, bounded browser fetch, rendered-result probe filtering, probe dispatch, and recovery state/sample bookkeeping. GameDevMap and web-derived discovery now share the runtime while keeping artifact merge semantics local.
@@ -32,9 +32,9 @@ The discovery adapters now have enough shared infrastructure to stop treating re
 
 These are the lowest-risk, highest-certainty consolidation targets because the implementations are structurally parallel but still live in separate adapter modules.
 
-- `gameprog.py::build_gameprog_static_candidate` and `gamesmap_candidates.py::build_gamesmap_static_candidate` duplicate static careers/website-only row construction with adapter-specific evidence fields. Extract a shared directory static candidate builder or strategy-backed `page_outcomes` callback.
-- `gameprog.py::_apply_gameprog_static_page_provenance`, `gamesmap_candidates.py::_apply_gamesmap_provider_provenance`, and `gamesmap_candidates.py::_apply_gamesmap_static_provenance` duplicate provenance tagging. Extract a shared directory provenance callback contract.
-- `gameprog.py::_empty_gameprog_scan_result` and `gamesmap_candidates.py::_empty_gamesmap_scan_result` duplicate empty audit scan templates. Move the template into `directory_audit`.
+- Completed first slice: `gameprog.py::build_gameprog_static_candidate` and `gamesmap_candidates.py::build_gamesmap_static_candidate` now use shared directory static row templates.
+- Completed first slice: `gameprog.py::_apply_gameprog_static_page_provenance`, `gamesmap_candidates.py::_apply_gamesmap_provider_provenance`, and `gamesmap_candidates.py::_apply_gamesmap_static_provenance` now use shared provenance enrichment templates.
+- Completed first slice: `gameprog.py::_empty_gameprog_scan_result` and `gamesmap_candidates.py::_empty_gamesmap_scan_result` now use a shared empty scan-result template.
 - `gameprog.py::_gameprog_scan` and `gamesmap_candidates.py::_gamesmap_scan` duplicate the same scan control-flow shape: fetch directory entries, cap/select rows, build fetch jobs, analyze pages, recover misses, merge candidates/failures, and emit summary/progress fields. Consolidate the common skeleton while keeping parser and provenance callbacks local.
 
 ### P1: GameDevMap Still Reimplements Shared Primitives
@@ -81,9 +81,8 @@ Sheet-directory now has a default audit path, but several small pieces remain ma
 
 ## Prioritized Reuse Roadmap
 
-### P0: Consolidate Gameprog/Gamesmap Templates First
+### P0: Consolidate Gameprog/Gamesmap Scan Skeleton Next
 
-- Extract shared empty scan-result templates, directory static candidate construction, and provenance callback contracts.
 - Thin `_gameprog_scan` and `_gamesmap_scan` to parser-specific entry selection plus shared scan orchestration callbacks.
 - Keep directory-specific evidence fields local through callback data, not duplicated control flow.
 

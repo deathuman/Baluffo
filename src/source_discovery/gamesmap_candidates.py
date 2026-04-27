@@ -11,6 +11,11 @@ from src.source_registry import unique_sources
 from . import audit_ledger
 from .audit_config import audit_artifact_path, audit_enabled, audit_ttl_minutes
 from .config import DEFAULT_DISCOVERY_CONFIG
+from .directory_adapter_templates import (
+    apply_directory_provenance,
+    build_directory_static_candidate,
+    empty_directory_scan_result,
+)
 from .directory_audit import discover_directory_adapter_candidates, run_directory_audit
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .directory_fetch_jobs import build_directory_fetch_jobs
@@ -34,7 +39,6 @@ from .page_outcomes import (
     classify_recovery_page,
 )
 from .scoring import unique_string_list
-from .static_candidates import build_known_careers_url_candidate
 from .web_search import fetch_text, infer_web_candidate
 
 root: ModuleType | None = None
@@ -143,58 +147,28 @@ def build_gamesmap_static_candidate(
     location: str,
     manual_only: bool = False,
 ) -> dict[str, Any]:
-    evidence_types = ["gamesmap_directory", "gamesmap_category_match"]
-    if website_only:
-        evidence_score = 24
-        evidence_types.extend(["gamesmap_website", "gamesmap_website_only"])
-        if manual_only:
-            evidence_types.append("gamesmap_manual_website_only")
-        if location:
-            evidence_types.append("gamesmap_location")
-        return {
-            "name": f"{studio} (Gamesmap)",
-            "studio": studio,
-            "company": studio,
-            "adapter": "static",
-            "pages": [target_url],
-            "listing_url": target_url,
-            "nlPriority": nl_priority,
-            "enabledByDefault": False,
-            "discoveryMethod": "gamesmap",
-            "discoveryStage": "generic_static",
-            "careersUrl": "",
-            "evidenceSource": "gamesmap",
-            "evidenceTypes": evidence_types,
-            "evidenceScore": evidence_score,
-            "weakSignal": True,
-            "sourceDirectory": "gamesmap",
-            "sourceDirectoryUrl": "https://www.gamesmap.de/",
-            "sourceDirectoryEntryUrl": detail_url,
-            "sourceDirectoryCategories": unique_string_list(categories),
-            "sourceDirectoryLocation": str(location or "").strip(),
-            "manualOnly": bool(manual_only),
-        }
-    evidence_types.append("gamesmap_careers_url")
-    if location:
-        evidence_types.append("gamesmap_location")
-    return build_known_careers_url_candidate(
-        target_url,
+    return build_directory_static_candidate(
         studio=studio,
-        name_suffix="Gamesmap",
+        target_url=target_url,
         nl_priority=nl_priority,
+        website_only=website_only,
+        name_suffix="Gamesmap",
         discovery_method="gamesmap",
         evidence_source="gamesmap",
-        evidence_types=evidence_types,
-        evidence_score=40,
-        enabled_by_default=False,
-        extra_fields={
-            "sourceDirectory": "gamesmap",
-            "sourceDirectoryUrl": "https://www.gamesmap.de/",
-            "sourceDirectoryEntryUrl": detail_url,
-            "sourceDirectoryCategories": unique_string_list(categories),
-            "sourceDirectoryLocation": str(location or "").strip(),
-            "manualOnly": bool(manual_only),
-        },
+        evidence_types=["gamesmap_directory", "gamesmap_category_match"],
+        source_directory="gamesmap",
+        source_directory_url="https://www.gamesmap.de/",
+        source_directory_entry_url=detail_url,
+        source_directory_location=location,
+        source_directory_categories=categories,
+        manual_only=manual_only,
+        website_evidence_types=[
+            "gamesmap_website",
+            "gamesmap_website_only",
+            *(["gamesmap_manual_website_only"] if manual_only else []),
+        ],
+        careers_evidence_type="gamesmap_careers_url",
+        location_evidence_type="gamesmap_location",
     )
 
 
@@ -207,9 +181,7 @@ def _apply_gamesmap_provider_provenance(
     location: str,
     fetched_website: bool = False,
 ) -> dict[str, Any]:
-    enriched = dict(candidate)
     evidence_types = [
-        *(enriched.get("evidenceTypes") or []),
         "gamesmap_directory",
         "gamesmap_category_match",
         "gamesmap_website",
@@ -218,16 +190,18 @@ def _apply_gamesmap_provider_provenance(
         evidence_types.append("gamesmap_website_fetch")
     if location:
         evidence_types.append("gamesmap_location")
-    enriched["evidenceSource"] = "gamesmap"
-    enriched["evidenceTypes"] = unique_string_list(evidence_types)
-    enriched["evidenceScore"] = max(int(enriched.get("evidenceScore") or 0), 44)
-    enriched["careersUrl"] = str(enriched.get("careersUrl") or website_url).strip() or website_url
-    enriched["sourceDirectory"] = "gamesmap"
-    enriched["sourceDirectoryUrl"] = "https://www.gamesmap.de/"
-    enriched["sourceDirectoryEntryUrl"] = detail_url
-    enriched["sourceDirectoryCategories"] = unique_string_list(categories)
-    enriched["sourceDirectoryLocation"] = str(location or "").strip()
-    return enriched
+    return apply_directory_provenance(
+        candidate,
+        evidence_source="gamesmap",
+        evidence_types=evidence_types,
+        source_directory="gamesmap",
+        source_directory_url="https://www.gamesmap.de/",
+        source_directory_entry_url=detail_url,
+        source_directory_location=location,
+        source_directory_categories=categories,
+        careers_url_fallback=website_url,
+        evidence_score_floor=44,
+    )
 
 
 def _apply_gamesmap_static_provenance(
@@ -239,9 +213,7 @@ def _apply_gamesmap_static_provenance(
     location: str,
     fetched_website: bool = False,
 ) -> dict[str, Any]:
-    enriched = dict(candidate)
     evidence_types = [
-        *(enriched.get("evidenceTypes") or []),
         "gamesmap_directory",
         "gamesmap_category_match",
         "gamesmap_website",
@@ -250,16 +222,18 @@ def _apply_gamesmap_static_provenance(
         evidence_types.append("gamesmap_website_fetch")
     if location:
         evidence_types.append("gamesmap_location")
-    enriched["name"] = f"{str(enriched.get('studio') or '').strip()} (Gamesmap)"
-    enriched["evidenceSource"] = "gamesmap"
-    enriched["evidenceTypes"] = unique_string_list(evidence_types)
-    enriched["sourceDirectory"] = "gamesmap"
-    enriched["sourceDirectoryUrl"] = "https://www.gamesmap.de/"
-    enriched["sourceDirectoryEntryUrl"] = detail_url
-    enriched["sourceDirectoryCategories"] = unique_string_list(categories)
-    enriched["sourceDirectoryLocation"] = str(location or "").strip()
-    enriched["careersUrl"] = str(enriched.get("careersUrl") or website_url).strip() or website_url
-    return enriched
+    return apply_directory_provenance(
+        candidate,
+        evidence_source="gamesmap",
+        evidence_types=evidence_types,
+        source_directory="gamesmap",
+        source_directory_url="https://www.gamesmap.de/",
+        source_directory_entry_url=detail_url,
+        source_directory_location=location,
+        source_directory_categories=categories,
+        careers_url_fallback=website_url,
+        name_suffix="Gamesmap",
+    )
 
 
 def _gamesmap_audit_enabled(cfg: dict[str, Any]) -> bool:
@@ -280,16 +254,12 @@ def _empty_gamesmap_scan_result(
     summary: dict[str, Any],
     batch_timing: dict[str, Any],
 ) -> dict[str, Any]:
-    return {
-        "providerCandidates": [],
-        "staticCandidates": [],
-        "failures": failures,
-        "summary": summary,
-        "websiteFetchJobs": [],
-        "browserRecoveryCandidates": [],
-        "batchTiming": batch_timing,
-        "writeCache": True,
-    }
+    return empty_directory_scan_result(
+        failures=failures,
+        summary=summary,
+        batch_timing=batch_timing,
+        write_cache=True,
+    )
 
 
 def _gamesmap_homepage_result_candidates(
