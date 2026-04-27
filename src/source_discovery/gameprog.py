@@ -12,12 +12,12 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 from src.source_registry import unique_sources
 
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .page_analysis import analyze_fetched_page
+from .recovery_url_planner import common_recovery_urls
 from .scoring import unique_string_list
 from .static_candidates import build_known_careers_url_candidate
 from .web_search import fetch_text
@@ -424,12 +424,8 @@ def discover_gameprog_candidates(
                 )
             )
             continue
-        careers_url = ""
-        parsed = urlparse(website_url)
-        base = f"{parsed.scheme}://{parsed.netloc}"
-        for pattern in COMMON_CAREERS_PATTERNS[:3]:
-            careers_url = base + pattern
-            break
+        careers_urls = common_recovery_urls(website_url, tuple(COMMON_CAREERS_PATTERNS[:3]))
+        careers_url = careers_urls[0] if careers_urls else ""
         if careers_url:
             static_candidates.append(
                 build_gameprog_static_candidate(

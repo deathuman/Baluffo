@@ -3,7 +3,6 @@ from __future__ import annotations
 """Resumable GameDevMap active-source dry-run reporting."""
 
 import asyncio
-import html as html_lib
 import json
 import re
 import time
@@ -11,17 +10,15 @@ from collections import Counter
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
 import httpx
 
 from src import source_registry as source_registry_module
-from src.shared.regex import find_urls_in_text
 from src.shared.utils import now_iso
 from src.source_registry import source_identity, unique_sources
 
-from . import audit_ledger
+from . import audit_ledger, recovery_url_planner
 from .config import DEFAULT_DISCOVERY_CONFIG
 from .core import (
     compute_candidate_score,
@@ -47,7 +44,6 @@ from .static_candidates import build_known_careers_url_candidate
 from .web_search import (
     async_fetch_text_httpx,
     extract_jobish_links,
-    extract_links_from_html,
     fetch_text,
     infer_web_candidate,
 )
@@ -135,34 +131,11 @@ def _candidate_url_key(candidate: dict[str, Any]) -> str:
 
 
 def _host(url: str) -> str:
-    try:
-        return (urlparse(str(url or "")).netloc or "").lower().lstrip(".")
-    except ValueError:
-        return ""
-
-
-def _registrable_host(host: str) -> str:
-    parts = [part for part in str(host or "").lower().split(".") if part]
-    if len(parts) <= 2:
-        return ".".join(parts)
-    if len(parts[-2]) <= 3 and len(parts[-1]) == 2 and len(parts) >= 3:
-        return ".".join(parts[-3:])
-    return ".".join(parts[-2:])
-
-
-def _same_party_url(source_url: str, candidate_url: str) -> bool:
-    source_host = _host(source_url)
-    candidate_host = _host(candidate_url)
-    if not source_host or not candidate_host:
-        return False
-    if source_host == candidate_host:
-        return True
-    return _registrable_host(source_host) == _registrable_host(candidate_host)
+    return recovery_url_planner.host(url)
 
 
 def _host_in(host: str, blocked_hosts: set[str]) -> bool:
-    normalized = str(host or "").lower().lstrip(".")
-    return any(normalized == item or normalized.endswith(f".{item}") for item in blocked_hosts)
+    return recovery_url_planner.host_in(host, blocked_hosts)
 
 
 def _normalize_failure_bucket(reason: str, detail: str = "") -> str:
@@ -1091,19 +1064,10 @@ def _validated_static_audit_candidate(
 
 
 def _html_url_candidates(html: str) -> list[str]:
-    text = html_lib.unescape(str(html or "")).replace("\\/", "/")
-    candidates = [*extract_links_from_html(text), *find_urls_in_text(text)]
-    for raw in PROVIDER_TEXT_URL_RE.findall(text):
-        candidates.append(unquote(raw))
-    out: list[str] = []
-    seen = set()
-    for raw in candidates:
-        url = str(raw or "").strip().strip("\"'.,;)")
-        if not url or url in seen:
-            continue
-        seen.add(url)
-        out.append(url)
-    return out
+    return recovery_url_planner.html_url_candidates(
+        html,
+        provider_url_pattern=PROVIDER_TEXT_URL_RE,
+    )
 
 
 def _looks_like_js_shell(html: str) -> bool:
@@ -1129,38 +1093,6 @@ def _no_careers_reason_detail(page_url: str, html: str) -> str:
     return "homepage_links_no_candidate"
 
 
-def _common_recovery_urls(
-    page_url: str, paths: tuple[str, ...] = NO_CAREERS_RECOVERY_PATHS
-) -> list[str]:
-    parsed = urlparse(page_url)
-    if not parsed.scheme or not parsed.netloc:
-        return []
-    if _host_in(parsed.netloc, SOCIAL_PROFILE_HOSTS | THIRD_PARTY_PROFILE_HOSTS):
-        return []
-    origin = f"{parsed.scheme}://{parsed.netloc}"
-    return [urljoin(origin, path) for path in paths]
-
-
-def _same_party_jobish_urls(page_url: str, html: str) -> list[str]:
-    candidates = [*extract_jobish_links(html, page_url)]
-    for raw_url in _html_url_candidates(html):
-        if not _same_party_url(page_url, raw_url):
-            continue
-        parsed = urlparse(raw_url)
-        text = f"{parsed.path} {raw_url}".lower()
-        if any(token in text for token in ("career", "jobs", "join", "opening", "vacancy")):
-            candidates.append(raw_url)
-    out: list[str] = []
-    seen = set()
-    for raw_url in candidates:
-        url = str(raw_url or "").split("#", 1)[0].strip()
-        if not url or url in seen or not _same_party_url(page_url, url):
-            continue
-        seen.add(url)
-        out.append(url)
-    return out
-
-
 def _recovery_urls(
     page_url: str,
     html: str,
@@ -1169,21 +1101,15 @@ def _recovery_urls(
     paths: tuple[str, ...] = NO_CAREERS_RECOVERY_PATHS,
     include_jobish_links: bool = True,
 ) -> list[str]:
-    page_host = _host(page_url)
-    if _host_in(page_host, SOCIAL_PROFILE_HOSTS | THIRD_PARTY_PROFILE_HOSTS):
-        return []
-    out: list[str] = []
-    seen = set()
-    jobish_urls = _same_party_jobish_urls(page_url, html) if include_jobish_links else []
-    for candidate_url in [*jobish_urls, *_common_recovery_urls(page_url, paths)]:
-        normalized = str(candidate_url or "").split("#", 1)[0].strip()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        out.append(normalized)
-        if len(out) >= limit:
-            break
-    return out
+    return recovery_url_planner.recovery_urls(
+        page_url,
+        html,
+        paths=paths,
+        limit=limit,
+        blocked_hosts=SOCIAL_PROFILE_HOSTS | THIRD_PARTY_PROFILE_HOSTS,
+        include_jobish_links=include_jobish_links,
+        html_url_candidate_fn=_html_url_candidates,
+    )
 
 
 def _provider_candidates_from_html_text(
