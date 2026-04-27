@@ -3,6 +3,11 @@ from __future__ import annotations
 from src.source_discovery.active_audit_runtime import (
     HomepagePageOutcome,
     NoCandidateOutcome,
+    active_audit_artifact_counts,
+    append_artifact_rows,
+    merge_rows_by_identity,
+    merge_unique_candidate_rows,
+    record_failure_rows,
     run_active_homepage_batch,
 )
 
@@ -140,3 +145,109 @@ def test_active_homepage_batch_no_candidate_can_reject_when_recovery_not_queued(
     assert result.rejected_rows == [
         {"reason": "no_careers_evidence", "url": "https://quiet.example"}
     ]
+
+
+def test_merge_unique_candidate_rows_uses_caller_dedupe() -> None:
+    def unique_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+        seen: set[str] = set()
+        output: list[dict[str, object]] = []
+        for row in rows:
+            key = str(row.get("url") or "")
+            if key in seen:
+                continue
+            seen.add(key)
+            output.append(row)
+        return output
+
+    rows = merge_unique_candidate_rows(
+        [{"url": "https://one.example"}, {"ignored": True}],
+        [{"url": "https://one.example"}, {"url": "https://two.example"}],
+        unique_rows=unique_rows,
+    )
+
+    assert rows == [
+        {"url": "https://one.example"},
+        {"ignored": True},
+        {"url": "https://two.example"},
+    ]
+
+
+def test_merge_rows_by_identity_replaces_duplicate_identity() -> None:
+    rows = merge_rows_by_identity(
+        [{"sourceId": "a", "value": 1}, {"value": "passthrough"}],
+        [{"sourceId": "a", "value": 2}, {"sourceId": "b", "value": 3}],
+        identity_fn=lambda row: str(row.get("sourceId") or ""),
+    )
+
+    assert rows == [
+        {"value": "passthrough"},
+        {"sourceId": "a", "value": 2},
+        {"sourceId": "b", "value": 3},
+    ]
+
+
+def test_append_rows_and_record_failures_preserve_artifact_state() -> None:
+    artifact: dict[str, object] = {"rejectedForActivation": [{"reason": "old"}]}
+
+    append_artifact_rows(artifact, "rejectedForActivation", [{"reason": "new"}])
+    record_failure_rows(
+        artifact,
+        [
+            {"stage": "homepage_fetch", "error": "timeout"},
+            {"stage": "homepage_fetch", "error": "dns"},
+        ],
+        sample_limit=1,
+    )
+
+    assert artifact["rejectedForActivation"] == [{"reason": "old"}, {"reason": "new"}]
+    assert artifact["failureCounts"] == {"homepage_fetch": 2}
+    assert artifact["failures"] == [{"stage": "homepage_fetch", "error": "timeout"}]
+
+
+def test_active_audit_artifact_counts_uses_caller_bucket_names() -> None:
+    artifact = {
+        "allRows": [
+            {"adapter": "greenhouse", "sourceId": "a", "recovered": True},
+            {"adapter": "static", "sourceId": "b"},
+        ],
+        "activeRows": [{"adapter": "greenhouse", "sourceId": "a", "recovered": True}],
+        "zeroRows": [{"sourceId": "z"}],
+        "rejections": [
+            {"reason": "probe_failed", "reasonDetail": "probe_failed"},
+            {
+                "reason": "no_careers_evidence",
+                "reasonDetail": "no_jobish_links",
+                "failureBucket": "coverage_miss",
+            },
+        ],
+        "browserRows": [{"url": "https://shell.example"}],
+        "failureSamples": [{"stage": "homepage_fetch"}],
+        "failureCounts": {"homepage_fetch": 2},
+        "browserRecovery": {"processedCount": 3, "activeCandidates": 1},
+        "lostRecoveryAudit": {"lostCount": 1},
+    }
+
+    counts = active_audit_artifact_counts(
+        artifact,
+        all_candidates_key="allRows",
+        active_candidates_key="activeRows",
+        zero_candidates_key="zeroRows",
+        rejected_key="rejections",
+        browser_candidates_key="browserRows",
+        recovered_predicate=lambda row: bool(row.get("recovered")),
+        failure_bucket_fn=lambda row: str(row.get("failureBucket") or "technical_failure"),
+    )
+
+    assert len(counts.all_candidates) == 2
+    assert len(counts.recovered_candidates) == 1
+    assert len(counts.recovered_active) == 1
+    assert counts.reason_counts == {"probe_failed": 1, "no_careers_evidence": 1}
+    assert counts.detail_counts == {"probe_failed": 1, "no_jobish_links": 1}
+    assert counts.active_adapter_counts == {"greenhouse": 1}
+    assert counts.zero_job_count == 1
+    assert counts.failure_count == 2
+    assert counts.failure_sample_count == 1
+    assert counts.browser_recovery_candidate_count == 1
+    assert counts.browser_recovery_processed_count == 3
+    assert counts.browser_recovered_active_count == 1
+    assert counts.lost_recovered_active_count == 1

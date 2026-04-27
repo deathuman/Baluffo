@@ -337,23 +337,19 @@ def _next_batch(
 
 
 def _merge_unique_rows(existing: Any, incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return unique_sources(
-        [*(_as_list(existing)), *[dict(row) for row in incoming if isinstance(row, dict)]]
+    return active_audit_runtime.merge_unique_candidate_rows(
+        existing,
+        incoming,
+        unique_rows=unique_sources,
     )
 
 
 def _merge_by_source_id(existing: Any, incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows: dict[str, dict[str, Any]] = {}
-    passthrough: list[dict[str, Any]] = []
-    for row in [*(_as_list(existing)), *incoming]:
-        if not isinstance(row, dict):
-            continue
-        row_id = _candidate_id(row)
-        if row_id:
-            rows[row_id] = dict(row)
-        else:
-            passthrough.append(dict(row))
-    return [*passthrough, *rows.values()]
+    return active_audit_runtime.merge_rows_by_identity(
+        existing,
+        incoming,
+        identity_fn=_candidate_id,
+    )
 
 
 def _duration_ms(started: float) -> int:
@@ -361,15 +357,15 @@ def _duration_ms(started: float) -> int:
 
 
 def _append_batch_timing(artifact: dict[str, Any], timing: dict[str, Any]) -> None:
-    audit_ledger.append_batch_timing(artifact, timing)
+    active_audit_runtime.append_batch_timing(artifact, timing)
 
 
 def _record_failures(artifact: dict[str, Any], failures: list[dict[str, Any]]) -> None:
-    audit_ledger.record_failures(artifact, failures, sample_limit=FAILURE_SAMPLE_LIMIT)
-
-
-def _failure_count(artifact: dict[str, Any]) -> int:
-    return audit_ledger.failure_count(artifact)
+    active_audit_runtime.record_failure_rows(
+        artifact,
+        failures,
+        sample_limit=FAILURE_SAMPLE_LIMIT,
+    )
 
 
 def _summarize_artifact(
@@ -380,36 +376,18 @@ def _summarize_artifact(
     completed_urls: set[str],
 ) -> None:
     prior_summary = _as_dict(artifact.get("summary"))
-    rejected = _as_list(artifact.get("rejectedForActivation"))
-    reason_counts = Counter(
-        str(row.get("reason") or "unknown") for row in rejected if isinstance(row, dict)
+    counts = active_audit_runtime.active_audit_artifact_counts(
+        artifact,
+        all_candidates_key="allCandidates",
+        active_candidates_key="activeCandidates",
+        zero_candidates_key="zeroJobCandidates",
+        rejected_key="rejectedForActivation",
+        browser_candidates_key="browserRecoveryCandidates",
+        recovered_predicate=lambda row: bool(row.get("gamedevmapRecovery")),
+        failure_bucket_fn=lambda row: str(
+            row.get("failureBucket") or _normalize_failure_bucket(row.get("reason", ""))
+        ),
     )
-    detail_counts = Counter(
-        str(row.get("reasonDetail") or "unknown") for row in rejected if isinstance(row, dict)
-    )
-    active = [row for row in _as_list(artifact.get("activeCandidates")) if isinstance(row, dict)]
-    all_candidates = [
-        row for row in _as_list(artifact.get("allCandidates")) if isinstance(row, dict)
-    ]
-    recovered_candidates = [row for row in all_candidates if bool(row.get("gamedevmapRecovery"))]
-    recovered_active = [row for row in active if bool(row.get("gamedevmapRecovery"))]
-    technical_failures = [
-        row
-        for row in rejected
-        if isinstance(row, dict)
-        and str(row.get("failureBucket") or _normalize_failure_bucket(row.get("reason", "")))
-        == "technical_failure"
-    ]
-    coverage_misses = [
-        row
-        for row in rejected
-        if isinstance(row, dict)
-        and str(row.get("failureBucket") or _normalize_failure_bucket(row.get("reason", "")))
-        == "coverage_miss"
-    ]
-    adapter_counts = Counter(str(row.get("adapter") or "unknown") for row in active)
-    browser_recovery = _as_dict(artifact.get("browserRecovery"))
-    lost_recovery = _as_dict(artifact.get("lostRecoveryAudit"))
     csv_rows = len(parsed_rows) if parsed_rows else _safe_int(prior_summary.get("csvRows"))
     eligible_rows = (
         len(representative_rows)
@@ -441,30 +419,30 @@ def _summarize_artifact(
             _as_dict(artifact.get("summary")).get("recoveryPagesFetched")
         ),
         "providerCandidates": len(
-            [row for row in all_candidates if str(row.get("adapter") or "") != "static"]
+            [row for row in counts.all_candidates if str(row.get("adapter") or "") != "static"]
         ),
         "staticCandidates": len(
-            [row for row in all_candidates if str(row.get("adapter") or "") == "static"]
+            [row for row in counts.all_candidates if str(row.get("adapter") or "") == "static"]
         ),
-        "recoveredCandidates": len(recovered_candidates),
-        "recoveredActiveCandidates": len(recovered_active),
-        "probedCandidates": len(all_candidates),
-        "activeCandidates": len(active),
-        "zeroJobCandidates": len(_as_list(artifact.get("zeroJobCandidates"))),
-        "probeFailures": int(reason_counts.get("probe_failed") or 0),
-        "technicalFailures": len(technical_failures),
-        "coverageMisses": len(coverage_misses),
-        "failures": _failure_count(artifact),
-        "failureSampleCount": len(_as_list(artifact.get("failureSamples"))),
+        "recoveredCandidates": len(counts.recovered_candidates),
+        "recoveredActiveCandidates": len(counts.recovered_active),
+        "probedCandidates": len(counts.all_candidates),
+        "activeCandidates": len(counts.active_rows),
+        "zeroJobCandidates": counts.zero_job_count,
+        "probeFailures": int(counts.reason_counts.get("probe_failed") or 0),
+        "technicalFailures": len(counts.technical_failures),
+        "coverageMisses": len(counts.coverage_misses),
+        "failures": counts.failure_count,
+        "failureSampleCount": counts.failure_sample_count,
         "artifactSizeBytes": _safe_int(_as_dict(artifact.get("runtime")).get("artifactSizeBytes")),
-        "rejectedForActivation": len(rejected),
-        "rejectedReasonCounts": dict(reason_counts),
-        "rejectedReasonDetailCounts": dict(detail_counts),
-        "activeAdapterCounts": dict(adapter_counts),
-        "browserRecoveryCandidates": len(_as_list(artifact.get("browserRecoveryCandidates"))),
-        "browserRecoveryProcessed": _safe_int(browser_recovery.get("processedCount")),
-        "browserRecoveredActiveCandidates": _safe_int(browser_recovery.get("activeCandidates")),
-        "lostRecoveredActiveCandidates": _safe_int(lost_recovery.get("lostCount")),
+        "rejectedForActivation": len(counts.rejected_rows),
+        "rejectedReasonCounts": counts.reason_counts,
+        "rejectedReasonDetailCounts": counts.detail_counts,
+        "activeAdapterCounts": counts.active_adapter_counts,
+        "browserRecoveryCandidates": counts.browser_recovery_candidate_count,
+        "browserRecoveryProcessed": counts.browser_recovery_processed_count,
+        "browserRecoveredActiveCandidates": counts.browser_recovered_active_count,
+        "lostRecoveredActiveCandidates": counts.lost_recovered_active_count,
     }
 
 
@@ -895,10 +873,11 @@ def _merge_browser_recovery_artifact_updates(
         artifact["allCandidates"] = _merge_unique_rows(
             artifact.get("allCandidates"), all_candidates
         )
-        artifact["rejectedForActivation"] = [
-            *(_as_list(artifact.get("rejectedForActivation"))),
-            *rejected,
-        ]
+        active_audit_runtime.append_artifact_rows(
+            artifact,
+            "rejectedForActivation",
+            rejected,
+        )
         _apply_probe_results(artifact, combined_probe_results)
 
     browser_recovery_helpers.merge_browser_recovery_results(
@@ -1568,10 +1547,11 @@ def _apply_probe_results(
     artifact["zeroJobCandidates"] = _merge_by_source_id(
         artifact.get("zeroJobCandidates"), classification.zero_job_candidates
     )
-    artifact["rejectedForActivation"] = [
-        *(_as_list(artifact.get("rejectedForActivation"))),
-        *classification.rejected_rows,
-    ]
+    active_audit_runtime.append_artifact_rows(
+        artifact,
+        "rejectedForActivation",
+        classification.rejected_rows,
+    )
 
 
 def run_gamedevmap_active_source_dry_run(
@@ -1887,13 +1867,16 @@ def run_gamedevmap_active_source_dry_run(
             ],
         )
         _record_failures(artifact, recovery_failures)
-        artifact["rejectedForActivation"] = [
-            *(_as_list(artifact.get("rejectedForActivation"))),
-            *rejected_missing,
-            *rejected_rows,
-            *recovery_rejected_rows,
-            *bad_provider_rejections,
-        ]
+        active_audit_runtime.append_artifact_rows(
+            artifact,
+            "rejectedForActivation",
+            [
+                *rejected_missing,
+                *rejected_rows,
+                *recovery_rejected_rows,
+                *bad_provider_rejections,
+            ],
+        )
         summary = _as_dict(artifact.get("summary"))
         summary["homepageFetchAttempts"] = _safe_int(summary.get("homepageFetchAttempts")) + len(
             homepage_rows
