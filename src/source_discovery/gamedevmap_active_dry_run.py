@@ -9,7 +9,6 @@ import re
 import time
 from collections import Counter
 from contextlib import suppress
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urljoin, urlparse
@@ -22,6 +21,7 @@ from src.shared.regex import find_urls_in_text
 from src.shared.utils import now_iso
 from src.source_registry import source_identity, unique_sources
 
+from . import audit_ledger
 from .config import DEFAULT_DISCOVERY_CONFIG
 from .core import (
     compute_candidate_score,
@@ -393,67 +393,19 @@ def _merge_by_source_id(existing: Any, incoming: list[dict[str, Any]]) -> list[d
 
 
 def _duration_ms(started: float) -> int:
-    return max(0, int((time.perf_counter() - started) * 1000))
-
-
-def _timings(artifact: dict[str, Any]) -> dict[str, Any]:
-    timings = _as_dict(artifact.get("timings"))
-    timings.setdefault("batches", [])
-    timings.setdefault("totalsMs", {})
-    artifact["timings"] = timings
-    return timings
-
-
-def _add_timing_total(artifact: dict[str, Any], key: str, duration_ms: int) -> None:
-    timings = _timings(artifact)
-    totals = _as_dict(timings.get("totalsMs"))
-    totals[key] = _safe_int(totals.get(key)) + max(0, int(duration_ms or 0))
-    timings["totalsMs"] = totals
+    return audit_ledger.duration_ms(started)
 
 
 def _append_batch_timing(artifact: dict[str, Any], timing: dict[str, Any]) -> None:
-    timings = _timings(artifact)
-    batches = _as_list(timings.get("batches"))
-    batches.append(dict(timing))
-    timings["batches"] = batches
-    for key, value in timing.items():
-        if key.endswith("Ms"):
-            _add_timing_total(artifact, key, _safe_int(value))
-
-
-def _failure_error_key(failure: dict[str, Any]) -> str:
-    error = str(failure.get("error") or "").strip()
-    if not error:
-        return "(blank)"
-    return error[:160]
+    audit_ledger.append_batch_timing(artifact, timing)
 
 
 def _record_failures(artifact: dict[str, Any], failures: list[dict[str, Any]]) -> None:
-    if not failures:
-        return
-    counts = _as_dict(artifact.get("failureCounts"))
-    error_counts = _as_dict(artifact.get("failureErrorCounts"))
-    samples = _as_list(artifact.get("failureSamples"))
-    for failure in failures:
-        if not isinstance(failure, dict):
-            continue
-        stage = str(failure.get("stage") or "unknown")
-        counts[stage] = _safe_int(counts.get(stage)) + 1
-        error_key = f"{stage}|{_failure_error_key(failure)}"
-        error_counts[error_key] = _safe_int(error_counts.get(error_key)) + 1
-        if len(samples) < FAILURE_SAMPLE_LIMIT:
-            samples.append(dict(failure))
-    artifact["failureCounts"] = counts
-    artifact["failureErrorCounts"] = error_counts
-    artifact["failureSamples"] = samples[:FAILURE_SAMPLE_LIMIT]
-    artifact["failures"] = artifact["failureSamples"]
+    audit_ledger.record_failures(artifact, failures, sample_limit=FAILURE_SAMPLE_LIMIT)
 
 
 def _failure_count(artifact: dict[str, Any]) -> int:
-    counts = _as_dict(artifact.get("failureCounts"))
-    if counts:
-        return sum(_safe_int(value) for value in counts.values())
-    return len(_as_list(artifact.get("failures")))
+    return audit_ledger.failure_count(artifact)
 
 
 def _summarize_artifact(
@@ -576,13 +528,7 @@ def _write_artifact(
         representative_rows=representative_rows,
         completed_urls=completed_urls,
     )
-    runtime = _as_dict(artifact.get("runtime"))
-    runtime["artifactSizeBytes"] = len(json.dumps(artifact, ensure_ascii=False).encode("utf-8"))
-    artifact["runtime"] = runtime
-    summary = _as_dict(artifact.get("summary"))
-    summary["artifactSizeBytes"] = int(runtime["artifactSizeBytes"])
-    artifact["summary"] = summary
-    source_registry_module.save_json_atomic(output_path, artifact)
+    audit_ledger.save_artifact_atomic(artifact, output_path)
 
 
 def _recovered_active_by_id(artifact: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -774,13 +720,7 @@ def _save_updated_artifact(artifact: dict[str, Any], output_path: Path) -> None:
         completed_urls=completed_urls,
     )
     artifact["updatedAt"] = now_iso()
-    runtime = _as_dict(artifact.get("runtime"))
-    runtime["artifactSizeBytes"] = len(json.dumps(artifact, ensure_ascii=False).encode("utf-8"))
-    artifact["runtime"] = runtime
-    summary = _as_dict(artifact.get("summary"))
-    summary["artifactSizeBytes"] = int(runtime["artifactSizeBytes"])
-    artifact["summary"] = summary
-    source_registry_module.save_json_atomic(output_path, artifact)
+    audit_ledger.save_artifact_atomic(artifact, output_path)
 
 
 def _default_browser_fetcher():
@@ -2392,36 +2332,20 @@ def _active_audit_ttl_minutes(cfg: dict[str, Any]) -> int:
         return 360
 
 
-def _parse_artifact_time(value: Any) -> datetime | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    try:
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-
 def _audit_artifact_is_fresh(artifact: dict[str, Any], cfg: dict[str, Any]) -> bool:
-    if int(artifact.get("schemaVersion") or 0) != DRY_RUN_SCHEMA_VERSION:
-        return False
-    if not bool(_as_dict(artifact.get("progress")).get("complete")):
-        return False
-    if not _audit_artifact_signature_matches(artifact, cfg):
-        return False
-    ttl_minutes = _active_audit_ttl_minutes(cfg)
-    if ttl_minutes <= 0:
-        return False
-    updated_at = _parse_artifact_time(artifact.get("updatedAt") or artifact.get("finishedAt"))
-    return bool(updated_at and datetime.now(UTC) - updated_at <= timedelta(minutes=ttl_minutes))
+    return audit_ledger.artifact_is_fresh(
+        artifact,
+        schema_version=DRY_RUN_SCHEMA_VERSION,
+        expected_signature=_gamedevmap_cache_signature(cfg),
+        ttl_minutes=_active_audit_ttl_minutes(cfg),
+    )
 
 
 def _audit_artifact_signature_matches(artifact: dict[str, Any], cfg: dict[str, Any]) -> bool:
-    if int(artifact.get("schemaVersion") or 0) != DRY_RUN_SCHEMA_VERSION:
-        return False
-    return _as_dict(artifact.get("runtime")).get("configSignature") == _gamedevmap_cache_signature(
-        cfg
+    return audit_ledger.artifact_signature_matches(
+        artifact,
+        schema_version=DRY_RUN_SCHEMA_VERSION,
+        expected_signature=_gamedevmap_cache_signature(cfg),
     )
 
 
