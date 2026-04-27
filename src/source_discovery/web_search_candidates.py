@@ -7,13 +7,10 @@ import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus, urlparse
-from xml.etree import ElementTree as ET
-
-import httpx
 
 from src.shared.regex import find_urls_in_text
 from src.shared.utils import now_iso
-from src.source_registry import source_identity, unique_sources
+from src.source_registry import unique_sources
 
 from . import audit_ledger
 from . import browser_recovery as browser_recovery_helpers
@@ -29,19 +26,25 @@ from .config import (
     MAX_SEARCH_LINKS_PER_QUERY,
     WEB_SEARCH_QUERY_SUFFIX,
 )
-from .core import (
-    compute_candidate_score,
-    normalize_candidate,
-    probe_bucket_for,
-    probe_concurrency_defaults,
-)
 from .directory_audit import run_directory_audit
 from .directory_fetch_jobs import build_directory_fetch_job
-from .io_runtime import endpoint_url
 from .page_analysis import analyze_fetched_page
+from .probe_runtime import (
+    candidate_id as probe_candidate_id,
+)
+from .probe_runtime import (
+    candidate_with_probe_evidence as probe_candidate_with_probe_evidence,
+)
+from .probe_runtime import (
+    probe_candidates_after_rendered_results,
+    rendered_static_probe_result,
+)
+from .probe_runtime import (
+    probe_candidates_async as shared_probe_candidates_async,
+)
 from .scoring import careers_keyword_count, clean_token, studio_domain_match, unique_string_list
 from .web_search_extract import extract_links_from_html
-from .web_search_fetch import async_fetch_text_httpx, fetch_text
+from .web_search_fetch import fetch_text
 
 WEB_SEARCH_AUDIT_SCHEMA_VERSION = 2
 WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT = 10_000
@@ -981,21 +984,15 @@ def _merge_web_scan_results(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _candidate_id(candidate: dict[str, Any]) -> str:
-    return str(source_identity(candidate) or "").strip()
+    return probe_candidate_id(candidate)
 
 
 def _candidate_with_probe_evidence(candidate: dict[str, Any], jobs_found: int) -> dict[str, Any]:
-    score, reasons = compute_candidate_score(candidate, jobs_found)
-    normalized = normalize_candidate(candidate, score, reasons, jobs_found, probed_at=now_iso())
-    normalized["deferred"] = False
-    normalized.pop("deferReason", None)
-    normalized["probeStatus"] = "ok"
-    normalized["candidateState"] = "validated"
-    normalized["prevalidatedDiscovery"] = True
-    identity = _candidate_id(normalized)
-    if identity:
-        normalized["id"] = identity
-    return normalized
+    return probe_candidate_with_probe_evidence(
+        candidate,
+        jobs_found,
+        prevalidated_discovery=True,
+    )
 
 
 def _browser_static_probe_result_from_rendered_html(
@@ -1004,20 +1001,11 @@ def _browser_static_probe_result_from_rendered_html(
     rendered_url: str,
     rendered_html: str,
 ) -> tuple[dict[str, Any], bool, int, str, int] | None:
-    from .probe import parse_probe_count
-
-    if str(candidate.get("adapter") or "").strip().lower() != "static":
-        return None
-    candidate_url = str(endpoint_url(candidate) or candidate.get("careersUrl") or "").strip()
-    if candidate_url.rstrip("/") != str(rendered_url or "").strip().rstrip("/"):
-        return None
-    try:
-        jobs_found = parse_probe_count("static", rendered_html)
-    except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
-        return None
-    if jobs_found <= 0:
-        return None
-    return candidate, True, int(jobs_found), "", 0
+    return rendered_static_probe_result(
+        candidate,
+        rendered_url=rendered_url,
+        rendered_html=rendered_html,
+    )
 
 
 async def _probe_candidates_async(
@@ -1026,40 +1014,7 @@ async def _probe_candidates_async(
     timeout_s: int,
     fetcher,
 ) -> list[tuple[dict[str, Any], bool, int, str, int]]:
-    from .probe import async_probe_candidate
-
-    limits = probe_concurrency_defaults()
-    total_sem = asyncio.Semaphore(int(limits["total"]))
-    bucket_sems = {
-        "static": asyncio.Semaphore(int(limits["static"])),
-        "provider": asyncio.Semaphore(int(limits["provider"])),
-        "teamtailor": asyncio.Semaphore(int(limits["teamtailor"])),
-    }
-
-    async def _call_fetch(url: str, call_timeout_s: int) -> str:
-        if fetcher is fetch_text:
-            return await async_fetch_text_httpx(client, url, call_timeout_s)
-        return await asyncio.to_thread(fetcher, url, call_timeout_s)
-
-    async def _probe_one(row: dict[str, Any]) -> tuple[dict[str, Any], bool, int, str, int]:
-        bucket = probe_bucket_for(row)
-        bucket_sem = bucket_sems.get(bucket, bucket_sems["provider"])
-        async with total_sem:
-            async with bucket_sem:
-                started = time.perf_counter()
-                ok, jobs_found, error = await async_probe_candidate(
-                    row,
-                    timeout_s,
-                    fetcher=_call_fetch,
-                )
-                return row, ok, jobs_found, error, audit_ledger.duration_ms(started)
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
-        tasks = [asyncio.create_task(_probe_one(row)) for row in candidates]
-        results: list[tuple[dict[str, Any], bool, int, str, int]] = []
-        for fut in asyncio.as_completed(tasks):
-            results.append(await fut)
-        return results
+    return await shared_probe_candidates_async(candidates, timeout_s=timeout_s, fetcher=fetcher)
 
 
 def _default_browser_fetcher():
@@ -1085,12 +1040,7 @@ def _browser_recovery_probe_candidates(
     all_candidates: list[dict[str, Any]],
     rendered_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
 ) -> list[dict[str, Any]]:
-    rendered_ids = {_candidate_id(result[0]) for result in rendered_probe_results}
-    return [
-        row
-        for row in all_candidates
-        if _candidate_id(row) and _candidate_id(row) not in rendered_ids
-    ]
+    return probe_candidates_after_rendered_results(all_candidates, rendered_probe_results)
 
 
 def _analyze_web_browser_recovery_fetches(

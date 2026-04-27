@@ -1,0 +1,124 @@
+from __future__ import annotations
+
+"""Shared probe mechanics for source-discovery audit and recovery paths."""
+
+import asyncio
+import json
+import time
+from typing import Any
+from xml.etree import ElementTree as ET
+
+import httpx
+
+from src.shared.utils import now_iso
+from src.source_registry import source_identity
+
+from . import audit_ledger
+from .core import (
+    compute_candidate_score,
+    normalize_candidate,
+    probe_bucket_for,
+    probe_concurrency_defaults,
+)
+from .io_runtime import endpoint_url
+from .web_search_fetch import async_fetch_text_httpx, fetch_text
+
+ProbeResult = tuple[dict[str, Any], bool, int, str, int]
+
+
+def candidate_id(candidate: dict[str, Any]) -> str:
+    return str(source_identity(candidate) or "").strip()
+
+
+def candidate_with_probe_evidence(
+    candidate: dict[str, Any],
+    jobs_found: int,
+    *,
+    prevalidated_discovery: bool = False,
+) -> dict[str, Any]:
+    score, reasons = compute_candidate_score(candidate, jobs_found)
+    normalized = normalize_candidate(candidate, score, reasons, jobs_found, probed_at=now_iso())
+    normalized["deferred"] = False
+    normalized.pop("deferReason", None)
+    normalized["probeStatus"] = "ok"
+    normalized["candidateState"] = "validated"
+    if prevalidated_discovery:
+        normalized["prevalidatedDiscovery"] = True
+    identity = candidate_id(normalized)
+    if identity:
+        normalized["id"] = identity
+    return normalized
+
+
+def rendered_static_probe_result(
+    candidate: dict[str, Any],
+    *,
+    rendered_url: str,
+    rendered_html: str,
+) -> ProbeResult | None:
+    from .probe import parse_probe_count
+
+    if str(candidate.get("adapter") or "").strip().lower() != "static":
+        return None
+    candidate_url = str(endpoint_url(candidate) or candidate.get("careersUrl") or "").strip()
+    if candidate_url.rstrip("/") != str(rendered_url or "").strip().rstrip("/"):
+        return None
+    try:
+        jobs_found = parse_probe_count("static", rendered_html)
+    except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
+        return None
+    if jobs_found <= 0:
+        return None
+    return candidate, True, int(jobs_found), "", 0
+
+
+def probe_candidates_after_rendered_results(
+    all_candidates: list[dict[str, Any]],
+    rendered_probe_results: list[ProbeResult],
+) -> list[dict[str, Any]]:
+    rendered_ids = {candidate_id(result[0]) for result in rendered_probe_results}
+    return [
+        row for row in all_candidates if candidate_id(row) and candidate_id(row) not in rendered_ids
+    ]
+
+
+async def probe_candidates_async(
+    candidates: list[dict[str, Any]],
+    *,
+    timeout_s: int,
+    fetcher,
+) -> list[ProbeResult]:
+    from .probe import async_probe_candidate
+
+    limits = probe_concurrency_defaults()
+    total_sem = asyncio.Semaphore(int(limits["total"]))
+    bucket_sems = {
+        "static": asyncio.Semaphore(int(limits["static"])),
+        "provider": asyncio.Semaphore(int(limits["provider"])),
+        "teamtailor": asyncio.Semaphore(int(limits["teamtailor"])),
+    }
+
+    async def _call_fetch(url: str, call_timeout_s: int) -> str:
+        if fetcher is fetch_text:
+            return await async_fetch_text_httpx(client, url, call_timeout_s)
+        return await asyncio.to_thread(fetcher, url, call_timeout_s)
+
+    async def _probe_one(row: dict[str, Any]) -> ProbeResult:
+        bucket = probe_bucket_for(row)
+        bucket_sem = bucket_sems.get(bucket, bucket_sems["provider"])
+        async with total_sem:
+            async with bucket_sem:
+                started = time.perf_counter()
+                ok, jobs_found, error = await async_probe_candidate(
+                    row,
+                    timeout_s,
+                    fetcher=_call_fetch,
+                )
+                return row, ok, jobs_found, error, audit_ledger.duration_ms(started)
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout_s)) as client:
+        tasks = [asyncio.create_task(_probe_one(row)) for row in candidates]
+        results: list[ProbeResult] = []
+        for fut in asyncio.as_completed(tasks):
+            results.append(await fut)
+        return results

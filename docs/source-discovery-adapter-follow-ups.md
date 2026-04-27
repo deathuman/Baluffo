@@ -34,6 +34,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Migrated the GameDevMap legacy rollback cache path onto the shared directory-cache helper. The fallback cache JSON shape and `activeAuditEnabled=false` behavior remain unchanged.
 - 2026-04-27: Extracted shared audit-config helpers for section merge, `activeAuditEnabled` defaults, audit artifact paths, TTL fallback, and positive integer coercion. Existing adapter-private wrappers remain in place to preserve test and monkeypatch seams.
 - 2026-04-27: Consolidated seed-careers and web-search fetched-page result handling behind one method-parameterized helper. Page-analysis, fetch-failure, browser-candidate, and web failure-sample behavior remains unchanged.
+- 2026-04-27: Extracted shared probe-runtime helpers for browser-recovery candidates, covering bounded async probing, rendered static-page probe shortcuts, rendered-result probe filtering, and validated candidate normalization. GameDevMap and web-derived recovery still own artifact-specific merge and rejection behavior.
 
 ## Reusable Opportunities
 
