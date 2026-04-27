@@ -150,6 +150,95 @@ def test_directory_audit_rows_normalize_candidates_and_failures() -> None:
     assert rows[2] == [{"stage": "fetch"}]
 
 
+def test_directory_scan_result_rows_preserve_raw_candidate_lists() -> None:
+    provider_rows = [{"adapter": "greenhouse", "slug": "same"}]
+    static_rows = [{"adapter": "static", "name": "Same"}]
+    failures = [{"stage": "fetch"}]
+
+    rows = directory_audit.directory_scan_result_rows(
+        {
+            "providerCandidates": provider_rows,
+            "staticCandidates": static_rows,
+            "failures": failures,
+        }
+    )
+
+    assert rows == (provider_rows, static_rows, failures)
+    assert rows[0] is not provider_rows
+    assert rows[1] is not static_rows
+    assert rows[2] is not failures
+
+
+def test_directory_scan_result_rows_missing_keys_return_empty_lists() -> None:
+    assert directory_audit.directory_scan_result_rows({}) == ([], [], [])
+
+
+def test_directory_audit_rows_for_method_filters_rows_and_failures() -> None:
+    rows = directory_audit.directory_audit_rows_for_method(
+        {
+            "providerCandidates": [
+                {
+                    "adapter": "greenhouse",
+                    "slug": "seed",
+                    "discoveryMethod": "seed_careers_page",
+                },
+                {"adapter": "lever", "slug": "web", "discoveryMethod": "web_search"},
+            ],
+            "staticCandidates": [
+                {
+                    "adapter": "static",
+                    "name": "Seed Jobs",
+                    "discoveryMethod": "seed_careers_page",
+                },
+                {"adapter": "static", "name": "Web Jobs", "discoveryMethod": "web_search"},
+            ],
+            "failures": [
+                {"adapter": "seed_careers_page", "stage": "page_fetch"},
+                {"adapter": "web_search", "stage": "page_fetch"},
+            ],
+        },
+        "web_search",
+    )
+
+    assert rows[0] == [
+        {
+            "adapter": "lever",
+            "slug": "web",
+            "discoveryMethod": "web_search",
+            "id": "lever:slug:web",
+        }
+    ]
+    assert rows[1] == [
+        {
+            "adapter": "static",
+            "name": "Web Jobs",
+            "discoveryMethod": "web_search",
+            "id": "static:name:web jobs",
+        }
+    ]
+    assert rows[2] == [{"adapter": "web_search", "stage": "page_fetch"}]
+
+
+def test_discover_directory_scan_candidates_calls_scan_once_with_timeout() -> None:
+    calls: list[int] = []
+
+    def scan(timeout_s: int) -> dict[str, object]:
+        calls.append(timeout_s)
+        return {
+            "providerCandidates": [{"adapter": "greenhouse", "slug": f"studio-{timeout_s}"}],
+            "staticCandidates": [],
+            "failures": [],
+        }
+
+    rows = directory_audit.discover_directory_scan_candidates(
+        9,
+        scan,
+    )
+
+    assert calls == [9]
+    assert rows == ([{"adapter": "greenhouse", "slug": "studio-9"}], [], [])
+
+
 def test_directory_adapter_wrapper_disabled_bypasses_work() -> None:
     logs: list[str] = []
 

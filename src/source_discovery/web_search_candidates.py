@@ -26,7 +26,7 @@ from .config import (
     MAX_SEARCH_LINKS_PER_QUERY,
     WEB_SEARCH_QUERY_SUFFIX,
 )
-from .directory_audit import run_directory_audit
+from .directory_audit import discover_directory_scan_candidates, run_directory_audit
 from .directory_fetch_jobs import build_directory_fetch_job
 from .page_analysis import analyze_fetched_page
 from .probe_runtime import (
@@ -1181,15 +1181,13 @@ def discover_seed_careers_page_candidates(
     fetcher=None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     fetcher = fetcher or fetch_text
-    scan = _scan_seed_careers_page_candidates(
+    return discover_directory_scan_candidates(
         timeout_s,
-        studio_seeds=studio_seeds,
-        fetcher=fetcher,
-    )
-    return (
-        list(scan.get("providerCandidates") or []),
-        list(scan.get("staticCandidates") or []),
-        list(scan.get("failures") or []),
+        lambda scan_timeout_s: _scan_seed_careers_page_candidates(
+            scan_timeout_s,
+            studio_seeds=studio_seeds,
+            fetcher=fetcher,
+        ),
     )
 
 
@@ -1201,16 +1199,14 @@ def discover_web_search_candidates(
     max_queries: int = 18,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     fetcher = fetcher or fetch_text
-    scan = _scan_web_search_candidates(
+    return discover_directory_scan_candidates(
         timeout_s,
-        studio_seeds=studio_seeds,
-        fetcher=fetcher,
-        max_queries=max_queries,
-    )
-    return (
-        list(scan.get("providerCandidates") or []),
-        list(scan.get("staticCandidates") or []),
-        list(scan.get("failures") or []),
+        lambda scan_timeout_s: _scan_web_search_candidates(
+            scan_timeout_s,
+            studio_seeds=studio_seeds,
+            fetcher=fetcher,
+            max_queries=max_queries,
+        ),
     )
 
 

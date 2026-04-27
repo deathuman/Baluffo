@@ -18,7 +18,7 @@ from .core import (
     classify_static_suppression,
     estimate_probe_priority,
 )
-from .directory_audit import directory_audit_rows
+from .directory_audit import directory_audit_rows, directory_audit_rows_for_method
 from .io_runtime import endpoint_url
 from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
 from .probe import validate_candidate_for_probe
@@ -219,18 +219,16 @@ def _web_search_audit_rows_for_method(
     cache: dict[str, Any],
     discovery_method: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    provider_rows, static_rows, failures = _load_web_search_audit_rows(
-        orchestrator=orchestrator,
-        deps=deps,
-        stage_enabled=stage_enabled,
-        cache=cache,
-    )
-    method = str(discovery_method)
-    return (
-        [row for row in provider_rows if str(row.get("discoveryMethod") or "") == method],
-        [row for row in static_rows if str(row.get("discoveryMethod") or "") == method],
-        [row for row in failures if str(row.get("adapter") or "") == method],
-    )
+    artifact = cache.get("artifact")
+    if artifact is None:
+        _load_web_search_audit_rows(
+            orchestrator=orchestrator,
+            deps=deps,
+            stage_enabled=stage_enabled,
+            cache=cache,
+        )
+        artifact = cache.get("artifact")
+    return directory_audit_rows_for_method(dict(artifact or {}), discovery_method)
 
 
 def _seed_careers_scan_rows(

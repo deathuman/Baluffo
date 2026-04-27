@@ -18,7 +18,7 @@ from .config import (
     GAME_STUDIOS_SHEET_ID,
     GAME_STUDIOS_SHEET_URL,
 )
-from .directory_audit import run_directory_audit
+from .directory_audit import discover_directory_scan_candidates, run_directory_audit
 from .io_runtime import collapse_competing_candidates
 from .scoring import unique_string_list
 from .static_candidates import build_known_careers_url_candidate
@@ -482,15 +482,13 @@ def discover_game_studio_sheet_candidates(
     fetcher = fetcher or fetch_text
     sheet_id = str(sheet_id or GAME_STUDIOS_SHEET_ID)
     gid = str(gid or GAME_STUDIOS_SHEET_GID)
-    scan = _sheet_directory_scan(
+    return discover_directory_scan_candidates(
         timeout_s,
-        sheet_id=sheet_id,
-        gid=gid,
-        fetcher=fetcher,
-        emit_log=emit_log,
-    )
-    return (
-        list(scan.get("providerCandidates") or []),
-        list(scan.get("staticCandidates") or []),
-        list(scan.get("failures") or []),
+        lambda scan_timeout_s: _sheet_directory_scan(
+            scan_timeout_s,
+            sheet_id=sheet_id,
+            gid=gid,
+            fetcher=fetcher,
+            emit_log=emit_log,
+        ),
     )

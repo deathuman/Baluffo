@@ -42,6 +42,34 @@ def directory_audit_rows(artifact: dict[str, Any]) -> DirectoryAuditRows:
     return provider_rows, static_rows, list(failures)
 
 
+def directory_scan_result_rows(scan_result: dict[str, Any]) -> DirectoryAuditRows:
+    return (
+        list(scan_result.get("providerCandidates") or []),
+        list(scan_result.get("staticCandidates") or []),
+        list(scan_result.get("failures") or []),
+    )
+
+
+def directory_audit_rows_for_method(
+    artifact: dict[str, Any],
+    discovery_method: str,
+) -> DirectoryAuditRows:
+    provider_rows, static_rows, failures = directory_audit_rows(artifact)
+    method = str(discovery_method)
+    return (
+        [row for row in provider_rows if str(row.get("discoveryMethod") or "") == method],
+        [row for row in static_rows if str(row.get("discoveryMethod") or "") == method],
+        [row for row in failures if str(row.get("adapter") or "") == method],
+    )
+
+
+def discover_directory_scan_candidates(
+    timeout_s: int,
+    scan: DirectoryAuditScan,
+) -> DirectoryAuditRows:
+    return directory_scan_result_rows(scan(timeout_s))
+
+
 def discover_directory_adapter_candidates(
     timeout_s: int,
     *,
@@ -68,9 +96,7 @@ def discover_directory_adapter_candidates(
         return cached
 
     scan_result = scan(timeout_s)
-    provider_candidates = list(scan_result.get("providerCandidates") or [])
-    static_candidates = list(scan_result.get("staticCandidates") or [])
-    failures = list(scan_result.get("failures") or [])
+    provider_candidates, static_candidates, failures = directory_scan_result_rows(scan_result)
 
     if scan_summary_log is not None:
         message = scan_summary_log(provider_candidates, static_candidates, failures)
@@ -222,12 +248,12 @@ def run_directory_audit(
     )
     scan_started = time.perf_counter()
     scan_result = scan(timeout_s)
-    artifact["providerCandidates"] = list(scan_result.get("providerCandidates") or [])
-    artifact["staticCandidates"] = list(scan_result.get("staticCandidates") or [])
+    provider_candidates, static_candidates, failures = directory_scan_result_rows(scan_result)
+    artifact["providerCandidates"] = provider_candidates
+    artifact["staticCandidates"] = static_candidates
     for key in ("browserRecoveryCandidates",):
         if key in scan_result:
             artifact[key] = list(scan_result.get(key) or [])
-    failures = list(scan_result.get("failures") or [])
     audit_ledger.record_failures(artifact, failures, sample_limit=sample_limit)
 
     artifact_summary = dict(artifact.get("summary") or {})
