@@ -17,16 +17,25 @@ from .config import (
     GAME_STUDIOS_SHEET_URL,
 )
 from .directory_adapter_templates import (
+    apply_directory_provenance,
     build_known_directory_entry_candidate,
 )
 from .directory_audit import discover_directory_scan_candidates, run_directory_audit
 from .directory_index_scan import run_directory_index_scan
+from .directory_page_recovery import (
+    RECOVERY_LOGIC_VERSION,
+    DirectoryRecoveryRequest,
+    run_directory_page_recovery,
+)
 from .io_runtime import collapse_competing_candidates
 from .multi_source_text import fetch_first_nonempty_text
+from .page_outcomes import FetchedPageContext, classify_recovery_page
 from .web_search import infer_web_candidate
 
 SHEET_DIRECTORY_AUDIT_SCHEMA_VERSION = 1
 SHEET_DIRECTORY_AUDIT_FAILURE_SAMPLE_LIMIT = 10_000
+SHEET_DIRECTORY_RECOVERY_FETCH_CONCURRENCY = 24
+SHEET_DIRECTORY_RECOVERY_PER_HOST_CONCURRENCY = 3
 
 
 def game_studios_sheet_candidate_urls(sheet_id: str, gid: str) -> list[str]:
@@ -120,12 +129,24 @@ def _sheet_directory_audit_ttl_minutes(config: dict[str, Any] | None) -> int:
     return audit_ttl_minutes(_sheet_directory_config_section(config))
 
 
-def _sheet_directory_audit_signature(*, sheet_id: str, gid: str) -> dict[str, Any]:
+def _sheet_directory_recovery_enabled(config: dict[str, Any] | None) -> bool:
+    cfg = _sheet_directory_config_section(config)
+    return bool(cfg.get("activeAuditRecoveryEnabled") is True)
+
+
+def _sheet_directory_audit_signature(
+    *,
+    sheet_id: str,
+    gid: str,
+    recovery_enabled: bool,
+) -> dict[str, Any]:
     return {
         "parserVersion": SHEET_DIRECTORY_AUDIT_SCHEMA_VERSION,
         "sheetId": str(sheet_id),
         "gid": str(gid),
         "maxRows": str(os.getenv("BALUFFO_SHEET_DIRECTORY_MAX_ROWS") or "").strip(),
+        "activeAuditRecoveryEnabled": bool(recovery_enabled),
+        "recoveryLogicVersion": RECOVERY_LOGIC_VERSION,
     }
 
 
@@ -257,6 +278,207 @@ def _append_sheet_entry_candidate(
     return False
 
 
+def _sheet_static_row_key(row: dict[str, Any]) -> str:
+    return str(
+        row.get("sourceDirectoryEntryUrl") or row.get("careersUrl") or row.get("listing_url") or ""
+    ).strip()
+
+
+def _sheet_recovery_request(row: dict[str, Any]) -> DirectoryRecoveryRequest | None:
+    page_url = _sheet_static_row_key(row)
+    if not page_url:
+        return None
+    try:
+        parsed = urlparse(page_url)
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    studio = str(row.get("studio") or row.get("company") or row.get("name") or "").strip()
+    if not studio:
+        return None
+    return DirectoryRecoveryRequest(
+        key=page_url,
+        adapter="sheet_directory",
+        discovery_method="sheet_directory",
+        name=studio,
+        studio=studio,
+        page_url=page_url,
+        html="",
+        payload=dict(row),
+    )
+
+
+def _sheet_recovery_evidence(payload: dict[str, Any]) -> tuple[list[str], int, bool]:
+    raw_evidence = payload.get("evidenceTypes")
+    evidence_types = (
+        [str(value) for value in raw_evidence if str(value or "").strip()]
+        if isinstance(raw_evidence, list)
+        else ["sheet_directory", "sheet_row"]
+    )
+    try:
+        evidence_score = int(payload.get("evidenceScore") or 0)
+    except (TypeError, ValueError):
+        evidence_score = 0
+    return evidence_types, evidence_score, bool(payload.get("weakSignal"))
+
+
+def _sheet_recovery_extra_fields(context: FetchedPageContext) -> dict[str, Any]:
+    source_entry_url = str(
+        context.payload.get("sourceDirectoryEntryUrl") or context.recovery_key or context.page_url
+    ).strip()
+    return {
+        "sourceDirectory": "game_studios_sheet",
+        "sourceDirectoryUrl": GAME_STUDIOS_SHEET_URL,
+        "sourceDirectoryEntryUrl": source_entry_url,
+    }
+
+
+def _sheet_recovery_provider_rows(
+    providers: list[dict[str, Any]],
+    context: FetchedPageContext,
+) -> list[dict[str, Any]]:
+    evidence_types, evidence_score, weak_signal = _sheet_recovery_evidence(context.payload)
+    source_entry_url = str(
+        context.payload.get("sourceDirectoryEntryUrl") or context.recovery_key or context.page_url
+    ).strip()
+    rows: list[dict[str, Any]] = []
+    for provider in providers:
+        row = apply_directory_provenance(
+            provider,
+            evidence_source="game_studios_sheet",
+            evidence_types=evidence_types,
+            source_directory="game_studios_sheet",
+            source_directory_url=GAME_STUDIOS_SHEET_URL,
+            source_directory_entry_url=source_entry_url,
+            careers_url_fallback=context.page_url,
+            evidence_score_floor=evidence_score,
+        )
+        row["discoveryMethod"] = "sheet_directory"
+        row["discoveryStage"] = "sheet_directory"
+        row["weakSignal"] = bool(row.get("weakSignal")) or weak_signal
+        rows.append(row)
+    return rows
+
+
+def _sheet_recovery_explicit_static(
+    explicit_careers_url: str,
+    context: FetchedPageContext,
+) -> dict[str, Any]:
+    evidence_types, evidence_score, weak_signal = _sheet_recovery_evidence(context.payload)
+    return build_known_directory_entry_candidate(
+        target_url=explicit_careers_url,
+        studio=context.studio,
+        nl_priority=context.nl_priority,
+        discovery_method="sheet_directory",
+        discovery_stage="sheet_directory",
+        evidence_source="game_studios_sheet",
+        evidence_types=evidence_types,
+        evidence_score=evidence_score,
+        name_suffix="Sheet",
+        enabled_by_default=None,
+        weak_signal=weak_signal,
+        extra_fields=_sheet_recovery_extra_fields(context),
+    )
+
+
+def _sheet_recovery_generic_static(
+    candidate: dict[str, Any],
+    context: FetchedPageContext,
+) -> dict[str, Any]:
+    evidence_types, evidence_score, weak_signal = _sheet_recovery_evidence(context.payload)
+    row = apply_directory_provenance(
+        candidate,
+        evidence_source="game_studios_sheet",
+        evidence_types=evidence_types,
+        source_directory="game_studios_sheet",
+        source_directory_url=GAME_STUDIOS_SHEET_URL,
+        source_directory_entry_url=str(
+            context.payload.get("sourceDirectoryEntryUrl")
+            or context.recovery_key
+            or context.page_url
+        ).strip(),
+        careers_url_fallback=context.page_url,
+        evidence_score_floor=evidence_score,
+    )
+    row["discoveryMethod"] = "sheet_directory"
+    row["discoveryStage"] = "sheet_directory"
+    row["weakSignal"] = bool(row.get("weakSignal")) or weak_signal
+    return row
+
+
+def _sheet_recovery_result_candidates(
+    result: dict[str, Any],
+    request: DirectoryRecoveryRequest,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    recovery_url = str(result.get("url") or request.page_url or "").strip()
+    context = FetchedPageContext(
+        page_url=recovery_url,
+        html=str(result.get("text") or ""),
+        studio=request.studio,
+        nl_priority=bool((request.payload or {}).get("nlPriority")),
+        discovery_method="sheet_directory",
+        payload=dict(request.payload or {}),
+        recovery_key=request.key,
+    )
+    outcome = classify_recovery_page(
+        context,
+        provider_rows=_sheet_recovery_provider_rows,
+        explicit_static=_sheet_recovery_explicit_static,
+        generic_static=_sheet_recovery_generic_static,
+    )
+    return outcome.provider_candidates, outcome.static_candidates
+
+
+def _apply_sheet_directory_recovery(
+    scan_result: dict[str, Any],
+    *,
+    timeout_s: int,
+    fetcher: Any,
+) -> dict[str, Any]:
+    static_candidates = list(scan_result.get("staticCandidates") or [])
+    requests = [
+        request
+        for row in static_candidates
+        if (request := _sheet_recovery_request(row)) is not None
+    ]
+    if not requests:
+        return scan_result
+
+    recovery = run_directory_page_recovery(
+        timeout_s,
+        requests,
+        fetcher=fetcher,
+        total_concurrency=SHEET_DIRECTORY_RECOVERY_FETCH_CONCURRENCY,
+        per_host_concurrency=SHEET_DIRECTORY_RECOVERY_PER_HOST_CONCURRENCY,
+        analyze_result=_sheet_recovery_result_candidates,
+        progress_label="Sheet directory",
+    )
+    recovered_keys = set(recovery.recovered_keys)
+    fallback_static_candidates = [
+        row for row in static_candidates if _sheet_static_row_key(row) not in recovered_keys
+    ]
+
+    updated = dict(scan_result)
+    updated["providerCandidates"] = collapse_competing_candidates(
+        [*(scan_result.get("providerCandidates") or []), *recovery.provider_candidates]
+    )
+    updated["staticCandidates"] = unique_sources(
+        [*recovery.static_candidates, *fallback_static_candidates]
+    )
+    if recovery.browser_recovery_candidates:
+        updated["browserRecoveryCandidates"] = list(recovery.browser_recovery_candidates)
+
+    summary = dict(scan_result.get("summary") or {})
+    summary.update(dict(recovery.summary))
+    updated["summary"] = summary
+
+    batch_timing = dict(scan_result.get("batchTiming") or {})
+    batch_timing.update(dict(recovery.batch_timing))
+    updated["batchTiming"] = batch_timing
+    return updated
+
+
 def _empty_sheet_summary(
     *,
     attempted_urls: list[str],
@@ -284,6 +506,7 @@ def _sheet_directory_scan(
     gid: str,
     fetcher: Any,
     emit_log: Any,
+    enable_recovery: bool = False,
 ) -> dict[str, Any]:
     batch_timing: dict[str, Any] = {"sheetId": sheet_id, "gid": gid}
 
@@ -343,7 +566,7 @@ def _sheet_directory_scan(
             f"invalid_urls={invalid_url_count}."
         )
 
-    return run_directory_index_scan(
+    scan_result = run_directory_index_scan(
         source_text=csv_text,
         fetch_error=last_error or "sheet CSV fetch failed",
         parse_entries=parse_game_studio_sheet_csv,
@@ -377,6 +600,13 @@ def _sheet_directory_scan(
         parsed_callback=parsed_log,
         candidates_callback=candidate_log,
     )
+    if not enable_recovery:
+        return scan_result
+    return _apply_sheet_directory_recovery(
+        scan_result,
+        timeout_s=timeout_s,
+        fetcher=fetcher,
+    )
 
 
 def run_sheet_directory_audit(
@@ -393,12 +623,17 @@ def run_sheet_directory_audit(
     fetcher = fetcher or fetch_text
     sheet_id = str(sheet_id or GAME_STUDIOS_SHEET_ID)
     gid = str(gid or GAME_STUDIOS_SHEET_GID)
+    recovery_enabled = _sheet_directory_recovery_enabled(config)
     return run_directory_audit(
         adapter="sheet_directory",
         schema_version=SHEET_DIRECTORY_AUDIT_SCHEMA_VERSION,
         output_path=_sheet_directory_audit_path(config),
         ttl_minutes=_sheet_directory_audit_ttl_minutes(config),
-        signature=_sheet_directory_audit_signature(sheet_id=sheet_id, gid=gid),
+        signature=_sheet_directory_audit_signature(
+            sheet_id=sheet_id,
+            gid=gid,
+            recovery_enabled=recovery_enabled,
+        ),
         timeout_s=timeout_s,
         scan=lambda scan_timeout_s: _sheet_directory_scan(
             scan_timeout_s,
@@ -406,6 +641,7 @@ def run_sheet_directory_audit(
             gid=gid,
             fetcher=fetcher,
             emit_log=emit_log,
+            enable_recovery=recovery_enabled,
         ),
         runtime={
             "sheetId": sheet_id,

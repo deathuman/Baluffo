@@ -271,6 +271,7 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     },
     "sheetDirectory": {
         "activeAuditEnabled": True,
+        "activeAuditRecoveryEnabled": False,
         "activeAuditPath": "data/sheet-directory-discovery-audit.json",
         "activeAuditTtlMinutes": 360,
     },

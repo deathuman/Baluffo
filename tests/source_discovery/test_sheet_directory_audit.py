@@ -33,12 +33,17 @@ def _fetch_from(payloads: dict[str, str]):
     return fake_fetch
 
 
-def _audit_config(audit_path: str) -> dict[str, object]:
+def _audit_config(audit_path: str, *, recovery_enabled: bool | None = None) -> dict[str, object]:
+    sheet_config: dict[str, object] = {
+        "activeAuditEnabled": True,
+        "activeAuditPath": audit_path,
+        "activeAuditTtlMinutes": 60,
+    }
+    if recovery_enabled is not None:
+        sheet_config["activeAuditRecoveryEnabled"] = bool(recovery_enabled)
     return {
         "sheetDirectory": {
-            "activeAuditEnabled": True,
-            "activeAuditPath": audit_path,
-            "activeAuditTtlMinutes": 60,
+            **sheet_config,
         }
     }
 
@@ -68,6 +73,7 @@ def test_sheet_directory_audit_missing_artifact_executes_and_writes_boundaries()
         assert artifact["summary"]["providerCandidates"] == 1
         assert artifact["summary"]["staticCandidates"] == 1
         assert artifact["summary"]["failures"] == 0
+        assert "recoveryFetchAttempts" not in artifact["summary"]
         assert artifact["timings"]["totalsMs"]["csvFetchMs"] >= 0
         assert artifact["timings"]["totalsMs"]["parseMs"] >= 0
         assert artifact["timings"]["totalsMs"]["candidateAnalysisMs"] >= 0
@@ -232,3 +238,156 @@ Bad Url Studio,yes,http://[broken
         assert artifact["summary"]["invalidUrls"] == 1
         assert artifact["summary"]["failures"] == 1
         assert artifact["failureCounts"] == {"directory_detail_parse": 1}
+
+
+def test_sheet_directory_audit_opt_in_recovery_replaces_static_fallback() -> None:
+    with workspace_tmpdir("sheet-directory-audit-recovery-static") as root:
+        audit_path = root / "sheet-audit.json"
+        csv_text = """Studio,Roles open,Link
+Recoverable Sheet Studio,yes,https://recover-sheet.example.com/
+"""
+
+        artifact, cache_hit = sd.run_sheet_directory_audit(
+            5,
+            sheet_id="sheet_test",
+            gid="1",
+            config=_audit_config(str(audit_path), recovery_enabled=True),
+            fetcher=_fetch_from(
+                {
+                    _sheet_url(): csv_text,
+                    "https://recover-sheet.example.com/careers": """
+                        <a href="/jobs/engineer">Engineer</a>
+                        <a href="/jobs/designer">Designer</a>
+                    """,
+                    "https://recover-sheet.example.com/jobs": "<html><body>No roles</body></html>",
+                }
+            ),
+        )
+
+        assert cache_hit is False
+        assert artifact["summary"]["recoveryFetchAttempts"] == 2
+        assert artifact["summary"]["recoveredStaticCandidates"] == 1
+        assert artifact["summary"]["staticCandidates"] == 1
+        assert artifact["staticCandidates"][0]["listing_url"] == (
+            "https://recover-sheet.example.com/careers"
+        )
+        assert artifact["staticCandidates"][0]["sourceDirectoryEntryUrl"] == (
+            "https://recover-sheet.example.com/"
+        )
+
+
+def test_sheet_directory_audit_opt_in_recovery_miss_keeps_static_fallback() -> None:
+    with workspace_tmpdir("sheet-directory-audit-recovery-miss") as root:
+        audit_path = root / "sheet-audit.json"
+        csv_text = """Studio,Roles open,Link
+Fallback Sheet Studio,speculative,https://fallback-sheet.example.com/
+"""
+        payloads = {
+            _sheet_url(): csv_text,
+            "https://fallback-sheet.example.com/careers": "<html><body>No roles</body></html>",
+            "https://fallback-sheet.example.com/jobs": "<html><body>No roles</body></html>",
+            "https://fallback-sheet.example.com/join-us": "<html><body>No roles</body></html>",
+            "https://fallback-sheet.example.com/work-with-us": "<html><body>No roles</body></html>",
+            "https://fallback-sheet.example.com/company/careers": (
+                "<html><body>No roles</body></html>"
+            ),
+            "https://fallback-sheet.example.com/about/careers": (
+                "<html><body>No roles</body></html>"
+            ),
+        }
+
+        artifact, _cache_hit = sd.run_sheet_directory_audit(
+            5,
+            sheet_id="sheet_test",
+            gid="1",
+            config=_audit_config(str(audit_path), recovery_enabled=True),
+            fetcher=_fetch_from(payloads),
+        )
+
+        assert artifact["summary"]["recoveryFetchAttempts"] == 6
+        assert artifact["summary"]["recoveredStaticCandidates"] == 0
+        assert artifact["summary"]["recoveryFailures"] == 0
+        assert len(artifact["staticCandidates"]) == 1
+        assert artifact["staticCandidates"][0]["listing_url"] == (
+            "https://fallback-sheet.example.com/"
+        )
+
+
+def test_sheet_directory_audit_opt_in_recovery_failure_is_diagnostic_only() -> None:
+    with workspace_tmpdir("sheet-directory-audit-recovery-failure") as root:
+        audit_path = root / "sheet-audit.json"
+        csv_text = """Studio,Roles open,Link
+Down Sheet Studio,yes,https://down-sheet.example.com/
+"""
+
+        artifact, _cache_hit = sd.run_sheet_directory_audit(
+            5,
+            sheet_id="sheet_test",
+            gid="1",
+            config=_audit_config(str(audit_path), recovery_enabled=True),
+            fetcher=_fetch_from({_sheet_url(): csv_text}),
+        )
+
+        assert artifact["summary"]["recoveryFailures"] > 0
+        assert artifact["summary"]["failures"] == 0
+        assert len(artifact["staticCandidates"]) == 1
+        assert artifact["staticCandidates"][0]["listing_url"] == "https://down-sheet.example.com/"
+
+
+def test_sheet_directory_audit_opt_in_recovery_keeps_invalid_url_failures() -> None:
+    with workspace_tmpdir("sheet-directory-audit-recovery-invalid-url") as root:
+        audit_path = root / "sheet-audit.json"
+        csv_text = """Studio,Roles open,Link
+Bad Url Studio,yes,http://[broken
+"""
+
+        artifact, _cache_hit = sd.run_sheet_directory_audit(
+            5,
+            sheet_id="sheet_test",
+            gid="1",
+            config=_audit_config(str(audit_path), recovery_enabled=True),
+            fetcher=_fetch_from({_sheet_url(): csv_text}),
+        )
+
+        assert artifact["summary"]["invalidUrls"] == 1
+        assert artifact["summary"]["failures"] == 1
+        assert artifact["failureCounts"] == {"directory_detail_parse": 1}
+        assert "recoveryFetchAttempts" not in artifact["summary"]
+
+
+def test_sheet_directory_audit_signature_rebuilds_when_recovery_toggle_changes() -> None:
+    with workspace_tmpdir("sheet-directory-audit-recovery-signature") as root:
+        audit_path = root / "sheet-audit.json"
+        csv_text = """Studio,Roles open,Link
+Recoverable Sheet Studio,yes,https://recover-signature.example.com/
+"""
+
+        first_artifact, first_cache_hit = sd.run_sheet_directory_audit(
+            5,
+            sheet_id="sheet_test",
+            gid="1",
+            config=_audit_config(str(audit_path), recovery_enabled=False),
+            fetcher=_fetch_from({_sheet_url(): csv_text}),
+        )
+        second_artifact, second_cache_hit = sd.run_sheet_directory_audit(
+            5,
+            sheet_id="sheet_test",
+            gid="1",
+            config=_audit_config(str(audit_path), recovery_enabled=True),
+            fetcher=_fetch_from(
+                {
+                    _sheet_url(): csv_text,
+                    "https://recover-signature.example.com/careers": (
+                        '<a href="/jobs/engineer">Engineer</a>'
+                    ),
+                    "https://recover-signature.example.com/jobs": (
+                        "<html><body>No roles</body></html>"
+                    ),
+                }
+            ),
+        )
+
+        assert first_cache_hit is False
+        assert second_cache_hit is False
+        assert "recoveryFetchAttempts" not in first_artifact["summary"]
+        assert second_artifact["summary"]["recoveryFetchAttempts"] == 2

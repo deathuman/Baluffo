@@ -73,6 +73,7 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 - Completed sheet-foundation slice: `sheet_directory.py::_append_sheet_entry_candidate` now uses a shared provider-or-static directory entry builder while preserving sheet evidence and provider-first ordering.
 - Completed sheet-foundation slice: `sheet_directory.py::_empty_sheet_scan_result` now uses a shared minimal empty scan-result payload helper.
 - Completed sheet-index slice: `sheet_directory.py::_sheet_directory_scan` now uses shared direct-entry index scan runtime for parse/failure/candidate/dedupe/progress mechanics while keeping sheet-specific selection and summaries local.
+- Completed recovery-pilot slice: sheet-directory audits can opt into shared HTTP-only same-site recovery with `sheetDirectory.activeAuditRecoveryEnabled=true`; default recovery remains disabled until evidence supports defaulting.
 
 ### P2: Prevalidated Queue Policy Adoption
 
@@ -107,7 +108,8 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 
 ### P2: Expand HTTP Recovery
 
-- Apply shared HTTP-only recovery to sheet-directory rows and web-derived seed pages when a source URL or homepage is available and the page produces no provider/static candidate.
+- Use sheet-directory recovery audit evidence to decide whether `sheetDirectory.activeAuditRecoveryEnabled` should become default.
+- Apply shared HTTP-only recovery to web-derived seed pages when a source URL or homepage is available and the page produces no provider/static candidate.
 - Document true semantic exceptions, such as rows that contain only a direct careers URL with no recoverable company homepage.
 - Keep browser rendering opt-in and separate from default HTTP recovery.
 
