@@ -34,7 +34,7 @@ These are the lowest-risk, highest-certainty consolidation targets because the i
 
 - Completed first slice: `gameprog.py::build_gameprog_static_candidate` and `gamesmap_candidates.py::build_gamesmap_static_candidate` now use shared directory static row templates.
 - Completed first slice: `gameprog.py::_apply_gameprog_static_page_provenance`, `gamesmap_candidates.py::_apply_gamesmap_provider_provenance`, and `gamesmap_candidates.py::_apply_gamesmap_static_provenance` now use shared provenance enrichment templates.
-- Completed first slice: `gameprog.py::_empty_gameprog_scan_result` and `gamesmap_candidates.py::_empty_gamesmap_scan_result` now use a shared empty scan-result template.
+- Completed first slice: `gameprog.py::_empty_gameprog_scan_result` and `gamesmap_candidates.py::_empty_gamesmap_scan_result` were replaced by direct shared empty scan-result template calls.
 - Completed second slice: `gameprog.py::_gameprog_scan` and `gamesmap_candidates.py::_gamesmap_scan` now share the post-selection website fetch, page analysis, recovery, fallback, dedupe, summary, and progress skeleton. Parser/index/category selection remains adapter-owned.
 - Completed recovery-contract slice: Gameprog/Gamesmap website scans now use shared recovery summary/application contracts for fallback suppression, recovered rows, browser candidates, and timing merge.
 - Completed scan-setup slice: Gameprog/Gamesmap now use a shared website-scan setup wrapper for common fetch-concurrency resolution, recovery-budget handoff, and `run_directory_website_scan(...)` call assembly.
@@ -48,7 +48,7 @@ GameDevMap created much of the better logic but still has the largest local acti
 - Completed diagnostics slice: `gamedevmap_active_dry_run.py::_looks_like_js_shell` and `_no_careers_reason_detail` now delegate to shared page diagnostics while preserving GameDevMap reason buckets.
 - Completed provider/page-outcome slice: `gamedevmap_active_dry_run.py::_provider_candidates_from_html_text` now uses shared provider HTML inference instead of local provider URL extraction.
 - Completed provider/page-outcome slice: `gamedevmap_active_dry_run.py::_append_analyzed_candidates` now uses `page_outcomes.classify_fetched_page`; `_static_candidate_from_analysis` was removed.
-- Completed recovery-fetch slice: `gamedevmap_active_dry_run.py::_recovery_job`, `_dedupe_recovery_jobs`, `_requests_from_recovery_result`, `_recovery_cache_result`, and `_fetch_recovery_jobs` now delegate to stable `directory_page_recovery` recovery fetch/fanout/cache helpers.
+- Completed recovery-fetch slice: `gamedevmap_active_dry_run.py::_recovery_job`, `_dedupe_recovery_jobs`, `_requests_from_recovery_result`, and `_recovery_cache_result` now delegate to stable `directory_page_recovery` recovery fetch/fanout/cache helpers; `_fetch_recovery_jobs` was pruned in favor of direct shared helper calls.
 - Completed recovery-planning slice: `gamedevmap_active_dry_run.py::_queue_no_careers_recovery` now uses shared recovery URL/job wave planning while keeping GameDevMap provider extraction and browser row creation local.
 - Completed recovery-result slice: `gamedevmap_active_dry_run.py::_apply_recovery_results` now uses shared recovery-result application for fanout iteration, failure routing, fetched counts, grouped-state threading, and finalization callbacks.
 - Completed homepage-runtime slice: `gamedevmap_active_dry_run.py::_extract_candidates_from_homepages` now uses shared active homepage batch runtime for direct provider inference, homepage fetch result routing, no-candidate recovery queueing, browser candidate collection, and fetched counts.
@@ -64,7 +64,8 @@ GameDevMap created much of the better logic but still has the largest local acti
 - Completed strategy-contract slice: GameDevMap active audit now wires shared batch and loop runtime through compact strategy dataclasses instead of long ad hoc callback lists.
 - Completed browser-analysis slice: `gamedevmap_active_dry_run.py::_analyze_browser_recovery_fetches` now uses shared rendered-fetch analysis.
 - Completed browser-merge slice: `gamedevmap_active_dry_run.py::_merge_browser_recovery_artifact_updates` and web-derived browser recovery now share merge orchestration, while adapter-specific artifact writes remain local.
-- Completed diagnostics slice: `gamedevmap_active_dry_run.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
+- Completed diagnostics slice: `gamedevmap_active_dry_run.py` now calls the shared browser recovery fetch fallback directly; the private `_default_browser_fetcher` wrapper was pruned.
+- Completed wrapper-pruning slice: GameDevMap now calls shared merge, recovery-fetch, browser-fetch, and audit freshness/signature helpers directly where private wrappers added no compatibility value.
 - Completed recovery-planning slice: `gamedevmap.py` legacy homepage fetch job construction now uses `directory_fetch_jobs`.
 
 ### P1: Web-Derived Browser Recovery Duplication
@@ -78,7 +79,7 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - Completed merge-policy slice: `web_search_candidates.py::_merge_web_browser_recovery_updates` and GameDevMap browser-recovery merge state now share probe-result filtering, active counting, and runtime state helpers. Web-derived positive recovered candidates now adopt shared prevalidated queue overrides.
 - Completed recovery-contract slice: `web_search_candidates.py::_run_web_http_recovery` now uses shared recovery application/timing-remap helpers, and browser recovery reason summaries are counted by `browser_recovery.browser_recovery_summary`.
 - Completed page-stage slice: seed-careers and web-search scanners now share page-job fetch, page-result routing, HTTP recovery, browser summary, candidate dedupe, timing, and completed-URL mechanics.
-- Completed diagnostics slice: `web_search_candidates.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
+- Completed diagnostics slice: `web_search_candidates.py` now calls the shared browser recovery fetch fallback directly; the private `_default_browser_fetcher` wrapper was pruned.
 - Completed default-recovery slice: web-derived audits run shared HTTP-only same-site recovery by default; `webSearch.activeAuditRecoveryEnabled=false` remains the rollback.
 - Completed recovery-budget slice: `webSearch.activeAuditRecoveryUrlLimit` defaults to `6`, falls back to `6` for invalid/non-positive values, and participates in audit signatures.
 - Evidence snapshot: [`source-discovery-http-recovery-evidence-2026-04-27.md`](source-discovery-http-recovery-evidence-2026-04-27.md) supports default-enabling both sheet-directory and web-derived HTTP recovery.

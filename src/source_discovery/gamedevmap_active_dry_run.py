@@ -312,22 +312,6 @@ def _load_or_initialize_artifact(
     )
 
 
-def _merge_unique_rows(existing: Any, incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return active_audit_runtime.merge_unique_candidate_rows(
-        existing,
-        incoming,
-        unique_rows=unique_sources,
-    )
-
-
-def _merge_by_source_id(existing: Any, incoming: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return active_audit_runtime.merge_rows_by_identity(
-        existing,
-        incoming,
-        identity_fn=_candidate_id,
-    )
-
-
 def _duration_ms(started: float) -> int:
     return audit_ledger.duration_ms(started)
 
@@ -617,10 +601,6 @@ def _save_updated_artifact(artifact: dict[str, Any], output_path: Path) -> None:
     )
 
 
-def _default_browser_fetcher():
-    return browser_recovery_helpers.default_browser_fetcher()
-
-
 def _browser_static_probe_result_from_rendered_html(
     candidate: dict[str, Any],
     *,
@@ -822,8 +802,10 @@ def _merge_browser_recovery_artifact_updates(
     probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
 ) -> None:
     def merge_probe_results(combined_probe_results):
-        artifact["allCandidates"] = _merge_unique_rows(
-            artifact.get("allCandidates"), all_candidates
+        artifact["allCandidates"] = active_audit_runtime.merge_unique_candidate_rows(
+            artifact.get("allCandidates"),
+            all_candidates,
+            unique_rows=unique_sources,
         )
         active_audit_runtime.append_artifact_rows(
             artifact,
@@ -872,7 +854,7 @@ def run_gamedevmap_browser_recovery(
         run_id=run_id,
         started_at=started_at,
     )
-    browser_fetcher = browser_fetcher or _default_browser_fetcher()
+    browser_fetcher = browser_fetcher or browser_recovery_helpers.default_browser_fetcher()
     browser_recovery = _as_dict(artifact.get("browserRecovery"))
     candidates, processed = _select_browser_recovery_candidates(artifact, cfg, browser_recovery)
     concurrency = max(1, int(cfg.get("activeAuditBrowserRecoveryConcurrency") or 2))
@@ -1236,28 +1218,6 @@ def _extract_candidates_from_homepages(
     )
 
 
-def _fetch_recovery_jobs(
-    *,
-    timeout_s: int,
-    jobs: list[dict[str, Any]],
-    fetcher,
-    total_concurrency: int,
-    per_host_concurrency: int,
-    progress_label: str,
-    recovery_cache: dict[str, dict[str, Any]],
-) -> tuple[list[dict[str, Any]], int, int]:
-    return directory_recovery_helpers.fetch_recovery_jobs(
-        timeout_s,
-        jobs,
-        fetcher=fetcher,
-        total_concurrency=total_concurrency,
-        per_host_concurrency=per_host_concurrency,
-        progress_label=progress_label,
-        recovery_cache=recovery_cache,
-        fetch_pages=fetch_directory_pages,
-    )
-
-
 def _apply_recovery_payload_to_group(
     *,
     payload: dict[str, Any],
@@ -1469,11 +1429,15 @@ def _apply_probe_results(
             reason_detail="zero_jobs",
         ),
     )
-    artifact["activeCandidates"] = _merge_by_source_id(
-        artifact.get("activeCandidates"), classification.positive_candidates
+    artifact["activeCandidates"] = active_audit_runtime.merge_rows_by_identity(
+        artifact.get("activeCandidates"),
+        classification.positive_candidates,
+        identity_fn=_candidate_id,
     )
-    artifact["zeroJobCandidates"] = _merge_by_source_id(
-        artifact.get("zeroJobCandidates"), classification.zero_job_candidates
+    artifact["zeroJobCandidates"] = active_audit_runtime.merge_rows_by_identity(
+        artifact.get("zeroJobCandidates"),
+        classification.zero_job_candidates,
+        identity_fn=_candidate_id,
     )
     active_audit_runtime.append_artifact_rows(
         artifact,
@@ -1593,14 +1557,15 @@ def _fetch_gamedevmap_active_recovery(
     per_host_concurrency: int,
     recovery_cache: dict[str, dict[str, Any]],
 ) -> active_audit_runtime.ActiveAuditRecoveryFetchResult:
-    results, unique_jobs, network_jobs = _fetch_recovery_jobs(
-        timeout_s=timeout_s,
-        jobs=jobs,
+    results, unique_jobs, network_jobs = directory_recovery_helpers.fetch_recovery_jobs(
+        timeout_s,
+        jobs,
         fetcher=fetcher,
         total_concurrency=total_concurrency,
         per_host_concurrency=per_host_concurrency,
         progress_label=progress_label,
         recovery_cache=recovery_cache,
+        fetch_pages=fetch_directory_pages,
     )
     return active_audit_runtime.ActiveAuditRecoveryFetchResult(
         results=results,
@@ -1672,9 +1637,15 @@ def _merge_gamedevmap_active_batch_artifact_updates(
     recovery_failures: list[dict[str, Any]],
     rejected_rows: list[dict[str, Any]],
 ) -> None:
-    artifact["allCandidates"] = _merge_unique_rows(artifact.get("allCandidates"), all_candidates)
-    artifact["browserRecoveryCandidates"] = _merge_unique_rows(
-        artifact.get("browserRecoveryCandidates"), browser_recovery_rows
+    artifact["allCandidates"] = active_audit_runtime.merge_unique_candidate_rows(
+        artifact.get("allCandidates"),
+        all_candidates,
+        unique_rows=unique_sources,
+    )
+    artifact["browserRecoveryCandidates"] = active_audit_runtime.merge_unique_candidate_rows(
+        artifact.get("browserRecoveryCandidates"),
+        browser_recovery_rows,
+        unique_rows=unique_sources,
     )
     _record_failures(artifact, homepage_failures)
     _record_failures(artifact, recovery_failures)
@@ -1940,23 +1911,6 @@ def _active_audit_ttl_minutes(cfg: dict[str, Any]) -> int:
         return 360
 
 
-def _audit_artifact_is_fresh(artifact: dict[str, Any], cfg: dict[str, Any]) -> bool:
-    return audit_ledger.artifact_is_fresh(
-        artifact,
-        schema_version=DRY_RUN_SCHEMA_VERSION,
-        expected_signature=_gamedevmap_cache_signature(cfg),
-        ttl_minutes=_active_audit_ttl_minutes(cfg),
-    )
-
-
-def _audit_artifact_signature_matches(artifact: dict[str, Any], cfg: dict[str, Any]) -> bool:
-    return audit_ledger.artifact_signature_matches(
-        artifact,
-        schema_version=DRY_RUN_SCHEMA_VERSION,
-        expected_signature=_gamedevmap_cache_signature(cfg),
-    )
-
-
 def run_gamedevmap_source_audit(
     *,
     timeout_s: int,
@@ -1982,8 +1936,17 @@ def run_gamedevmap_source_audit(
         reset=reset,
         has_rerun_reasons=bool(parsed_rerun_reasons),
         load_artifact=lambda: source_registry_module.load_json_object(output_path, {}),
-        signature_matches=lambda artifact: _audit_artifact_signature_matches(artifact, cfg),
-        is_fresh=lambda artifact: _audit_artifact_is_fresh(artifact, cfg),
+        signature_matches=lambda artifact: audit_ledger.artifact_signature_matches(
+            artifact,
+            schema_version=DRY_RUN_SCHEMA_VERSION,
+            expected_signature=_gamedevmap_cache_signature(cfg),
+        ),
+        is_fresh=lambda artifact: audit_ledger.artifact_is_fresh(
+            artifact,
+            schema_version=DRY_RUN_SCHEMA_VERSION,
+            expected_signature=_gamedevmap_cache_signature(cfg),
+            ttl_minutes=_active_audit_ttl_minutes(cfg),
+        ),
         refresh=lambda effective_reset: run_gamedevmap_active_source_dry_run(
             timeout_s=timeout_s,
             config=config,

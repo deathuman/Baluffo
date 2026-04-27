@@ -249,20 +249,6 @@ def _gamesmap_audit_ttl_minutes(config: dict[str, Any] | None, cfg: dict[str, An
     return audit_ttl_minutes(cfg, fallback_ttl=gamesmap_cache_ttl_minutes(config))
 
 
-def _empty_gamesmap_scan_result(
-    *,
-    failures: list[dict[str, Any]],
-    summary: dict[str, Any],
-    batch_timing: dict[str, Any],
-) -> dict[str, Any]:
-    return empty_directory_scan_result(
-        failures=failures,
-        summary=summary,
-        batch_timing=batch_timing,
-        write_cache=True,
-    )
-
-
 def _gamesmap_homepage_result_candidates(
     result: dict[str, Any],
     *,
@@ -625,10 +611,11 @@ def _gamesmap_scan(
             "Gamesmap parsed entries: "
             f"rows=0, withWebsite=0, eligibleAfterFilter=0, unresolvedCategoryRefs={unresolved_reference_count}."
         )
-        return _empty_gamesmap_scan_result(
+        return empty_directory_scan_result(
             failures=failures,
             summary=base_summary,
             batch_timing=batch_timing,
+            write_cache=True,
         )
 
     def select_entries(parsed_entries: list[dict[str, Any]]) -> dict[str, Any]:

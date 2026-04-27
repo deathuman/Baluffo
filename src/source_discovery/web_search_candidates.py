@@ -1036,10 +1036,6 @@ def _browser_static_probe_result_from_rendered_html(
     )
 
 
-def _default_browser_fetcher():
-    return browser_recovery_helpers.default_browser_fetcher()
-
-
 def _load_web_search_browser_recovery_artifact(output_path: Path) -> dict[str, Any]:
     try:
         payload = json.loads(output_path.read_text(encoding="utf-8"))
@@ -1359,7 +1355,7 @@ def run_web_search_browser_recovery(
     from .reporting import emit_log
 
     fetcher = fetcher or fetch_text
-    browser_fetcher = browser_fetcher or _default_browser_fetcher()
+    browser_fetcher = browser_fetcher or browser_recovery_helpers.default_browser_fetcher()
     output_path = output_path or _web_search_audit_path(config)
     artifact = _load_web_search_browser_recovery_artifact(output_path)
     if not artifact:

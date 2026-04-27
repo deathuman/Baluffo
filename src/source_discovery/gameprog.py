@@ -251,30 +251,21 @@ def _apply_gameprog_static_page_provenance(
     )
 
 
-def _empty_gameprog_scan_result(
-    *,
-    failures: list[dict[str, Any]],
-    batch_timing: dict[str, Any],
-) -> dict[str, Any]:
-    return empty_directory_scan_result(
-        failures=failures,
-        summary={
-            "teamsRows": 0,
-            "parsedRows": 0,
-            "eligibleRows": 0,
-            "websiteFetchJobs": 0,
-            "websiteFetchFailures": 0,
-            "recoveryFetchAttempts": 0,
-            "recoveryPagesFetched": 0,
-            "recoveredProviderCandidates": 0,
-            "recoveredStaticCandidates": 0,
-            "recoveryFailures": 0,
-            "browserRecoveryCandidates": 0,
-            "badProviderInferences": 0,
-        },
-        batch_timing=batch_timing,
-        write_cache=False,
-    )
+def _empty_gameprog_summary() -> dict[str, int]:
+    return {
+        "teamsRows": 0,
+        "parsedRows": 0,
+        "eligibleRows": 0,
+        "websiteFetchJobs": 0,
+        "websiteFetchFailures": 0,
+        "recoveryFetchAttempts": 0,
+        "recoveryPagesFetched": 0,
+        "recoveredProviderCandidates": 0,
+        "recoveredStaticCandidates": 0,
+        "recoveryFailures": 0,
+        "browserRecoveryCandidates": 0,
+        "badProviderInferences": 0,
+    }
 
 
 def _apply_gameprog_provider_provenance(
@@ -503,7 +494,12 @@ def _gameprog_scan(
                 "stage": "teams_json_fetch",
             }
         )
-        return _empty_gameprog_scan_result(failures=failures, batch_timing=batch_timing)
+        return empty_directory_scan_result(
+            failures=failures,
+            summary=_empty_gameprog_summary(),
+            batch_timing=batch_timing,
+            write_cache=False,
+        )
     batch_timing["teamsFetchMs"] = audit_ledger.duration_ms(started)
 
     started = time.perf_counter()
@@ -520,7 +516,12 @@ def _gameprog_scan(
                 "stage": "teams_json_parse",
             }
         )
-        return _empty_gameprog_scan_result(failures=failures, batch_timing=batch_timing)
+        return empty_directory_scan_result(
+            failures=failures,
+            summary=_empty_gameprog_summary(),
+            batch_timing=batch_timing,
+            write_cache=False,
+        )
 
     def select_entries(parsed_entries: list[dict[str, Any]]) -> dict[str, Any]:
         selected_entries = parsed_entries[:max_studios] if max_studios else list(parsed_entries)
