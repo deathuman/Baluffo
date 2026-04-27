@@ -1,6 +1,29 @@
 from __future__ import annotations
 
-from src.source_discovery.directory_fetch_jobs import build_directory_fetch_jobs
+from src.source_discovery.directory_fetch_jobs import (
+    build_directory_fetch_job,
+    build_directory_fetch_jobs,
+)
+
+
+def test_build_directory_fetch_job_emits_current_synthetic_shape() -> None:
+    payload = {"studio": "Studio A", "nlPriority": True}
+
+    job = build_directory_fetch_job(
+        url=" https://studio-a.example.com/careers ",
+        payload=payload,
+        adapter="web_search",
+        failure_stage="page_fetch",
+    )
+
+    assert job == {
+        "url": "https://studio-a.example.com/careers",
+        "payload": payload,
+        "name": "https://studio-a.example.com/careers",
+        "adapter": "web_search",
+        "failureStage": "page_fetch",
+    }
+    assert job["payload"] is payload
 
 
 def test_build_directory_fetch_jobs_emits_current_shape_and_preserves_payload() -> None:

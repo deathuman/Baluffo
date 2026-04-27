@@ -6,6 +6,7 @@ from urllib.parse import quote_plus, urlparse
 from src.shared.regex import find_urls_in_text
 
 from .config import DUCKDUCKGO_HTML_SEARCH, MAX_SEARCH_LINKS_PER_QUERY, WEB_SEARCH_QUERY_SUFFIX
+from .directory_fetch_jobs import build_directory_fetch_job
 from .page_analysis import analyze_fetched_page
 from .scoring import careers_keyword_count, clean_token, studio_domain_match, unique_string_list
 from .web_search_extract import extract_links_from_html
@@ -305,16 +306,15 @@ def _page_job(
     nl_priority: bool,
     adapter: str,
 ) -> dict[str, Any]:
-    return {
-        "url": url,
-        "payload": {
+    return build_directory_fetch_job(
+        url=url,
+        payload={
             "studio": studio,
             "nlPriority": nl_priority,
         },
-        "name": url,
-        "adapter": adapter,
-        "failureStage": "page_fetch",
-    }
+        adapter=adapter,
+        failure_stage="page_fetch",
+    )
 
 
 def _append_page_analysis_outcome(
