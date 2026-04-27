@@ -60,7 +60,7 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - Completed provider/page-outcome slice: `web_search_candidates.py::_append_page_analysis_outcome` now uses shared static page-outcome callback builders instead of local callback boilerplate.
 - Completed browser-row slice: `web_search_candidates.py::_web_browser_recovery_candidate`, GameDevMap JS-shell browser rows, and directory page recovery browser rows now share one browser-recovery row factory.
 - Completed browser-analysis slice: `web_search_candidates.py::_analyze_web_browser_recovery_fetches` now uses shared rendered-fetch analysis with adapter-specific page-analysis and candidate-marking callbacks.
-- `web_search_candidates.py::_merge_web_browser_recovery_updates` should migrate to a shared merge contract for positive probe results, zero-job diagnostics, fetch failures, and processed-key state.
+- Completed merge-policy slice: `web_search_candidates.py::_merge_web_browser_recovery_updates` and GameDevMap browser-recovery merge state now share probe-result filtering, active counting, and runtime state helpers. Web-derived positive recovered candidates now adopt shared prevalidated queue overrides.
 - Completed diagnostics slice: `web_search_candidates.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
 
 ### P1: Sheet-Directory Manual Implementations
@@ -75,8 +75,8 @@ Sheet-directory now has a default audit path, but several small pieces remain ma
 ### P2: Prevalidated Queue Policy Adoption
 
 - GameDevMap uses shared prevalidated queue-cap overrides for validated static sources.
-- Web-derived browser recovery sets `prevalidatedDiscovery=True` for `jobsFound > 0` recovered candidates but does not apply `apply_prevalidated_queue_overrides`.
-- Extending queue-cap overrides to web-derived or future probe-validated adapters is a behavior change, not a pure refactor. It should be tested against adapter/domain deferral behavior, pending/active promotion, tombstones, static suppression, and disabled auto-approval.
+- Completed merge-policy slice: web-derived browser recovery now applies `apply_prevalidated_queue_overrides` to `jobsFound > 0` recovered candidates.
+- Extending queue-cap overrides to future probe-validated adapters is a behavior change, not a pure refactor. It should be tested against adapter/domain deferral behavior, pending/active promotion, tombstones, static suppression, and disabled auto-approval.
 
 ## Prioritized Reuse Roadmap
 
@@ -117,7 +117,7 @@ Sheet-directory now has a default audit path, but several small pieces remain ma
 
 ### P2: Adopt Prevalidated Queue Overrides Deliberately
 
-- Migrate every adapter that emits probe-validated `jobsFound > 0` candidates to the shared prevalidated queue policy, or document why normal queue caps should still apply.
+- GameDevMap and web-derived browser recovery now use the shared prevalidated queue policy for probe-validated `jobsFound > 0` candidates. Migrate future probe-validated adapters to the same policy, or document why normal queue caps should still apply.
 - Treat each adoption as behavior-changing and test queued/deferred output, active/pending movement, disabled auto-approval, and internal override-field stripping.
 
 ### P3: Evidence-Led Tuning And Legacy Cleanup

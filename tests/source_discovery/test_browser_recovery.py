@@ -288,6 +288,57 @@ def test_run_browser_recovery_batch_calls_fetch_and_analysis_once(monkeypatch) -
     assert batch.analysis.all_candidates == [{"adapter": "greenhouse", "slug": "studio"}]
 
 
+def test_browser_recovery_merge_helpers_filter_count_and_update_state() -> None:
+    rendered = [({"adapter": "static", "name": "Rendered"}, True, 2, "", 1)]
+    probed = [
+        ({"adapter": "greenhouse", "name": "Provider"}, True, 3, "", 2),
+        ({"adapter": "static", "name": "Zero"}, True, 0, "", 3),
+        ({"adapter": "static", "name": "Failed"}, False, 0, "timeout", 4),
+    ]
+    combined = browser_recovery.combine_probe_results(rendered, probed)
+    state: dict[str, object] = {}
+    started = time.perf_counter()
+
+    positives = browser_recovery.positive_probe_candidates(
+        combined,
+        normalize_candidate=lambda candidate, jobs_found: {
+            **candidate,
+            "jobsFound": jobs_found,
+        },
+    )
+    active_count = browser_recovery.count_recovered_candidates(
+        [{"webSearchBrowserRecovery": True}, {"gamedevmapBrowserRecovery": True}, "bad"],
+        lambda row: bool(row.get("webSearchBrowserRecovery")),
+    )
+    browser_recovery.update_browser_recovery_merge_state(
+        state,
+        processed={"url:https://one.example/jobs"},
+        started=started,
+        candidate_count=4,
+        active_count=active_count,
+        probe_candidate_count=2,
+        rendered_static_validated=1,
+        fetch_attempts=3,
+        fetch_failures=1,
+        candidate_analysis_count=2,
+    )
+
+    assert combined == [*rendered, *probed]
+    assert positives == [
+        {"adapter": "static", "name": "Rendered", "jobsFound": 2},
+        {"adapter": "greenhouse", "name": "Provider", "jobsFound": 3},
+    ]
+    assert active_count == 1
+    assert state["processedKeys"] == ["url:https://one.example/jobs"]
+    assert state["candidateCount"] == 4
+    assert state["activeCandidates"] == 1
+    assert state["probeCandidates"] == 2
+    assert state["renderedStaticValidated"] == 1
+    assert state["fetchAttempts"] == 3
+    assert state["fetchFailures"] == 1
+    assert state["candidateAnalysisCount"] == 2
+
+
 def test_run_browser_recovery_batch_skips_probe_for_rendered_validated_candidate(
     monkeypatch,
 ) -> None:

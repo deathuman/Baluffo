@@ -38,6 +38,7 @@ from .page_outcomes import (
     classify_fetched_page,
     static_page_outcome_builders,
 )
+from .prevalidated_queue_policy import apply_prevalidated_queue_overrides
 from .probe_runtime import (
     candidate_with_probe_evidence as probe_candidate_with_probe_evidence,
 )
@@ -51,6 +52,12 @@ from .web_search_fetch import fetch_text
 WEB_SEARCH_AUDIT_SCHEMA_VERSION = 2
 WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT = 10_000
 WEB_SEARCH_AUDIT_SAMPLE_LIMIT = 25
+_PREVALIDATED_BROWSER_QUEUE_CAP = int(
+    DEFAULT_DISCOVERY_CONFIG["gamedevmap"]["validatedStaticQueueCap"]
+)
+_PREVALIDATED_BROWSER_DOMAIN_CAP = int(
+    DEFAULT_DISCOVERY_CONFIG["gamedevmap"]["validatedStaticDomainCap"]
+)
 
 _PROVIDER_DISPLAY_NAMES = {
     "ashby": "Ashby",
@@ -1088,11 +1095,20 @@ def _merge_web_browser_recovery_updates(
     fetch_attempts: int,
     fetch_failures: int,
 ) -> None:
-    combined_probe_results = [*rendered_probe_results, *probe_results]
+    combined_probe_results = browser_recovery_helpers.combine_probe_results(
+        rendered_probe_results,
+        probe_results,
+    )
     validated_rows = [
-        _candidate_with_probe_evidence(candidate, jobs_found)
-        for candidate, ok, jobs_found, _error, _duration_ms in combined_probe_results
-        if ok and int(jobs_found or 0) > 0
+        apply_prevalidated_queue_overrides(
+            row,
+            adapter_cap=_PREVALIDATED_BROWSER_QUEUE_CAP,
+            domain_cap=_PREVALIDATED_BROWSER_DOMAIN_CAP,
+        )
+        for row in browser_recovery_helpers.positive_probe_candidates(
+            combined_probe_results,
+            normalize_candidate=_candidate_with_probe_evidence,
+        )
     ]
     provider_validated, static_validated = candidate_collections.split_provider_static_rows(
         validated_rows
@@ -1102,27 +1118,24 @@ def _merge_web_browser_recovery_updates(
         provider_rows=provider_validated,
         static_rows=static_validated,
     )
-    active_browser_count = len(
+    active_browser_count = browser_recovery_helpers.count_recovered_candidates(
         [
-            row
-            for row in [
-                *list(artifact.get("providerCandidates") or []),
-                *list(artifact.get("staticCandidates") or []),
-            ]
-            if isinstance(row, dict) and bool(row.get("webSearchBrowserRecovery"))
-        ]
+            *list(artifact.get("providerCandidates") or []),
+            *list(artifact.get("staticCandidates") or []),
+        ],
+        lambda row: bool(row.get("webSearchBrowserRecovery")),
     )
-    browser_recovery_helpers.update_browser_recovery_state(
+    browser_recovery_helpers.update_browser_recovery_merge_state(
         browser_recovery,
         processed=processed,
         started=started,
         candidate_count=len(list(artifact.get("browserRecoveryCandidates") or [])),
-        fetchAttempts=fetch_attempts,
-        fetchFailures=fetch_failures,
-        candidateAnalysisCount=len(all_candidates),
-        probeCandidates=len(probe_candidates),
-        renderedStaticValidated=len(rendered_probe_results),
-        activeCandidates=active_browser_count,
+        active_count=active_browser_count,
+        probe_candidate_count=len(probe_candidates),
+        rendered_static_validated=len(rendered_probe_results),
+        fetch_attempts=fetch_attempts,
+        fetch_failures=fetch_failures,
+        candidate_analysis_count=len(all_candidates),
     )
     artifact["browserRecovery"] = browser_recovery
     summary = dict(artifact.get("summary") or {})

@@ -400,6 +400,8 @@ def test_web_search_browser_recovery_merges_only_validated_rendered_sources() ->
         assert recovered["summary"]["browserRecoveredActiveCandidates"] == 1
         assert recovered["staticCandidates"][0]["prevalidatedDiscovery"] is True
         assert recovered["staticCandidates"][0]["probeStatus"] == "ok"
+        assert recovered["staticCandidates"][0]["queueAdapterCapOverride"] == 500
+        assert recovered["staticCandidates"][0]["queueDomainCapOverride"] == 8
 
 
 def test_web_search_browser_recovery_keeps_zero_and_failed_rows_as_diagnostics() -> None:

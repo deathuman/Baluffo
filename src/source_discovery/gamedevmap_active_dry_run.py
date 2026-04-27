@@ -904,7 +904,10 @@ def _merge_browser_recovery_artifact_updates(
     rendered_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
     probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
 ) -> None:
-    combined_probe_results = [*rendered_probe_results, *probe_results]
+    combined_probe_results = browser_recovery_helpers.combine_probe_results(
+        rendered_probe_results,
+        probe_results,
+    )
     _mark_browser_recovery_probe_results(
         combined_probe_results,
         rendered_count=len(rendered_probe_results),
@@ -915,21 +918,18 @@ def _merge_browser_recovery_artifact_updates(
         *rejected,
     ]
     _apply_probe_results(artifact, combined_probe_results)
-    active_browser_count = len(
-        [
-            row
-            for row in _as_list(artifact.get("activeCandidates"))
-            if isinstance(row, dict) and bool(row.get("gamedevmapBrowserRecovery"))
-        ]
+    active_browser_count = browser_recovery_helpers.count_recovered_candidates(
+        _as_list(artifact.get("activeCandidates")),
+        lambda row: bool(row.get("gamedevmapBrowserRecovery")),
     )
-    browser_recovery_helpers.update_browser_recovery_state(
+    browser_recovery_helpers.update_browser_recovery_merge_state(
         browser_recovery,
         processed=processed,
         started=started,
         candidate_count=len(_as_list(artifact.get("browserRecoveryCandidates"))),
-        activeCandidates=active_browser_count,
-        probeCandidates=len(probe_candidates),
-        renderedStaticValidated=len(rendered_probe_results),
+        active_count=active_browser_count,
+        probe_candidate_count=len(probe_candidates),
+        rendered_static_validated=len(rendered_probe_results),
     )
     artifact["browserRecovery"] = browser_recovery
 

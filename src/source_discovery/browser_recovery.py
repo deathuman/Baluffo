@@ -296,6 +296,65 @@ def run_browser_recovery_batch(
     )
 
 
+def combine_probe_results(
+    rendered_probe_results: list[ProbeResult],
+    probe_results: list[ProbeResult],
+) -> list[ProbeResult]:
+    return [*rendered_probe_results, *probe_results]
+
+
+def positive_probe_candidates(
+    probe_results: list[ProbeResult],
+    *,
+    normalize_candidate: Callable[[dict[str, Any], int], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        normalize_candidate(candidate, int(jobs_found or 0))
+        for candidate, ok, jobs_found, _error, _duration_ms in probe_results
+        if ok and int(jobs_found or 0) > 0
+    ]
+
+
+def count_recovered_candidates(
+    rows: list[Any],
+    predicate: Callable[[dict[str, Any]], bool],
+) -> int:
+    return len([row for row in rows if isinstance(row, dict) and predicate(row)])
+
+
+def update_browser_recovery_merge_state(
+    browser_recovery: dict[str, Any],
+    *,
+    processed: set[str],
+    started: float,
+    candidate_count: int,
+    active_count: int,
+    probe_candidate_count: int,
+    rendered_static_validated: int,
+    fetch_attempts: int | None = None,
+    fetch_failures: int | None = None,
+    candidate_analysis_count: int | None = None,
+) -> None:
+    counts = {
+        "activeCandidates": active_count,
+        "probeCandidates": probe_candidate_count,
+        "renderedStaticValidated": rendered_static_validated,
+    }
+    if fetch_attempts is not None:
+        counts["fetchAttempts"] = fetch_attempts
+    if fetch_failures is not None:
+        counts["fetchFailures"] = fetch_failures
+    if candidate_analysis_count is not None:
+        counts["candidateAnalysisCount"] = candidate_analysis_count
+    update_browser_recovery_state(
+        browser_recovery,
+        processed=processed,
+        started=started,
+        candidate_count=candidate_count,
+        **counts,
+    )
+
+
 def append_fetch_sample(
     browser_recovery: dict[str, Any],
     *,
