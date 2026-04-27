@@ -277,6 +277,7 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     },
     "webSearch": {
         "activeAuditEnabled": True,
+        "activeAuditRecoveryEnabled": False,
         "activeAuditPath": "data/web-search-discovery-audit.json",
         "activeAuditTtlMinutes": 360,
         "maxQueries": 24,

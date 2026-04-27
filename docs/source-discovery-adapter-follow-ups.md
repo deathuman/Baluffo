@@ -64,6 +64,7 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - Completed browser-analysis slice: `web_search_candidates.py::_analyze_web_browser_recovery_fetches` now uses shared rendered-fetch analysis with adapter-specific page-analysis and candidate-marking callbacks.
 - Completed merge-policy slice: `web_search_candidates.py::_merge_web_browser_recovery_updates` and GameDevMap browser-recovery merge state now share probe-result filtering, active counting, and runtime state helpers. Web-derived positive recovered candidates now adopt shared prevalidated queue overrides.
 - Completed diagnostics slice: `web_search_candidates.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
+- Completed recovery-pilot slice: web-derived audits can opt into shared HTTP-only same-site recovery with `webSearch.activeAuditRecoveryEnabled=true`; default recovery remains disabled until evidence supports defaulting.
 
 ### P1: Sheet-Directory Manual Implementations
 
@@ -109,7 +110,7 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 ### P2: Expand HTTP Recovery
 
 - Use sheet-directory recovery audit evidence to decide whether `sheetDirectory.activeAuditRecoveryEnabled` should become default.
-- Apply shared HTTP-only recovery to web-derived seed pages when a source URL or homepage is available and the page produces no provider/static candidate.
+- Use web-derived recovery audit evidence to decide whether `webSearch.activeAuditRecoveryEnabled` should become default or needs tuning.
 - Document true semantic exceptions, such as rows that contain only a direct careers URL with no recoverable company homepage.
 - Keep browser rendering opt-in and separate from default HTTP recovery.
 

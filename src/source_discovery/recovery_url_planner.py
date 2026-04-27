@@ -9,7 +9,7 @@ from urllib.parse import unquote, urljoin, urlparse
 
 from src.shared.regex import find_urls_in_text
 
-from .web_search import extract_jobish_links, extract_links_from_html
+from .web_search_extract import extract_jobish_links, extract_links_from_html
 
 
 def host(url: str) -> str:

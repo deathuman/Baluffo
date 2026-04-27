@@ -7,7 +7,7 @@ from typing import Any
 
 from src.shared.http_batch import fetch_pages_batched
 
-from .web_search import async_fetch_text_httpx, fetch_text
+from .web_search_fetch import async_fetch_text_httpx, fetch_text
 
 
 def _env_int(name: str, default: int) -> int:
