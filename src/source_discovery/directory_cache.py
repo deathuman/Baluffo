@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from src.source_registry import unique_sources
+from . import candidate_collections
 
 DirectoryCacheRows = tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]
 
@@ -52,7 +52,10 @@ def load_directory_cache(
         or not isinstance(failures, list)
     ):
         return None
-    return unique_sources(provider_rows), unique_sources(static_rows), failures
+    provider_candidates, static_candidates = (
+        candidate_collections.provider_static_rows_from_payload(payload)
+    )
+    return provider_candidates, static_candidates, failures
 
 
 def write_directory_cache(
@@ -68,8 +71,8 @@ def write_directory_cache(
     payload = {
         "updatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "configSignature": signature,
-        "providerCandidates": unique_sources(provider_candidates),
-        "staticCandidates": unique_sources(static_candidates),
+        "providerCandidates": candidate_collections.unique_candidate_rows(provider_candidates),
+        "staticCandidates": candidate_collections.unique_candidate_rows(static_candidates),
         "failures": failures,
     }
     try:

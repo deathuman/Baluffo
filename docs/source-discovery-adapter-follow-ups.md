@@ -37,6 +37,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Extracted shared probe-runtime helpers for browser-recovery candidates, covering bounded async probing, rendered static-page probe shortcuts, rendered-result probe filtering, and validated candidate normalization. GameDevMap and web-derived recovery still own artifact-specific merge and rejection behavior.
 - 2026-04-27: Reused the shared bounded probe-batch runner in normal discovery probing. Orchestrator queueing, URL-patch reprobe handling, runtime accounting, and Playwright fallback seams remain adapter/orchestrator-owned.
 - 2026-04-27: Extracted shared candidate collection helpers for safe provider/static row extraction, provider/static splitting, and append-with-dedupe artifact updates. Broader artifact merge semantics remain adapter-owned.
+- 2026-04-27: Reused candidate collection helpers inside the shared directory-cache load/write path while preserving strict cache validation and the existing cache JSON shape.
 
 ## Reusable Opportunities
 

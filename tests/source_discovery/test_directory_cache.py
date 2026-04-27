@@ -114,11 +114,30 @@ def test_directory_cache_rejects_stale_invalid_or_disabled_cache() -> None:
             expected_signature=signature,
         )
 
+        cache_path.write_text(
+            json.dumps(
+                {
+                    "updatedAt": datetime.now(UTC).isoformat(),
+                    "configSignature": signature,
+                    "providerCandidates": {},
+                    "staticCandidates": [],
+                    "failures": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        malformed_candidates = directory_cache.load_directory_cache(
+            cache_path,
+            ttl_minutes=60,
+            expected_signature=signature,
+        )
+
     assert stale is None
     assert disabled is None
     assert bad_json is None
     assert signature_mismatch is None
     assert missing_updated_at is None
+    assert malformed_candidates is None
 
 
 def test_directory_cache_write_emits_existing_shape() -> None:
