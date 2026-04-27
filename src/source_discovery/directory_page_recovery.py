@@ -78,6 +78,8 @@ RecoveryPayloadApplier = Callable[
     str,
 ]
 RecoveryGroupFinalizer = Callable[[dict[str, Any]], list[dict[str, Any]]]
+RecoveryJobPayloadFactory = Callable[[str, int], dict[str, Any]]
+RecoveryJobNameFactory = Callable[[str, int], str]
 
 
 @dataclass
@@ -155,6 +157,62 @@ def build_recovery_fetch_job(
         "adapter": adapter,
         "failureStage": failure_stage,
     }
+
+
+def plan_recovery_fetch_job_waves(
+    *,
+    page_url: str,
+    html: str,
+    primary_paths: tuple[str, ...] = PRIMARY_RECOVERY_PATHS,
+    secondary_paths: tuple[str, ...] = SECONDARY_RECOVERY_PATHS,
+    payload_factory: RecoveryJobPayloadFactory,
+    name_factory: RecoveryJobNameFactory,
+    adapter: str,
+    failure_stage: str,
+    limit: int = DEFAULT_RECOVERY_URL_LIMIT,
+    blocked_hosts: set[str] | None = None,
+    primary_include_jobish_links: bool = True,
+    secondary_include_jobish_links: bool = False,
+    html_url_candidate_fn: Any | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    def jobs_for_wave(
+        *,
+        paths: tuple[str, ...],
+        include_jobish_links: bool,
+        wave: int,
+    ) -> list[dict[str, Any]]:
+        urls = recovery_urls(
+            page_url,
+            html,
+            paths=paths,
+            limit=limit,
+            blocked_hosts=blocked_hosts or set(PROFILE_HOSTS),
+            include_jobish_links=include_jobish_links,
+            html_url_candidate_fn=html_url_candidate_fn,
+        )
+        return [
+            build_recovery_fetch_job(
+                recovery_url=url,
+                payload=payload_factory(url, wave),
+                name=name_factory(url, wave),
+                adapter=adapter,
+                failure_stage=failure_stage,
+            )
+            for url in urls
+        ]
+
+    return (
+        jobs_for_wave(
+            paths=primary_paths,
+            include_jobish_links=primary_include_jobish_links,
+            wave=1,
+        ),
+        jobs_for_wave(
+            paths=secondary_paths,
+            include_jobish_links=secondary_include_jobish_links,
+            wave=2,
+        ),
+    )
 
 
 def dedupe_recovery_fetch_jobs(jobs: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -45,12 +45,13 @@ GameDevMap created much of the better logic but still has the largest local acti
 - Completed provider/page-outcome slice: `gamedevmap_active_dry_run.py::_provider_candidates_from_html_text` now uses shared provider HTML inference instead of local provider URL extraction.
 - Completed provider/page-outcome slice: `gamedevmap_active_dry_run.py::_append_analyzed_candidates` now uses `page_outcomes.classify_fetched_page`; `_static_candidate_from_analysis` was removed.
 - Completed recovery-fetch slice: `gamedevmap_active_dry_run.py::_recovery_job`, `_dedupe_recovery_jobs`, `_requests_from_recovery_result`, `_recovery_cache_result`, and `_fetch_recovery_jobs` now delegate to stable `directory_page_recovery` recovery fetch/fanout/cache helpers.
-- Completed recovery-result slice: `gamedevmap_active_dry_run.py::_apply_recovery_results` now uses shared recovery-result application for fanout iteration, failure routing, fetched counts, grouped-state threading, and finalization callbacks. `_queue_no_careers_recovery` still keeps GameDevMap's no-careers recovery request setup local.
+- Completed recovery-planning slice: `gamedevmap_active_dry_run.py::_queue_no_careers_recovery` now uses shared recovery URL/job wave planning while keeping GameDevMap provider extraction and browser row creation local.
+- Completed recovery-result slice: `gamedevmap_active_dry_run.py::_apply_recovery_results` now uses shared recovery-result application for fanout iteration, failure routing, fetched counts, grouped-state threading, and finalization callbacks.
 - Completed recovery-fetch slice: `gamedevmap_active_dry_run.py::_filter_bad_provider_inferences` now uses `provider_inference_filters.split_bad_provider_inferences`, with GameDevMap-specific rejection row formatting still local.
 - Completed probe-classification slice: `gamedevmap_active_dry_run.py::_apply_probe_results` now uses shared `probe_runtime` probe-result classification and validated candidate evidence helpers, with active/zero/rejected artifact bucket writes still local.
 - Completed browser-analysis slice: `gamedevmap_active_dry_run.py::_analyze_browser_recovery_fetches` now uses shared rendered-fetch analysis. `_merge_browser_recovery_artifact_updates` still overlaps the web-derived merge pipeline and remains a future merge-contract target.
 - Completed diagnostics slice: `gamedevmap_active_dry_run.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
-- `gamedevmap.py` legacy homepage fetch job construction should use `directory_fetch_jobs` where the job contract matches.
+- Completed recovery-planning slice: `gamedevmap.py` legacy homepage fetch job construction now uses `directory_fetch_jobs`.
 
 ### P1: Web-Derived Browser Recovery Duplication
 

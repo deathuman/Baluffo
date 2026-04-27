@@ -1223,41 +1223,27 @@ def _queue_no_careers_recovery(
         index_url=index_url,
     )
     provider_candidates.extend(row_provider_candidates)
-    primary_recovery_urls = _recovery_urls(
-        target_url,
-        html,
-        paths=PRIMARY_RECOVERY_PATHS,
-        include_jobish_links=True,
+    primary_jobs, secondary_jobs = directory_recovery_helpers.plan_recovery_fetch_job_waves(
+        page_url=target_url,
+        html=html,
+        primary_paths=PRIMARY_RECOVERY_PATHS,
+        secondary_paths=SECONDARY_RECOVERY_PATHS,
+        payload_factory=lambda _url, wave: {
+            "row": row,
+            "homepageUrl": target_url,
+            "homepageReasonDetail": detail,
+            "recoverySource": "same_party_recovery_url",
+            "recoveryWave": int(wave),
+        },
+        name_factory=lambda recovery_url, _wave: f"{studio} recovery {recovery_url}",
+        adapter="gamedevmap",
+        failure_stage="gamedevmap_recovery_fetch",
+        blocked_hosts=SOCIAL_PROFILE_HOSTS | THIRD_PARTY_PROFILE_HOSTS,
+        html_url_candidate_fn=_html_url_candidates,
     )
-    secondary_recovery_urls = _recovery_urls(
-        target_url,
-        html,
-        paths=SECONDARY_RECOVERY_PATHS,
-        include_jobish_links=False,
-    )
-    for recovery_url in primary_recovery_urls:
-        primary_recovery_jobs.append(
-            _recovery_job(
-                row=row,
-                homepage_url=target_url,
-                recovery_url=recovery_url,
-                reason_detail=detail,
-                recovery_source="same_party_recovery_url",
-                wave=1,
-            )
-        )
-    for recovery_url in secondary_recovery_urls:
-        secondary_recovery_jobs.append(
-            _recovery_job(
-                row=row,
-                homepage_url=target_url,
-                recovery_url=recovery_url,
-                reason_detail=detail,
-                recovery_source="same_party_recovery_url",
-                wave=2,
-            )
-        )
-    return bool(primary_recovery_urls or secondary_recovery_urls or row_provider_candidates)
+    primary_recovery_jobs.extend(primary_jobs)
+    secondary_recovery_jobs.extend(secondary_jobs)
+    return bool(primary_jobs or secondary_jobs or row_provider_candidates)
 
 
 def _extract_candidates_from_homepages(

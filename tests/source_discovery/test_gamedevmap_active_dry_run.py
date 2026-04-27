@@ -279,6 +279,63 @@ def test_gamedevmap_recovery_dedupe_fans_out_result_to_requesters() -> None:
     assert recovered == {"https://a.example.com", "https://b.example.com"}
 
 
+def test_gamedevmap_no_careers_recovery_uses_shared_wave_planning() -> None:
+    row = {
+        "studio": "Shell Studio",
+        "url": "https://shell.example.com",
+        "sourceDirectoryEntryUrl": "https://www.gamedevmap.com/shell-studio",
+    }
+    provider_candidates: list[dict[str, object]] = []
+    primary_jobs: list[dict[str, object]] = []
+    secondary_jobs: list[dict[str, object]] = []
+    browser_rows: list[dict[str, object]] = []
+
+    queued = dry_run._queue_no_careers_recovery(
+        row=row,
+        target_url="https://shell.example.com",
+        html='<div id="root"></div><script src="/app.js"></script><a href="/jobs">Jobs</a>',
+        index_url=INDEX_URL,
+        provider_candidates=provider_candidates,
+        primary_recovery_jobs=primary_jobs,
+        secondary_recovery_jobs=secondary_jobs,
+        browser_recovery_candidates=browser_rows,
+    )
+
+    assert queued is True
+    assert provider_candidates == []
+    assert [job["url"] for job in primary_jobs][:2] == [
+        "https://shell.example.com/jobs",
+        "https://shell.example.com/careers",
+    ]
+    assert [job["url"] for job in secondary_jobs] == [
+        "https://shell.example.com/join-us",
+        "https://shell.example.com/work-with-us",
+        "https://shell.example.com/company/careers",
+        "https://shell.example.com/about/careers",
+    ]
+    assert primary_jobs[0]["payload"] == {
+        "row": row,
+        "homepageUrl": "https://shell.example.com",
+        "homepageReasonDetail": "js_shell",
+        "recoverySource": "same_party_recovery_url",
+        "recoveryWave": 1,
+    }
+    assert primary_jobs[0]["name"] == "Shell Studio recovery https://shell.example.com/jobs"
+    assert primary_jobs[0]["adapter"] == "gamedevmap"
+    assert primary_jobs[0]["failureStage"] == "gamedevmap_recovery_fetch"
+    assert secondary_jobs[0]["payload"]["recoveryWave"] == 2
+    assert browser_rows == [
+        {
+            "adapter": "gamedevmap",
+            "name": "Shell Studio browser recovery",
+            "studio": "Shell Studio",
+            "url": "https://shell.example.com",
+            "sourceDirectoryEntryUrl": "https://www.gamedevmap.com/shell-studio",
+            "reasonDetail": "js_shell",
+        }
+    ]
+
+
 def test_gamedevmap_failure_aggregation_bounds_samples() -> None:
     artifact: dict[str, object] = {}
     failures = [

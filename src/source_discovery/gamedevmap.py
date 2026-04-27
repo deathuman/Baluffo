@@ -20,6 +20,7 @@ from src.source_registry import normalize_source_url, unique_sources
 from .config import DEFAULT_DISCOVERY_CONFIG
 from .directory_cache import load_directory_cache, write_directory_cache
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
+from .directory_fetch_jobs import build_directory_fetch_jobs
 from .page_analysis import analyze_fetched_page
 from .reporting import emit_log
 from .scoring import unique_string_list
@@ -449,17 +450,13 @@ def discover_gamedevmap_candidates(
 
     homepage_fetch_results = fetch_directory_pages(
         timeout_s,
-        [
-            {
-                "url": str(row.get("url") or "").strip(),
-                "payload": row,
-                "name": str(row.get("url") or "").strip(),
-                "adapter": "gamedevmap",
-                "failureStage": "homepage_fetch",
-            }
-            for row in homepage_candidates[:max_homepage_fetches]
-            if str(row.get("studio") or "").strip() and str(row.get("url") or "").strip()
-        ],
+        build_directory_fetch_jobs(
+            homepage_candidates[:max_homepage_fetches],
+            url_field="url",
+            adapter="gamedevmap",
+            failure_stage="homepage_fetch",
+            required_fields=("studio",),
+        ),
         fetcher=fetcher,
         total_concurrency=fetch_concurrency,
         per_host_concurrency=per_host_concurrency,

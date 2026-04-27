@@ -5,8 +5,14 @@ from datetime import UTC, datetime, timedelta
 from src.source_discovery import gamedevmap
 from src.source_discovery.config import DEFAULT_DISCOVERY_CONFIG
 
-from ._helpers import json, workspace_tmpdir
-from .gamedevmap_test_helpers import CSV_URL, INDEX_URL, gamedevmap_fetcher, gamedevmap_payloads
+from ._helpers import json, mock, workspace_tmpdir
+from .gamedevmap_test_helpers import (
+    CSV_URL,
+    INDEX_URL,
+    gamedevmap_csv_row,
+    gamedevmap_fetcher,
+    gamedevmap_payloads,
+)
 
 
 def _legacy_cache_config(cache_path: str | None = None) -> dict[str, object]:
@@ -50,6 +56,42 @@ def test_gamedevmap_legacy_cache_reuses_fresh_cache() -> None:
             fetcher=blocked_fetcher,
         )
         assert second == first
+
+
+def test_gamedevmap_legacy_scan_uses_shared_homepage_fetch_job_shape() -> None:
+    with workspace_tmpdir("gamedevmap-legacy-fetch-jobs") as root:
+        cache_path = root / "gamedevmap-cache.json"
+        config = _legacy_cache_config(str(cache_path))
+        captured_jobs: list[dict[str, object]] = []
+
+        def fake_fetch_pages(_timeout_s, jobs, **_kwargs):
+            captured_jobs.extend(jobs)
+            return []
+
+        with mock.patch.object(gamedevmap, "fetch_directory_pages", side_effect=fake_fetch_pages):
+            gamedevmap.discover_gamedevmap_candidates(
+                5,
+                config=config,
+                fetcher=gamedevmap_fetcher(
+                    {CSV_URL: gamedevmap_csv_row("Studio", "https://studio.example")}
+                ),
+            )
+
+        assert len(captured_jobs) == 1
+        job = captured_jobs[0]
+        assert job["url"] == "https://studio.example"
+        assert job["name"] == "https://studio.example"
+        assert job["adapter"] == "gamedevmap"
+        assert job["failureStage"] == "homepage_fetch"
+        payload = job["payload"]
+        assert isinstance(payload, dict)
+        assert payload["studio"] == "Studio"
+        assert payload["url"] == "https://studio.example"
+        assert payload["category"] == "Developer"
+        assert payload["sourceDirectoryEntryUrl"] == (
+            "https://www.gamedevmap.com/index.php"
+            "?query=Studio&exact=1&type=Developer&country=Italy&state=Lazio&city=Rome"
+        )
 
 
 def test_gamedevmap_legacy_cache_rejects_stale_or_signature_mismatched_payload() -> None:

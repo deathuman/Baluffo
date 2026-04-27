@@ -8,6 +8,7 @@ from src.source_discovery.directory_page_recovery import (
     dedupe_recovery_fetch_jobs,
     fetch_recovery_jobs,
     looks_like_js_shell,
+    plan_recovery_fetch_job_waves,
     plan_recovery_urls,
     recovery_cache_result,
     run_directory_page_recovery,
@@ -131,6 +132,45 @@ def test_recovery_fetch_job_builder_preserves_payload_and_failure_stage() -> Non
         "adapter": "gamedevmap",
         "failureStage": "gamedevmap_recovery_fetch",
     }
+
+
+def test_plan_recovery_fetch_job_waves_preserves_payloads_and_custom_url_extraction() -> None:
+    primary_jobs, secondary_jobs = plan_recovery_fetch_job_waves(
+        page_url="https://studio.example/",
+        html='<a href="/jobs">Jobs</a><script>window.url="/hidden-careers"</script>',
+        primary_paths=("/careers",),
+        secondary_paths=("/join-us",),
+        payload_factory=lambda recovery_url, wave: {
+            "homepageUrl": "https://studio.example/",
+            "recoveryUrl": recovery_url,
+            "reasonDetail": "no_jobish_links",
+            "recoverySource": "same_party_recovery_url",
+            "recoveryWave": wave,
+        },
+        name_factory=lambda recovery_url, wave: f"Studio wave {wave} {recovery_url}",
+        adapter="gamedevmap",
+        failure_stage="gamedevmap_recovery_fetch",
+        blocked_hosts=set(),
+        html_url_candidate_fn=lambda _html: ["https://studio.example/hidden-careers"],
+    )
+
+    assert [job["url"] for job in primary_jobs] == [
+        "https://studio.example/jobs",
+        "https://studio.example/hidden-careers",
+        "https://studio.example/careers",
+    ]
+    assert [job["url"] for job in secondary_jobs] == ["https://studio.example/join-us"]
+    assert primary_jobs[0]["payload"] == {
+        "homepageUrl": "https://studio.example/",
+        "recoveryUrl": "https://studio.example/jobs",
+        "reasonDetail": "no_jobish_links",
+        "recoverySource": "same_party_recovery_url",
+        "recoveryWave": 1,
+    }
+    assert primary_jobs[0]["name"] == "Studio wave 1 https://studio.example/jobs"
+    assert primary_jobs[0]["adapter"] == "gamedevmap"
+    assert primary_jobs[0]["failureStage"] == "gamedevmap_recovery_fetch"
+    assert secondary_jobs[0]["payload"]["recoveryWave"] == 2
 
 
 def test_dedupe_recovery_fetch_jobs_fans_out_payloads() -> None:
