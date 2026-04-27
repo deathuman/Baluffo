@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+from src.shared.utils import now_iso
 
 from . import audit_ledger
 
@@ -81,6 +85,114 @@ def _safe_int(value: Any) -> int:
 
 def _dict_rows(value: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in _as_list(value) if isinstance(row, dict)]
+
+
+def create_active_audit_artifact(
+    *,
+    schema_version: int,
+    run_id: str,
+    started_at: str,
+    mode: str,
+    progress: dict[str, Any],
+    runtime: dict[str, Any],
+    list_keys: list[str],
+    dict_keys: list[str],
+) -> dict[str, Any]:
+    artifact: dict[str, Any] = {
+        "schemaVersion": int(schema_version),
+        "runId": str(run_id or ""),
+        "startedAt": str(started_at or now_iso()),
+        "updatedAt": "",
+        "finishedAt": "",
+        "mode": str(mode or ""),
+        "summary": {},
+        "progress": dict(progress),
+        "runtime": dict(runtime),
+        "timings": {"batches": [], "totalsMs": {}},
+    }
+    for key in dict_keys:
+        artifact[str(key)] = {}
+    for key in list_keys:
+        artifact[str(key)] = []
+    return artifact
+
+
+def load_or_initialize_active_audit_artifact(
+    output_path: Path,
+    *,
+    reset: bool,
+    schema_version: int,
+    initial_artifact: dict[str, Any],
+    runtime_updates: dict[str, Any],
+    progress_updates: dict[str, Any],
+    list_keys: list[str],
+    dict_keys: list[str],
+    failure_sample_limit: int,
+    load_json_object: Callable[[Path, dict[str, Any]], Any],
+) -> dict[str, Any]:
+    if reset:
+        with suppress(FileNotFoundError, PermissionError, OSError):
+            output_path.unlink()
+    existing = load_json_object(output_path, {})
+    if isinstance(existing, dict) and int(existing.get("schemaVersion") or 0) == int(
+        schema_version
+    ):
+        artifact = dict(existing)
+        artifact["runtime"] = {
+            **_as_dict(artifact.get("runtime")),
+            **dict(runtime_updates),
+        }
+        artifact["progress"] = {
+            **_as_dict(artifact.get("progress")),
+            **dict(progress_updates),
+        }
+        artifact.setdefault("timings", {"batches": [], "totalsMs": {}})
+        for key in dict_keys:
+            artifact.setdefault(str(key), {})
+        for key in list_keys:
+            if str(key) == "failureSamples":
+                continue
+            artifact.setdefault(str(key), [])
+        artifact.setdefault(
+            "failureSamples", _as_list(artifact.get("failures"))[:failure_sample_limit]
+        )
+        return artifact
+    return dict(initial_artifact)
+
+
+def finalize_active_audit_artifact(
+    artifact: dict[str, Any],
+    output_path: Path,
+    *,
+    completed_identities: set[str],
+    complete: bool,
+    completed_cursor_position: int,
+    completed_key: str,
+    summarize: Callable[[dict[str, Any], set[str]], None],
+) -> None:
+    progress = _as_dict(artifact.get("progress"))
+    progress["complete"] = bool(complete)
+    progress["completedUrlsCount"] = len(completed_identities)
+    if complete:
+        progress["cursorPosition"] = int(completed_cursor_position)
+        artifact["finishedAt"] = now_iso()
+    artifact["progress"] = progress
+    artifact[completed_key] = sorted(completed_identities)
+    artifact["updatedAt"] = now_iso()
+    summarize(artifact, completed_identities)
+    audit_ledger.save_artifact_atomic(artifact, output_path)
+
+
+def save_updated_active_audit_artifact(
+    artifact: dict[str, Any],
+    output_path: Path,
+    *,
+    completed_identities: set[str],
+    summarize: Callable[[dict[str, Any], set[str]], None],
+) -> None:
+    summarize(artifact, completed_identities)
+    artifact["updatedAt"] = now_iso()
+    audit_ledger.save_artifact_atomic(artifact, output_path)
 
 
 def merge_unique_candidate_rows(

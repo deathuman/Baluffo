@@ -1,19 +1,32 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from src.source_discovery.active_audit_runtime import (
     HomepagePageOutcome,
     NoCandidateOutcome,
     active_audit_artifact_counts,
     append_artifact_rows,
+    create_active_audit_artifact,
+    finalize_active_audit_artifact,
+    load_or_initialize_active_audit_artifact,
     merge_rows_by_identity,
     merge_unique_candidate_rows,
     record_failure_rows,
     run_active_homepage_batch,
+    save_updated_active_audit_artifact,
 )
 
 
 def _row_url(row: dict[str, object]) -> str:
     return str(row.get("url") or "").strip()
+
+
+def _load_json_object(path: Path, default: dict[str, object]) -> object:
+    if not path.exists():
+        return default
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_active_homepage_batch_direct_rows_infer_provider_and_skip_fetch() -> None:
@@ -251,3 +264,138 @@ def test_active_audit_artifact_counts_uses_caller_bucket_names() -> None:
     assert counts.browser_recovery_processed_count == 3
     assert counts.browser_recovered_active_count == 1
     assert counts.lost_recovered_active_count == 1
+
+
+def test_create_active_audit_artifact_preserves_caller_runtime_and_buckets() -> None:
+    artifact = create_active_audit_artifact(
+        schema_version=7,
+        run_id="run-1",
+        started_at="2026-04-27T10:00:00Z",
+        mode="active_test",
+        progress={"complete": False, "batchSize": 5},
+        runtime={"timeoutSeconds": 10, "configSignature": "sig"},
+        list_keys=["completedItems", "activeRows"],
+        dict_keys=["failureCounts"],
+    )
+
+    assert artifact["schemaVersion"] == 7
+    assert artifact["runId"] == "run-1"
+    assert artifact["startedAt"] == "2026-04-27T10:00:00Z"
+    assert artifact["mode"] == "active_test"
+    assert artifact["progress"] == {"complete": False, "batchSize": 5}
+    assert artifact["runtime"] == {"timeoutSeconds": 10, "configSignature": "sig"}
+    assert artifact["timings"] == {"batches": [], "totalsMs": {}}
+    assert artifact["completedItems"] == []
+    assert artifact["activeRows"] == []
+    assert artifact["failureCounts"] == {}
+
+
+def test_load_or_initialize_active_audit_artifact_refreshes_existing_state(
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 7,
+                "runtime": {"old": True},
+                "progress": {"complete": False, "batchSize": 1},
+                "activeRows": [{"sourceId": "a"}],
+                "failures": [{"stage": "fetch"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    artifact = load_or_initialize_active_audit_artifact(
+        artifact_path,
+        reset=False,
+        schema_version=7,
+        initial_artifact={"schemaVersion": 7, "activeRows": []},
+        runtime_updates={"timeoutSeconds": 20},
+        progress_updates={"batchSize": 10},
+        list_keys=["activeRows", "failureSamples"],
+        dict_keys=["failureCounts"],
+        failure_sample_limit=5,
+        load_json_object=_load_json_object,
+    )
+
+    assert artifact["runtime"] == {"old": True, "timeoutSeconds": 20}
+    assert artifact["progress"] == {"complete": False, "batchSize": 10}
+    assert artifact["activeRows"] == [{"sourceId": "a"}]
+    assert artifact["failureCounts"] == {}
+    assert artifact["failureSamples"] == [{"stage": "fetch"}]
+
+
+def test_load_or_initialize_active_audit_artifact_reset_uses_initial_state(
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(json.dumps({"schemaVersion": 7, "activeRows": ["old"]}))
+
+    artifact = load_or_initialize_active_audit_artifact(
+        artifact_path,
+        reset=True,
+        schema_version=7,
+        initial_artifact={"schemaVersion": 7, "activeRows": []},
+        runtime_updates={},
+        progress_updates={},
+        list_keys=["activeRows"],
+        dict_keys=[],
+        failure_sample_limit=5,
+        load_json_object=_load_json_object,
+    )
+
+    assert artifact == {"schemaVersion": 7, "activeRows": []}
+    assert not artifact_path.exists()
+
+
+def test_finalize_active_audit_artifact_stamps_progress_and_saves(tmp_path: Path) -> None:
+    artifact = {"progress": {"cursorPosition": 0}, "summary": {}}
+    output_path = tmp_path / "artifact.json"
+    summary_calls: list[set[str]] = []
+
+    finalize_active_audit_artifact(
+        artifact,
+        output_path,
+        completed_identities={"b", "a"},
+        complete=True,
+        completed_cursor_position=3,
+        completed_key="completedItems",
+        summarize=lambda current, identities: (
+            summary_calls.append(set(identities)),
+            current["summary"].update({"count": len(identities)}),
+        ),
+    )
+
+    saved = json.loads(output_path.read_text(encoding="utf-8"))
+    assert saved["progress"]["complete"] is True
+    assert saved["progress"]["cursorPosition"] == 3
+    assert saved["progress"]["completedUrlsCount"] == 2
+    assert saved["completedItems"] == ["a", "b"]
+    assert saved["summary"]["count"] == 2
+    assert saved["summary"]["artifactSizeBytes"] > 0
+    assert saved["updatedAt"]
+    assert saved["finishedAt"]
+    assert summary_calls == [{"a", "b"}]
+
+
+def test_save_updated_active_audit_artifact_preserves_progress_completion(
+    tmp_path: Path,
+) -> None:
+    artifact = {"progress": {"complete": False}, "summary": {}}
+    output_path = tmp_path / "artifact.json"
+
+    save_updated_active_audit_artifact(
+        artifact,
+        output_path,
+        completed_identities={"a"},
+        summarize=lambda current, identities: current["summary"].update({"count": len(identities)}),
+    )
+
+    saved = json.loads(output_path.read_text(encoding="utf-8"))
+    assert saved["progress"] == {"complete": False}
+    assert saved["summary"]["count"] == 1
+    assert saved["summary"]["artifactSizeBytes"] > 0
+    assert saved["updatedAt"]
+    assert "finishedAt" not in saved

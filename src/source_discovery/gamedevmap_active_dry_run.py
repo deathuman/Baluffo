@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import Counter
-from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -210,22 +209,19 @@ def _initial_artifact(
     recovery_per_host_concurrency: int,
     recovery_timeout_s: int,
 ) -> dict[str, Any]:
-    return {
-        "schemaVersion": DRY_RUN_SCHEMA_VERSION,
-        "runId": str(run_id or ""),
-        "startedAt": str(started_at or now_iso()),
-        "updatedAt": "",
-        "finishedAt": "",
-        "mode": "gamedevmap_active_source_dry_run",
-        "summary": {},
-        "progress": {
+    return active_audit_runtime.create_active_audit_artifact(
+        schema_version=DRY_RUN_SCHEMA_VERSION,
+        run_id=run_id,
+        started_at=started_at,
+        mode="gamedevmap_active_source_dry_run",
+        progress={
             "complete": False,
             "cursorPosition": 0,
             "batchSize": int(batch_size),
             "batchesCompleted": 0,
             "completedUrlsCount": 0,
         },
-        "runtime": {
+        runtime={
             "timeoutSeconds": int(timeout_s),
             "fetchConcurrency": int(fetch_concurrency),
             "perHostConcurrency": int(per_host_concurrency),
@@ -237,18 +233,18 @@ def _initial_artifact(
             "indexUrl": index_url,
             "configSignature": _gamedevmap_cache_signature(cfg),
         },
-        "timings": {"batches": [], "totalsMs": {}},
-        "failureCounts": {},
-        "failureErrorCounts": {},
-        "failureSamples": [],
-        "completedUrls": [],
-        "activeCandidates": [],
-        "zeroJobCandidates": [],
-        "rejectedForActivation": [],
-        "browserRecoveryCandidates": [],
-        "failures": [],
-        "allCandidates": [],
-    }
+        list_keys=[
+            "failureSamples",
+            "completedUrls",
+            "activeCandidates",
+            "zeroJobCandidates",
+            "rejectedForActivation",
+            "browserRecoveryCandidates",
+            "failures",
+            "allCandidates",
+        ],
+        dict_keys=["failureCounts", "failureErrorCounts"],
+    )
 
 
 def _load_or_initialize_artifact(
@@ -269,14 +265,26 @@ def _load_or_initialize_artifact(
     recovery_per_host_concurrency: int,
     recovery_timeout_s: int,
 ) -> dict[str, Any]:
-    if reset:
-        with suppress(FileNotFoundError, PermissionError, OSError):
-            output_path.unlink()
-    existing = source_registry_module.load_json_object(output_path, {})
-    if int(existing.get("schemaVersion") or 0) == DRY_RUN_SCHEMA_VERSION:
-        artifact = dict(existing)
-        artifact["runtime"] = {
-            **_as_dict(artifact.get("runtime")),
+    return active_audit_runtime.load_or_initialize_active_audit_artifact(
+        output_path,
+        reset=reset,
+        schema_version=DRY_RUN_SCHEMA_VERSION,
+        initial_artifact=_initial_artifact(
+            run_id=run_id,
+            started_at=started_at,
+            timeout_s=timeout_s,
+            csv_url=csv_url,
+            index_url=index_url,
+            cfg=cfg,
+            batch_size=batch_size,
+            fetch_concurrency=fetch_concurrency,
+            per_host_concurrency=per_host_concurrency,
+            homepage_fetch_concurrency=homepage_fetch_concurrency,
+            recovery_fetch_concurrency=recovery_fetch_concurrency,
+            recovery_per_host_concurrency=recovery_per_host_concurrency,
+            recovery_timeout_s=recovery_timeout_s,
+        ),
+        runtime_updates={
             "timeoutSeconds": int(timeout_s),
             "fetchConcurrency": int(fetch_concurrency),
             "perHostConcurrency": int(per_host_concurrency),
@@ -287,33 +295,22 @@ def _load_or_initialize_artifact(
             "csvUrl": csv_url,
             "indexUrl": index_url,
             "configSignature": _gamedevmap_cache_signature(cfg),
-        }
-        artifact["progress"] = {
-            **_as_dict(artifact.get("progress")),
+        },
+        progress_updates={
             "batchSize": int(batch_size),
-        }
-        artifact.setdefault("browserRecoveryCandidates", [])
-        artifact.setdefault("timings", {"batches": [], "totalsMs": {}})
-        artifact.setdefault("failureCounts", {})
-        artifact.setdefault("failureErrorCounts", {})
-        artifact.setdefault(
-            "failureSamples", _as_list(artifact.get("failures"))[:FAILURE_SAMPLE_LIMIT]
-        )
-        return artifact
-    return _initial_artifact(
-        run_id=run_id,
-        started_at=started_at,
-        timeout_s=timeout_s,
-        csv_url=csv_url,
-        index_url=index_url,
-        cfg=cfg,
-        batch_size=batch_size,
-        fetch_concurrency=fetch_concurrency,
-        per_host_concurrency=per_host_concurrency,
-        homepage_fetch_concurrency=homepage_fetch_concurrency,
-        recovery_fetch_concurrency=recovery_fetch_concurrency,
-        recovery_per_host_concurrency=recovery_per_host_concurrency,
-        recovery_timeout_s=recovery_timeout_s,
+        },
+        list_keys=[
+            "completedUrls",
+            "activeCandidates",
+            "zeroJobCandidates",
+            "rejectedForActivation",
+            "browserRecoveryCandidates",
+            "failures",
+            "allCandidates",
+        ],
+        dict_keys=["failureCounts", "failureErrorCounts"],
+        failure_sample_limit=FAILURE_SAMPLE_LIMIT,
+        load_json_object=source_registry_module.load_json_object,
     )
 
 
@@ -455,22 +452,20 @@ def _write_artifact(
     completed_urls: set[str],
     complete: bool,
 ) -> None:
-    progress = _as_dict(artifact.get("progress"))
-    progress["complete"] = bool(complete)
-    progress["completedUrlsCount"] = len(completed_urls)
-    if complete:
-        progress["cursorPosition"] = len(representative_rows)
-        artifact["finishedAt"] = now_iso()
-    artifact["progress"] = progress
-    artifact["completedUrls"] = sorted(completed_urls)
-    artifact["updatedAt"] = now_iso()
-    _summarize_artifact(
+    active_audit_runtime.finalize_active_audit_artifact(
         artifact,
-        parsed_rows=parsed_rows,
-        representative_rows=representative_rows,
-        completed_urls=completed_urls,
+        output_path,
+        completed_identities=completed_urls,
+        complete=complete,
+        completed_cursor_position=len(representative_rows),
+        completed_key="completedUrls",
+        summarize=lambda current, identities: _summarize_artifact(
+            current,
+            parsed_rows=parsed_rows,
+            representative_rows=representative_rows,
+            completed_urls=identities,
+        ),
     )
-    audit_ledger.save_artifact_atomic(artifact, output_path)
 
 
 def _recovered_active_by_id(artifact: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -655,14 +650,17 @@ def _save_updated_artifact(artifact: dict[str, Any], output_path: Path) -> None:
     completed_urls = {
         str(item).strip() for item in _as_list(artifact.get("completedUrls")) if str(item).strip()
     }
-    _summarize_artifact(
+    active_audit_runtime.save_updated_active_audit_artifact(
         artifact,
-        parsed_rows=[],
-        representative_rows=[],
-        completed_urls=completed_urls,
+        output_path,
+        completed_identities=completed_urls,
+        summarize=lambda current, identities: _summarize_artifact(
+            current,
+            parsed_rows=[],
+            representative_rows=[],
+            completed_urls=identities,
+        ),
     )
-    artifact["updatedAt"] = now_iso()
-    audit_ledger.save_artifact_atomic(artifact, output_path)
 
 
 def _default_browser_fetcher():
