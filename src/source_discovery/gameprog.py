@@ -35,8 +35,9 @@ from .directory_page_recovery import (
 from .page_outcomes import (
     FetchedPageContext,
     PageOutcome,
-    classify_fetched_page,
-    classify_recovery_page,
+    PageOutcomeStrategy,
+    classify_fetched_page_with_strategy,
+    classify_recovery_page_with_strategy,
 )
 from .recovery_url_planner import common_recovery_urls
 from .web_search import fetch_text
@@ -422,16 +423,19 @@ def _gameprog_fetch_result_candidates(
             weak_signal=True,
         )
 
+    strategy = PageOutcomeStrategy(
+        provider_rows=_gameprog_provider_rows,
+        explicit_static=_gameprog_explicit_static,
+        generic_static=_gameprog_generic_static,
+        fallback_static=_fallback_static,
+        recovery_request=_gameprog_recovery_request,
+        filter_bad_providers=True,
+    )
     return _gameprog_rows_from_outcome(
-        classify_fetched_page(
+        classify_fetched_page_with_strategy(
             context,
-            provider_rows=_gameprog_provider_rows,
-            explicit_static=_gameprog_explicit_static,
-            generic_static=_gameprog_generic_static,
-            fallback_static=_fallback_static,
-            recovery_request=_gameprog_recovery_request,
+            strategy,
             enable_recovery=enable_recovery and bool(website_url),
-            filter_bad_providers=True,
         )
     )
 
@@ -451,12 +455,14 @@ def _gameprog_recovery_result_candidates(
         payload={**entry, "sourcePageUrl": request.page_url},
         recovery_key=request.key,
     )
-    outcome = classify_recovery_page(
+    outcome = classify_recovery_page_with_strategy(
         context,
-        provider_rows=_gameprog_provider_rows,
-        explicit_static=_gameprog_explicit_static,
-        generic_static=_gameprog_generic_static,
-        filter_bad_providers=True,
+        PageOutcomeStrategy(
+            provider_rows=_gameprog_provider_rows,
+            explicit_static=_gameprog_explicit_static,
+            generic_static=_gameprog_generic_static,
+            filter_bad_providers=True,
+        ),
     )
     return outcome.provider_candidates, outcome.static_candidates
 

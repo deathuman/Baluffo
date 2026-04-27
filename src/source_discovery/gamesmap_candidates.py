@@ -36,8 +36,9 @@ from .page_analysis import analyze_fetched_page
 from .page_outcomes import (
     FetchedPageContext,
     PageOutcome,
-    classify_fetched_page,
-    classify_recovery_page,
+    PageOutcomeStrategy,
+    classify_fetched_page_with_strategy,
+    classify_recovery_page_with_strategy,
 )
 from .scoring import unique_string_list
 from .web_search import fetch_text, infer_web_candidate
@@ -301,17 +302,20 @@ def _gamesmap_homepage_result_candidates(
         )
         return candidate
 
+    strategy = PageOutcomeStrategy(
+        provider_rows=_gamesmap_provider_rows,
+        explicit_static=_gamesmap_explicit_static,
+        generic_static=_gamesmap_generic_static,
+        fallback_static=_fallback_static,
+        recovery_request=_gamesmap_recovery_request,
+        filter_bad_providers=True,
+        analyze_page=analyze_page,
+    )
     return _gamesmap_rows_from_outcome(
-        classify_fetched_page(
+        classify_fetched_page_with_strategy(
             context,
-            provider_rows=_gamesmap_provider_rows,
-            explicit_static=_gamesmap_explicit_static,
-            generic_static=_gamesmap_generic_static,
-            fallback_static=_fallback_static,
-            recovery_request=_gamesmap_recovery_request,
+            strategy,
             enable_recovery=enable_recovery and bool(website_url),
-            filter_bad_providers=True,
-            analyze_page=analyze_page,
         )
     )
 
@@ -422,12 +426,14 @@ def _gamesmap_recovery_result_candidates(
         payload={**entry, "sourcePageUrl": request.page_url},
         recovery_key=request.key,
     )
-    outcome = classify_recovery_page(
+    outcome = classify_recovery_page_with_strategy(
         context,
-        provider_rows=_gamesmap_provider_rows,
-        explicit_static=_gamesmap_explicit_static,
-        generic_static=_gamesmap_generic_static,
-        filter_bad_providers=True,
+        PageOutcomeStrategy(
+            provider_rows=_gamesmap_provider_rows,
+            explicit_static=_gamesmap_explicit_static,
+            generic_static=_gamesmap_generic_static,
+            filter_bad_providers=True,
+        ),
     )
     return outcome.provider_candidates, outcome.static_candidates
 

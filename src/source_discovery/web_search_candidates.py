@@ -43,8 +43,9 @@ from .page_diagnostics import (
 )
 from .page_outcomes import (
     FetchedPageContext,
-    classify_fetched_page,
-    classify_recovery_page,
+    PageOutcomeStrategy,
+    classify_fetched_page_with_strategy,
+    classify_recovery_page_with_strategy,
     static_page_outcome_builders,
 )
 from .prevalidated_queue_policy import apply_prevalidated_queue_overrides
@@ -227,12 +228,14 @@ def _web_page_analysis_outcome(
         evidence_score=40,
         enabled_by_default=False,
     )
-    outcome = classify_fetched_page(
+    outcome = classify_fetched_page_with_strategy(
         context,
-        provider_rows=provider_rows,
-        explicit_static=explicit_static,
-        generic_static=generic_static,
-        recovery_request=recovery_request,
+        PageOutcomeStrategy(
+            provider_rows=provider_rows,
+            explicit_static=explicit_static,
+            generic_static=generic_static,
+            recovery_request=recovery_request,
+        ),
         enable_recovery=enable_recovery,
     )
     return outcome
@@ -298,11 +301,13 @@ def _web_recovery_page_outcome(
         evidence_score=40,
         enabled_by_default=False,
     )
-    return classify_recovery_page(
+    return classify_recovery_page_with_strategy(
         context,
-        provider_rows=provider_rows,
-        explicit_static=explicit_static,
-        generic_static=generic_static,
+        PageOutcomeStrategy(
+            provider_rows=provider_rows,
+            explicit_static=explicit_static,
+            generic_static=generic_static,
+        ),
     )
 
 

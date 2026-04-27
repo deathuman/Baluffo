@@ -32,7 +32,11 @@ from .directory_page_recovery import (
 )
 from .io_runtime import collapse_competing_candidates
 from .multi_source_text import fetch_first_nonempty_text
-from .page_outcomes import FetchedPageContext, classify_recovery_page
+from .page_outcomes import (
+    FetchedPageContext,
+    PageOutcomeStrategy,
+    classify_recovery_page_with_strategy,
+)
 from .web_search import infer_web_candidate
 
 SHEET_DIRECTORY_AUDIT_SCHEMA_VERSION = 1
@@ -430,11 +434,13 @@ def _sheet_recovery_result_candidates(
         payload=dict(request.payload or {}),
         recovery_key=request.key,
     )
-    outcome = classify_recovery_page(
+    outcome = classify_recovery_page_with_strategy(
         context,
-        provider_rows=_sheet_recovery_provider_rows,
-        explicit_static=_sheet_recovery_explicit_static,
-        generic_static=_sheet_recovery_generic_static,
+        PageOutcomeStrategy(
+            provider_rows=_sheet_recovery_provider_rows,
+            explicit_static=_sheet_recovery_explicit_static,
+            generic_static=_sheet_recovery_generic_static,
+        ),
     )
     return outcome.provider_candidates, outcome.static_candidates
 

@@ -35,7 +35,8 @@ from .page_diagnostics import (
 from .page_outcomes import (
     FetchedPageContext,
     PageOutcome,
-    classify_fetched_page,
+    PageOutcomeStrategy,
+    classify_fetched_page_with_strategy,
     static_page_outcome_builders,
 )
 from .prevalidated_queue_policy import apply_prevalidated_queue_overrides
@@ -1022,12 +1023,14 @@ def _gamedevmap_page_outcome(
     ) -> dict[str, Any]:
         return _mark_candidate(generic_static(candidate, outcome_context))
 
-    return classify_fetched_page(
+    return classify_fetched_page_with_strategy(
         context,
-        provider_rows=_provider_rows,
-        explicit_static=_explicit_static,
-        generic_static=_generic_static,
-        analyze_page=analyze_fetched_page,
+        PageOutcomeStrategy(
+            provider_rows=_provider_rows,
+            explicit_static=_explicit_static,
+            generic_static=_generic_static,
+            analyze_page=analyze_fetched_page,
+        ),
     )
 
 

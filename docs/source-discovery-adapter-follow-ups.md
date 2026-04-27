@@ -48,6 +48,7 @@ GameDevMap created much of the better logic but still has the largest local acti
 - Completed diagnostics slice: `gamedevmap_active_dry_run.py::_looks_like_js_shell` and `_no_careers_reason_detail` now delegate to shared page diagnostics while preserving GameDevMap reason buckets.
 - Completed provider/page-outcome slice: `gamedevmap_active_dry_run.py::_provider_candidates_from_html_text` now uses shared provider HTML inference instead of local provider URL extraction.
 - Completed provider/page-outcome slice: `gamedevmap_active_dry_run.py::_append_analyzed_candidates` now uses `page_outcomes.classify_fetched_page`; `_static_candidate_from_analysis` was removed.
+- Completed page-strategy slice: GameDevMap, Gameprog, Gamesmap, sheet-directory recovery, and web-derived page analysis now use `PageOutcomeStrategy` wiring for provider/static/recovery callbacks.
 - Completed recovery-fetch slice: `gamedevmap_active_dry_run.py::_recovery_job`, `_dedupe_recovery_jobs`, `_requests_from_recovery_result`, and `_recovery_cache_result` now delegate to stable `directory_page_recovery` recovery fetch/fanout/cache helpers; `_fetch_recovery_jobs` was pruned in favor of direct shared helper calls.
 - Completed recovery-planning slice: `gamedevmap_active_dry_run.py::_queue_no_careers_recovery` now uses shared recovery URL/job wave planning while keeping GameDevMap provider extraction and browser row creation local.
 - Completed recovery-result slice: `gamedevmap_active_dry_run.py::_apply_recovery_results` now uses shared recovery-result application for fanout iteration, failure routing, fetched counts, grouped-state threading, and finalization callbacks.
@@ -123,6 +124,7 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 
 ### P1c: Standardize Adapter Strategy Contracts
 
+- Page-outcome callback wiring now uses `PageOutcomeStrategy`; remaining strategy work should target broader scan/recovery assembly, not provider/static classification callback plumbing.
 - Define shared strategy shapes for directory provenance, static fallback rows, no-candidate diagnostics, recovery requests, browser-recovery candidate rows, and audit merge results.
 - Prefer callback-driven shared flow over adapter-owned branching.
 - Keep strategy contracts narrow enough that source-specific evidence fields stay explicit and testable.

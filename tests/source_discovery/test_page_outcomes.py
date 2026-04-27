@@ -4,8 +4,11 @@ from typing import Any
 
 from src.source_discovery.page_outcomes import (
     FetchedPageContext,
+    PageOutcomeStrategy,
     classify_fetched_page,
+    classify_fetched_page_with_strategy,
     classify_recovery_page,
+    classify_recovery_page_with_strategy,
     static_page_outcome_builders,
 )
 
@@ -192,6 +195,65 @@ def test_page_outcome_no_candidate_can_emit_recovery_request_and_fallback() -> N
     ]
 
 
+def test_page_outcome_strategy_preserves_callbacks_and_recovery_flow() -> None:
+    def analyze_page(**_kwargs):
+        return {
+            "provider_candidates": [],
+            "explicit_careers_url": "",
+            "generic_static_candidate": None,
+        }
+
+    strategy = PageOutcomeStrategy(
+        provider_rows=_provider_rows,
+        explicit_static=_explicit_static,
+        generic_static=_generic_static,
+        fallback_static=lambda context: {"adapter": "static", "listing_url": context.page_url},
+        recovery_request=lambda context: {"url": context.page_url},
+        analyze_page=analyze_page,
+    )
+
+    outcome = classify_fetched_page_with_strategy(
+        _context(),
+        strategy,
+        enable_recovery=True,
+    )
+
+    assert outcome.recovery_requests == [{"url": "https://studio.example.com/"}]
+    assert outcome.fallback_static_candidates == [
+        {
+            "key": "https://studio.example.com/",
+            "candidate": {"adapter": "static", "listing_url": "https://studio.example.com/"},
+        }
+    ]
+
+
+def test_page_outcome_strategy_preserves_custom_analysis_and_bad_provider_filtering() -> None:
+    def analyze_page(**_kwargs):
+        return {
+            "provider_candidates": [
+                {"adapter": "greenhouse", "slug": "embed"},
+                {"adapter": "greenhouse", "slug": "realstudio"},
+            ],
+            "explicit_careers_url": "https://studio.example.com/careers",
+            "generic_static_candidate": {"adapter": "static"},
+        }
+
+    outcome = classify_fetched_page_with_strategy(
+        _context(),
+        PageOutcomeStrategy(
+            provider_rows=_provider_rows,
+            explicit_static=_explicit_static,
+            generic_static=_generic_static,
+            filter_bad_providers=True,
+            analyze_page=analyze_page,
+        ),
+    )
+
+    assert outcome.provider_candidates == [{"adapter": "greenhouse", "slug": "realstudio"}]
+    assert outcome.static_candidates == []
+    assert outcome.bad_provider_inferences == 1
+
+
 def test_recovery_page_outcome_never_emits_fallback_candidates() -> None:
     def analyze_page(**_kwargs):
         return {
@@ -210,4 +272,30 @@ def test_recovery_page_outcome_never_emits_fallback_candidates() -> None:
 
     assert outcome.provider_candidates == []
     assert outcome.static_candidates == []
+    assert outcome.fallback_static_candidates == []
+
+
+def test_recovery_page_outcome_strategy_never_uses_fallback_or_recovery_request() -> None:
+    def analyze_page(**_kwargs):
+        return {
+            "provider_candidates": [],
+            "explicit_careers_url": "",
+            "generic_static_candidate": None,
+        }
+
+    outcome = classify_recovery_page_with_strategy(
+        _context(),
+        PageOutcomeStrategy(
+            provider_rows=_provider_rows,
+            explicit_static=_explicit_static,
+            generic_static=_generic_static,
+            fallback_static=lambda context: {"adapter": "static", "listing_url": context.page_url},
+            recovery_request=lambda context: {"url": context.page_url},
+            analyze_page=analyze_page,
+        ),
+    )
+
+    assert outcome.provider_candidates == []
+    assert outcome.static_candidates == []
+    assert outcome.recovery_requests == []
     assert outcome.fallback_static_candidates == []

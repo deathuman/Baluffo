@@ -42,6 +42,17 @@ RecoveryRequestBuilder = Callable[[FetchedPageContext], Any | None]
 AnalyzePageFn = Callable[..., dict[str, Any]]
 
 
+@dataclass(frozen=True)
+class PageOutcomeStrategy:
+    provider_rows: ProviderRowsBuilder
+    explicit_static: ExplicitStaticBuilder
+    generic_static: GenericStaticBuilder
+    fallback_static: FallbackStaticBuilder | None = None
+    recovery_request: RecoveryRequestBuilder | None = None
+    filter_bad_providers: bool = False
+    analyze_page: AnalyzePageFn = analyze_fetched_page
+
+
 def passthrough_provider_rows(
     rows: list[dict[str, Any]],
     _context: FetchedPageContext,
@@ -166,4 +177,37 @@ def classify_recovery_page(
         generic_static=generic_static,
         filter_bad_providers=filter_bad_providers,
         analyze_page=analyze_page,
+    )
+
+
+def classify_fetched_page_with_strategy(
+    context: FetchedPageContext,
+    strategy: PageOutcomeStrategy,
+    *,
+    enable_recovery: bool = False,
+) -> PageOutcome:
+    return classify_fetched_page(
+        context,
+        provider_rows=strategy.provider_rows,
+        explicit_static=strategy.explicit_static,
+        generic_static=strategy.generic_static,
+        fallback_static=strategy.fallback_static,
+        recovery_request=strategy.recovery_request,
+        enable_recovery=enable_recovery,
+        filter_bad_providers=strategy.filter_bad_providers,
+        analyze_page=strategy.analyze_page,
+    )
+
+
+def classify_recovery_page_with_strategy(
+    context: FetchedPageContext,
+    strategy: PageOutcomeStrategy,
+) -> PageOutcome:
+    return classify_recovery_page(
+        context,
+        provider_rows=strategy.provider_rows,
+        explicit_static=strategy.explicit_static,
+        generic_static=strategy.generic_static,
+        filter_bad_providers=strategy.filter_bad_providers,
+        analyze_page=strategy.analyze_page,
     )
