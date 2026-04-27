@@ -8,6 +8,7 @@ from src.source_registry import unique_sources
 
 from .config import DEFAULT_DISCOVERY_CONFIG
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
+from .directory_fetch_jobs import build_directory_fetch_jobs
 from .gamesmap_cache import gamesmap_config_value, load_gamesmap_cache, write_gamesmap_cache
 from .gamesmap_parsing import _parse_gamesmap_index_entries_with_diagnostics
 from .page_analysis import analyze_fetched_page
@@ -383,17 +384,12 @@ def discover_gamesmap_candidates(
     emit_log(f"Gamesmap homepage fetch jobs: {len(homepage_entries)}")
     homepage_fetch_results = fetch_pages(
         timeout_s,
-        [
-            {
-                "url": str(entry.get("websiteUrl") or "").strip(),
-                "payload": entry,
-                "name": str(entry.get("websiteUrl") or "").strip(),
-                "adapter": "gamesmap",
-                "failureStage": "website_fetch",
-            }
-            for entry in homepage_entries
-            if str(entry.get("websiteUrl") or "").strip()
-        ],
+        build_directory_fetch_jobs(
+            homepage_entries,
+            url_field="websiteUrl",
+            adapter="gamesmap",
+            failure_stage="website_fetch",
+        ),
         fetcher=fetcher,
         total_concurrency=fetch_concurrency,
         per_host_concurrency=per_host_concurrency,

@@ -16,6 +16,7 @@ from src.source_registry import unique_sources
 
 from .directory_cache import load_directory_cache, write_directory_cache
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
+from .directory_fetch_jobs import build_directory_fetch_jobs
 from .page_analysis import analyze_fetched_page
 from .recovery_url_planner import common_recovery_urls
 from .scoring import unique_string_list
@@ -300,17 +301,13 @@ def discover_gameprog_candidates(
 
     website_fetch_results = fetch_directory_pages(
         timeout_s,
-        [
-            {
-                "url": str(entry.get("url") or "").strip(),
-                "payload": entry,
-                "name": str(entry.get("url") or "").strip(),
-                "adapter": "gameprog",
-                "failureStage": "website_fetch",
-            }
-            for entry in entries
-            if str(entry.get("studio") or "").strip() and str(entry.get("url") or "").strip()
-        ],
+        build_directory_fetch_jobs(
+            entries,
+            url_field="url",
+            adapter="gameprog",
+            failure_stage="website_fetch",
+            required_fields=("studio",),
+        ),
         fetcher=fetcher,
         total_concurrency=fetch_concurrency,
         per_host_concurrency=per_host_concurrency,

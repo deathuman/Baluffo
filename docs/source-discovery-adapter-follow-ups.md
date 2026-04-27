@@ -15,6 +15,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Extracted shared recovery URL planning helpers for common same-origin careers URLs, same-party jobish links, profile-host blocking, and bounded dedupe. GameDevMap and Gameprog use the helper without changing fetch/probe/queue behavior.
 - 2026-04-27: Extracted shared directory cache helpers for Gamesmap/Gameprog TTL, signature, safe JSON load/write, and candidate dedupe mechanics without changing cache shape or adapter behavior.
 - 2026-04-27: Extracted shared prevalidated queue-cap policy helpers for internal adapter/domain cap overrides. GameDevMap remains the only producer; queue limits, candidate ordering, and registry behavior did not change.
+- 2026-04-27: Extracted shared directory fetch-job builders for Gamesmap/Gameprog website fetch jobs. This standardizes an audit-readiness seam without changing fetch, cache, probe, or queue behavior.
 
 ## Reusable Opportunities
 
@@ -23,6 +24,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - Extend the shared audit-ledger helpers only when a second adapter adopts them; report-summary logic remains adapter-owned for now.
 - Extend shared directory-cache helpers only when another adapter has the same cache shape and bypass semantics.
 - Extend the shared prevalidated queue-cap policy only when another adapter produces candidates that already passed `jobsFound > 0`, while preserving dedupe, tombstones, pending/rejected state, and admin auto-approval gates.
+- Extend shared directory fetch-job builders only for adapters that already use the same `fetch_directory_pages` job shape.
 - Add explicit browser-recovery lanes for other adapters that can first produce an HTTP-only `browserRecoveryCandidates` list and then run opt-in rendered recovery without slowing normal scans.
 
 ## Guardrails
