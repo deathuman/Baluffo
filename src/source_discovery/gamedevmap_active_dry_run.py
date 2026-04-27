@@ -13,7 +13,7 @@ from src import source_registry as source_registry_module
 from src.shared.utils import now_iso
 from src.source_registry import unique_sources
 
-from . import audit_ledger, audit_report_summary, recovery_url_planner
+from . import active_audit_runtime, audit_ledger, audit_report_summary, recovery_url_planner
 from . import browser_recovery as browser_recovery_helpers
 from . import directory_page_recovery as directory_recovery_helpers
 from .config import DEFAULT_DISCOVERY_CONFIG
@@ -1208,18 +1208,7 @@ def _extract_candidates_from_homepages(
     list[dict[str, Any]],
     int,
 ]:
-    provider_candidates: list[dict[str, Any]] = []
-    static_candidates: list[dict[str, Any]] = []
-    rejected_for_activation: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
-    primary_recovery_jobs: list[dict[str, Any]] = []
-    secondary_recovery_jobs: list[dict[str, Any]] = []
-    browser_recovery_candidates: list[dict[str, Any]] = []
-    homepages_fetched = 0
-    fetched_urls = {str(result.get("url") or "").strip() for result in homepage_fetch_results}
-    direct_rows = [row for row in batch_rows if _row_url(row) not in fetched_urls]
-
-    for row in direct_rows:
+    def _infer_direct_provider(row: dict[str, Any]) -> dict[str, Any] | None:
         studio = str(row.get("studio") or "").strip()
         inferred = infer_web_candidate(
             _row_url(row),
@@ -1229,73 +1218,90 @@ def _extract_candidates_from_homepages(
         )
         if inferred:
             inferred["careersUrl"] = _row_url(row)
-            provider_candidates.append(
-                _apply_gamedevmap_provenance(
-                    inferred,
-                    row,
-                    index_url=index_url,
-                    include_direct_url=True,
-                )
+            return _apply_gamedevmap_provenance(
+                inferred,
+                row,
+                index_url=index_url,
+                include_direct_url=True,
             )
+        return None
 
-    for result in homepage_fetch_results:
-        row = dict(result.get("payload") or {})
-        target_url = str(result.get("url") or row.get("url") or "").strip()
-        studio = str(row.get("studio") or "").strip()
-        if not bool(result.get("ok")):
-            failure = result.get("failure")
-            if isinstance(failure, dict):
-                failures.append(failure)
-            rejected_for_activation.append(
-                _rejection(
-                    reason="homepage_fetch_failed",
-                    row=row,
-                    error=_error_text(result),
-                    reason_detail="homepage_fetch_failed",
-                )
-            )
-            continue
-        homepages_fetched += 1
-        html = str(result.get("text") or "")
+    def _fetch_failure_rejection(row: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+        return _rejection(
+            reason="homepage_fetch_failed",
+            row=row,
+            error=_error_text(result),
+            reason_detail="homepage_fetch_failed",
+        )
+
+    def _analyze_homepage(
+        row: dict[str, Any], target_url: str, html: str
+    ) -> active_audit_runtime.HomepagePageOutcome:
         outcome = _gamedevmap_page_outcome(
             page_url=target_url,
             html=html,
             row=row,
             index_url=index_url,
         )
-        if outcome.found_candidates:
-            provider_candidates.extend(outcome.provider_candidates)
-            static_candidates.extend(outcome.static_candidates)
-            continue
-        else:
-            detail = _no_careers_reason_detail(target_url, html)
-            queued = _queue_no_careers_recovery(
-                row=row,
-                target_url=target_url,
-                html=html,
-                index_url=index_url,
-                provider_candidates=provider_candidates,
-                primary_recovery_jobs=primary_recovery_jobs,
-                secondary_recovery_jobs=secondary_recovery_jobs,
-                browser_recovery_candidates=browser_recovery_candidates,
-            )
-            if not queued:
-                rejected_for_activation.append(
-                    _rejection(
-                        reason="no_careers_evidence",
-                        row=row,
-                        reason_detail=detail,
-                    )
+        return active_audit_runtime.HomepagePageOutcome(
+            provider_candidates=outcome.provider_candidates,
+            static_candidates=outcome.static_candidates,
+            found_candidates=outcome.found_candidates,
+        )
+
+    def _handle_no_candidate(
+        row: dict[str, Any], target_url: str, html: str
+    ) -> active_audit_runtime.NoCandidateOutcome:
+        detail = _no_careers_reason_detail(target_url, html)
+        provider_candidates: list[dict[str, Any]] = []
+        primary_recovery_jobs: list[dict[str, Any]] = []
+        secondary_recovery_jobs: list[dict[str, Any]] = []
+        browser_recovery_candidates: list[dict[str, Any]] = []
+        queued = _queue_no_careers_recovery(
+            row=row,
+            target_url=target_url,
+            html=html,
+            index_url=index_url,
+            provider_candidates=provider_candidates,
+            primary_recovery_jobs=primary_recovery_jobs,
+            secondary_recovery_jobs=secondary_recovery_jobs,
+            browser_recovery_candidates=browser_recovery_candidates,
+        )
+        rejected_rows: list[dict[str, Any]] = []
+        if not queued:
+            rejected_rows.append(
+                _rejection(
+                    reason="no_careers_evidence",
+                    row=row,
+                    reason_detail=detail,
                 )
+            )
+        return active_audit_runtime.NoCandidateOutcome(
+            provider_candidates=provider_candidates,
+            rejected_rows=rejected_rows,
+            primary_recovery_jobs=primary_recovery_jobs,
+            secondary_recovery_jobs=secondary_recovery_jobs,
+            browser_recovery_candidates=browser_recovery_candidates,
+        )
+
+    result = active_audit_runtime.run_active_homepage_batch(
+        batch_rows=batch_rows,
+        homepage_fetch_results=homepage_fetch_results,
+        row_url=_row_url,
+        infer_direct_provider=_infer_direct_provider,
+        fetch_failure_rejection=_fetch_failure_rejection,
+        analyze_homepage=_analyze_homepage,
+        handle_no_candidate=_handle_no_candidate,
+    )
 
     return (
-        provider_candidates,
-        static_candidates,
-        rejected_for_activation,
-        primary_recovery_jobs,
-        secondary_recovery_jobs,
-        browser_recovery_candidates,
-        homepages_fetched,
+        result.provider_candidates,
+        result.static_candidates,
+        result.rejected_rows,
+        result.primary_recovery_jobs,
+        result.secondary_recovery_jobs,
+        result.browser_recovery_candidates,
+        result.homepages_fetched,
     )
 
 
