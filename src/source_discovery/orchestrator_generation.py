@@ -211,14 +211,30 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
         )
         orchestrator.emit_log("Scanning game studios sheet directory for candidate sources.")
         stage_started = time.perf_counter()
-        provider_sheet_candidates, static_sheet_candidates, sheet_failures = (
-            orchestrator.discover_game_studio_sheet_candidates(
+        sheet_cfg = deps.effective_config.get("sheetDirectory")
+        sheet_cfg = sheet_cfg if isinstance(sheet_cfg, dict) else {}
+        if bool(sheet_cfg.get("activeAuditEnabled", False)):
+            from .directory_audit import directory_audit_rows
+
+            sheet_artifact, _sheet_cache_hit = orchestrator.run_sheet_directory_audit(
                 deps.timeout_s,
                 sheet_id=str(discovery_config_module.GAME_STUDIOS_SHEET_ID or "") or None,
                 gid=str(discovery_config_module.GAME_STUDIOS_SHEET_GID or "") or None,
+                config=deps.effective_config,
                 fetcher=deps.fetcher,
             )
-        )
+            provider_sheet_candidates, static_sheet_candidates, sheet_failures = (
+                directory_audit_rows(sheet_artifact)
+            )
+        else:
+            provider_sheet_candidates, static_sheet_candidates, sheet_failures = (
+                orchestrator.discover_game_studio_sheet_candidates(
+                    deps.timeout_s,
+                    sheet_id=str(discovery_config_module.GAME_STUDIOS_SHEET_ID or "") or None,
+                    gid=str(discovery_config_module.GAME_STUDIOS_SHEET_GID or "") or None,
+                    fetcher=deps.fetcher,
+                )
+            )
         sheet_stage_rows = [*provider_sheet_candidates, *static_sheet_candidates]
         stage_duration_ms = _record_stage_timing(
             state.stage_timings_ms, "sheetDirectory", stage_started

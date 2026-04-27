@@ -73,6 +73,7 @@ from .scoring import resolve_discovery_thresholds
 from .sheet_directory import (
     discover_game_studio_sheet_candidates as _discover_game_studio_sheet_candidates,
 )
+from .sheet_directory import run_sheet_directory_audit as _run_sheet_directory_audit
 from .stage_control import apply_discovery_cli_args_to_config as _apply_discovery_cli_args_to_config
 from .url_patches import (
     load_url_patches as _load_url_patches,
@@ -112,6 +113,7 @@ merge_candidate_streams = _merge_candidate_streams
 stage_curated_seed_candidates = _stage_curated_seed_candidates
 write_discovery_progress_report = _write_discovery_progress_report
 discover_game_studio_sheet_candidates = _discover_game_studio_sheet_candidates
+run_sheet_directory_audit = _run_sheet_directory_audit
 load_url_patches = _load_url_patches
 resolve_patch_target = _resolve_patch_target
 save_url_patch_manifest = _save_url_patch_manifest

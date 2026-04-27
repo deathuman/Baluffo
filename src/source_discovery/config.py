@@ -267,6 +267,11 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "fetchConcurrency": 24,
         "perHostConcurrency": 3,
     },
+    "sheetDirectory": {
+        "activeAuditEnabled": False,
+        "activeAuditPath": "data/sheet-directory-discovery-audit.json",
+        "activeAuditTtlMinutes": 360,
+    },
     "gamedevmap": {
         "enabled": True,
         "csvUrl": "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv",

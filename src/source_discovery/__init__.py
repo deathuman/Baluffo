@@ -46,6 +46,7 @@ from .sheet_directory import (
     discover_game_studio_sheet_candidates,
     game_studios_sheet_candidate_urls,
     parse_game_studio_sheet_csv,
+    run_sheet_directory_audit,
 )
 
 
