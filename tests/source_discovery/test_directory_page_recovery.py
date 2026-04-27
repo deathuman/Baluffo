@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from src.source_discovery.directory_page_recovery import (
     DirectoryRecoveryRequest,
+    DirectoryRecoveryResult,
     apply_recovery_fetch_results,
+    apply_recovery_to_scan_result,
     browser_recovery_candidate,
     build_recovery_fetch_job,
     dedupe_recovery_fetch_jobs,
+    default_recovery_summary,
     fetch_recovery_jobs,
     looks_like_js_shell,
     plan_recovery_fetch_job_waves,
@@ -354,6 +357,82 @@ def test_apply_recovery_fetch_results_processes_fanout_failures_and_finalizers()
         {"reason": "no_careers_evidence", "row": {"key": "two", "found": False}}
     ]
     assert output.grouped["two"]["attempts"] == 2
+
+
+def test_default_recovery_summary_preserves_report_keys() -> None:
+    assert default_recovery_summary() == {
+        "recoveryFetchAttempts": 0,
+        "recoveryPagesFetched": 0,
+        "recoveredProviderCandidates": 0,
+        "recoveredStaticCandidates": 0,
+        "recoveryFailures": 0,
+        "browserRecoveryCandidates": 0,
+    }
+
+
+def test_apply_recovery_to_scan_result_suppresses_recovered_fallbacks() -> None:
+    recovery = DirectoryRecoveryResult(
+        provider_candidates=[{"adapter": "greenhouse", "studio": "Recovered"}],
+        static_candidates=[{"adapter": "static", "listing_url": "https://recovered.example/jobs"}],
+        browser_recovery_candidates=[{"url": "https://js.example", "reasonDetail": "js_shell"}],
+        recovered_keys={"recovered"},
+        summary={**default_recovery_summary(), "recoveredStaticCandidates": 1},
+        batch_timing={"recoveryFetchMs": 12},
+    )
+
+    row = apply_recovery_to_scan_result(
+        {
+            "providerCandidates": [{"adapter": "lever", "studio": "Existing"}],
+            "staticCandidates": [
+                {"adapter": "static", "listing_url": "https://direct.example/jobs"}
+            ],
+            "browserRecoveryCandidates": [],
+            "summary": {"existing": 1},
+            "batchTiming": {"candidateAnalysisMs": 3},
+        },
+        recovery,
+        provider_dedupe=lambda rows: rows,
+        static_dedupe=lambda rows: rows,
+        fallback_static_candidates=[
+            {"key": "recovered", "candidate": {"listing_url": "skip"}},
+            {"key": "miss", "candidate": {"listing_url": "keep"}},
+        ],
+        fallback_key=lambda entry: entry["key"],
+        fallback_candidate=lambda entry: entry["candidate"],
+    )
+
+    assert row["providerCandidates"] == [
+        {"adapter": "lever", "studio": "Existing"},
+        {"adapter": "greenhouse", "studio": "Recovered"},
+    ]
+    assert row["staticCandidates"] == [
+        {"adapter": "static", "listing_url": "https://direct.example/jobs"},
+        {"adapter": "static", "listing_url": "https://recovered.example/jobs"},
+        {"listing_url": "keep"},
+    ]
+    assert row["browserRecoveryCandidates"] == [
+        {"url": "https://js.example", "reasonDetail": "js_shell"}
+    ]
+    assert row["summary"]["existing"] == 1
+    assert row["summary"]["recoveredStaticCandidates"] == 1
+    assert row["batchTiming"] == {"candidateAnalysisMs": 3, "recoveryFetchMs": 12}
+
+
+def test_apply_recovery_to_scan_result_can_remap_timing_key() -> None:
+    recovery = DirectoryRecoveryResult(batch_timing={"recoveryFetchMs": 7})
+
+    row = apply_recovery_to_scan_result(
+        {
+            "providerCandidates": [],
+            "staticCandidates": [],
+            "summary": {},
+            "batchTiming": {},
+        },
+        recovery,
+        timing_key="webRecoveryFetchMs",
+    )
+
+    assert row["batchTiming"] == {"webRecoveryFetchMs": 7}
 
 
 def test_bad_provider_inference_filter_rejects_generic_hosts_and_slugs() -> None:

@@ -5,7 +5,12 @@ from typing import Any
 
 from . import audit_ledger
 from .directory_fetch_jobs import build_directory_fetch_jobs
-from .directory_page_recovery import run_directory_page_recovery
+from .directory_page_recovery import (
+    apply_recovery_to_scan_result,
+    default_recovery_summary,
+    run_directory_page_recovery,
+    run_recovery_for_requests,
+)
 from .scoring import unique_string_list
 from .static_candidates import build_known_careers_url_candidate
 
@@ -265,14 +270,7 @@ def run_directory_website_scan(
     recovery_requests: list[Any] = []
     fallback_static_candidates: list[dict[str, Any]] = []
     bad_provider_inferences = 0
-    recovery_summary: dict[str, int] = {
-        "recoveryFetchAttempts": 0,
-        "recoveryPagesFetched": 0,
-        "recoveredProviderCandidates": 0,
-        "recoveredStaticCandidates": 0,
-        "recoveryFailures": 0,
-        "browserRecoveryCandidates": 0,
-    }
+    recovery_summary: dict[str, int] = default_recovery_summary()
 
     website_fetch_jobs = build_directory_fetch_jobs(
         entries,
@@ -307,31 +305,42 @@ def run_directory_website_scan(
             website_fetch_failures += 1
     batch_timing["candidateAnalysisMs"] = audit_ledger.duration_ms(started)
 
-    recovered_keys: set[str] = set()
-    if enable_recovery and recovery_requests:
-        recovery = recovery_runner(
-            timeout_s,
-            recovery_requests,
-            fetcher=fetcher,
-            total_concurrency=fetch_concurrency,
-            per_host_concurrency=per_host_concurrency,
-            analyze_result=recovery_analyze_result,
-            progress_label=recovery_progress_label,
-        )
-        provider_candidates.extend(recovery.provider_candidates)
-        static_candidates.extend(recovery.static_candidates)
-        browser_recovery_candidates.extend(recovery.browser_recovery_candidates)
-        recovered_keys = set(recovery.recovered_keys)
-        recovery_summary = dict(recovery.summary)
-        batch_timing.update(recovery.batch_timing)
-    for fallback in fallback_static_candidates:
-        if str(fallback.get("key") or "") not in recovered_keys:
-            candidate = fallback.get("candidate")
-            if isinstance(candidate, dict):
-                static_candidates.append(candidate)
-
-    provider_candidates = unique_sources_fn(provider_candidates)
-    static_candidates = unique_sources_fn(static_candidates)
+    recovery = run_recovery_for_requests(
+        timeout_s,
+        recovery_requests if enable_recovery else [],
+        fetcher=fetcher,
+        total_concurrency=fetch_concurrency,
+        per_host_concurrency=per_host_concurrency,
+        analyze_result=recovery_analyze_result,
+        progress_label=recovery_progress_label,
+        recovery_runner=recovery_runner,
+    )
+    recovery_summary = dict(recovery.summary)
+    scan_payload = apply_recovery_to_scan_result(
+        {
+            "providerCandidates": provider_candidates,
+            "staticCandidates": static_candidates,
+            "browserRecoveryCandidates": browser_recovery_candidates,
+            "summary": {},
+            "batchTiming": batch_timing,
+        },
+        recovery,
+        provider_dedupe=unique_sources_fn,
+        static_dedupe=unique_sources_fn,
+        fallback_static_candidates=fallback_static_candidates,
+        fallback_key=lambda entry: str(entry.get("key") or "") if isinstance(entry, dict) else "",
+        fallback_candidate=lambda entry: (
+            dict(entry.get("candidate"))
+            if isinstance(entry, dict) and isinstance(entry.get("candidate"), dict)
+            else None
+        ),
+    )
+    provider_candidates = list(scan_payload.get("providerCandidates") or [])
+    static_candidates = list(scan_payload.get("staticCandidates") or [])
+    browser_recovery_candidates = list(scan_payload.get("browserRecoveryCandidates") or [])
+    merged_batch_timing = dict(scan_payload.get("batchTiming") or batch_timing)
+    batch_timing.clear()
+    batch_timing.update(merged_batch_timing)
     return {
         "providerCandidates": provider_candidates,
         "staticCandidates": static_candidates,

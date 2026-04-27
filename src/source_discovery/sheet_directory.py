@@ -25,7 +25,8 @@ from .directory_index_scan import run_directory_index_scan
 from .directory_page_recovery import (
     RECOVERY_LOGIC_VERSION,
     DirectoryRecoveryRequest,
-    run_directory_page_recovery,
+    apply_recovery_to_scan_result,
+    run_recovery_for_requests,
 )
 from .io_runtime import collapse_competing_candidates
 from .multi_source_text import fetch_first_nonempty_text
@@ -445,7 +446,7 @@ def _apply_sheet_directory_recovery(
     if not requests:
         return scan_result
 
-    recovery = run_directory_page_recovery(
+    recovery = run_recovery_for_requests(
         timeout_s,
         requests,
         fetcher=fetcher,
@@ -454,29 +455,16 @@ def _apply_sheet_directory_recovery(
         analyze_result=_sheet_recovery_result_candidates,
         progress_label="Sheet directory",
     )
-    recovered_keys = set(recovery.recovered_keys)
-    fallback_static_candidates = [
-        row for row in static_candidates if _sheet_static_row_key(row) not in recovered_keys
-    ]
-
-    updated = dict(scan_result)
-    updated["providerCandidates"] = collapse_competing_candidates(
-        [*(scan_result.get("providerCandidates") or []), *recovery.provider_candidates]
+    recovery_scan_result = dict(scan_result)
+    recovery_scan_result["staticCandidates"] = []
+    return apply_recovery_to_scan_result(
+        recovery_scan_result,
+        recovery,
+        provider_dedupe=collapse_competing_candidates,
+        static_dedupe=unique_sources,
+        fallback_static_candidates=static_candidates,
+        fallback_key=_sheet_static_row_key,
     )
-    updated["staticCandidates"] = unique_sources(
-        [*recovery.static_candidates, *fallback_static_candidates]
-    )
-    if recovery.browser_recovery_candidates:
-        updated["browserRecoveryCandidates"] = list(recovery.browser_recovery_candidates)
-
-    summary = dict(scan_result.get("summary") or {})
-    summary.update(dict(recovery.summary))
-    updated["summary"] = summary
-
-    batch_timing = dict(scan_result.get("batchTiming") or {})
-    batch_timing.update(dict(recovery.batch_timing))
-    updated["batchTiming"] = batch_timing
-    return updated
 
 
 def _empty_sheet_summary(

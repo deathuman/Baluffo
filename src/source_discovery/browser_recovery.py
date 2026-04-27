@@ -129,6 +129,31 @@ def browser_recovery_candidate_row(
     return row
 
 
+def browser_recovery_summary(
+    browser_recovery_candidates: list[dict[str, Any]],
+    *,
+    include_reason_breakdown: bool = False,
+) -> dict[str, int]:
+    rows = [row for row in browser_recovery_candidates if isinstance(row, dict)]
+    summary = {"browserRecoveryCandidates": len(rows)}
+    if include_reason_breakdown:
+        summary.update(
+            {
+                "browserRecoveryJsShellCandidates": len(
+                    [row for row in rows if str(row.get("reasonDetail") or "") == "js_shell"]
+                ),
+                "browserRecoveryFetchFailureCandidates": len(
+                    [
+                        row
+                        for row in rows
+                        if str(row.get("reasonDetail") or "") == "browser_recovery_fetch_failed"
+                    ]
+                ),
+            }
+        )
+    return summary
+
+
 def analyze_browser_recovery_fetch_results(
     *,
     fetch_results: list[BrowserFetchResult],

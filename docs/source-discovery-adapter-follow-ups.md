@@ -36,6 +36,7 @@ These are the lowest-risk, highest-certainty consolidation targets because the i
 - Completed first slice: `gameprog.py::_apply_gameprog_static_page_provenance`, `gamesmap_candidates.py::_apply_gamesmap_provider_provenance`, and `gamesmap_candidates.py::_apply_gamesmap_static_provenance` now use shared provenance enrichment templates.
 - Completed first slice: `gameprog.py::_empty_gameprog_scan_result` and `gamesmap_candidates.py::_empty_gamesmap_scan_result` now use a shared empty scan-result template.
 - Completed second slice: `gameprog.py::_gameprog_scan` and `gamesmap_candidates.py::_gamesmap_scan` now share the post-selection website fetch, page analysis, recovery, fallback, dedupe, summary, and progress skeleton. Parser/index/category selection remains adapter-owned.
+- Completed recovery-contract slice: Gameprog/Gamesmap website scans now use shared recovery summary/application contracts for fallback suppression, recovered rows, browser candidates, and timing merge.
 
 ### P1: GameDevMap Still Reimplements Shared Primitives
 
@@ -63,6 +64,7 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - Completed browser-row slice: `web_search_candidates.py::_web_browser_recovery_candidate`, GameDevMap JS-shell browser rows, and directory page recovery browser rows now share one browser-recovery row factory.
 - Completed browser-analysis slice: `web_search_candidates.py::_analyze_web_browser_recovery_fetches` now uses shared rendered-fetch analysis with adapter-specific page-analysis and candidate-marking callbacks.
 - Completed merge-policy slice: `web_search_candidates.py::_merge_web_browser_recovery_updates` and GameDevMap browser-recovery merge state now share probe-result filtering, active counting, and runtime state helpers. Web-derived positive recovered candidates now adopt shared prevalidated queue overrides.
+- Completed recovery-contract slice: `web_search_candidates.py::_run_web_http_recovery` now uses shared recovery application/timing-remap helpers, and browser recovery reason summaries are counted by `browser_recovery.browser_recovery_summary`.
 - Completed diagnostics slice: `web_search_candidates.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
 - Completed default-recovery slice: web-derived audits run shared HTTP-only same-site recovery by default; `webSearch.activeAuditRecoveryEnabled=false` remains the rollback.
 - Evidence snapshot: [`source-discovery-http-recovery-evidence-2026-04-27.md`](source-discovery-http-recovery-evidence-2026-04-27.md) supports default-enabling both sheet-directory and web-derived HTTP recovery.
@@ -75,6 +77,7 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 - Completed sheet-foundation slice: `sheet_directory.py::_append_sheet_entry_candidate` now uses a shared provider-or-static directory entry builder while preserving sheet evidence and provider-first ordering.
 - Completed sheet-foundation slice: `sheet_directory.py::_empty_sheet_scan_result` now uses a shared minimal empty scan-result payload helper.
 - Completed sheet-index slice: `sheet_directory.py::_sheet_directory_scan` now uses shared direct-entry index scan runtime for parse/failure/candidate/dedupe/progress mechanics while keeping sheet-specific selection and summaries local.
+- Completed recovery-contract slice: `sheet_directory.py::_apply_sheet_directory_recovery` now delegates fallback suppression, recovered row merge, browser candidate passthrough, summary merge, and timing merge to shared recovery application helpers.
 - Completed default-recovery slice: sheet-directory audits run shared HTTP-only same-site recovery by default; `sheetDirectory.activeAuditRecoveryEnabled=false` remains the rollback.
 
 ### P2: Prevalidated Queue Policy Adoption
@@ -116,7 +119,7 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 
 ### P2: Promote Browser-Recovery Eligibility
 
-- Browser-recovery candidate row construction is shared; summary counting still needs a shared contract.
+- Browser-recovery candidate row construction and reason summary counting are shared.
 - Adopt it for GameDevMap, web-derived discovery, and any directory adapter that emits HTTP-only JS-shell or browser-recoverable fetch failures.
 - Keep rendered recovery commands explicit and artifact-only until a separate plan changes default behavior.
 

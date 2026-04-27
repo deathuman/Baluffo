@@ -71,6 +71,21 @@ def test_browser_recovery_candidate_row_reproduces_gamedevmap_shape() -> None:
     }
 
 
+def test_browser_recovery_summary_counts_reason_breakdown() -> None:
+    assert browser_recovery.browser_recovery_summary(
+        [
+            {"reasonDetail": "js_shell"},
+            {"reasonDetail": "browser_recovery_fetch_failed"},
+            {"reasonDetail": "other"},
+        ],
+        include_reason_breakdown=True,
+    ) == {
+        "browserRecoveryCandidates": 3,
+        "browserRecoveryJsShellCandidates": 1,
+        "browserRecoveryFetchFailureCandidates": 1,
+    }
+
+
 def test_analyze_browser_recovery_fetch_results_routes_common_analysis_flow() -> None:
     browser_state: dict[str, object] = {}
     processed: set[str] = set()

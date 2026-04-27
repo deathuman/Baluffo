@@ -80,6 +80,9 @@ RecoveryPayloadApplier = Callable[
 RecoveryGroupFinalizer = Callable[[dict[str, Any]], list[dict[str, Any]]]
 RecoveryJobPayloadFactory = Callable[[str, int], dict[str, Any]]
 RecoveryJobNameFactory = Callable[[str, int], str]
+RecoveryRowsDedupe = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
+RecoveryFallbackKey = Callable[[Any], str]
+RecoveryFallbackCandidate = Callable[[Any], dict[str, Any] | None]
 
 
 @dataclass
@@ -91,6 +94,17 @@ class DirectoryRecoveryApplicationResult:
     pages_fetched: int = 0
     grouped: dict[str, dict[str, Any]] = field(default_factory=dict)
     recovered_homepages: set[str] = field(default_factory=set)
+
+
+def default_recovery_summary() -> dict[str, int]:
+    return {
+        "recoveryFetchAttempts": 0,
+        "recoveryPagesFetched": 0,
+        "recoveredProviderCandidates": 0,
+        "recoveredStaticCandidates": 0,
+        "recoveryFailures": 0,
+        "browserRecoveryCandidates": 0,
+    }
 
 
 def looks_like_js_shell(html: str) -> bool:
@@ -492,6 +506,111 @@ def _run_recovery_wave(
             _record_recovery_failure(output, result, fanout_requests)
 
 
+def run_recovery_for_requests(
+    timeout_s: int,
+    requests: list[DirectoryRecoveryRequest],
+    *,
+    fetcher: Any,
+    total_concurrency: int,
+    per_host_concurrency: int,
+    analyze_result: RecoveryAnalyzer,
+    progress_label: str,
+    url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
+    recovery_runner: Any = None,
+) -> DirectoryRecoveryResult:
+    if not requests:
+        return DirectoryRecoveryResult(summary=default_recovery_summary())
+    runner = recovery_runner or run_directory_page_recovery
+    return runner(
+        timeout_s,
+        requests,
+        fetcher=fetcher,
+        total_concurrency=total_concurrency,
+        per_host_concurrency=per_host_concurrency,
+        analyze_result=analyze_result,
+        progress_label=progress_label,
+        url_limit=url_limit,
+    )
+
+
+def _identity_fallback_candidate(entry: Any) -> dict[str, Any] | None:
+    return dict(entry) if isinstance(entry, dict) else None
+
+
+def _empty_fallback_key(_entry: Any) -> str:
+    return ""
+
+
+def apply_recovery_to_scan_result(
+    scan_result: dict[str, Any],
+    recovery: DirectoryRecoveryResult,
+    *,
+    provider_dedupe: RecoveryRowsDedupe | None = None,
+    static_dedupe: RecoveryRowsDedupe | None = None,
+    fallback_static_candidates: list[Any] | None = None,
+    fallback_key: RecoveryFallbackKey | None = None,
+    fallback_candidate: RecoveryFallbackCandidate | None = None,
+    timing_key: str | None = None,
+) -> dict[str, Any]:
+    recovered_keys = {
+        str(key) for key in getattr(recovery, "recovered_keys", set()) if str(key).strip()
+    }
+    provider_rows = [
+        *list(scan_result.get("providerCandidates") or []),
+        *list(getattr(recovery, "provider_candidates", []) or []),
+    ]
+    if fallback_static_candidates is None:
+        static_rows = [
+            *list(scan_result.get("staticCandidates") or []),
+            *list(getattr(recovery, "static_candidates", []) or []),
+        ]
+    else:
+        key_fn = fallback_key or _empty_fallback_key
+        candidate_fn = fallback_candidate or _identity_fallback_candidate
+        static_rows = [
+            *list(scan_result.get("staticCandidates") or []),
+            *list(getattr(recovery, "static_candidates", []) or []),
+        ]
+        for entry in fallback_static_candidates:
+            key = str(key_fn(entry) or "").strip()
+            if key and key in recovered_keys:
+                continue
+            candidate = candidate_fn(entry)
+            if isinstance(candidate, dict):
+                static_rows.append(candidate)
+
+    if provider_dedupe is not None:
+        provider_rows = provider_dedupe(provider_rows)
+    if static_dedupe is not None:
+        static_rows = static_dedupe(static_rows)
+
+    updated = dict(scan_result)
+    updated["providerCandidates"] = provider_rows
+    updated["staticCandidates"] = static_rows
+
+    browser_rows = [
+        *list(scan_result.get("browserRecoveryCandidates") or []),
+        *list(getattr(recovery, "browser_recovery_candidates", []) or []),
+    ]
+    if browser_rows or "browserRecoveryCandidates" in scan_result:
+        updated["browserRecoveryCandidates"] = browser_rows
+
+    summary = dict(scan_result.get("summary") or {})
+    summary.update(dict(getattr(recovery, "summary", {}) or {}))
+    updated["summary"] = summary
+
+    batch_timing = dict(scan_result.get("batchTiming") or {})
+    recovery_timing = dict(getattr(recovery, "batch_timing", {}) or {})
+    if timing_key and "recoveryFetchMs" in recovery_timing:
+        recovery_timing = {
+            **{key: value for key, value in recovery_timing.items() if key != "recoveryFetchMs"},
+            timing_key: recovery_timing["recoveryFetchMs"],
+        }
+    batch_timing.update(recovery_timing)
+    updated["batchTiming"] = batch_timing
+    return updated
+
+
 def run_directory_page_recovery(
     timeout_s: int,
     requests: list[DirectoryRecoveryRequest],
@@ -503,16 +622,7 @@ def run_directory_page_recovery(
     progress_label: str,
     url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
 ) -> DirectoryRecoveryResult:
-    output = DirectoryRecoveryResult(
-        summary={
-            "recoveryFetchAttempts": 0,
-            "recoveryPagesFetched": 0,
-            "recoveredProviderCandidates": 0,
-            "recoveredStaticCandidates": 0,
-            "recoveryFailures": 0,
-            "browserRecoveryCandidates": 0,
-        }
-    )
+    output = DirectoryRecoveryResult(summary=default_recovery_summary())
     if not requests:
         return output
 

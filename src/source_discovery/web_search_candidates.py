@@ -30,7 +30,8 @@ from .directory_fetch_jobs import build_directory_fetch_job
 from .directory_page_recovery import (
     RECOVERY_LOGIC_VERSION,
     DirectoryRecoveryRequest,
-    run_directory_page_recovery,
+    apply_recovery_to_scan_result,
+    run_recovery_for_requests,
 )
 from .page_diagnostics import (
     browser_recoverable_error as shared_browser_recoverable_error,
@@ -361,25 +362,10 @@ def _append_browser_recovery_candidate(
 def _browser_recovery_summary(
     browser_recovery_candidates: list[dict[str, Any]],
 ) -> dict[str, int]:
-    js_shell = len(
-        [
-            row
-            for row in browser_recovery_candidates
-            if str(row.get("reasonDetail") or "") == "js_shell"
-        ]
+    return browser_recovery_helpers.browser_recovery_summary(
+        browser_recovery_candidates,
+        include_reason_breakdown=True,
     )
-    fetch_failed = len(
-        [
-            row
-            for row in browser_recovery_candidates
-            if str(row.get("reasonDetail") or "") == "browser_recovery_fetch_failed"
-        ]
-    )
-    return {
-        "browserRecoveryCandidates": len(browser_recovery_candidates),
-        "browserRecoveryJsShellCandidates": js_shell,
-        "browserRecoveryFetchFailureCandidates": fetch_failed,
-    }
 
 
 def _web_search_config_section(config: dict[str, Any] | None) -> dict[str, Any]:
@@ -751,7 +737,7 @@ def _run_web_http_recovery(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     if not requests:
         return [], [], [], {}
-    recovery = run_directory_page_recovery(
+    recovery = run_recovery_for_requests(
         timeout_s,
         requests,
         fetcher=fetcher,
@@ -760,14 +746,25 @@ def _run_web_http_recovery(
         analyze_result=_web_recovery_result_candidates,
         progress_label=progress_label,
     )
-    batch_timing: dict[str, Any] = {}
-    if "recoveryFetchMs" in recovery.batch_timing:
-        batch_timing[timing_key] = recovery.batch_timing["recoveryFetchMs"]
+    updated = apply_recovery_to_scan_result(
+        {
+            "providerCandidates": [],
+            "staticCandidates": [],
+            "browserRecoveryCandidates": [],
+            "summary": {},
+            "batchTiming": {},
+        },
+        recovery,
+        timing_key=timing_key,
+    )
     return (
-        list(recovery.provider_candidates),
-        list(recovery.static_candidates),
-        list(recovery.browser_recovery_candidates),
-        {"summary": dict(recovery.summary), "batchTiming": batch_timing},
+        list(updated.get("providerCandidates") or []),
+        list(updated.get("staticCandidates") or []),
+        list(updated.get("browserRecoveryCandidates") or []),
+        {
+            "summary": dict(updated.get("summary") or {}),
+            "batchTiming": dict(updated.get("batchTiming") or {}),
+        },
     )
 
 
