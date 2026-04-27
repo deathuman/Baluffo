@@ -199,6 +199,47 @@ def test_gamesmap_audit_records_index_and_homepage_failures() -> None:
         assert artifact["failureCounts"] == {"website_fetch": 1}
 
 
+def test_gamesmap_audit_recovers_static_candidate_with_provenance() -> None:
+    with workspace_tmpdir("gamesmap-audit-recovery-static") as root:
+        audit_path = root / "gamesmap-audit.json"
+        config = _gamesmap_config(str(audit_path))
+        config["gamesmap"]["activeAuditRecoveryEnabled"] = True
+        companies = [
+            {
+                "id": "1",
+                "name": "Recoverable Studio",
+                "slug": "recoverable-studio",
+                "categories": [{"name": "Developer"}],
+                "address": {"city": "Berlin", "state": "Berlin", "country": "DE"},
+                "websites": ["https://recover.example.com"],
+            }
+        ]
+        payloads = {
+            "https://www.gamesmap.de/en": _gamesmap_next_payload_html(companies),
+            "https://recover.example.com": "<html><body>Recoverable Studio</body></html>",
+            "https://recover.example.com/careers": """
+                <a href="/jobs/engineer">Engineer</a><a href="/jobs/designer">Designer</a>
+            """,
+            "https://recover.example.com/jobs": "<html><body></body></html>",
+        }
+
+        provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(
+            5,
+            config=config,
+            fetcher=_fetch_from(payloads),
+        )
+
+        assert provider_rows == []
+        assert failures == []
+        assert len(static_rows) == 1
+        assert static_rows[0]["listing_url"] == "https://recover.example.com/careers"
+        assert static_rows[0]["sourceDirectory"] == "gamesmap"
+        assert static_rows[0]["sourceDirectoryEntryUrl"].endswith("/recoverable-studio")
+        artifact = json.loads(audit_path.read_text(encoding="utf-8"))
+        assert artifact["summary"]["recoveryFetchAttempts"] == 2
+        assert artifact["summary"]["recoveredStaticCandidates"] == 1
+
+
 def test_gamesmap_audit_disabled_preserves_legacy_cache_behavior_and_writes_no_artifact() -> None:
     with workspace_tmpdir("gamesmap-audit-disabled") as root:
         audit_path = root / "gamesmap-audit.json"

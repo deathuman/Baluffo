@@ -219,6 +219,132 @@ def test_gameprog_audit_records_website_fetch_failures_in_failure_channel() -> N
         assert artifact["failures"] == failures
 
 
+def test_gameprog_audit_recovers_static_candidate_before_weak_fallback() -> None:
+    with workspace_tmpdir("gameprog-audit-recovery-static") as root:
+        audit_path = root / "gameprog-audit.json"
+        config = {
+            "gameprog": {
+                "enabled": True,
+                "activeAuditEnabled": True,
+                "activeAuditRecoveryEnabled": True,
+                "activeAuditPath": str(audit_path),
+                "activeAuditTtlMinutes": 60,
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": True,
+                "maxStudios": 1,
+            }
+        }
+        payloads = {
+            "https://gameprog.it/teams.json": """[
+                {"name": "Recoverable Studio", "url": "https://recover.example.com/", "place": "Rome"}
+            ]""",
+            "https://recover.example.com/": "<html><body>Recoverable Studio</body></html>",
+            "https://recover.example.com/careers": """
+                <a href="/jobs/engineer">Engineer</a><a href="/jobs/designer">Designer</a>
+            """,
+            "https://recover.example.com/jobs": "<html><body></body></html>",
+        }
+
+        _provider_rows, static_rows, failures = sd.discover_gameprog_candidates(
+            5,
+            config=config,
+            fetcher=_fetch_from(payloads),
+        )
+
+        assert failures == []
+        assert len(static_rows) == 1
+        assert static_rows[0]["listing_url"] == "https://recover.example.com/careers"
+        assert "gameprog_no_current_openings" not in static_rows[0]["evidenceTypes"]
+        artifact = json.loads(audit_path.read_text(encoding="utf-8"))
+        assert artifact["summary"]["recoveryFetchAttempts"] == 2
+        assert artifact["summary"]["recoveredStaticCandidates"] == 1
+
+
+def test_gameprog_audit_recovery_miss_keeps_existing_weak_fallback() -> None:
+    with workspace_tmpdir("gameprog-audit-recovery-miss") as root:
+        audit_path = root / "gameprog-audit.json"
+        config = {
+            "gameprog": {
+                "enabled": True,
+                "activeAuditEnabled": True,
+                "activeAuditRecoveryEnabled": True,
+                "activeAuditPath": str(audit_path),
+                "activeAuditTtlMinutes": 60,
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": True,
+                "maxStudios": 1,
+            }
+        }
+        payloads = {
+            "https://gameprog.it/teams.json": """[
+                {"name": "Fallback Studio", "url": "https://fallback.example.com/", "place": "Rome"}
+            ]""",
+            "https://fallback.example.com/": "<html><body>Fallback Studio</body></html>",
+            "https://fallback.example.com/careers": "<html><body>No roles</body></html>",
+            "https://fallback.example.com/jobs": "<html><body>No roles</body></html>",
+            "https://fallback.example.com/join-us": "<html><body>No roles</body></html>",
+            "https://fallback.example.com/work-with-us": "<html><body>No roles</body></html>",
+            "https://fallback.example.com/company/careers": "<html><body>No roles</body></html>",
+            "https://fallback.example.com/about/careers": "<html><body>No roles</body></html>",
+        }
+
+        _provider_rows, static_rows, failures = sd.discover_gameprog_candidates(
+            5,
+            config=config,
+            fetcher=_fetch_from(payloads),
+        )
+
+        assert failures == []
+        assert len(static_rows) == 1
+        assert "gameprog_no_current_openings" in static_rows[0]["evidenceTypes"]
+
+
+def test_gameprog_audit_signature_rebuilds_when_recovery_toggle_changes() -> None:
+    with workspace_tmpdir("gameprog-audit-recovery-signature") as root:
+        audit_path = root / "gameprog-audit.json"
+        base_config = {
+            "gameprog": {
+                "enabled": True,
+                "activeAuditEnabled": True,
+                "activeAuditPath": str(audit_path),
+                "activeAuditTtlMinutes": 60,
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": True,
+                "maxStudios": 1,
+            }
+        }
+        payloads = {
+            "https://gameprog.it/teams.json": """[
+                {"name": "Recoverable Studio", "url": "https://recover.example.com/", "place": "Rome"}
+            ]""",
+            "https://recover.example.com/": "<html><body>Recoverable Studio</body></html>",
+            "https://recover.example.com/careers": """
+                <a href="/jobs/engineer">Engineer</a><a href="/jobs/designer">Designer</a>
+            """,
+            "https://recover.example.com/jobs": "<html><body></body></html>",
+        }
+        disabled_config = json.loads(json.dumps(base_config))
+        disabled_config["gameprog"]["activeAuditRecoveryEnabled"] = False
+        enabled_config = json.loads(json.dumps(base_config))
+        enabled_config["gameprog"]["activeAuditRecoveryEnabled"] = True
+
+        first_artifact, first_cache_hit = gameprog.run_gameprog_directory_audit(
+            5,
+            config=disabled_config,
+            fetcher=_fetch_from(payloads),
+        )
+        second_artifact, second_cache_hit = gameprog.run_gameprog_directory_audit(
+            5,
+            config=enabled_config,
+            fetcher=_fetch_from(payloads),
+        )
+
+        assert first_cache_hit is False
+        assert second_cache_hit is False
+        assert first_artifact["summary"]["recoveryFetchAttempts"] == 0
+        assert second_artifact["summary"]["recoveryFetchAttempts"] == 2
+
+
 def test_gameprog_audit_disabled_preserves_legacy_cache_behavior_and_writes_no_artifact() -> None:
     with workspace_tmpdir("gameprog-audit-disabled") as root:
         audit_path = root / "gameprog-audit.json"

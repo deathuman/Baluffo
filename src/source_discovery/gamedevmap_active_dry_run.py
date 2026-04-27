@@ -42,6 +42,7 @@ from .probe_runtime import (
 from .probe_runtime import (
     rendered_static_probe_result,
 )
+from .provider_inference_filters import bad_provider_inference_detail
 from .reporting import emit_log
 from .static_candidates import build_known_careers_url_candidate
 from .web_search import (
@@ -1616,33 +1617,13 @@ def _apply_recovery_results(
     )
 
 
-def _bad_provider_inference_detail(candidate: dict[str, Any]) -> str:
-    adapter = str(candidate.get("adapter") or "").strip().lower()
-    if adapter == "greenhouse":
-        slug = str(candidate.get("slug") or "").strip().lower()
-        if slug in {"api", "board", "boards", "embed", "greenhouse", "job", "jobs", "v1"}:
-            return "bad_greenhouse_slug"
-    if adapter == "teamtailor":
-        host = _host(str(candidate.get("listing_url") or candidate.get("base_url") or ""))
-        subdomain = host.split(".teamtailor.com", 1)[0] if ".teamtailor.com" in host else host
-        if host in {"teamtailor.com", "www.teamtailor.com", "api.teamtailor.com"} or subdomain in {
-            "api",
-            "career",
-            "careers",
-            "jobs",
-            "www",
-        }:
-            return "bad_teamtailor_host"
-    return ""
-
-
 def _filter_bad_provider_inferences(
     candidates: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     good: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     for candidate in candidates:
-        detail = _bad_provider_inference_detail(candidate)
+        detail = bad_provider_inference_detail(candidate)
         if detail:
             rejected.append(
                 _rejection(

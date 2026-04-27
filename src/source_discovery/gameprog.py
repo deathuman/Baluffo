@@ -21,7 +21,13 @@ from .directory_audit import discover_directory_adapter_candidates, run_director
 from .directory_cache import load_directory_cache, write_directory_cache
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .directory_fetch_jobs import build_directory_fetch_jobs
+from .directory_page_recovery import (
+    RECOVERY_LOGIC_VERSION,
+    DirectoryRecoveryRequest,
+    run_directory_page_recovery,
+)
 from .page_analysis import analyze_fetched_page
+from .provider_inference_filters import split_bad_provider_inferences
 from .recovery_url_planner import common_recovery_urls
 from .scoring import unique_string_list
 from .static_candidates import build_known_careers_url_candidate
@@ -107,6 +113,8 @@ def _gameprog_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
         "teamsUrl": str(cfg.get("teamsUrl") or "").strip(),
         "websiteOnlyFallback": bool(cfg.get("websiteOnlyFallback", True)),
         "maxStudios": max(0, int(cfg.get("maxStudios") or 0)),
+        "activeAuditRecoveryEnabled": bool(cfg.get("activeAuditRecoveryEnabled", True)),
+        "recoveryLogicVersion": RECOVERY_LOGIC_VERSION,
     }
 
 
@@ -284,8 +292,16 @@ def _empty_gameprog_scan_result(
             "eligibleRows": 0,
             "websiteFetchJobs": 0,
             "websiteFetchFailures": 0,
+            "recoveryFetchAttempts": 0,
+            "recoveryPagesFetched": 0,
+            "recoveredProviderCandidates": 0,
+            "recoveredStaticCandidates": 0,
+            "recoveryFailures": 0,
+            "browserRecoveryCandidates": 0,
+            "badProviderInferences": 0,
         },
         "websiteFetchJobs": [],
+        "browserRecoveryCandidates": [],
         "batchTiming": batch_timing,
         "writeCache": False,
     }
@@ -318,6 +334,7 @@ def _gameprog_fetch_result_candidates(
     result: dict[str, Any],
     *,
     website_only_fallback: bool,
+    enable_recovery: bool = False,
 ) -> dict[str, Any]:
     entry = dict(result.get("payload") or {})
     studio = str(entry.get("studio") or "").strip()
@@ -355,18 +372,23 @@ def _gameprog_fetch_result_candidates(
         nl_priority=nl_priority,
         discovery_method="gameprog",
     )
+    bad_provider_count = 0
     providers = list(analyzed.get("provider_candidates") or [])
     if providers:
-        return {
-            "providerCandidates": _apply_gameprog_provider_provenance(
-                providers,
-                website_url=website_url,
-                location=location,
-            ),
-            "staticCandidates": [],
-            "failures": [],
-            "fetchFailed": False,
-        }
+        providers, bad_providers = split_bad_provider_inferences(providers)
+        bad_provider_count = len(bad_providers)
+        if providers:
+            return {
+                "providerCandidates": _apply_gameprog_provider_provenance(
+                    providers,
+                    website_url=website_url,
+                    location=location,
+                ),
+                "staticCandidates": [],
+                "failures": [],
+                "fetchFailed": False,
+                "badProviderInferences": bad_provider_count,
+            }
 
     explicit_careers_url = str(analyzed.get("explicit_careers_url") or "").strip()
     if explicit_careers_url:
@@ -395,6 +417,7 @@ def _gameprog_fetch_result_candidates(
                 "staticCandidates": [],
                 "failures": [],
                 "fetchFailed": False,
+                "badProviderInferences": bad_provider_count,
             }
         static_candidate = build_gameprog_static_candidate(
             studio=studio,
@@ -406,12 +429,95 @@ def _gameprog_fetch_result_candidates(
             manual_only=False,
             weak_signal=True,
         )
+        if enable_recovery and website_url:
+            return {
+                "providerCandidates": [],
+                "staticCandidates": [],
+                "failures": [],
+                "fetchFailed": False,
+                "recoveryRequests": [
+                    DirectoryRecoveryRequest(
+                        key=website_url,
+                        adapter="gameprog",
+                        discovery_method="gameprog",
+                        name=studio or website_url,
+                        studio=studio,
+                        page_url=website_url,
+                        html=str(result.get("text") or ""),
+                        payload=entry,
+                    )
+                ],
+                "fallbackStaticCandidates": [
+                    {
+                        "key": website_url,
+                        "candidate": static_candidate,
+                    }
+                ],
+                "badProviderInferences": bad_provider_count,
+            }
     return {
         "providerCandidates": [],
         "staticCandidates": [static_candidate],
         "failures": [],
         "fetchFailed": False,
+        "badProviderInferences": bad_provider_count,
     }
+
+
+def _gameprog_recovery_result_candidates(
+    result: dict[str, Any],
+    request: DirectoryRecoveryRequest,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    entry = dict(request.payload or {})
+    location = str(entry.get("place") or "").strip()
+    recovery_url = str(result.get("url") or request.page_url or "").strip()
+    analyzed = analyze_fetched_page(
+        page_url=recovery_url,
+        html=str(result.get("text") or ""),
+        studio=request.studio,
+        nl_priority=False,
+        discovery_method="gameprog",
+    )
+    providers = list(analyzed.get("provider_candidates") or [])
+    providers, _bad_providers = split_bad_provider_inferences(providers)
+    if providers:
+        return (
+            _apply_gameprog_provider_provenance(
+                providers,
+                website_url=request.page_url,
+                location=location,
+            ),
+            [],
+        )
+    explicit_careers_url = str(analyzed.get("explicit_careers_url") or "").strip()
+    if explicit_careers_url:
+        return (
+            [],
+            [
+                build_gameprog_static_candidate(
+                    studio=request.studio,
+                    target_url=explicit_careers_url,
+                    nl_priority=False,
+                    website_only=False,
+                    detail_url=request.page_url,
+                    location=location,
+                    manual_only=False,
+                    weak_signal=False,
+                )
+            ],
+        )
+    if analyzed.get("generic_static_candidate"):
+        return (
+            [],
+            [
+                _apply_gameprog_static_page_provenance(
+                    analyzed["generic_static_candidate"],
+                    website_url=request.page_url,
+                    location=location,
+                )
+            ],
+        )
+    return [], []
 
 
 def _gameprog_scan(
@@ -420,6 +526,7 @@ def _gameprog_scan(
     cfg: dict[str, Any],
     fetcher: Any,
     emit_log: Any,
+    enable_recovery: bool = False,
 ) -> dict[str, Any]:
     teams_url = str(cfg.get("teamsUrl") or GAMEPROG_TEAMS_URL).strip()
     website_only_fallback = bool(cfg.get("websiteOnlyFallback", True))
@@ -429,6 +536,18 @@ def _gameprog_scan(
     provider_candidates: list[dict[str, Any]] = []
     static_candidates: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    browser_recovery_candidates: list[dict[str, Any]] = []
+    recovery_requests: list[DirectoryRecoveryRequest] = []
+    fallback_static_candidates: list[dict[str, Any]] = []
+    bad_provider_inferences = 0
+    recovery_summary: dict[str, int] = {
+        "recoveryFetchAttempts": 0,
+        "recoveryPagesFetched": 0,
+        "recoveredProviderCandidates": 0,
+        "recoveredStaticCandidates": 0,
+        "recoveryFailures": 0,
+        "browserRecoveryCandidates": 0,
+    }
     batch_timing: dict[str, Any] = {
         "teamsUrl": teams_url,
         "maxStudios": max_studios,
@@ -497,13 +616,40 @@ def _gameprog_scan(
         rows = _gameprog_fetch_result_candidates(
             result,
             website_only_fallback=website_only_fallback,
+            enable_recovery=enable_recovery,
         )
         provider_candidates.extend(list(rows.get("providerCandidates") or []))
         static_candidates.extend(list(rows.get("staticCandidates") or []))
         failures.extend(list(rows.get("failures") or []))
+        recovery_requests.extend(list(rows.get("recoveryRequests") or []))
+        fallback_static_candidates.extend(list(rows.get("fallbackStaticCandidates") or []))
+        bad_provider_inferences += int(rows.get("badProviderInferences") or 0)
         if bool(rows.get("fetchFailed")):
             website_fetch_failures += 1
     batch_timing["candidateAnalysisMs"] = audit_ledger.duration_ms(started)
+
+    recovered_keys: set[str] = set()
+    if enable_recovery and recovery_requests:
+        recovery = run_directory_page_recovery(
+            timeout_s,
+            recovery_requests,
+            fetcher=fetcher,
+            total_concurrency=fetch_concurrency,
+            per_host_concurrency=per_host_concurrency,
+            analyze_result=_gameprog_recovery_result_candidates,
+            progress_label="Gameprog",
+        )
+        provider_candidates.extend(recovery.provider_candidates)
+        static_candidates.extend(recovery.static_candidates)
+        browser_recovery_candidates.extend(recovery.browser_recovery_candidates)
+        recovered_keys = set(recovery.recovered_keys)
+        recovery_summary = dict(recovery.summary)
+        batch_timing.update(recovery.batch_timing)
+    for fallback in fallback_static_candidates:
+        if str(fallback.get("key") or "") not in recovered_keys:
+            candidate = fallback.get("candidate")
+            if isinstance(candidate, dict):
+                static_candidates.append(candidate)
 
     provider_candidates = unique_sources(provider_candidates)
     static_candidates = unique_sources(static_candidates)
@@ -517,8 +663,12 @@ def _gameprog_scan(
             "eligibleRows": len(entries),
             "websiteFetchJobs": len(website_fetch_jobs),
             "websiteFetchFailures": website_fetch_failures,
+            **recovery_summary,
+            "browserRecoveryCandidates": len(browser_recovery_candidates),
+            "badProviderInferences": bad_provider_inferences,
         },
         "websiteFetchJobs": website_fetch_jobs,
+        "browserRecoveryCandidates": browser_recovery_candidates,
         "progress": {
             "complete": True,
             "cursor": len(entries),
@@ -556,6 +706,7 @@ def run_gameprog_directory_audit(
             cfg=cfg,
             fetcher=fetcher,
             emit_log=emit_log,
+            enable_recovery=bool(cfg.get("activeAuditRecoveryEnabled", True)),
         ),
         runtime={
             "fetchConcurrency": fetch_concurrency,
@@ -568,6 +719,13 @@ def run_gameprog_directory_audit(
             "eligibleRows": 0,
             "websiteFetchJobs": 0,
             "websiteFetchFailures": 0,
+            "recoveryFetchAttempts": 0,
+            "recoveryPagesFetched": 0,
+            "recoveredProviderCandidates": 0,
+            "recoveredStaticCandidates": 0,
+            "recoveryFailures": 0,
+            "browserRecoveryCandidates": 0,
+            "badProviderInferences": 0,
         },
         sample_limit=GAMEPROG_AUDIT_FAILURE_SAMPLE_LIMIT,
         emit_log=emit_log,
@@ -600,6 +758,7 @@ def discover_gameprog_candidates(
             cfg=cfg,
             fetcher=fetcher,
             emit_log=emit_log,
+            enable_recovery=False,
         ),
         write_cache=lambda provider_candidates, static_candidates, failures: _write_gameprog_cache(
             config,

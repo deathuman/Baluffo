@@ -42,11 +42,12 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Shared the public directory-adapter discovery wrapper for Gameprog/Gamesmap. The common enabled -> audit -> cache -> scan/write sequence is centralized while adapter-specific config, scans, caches, audit callbacks, and logs remain local.
 - 2026-04-27: Shared directory scan-row extraction for audit-backed direct scanners and web-search audit method splitting. Raw scan results remain unnormalized, while audit artifact reads keep existing normalized row behavior.
 - 2026-04-27: Shared browser-recovery runtime orchestration for GameDevMap and web-derived discovery. Browser fetch, rendered-probe filtering, and bounded probing are centralized while adapter analysis and artifact merge semantics remain local.
+- 2026-04-27: Added shared HTTP-only directory page recovery for Gameprog/Gamesmap audit scans. Homepage misses now try bounded same-site jobish links plus common careers paths before legacy weak fallback, while recovery misses stay audit diagnostics and `activeAuditEnabled=false` preserves the old no-recovery cache path.
 
 ## Reusable Opportunities
 
 - Use default web-search and explicit browser-recovery evidence to decide whether deeper rendered-source tuning is worth adding.
-- Extend shared recovery URL planning only when another adapter adopts the same behavior; provider inference, browser-candidate classification, and adapter diagnostics remain adapter-owned for now.
+- Extend shared HTTP recovery only when another adapter has the same homepage-miss semantics; provider/static provenance and artifact merge behavior should remain adapter-owned until a second identical adopter exists.
 - Consider browser-recovery candidates for additional adapters only after each adapter can emit an HTTP-only candidate list without slowing default scans.
 - Extend the shared prevalidated queue-cap policy only when another adapter produces candidates that already passed `jobsFound > 0`, while preserving dedupe, tombstones, pending/rejected state, and admin auto-approval gates.
 - Extend shared directory fetch-job builders only for additional adapters that already use the same `fetch_directory_pages` job shape.
@@ -55,7 +56,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 
 ## Audit Readiness Notes
 
-- Gamesmap and Gameprog now share cache, fetch-job, audit-engine, and report-summary seams. Their audit paths are default when each adapter is enabled; future work should focus on runtime evidence and broader adapter migration.
+- Gamesmap and Gameprog now share cache, fetch-job, audit-engine, report-summary, and HTTP recovery seams. Their audit paths are default when each adapter is enabled; future work should focus on runtime evidence and broader adapter migration.
 - Sheet-directory, seed-careers, and web-search now default to audit artifacts when their stages are enabled, with adapter-owned `activeAuditEnabled=false` rollback paths.
 - Browser recovery stays opt-in and active promotion stays out of shared audit-engine readiness. Any adapter adopting rendered recovery should first emit HTTP-only browser candidates and still route validated rows through the normal discovery queue.
 
