@@ -6,6 +6,7 @@ import asyncio
 import json
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -26,6 +27,16 @@ from .web_search_fetch import async_fetch_text_httpx, fetch_text
 
 ProbeResult = tuple[dict[str, Any], bool, int, str, int]
 AsyncProbe = Callable[..., Awaitable[tuple[bool, int, str]]]
+ProbeFailedRejection = Callable[[dict[str, Any], str], dict[str, Any]]
+ZeroJobsRejection = Callable[[dict[str, Any], int], dict[str, Any]]
+ProbeNormalizer = Callable[[dict[str, Any], int], dict[str, Any]]
+
+
+@dataclass
+class ProbeClassification:
+    positive_candidates: list[dict[str, Any]]
+    zero_job_candidates: list[dict[str, Any]]
+    rejected_rows: list[dict[str, Any]]
 
 
 def candidate_id(candidate: dict[str, Any]) -> str:
@@ -50,6 +61,34 @@ def candidate_with_probe_evidence(
     if identity:
         normalized["id"] = identity
     return normalized
+
+
+def classify_probe_results(
+    probe_results: list[ProbeResult],
+    *,
+    probe_failed_rejection: ProbeFailedRejection,
+    zero_jobs_rejection: ZeroJobsRejection,
+    normalize_candidate: ProbeNormalizer = candidate_with_probe_evidence,
+) -> ProbeClassification:
+    positive_candidates: list[dict[str, Any]] = []
+    zero_job_candidates: list[dict[str, Any]] = []
+    rejected_rows: list[dict[str, Any]] = []
+    for candidate, ok, jobs_found, error, duration_ms in probe_results:
+        if not ok:
+            rejected_rows.append(probe_failed_rejection(candidate, error))
+            continue
+        normalized = normalize_candidate(candidate, jobs_found)
+        normalized["probeDurationMs"] = int(duration_ms)
+        if jobs_found > 0:
+            positive_candidates.append(normalized)
+        else:
+            zero_job_candidates.append(normalized)
+            rejected_rows.append(zero_jobs_rejection(normalized, jobs_found))
+    return ProbeClassification(
+        positive_candidates=positive_candidates,
+        zero_job_candidates=zero_job_candidates,
+        rejected_rows=rejected_rows,
+    )
 
 
 def rendered_static_probe_result(

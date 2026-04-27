@@ -46,13 +46,11 @@ from .probe_runtime import (
     candidate_id as probe_candidate_id,
 )
 from .probe_runtime import (
-    candidate_with_probe_evidence as probe_candidate_with_probe_evidence,
+    classify_probe_results,
+    rendered_static_probe_result,
 )
 from .probe_runtime import (
     probe_candidates_async as shared_probe_candidates_async,
-)
-from .probe_runtime import (
-    rendered_static_probe_result,
 )
 from .provider_inference_filters import split_bad_provider_inferences
 from .reporting import emit_log
@@ -202,10 +200,6 @@ def _rejection(
         payload["adapter"] = str(candidate.get("adapter") or "")
         payload["name"] = str(candidate.get("name") or "")
     return payload
-
-
-def _candidate_with_probe_evidence(candidate: dict[str, Any], jobs_found: int) -> dict[str, Any]:
-    return probe_candidate_with_probe_evidence(candidate, jobs_found)
 
 
 def _initial_artifact(
@@ -1622,43 +1616,30 @@ def _apply_probe_results(
     artifact: dict[str, Any],
     probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
 ) -> None:
-    active_candidates: list[dict[str, Any]] = []
-    zero_job_candidates: list[dict[str, Any]] = []
-    rejected_for_activation: list[dict[str, Any]] = []
-    for candidate, ok, jobs_found, error, duration_ms in probe_results:
-        if not ok:
-            rejected_for_activation.append(
-                _rejection(
-                    reason="probe_failed",
-                    candidate=candidate,
-                    error=error,
-                    reason_detail="probe_failed",
-                )
-            )
-            continue
-        normalized = _candidate_with_probe_evidence(candidate, jobs_found)
-        normalized["probeDurationMs"] = int(duration_ms)
-        if jobs_found > 0:
-            active_candidates.append(normalized)
-        else:
-            zero_job_candidates.append(normalized)
-            rejected_for_activation.append(
-                _rejection(
-                    reason="zero_jobs",
-                    candidate=normalized,
-                    jobs_found=jobs_found,
-                    reason_detail="zero_jobs",
-                )
-            )
+    classification = classify_probe_results(
+        probe_results,
+        probe_failed_rejection=lambda candidate, error: _rejection(
+            reason="probe_failed",
+            candidate=candidate,
+            error=error,
+            reason_detail="probe_failed",
+        ),
+        zero_jobs_rejection=lambda candidate, jobs_found: _rejection(
+            reason="zero_jobs",
+            candidate=candidate,
+            jobs_found=jobs_found,
+            reason_detail="zero_jobs",
+        ),
+    )
     artifact["activeCandidates"] = _merge_by_source_id(
-        artifact.get("activeCandidates"), active_candidates
+        artifact.get("activeCandidates"), classification.positive_candidates
     )
     artifact["zeroJobCandidates"] = _merge_by_source_id(
-        artifact.get("zeroJobCandidates"), zero_job_candidates
+        artifact.get("zeroJobCandidates"), classification.zero_job_candidates
     )
     artifact["rejectedForActivation"] = [
         *(_as_list(artifact.get("rejectedForActivation"))),
-        *rejected_for_activation,
+        *classification.rejected_rows,
     ]
 
 

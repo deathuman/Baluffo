@@ -91,6 +91,75 @@ def test_candidate_with_probe_evidence_can_mark_prevalidated_discovery() -> None
     assert prevalidated["id"] == normal["id"]
 
 
+def test_classify_probe_results_splits_positive_zero_and_failed_rows() -> None:
+    positive = _static_candidate("https://studio.example/careers")
+    zero = _static_candidate("https://zero.example/jobs")
+    failed = _static_candidate("https://failed.example/jobs")
+
+    classification = probe_runtime.classify_probe_results(
+        [
+            (positive, True, 2, "", 11),
+            (zero, True, 0, "", 12),
+            (failed, False, 0, "timeout", 13),
+        ],
+        probe_failed_rejection=lambda candidate, error: {
+            "reason": "probe_failed",
+            "candidate": candidate,
+            "error": error,
+        },
+        zero_jobs_rejection=lambda candidate, jobs_found: {
+            "reason": "zero_jobs",
+            "candidate": candidate,
+            "jobsFound": jobs_found,
+        },
+    )
+
+    assert len(classification.positive_candidates) == 1
+    assert classification.positive_candidates[0]["jobsFound"] == 2
+    assert classification.positive_candidates[0]["probeDurationMs"] == 11
+    assert len(classification.zero_job_candidates) == 1
+    assert classification.zero_job_candidates[0]["jobsFound"] == 0
+    assert classification.zero_job_candidates[0]["probeDurationMs"] == 12
+    assert classification.rejected_rows == [
+        {
+            "reason": "zero_jobs",
+            "candidate": classification.zero_job_candidates[0],
+            "jobsFound": 0,
+        },
+        {
+            "reason": "probe_failed",
+            "candidate": failed,
+            "error": "timeout",
+        },
+    ]
+
+
+def test_classify_probe_results_accepts_custom_normalizer() -> None:
+    candidate = _static_candidate()
+
+    classification = probe_runtime.classify_probe_results(
+        [(candidate, True, 4, "", 9)],
+        probe_failed_rejection=lambda _candidate, _error: {},
+        zero_jobs_rejection=lambda _candidate, _jobs_found: {},
+        normalize_candidate=lambda row, jobs_found: {
+            **row,
+            "jobsFound": jobs_found,
+            "custom": True,
+        },
+    )
+
+    assert classification.positive_candidates == [
+        {
+            **candidate,
+            "jobsFound": 4,
+            "custom": True,
+            "probeDurationMs": 9,
+        }
+    ]
+    assert classification.zero_job_candidates == []
+    assert classification.rejected_rows == []
+
+
 def test_run_bounded_probe_batch_async_uses_caller_probe_and_kwargs() -> None:
     seen: dict[str, object] = {}
 
