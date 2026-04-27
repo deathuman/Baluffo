@@ -37,6 +37,8 @@ These are the lowest-risk, highest-certainty consolidation targets because the i
 - Completed first slice: `gameprog.py::_empty_gameprog_scan_result` and `gamesmap_candidates.py::_empty_gamesmap_scan_result` now use a shared empty scan-result template.
 - Completed second slice: `gameprog.py::_gameprog_scan` and `gamesmap_candidates.py::_gamesmap_scan` now share the post-selection website fetch, page analysis, recovery, fallback, dedupe, summary, and progress skeleton. Parser/index/category selection remains adapter-owned.
 - Completed recovery-contract slice: Gameprog/Gamesmap website scans now use shared recovery summary/application contracts for fallback suppression, recovered rows, browser candidates, and timing merge.
+- Completed scan-setup slice: Gameprog/Gamesmap now use a shared website-scan setup wrapper for common fetch-concurrency resolution, recovery-budget handoff, and `run_directory_website_scan(...)` call assembly.
+- Completed recovery-budget slice: `gameprog.activeAuditRecoveryUrlLimit` and `gamesmap.activeAuditRecoveryUrlLimit` default to `6`, fall back to `6` for invalid/non-positive values, and participate in audit signatures.
 
 ### P1: GameDevMap Still Reimplements Shared Primitives
 
@@ -67,6 +69,7 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - Completed recovery-contract slice: `web_search_candidates.py::_run_web_http_recovery` now uses shared recovery application/timing-remap helpers, and browser recovery reason summaries are counted by `browser_recovery.browser_recovery_summary`.
 - Completed diagnostics slice: `web_search_candidates.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
 - Completed default-recovery slice: web-derived audits run shared HTTP-only same-site recovery by default; `webSearch.activeAuditRecoveryEnabled=false` remains the rollback.
+- Completed recovery-budget slice: `webSearch.activeAuditRecoveryUrlLimit` defaults to `6`, falls back to `6` for invalid/non-positive values, and participates in audit signatures.
 - Evidence snapshot: [`source-discovery-http-recovery-evidence-2026-04-27.md`](source-discovery-http-recovery-evidence-2026-04-27.md) supports default-enabling both sheet-directory and web-derived HTTP recovery.
 
 ### P1: Sheet-Directory Manual Implementations
@@ -79,6 +82,7 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 - Completed sheet-index slice: `sheet_directory.py::_sheet_directory_scan` now uses shared direct-entry index scan runtime for parse/failure/candidate/dedupe/progress mechanics while keeping sheet-specific selection and summaries local.
 - Completed recovery-contract slice: `sheet_directory.py::_apply_sheet_directory_recovery` now delegates fallback suppression, recovered row merge, browser candidate passthrough, summary merge, and timing merge to shared recovery application helpers.
 - Completed default-recovery slice: sheet-directory audits run shared HTTP-only same-site recovery by default; `sheetDirectory.activeAuditRecoveryEnabled=false` remains the rollback.
+- Completed recovery-budget slice: `sheetDirectory.activeAuditRecoveryUrlLimit` defaults to `6`, falls back to `6` for invalid/non-positive values, and participates in audit signatures.
 
 ### P2: Prevalidated Queue Policy Adoption
 
@@ -113,7 +117,7 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 
 ### P2: Tune Default HTTP Recovery
 
-- Use sheet-directory and web-derived recovery audit evidence to tune recovery URL limits, skip rules, profile-host handling, and timing budgets.
+- Use sheet-directory and web-derived recovery audit evidence to tune recovery URL limits, skip rules, profile-host handling, and timing budgets. The first shared knob is `activeAuditRecoveryUrlLimit`, defaulting to `6` for Gameprog, Gamesmap, sheet-directory, and web-search.
 - Document true semantic exceptions, such as rows that contain only a direct careers URL with no recoverable company homepage.
 - Keep browser rendering opt-in and separate from default HTTP recovery.
 

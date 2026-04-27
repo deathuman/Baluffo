@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .directory_cache import load_directory_cache, write_directory_cache
-from .directory_page_recovery import RECOVERY_LOGIC_VERSION
+from .directory_page_recovery import RECOVERY_LOGIC_VERSION, resolve_recovery_url_limit
 
 GAMESMAP_PARSER_CACHE_VERSION = 2
 
@@ -53,6 +53,7 @@ def gamesmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
         "allowedCategoryTokens": list(cfg.get("allowedCategoryTokens") or []),
         "blockedCategoryTokens": list(cfg.get("blockedCategoryTokens") or []),
         "activeAuditRecoveryEnabled": bool(cfg.get("activeAuditRecoveryEnabled", True)),
+        "activeAuditRecoveryUrlLimit": resolve_recovery_url_limit(cfg),
         "recoveryLogicVersion": RECOVERY_LOGIC_VERSION,
     }
 

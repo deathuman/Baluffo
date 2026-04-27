@@ -23,9 +23,11 @@ from .directory_adapter_templates import (
 from .directory_audit import discover_directory_scan_candidates, run_directory_audit
 from .directory_index_scan import run_directory_index_scan
 from .directory_page_recovery import (
+    DEFAULT_RECOVERY_URL_LIMIT,
     RECOVERY_LOGIC_VERSION,
     DirectoryRecoveryRequest,
     apply_recovery_to_scan_result,
+    resolve_recovery_url_limit,
     run_recovery_for_requests,
 )
 from .io_runtime import collapse_competing_candidates
@@ -135,11 +137,16 @@ def _sheet_directory_recovery_enabled(config: dict[str, Any] | None) -> bool:
     return bool(cfg.get("activeAuditRecoveryEnabled", True))
 
 
+def _sheet_directory_recovery_url_limit(config: dict[str, Any] | None) -> int:
+    return resolve_recovery_url_limit(_sheet_directory_config_section(config))
+
+
 def _sheet_directory_audit_signature(
     *,
     sheet_id: str,
     gid: str,
     recovery_enabled: bool,
+    recovery_url_limit: int,
 ) -> dict[str, Any]:
     return {
         "parserVersion": SHEET_DIRECTORY_AUDIT_SCHEMA_VERSION,
@@ -147,6 +154,7 @@ def _sheet_directory_audit_signature(
         "gid": str(gid),
         "maxRows": str(os.getenv("BALUFFO_SHEET_DIRECTORY_MAX_ROWS") or "").strip(),
         "activeAuditRecoveryEnabled": bool(recovery_enabled),
+        "activeAuditRecoveryUrlLimit": int(recovery_url_limit),
         "recoveryLogicVersion": RECOVERY_LOGIC_VERSION,
     }
 
@@ -436,6 +444,7 @@ def _apply_sheet_directory_recovery(
     *,
     timeout_s: int,
     fetcher: Any,
+    recovery_url_limit: int,
 ) -> dict[str, Any]:
     static_candidates = list(scan_result.get("staticCandidates") or [])
     requests = [
@@ -454,6 +463,7 @@ def _apply_sheet_directory_recovery(
         per_host_concurrency=SHEET_DIRECTORY_RECOVERY_PER_HOST_CONCURRENCY,
         analyze_result=_sheet_recovery_result_candidates,
         progress_label="Sheet directory",
+        url_limit=recovery_url_limit,
     )
     recovery_scan_result = dict(scan_result)
     recovery_scan_result["staticCandidates"] = []
@@ -495,6 +505,7 @@ def _sheet_directory_scan(
     fetcher: Any,
     emit_log: Any,
     enable_recovery: bool = False,
+    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
 ) -> dict[str, Any]:
     batch_timing: dict[str, Any] = {"sheetId": sheet_id, "gid": gid}
 
@@ -594,6 +605,7 @@ def _sheet_directory_scan(
         scan_result,
         timeout_s=timeout_s,
         fetcher=fetcher,
+        recovery_url_limit=recovery_url_limit,
     )
 
 
@@ -612,6 +624,7 @@ def run_sheet_directory_audit(
     sheet_id = str(sheet_id or GAME_STUDIOS_SHEET_ID)
     gid = str(gid or GAME_STUDIOS_SHEET_GID)
     recovery_enabled = _sheet_directory_recovery_enabled(config)
+    recovery_url_limit = _sheet_directory_recovery_url_limit(config)
     return run_directory_audit(
         adapter="sheet_directory",
         schema_version=SHEET_DIRECTORY_AUDIT_SCHEMA_VERSION,
@@ -621,6 +634,7 @@ def run_sheet_directory_audit(
             sheet_id=sheet_id,
             gid=gid,
             recovery_enabled=recovery_enabled,
+            recovery_url_limit=recovery_url_limit,
         ),
         timeout_s=timeout_s,
         scan=lambda scan_timeout_s: _sheet_directory_scan(
@@ -630,6 +644,7 @@ def run_sheet_directory_audit(
             fetcher=fetcher,
             emit_log=emit_log,
             enable_recovery=recovery_enabled,
+            recovery_url_limit=recovery_url_limit,
         ),
         runtime={
             "sheetId": sheet_id,

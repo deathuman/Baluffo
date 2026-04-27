@@ -15,11 +15,15 @@ from .directory_adapter_templates import (
     apply_directory_provenance,
     build_directory_static_candidate,
     empty_directory_scan_result,
-    run_directory_website_scan,
+    run_directory_adapter_website_scan,
 )
 from .directory_audit import discover_directory_adapter_candidates, run_directory_audit
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
-from .directory_page_recovery import DirectoryRecoveryRequest
+from .directory_page_recovery import (
+    DEFAULT_RECOVERY_URL_LIMIT,
+    DirectoryRecoveryRequest,
+    resolve_recovery_url_limit,
+)
 from .gamesmap_cache import (
     gamesmap_cache_signature,
     gamesmap_cache_ttl_minutes,
@@ -554,6 +558,7 @@ def _gamesmap_scan(
     fetcher: Any,
     emit_log: Any,
     enable_recovery: bool = False,
+    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
 ) -> dict[str, Any]:
     parse_index_entries = _root_attr(
         "_parse_gamesmap_index_entries_with_diagnostics",
@@ -574,13 +579,10 @@ def _gamesmap_scan(
     website_only_fallback = bool(cfg.get("websiteOnlyFallback", True))
     website_only_manual_only = bool(cfg.get("websiteOnlyManualOnly", False))
     max_detail_pages = max(0, int(cfg.get("maxDetailPages") or 0))
-    fetch_concurrency, per_host_concurrency = fetch_limits(cfg)
 
     batch_timing: dict[str, Any] = {
         "indexUrlCount": len(index_urls),
         "maxDetailPages": max_detail_pages,
-        "fetchConcurrency": fetch_concurrency,
-        "perHostConcurrency": per_host_concurrency,
     }
 
     started = time.perf_counter()
@@ -649,16 +651,16 @@ def _gamesmap_scan(
         f"eligibleAfterFilter={eligible_entries}, unresolvedCategoryRefs={unresolved_reference_count}."
     )
     emit_log(f"Gamesmap homepage fetch jobs: {len(homepage_entries)}")
-    scan_result = run_directory_website_scan(
+    scan_result = run_directory_adapter_website_scan(
         timeout_s,
+        cfg=cfg,
         entries=homepage_entries,
         url_field="websiteUrl",
         adapter="gamesmap",
         failure_stage="website_fetch",
         fetcher=fetcher,
         fetch_pages=fetch_pages,
-        fetch_concurrency=fetch_concurrency,
-        per_host_concurrency=per_host_concurrency,
+        resolve_fetch_limits=fetch_limits,
         progress_label="Gamesmap website fetch",
         analyze_result=lambda result: _gamesmap_homepage_result_candidates(
             result,
@@ -674,6 +676,7 @@ def _gamesmap_scan(
         batch_timing=batch_timing,
         summary={**base_summary, "eligibleRows": eligible_entries},
         progress_cursor=eligible_entries,
+        recovery_url_limit=recovery_url_limit,
         initial_provider_candidates=provider_candidates,
         initial_failures=failures,
     )
@@ -697,6 +700,7 @@ def run_gamesmap_directory_audit(
     cfg = dict(gamesmap_config_value(config, "gamesmap", DEFAULT_DISCOVERY_CONFIG["gamesmap"]))
     fetch_limits = _root_attr("resolve_directory_fetch_limits", resolve_directory_fetch_limits)
     fetch_concurrency, per_host_concurrency = fetch_limits(cfg)
+    recovery_url_limit = resolve_recovery_url_limit(cfg)
     return run_directory_audit(
         adapter="gamesmap",
         schema_version=GAMESMAP_AUDIT_SCHEMA_VERSION,
@@ -710,6 +714,7 @@ def run_gamesmap_directory_audit(
             fetcher=fetcher,
             emit_log=emit_log,
             enable_recovery=bool(cfg.get("activeAuditRecoveryEnabled", True)),
+            recovery_url_limit=recovery_url_limit,
         ),
         runtime={
             "fetchConcurrency": fetch_concurrency,

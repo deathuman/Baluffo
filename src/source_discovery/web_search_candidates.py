@@ -28,9 +28,11 @@ from .config import (
 from .directory_audit import discover_directory_scan_candidates, run_directory_audit
 from .directory_fetch_jobs import build_directory_fetch_job
 from .directory_page_recovery import (
+    DEFAULT_RECOVERY_URL_LIMIT,
     RECOVERY_LOGIC_VERSION,
     DirectoryRecoveryRequest,
     apply_recovery_to_scan_result,
+    resolve_recovery_url_limit,
     run_recovery_for_requests,
 )
 from .page_diagnostics import (
@@ -393,6 +395,10 @@ def _web_search_recovery_enabled(config: dict[str, Any] | None) -> bool:
     return bool(cfg.get("activeAuditRecoveryEnabled", True))
 
 
+def _web_search_recovery_url_limit(config: dict[str, Any] | None) -> int:
+    return resolve_recovery_url_limit(_web_search_config_section(config))
+
+
 def _web_search_max_queries(config: dict[str, Any] | None) -> int:
     return int_config_value(
         _web_search_config_section(config),
@@ -471,6 +477,7 @@ def _web_search_audit_signature(
     max_queries: int,
     max_links_per_query: int,
     recovery_enabled: bool,
+    recovery_url_limit: int,
 ) -> dict[str, Any]:
     return {
         "parserVersion": WEB_SEARCH_AUDIT_SCHEMA_VERSION,
@@ -479,6 +486,7 @@ def _web_search_audit_signature(
         "maxQueries": max(0, int(max_queries)),
         "maxLinksPerQuery": max(0, int(max_links_per_query)),
         "activeAuditRecoveryEnabled": bool(recovery_enabled),
+        "activeAuditRecoveryUrlLimit": int(recovery_url_limit),
         "recoveryLogicVersion": RECOVERY_LOGIC_VERSION,
         "seedCatalog": _seed_catalog_signature(studio_seeds),
     }
@@ -490,6 +498,7 @@ def _scan_seed_careers_page_candidates(
     studio_seeds: list[dict[str, Any]],
     fetcher: Any,
     enable_recovery: bool = False,
+    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
 ) -> dict[str, Any]:
     from .directory_fetch import directory_fetch_concurrency_defaults, fetch_directory_pages
     from .io_runtime import collapse_competing_candidates
@@ -566,6 +575,7 @@ def _scan_seed_careers_page_candidates(
                 per_host_concurrency=int(fetch_defaults["perHost"]),
                 progress_label="Seed careers page recovery",
                 timing_key="seedRecoveryFetchMs",
+                recovery_url_limit=recovery_url_limit,
             )
         )
         provider_candidates.extend(recovered_providers)
@@ -734,6 +744,7 @@ def _run_web_http_recovery(
     per_host_concurrency: int,
     progress_label: str,
     timing_key: str,
+    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     if not requests:
         return [], [], [], {}
@@ -745,6 +756,7 @@ def _run_web_http_recovery(
         per_host_concurrency=per_host_concurrency,
         analyze_result=_web_recovery_result_candidates,
         progress_label=progress_label,
+        url_limit=recovery_url_limit,
     )
     updated = apply_recovery_to_scan_result(
         {
@@ -784,6 +796,7 @@ def _scan_web_search_candidates(
     max_queries: int = 18,
     max_links_per_query: int = MAX_SEARCH_LINKS_PER_QUERY,
     enable_recovery: bool = False,
+    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
 ) -> dict[str, Any]:
     from .directory_fetch import directory_fetch_concurrency_defaults, fetch_directory_pages
     from .io_runtime import collapse_competing_candidates
@@ -887,6 +900,7 @@ def _scan_web_search_candidates(
                 per_host_concurrency=int(fetch_defaults["perHost"]),
                 progress_label="Web search page recovery",
                 timing_key="webRecoveryFetchMs",
+                recovery_url_limit=recovery_url_limit,
             )
         )
         provider_candidates.extend(recovered_providers)
@@ -1217,6 +1231,7 @@ def run_web_search_directory_audit(
         configured_max_queries = max(0, int(max_queries))
     max_links_per_query = _web_search_max_links_per_query(config)
     recovery_enabled = _web_search_recovery_enabled(config)
+    recovery_url_limit = _web_search_recovery_url_limit(config)
 
     def _scan(scan_timeout_s: int) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
@@ -1227,6 +1242,7 @@ def run_web_search_directory_audit(
                     studio_seeds=studio_seeds,
                     fetcher=fetcher,
                     enable_recovery=recovery_enabled,
+                    recovery_url_limit=recovery_url_limit,
                 )
             )
         if include_web_search:
@@ -1238,6 +1254,7 @@ def run_web_search_directory_audit(
                     max_queries=configured_max_queries,
                     max_links_per_query=max_links_per_query,
                     enable_recovery=recovery_enabled,
+                    recovery_url_limit=recovery_url_limit,
                 )
             )
         merged = _merge_web_scan_results(results)
@@ -1277,6 +1294,7 @@ def run_web_search_directory_audit(
             max_queries=configured_max_queries,
             max_links_per_query=max_links_per_query,
             recovery_enabled=recovery_enabled,
+            recovery_url_limit=recovery_url_limit,
         ),
         timeout_s=timeout_s,
         scan=_scan,

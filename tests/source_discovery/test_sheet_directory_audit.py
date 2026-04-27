@@ -33,7 +33,11 @@ def _fetch_from(payloads: dict[str, str]):
     return fake_fetch
 
 
-def _audit_config(audit_path: str, *, recovery_enabled: bool | None = None) -> dict[str, object]:
+def _audit_config(
+    audit_path: str,
+    *,
+    recovery_enabled: bool | None = None,
+) -> dict[str, object]:
     sheet_config: dict[str, object] = {
         "activeAuditEnabled": True,
         "activeAuditPath": audit_path,

@@ -228,6 +228,7 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "enabled": True,
         "activeAuditEnabled": True,
         "activeAuditRecoveryEnabled": True,
+        "activeAuditRecoveryUrlLimit": 6,
         "teamsUrl": "https://gameprog.it/teams.json",
         "websiteOnlyFallback": True,
         "maxStudios": 200,
@@ -238,6 +239,7 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "enabled": False,
         "activeAuditEnabled": True,
         "activeAuditRecoveryEnabled": True,
+        "activeAuditRecoveryUrlLimit": 6,
         "baseUrl": "https://www.gamesmap.de",
         "indexUrls": [
             "https://www.gamesmap.de/en",
@@ -272,12 +274,14 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     "sheetDirectory": {
         "activeAuditEnabled": True,
         "activeAuditRecoveryEnabled": True,
+        "activeAuditRecoveryUrlLimit": 6,
         "activeAuditPath": "data/sheet-directory-discovery-audit.json",
         "activeAuditTtlMinutes": 360,
     },
     "webSearch": {
         "activeAuditEnabled": True,
         "activeAuditRecoveryEnabled": True,
+        "activeAuditRecoveryUrlLimit": 6,
         "activeAuditPath": "data/web-search-discovery-audit.json",
         "activeAuditTtlMinutes": 360,
         "maxQueries": 24,

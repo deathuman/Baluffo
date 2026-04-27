@@ -14,6 +14,7 @@ from src.source_discovery.directory_page_recovery import (
     plan_recovery_fetch_job_waves,
     plan_recovery_urls,
     recovery_cache_result,
+    resolve_recovery_url_limit,
     run_directory_page_recovery,
 )
 from src.source_discovery.provider_inference_filters import split_bad_provider_inferences
@@ -368,6 +369,13 @@ def test_default_recovery_summary_preserves_report_keys() -> None:
         "recoveryFailures": 0,
         "browserRecoveryCandidates": 0,
     }
+
+
+def test_resolve_recovery_url_limit_defaults_and_rejects_invalid_values() -> None:
+    assert resolve_recovery_url_limit({}) == 6
+    assert resolve_recovery_url_limit({"activeAuditRecoveryUrlLimit": 4}) == 4
+    assert resolve_recovery_url_limit({"activeAuditRecoveryUrlLimit": 0}) == 6
+    assert resolve_recovery_url_limit({"activeAuditRecoveryUrlLimit": "bad"}) == 6
 
 
 def test_apply_recovery_to_scan_result_suppresses_recovered_fallbacks() -> None:

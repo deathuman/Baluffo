@@ -107,6 +107,19 @@ def default_recovery_summary() -> dict[str, int]:
     }
 
 
+def resolve_recovery_url_limit(
+    config: dict[str, Any] | None,
+    *,
+    default: int = DEFAULT_RECOVERY_URL_LIMIT,
+) -> int:
+    source = config if isinstance(config, dict) else {}
+    try:
+        value = int(source.get("activeAuditRecoveryUrlLimit", default))
+    except (TypeError, ValueError):
+        return int(default)
+    return value if value > 0 else int(default)
+
+
 def looks_like_js_shell(html: str) -> bool:
     return page_looks_like_js_shell(html, short_html_threshold=700)
 

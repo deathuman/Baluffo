@@ -6,6 +6,7 @@ from typing import Any
 from . import audit_ledger
 from .directory_fetch_jobs import build_directory_fetch_jobs
 from .directory_page_recovery import (
+    DEFAULT_RECOVERY_URL_LIMIT,
     apply_recovery_to_scan_result,
     default_recovery_summary,
     run_directory_page_recovery,
@@ -261,6 +262,7 @@ def run_directory_website_scan(
     initial_static_candidates: list[dict[str, Any]] | None = None,
     initial_failures: list[dict[str, Any]] | None = None,
     write_cache: bool = True,
+    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
     recovery_runner: Any = run_directory_page_recovery,
 ) -> dict[str, Any]:
     provider_candidates = list(initial_provider_candidates or [])
@@ -313,6 +315,7 @@ def run_directory_website_scan(
         per_host_concurrency=per_host_concurrency,
         analyze_result=recovery_analyze_result,
         progress_label=recovery_progress_label,
+        url_limit=recovery_url_limit,
         recovery_runner=recovery_runner,
     )
     recovery_summary = dict(recovery.summary)
@@ -367,3 +370,63 @@ def run_directory_website_scan(
         "batchTiming": batch_timing,
         "writeCache": bool(write_cache),
     }
+
+
+def run_directory_adapter_website_scan(
+    timeout_s: int,
+    *,
+    cfg: dict[str, Any],
+    entries: list[dict[str, Any]],
+    url_field: str,
+    adapter: str,
+    failure_stage: str,
+    fetcher: Any,
+    fetch_pages: Any,
+    resolve_fetch_limits: Any,
+    progress_label: str,
+    analyze_result: Any,
+    enable_recovery: bool,
+    recovery_analyze_result: Any,
+    recovery_progress_label: str,
+    unique_sources_fn: Any,
+    batch_timing: dict[str, Any],
+    summary: dict[str, Any],
+    progress_cursor: int,
+    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
+    required_fields: tuple[str, ...] = (),
+    initial_provider_candidates: list[dict[str, Any]] | None = None,
+    initial_static_candidates: list[dict[str, Any]] | None = None,
+    initial_failures: list[dict[str, Any]] | None = None,
+    write_cache: bool = True,
+    recovery_runner: Any = run_directory_page_recovery,
+) -> dict[str, Any]:
+    fetch_concurrency, per_host_concurrency = resolve_fetch_limits(cfg)
+    batch_timing["fetchConcurrency"] = fetch_concurrency
+    batch_timing["perHostConcurrency"] = per_host_concurrency
+    return run_directory_website_scan(
+        timeout_s,
+        entries=entries,
+        url_field=url_field,
+        adapter=adapter,
+        failure_stage=failure_stage,
+        fetcher=fetcher,
+        fetch_pages=fetch_pages,
+        fetch_concurrency=fetch_concurrency,
+        per_host_concurrency=per_host_concurrency,
+        progress_label=progress_label,
+        analyze_result=analyze_result,
+        enable_recovery=enable_recovery,
+        recovery_analyze_result=recovery_analyze_result,
+        recovery_progress_label=recovery_progress_label,
+        unique_sources_fn=unique_sources_fn,
+        batch_timing=batch_timing,
+        summary=summary,
+        progress_cursor=progress_cursor,
+        recovery_url_limit=recovery_url_limit,
+        required_fields=required_fields,
+        initial_provider_candidates=initial_provider_candidates,
+        initial_static_candidates=initial_static_candidates,
+        initial_failures=initial_failures,
+        write_cache=write_cache,
+        recovery_runner=recovery_runner,
+    )

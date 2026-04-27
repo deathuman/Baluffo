@@ -8,6 +8,7 @@ from src.source_discovery.directory_adapter_templates import (
     build_known_directory_entry_candidate,
     empty_directory_scan_result,
     empty_scan_result_payload,
+    run_directory_adapter_website_scan,
     run_directory_website_scan,
 )
 
@@ -303,8 +304,9 @@ def test_run_directory_website_scan_runs_recovery_and_skips_recovered_fallback()
             "badProviderInferences": 1,
         }
 
-    def recovery_runner(_timeout_s, requests, **_kwargs):
+    def recovery_runner(_timeout_s, requests, **kwargs):
         recovery_calls.append(list(requests))
+        assert kwargs["url_limit"] == 6
         return SimpleNamespace(
             provider_candidates=[],
             static_candidates=[{"adapter": "static", "listing_url": "recovered"}],
@@ -354,3 +356,44 @@ def test_run_directory_website_scan_runs_recovery_and_skips_recovered_fallback()
     assert row["summary"]["browserRecoveryCandidates"] == 1
     assert row["summary"]["badProviderInferences"] == 1
     assert batch_timing["recoveryFetchMs"] == 4
+
+
+def test_run_directory_adapter_website_scan_resolves_common_setup() -> None:
+    captured: dict[str, object] = {}
+
+    def fake_fetch_pages(_timeout_s, jobs, **kwargs):
+        captured["jobs"] = list(jobs)
+        captured["total"] = kwargs["total_concurrency"]
+        captured["per_host"] = kwargs["per_host_concurrency"]
+        return []
+
+    row = run_directory_adapter_website_scan(
+        5,
+        cfg={"fetchConcurrency": 7, "perHostConcurrency": 2},
+        entries=[],
+        url_field="url",
+        adapter="gameprog",
+        failure_stage="website_fetch",
+        fetcher=lambda *_args: "",
+        fetch_pages=fake_fetch_pages,
+        resolve_fetch_limits=lambda cfg: (
+            int(cfg["fetchConcurrency"]),
+            int(cfg["perHostConcurrency"]),
+        ),
+        progress_label="Gameprog website fetch",
+        analyze_result=lambda _result: {},
+        enable_recovery=True,
+        recovery_analyze_result=lambda _result, _request: ([], []),
+        recovery_progress_label="Gameprog",
+        unique_sources_fn=lambda rows: rows,
+        batch_timing={},
+        summary={"eligibleRows": 0},
+        progress_cursor=0,
+        recovery_url_limit=3,
+    )
+
+    assert captured == {"jobs": [], "total": 7, "per_host": 2}
+    assert row["summary"]["eligibleRows"] == 0
+    assert row["summary"]["websiteFetchJobs"] == 0
+    assert row["summary"]["recoveryFetchAttempts"] == 0
+    assert row["progress"]["cursor"] == 0

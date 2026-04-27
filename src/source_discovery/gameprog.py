@@ -21,12 +21,17 @@ from .directory_adapter_templates import (
     apply_directory_provenance,
     build_directory_static_candidate,
     empty_directory_scan_result,
-    run_directory_website_scan,
+    run_directory_adapter_website_scan,
 )
 from .directory_audit import discover_directory_adapter_candidates, run_directory_audit
 from .directory_cache import load_directory_cache, write_directory_cache
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
-from .directory_page_recovery import RECOVERY_LOGIC_VERSION, DirectoryRecoveryRequest
+from .directory_page_recovery import (
+    DEFAULT_RECOVERY_URL_LIMIT,
+    RECOVERY_LOGIC_VERSION,
+    DirectoryRecoveryRequest,
+    resolve_recovery_url_limit,
+)
 from .page_outcomes import (
     FetchedPageContext,
     PageOutcome,
@@ -117,6 +122,7 @@ def _gameprog_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
         "websiteOnlyFallback": bool(cfg.get("websiteOnlyFallback", True)),
         "maxStudios": max(0, int(cfg.get("maxStudios") or 0)),
         "activeAuditRecoveryEnabled": bool(cfg.get("activeAuditRecoveryEnabled", True)),
+        "activeAuditRecoveryUrlLimit": resolve_recovery_url_limit(cfg),
         "recoveryLogicVersion": RECOVERY_LOGIC_VERSION,
     }
 
@@ -471,18 +477,16 @@ def _gameprog_scan(
     fetcher: Any,
     emit_log: Any,
     enable_recovery: bool = False,
+    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
 ) -> dict[str, Any]:
     teams_url = str(cfg.get("teamsUrl") or GAMEPROG_TEAMS_URL).strip()
     website_only_fallback = bool(cfg.get("websiteOnlyFallback", True))
     max_studios = max(0, int(cfg.get("maxStudios") or 0))
-    fetch_concurrency, per_host_concurrency = resolve_directory_fetch_limits(cfg)
 
     failures: list[dict[str, Any]] = []
     batch_timing: dict[str, Any] = {
         "teamsUrl": teams_url,
         "maxStudios": max_studios,
-        "fetchConcurrency": fetch_concurrency,
-        "perHostConcurrency": per_host_concurrency,
     }
 
     teams_json = ""
@@ -521,16 +525,16 @@ def _gameprog_scan(
         entries = entries[:max_studios]
 
     emit_log(f"Gameprog directory entries: {len(entries)}")
-    return run_directory_website_scan(
+    return run_directory_adapter_website_scan(
         timeout_s,
+        cfg=cfg,
         entries=entries,
         url_field="url",
         adapter="gameprog",
         failure_stage="website_fetch",
         fetcher=fetcher,
         fetch_pages=fetch_directory_pages,
-        fetch_concurrency=fetch_concurrency,
-        per_host_concurrency=per_host_concurrency,
+        resolve_fetch_limits=resolve_directory_fetch_limits,
         progress_label="Gameprog website fetch",
         required_fields=("studio",),
         analyze_result=lambda result: _gameprog_fetch_result_candidates(
@@ -549,6 +553,7 @@ def _gameprog_scan(
             "eligibleRows": len(entries),
         },
         progress_cursor=len(entries),
+        recovery_url_limit=recovery_url_limit,
         initial_failures=failures,
     )
 
@@ -564,6 +569,7 @@ def run_gameprog_directory_audit(
     fetcher = fetcher or fetch_text
     cfg = _gameprog_config_section(config)
     fetch_concurrency, per_host_concurrency = resolve_directory_fetch_limits(cfg)
+    recovery_url_limit = resolve_recovery_url_limit(cfg)
     return run_directory_audit(
         adapter="gameprog",
         schema_version=GAMEPROG_AUDIT_SCHEMA_VERSION,
@@ -577,6 +583,7 @@ def run_gameprog_directory_audit(
             fetcher=fetcher,
             emit_log=emit_log,
             enable_recovery=bool(cfg.get("activeAuditRecoveryEnabled", True)),
+            recovery_url_limit=recovery_url_limit,
         ),
         runtime={
             "fetchConcurrency": fetch_concurrency,
