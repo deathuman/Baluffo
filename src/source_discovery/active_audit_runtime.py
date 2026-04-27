@@ -105,10 +105,57 @@ class ActiveAuditBatchResult:
 
 
 @dataclass
+class ActiveAuditBatchStrategy:
+    prepare_rows: Callable[[list[dict[str, Any]]], ActiveAuditPreparedRows]
+    fetch_homepages: Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
+    analyze_homepages: Callable[[list[dict[str, Any]]], ActiveHomepageBatchResult]
+    fetch_recovery: Callable[[list[dict[str, Any]], str], ActiveAuditRecoveryFetchResult]
+    apply_recovery: Callable[
+        [list[dict[str, Any]], dict[str, Any] | None, bool],
+        ActiveAuditRecoveryApplicationResult,
+    ]
+    recovery_homepage_key: Callable[[dict[str, Any]], str]
+    merge_candidates: Callable[
+        [
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+        ],
+        ActiveAuditCandidateMergeResult,
+    ]
+    merge_artifact_updates: Callable[
+        [
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+        ],
+        None,
+    ]
+    update_summary: Callable[[dict[str, Any]], None]
+    probe_candidates: Callable[[list[dict[str, Any]]], Any]
+    apply_probe_results: Callable[[Any], None]
+    row_identity: Callable[[dict[str, Any]], str]
+    append_timing: Callable[[dict[str, Any]], None]
+
+
+@dataclass
 class ActiveAuditLoopResult:
     batches_run: int
     completed_identities: set[str]
     complete: bool
+
+
+@dataclass
+class ActiveAuditLoopStrategy:
+    row_identity: Callable[[dict[str, Any]], str]
+    emit_batch_log: Callable[[int, int, int], None]
+    run_batch: Callable[[list[dict[str, Any]], int, int], None]
+    before_write: Callable[[], None]
+    write_artifact: Callable[[bool], None]
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -635,41 +682,8 @@ def run_active_audit_batch(
     batch_rows: list[dict[str, Any]],
     cursor: int,
     batch_number: int,
-    prepare_rows: Callable[[list[dict[str, Any]]], ActiveAuditPreparedRows],
-    fetch_homepages: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],
-    analyze_homepages: Callable[[list[dict[str, Any]]], ActiveHomepageBatchResult],
-    fetch_recovery: Callable[[list[dict[str, Any]], str], ActiveAuditRecoveryFetchResult],
-    apply_recovery: Callable[
-        [list[dict[str, Any]], dict[str, Any] | None, bool],
-        ActiveAuditRecoveryApplicationResult,
-    ],
-    recovery_homepage_key: Callable[[dict[str, Any]], str],
-    merge_candidates: Callable[
-        [
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-        ],
-        ActiveAuditCandidateMergeResult,
-    ],
-    merge_artifact_updates: Callable[
-        [
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-            list[dict[str, Any]],
-        ],
-        None,
-    ],
-    update_summary: Callable[[dict[str, Any]], None],
-    probe_candidates: Callable[[list[dict[str, Any]]], Any],
-    apply_probe_results: Callable[[Any], None],
-    row_identity: Callable[[dict[str, Any]], str],
+    strategy: ActiveAuditBatchStrategy,
     completed_identities: set[str],
-    append_timing: Callable[[dict[str, Any]], None],
 ) -> ActiveAuditBatchResult:
     batch_started = time.perf_counter()
     batch_timing: dict[str, Any] = {
@@ -679,43 +693,43 @@ def run_active_audit_batch(
     }
 
     direct_started = time.perf_counter()
-    prepared = prepare_rows(batch_rows)
+    prepared = strategy.prepare_rows(batch_rows)
     batch_timing["directInferenceMs"] = _duration_ms(direct_started)
 
     homepage_fetch_started = time.perf_counter()
-    homepage_fetch_results = fetch_homepages(prepared.homepage_rows)
+    homepage_fetch_results = strategy.fetch_homepages(prepared.homepage_rows)
     batch_timing["homepageFetchMs"] = _duration_ms(homepage_fetch_started)
 
     homepage_analysis_started = time.perf_counter()
-    homepage_result = analyze_homepages(homepage_fetch_results)
+    homepage_result = strategy.analyze_homepages(homepage_fetch_results)
     batch_timing["homepageAnalysisMs"] = _duration_ms(homepage_analysis_started)
 
     recovery_wave1_fetch_started = time.perf_counter()
-    wave1_fetch = fetch_recovery(
+    wave1_fetch = strategy.fetch_recovery(
         homepage_result.primary_recovery_jobs,
         "GameDevMap active dry run careers recovery fetch wave 1",
     )
     batch_timing["recoveryWave1FetchMs"] = _duration_ms(recovery_wave1_fetch_started)
 
     recovery_wave1_analysis_started = time.perf_counter()
-    wave1_apply = apply_recovery(wave1_fetch.results, None, False)
+    wave1_apply = strategy.apply_recovery(wave1_fetch.results, None, False)
     batch_timing["recoveryWave1AnalysisMs"] = _duration_ms(recovery_wave1_analysis_started)
 
     secondary_jobs_to_fetch = [
         job
         for job in homepage_result.secondary_recovery_jobs
-        if recovery_homepage_key(job) not in wave1_apply.recovered_homepages
+        if strategy.recovery_homepage_key(job) not in wave1_apply.recovered_homepages
     ]
 
     recovery_wave2_fetch_started = time.perf_counter()
-    wave2_fetch = fetch_recovery(
+    wave2_fetch = strategy.fetch_recovery(
         secondary_jobs_to_fetch,
         "GameDevMap active dry run careers recovery fetch wave 2",
     )
     batch_timing["recoveryWave2FetchMs"] = _duration_ms(recovery_wave2_fetch_started)
 
     recovery_wave2_analysis_started = time.perf_counter()
-    wave2_apply = apply_recovery(wave2_fetch.results, wave1_apply.grouped_state, True)
+    wave2_apply = strategy.apply_recovery(wave2_fetch.results, wave1_apply.grouped_state, True)
     batch_timing["recoveryWave2AnalysisMs"] = _duration_ms(recovery_wave2_analysis_started)
 
     recovery_provider_rows = [
@@ -741,7 +755,7 @@ def run_active_audit_batch(
     batch_timing["recoveryRecoveredHomepages"] = len(recovered_homepages)
 
     merge_started = time.perf_counter()
-    merged = merge_candidates(
+    merged = strategy.merge_candidates(
         prepared.direct_provider_candidates,
         homepage_result.provider_candidates,
         homepage_result.static_candidates,
@@ -753,7 +767,7 @@ def run_active_audit_batch(
         for result in homepage_fetch_results
         if isinstance(result.get("failure"), dict)
     ]
-    merge_artifact_updates(
+    strategy.merge_artifact_updates(
         merged.candidates,
         homepage_result.browser_recovery_candidates,
         homepage_failures,
@@ -765,7 +779,7 @@ def run_active_audit_batch(
             *merged.rejected_rows,
         ],
     )
-    update_summary(
+    strategy.update_summary(
         {
             "homepageFetchAttempts": len(prepared.homepage_rows),
             "homepagesFetched": int(homepage_result.homepages_fetched),
@@ -780,17 +794,19 @@ def run_active_audit_batch(
     batch_timing["mergeMs"] = _duration_ms(merge_started)
 
     probe_started = time.perf_counter()
-    probe_results = probe_candidates(merged.candidates)
-    apply_probe_results(probe_results)
+    probe_results = strategy.probe_candidates(merged.candidates)
+    strategy.apply_probe_results(probe_results)
     batch_timing["probeMs"] = _duration_ms(probe_started)
 
-    completed_identities.update(row_identity(row) for row in batch_rows if row_identity(row))
+    completed_identities.update(
+        strategy.row_identity(row) for row in batch_rows if strategy.row_identity(row)
+    )
     progress = _as_dict(artifact.get("progress"))
     progress["batchesCompleted"] = _safe_int(progress.get("batchesCompleted")) + 1
     artifact["progress"] = progress
     batch_timing["totalMs"] = _duration_ms(batch_started)
     batch_timing["artifactWriteMs"] = 0
-    append_timing(batch_timing)
+    strategy.append_timing(batch_timing)
 
     return ActiveAuditBatchResult(
         timing=batch_timing,
@@ -807,11 +823,7 @@ def run_active_audit_loop(
     completed_identities: set[str],
     batch_size: int,
     max_batches: int,
-    row_identity: Callable[[dict[str, Any]], str],
-    emit_batch_log: Callable[[int, int, int], None],
-    run_batch: Callable[[list[dict[str, Any]], int, int], None],
-    before_write: Callable[[], None],
-    write_artifact: Callable[[bool], None],
+    strategy: ActiveAuditLoopStrategy,
 ) -> ActiveAuditLoopResult:
     batches_run = 0
     effective_batch_size = max(1, int(batch_size or 1))
@@ -822,15 +834,15 @@ def run_active_audit_loop(
             source_rows,
             completed_identities,
             effective_batch_size,
-            row_identity,
+            strategy.row_identity,
         )
         progress = _as_dict(artifact.get("progress"))
         progress["cursorPosition"] = int(cursor)
         artifact["progress"] = progress
 
         if not batch_rows:
-            before_write()
-            write_artifact(True)
+            strategy.before_write()
+            strategy.write_artifact(True)
             return ActiveAuditLoopResult(
                 batches_run=batches_run,
                 completed_identities=set(completed_identities),
@@ -838,8 +850,8 @@ def run_active_audit_loop(
             )
 
         if effective_max_batches and batches_run >= effective_max_batches:
-            before_write()
-            write_artifact(False)
+            strategy.before_write()
+            strategy.write_artifact(False)
             return ActiveAuditLoopResult(
                 batches_run=batches_run,
                 completed_identities=set(completed_identities),
@@ -847,13 +859,13 @@ def run_active_audit_loop(
             )
 
         batch_number = batches_run + 1
-        emit_batch_log(batch_number, len(batch_rows), cursor)
-        run_batch(batch_rows, cursor, batch_number)
+        strategy.emit_batch_log(batch_number, len(batch_rows), cursor)
+        strategy.run_batch(batch_rows, cursor, batch_number)
         batches_run += 1
 
-        before_write()
+        strategy.before_write()
         complete = len(completed_identities) >= len(source_rows)
-        write_artifact(complete)
+        strategy.write_artifact(complete)
         if effective_max_batches and batches_run >= effective_max_batches:
             return ActiveAuditLoopResult(
                 batches_run=batches_run,

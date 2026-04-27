@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from src.source_discovery.active_audit_runtime import (
+    ActiveAuditBatchStrategy,
     ActiveAuditCandidateMergeResult,
+    ActiveAuditLoopStrategy,
     ActiveAuditPreparedRows,
     ActiveAuditRecoveryApplicationResult,
     ActiveAuditRecoveryFetchResult,
@@ -26,68 +28,79 @@ def test_active_audit_batch_sequences_recovery_probe_and_progress() -> None:
         batch_rows=[{"url": "https://one.example"}, {"url": "https://two.example"}],
         cursor=2,
         batch_number=1,
-        prepare_rows=lambda rows: ActiveAuditPreparedRows(
-            direct_provider_candidates=[{"adapter": "greenhouse", "url": "direct"}],
-            homepage_rows=rows,
-            rejected_rows=[{"reason": "missing"}],
-        ),
-        fetch_homepages=lambda rows: [
-            {"ok": True, "url": row["url"], "payload": row, "text": "<html></html>"} for row in rows
-        ],
-        analyze_homepages=lambda results: ActiveHomepageBatchResult(
-            provider_candidates=[{"adapter": "lever", "url": "homepage-provider"}],
-            static_candidates=[{"adapter": "static", "url": "homepage-static"}],
-            primary_recovery_jobs=[{"url": "https://one.example/careers"}],
-            secondary_recovery_jobs=[
-                {"url": "https://one.example/jobs", "payload": {"homepageUrl": "h1"}},
-                {"url": "https://two.example/jobs", "payload": {"homepageUrl": "h2"}},
+        strategy=ActiveAuditBatchStrategy(
+            prepare_rows=lambda rows: ActiveAuditPreparedRows(
+                direct_provider_candidates=[{"adapter": "greenhouse", "url": "direct"}],
+                homepage_rows=rows,
+                rejected_rows=[{"reason": "missing"}],
+            ),
+            fetch_homepages=lambda rows: [
+                {"ok": True, "url": row["url"], "payload": row, "text": "<html></html>"}
+                for row in rows
             ],
-            browser_recovery_candidates=[{"url": "https://shell.example"}],
-            homepages_fetched=2,
+            analyze_homepages=lambda results: ActiveHomepageBatchResult(
+                provider_candidates=[{"adapter": "lever", "url": "homepage-provider"}],
+                static_candidates=[{"adapter": "static", "url": "homepage-static"}],
+                primary_recovery_jobs=[{"url": "https://one.example/careers"}],
+                secondary_recovery_jobs=[
+                    {"url": "https://one.example/jobs", "payload": {"homepageUrl": "h1"}},
+                    {"url": "https://two.example/jobs", "payload": {"homepageUrl": "h2"}},
+                ],
+                browser_recovery_candidates=[{"url": "https://shell.example"}],
+                homepages_fetched=2,
+            ),
+            fetch_recovery=lambda jobs, label: (
+                fetch_labels.append(label)
+                or ActiveAuditRecoveryFetchResult(
+                    results=[
+                        {"url": job["url"], "payload": job.get("payload", {})} for job in jobs
+                    ],
+                    unique_jobs=len(jobs),
+                    network_jobs=len(jobs),
+                )
+            ),
+            apply_recovery=lambda results, grouped, finalize: ActiveAuditRecoveryApplicationResult(
+                provider_candidates=[] if finalize else [{"adapter": "ashby", "url": "wave1"}],
+                static_candidates=[{"adapter": "static", "url": "wave2"}] if finalize else [],
+                rejected_rows=[{"reason": "recovery_miss"}] if finalize else [],
+                failures=[{"stage": "recovery_fetch"}] if finalize else [],
+                pages_fetched=len(results),
+                grouped_state={"wave1": True},
+                recovered_homepages={"h1"} if not finalize else {"h2"},
+            ),
+            recovery_homepage_key=lambda job: str(job.get("payload", {}).get("homepageUrl") or ""),
+            merge_candidates=lambda direct, provider, static, recovery_provider, recovery_static: (
+                ActiveAuditCandidateMergeResult(
+                    candidates=[
+                        *direct,
+                        *provider,
+                        *static,
+                        *recovery_provider,
+                        *recovery_static,
+                    ],
+                    rejected_rows=[{"reason": "bad_provider"}],
+                )
+            ),
+            merge_artifact_updates=lambda candidates, browser, homepage_failures, recovery_failures, rejected: (
+                merged_updates.append(
+                    {
+                        "candidates": candidates,
+                        "browser": browser,
+                        "homepageFailures": homepage_failures,
+                        "recoveryFailures": recovery_failures,
+                        "rejected": rejected,
+                    }
+                )
+            ),
+            update_summary=summary_updates.append,
+            probe_candidates=lambda candidates: (
+                probed_candidates.append(candidates) or [{"candidate": candidates[0]}]
+            ),
+            apply_probe_results=applied_probe_results.append,
+            row_identity=lambda row: str(row.get("url") or ""),
+            append_timing=appended_timing.append,
         ),
-        fetch_recovery=lambda jobs, label: (
-            fetch_labels.append(label)
-            or ActiveAuditRecoveryFetchResult(
-                results=[{"url": job["url"], "payload": job.get("payload", {})} for job in jobs],
-                unique_jobs=len(jobs),
-                network_jobs=len(jobs),
-            )
-        ),
-        apply_recovery=lambda results, grouped, finalize: ActiveAuditRecoveryApplicationResult(
-            provider_candidates=[] if finalize else [{"adapter": "ashby", "url": "wave1"}],
-            static_candidates=[{"adapter": "static", "url": "wave2"}] if finalize else [],
-            rejected_rows=[{"reason": "recovery_miss"}] if finalize else [],
-            failures=[{"stage": "recovery_fetch"}] if finalize else [],
-            pages_fetched=len(results),
-            grouped_state={"wave1": True},
-            recovered_homepages={"h1"} if not finalize else {"h2"},
-        ),
-        recovery_homepage_key=lambda job: str(job.get("payload", {}).get("homepageUrl") or ""),
-        merge_candidates=lambda direct, provider, static, recovery_provider, recovery_static: (
-            ActiveAuditCandidateMergeResult(
-                candidates=[*direct, *provider, *static, *recovery_provider, *recovery_static],
-                rejected_rows=[{"reason": "bad_provider"}],
-            )
-        ),
-        merge_artifact_updates=lambda candidates, browser, homepage_failures, recovery_failures, rejected: (
-            merged_updates.append(
-                {
-                    "candidates": candidates,
-                    "browser": browser,
-                    "homepageFailures": homepage_failures,
-                    "recoveryFailures": recovery_failures,
-                    "rejected": rejected,
-                }
-            )
-        ),
-        update_summary=summary_updates.append,
-        probe_candidates=lambda candidates: (
-            probed_candidates.append(candidates) or [{"candidate": candidates[0]}]
-        ),
-        apply_probe_results=applied_probe_results.append,
-        row_identity=lambda row: str(row.get("url") or ""),
         completed_identities=completed,
-        append_timing=appended_timing.append,
     )
 
     assert fetch_labels == [
@@ -130,11 +143,13 @@ def test_active_audit_loop_writes_complete_when_no_rows_remain() -> None:
         completed_identities={"https://one.example"},
         batch_size=10,
         max_batches=0,
-        row_identity=lambda row: str(row.get("url") or ""),
-        emit_batch_log=lambda batch, rows, cursor: order.append("emit"),
-        run_batch=lambda rows, cursor, batch: order.append("batch"),
-        before_write=lambda: order.append("before_write"),
-        write_artifact=lambda complete: order.append(f"write:{complete}"),
+        strategy=ActiveAuditLoopStrategy(
+            row_identity=lambda row: str(row.get("url") or ""),
+            emit_batch_log=lambda batch, rows, cursor: order.append("emit"),
+            run_batch=lambda rows, cursor, batch: order.append("batch"),
+            before_write=lambda: order.append("before_write"),
+            write_artifact=lambda complete: order.append(f"write:{complete}"),
+        ),
     )
 
     assert result.complete is True
@@ -164,11 +179,15 @@ def test_active_audit_loop_stops_after_max_batches_and_writes_incomplete() -> No
         completed_identities=completed,
         batch_size=2,
         max_batches=1,
-        row_identity=lambda row: str(row.get("url") or ""),
-        emit_batch_log=lambda batch, rows, cursor: order.append(f"emit:{batch}:{rows}:{cursor}"),
-        run_batch=_run_batch,
-        before_write=lambda: order.append("before_write"),
-        write_artifact=lambda complete: order.append(f"write:{complete}"),
+        strategy=ActiveAuditLoopStrategy(
+            row_identity=lambda row: str(row.get("url") or ""),
+            emit_batch_log=lambda batch, rows, cursor: order.append(
+                f"emit:{batch}:{rows}:{cursor}"
+            ),
+            run_batch=_run_batch,
+            before_write=lambda: order.append("before_write"),
+            write_artifact=lambda complete: order.append(f"write:{complete}"),
+        ),
     )
 
     assert result.complete is False

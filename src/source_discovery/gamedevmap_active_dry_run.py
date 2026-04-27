@@ -1695,6 +1695,112 @@ def _update_gamedevmap_active_batch_summary(
     artifact["summary"] = summary
 
 
+def _build_gamedevmap_active_batch_strategy(
+    *,
+    artifact: dict[str, Any],
+    index_url: str,
+    timeout_s: int,
+    fetcher,
+    homepage_fetch_concurrency: int,
+    per_host_concurrency: int,
+    recovery_timeout_s: int,
+    recovery_fetch_concurrency: int,
+    recovery_per_host_concurrency: int,
+    recovery_cache: dict[str, dict[str, Any]],
+) -> active_audit_runtime.ActiveAuditBatchStrategy:
+    return active_audit_runtime.ActiveAuditBatchStrategy(
+        prepare_rows=lambda rows: _prepare_gamedevmap_active_batch_rows(
+            rows,
+            index_url=index_url,
+        ),
+        fetch_homepages=lambda rows: _fetch_gamedevmap_active_homepages(
+            rows,
+            timeout_s=timeout_s,
+            fetcher=fetcher,
+            total_concurrency=homepage_fetch_concurrency,
+            per_host_concurrency=per_host_concurrency,
+        ),
+        analyze_homepages=lambda results: _analyze_gamedevmap_active_homepages(
+            results,
+            index_url=index_url,
+        ),
+        fetch_recovery=lambda jobs, label: _fetch_gamedevmap_active_recovery(
+            jobs,
+            label,
+            timeout_s=recovery_timeout_s,
+            fetcher=fetcher,
+            total_concurrency=recovery_fetch_concurrency,
+            per_host_concurrency=recovery_per_host_concurrency,
+            recovery_cache=recovery_cache,
+        ),
+        apply_recovery=lambda results, grouped, finalize: _apply_gamedevmap_active_recovery(
+            results,
+            grouped,
+            finalize,
+            index_url=index_url,
+        ),
+        recovery_homepage_key=lambda job: str(
+            _as_dict(job.get("payload")).get("homepageUrl") or ""
+        ).strip(),
+        merge_candidates=_merge_gamedevmap_active_batch_candidates,
+        merge_artifact_updates=lambda *args: _merge_gamedevmap_active_batch_artifact_updates(
+            artifact, *args
+        ),
+        update_summary=lambda batch_counts: _update_gamedevmap_active_batch_summary(
+            artifact, batch_counts
+        ),
+        probe_candidates=lambda all_candidates: asyncio.run(
+            _probe_candidates_async(all_candidates, timeout_s=timeout_s, fetcher=fetcher)
+        ),
+        apply_probe_results=lambda probe_results: _apply_probe_results(artifact, probe_results),
+        row_identity=_row_url,
+        append_timing=lambda batch_timing: _append_batch_timing(artifact, batch_timing),
+    )
+
+
+def _build_gamedevmap_active_loop_strategy(
+    *,
+    artifact: dict[str, Any],
+    output_path: Path,
+    parsed_rows: list[dict[str, Any]],
+    representative_rows: list[dict[str, Any]],
+    completed_urls: set[str],
+    compare_artifact_path: Path | str | None,
+    batch_strategy: active_audit_runtime.ActiveAuditBatchStrategy,
+) -> active_audit_runtime.ActiveAuditLoopStrategy:
+    def _run_batch(batch_rows: list[dict[str, Any]], cursor: int, batch_number: int) -> None:
+        progress = _as_dict(artifact.get("progress"))
+        active_audit_runtime.run_active_audit_batch(
+            artifact=artifact,
+            batch_rows=batch_rows,
+            cursor=cursor,
+            batch_number=_safe_int(progress.get("batchesCompleted")) + 1,
+            strategy=batch_strategy,
+            completed_identities=completed_urls,
+        )
+
+    return active_audit_runtime.ActiveAuditLoopStrategy(
+        row_identity=_row_url,
+        emit_batch_log=lambda batch_number, row_count, cursor: emit_log(
+            "GameDevMap active-source dry run: "
+            f"batch={batch_number}, rows={row_count}, cursor={cursor}."
+        ),
+        run_batch=_run_batch,
+        before_write=lambda: apply_gamedevmap_lost_recovery_audit(
+            artifact,
+            compare_artifact_path=compare_artifact_path,
+        ),
+        write_artifact=lambda complete: _write_artifact(
+            artifact,
+            output_path,
+            parsed_rows=parsed_rows,
+            representative_rows=representative_rows,
+            completed_urls=completed_urls,
+            complete=complete,
+        ),
+    )
+
+
 def run_gamedevmap_active_source_dry_run(
     *,
     timeout_s: int,
@@ -1791,78 +1897,27 @@ def run_gamedevmap_active_source_dry_run(
         artifact["progress"] = progress
 
     recovery_cache: dict[str, dict[str, Any]] = {}
-
-    def _run_batch(batch_rows: list[dict[str, Any]], cursor: int, batch_number: int) -> None:
-        progress = _as_dict(artifact.get("progress"))
-        active_audit_runtime.run_active_audit_batch(
-            artifact=artifact,
-            batch_rows=batch_rows,
-            cursor=cursor,
-            batch_number=_safe_int(progress.get("batchesCompleted")) + 1,
-            prepare_rows=lambda rows: _prepare_gamedevmap_active_batch_rows(
-                rows,
-                index_url=index_url,
-            ),
-            fetch_homepages=lambda rows: _fetch_gamedevmap_active_homepages(
-                rows,
-                timeout_s=timeout_s,
-                fetcher=fetcher,
-                total_concurrency=homepage_fetch_concurrency,
-                per_host_concurrency=per_host_concurrency,
-            ),
-            analyze_homepages=lambda results: _analyze_gamedevmap_active_homepages(
-                results,
-                index_url=index_url,
-            ),
-            fetch_recovery=lambda jobs, label: _fetch_gamedevmap_active_recovery(
-                jobs,
-                label,
-                timeout_s=recovery_timeout_s,
-                fetcher=fetcher,
-                total_concurrency=recovery_fetch_concurrency,
-                per_host_concurrency=recovery_per_host_concurrency,
-                recovery_cache=recovery_cache,
-            ),
-            apply_recovery=lambda results, grouped, finalize: _apply_gamedevmap_active_recovery(
-                results,
-                grouped,
-                finalize,
-                index_url=index_url,
-            ),
-            recovery_homepage_key=lambda job: str(
-                _as_dict(job.get("payload")).get("homepageUrl") or ""
-            ).strip(),
-            merge_candidates=_merge_gamedevmap_active_batch_candidates,
-            merge_artifact_updates=lambda *args: _merge_gamedevmap_active_batch_artifact_updates(
-                artifact, *args
-            ),
-            update_summary=lambda batch_counts: _update_gamedevmap_active_batch_summary(
-                artifact, batch_counts
-            ),
-            probe_candidates=lambda all_candidates: asyncio.run(
-                _probe_candidates_async(all_candidates, timeout_s=timeout_s, fetcher=fetcher)
-            ),
-            apply_probe_results=lambda probe_results: _apply_probe_results(artifact, probe_results),
-            row_identity=_row_url,
-            completed_identities=completed_urls,
-            append_timing=lambda batch_timing: _append_batch_timing(artifact, batch_timing),
-        )
-
-    def _before_write() -> None:
-        apply_gamedevmap_lost_recovery_audit(
-            artifact,
-            compare_artifact_path=compare_artifact_path,
-        )
-
-    def _write_current_artifact(complete: bool) -> None:
-        _write_artifact(
-            artifact,
-            output_path,
-            parsed_rows=parsed_rows,
-            representative_rows=representative_rows,
-            completed_urls=completed_urls,
-            complete=complete,
-        )
+    batch_strategy = _build_gamedevmap_active_batch_strategy(
+        artifact=artifact,
+        index_url=index_url,
+        timeout_s=timeout_s,
+        fetcher=fetcher,
+        homepage_fetch_concurrency=homepage_fetch_concurrency,
+        per_host_concurrency=per_host_concurrency,
+        recovery_timeout_s=recovery_timeout_s,
+        recovery_fetch_concurrency=recovery_fetch_concurrency,
+        recovery_per_host_concurrency=recovery_per_host_concurrency,
+        recovery_cache=recovery_cache,
+    )
+    loop_strategy = _build_gamedevmap_active_loop_strategy(
+        artifact=artifact,
+        output_path=output_path,
+        parsed_rows=parsed_rows,
+        representative_rows=representative_rows,
+        completed_urls=completed_urls,
+        compare_artifact_path=compare_artifact_path,
+        batch_strategy=batch_strategy,
+    )
 
     active_audit_runtime.run_active_audit_loop(
         artifact=artifact,
@@ -1870,14 +1925,7 @@ def run_gamedevmap_active_source_dry_run(
         completed_identities=completed_urls,
         batch_size=batch_size,
         max_batches=max_batches,
-        row_identity=_row_url,
-        emit_batch_log=lambda batch_number, row_count, cursor: emit_log(
-            "GameDevMap active-source dry run: "
-            f"batch={batch_number}, rows={row_count}, cursor={cursor}."
-        ),
-        run_batch=_run_batch,
-        before_write=_before_write,
-        write_artifact=_write_current_artifact,
+        strategy=loop_strategy,
     )
 
     emit_log(f"GameDevMap active-source dry run written to {output_path}.")
