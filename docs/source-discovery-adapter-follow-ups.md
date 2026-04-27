@@ -72,7 +72,7 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 - Completed sheet-foundation slice: `sheet_directory.py::_fetch_sheet_csv` now delegates to a shared multi-source text fetch helper.
 - Completed sheet-foundation slice: `sheet_directory.py::_append_sheet_entry_candidate` now uses a shared provider-or-static directory entry builder while preserving sheet evidence and provider-first ordering.
 - Completed sheet-foundation slice: `sheet_directory.py::_empty_sheet_scan_result` now uses a shared minimal empty scan-result payload helper.
-- `sheet_directory.py::_sheet_directory_scan` should be thinned toward a shared scan skeleton once entry selection and summary callbacks are isolated.
+- Completed sheet-index slice: `sheet_directory.py::_sheet_directory_scan` now uses shared direct-entry index scan runtime for parse/failure/candidate/dedupe/progress mechanics while keeping sheet-specific selection and summaries local.
 
 ### P2: Prevalidated Queue Policy Adoption
 

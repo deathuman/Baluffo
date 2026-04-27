@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import os
-import time
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -10,7 +9,6 @@ from urllib.parse import urlparse
 
 from src.source_registry import unique_sources
 
-from . import audit_ledger
 from .audit_config import audit_artifact_path, audit_ttl_minutes, config_section
 from .config import (
     DEFAULT_DISCOVERY_CONFIG,
@@ -20,9 +18,9 @@ from .config import (
 )
 from .directory_adapter_templates import (
     build_known_directory_entry_candidate,
-    empty_scan_result_payload,
 )
 from .directory_audit import discover_directory_scan_candidates, run_directory_audit
+from .directory_index_scan import run_directory_index_scan
 from .io_runtime import collapse_competing_candidates
 from .multi_source_text import fetch_first_nonempty_text
 from .web_search import infer_web_candidate
@@ -279,28 +277,6 @@ def _empty_sheet_summary(
     return summary
 
 
-def _empty_sheet_scan_result(
-    *,
-    failures: list[dict[str, Any]],
-    batch_timing: dict[str, Any],
-    attempted_urls: list[str],
-    selected_csv_url: str = "",
-    parse_failures: int = 0,
-    csv_fetch_failures: int | None = None,
-) -> dict[str, Any]:
-    return empty_scan_result_payload(
-        failures=failures,
-        summary=_empty_sheet_summary(
-            attempted_urls=attempted_urls,
-            selected_csv_url=selected_csv_url,
-            csv_fetch_failures=len(failures) if csv_fetch_failures is None else csv_fetch_failures,
-            parse_failures=parse_failures,
-        ),
-        progress={"complete": True, "cursor": 0, "completedUrlIdentities": []},
-        batch_timing=batch_timing,
-    )
-
-
 def _sheet_directory_scan(
     timeout_s: int,
     *,
@@ -309,9 +285,6 @@ def _sheet_directory_scan(
     fetcher: Any,
     emit_log: Any,
 ) -> dict[str, Any]:
-    provider_candidates: list[dict[str, Any]] = []
-    static_candidates: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
     batch_timing: dict[str, Any] = {"sheetId": sheet_id, "gid": gid}
 
     csv_text, last_error, attempted_urls, selected_csv_url, csv_fetch_ms = _fetch_sheet_csv(
@@ -321,100 +294,89 @@ def _sheet_directory_scan(
         fetcher=fetcher,
     )
     batch_timing["csvFetchMs"] = csv_fetch_ms
-    if not str(csv_text or "").strip():
-        failures.append(
-            {
-                "name": "game_studios_sheet",
-                "adapter": "sheet_directory",
-                "error": last_error or "sheet CSV fetch failed",
-                "stage": "directory_index_fetch",
-            }
-        )
-        return _empty_sheet_scan_result(
-            failures=failures,
-            batch_timing=batch_timing,
+
+    def build_empty_summary(csv_fetch_failures: int, parse_failures: int) -> dict[str, Any]:
+        return _empty_sheet_summary(
             attempted_urls=attempted_urls,
             selected_csv_url=selected_csv_url,
+            csv_fetch_failures=csv_fetch_failures,
+            parse_failures=parse_failures,
         )
 
-    started = time.perf_counter()
-    raw_entries = parse_game_studio_sheet_csv(csv_text)
-    batch_timing["parseMs"] = audit_ledger.duration_ms(started)
-    if not raw_entries and str(csv_text or "").strip():
-        failures.append(
-            {
-                "name": "game_studios_sheet",
-                "adapter": "sheet_directory",
-                "error": "no rows parsed (check sheet header/columns)",
-                "stage": "directory_parse",
-            }
-        )
-        parse_result = _empty_sheet_scan_result(
-            failures=failures,
-            batch_timing=batch_timing,
-            attempted_urls=attempted_urls,
-            selected_csv_url=selected_csv_url,
-            csv_fetch_failures=0,
-            parse_failures=1,
-        )
-        return parse_result
-
-    total_raw = len(raw_entries)
-    entries = _selected_sheet_entries(raw_entries)
-    opening_counts = _sheet_opening_counts(entries)
-    emit_log(
-        "Game studios sheet directory rows parsed: "
-        f"raw={total_raw}, usable={len(entries)}, "
-        f"openings=yes/{opening_counts['yesRows']}, "
-        f"speculative/{opening_counts['speculativeRows']}, "
-        f"no/{opening_counts['noRows']}, unknown/{opening_counts['unknownRows']}."
-    )
-
-    invalid_url_count = 0
-    started = time.perf_counter()
-    for entry in entries:
-        if _append_sheet_entry_candidate(
-            entry,
-            provider_candidates=provider_candidates,
-            static_candidates=static_candidates,
-            failures=failures,
-        ):
-            invalid_url_count += 1
-    batch_timing["candidateAnalysisMs"] = audit_ledger.duration_ms(started)
-
-    provider_candidates = collapse_competing_candidates(provider_candidates)
-    static_candidates = unique_sources(static_candidates)
-    emit_log(
-        "Game studios sheet directory candidates after validation: "
-        f"provider={len(provider_candidates)}, static={len(static_candidates)}, "
-        f"invalid_urls={invalid_url_count}."
-    )
-
-    return {
-        "providerCandidates": provider_candidates,
-        "staticCandidates": static_candidates,
-        "failures": failures,
-        "summary": {
+    def build_summary(
+        raw_entries: list[dict[str, Any]],
+        entries: list[dict[str, Any]],
+        invalid_url_count: int,
+    ) -> dict[str, Any]:
+        return {
             "csvUrlAttempts": len(attempted_urls),
             "selectedCsvUrl": selected_csv_url,
-            "rawRows": total_raw,
+            "rawRows": len(raw_entries),
             "eligibleRows": len(entries),
-            **opening_counts,
+            **_sheet_opening_counts(entries),
             "invalidUrls": invalid_url_count,
             "csvFetchFailures": 0,
             "parseFailures": 0,
+        }
+
+    def parsed_log(
+        raw_entries: list[dict[str, Any]],
+        entries: list[dict[str, Any]],
+        summary: dict[str, Any],
+    ) -> None:
+        emit_log(
+            "Game studios sheet directory rows parsed: "
+            f"raw={len(raw_entries)}, usable={len(entries)}, "
+            f"openings=yes/{summary['yesRows']}, "
+            f"speculative/{summary['speculativeRows']}, "
+            f"no/{summary['noRows']}, unknown/{summary['unknownRows']}."
+        )
+
+    def candidate_log(
+        provider_candidates: list[dict[str, Any]],
+        static_candidates: list[dict[str, Any]],
+        invalid_url_count: int,
+    ) -> None:
+        emit_log(
+            "Game studios sheet directory candidates after validation: "
+            f"provider={len(provider_candidates)}, static={len(static_candidates)}, "
+            f"invalid_urls={invalid_url_count}."
+        )
+
+    return run_directory_index_scan(
+        source_text=csv_text,
+        fetch_error=last_error or "sheet CSV fetch failed",
+        parse_entries=parse_game_studio_sheet_csv,
+        select_entries=_selected_sheet_entries,
+        append_entry=lambda entry, provider_rows, static_rows, failures: (
+            _append_sheet_entry_candidate(
+                entry,
+                provider_candidates=provider_rows,
+                static_candidates=static_rows,
+                failures=failures,
+            )
+        ),
+        dedupe_provider_candidates=collapse_competing_candidates,
+        dedupe_static_candidates=unique_sources,
+        build_empty_summary=build_empty_summary,
+        build_summary=build_summary,
+        index_fetch_failure=lambda error: {
+            "name": "game_studios_sheet",
+            "adapter": "sheet_directory",
+            "error": error,
+            "stage": "directory_index_fetch",
         },
-        "progress": {
-            "complete": True,
-            "cursor": len(entries),
-            "completedUrlIdentities": [
-                str(row.get("careersUrl") or "").strip()
-                for row in entries
-                if isinstance(row, dict) and str(row.get("careersUrl") or "").strip()
-            ],
+        parse_failure=lambda: {
+            "name": "game_studios_sheet",
+            "adapter": "sheet_directory",
+            "error": "no rows parsed (check sheet header/columns)",
+            "stage": "directory_parse",
         },
-        "batchTiming": batch_timing,
-    }
+        completed_identity=lambda entry: str(entry.get("careersUrl") or "").strip(),
+        batch_timing=batch_timing,
+        parsed_callback=parsed_log,
+        candidates_callback=candidate_log,
+    )
 
 
 def run_sheet_directory_audit(
