@@ -28,6 +28,12 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - Extend shared directory fetch-job builders only for additional adapters that already use the same `fetch_directory_pages` job shape.
 - Add explicit browser-recovery lanes for other adapters that can first produce an HTTP-only `browserRecoveryCandidates` list and then run opt-in rendered recovery without slowing normal scans.
 
+## Audit Readiness Notes
+
+- Gamesmap and Gameprog now share cache and fetch-job helper seams. A future audit-engine plan can treat index/teams fetch, parsed-entry caps, website fetch jobs, candidate analysis, and cache writes as explicit resumable boundaries.
+- Sheet-directory, seed-careers, and web-search still own different input shapes. They should only join a generalized audit engine after a separate plan defines artifact shape, progress keys, and report metadata for those flows.
+- Browser recovery and active promotion stay out of shared audit-engine readiness. Any adapter adopting rendered recovery should first emit HTTP-only browser candidates and still route validated rows through the normal discovery queue.
+
 ## Guardrails
 
 - Keep adapter-specific behavior in the owning adapter until at least two adapters need the same abstraction.

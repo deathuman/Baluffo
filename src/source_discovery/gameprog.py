@@ -40,12 +40,16 @@ COMMON_CAREERS_PATTERNS = [
 ]
 
 
-def _gameprog_config_value(config: dict[str, Any] | None, key: str, default: Any) -> Any:
+def _gameprog_config_section(config: dict[str, Any] | None) -> dict[str, Any]:
     source = config if isinstance(config, dict) else {}
     gameprog_cfg = source.get("gameprog")
     if isinstance(gameprog_cfg, dict):
-        return gameprog_cfg.get(key, default)
-    return default
+        return dict(gameprog_cfg)
+    return dict(source)
+
+
+def _gameprog_config_value(config: dict[str, Any] | None, key: str, default: Any) -> Any:
+    return _gameprog_config_section(config).get(key, default)
 
 
 def _gameprog_enabled(config: dict[str, Any] | None) -> bool:
@@ -255,7 +259,7 @@ def discover_gameprog_candidates(
     if not _gameprog_enabled(config):
         emit_log("Gameprog directory disabled, skipping.")
         return [], [], []
-    cfg = dict(_gameprog_config_value(config, "gameprog", {}))
+    cfg = _gameprog_config_section(config)
     cached = _load_gameprog_cache(config, cfg, fetcher=fetcher)
     if cached is not None:
         return cached
