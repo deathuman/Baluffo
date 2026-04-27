@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -469,34 +468,24 @@ def _write_artifact(
 
 
 def _recovered_active_by_id(artifact: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    rows: dict[str, dict[str, Any]] = {}
-    for row in _as_list(artifact.get("activeCandidates")):
-        if not isinstance(row, dict) or not bool(row.get("gamedevmapRecovery")):
-            continue
-        row_id = _candidate_id(row)
-        if row_id:
-            rows[row_id] = dict(row)
-    return rows
+    return active_audit_runtime.recovered_active_by_identity(
+        artifact,
+        active_key="activeCandidates",
+        recovered_predicate=lambda row: bool(row.get("gamedevmapRecovery")),
+        identity_fn=_candidate_id,
+    )
 
 
 def _index_current_rejections(artifact: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    indexed: dict[str, list[dict[str, Any]]] = {}
-    for rejection in _as_list(artifact.get("rejectedForActivation")):
-        if not isinstance(rejection, dict):
-            continue
-        candidate = _as_dict(rejection.get("candidate"))
-        keys = {
-            str(rejection.get("sourceId") or "").strip(),
-            _candidate_id(candidate),
-            _candidate_url_key(candidate),
-            f"url:{str(rejection.get('url') or '').strip()}",
-            f"entry:{str(rejection.get('sourceDirectoryEntryUrl') or '').strip()}",
-            f"entry:{str(candidate.get('sourceDirectoryEntryUrl') or '').strip()}",
-        }
-        for key in keys:
-            if key and key not in {"url:", "entry:"}:
-                indexed.setdefault(key, []).append(dict(rejection))
-    return indexed
+    return active_audit_runtime.index_rejections_by_identity(
+        artifact,
+        rejected_key="rejectedForActivation",
+        lookup_keys_fn=lambda rejection: active_audit_runtime.rejection_lookup_keys(
+            rejection,
+            candidate_identity_fn=_candidate_id,
+            candidate_url_key_fn=_candidate_url_key,
+        ),
+    )
 
 
 def _classify_lost_recovery(
@@ -543,39 +532,24 @@ def compare_gamedevmap_recovered_sources(
     previous = _recovered_active_by_id(previous_artifact)
     current = _recovered_active_by_id(current_artifact)
     current_rejections = _index_current_rejections(current_artifact)
-    lost_rows: list[dict[str, Any]] = []
-    cause_counts: Counter[str] = Counter()
-    for row_id, previous_candidate in previous.items():
-        if row_id in current:
-            continue
-        cause, matched_rejection = _classify_lost_recovery(
-            previous_candidate,
-            current_rejections,
-        )
-        cause_counts[cause] += 1
-        lost_rows.append(
-            {
-                "sourceId": row_id,
-                "cause": cause,
-                "name": str(previous_candidate.get("name") or ""),
-                "adapter": str(previous_candidate.get("adapter") or ""),
-                "jobsFound": _safe_int(previous_candidate.get("jobsFound")),
-                "recoverySource": str(previous_candidate.get("gamedevmapRecoverySource") or ""),
-                "careersUrl": str(
-                    previous_candidate.get("careersUrl")
-                    or previous_candidate.get("listing_url")
-                    or ""
-                ),
-                "matchedCurrentRejection": matched_rejection,
-            }
-        )
-    return {
-        "previousRecoveredActiveCount": len(previous),
-        "currentRecoveredActiveCount": len(current),
-        "lostCount": len(lost_rows),
-        "lossCauseCounts": dict(cause_counts),
-        "lostCandidates": sorted(lost_rows, key=lambda row: str(row.get("sourceId") or "")),
-    }
+    return active_audit_runtime.compare_recovered_active_maps(
+        previous=previous,
+        current=current,
+        current_rejections=current_rejections,
+        classify_lost=_classify_lost_recovery,
+        lost_row_builder=lambda row_id, cause, previous_candidate, matched_rejection: {
+            "sourceId": row_id,
+            "cause": cause,
+            "name": str(previous_candidate.get("name") or ""),
+            "adapter": str(previous_candidate.get("adapter") or ""),
+            "jobsFound": _safe_int(previous_candidate.get("jobsFound")),
+            "recoverySource": str(previous_candidate.get("gamedevmapRecoverySource") or ""),
+            "careersUrl": str(
+                previous_candidate.get("careersUrl") or previous_candidate.get("listing_url") or ""
+            ),
+            "matchedCurrentRejection": matched_rejection,
+        },
+    )
 
 
 def apply_gamedevmap_lost_recovery_audit(
@@ -1446,28 +1420,15 @@ def _parse_rerun_reasons(value: str | list[str] | tuple[str, ...] | None) -> set
 
 
 def _rejection_row_key(rejection: dict[str, Any]) -> str:
-    url = str(rejection.get("url") or "").strip()
-    if url:
-        return f"url:{url}"
-    candidate = _as_dict(rejection.get("candidate"))
-    entry_url = str(candidate.get("sourceDirectoryEntryUrl") or "").strip()
-    if entry_url:
-        return f"entry:{entry_url}"
-    careers_url = str(candidate.get("careersUrl") or candidate.get("listing_url") or "").strip()
-    if careers_url:
-        return f"url:{careers_url}"
-    return ""
+    return active_audit_runtime.rejection_rerun_key(rejection)
 
 
 def _row_keys(row: dict[str, Any]) -> set[str]:
-    keys = set()
-    url = _row_url(row)
-    if url:
-        keys.add(f"url:{url}")
-    entry_url = str(row.get("sourceDirectoryEntryUrl") or "").strip()
-    if entry_url:
-        keys.add(f"entry:{entry_url}")
-    return keys
+    return active_audit_runtime.row_identity_keys(
+        row,
+        url=_row_url(row),
+        entry_url=str(row.get("sourceDirectoryEntryUrl") or "").strip(),
+    )
 
 
 def _select_rerun_rows(
@@ -1475,20 +1436,14 @@ def _select_rerun_rows(
     representative_rows: list[dict[str, Any]],
     rerun_reasons: set[str],
 ) -> tuple[list[dict[str, Any]], set[str]]:
-    if not rerun_reasons:
-        return representative_rows, set()
-    requested_keys = {
-        key
-        for rejection in _as_list(artifact.get("rejectedForActivation"))
-        if isinstance(rejection, dict)
-        and str(rejection.get("reason") or "").strip() in rerun_reasons
-        for key in [_rejection_row_key(rejection)]
-        if key
-    }
-    if not requested_keys:
-        return [], set()
-    rows = [row for row in representative_rows if _row_keys(row) & requested_keys]
-    return rows, requested_keys
+    return active_audit_runtime.select_rerun_rows(
+        artifact,
+        representative_rows,
+        rerun_reasons,
+        rejected_key="rejectedForActivation",
+        rejection_key_fn=_rejection_row_key,
+        row_keys_fn=_row_keys,
+    )
 
 
 def _prune_rerun_rejections(
@@ -1497,18 +1452,13 @@ def _prune_rerun_rejections(
     rerun_reasons: set[str],
     rerun_row_keys: set[str],
 ) -> None:
-    if not rerun_reasons or not rerun_row_keys:
-        return
-    kept: list[dict[str, Any]] = []
-    for rejection in _as_list(artifact.get("rejectedForActivation")):
-        if not isinstance(rejection, dict):
-            continue
-        reason = str(rejection.get("reason") or "").strip()
-        key = _rejection_row_key(rejection)
-        if reason in rerun_reasons and key in rerun_row_keys:
-            continue
-        kept.append(rejection)
-    artifact["rejectedForActivation"] = kept
+    active_audit_runtime.prune_rerun_rejections(
+        artifact,
+        rejected_key="rejectedForActivation",
+        rerun_reasons=rerun_reasons,
+        rerun_row_keys=rerun_row_keys,
+        rejection_key_fn=_rejection_row_key,
+    )
 
 
 async def _probe_candidates_async(

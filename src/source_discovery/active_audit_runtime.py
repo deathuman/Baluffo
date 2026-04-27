@@ -292,6 +292,163 @@ def active_audit_artifact_counts(
     )
 
 
+def row_identity_keys(
+    row: dict[str, Any],
+    *,
+    url: str,
+    entry_url: str,
+) -> set[str]:
+    keys: set[str] = set()
+    if url:
+        keys.add(f"url:{url}")
+    if entry_url:
+        keys.add(f"entry:{entry_url}")
+    return keys
+
+
+def rejection_rerun_key(
+    rejection: dict[str, Any],
+    *,
+    candidate_url_fields: tuple[str, ...] = ("careersUrl", "listing_url"),
+) -> str:
+    url = str(rejection.get("url") or "").strip()
+    if url:
+        return f"url:{url}"
+    candidate = _as_dict(rejection.get("candidate"))
+    entry_url = str(candidate.get("sourceDirectoryEntryUrl") or "").strip()
+    if entry_url:
+        return f"entry:{entry_url}"
+    for field_name in candidate_url_fields:
+        candidate_url = str(candidate.get(field_name) or "").strip()
+        if candidate_url:
+            return f"url:{candidate_url}"
+    return ""
+
+
+def select_rerun_rows(
+    artifact: dict[str, Any],
+    representative_rows: list[dict[str, Any]],
+    rerun_reasons: set[str],
+    *,
+    rejected_key: str,
+    rejection_key_fn: Callable[[dict[str, Any]], str],
+    row_keys_fn: Callable[[dict[str, Any]], set[str]],
+) -> tuple[list[dict[str, Any]], set[str]]:
+    if not rerun_reasons:
+        return representative_rows, set()
+    requested_keys = {
+        key
+        for rejection in _as_list(artifact.get(rejected_key))
+        if isinstance(rejection, dict)
+        and str(rejection.get("reason") or "").strip() in rerun_reasons
+        for key in [rejection_key_fn(rejection)]
+        if key
+    }
+    if not requested_keys:
+        return [], set()
+    rows = [row for row in representative_rows if row_keys_fn(row) & requested_keys]
+    return rows, requested_keys
+
+
+def prune_rerun_rejections(
+    artifact: dict[str, Any],
+    *,
+    rejected_key: str,
+    rerun_reasons: set[str],
+    rerun_row_keys: set[str],
+    rejection_key_fn: Callable[[dict[str, Any]], str],
+) -> None:
+    if not rerun_reasons or not rerun_row_keys:
+        return
+    kept: list[dict[str, Any]] = []
+    for rejection in _as_list(artifact.get(rejected_key)):
+        if not isinstance(rejection, dict):
+            continue
+        reason = str(rejection.get("reason") or "").strip()
+        key = rejection_key_fn(rejection)
+        if reason in rerun_reasons and key in rerun_row_keys:
+            continue
+        kept.append(dict(rejection))
+    artifact[rejected_key] = kept
+
+
+def rejection_lookup_keys(
+    rejection: dict[str, Any],
+    *,
+    candidate_identity_fn: Callable[[dict[str, Any]], str],
+    candidate_url_key_fn: Callable[[dict[str, Any]], str],
+) -> set[str]:
+    candidate = _as_dict(rejection.get("candidate"))
+    return {
+        str(rejection.get("sourceId") or "").strip(),
+        candidate_identity_fn(candidate),
+        candidate_url_key_fn(candidate),
+        f"url:{str(rejection.get('url') or '').strip()}",
+        f"entry:{str(rejection.get('sourceDirectoryEntryUrl') or '').strip()}",
+        f"entry:{str(candidate.get('sourceDirectoryEntryUrl') or '').strip()}",
+    }
+
+
+def index_rejections_by_identity(
+    artifact: dict[str, Any],
+    *,
+    rejected_key: str,
+    lookup_keys_fn: Callable[[dict[str, Any]], set[str]],
+) -> dict[str, list[dict[str, Any]]]:
+    indexed: dict[str, list[dict[str, Any]]] = {}
+    for rejection in _as_list(artifact.get(rejected_key)):
+        if not isinstance(rejection, dict):
+            continue
+        for key in lookup_keys_fn(rejection):
+            if key and key not in {"url:", "entry:"}:
+                indexed.setdefault(key, []).append(dict(rejection))
+    return indexed
+
+
+def recovered_active_by_identity(
+    artifact: dict[str, Any],
+    *,
+    active_key: str,
+    recovered_predicate: Callable[[dict[str, Any]], bool],
+    identity_fn: Callable[[dict[str, Any]], str],
+) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for row in _as_list(artifact.get(active_key)):
+        if not isinstance(row, dict) or not recovered_predicate(row):
+            continue
+        row_id = identity_fn(row)
+        if row_id:
+            rows[row_id] = dict(row)
+    return rows
+
+
+def compare_recovered_active_maps(
+    *,
+    previous: dict[str, dict[str, Any]],
+    current: dict[str, dict[str, Any]],
+    current_rejections: dict[str, list[dict[str, Any]]],
+    classify_lost: Callable[
+        [dict[str, Any], dict[str, list[dict[str, Any]]]], tuple[str, dict[str, Any]]
+    ],
+    lost_row_builder: Callable[[str, str, dict[str, Any], dict[str, Any]], dict[str, Any]],
+) -> dict[str, Any]:
+    lost_rows: list[dict[str, Any]] = []
+    cause_counts: Counter[str] = Counter()
+    for row_id, previous_candidate in previous.items():
+        if row_id in current:
+            continue
+        cause, matched_rejection = classify_lost(previous_candidate, current_rejections)
+        cause_counts[cause] += 1
+        lost_rows.append(lost_row_builder(row_id, cause, previous_candidate, matched_rejection))
+    return {
+        "previousRecoveredActiveCount": len(previous),
+        "currentRecoveredActiveCount": len(current),
+        "lostCount": len(lost_rows),
+        "lossCauseCounts": dict(cause_counts),
+        "lostCandidates": sorted(lost_rows, key=lambda row: str(row.get("sourceId") or "")),
+    }
+
+
 def run_active_homepage_batch(
     *,
     batch_rows: list[dict[str, Any]],

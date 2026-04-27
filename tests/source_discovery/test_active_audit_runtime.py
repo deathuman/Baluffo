@@ -8,14 +8,22 @@ from src.source_discovery.active_audit_runtime import (
     NoCandidateOutcome,
     active_audit_artifact_counts,
     append_artifact_rows,
+    compare_recovered_active_maps,
     create_active_audit_artifact,
     finalize_active_audit_artifact,
+    index_rejections_by_identity,
     load_or_initialize_active_audit_artifact,
     merge_rows_by_identity,
     merge_unique_candidate_rows,
+    prune_rerun_rejections,
     record_failure_rows,
+    recovered_active_by_identity,
+    rejection_lookup_keys,
+    rejection_rerun_key,
+    row_identity_keys,
     run_active_homepage_batch,
     save_updated_active_audit_artifact,
+    select_rerun_rows,
 )
 
 
@@ -399,3 +407,155 @@ def test_save_updated_active_audit_artifact_preserves_progress_completion(
     assert saved["summary"]["artifactSizeBytes"] > 0
     assert saved["updatedAt"]
     assert "finishedAt" not in saved
+
+
+def test_active_audit_identity_keys_cover_rows_and_rejections() -> None:
+    assert row_identity_keys(
+        {"name": "Studio"},
+        url="https://studio.example",
+        entry_url="https://directory.example/studio",
+    ) == {
+        "url:https://studio.example",
+        "entry:https://directory.example/studio",
+    }
+    assert rejection_rerun_key({"url": "https://studio.example"}) == ("url:https://studio.example")
+    assert (
+        rejection_rerun_key(
+            {"candidate": {"sourceDirectoryEntryUrl": "https://directory.example/studio"}}
+        )
+        == "entry:https://directory.example/studio"
+    )
+    assert rejection_rerun_key({"candidate": {"listing_url": "https://jobs.example"}}) == (
+        "url:https://jobs.example"
+    )
+    assert rejection_rerun_key({"candidate": {}}) == ""
+
+
+def test_select_and_prune_rerun_rows_preserves_unrelated_rejections() -> None:
+    artifact = {
+        "rejections": [
+            {"reason": "probe_failed", "url": "https://one.example"},
+            {"reason": "zero_jobs", "url": "https://two.example"},
+        ]
+    }
+    rows = [
+        {"url": "https://one.example"},
+        {"url": "https://two.example"},
+        {"url": "https://three.example"},
+    ]
+
+    selected, keys = select_rerun_rows(
+        artifact,
+        rows,
+        {"probe_failed"},
+        rejected_key="rejections",
+        rejection_key_fn=rejection_rerun_key,
+        row_keys_fn=lambda row: row_identity_keys(
+            row,
+            url=str(row.get("url") or ""),
+            entry_url="",
+        ),
+    )
+    prune_rerun_rejections(
+        artifact,
+        rejected_key="rejections",
+        rerun_reasons={"probe_failed"},
+        rerun_row_keys=keys,
+        rejection_key_fn=rejection_rerun_key,
+    )
+
+    assert selected == [{"url": "https://one.example"}]
+    assert keys == {"url:https://one.example"}
+    assert artifact["rejections"] == [{"reason": "zero_jobs", "url": "https://two.example"}]
+
+
+def test_index_rejections_by_identity_supports_candidate_and_url_keys() -> None:
+    artifact = {
+        "rejections": [
+            {
+                "sourceId": "source:one",
+                "url": "https://row.example",
+                "sourceDirectoryEntryUrl": "https://directory.example/row",
+                "candidate": {
+                    "sourceId": "candidate:one",
+                    "careersUrl": "https://candidate.example/jobs",
+                    "sourceDirectoryEntryUrl": "https://directory.example/candidate",
+                },
+            }
+        ]
+    }
+
+    indexed = index_rejections_by_identity(
+        artifact,
+        rejected_key="rejections",
+        lookup_keys_fn=lambda rejection: rejection_lookup_keys(
+            rejection,
+            candidate_identity_fn=lambda candidate: str(candidate.get("sourceId") or ""),
+            candidate_url_key_fn=lambda candidate: (
+                f"url:{candidate.get('careersUrl')}" if candidate.get("careersUrl") else ""
+            ),
+        ),
+    )
+
+    assert indexed["source:one"] == artifact["rejections"]
+    assert indexed["candidate:one"] == artifact["rejections"]
+    assert indexed["url:https://row.example"] == artifact["rejections"]
+    assert indexed["url:https://candidate.example/jobs"] == artifact["rejections"]
+    assert indexed["entry:https://directory.example/row"] == artifact["rejections"]
+    assert indexed["entry:https://directory.example/candidate"] == artifact["rejections"]
+
+
+def test_recovered_active_mapping_and_compare_preserves_ordered_lost_rows() -> None:
+    previous_artifact = {
+        "activeRows": [
+            {"sourceId": "b", "recovered": True, "name": "B"},
+            {"sourceId": "a", "recovered": True, "name": "A"},
+            {"sourceId": "ignored", "recovered": False},
+        ]
+    }
+    current_artifact = {"activeRows": [{"sourceId": "b", "recovered": True, "name": "B"}]}
+    previous = recovered_active_by_identity(
+        previous_artifact,
+        active_key="activeRows",
+        recovered_predicate=lambda row: bool(row.get("recovered")),
+        identity_fn=lambda row: str(row.get("sourceId") or ""),
+    )
+    current = recovered_active_by_identity(
+        current_artifact,
+        active_key="activeRows",
+        recovered_predicate=lambda row: bool(row.get("recovered")),
+        identity_fn=lambda row: str(row.get("sourceId") or ""),
+    )
+    classifier_calls: list[str] = []
+
+    result = compare_recovered_active_maps(
+        previous=previous,
+        current=current,
+        current_rejections={"a": [{"reason": "probe_failed"}]},
+        classify_lost=lambda candidate, rejections: (
+            classifier_calls.append(str(candidate.get("sourceId") or "")),
+            ("probe_failure", rejections.get(str(candidate.get("sourceId") or ""), [{}])[0]),
+        )[1],
+        lost_row_builder=lambda row_id, cause, candidate, rejection: {
+            "sourceId": row_id,
+            "cause": cause,
+            "name": candidate.get("name"),
+            "matchedCurrentRejection": rejection,
+        },
+    )
+
+    assert result == {
+        "previousRecoveredActiveCount": 2,
+        "currentRecoveredActiveCount": 1,
+        "lostCount": 1,
+        "lossCauseCounts": {"probe_failure": 1},
+        "lostCandidates": [
+            {
+                "sourceId": "a",
+                "cause": "probe_failure",
+                "name": "A",
+                "matchedCurrentRejection": {"reason": "probe_failed"},
+            }
+        ],
+    }
+    assert classifier_calls == ["a"]
