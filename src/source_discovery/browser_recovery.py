@@ -34,6 +34,10 @@ BrowserRecoveryFinalizeCallback = Callable[
     tuple[list[dict[str, Any]], list[dict[str, Any]]],
 ]
 RenderedStaticProbeCallback = Callable[[dict[str, Any], str, str], ProbeResult | None]
+BrowserRecoveryProbeMergeCallback = Callable[[list[ProbeResult]], None]
+BrowserRecoveryProbeMarker = Callable[[list[ProbeResult], int], None]
+BrowserRecoveryRowsProvider = Callable[[], list[Any]]
+BrowserRecoveryActivePredicate = Callable[[dict[str, Any]], bool]
 
 
 @dataclass
@@ -353,6 +357,46 @@ def update_browser_recovery_merge_state(
         candidate_count=candidate_count,
         **counts,
     )
+
+
+def merge_browser_recovery_results(
+    *,
+    browser_recovery: dict[str, Any],
+    processed: set[str],
+    started: float,
+    candidate_count: int,
+    probe_candidate_count: int,
+    rendered_probe_results: list[ProbeResult],
+    probe_results: list[ProbeResult],
+    merge_probe_results: BrowserRecoveryProbeMergeCallback,
+    recovered_rows: BrowserRecoveryRowsProvider,
+    recovered_predicate: BrowserRecoveryActivePredicate,
+    mark_probe_results: BrowserRecoveryProbeMarker | None = None,
+    fetch_attempts: int | None = None,
+    fetch_failures: int | None = None,
+    candidate_analysis_count: int | None = None,
+) -> tuple[list[ProbeResult], int]:
+    combined_probe_results = combine_probe_results(rendered_probe_results, probe_results)
+    if mark_probe_results is not None:
+        mark_probe_results(combined_probe_results, len(rendered_probe_results))
+    merge_probe_results(combined_probe_results)
+    active_count = count_recovered_candidates(
+        recovered_rows(),
+        recovered_predicate,
+    )
+    update_browser_recovery_merge_state(
+        browser_recovery,
+        processed=processed,
+        started=started,
+        candidate_count=candidate_count,
+        active_count=active_count,
+        probe_candidate_count=probe_candidate_count,
+        rendered_static_validated=len(rendered_probe_results),
+        fetch_attempts=fetch_attempts,
+        fetch_failures=fetch_failures,
+        candidate_analysis_count=candidate_analysis_count,
+    )
+    return combined_probe_results, active_count
 
 
 def append_fetch_sample(

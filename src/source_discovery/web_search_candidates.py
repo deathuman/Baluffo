@@ -893,48 +893,48 @@ def _merge_web_browser_recovery_updates(
     fetch_attempts: int,
     fetch_failures: int,
 ) -> None:
-    combined_probe_results = browser_recovery_helpers.combine_probe_results(
-        rendered_probe_results,
-        probe_results,
-    )
-    validated_rows = [
-        apply_prevalidated_queue_overrides(
-            row,
-            adapter_cap=_PREVALIDATED_BROWSER_QUEUE_CAP,
-            domain_cap=_PREVALIDATED_BROWSER_DOMAIN_CAP,
+    def merge_probe_results(combined_probe_results):
+        validated_rows = [
+            apply_prevalidated_queue_overrides(
+                row,
+                adapter_cap=_PREVALIDATED_BROWSER_QUEUE_CAP,
+                domain_cap=_PREVALIDATED_BROWSER_DOMAIN_CAP,
+            )
+            for row in browser_recovery_helpers.positive_probe_candidates(
+                combined_probe_results,
+                normalize_candidate=_candidate_with_probe_evidence,
+            )
+        ]
+        provider_validated, static_validated = candidate_collections.split_provider_static_rows(
+            validated_rows
         )
-        for row in browser_recovery_helpers.positive_probe_candidates(
-            combined_probe_results,
-            normalize_candidate=_candidate_with_probe_evidence,
+        candidate_collections.append_provider_static_rows(
+            artifact,
+            provider_rows=provider_validated,
+            static_rows=static_validated,
         )
-    ]
-    provider_validated, static_validated = candidate_collections.split_provider_static_rows(
-        validated_rows
-    )
-    candidate_collections.append_provider_static_rows(
-        artifact,
-        provider_rows=provider_validated,
-        static_rows=static_validated,
-    )
-    active_browser_count = browser_recovery_helpers.count_recovered_candidates(
-        [
+
+    def recovered_rows() -> list[Any]:
+        return [
             *list(artifact.get("providerCandidates") or []),
             *list(artifact.get("staticCandidates") or []),
-        ],
-        lambda row: bool(row.get("webSearchBrowserRecovery")),
-    )
-    browser_recovery_helpers.update_browser_recovery_merge_state(
-        browser_recovery,
+        ]
+
+    active_browser_count = browser_recovery_helpers.merge_browser_recovery_results(
+        browser_recovery=browser_recovery,
         processed=processed,
         started=started,
         candidate_count=len(list(artifact.get("browserRecoveryCandidates") or [])),
-        active_count=active_browser_count,
         probe_candidate_count=len(probe_candidates),
-        rendered_static_validated=len(rendered_probe_results),
+        rendered_probe_results=rendered_probe_results,
+        probe_results=probe_results,
+        merge_probe_results=merge_probe_results,
+        recovered_rows=recovered_rows,
+        recovered_predicate=lambda row: bool(row.get("webSearchBrowserRecovery")),
         fetch_attempts=fetch_attempts,
         fetch_failures=fetch_failures,
         candidate_analysis_count=len(all_candidates),
-    )
+    )[1]
     artifact["browserRecovery"] = browser_recovery
     summary = dict(artifact.get("summary") or {})
     summary["providerCandidates"] = len(list(artifact.get("providerCandidates") or []))

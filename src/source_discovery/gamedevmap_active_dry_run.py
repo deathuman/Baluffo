@@ -69,14 +69,6 @@ GAMEDEVMAP_RERUN_REASONS = {
     "probe_failed",
     "zero_jobs",
 }
-NO_CAREERS_RECOVERY_PATHS = (
-    "/careers",
-    "/jobs",
-    "/join-us",
-    "/work-with-us",
-    "/company/careers",
-    "/about/careers",
-)
 PRIMARY_RECOVERY_PATHS = ("/careers", "/jobs")
 SECONDARY_RECOVERY_PATHS = (
     "/join-us",
@@ -899,32 +891,31 @@ def _merge_browser_recovery_artifact_updates(
     rendered_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
     probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
 ) -> None:
-    combined_probe_results = browser_recovery_helpers.combine_probe_results(
-        rendered_probe_results,
-        probe_results,
-    )
-    _mark_browser_recovery_probe_results(
-        combined_probe_results,
-        rendered_count=len(rendered_probe_results),
-    )
-    artifact["allCandidates"] = _merge_unique_rows(artifact.get("allCandidates"), all_candidates)
-    artifact["rejectedForActivation"] = [
-        *(_as_list(artifact.get("rejectedForActivation"))),
-        *rejected,
-    ]
-    _apply_probe_results(artifact, combined_probe_results)
-    active_browser_count = browser_recovery_helpers.count_recovered_candidates(
-        _as_list(artifact.get("activeCandidates")),
-        lambda row: bool(row.get("gamedevmapBrowserRecovery")),
-    )
-    browser_recovery_helpers.update_browser_recovery_merge_state(
-        browser_recovery,
+    def merge_probe_results(combined_probe_results):
+        artifact["allCandidates"] = _merge_unique_rows(
+            artifact.get("allCandidates"), all_candidates
+        )
+        artifact["rejectedForActivation"] = [
+            *(_as_list(artifact.get("rejectedForActivation"))),
+            *rejected,
+        ]
+        _apply_probe_results(artifact, combined_probe_results)
+
+    browser_recovery_helpers.merge_browser_recovery_results(
+        browser_recovery=browser_recovery,
         processed=processed,
         started=started,
         candidate_count=len(_as_list(artifact.get("browserRecoveryCandidates"))),
-        active_count=active_browser_count,
         probe_candidate_count=len(probe_candidates),
-        rendered_static_validated=len(rendered_probe_results),
+        rendered_probe_results=rendered_probe_results,
+        probe_results=probe_results,
+        mark_probe_results=lambda results, rendered_count: _mark_browser_recovery_probe_results(
+            results,
+            rendered_count=rendered_count,
+        ),
+        merge_probe_results=merge_probe_results,
+        recovered_rows=lambda: _as_list(artifact.get("activeCandidates")),
+        recovered_predicate=lambda row: bool(row.get("gamedevmapBrowserRecovery")),
     )
     artifact["browserRecovery"] = browser_recovery
 
@@ -1018,25 +1009,6 @@ def _no_careers_reason_detail(page_url: str, html: str) -> str:
         third_party_profile_hosts=THIRD_PARTY_PROFILE_HOSTS,
         jobish_url_fn=lambda url, body: extract_jobish_links(body, url),
         include_noscript_script_shell=True,
-    )
-
-
-def _recovery_urls(
-    page_url: str,
-    html: str,
-    *,
-    limit: int = 6,
-    paths: tuple[str, ...] = NO_CAREERS_RECOVERY_PATHS,
-    include_jobish_links: bool = True,
-) -> list[str]:
-    return recovery_url_planner.recovery_urls(
-        page_url,
-        html,
-        paths=paths,
-        limit=limit,
-        blocked_hosts=SOCIAL_PROFILE_HOSTS | THIRD_PARTY_PROFILE_HOSTS,
-        include_jobish_links=include_jobish_links,
-        html_url_candidate_fn=_html_url_candidates,
     )
 
 
@@ -1166,30 +1138,6 @@ def _append_analyzed_candidates(
     provider_candidates.extend(outcome.provider_candidates)
     static_candidates.extend(outcome.static_candidates)
     return outcome.found_candidates
-
-
-def _recovery_job(
-    *,
-    row: dict[str, Any],
-    homepage_url: str,
-    recovery_url: str,
-    reason_detail: str,
-    recovery_source: str,
-    wave: int,
-) -> dict[str, Any]:
-    return directory_recovery_helpers.build_recovery_fetch_job(
-        recovery_url=recovery_url,
-        payload={
-            "row": row,
-            "homepageUrl": homepage_url,
-            "homepageReasonDetail": reason_detail,
-            "recoverySource": recovery_source,
-            "recoveryWave": int(wave),
-        },
-        name=f"{str(row.get('studio') or '').strip()} recovery {recovery_url}",
-        adapter="gamedevmap",
-        failure_stage="gamedevmap_recovery_fetch",
-    )
 
 
 def _queue_no_careers_recovery(

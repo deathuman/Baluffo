@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
-from src.source_discovery.directory_page_recovery import dedupe_recovery_fetch_jobs
+from src.source_discovery.directory_page_recovery import (
+    build_recovery_fetch_job,
+    dedupe_recovery_fetch_jobs,
+    plan_recovery_fetch_job_waves,
+)
 
 from ._helpers import (
     discovery_config_without_generator_stages,
@@ -158,12 +162,20 @@ def test_gamedevmap_active_dry_run_records_probe_failures() -> None:
 
 
 def test_gamedevmap_no_careers_recovery_urls_are_bounded() -> None:
-    urls = dry_run._recovery_urls(
-        "https://recover.example.com",
-        '<html><a href="/jobs">Jobs</a><a href="/careers">Careers</a></html>',
+    primary_jobs, secondary_jobs = plan_recovery_fetch_job_waves(
+        page_url="https://recover.example.com",
+        html='<html><a href="/jobs">Jobs</a><a href="/careers">Careers</a></html>',
+        primary_paths=dry_run.PRIMARY_RECOVERY_PATHS,
+        secondary_paths=dry_run.SECONDARY_RECOVERY_PATHS,
+        payload_factory=lambda recovery_url, wave: {"url": recovery_url, "wave": wave},
+        name_factory=lambda recovery_url, _wave: recovery_url,
+        adapter="gamedevmap",
+        failure_stage="gamedevmap_recovery_fetch",
+        blocked_hosts=dry_run.SOCIAL_PROFILE_HOSTS | dry_run.THIRD_PARTY_PROFILE_HOSTS,
+        html_url_candidate_fn=dry_run._html_url_candidates,
     )
 
-    assert urls == [
+    assert [job["url"] for job in [*primary_jobs, *secondary_jobs]] == [
         "https://recover.example.com/jobs",
         "https://recover.example.com/careers",
         "https://recover.example.com/join-us",
@@ -171,7 +183,15 @@ def test_gamedevmap_no_careers_recovery_urls_are_bounded() -> None:
         "https://recover.example.com/company/careers",
         "https://recover.example.com/about/careers",
     ]
-    assert dry_run._recovery_urls("https://linktr.ee/studio", '<a href="/jobs">Jobs</a>') == []
+    assert plan_recovery_fetch_job_waves(
+        page_url="https://linktr.ee/studio",
+        html='<a href="/jobs">Jobs</a>',
+        payload_factory=lambda recovery_url, wave: {"url": recovery_url, "wave": wave},
+        name_factory=lambda recovery_url, _wave: recovery_url,
+        adapter="gamedevmap",
+        failure_stage="gamedevmap_recovery_fetch",
+        blocked_hosts=dry_run.SOCIAL_PROFILE_HOSTS | dry_run.THIRD_PARTY_PROFILE_HOSTS,
+    ) == ([], [])
 
 
 def test_gamedevmap_active_audit_uses_split_fetch_limits() -> None:
@@ -239,21 +259,31 @@ def test_gamedevmap_recovery_dedupe_fans_out_result_to_requesters() -> None:
     row_a = {"studio": "Studio A", "url": "https://a.example.com"}
     row_b = {"studio": "Studio B", "url": "https://b.example.com"}
     jobs = [
-        dry_run._recovery_job(
-            row=row_a,
-            homepage_url="https://a.example.com",
+        build_recovery_fetch_job(
             recovery_url="https://shared.example.com/jobs",
-            reason_detail="no_jobish_links",
-            recovery_source="same_party_recovery_url",
-            wave=1,
+            payload={
+                "row": row_a,
+                "homepageUrl": "https://a.example.com",
+                "homepageReasonDetail": "no_jobish_links",
+                "recoverySource": "same_party_recovery_url",
+                "recoveryWave": 1,
+            },
+            name="Studio A recovery https://shared.example.com/jobs",
+            adapter="gamedevmap",
+            failure_stage="gamedevmap_recovery_fetch",
         ),
-        dry_run._recovery_job(
-            row=row_b,
-            homepage_url="https://b.example.com",
+        build_recovery_fetch_job(
             recovery_url="https://shared.example.com/jobs",
-            reason_detail="no_jobish_links",
-            recovery_source="same_party_recovery_url",
-            wave=1,
+            payload={
+                "row": row_b,
+                "homepageUrl": "https://b.example.com",
+                "homepageReasonDetail": "no_jobish_links",
+                "recoverySource": "same_party_recovery_url",
+                "recoveryWave": 1,
+            },
+            name="Studio B recovery https://shared.example.com/jobs",
+            adapter="gamedevmap",
+            failure_stage="gamedevmap_recovery_fetch",
         ),
     ]
     deduped = dedupe_recovery_fetch_jobs(jobs)

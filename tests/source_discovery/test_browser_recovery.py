@@ -339,6 +339,54 @@ def test_browser_recovery_merge_helpers_filter_count_and_update_state() -> None:
     assert state["candidateAnalysisCount"] == 2
 
 
+def test_merge_browser_recovery_results_applies_callbacks_and_updates_state() -> None:
+    rendered = [({"adapter": "static", "name": "Rendered"}, True, 2, "", 1)]
+    probed = [({"adapter": "greenhouse", "name": "Provider"}, True, 3, "", 2)]
+    state: dict[str, object] = {}
+    merged_results: list[object] = []
+    marked: list[tuple[list[object], int]] = []
+    active_rows: list[dict[str, object]] = []
+    started = time.perf_counter()
+
+    def merge_probe_results(combined):
+        merged_results.extend(combined)
+        active_rows.extend(
+            {"webSearchBrowserRecovery": True, "name": row[0]["name"]} for row in combined if row[1]
+        )
+
+    combined, active_count = browser_recovery.merge_browser_recovery_results(
+        browser_recovery=state,
+        processed={"url:https://rendered.example/jobs"},
+        started=started,
+        candidate_count=5,
+        probe_candidate_count=1,
+        rendered_probe_results=rendered,
+        probe_results=probed,
+        mark_probe_results=lambda results, rendered_count: marked.append(
+            (list(results), rendered_count)
+        ),
+        merge_probe_results=merge_probe_results,
+        recovered_rows=lambda: list(active_rows),
+        recovered_predicate=lambda row: bool(row.get("webSearchBrowserRecovery")),
+        fetch_attempts=2,
+        fetch_failures=0,
+        candidate_analysis_count=2,
+    )
+
+    assert combined == [*rendered, *probed]
+    assert merged_results == combined
+    assert marked == [(combined, 1)]
+    assert active_count == 2
+    assert state["processedKeys"] == ["url:https://rendered.example/jobs"]
+    assert state["candidateCount"] == 5
+    assert state["activeCandidates"] == 2
+    assert state["probeCandidates"] == 1
+    assert state["renderedStaticValidated"] == 1
+    assert state["fetchAttempts"] == 2
+    assert state["fetchFailures"] == 0
+    assert state["candidateAnalysisCount"] == 2
+
+
 def test_run_browser_recovery_batch_skips_probe_for_rendered_validated_candidate(
     monkeypatch,
 ) -> None:
