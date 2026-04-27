@@ -26,12 +26,13 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Added an opt-in sheet-directory audit pilot using the shared directory audit engine. Default sheet discovery remains the legacy CSV scan; `sheetDirectory.activeAuditEnabled=true` writes/reuses `data/sheet-directory-discovery-audit.json` and reports metadata through `directoryAuditSummaries`.
 - 2026-04-27: Default-enabled the sheet-directory audit when the sheet stage is enabled. `sheetDirectory.activeAuditEnabled=false` remains the rollback to the legacy direct CSV scan.
 - 2026-04-27: Characterized seed-careers and web-search audit-readiness boundaries around page-fetch jobs, page-fetch failures, candidate analysis, and provider/static/failure provenance without adding audit artifacts.
+- 2026-04-27: Added an opt-in combined seed-careers/web-search audit pilot using the shared directory audit engine. Default web-derived discovery remains direct scanning; `webSearch.activeAuditEnabled=true` writes/reuses `data/web-search-discovery-audit.json` and reports metadata through `directoryAuditSummaries.web_search`.
 
 ## Reusable Opportunities
 
-- Generalize the resumable audit engine for web-search sources where a full scan has meaningful intermediate progress, timing, cache, and resume needs.
+- Use opt-in web-search audit evidence to decide whether the combined seed-careers/web-search audit should become default.
 - Extend shared recovery URL planning only when another adapter adopts the same behavior; provider inference, browser-candidate classification, and adapter diagnostics remain adapter-owned for now.
-- Use directory audit report evidence to decide whether web-search should get a separate audit migration.
+- Consider browser-recovery candidates for web-derived discovery only after the HTTP-only web audit has enough runtime evidence.
 - Extend shared directory-cache helpers only when another adapter has the same cache shape and bypass semantics.
 - Extend the shared prevalidated queue-cap policy only when another adapter produces candidates that already passed `jobsFound > 0`, while preserving dedupe, tombstones, pending/rejected state, and admin auto-approval gates.
 - Extend shared directory fetch-job builders only for additional adapters that already use the same `fetch_directory_pages` job shape.
@@ -40,7 +41,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 ## Audit Readiness Notes
 
 - Gamesmap and Gameprog now share cache, fetch-job, audit-engine, and report-summary seams. Their audit paths are default when each adapter is enabled; future work should focus on runtime evidence and broader adapter migration.
-- Sheet-directory now defaults to its audit artifact when the stage is enabled. Seed-careers and web-search have characterized fetch-job and candidate-output seams, but still own different input shapes and need a separate plan before adopting an audit artifact.
+- Sheet-directory now defaults to its audit artifact when the stage is enabled. Seed-careers and web-search now have an opt-in combined audit artifact, but default behavior remains direct scanning until runtime evidence supports default enablement.
 - Browser recovery and active promotion stay out of shared audit-engine readiness. Any adapter adopting rendered recovery should first emit HTTP-only browser candidates and still route validated rows through the normal discovery queue.
 
 ## Future Directory Audit Contract

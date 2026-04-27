@@ -1,16 +1,30 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import time
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus, urlparse
 
 from src.shared.regex import find_urls_in_text
 
-from .config import DUCKDUCKGO_HTML_SEARCH, MAX_SEARCH_LINKS_PER_QUERY, WEB_SEARCH_QUERY_SUFFIX
+from . import audit_ledger
+from .config import (
+    DEFAULT_DISCOVERY_CONFIG,
+    DUCKDUCKGO_HTML_SEARCH,
+    MAX_SEARCH_LINKS_PER_QUERY,
+    WEB_SEARCH_QUERY_SUFFIX,
+)
+from .directory_audit import run_directory_audit
 from .directory_fetch_jobs import build_directory_fetch_job
 from .page_analysis import analyze_fetched_page
 from .scoring import careers_keyword_count, clean_token, studio_domain_match, unique_string_list
 from .web_search_extract import extract_links_from_html
 from .web_search_fetch import fetch_text
+
+WEB_SEARCH_AUDIT_SCHEMA_VERSION = 1
+WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT = 10_000
 
 _PROVIDER_DISPLAY_NAMES = {
     "ashby": "Ashby",
@@ -361,28 +375,90 @@ def _append_page_analysis_outcome(
         static_candidates.append(static_candidate)
 
 
-def discover_seed_careers_page_candidates(
+def _web_search_config_section(config: dict[str, Any] | None) -> dict[str, Any]:
+    defaults = dict(DEFAULT_DISCOVERY_CONFIG.get("webSearch") or {})
+    source = config if isinstance(config, dict) else {}
+    section = source.get("webSearch")
+    if isinstance(section, dict):
+        defaults.update(section)
+        return defaults
+    defaults.update(source)
+    return defaults
+
+
+def _web_search_audit_path(config: dict[str, Any] | None) -> Path:
+    cfg = _web_search_config_section(config)
+    raw = str(cfg.get("activeAuditPath") or "").strip()
+    if raw:
+        return Path(raw)
+    return Path(__file__).resolve().parents[2] / "data" / "web-search-discovery-audit.json"
+
+
+def _web_search_audit_ttl_minutes(config: dict[str, Any] | None) -> int:
+    raw = _web_search_config_section(config).get("activeAuditTtlMinutes", 360)
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 360
+
+
+def _seed_catalog_signature(studio_seeds: list[dict[str, Any]]) -> dict[str, Any]:
+    normalized = [
+        {
+            "studio": str(seed.get("studio") or "").strip(),
+            "careersUrl": str(seed.get("careersUrl") or "").strip(),
+            "nlPriority": bool(seed.get("nlPriority")),
+        }
+        for seed in studio_seeds
+    ]
+    payload = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
+    return {
+        "count": len(normalized),
+        "sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+    }
+
+
+def _web_search_audit_signature(
+    *,
+    studio_seeds: list[dict[str, Any]],
+    include_seed_careers: bool,
+    include_web_search: bool,
+    max_queries: int,
+) -> dict[str, Any]:
+    return {
+        "parserVersion": WEB_SEARCH_AUDIT_SCHEMA_VERSION,
+        "includeSeedCareers": bool(include_seed_careers),
+        "includeWebSearch": bool(include_web_search),
+        "maxQueries": max(0, int(max_queries)),
+        "seedCatalog": _seed_catalog_signature(studio_seeds),
+    }
+
+
+def _scan_seed_careers_page_candidates(
     timeout_s: int,
     *,
     studio_seeds: list[dict[str, Any]],
-    fetcher=None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    fetcher: Any,
+) -> dict[str, Any]:
     from src.source_registry import unique_sources
 
     from .directory_fetch import directory_fetch_concurrency_defaults, fetch_directory_pages
     from .io_runtime import collapse_competing_candidates
 
-    fetcher = fetcher or fetch_text
     provider_candidates: list[dict[str, Any]] = []
     static_candidates: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     fetch_defaults = directory_fetch_concurrency_defaults()
     page_jobs: list[dict[str, Any]] = []
+    setup_started = time.perf_counter()
+    seeds_with_careers_url = 0
+    direct_provider_links = 0
     for seed in studio_seeds:
         careers_url = str(seed.get("careersUrl") or "").strip()
         studio = str(seed.get("studio") or "").strip()
         if not careers_url or not studio:
             continue
+        seeds_with_careers_url += 1
         nl_priority = bool(seed.get("nlPriority"))
         inferred = infer_web_candidate(
             careers_url,
@@ -393,6 +469,7 @@ def discover_seed_careers_page_candidates(
         if inferred:
             inferred["careersUrl"] = careers_url
             provider_candidates.append(inferred)
+            direct_provider_links += 1
             continue
         page_jobs.append(
             _page_job(
@@ -402,6 +479,8 @@ def discover_seed_careers_page_candidates(
                 adapter="seed_careers_page",
             )
         )
+    setup_ms = audit_ledger.duration_ms(setup_started)
+    page_fetch_started = time.perf_counter()
     page_fetch_results = fetch_directory_pages(
         timeout_s,
         page_jobs,
@@ -410,12 +489,16 @@ def discover_seed_careers_page_candidates(
         per_host_concurrency=int(fetch_defaults["perHost"]),
         progress_label="Seed careers page fetch",
     )
+    page_fetch_ms = audit_ledger.duration_ms(page_fetch_started)
+    analysis_started = time.perf_counter()
+    fetched_pages = 0
     for result in page_fetch_results:
         if not bool(result.get("ok")):
             failure = result.get("failure")
             if isinstance(failure, dict):
                 failures.append(failure)
             continue
+        fetched_pages += 1
         payload = dict(result.get("payload") or {})
         _append_page_analysis_outcome(
             page_url=str(result.get("url") or "").strip(),
@@ -426,32 +509,55 @@ def discover_seed_careers_page_candidates(
             provider_candidates=provider_candidates,
             static_candidates=static_candidates,
         )
-    return (
-        collapse_competing_candidates(provider_candidates),
-        unique_sources(static_candidates),
-        failures,
-    )
+    provider_rows = collapse_competing_candidates(provider_candidates)
+    static_rows = unique_sources(static_candidates)
+    return {
+        "providerCandidates": provider_rows,
+        "staticCandidates": static_rows,
+        "failures": failures,
+        "summary": {
+            "seedRows": len(studio_seeds),
+            "seedRowsWithCareersUrl": seeds_with_careers_url,
+            "seedDirectProviderLinks": direct_provider_links,
+            "seedPageFetchJobs": len(page_jobs),
+            "seedPagesFetched": fetched_pages,
+            "seedProviderCandidates": len(provider_rows),
+            "seedStaticCandidates": len(static_rows),
+            "seedFailures": len(failures),
+        },
+        "batchTiming": {
+            "seedSetupMs": setup_ms,
+            "seedPageFetchMs": page_fetch_ms,
+            "seedCandidateAnalysisMs": audit_ledger.duration_ms(analysis_started),
+        },
+        "completedUrlIdentities": [
+            str(job.get("url") or "").strip() for job in page_jobs if str(job.get("url") or "")
+        ],
+    }
 
 
-def discover_web_search_candidates(
+def _scan_web_search_candidates(
     timeout_s: int,
     *,
     studio_seeds: list[dict[str, Any]],
-    fetcher=None,
+    fetcher: Any,
     max_queries: int = 18,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> dict[str, Any]:
     from src.source_registry import unique_sources
 
     from .directory_fetch import directory_fetch_concurrency_defaults, fetch_directory_pages
     from .io_runtime import collapse_competing_candidates
 
-    fetcher = fetcher or fetch_text
     provider_candidates: list[dict[str, Any]] = []
     static_candidates: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     fetch_defaults = directory_fetch_concurrency_defaults()
     page_jobs: list[dict[str, Any]] = []
-    for query, seed in build_web_search_queries(studio_seeds, max_queries=max_queries):
+    queries = build_web_search_queries(studio_seeds, max_queries=max_queries)
+    search_started = time.perf_counter()
+    search_successes = 0
+    direct_provider_links = 0
+    for query, seed in queries:
         url = DUCKDUCKGO_HTML_SEARCH.format(query=quote_plus(query))
         try:
             html = fetcher(url, timeout_s)
@@ -460,6 +566,7 @@ def discover_web_search_candidates(
                 {"name": query, "adapter": "web_search", "error": str(exc), "stage": "search"}
             )
             continue
+        search_successes += 1
         studio = str(seed.get("studio") or "")
         nl_priority = bool(seed.get("nlPriority"))
         for link in extract_links_from_html(html)[:MAX_SEARCH_LINKS_PER_QUERY]:
@@ -471,6 +578,7 @@ def discover_web_search_candidates(
             )
             if inferred:
                 provider_candidates.append(inferred)
+                direct_provider_links += 1
                 continue
             if not careers_keyword_count(link):
                 continue
@@ -482,6 +590,8 @@ def discover_web_search_candidates(
                     adapter="web_search",
                 )
             )
+    search_ms = audit_ledger.duration_ms(search_started)
+    page_fetch_started = time.perf_counter()
     page_fetch_results = fetch_directory_pages(
         timeout_s,
         page_jobs,
@@ -490,12 +600,16 @@ def discover_web_search_candidates(
         per_host_concurrency=int(fetch_defaults["perHost"]),
         progress_label="Web search page fetch",
     )
+    page_fetch_ms = audit_ledger.duration_ms(page_fetch_started)
+    analysis_started = time.perf_counter()
+    fetched_pages = 0
     for result in page_fetch_results:
         if not bool(result.get("ok")):
             failure = result.get("failure")
             if isinstance(failure, dict):
                 failures.append(failure)
             continue
+        fetched_pages += 1
         payload = dict(result.get("payload") or {})
         _append_page_analysis_outcome(
             page_url=str(result.get("url") or "").strip(),
@@ -506,8 +620,179 @@ def discover_web_search_candidates(
             provider_candidates=provider_candidates,
             static_candidates=static_candidates,
         )
+    provider_rows = collapse_competing_candidates(provider_candidates)
+    static_rows = unique_sources(static_candidates)
+    return {
+        "providerCandidates": provider_rows,
+        "staticCandidates": static_rows,
+        "failures": failures,
+        "summary": {
+            "webQueriesPlanned": len(queries),
+            "webSearchSuccesses": search_successes,
+            "webDirectProviderLinks": direct_provider_links,
+            "webPageFetchJobs": len(page_jobs),
+            "webPagesFetched": fetched_pages,
+            "webProviderCandidates": len(provider_rows),
+            "webStaticCandidates": len(static_rows),
+            "webFailures": len(failures),
+        },
+        "batchTiming": {
+            "webSearchFetchMs": search_ms,
+            "webPageFetchMs": page_fetch_ms,
+            "webCandidateAnalysisMs": audit_ledger.duration_ms(analysis_started),
+        },
+        "completedUrlIdentities": [
+            str(job.get("url") or "").strip() for job in page_jobs if str(job.get("url") or "")
+        ],
+    }
+
+
+def _merge_web_scan_results(results: list[dict[str, Any]]) -> dict[str, Any]:
+    provider_candidates: list[dict[str, Any]] = []
+    static_candidates: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    summary: dict[str, Any] = {}
+    batch_timing: dict[str, Any] = {}
+    completed_url_identities: list[str] = []
+    for result in results:
+        provider_candidates.extend(list(result.get("providerCandidates") or []))
+        static_candidates.extend(list(result.get("staticCandidates") or []))
+        failures.extend(list(result.get("failures") or []))
+        summary.update(dict(result.get("summary") or {}))
+        batch_timing.update(dict(result.get("batchTiming") or {}))
+        completed_url_identities.extend(
+            str(url) for url in list(result.get("completedUrlIdentities") or []) if str(url)
+        )
+    return {
+        "providerCandidates": provider_candidates,
+        "staticCandidates": static_candidates,
+        "failures": failures,
+        "summary": summary,
+        "batchTiming": batch_timing,
+        "completedUrlIdentities": completed_url_identities,
+    }
+
+
+def discover_seed_careers_page_candidates(
+    timeout_s: int,
+    *,
+    studio_seeds: list[dict[str, Any]],
+    fetcher=None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    fetcher = fetcher or fetch_text
+    scan = _scan_seed_careers_page_candidates(
+        timeout_s,
+        studio_seeds=studio_seeds,
+        fetcher=fetcher,
+    )
     return (
-        collapse_competing_candidates(provider_candidates),
-        unique_sources(static_candidates),
-        failures,
+        list(scan.get("providerCandidates") or []),
+        list(scan.get("staticCandidates") or []),
+        list(scan.get("failures") or []),
+    )
+
+
+def discover_web_search_candidates(
+    timeout_s: int,
+    *,
+    studio_seeds: list[dict[str, Any]],
+    fetcher=None,
+    max_queries: int = 18,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    fetcher = fetcher or fetch_text
+    scan = _scan_web_search_candidates(
+        timeout_s,
+        studio_seeds=studio_seeds,
+        fetcher=fetcher,
+        max_queries=max_queries,
+    )
+    return (
+        list(scan.get("providerCandidates") or []),
+        list(scan.get("staticCandidates") or []),
+        list(scan.get("failures") or []),
+    )
+
+
+def run_web_search_directory_audit(
+    timeout_s: int,
+    *,
+    studio_seeds: list[dict[str, Any]],
+    include_seed_careers: bool,
+    include_web_search: bool,
+    config: dict[str, Any] | None = None,
+    fetcher=None,
+    max_queries: int = 18,
+) -> tuple[dict[str, Any], bool]:
+    from .reporting import emit_log
+
+    fetcher = fetcher or fetch_text
+
+    def _scan(scan_timeout_s: int) -> dict[str, Any]:
+        results: list[dict[str, Any]] = []
+        if include_seed_careers:
+            results.append(
+                _scan_seed_careers_page_candidates(
+                    scan_timeout_s,
+                    studio_seeds=studio_seeds,
+                    fetcher=fetcher,
+                )
+            )
+        if include_web_search:
+            results.append(
+                _scan_web_search_candidates(
+                    scan_timeout_s,
+                    studio_seeds=studio_seeds,
+                    fetcher=fetcher,
+                    max_queries=max_queries,
+                )
+            )
+        merged = _merge_web_scan_results(results)
+        summary = dict(merged.get("summary") or {})
+        summary.update(
+            {
+                "seedCareersEnabled": bool(include_seed_careers),
+                "webSearchEnabled": bool(include_web_search),
+                "seedRows": len(studio_seeds),
+                "maxQueries": max(0, int(max_queries)),
+            }
+        )
+        return {
+            "providerCandidates": list(merged.get("providerCandidates") or []),
+            "staticCandidates": list(merged.get("staticCandidates") or []),
+            "failures": list(merged.get("failures") or []),
+            "summary": summary,
+            "batchTiming": dict(merged.get("batchTiming") or {}),
+            "progress": {
+                "complete": True,
+                "cursor": len(studio_seeds),
+                "completedUrlIdentities": list(merged.get("completedUrlIdentities") or []),
+            },
+        }
+
+    return run_directory_audit(
+        adapter="web_search",
+        schema_version=WEB_SEARCH_AUDIT_SCHEMA_VERSION,
+        output_path=_web_search_audit_path(config),
+        ttl_minutes=_web_search_audit_ttl_minutes(config),
+        signature=_web_search_audit_signature(
+            studio_seeds=studio_seeds,
+            include_seed_careers=include_seed_careers,
+            include_web_search=include_web_search,
+            max_queries=max_queries,
+        ),
+        timeout_s=timeout_s,
+        scan=_scan,
+        runtime={
+            "includeSeedCareers": bool(include_seed_careers),
+            "includeWebSearch": bool(include_web_search),
+            "maxQueries": max(0, int(max_queries)),
+        },
+        summary={
+            "seedCareersEnabled": bool(include_seed_careers),
+            "webSearchEnabled": bool(include_web_search),
+            "seedRows": len(studio_seeds),
+            "maxQueries": max(0, int(max_queries)),
+        },
+        sample_limit=WEB_SEARCH_AUDIT_FAILURE_SAMPLE_LIMIT,
+        emit_log=emit_log,
     )

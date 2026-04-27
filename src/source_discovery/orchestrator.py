@@ -93,6 +93,9 @@ from .web_search import (
 from .web_search import (
     fetch_text,
 )
+from .web_search_candidates import (
+    run_web_search_directory_audit as _run_web_search_directory_audit,
+)
 
 orchestrator_generation_mod.root = sys.modules[__name__]
 orchestrator_probe_mod.root = sys.modules[__name__]
@@ -119,6 +122,7 @@ resolve_patch_target = _resolve_patch_target
 save_url_patch_manifest = _save_url_patch_manifest
 discover_seed_careers_page_candidates = _discover_seed_careers_page_candidates
 discover_web_search_candidates = _discover_web_search_candidates
+run_web_search_directory_audit = _run_web_search_directory_audit
 
 
 def _discovery_report_write_path() -> Path:

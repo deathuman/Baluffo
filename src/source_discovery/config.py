@@ -272,6 +272,11 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "activeAuditPath": "data/sheet-directory-discovery-audit.json",
         "activeAuditTtlMinutes": 360,
     },
+    "webSearch": {
+        "activeAuditEnabled": False,
+        "activeAuditPath": "data/web-search-discovery-audit.json",
+        "activeAuditTtlMinutes": 360,
+    },
     "gamedevmap": {
         "enabled": True,
         "csvUrl": "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv",
