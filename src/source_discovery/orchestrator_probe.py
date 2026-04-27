@@ -6,8 +6,6 @@ from contextlib import suppress
 from typing import Any
 from urllib.parse import urlparse
 
-import httpx
-
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.shared.utils import now_iso
 from src.source_registry import source_identity
@@ -17,12 +15,11 @@ from .core import (
     compute_candidate_rank,
     compute_candidate_score,
     normalize_candidate,
-    probe_bucket_for,
-    probe_concurrency_defaults,
     should_queue_candidate,
 )
 from .io_runtime import endpoint_url
 from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
+from .probe_runtime import run_bounded_probe_batch_async
 from .runtime_metrics import adjust_adapter_runtime as _adjust_adapter_runtime
 from .runtime_metrics import increment_adapter_runtime as _increment_adapter_runtime
 from .runtime_metrics import record_stage_timing as _record_stage_timing
@@ -32,7 +29,6 @@ from .url_patches import (
     merge_url_patches,
     should_attempt_patch_recovery,
 )
-from .web_search import async_fetch_text_httpx
 
 root: Any | None = None
 
@@ -95,41 +91,17 @@ async def _run_probe_batch(
     playwright_semaphore: asyncio.Semaphore | None,
 ) -> list[tuple[dict[str, Any], bool, int, str, int]]:
     orchestrator = _require_root()
-    limits = probe_concurrency_defaults()
-    total_sem = asyncio.Semaphore(int(limits["total"]))
-    bucket_sems = {
-        "static": asyncio.Semaphore(int(limits["static"])),
-        "provider": asyncio.Semaphore(int(limits["provider"])),
-        "teamtailor": asyncio.Semaphore(int(limits["teamtailor"])),
-    }
-
-    async def _call_fetch(url: str, timeout_s: int) -> str:
-        if deps.fetcher is not orchestrator.fetch_text:
-            return await asyncio.to_thread(deps.fetcher, url, timeout_s)
-        return await async_fetch_text_httpx(client, url, timeout_s)
-
-    async def _probe_one(row: dict[str, Any]) -> tuple[dict[str, Any], bool, int, str, int]:
-        bucket = probe_bucket_for(row)
-        bucket_sem = bucket_sems.get(bucket, bucket_sems["provider"])
-        async with total_sem:
-            async with bucket_sem:
-                probe_started = time.perf_counter()
-                ok, jobs_found, error = await orchestrator.async_probe_candidate(
-                    row,
-                    deps.timeout_s,
-                    fetcher=_call_fetch,
-                    try_playwright=try_playwright,
-                    playwright_semaphore=playwright_semaphore,
-                )
-                probe_duration_ms = max(0, int((time.perf_counter() - probe_started) * 1000))
-                return row, ok, jobs_found, error, probe_duration_ms
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(deps.timeout_s)) as client:
-        tasks = [asyncio.create_task(_probe_one(row)) for row in rows]
-        results: list[tuple[dict[str, Any], bool, int, str, int]] = []
-        for fut in asyncio.as_completed(tasks):
-            results.append(await fut)
-        return results
+    return await run_bounded_probe_batch_async(
+        rows,
+        timeout_s=deps.timeout_s,
+        fetcher=deps.fetcher,
+        async_probe=orchestrator.async_probe_candidate,
+        default_fetcher=orchestrator.fetch_text,
+        probe_kwargs={
+            "try_playwright": try_playwright,
+            "playwright_semaphore": playwright_semaphore,
+        },
+    )
 
 
 def probe_and_recover(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> None:

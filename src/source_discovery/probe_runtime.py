@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -24,6 +25,7 @@ from .io_runtime import endpoint_url
 from .web_search_fetch import async_fetch_text_httpx, fetch_text
 
 ProbeResult = tuple[dict[str, Any], bool, int, str, int]
+AsyncProbe = Callable[..., Awaitable[tuple[bool, int, str]]]
 
 
 def candidate_id(candidate: dict[str, Any]) -> str:
@@ -82,14 +84,16 @@ def probe_candidates_after_rendered_results(
     ]
 
 
-async def probe_candidates_async(
+async def run_bounded_probe_batch_async(
     candidates: list[dict[str, Any]],
     *,
     timeout_s: int,
     fetcher,
+    async_probe: AsyncProbe,
+    default_fetcher=fetch_text,
+    probe_kwargs: dict[str, Any] | None = None,
 ) -> list[ProbeResult]:
-    from .probe import async_probe_candidate
-
+    probe_options = dict(probe_kwargs or {})
     limits = probe_concurrency_defaults()
     total_sem = asyncio.Semaphore(int(limits["total"]))
     bucket_sems = {
@@ -99,7 +103,7 @@ async def probe_candidates_async(
     }
 
     async def _call_fetch(url: str, call_timeout_s: int) -> str:
-        if fetcher is fetch_text:
+        if fetcher is default_fetcher:
             return await async_fetch_text_httpx(client, url, call_timeout_s)
         return await asyncio.to_thread(fetcher, url, call_timeout_s)
 
@@ -109,10 +113,11 @@ async def probe_candidates_async(
         async with total_sem:
             async with bucket_sem:
                 started = time.perf_counter()
-                ok, jobs_found, error = await async_probe_candidate(
+                ok, jobs_found, error = await async_probe(
                     row,
                     timeout_s,
                     fetcher=_call_fetch,
+                    **probe_options,
                 )
                 return row, ok, jobs_found, error, audit_ledger.duration_ms(started)
 
@@ -122,3 +127,19 @@ async def probe_candidates_async(
         for fut in asyncio.as_completed(tasks):
             results.append(await fut)
         return results
+
+
+async def probe_candidates_async(
+    candidates: list[dict[str, Any]],
+    *,
+    timeout_s: int,
+    fetcher,
+) -> list[ProbeResult]:
+    from .probe import async_probe_candidate
+
+    return await run_bounded_probe_batch_async(
+        candidates,
+        timeout_s=timeout_s,
+        fetcher=fetcher,
+        async_probe=async_probe_candidate,
+    )
