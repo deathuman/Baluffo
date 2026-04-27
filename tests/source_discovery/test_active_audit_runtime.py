@@ -25,6 +25,7 @@ from src.source_discovery.active_audit_runtime import (
     run_active_homepage_batch,
     save_updated_active_audit_artifact,
     select_rerun_rows,
+    validated_active_candidates_from_artifact,
 )
 
 
@@ -650,3 +651,121 @@ def test_run_active_audit_cache_stale_artifact_refreshes_without_hit() -> None:
     assert result == {"reset": False}
     assert cache_hit is False
     assert calls == ["refresh:False"]
+
+
+def test_validated_active_candidates_filters_and_stamps_provider_rows() -> None:
+    artifact = {
+        "activeRows": [
+            {
+                "adapter": "greenhouse",
+                "sourceId": "one",
+                "probeStatus": "ok",
+                "jobsFound": 3,
+            },
+            {
+                "adapter": "lever",
+                "sourceId": "bad-status",
+                "probeStatus": "failed",
+                "jobsFound": 3,
+            },
+            {
+                "adapter": "ashby",
+                "sourceId": "zero",
+                "probeStatus": "ok",
+                "jobsFound": 0,
+            },
+            {
+                "adapter": "workable",
+                "probeStatus": "ok",
+                "jobsFound": 2,
+            },
+            {
+                "adapter": "greenhouse",
+                "sourceId": "one",
+                "probeStatus": "ok",
+                "jobsFound": 3,
+            },
+        ]
+    }
+
+    provider_rows, static_rows = validated_active_candidates_from_artifact(
+        artifact,
+        active_key="activeRows",
+        identity_fn=lambda row: str(row.get("sourceId") or ""),
+        validation_metadata={"prevalidatedDiscovery": True, "auditValidated": True},
+        source_directory="test_directory",
+        static_transform=lambda row: row,
+        unique_rows=lambda rows: list({str(row.get("sourceId")): row for row in rows}.values()),
+    )
+
+    assert provider_rows == [
+        {
+            "adapter": "greenhouse",
+            "sourceId": "one",
+            "probeStatus": "ok",
+            "jobsFound": 3,
+            "prevalidatedDiscovery": True,
+            "auditValidated": True,
+            "sourceDirectory": "test_directory",
+        }
+    ]
+    assert static_rows == []
+
+
+def test_validated_active_candidates_routes_static_transform_and_suppression() -> None:
+    artifact = {
+        "activeRows": [
+            {
+                "adapter": "static",
+                "sourceId": "static-one",
+                "probeStatus": "ok",
+                "sampleCount": 1,
+            },
+            {
+                "adapter": "static",
+                "sourceId": "static-two",
+                "probeStatus": "ok",
+                "jobsFound": 2,
+            },
+            {
+                "adapter": "greenhouse",
+                "sourceId": "provider-one",
+                "probeStatus": "ok",
+                "jobsFound": 1,
+            },
+        ]
+    }
+
+    provider_rows, static_rows = validated_active_candidates_from_artifact(
+        artifact,
+        active_key="activeRows",
+        identity_fn=lambda row: str(row.get("sourceId") or ""),
+        validation_metadata={"prevalidatedDiscovery": True},
+        source_directory="test_directory",
+        static_transform=lambda row: (
+            None if row.get("sourceId") == "static-two" else {**row, "transformed": True}
+        ),
+        unique_rows=lambda rows: rows,
+    )
+
+    assert provider_rows == [
+        {
+            "adapter": "greenhouse",
+            "sourceId": "provider-one",
+            "probeStatus": "ok",
+            "jobsFound": 1,
+            "prevalidatedDiscovery": True,
+            "sourceDirectory": "test_directory",
+        }
+    ]
+    assert static_rows == [
+        {
+            "adapter": "static",
+            "sourceId": "static-one",
+            "probeStatus": "ok",
+            "sampleCount": 1,
+            "prevalidatedDiscovery": True,
+            "sourceDirectory": "test_directory",
+            "transformed": True,
+        }
+    ]

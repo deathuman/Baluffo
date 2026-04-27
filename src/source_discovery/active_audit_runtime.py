@@ -222,6 +222,40 @@ def run_active_audit_cache(
     return refresh(effective_reset), False
 
 
+def validated_active_candidates_from_artifact(
+    artifact: dict[str, Any],
+    *,
+    active_key: str,
+    identity_fn: Callable[[dict[str, Any]], str],
+    validation_metadata: dict[str, Any],
+    source_directory: str,
+    static_transform: Callable[[dict[str, Any]], dict[str, Any] | None],
+    unique_rows: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    provider_candidates: list[dict[str, Any]] = []
+    static_candidates: list[dict[str, Any]] = []
+    for item in _as_list(artifact.get(active_key)):
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        if str(row.get("probeStatus") or "").strip().lower() != "ok":
+            continue
+        if _safe_int(row.get("jobsFound") or row.get("sampleCount")) <= 0:
+            continue
+        if not identity_fn(row):
+            continue
+        row.update(dict(validation_metadata))
+        row["sourceDirectory"] = str(row.get("sourceDirectory") or source_directory)
+        adapter = str(row.get("adapter") or "").strip().lower()
+        if adapter == "static":
+            static_row = static_transform(row)
+            if static_row is not None:
+                static_candidates.append(static_row)
+        elif adapter:
+            provider_candidates.append(row)
+    return unique_rows(provider_candidates), unique_rows(static_candidates)
+
+
 def merge_unique_candidate_rows(
     existing: Any,
     incoming: list[dict[str, Any]],

@@ -1957,34 +1957,23 @@ def gamedevmap_validated_candidates_from_artifact(
     validated_static_queue_cap: int = 0,
     validated_static_domain_cap: int = 0,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    provider_candidates: list[dict[str, Any]] = []
-    static_candidates: list[dict[str, Any]] = []
-    for item in _as_list(artifact.get("activeCandidates")):
-        if not isinstance(item, dict):
-            continue
-        row = dict(item)
-        if str(row.get("probeStatus") or "").strip().lower() != "ok":
-            continue
-        if _safe_int(row.get("jobsFound") or row.get("sampleCount")) <= 0:
-            continue
-        if not _candidate_id(row):
-            continue
-        row["prevalidatedDiscovery"] = True
-        row["gamedevmapAuditValidated"] = True
-        row["sourceDirectory"] = str(row.get("sourceDirectory") or "gamedevmap")
-        adapter = str(row.get("adapter") or "").strip().lower()
-        if adapter == "static":
-            static_row = _validated_static_audit_candidate(
-                row,
-                promote_validated_static=promote_validated_static,
-                validated_static_queue_cap=validated_static_queue_cap,
-                validated_static_domain_cap=validated_static_domain_cap,
-            )
-            if static_row is not None:
-                static_candidates.append(static_row)
-        elif adapter:
-            provider_candidates.append(row)
-    return unique_sources(provider_candidates), unique_sources(static_candidates)
+    return active_audit_runtime.validated_active_candidates_from_artifact(
+        artifact,
+        active_key="activeCandidates",
+        identity_fn=_candidate_id,
+        validation_metadata={
+            "prevalidatedDiscovery": True,
+            "gamedevmapAuditValidated": True,
+        },
+        source_directory="gamedevmap",
+        static_transform=lambda row: _validated_static_audit_candidate(
+            row,
+            promote_validated_static=promote_validated_static,
+            validated_static_queue_cap=validated_static_queue_cap,
+            validated_static_domain_cap=validated_static_domain_cap,
+        ),
+        unique_rows=unique_sources,
+    )
 
 
 def discover_gamedevmap_audit_candidates(
