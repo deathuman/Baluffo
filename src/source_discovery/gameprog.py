@@ -10,13 +10,13 @@ Responsibilities:
 
 import json
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from src.source_registry import unique_sources
 
 from . import audit_ledger
+from .directory_audit import directory_audit_rows, run_directory_audit
 from .directory_cache import load_directory_cache, write_directory_cache
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .directory_fetch_jobs import build_directory_fetch_jobs
@@ -145,29 +145,6 @@ def _write_gameprog_cache(
         static_candidates=static_candidates,
         failures=failures,
     )
-
-
-def _load_gameprog_audit_artifact(path: Path) -> dict[str, Any] | None:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    return payload if isinstance(payload, dict) else None
-
-
-def _gameprog_audit_rows(
-    artifact: dict[str, Any],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    provider_rows = artifact.get("providerCandidates")
-    static_rows = artifact.get("staticCandidates")
-    failures = artifact.get("failures")
-    if not isinstance(provider_rows, list):
-        provider_rows = []
-    if not isinstance(static_rows, list):
-        static_rows = []
-    if not isinstance(failures, list):
-        failures = []
-    return unique_sources(provider_rows), unique_sources(static_rows), list(failures)
 
 
 def parse_gameprog_teams_json(json_text: str) -> list[dict[str, Any]]:
@@ -546,44 +523,17 @@ def _gameprog_scan(
             "websiteFetchFailures": website_fetch_failures,
         },
         "websiteFetchJobs": website_fetch_jobs,
+        "progress": {
+            "complete": True,
+            "cursor": len(entries),
+            "completedUrlIdentities": [
+                str(row.get("url") or "").strip()
+                for row in website_fetch_jobs
+                if isinstance(row, dict)
+            ],
+        },
         "batchTiming": batch_timing,
         "writeCache": True,
-    }
-
-
-def _initial_gameprog_audit_artifact(*, cfg: dict[str, Any], timeout_s: int) -> dict[str, Any]:
-    now = datetime.now(UTC).isoformat()
-    fetch_concurrency, per_host_concurrency = resolve_directory_fetch_limits(cfg)
-    return {
-        "schemaVersion": GAMEPROG_AUDIT_SCHEMA_VERSION,
-        "adapter": "gameprog",
-        "startedAt": now,
-        "updatedAt": now,
-        "runtime": {
-            "configSignature": _gameprog_cache_signature(cfg),
-            "timeoutSeconds": int(timeout_s),
-            "fetchConcurrency": fetch_concurrency,
-            "perHostConcurrency": per_host_concurrency,
-            "teamsUrl": str(cfg.get("teamsUrl") or GAMEPROG_TEAMS_URL).strip(),
-        },
-        "progress": {"complete": False, "cursor": 0, "completedUrlIdentities": []},
-        "summary": {
-            "teamsRows": 0,
-            "parsedRows": 0,
-            "eligibleRows": 0,
-            "websiteFetchJobs": 0,
-            "websiteFetchFailures": 0,
-            "providerCandidates": 0,
-            "staticCandidates": 0,
-            "failures": 0,
-        },
-        "providerCandidates": [],
-        "staticCandidates": [],
-        "failures": [],
-        "failureCounts": {},
-        "failureErrorCounts": {},
-        "failureSamples": [],
-        "timings": {"batches": [], "totalsMs": {}},
     }
 
 
@@ -597,52 +547,35 @@ def run_gameprog_directory_audit(
 
     fetcher = fetcher or fetch_text
     cfg = _gameprog_config_section(config)
-    output_path = _gameprog_audit_path(config)
-    expected_signature = _gameprog_cache_signature(cfg)
-    ttl_minutes = _gameprog_audit_ttl_minutes(config)
-    existing = _load_gameprog_audit_artifact(output_path)
-    if existing is not None and audit_ledger.artifact_is_fresh(
-        existing,
+    fetch_concurrency, per_host_concurrency = resolve_directory_fetch_limits(cfg)
+    return run_directory_audit(
+        adapter="gameprog",
         schema_version=GAMEPROG_AUDIT_SCHEMA_VERSION,
-        expected_signature=expected_signature,
-        ttl_minutes=ttl_minutes,
-    ):
-        emit_log(f"Gameprog directory audit cache hit: {output_path}.")
-        return existing, True
-
-    artifact = _initial_gameprog_audit_artifact(cfg=cfg, timeout_s=timeout_s)
-    scan_started = time.perf_counter()
-    scan = _gameprog_scan(timeout_s, cfg=cfg, fetcher=fetcher, emit_log=emit_log)
-    artifact["providerCandidates"] = list(scan.get("providerCandidates") or [])
-    artifact["staticCandidates"] = list(scan.get("staticCandidates") or [])
-    failures = list(scan.get("failures") or [])
-    audit_ledger.record_failures(
-        artifact,
-        failures,
+        output_path=_gameprog_audit_path(config),
+        ttl_minutes=_gameprog_audit_ttl_minutes(config),
+        signature=_gameprog_cache_signature(cfg),
+        timeout_s=timeout_s,
+        scan=lambda scan_timeout_s: _gameprog_scan(
+            scan_timeout_s,
+            cfg=cfg,
+            fetcher=fetcher,
+            emit_log=emit_log,
+        ),
+        runtime={
+            "fetchConcurrency": fetch_concurrency,
+            "perHostConcurrency": per_host_concurrency,
+            "teamsUrl": str(cfg.get("teamsUrl") or GAMEPROG_TEAMS_URL).strip(),
+        },
+        summary={
+            "teamsRows": 0,
+            "parsedRows": 0,
+            "eligibleRows": 0,
+            "websiteFetchJobs": 0,
+            "websiteFetchFailures": 0,
+        },
         sample_limit=GAMEPROG_AUDIT_FAILURE_SAMPLE_LIMIT,
+        emit_log=emit_log,
     )
-    summary = dict(artifact.get("summary") or {})
-    summary.update(dict(scan.get("summary") or {}))
-    summary["providerCandidates"] = len(artifact["providerCandidates"])
-    summary["staticCandidates"] = len(artifact["staticCandidates"])
-    summary["failures"] = audit_ledger.failure_count(artifact)
-    artifact["summary"] = summary
-    batch_timing = dict(scan.get("batchTiming") or {})
-    batch_timing["totalMs"] = audit_ledger.duration_ms(scan_started)
-    audit_ledger.append_batch_timing(artifact, batch_timing)
-    artifact["progress"] = {
-        "complete": True,
-        "cursor": int(summary.get("eligibleRows") or 0),
-        "completedUrlIdentities": [
-            str(row.get("url") or "").strip()
-            for row in list(scan.get("websiteFetchJobs") or [])
-            if isinstance(row, dict)
-        ],
-    }
-    artifact["finishedAt"] = datetime.now(UTC).isoformat()
-    artifact["updatedAt"] = artifact["finishedAt"]
-    audit_ledger.save_artifact_atomic(artifact, output_path)
-    return artifact, False
 
 
 def discover_gameprog_candidates(
@@ -664,7 +597,7 @@ def discover_gameprog_candidates(
             config=config,
             fetcher=fetcher,
         )
-        return _gameprog_audit_rows(artifact)
+        return directory_audit_rows(artifact)
 
     cached = _load_gameprog_cache(config, cfg, fetcher=fetcher)
     if cached is not None:
