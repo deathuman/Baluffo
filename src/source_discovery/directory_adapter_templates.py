@@ -430,3 +430,77 @@ def run_directory_adapter_website_scan(
         write_cache=write_cache,
         recovery_runner=recovery_runner,
     )
+
+
+def run_directory_entry_selection_scan(
+    timeout_s: int,
+    *,
+    cfg: dict[str, Any],
+    parsed_entries: list[dict[str, Any]],
+    empty_result: Any,
+    select_entries: Any,
+    emit_selection_log: Any,
+    url_field: str,
+    adapter: str,
+    failure_stage: str,
+    fetcher: Any,
+    fetch_pages: Any,
+    resolve_fetch_limits: Any,
+    progress_label: str,
+    analyze_result: Any,
+    enable_recovery: bool,
+    recovery_analyze_result: Any,
+    recovery_progress_label: str,
+    unique_sources_fn: Any,
+    batch_timing: dict[str, Any],
+    summary: dict[str, Any],
+    recovery_url_limit: int = DEFAULT_RECOVERY_URL_LIMIT,
+    selection_timing_key: str = "candidateSelectionMs",
+    required_fields: tuple[str, ...] = (),
+    initial_failures: list[dict[str, Any]] | None = None,
+    write_cache: bool = True,
+) -> dict[str, Any]:
+    if not parsed_entries:
+        return empty_result()
+
+    started = time.perf_counter()
+    selected = select_entries(parsed_entries)
+    if selection_timing_key:
+        batch_timing[selection_timing_key] = audit_ledger.duration_ms(started)
+    selected = selected if isinstance(selected, dict) else {}
+    homepage_entries = list(selected.get("homepageEntries") or [])
+    eligible_entries = int(selected.get("eligibleEntries") or len(homepage_entries))
+    provider_candidates = list(selected.get("providerCandidates") or [])
+    static_candidates = list(selected.get("staticCandidates") or [])
+    selected_failures = list(selected.get("failures") or [])
+    emit_selection_log(selected)
+    return run_directory_adapter_website_scan(
+        timeout_s,
+        cfg=cfg,
+        entries=homepage_entries,
+        url_field=url_field,
+        adapter=adapter,
+        failure_stage=failure_stage,
+        fetcher=fetcher,
+        fetch_pages=fetch_pages,
+        resolve_fetch_limits=resolve_fetch_limits,
+        progress_label=progress_label,
+        analyze_result=analyze_result,
+        enable_recovery=enable_recovery,
+        recovery_analyze_result=recovery_analyze_result,
+        recovery_progress_label=recovery_progress_label,
+        unique_sources_fn=unique_sources_fn,
+        batch_timing=batch_timing,
+        summary={
+            **summary,
+            **dict(selected.get("summary") or {}),
+            "eligibleRows": eligible_entries,
+        },
+        progress_cursor=int(selected.get("progressCursor") or eligible_entries),
+        recovery_url_limit=recovery_url_limit,
+        required_fields=required_fields,
+        initial_provider_candidates=provider_candidates,
+        initial_static_candidates=static_candidates,
+        initial_failures=[*list(initial_failures or []), *selected_failures],
+        write_cache=write_cache,
+    )

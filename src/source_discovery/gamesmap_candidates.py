@@ -15,7 +15,7 @@ from .directory_adapter_templates import (
     apply_directory_provenance,
     build_directory_static_candidate,
     empty_directory_scan_result,
-    run_directory_adapter_website_scan,
+    run_directory_entry_selection_scan,
 )
 from .directory_audit import discover_directory_adapter_candidates, run_directory_audit
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
@@ -619,7 +619,8 @@ def _gamesmap_scan(
         "browserRecoveryCandidates": 0,
         "badProviderInferences": 0,
     }
-    if not detail_entries:
+
+    def empty_result() -> dict[str, Any]:
         emit_log(
             "Gamesmap parsed entries: "
             f"rows=0, withWebsite=0, eligibleAfterFilter=0, unresolvedCategoryRefs={unresolved_reference_count}."
@@ -630,31 +631,32 @@ def _gamesmap_scan(
             batch_timing=batch_timing,
         )
 
-    homepage_entries: list[dict[str, Any]] = []
-    eligible_entries = 0
-    started = time.perf_counter()
-    selected = _gamesmap_select_homepage_entries(
-        detail_entries,
-        match_category=match_category,
-        infer_candidate=infer_candidate,
-        allowed_tokens=allowed_tokens,
-        blocked_tokens=blocked_tokens,
-    )
-    provider_candidates = list(selected.get("providerCandidates") or [])
-    homepage_entries = list(selected.get("homepageEntries") or [])
-    eligible_entries = int(selected.get("eligibleEntries") or 0)
-    batch_timing["candidateSelectionMs"] = audit_ledger.duration_ms(started)
+    def select_entries(parsed_entries: list[dict[str, Any]]) -> dict[str, Any]:
+        return _gamesmap_select_homepage_entries(
+            parsed_entries,
+            match_category=match_category,
+            infer_candidate=infer_candidate,
+            allowed_tokens=allowed_tokens,
+            blocked_tokens=blocked_tokens,
+        )
 
-    emit_log(
-        "Gamesmap parsed entries: "
-        f"rows={len(detail_entries)}, withWebsite={rows_with_website}, "
-        f"eligibleAfterFilter={eligible_entries}, unresolvedCategoryRefs={unresolved_reference_count}."
-    )
-    emit_log(f"Gamesmap homepage fetch jobs: {len(homepage_entries)}")
-    scan_result = run_directory_adapter_website_scan(
+    def emit_selection_log(selected: dict[str, Any]) -> None:
+        eligible_entries = int(selected.get("eligibleEntries") or 0)
+        homepage_entries = list(selected.get("homepageEntries") or [])
+        emit_log(
+            "Gamesmap parsed entries: "
+            f"rows={len(detail_entries)}, withWebsite={rows_with_website}, "
+            f"eligibleAfterFilter={eligible_entries}, unresolvedCategoryRefs={unresolved_reference_count}."
+        )
+        emit_log(f"Gamesmap homepage fetch jobs: {len(homepage_entries)}")
+
+    scan_result = run_directory_entry_selection_scan(
         timeout_s,
         cfg=cfg,
-        entries=homepage_entries,
+        parsed_entries=detail_entries,
+        empty_result=empty_result,
+        select_entries=select_entries,
+        emit_selection_log=emit_selection_log,
         url_field="websiteUrl",
         adapter="gamesmap",
         failure_stage="website_fetch",
@@ -674,10 +676,8 @@ def _gamesmap_scan(
         recovery_progress_label="Gamesmap",
         unique_sources_fn=unique_sources_fn,
         batch_timing=batch_timing,
-        summary={**base_summary, "eligibleRows": eligible_entries},
-        progress_cursor=eligible_entries,
+        summary=base_summary,
         recovery_url_limit=recovery_url_limit,
-        initial_provider_candidates=provider_candidates,
         initial_failures=failures,
     )
     emit_log(

@@ -21,7 +21,7 @@ from .directory_adapter_templates import (
     apply_directory_provenance,
     build_directory_static_candidate,
     empty_directory_scan_result,
-    run_directory_adapter_website_scan,
+    run_directory_entry_selection_scan,
 )
 from .directory_audit import discover_directory_adapter_candidates, run_directory_audit
 from .directory_cache import load_directory_cache, write_directory_cache
@@ -510,7 +510,8 @@ def _gameprog_scan(
     entries = parse_gameprog_teams_json(teams_json)
     batch_timing["parseMs"] = audit_ledger.duration_ms(started)
     parsed_count = len(entries)
-    if not entries:
+
+    def empty_result() -> dict[str, Any]:
         failures.append(
             {
                 "name": "gameprog_teams",
@@ -521,14 +522,22 @@ def _gameprog_scan(
         )
         return _empty_gameprog_scan_result(failures=failures, batch_timing=batch_timing)
 
-    if max_studios:
-        entries = entries[:max_studios]
+    def select_entries(parsed_entries: list[dict[str, Any]]) -> dict[str, Any]:
+        selected_entries = parsed_entries[:max_studios] if max_studios else list(parsed_entries)
+        return {
+            "homepageEntries": selected_entries,
+            "eligibleEntries": len(selected_entries),
+        }
 
-    emit_log(f"Gameprog directory entries: {len(entries)}")
-    return run_directory_adapter_website_scan(
+    return run_directory_entry_selection_scan(
         timeout_s,
         cfg=cfg,
-        entries=entries,
+        parsed_entries=entries,
+        empty_result=empty_result,
+        select_entries=select_entries,
+        emit_selection_log=lambda selected: emit_log(
+            f"Gameprog directory entries: {int(selected.get('eligibleEntries') or 0)}"
+        ),
         url_field="url",
         adapter="gameprog",
         failure_stage="website_fetch",
@@ -550,9 +559,8 @@ def _gameprog_scan(
         summary={
             "teamsRows": parsed_count,
             "parsedRows": parsed_count,
-            "eligibleRows": len(entries),
         },
-        progress_cursor=len(entries),
+        selection_timing_key="",
         recovery_url_limit=recovery_url_limit,
         initial_failures=failures,
     )

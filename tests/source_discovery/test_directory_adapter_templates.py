@@ -9,6 +9,7 @@ from src.source_discovery.directory_adapter_templates import (
     empty_directory_scan_result,
     empty_scan_result_payload,
     run_directory_adapter_website_scan,
+    run_directory_entry_selection_scan,
     run_directory_website_scan,
 )
 
@@ -397,3 +398,100 @@ def test_run_directory_adapter_website_scan_resolves_common_setup() -> None:
     assert row["summary"]["websiteFetchJobs"] == 0
     assert row["summary"]["recoveryFetchAttempts"] == 0
     assert row["progress"]["cursor"] == 0
+
+
+def test_run_directory_entry_selection_scan_returns_empty_payload_without_selection() -> None:
+    selection_calls: list[object] = []
+
+    row = run_directory_entry_selection_scan(
+        5,
+        cfg={},
+        parsed_entries=[],
+        empty_result=lambda: {
+            "providerCandidates": [],
+            "staticCandidates": [],
+            "failures": [{"stage": "parse"}],
+            "summary": {"parsedRows": 0},
+            "batchTiming": {"parseMs": 1},
+        },
+        select_entries=lambda entries: selection_calls.append(entries) or {},
+        emit_selection_log=lambda _selected: None,
+        url_field="url",
+        adapter="gameprog",
+        failure_stage="website_fetch",
+        fetcher=lambda *_args: "",
+        fetch_pages=lambda *_args, **_kwargs: [],
+        resolve_fetch_limits=lambda _cfg: (1, 1),
+        progress_label="Gameprog website fetch",
+        analyze_result=lambda _result: {},
+        enable_recovery=False,
+        recovery_analyze_result=lambda _result, _request: ([], []),
+        recovery_progress_label="Gameprog",
+        unique_sources_fn=lambda rows: rows,
+        batch_timing={},
+        summary={"parsedRows": 0},
+    )
+
+    assert selection_calls == []
+    assert row["failures"] == [{"stage": "parse"}]
+    assert row["summary"] == {"parsedRows": 0}
+
+
+def test_run_directory_entry_selection_scan_preserves_selected_rows_and_initial_state() -> None:
+    logs: list[dict[str, object]] = []
+
+    def fake_fetch_pages(_timeout_s, jobs, **_kwargs):
+        return [
+            {"url": job["url"], "payload": job["payload"], "ok": True, "text": ""} for job in jobs
+        ]
+
+    row = run_directory_entry_selection_scan(
+        5,
+        cfg={"fetchConcurrency": 4, "perHostConcurrency": 2},
+        parsed_entries=[
+            {"studio": "One", "url": "https://one.example/"},
+            {"studio": "Two", "url": "https://two.example/"},
+        ],
+        empty_result=lambda: {},
+        select_entries=lambda entries: {
+            "homepageEntries": [entries[0]],
+            "eligibleEntries": 1,
+            "providerCandidates": [{"adapter": "greenhouse", "studio": "Direct"}],
+            "summary": {"parsedRows": 2},
+            "progressCursor": 1,
+        },
+        emit_selection_log=lambda selected: logs.append(dict(selected)),
+        url_field="url",
+        adapter="gameprog",
+        failure_stage="website_fetch",
+        fetcher=lambda *_args: "",
+        fetch_pages=fake_fetch_pages,
+        resolve_fetch_limits=lambda cfg: (
+            int(cfg["fetchConcurrency"]),
+            int(cfg["perHostConcurrency"]),
+        ),
+        progress_label="Gameprog website fetch",
+        analyze_result=lambda _result: {
+            "staticCandidates": [{"adapter": "static", "listing_url": "https://one.example/"}]
+        },
+        enable_recovery=False,
+        recovery_analyze_result=lambda _result, _request: ([], []),
+        recovery_progress_label="Gameprog",
+        unique_sources_fn=lambda rows: rows,
+        batch_timing={},
+        summary={"teamsRows": 2},
+        required_fields=("studio",),
+        initial_failures=[{"stage": "index"}],
+    )
+
+    assert len(logs) == 1
+    assert row["providerCandidates"] == [{"adapter": "greenhouse", "studio": "Direct"}]
+    assert row["staticCandidates"] == [{"adapter": "static", "listing_url": "https://one.example/"}]
+    assert row["failures"] == [{"stage": "index"}]
+    assert row["summary"]["teamsRows"] == 2
+    assert row["summary"]["parsedRows"] == 2
+    assert row["summary"]["eligibleRows"] == 1
+    assert row["progress"]["cursor"] == 1
+    assert row["batchTiming"]["fetchConcurrency"] == 4
+    assert row["batchTiming"]["perHostConcurrency"] == 2
+    assert "candidateSelectionMs" in row["batchTiming"]

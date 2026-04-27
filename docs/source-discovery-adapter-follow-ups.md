@@ -38,6 +38,7 @@ These are the lowest-risk, highest-certainty consolidation targets because the i
 - Completed second slice: `gameprog.py::_gameprog_scan` and `gamesmap_candidates.py::_gamesmap_scan` now share the post-selection website fetch, page analysis, recovery, fallback, dedupe, summary, and progress skeleton. Parser/index/category selection remains adapter-owned.
 - Completed recovery-contract slice: Gameprog/Gamesmap website scans now use shared recovery summary/application contracts for fallback suppression, recovered rows, browser candidates, and timing merge.
 - Completed scan-setup slice: Gameprog/Gamesmap now use a shared website-scan setup wrapper for common fetch-concurrency resolution, recovery-budget handoff, and `run_directory_website_scan(...)` call assembly.
+- Completed entry-selection slice: Gameprog/Gamesmap now share parsed-entry empty handling, selection callback timing, selection log handoff, selected summary merge, and website-scan dispatch.
 - Completed recovery-budget slice: `gameprog.activeAuditRecoveryUrlLimit` and `gamesmap.activeAuditRecoveryUrlLimit` default to `6`, fall back to `6` for invalid/non-positive values, and participate in audit signatures.
 
 ### P1: GameDevMap Still Reimplements Shared Primitives
@@ -95,7 +96,7 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 
 ### P0: Continue Gameprog/Gamesmap Scan Skeleton Thinning
 
-- Further thin `_gameprog_scan` and `_gamesmap_scan` by isolating parser-specific entry selection and summary base construction behind shared scan orchestration callbacks.
+- Further thin `_gameprog_scan` and `_gamesmap_scan` only where parser/index/category setup can use shared callbacks without hiding adapter-specific evidence semantics.
 - Keep directory-specific evidence fields local through callback data, not duplicated control flow.
 
 ### P1a: Backfill Existing Helpers Across All Adapters
