@@ -10,8 +10,13 @@ from typing import Any
 
 from . import audit_ledger
 from .directory_fetch import fetch_directory_pages
-from .page_diagnostics import looks_like_js_shell as page_looks_like_js_shell
-from .recovery_url_planner import host, host_in, recovery_urls, same_party_jobish_urls
+from .page_diagnostics import (
+    looks_like_js_shell as page_looks_like_js_shell,
+)
+from .page_diagnostics import (
+    no_candidate_reason_detail as page_no_candidate_reason_detail,
+)
+from .recovery_url_planner import recovery_urls, same_party_jobish_urls
 
 RECOVERY_LOGIC_VERSION = 1
 PRIMARY_RECOVERY_PATHS = ("/careers", "/jobs")
@@ -68,14 +73,13 @@ def looks_like_js_shell(html: str) -> bool:
 
 
 def no_candidate_reason_detail(page_url: str, html: str) -> str:
-    page_host = host(page_url)
-    if host_in(page_host, set(PROFILE_HOSTS)):
-        return "profile_host"
-    if looks_like_js_shell(html):
-        return "js_shell"
-    if not same_party_jobish_urls(page_url, html):
-        return "no_jobish_links"
-    return "homepage_links_no_candidate"
+    return page_no_candidate_reason_detail(
+        page_url,
+        html,
+        profile_hosts=set(PROFILE_HOSTS),
+        jobish_url_fn=same_party_jobish_urls,
+        short_html_threshold=700,
+    )
 
 
 def browser_recovery_candidate(

@@ -42,6 +42,17 @@ class BrowserRecoveryBatch:
     probe_results: list[ProbeResult]
 
 
+def default_browser_fetcher():
+    try:
+        from src.bridge.source_check_http import try_fetch_with_playwright
+    except ImportError:
+        return lambda _url, _timeout_s: (
+            "",
+            "browser fallback unavailable (playwright helper is not importable)",
+        )
+    return try_fetch_with_playwright
+
+
 def browser_recovery_processed_key(row: dict[str, Any]) -> str:
     url = str(row.get("url") or "").strip()
     if url:

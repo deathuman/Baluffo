@@ -29,6 +29,12 @@ from .gamedevmap import (
 )
 from .io_runtime import endpoint_url
 from .page_analysis import analyze_fetched_page
+from .page_diagnostics import (
+    looks_like_js_shell as shared_looks_like_js_shell,
+)
+from .page_diagnostics import (
+    no_candidate_reason_detail as shared_no_candidate_reason_detail,
+)
 from .prevalidated_queue_policy import apply_prevalidated_queue_overrides
 from .probe_runtime import (
     candidate_id as probe_candidate_id,
@@ -691,14 +697,7 @@ def _save_updated_artifact(artifact: dict[str, Any], output_path: Path) -> None:
 
 
 def _default_browser_fetcher():
-    try:
-        from src.bridge.source_check_http import try_fetch_with_playwright
-    except ImportError:
-        return lambda _url, _timeout_s: (
-            "",
-            "browser fallback unavailable (playwright helper is not importable)",
-        )
-    return try_fetch_with_playwright
+    return browser_recovery_helpers.default_browser_fetcher()
 
 
 def _browser_recovery_processed_key(row: dict[str, Any]) -> str:
@@ -1020,26 +1019,18 @@ def _html_url_candidates(html: str) -> list[str]:
 
 
 def _looks_like_js_shell(html: str) -> bool:
-    text = str(html or "")
-    lowered = text.lower()
-    if len(text.strip()) < 500 and "<script" in lowered:
-        return True
-    if re.search(r'id=["\'](?:app|root|__next)["\']', lowered) and "<script" in lowered:
-        return True
-    return bool("<noscript" in lowered and lowered.count("<script") >= 3)
+    return shared_looks_like_js_shell(html, include_noscript_script_shell=True)
 
 
 def _no_careers_reason_detail(page_url: str, html: str) -> str:
-    host = _host(page_url)
-    if _host_in(host, SOCIAL_PROFILE_HOSTS):
-        return "social_profile_host"
-    if _host_in(host, THIRD_PARTY_PROFILE_HOSTS):
-        return "third_party_profile_host"
-    if _looks_like_js_shell(html):
-        return "js_shell"
-    if not extract_jobish_links(html, page_url):
-        return "no_jobish_links"
-    return "homepage_links_no_candidate"
+    return shared_no_candidate_reason_detail(
+        page_url,
+        html,
+        social_profile_hosts=SOCIAL_PROFILE_HOSTS,
+        third_party_profile_hosts=THIRD_PARTY_PROFILE_HOSTS,
+        jobish_url_fn=lambda url, body: extract_jobish_links(body, url),
+        include_noscript_script_shell=True,
+    )
 
 
 def _recovery_urls(

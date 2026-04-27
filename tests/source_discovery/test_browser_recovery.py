@@ -1,9 +1,26 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 import time
 
 from src.source_discovery import browser_recovery
+
+
+def test_default_browser_fetcher_returns_fallback_when_bridge_unavailable(monkeypatch) -> None:
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "src.bridge.source_check_http":
+            raise ImportError("missing playwright helper")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    html, error = browser_recovery.default_browser_fetcher()("https://example.com", 5)
+
+    assert html == ""
+    assert error == "browser fallback unavailable (playwright helper is not importable)"
 
 
 def test_browser_recovery_processed_key_prefers_url_entry_then_name() -> None:

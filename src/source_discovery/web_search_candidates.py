@@ -989,14 +989,7 @@ def _browser_static_probe_result_from_rendered_html(
 
 
 def _default_browser_fetcher():
-    try:
-        from src.bridge.source_check_http import try_fetch_with_playwright
-    except ImportError:
-        return lambda _url, _timeout_s: (
-            "",
-            "browser fallback unavailable (playwright helper is not importable)",
-        )
-    return try_fetch_with_playwright
+    return browser_recovery_helpers.default_browser_fetcher()
 
 
 def _load_web_search_browser_recovery_artifact(output_path: Path) -> dict[str, Any]:

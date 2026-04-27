@@ -23,7 +23,7 @@ The discovery adapters now have enough shared infrastructure to stop treating re
 - **Fetch, cache, and scan seams:** `directory_cache`, `directory_fetch_jobs`, `directory_fetch`, `directory_adapter_templates`, shared directory adapter wrappers, and scan-stage orchestration own common cache shape, fetch-job shape, static/provenance row templates, cache-compatible discovery wrappers, and provider/static/failure stage plumbing.
 - **Candidate, probe, and queue mechanics:** `candidate_collections`, `probe_runtime`, and `prevalidated_queue_policy` own provider/static row normalization, append-with-dedupe, bounded async probing, rendered static shortcuts, and internal queue-cap override fields.
 - **Page and recovery classification:** `page_outcomes`, `page_diagnostics`, `recovery_url_planner`, `directory_page_recovery`, and `provider_inference_filters` own provider-first page classification, explicit/static fallback ordering, JS-shell diagnostics, same-site recovery planning, HTTP-only recovery fetches, and bad provider inference filtering.
-- **Browser recovery:** `browser_recovery` owns processed-key selection, bounded browser fetch, rendered-result probe filtering, probe dispatch, and recovery state/sample bookkeeping. GameDevMap and web-derived discovery now share the runtime while keeping artifact merge semantics local.
+- **Browser recovery:** `browser_recovery` owns default browser fetch fallback, processed-key selection, bounded browser fetch, rendered-result probe filtering, probe dispatch, and recovery state/sample bookkeeping. GameDevMap and web-derived discovery now share the runtime while keeping artifact merge semantics local.
 - **Default audit adoption:** Gameprog, Gamesmap, sheet-directory, seed-careers, and web-search use default audit paths when their stages are enabled. GameDevMap uses its audit/recovery path as the canonical adapter behavior while keeping the active-source artifact schema local.
 
 ## Current Duplication Inventory
@@ -41,8 +41,7 @@ These are the lowest-risk, highest-certainty consolidation targets because the i
 
 GameDevMap created much of the better logic but still has the largest local active-audit surface. It should be decomposed into reusable strategy contracts instead of remaining a special case.
 
-- `gamedevmap_active_dry_run.py::_looks_like_js_shell` overlaps `page_diagnostics.looks_like_js_shell`.
-- `gamedevmap_active_dry_run.py::_no_careers_reason_detail` overlaps `directory_page_recovery.no_candidate_reason_detail`.
+- Completed diagnostics slice: `gamedevmap_active_dry_run.py::_looks_like_js_shell` and `_no_careers_reason_detail` now delegate to shared page diagnostics while preserving GameDevMap reason buckets.
 - `gamedevmap_active_dry_run.py::_provider_candidates_from_html_text` should use a shared provider inference helper rather than local regex extraction.
 - `gamedevmap_active_dry_run.py::_append_analyzed_candidates` and `_static_candidate_from_analysis` overlap `page_outcomes.classify_fetched_page`.
 - `gamedevmap_active_dry_run.py::_recovery_job` overlaps `directory_fetch_jobs.build_directory_fetch_job`.
@@ -50,7 +49,7 @@ GameDevMap created much of the better logic but still has the largest local acti
 - `gamedevmap_active_dry_run.py::_filter_bad_provider_inferences` overlaps `provider_inference_filters.split_bad_provider_inferences`, with GameDevMap-specific rejection row formatting still local.
 - `gamedevmap_active_dry_run.py::_apply_probe_results` overlaps `probe_runtime` probe-result filtering and validated candidate evidence helpers, with active/zero/rejected bucket assignment still local.
 - `gamedevmap_active_dry_run.py::_analyze_browser_recovery_fetches` and `_merge_browser_recovery_artifact_updates` overlap the web-derived browser recovery pipeline. Extract shared browser recovery analysis and merge contracts while preserving GameDevMap's artifact fields.
-- `gamedevmap_active_dry_run.py::_default_browser_fetcher` is duplicated in web-derived discovery and should move to a shared browser fetch helper.
+- Completed diagnostics slice: `gamedevmap_active_dry_run.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
 - `gamedevmap.py` legacy homepage fetch job construction should use `directory_fetch_jobs` where the job contract matches.
 
 ### P1: Web-Derived Browser Recovery Duplication
@@ -62,7 +61,7 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - `web_search_candidates.py::_web_browser_recovery_candidate` should move to a shared browser-recovery row factory or use the directory recovery candidate factory when the row contract matches.
 - `web_search_candidates.py::_analyze_web_browser_recovery_fetches` should migrate to a shared analysis contract that accepts adapter-specific page-analysis and candidate-marking callbacks.
 - `web_search_candidates.py::_merge_web_browser_recovery_updates` should migrate to a shared merge contract for positive probe results, zero-job diagnostics, fetch failures, and processed-key state.
-- `web_search_candidates.py::_default_browser_fetcher` should be replaced by the same shared browser fetch helper used by GameDevMap.
+- Completed diagnostics slice: `web_search_candidates.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
 
 ### P1: Sheet-Directory Manual Implementations
 
