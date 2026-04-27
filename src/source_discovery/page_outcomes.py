@@ -42,6 +42,49 @@ RecoveryRequestBuilder = Callable[[FetchedPageContext], Any | None]
 AnalyzePageFn = Callable[..., dict[str, Any]]
 
 
+def passthrough_provider_rows(
+    rows: list[dict[str, Any]],
+    _context: FetchedPageContext,
+) -> list[dict[str, Any]]:
+    return rows
+
+
+def passthrough_generic_static(
+    candidate: dict[str, Any],
+    _context: FetchedPageContext,
+) -> dict[str, Any]:
+    return candidate
+
+
+def static_page_outcome_builders(
+    *,
+    name_suffix: str,
+    evidence_source: str,
+    evidence_types: list[str],
+    evidence_score: int,
+    enabled_by_default: bool,
+) -> tuple[ProviderRowsBuilder, ExplicitStaticBuilder, GenericStaticBuilder]:
+    from .static_candidates import build_known_careers_url_candidate
+
+    def _explicit_static(
+        explicit_careers_url: str,
+        context: FetchedPageContext,
+    ) -> dict[str, Any]:
+        return build_known_careers_url_candidate(
+            explicit_careers_url,
+            studio=context.studio,
+            name_suffix=name_suffix,
+            nl_priority=context.nl_priority,
+            discovery_method=context.discovery_method,
+            evidence_source=evidence_source,
+            evidence_types=evidence_types,
+            evidence_score=evidence_score,
+            enabled_by_default=enabled_by_default,
+        )
+
+    return passthrough_provider_rows, _explicit_static, passthrough_generic_static
+
+
 def classify_fetched_page(
     context: FetchedPageContext,
     *,

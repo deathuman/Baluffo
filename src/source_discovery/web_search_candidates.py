@@ -33,7 +33,11 @@ from .page_diagnostics import (
 from .page_diagnostics import (
     looks_like_js_shell as shared_looks_like_js_shell,
 )
-from .page_outcomes import FetchedPageContext, classify_fetched_page
+from .page_outcomes import (
+    FetchedPageContext,
+    classify_fetched_page,
+    static_page_outcome_builders,
+)
 from .probe_runtime import (
     candidate_with_probe_evidence as probe_candidate_with_probe_evidence,
 )
@@ -363,8 +367,6 @@ def _append_page_analysis_outcome(
     provider_candidates: list[dict[str, Any]],
     static_candidates: list[dict[str, Any]],
 ) -> bool:
-    from .static_candidates import build_known_careers_url_candidate
-
     context = FetchedPageContext(
         page_url=page_url,
         html=page_html,
@@ -372,40 +374,18 @@ def _append_page_analysis_outcome(
         nl_priority=nl_priority,
         discovery_method=discovery_method,
     )
-
-    def _provider_rows(
-        rows: list[dict[str, Any]],
-        _context: FetchedPageContext,
-    ) -> list[dict[str, Any]]:
-        return rows
-
-    def _explicit_static(
-        explicit_careers_url: str,
-        explicit_context: FetchedPageContext,
-    ) -> dict[str, Any]:
-        return build_known_careers_url_candidate(
-            explicit_careers_url,
-            studio=explicit_context.studio,
-            name_suffix="Manual Website",
-            nl_priority=explicit_context.nl_priority,
-            discovery_method=explicit_context.discovery_method,
-            evidence_source="careers_page",
-            evidence_types=["careers_keyword"],
-            evidence_score=40,
-            enabled_by_default=False,
-        )
-
-    def _generic_static(
-        candidate: dict[str, Any],
-        _context: FetchedPageContext,
-    ) -> dict[str, Any]:
-        return candidate
-
+    provider_rows, explicit_static, generic_static = static_page_outcome_builders(
+        name_suffix="Manual Website",
+        evidence_source="careers_page",
+        evidence_types=["careers_keyword"],
+        evidence_score=40,
+        enabled_by_default=False,
+    )
     outcome = classify_fetched_page(
         context,
-        provider_rows=_provider_rows,
-        explicit_static=_explicit_static,
-        generic_static=_generic_static,
+        provider_rows=provider_rows,
+        explicit_static=explicit_static,
+        generic_static=generic_static,
     )
     provider_candidates.extend(outcome.provider_candidates)
     static_candidates.extend(outcome.static_candidates)

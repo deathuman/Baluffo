@@ -3,7 +3,6 @@ from __future__ import annotations
 """Resumable GameDevMap active-source dry-run reporting."""
 
 import asyncio
-import re
 import time
 from collections import Counter
 from contextlib import suppress
@@ -35,6 +34,12 @@ from .page_diagnostics import (
 from .page_diagnostics import (
     no_candidate_reason_detail as shared_no_candidate_reason_detail,
 )
+from .page_outcomes import (
+    FetchedPageContext,
+    PageOutcome,
+    classify_fetched_page,
+    static_page_outcome_builders,
+)
 from .prevalidated_queue_policy import apply_prevalidated_queue_overrides
 from .probe_runtime import (
     candidate_id as probe_candidate_id,
@@ -50,10 +55,10 @@ from .probe_runtime import (
 )
 from .provider_inference_filters import bad_provider_inference_detail
 from .reporting import emit_log
-from .static_candidates import build_known_careers_url_candidate
 from .web_search import (
     extract_jobish_links,
     fetch_text,
+    infer_provider_candidates_from_html,
     infer_web_candidate,
 )
 
@@ -97,7 +102,6 @@ THIRD_PARTY_PROFILE_HOSTS = {
     "sites.google.com",
 }
 TECHNICAL_REJECTION_REASONS = {"bad_provider_inference", "homepage_fetch_failed", "probe_failed"}
-PROVIDER_TEXT_URL_RE = re.compile(r"https?(?::|%3A)(?:/|%2F){2}[^\s\"'<>)}\]]+", re.I)
 
 
 def gamedevmap_active_dry_run_path() -> Path:
@@ -1012,10 +1016,7 @@ def _validated_static_audit_candidate(
 
 
 def _html_url_candidates(html: str) -> list[str]:
-    return recovery_url_planner.html_url_candidates(
-        html,
-        provider_url_pattern=PROVIDER_TEXT_URL_RE,
-    )
+    return recovery_url_planner.html_url_candidates(html)
 
 
 def _looks_like_js_shell(html: str) -> bool:
@@ -1061,26 +1062,25 @@ def _provider_candidates_from_html_text(
 ) -> list[dict[str, Any]]:
     studio = str(row.get("studio") or "").strip()
     candidates: list[dict[str, Any]] = []
-    seen = set()
-    for raw_url in _html_url_candidates(html):
-        if raw_url in seen:
-            continue
-        seen.add(raw_url)
-        inferred = infer_web_candidate(
-            raw_url,
-            studio,
-            nl_priority=False,
-            discovery_method="gamedevmap",
-        )
-        if not inferred:
-            continue
+    for inferred_row in infer_provider_candidates_from_html(
+        page_url=page_url,
+        html=html,
+        studio=studio,
+        nl_priority=False,
+        discovery_method="gamedevmap",
+    ):
+        inferred = dict(inferred_row)
         inferred["careersUrl"] = page_url
         inferred["gamedevmapRecovery"] = True
         inferred["gamedevmapRecoverySource"] = "homepage_html_provider_url"
-        inferred["evidenceTypes"] = [
-            *(inferred.get("evidenceTypes") or []),
-            "gamedevmap_recovery_provider_url",
-        ]
+        inferred["evidenceTypes"] = list(
+            dict.fromkeys(
+                [
+                    *(inferred.get("evidenceTypes") or []),
+                    "gamedevmap_recovery_provider_url",
+                ]
+            )
+        )
         candidates.append(
             _apply_gamedevmap_provenance(
                 inferred,
@@ -1090,6 +1090,73 @@ def _provider_candidates_from_html_text(
             )
         )
     return candidates
+
+
+def _gamedevmap_page_outcome(
+    *,
+    page_url: str,
+    html: str,
+    row: dict[str, Any],
+    index_url: str,
+    recovery_source: str = "",
+) -> PageOutcome:
+    studio = str(row.get("studio") or "").strip()
+    context = FetchedPageContext(
+        page_url=page_url,
+        html=html,
+        studio=studio,
+        nl_priority=False,
+        discovery_method="gamedevmap",
+    )
+    provider_rows, explicit_static, generic_static = static_page_outcome_builders(
+        name_suffix="GameDevMap",
+        evidence_source="gamedevmap",
+        evidence_types=(
+            ["gamedevmap_careers_url", "gamedevmap_recovery_page"]
+            if recovery_source
+            else ["gamedevmap_careers_url"]
+        ),
+        evidence_score=44 if recovery_source else 40,
+        enabled_by_default=False,
+    )
+
+    def _mark_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+        marked = dict(candidate)
+        if recovery_source:
+            marked["gamedevmapRecovery"] = True
+            marked["gamedevmapRecoverySource"] = recovery_source
+        return _apply_gamedevmap_provenance(
+            marked,
+            row,
+            index_url=index_url,
+            include_homepage_fetch=True,
+        )
+
+    def _provider_rows(
+        rows: list[dict[str, Any]],
+        outcome_context: FetchedPageContext,
+    ) -> list[dict[str, Any]]:
+        return [_mark_candidate(candidate) for candidate in provider_rows(rows, outcome_context)]
+
+    def _explicit_static(
+        explicit_careers_url: str,
+        outcome_context: FetchedPageContext,
+    ) -> dict[str, Any]:
+        return _mark_candidate(explicit_static(explicit_careers_url, outcome_context))
+
+    def _generic_static(
+        candidate: dict[str, Any],
+        outcome_context: FetchedPageContext,
+    ) -> dict[str, Any]:
+        return _mark_candidate(generic_static(candidate, outcome_context))
+
+    return classify_fetched_page(
+        context,
+        provider_rows=_provider_rows,
+        explicit_static=_explicit_static,
+        generic_static=_generic_static,
+        analyze_page=analyze_fetched_page,
+    )
 
 
 def _append_analyzed_candidates(
@@ -1102,58 +1169,16 @@ def _append_analyzed_candidates(
     provider_candidates: list[dict[str, Any]],
     static_candidates: list[dict[str, Any]],
 ) -> bool:
-    studio = str(row.get("studio") or "").strip()
-    analyzed = analyze_fetched_page(
-        page_url,
-        html,
-        studio=studio,
-        nl_priority=False,
-        discovery_method="gamedevmap",
+    outcome = _gamedevmap_page_outcome(
+        page_url=page_url,
+        html=html,
+        row=row,
+        index_url=index_url,
+        recovery_source=recovery_source,
     )
-    inferred_rows = list(analyzed.get("provider_candidates") or [])
-    if inferred_rows:
-        for inferred in inferred_rows:
-            inferred["gamedevmapRecovery"] = True
-            inferred["gamedevmapRecoverySource"] = recovery_source
-            provider_candidates.append(
-                _apply_gamedevmap_provenance(
-                    inferred,
-                    row,
-                    index_url=index_url,
-                    include_homepage_fetch=True,
-                )
-            )
-        return True
-
-    explicit_careers_url = str(analyzed.get("explicit_careers_url") or "").strip()
-    static_candidate: dict[str, Any] | None
-    if explicit_careers_url:
-        static_candidate = build_known_careers_url_candidate(
-            explicit_careers_url,
-            studio=studio,
-            name_suffix="GameDevMap",
-            nl_priority=False,
-            discovery_method="gamedevmap",
-            evidence_source="gamedevmap",
-            evidence_types=["gamedevmap_careers_url", "gamedevmap_recovery_page"],
-            evidence_score=44,
-            enabled_by_default=False,
-        )
-    else:
-        static_candidate = analyzed.get("generic_static_candidate")
-    if static_candidate:
-        static_candidate["gamedevmapRecovery"] = True
-        static_candidate["gamedevmapRecoverySource"] = recovery_source
-        static_candidates.append(
-            _apply_gamedevmap_provenance(
-                static_candidate,
-                row,
-                index_url=index_url,
-                include_homepage_fetch=True,
-            )
-        )
-        return True
-    return False
+    provider_candidates.extend(outcome.provider_candidates)
+    static_candidates.extend(outcome.static_candidates)
+    return outcome.found_candidates
 
 
 def _recovery_job(
@@ -1248,27 +1273,6 @@ def _queue_no_careers_recovery(
     return bool(primary_recovery_urls or secondary_recovery_urls or row_provider_candidates)
 
 
-def _static_candidate_from_analysis(
-    analyzed: dict[str, Any],
-    *,
-    studio: str,
-) -> dict[str, Any] | None:
-    explicit_careers_url = str(analyzed.get("explicit_careers_url") or "").strip()
-    if explicit_careers_url:
-        return build_known_careers_url_candidate(
-            explicit_careers_url,
-            studio=studio,
-            name_suffix="GameDevMap",
-            nl_priority=False,
-            discovery_method="gamedevmap",
-            evidence_source="gamedevmap",
-            evidence_types=["gamedevmap_careers_url"],
-            evidence_score=40,
-            enabled_by_default=False,
-        )
-    return analyzed.get("generic_static_candidate")
-
-
 def _extract_candidates_from_homepages(
     *,
     batch_rows: list[dict[str, Any]],
@@ -1332,36 +1336,16 @@ def _extract_candidates_from_homepages(
             continue
         homepages_fetched += 1
         html = str(result.get("text") or "")
-        analyzed = analyze_fetched_page(
-            target_url,
-            html,
-            studio=studio,
-            nl_priority=False,
-            discovery_method="gamedevmap",
+        outcome = _gamedevmap_page_outcome(
+            page_url=target_url,
+            html=html,
+            row=row,
+            index_url=index_url,
         )
-        inferred_rows = list(analyzed.get("provider_candidates") or [])
-        if inferred_rows:
-            for inferred in inferred_rows:
-                provider_candidates.append(
-                    _apply_gamedevmap_provenance(
-                        inferred,
-                        row,
-                        index_url=index_url,
-                        include_homepage_fetch=True,
-                    )
-                )
+        if outcome.found_candidates:
+            provider_candidates.extend(outcome.provider_candidates)
+            static_candidates.extend(outcome.static_candidates)
             continue
-
-        static_candidate = _static_candidate_from_analysis(analyzed, studio=studio)
-        if static_candidate:
-            static_candidates.append(
-                _apply_gamedevmap_provenance(
-                    static_candidate,
-                    row,
-                    index_url=index_url,
-                    include_homepage_fetch=True,
-                )
-            )
         else:
             detail = _no_careers_reason_detail(target_url, html)
             queued = _queue_no_careers_recovery(

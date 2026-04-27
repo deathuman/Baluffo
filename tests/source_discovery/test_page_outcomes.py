@@ -6,6 +6,7 @@ from src.source_discovery.page_outcomes import (
     FetchedPageContext,
     classify_fetched_page,
     classify_recovery_page,
+    static_page_outcome_builders,
 )
 
 
@@ -128,6 +129,38 @@ def test_page_outcome_uses_explicit_and_generic_static_callbacks() -> None:
     assert generic.static_candidates == [
         {"adapter": "static", "listing_url": "https://jobs", "studio": "Studio"}
     ]
+
+
+def test_static_page_outcome_builders_create_common_callbacks() -> None:
+    provider_rows, explicit_static, generic_static = static_page_outcome_builders(
+        name_suffix="Manual Website",
+        evidence_source="careers_page",
+        evidence_types=["careers_keyword"],
+        evidence_score=40,
+        enabled_by_default=False,
+    )
+    context = _context()
+    generic = {"adapter": "static", "listing_url": "https://studio.example.com/jobs"}
+
+    assert provider_rows([{"adapter": "greenhouse"}], context) == [{"adapter": "greenhouse"}]
+    assert explicit_static("https://studio.example.com/careers", context) == {
+        "name": "Studio (Manual Website)",
+        "studio": "Studio",
+        "adapter": "static",
+        "enabledByDefault": False,
+        "nlPriority": False,
+        "discoveryMethod": "test",
+        "listing_url": "https://studio.example.com/careers",
+        "careersUrl": "https://studio.example.com/careers",
+        "company": "Studio",
+        "discoveryStage": "generic_static",
+        "evidenceScore": 40,
+        "evidenceTypes": ["careers_keyword"],
+        "evidenceSource": "careers_page",
+        "pages": ["https://studio.example.com/careers"],
+        "weakSignal": False,
+    }
+    assert generic_static(generic, context) is generic
 
 
 def test_page_outcome_no_candidate_can_emit_recovery_request_and_fallback() -> None:

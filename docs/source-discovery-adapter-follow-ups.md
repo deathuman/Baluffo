@@ -42,8 +42,8 @@ These are the lowest-risk, highest-certainty consolidation targets because the i
 GameDevMap created much of the better logic but still has the largest local active-audit surface. It should be decomposed into reusable strategy contracts instead of remaining a special case.
 
 - Completed diagnostics slice: `gamedevmap_active_dry_run.py::_looks_like_js_shell` and `_no_careers_reason_detail` now delegate to shared page diagnostics while preserving GameDevMap reason buckets.
-- `gamedevmap_active_dry_run.py::_provider_candidates_from_html_text` should use a shared provider inference helper rather than local regex extraction.
-- `gamedevmap_active_dry_run.py::_append_analyzed_candidates` and `_static_candidate_from_analysis` overlap `page_outcomes.classify_fetched_page`.
+- Completed provider/page-outcome slice: `gamedevmap_active_dry_run.py::_provider_candidates_from_html_text` now uses shared provider HTML inference instead of local provider URL extraction.
+- Completed provider/page-outcome slice: `gamedevmap_active_dry_run.py::_append_analyzed_candidates` now uses `page_outcomes.classify_fetched_page`; `_static_candidate_from_analysis` was removed.
 - `gamedevmap_active_dry_run.py::_recovery_job` overlaps `directory_fetch_jobs.build_directory_fetch_job`.
 - `gamedevmap_active_dry_run.py::_queue_no_careers_recovery`, `_dedupe_recovery_jobs`, `_fetch_recovery_jobs`, and `_apply_recovery_results` overlap `directory_page_recovery` mechanics. Expose stable public-internal recovery APIs before migrating; do not import private helper functions directly.
 - `gamedevmap_active_dry_run.py::_filter_bad_provider_inferences` overlaps `provider_inference_filters.split_bad_provider_inferences`, with GameDevMap-specific rejection row formatting still local.
@@ -57,7 +57,7 @@ GameDevMap created much of the better logic but still has the largest local acti
 The runtime is shared, but web-derived discovery still owns analysis and merge code that mirrors GameDevMap.
 
 - `web_search_candidates.py::_provider_candidate_base` and `_provider_candidate` hardcode provider URL parsing that overlaps `infer_web_candidate` and candidate-collapsing helpers. Migrate provider inference and competing-candidate collapsing to shared helpers.
-- `web_search_candidates.py::_append_page_analysis_outcome` builds local `FetchedPageContext` callbacks before calling `classify_fetched_page`. Supply those callbacks through a shared page-outcome strategy contract instead.
+- Completed provider/page-outcome slice: `web_search_candidates.py::_append_page_analysis_outcome` now uses shared static page-outcome callback builders instead of local callback boilerplate.
 - `web_search_candidates.py::_web_browser_recovery_candidate` should move to a shared browser-recovery row factory or use the directory recovery candidate factory when the row contract matches.
 - `web_search_candidates.py::_analyze_web_browser_recovery_fetches` should migrate to a shared analysis contract that accepts adapter-specific page-analysis and candidate-marking callbacks.
 - `web_search_candidates.py::_merge_web_browser_recovery_updates` should migrate to a shared merge contract for positive probe results, zero-job diagnostics, fetch failures, and processed-key state.
