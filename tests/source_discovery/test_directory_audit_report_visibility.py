@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import json
 
-from ._helpers import _gamesmap_next_payload_html, override_discovery_runtime, sd, workspace_tmpdir
+from ._helpers import (
+    _gamesmap_next_payload_html,
+    discovery_orchestrator,
+    mock,
+    override_discovery_runtime,
+    sd,
+    workspace_tmpdir,
+)
 
 
 def _stage_config(target: str, section: dict[str, object]) -> dict[str, object]:
@@ -220,59 +227,8 @@ def test_run_discovery_omits_directory_audit_metadata_when_audits_disabled() -> 
             assert report["summary"]["directoryAudits"] == {}
 
 
-def test_run_discovery_default_sheet_directory_uses_legacy_path_without_audit_metadata() -> None:
+def test_run_discovery_default_sheet_directory_reports_audit_summary_and_reuses_cache() -> None:
     with workspace_tmpdir("directory-audit-report-sheet-default") as root:
-        with override_discovery_runtime(
-            root,
-            studio_seeds=[],
-            static_candidates=[],
-            extra_config_overrides={
-                "GAME_STUDIOS_SHEET_ID": "sheet_test",
-                "GAME_STUDIOS_SHEET_GID": "1",
-            },
-        ):
-            sheet_url = sd.game_studios_sheet_candidate_urls("sheet_test", "1")[0]
-            config = {
-                "stageToggles": {
-                    "curatedSeed": False,
-                    "sheetDirectory": True,
-                    "providerPatterns": False,
-                    "seedCareersScan": False,
-                    "gamesmap": False,
-                    "gameprog": False,
-                    "gamedevmap": False,
-                    "webSearch": False,
-                },
-                "gamesmap": {"enabled": False},
-                "gameprog": {"enabled": False},
-                "gamedevmap": {"enabled": False},
-            }
-            payloads = {
-                sheet_url: """x,x,x,x
-x,Studio,Hiring Location,Roles open,Link
-x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
-""",
-                "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true": json.dumps(
-                    {"jobs": [{}, {}]}
-                ),
-            }
-
-            report = sd.run_discovery(
-                timeout_s=5,
-                top_n=0,
-                mode="dynamic",
-                include_web_search=False,
-                discovery_config=config,
-                fetcher=lambda url, _timeout: payloads[url],
-            )
-
-            assert "sheet_directory" not in report["directoryAuditSummaries"]
-            assert "sheet_directory" not in report["summary"]["directoryAudits"]
-            assert int(report["summary"].get("queuedCandidateCount") or 0) == 1
-
-
-def test_run_discovery_reports_opt_in_sheet_directory_audit_summary() -> None:
-    with workspace_tmpdir("directory-audit-report-sheet-opt-in") as root:
         with override_discovery_runtime(
             root,
             studio_seeds=[],
@@ -296,7 +252,6 @@ def test_run_discovery_reports_opt_in_sheet_directory_audit_summary() -> None:
                     "webSearch": False,
                 },
                 "sheetDirectory": {
-                    "activeAuditEnabled": True,
                     "activeAuditPath": str(audit_path),
                     "activeAuditTtlMinutes": 60,
                 },
@@ -304,17 +259,18 @@ def test_run_discovery_reports_opt_in_sheet_directory_audit_summary() -> None:
                 "gameprog": {"enabled": False},
                 "gamedevmap": {"enabled": False},
             }
+            provider_api = (
+                "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true"
+            )
             payloads = {
                 sheet_url: """x,x,x,x
 x,Studio,Hiring Location,Roles open,Link
 x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
 """,
-                "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true": json.dumps(
-                    {"jobs": [{}, {}]}
-                ),
+                provider_api: json.dumps({"jobs": [{}, {}]}),
             }
 
-            report = sd.run_discovery(
+            first_report = sd.run_discovery(
                 timeout_s=5,
                 top_n=0,
                 mode="dynamic",
@@ -323,16 +279,97 @@ x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
                 fetcher=lambda url, _timeout: payloads[url],
             )
 
-            summary = report["directoryAuditSummaries"]["sheet_directory"]
-            assert report["summary"]["directoryAudits"]["sheet_directory"] == summary
-            assert summary["cacheHit"] is False
-            assert summary["complete"] is True
-            assert summary["rawRows"] == 1
-            assert summary["eligibleRows"] == 1
-            assert summary["providerCandidates"] == 1
-            assert summary["artifactSizeBytes"] > 0
-            assert summary["timingTotalsMs"]["csvFetchMs"] >= 0
+            first_summary = first_report["directoryAuditSummaries"]["sheet_directory"]
+            assert first_report["summary"]["directoryAudits"]["sheet_directory"] == first_summary
+            assert first_summary["cacheHit"] is False
+            assert first_summary["complete"] is True
+            assert first_summary["rawRows"] == 1
+            assert first_summary["providerCandidates"] == 1
             assert audit_path.exists()
+            assert int(first_report["summary"].get("queuedCandidateCount") or 0) == 1
+
+            def fetch_without_sheet(url: str, _timeout: int) -> str:
+                if url == provider_api:
+                    return payloads[provider_api]
+                raise AssertionError("fresh sheet audit artifact should bypass CSV fetch")
+
+            second_report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=False,
+                discovery_config=config,
+                fetcher=fetch_without_sheet,
+            )
+
+            second_summary = second_report["directoryAuditSummaries"]["sheet_directory"]
+            assert second_summary["cacheHit"] is True
+            assert second_summary["complete"] is True
+            queued = json.loads(paths.discovery_candidates_path.read_text(encoding="utf-8"))
+            assert all(str(row.get("discoveryMethod") or "") == "sheet_directory" for row in queued)
+
+
+def test_run_discovery_explicit_sheet_directory_audit_disabled_uses_legacy_path() -> None:
+    with workspace_tmpdir("directory-audit-report-sheet-disabled") as root:
+        with override_discovery_runtime(
+            root,
+            studio_seeds=[],
+            static_candidates=[],
+            extra_config_overrides={
+                "GAME_STUDIOS_SHEET_ID": "sheet_test",
+                "GAME_STUDIOS_SHEET_GID": "1",
+            },
+        ) as paths:
+            config = {
+                "stageToggles": {
+                    "curatedSeed": False,
+                    "sheetDirectory": True,
+                    "providerPatterns": False,
+                    "seedCareersScan": False,
+                    "gamesmap": False,
+                    "gameprog": False,
+                    "gamedevmap": False,
+                    "webSearch": False,
+                },
+                "sheetDirectory": {
+                    "activeAuditEnabled": False,
+                },
+                "gamesmap": {"enabled": False},
+                "gameprog": {"enabled": False},
+                "gamedevmap": {"enabled": False},
+            }
+
+            with mock.patch.object(
+                discovery_orchestrator,
+                "discover_game_studio_sheet_candidates",
+                return_value=(
+                    [
+                        {
+                            "adapter": "greenhouse",
+                            "slug": "examplestudio",
+                            "api_url": "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true",
+                            "name": "Example Studio",
+                            "discoveryMethod": "sheet_directory",
+                            "discoveryStage": "sheet_directory",
+                            "evidenceScore": 46,
+                        }
+                    ],
+                    [],
+                    [],
+                ),
+            ) as legacy_scan:
+                report = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=False,
+                    discovery_config=config,
+                    fetcher=lambda *_args: json.dumps({"jobs": [{}, {}]}),
+                )
+
+            legacy_scan.assert_called_once()
+            assert "sheet_directory" not in report["directoryAuditSummaries"]
+            assert "sheet_directory" not in report["summary"]["directoryAudits"]
             queued = json.loads(paths.discovery_candidates_path.read_text(encoding="utf-8"))
             assert len(queued) == 1
             assert str(queued[0].get("discoveryMethod") or "") == "sheet_directory"

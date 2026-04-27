@@ -213,7 +213,7 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
         stage_started = time.perf_counter()
         sheet_cfg = deps.effective_config.get("sheetDirectory")
         sheet_cfg = sheet_cfg if isinstance(sheet_cfg, dict) else {}
-        if bool(sheet_cfg.get("activeAuditEnabled", False)):
+        if bool(sheet_cfg.get("activeAuditEnabled", True)):
             from .directory_audit import directory_audit_rows
 
             sheet_artifact, _sheet_cache_hit = orchestrator.run_sheet_directory_audit(

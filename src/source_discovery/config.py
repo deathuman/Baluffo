@@ -268,7 +268,7 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "perHostConcurrency": 3,
     },
     "sheetDirectory": {
-        "activeAuditEnabled": False,
+        "activeAuditEnabled": True,
         "activeAuditPath": "data/sheet-directory-discovery-audit.json",
         "activeAuditTtlMinutes": 360,
     },

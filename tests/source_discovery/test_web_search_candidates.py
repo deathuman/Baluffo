@@ -145,6 +145,52 @@ def test_discover_seed_careers_page_candidates_records_fetch_failures(monkeypatc
     ]
 
 
+def test_seed_careers_page_readiness_preserves_fetch_jobs_and_provenance(monkeypatch) -> None:
+    seen_page_jobs = []
+
+    def fake_fetch_directory_pages(_timeout_s, page_jobs, **_kwargs):
+        seen_page_jobs.extend(page_jobs)
+        job = page_jobs[0]
+        return [
+            {
+                "ok": True,
+                "url": job["url"],
+                "payload": job["payload"],
+                "text": "<script>const board='https://jobs.lever.co/example-studio';</script>",
+            }
+        ]
+
+    monkeypatch.setattr(directory_fetch, "fetch_directory_pages", fake_fetch_directory_pages)
+
+    providers, static_rows, failures = web_candidates.discover_seed_careers_page_candidates(
+        5,
+        studio_seeds=[
+            {
+                "studio": "Example Studio",
+                "careersUrl": "https://example.com/careers",
+                "nlPriority": True,
+            }
+        ],
+        fetcher=lambda *_args: "",
+    )
+
+    assert seen_page_jobs == [
+        {
+            "url": "https://example.com/careers",
+            "payload": {"studio": "Example Studio", "nlPriority": True},
+            "name": "https://example.com/careers",
+            "adapter": "seed_careers_page",
+            "failureStage": "page_fetch",
+        }
+    ]
+    assert static_rows == []
+    assert failures == []
+    assert len(providers) == 1
+    assert providers[0]["adapter"] == "lever"
+    assert providers[0]["discoveryMethod"] == "seed_careers_page"
+    assert providers[0]["discoveryStage"] == "web_provider"
+
+
 def test_discover_web_search_candidates_records_search_and_page_fetch_failures(
     monkeypatch,
 ) -> None:
@@ -201,6 +247,68 @@ def test_discover_web_search_candidates_records_search_and_page_fetch_failures(
             "error": "page failed",
         }
     ]
+
+
+def test_web_search_readiness_preserves_page_jobs_failures_and_provenance(monkeypatch) -> None:
+    seen_page_jobs = []
+
+    def fake_fetch(url: str, _timeout: int) -> str:
+        if "duckduckgo.com" in url:
+            return '<a href="https://example.com/careers">Careers</a>'
+        raise AssertionError(f"unexpected direct fetch: {url}")
+
+    def fake_fetch_directory_pages(_timeout_s, page_jobs, **_kwargs):
+        seen_page_jobs.extend(page_jobs)
+        job = page_jobs[0]
+        return [
+            {
+                "ok": True,
+                "url": job["url"],
+                "payload": job["payload"],
+                "text": "<script>const board='https://apply.workable.com/example-studio/';</script>",
+            },
+            {
+                "ok": False,
+                "failure": {
+                    "name": "https://example.com/extra-careers",
+                    "adapter": "web_search",
+                    "error": "timeout",
+                    "stage": "page_fetch",
+                },
+            },
+        ]
+
+    monkeypatch.setattr(directory_fetch, "fetch_directory_pages", fake_fetch_directory_pages)
+
+    providers, static_rows, failures = web_candidates.discover_web_search_candidates(
+        5,
+        studio_seeds=[{"studio": "Example Studio", "nlPriority": True}],
+        fetcher=fake_fetch,
+        max_queries=1,
+    )
+
+    assert seen_page_jobs == [
+        {
+            "url": "https://example.com/careers",
+            "payload": {"studio": "Example Studio", "nlPriority": True},
+            "name": "https://example.com/careers",
+            "adapter": "web_search",
+            "failureStage": "page_fetch",
+        }
+    ]
+    assert static_rows == []
+    assert failures == [
+        {
+            "name": "https://example.com/extra-careers",
+            "adapter": "web_search",
+            "error": "timeout",
+            "stage": "page_fetch",
+        }
+    ]
+    assert len(providers) == 1
+    assert providers[0]["adapter"] == "workable"
+    assert providers[0]["discoveryMethod"] == "web_search"
+    assert providers[0]["discoveryStage"] == "web_provider"
 
 
 def test_discover_web_search_candidates_uses_direct_provider_links_without_page_fetch(
