@@ -123,6 +123,7 @@ def test_run_discovery_default_web_search_audit_reuses_artifact() -> None:
             assert first_summary["webLinksConsidered"] == 3
             assert first_summary["webJobishLinks"] == 3
             assert first_summary["webDuplicatePageFetchUrls"] == 2
+            assert first_summary["browserRecoveryCandidates"] == 0
             assert len(first_summary["webQuerySamples"]) == 3
             assert first_summary["providerCandidates"] >= 2
             assert audit_path.exists()
@@ -207,3 +208,41 @@ def test_run_discovery_default_web_search_audit_respects_no_web_search() -> None
             assert int(summary.get("webProviderCandidates") or 0) == 0
             assert int(summary.get("webQueriesPlanned") or 0) == 0
             assert int(summary.get("webSearchSuccesses") or 0) == 0
+
+
+def test_run_discovery_web_search_browser_recovery_cli_updates_only_artifact() -> None:
+    with workspace_tmpdir("web-search-browser-recovery-cli") as root:
+        with override_discovery_runtime(
+            root,
+            studio_seeds=[],
+            static_candidates=[],
+        ):
+            audit_path = root / "web-audit.json"
+            config = _stage_config(audit_path=str(audit_path))
+            called: dict[str, object] = {}
+
+            def fake_recovery(timeout_s: int, **kwargs):
+                called["timeout"] = timeout_s
+                called["config"] = kwargs.get("config")
+                return {"adapter": "web_search", "browserRecovery": {"processedCount": 1}}
+
+            args = discovery_orchestrator.parse_args(["--web-search-browser-recovery"])
+            with mock.patch.object(
+                discovery_orchestrator,
+                "run_web_search_browser_recovery",
+                side_effect=fake_recovery,
+            ) as recovery:
+                output = sd.run_discovery(
+                    timeout_s=5,
+                    top_n=0,
+                    mode="dynamic",
+                    include_web_search=True,
+                    discovery_config=config,
+                    cli_args=args,
+                    fetcher=lambda *_args: "",
+                )
+
+            recovery.assert_called_once()
+            assert output == {"adapter": "web_search", "browserRecovery": {"processedCount": 1}}
+            assert called["timeout"] == 5
+            assert called["config"] == config

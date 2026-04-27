@@ -152,7 +152,7 @@ from .web_search import (
     infer_provider_candidates_from_html,
     infer_web_candidate,
 )
-from .web_search_candidates import run_web_search_directory_audit
+from .web_search_candidates import run_web_search_browser_recovery, run_web_search_directory_audit
 
 
 def discover_seed_careers_page_candidates(timeout_s: int, *, fetcher=None):

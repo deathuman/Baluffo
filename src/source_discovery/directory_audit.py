@@ -180,6 +180,9 @@ def run_directory_audit(
     scan_result = scan(timeout_s)
     artifact["providerCandidates"] = list(scan_result.get("providerCandidates") or [])
     artifact["staticCandidates"] = list(scan_result.get("staticCandidates") or [])
+    for key in ("browserRecoveryCandidates",):
+        if key in scan_result:
+            artifact[key] = list(scan_result.get(key) or [])
     failures = list(scan_result.get("failures") or [])
     audit_ledger.record_failures(artifact, failures, sample_limit=sample_limit)
 

@@ -19,6 +19,7 @@ from src.shared.utils import now_iso
 from src.source_registry import source_identity, unique_sources
 
 from . import audit_ledger, audit_report_summary, recovery_url_planner
+from . import browser_recovery as browser_recovery_helpers
 from .config import DEFAULT_DISCOVERY_CONFIG
 from .core import (
     compute_candidate_score,
@@ -715,30 +716,16 @@ async def _fetch_browser_recovery_pages_async(
     browser_fetcher,
     concurrency: int,
 ) -> list[tuple[dict[str, Any], str, str, int]]:
-    sem = asyncio.Semaphore(max(1, int(concurrency or 1)))
-
-    async def _one(row: dict[str, Any]) -> tuple[dict[str, Any], str, str, int]:
-        url = str(row.get("url") or "").strip()
-        async with sem:
-            started = time.perf_counter()
-            html, error = await asyncio.to_thread(browser_fetcher, url, timeout_s)
-            return row, str(html or ""), str(error or ""), _duration_ms(started)
-
-    tasks = [asyncio.create_task(_one(row)) for row in rows]
-    results: list[tuple[dict[str, Any], str, str, int]] = []
-    for fut in asyncio.as_completed(tasks):
-        results.append(await fut)
-    return results
+    return await browser_recovery_helpers.fetch_browser_recovery_pages_async(
+        rows,
+        timeout_s=timeout_s,
+        browser_fetcher=browser_fetcher,
+        concurrency=concurrency,
+    )
 
 
 def _browser_recovery_processed_key(row: dict[str, Any]) -> str:
-    url = str(row.get("url") or "").strip()
-    entry_url = str(row.get("sourceDirectoryEntryUrl") or "").strip()
-    if url:
-        return f"url:{url}"
-    if entry_url:
-        return f"entry:{entry_url}"
-    return str(row.get("name") or "").strip()
+    return browser_recovery_helpers.browser_recovery_processed_key(row)
 
 
 def _browser_static_probe_result_from_rendered_html(
@@ -802,20 +789,12 @@ def _select_browser_recovery_candidates(
     cfg: dict[str, Any],
     browser_recovery: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], set[str]]:
-    processed = {
-        str(item).strip()
-        for item in _as_list(browser_recovery.get("processedKeys"))
-        if str(item).strip()
-    }
-    candidates = [
-        dict(row)
-        for row in _as_list(artifact.get("browserRecoveryCandidates"))
-        if isinstance(row, dict)
-        and _browser_recovery_processed_key(row)
-        and _browser_recovery_processed_key(row) not in processed
-    ]
     limit = max(0, int(cfg.get("activeAuditBrowserRecoveryLimit") or 0))
-    return (candidates[:limit] if limit else candidates), processed
+    return browser_recovery_helpers.select_unprocessed_candidates(
+        [dict(row) for row in _as_list(artifact.get("browserRecoveryCandidates"))],
+        browser_recovery=browser_recovery,
+        limit=limit,
+    )
 
 
 def _record_browser_fetch_sample(
@@ -825,10 +804,12 @@ def _record_browser_fetch_sample(
     duration_ms: int,
     html: str,
 ) -> None:
-    samples = _as_list(browser_recovery.get("fetchSamples"))
-    if len(samples) < 25:
-        samples.append({"url": source_url, "durationMs": int(duration_ms), "htmlBytes": len(html)})
-    browser_recovery["fetchSamples"] = samples[:25]
+    browser_recovery_helpers.append_fetch_sample(
+        browser_recovery,
+        source_url=source_url,
+        duration_ms=duration_ms,
+        html=html,
+    )
 
 
 def _analyze_browser_recovery_fetches(
@@ -965,17 +946,14 @@ def _merge_browser_recovery_artifact_updates(
             if isinstance(row, dict) and bool(row.get("gamedevmapBrowserRecovery"))
         ]
     )
-    browser_recovery.update(
-        {
-            "processedKeys": sorted(processed),
-            "processedCount": len(processed),
-            "lastRunAt": now_iso(),
-            "lastDurationMs": _duration_ms(started),
-            "candidateCount": len(_as_list(artifact.get("browserRecoveryCandidates"))),
-            "activeCandidates": active_browser_count,
-            "probeCandidates": len(probe_candidates),
-            "renderedStaticValidated": len(rendered_probe_results),
-        }
+    browser_recovery_helpers.update_browser_recovery_state(
+        browser_recovery,
+        processed=processed,
+        started=started,
+        candidate_count=len(_as_list(artifact.get("browserRecoveryCandidates"))),
+        activeCandidates=active_browser_count,
+        probeCandidates=len(probe_candidates),
+        renderedStaticValidated=len(rendered_probe_results),
     )
     artifact["browserRecovery"] = browser_recovery
 

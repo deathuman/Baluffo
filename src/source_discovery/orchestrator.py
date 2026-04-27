@@ -94,6 +94,9 @@ from .web_search import (
     fetch_text,
 )
 from .web_search_candidates import (
+    run_web_search_browser_recovery as _run_web_search_browser_recovery,
+)
+from .web_search_candidates import (
     run_web_search_directory_audit as _run_web_search_directory_audit,
 )
 
@@ -123,6 +126,7 @@ save_url_patch_manifest = _save_url_patch_manifest
 discover_seed_careers_page_candidates = _discover_seed_careers_page_candidates
 discover_web_search_candidates = _discover_web_search_candidates
 run_web_search_directory_audit = _run_web_search_directory_audit
+run_web_search_browser_recovery = _run_web_search_browser_recovery
 
 
 def _discovery_report_write_path() -> Path:
@@ -227,6 +231,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Run browser-rendered recovery only for saved GameDevMap browser candidates.",
     )
     parser.add_argument(
+        "--web-search-browser-recovery",
+        action="store_true",
+        help="Run browser-rendered recovery only for saved seed-careers/web-search candidates.",
+    )
+    parser.add_argument(
         "--gameprog-enabled",
         action="store_true",
         help="Enable Gameprog directory scanning.",
@@ -294,6 +303,12 @@ def run_discovery(
             fetcher=fetcher,
             run_id=run_id,
             started_at=started_at,
+        )
+    if bool(getattr(cli_args, "web_search_browser_recovery", False)):
+        return run_web_search_browser_recovery(
+            timeout_s,
+            config=effective_config,
+            fetcher=fetcher,
         )
 
     _prime_bridge_discovery_report(

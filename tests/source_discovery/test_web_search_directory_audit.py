@@ -72,7 +72,7 @@ def test_web_search_directory_audit_missing_artifact_runs_both_substages() -> No
         assert cache_hit is False
         assert audit_path.exists()
         assert artifact["adapter"] == "web_search"
-        assert artifact["schemaVersion"] == 1
+        assert artifact["schemaVersion"] == web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION
         assert artifact["progress"]["complete"] is True
         assert artifact["progress"]["cursor"] == 2
         assert artifact["summary"]["seedCareersEnabled"] is True
@@ -96,6 +96,8 @@ def test_web_search_directory_audit_missing_artifact_runs_both_substages() -> No
         assert artifact["summary"]["providerCandidates"] == 2
         assert artifact["summary"]["staticCandidates"] == 0
         assert artifact["summary"]["failures"] == 0
+        assert artifact["summary"]["browserRecoveryCandidates"] == 0
+        assert artifact["browserRecoveryCandidates"] == []
         assert artifact["timings"]["totalsMs"]["seedPageFetchMs"] >= 0
         assert artifact["timings"]["totalsMs"]["webSearchFetchMs"] >= 0
         methods = {row["discoveryMethod"] for row in artifact["providerCandidates"]}
@@ -228,10 +230,16 @@ def test_web_search_directory_audit_reruns_stale_wrong_schema_incomplete_or_sign
 ):
     cases = [
         {"schemaVersion": 0},
-        {"schemaVersion": 1, "progress": {"complete": False}},
-        {"schemaVersion": 1, "runtime": {"configSignature": {"maxQueries": 99}}},
         {
-            "schemaVersion": 1,
+            "schemaVersion": web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
+            "progress": {"complete": False},
+        },
+        {
+            "schemaVersion": web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
+            "runtime": {"configSignature": {"maxQueries": 99}},
+        },
+        {
+            "schemaVersion": web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
             "updatedAt": (datetime.now(UTC) - timedelta(minutes=90)).isoformat(),
         },
     ]
@@ -240,7 +248,7 @@ def test_web_search_directory_audit_reruns_stale_wrong_schema_incomplete_or_sign
         with workspace_tmpdir(f"web-search-audit-rerun-{index}") as root:
             audit_path = root / "web-audit.json"
             payload = {
-                "schemaVersion": 1,
+                "schemaVersion": web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
                 "updatedAt": datetime.now(UTC).isoformat(),
                 "progress": {"complete": True},
                 "runtime": {"configSignature": {}},
@@ -321,6 +329,170 @@ def test_web_search_directory_audit_records_search_and_page_fetch_failures() -> 
         assert artifact["summary"]["webSearchFailures"] == 1
         assert artifact["summary"]["webPageFetchFailures"] == 0
         assert artifact["summary"]["webFailureSamples"][0]["stage"] == "search"
+
+
+def test_web_search_directory_audit_records_browser_recovery_candidates() -> None:
+    with workspace_tmpdir("web-search-audit-browser-candidates") as root:
+        audit_path = root / "web-audit.json"
+
+        def browser_candidate_fetch(url: str, _timeout_s: int) -> str:
+            if url == "https://seed.example/careers":
+                return '<html><div id="root"></div><script src="/app.js"></script></html>'
+            if "duckduckgo.com" in url:
+                return '<a href="https://search.example/careers">Careers</a>'
+            raise RuntimeError("403 forbidden")
+
+        artifact, _cache_hit = web_candidates.run_web_search_directory_audit(
+            5,
+            studio_seeds=_seeds(),
+            include_seed_careers=True,
+            include_web_search=True,
+            config=_audit_config(str(audit_path)),
+            fetcher=browser_candidate_fetch,
+            max_queries=1,
+        )
+
+        assert artifact["summary"]["browserRecoveryCandidates"] == 2
+        assert artifact["summary"]["browserRecoveryJsShellCandidates"] == 1
+        assert artifact["summary"]["browserRecoveryFetchFailureCandidates"] == 1
+        assert {row["reasonDetail"] for row in artifact["browserRecoveryCandidates"]} == {
+            "js_shell",
+            "browser_recovery_fetch_failed",
+        }
+
+
+def test_web_search_browser_recovery_merges_only_validated_rendered_sources() -> None:
+    with workspace_tmpdir("web-search-browser-recovery") as root:
+        audit_path = root / "web-audit.json"
+
+        def shell_fetch(url: str, _timeout_s: int) -> str:
+            if url == "https://seed.example/careers":
+                return '<html><div id="root"></div><script src="/app.js"></script></html>'
+            raise RuntimeError(f"unexpected URL: {url}")
+
+        artifact, _cache_hit = web_candidates.run_web_search_directory_audit(
+            5,
+            studio_seeds=[_seeds()[0]],
+            include_seed_careers=True,
+            include_web_search=False,
+            config=_audit_config(str(audit_path)),
+            fetcher=shell_fetch,
+        )
+        assert artifact["summary"]["browserRecoveryCandidates"] == 1
+
+        calls: list[str] = []
+
+        def fake_browser(url: str, _timeout_s: int) -> tuple[str, str]:
+            calls.append(url)
+            return '<a href="/jobs/rendering-engineer">Rendering Engineer</a>', ""
+
+        recovered = web_candidates.run_web_search_browser_recovery(
+            5,
+            config=_audit_config(str(audit_path)),
+            output_path=audit_path,
+            browser_fetcher=fake_browser,
+            fetcher=lambda *_args: "",
+        )
+
+        assert calls == ["https://seed.example/careers"]
+        assert recovered["browserRecovery"]["processedCount"] == 1
+        assert recovered["browserRecovery"]["activeCandidates"] == 1
+        assert recovered["summary"]["browserRecoveredActiveCandidates"] == 1
+        assert recovered["staticCandidates"][0]["prevalidatedDiscovery"] is True
+        assert recovered["staticCandidates"][0]["probeStatus"] == "ok"
+
+
+def test_web_search_browser_recovery_keeps_zero_and_failed_rows_as_diagnostics() -> None:
+    with workspace_tmpdir("web-search-browser-recovery-diagnostics") as root:
+        audit_path = root / "web-audit.json"
+        audit_path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
+                    "adapter": "web_search",
+                    "summary": {"browserRecoveryCandidates": 2},
+                    "providerCandidates": [],
+                    "staticCandidates": [],
+                    "browserRecoveryCandidates": [
+                        {
+                            "name": "Zero Studio",
+                            "studio": "Zero Studio",
+                            "url": "https://zero.example/jobs",
+                            "discoveryMethod": "web_search",
+                        },
+                        {
+                            "name": "Failed Studio",
+                            "studio": "Failed Studio",
+                            "url": "https://failed.example/jobs",
+                            "discoveryMethod": "web_search",
+                        },
+                    ],
+                    "browserRecovery": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        def fake_browser(url: str, _timeout_s: int) -> tuple[str, str]:
+            if "failed" in url:
+                return "", "browser failed"
+            return "<html>No jobs here</html>", ""
+
+        recovered = web_candidates.run_web_search_browser_recovery(
+            5,
+            config=_audit_config(str(audit_path)),
+            output_path=audit_path,
+            browser_fetcher=fake_browser,
+            fetcher=lambda *_args: "",
+        )
+
+        assert recovered["providerCandidates"] == []
+        assert recovered["staticCandidates"] == []
+        assert recovered["browserRecovery"]["processedCount"] == 2
+        assert recovered["browserRecovery"]["activeCandidates"] == 0
+        assert recovered["browserRecovery"]["fetchFailures"] == 1
+        assert recovered["browserRecovery"]["failureSamples"][0]["stage"] == "browser_fetch"
+
+
+def test_web_search_browser_recovery_respects_batch_size_and_max_batches() -> None:
+    with workspace_tmpdir("web-search-browser-recovery-batch") as root:
+        audit_path = root / "web-audit.json"
+        config = _audit_config(str(audit_path))
+        config["webSearch"]["browserRecoveryBatchSize"] = 1
+        config["webSearch"]["browserRecoveryMaxBatchesPerRun"] = 1
+        audit_path.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
+                    "adapter": "web_search",
+                    "summary": {"browserRecoveryCandidates": 2},
+                    "providerCandidates": [],
+                    "staticCandidates": [],
+                    "browserRecoveryCandidates": [
+                        {"name": "One", "studio": "One", "url": "https://one.example/jobs"},
+                        {"name": "Two", "studio": "Two", "url": "https://two.example/jobs"},
+                    ],
+                    "browserRecovery": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        calls: list[str] = []
+
+        def fake_browser(url: str, _timeout_s: int) -> tuple[str, str]:
+            calls.append(url)
+            return "<html>No jobs</html>", ""
+
+        recovered = web_candidates.run_web_search_browser_recovery(
+            5,
+            config=config,
+            output_path=audit_path,
+            browser_fetcher=fake_browser,
+            fetcher=lambda *_args: "",
+        )
+
+        assert calls == ["https://one.example/jobs"]
+        assert recovered["browserRecovery"]["processedCount"] == 1
 
 
 def test_web_search_directory_audit_supports_seed_only_and_web_only() -> None:

@@ -29,22 +29,24 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Added an opt-in combined seed-careers/web-search audit pilot using the shared directory audit engine. Default web-derived discovery remains direct scanning; `webSearch.activeAuditEnabled=true` writes/reuses `data/web-search-discovery-audit.json` and reports metadata through `directoryAuditSummaries.web_search`.
 - 2026-04-27: Default-enabled the combined seed-careers/web-search audit when those stages are enabled. `webSearch.activeAuditEnabled=false` remains the rollback to the direct scanners.
 - 2026-04-27: Added web-search audit tuning and diagnostics. The default audit now supports `webSearch.maxQueries` / `webSearch.maxLinksPerQuery`, prioritizes seed careers-host queries, and reports link/query diagnostics plus bounded samples.
+- 2026-04-27: Extracted shared browser-recovery mechanics for processed-key tracking, bounded candidate selection, async browser fetch, and recovery state/sample bookkeeping. GameDevMap and web-derived discovery share these mechanics while keeping adapter-specific analysis local.
+- 2026-04-27: Added an explicit web-derived browser recovery lane. Default web discovery remains HTTP-only; `--web-search-browser-recovery` processes saved `browserRecoveryCandidates` and writes validated `jobsFound > 0` candidates back to the web-search audit artifact for normal discovery queueing.
 
 ## Reusable Opportunities
 
-- Use default web-search audit evidence to decide whether browser recovery or deeper search-source tuning is worth adding.
+- Use default web-search and explicit browser-recovery evidence to decide whether deeper rendered-source tuning is worth adding.
 - Extend shared recovery URL planning only when another adapter adopts the same behavior; provider inference, browser-candidate classification, and adapter diagnostics remain adapter-owned for now.
-- Consider browser-recovery candidates for web-derived discovery only after the HTTP-only web audit has enough runtime evidence.
+- Consider browser-recovery candidates for additional adapters only after each adapter can emit an HTTP-only candidate list without slowing default scans.
 - Extend shared directory-cache helpers only when another adapter has the same cache shape and bypass semantics.
 - Extend the shared prevalidated queue-cap policy only when another adapter produces candidates that already passed `jobsFound > 0`, while preserving dedupe, tombstones, pending/rejected state, and admin auto-approval gates.
 - Extend shared directory fetch-job builders only for additional adapters that already use the same `fetch_directory_pages` job shape.
-- Add explicit browser-recovery lanes for other adapters that can first produce an HTTP-only `browserRecoveryCandidates` list and then run opt-in rendered recovery without slowing normal scans.
+- Extend explicit browser-recovery lanes only to adapters that can first produce an HTTP-only `browserRecoveryCandidates` list and then run opt-in rendered recovery without slowing normal scans.
 
 ## Audit Readiness Notes
 
 - Gamesmap and Gameprog now share cache, fetch-job, audit-engine, and report-summary seams. Their audit paths are default when each adapter is enabled; future work should focus on runtime evidence and broader adapter migration.
 - Sheet-directory, seed-careers, and web-search now default to audit artifacts when their stages are enabled, with adapter-owned `activeAuditEnabled=false` rollback paths.
-- Browser recovery and active promotion stay out of shared audit-engine readiness. Any adapter adopting rendered recovery should first emit HTTP-only browser candidates and still route validated rows through the normal discovery queue.
+- Browser recovery stays opt-in and active promotion stays out of shared audit-engine readiness. Any adapter adopting rendered recovery should first emit HTTP-only browser candidates and still route validated rows through the normal discovery queue.
 
 ## Future Directory Audit Contract
 

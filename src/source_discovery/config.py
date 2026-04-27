@@ -278,6 +278,10 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "activeAuditTtlMinutes": 360,
         "maxQueries": 24,
         "maxLinksPerQuery": 8,
+        "browserRecoveryBatchSize": 50,
+        "browserRecoveryMaxBatchesPerRun": 1,
+        "browserRecoveryConcurrency": 2,
+        "browserRecoveryTimeoutSeconds": 15,
     },
     "gamedevmap": {
         "enabled": True,
