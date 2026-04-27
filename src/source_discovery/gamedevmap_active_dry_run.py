@@ -1924,20 +1924,16 @@ def run_gamedevmap_source_audit(
     cfg["enabled"] = True
     output_path = output_path or gamedevmap_active_dry_run_path()
     parsed_rerun_reasons = _parse_rerun_reasons(rerun_reasons)
-    if not reset and not parsed_rerun_reasons:
-        existing = source_registry_module.load_json_object(output_path, {})
-        existing_artifact = dict(existing) if isinstance(existing, dict) else {}
-        if existing_artifact and not _audit_artifact_signature_matches(existing_artifact, cfg):
-            reset = True
-        fresh = existing_artifact if _audit_artifact_is_fresh(existing_artifact, cfg) else None
-        if fresh is not None:
-            emit_log(f"GameDevMap active-source audit cache hit: {output_path}.")
-            return fresh, True
     batch_size = max(1, int(cfg.get("activeAuditBatchSize") or 1000))
     configured_max_batches = max(0, int(cfg.get("activeAuditMaxBatchesPerDiscoveryRun") or 0))
     effective_max_batches = configured_max_batches if max_batches is None else max(0, max_batches)
-    return (
-        run_gamedevmap_active_source_dry_run(
+    return active_audit_runtime.run_active_audit_cache(
+        reset=reset,
+        has_rerun_reasons=bool(parsed_rerun_reasons),
+        load_artifact=lambda: source_registry_module.load_json_object(output_path, {}),
+        signature_matches=lambda artifact: _audit_artifact_signature_matches(artifact, cfg),
+        is_fresh=lambda artifact: _audit_artifact_is_fresh(artifact, cfg),
+        refresh=lambda effective_reset: run_gamedevmap_active_source_dry_run(
             timeout_s=timeout_s,
             config=config,
             fetcher=fetcher,
@@ -1945,11 +1941,12 @@ def run_gamedevmap_source_audit(
             run_id=run_id,
             started_at=started_at,
             batch_size=batch_size,
-            reset=reset,
+            reset=effective_reset,
             max_batches=effective_max_batches,
             rerun_reasons=rerun_reasons,
         ),
-        False,
+        cache_hit_log=lambda _artifact: f"GameDevMap active-source audit cache hit: {output_path}.",
+        emit_log_fn=emit_log,
     )
 
 

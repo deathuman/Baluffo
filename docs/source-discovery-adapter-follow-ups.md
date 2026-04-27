@@ -57,6 +57,7 @@ GameDevMap created much of the better logic but still has the largest local acti
 - Completed artifact-state slice: GameDevMap active audit now uses shared active-audit helpers for unique candidate merge, source-identity bucket merge, rejection/failure append, batch timing, and summary count extraction while keeping GameDevMap bucket names local.
 - Completed lifecycle slice: GameDevMap active audit artifact initialization, resume/reset refresh, progress finalization, timestamp stamping, and atomic save now use shared active-audit lifecycle helpers.
 - Completed rerun-state slice: GameDevMap rerun row selection, rejection pruning, rejection identity indexing, recovered-active mapping, and lost-recovery comparison iteration now use shared active-audit state helpers.
+- Completed cache-wrapper slice: GameDevMap active audit cache reuse, signature/freshness checks, rerun/reset bypass, and refresh dispatch now use a shared active-audit cache wrapper.
 - Completed browser-analysis slice: `gamedevmap_active_dry_run.py::_analyze_browser_recovery_fetches` now uses shared rendered-fetch analysis.
 - Completed browser-merge slice: `gamedevmap_active_dry_run.py::_merge_browser_recovery_artifact_updates` and web-derived browser recovery now share merge orchestration, while adapter-specific artifact writes remain local.
 - Completed diagnostics slice: `gamedevmap_active_dry_run.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.

@@ -21,6 +21,7 @@ from src.source_discovery.active_audit_runtime import (
     rejection_lookup_keys,
     rejection_rerun_key,
     row_identity_keys,
+    run_active_audit_cache,
     run_active_homepage_batch,
     save_updated_active_audit_artifact,
     select_rerun_rows,
@@ -559,3 +560,93 @@ def test_recovered_active_mapping_and_compare_preserves_ordered_lost_rows() -> N
         ],
     }
     assert classifier_calls == ["a"]
+
+
+def test_run_active_audit_cache_reuses_fresh_matching_artifact() -> None:
+    calls: list[str] = []
+    artifact = {"schemaVersion": 1, "fresh": True}
+
+    result, cache_hit = run_active_audit_cache(
+        reset=False,
+        has_rerun_reasons=False,
+        load_artifact=lambda: artifact,
+        signature_matches=lambda row: True,
+        is_fresh=lambda row: True,
+        refresh=lambda reset: calls.append(f"refresh:{reset}") or {"refreshed": True},
+        cache_hit_log=lambda row: "cache hit",
+        emit_log_fn=calls.append,
+    )
+
+    assert result == artifact
+    assert cache_hit is True
+    assert calls == ["cache hit"]
+
+
+def test_run_active_audit_cache_reset_and_rerun_bypass_cache() -> None:
+    calls: list[str] = []
+
+    reset_result, reset_cache_hit = run_active_audit_cache(
+        reset=True,
+        has_rerun_reasons=False,
+        load_artifact=lambda: calls.append("load") or {"fresh": True},
+        signature_matches=lambda row: True,
+        is_fresh=lambda row: True,
+        refresh=lambda reset: calls.append(f"refresh:{reset}") or {"reset": reset},
+        cache_hit_log=lambda row: "cache hit",
+        emit_log_fn=calls.append,
+    )
+    rerun_result, rerun_cache_hit = run_active_audit_cache(
+        reset=False,
+        has_rerun_reasons=True,
+        load_artifact=lambda: calls.append("load") or {"fresh": True},
+        signature_matches=lambda row: True,
+        is_fresh=lambda row: True,
+        refresh=lambda reset: calls.append(f"refresh:{reset}") or {"reset": reset},
+        cache_hit_log=lambda row: "cache hit",
+        emit_log_fn=calls.append,
+    )
+
+    assert reset_result == {"reset": True}
+    assert reset_cache_hit is False
+    assert rerun_result == {"reset": False}
+    assert rerun_cache_hit is False
+    assert calls == ["refresh:True", "refresh:False"]
+
+
+def test_run_active_audit_cache_signature_mismatch_refreshes_with_reset() -> None:
+    calls: list[str] = []
+
+    result, cache_hit = run_active_audit_cache(
+        reset=False,
+        has_rerun_reasons=False,
+        load_artifact=lambda: {"schemaVersion": 1},
+        signature_matches=lambda row: False,
+        is_fresh=lambda row: False,
+        refresh=lambda reset: calls.append(f"refresh:{reset}") or {"reset": reset},
+        cache_hit_log=lambda row: "cache hit",
+        emit_log_fn=calls.append,
+        signature_mismatch_log=lambda row: "signature mismatch",
+    )
+
+    assert result == {"reset": True}
+    assert cache_hit is False
+    assert calls == ["signature mismatch", "refresh:True"]
+
+
+def test_run_active_audit_cache_stale_artifact_refreshes_without_hit() -> None:
+    calls: list[str] = []
+
+    result, cache_hit = run_active_audit_cache(
+        reset=False,
+        has_rerun_reasons=False,
+        load_artifact=lambda: {"schemaVersion": 1},
+        signature_matches=lambda row: True,
+        is_fresh=lambda row: False,
+        refresh=lambda reset: calls.append(f"refresh:{reset}") or {"reset": reset},
+        cache_hit_log=lambda row: "cache hit",
+        emit_log_fn=calls.append,
+    )
+
+    assert result == {"reset": False}
+    assert cache_hit is False
+    assert calls == ["refresh:False"]

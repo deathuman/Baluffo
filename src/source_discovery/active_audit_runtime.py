@@ -195,6 +195,33 @@ def save_updated_active_audit_artifact(
     audit_ledger.save_artifact_atomic(artifact, output_path)
 
 
+def run_active_audit_cache(
+    *,
+    reset: bool,
+    has_rerun_reasons: bool,
+    load_artifact: Callable[[], Any],
+    signature_matches: Callable[[dict[str, Any]], bool],
+    is_fresh: Callable[[dict[str, Any]], bool],
+    refresh: Callable[[bool], dict[str, Any]],
+    cache_hit_log: Callable[[dict[str, Any]], str],
+    emit_log_fn: Callable[[str], None],
+    signature_mismatch_log: Callable[[dict[str, Any]], str] | None = None,
+) -> tuple[dict[str, Any], bool]:
+    effective_reset = bool(reset)
+    if not effective_reset and not has_rerun_reasons:
+        existing = load_artifact()
+        existing_artifact = dict(existing) if isinstance(existing, dict) else {}
+        if existing_artifact and not signature_matches(existing_artifact):
+            effective_reset = True
+            if signature_mismatch_log is not None:
+                emit_log_fn(signature_mismatch_log(existing_artifact))
+        fresh = existing_artifact if is_fresh(existing_artifact) else None
+        if fresh is not None:
+            emit_log_fn(cache_hit_log(fresh))
+            return fresh, True
+    return refresh(effective_reset), False
+
+
 def merge_unique_candidate_rows(
     existing: Any,
     incoming: list[dict[str, Any]],
