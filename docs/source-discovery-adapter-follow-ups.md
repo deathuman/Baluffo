@@ -41,6 +41,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Consolidated provider/static scan-stage orchestration in the discovery orchestrator. Adapter scan callbacks, audit/direct rollback behavior, failure routing, progress labels, and stream routing remain unchanged.
 - 2026-04-27: Shared the public directory-adapter discovery wrapper for Gameprog/Gamesmap. The common enabled -> audit -> cache -> scan/write sequence is centralized while adapter-specific config, scans, caches, audit callbacks, and logs remain local.
 - 2026-04-27: Shared directory scan-row extraction for audit-backed direct scanners and web-search audit method splitting. Raw scan results remain unnormalized, while audit artifact reads keep existing normalized row behavior.
+- 2026-04-27: Shared browser-recovery runtime orchestration for GameDevMap and web-derived discovery. Browser fetch, rendered-probe filtering, and bounded probing are centralized while adapter analysis and artifact merge semantics remain local.
 
 ## Reusable Opportunities
 

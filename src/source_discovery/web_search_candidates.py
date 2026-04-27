@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import time
@@ -30,17 +29,10 @@ from .directory_audit import discover_directory_scan_candidates, run_directory_a
 from .directory_fetch_jobs import build_directory_fetch_job
 from .page_analysis import analyze_fetched_page
 from .probe_runtime import (
-    candidate_id as probe_candidate_id,
-)
-from .probe_runtime import (
     candidate_with_probe_evidence as probe_candidate_with_probe_evidence,
 )
 from .probe_runtime import (
-    probe_candidates_after_rendered_results,
     rendered_static_probe_result,
-)
-from .probe_runtime import (
-    probe_candidates_async as shared_probe_candidates_async,
 )
 from .scoring import careers_keyword_count, clean_token, studio_domain_match, unique_string_list
 from .web_search_extract import extract_links_from_html
@@ -983,10 +975,6 @@ def _merge_web_scan_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _candidate_id(candidate: dict[str, Any]) -> str:
-    return probe_candidate_id(candidate)
-
-
 def _candidate_with_probe_evidence(candidate: dict[str, Any], jobs_found: int) -> dict[str, Any]:
     return probe_candidate_with_probe_evidence(
         candidate,
@@ -1008,15 +996,6 @@ def _browser_static_probe_result_from_rendered_html(
     )
 
 
-async def _probe_candidates_async(
-    candidates: list[dict[str, Any]],
-    *,
-    timeout_s: int,
-    fetcher,
-) -> list[tuple[dict[str, Any], bool, int, str, int]]:
-    return await shared_probe_candidates_async(candidates, timeout_s=timeout_s, fetcher=fetcher)
-
-
 def _default_browser_fetcher():
     try:
         from src.bridge.source_check_http import try_fetch_with_playwright
@@ -1034,13 +1013,6 @@ def _load_web_search_browser_recovery_artifact(output_path: Path) -> dict[str, A
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
-
-
-def _browser_recovery_probe_candidates(
-    all_candidates: list[dict[str, Any]],
-    rendered_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
-) -> list[dict[str, Any]]:
-    return probe_candidates_after_rendered_results(all_candidates, rendered_probe_results)
 
 
 def _analyze_web_browser_recovery_fetches(
@@ -1111,6 +1083,23 @@ def _analyze_web_browser_recovery_fetches(
         unique_sources([*provider_candidates, *static_candidates]),
         rendered_probe_results,
         fetch_failures,
+    )
+
+
+def _analyze_web_browser_recovery_batch(
+    fetch_results: list[tuple[dict[str, Any], str, str, int]],
+    browser_recovery: dict[str, Any],
+    processed: set[str],
+) -> browser_recovery_helpers.BrowserRecoveryAnalysis:
+    all_candidates, rendered_probe_results, fetch_failures = _analyze_web_browser_recovery_fetches(
+        fetch_results,
+        browser_recovery=browser_recovery,
+        processed=processed,
+    )
+    return browser_recovery_helpers.BrowserRecoveryAnalysis(
+        all_candidates=all_candidates,
+        rendered_probe_results=rendered_probe_results,
+        fetch_failures=fetch_failures,
     )
 
 
@@ -1345,38 +1334,30 @@ def run_web_search_browser_recovery(
     )
     concurrency = _web_search_browser_recovery_concurrency(config)
     browser_timeout_s = _web_search_browser_recovery_timeout_s(config, timeout_s)
-    emit_log(f"Web-search browser recovery: candidates={len(selected)}, concurrency={concurrency}.")
-    started = time.perf_counter()
-    fetch_results = asyncio.run(
-        browser_recovery_helpers.fetch_browser_recovery_pages_async(
-            selected,
-            timeout_s=browser_timeout_s,
-            browser_fetcher=browser_fetcher,
-            concurrency=concurrency,
-        )
-    )
-    all_candidates, rendered_probe_results, fetch_failures = _analyze_web_browser_recovery_fetches(
-        fetch_results,
-        browser_recovery=browser_recovery,
+    batch = browser_recovery_helpers.run_browser_recovery_batch(
+        selected=selected,
         processed=processed,
+        browser_recovery=browser_recovery,
+        timeout_s=browser_timeout_s,
+        fetcher=fetcher,
+        browser_fetcher=browser_fetcher,
+        concurrency=concurrency,
+        analyze_fetches=_analyze_web_browser_recovery_batch,
+        probe_timeout_s=timeout_s,
+        emit_log=emit_log,
+        log_label="Web-search browser recovery",
     )
-    probe_candidates = _browser_recovery_probe_candidates(all_candidates, rendered_probe_results)
-    probe_results: list[tuple[dict[str, Any], bool, int, str, int]] = []
-    if probe_candidates:
-        probe_results = asyncio.run(
-            _probe_candidates_async(probe_candidates, timeout_s=timeout_s, fetcher=fetcher)
-        )
     _merge_web_browser_recovery_updates(
         artifact,
         output_path=output_path,
         browser_recovery=browser_recovery,
-        processed=processed,
-        started=started,
-        all_candidates=all_candidates,
-        probe_candidates=probe_candidates,
-        rendered_probe_results=rendered_probe_results,
-        probe_results=probe_results,
-        fetch_attempts=len(fetch_results),
-        fetch_failures=fetch_failures,
+        processed=batch.processed,
+        started=batch.started,
+        all_candidates=batch.analysis.all_candidates,
+        probe_candidates=batch.probe_candidates,
+        rendered_probe_results=batch.analysis.rendered_probe_results,
+        probe_results=batch.probe_results,
+        fetch_attempts=len(batch.fetch_results),
+        fetch_failures=batch.analysis.fetch_failures,
     )
     return artifact

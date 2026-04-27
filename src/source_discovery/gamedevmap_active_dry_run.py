@@ -37,11 +37,10 @@ from .probe_runtime import (
     candidate_with_probe_evidence as probe_candidate_with_probe_evidence,
 )
 from .probe_runtime import (
-    probe_candidates_after_rendered_results,
-    rendered_static_probe_result,
+    probe_candidates_async as shared_probe_candidates_async,
 )
 from .probe_runtime import (
-    probe_candidates_async as shared_probe_candidates_async,
+    rendered_static_probe_result,
 )
 from .reporting import emit_log
 from .static_candidates import build_known_careers_url_candidate
@@ -701,21 +700,6 @@ def _default_browser_fetcher():
     return try_fetch_with_playwright
 
 
-async def _fetch_browser_recovery_pages_async(
-    rows: list[dict[str, Any]],
-    *,
-    timeout_s: int,
-    browser_fetcher,
-    concurrency: int,
-) -> list[tuple[dict[str, Any], str, str, int]]:
-    return await browser_recovery_helpers.fetch_browser_recovery_pages_async(
-        rows,
-        timeout_s=timeout_s,
-        browser_fetcher=browser_fetcher,
-        concurrency=concurrency,
-    )
-
-
 def _browser_recovery_processed_key(row: dict[str, Any]) -> str:
     return browser_recovery_helpers.browser_recovery_processed_key(row)
 
@@ -876,11 +860,27 @@ def _analyze_browser_recovery_fetches(
     return all_candidates, [*rejected, *bad_provider_rejections], rendered_probe_results
 
 
-def _browser_recovery_probe_candidates(
-    all_candidates: list[dict[str, Any]],
-    rendered_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
-) -> list[dict[str, Any]]:
-    return probe_candidates_after_rendered_results(all_candidates, rendered_probe_results)
+def _analyze_browser_recovery_batch(
+    cfg: dict[str, Any],
+):
+    def _analyze(
+        fetch_results: list[tuple[dict[str, Any], str, str, int]],
+        browser_recovery: dict[str, Any],
+        processed: set[str],
+    ) -> browser_recovery_helpers.BrowserRecoveryAnalysis:
+        all_candidates, rejected, rendered_probe_results = _analyze_browser_recovery_fetches(
+            fetch_results=fetch_results,
+            cfg=cfg,
+            browser_recovery=browser_recovery,
+            processed=processed,
+        )
+        return browser_recovery_helpers.BrowserRecoveryAnalysis(
+            all_candidates=all_candidates,
+            rendered_probe_results=rendered_probe_results,
+            rejected_rows=rejected,
+        )
+
+    return _analyze
 
 
 def _mark_browser_recovery_probe_results(
@@ -967,40 +967,29 @@ def run_gamedevmap_browser_recovery(
         1,
         min(max(1, int(timeout_s)), int(cfg.get("activeAuditBrowserRecoveryTimeoutSeconds") or 15)),
     )
-    emit_log(
-        f"GameDevMap browser recovery: candidates={len(candidates)}, concurrency={concurrency}."
-    )
-    started = time.perf_counter()
-    fetch_results = asyncio.run(
-        _fetch_browser_recovery_pages_async(
-            candidates,
-            timeout_s=browser_timeout_s,
-            browser_fetcher=browser_fetcher,
-            concurrency=concurrency,
-        )
-    )
-    all_candidates, rejected, rendered_probe_results = _analyze_browser_recovery_fetches(
-        fetch_results=fetch_results,
-        cfg=cfg,
-        browser_recovery=browser_recovery,
+    batch = browser_recovery_helpers.run_browser_recovery_batch(
+        selected=candidates,
         processed=processed,
+        browser_recovery=browser_recovery,
+        timeout_s=browser_timeout_s,
+        fetcher=fetcher,
+        browser_fetcher=browser_fetcher,
+        concurrency=concurrency,
+        analyze_fetches=_analyze_browser_recovery_batch(cfg),
+        probe_timeout_s=timeout_s,
+        emit_log=emit_log,
+        log_label="GameDevMap browser recovery",
     )
-    probe_candidates = _browser_recovery_probe_candidates(all_candidates, rendered_probe_results)
-    probe_results = []
-    if probe_candidates:
-        probe_results = asyncio.run(
-            _probe_candidates_async(probe_candidates, timeout_s=timeout_s, fetcher=fetcher)
-        )
     _merge_browser_recovery_artifact_updates(
         artifact=artifact,
         browser_recovery=browser_recovery,
-        all_candidates=all_candidates,
-        rejected=rejected,
-        processed=processed,
-        started=started,
-        probe_candidates=probe_candidates,
-        rendered_probe_results=rendered_probe_results,
-        probe_results=probe_results,
+        all_candidates=batch.analysis.all_candidates,
+        rejected=list(batch.analysis.rejected_rows or []),
+        processed=batch.processed,
+        started=batch.started,
+        probe_candidates=batch.probe_candidates,
+        rendered_probe_results=batch.analysis.rendered_probe_results,
+        probe_results=batch.probe_results,
     )
     _save_updated_artifact(artifact, output_path)
     return artifact

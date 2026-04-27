@@ -4,11 +4,42 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from src.shared.utils import now_iso
 
+from .probe_runtime import (
+    ProbeResult,
+    probe_candidates_after_rendered_results,
+    probe_candidates_async,
+)
+
 BrowserFetchResult = tuple[dict[str, Any], str, str, int]
+BrowserRecoveryAnalysisCallback = Callable[
+    [list[BrowserFetchResult], dict[str, Any], set[str]],
+    "BrowserRecoveryAnalysis",
+]
+
+
+@dataclass
+class BrowserRecoveryAnalysis:
+    all_candidates: list[dict[str, Any]]
+    rendered_probe_results: list[ProbeResult]
+    fetch_failures: int = 0
+    rejected_rows: list[dict[str, Any]] | None = None
+
+
+@dataclass
+class BrowserRecoveryBatch:
+    selected: list[dict[str, Any]]
+    processed: set[str]
+    started: float
+    fetch_results: list[BrowserFetchResult]
+    analysis: BrowserRecoveryAnalysis
+    probe_candidates: list[dict[str, Any]]
+    probe_results: list[ProbeResult]
 
 
 def browser_recovery_processed_key(row: dict[str, Any]) -> str:
@@ -69,6 +100,58 @@ async def fetch_browser_recovery_pages_async(
     for fut in asyncio.as_completed(tasks):
         results.append(await fut)
     return results
+
+
+def run_browser_recovery_batch(
+    *,
+    selected: list[dict[str, Any]],
+    processed: set[str],
+    browser_recovery: dict[str, Any],
+    timeout_s: int,
+    fetcher,
+    browser_fetcher,
+    concurrency: int,
+    analyze_fetches: BrowserRecoveryAnalysisCallback,
+    probe_timeout_s: int | None = None,
+    emit_log: Callable[[str], None] | None = None,
+    log_label: str = "Browser recovery",
+) -> BrowserRecoveryBatch:
+    if emit_log is not None:
+        emit_log(
+            f"{log_label}: candidates={len(selected)}, concurrency={max(1, int(concurrency or 1))}."
+        )
+    started = time.perf_counter()
+    fetch_results = asyncio.run(
+        fetch_browser_recovery_pages_async(
+            selected,
+            timeout_s=timeout_s,
+            browser_fetcher=browser_fetcher,
+            concurrency=concurrency,
+        )
+    )
+    analysis = analyze_fetches(fetch_results, browser_recovery, processed)
+    probe_candidates = probe_candidates_after_rendered_results(
+        analysis.all_candidates,
+        analysis.rendered_probe_results,
+    )
+    probe_results: list[ProbeResult] = []
+    if probe_candidates:
+        probe_results = asyncio.run(
+            probe_candidates_async(
+                probe_candidates,
+                timeout_s=int(probe_timeout_s if probe_timeout_s is not None else timeout_s),
+                fetcher=fetcher,
+            )
+        )
+    return BrowserRecoveryBatch(
+        selected=list(selected),
+        processed=processed,
+        started=started,
+        fetch_results=fetch_results,
+        analysis=analysis,
+        probe_candidates=probe_candidates,
+        probe_results=probe_results,
+    )
 
 
 def append_fetch_sample(
