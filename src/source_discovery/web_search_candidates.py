@@ -12,7 +12,7 @@ from src.shared.regex import find_urls_in_text
 from src.shared.utils import now_iso
 from src.source_registry import unique_sources
 
-from . import audit_ledger
+from . import audit_ledger, candidate_collections
 from . import browser_recovery as browser_recovery_helpers
 from .audit_config import (
     audit_artifact_path,
@@ -1134,15 +1134,13 @@ def _merge_web_browser_recovery_updates(
         for candidate, ok, jobs_found, _error, _duration_ms in combined_probe_results
         if ok and int(jobs_found or 0) > 0
     ]
-    provider_validated = [
-        row for row in validated_rows if str(row.get("adapter") or "") != "static"
-    ]
-    static_validated = [row for row in validated_rows if str(row.get("adapter") or "") == "static"]
-    artifact["providerCandidates"] = unique_sources(
-        [*list(artifact.get("providerCandidates") or []), *provider_validated]
+    provider_validated, static_validated = candidate_collections.split_provider_static_rows(
+        validated_rows
     )
-    artifact["staticCandidates"] = unique_sources(
-        [*list(artifact.get("staticCandidates") or []), *static_validated]
+    candidate_collections.append_provider_static_rows(
+        artifact,
+        provider_rows=provider_validated,
+        static_rows=static_validated,
     )
     active_browser_count = len(
         [

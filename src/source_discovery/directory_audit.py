@@ -9,9 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from src.source_registry import unique_sources
-
-from . import audit_ledger, audit_report_summary
+from . import audit_ledger, audit_report_summary, candidate_collections
 
 DirectoryAuditRows = tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]
 DirectoryAuditScan = Callable[[int], dict[str, Any]]
@@ -27,16 +25,11 @@ def load_directory_audit_artifact(path: Path) -> dict[str, Any] | None:
 
 
 def directory_audit_rows(artifact: dict[str, Any]) -> DirectoryAuditRows:
-    provider_rows = artifact.get("providerCandidates")
-    static_rows = artifact.get("staticCandidates")
+    provider_rows, static_rows = candidate_collections.provider_static_rows_from_payload(artifact)
     failures = artifact.get("failures")
-    if not isinstance(provider_rows, list):
-        provider_rows = []
-    if not isinstance(static_rows, list):
-        static_rows = []
     if not isinstance(failures, list):
         failures = []
-    return unique_sources(provider_rows), unique_sources(static_rows), list(failures)
+    return provider_rows, static_rows, list(failures)
 
 
 def directory_audit_report_summary(
