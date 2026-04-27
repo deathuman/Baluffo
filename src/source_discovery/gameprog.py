@@ -17,7 +17,7 @@ from src.source_registry import unique_sources
 
 from . import audit_ledger
 from .audit_config import audit_artifact_path, audit_enabled, audit_ttl_minutes, config_section
-from .directory_audit import directory_audit_rows, run_directory_audit
+from .directory_audit import discover_directory_adapter_candidates, run_directory_audit
 from .directory_cache import load_directory_cache, write_directory_cache
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .directory_fetch_jobs import build_directory_fetch_jobs
@@ -583,36 +583,36 @@ def discover_gameprog_candidates(
     from .reporting import emit_log
 
     fetcher = fetcher or fetch_text
-    if not _gameprog_enabled(config):
-        emit_log("Gameprog directory disabled, skipping.")
-        return [], [], []
     cfg = _gameprog_config_section(config)
-    if _gameprog_audit_enabled(config):
-        artifact, _cache_hit = run_gameprog_directory_audit(
+    return discover_directory_adapter_candidates(
+        timeout_s,
+        enabled=_gameprog_enabled(config),
+        disabled_log="Gameprog directory disabled, skipping.",
+        audit_enabled=_gameprog_audit_enabled(config),
+        run_audit=lambda: run_gameprog_directory_audit(
             timeout_s,
             config=config,
             fetcher=fetcher,
-        )
-        return directory_audit_rows(artifact)
-
-    cached = _load_gameprog_cache(config, cfg, fetcher=fetcher)
-    if cached is not None:
-        return cached
-    scan = _gameprog_scan(timeout_s, cfg=cfg, fetcher=fetcher, emit_log=emit_log)
-    provider_candidates = list(scan.get("providerCandidates") or [])
-    static_candidates = list(scan.get("staticCandidates") or [])
-    failures = list(scan.get("failures") or [])
-
-    emit_log(
-        f"Gameprog candidates: provider={len(provider_candidates)}, static={len(static_candidates)}, failures={len(failures)}."
-    )
-
-    if bool(scan.get("writeCache")):
-        _write_gameprog_cache(
+        ),
+        load_cache=lambda: _load_gameprog_cache(config, cfg, fetcher=fetcher),
+        scan=lambda scan_timeout_s: _gameprog_scan(
+            scan_timeout_s,
+            cfg=cfg,
+            fetcher=fetcher,
+            emit_log=emit_log,
+        ),
+        write_cache=lambda provider_candidates, static_candidates, failures: _write_gameprog_cache(
             config,
             cfg,
             provider_candidates=provider_candidates,
             static_candidates=static_candidates,
             failures=failures,
-        )
-    return provider_candidates, static_candidates, failures
+        ),
+        emit_log=emit_log,
+        scan_summary_log=lambda provider_candidates, static_candidates, failures: (
+            "Gameprog candidates: "
+            f"provider={len(provider_candidates)}, "
+            f"static={len(static_candidates)}, "
+            f"failures={len(failures)}."
+        ),
+    )

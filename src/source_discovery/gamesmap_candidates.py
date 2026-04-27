@@ -11,7 +11,7 @@ from src.source_registry import unique_sources
 from . import audit_ledger
 from .audit_config import audit_artifact_path, audit_enabled, audit_ttl_minutes
 from .config import DEFAULT_DISCOVERY_CONFIG
-from .directory_audit import directory_audit_rows, run_directory_audit
+from .directory_audit import discover_directory_adapter_candidates, run_directory_audit
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .directory_fetch_jobs import build_directory_fetch_jobs
 from .gamesmap_cache import (
@@ -700,37 +700,34 @@ def discover_gamesmap_candidates(
     from .reporting import emit_log
 
     cfg = dict(gamesmap_config_value(config, "gamesmap", DEFAULT_DISCOVERY_CONFIG["gamesmap"]))
-    if not bool(cfg.get("enabled")):
-        emit_log("Gamesmap directory disabled, skipping.")
-        return [], [], []
-
-    if _gamesmap_audit_enabled(cfg):
-        artifact, _cache_hit = run_gamesmap_directory_audit(
+    return discover_directory_adapter_candidates(
+        timeout_s,
+        enabled=bool(cfg.get("enabled")),
+        disabled_log="Gamesmap directory disabled, skipping.",
+        audit_enabled=_gamesmap_audit_enabled(cfg),
+        run_audit=lambda: run_gamesmap_directory_audit(
             timeout_s,
             config=config,
             fetcher=fetcher,
-        )
-        return directory_audit_rows(artifact)
-
-    cached = load_gamesmap_cache(
-        config,
-        cfg,
-        fetcher=fetcher,
-        default_fetcher=_root_attr("fetch_text", fetch_text),
-    )
-    if cached is not None:
-        return cached
-
-    scan = _gamesmap_scan(timeout_s, cfg=cfg, fetcher=fetcher, emit_log=emit_log)
-    provider_candidates = list(scan.get("providerCandidates") or [])
-    static_candidates = list(scan.get("staticCandidates") or [])
-    failures = list(scan.get("failures") or [])
-    if bool(scan.get("writeCache")):
-        write_gamesmap_cache(
+        ),
+        load_cache=lambda: load_gamesmap_cache(
+            config,
+            cfg,
+            fetcher=fetcher,
+            default_fetcher=_root_attr("fetch_text", fetch_text),
+        ),
+        scan=lambda scan_timeout_s: _gamesmap_scan(
+            scan_timeout_s,
+            cfg=cfg,
+            fetcher=fetcher,
+            emit_log=emit_log,
+        ),
+        write_cache=lambda provider_candidates, static_candidates, failures: write_gamesmap_cache(
             config,
             cfg,
             provider_candidates=provider_candidates,
             static_candidates=static_candidates,
             failures=failures,
-        )
-    return provider_candidates, static_candidates, failures
+        ),
+        emit_log=emit_log,
+    )

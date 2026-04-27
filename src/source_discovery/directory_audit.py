@@ -13,6 +13,16 @@ from . import audit_ledger, audit_report_summary, candidate_collections
 
 DirectoryAuditRows = tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]
 DirectoryAuditScan = Callable[[int], dict[str, Any]]
+DirectoryDiscoveryAudit = Callable[[], tuple[dict[str, Any], bool]]
+DirectoryDiscoveryCacheLoader = Callable[[], DirectoryAuditRows | None]
+DirectoryDiscoveryCacheWriter = Callable[
+    [list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]],
+    None,
+]
+DirectoryDiscoverySummaryLog = Callable[
+    [list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]],
+    str | None,
+]
 _LATEST_DIRECTORY_AUDIT_SUMMARIES: dict[str, dict[str, Any]] = {}
 
 
@@ -30,6 +40,47 @@ def directory_audit_rows(artifact: dict[str, Any]) -> DirectoryAuditRows:
     if not isinstance(failures, list):
         failures = []
     return provider_rows, static_rows, list(failures)
+
+
+def discover_directory_adapter_candidates(
+    timeout_s: int,
+    *,
+    enabled: bool,
+    disabled_log: str,
+    audit_enabled: bool,
+    run_audit: DirectoryDiscoveryAudit,
+    load_cache: DirectoryDiscoveryCacheLoader,
+    scan: DirectoryAuditScan,
+    write_cache: DirectoryDiscoveryCacheWriter,
+    emit_log: Callable[[str], None],
+    scan_summary_log: DirectoryDiscoverySummaryLog | None = None,
+) -> DirectoryAuditRows:
+    if not enabled:
+        emit_log(disabled_log)
+        return [], [], []
+
+    if audit_enabled:
+        artifact, _cache_hit = run_audit()
+        return directory_audit_rows(artifact)
+
+    cached = load_cache()
+    if cached is not None:
+        return cached
+
+    scan_result = scan(timeout_s)
+    provider_candidates = list(scan_result.get("providerCandidates") or [])
+    static_candidates = list(scan_result.get("staticCandidates") or [])
+    failures = list(scan_result.get("failures") or [])
+
+    if scan_summary_log is not None:
+        message = scan_summary_log(provider_candidates, static_candidates, failures)
+        if message:
+            emit_log(message)
+
+    if bool(scan_result.get("writeCache")):
+        write_cache(provider_candidates, static_candidates, failures)
+
+    return provider_candidates, static_candidates, failures
 
 
 def directory_audit_report_summary(
