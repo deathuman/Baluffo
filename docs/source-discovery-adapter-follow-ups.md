@@ -19,10 +19,11 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Extended shared directory fetch-job builders to seed-careers and web-search page fetches. Web-search still owns URL selection and analysis; only the `fetch_directory_pages` job shape is shared.
 - 2026-04-27: Extracted shared audit report-summary helpers for active split, top failure buckets, and artifact size fallback. GameDevMap remains the only caller; report fields did not change.
 - 2026-04-27: Characterized the future directory audit contract for Gamesmap/Gameprog. This documented resumable boundaries and locked cache/fetch/candidate provenance behavior in tests without adding artifacts.
+- 2026-04-27: Added an opt-in Gameprog directory audit pilot using the shared audit-ledger helper. The default Gameprog path, cache shape, registry flow, queue behavior, and report fields remain unchanged.
 
 ## Reusable Opportunities
 
-- Generalize the resumable audit engine for Gamesmap, Gameprog, sheet-directory, and web-search sources where a full scan has meaningful intermediate progress, timing, cache, and resume needs.
+- Generalize the resumable audit engine for Gamesmap, sheet-directory, and web-search sources where a full scan has meaningful intermediate progress, timing, cache, and resume needs.
 - Extend shared recovery URL planning only when another adapter adopts the same behavior; provider inference, browser-candidate classification, and adapter diagnostics remain adapter-owned for now.
 - Extend the shared audit-ledger and audit report-summary helpers only when a second adapter adopts resumable audit artifacts.
 - Extend shared directory-cache helpers only when another adapter has the same cache shape and bypass semantics.
@@ -32,7 +33,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 
 ## Audit Readiness Notes
 
-- Gamesmap and Gameprog now share cache and fetch-job helper seams. A future audit-engine plan can treat index/teams fetch, parsed-entry caps, website fetch jobs, candidate analysis, and cache writes as explicit resumable boundaries.
+- Gamesmap and Gameprog now share cache and fetch-job helper seams. Gameprog has an opt-in audit pilot; a future Gamesmap plan can treat index fetch, parsed-entry caps, website fetch jobs, candidate analysis, and cache writes as explicit resumable boundaries.
 - Sheet-directory, seed-careers, and web-search still own different input shapes. They should only join a generalized audit engine after a separate plan defines artifact shape, progress keys, and report metadata for those flows.
 - Browser recovery and active promotion stay out of shared audit-engine readiness. Any adapter adopting rendered recovery should first emit HTTP-only browser candidates and still route validated rows through the normal discovery queue.
 

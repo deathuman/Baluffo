@@ -1,0 +1,230 @@
+from __future__ import annotations
+
+import json
+
+from src.source_discovery import gameprog
+
+from ._helpers import sd, workspace_tmpdir
+
+
+def _gameprog_payloads() -> dict[str, str]:
+    return {
+        "https://gameprog.it/teams.json": """[
+            {"name": "First Studio", "url": "https://first.example.com/", "place": "Rome"},
+            {"name": "Second Studio", "url": "https://second.example.com/", "place": "Milan"}
+        ]""",
+        "https://first.example.com/": """
+            <!doctype html><html><body><a href="/careers">Careers</a></body></html>
+        """,
+        "https://second.example.com/": """
+            <!doctype html><html><body><a href="https://boards.greenhouse.io/second">Jobs</a></body></html>
+        """,
+    }
+
+
+def _fetch_from(payloads: dict[str, str]):
+    def fake_fetch(url: str, _: int) -> str:
+        if url not in payloads:
+            raise RuntimeError(f"unexpected URL: {url}")
+        return payloads[url]
+
+    return fake_fetch
+
+
+def test_gameprog_audit_missing_artifact_executes_and_writes_boundaries() -> None:
+    with workspace_tmpdir("gameprog-audit-missing") as root:
+        audit_path = root / "gameprog-audit.json"
+        config = {
+            "gameprog": {
+                "enabled": True,
+                "activeAuditEnabled": True,
+                "activeAuditPath": str(audit_path),
+                "activeAuditTtlMinutes": 60,
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": True,
+                "maxStudios": 1,
+            }
+        }
+
+        artifact, cache_hit = gameprog.run_gameprog_directory_audit(
+            5,
+            config=config,
+            fetcher=_fetch_from(_gameprog_payloads()),
+        )
+
+        assert cache_hit is False
+        assert audit_path.exists()
+        assert artifact["schemaVersion"] == gameprog.GAMEPROG_AUDIT_SCHEMA_VERSION
+        assert artifact["progress"]["complete"] is True
+        assert artifact["progress"]["cursor"] == 1
+        assert artifact["progress"]["completedUrlIdentities"] == ["https://first.example.com/"]
+        assert artifact["summary"]["parsedRows"] == 2
+        assert artifact["summary"]["eligibleRows"] == 1
+        assert artifact["summary"]["websiteFetchJobs"] == 1
+        assert artifact["summary"]["staticCandidates"] == 1
+        assert artifact["summary"]["failures"] == 0
+        assert artifact["runtime"]["configSignature"] == gameprog._gameprog_cache_signature(
+            gameprog._gameprog_config_section(config)
+        )
+        assert artifact["timings"]["batches"]
+        assert artifact["timings"]["totalsMs"]["teamsFetchMs"] >= 0
+        assert artifact["timings"]["totalsMs"]["websiteFetchMs"] >= 0
+
+        saved = json.loads(audit_path.read_text(encoding="utf-8"))
+        assert saved["summary"]["artifactSizeBytes"] > 0
+
+
+def test_gameprog_audit_reuses_fresh_completed_artifact_without_network_work() -> None:
+    with workspace_tmpdir("gameprog-audit-reuse") as root:
+        audit_path = root / "gameprog-audit.json"
+        config = {
+            "gameprog": {
+                "enabled": True,
+                "activeAuditEnabled": True,
+                "activeAuditPath": str(audit_path),
+                "activeAuditTtlMinutes": 60,
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": True,
+                "maxStudios": 1,
+            }
+        }
+        first_artifact, first_cache_hit = gameprog.run_gameprog_directory_audit(
+            5,
+            config=config,
+            fetcher=_fetch_from(_gameprog_payloads()),
+        )
+
+        second_artifact, second_cache_hit = gameprog.run_gameprog_directory_audit(
+            5,
+            config=config,
+            fetcher=lambda *_args: (_ for _ in ()).throw(
+                AssertionError("fresh audit artifact should bypass network work")
+            ),
+        )
+
+        assert first_cache_hit is False
+        assert second_cache_hit is True
+        assert second_artifact == first_artifact
+
+        provider_rows, static_rows, failures = sd.discover_gameprog_candidates(
+            5,
+            config=config,
+            fetcher=lambda *_args: (_ for _ in ()).throw(
+                AssertionError("fresh audit artifact should bypass discovery fetches")
+            ),
+        )
+
+        assert provider_rows == first_artifact["providerCandidates"]
+        assert static_rows == first_artifact["staticCandidates"]
+        assert failures == first_artifact["failures"]
+
+
+def test_gameprog_audit_output_matches_legacy_scan_for_same_inputs() -> None:
+    with workspace_tmpdir("gameprog-audit-equivalence") as root:
+        audit_path = root / "gameprog-audit.json"
+        base_config = {
+            "gameprog": {
+                "enabled": True,
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": True,
+                "maxStudios": 2,
+            }
+        }
+        audit_config = {
+            "gameprog": {
+                **base_config["gameprog"],
+                "activeAuditEnabled": True,
+                "activeAuditPath": str(audit_path),
+                "activeAuditTtlMinutes": 60,
+            }
+        }
+
+        legacy_rows = sd.discover_gameprog_candidates(
+            5,
+            config=base_config,
+            fetcher=_fetch_from(_gameprog_payloads()),
+        )
+        audit_rows = sd.discover_gameprog_candidates(
+            5,
+            config=audit_config,
+            fetcher=_fetch_from(_gameprog_payloads()),
+        )
+
+        assert audit_rows == legacy_rows
+
+
+def test_gameprog_audit_records_website_fetch_failures_in_failure_channel() -> None:
+    with workspace_tmpdir("gameprog-audit-failures") as root:
+        audit_path = root / "gameprog-audit.json"
+        config = {
+            "gameprog": {
+                "enabled": True,
+                "activeAuditEnabled": True,
+                "activeAuditPath": str(audit_path),
+                "activeAuditTtlMinutes": 60,
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": False,
+                "maxStudios": 1,
+            }
+        }
+        payloads = {
+            "https://gameprog.it/teams.json": """[
+                {"name": "Broken Studio", "url": "https://broken.example.com/", "place": "Rome"}
+            ]""",
+        }
+
+        provider_rows, static_rows, failures = sd.discover_gameprog_candidates(
+            5,
+            config=config,
+            fetcher=_fetch_from(payloads),
+        )
+
+        assert provider_rows == []
+        assert static_rows == []
+        assert len(failures) == 1
+        assert failures[0]["adapter"] == "gameprog"
+        assert failures[0]["stage"] == "website_fetch"
+
+        artifact = json.loads(audit_path.read_text(encoding="utf-8"))
+        assert artifact["summary"]["websiteFetchFailures"] == 1
+        assert artifact["summary"]["failures"] == 1
+        assert artifact["failureCounts"] == {"website_fetch": 1}
+        assert artifact["failures"] == failures
+
+
+def test_gameprog_audit_disabled_preserves_legacy_cache_behavior_and_writes_no_artifact() -> None:
+    with workspace_tmpdir("gameprog-audit-disabled") as root:
+        audit_path = root / "gameprog-audit.json"
+        cache_path = root / "gameprog-cache.json"
+        config = {
+            "gameprog": {
+                "enabled": True,
+                "activeAuditEnabled": False,
+                "activeAuditPath": str(audit_path),
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": True,
+                "maxStudios": 1,
+                "cachePath": str(cache_path),
+                "cacheTtlMinutes": 60,
+            }
+        }
+        payloads = _gameprog_payloads()
+        calls: list[str] = []
+
+        def fake_fetch(url: str, timeout_s: int) -> str:
+            calls.append(url)
+            return _fetch_from(payloads)(url, timeout_s)
+
+        first_rows = sd.discover_gameprog_candidates(5, config=config, fetcher=fake_fetch)
+        second_rows = sd.discover_gameprog_candidates(
+            5,
+            config=config,
+            fetcher=lambda *_args: (_ for _ in ()).throw(
+                AssertionError("legacy cache should bypass fetches")
+            ),
+        )
+
+        assert first_rows == second_rows
+        assert calls
+        assert cache_path.exists()
+        assert not audit_path.exists()
