@@ -45,7 +45,8 @@ from .probe_runtime import (
 from .probe_runtime import (
     rendered_static_probe_result,
 )
-from .scoring import careers_keyword_count, clean_token, studio_domain_match, unique_string_list
+from .provider_inference import infer_web_candidate as shared_infer_web_candidate
+from .scoring import careers_keyword_count, unique_string_list
 from .web_search_extract import extract_links_from_html
 from .web_search_fetch import fetch_text
 
@@ -59,193 +60,6 @@ _PREVALIDATED_BROWSER_DOMAIN_CAP = int(
     DEFAULT_DISCOVERY_CONFIG["gamedevmap"]["validatedStaticDomainCap"]
 )
 
-_PROVIDER_DISPLAY_NAMES = {
-    "ashby": "Ashby",
-    "greenhouse": "Greenhouse",
-    "lever": "Lever",
-    "personio": "Personio",
-    "pinpoint": "Pinpoint",
-    "recruitee": "Recruitee",
-    "smartrecruiters": "SmartRecruiters",
-    "teamtailor": "Teamtailor",
-    "workable": "Workable",
-}
-
-
-def _provider_candidate_base(
-    *,
-    studio: str,
-    adapter: str,
-    nl_priority: bool,
-    discovery_method: str,
-    url: str,
-    evidence_types: list[str],
-    evidence_source: str,
-    evidence_score: int,
-) -> dict[str, Any]:
-    return {
-        "name": f"{studio} ({_PROVIDER_DISPLAY_NAMES[adapter]})",
-        "studio": studio,
-        "adapter": adapter,
-        "nlPriority": nl_priority,
-        "discoveryMethod": discovery_method,
-        "discoveryStage": "web_provider",
-        "careersUrl": url,
-        "evidenceScore": evidence_score,
-        "evidenceTypes": evidence_types,
-        "evidenceSource": evidence_source,
-    }
-
-
-def _provider_candidate(
-    *,
-    studio: str,
-    adapter: str,
-    url: str,
-    nl_priority: bool,
-    discovery_method: str,
-    evidence_types: list[str],
-    evidence_source: str,
-    evidence_score: int,
-) -> dict[str, Any] | None:
-    parsed = urlparse(url)
-    host = (parsed.netloc or "").lower()
-    path = parsed.path or ""
-    base = _provider_candidate_base(
-        studio=studio,
-        adapter=adapter,
-        nl_priority=nl_priority,
-        discovery_method=discovery_method,
-        url=url,
-        evidence_types=evidence_types,
-        evidence_source=evidence_source,
-        evidence_score=evidence_score,
-    )
-    if adapter == "greenhouse":
-        slug = (
-            clean_token(path.split("/boards/", 1)[1].split("/", 1)[0])
-            if "boards-api.greenhouse.io" in host and "/boards/" in path
-            else clean_token(([piece for piece in path.split("/") if piece] or [""])[0])
-        )
-        if not slug:
-            return None
-        return {
-            **base,
-            "slug": slug,
-            "api_url": f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true",
-        }
-    if adapter == "lever":
-        if "api.lever.co" in host and "/v0/postings/" in path:
-            account = clean_token(path.split("/v0/postings/", 1)[1].split("/", 1)[0])
-        else:
-            account = clean_token(([piece for piece in path.split("/") if piece] or [""])[0])
-        if not account:
-            return None
-        return {
-            **base,
-            "account": account,
-            "api_url": f"https://api.lever.co/v0/postings/{account}?mode=json",
-        }
-    if adapter == "smartrecruiters":
-        company_id = ""
-        if "api.smartrecruiters.com" in host and "/companies/" in path:
-            pieces = [piece for piece in path.split("/") if piece]
-            if "companies" in pieces:
-                idx = pieces.index("companies")
-                if idx + 1 < len(pieces):
-                    company_id = pieces[idx + 1].strip()
-        elif "jobs.smartrecruiters.com" in host:
-            company_id = ([piece for piece in path.split("/") if piece] or [""])[0].strip()
-        if not company_id:
-            return None
-        return {
-            **base,
-            "company_id": company_id,
-            "api_url": f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings",
-        }
-    if adapter == "workable":
-        account = clean_token(([piece for piece in path.split("/") if piece] or [""])[-1])
-        if not account:
-            return None
-        return {
-            **base,
-            "account": account,
-            "api_url": f"https://apply.workable.com/api/v1/widget/accounts/{account}?details=true",
-        }
-    if adapter == "recruitee":
-        subdomain = host.split(".recruitee.com", 1)[0]
-        if not subdomain:
-            return None
-        return {
-            **base,
-            "subdomain": subdomain,
-            "api_url": f"https://{host}/api/offers/",
-        }
-    if adapter == "pinpoint":
-        subdomain = host.split(".pinpointhq.com", 1)[0]
-        if not subdomain:
-            return None
-        return {
-            **base,
-            "subdomain": subdomain,
-            "api_url": f"https://{host}/postings.json",
-        }
-    if adapter == "teamtailor":
-        base_url = f"{parsed.scheme}://{host}" if parsed.scheme else f"https://{host}"
-        return {
-            **base,
-            "listing_url": f"{base_url}/jobs",
-            "base_url": base_url,
-            "company": studio,
-        }
-    if adapter == "ashby":
-        slug = clean_token(([piece for piece in path.split("/") if piece] or [""])[0])
-        if not slug:
-            return None
-        return {
-            **base,
-            "board_url": f"https://jobs.ashbyhq.com/{slug}",
-        }
-    if adapter == "personio":
-        token = host.split(".jobs.personio.de", 1)[0]
-        if not token:
-            return None
-        return {
-            **base,
-            "feed_url": f"https://{token}.jobs.personio.de/xml",
-        }
-    return None
-
-
-def _infer_provider_adapter(host: str, path: str) -> str | None:
-    if (
-        "boards.greenhouse.io" in host
-        or "jobs.greenhouse.io" in host
-        or "boards-api.greenhouse.io" in host
-    ):
-        return "greenhouse"
-    if "jobs.ashbyhq.com" in host:
-        return "ashby"
-    if ".recruitee.com" in host:
-        return "recruitee"
-    if ".pinpointhq.com" in host:
-        return "pinpoint"
-    if "apply.workable.com" in host:
-        return "workable"
-    if ".teamtailor.com" in host:
-        return "teamtailor"
-    if ".jobs.personio.de" in host:
-        return "personio"
-    if ("api.lever.co" in host and "/v0/postings/" in path) or (
-        "lever.co" in host and host != "api.lever.co"
-    ):
-        return "lever"
-    if ("api.smartrecruiters.com" in host and "/companies/" in path) or (
-        "jobs.smartrecruiters.com" in host
-    ):
-        return "smartrecruiters"
-    return None
-
 
 def infer_web_candidate(
     url: str,
@@ -254,27 +68,11 @@ def infer_web_candidate(
     nl_priority: bool,
     discovery_method: str = "web_search",
 ) -> dict[str, Any] | None:
-    try:
-        parsed = urlparse(url)
-    except ValueError:
-        return None
-    adapter = _infer_provider_adapter((parsed.netloc or "").lower(), parsed.path or "")
-    if not adapter:
-        return None
-    evidence_score = (
-        28
-        + (12 if studio_domain_match(studio, url) else 0)
-        + (4 if careers_keyword_count(url) else 0)
-    )
-    return _provider_candidate(
-        studio=studio,
-        adapter=adapter,
-        url=url,
+    return shared_infer_web_candidate(
+        url,
+        studio,
         nl_priority=nl_priority,
         discovery_method=discovery_method,
-        evidence_types=["web_provider_url"],
-        evidence_source="url",
-        evidence_score=evidence_score,
     )
 
 

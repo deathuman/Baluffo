@@ -1365,10 +1365,6 @@ def _extract_candidates_from_homepages(
     )
 
 
-def _requests_from_recovery_result(result: dict[str, Any]) -> list[dict[str, Any]]:
-    return directory_recovery_helpers.recovery_requests_from_result(result)
-
-
 def _fetch_recovery_jobs(
     *,
     timeout_s: int,

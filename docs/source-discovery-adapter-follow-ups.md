@@ -56,7 +56,7 @@ GameDevMap created much of the better logic but still has the largest local acti
 
 The runtime is shared, but web-derived discovery still owns analysis and merge code that mirrors GameDevMap.
 
-- `web_search_candidates.py::_provider_candidate_base` and `_provider_candidate` hardcode provider URL parsing that overlaps `infer_web_candidate` and candidate-collapsing helpers. Migrate provider inference and competing-candidate collapsing to shared helpers.
+- Completed provider-inference slice: `web_search_candidates.py::_provider_candidate_base`, `_provider_candidate`, and provider adapter detection now live in shared `provider_inference`, while `infer_web_candidate(...)` remains the public compatibility wrapper.
 - Completed provider/page-outcome slice: `web_search_candidates.py::_append_page_analysis_outcome` now uses shared static page-outcome callback builders instead of local callback boilerplate.
 - Completed browser-row slice: `web_search_candidates.py::_web_browser_recovery_candidate`, GameDevMap JS-shell browser rows, and directory page recovery browser rows now share one browser-recovery row factory.
 - Completed browser-analysis slice: `web_search_candidates.py::_analyze_web_browser_recovery_fetches` now uses shared rendered-fetch analysis with adapter-specific page-analysis and candidate-marking callbacks.
