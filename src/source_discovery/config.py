@@ -271,13 +271,13 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     },
     "sheetDirectory": {
         "activeAuditEnabled": True,
-        "activeAuditRecoveryEnabled": False,
+        "activeAuditRecoveryEnabled": True,
         "activeAuditPath": "data/sheet-directory-discovery-audit.json",
         "activeAuditTtlMinutes": 360,
     },
     "webSearch": {
         "activeAuditEnabled": True,
-        "activeAuditRecoveryEnabled": False,
+        "activeAuditRecoveryEnabled": True,
         "activeAuditPath": "data/web-search-discovery-audit.json",
         "activeAuditTtlMinutes": 360,
         "maxQueries": 24,

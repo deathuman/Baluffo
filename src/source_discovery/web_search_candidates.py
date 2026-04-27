@@ -404,7 +404,7 @@ def _web_search_audit_ttl_minutes(config: dict[str, Any] | None) -> int:
 
 def _web_search_recovery_enabled(config: dict[str, Any] | None) -> bool:
     cfg = _web_search_config_section(config)
-    return bool(cfg.get("activeAuditRecoveryEnabled") is True)
+    return bool(cfg.get("activeAuditRecoveryEnabled", True))
 
 
 def _web_search_max_queries(config: dict[str, Any] | None) -> int:

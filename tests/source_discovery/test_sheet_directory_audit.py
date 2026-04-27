@@ -56,7 +56,7 @@ def test_sheet_directory_audit_missing_artifact_executes_and_writes_boundaries()
             5,
             sheet_id="sheet_test",
             gid="1",
-            config=_audit_config(str(audit_path)),
+            config=_audit_config(str(audit_path), recovery_enabled=False),
             fetcher=_fetch_from({_sheet_url(): _sheet_csv()}),
         )
 
@@ -79,10 +79,55 @@ def test_sheet_directory_audit_missing_artifact_executes_and_writes_boundaries()
         assert artifact["timings"]["totalsMs"]["candidateAnalysisMs"] >= 0
 
 
+def test_sheet_directory_audit_default_recovery_runs_and_reuses_artifact() -> None:
+    with workspace_tmpdir("sheet-directory-audit-default-recovery") as root:
+        audit_path = root / "sheet-audit.json"
+        csv_text = """Studio,Roles open,Link
+Default Recovery Studio,yes,https://default-recover-sheet.example.com/
+"""
+        config = _audit_config(str(audit_path))
+
+        first_artifact, first_cache_hit = sd.run_sheet_directory_audit(
+            5,
+            sheet_id="sheet_test",
+            gid="1",
+            config=config,
+            fetcher=_fetch_from(
+                {
+                    _sheet_url(): csv_text,
+                    "https://default-recover-sheet.example.com/careers": (
+                        '<a href="/jobs/designer">Designer</a>'
+                    ),
+                    "https://default-recover-sheet.example.com/jobs": (
+                        "<html><body>No roles</body></html>"
+                    ),
+                }
+            ),
+        )
+        second_artifact, second_cache_hit = sd.run_sheet_directory_audit(
+            5,
+            sheet_id="sheet_test",
+            gid="1",
+            config=config,
+            fetcher=lambda *_args: (_ for _ in ()).throw(
+                AssertionError("fresh default recovery sheet artifact should bypass fetch")
+            ),
+        )
+
+        assert first_cache_hit is False
+        assert second_cache_hit is True
+        assert second_artifact == first_artifact
+        assert first_artifact["summary"]["recoveryFetchAttempts"] == 2
+        assert first_artifact["summary"]["recoveredStaticCandidates"] == 1
+        assert first_artifact["staticCandidates"][0]["listing_url"] == (
+            "https://default-recover-sheet.example.com/careers"
+        )
+
+
 def test_sheet_directory_audit_reuses_fresh_completed_artifact_without_fetch() -> None:
     with workspace_tmpdir("sheet-directory-audit-reuse") as root:
         audit_path = root / "sheet-audit.json"
-        config = _audit_config(str(audit_path))
+        config = _audit_config(str(audit_path), recovery_enabled=False)
 
         first_artifact, first_cache_hit = sd.run_sheet_directory_audit(
             5,
@@ -115,7 +160,7 @@ def test_sheet_directory_csv_fetch_falls_back_to_next_candidate_url() -> None:
             5,
             sheet_id="sheet_test",
             gid="1",
-            config=_audit_config(str(audit_path)),
+            config=_audit_config(str(audit_path), recovery_enabled=False),
             fetcher=_fetch_from({urls[1]: _sheet_csv()}),
         )
 
@@ -160,7 +205,7 @@ def test_sheet_directory_audit_reruns_stale_wrong_schema_incomplete_or_signature
                 5,
                 sheet_id="sheet_test",
                 gid="1",
-                config=_audit_config(str(audit_path)),
+                config=_audit_config(str(audit_path), recovery_enabled=False),
                 fetcher=_fetch_from({_sheet_url(): _sheet_csv()}),
             )
 
@@ -183,7 +228,7 @@ def test_sheet_directory_audit_output_matches_legacy_scan_for_same_inputs() -> N
             5,
             sheet_id="sheet_test",
             gid="1",
-            config=_audit_config(str(audit_path)),
+            config=_audit_config(str(audit_path), recovery_enabled=False),
             fetcher=_fetch_from(payloads),
         )
         audit_rows = directory_audit.directory_audit_rows(artifact)

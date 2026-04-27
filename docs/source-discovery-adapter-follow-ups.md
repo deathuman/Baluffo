@@ -64,7 +64,7 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - Completed browser-analysis slice: `web_search_candidates.py::_analyze_web_browser_recovery_fetches` now uses shared rendered-fetch analysis with adapter-specific page-analysis and candidate-marking callbacks.
 - Completed merge-policy slice: `web_search_candidates.py::_merge_web_browser_recovery_updates` and GameDevMap browser-recovery merge state now share probe-result filtering, active counting, and runtime state helpers. Web-derived positive recovered candidates now adopt shared prevalidated queue overrides.
 - Completed diagnostics slice: `web_search_candidates.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
-- Completed recovery-pilot slice: web-derived audits can opt into shared HTTP-only same-site recovery with `webSearch.activeAuditRecoveryEnabled=true`; default recovery remains disabled until evidence supports defaulting.
+- Completed default-recovery slice: web-derived audits run shared HTTP-only same-site recovery by default; `webSearch.activeAuditRecoveryEnabled=false` remains the rollback.
 - Evidence snapshot: [`source-discovery-http-recovery-evidence-2026-04-27.md`](source-discovery-http-recovery-evidence-2026-04-27.md) supports default-enabling both sheet-directory and web-derived HTTP recovery.
 
 ### P1: Sheet-Directory Manual Implementations
@@ -75,7 +75,7 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 - Completed sheet-foundation slice: `sheet_directory.py::_append_sheet_entry_candidate` now uses a shared provider-or-static directory entry builder while preserving sheet evidence and provider-first ordering.
 - Completed sheet-foundation slice: `sheet_directory.py::_empty_sheet_scan_result` now uses a shared minimal empty scan-result payload helper.
 - Completed sheet-index slice: `sheet_directory.py::_sheet_directory_scan` now uses shared direct-entry index scan runtime for parse/failure/candidate/dedupe/progress mechanics while keeping sheet-specific selection and summaries local.
-- Completed recovery-pilot slice: sheet-directory audits can opt into shared HTTP-only same-site recovery with `sheetDirectory.activeAuditRecoveryEnabled=true`; default recovery remains disabled until evidence supports defaulting.
+- Completed default-recovery slice: sheet-directory audits run shared HTTP-only same-site recovery by default; `sheetDirectory.activeAuditRecoveryEnabled=false` remains the rollback.
 
 ### P2: Prevalidated Queue Policy Adoption
 
@@ -108,10 +108,9 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 - Prefer callback-driven shared flow over adapter-owned branching.
 - Keep strategy contracts narrow enough that source-specific evidence fields stay explicit and testable.
 
-### P2: Expand HTTP Recovery
+### P2: Tune Default HTTP Recovery
 
-- Use sheet-directory recovery audit evidence to decide whether `sheetDirectory.activeAuditRecoveryEnabled` should become default.
-- Use web-derived recovery audit evidence to decide whether `webSearch.activeAuditRecoveryEnabled` should become default or needs tuning.
+- Use sheet-directory and web-derived recovery audit evidence to tune recovery URL limits, skip rules, profile-host handling, and timing budgets.
 - Document true semantic exceptions, such as rows that contain only a direct careers URL with no recoverable company homepage.
 - Keep browser rendering opt-in and separate from default HTTP recovery.
 

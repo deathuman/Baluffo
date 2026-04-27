@@ -131,7 +131,7 @@ def _sheet_directory_audit_ttl_minutes(config: dict[str, Any] | None) -> int:
 
 def _sheet_directory_recovery_enabled(config: dict[str, Any] | None) -> bool:
     cfg = _sheet_directory_config_section(config)
-    return bool(cfg.get("activeAuditRecoveryEnabled") is True)
+    return bool(cfg.get("activeAuditRecoveryEnabled", True))
 
 
 def _sheet_directory_audit_signature(
