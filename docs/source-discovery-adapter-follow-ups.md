@@ -65,6 +65,7 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - Completed merge-policy slice: `web_search_candidates.py::_merge_web_browser_recovery_updates` and GameDevMap browser-recovery merge state now share probe-result filtering, active counting, and runtime state helpers. Web-derived positive recovered candidates now adopt shared prevalidated queue overrides.
 - Completed diagnostics slice: `web_search_candidates.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
 - Completed recovery-pilot slice: web-derived audits can opt into shared HTTP-only same-site recovery with `webSearch.activeAuditRecoveryEnabled=true`; default recovery remains disabled until evidence supports defaulting.
+- Evidence snapshot: [`source-discovery-http-recovery-evidence-2026-04-27.md`](source-discovery-http-recovery-evidence-2026-04-27.md) supports default-enabling both sheet-directory and web-derived HTTP recovery.
 
 ### P1: Sheet-Directory Manual Implementations
 
