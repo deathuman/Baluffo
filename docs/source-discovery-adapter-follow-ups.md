@@ -18,6 +18,7 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - 2026-04-27: Extracted shared directory fetch-job builders for Gamesmap/Gameprog website fetch jobs. This standardizes an audit-readiness seam without changing fetch, cache, probe, or queue behavior.
 - 2026-04-27: Extended shared directory fetch-job builders to seed-careers and web-search page fetches. Web-search still owns URL selection and analysis; only the `fetch_directory_pages` job shape is shared.
 - 2026-04-27: Extracted shared audit report-summary helpers for active split, top failure buckets, and artifact size fallback. GameDevMap remains the only caller; report fields did not change.
+- 2026-04-27: Characterized the future directory audit contract for Gamesmap/Gameprog. This documented resumable boundaries and locked cache/fetch/candidate provenance behavior in tests without adding artifacts.
 
 ## Reusable Opportunities
 
@@ -34,6 +35,13 @@ GameDevMap now has a resumable audit/recovery path that proved useful for broad,
 - Gamesmap and Gameprog now share cache and fetch-job helper seams. A future audit-engine plan can treat index/teams fetch, parsed-entry caps, website fetch jobs, candidate analysis, and cache writes as explicit resumable boundaries.
 - Sheet-directory, seed-careers, and web-search still own different input shapes. They should only join a generalized audit engine after a separate plan defines artifact shape, progress keys, and report metadata for those flows.
 - Browser recovery and active promotion stay out of shared audit-engine readiness. Any adapter adopting rendered recovery should first emit HTTP-only browser candidates and still route validated rows through the normal discovery queue.
+
+## Future Directory Audit Contract
+
+- Resumable boundaries for Gamesmap/Gameprog should be: directory index or teams fetch, parsed-entry selection after configured caps, website fetch job creation, fetched-page candidate analysis, and final cache-compatible candidate/failure write.
+- A future directory audit artifact should own only operational state: progress cursor, completed URL identities, timing totals, aggregated failures with bounded samples, provider/static candidates, and completion/cache freshness state.
+- Candidate outputs must preserve the current provenance fields from the directory adapters so a later audit engine can resume without inventing new registry fields.
+- Non-goals for the directory audit migration are browser recovery, direct active/pending/rejected registry writes, queue-cap bypass, public report fields, and cache shape changes unless a separate plan explicitly adds them.
 
 ## Guardrails
 

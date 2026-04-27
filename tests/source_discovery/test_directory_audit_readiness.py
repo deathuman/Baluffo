@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ._helpers import gamesmap_adapter, mock, sd
+from ._helpers import gamesmap_adapter, mock, sd, workspace_tmpdir
 
 
 def test_gameprog_audit_readiness_caps_entries_before_website_fetch_jobs() -> None:
@@ -38,6 +38,12 @@ def test_gameprog_audit_readiness_caps_entries_before_website_fetch_jobs() -> No
     assert [job["url"] for job in captured_jobs] == ["https://first.example.com/"]
     assert captured_jobs[0]["adapter"] == "gameprog"
     assert captured_jobs[0]["failureStage"] == "website_fetch"
+    assert captured_jobs[0]["name"] == "https://first.example.com/"
+    assert captured_jobs[0]["payload"] == {
+        "studio": "First Studio",
+        "url": "https://first.example.com/",
+        "place": "Rome",
+    }
 
 
 def test_gamesmap_audit_readiness_caps_entries_before_website_fetch_jobs() -> None:
@@ -95,6 +101,11 @@ def test_gamesmap_audit_readiness_caps_entries_before_website_fetch_jobs() -> No
     ]
     assert all(job["adapter"] == "gamesmap" for job in captured_jobs)
     assert all(job["failureStage"] == "website_fetch" for job in captured_jobs)
+    assert [job["name"] for job in captured_jobs] == [
+        "https://studio-0.example.com",
+        "https://studio-1.example.com",
+    ]
+    assert captured_jobs[0]["payload"] == parsed_entries[0]
 
 
 def test_directory_audit_readiness_website_fetch_failures_stay_in_failure_channel() -> None:
@@ -170,3 +181,202 @@ def test_directory_audit_readiness_website_fetch_failures_stay_in_failure_channe
     assert len(failures) == 1
     assert failures[0]["adapter"] == "gamesmap"
     assert failures[0]["stage"] == "website_fetch"
+
+
+def test_directory_audit_contract_cache_hit_bypasses_boundary_work() -> None:
+    with workspace_tmpdir("directory-audit-cache-contract") as root:
+        gameprog_cache_path = root / "gameprog-cache.json"
+        gameprog_config = {
+            "gameprog": {
+                "enabled": True,
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": True,
+                "maxStudios": 1,
+                "cachePath": str(gameprog_cache_path),
+                "cacheTtlMinutes": 60,
+            }
+        }
+        gameprog_payloads = {
+            "https://gameprog.it/teams.json": """[
+                {"name": "Cached Studio", "url": "https://cached-gameprog.example.com/", "place": "Rome"}
+            ]""",
+            "https://cached-gameprog.example.com/": """
+                <!doctype html><html><body><a href="/careers">Careers</a></body></html>
+            """,
+        }
+
+        def fake_gameprog_fetch(url: str, _: int) -> str:
+            if url not in gameprog_payloads:
+                raise RuntimeError(f"unexpected URL: {url}")
+            return gameprog_payloads[url]
+
+        first_gameprog = sd.discover_gameprog_candidates(
+            5, config=gameprog_config, fetcher=fake_gameprog_fetch
+        )
+
+        with mock.patch(
+            "src.source_discovery.gameprog.fetch_directory_pages",
+            side_effect=AssertionError("cache hit should bypass website boundary work"),
+        ):
+            second_gameprog = sd.discover_gameprog_candidates(
+                5,
+                config=gameprog_config,
+                fetcher=lambda *_args: (_ for _ in ()).throw(
+                    AssertionError("cache hit should bypass teams fetch")
+                ),
+            )
+
+        assert first_gameprog == second_gameprog
+
+        gamesmap_cache_path = root / "gamesmap-cache.json"
+        gamesmap_config = {
+            "gamesmap": {
+                "enabled": True,
+                "baseUrl": "https://www.gamesmap.de",
+                "indexUrls": ["https://www.gamesmap.de/en"],
+                "websiteOnlyFallback": True,
+                "maxDetailPages": 1,
+                "allowedCategoryTokens": ["developer"],
+                "blockedCategoryTokens": [],
+                "cachePath": str(gamesmap_cache_path),
+                "cacheTtlMinutes": 60,
+            }
+        }
+        gamesmap_entries = [
+            {
+                "detailUrl": "https://www.gamesmap.de/en/company/cached-studio",
+                "studio": "Cached Studio",
+                "categories": ["Developer"],
+                "websiteUrl": "https://cached-gamesmap.example.com",
+                "location": "Berlin",
+            }
+        ]
+        gamesmap_payloads = {
+            "https://www.gamesmap.de/en": "<html></html>",
+            "https://cached-gamesmap.example.com": """
+                <!doctype html><html><body><a href="/careers">Careers</a></body></html>
+            """,
+        }
+
+        def fake_gamesmap_fetch(url: str, _: int) -> str:
+            if url not in gamesmap_payloads:
+                raise RuntimeError(f"unexpected URL: {url}")
+            return gamesmap_payloads[url]
+
+        with (
+            mock.patch.object(
+                gamesmap_adapter,
+                "_parse_gamesmap_index_entries_with_diagnostics",
+                return_value=(gamesmap_entries, {"unresolvedReferenceCount": 0}),
+            ),
+            mock.patch.object(gamesmap_adapter, "infer_web_candidate", return_value=None),
+        ):
+            first_gamesmap = sd.discover_gamesmap_candidates(
+                5, config=gamesmap_config, fetcher=fake_gamesmap_fetch
+            )
+
+        with mock.patch(
+            "src.source_discovery.gamesmap.fetch_directory_pages",
+            side_effect=AssertionError("cache hit should bypass website boundary work"),
+        ):
+            second_gamesmap = sd.discover_gamesmap_candidates(
+                5,
+                config=gamesmap_config,
+                fetcher=lambda *_args: (_ for _ in ()).throw(
+                    AssertionError("cache hit should bypass index fetch")
+                ),
+            )
+
+        assert first_gamesmap == second_gamesmap
+
+
+def test_directory_audit_contract_candidate_outputs_keep_boundary_provenance() -> None:
+    gameprog_config = {
+        "gameprog": {
+            "enabled": True,
+            "teamsUrl": "https://gameprog.it/teams.json",
+            "websiteOnlyFallback": True,
+            "maxStudios": 1,
+        }
+    }
+    gameprog_payloads = {
+        "https://gameprog.it/teams.json": """[
+            {"name": "Boundary Studio", "url": "https://boundary-gameprog.example.com/", "place": "Rome"}
+        ]""",
+        "https://boundary-gameprog.example.com/": """
+            <!doctype html><html><body><a href="/careers">Careers</a></body></html>
+        """,
+    }
+
+    def fake_gameprog_fetch(url: str, _: int) -> str:
+        if url not in gameprog_payloads:
+            raise RuntimeError(f"unexpected URL: {url}")
+        return gameprog_payloads[url]
+
+    provider_rows, static_rows, failures = sd.discover_gameprog_candidates(
+        5, config=gameprog_config, fetcher=fake_gameprog_fetch
+    )
+
+    assert provider_rows == []
+    assert failures == []
+    assert len(static_rows) == 1
+    assert static_rows[0]["sourceDirectory"] == "gameprog"
+    assert static_rows[0]["sourceDirectoryEntryUrl"] == "https://boundary-gameprog.example.com/"
+    assert static_rows[0]["sourceDirectoryLocation"] == "Rome"
+    assert "gameprog_directory" in static_rows[0]["evidenceTypes"]
+
+    gamesmap_config = {
+        "gamesmap": {
+            "enabled": True,
+            "baseUrl": "https://www.gamesmap.de",
+            "indexUrls": ["https://www.gamesmap.de/en"],
+            "websiteOnlyFallback": True,
+            "maxDetailPages": 1,
+            "allowedCategoryTokens": ["developer"],
+            "blockedCategoryTokens": [],
+        }
+    }
+    gamesmap_entries = [
+        {
+            "detailUrl": "https://www.gamesmap.de/en/company/boundary-studio",
+            "studio": "Boundary Studio",
+            "categories": ["Developer"],
+            "websiteUrl": "https://boundary-gamesmap.example.com",
+            "location": "Berlin",
+        }
+    ]
+    gamesmap_payloads = {
+        "https://www.gamesmap.de/en": "<html></html>",
+        "https://boundary-gamesmap.example.com": """
+            <!doctype html><html><body><a href="/careers">Careers</a></body></html>
+        """,
+    }
+
+    def fake_gamesmap_fetch(url: str, _: int) -> str:
+        if url not in gamesmap_payloads:
+            raise RuntimeError(f"unexpected URL: {url}")
+        return gamesmap_payloads[url]
+
+    with (
+        mock.patch.object(
+            gamesmap_adapter,
+            "_parse_gamesmap_index_entries_with_diagnostics",
+            return_value=(gamesmap_entries, {"unresolvedReferenceCount": 0}),
+        ),
+        mock.patch.object(gamesmap_adapter, "infer_web_candidate", return_value=None),
+    ):
+        provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(
+            5, config=gamesmap_config, fetcher=fake_gamesmap_fetch
+        )
+
+    assert provider_rows == []
+    assert failures == []
+    assert len(static_rows) == 1
+    assert static_rows[0]["sourceDirectory"] == "gamesmap"
+    assert (
+        static_rows[0]["sourceDirectoryEntryUrl"]
+        == "https://www.gamesmap.de/en/company/boundary-studio"
+    )
+    assert static_rows[0]["sourceDirectoryLocation"] == "Berlin"
+    assert static_rows[0]["sourceDirectoryCategories"] == ["Developer"]
+    assert "gamesmap_directory" in static_rows[0]["evidenceTypes"]
