@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from src.source_registry import unique_sources
+from .directory_cache import load_directory_cache, write_directory_cache
 
 GAMESMAP_PARSER_CACHE_VERSION = 2
 
@@ -65,36 +63,13 @@ def load_gamesmap_cache(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
     cache_path = gamesmap_cache_path(config)
     ttl_minutes = gamesmap_cache_ttl_minutes(config)
-    if ttl_minutes <= 0 or cache_path is None:
-        return None
     source = _gamesmap_source_config(config)
-    if fetcher is not default_fetcher and not str(source.get("cachePath") or "").strip():
-        return None
-    try:
-        payload = json.loads(cache_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    updated_at_raw = str(payload.get("updatedAt") or "").strip()
-    if not updated_at_raw:
-        return None
-    try:
-        updated_at = datetime.fromisoformat(updated_at_raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if datetime.now(UTC) - updated_at > timedelta(minutes=ttl_minutes):
-        return None
-    if payload.get("configSignature") != gamesmap_cache_signature(cfg):
-        return None
-    provider_rows = payload.get("providerCandidates")
-    static_rows = payload.get("staticCandidates")
-    failures = payload.get("failures")
-    if (
-        not isinstance(provider_rows, list)
-        or not isinstance(static_rows, list)
-        or not isinstance(failures, list)
-    ):
-        return None
-    return unique_sources(provider_rows), unique_sources(static_rows), failures
+    return load_directory_cache(
+        cache_path,
+        ttl_minutes=ttl_minutes,
+        expected_signature=gamesmap_cache_signature(cfg),
+        use_cache=fetcher is default_fetcher or bool(str(source.get("cachePath") or "").strip()),
+    )
 
 
 def write_gamesmap_cache(
@@ -105,18 +80,10 @@ def write_gamesmap_cache(
     static_candidates: list[dict[str, Any]],
     failures: list[dict[str, Any]],
 ) -> None:
-    cache_path = gamesmap_cache_path(config)
-    if cache_path is None:
-        return
-    payload = {
-        "updatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        "configSignature": gamesmap_cache_signature(cfg),
-        "providerCandidates": unique_sources(provider_candidates),
-        "staticCandidates": unique_sources(static_candidates),
-        "failures": failures,
-    }
-    try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    except OSError:
-        return
+    write_directory_cache(
+        gamesmap_cache_path(config),
+        signature=gamesmap_cache_signature(cfg),
+        provider_candidates=provider_candidates,
+        static_candidates=static_candidates,
+        failures=failures,
+    )
