@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.source_discovery.directory_page_recovery import (
     DirectoryRecoveryRequest,
+    apply_recovery_fetch_results,
     browser_recovery_candidate,
     build_recovery_fetch_job,
     dedupe_recovery_fetch_jobs,
@@ -262,6 +263,57 @@ def test_fetch_recovery_jobs_uses_cache_and_updates_uncached_results() -> None:
         "text": "",
         "error": "down",
     }
+
+
+def test_apply_recovery_fetch_results_processes_fanout_failures_and_finalizers() -> None:
+    def apply_payload(payload, result, grouped, provider_candidates, _static_candidates):
+        key = str(payload["key"])
+        group = grouped.setdefault(key, {"attempts": 0, "candidates": 0, "row": payload})
+        group["attempts"] += 1
+        if not bool(result.get("ok")):
+            group["failures"] = int(group.get("failures") or 0) + 1
+            return ""
+        group["fetched"] = int(group.get("fetched") or 0) + 1
+        if not bool(payload.get("found")):
+            return ""
+        provider_candidates.append({"adapter": "lever", "source": key})
+        group["candidates"] += 1
+        return key
+
+    def finalize_group(group):
+        if int(group.get("candidates") or 0) > 0:
+            return []
+        return [{"reason": "no_careers_evidence", "row": group["row"]}]
+
+    output = apply_recovery_fetch_results(
+        [
+            {
+                "ok": True,
+                "payload": {
+                    "requests": [
+                        {"key": "one", "found": True},
+                        {"key": "two", "found": False},
+                    ]
+                },
+            },
+            {
+                "ok": False,
+                "payload": {"requests": [{"key": "two"}]},
+                "failure": {"stage": "recovery_fetch", "error": "timeout"},
+            },
+        ],
+        apply_payload=apply_payload,
+        finalize_group=finalize_group,
+    )
+
+    assert output.pages_fetched == 1
+    assert output.provider_candidates == [{"adapter": "lever", "source": "one"}]
+    assert output.failures == [{"stage": "recovery_fetch", "error": "timeout"}]
+    assert output.recovered_homepages == {"one"}
+    assert output.rejected_rows == [
+        {"reason": "no_careers_evidence", "row": {"key": "two", "found": False}}
+    ]
+    assert output.grouped["two"]["attempts"] == 2
 
 
 def test_bad_provider_inference_filter_rejects_generic_hosts_and_slugs() -> None:

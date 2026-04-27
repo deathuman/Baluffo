@@ -1451,57 +1451,52 @@ def _apply_recovery_results(
     dict[str, dict[str, Any]],
     set[str],
 ]:
-    provider_candidates: list[dict[str, Any]] = []
-    static_candidates: list[dict[str, Any]] = []
-    rejected_for_activation: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
-    pages_fetched = 0
-    grouped = grouped or {}
-    recovered_homepages: set[str] = set()
+    def apply_payload(
+        payload: dict[str, Any],
+        result: dict[str, Any],
+        grouped_rows: dict[str, dict[str, Any]],
+        provider_candidates: list[dict[str, Any]],
+        static_candidates: list[dict[str, Any]],
+    ) -> str:
+        return _apply_recovery_payload_to_group(
+            payload=payload,
+            result=result,
+            grouped=grouped_rows,
+            index_url=index_url,
+            provider_candidates=provider_candidates,
+            static_candidates=static_candidates,
+        )
 
-    for result in recovery_fetch_results:
-        requests = _requests_from_recovery_result(result)
-        if not bool(result.get("ok")):
-            failure = result.get("failure")
-            if isinstance(failure, dict):
-                failures.append(failure)
-        else:
-            pages_fetched += 1
-        for payload in requests:
-            recovered_homepage = _apply_recovery_payload_to_group(
-                payload=payload,
-                result=result,
-                grouped=grouped,
-                index_url=index_url,
-                provider_candidates=provider_candidates,
-                static_candidates=static_candidates,
+    def finalize_group(group: dict[str, Any]) -> list[dict[str, Any]]:
+        if _safe_int(group.get("candidates")) > 0:
+            return []
+        detail = "recovery_pages_no_jobs"
+        if _safe_int(group.get("fetched")) == 0 and _safe_int(group.get("failures")) > 0:
+            detail = "recovery_fetch_failed"
+        return [
+            _rejection(
+                reason="no_careers_evidence",
+                row=_as_dict(group.get("row")),
+                reason_detail=detail,
             )
-            if recovered_homepage:
-                recovered_homepages.add(recovered_homepage)
+        ]
 
-    if finalize:
-        for group in grouped.values():
-            if _safe_int(group.get("candidates")) > 0:
-                continue
-            detail = "recovery_pages_no_jobs"
-            if _safe_int(group.get("fetched")) == 0 and _safe_int(group.get("failures")) > 0:
-                detail = "recovery_fetch_failed"
-            rejected_for_activation.append(
-                _rejection(
-                    reason="no_careers_evidence",
-                    row=_as_dict(group.get("row")),
-                    reason_detail=detail,
-                )
-            )
+    output = directory_recovery_helpers.apply_recovery_fetch_results(
+        recovery_fetch_results,
+        grouped=grouped,
+        finalize=finalize,
+        apply_payload=apply_payload,
+        finalize_group=finalize_group,
+    )
 
     return (
-        provider_candidates,
-        static_candidates,
-        rejected_for_activation,
-        failures,
-        pages_fetched,
-        grouped,
-        recovered_homepages,
+        output.provider_candidates,
+        output.static_candidates,
+        output.rejected_rows,
+        output.failures,
+        output.pages_fetched,
+        output.grouped,
+        output.recovered_homepages,
     )
 
 

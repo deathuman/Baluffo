@@ -67,6 +67,28 @@ RecoveryAnalyzer = Callable[
     [dict[str, Any], DirectoryRecoveryRequest],
     tuple[list[dict[str, Any]], list[dict[str, Any]]],
 ]
+RecoveryPayloadApplier = Callable[
+    [
+        dict[str, Any],
+        dict[str, Any],
+        dict[str, dict[str, Any]],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+    ],
+    str,
+]
+RecoveryGroupFinalizer = Callable[[dict[str, Any]], list[dict[str, Any]]]
+
+
+@dataclass
+class DirectoryRecoveryApplicationResult:
+    provider_candidates: list[dict[str, Any]] = field(default_factory=list)
+    static_candidates: list[dict[str, Any]] = field(default_factory=list)
+    rejected_rows: list[dict[str, Any]] = field(default_factory=list)
+    failures: list[dict[str, Any]] = field(default_factory=list)
+    pages_fetched: int = 0
+    grouped: dict[str, dict[str, Any]] = field(default_factory=dict)
+    recovered_homepages: set[str] = field(default_factory=set)
 
 
 def looks_like_js_shell(html: str) -> bool:
@@ -250,6 +272,39 @@ def fetch_recovery_jobs(
             "error": recovery_fetch_error_text(result),
         }
     return [*cached_results, *fetched_results], len(deduped_jobs), len(fetch_jobs)
+
+
+def apply_recovery_fetch_results(
+    recovery_fetch_results: list[dict[str, Any]],
+    *,
+    grouped: dict[str, dict[str, Any]] | None = None,
+    finalize: bool = True,
+    apply_payload: RecoveryPayloadApplier,
+    finalize_group: RecoveryGroupFinalizer,
+) -> DirectoryRecoveryApplicationResult:
+    output = DirectoryRecoveryApplicationResult(grouped=grouped or {})
+    for result in recovery_fetch_results:
+        requests = recovery_requests_from_result(result)
+        if not bool(result.get("ok")):
+            failure = result.get("failure")
+            if isinstance(failure, dict):
+                output.failures.append(failure)
+        else:
+            output.pages_fetched += 1
+        for payload in requests:
+            recovered_homepage = apply_payload(
+                payload,
+                result,
+                output.grouped,
+                output.provider_candidates,
+                output.static_candidates,
+            )
+            if recovered_homepage:
+                output.recovered_homepages.add(recovered_homepage)
+    if finalize:
+        for group in output.grouped.values():
+            output.rejected_rows.extend(finalize_group(group))
+    return output
 
 
 def _dedupe_jobs(
