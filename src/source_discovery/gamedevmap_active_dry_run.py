@@ -704,10 +704,6 @@ def _default_browser_fetcher():
     return browser_recovery_helpers.default_browser_fetcher()
 
 
-def _browser_recovery_processed_key(row: dict[str, Any]) -> str:
-    return browser_recovery_helpers.browser_recovery_processed_key(row)
-
-
 def _browser_static_probe_result_from_rendered_html(
     candidate: dict[str, Any],
     *,
@@ -770,21 +766,6 @@ def _select_browser_recovery_candidates(
     )
 
 
-def _record_browser_fetch_sample(
-    browser_recovery: dict[str, Any],
-    *,
-    source_url: str,
-    duration_ms: int,
-    html: str,
-) -> None:
-    browser_recovery_helpers.append_fetch_sample(
-        browser_recovery,
-        source_url=source_url,
-        duration_ms=duration_ms,
-        html=html,
-    )
-
-
 def _analyze_browser_recovery_fetches(
     *,
     fetch_results: list[tuple[dict[str, Any], str, str, int]],
@@ -796,27 +777,31 @@ def _analyze_browser_recovery_fetches(
     list[dict[str, Any]],
     list[tuple[dict[str, Any], bool, int, str, int]],
 ]:
-    provider_candidates: list[dict[str, Any]] = []
-    static_candidates: list[dict[str, Any]] = []
-    rejected: list[dict[str, Any]] = []
-    rendered_probe_results: list[tuple[dict[str, Any], bool, int, str, int]] = []
     index_url = str(cfg.get("indexUrl") or GAMEDEVMAP_INDEX_URL)
-    for row, html, error, duration_ms in fetch_results:
-        key = _browser_recovery_processed_key(row)
-        if key:
-            processed.add(key)
-        source_url = str(row.get("url") or "").strip()
-        if error or not html:
-            rejected.append(
-                _rejection(
-                    reason="no_careers_evidence",
-                    row={"studio": row.get("studio"), "url": source_url},
-                    error=error or "browser fallback returned empty content",
-                    reason_detail="browser_recovery_fetch_failed",
-                    failure_bucket="technical_failure",
-                )
+
+    def _handle_failure(
+        row: dict[str, Any],
+        source_url: str,
+        error: str,
+        _browser_recovery: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        return [
+            _rejection(
+                reason="no_careers_evidence",
+                row={"studio": row.get("studio"), "url": source_url},
+                error=error,
+                reason_detail="browser_recovery_fetch_failed",
+                failure_bucket="technical_failure",
             )
-            continue
+        ]
+
+    def _analyze_success(
+        row: dict[str, Any],
+        source_url: str,
+        html: str,
+    ) -> browser_recovery_helpers.BrowserRecoveryPageAnalysis:
+        provider_candidates: list[dict[str, Any]] = []
+        static_candidates: list[dict[str, Any]] = []
         row_payload = {
             "studio": row.get("studio"),
             "url": source_url,
@@ -830,7 +815,6 @@ def _analyze_browser_recovery_fetches(
                 index_url=index_url,
             )
         )
-        static_before = len(static_candidates)
         _append_analyzed_candidates(
             page_url=source_url,
             html=html,
@@ -840,28 +824,36 @@ def _analyze_browser_recovery_fetches(
             provider_candidates=provider_candidates,
             static_candidates=static_candidates,
         )
-        rendered_probe_results.extend(
-            result
-            for candidate in static_candidates[static_before:]
-            for result in [
-                _browser_static_probe_result_from_rendered_html(
-                    candidate,
-                    rendered_url=source_url,
-                    rendered_html=html,
-                )
-            ]
-            if result is not None
+        return browser_recovery_helpers.BrowserRecoveryPageAnalysis(
+            all_candidates=[*provider_candidates, *static_candidates],
+            rendered_static_candidates=static_candidates,
         )
-        _record_browser_fetch_sample(
-            browser_recovery,
-            source_url=source_url,
-            duration_ms=duration_ms,
-            html=html,
-        )
-    all_candidates, bad_provider_rejections = _filter_bad_provider_inferences(
-        unique_sources([*provider_candidates, *static_candidates])
+
+    def _finalize_candidates(
+        candidates: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        return _filter_bad_provider_inferences(unique_sources(candidates))
+
+    analysis = browser_recovery_helpers.analyze_browser_recovery_fetch_results(
+        fetch_results=fetch_results,
+        browser_recovery=browser_recovery,
+        processed=processed,
+        analyze_success=_analyze_success,
+        handle_fetch_failure=_handle_failure,
+        rendered_static_probe_result=lambda candidate, rendered_url, rendered_html: (
+            _browser_static_probe_result_from_rendered_html(
+                candidate,
+                rendered_url=rendered_url,
+                rendered_html=rendered_html,
+            )
+        ),
+        finalize_candidates=_finalize_candidates,
     )
-    return all_candidates, [*rejected, *bad_provider_rejections], rendered_probe_results
+    return (
+        analysis.all_candidates,
+        list(analysis.rejected_rows or []),
+        analysis.rendered_probe_results,
+    )
 
 
 def _analyze_browser_recovery_batch(

@@ -21,6 +21,19 @@ BrowserRecoveryAnalysisCallback = Callable[
     [list[BrowserFetchResult], dict[str, Any], set[str]],
     "BrowserRecoveryAnalysis",
 ]
+BrowserRecoveryFailureCallback = Callable[
+    [dict[str, Any], str, str, dict[str, Any]],
+    list[dict[str, Any]],
+]
+BrowserRecoverySuccessCallback = Callable[
+    [dict[str, Any], str, str],
+    "BrowserRecoveryPageAnalysis",
+]
+BrowserRecoveryFinalizeCallback = Callable[
+    [list[dict[str, Any]]],
+    tuple[list[dict[str, Any]], list[dict[str, Any]]],
+]
+RenderedStaticProbeCallback = Callable[[dict[str, Any], str, str], ProbeResult | None]
 
 
 @dataclass
@@ -29,6 +42,12 @@ class BrowserRecoveryAnalysis:
     rendered_probe_results: list[ProbeResult]
     fetch_failures: int = 0
     rejected_rows: list[dict[str, Any]] | None = None
+
+
+@dataclass
+class BrowserRecoveryPageAnalysis:
+    all_candidates: list[dict[str, Any]]
+    rendered_static_candidates: list[dict[str, Any]]
 
 
 @dataclass
@@ -104,6 +123,65 @@ def browser_recovery_candidate_row(
     if error is not None:
         row["error"] = str(error or "")
     return row
+
+
+def analyze_browser_recovery_fetch_results(
+    *,
+    fetch_results: list[BrowserFetchResult],
+    browser_recovery: dict[str, Any],
+    processed: set[str],
+    analyze_success: BrowserRecoverySuccessCallback,
+    handle_fetch_failure: BrowserRecoveryFailureCallback,
+    rendered_static_probe_result: RenderedStaticProbeCallback,
+    finalize_candidates: BrowserRecoveryFinalizeCallback | None = None,
+) -> BrowserRecoveryAnalysis:
+    all_candidates: list[dict[str, Any]] = []
+    rendered_probe_results: list[ProbeResult] = []
+    rejected_rows: list[dict[str, Any]] = []
+    fetch_failures = 0
+
+    for row, html, error, duration_ms in fetch_results:
+        key = browser_recovery_processed_key(row)
+        if key:
+            processed.add(key)
+        source_url = str(row.get("url") or "").strip()
+        if error or not html:
+            fetch_failures += 1
+            rejected_rows.extend(
+                handle_fetch_failure(
+                    row,
+                    source_url,
+                    error or "browser fallback returned empty content",
+                    browser_recovery,
+                )
+            )
+            continue
+
+        page_analysis = analyze_success(row, source_url, html)
+        all_candidates.extend(page_analysis.all_candidates)
+        rendered_probe_results.extend(
+            result
+            for candidate in page_analysis.rendered_static_candidates
+            for result in [rendered_static_probe_result(candidate, source_url, html)]
+            if result is not None
+        )
+        append_fetch_sample(
+            browser_recovery,
+            source_url=source_url,
+            duration_ms=duration_ms,
+            html=html,
+        )
+
+    if finalize_candidates is not None:
+        all_candidates, extra_rejections = finalize_candidates(all_candidates)
+        rejected_rows.extend(extra_rejections)
+
+    return BrowserRecoveryAnalysis(
+        all_candidates=all_candidates,
+        rendered_probe_results=rendered_probe_results,
+        fetch_failures=fetch_failures,
+        rejected_rows=rejected_rows,
+    )
 
 
 def browser_recovery_processed_key(row: dict[str, Any]) -> str:

@@ -71,6 +71,71 @@ def test_browser_recovery_candidate_row_reproduces_gamedevmap_shape() -> None:
     }
 
 
+def test_analyze_browser_recovery_fetch_results_routes_common_analysis_flow() -> None:
+    browser_state: dict[str, object] = {}
+    processed: set[str] = set()
+    rendered_static = {"adapter": "static", "listing_url": "https://one.example/jobs"}
+    provider = {"adapter": "greenhouse", "slug": "one"}
+    probe_result = (rendered_static, True, 2, "", 0)
+
+    def analyze_success(
+        row: dict[str, object],
+        source_url: str,
+        html: str,
+    ) -> browser_recovery.BrowserRecoveryPageAnalysis:
+        assert row["studio"] == "One"
+        assert source_url == "https://one.example/jobs"
+        assert html == "<html>jobs</html>"
+        provider["marked"] = True
+        rendered_static["marked"] = True
+        return browser_recovery.BrowserRecoveryPageAnalysis(
+            all_candidates=[provider, rendered_static],
+            rendered_static_candidates=[rendered_static],
+        )
+
+    def handle_failure(
+        _row: dict[str, object],
+        source_url: str,
+        error: str,
+        current_browser_state: dict[str, object],
+    ) -> list[dict[str, object]]:
+        browser_recovery.append_failure_sample(
+            current_browser_state,
+            {"url": source_url, "error": error},
+        )
+        return [{"reasonDetail": "browser_recovery_fetch_failed", "url": source_url}]
+
+    analysis = browser_recovery.analyze_browser_recovery_fetch_results(
+        fetch_results=[
+            ({"studio": "One", "url": "https://one.example/jobs"}, "<html>jobs</html>", "", 12),
+            ({"studio": "Two", "url": "https://two.example/jobs"}, "", "timeout", 3),
+        ],
+        browser_recovery=browser_state,
+        processed=processed,
+        analyze_success=analyze_success,
+        handle_fetch_failure=handle_failure,
+        rendered_static_probe_result=lambda candidate, _url, _html: (
+            probe_result if candidate is rendered_static else None
+        ),
+        finalize_candidates=lambda candidates: (candidates, [{"reasonDetail": "bad_provider"}]),
+    )
+
+    assert processed == {"url:https://one.example/jobs", "url:https://two.example/jobs"}
+    assert browser_state["fetchSamples"] == [
+        {"url": "https://one.example/jobs", "durationMs": 12, "htmlBytes": 17}
+    ]
+    assert browser_state["failureSamples"] == [
+        {"url": "https://two.example/jobs", "error": "timeout"}
+    ]
+    assert analysis.all_candidates == [provider, rendered_static]
+    assert analysis.rendered_probe_results == [probe_result]
+    assert analysis.fetch_failures == 1
+    assert analysis.rejected_rows == [
+        {"reasonDetail": "browser_recovery_fetch_failed", "url": "https://two.example/jobs"},
+        {"reasonDetail": "bad_provider"},
+    ]
+
+
 def test_browser_recovery_processed_key_prefers_url_entry_then_name() -> None:
     assert (
         browser_recovery.browser_recovery_processed_key(

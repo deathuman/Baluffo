@@ -990,28 +990,30 @@ def _analyze_web_browser_recovery_fetches(
     list[tuple[dict[str, Any], bool, int, str, int]],
     int,
 ]:
-    provider_candidates: list[dict[str, Any]] = []
-    static_candidates: list[dict[str, Any]] = []
-    rendered_probe_results: list[tuple[dict[str, Any], bool, int, str, int]] = []
-    fetch_failures = 0
-    for row, html, error, duration_ms in fetch_results:
-        key = browser_recovery_helpers.browser_recovery_processed_key(row)
-        if key:
-            processed.add(key)
-        source_url = str(row.get("url") or "").strip()
-        if error or not html:
-            fetch_failures += 1
-            browser_recovery_helpers.append_failure_sample(
-                browser_recovery,
-                {
-                    "url": source_url,
-                    "stage": "browser_fetch",
-                    "error": error or "browser fallback returned empty content",
-                },
-            )
-            continue
-        provider_before = len(provider_candidates)
-        static_before = len(static_candidates)
+
+    def _handle_failure(
+        _row: dict[str, Any],
+        source_url: str,
+        error: str,
+        current_browser_recovery: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        browser_recovery_helpers.append_failure_sample(
+            current_browser_recovery,
+            {
+                "url": source_url,
+                "stage": "browser_fetch",
+                "error": error,
+            },
+        )
+        return []
+
+    def _analyze_success(
+        row: dict[str, Any],
+        source_url: str,
+        html: str,
+    ) -> browser_recovery_helpers.BrowserRecoveryPageAnalysis:
+        provider_candidates: list[dict[str, Any]] = []
+        static_candidates: list[dict[str, Any]] = []
         _append_page_analysis_outcome(
             page_url=source_url,
             page_html=html,
@@ -1021,33 +1023,37 @@ def _analyze_web_browser_recovery_fetches(
             provider_candidates=provider_candidates,
             static_candidates=static_candidates,
         )
-        for candidate in [
-            *provider_candidates[provider_before:],
-            *static_candidates[static_before:],
-        ]:
+        for candidate in [*provider_candidates, *static_candidates]:
             candidate["webSearchBrowserRecovery"] = True
-        rendered_probe_results.extend(
-            result
-            for candidate in static_candidates[static_before:]
-            for result in [
-                _browser_static_probe_result_from_rendered_html(
-                    candidate,
-                    rendered_url=source_url,
-                    rendered_html=html,
-                )
-            ]
-            if result is not None
+        return browser_recovery_helpers.BrowserRecoveryPageAnalysis(
+            all_candidates=[*provider_candidates, *static_candidates],
+            rendered_static_candidates=static_candidates,
         )
-        browser_recovery_helpers.append_fetch_sample(
-            browser_recovery,
-            source_url=source_url,
-            duration_ms=duration_ms,
-            html=html,
-        )
+
+    def _finalize_candidates(
+        candidates: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        return unique_sources(candidates), []
+
+    analysis = browser_recovery_helpers.analyze_browser_recovery_fetch_results(
+        fetch_results=fetch_results,
+        browser_recovery=browser_recovery,
+        processed=processed,
+        analyze_success=_analyze_success,
+        handle_fetch_failure=_handle_failure,
+        rendered_static_probe_result=lambda candidate, rendered_url, rendered_html: (
+            _browser_static_probe_result_from_rendered_html(
+                candidate,
+                rendered_url=rendered_url,
+                rendered_html=rendered_html,
+            )
+        ),
+        finalize_candidates=_finalize_candidates,
+    )
     return (
-        unique_sources([*provider_candidates, *static_candidates]),
-        rendered_probe_results,
-        fetch_failures,
+        analysis.all_candidates,
+        analysis.rendered_probe_results,
+        analysis.fetch_failures,
     )
 
 

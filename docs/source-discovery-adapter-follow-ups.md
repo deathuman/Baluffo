@@ -48,7 +48,7 @@ GameDevMap created much of the better logic but still has the largest local acti
 - `gamedevmap_active_dry_run.py::_queue_no_careers_recovery`, `_dedupe_recovery_jobs`, `_fetch_recovery_jobs`, and `_apply_recovery_results` overlap `directory_page_recovery` mechanics. Expose stable public-internal recovery APIs before migrating; do not import private helper functions directly.
 - `gamedevmap_active_dry_run.py::_filter_bad_provider_inferences` overlaps `provider_inference_filters.split_bad_provider_inferences`, with GameDevMap-specific rejection row formatting still local.
 - `gamedevmap_active_dry_run.py::_apply_probe_results` overlaps `probe_runtime` probe-result filtering and validated candidate evidence helpers, with active/zero/rejected bucket assignment still local.
-- `gamedevmap_active_dry_run.py::_analyze_browser_recovery_fetches` and `_merge_browser_recovery_artifact_updates` overlap the web-derived browser recovery pipeline. Extract shared browser recovery analysis and merge contracts while preserving GameDevMap's artifact fields.
+- Completed browser-analysis slice: `gamedevmap_active_dry_run.py::_analyze_browser_recovery_fetches` now uses shared rendered-fetch analysis. `_merge_browser_recovery_artifact_updates` still overlaps the web-derived merge pipeline and remains a future merge-contract target.
 - Completed diagnostics slice: `gamedevmap_active_dry_run.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
 - `gamedevmap.py` legacy homepage fetch job construction should use `directory_fetch_jobs` where the job contract matches.
 
@@ -59,7 +59,7 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - `web_search_candidates.py::_provider_candidate_base` and `_provider_candidate` hardcode provider URL parsing that overlaps `infer_web_candidate` and candidate-collapsing helpers. Migrate provider inference and competing-candidate collapsing to shared helpers.
 - Completed provider/page-outcome slice: `web_search_candidates.py::_append_page_analysis_outcome` now uses shared static page-outcome callback builders instead of local callback boilerplate.
 - Completed browser-row slice: `web_search_candidates.py::_web_browser_recovery_candidate`, GameDevMap JS-shell browser rows, and directory page recovery browser rows now share one browser-recovery row factory.
-- `web_search_candidates.py::_analyze_web_browser_recovery_fetches` should migrate to a shared analysis contract that accepts adapter-specific page-analysis and candidate-marking callbacks.
+- Completed browser-analysis slice: `web_search_candidates.py::_analyze_web_browser_recovery_fetches` now uses shared rendered-fetch analysis with adapter-specific page-analysis and candidate-marking callbacks.
 - `web_search_candidates.py::_merge_web_browser_recovery_updates` should migrate to a shared merge contract for positive probe results, zero-job diagnostics, fetch failures, and processed-key state.
 - Completed diagnostics slice: `web_search_candidates.py::_default_browser_fetcher` now delegates to the shared browser recovery fetch fallback.
 
