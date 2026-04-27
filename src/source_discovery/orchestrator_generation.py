@@ -129,7 +129,7 @@ def _route_valid_probe_candidate(
 def _web_search_audit_enabled(discovery_config: dict[str, Any]) -> bool:
     cfg = discovery_config.get("webSearch")
     cfg = cfg if isinstance(cfg, dict) else {}
-    return bool(cfg.get("activeAuditEnabled", False))
+    return bool(cfg.get("activeAuditEnabled", True))
 
 
 def _load_web_search_audit_rows(

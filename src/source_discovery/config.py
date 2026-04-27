@@ -273,7 +273,7 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "activeAuditTtlMinutes": 360,
     },
     "webSearch": {
-        "activeAuditEnabled": False,
+        "activeAuditEnabled": True,
         "activeAuditPath": "data/web-search-discovery-audit.json",
         "activeAuditTtlMinutes": 360,
     },

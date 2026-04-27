@@ -5,7 +5,11 @@ import json
 from ._helpers import discovery_orchestrator, mock, override_discovery_runtime, sd, workspace_tmpdir
 
 
-def _stage_config(*, audit_path: str | None = None) -> dict[str, object]:
+def _stage_config(
+    *,
+    audit_path: str | None = None,
+    active_audit_enabled: bool | None = None,
+) -> dict[str, object]:
     config: dict[str, object] = {
         "stageToggles": {
             "curatedSeed": False,
@@ -22,21 +26,27 @@ def _stage_config(*, audit_path: str | None = None) -> dict[str, object]:
         "gamedevmap": {"enabled": False},
     }
     if audit_path is not None:
-        config["webSearch"] = {
-            "activeAuditEnabled": True,
+        web_search_config: dict[str, object] = {
             "activeAuditPath": audit_path,
             "activeAuditTtlMinutes": 60,
         }
+        if active_audit_enabled is not None:
+            web_search_config["activeAuditEnabled"] = active_audit_enabled
+        config["webSearch"] = web_search_config
     return config
 
 
-def test_run_discovery_default_web_search_uses_direct_paths_without_audit_metadata() -> None:
-    with workspace_tmpdir("web-search-audit-flow-default") as root:
+def test_run_discovery_audit_disabled_web_search_uses_direct_paths_without_metadata() -> None:
+    with workspace_tmpdir("web-search-audit-flow-disabled") as root:
         with override_discovery_runtime(
             root,
             studio_seeds=[{"studio": "Example Studio", "careersUrl": "https://example.com/jobs"}],
             static_candidates=[],
         ):
+            config = _stage_config(
+                audit_path=str(root / "disabled-web-audit.json"),
+                active_audit_enabled=False,
+            )
             with (
                 mock.patch.object(
                     discovery_orchestrator,
@@ -54,7 +64,7 @@ def test_run_discovery_default_web_search_uses_direct_paths_without_audit_metada
                     top_n=0,
                     mode="dynamic",
                     include_web_search=True,
-                    discovery_config=_stage_config(),
+                    discovery_config=config,
                     fetcher=lambda *_args: "",
                 )
 
@@ -64,8 +74,8 @@ def test_run_discovery_default_web_search_uses_direct_paths_without_audit_metada
             assert "web_search" not in report["summary"]["directoryAudits"]
 
 
-def test_run_discovery_reports_opt_in_web_search_audit_and_reuses_artifact() -> None:
-    with workspace_tmpdir("web-search-audit-flow-opt-in") as root:
+def test_run_discovery_default_web_search_audit_reuses_artifact() -> None:
+    with workspace_tmpdir("web-search-audit-flow-default") as root:
         with override_discovery_runtime(
             root,
             studio_seeds=[
@@ -130,3 +140,45 @@ def test_run_discovery_reports_opt_in_web_search_audit_and_reuses_artifact() -> 
             )
 
             assert second_report["directoryAuditSummaries"]["web_search"]["cacheHit"] is True
+
+
+def test_run_discovery_default_web_search_audit_respects_no_web_search() -> None:
+    with workspace_tmpdir("web-search-audit-flow-seed-only") as root:
+        with override_discovery_runtime(
+            root,
+            studio_seeds=[
+                {
+                    "studio": "Seed Studio",
+                    "careersUrl": "https://seed.example/careers",
+                }
+            ],
+            static_candidates=[],
+        ):
+            audit_path = root / "seed-only-web-audit.json"
+            config = _stage_config(audit_path=str(audit_path))
+
+            def fake_fetch(url: str, _timeout_s: int) -> str:
+                if url == "https://seed.example/careers":
+                    return '<a href="https://boards.greenhouse.io/seedstudio/jobs/1">Role</a>'
+                if "boards-api.greenhouse.io" in url:
+                    return json.dumps({"jobs": [{}]})
+                raise AssertionError(
+                    "web-search fetch should not run when include_web_search is false"
+                )
+
+            report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=False,
+                discovery_config=config,
+                fetcher=fake_fetch,
+            )
+
+            summary = report["directoryAuditSummaries"]["web_search"]
+            assert summary["cacheHit"] is False
+            assert summary["complete"] is True
+            assert summary["seedCareersEnabled"] is True
+            assert summary["webSearchEnabled"] is False
+            assert summary["seedProviderCandidates"] == 1
+            assert int(summary.get("webProviderCandidates") or 0) == 0
