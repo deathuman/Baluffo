@@ -35,7 +35,7 @@ These are the lowest-risk, highest-certainty consolidation targets because the i
 - Completed first slice: `gameprog.py::build_gameprog_static_candidate` and `gamesmap_candidates.py::build_gamesmap_static_candidate` now use shared directory static row templates.
 - Completed first slice: `gameprog.py::_apply_gameprog_static_page_provenance`, `gamesmap_candidates.py::_apply_gamesmap_provider_provenance`, and `gamesmap_candidates.py::_apply_gamesmap_static_provenance` now use shared provenance enrichment templates.
 - Completed first slice: `gameprog.py::_empty_gameprog_scan_result` and `gamesmap_candidates.py::_empty_gamesmap_scan_result` now use a shared empty scan-result template.
-- `gameprog.py::_gameprog_scan` and `gamesmap_candidates.py::_gamesmap_scan` duplicate the same scan control-flow shape: fetch directory entries, cap/select rows, build fetch jobs, analyze pages, recover misses, merge candidates/failures, and emit summary/progress fields. Consolidate the common skeleton while keeping parser and provenance callbacks local.
+- Completed second slice: `gameprog.py::_gameprog_scan` and `gamesmap_candidates.py::_gamesmap_scan` now share the post-selection website fetch, page analysis, recovery, fallback, dedupe, summary, and progress skeleton. Parser/index/category selection remains adapter-owned.
 
 ### P1: GameDevMap Still Reimplements Shared Primitives
 
@@ -81,9 +81,9 @@ Sheet-directory now has a default audit path, but several small pieces remain ma
 
 ## Prioritized Reuse Roadmap
 
-### P0: Consolidate Gameprog/Gamesmap Scan Skeleton Next
+### P0: Continue Gameprog/Gamesmap Scan Skeleton Thinning
 
-- Thin `_gameprog_scan` and `_gamesmap_scan` to parser-specific entry selection plus shared scan orchestration callbacks.
+- Further thin `_gameprog_scan` and `_gamesmap_scan` by isolating parser-specific entry selection and summary base construction behind shared scan orchestration callbacks.
 - Keep directory-specific evidence fields local through callback data, not duplicated control flow.
 
 ### P1a: Backfill Existing Helpers Across All Adapters

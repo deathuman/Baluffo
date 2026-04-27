@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from src.source_discovery.directory_adapter_templates import (
     apply_directory_provenance,
     build_directory_static_candidate,
     empty_directory_scan_result,
+    run_directory_website_scan,
 )
 
 
@@ -130,3 +133,133 @@ def test_empty_directory_scan_result_preserves_template_fields() -> None:
         "batchTiming": batch_timing,
         "writeCache": False,
     }
+
+
+def test_run_directory_website_scan_builds_fetch_jobs_and_merges_rows() -> None:
+    captured_jobs: list[dict[str, object]] = []
+
+    def fake_fetch_pages(_timeout_s, jobs, **_kwargs):
+        captured_jobs.extend(jobs)
+        return [
+            {"url": "https://first.example.com", "payload": {"studio": "First"}},
+            {"url": "https://second.example.com", "payload": {"studio": "Second"}},
+        ]
+
+    def analyze_result(result):
+        if str(result["url"]) == "https://first.example.com":
+            return {"providerCandidates": [{"adapter": "greenhouse", "studio": "First"}]}
+        return {
+            "failures": [{"adapter": "gameprog", "stage": "website_fetch"}],
+            "fetchFailed": True,
+        }
+
+    batch_timing = {"parseMs": 1}
+    row = run_directory_website_scan(
+        5,
+        entries=[
+            {"studio": "First", "url": "https://first.example.com"},
+            {"studio": "Second", "url": "https://second.example.com"},
+        ],
+        url_field="url",
+        adapter="gameprog",
+        failure_stage="website_fetch",
+        fetcher=lambda *_args: "",
+        fetch_pages=fake_fetch_pages,
+        fetch_concurrency=3,
+        per_host_concurrency=2,
+        progress_label="Gameprog website fetch",
+        analyze_result=analyze_result,
+        enable_recovery=False,
+        recovery_analyze_result=lambda _result, _request: {"providerCandidates": []},
+        recovery_progress_label="Gameprog",
+        unique_sources_fn=lambda rows: rows,
+        batch_timing=batch_timing,
+        summary={"parsedRows": 2, "eligibleRows": 2},
+        progress_cursor=2,
+        required_fields=("studio",),
+    )
+
+    assert [job["url"] for job in captured_jobs] == [
+        "https://first.example.com",
+        "https://second.example.com",
+    ]
+    assert all(job["adapter"] == "gameprog" for job in captured_jobs)
+    assert row["providerCandidates"] == [{"adapter": "greenhouse", "studio": "First"}]
+    assert row["failures"] == [{"adapter": "gameprog", "stage": "website_fetch"}]
+    assert row["summary"]["websiteFetchJobs"] == 2
+    assert row["summary"]["websiteFetchFailures"] == 1
+    assert row["progress"]["completedUrlIdentities"] == [
+        "https://first.example.com",
+        "https://second.example.com",
+    ]
+    assert "websiteFetchMs" in batch_timing
+    assert "candidateAnalysisMs" in batch_timing
+
+
+def test_run_directory_website_scan_runs_recovery_and_skips_recovered_fallback() -> None:
+    recovery_calls: list[list[object]] = []
+
+    def fake_fetch_pages(_timeout_s, jobs, **_kwargs):
+        return [{"url": job["url"], "payload": job["payload"]} for job in jobs]
+
+    def analyze_result(_result):
+        return {
+            "recoveryRequests": [SimpleNamespace(key="recovered")],
+            "fallbackStaticCandidates": [
+                {"key": "recovered", "candidate": {"adapter": "static", "listing_url": "skip"}},
+                {"key": "fallback", "candidate": {"adapter": "static", "listing_url": "keep"}},
+            ],
+            "badProviderInferences": 1,
+        }
+
+    def recovery_runner(_timeout_s, requests, **_kwargs):
+        recovery_calls.append(list(requests))
+        return SimpleNamespace(
+            provider_candidates=[],
+            static_candidates=[{"adapter": "static", "listing_url": "recovered"}],
+            browser_recovery_candidates=[{"url": "https://example.com"}],
+            recovered_keys={"recovered"},
+            summary={
+                "recoveryFetchAttempts": 1,
+                "recoveryPagesFetched": 1,
+                "recoveredProviderCandidates": 0,
+                "recoveredStaticCandidates": 1,
+                "recoveryFailures": 0,
+                "browserRecoveryCandidates": 1,
+            },
+            batch_timing={"recoveryFetchMs": 4},
+        )
+
+    batch_timing: dict[str, object] = {}
+    row = run_directory_website_scan(
+        5,
+        entries=[{"websiteUrl": "https://example.com", "studio": "Example"}],
+        url_field="websiteUrl",
+        adapter="gamesmap",
+        failure_stage="website_fetch",
+        fetcher=lambda *_args: "",
+        fetch_pages=fake_fetch_pages,
+        fetch_concurrency=3,
+        per_host_concurrency=2,
+        progress_label="Gamesmap website fetch",
+        analyze_result=analyze_result,
+        enable_recovery=True,
+        recovery_analyze_result=lambda _result, _request: {"staticCandidates": []},
+        recovery_progress_label="Gamesmap",
+        unique_sources_fn=lambda rows: rows,
+        batch_timing=batch_timing,
+        summary={"eligibleRows": 1},
+        progress_cursor=1,
+        recovery_runner=recovery_runner,
+    )
+
+    assert len(recovery_calls) == 1
+    assert row["staticCandidates"] == [
+        {"adapter": "static", "listing_url": "recovered"},
+        {"adapter": "static", "listing_url": "keep"},
+    ]
+    assert row["browserRecoveryCandidates"] == [{"url": "https://example.com"}]
+    assert row["summary"]["recoveredStaticCandidates"] == 1
+    assert row["summary"]["browserRecoveryCandidates"] == 1
+    assert row["summary"]["badProviderInferences"] == 1
+    assert batch_timing["recoveryFetchMs"] == 4

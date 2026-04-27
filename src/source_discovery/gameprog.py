@@ -21,16 +21,12 @@ from .directory_adapter_templates import (
     apply_directory_provenance,
     build_directory_static_candidate,
     empty_directory_scan_result,
+    run_directory_website_scan,
 )
 from .directory_audit import discover_directory_adapter_candidates, run_directory_audit
 from .directory_cache import load_directory_cache, write_directory_cache
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
-from .directory_fetch_jobs import build_directory_fetch_jobs
-from .directory_page_recovery import (
-    RECOVERY_LOGIC_VERSION,
-    DirectoryRecoveryRequest,
-    run_directory_page_recovery,
-)
+from .directory_page_recovery import RECOVERY_LOGIC_VERSION, DirectoryRecoveryRequest
 from .page_outcomes import (
     FetchedPageContext,
     PageOutcome,
@@ -481,21 +477,7 @@ def _gameprog_scan(
     max_studios = max(0, int(cfg.get("maxStudios") or 0))
     fetch_concurrency, per_host_concurrency = resolve_directory_fetch_limits(cfg)
 
-    provider_candidates: list[dict[str, Any]] = []
-    static_candidates: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
-    browser_recovery_candidates: list[dict[str, Any]] = []
-    recovery_requests: list[DirectoryRecoveryRequest] = []
-    fallback_static_candidates: list[dict[str, Any]] = []
-    bad_provider_inferences = 0
-    recovery_summary: dict[str, int] = {
-        "recoveryFetchAttempts": 0,
-        "recoveryPagesFetched": 0,
-        "recoveredProviderCandidates": 0,
-        "recoveredStaticCandidates": 0,
-        "recoveryFailures": 0,
-        "browserRecoveryCandidates": 0,
-    }
     batch_timing: dict[str, Any] = {
         "teamsUrl": teams_url,
         "maxStudios": max_studios,
@@ -539,96 +521,36 @@ def _gameprog_scan(
         entries = entries[:max_studios]
 
     emit_log(f"Gameprog directory entries: {len(entries)}")
-    website_fetch_jobs = build_directory_fetch_jobs(
-        entries,
+    return run_directory_website_scan(
+        timeout_s,
+        entries=entries,
         url_field="url",
         adapter="gameprog",
         failure_stage="website_fetch",
-        required_fields=("studio",),
-    )
-
-    started = time.perf_counter()
-    website_fetch_results = fetch_directory_pages(
-        timeout_s,
-        website_fetch_jobs,
         fetcher=fetcher,
-        total_concurrency=fetch_concurrency,
+        fetch_pages=fetch_directory_pages,
+        fetch_concurrency=fetch_concurrency,
         per_host_concurrency=per_host_concurrency,
         progress_label="Gameprog website fetch",
-    )
-    batch_timing["websiteFetchMs"] = audit_ledger.duration_ms(started)
-
-    website_fetch_failures = 0
-    started = time.perf_counter()
-    for result in website_fetch_results:
-        rows = _gameprog_fetch_result_candidates(
+        required_fields=("studio",),
+        analyze_result=lambda result: _gameprog_fetch_result_candidates(
             result,
             website_only_fallback=website_only_fallback,
             enable_recovery=enable_recovery,
-        )
-        provider_candidates.extend(list(rows.get("providerCandidates") or []))
-        static_candidates.extend(list(rows.get("staticCandidates") or []))
-        failures.extend(list(rows.get("failures") or []))
-        recovery_requests.extend(list(rows.get("recoveryRequests") or []))
-        fallback_static_candidates.extend(list(rows.get("fallbackStaticCandidates") or []))
-        bad_provider_inferences += int(rows.get("badProviderInferences") or 0)
-        if bool(rows.get("fetchFailed")):
-            website_fetch_failures += 1
-    batch_timing["candidateAnalysisMs"] = audit_ledger.duration_ms(started)
-
-    recovered_keys: set[str] = set()
-    if enable_recovery and recovery_requests:
-        recovery = run_directory_page_recovery(
-            timeout_s,
-            recovery_requests,
-            fetcher=fetcher,
-            total_concurrency=fetch_concurrency,
-            per_host_concurrency=per_host_concurrency,
-            analyze_result=_gameprog_recovery_result_candidates,
-            progress_label="Gameprog",
-        )
-        provider_candidates.extend(recovery.provider_candidates)
-        static_candidates.extend(recovery.static_candidates)
-        browser_recovery_candidates.extend(recovery.browser_recovery_candidates)
-        recovered_keys = set(recovery.recovered_keys)
-        recovery_summary = dict(recovery.summary)
-        batch_timing.update(recovery.batch_timing)
-    for fallback in fallback_static_candidates:
-        if str(fallback.get("key") or "") not in recovered_keys:
-            candidate = fallback.get("candidate")
-            if isinstance(candidate, dict):
-                static_candidates.append(candidate)
-
-    provider_candidates = unique_sources(provider_candidates)
-    static_candidates = unique_sources(static_candidates)
-    return {
-        "providerCandidates": provider_candidates,
-        "staticCandidates": static_candidates,
-        "failures": failures,
-        "summary": {
+        ),
+        enable_recovery=enable_recovery,
+        recovery_analyze_result=_gameprog_recovery_result_candidates,
+        recovery_progress_label="Gameprog",
+        unique_sources_fn=unique_sources,
+        batch_timing=batch_timing,
+        summary={
             "teamsRows": parsed_count,
             "parsedRows": parsed_count,
             "eligibleRows": len(entries),
-            "websiteFetchJobs": len(website_fetch_jobs),
-            "websiteFetchFailures": website_fetch_failures,
-            **recovery_summary,
-            "browserRecoveryCandidates": len(browser_recovery_candidates),
-            "badProviderInferences": bad_provider_inferences,
         },
-        "websiteFetchJobs": website_fetch_jobs,
-        "browserRecoveryCandidates": browser_recovery_candidates,
-        "progress": {
-            "complete": True,
-            "cursor": len(entries),
-            "completedUrlIdentities": [
-                str(row.get("url") or "").strip()
-                for row in website_fetch_jobs
-                if isinstance(row, dict)
-            ],
-        },
-        "batchTiming": batch_timing,
-        "writeCache": True,
-    }
+        progress_cursor=len(entries),
+        initial_failures=failures,
+    )
 
 
 def run_gameprog_directory_audit(
