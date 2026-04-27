@@ -98,6 +98,25 @@ def test_gamesmap_audit_missing_artifact_executes_and_writes_boundaries() -> Non
         assert artifact["timings"]["totalsMs"]["websiteFetchMs"] >= 0
 
 
+def test_gamesmap_audit_enabled_defaults_to_true_when_config_field_missing() -> None:
+    with workspace_tmpdir("gamesmap-audit-default-enabled") as root:
+        audit_path = root / "gamesmap-audit.json"
+        config = _gamesmap_config()
+        config["gamesmap"]["activeAuditPath"] = str(audit_path)
+        config["gamesmap"]["activeAuditTtlMinutes"] = 60
+
+        provider_rows, static_rows, failures = sd.discover_gamesmap_candidates(
+            5,
+            config=config,
+            fetcher=_fetch_from(_gamesmap_payloads()),
+        )
+
+        assert provider_rows == []
+        assert len(static_rows) == 1
+        assert failures == []
+        assert audit_path.exists()
+
+
 def test_gamesmap_audit_reuses_fresh_artifact_without_network_work() -> None:
     with workspace_tmpdir("gamesmap-audit-reuse") as root:
         audit_path = root / "gamesmap-audit.json"
@@ -123,6 +142,7 @@ def test_gamesmap_audit_output_matches_legacy_scan_for_same_inputs() -> None:
     with workspace_tmpdir("gamesmap-audit-equivalence") as root:
         audit_path = root / "gamesmap-audit.json"
         legacy_config = _gamesmap_config()
+        legacy_config["gamesmap"]["activeAuditEnabled"] = False
         audit_config = _gamesmap_config(str(audit_path))
 
         legacy_rows = sd.discover_gamesmap_candidates(

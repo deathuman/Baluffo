@@ -55,6 +55,7 @@ def test_discover_gameprog_candidates_emits_provider_and_static() -> None:
     config = {
         "gameprog": {
             "enabled": True,
+            "activeAuditEnabled": False,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 10,
@@ -103,6 +104,7 @@ def test_discover_gameprog_candidates_handles_fetch_failure() -> None:
     config = {
         "gameprog": {
             "enabled": True,
+            "activeAuditEnabled": False,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 10,
@@ -168,6 +170,7 @@ def test_discover_gameprog_candidates_reuses_fresh_cache() -> None:
         config = {
             "gameprog": {
                 "enabled": True,
+                "activeAuditEnabled": False,
                 "teamsUrl": "https://gameprog.it/teams.json",
                 "websiteOnlyFallback": True,
                 "maxStudios": 10,

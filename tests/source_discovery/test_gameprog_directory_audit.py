@@ -74,6 +74,32 @@ def test_gameprog_audit_missing_artifact_executes_and_writes_boundaries() -> Non
         assert saved["summary"]["artifactSizeBytes"] > 0
 
 
+def test_gameprog_audit_enabled_defaults_to_true_when_config_field_missing() -> None:
+    with workspace_tmpdir("gameprog-audit-default-enabled") as root:
+        audit_path = root / "gameprog-audit.json"
+        config = {
+            "gameprog": {
+                "enabled": True,
+                "activeAuditPath": str(audit_path),
+                "activeAuditTtlMinutes": 60,
+                "teamsUrl": "https://gameprog.it/teams.json",
+                "websiteOnlyFallback": True,
+                "maxStudios": 1,
+            }
+        }
+
+        provider_rows, static_rows, failures = sd.discover_gameprog_candidates(
+            5,
+            config=config,
+            fetcher=_fetch_from(_gameprog_payloads()),
+        )
+
+        assert provider_rows == []
+        assert len(static_rows) == 1
+        assert failures == []
+        assert audit_path.exists()
+
+
 def test_gameprog_audit_reuses_fresh_completed_artifact_without_network_work() -> None:
     with workspace_tmpdir("gameprog-audit-reuse") as root:
         audit_path = root / "gameprog-audit.json"
@@ -125,6 +151,7 @@ def test_gameprog_audit_output_matches_legacy_scan_for_same_inputs() -> None:
         base_config = {
             "gameprog": {
                 "enabled": True,
+                "activeAuditEnabled": False,
                 "teamsUrl": "https://gameprog.it/teams.json",
                 "websiteOnlyFallback": True,
                 "maxStudios": 2,

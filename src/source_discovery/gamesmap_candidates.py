@@ -252,7 +252,7 @@ def _apply_gamesmap_static_provenance(
 
 
 def _gamesmap_audit_enabled(cfg: dict[str, Any]) -> bool:
-    return bool(cfg.get("activeAuditEnabled", False))
+    return bool(cfg.get("activeAuditEnabled", True))
 
 
 def _gamesmap_audit_path(cfg: dict[str, Any]) -> Path:

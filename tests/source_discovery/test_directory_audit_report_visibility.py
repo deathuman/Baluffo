@@ -31,7 +31,6 @@ def test_run_discovery_reports_opt_in_gameprog_directory_audit_summary() -> None
                 "gameprog",
                 {
                     "enabled": True,
-                    "activeAuditEnabled": True,
                     "activeAuditPath": str(audit_path),
                     "activeAuditTtlMinutes": 60,
                     "teamsUrl": "https://gameprog.it/teams.json",
@@ -68,6 +67,46 @@ def test_run_discovery_reports_opt_in_gameprog_directory_audit_summary() -> None
             assert json.loads(paths.pending_path.read_text(encoding="utf-8")) == []
 
 
+def test_run_discovery_reuses_default_gameprog_directory_audit_artifact() -> None:
+    with workspace_tmpdir("directory-audit-report-gameprog-cache") as root:
+        with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):
+            audit_path = root / "gameprog-audit.json"
+            config = _stage_config(
+                "gameprog",
+                {
+                    "enabled": True,
+                    "activeAuditPath": str(audit_path),
+                    "activeAuditTtlMinutes": 60,
+                    "teamsUrl": "https://gameprog.it/teams.json",
+                    "maxStudios": 0,
+                },
+            )
+
+            sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=False,
+                discovery_config=config,
+                fetcher=lambda url, _timeout: "[]" if url.endswith("teams.json") else "",
+            )
+            report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=False,
+                discovery_config=config,
+                fetcher=lambda *_args: (_ for _ in ()).throw(
+                    AssertionError("fresh audit artifact should bypass Gameprog network work")
+                ),
+            )
+
+            summary = report["directoryAuditSummaries"]["gameprog"]
+            assert summary["cacheHit"] is True
+            assert summary["complete"] is True
+            assert summary["artifactSizeBytes"] > 0
+
+
 def test_run_discovery_reports_gamesmap_directory_audit_cache_hit() -> None:
     with workspace_tmpdir("directory-audit-report-gamesmap") as root:
         with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):
@@ -76,7 +115,6 @@ def test_run_discovery_reports_gamesmap_directory_audit_cache_hit() -> None:
                 "gamesmap",
                 {
                     "enabled": True,
-                    "activeAuditEnabled": True,
                     "activeAuditPath": str(audit_path),
                     "activeAuditTtlMinutes": 60,
                     "baseUrl": "https://www.gamesmap.de",
@@ -121,6 +159,39 @@ def test_run_discovery_reports_gamesmap_directory_audit_cache_hit() -> None:
             assert summary["parsedRows"] == 0
             assert summary["artifactSizeBytes"] > 0
             assert "indexFetchParseMs" in summary["timingTotalsMs"]
+
+
+def test_run_discovery_keeps_gamesmap_adapter_disabled_by_default() -> None:
+    with workspace_tmpdir("directory-audit-report-gamesmap-disabled-default") as root:
+        with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):
+            config = {
+                "stageToggles": {
+                    "curatedSeed": False,
+                    "sheetDirectory": False,
+                    "providerPatterns": False,
+                    "seedCareersScan": False,
+                    "gamesmap": True,
+                    "gameprog": False,
+                    "gamedevmap": False,
+                    "webSearch": False,
+                },
+                "gameprog": {"enabled": False},
+                "gamedevmap": {"enabled": False},
+            }
+
+            report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=False,
+                discovery_config=config,
+                fetcher=lambda *_args: (_ for _ in ()).throw(
+                    AssertionError("disabled Gamesmap adapter should not fetch")
+                ),
+            )
+
+            assert report["directoryAuditSummaries"] == {}
+            assert report["summary"]["directoryAudits"] == {}
 
 
 def test_run_discovery_omits_directory_audit_metadata_when_audits_disabled() -> None:

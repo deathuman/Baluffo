@@ -7,6 +7,7 @@ def test_gameprog_audit_readiness_caps_entries_before_website_fetch_jobs() -> No
     config = {
         "gameprog": {
             "enabled": True,
+            "activeAuditEnabled": False,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 1,
@@ -50,6 +51,7 @@ def test_gamesmap_audit_readiness_caps_entries_before_website_fetch_jobs() -> No
     config = {
         "gamesmap": {
             "enabled": True,
+            "activeAuditEnabled": False,
             "baseUrl": "https://www.gamesmap.de",
             "indexUrls": ["https://www.gamesmap.de/en"],
             "websiteOnlyFallback": True,
@@ -141,6 +143,7 @@ def test_directory_audit_readiness_website_fetch_failures_stay_in_failure_channe
     gamesmap_config = {
         "gamesmap": {
             "enabled": True,
+            "activeAuditEnabled": False,
             "baseUrl": "https://www.gamesmap.de",
             "indexUrls": ["https://www.gamesmap.de/en"],
             "websiteOnlyFallback": True,
@@ -294,6 +297,7 @@ def test_directory_audit_contract_candidate_outputs_keep_boundary_provenance() -
     gameprog_config = {
         "gameprog": {
             "enabled": True,
+            "activeAuditEnabled": False,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 1,
@@ -328,6 +332,7 @@ def test_directory_audit_contract_candidate_outputs_keep_boundary_provenance() -
     gamesmap_config = {
         "gamesmap": {
             "enabled": True,
+            "activeAuditEnabled": False,
             "baseUrl": "https://www.gamesmap.de",
             "indexUrls": ["https://www.gamesmap.de/en"],
             "websiteOnlyFallback": True,

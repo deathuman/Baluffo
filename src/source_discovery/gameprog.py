@@ -85,7 +85,7 @@ def _gameprog_cache_ttl_minutes(config: dict[str, Any] | None) -> int:
 
 
 def _gameprog_audit_enabled(config: dict[str, Any] | None) -> bool:
-    return bool(_gameprog_config_value(config, "activeAuditEnabled", False))
+    return bool(_gameprog_config_value(config, "activeAuditEnabled", True))
 
 
 def _gameprog_audit_path(config: dict[str, Any] | None) -> Path:

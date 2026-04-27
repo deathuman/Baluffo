@@ -226,6 +226,7 @@ DEFAULT_STUDIO_SEEDS: list[dict[str, Any]] = [
 DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     "gameprog": {
         "enabled": True,
+        "activeAuditEnabled": True,
         "teamsUrl": "https://gameprog.it/teams.json",
         "websiteOnlyFallback": True,
         "maxStudios": 200,
@@ -234,6 +235,7 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     },
     "gamesmap": {
         "enabled": False,
+        "activeAuditEnabled": True,
         "baseUrl": "https://www.gamesmap.de",
         "indexUrls": [
             "https://www.gamesmap.de/en",
