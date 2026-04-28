@@ -8,10 +8,7 @@ from typing import Any
 
 from src.jobs.text_utils import clean_text, norm_text
 from src.scrapers.domain_profiles import domain_profile_for_url, pick_canonical_listing_url
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
+from src.shared.json_shapes import as_json_list, json_object_rows
 
 
 def build_browser_fallback_queue(
@@ -21,13 +18,8 @@ def build_browser_fallback_queue(
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     seen = set()
-    for report in source_reports:
-        details = report.get("details") if isinstance(report, dict) else None
-        if not isinstance(details, list):
-            continue
-        for item in details:
-            if not isinstance(item, dict):
-                continue
+    for report in json_object_rows(list(source_reports)):
+        for item in json_object_rows(report.get("details")):
             if not bool(item.get("browserFallbackRecommended")):
                 continue
             classification = norm_text(item.get("classification"))
@@ -35,7 +27,7 @@ def build_browser_fallback_queue(
             name = clean_text(item.get("name"))
             studio = clean_text(item.get("studio"))
             clean_pages = [
-                clean_text(page) for page in _as_list(item.get("pages")) if clean_text(page)
+                clean_text(page) for page in as_json_list(item.get("pages")) if clean_text(page)
             ]
             canonical = pick_canonical_listing_url(clean_pages) if clean_pages else None
             if not canonical:
@@ -85,13 +77,10 @@ def _parser_regression_pages(report: dict[str, Any]) -> list[str]:
     listing_url = clean_text(report.get("listingUrl"))
     if listing_url:
         pages.append(listing_url)
-    top_pages = _as_list(report.get("pages"))
+    top_pages = as_json_list(report.get("pages"))
     pages.extend(clean_text(page) for page in top_pages if clean_text(page))
-    details = _as_list(report.get("details"))
-    for item in details:
-        if not isinstance(item, dict):
-            continue
-        item_pages = _as_list(item.get("pages"))
+    for item in json_object_rows(report.get("details")):
+        item_pages = as_json_list(item.get("pages"))
         pages.extend(clean_text(page) for page in item_pages if clean_text(page))
     provider_url = clean_text(report.get("providerUrl"))
     if provider_url:

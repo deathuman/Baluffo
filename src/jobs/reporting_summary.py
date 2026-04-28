@@ -7,6 +7,7 @@ from typing import Any
 
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text
+from src.shared.json_shapes import as_json_list, json_object_rows
 
 from .common import config as common_config
 from .reporting_breakdowns import (
@@ -17,10 +18,6 @@ from .reporting_breakdowns import (
 
 TARGET_PROFESSIONS = common_config.TARGET_PROFESSIONS
 OUTPUT_SIZE_GUARDRAIL_LIMITS = common_config.OUTPUT_SIZE_GUARDRAIL_LIMITS
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 def _size_guardrail_row(bytes_value: int, limit_bytes: int) -> dict[str, Any]:
@@ -34,8 +31,8 @@ def _size_guardrail_row(bytes_value: int, limit_bytes: int) -> dict[str, Any]:
 
 
 def format_source_error(source_name: str, error: Any) -> str:
-    message = clean_text(str(error))
-    prefix = f"{clean_text(source_name)}:"
+    message = str(clean_text(str(error)))
+    prefix = f"{str(clean_text(source_name))}:"
     if not message:
         return "unknown error"
     if message.lower().startswith(prefix.lower()):
@@ -45,12 +42,9 @@ def format_source_error(source_name: str, error: Any) -> str:
 
 def _cache_rows(source_reports: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for row in source_reports:
-        if not isinstance(row, dict):
-            continue
+    for row in json_object_rows(list(source_reports)):
         rows.append(row)
-        details = _as_list(row.get("details"))
-        rows.extend([item for item in details if isinstance(item, dict)])
+        rows.extend(json_object_rows(row.get("details")))
     return rows
 
 
@@ -61,8 +55,8 @@ def _has_ok_warning(row: dict[str, Any]) -> bool:
         if clean_text(row.get(key)):
             return True
     for key in ("warnings", "errors", "partialErrors"):
-        values = row.get(key)
-        if isinstance(values, list) and any(clean_text(item) for item in values):
+        values = as_json_list(row.get(key))
+        if any(clean_text(item) for item in values):
             return True
     return False
 
@@ -93,9 +87,7 @@ def build_pipeline_summary(
         decision = clean_text(row.get("cacheDecision"))
         if decision:
             cache_decision_counts[decision] = int(cache_decision_counts.get(decision, 0)) + 1
-    source_count_rows = [
-        row for row in (summary_source_rows or source_reports) if isinstance(row, dict)
-    ]
+    source_count_rows = json_object_rows(list(summary_source_rows or source_reports))
     raw_fetched = int(
         sum(
             int(row.get("fetchedCount") or 0)

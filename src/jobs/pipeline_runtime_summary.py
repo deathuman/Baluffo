@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from src.jobs.text_utils import clean_text, norm_text
+from src.shared.json_shapes import as_json_object
 from src.shared.live_task import (
     append_live_task_event,
     build_live_task_payload,
@@ -12,10 +13,6 @@ from src.shared.live_task import (
     snapshot_live_task_work_items,
 )
 from src.shared.utils import now_iso
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def _runtime_non_negative_int(runtime: Any, attr_name: str) -> int:
@@ -116,7 +113,7 @@ def build_fetch_task_progress_payload(
 
 
 def snapshot_task_rows(task_rows: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    return snapshot_live_task_work_items(task_rows)
+    return cast(list[dict[str, Any]], snapshot_live_task_work_items(task_rows))
 
 
 def build_detailed_source_rows(
@@ -135,8 +132,8 @@ def build_detailed_source_rows(
         name = clean_text(task_row.get("name"))
         if not name:
             continue
-        progress = _as_dict(task_row.get("progress"))
-        counts = _as_dict(progress.get("counts"))
+        progress = as_json_object(task_row.get("progress"))
+        counts = as_json_object(progress.get("counts"))
         report_row = dict(report_by_name.get(name) or {})
         merged: dict[str, Any] = {**report_row}
         merged["name"] = name
@@ -174,7 +171,7 @@ def build_detailed_source_rows(
             int(counts.get("lowConfidenceDropped") or 0),
         )
         merged["error"] = clean_text(report_row.get("error")) or clean_text(task_row.get("error"))
-        if isinstance(progress, dict) and progress:
+        if progress:
             merged["progress"] = dict(progress)
         detailed_rows.append(merged)
     return detailed_rows
@@ -284,28 +281,31 @@ def build_fetch_live_task_payload(
         "excluded": sum(1 for row in rows_snapshot if row.get("status") == "excluded"),
         "outputCount": max(0, int(runtime.current_output_count or 0)),
     }
-    return build_live_task_payload(
-        task_type="fetch",
-        active=not bool(finished_at),
-        run_id=runtime.run_id,
-        started_at=runtime.started_at,
-        finished_at=finished_at,
-        heartbeat_at=now_iso(),
-        task_progress=build_fetch_task_progress_payload(
-            phase_key="completed" if finished_at else runtime.current_phase_key,
-            phase_label="Completed" if finished_at else runtime.current_phase_label,
-            task_rows={
-                str(row.get("name") or ""): row
-                for row in rows_snapshot
-                if str(row.get("name") or "").strip()
-            },
-            output_count=runtime.current_output_count,
-            finished=bool(finished_at),
+    return cast(
+        dict[str, Any],
+        build_live_task_payload(
+            task_type="fetch",
+            active=not bool(finished_at),
+            run_id=runtime.run_id,
+            started_at=runtime.started_at,
+            finished_at=finished_at,
+            heartbeat_at=now_iso(),
+            task_progress=build_fetch_task_progress_payload(
+                phase_key="completed" if finished_at else runtime.current_phase_key,
+                phase_label="Completed" if finished_at else runtime.current_phase_label,
+                task_rows={
+                    str(row.get("name") or ""): row
+                    for row in rows_snapshot
+                    if str(row.get("name") or "").strip()
+                },
+                output_count=runtime.current_output_count,
+                finished=bool(finished_at),
+            ),
+            summary=summary,
+            work_items=rows_snapshot,
+            recent_events=list(runtime.recent_events),
+            outputs={"report": str(report_path)},
         ),
-        summary=summary,
-        work_items=rows_snapshot,
-        recent_events=list(runtime.recent_events),
-        outputs={"report": str(report_path)},
     )
 
 
@@ -366,7 +366,7 @@ def update_fetch_work_item_progress(
         row = runtime.task_rows.get(source_name)
         if not isinstance(row, dict):
             return
-        progress = _as_dict(row.get("progress"))
+        progress = as_json_object(row.get("progress"))
         next_counts = counts if isinstance(counts, dict) else {}
         next_progress = build_live_task_progress_payload(
             active=str(row.get("status") or "").strip().lower() == "running",

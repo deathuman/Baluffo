@@ -14,10 +14,7 @@ from src.jobs.common.taxonomy import (
     failure_bucket_from_zero_extract_assessment,
 )
 from src.jobs.text_utils import clean_text, norm_text
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
+from src.shared.json_shapes import as_json_list, as_json_object
 
 
 def _float_or_zero(value: Any) -> float:
@@ -33,17 +30,15 @@ def _clean_label(value: Any) -> str:
 
 
 def _clean_pages(pages: Any) -> list[str]:
-    if not isinstance(pages, list):
-        return []
-    return [clean_text(page) for page in pages if clean_text(page)]
+    return [clean_text(page) for page in as_json_list(pages) if clean_text(page)]
 
 
 def _normalize_dead_listing_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
     dead_listing_page_count = _clamped_int(src.get("deadListingPageCount"), 0, 0)
     if dead_listing_page_count > 0:
         target["deadListingPageCount"] = dead_listing_page_count
-    dead_listing_page_examples = src.get("deadListingPageExamples")
-    if isinstance(dead_listing_page_examples, list):
+    dead_listing_page_examples = as_json_list(src.get("deadListingPageExamples"))
+    if dead_listing_page_examples:
         cleaned_examples = [
             clean_text(item) for item in dead_listing_page_examples if clean_text(item)
         ]
@@ -52,7 +47,7 @@ def _normalize_dead_listing_fields(target: dict[str, Any], src: dict[str, Any]) 
 
 
 def _normalize_stage_timings(src: dict[str, Any]) -> dict[str, int]:
-    raw_stage_timings = _as_dict(src.get("stageTimingsMs"))
+    raw_stage_timings = as_json_object(src.get("stageTimingsMs"))
     return {
         "fetchAndParse": _clamped_int(raw_stage_timings.get("fetchAndParse"), 0, 0),
         "listingFetch": _clamped_int(raw_stage_timings.get("listingFetch"), 0, 0),
@@ -65,8 +60,8 @@ def _normalize_stage_timings(src: dict[str, Any]) -> dict[str, int]:
 
 
 def _normalize_loss(loss: Any) -> dict[str, Any]:
-    payload = _as_dict(loss)
-    drop_reasons = _as_dict(payload.get("canonicalDropReasons"))
+    payload = as_json_object(loss)
+    drop_reasons = as_json_object(payload.get("canonicalDropReasons"))
     return {
         "rawFetched": _clamped_int(payload.get("rawFetched"), 0, 0),
         "canonicalDropped": _clamped_int(payload.get("canonicalDropped"), 0, 0),
@@ -209,17 +204,18 @@ def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
     _apply_listing_fields(clean_item, item)
     _normalize_dead_listing_fields(clean_item, item)
 
-    top_reject_reasons = item.get("top_reject_reasons")
-    if isinstance(top_reject_reasons, list):
+    top_reject_reasons = as_json_list(item.get("top_reject_reasons"))
+    if top_reject_reasons:
         clean_item["top_reject_reasons"] = [
             clean_text(reason) for reason in top_reject_reasons if clean_text(reason)
         ][:5]
 
-    stats = item.get("stats")
-    if isinstance(stats, dict):
+    stats = as_json_object(item.get("stats"))
+    if stats:
         clean_item["stats"] = _normalize_detail_stats(stats)
-    if isinstance(item.get("loss"), dict):
-        clean_item["loss"] = _normalize_loss(item.get("loss"))
+    loss = as_json_object(item.get("loss"))
+    if loss:
+        clean_item["loss"] = _normalize_loss(loss)
 
     source_id = clean_text(item.get("sourceId"))
     if source_id:
@@ -231,7 +227,7 @@ def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
-    src = row if isinstance(row, dict) else {}
+    src = as_json_object(row)
     normalized: dict[str, Any] = {
         "name": clean_text(src.get("name")),
         "status": norm_text(src.get("status")) or "error",
@@ -339,11 +335,7 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     board_count = _clamped_int(src.get("boardCount"), 0, 0)
     if board_count > 0:
         normalized["boardCount"] = board_count
-    board_decision_counts = (
-        src.get("boardCacheDecisionCounts")
-        if isinstance(src.get("boardCacheDecisionCounts"), dict)
-        else {}
-    )
+    board_decision_counts = as_json_object(src.get("boardCacheDecisionCounts"))
     if board_decision_counts:
         normalized["boardCacheDecisionCounts"] = {
             clean_text(key): _clamped_int(value, 0, 0)
@@ -366,11 +358,7 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     subsource_count = _clamped_int(src.get("subsourceCount"), 0, 0)
     if subsource_count > 0:
         normalized["subsourceCount"] = subsource_count
-    subsource_decision_counts = (
-        src.get("subsourceCacheDecisionCounts")
-        if isinstance(src.get("subsourceCacheDecisionCounts"), dict)
-        else {}
-    )
+    subsource_decision_counts = as_json_object(src.get("subsourceCacheDecisionCounts"))
     if subsource_decision_counts:
         normalized["subsourceCacheDecisionCounts"] = {
             clean_text(key): _clamped_int(value, 0, 0)
@@ -397,8 +385,9 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     exclusion_reason = clean_text(src.get("exclusionReason"))
     if exclusion_reason:
         normalized["exclusionReason"] = exclusion_reason
-    if isinstance(src.get("loss"), dict):
-        normalized["loss"] = _normalize_loss(src.get("loss"))
+    loss = as_json_object(src.get("loss"))
+    if loss:
+        normalized["loss"] = _normalize_loss(loss)
 
     if norm_text(src.get("adapter")) == "static" and failure_bucket == "site_changed":
         listing_url = clean_text(src.get("listingUrl"))
@@ -418,8 +407,8 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         if provider_url:
             normalized["providerUrl"] = provider_url
 
-    details = src.get("details")
-    if isinstance(details, list):
+    details = as_json_list(src.get("details"))
+    if details:
         clean_details: list[Any] = []
         for item in details:
             if isinstance(item, dict):

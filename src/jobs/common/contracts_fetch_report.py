@@ -7,6 +7,7 @@ from typing import Any
 from src.contracts import SCHEMA_VERSION
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
+from src.shared.json_shapes import as_json_object, copy_json_object, json_object_rows
 from src.shared.live_task import (
     build_live_task_contract_fields,
     normalize_live_task_payload,
@@ -14,14 +15,6 @@ from src.shared.live_task import (
 
 from .contracts_runtime import normalize_runtime_payload
 from .contracts_source_reports import normalize_source_report_row
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 def _float_or_zero(value: Any) -> float:
@@ -32,14 +25,14 @@ def _float_or_zero(value: Any) -> float:
 
 
 def _normalize_count_map(payload: Any) -> dict[str, int]:
-    src = _as_dict(payload)
+    src = as_json_object(payload)
     return {
         clean_text(key): _clamped_int(value, 0, 0) for key, value in src.items() if clean_text(key)
     }
 
 
 def _normalize_social_channel_summary(payload: Any) -> dict[str, Any]:
-    src_channel = _as_dict(payload)
+    src_channel = as_json_object(payload)
     return {
         "keptCount": _clamped_int(src_channel.get("keptCount"), 0, 0),
         "uniqueKeptCount": _clamped_int(src_channel.get("uniqueKeptCount"), 0, 0),
@@ -53,7 +46,7 @@ def _normalize_social_channel_summary(payload: Any) -> dict[str, Any]:
 
 
 def _normalize_contamination_audit(payload: Any) -> dict[str, Any]:
-    contamination_audit = _as_dict(payload)
+    contamination_audit = as_json_object(payload)
     return {
         "totalRows": _clamped_int(contamination_audit.get("totalRows"), 0, 0),
         "contaminatedRows": _clamped_int(contamination_audit.get("contaminatedRows"), 0, 0),
@@ -66,18 +59,17 @@ def _normalize_contamination_audit(payload: Any) -> dict[str, Any]:
                 "jobLink": clean_text(item.get("jobLink")),
                 "fields": {
                     clean_text(key): clean_text(value)
-                    for key, value in _as_dict(item.get("fields")).items()
+                    for key, value in as_json_object(item.get("fields")).items()
                     if clean_text(key)
                 },
             }
-            for item in _as_list(contamination_audit.get("examples"))[:20]
-            if isinstance(item, dict)
+            for item in json_object_rows(contamination_audit.get("examples"))[:20]
         ],
     }
 
 
 def _normalize_location_quality_audit(payload: Any) -> dict[str, Any]:
-    location_quality_audit = _as_dict(payload)
+    location_quality_audit = as_json_object(payload)
     return {
         "totalRows": _clamped_int(location_quality_audit.get("totalRows"), 0, 0),
         "invalidLocationFieldCount": _clamped_int(
@@ -95,14 +87,13 @@ def _normalize_location_quality_audit(payload: Any) -> dict[str, Any]:
                 "reason": clean_text(item.get("reason")),
                 "value": clean_text(item.get("value")),
             }
-            for item in _as_list(location_quality_audit.get("examples"))[:20]
-            if isinstance(item, dict)
+            for item in json_object_rows(location_quality_audit.get("examples"))[:20]
         ],
     }
 
 
 def _normalize_city_garbage_audit(payload: Any) -> dict[str, Any]:
-    city_garbage_audit = _as_dict(payload)
+    city_garbage_audit = as_json_object(payload)
     return {
         "totalRows": _clamped_int(city_garbage_audit.get("totalRows"), 0, 0),
         "garbageRows": _clamped_int(city_garbage_audit.get("garbageRows"), 0, 0),
@@ -114,16 +105,15 @@ def _normalize_city_garbage_audit(payload: Any) -> dict[str, Any]:
                 "title": clean_text(item.get("title")),
                 "source": clean_text(item.get("source")),
                 "jobLink": clean_text(item.get("jobLink")),
-                "fields": _as_dict(item.get("fields")),
+                "fields": as_json_object(item.get("fields")),
             }
-            for item in _as_list(city_garbage_audit.get("examples"))[:20]
-            if isinstance(item, dict)
+            for item in json_object_rows(city_garbage_audit.get("examples"))[:20]
         ],
     }
 
 
 def _normalize_sector_quality_audit(payload: Any) -> dict[str, Any]:
-    sector_quality_audit = _as_dict(payload)
+    sector_quality_audit = as_json_object(payload)
     return {
         "totalRows": _clamped_int(sector_quality_audit.get("totalRows"), 0, 0),
         "downgradedGameSectorCount": _clamped_int(
@@ -138,15 +128,14 @@ def _normalize_sector_quality_audit(payload: Any) -> dict[str, Any]:
                 "rawSector": clean_text(item.get("rawSector")),
                 "normalizedSector": clean_text(item.get("normalizedSector")),
             }
-            for item in _as_list(sector_quality_audit.get("examples"))[:20]
-            if isinstance(item, dict)
+            for item in json_object_rows(sector_quality_audit.get("examples"))[:20]
         ],
     }
 
 
 def _normalize_outputs(payload: Any) -> dict[str, Any]:
-    outputs = _as_dict(payload)
-    changed = _as_dict(outputs.get("changed"))
+    outputs = as_json_object(payload)
+    changed = as_json_object(outputs.get("changed"))
     return {
         "json": clean_text(outputs.get("json")),
         "csv": clean_text(outputs.get("csv")),
@@ -164,7 +153,7 @@ def _normalize_outputs(payload: Any) -> dict[str, Any]:
 
 
 def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    src = _as_dict(payload)
+    src = as_json_object(payload)
     live_task_payload = normalize_live_task_payload(
         src,
         task_type="fetch",
@@ -173,12 +162,12 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         finished_at=clean_text(src.get("finishedAt")),
     )
     live_task_fields = build_live_task_contract_fields(live_task_payload)
-    summary = _as_dict(src.get("summary"))
-    source_rows = _as_list(src.get("sources"))
-    source_family_rows = _as_list(src.get("sourceFamilies"))
-    runtime = _as_dict(src.get("runtime"))
-    social_summary_raw = _as_dict(src.get("socialSummary"))
-    social_channels_raw = _as_dict(social_summary_raw.get("channels"))
+    summary = copy_json_object(src.get("summary"))
+    source_rows = json_object_rows(src.get("sources"))
+    source_family_rows = json_object_rows(src.get("sourceFamilies"))
+    runtime = as_json_object(src.get("runtime"))
+    social_summary_raw = as_json_object(src.get("socialSummary"))
+    social_channels_raw = as_json_object(social_summary_raw.get("channels"))
 
     normalized_payload = {
         "schemaVersion": SCHEMA_VERSION,
@@ -189,7 +178,7 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "finishedAt": clean_text(src.get("finishedAt")),
         **live_task_fields,
         "runtime": normalize_runtime_payload(runtime, selected_source_count=len(source_rows)),
-        "summary": dict(summary),
+        "summary": summary,
         "socialSummary": {
             "pilotWindowStartAt": clean_text(social_summary_raw.get("pilotWindowStartAt")),
             "pilotWindowEndAt": clean_text(social_summary_raw.get("pilotWindowEndAt")),
@@ -225,13 +214,9 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "locationQualityAudit": _normalize_location_quality_audit(src.get("locationQualityAudit")),
         "cityGarbageAudit": _normalize_city_garbage_audit(src.get("cityGarbageAudit")),
         "sectorQualityAudit": _normalize_sector_quality_audit(src.get("sectorQualityAudit")),
-        "sources": [
-            normalize_source_report_row(row) for row in source_rows if isinstance(row, dict)
-        ],
-        "sourceFamilies": [
-            normalize_source_report_row(row) for row in source_family_rows if isinstance(row, dict)
-        ],
-        "healthSummary": dict(_as_dict(src.get("healthSummary"))),
+        "sources": [normalize_source_report_row(row) for row in source_rows],
+        "sourceFamilies": [normalize_source_report_row(row) for row in source_family_rows],
+        "healthSummary": copy_json_object(src.get("healthSummary")),
         "outputs": _normalize_outputs(src.get("outputs")),
     }
     return normalized_payload

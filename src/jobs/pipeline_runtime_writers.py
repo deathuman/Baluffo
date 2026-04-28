@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_bootstrap import PipelinePaths
 from src.jobs.text_utils import clean_text
+from src.shared.json_shapes import as_json_object
 from src.shared.live_task import append_live_task_event
 from src.shared.utils import now_iso
 
@@ -321,8 +322,7 @@ def make_fetch_text_limited(
                         row = runtime.task_rows[current]
                         if row.get("status") == "running":
                             row["heartbeatAt"] = now_iso()
-                            progress_value = row.get("progress")
-                            progress = progress_value if isinstance(progress_value, dict) else {}
+                            progress = as_json_object(row.get("progress"))
                             progress["targetUrl"] = str(url or "").strip()
                             progress["targetLabel"] = host
                             if wait_reason_label:

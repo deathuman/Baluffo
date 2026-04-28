@@ -2,7 +2,8 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import cast
+
+from src.shared.json_shapes import as_json_object
 
 
 class FailureBucket(StrEnum):
@@ -58,10 +59,6 @@ class ZeroExtractAssessment:
 
 def _normalized_text(value: object) -> str:
     return str(value or "").strip().lower()
-
-
-def _as_dict(value: object) -> dict[str, object]:
-    return cast(dict[str, object], value) if isinstance(value, dict) else {}
 
 
 def _coerce_int(value: object) -> int:
@@ -153,40 +150,41 @@ def _has_site_changed_signal(error_lower: str) -> bool:
 def classification_context_from_source_detail(
     source_detail: dict[str, object],
 ) -> ClassificationContext:
-    stats = _as_dict(source_detail.get("stats"))
-    loss = _as_dict(source_detail.get("loss"))
-    http_status = _coerce_int(source_detail.get("httpStatus")) or None
-    fetched_count = _coerce_int(source_detail.get("fetchedCount"))
+    src = as_json_object(source_detail)
+    stats = as_json_object(src.get("stats"))
+    loss = as_json_object(src.get("loss"))
+    http_status = _coerce_int(src.get("httpStatus")) or None
+    fetched_count = _coerce_int(src.get("fetchedCount"))
     detail_pages_visited = _coerce_int(
-        source_detail.get("detailPagesVisited") or stats.get("detail_pages_visited")
+        src.get("detailPagesVisited") or stats.get("detail_pages_visited")
     )
     candidate_links_found = _coerce_int(
-        source_detail.get("candidateLinksFound") or stats.get("candidate_links_found")
+        src.get("candidateLinksFound") or stats.get("candidate_links_found")
     )
-    listing_jobs_found = _coerce_int(source_detail.get("listingJobsFound"))
+    listing_jobs_found = _coerce_int(src.get("listingJobsFound"))
     detail_parse_empty_count = _coerce_int(
-        source_detail.get("detailParseEmptyCount") or loss.get("staticDetailParseEmpty")
+        src.get("detailParseEmptyCount") or loss.get("staticDetailParseEmpty")
     )
     return ClassificationContext(
-        status=_normalized_text(source_detail.get("status")),
-        error=_normalized_text(source_detail.get("error")),
-        classification=_normalized_text(source_detail.get("classification")),
+        status=_normalized_text(src.get("status")),
+        error=_normalized_text(src.get("error")),
+        classification=_normalized_text(src.get("classification")),
         http_status=http_status,
         fetched_count=fetched_count,
-        browser_fallback_recommended=bool(source_detail.get("browserFallbackRecommended")),
-        empty_confirmed=bool(source_detail.get("emptyConfirmed")),
-        listing_changed=bool(source_detail.get("listingChanged")),
+        browser_fallback_recommended=bool(src.get("browserFallbackRecommended")),
+        empty_confirmed=bool(src.get("emptyConfirmed")),
+        listing_changed=bool(src.get("listingChanged")),
         listing_fingerprint_changed=bool(
-            source_detail.get("listingFingerprintChanged")
-            if "listingFingerprintChanged" in source_detail
-            else source_detail.get("listingChanged")
+            src.get("listingFingerprintChanged")
+            if "listingFingerprintChanged" in src
+            else src.get("listingChanged")
         ),
         detail_pages_visited=detail_pages_visited,
         candidate_links_found=candidate_links_found,
         listing_jobs_found=listing_jobs_found,
         detail_parse_empty_count=detail_parse_empty_count,
-        extractor_hint=_normalized_text(source_detail.get("extractorHint")),
-        signal_quality=_normalized_text(source_detail.get("signalQuality")) or "strong",
+        extractor_hint=_normalized_text(src.get("extractorHint")),
+        signal_quality=_normalized_text(src.get("signalQuality")) or "strong",
     )
 
 

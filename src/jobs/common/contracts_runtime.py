@@ -6,14 +6,7 @@ from typing import Any
 
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
+from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
 
 def _normalize_stage_totals(stage_totals: dict[str, Any]) -> dict[str, int]:
@@ -38,9 +31,7 @@ def _normalize_named_duration_rows(
     include_detail_fetch: bool = False,
 ) -> list[dict[str, Any]]:
     normalized_rows: list[dict[str, Any]] = []
-    for row in rows[:limit]:
-        if not isinstance(row, dict):
-            continue
+    for row in json_object_rows(rows)[:limit]:
         name = clean_text(row.get(name_key))
         if name_key == "stage" and not name:
             continue
@@ -69,8 +60,8 @@ def _normalize_named_duration_rows(
 def normalize_runtime_payload(
     runtime: dict[str, Any], *, selected_source_count: int
 ) -> dict[str, Any]:
-    src = runtime if isinstance(runtime, dict) else {}
-    lifecycle = src.get("lifecycle") if isinstance(src.get("lifecycle"), dict) else {}
+    src = as_json_object(runtime)
+    lifecycle = as_json_object(src.get("lifecycle"))
     payload = {
         "selectedSourceCount": _clamped_int(
             src.get("selectedSourceCount"), selected_source_count, 0
@@ -120,9 +111,7 @@ def normalize_runtime_payload(
             "heartbeatAt": clean_text(lifecycle.get("heartbeatAt")),
         }
 
-    slowest_sources_raw = (
-        src.get("slowestSources") if isinstance(src.get("slowestSources"), list) else []
-    )
+    slowest_sources_raw = as_json_list(src.get("slowestSources"))
     if slowest_sources_raw:
         payload["slowestSources"] = _normalize_named_duration_rows(
             slowest_sources_raw,
@@ -134,22 +123,24 @@ def normalize_runtime_payload(
     dead_listing_page_count = _clamped_int(src.get("deadListingPageCount"), 0, 0)
     if dead_listing_page_count > 0:
         payload["deadListingPageCount"] = dead_listing_page_count
-    dead_listing_page_examples = src.get("deadListingPageExamples")
-    if isinstance(dead_listing_page_examples, list):
+    dead_listing_page_examples = as_json_list(src.get("deadListingPageExamples"))
+    if dead_listing_page_examples:
         cleaned_examples = [
             clean_text(item) for item in dead_listing_page_examples if clean_text(item)
         ]
         if cleaned_examples:
             payload["deadListingPageExamples"] = cleaned_examples[:5]
 
-    timing_summary_raw = _as_dict(src.get("timingSummary"))
+    timing_summary_raw = as_json_object(src.get("timingSummary"))
     if timing_summary_raw:
-        stage_totals = _as_dict(timing_summary_raw.get("stageTotalsMs"))
-        stage_top = _as_list(timing_summary_raw.get("stageTop"))
-        adapter_timings = _as_list(timing_summary_raw.get("adapterTimings"))
-        slowest_adapters = _as_list(timing_summary_raw.get("slowestAdapters"))
-        high_cost_low_yield_sources = _as_list(timing_summary_raw.get("highCostLowYieldSources"))
-        detail_heavy_sources = _as_list(timing_summary_raw.get("detailHeavySources"))
+        stage_totals = as_json_object(timing_summary_raw.get("stageTotalsMs"))
+        stage_top = as_json_list(timing_summary_raw.get("stageTop"))
+        adapter_timings = as_json_list(timing_summary_raw.get("adapterTimings"))
+        slowest_adapters = as_json_list(timing_summary_raw.get("slowestAdapters"))
+        high_cost_low_yield_sources = as_json_list(
+            timing_summary_raw.get("highCostLowYieldSources")
+        )
+        detail_heavy_sources = as_json_list(timing_summary_raw.get("detailHeavySources"))
         payload["timingSummary"] = {
             "totalDurationMs": _clamped_int(timing_summary_raw.get("totalDurationMs"), 0, 0),
             "wallClockDurationMs": _clamped_int(

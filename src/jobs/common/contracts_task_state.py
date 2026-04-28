@@ -7,14 +7,11 @@ from typing import Any
 from src.contracts import SCHEMA_VERSION
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text, norm_text
+from src.shared.json_shapes import as_json_object
 from src.shared.live_task import (
     build_live_task_contract_fields,
     normalize_live_task_payload,
 )
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def normalize_task_state_payload(
@@ -25,7 +22,7 @@ def normalize_task_state_payload(
     finished_at: str = "",
     report_path: str = "",
 ) -> dict[str, Any]:
-    src = payload if isinstance(payload, dict) else {}
+    src = as_json_object(payload)
     normalized = normalize_live_task_payload(
         src,
         task_type="fetch",
@@ -34,8 +31,8 @@ def normalize_task_state_payload(
         finished_at=finished_at,
     )
     live_task_fields = build_live_task_contract_fields(normalized)
-    summary = _as_dict(src.get("summary"))
-    outputs = _as_dict(normalized.get("outputs"))
+    summary = as_json_object(src.get("summary"))
+    outputs = as_json_object(normalized.get("outputs"))
     return {
         "schemaVersion": SCHEMA_VERSION,
         "taskType": clean_text(normalized.get("taskType")) or "fetch",

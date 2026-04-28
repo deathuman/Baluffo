@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text
+from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
 SOCIAL_EXPERIMENT_REVIEW_FILENAME = "social-experiment-review.json"
 SOCIAL_EXPERIMENT_SAMPLE_SIZE = 50
@@ -27,10 +28,6 @@ OFFICIAL_BOARD_SOURCE_ADAPTERS = {
     "static",
 }
 OFFICIAL_BOARD_SOURCE_NAMES = {"epic_games_careers"}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 def _canonical_sort_key(row: dict[str, Any]) -> tuple[str, int, str, str, str]:
@@ -57,8 +54,7 @@ def _social_channel_for_source(source_name: Any) -> str:
 
 
 def _source_bundle_items(row: dict[str, Any]) -> list[dict[str, Any]]:
-    bundle = _as_list(row.get("sourceBundle"))
-    return [item for item in bundle if isinstance(item, dict)]
+    return cast(list[dict[str, Any]], json_object_rows(row.get("sourceBundle")))
 
 
 def _row_origin_info(row: dict[str, Any]) -> tuple[list[str], bool]:
@@ -115,9 +111,7 @@ def build_social_experiment_review_payload(
     rows: list[dict[str, Any]] = []
     reviewed_count = 0
     false_positive_count = 0
-    for row in review_rows:
-        if not isinstance(row, dict):
-            continue
+    for row in json_object_rows(list(review_rows)):
         decision = clean_text(row.get("reviewDecision"))
         reviewed = decision in {"true_positive", "false_positive"}
         if reviewed:
@@ -133,7 +127,7 @@ def build_social_experiment_review_payload(
                 "jobLink": clean_text(row.get("jobLink")),
                 "channels": [
                     clean_text(item)
-                    for item in _as_list(row.get("channels"))
+                    for item in as_json_list(row.get("channels"))
                     if clean_text(item) in {"reddit", "mastodon", "x"}
                 ],
                 "officialBoardOrigin": bool(row.get("officialBoardOrigin")),
@@ -173,15 +167,14 @@ def summarize_social_experiment(
 ) -> dict[str, Any]:
     social_rows = [
         row
-        for row in source_reports
-        if isinstance(row, dict)
-        and clean_text(row.get("name")) in {"social_reddit", "social_mastodon"}
+        for row in json_object_rows(list(source_reports))
+        if clean_text(row.get("name")) in {"social_reddit", "social_mastodon"}
     ]
     by_channel: dict[str, dict[str, Any]] = {}
     social_unique_total = 0
     social_overlap_total = 0
     for channel, source_name in {"reddit": "social_reddit", "mastodon": "social_mastodon"}.items():
-        channel_report = next(
+        channel_report: dict[str, Any] = next(
             (row for row in social_rows if clean_text(row.get("name")) == source_name),
             {},
         )
@@ -215,7 +208,7 @@ def summarize_social_experiment(
     low_conf_total = sum(int(row.get("lowConfidenceDropped") or 0) for row in social_rows)
     duplicate_total = max(0, kept_total - social_unique_total - social_overlap_total)
     duplicate_rate_total = (duplicate_total / kept_total) if kept_total > 0 else 0.0
-    review_payload = review_payload if isinstance(review_payload, dict) else {}
+    review_payload = as_json_object(review_payload)
     reviewed_count = int(review_payload.get("reviewedCount") or 0)
     false_positive_count = int(review_payload.get("falsePositiveCount") or 0)
     false_positive_rate = float(review_payload.get("falsePositiveRate") or 0.0)

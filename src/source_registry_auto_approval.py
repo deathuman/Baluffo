@@ -4,15 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 from src.shared.utils import now_iso
 from src.source_registry_identity import source_identity, unique_sources
 from src.source_registry_io import load_json_object, save_json_atomic
 from src.source_registry_state import (
     REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
-    _as_dict,
-    _as_list,
     transition_registry_to_active,
 )
 
@@ -34,7 +33,7 @@ def _normalize_discovery_health_status(value: Any) -> str:
 
 
 def _discovery_jobs_count(row: dict[str, Any], report: dict[str, Any] | None = None) -> int:
-    report_row = report if isinstance(report, dict) else {}
+    report_row = as_json_object(report)
     for value in (
         row.get("jobsFound"),
         row.get("sampleCount"),
@@ -53,7 +52,7 @@ def _discovery_jobs_count(row: dict[str, Any], report: dict[str, Any] | None = N
 def _discovery_row_has_blocking_error(
     row: dict[str, Any], report: dict[str, Any] | None = None
 ) -> bool:
-    report_row = report if isinstance(report, dict) else {}
+    report_row = as_json_object(report)
     last_probe_error = str(
         report_row.get("lastProbeError") or row.get("lastProbeError") or ""
     ).strip()
@@ -71,7 +70,7 @@ def _discovery_row_has_blocking_error(
 def _discovery_row_has_blocking_state(
     row: dict[str, Any], report: dict[str, Any] | None = None
 ) -> bool:
-    report_row = report if isinstance(report, dict) else {}
+    report_row = as_json_object(report)
     candidate_state = str(row.get("candidateState") or "").strip().lower()
     report_candidate_state = str(report_row.get("candidateState") or "").strip().lower()
     return candidate_state in {"quarantined", "rejected"} or report_candidate_state in {
@@ -83,7 +82,7 @@ def _discovery_row_has_blocking_state(
 def _rank_reason_tokens(row: dict[str, Any]) -> set[str]:
     return {
         str(item or "").strip()
-        for item in (row.get("rankReasons") or row.get("reasons") or [])
+        for item in as_json_list(row.get("rankReasons") or row.get("reasons"))
         if str(item or "").strip()
     }
 
@@ -96,9 +95,7 @@ def _pending_row_is_auto_approvable(
     weakSignal rows remain review-only even when they have job evidence.
     Report-side queue throttles such as domain_cap do not override a clean pending row.
     """
-    if not isinstance(row, dict):
-        return False
-    report = report_row if isinstance(report_row, dict) else {}
+    report = as_json_object(report_row)
     if bool(row.get("deferred")):
         return False
     if bool(row.get("weakSignal")) or bool(report.get("weakSignal")):
@@ -113,8 +110,6 @@ def _pending_row_is_auto_approvable(
 
 
 def _cap_deferred_candidate_is_auto_approvable(row: dict[str, Any]) -> bool:
-    if not isinstance(row, dict):
-        return False
     if not bool(row.get("deferred")):
         return False
     defer_reason = str(row.get("deferReason") or row.get("dropReason") or "").strip()
@@ -136,11 +131,14 @@ def _cap_deferred_candidate_is_auto_approvable(row: dict[str, Any]) -> bool:
 def _stamp_live_transition(
     row: dict[str, Any], *, approved_by: str, approved_at: str, promotion_reason: str = ""
 ) -> dict[str, Any]:
-    updated = transition_registry_to_active(
-        row,
-        reason=promotion_reason or REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
-        actor=approved_by,
-        at=approved_at,
+    updated = cast(
+        dict[str, Any],
+        transition_registry_to_active(
+            row,
+            reason=promotion_reason or REGISTRY_REASON_DISCOVERY_AUTO_APPROVE,
+            actor=approved_by,
+            at=approved_at,
+        ),
     )
     if promotion_reason:
         updated["promotionReason"] = str(promotion_reason)
@@ -155,7 +153,7 @@ def _promotion_reason_for_candidate(row: dict[str, Any]) -> str:
     jobs_found = max(0, int(row.get("jobsFound") or row.get("sampleCount") or 0))
     rank_reasons = {
         str(item or "").strip()
-        for item in (row.get("rankReasons") or row.get("reasons") or [])
+        for item in as_json_list(row.get("rankReasons") or row.get("reasons"))
         if str(item or "").strip()
     }
 
@@ -201,19 +199,16 @@ def apply_discovery_auto_approval(
     now_iso_fn: Callable[[], str] | None = now_iso,
 ) -> tuple[dict[str, list[dict[str, Any]]], int]:
     normalized_state = {
-        bucket: unique_sources(
-            dict(row) for row in list(state.get(bucket) or []) if isinstance(row, dict)
-        )
+        bucket: unique_sources(dict(row) for row in json_object_rows(state.get(bucket)))
         for bucket in ("active", "pending", "rejected")
     }
-    summary = _as_dict(report.get("summary"))
-    runtime = _as_dict(report.get("runtime"))
-    runtime_auto = _as_dict(runtime.get("autoApproval"))
-    report_candidates = _as_list(report.get("candidates"))
+    summary = as_json_object(report.get("summary"))
+    runtime = as_json_object(report.get("runtime"))
+    runtime_auto = as_json_object(runtime.get("autoApproval"))
+    report_candidates = as_json_list(report.get("candidates"))
+    report_candidate_rows = json_object_rows(report_candidates)
     report_candidates_by_id = {
-        source_identity(row): row
-        for row in report_candidates
-        if isinstance(row, dict) and source_identity(row)
+        source_identity(row): row for row in report_candidate_rows if source_identity(row)
     }
     approved_at = str(now_iso_fn() if callable(now_iso_fn) else now_iso())
     moved: list[dict[str, Any]] = []
@@ -241,9 +236,7 @@ def apply_discovery_auto_approval(
                 )
             else:
                 remaining.append(dict(row))
-        for row in report_candidates:
-            if not isinstance(row, dict):
-                continue
+        for row in report_candidate_rows:
             row_id = source_identity(row)
             if not row_id or row_id in active_ids or row_id in moved_ids:
                 continue

@@ -1,25 +1,18 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
+from src.shared.json_shapes import as_json_object, json_object_rows
 
 
 def _first_dict(value: Any) -> dict[str, Any]:
-    for item in _as_list(value):
-        if isinstance(item, dict):
-            return item
+    for item in json_object_rows(value):
+        return cast(dict[str, Any], item)
     return {}
 
 
 def _detail_stats(detail: dict[str, Any]) -> dict[str, Any]:
-    return _as_dict(detail.get("stats"))
+    return cast(dict[str, Any], as_json_object(detail.get("stats")))
 
 
 def _detail_stat_int(detail: dict[str, Any], key: str) -> int:
@@ -44,7 +37,7 @@ def build_runtime_timing_summary(
     norm_text_fn,
     percentile_ms_fn,
 ) -> dict[str, Any]:
-    rows = [row for row in source_reports if isinstance(row, dict)]
+    rows = json_object_rows(source_reports)
     durations = [max(0, int(row.get("durationMs") or 0)) for row in rows]
     stage_keys = [
         "fetchAndParse",
@@ -57,7 +50,7 @@ def build_runtime_timing_summary(
     ]
     stage_totals: dict[str, int] = {key: 0 for key in stage_keys}
     for row in rows:
-        stage_timings = _as_dict(row.get("stageTimingsMs"))
+        stage_timings = as_json_object(row.get("stageTimingsMs"))
         for key in stage_keys:
             stage_totals[key] += max(0, int(stage_timings.get(key) or 0))
     adapter_totals: dict[str, dict[str, int | str]] = {}
@@ -117,11 +110,15 @@ def build_runtime_timing_summary(
             "durationMs": max(0, int(row.get("durationMs") or 0)),
             "keptCount": max(0, int(row.get("keptCount") or 0)),
             "detailPagesVisited": int(
-                _as_dict(_first_dict(row.get("details")).get("stats")).get("detail_pages_visited")
+                as_json_object(_first_dict(row.get("details")).get("stats")).get(
+                    "detail_pages_visited"
+                )
                 or 0
             ),
             "detailYieldPct": int(
-                _as_dict(_first_dict(row.get("details")).get("stats")).get("detail_yield_percent")
+                as_json_object(_first_dict(row.get("details")).get("stats")).get(
+                    "detail_yield_percent"
+                )
                 or 0
             ),
         }
@@ -159,7 +156,7 @@ def build_runtime_timing_summary(
             "durationMs": max(0, int(row.get("durationMs") or 0)),
             "detailFetchMs": max(
                 0,
-                int(_as_dict(row.get("stageTimingsMs")).get("detailFetch") or 0),
+                int(as_json_object(row.get("stageTimingsMs")).get("detailFetch") or 0),
             ),
             "keptCount": max(0, int(row.get("keptCount") or 0)),
         }
@@ -169,11 +166,13 @@ def build_runtime_timing_summary(
                 for row in rows
                 if max(
                     0,
-                    int(_as_dict(row.get("stageTimingsMs")).get("detailFetch") or 0),
+                    int(as_json_object(row.get("stageTimingsMs")).get("detailFetch") or 0),
                 )
                 > 0
             ],
-            key=lambda item: int(_as_dict(item.get("stageTimingsMs")).get("detailFetch") or 0),
+            key=lambda item: int(
+                as_json_object(item.get("stageTimingsMs")).get("detailFetch") or 0
+            ),
             reverse=True,
         )[:10]
     ]
