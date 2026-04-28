@@ -7,6 +7,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlparse
 
 from src.shared.json_shapes import as_json_object, json_object_rows
 
@@ -128,6 +129,35 @@ def recovery_request_from_context(
         name=context.studio or context.page_url,
         studio=context.studio,
         page_url=context.page_url,
+        html=context.html,
+        payload=dict(context.payload),
+    )
+
+
+def http_recovery_request_from_context(
+    context: FetchedPageContext,
+    *,
+    adapter: str | None = None,
+    discovery_method: str | None = None,
+) -> DirectoryRecoveryRequest | None:
+    page_url = str(context.page_url or "").strip()
+    studio = str(context.studio or "").strip()
+    if not page_url or not studio:
+        return None
+    try:
+        parsed = urlparse(page_url)
+    except ValueError:
+        return None
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    method = discovery_method or context.discovery_method
+    return DirectoryRecoveryRequest(
+        key=context.recovery_key or page_url,
+        adapter=adapter or method,
+        discovery_method=method,
+        name=studio,
+        studio=studio,
+        page_url=page_url,
         html=context.html,
         payload=dict(context.payload),
     )

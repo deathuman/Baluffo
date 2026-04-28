@@ -139,6 +139,41 @@ def browser_recovery_candidate_row(
     return row
 
 
+def append_browser_recovery_candidate_row(
+    rows: list[dict[str, Any]],
+    *,
+    adapter: str,
+    name: str,
+    studio: str,
+    url: str,
+    reason_detail: str,
+    source_directory_entry_url: str | None = None,
+    discovery_method: str | None = None,
+    nl_priority: bool | None = None,
+    error: str | None = None,
+    company: str | None = None,
+    reason: str | None = None,
+) -> bool:
+    if not str(url or "").strip() or not str(studio or "").strip():
+        return False
+    rows.append(
+        browser_recovery_candidate_row(
+            adapter=adapter,
+            discovery_method=discovery_method,
+            name=name,
+            studio=studio,
+            company=company,
+            url=url,
+            source_directory_entry_url=source_directory_entry_url,
+            nl_priority=nl_priority,
+            reason_detail=reason_detail,
+            error=error,
+            reason=reason,
+        )
+    )
+    return True
+
+
 def browser_recovery_summary(
     browser_recovery_candidates: list[dict[str, Any]],
     *,

@@ -71,6 +71,66 @@ def test_browser_recovery_candidate_row_reproduces_gamedevmap_shape() -> None:
     }
 
 
+def test_append_browser_recovery_candidate_row_validates_and_preserves_shape() -> None:
+    rows: list[dict[str, object]] = []
+
+    assert (
+        browser_recovery.append_browser_recovery_candidate_row(
+            rows,
+            adapter="web_search",
+            discovery_method="web_search",
+            name="Studio (Browser Recovery)",
+            studio="Studio",
+            company="Studio",
+            url=" https://studio.example/jobs ",
+            source_directory_entry_url=" https://studio.example/jobs ",
+            nl_priority=True,
+            reason_detail="js_shell",
+            error="",
+        )
+        is True
+    )
+    assert (
+        browser_recovery.append_browser_recovery_candidate_row(
+            rows,
+            adapter="web_search",
+            discovery_method="web_search",
+            name="Missing URL",
+            studio="Studio",
+            url="",
+            reason_detail="js_shell",
+        )
+        is False
+    )
+    assert (
+        browser_recovery.append_browser_recovery_candidate_row(
+            rows,
+            adapter="web_search",
+            discovery_method="web_search",
+            name="Missing Studio",
+            studio="",
+            url="https://studio.example/jobs",
+            reason_detail="js_shell",
+        )
+        is False
+    )
+
+    assert rows == [
+        {
+            "name": "Studio (Browser Recovery)",
+            "studio": "Studio",
+            "company": "Studio",
+            "url": "https://studio.example/jobs",
+            "sourceDirectoryEntryUrl": "https://studio.example/jobs",
+            "nlPriority": True,
+            "discoveryMethod": "web_search",
+            "adapter": "web_search",
+            "reasonDetail": "js_shell",
+            "error": "",
+        }
+    ]
+
+
 def test_browser_recovery_summary_counts_reason_breakdown() -> None:
     assert browser_recovery.browser_recovery_summary(
         [

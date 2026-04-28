@@ -10,6 +10,7 @@ from src.source_discovery.directory_page_recovery import (
     dedupe_recovery_fetch_jobs,
     default_recovery_summary,
     fetch_recovery_jobs,
+    http_recovery_request_from_context,
     looks_like_js_shell,
     merge_scan_result_payloads,
     page_outcome_scan_rows,
@@ -396,6 +397,54 @@ def test_recovery_request_from_context_preserves_directory_request_shape() -> No
         page_url="https://studio.example/",
         html="<html></html>",
         payload={"detailUrl": "https://directory.example/studio"},
+    )
+
+
+def test_http_recovery_request_from_context_validates_url_and_studio() -> None:
+    context = FetchedPageContext(
+        page_url=" https://studio.example/jobs ",
+        html="<html></html>",
+        studio="Studio",
+        nl_priority=True,
+        discovery_method="web_search",
+        payload={"nlPriority": True},
+        recovery_key="seed-key",
+    )
+
+    assert http_recovery_request_from_context(context) == DirectoryRecoveryRequest(
+        key="seed-key",
+        adapter="web_search",
+        discovery_method="web_search",
+        name="Studio",
+        studio="Studio",
+        page_url="https://studio.example/jobs",
+        html="<html></html>",
+        payload={"nlPriority": True},
+    )
+
+    assert (
+        http_recovery_request_from_context(
+            FetchedPageContext(
+                page_url="ftp://studio.example/jobs",
+                html="",
+                studio="Studio",
+                nl_priority=False,
+                discovery_method="web_search",
+            )
+        )
+        is None
+    )
+    assert (
+        http_recovery_request_from_context(
+            FetchedPageContext(
+                page_url="https://studio.example/jobs",
+                html="",
+                studio="",
+                nl_priority=False,
+                discovery_method="web_search",
+            )
+        )
+        is None
     )
 
 

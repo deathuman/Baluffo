@@ -4,6 +4,7 @@ import pytest
 
 import src.source_discovery.directory_fetch as directory_fetch
 import src.source_discovery.web_search_candidates as web_candidates
+from src.source_discovery.page_outcomes import FetchedPageContext
 
 
 @pytest.mark.parametrize(
@@ -72,6 +73,79 @@ def test_infer_web_candidate_rejects_invalid_unknown_and_empty_provider_tokens()
         )
         is None
     )
+
+
+def test_web_recovery_request_preserves_shape_and_validation() -> None:
+    request = web_candidates._web_recovery_request(
+        FetchedPageContext(
+            page_url=" https://studio.example/jobs ",
+            html="<html></html>",
+            studio="Studio",
+            nl_priority=True,
+            discovery_method="web_search",
+            payload={"nlPriority": True},
+            recovery_key="seed-key",
+        )
+    )
+
+    assert request is not None
+    assert request.key == "seed-key"
+    assert request.adapter == "web_search"
+    assert request.discovery_method == "web_search"
+    assert request.name == "Studio"
+    assert request.studio == "Studio"
+    assert request.page_url == "https://studio.example/jobs"
+    assert request.html == "<html></html>"
+    assert request.payload == {"nlPriority": True}
+    assert (
+        web_candidates._web_recovery_request(
+            FetchedPageContext(
+                page_url="not a url",
+                html="",
+                studio="Studio",
+                nl_priority=False,
+                discovery_method="web_search",
+            )
+        )
+        is None
+    )
+
+
+def test_web_browser_recovery_append_preserves_shape_and_skips_incomplete_rows() -> None:
+    rows: list[dict[str, object]] = []
+
+    web_candidates._append_browser_recovery_candidate(
+        rows,
+        url=" https://studio.example/jobs ",
+        studio="Studio",
+        nl_priority=True,
+        discovery_method="web_search",
+        reason_detail="js_shell",
+        error="",
+    )
+    web_candidates._append_browser_recovery_candidate(
+        rows,
+        url="",
+        studio="Studio",
+        nl_priority=True,
+        discovery_method="web_search",
+        reason_detail="js_shell",
+    )
+
+    assert rows == [
+        {
+            "name": "Studio (Browser Recovery)",
+            "studio": "Studio",
+            "company": "Studio",
+            "url": "https://studio.example/jobs",
+            "sourceDirectoryEntryUrl": "https://studio.example/jobs",
+            "nlPriority": True,
+            "discoveryMethod": "web_search",
+            "adapter": "web_search",
+            "reasonDetail": "js_shell",
+            "error": "",
+        }
+    ]
 
 
 def test_build_web_search_queries_skips_blank_seeds_adds_site_queries_and_caps_results() -> None:

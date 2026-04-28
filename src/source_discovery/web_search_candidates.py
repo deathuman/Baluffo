@@ -36,6 +36,7 @@ from .directory_page_recovery import (
     RECOVERY_LOGIC_VERSION,
     DirectoryRecoveryRequest,
     apply_recovery_to_scan_result,
+    http_recovery_request_from_context,
     merge_scan_result_payloads,
     recovery_result_candidates_from_strategy,
     resolve_recovery_url_limit,
@@ -248,23 +249,7 @@ def _web_page_analysis_outcome(
 
 
 def _web_recovery_request(context: FetchedPageContext) -> DirectoryRecoveryRequest | None:
-    page_url = str(context.page_url or "").strip()
-    studio = str(context.studio or "").strip()
-    if not page_url or not studio:
-        return None
-    parsed = urlparse(page_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return None
-    return DirectoryRecoveryRequest(
-        key=context.recovery_key or page_url,
-        adapter=context.discovery_method,
-        discovery_method=context.discovery_method,
-        name=studio,
-        studio=studio,
-        page_url=page_url,
-        html=context.html,
-        payload=dict(context.payload),
-    )
+    return http_recovery_request_from_context(context)
 
 
 def _web_recovery_result_candidates(
@@ -300,29 +285,6 @@ def _browser_recoverable_error(error: str) -> bool:
     return shared_browser_recoverable_error(error)
 
 
-def _web_browser_recovery_candidate(
-    *,
-    url: str,
-    studio: str,
-    nl_priority: bool,
-    discovery_method: str,
-    reason_detail: str,
-    error: str = "",
-) -> dict[str, Any]:
-    return browser_recovery_helpers.browser_recovery_candidate_row(
-        adapter=discovery_method,
-        discovery_method=discovery_method,
-        name=f"{studio} (Browser Recovery)",
-        studio=studio,
-        company=studio,
-        url=url,
-        source_directory_entry_url=url,
-        nl_priority=nl_priority,
-        reason_detail=reason_detail,
-        error=error,
-    )
-
-
 def _append_browser_recovery_candidate(
     browser_recovery_candidates: list[dict[str, Any]],
     *,
@@ -333,17 +295,18 @@ def _append_browser_recovery_candidate(
     reason_detail: str,
     error: str = "",
 ) -> None:
-    if not str(url or "").strip() or not str(studio or "").strip():
-        return
-    browser_recovery_candidates.append(
-        _web_browser_recovery_candidate(
-            url=url,
-            studio=studio,
-            nl_priority=nl_priority,
-            discovery_method=discovery_method,
-            reason_detail=reason_detail,
-            error=error,
-        )
+    browser_recovery_helpers.append_browser_recovery_candidate_row(
+        browser_recovery_candidates,
+        adapter=discovery_method,
+        discovery_method=discovery_method,
+        name=f"{studio} (Browser Recovery)",
+        studio=studio,
+        company=studio,
+        url=url,
+        source_directory_entry_url=url,
+        nl_priority=nl_priority,
+        reason_detail=reason_detail,
+        error=error,
     )
 
 

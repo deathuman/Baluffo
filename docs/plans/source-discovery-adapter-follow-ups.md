@@ -7,7 +7,7 @@
 > - **Then inspect:** [`scraping-pipeline.md`](../scraping-pipeline.md), [`architecture-ai-map.md`](../architecture-ai-map.md), and the owning adapter modules
 > - **Last updated:** 2026-04-28
 
-The discovery adapter reuse effort has moved from "build the shared primitives" to "finish the remaining safe migrations without changing runtime behavior." Most high-duplication paths now have shared contracts. The remaining work is split between small safe refactors, strategy-contract cleanup, and deliberately behavior-changing tuning that should not be mixed into cleanup slices.
+The discovery adapter reuse effort has moved from "build the shared primitives" to evidence-led tuning and deliberately scoped behavior changes. Most high-duplication paths now have shared contracts. Remaining work should avoid broad cleanup sweeps and keep behavior-changing recovery, browser, queue, and tuning changes separate.
 
 ## Current Status Dashboard
 
@@ -16,7 +16,7 @@ The discovery adapter reuse effort has moved from "build the shared primitives" 
 | P0 Gameprog/Gamesmap twins | Complete for behavior-preserving extraction | Shared row templates, provenance, website scan skeleton, recovery contracts, scan setup, entry selection, recovery budgets, and Gamesmap index collection are in place. Remaining parser/index/category differences are source semantics, not shared skeleton backlog. |
 | P1a helper backfill | Complete for the current exhaustive sweep | Current mechanical helper backfills are shared across fetch/cache/probe/page/recovery/browser/audit runner paths. Future helper ideas should be filed as new scoped slices, not as open-ended P1a debt. |
 | P1b GameDevMap active-audit extraction | Largely complete | Lifecycle, cache, rerun state, homepage runtime, batch runtime, loop runtime, recovery contracts, probe classification, artifact updates, strategy assembly, and browser-recovery assembly are shared. Remaining work should focus on semantic strategy shape cleanup, not another broad extraction. |
-| P1c strategy contract normalization | In progress | `PageOutcomeStrategy`, active-audit strategies, browser-recovery assembly, shared recovery request/result payload contracts, scan-result merge payloads, and web/sheet recovery-result strategy backfills exist. Broader contracts for provenance and remaining adapter-specific result shapes are still future cleanup. |
+| P1c strategy contract normalization | Complete for behavior-preserving normalization | Shared page-outcome, active-audit, browser-recovery, recovery request/result, scan-result merge, web/sheet recovery-result, and web browser-row append contracts are in place. Remaining provenance/fallback callbacks are source semantics, not P1c debt. |
 | P2 recovery/browser/queue behavior | Mostly future work | HTTP recovery is shared and defaulted where already proven. Browser eligibility expansion and queue override adoption remain behavior-changing and need explicit before/after coverage. |
 | P3 evidence-led tuning and legacy cleanup | Future work | Use audit evidence to tune recovery budgets, skip rules, browser coverage, and old wrapper deletion after shared behavior is proven. |
 
@@ -57,12 +57,11 @@ The discovery adapter reuse effort has moved from "build the shared primitives" 
 
 ### P1c: Standardize Adapter Strategy Contracts
 
-**Type:** Safe refactor when callback-only; potentially behavior-changing if output shapes move.
+**Type:** Complete for behavior-preserving normalization.
 
-- Page-outcome callback wiring now uses `PageOutcomeStrategy`; remaining strategy work should target broader scan/recovery assembly, not provider/static classification callback plumbing.
-- Define shared strategy shapes for directory provenance, static fallback rows, no-candidate diagnostics, recovery requests, browser-recovery candidate rows, and any remaining adapter-specific result shapes.
-- Prefer callback-driven shared flow over adapter-owned branching.
-- Keep strategy contracts narrow enough that source-specific evidence fields stay explicit and testable.
+- Treat P1c as closed unless a future adapter introduces a concrete duplicate contract shape with an obvious adopter pair.
+- Keep directory provenance, static fallback rows, GameDevMap rejection/artifact fields, and row identity callbacks local when they encode source-specific evidence or persisted artifact semantics.
+- Move behavior-changing recovery/browser/queue ideas to P2, and evidence/tuning snapshots to P3.
 
 ### P2: Tune Default HTTP Recovery
 
@@ -152,6 +151,7 @@ The discovery adapter reuse effort has moved from "build the shared primitives" 
 - Completed recovery-contract slice: `web_search_candidates.py::_run_web_http_recovery` now uses shared recovery application/timing-remap helpers, and browser recovery reason summaries are counted by `browser_recovery.browser_recovery_summary`.
 - Completed audit-result contract slice: `web_search_candidates.py::_merge_web_scan_results` now uses shared scan-result payload merging for provider/static/browser rows, additive recovery counters, failures, timing, and completed URL identities.
 - Completed recovery-strategy backfill slice: `web_search_candidates.py::_web_recovery_result_candidates` and `sheet_directory.py::_sheet_recovery_result_candidates` now use shared recovery-result strategy assembly while preserving adapter-local evidence callbacks and payload shapes.
+- Completed P1c closure slice: web-derived recovery request validation and browser-recovery candidate appending now use shared helpers, while remaining provenance/fallback callbacks are documented as source-specific semantics.
 - Completed page-stage slice: seed-careers and web-search scanners now share page-job fetch, page-result routing, HTTP recovery, browser summary, candidate dedupe, timing, and completed-URL mechanics.
 - Completed diagnostics slice: `web_search_candidates.py` now calls the shared browser recovery fetch fallback directly; the private `_default_browser_fetcher` wrapper was pruned.
 - Completed default-recovery slice: web-derived audits run shared HTTP-only same-site recovery by default; `webSearch.activeAuditRecoveryEnabled=false` remains the rollback.
