@@ -93,9 +93,13 @@ In particular:
 
 - update signing material such as `BALUFFO_UPDATE_SIGNING_KEY` must never be committed
 - local configuration secrets must not be added to tracked files
+- production packaged sync config must stay out of tracked files as `packaging/github-app-sync-config.json`
+- generated local sync key material must stay out of tracked files as `packaging/github-app-sync-config.localkey.json`
+- machine-local config overrides must stay out of tracked files as `baluffo.config.local.json`
+- release workflow secrets such as `BALUFFO_SYNC_BUILD_PRIVATE_KEY_PEM` and `BALUFFO_DESKTOP_UPDATE_PRIVATE_KEY_B64` belong in GitHub encrypted secrets
 - release artifacts should not contain developer-local credentials, logs, or private runtime state
 
-If you believe a secret has been exposed in repository history, CI logs, or published artifacts, report it immediately.
+The contributor and CI lint gates run `gitleaks` through pre-commit to catch likely secrets before merge. If you believe a secret has been exposed in repository history, CI logs, or published artifacts, report it immediately, rotate the credential first, and treat any history rewrite as a separate high-risk follow-up.
 
 ## Release and Update Security
 
@@ -123,6 +127,7 @@ If contributing to Baluffo:
 3. **Validate and sanitize data before displaying it in the UI**
 4. **Avoid widening file-system access or data export/import behavior without review**
 5. **Keep release artifacts and build outputs free of local-only runtime state**
+6. **Run `npm run lint:precommit:changed` before committing security-sensitive changes**
 
 ## Dependency and Tooling Hygiene
 

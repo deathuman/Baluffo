@@ -87,6 +87,17 @@ The audit scans the checked-in `requirements-lock.txt` with `pip-audit`, writes 
 
 Known non-actionable findings must be listed in `tools/security/pip-audit-allowlist.json` with an advisory id, package, reason, owner, and `review_by` date. Expired or malformed allowlist entries are failures. Ownership defaults to the matching code owner; for repository-wide dependency findings, use the default owner from `CODEOWNERS`.
 
+## Secret scanning
+
+`gitleaks` runs through the existing pre-commit lane. Use the normal commands:
+
+```bash
+npm run lint:precommit:changed
+npm run lint:precommit:ci
+```
+
+The repo-specific tuning lives in `.gitleaks.toml`, with filename-aware hook routing in `scripts/gitleaks_precommit.py`. Keep allowlists narrow: allowlist known fake fixtures and documented placeholders, not whole test or docs trees. Normal PR and push CI scans the tracked file list passed by the lint workflow, including its existing `data/` exclusion. A full-history audit is a separate manual incident or rollout task, for example `gitleaks git --config .gitleaks.toml --redact --verbose .`, and should be followed by credential rotation before any history rewrite is considered.
+
 ## Test layout and fixtures
 
 The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `def test_*` functions.

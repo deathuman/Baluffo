@@ -21,6 +21,8 @@
 - Update docs when commands, contracts, or routing change
 - Add tests for new features in `tests/`
 - Keep PRs focused and describe your changes clearly
+- The pre-commit gate includes `gitleaks`; PRs and pushes fail when tracked or staged content appears to contain secrets
+- Keep real local and release secrets out of tracked files; use `baluffo.config.local.json`, ignored packaged sync config files, environment variables, or GitHub encrypted secrets as appropriate
 - Dependency vulnerability findings fail CI unless an entry in `tools/security/pip-audit-allowlist.json` has an advisory id, package, reason, owner, and unexpired review date
 - Keep perf artifacts in repo-local paths such as `.tmp/` and `_out/`; avoid new workflows that depend on `%LOCALAPPDATA%\\Temp`
 

@@ -1,0 +1,58 @@
+title = "Baluffo gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Invalid toy PEM blocks used by tests and CI placeholders"
+condition = "AND"
+paths = [
+  '''^tests/''',
+  '''^\.github/workflows/build-portable-exe\.yml$''',
+]
+regexTarget = "line"
+regexes = [
+  '''-----BEGIN (RSA )?PRIVATE KEY-----''',
+  '''-----END (RSA )?PRIVATE KEY-----''',
+  '''\\n(TEST|abc123|xyz789)\\n''',
+  '''QkFMVUZGTy1DSS1QTEFDRUhPTERFUg==''',
+]
+
+[[allowlists]]
+description = "Documented placeholder values for release and packaged sync setup"
+condition = "AND"
+paths = [
+  '''^docs/RELEASE\.md$''',
+  '''^packaging/README\.md$''',
+  '''^packaging/github-app-sync-config\.template\.json$''',
+]
+regexTarget = "line"
+regexes = [
+  '''replace-with-[A-Za-z0-9-]+''',
+  '''base64url-encrypted-private-key''',
+]
+
+[[allowlists]]
+description = "Literal fake secrets used to test diagnostic redaction behavior"
+condition = "AND"
+paths = [
+  '''^tests/''',
+]
+regexTarget = "line"
+regexes = [
+  '''owner-secret''',
+  '''api-secret''',
+  '''shared-secret''',
+]
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Ed25519 key class alias assignments are code references, not secret values"
+condition = "AND"
+paths = [
+  '''^src/ship/desktop_update\.py$''',
+]
+regexTarget = "line"
+regexes = [
+  '''Ed25519(Private|Public)Key = _Ed25519(Private|Public)Key''',
+]
