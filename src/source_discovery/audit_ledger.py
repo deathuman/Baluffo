@@ -130,7 +130,7 @@ def artifact_signature_matches(
 ) -> bool:
     if int(artifact.get("schemaVersion") or 0) != int(schema_version):
         return False
-    return _as_dict(artifact.get("runtime")).get("configSignature") == expected_signature
+    return bool(_as_dict(artifact.get("runtime")).get("configSignature") == expected_signature)
 
 
 def artifact_is_fresh(

@@ -47,6 +47,7 @@ from .page_diagnostics import (
 )
 from .page_outcomes import (
     FetchedPageContext,
+    PageOutcome,
     PageOutcomeStrategy,
     classify_fetched_page_with_strategy,
     classify_recovery_page_with_strategy,
@@ -215,7 +216,7 @@ def _web_page_analysis_outcome(
     payload: dict[str, Any] | None = None,
     recovery_request=None,
     enable_recovery: bool = False,
-):
+) -> PageOutcome:
     context = FetchedPageContext(
         page_url=page_url,
         html=page_html,

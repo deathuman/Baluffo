@@ -35,11 +35,12 @@ def top_failure_buckets(
 ) -> list[dict[str, int | str]]:
     rejected_counts = _count_pairs(rejected_reason_detail_counts)
     raw_failure_counts = _count_pairs(failure_counts)
-    return [
+    rows: list[dict[str, int | str]] = [
         {"key": str(key), "count": int(count)}
         for key, count in [*rejected_counts[:limit], *raw_failure_counts[:limit]]
         if key and count
-    ][: max(0, int(limit))]
+    ]
+    return rows[: max(0, int(limit))]
 
 
 def artifact_size_bytes(*, summary: dict[str, Any], runtime: dict[str, Any]) -> int:

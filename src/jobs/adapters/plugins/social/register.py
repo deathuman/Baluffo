@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
-from functools import partial
 from typing import Any, cast
 from urllib.parse import quote
 from xml.etree import ElementTree as ET
@@ -97,7 +96,7 @@ def _parse_reddit_json_result(
     text: str,
     *,
     subreddit: str,
-    min_confidence: float,
+    min_confidence: int,
     reject_for_hire_posts: bool,
     reject_reason_counts: dict[str, int],
     entry: dict[str, object],
@@ -128,7 +127,7 @@ def _parse_reddit_rss_result(
     text: str,
     *,
     subreddit: str,
-    min_confidence: float,
+    min_confidence: int,
     reject_for_hire_posts: bool,
     reject_reason_counts: dict[str, int],
 ) -> tuple[list[RawJob], int, str]:
@@ -153,7 +152,7 @@ def _run_reddit_html_fallback(
     retries: int,
     backoff_s: float,
     heartbeat_callback: Callable[[], None] | None,
-    min_confidence: float,
+    min_confidence: int,
     reject_for_hire_posts: bool,
     reject_reason_counts: dict[str, int],
     error_messages: list[str],
@@ -179,10 +178,10 @@ def _run_reddit_html_fallback(
         )
         return parsed, int(low_conf)
 
-    html_result = run_recoverable_adapter_attempt(
-        _html_attempt,
-        partial(_append_adapter_error, error_messages, "HTML fetch error"),
-    )
+    def _record_html_error(exc: Exception) -> None:
+        _append_adapter_error(error_messages, "HTML fetch error", exc)
+
+    html_result = run_recoverable_adapter_attempt(_html_attempt, _record_html_error)
     if html_result is None:
         return [], 0, False
     parsed_rows, low_conf_sub = html_result
@@ -242,23 +241,27 @@ def _run_reddit(
         parsed_rows: list[RawJob] = []
         low_conf_sub = 0
         reject_reason_counts: dict[str, int] = {}
-        error_messages = []
+        error_messages: list[str] = []
 
         # Add delay between requests to avoid rate limiting
         if i > 0:
             time.sleep(rate_limit_delay)
+
         # Try JSON API first
-        text = run_recoverable_adapter_attempt(
-            lambda json_url=json_url: fetch_with_retries(
+        def _fetch_json(json_url: str = json_url) -> str:
+            return fetch_with_retries(
                 json_url,
                 fetch_text,
                 timeout_s,
                 retries,
                 backoff_s,
                 heartbeat_callback=heartbeat_callback,
-            ),
-            partial(_append_adapter_error, error_messages, "JSON API error"),
-        )
+            )
+
+        def _record_json_error(exc: Exception, error_messages: list[str] = error_messages) -> None:
+            _append_adapter_error(error_messages, "JSON API error", exc)
+
+        text = run_recoverable_adapter_attempt(_fetch_json, _record_json_error)
         if text is not None:
             tick()
             parsed_rows, low_conf_sub, parse_error = _parse_reddit_json_result(
@@ -276,17 +279,23 @@ def _run_reddit(
 
         # Try RSS fallback if enabled and JSON failed
         if not parsed_rows and rss_fallback:
-            rss_text = run_recoverable_adapter_attempt(
-                lambda rss_url=rss_url: fetch_with_retries(
+
+            def _fetch_rss(rss_url: str = rss_url) -> str:
+                return fetch_with_retries(
                     rss_url,
                     fetch_text,
                     timeout_s,
                     retries,
                     backoff_s,
                     heartbeat_callback=heartbeat_callback,
-                ),
-                partial(_append_adapter_error, error_messages, "RSS fetch error"),
-            )
+                )
+
+            def _record_rss_error(
+                exc: Exception, error_messages: list[str] = error_messages
+            ) -> None:
+                _append_adapter_error(error_messages, "RSS fetch error", exc)
+
+            rss_text = run_recoverable_adapter_attempt(_fetch_rss, _record_rss_error)
             if rss_text is not None:
                 tick()
                 parsed_rows, low_conf_sub, parse_error = _parse_reddit_rss_result(

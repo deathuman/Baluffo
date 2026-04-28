@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from src import source_registry as source_registry_module
@@ -247,10 +247,13 @@ def _seed_careers_scan_rows(
             cache=web_audit_cache,
             discovery_method="seed_careers_page",
         )
-    return orchestrator.discover_seed_careers_page_candidates(
-        deps.timeout_s,
-        studio_seeds=list(discovery_config_module.STUDIO_SEEDS),
-        fetcher=deps.fetcher,
+    return cast(
+        ProviderStaticScanRows,
+        orchestrator.discover_seed_careers_page_candidates(
+            deps.timeout_s,
+            studio_seeds=list(discovery_config_module.STUDIO_SEEDS),
+            fetcher=deps.fetcher,
+        ),
     )
 
 
@@ -270,10 +273,13 @@ def _web_search_scan_rows(
             cache=web_audit_cache,
             discovery_method="web_search",
         )
-    return orchestrator.discover_web_search_candidates(
-        deps.timeout_s,
-        studio_seeds=list(discovery_config_module.STUDIO_SEEDS),
-        fetcher=deps.fetcher,
+    return cast(
+        ProviderStaticScanRows,
+        orchestrator.discover_web_search_candidates(
+            deps.timeout_s,
+            studio_seeds=list(discovery_config_module.STUDIO_SEEDS),
+            fetcher=deps.fetcher,
+        ),
     )
 
 
@@ -365,11 +371,14 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
                 fetcher=deps.fetcher,
             )
             return directory_audit_rows(sheet_artifact)
-        return orchestrator.discover_game_studio_sheet_candidates(
-            deps.timeout_s,
-            sheet_id=str(discovery_config_module.GAME_STUDIOS_SHEET_ID or "") or None,
-            gid=str(discovery_config_module.GAME_STUDIOS_SHEET_GID or "") or None,
-            fetcher=deps.fetcher,
+        return cast(
+            ProviderStaticScanRows,
+            orchestrator.discover_game_studio_sheet_candidates(
+                deps.timeout_s,
+                sheet_id=str(discovery_config_module.GAME_STUDIOS_SHEET_ID or "") or None,
+                gid=str(discovery_config_module.GAME_STUDIOS_SHEET_GID or "") or None,
+                fetcher=deps.fetcher,
+            ),
         )
 
     def _route_sheet_failures(
@@ -478,10 +487,13 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
             gameprog_config = dict(deps.effective_config.get("gameprog") or {})
             config_with_gameprog = dict(deps.effective_config)
             config_with_gameprog["gameprog"] = gameprog_config
-            return orchestrator.discover_gameprog_candidates(
-                deps.timeout_s,
-                config=config_with_gameprog,
-                fetcher=deps.fetcher,
+            return cast(
+                ProviderStaticScanRows,
+                orchestrator.discover_gameprog_candidates(
+                    deps.timeout_s,
+                    config=config_with_gameprog,
+                    fetcher=deps.fetcher,
+                ),
             )
 
         _run_provider_static_scan_stage(
@@ -502,10 +514,13 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
         )
 
         def _scan_gamedevmap() -> ProviderStaticScanRows:
-            return orchestrator.discover_gamedevmap_candidates(
-                deps.timeout_s,
-                config=deps.effective_config,
-                fetcher=deps.fetcher,
+            return cast(
+                ProviderStaticScanRows,
+                orchestrator.discover_gamedevmap_candidates(
+                    deps.timeout_s,
+                    config=deps.effective_config,
+                    fetcher=deps.fetcher,
+                ),
             )
 
         def _capture_gamedevmap_summary(

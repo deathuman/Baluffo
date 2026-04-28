@@ -273,8 +273,9 @@ def _load_x_query_payload(
         rss_errors: list[str] = []
         for instance in rss_instances:
             rss_url = f"{instance}/search/rss?f=tweets&q={quote(query, safe='')}"
-            result = run_recoverable_adapter_attempt(
-                lambda rss_url=rss_url: (
+
+            def _fetch_rss(rss_url: str = rss_url) -> tuple[str, str]:
+                return (
                     "rss",
                     fetch_with_retries(
                         rss_url,
@@ -284,9 +285,12 @@ def _load_x_query_payload(
                         backoff_s,
                         heartbeat_callback=heartbeat_callback,
                     ),
-                ),
-                lambda exc, instance=instance: rss_errors.append(f"{instance}: {exc}"),
-            )
+                )
+
+            def _record_rss_error(exc: Exception, instance: str = instance) -> None:
+                rss_errors.append(f"{instance}: {exc}")
+
+            result = run_recoverable_adapter_attempt(_fetch_rss, _record_rss_error)
             if result is not None:
                 return result
         raise AdapterValidationError.from_errors(rss_errors)

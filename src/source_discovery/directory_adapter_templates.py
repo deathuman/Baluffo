@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, cast
+
+from src.shared.json_shapes import as_json_object
 
 from . import audit_ledger
 from .directory_fetch_jobs import build_directory_fetch_jobs
@@ -319,6 +321,15 @@ def run_directory_website_scan(
         recovery_runner=recovery_runner,
     )
     recovery_summary = dict(recovery.summary)
+
+    def _fallback_static_key(entry: Any) -> str:
+        src = as_json_object(entry)
+        return str(src.get("key") or "")
+
+    def _fallback_static_candidate(entry: Any) -> dict[str, Any] | None:
+        candidate = as_json_object(as_json_object(entry).get("candidate"))
+        return dict(candidate) if candidate else None
+
     scan_payload = apply_recovery_to_scan_result(
         {
             "providerCandidates": provider_candidates,
@@ -331,12 +342,8 @@ def run_directory_website_scan(
         provider_dedupe=unique_sources_fn,
         static_dedupe=unique_sources_fn,
         fallback_static_candidates=fallback_static_candidates,
-        fallback_key=lambda entry: str(entry.get("key") or "") if isinstance(entry, dict) else "",
-        fallback_candidate=lambda entry: (
-            dict(entry.get("candidate"))
-            if isinstance(entry, dict) and isinstance(entry.get("candidate"), dict)
-            else None
-        ),
+        fallback_key=_fallback_static_key,
+        fallback_candidate=_fallback_static_candidate,
     )
     provider_candidates = list(scan_payload.get("providerCandidates") or [])
     static_candidates = list(scan_payload.get("staticCandidates") or [])
@@ -461,13 +468,13 @@ def run_directory_entry_selection_scan(
     write_cache: bool = True,
 ) -> dict[str, Any]:
     if not parsed_entries:
-        return empty_result()
+        return cast(dict[str, Any], empty_result())
 
     started = time.perf_counter()
     selected = select_entries(parsed_entries)
     if selection_timing_key:
         batch_timing[selection_timing_key] = audit_ledger.duration_ms(started)
-    selected = selected if isinstance(selected, dict) else {}
+    selected = as_json_object(selected)
     homepage_entries = list(selected.get("homepageEntries") or [])
     eligible_entries = int(selected.get("eligibleEntries") or len(homepage_entries))
     provider_candidates = list(selected.get("providerCandidates") or [])
@@ -493,7 +500,7 @@ def run_directory_entry_selection_scan(
         batch_timing=batch_timing,
         summary={
             **summary,
-            **dict(selected.get("summary") or {}),
+            **dict(as_json_object(selected.get("summary"))),
             "eligibleRows": eligible_entries,
         },
         progress_cursor=int(selected.get("progressCursor") or eligible_entries),

@@ -8,6 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.shared.json_shapes import as_json_object, json_object_rows
+
 from . import audit_ledger
 from .browser_recovery import browser_recovery_candidate_row
 from .directory_fetch import fetch_directory_pages
@@ -250,7 +252,7 @@ def dedupe_recovery_fetch_jobs(jobs: list[dict[str, Any]]) -> list[dict[str, Any
         url = str(job.get("url") or "").strip()
         if not url:
             continue
-        payload = dict(job.get("payload")) if isinstance(job.get("payload"), dict) else {}
+        payload = dict(as_json_object(job.get("payload")))
         existing = by_url.get(url)
         if existing is None:
             existing = {
@@ -262,14 +264,8 @@ def dedupe_recovery_fetch_jobs(jobs: list[dict[str, Any]]) -> list[dict[str, Any
             }
             by_url[url] = existing
         else:
-            existing_payload = (
-                dict(existing.get("payload")) if isinstance(existing.get("payload"), dict) else {}
-            )
-            requests = [
-                item
-                for item in list(existing_payload.get("requests") or [])
-                if isinstance(item, dict)
-            ]
+            existing_payload = dict(as_json_object(existing.get("payload")))
+            requests = json_object_rows(existing_payload.get("requests"))
             requests.append(payload)
             existing_payload["requests"] = requests
             existing_payload["dedupeCount"] = len(requests)
@@ -278,8 +274,8 @@ def dedupe_recovery_fetch_jobs(jobs: list[dict[str, Any]]) -> list[dict[str, Any
 
 
 def recovery_requests_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
-    payload = dict(result.get("payload")) if isinstance(result.get("payload"), dict) else {}
-    requests = [item for item in list(payload.get("requests") or []) if isinstance(item, dict)]
+    payload = dict(as_json_object(result.get("payload")))
+    requests = json_object_rows(payload.get("requests"))
     return requests or [payload]
 
 
@@ -444,7 +440,8 @@ def _record_recovery_failure(
     if not isinstance(failure, dict):
         return
     recovery_url = str(result.get("url") or "").strip()
-    for request in fanout_requests or [None]:
+    requests: list[DirectoryRecoveryRequest | None] = list(fanout_requests) or [None]
+    for request in requests:
         row = dict(failure)
         if request is not None:
             row["name"] = request.name

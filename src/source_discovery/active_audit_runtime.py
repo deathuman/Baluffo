@@ -762,11 +762,11 @@ def run_active_audit_batch(
         recovery_provider_rows,
         recovery_static_rows,
     )
-    homepage_failures = [
-        dict(result.get("failure"))
-        for result in homepage_fetch_results
-        if isinstance(result.get("failure"), dict)
-    ]
+    homepage_failures: list[dict[str, Any]] = []
+    for result in homepage_fetch_results:
+        failure = result.get("failure")
+        if isinstance(failure, dict):
+            homepage_failures.append(dict(failure))
     strategy.merge_artifact_updates(
         merged.candidates,
         homepage_result.browser_recovery_candidates,
