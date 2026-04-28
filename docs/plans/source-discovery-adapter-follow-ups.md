@@ -1,4 +1,4 @@
-﻿# Deletion-First Source Discovery Reset
+# Deletion-First Source Discovery Reset
 
 > - **Status:** Active deletion-first roadmap
 > - **Use this when:** planning source-discovery simplification, adapter deletion, active-source yield work, or discovery behavior changes
@@ -7,22 +7,23 @@
 > - **Then inspect:** [`scraping-pipeline.md`](../scraping-pipeline.md), [`DATA_CONTRACT.md`](../DATA_CONTRACT.md), and the owning source-discovery modules
 > - **Last updated:** 2026-04-28
 
-This tracker replaces the previous helper-first follow-up roadmap. The previous work created real shared primitives, but it did not achieve the lean adapter objective. The new product goal is simpler: find active job sources and real openings in acceptable time, while protecting saved jobs, local user data, and current UI/runtime invocation paths.
+This tracker covers only source-discovery adapters and orchestration. Job-fetcher adapters such as static, provider API, community, and social belong to [`adapter-plugin-inventory.md`](../adapter-plugin-inventory.md) and fetch pipeline docs.
 
-Source-discovery internals are now considered removable unless they demonstrably improve current active-source yield or preserve a protected runtime surface. Historical behavior, long-term rollback flags, adapter-local orchestration, and compatibility wrappers should not survive by default.
+The product goal is simple: find active job sources and real openings in acceptable time while protecting saved jobs, local user data, and current UI/runtime invocation paths. Source-discovery internals are removable unless they improve current active-source yield or preserve a protected runtime surface.
 
-## Current Verdict
+## Current Adapter State
 
-| Area | Verdict | Readout |
+| Area | Current state | Next pressure |
 | --- | --- | --- |
-| Shared logic adoption | Partially achieved | Shared fetch, audit, page outcome, recovery, probe, browser, queue, and reporting primitives exist and are used by multiple adapters. |
-| Thin adapters | In progress | Gameprog's public discovery entrypoint now delegates to the audit path and no longer owns the legacy cache branch. Gamesmap, Sheet-directory, Web-derived discovery, and GameDevMap still own substantial orchestration, wrappers, summaries, config glue, and artifact/report behavior. |
-| Complexity/LOC reduction | Not convincingly achieved | Complexity moved into shared helpers and callback surfaces, while many adapter modules remain large and several source-discovery C901 offenders remain in the baseline. |
-| Next direction | Deletion-first reset | Stop adding helpers as the success metric. Migrate adapters toward specs, delete legacy paths, and require net simplification. |
+| Shared audit runner | [`DirectoryAuditRunSpec`](../../src/source_discovery/directory_audit.py) and `run_directory_audit_spec` already exist; `discover_directory_adapter_candidates` still preserves rollback/direct-scan wiring for some adapters. | Thin adapter-owned lifecycle around the existing runner; do not plan as if the first audit runner still needs to be created. |
+| Gameprog | Migrated proof point. [`discover_gameprog_candidates`](../../src/source_discovery/gameprog.py) always returns rows from the audit artifact when enabled; `activeAuditEnabled=false` is accepted as legacy input but no longer routes to the old cache branch. | Keep as the deletion proof and later remove/rename the stale config field when other adapters no longer need the rollback convention. |
+| Gamesmap | Uses `DirectoryAuditRunSpec` in [`gamesmap_candidates.py`](../../src/source_discovery/gamesmap_candidates.py), but still has rollback/direct-path wiring and large scan/category/parser surfaces. | Delete rollback path after audit behavior is locked; reduce orchestration complexity before parser-only complexity. |
+| Sheet-directory | Uses `DirectoryAuditRunSpec` in [`sheet_directory.py`](../../src/source_discovery/sheet_directory.py), but still owns CSV parsing, recovery, summary, scan, and public direct-scan glue. | Best next low-risk thinning candidate because its source format and evidence are clear. |
+| Web-derived discovery | Uses `DirectoryAuditRunSpec` in [`web_search_candidates.py`](../../src/source_discovery/web_search_candidates.py), but still owns seed-careers/web-search scan, recovery, browser-recovery, and report complexity. | Keep after one simpler adapter proof because behavior is broader and failure modes are higher. |
+| GameDevMap | Uses a separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`; artifact/recovery behavior is larger than the directory-audit adapters. | Keep last until the source-discovery reset pattern is proven elsewhere. |
+| Stage wiring | [`orchestrator_generation.py`](../../src/source_discovery/orchestrator_generation.py) owns stage invocation and compatibility with current discovery flows. | Treat route changes as compatibility work and preserve task-start, busy-state, queue, pending review, and report behavior. |
 
 ## Protected Surfaces
-
-These are protected unless a future plan explicitly changes the product contract and test coverage:
 
 - Saved jobs and local user data.
 - Current frontend/local storage behavior for saved/local user sections.
@@ -32,61 +33,31 @@ These are protected unless a future plan explicitly changes the product contract
 
 ## Removable Surfaces
 
-These are not sacred and should be removed or collapsed when tests prove current active-source behavior remains acceptable:
-
-- Legacy direct discovery paths that duplicate the shared audit/runner path.
-- Long-term rollback flags such as permanent `activeAuditEnabled=false` alternate paths.
+- Legacy direct discovery paths that duplicate the shared audit path.
+- Permanent rollback branches such as long-term `activeAuditEnabled=false` alternate paths.
 - Adapter-owned fetch, retry, recovery, probe, dedupe, report, audit, and progress lifecycle code.
 - Compatibility wrappers that exist only because older discovery internals existed.
 - Historical report/cache/artifact details that are not consumed by the current UI/runtime or active maintenance workflow.
 
 ## Target Adapter Shape
 
-Adapters should become source specs plus parsers, not mini-orchestrators.
+Adapters should become source metadata plus parsers/evidence code. Shared runners should own fetch, retry, cache reuse, HTTP/browser recovery, probe classification, candidate dedupe, queue/pending movement, report summaries, progress writing, and artifact lifecycle.
 
-An adapter may own:
+Keep source-specific semantics local: source id, display name, stage labels, entry URLs, API endpoints, seed queries, parser callbacks, evidence metadata, row fields, and truly source-specific limits.
 
-- Source id, display name, and stage labels.
-- Entry URLs, API endpoints, or source-specific seed queries.
-- Parser for source-specific index, detail, CSV, JSON, or category formats.
-- Evidence metadata and source-specific row fields.
-- Optional limits that are truly source-specific.
-
-Shared runners should own:
-
-- Fetch, retry, cache reuse, and timing.
-- HTTP recovery and browser recovery.
-- Provider inference and static fallback generation.
-- Probe dispatch and probe result classification.
-- Candidate dedupe and queue/pending movement.
-- Report summary, audit/progress writing, and artifact lifecycle.
-
-A healthy adapter should read more like:
-
-```text
-SourceSpec(
-    id="gameprog",
-    display_name="GameProg",
-    entrypoints=[...],
-    parse_index=parse_gameprog_teams_json,
-    evidence=SourceEvidence(...),
-    limits=SourceLimits(...),
-)
-```
-
-## Hard Gates For Future Source-Discovery Refactors
+## Hard Gates
 
 - No new helper unless the same slice deletes or substantially thins adapter-owned code.
-- Every source-discovery refactor should be net LOC-negative unless it adds new source coverage.
-- No adapter implementation should own fetch, recovery, probe, dedupe, report, or audit lifecycle after migration.
+- Each source-discovery refactor should be net LOC-negative unless it adds new source coverage.
+- No adapter should own fetch, recovery, probe, dedupe, report, or audit lifecycle after migration.
 - No new source-discovery C901 offenders.
-- Existing source-discovery C901 offenders must trend down by count, complexity score, or line footprint.
+- Existing source-discovery C901 offenders must trend down by count, score, or line footprint.
 - Rollback paths must be temporary, named, tested, and include removal criteria.
 - Behavior changes are allowed inside discovery/fetch internals when protected surfaces remain tested.
 
 ## Current C901 Baseline
 
-From `scripts/complexity_baseline.json`, current source-discovery C901 offenders include:
+From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json), current source-discovery C901 offenders include:
 
 | Function | Score |
 | --- | ---: |
@@ -100,10 +71,12 @@ From `scripts/complexity_baseline.json`, current source-discovery C901 offenders
 | `src/source_discovery/sheet_directory.py::discover_game_studio_sheet_candidates` | 17 |
 | `src/source_discovery/gamedevmap.py::discover_gamedevmap_candidates` | 16 |
 | `src/source_discovery/provider_patterns.py::build_pattern_candidates` | 16 |
+| `src/source_discovery/sheet_directory.py::parse_game_studio_sheet_csv` | 16 |
 | `src/source_discovery/probe.py::fallback_probe_urls` | 15 |
 | `src/source_discovery/gamesmap_candidates.py::gamesmap_matches_category` | 14 |
 | `src/source_discovery/probe.py::async_probe_candidate` | 13 |
 | `src/source_discovery/provider_patterns.py::provider_reinforcement_score` | 13 |
+| `src/source_discovery/gamesmap_parsing.py::_parse_gamesmap_index_entries_with_diagnostics` | 13 |
 | `src/source_discovery/core_scoring.py::compute_candidate_rank` | 12 |
 | `src/source_discovery/gamesmap_parsing.py::_extract_json_array` | 11 |
 | `src/source_discovery/probe.py::probe_candidate` | 11 |
@@ -112,90 +85,66 @@ Parser complexity can remain temporarily when it is genuinely source-format comp
 
 ## Migration Sequence
 
-### 1. Reset Roadmap And Baseline Metrics
+### 1. Gameprog Proof Point: Preserve The Deleted Legacy Branch
 
-**Status:** Current slice.
-
-Replace helper-first roadmap language with this deletion-first charter, protected/removable surfaces, C901 baseline, target adapter shape, and hard gates.
-
-Projected result: future work has a clear simplification standard instead of rewarding abstraction without adapter thinning.
-
-### 2. Gameprog Proof Point: Delete Legacy Discovery Branch
-
-**Status:** Completed first code slice.
-
-Gameprog now treats the directory audit path as the public discovery path when the adapter is enabled. The old `activeAuditEnabled=false` legacy cache branch was removed from `discover_gameprog_candidates(...)`; fresh audit artifacts are the cache boundary.
-
-Projected result: the first deletion-first proof point is net LOC-negative, and `src/source_discovery/gameprog.py::discover_gameprog_candidates` no longer appears in the C901 baseline.
-
-Remaining removal criteria:
-
-- Keep `activeAuditEnabled=false` accepted as harmless legacy config input for now, but do not route Gameprog through a separate legacy implementation.
-- Remove or rename the Gameprog `activeAuditEnabled` config field from docs/defaults in a later config cleanup once other adapters no longer use the same rollback convention.
-
-### 3. Create Source-Spec Runner Contract
-
-Define a generic source-spec runner that accepts source metadata, entrypoints, parser callbacks, evidence metadata, and source limits.
-
-Projected result: adapters can move from orchestration modules to spec modules without losing source-specific parser/evidence behavior.
+Gameprog is the reference deletion slice. Keep `activeAuditEnabled=false` harmless for now, but do not restore the separate legacy cache/direct implementation.
 
 Acceptance criteria:
 
-- Contract is introduced with one adopter in the same slice.
-- The adopter is net LOC-negative.
-- No new source-discovery C901 offender is added.
-- Protected UI/runtime and saved/local-user surfaces are untouched.
+- `discover_gameprog_candidates(...)` continues to return audit-artifact rows when the adapter is enabled.
+- The old Gameprog cache path is not recreated.
+- Later config cleanup removes or renames the stale Gameprog flag after shared rollback convention cleanup.
 
-### 4. Migrate One Low-Risk Adapter Spec-First
+### 2. Sheet-directory Thinning
 
-Recommended next candidate: Sheet-directory.
-
-Gameprog proved the deletion gate by removing its legacy public discovery branch. Sheet-directory is now attractive because CSV parsing and evidence are clear, but the current sheet path has more candidate/recovery wrinkles.
-
-Projected result: one adapter stops owning fetch/recovery/probe/dedupe/report/audit lifecycle and becomes the proof point for deletion-first migration.
+Move Sheet-directory toward source metadata plus CSV parser/evidence code. Use the existing directory-audit runner instead of adding another runner layer.
 
 Acceptance criteria:
 
 - Adapter implementation is net LOC-negative.
-- Legacy direct path is deleted or explicitly temporary with removal criteria.
-- Adapter-specific parser and evidence semantics remain local.
-- Targeted adapter tests and `tests/source_discovery` pass.
+- Legacy direct scan is deleted or explicitly temporary with removal criteria.
+- CSV parsing and evidence semantics remain local.
+- Targeted Sheet-directory tests and `tests/source_discovery` pass.
 
-### 5. Remove Legacy Fallback Path For Migrated Adapter
+### 3. Gamesmap Thinning
 
-Delete permanent rollback paths after the spec-runner path is validated.
-
-Projected result: the codebase loses a second path instead of carrying both old and new discovery systems indefinitely.
+Delete rollback/direct-path wiring after audit behavior is locked, then reduce adapter-owned scan/category orchestration before touching source-format parser complexity.
 
 Acceptance criteria:
 
 - No runtime/UI caller depends on the deleted path.
-- Tests prove current discovery output remains acceptable for active-source behavior.
-- Config docs no longer imply rollback flags are long-term architecture.
+- Gamesmap audit rows remain acceptable for current discovery behavior.
+- C901 pressure in `gamesmap_candidates.py` trends down.
 
-### 6. Thin Test Scaffolding After Deletion Proofs
+### 4. Web-derived Discovery Thinning
 
-After a deletion slice lands and the new behavior is protected, consolidate repeated adapter test setup without weakening the guardrails.
+Apply the proven pattern to seed-careers and web-search after a simpler adapter has landed.
 
-For Gameprog specifically, later cleanup should reduce repeated audit-path, TTL, payload, and legacy-flag setup in the focused tests. Keep explicit assertions that the legacy Gameprog cache/direct branch is gone and fresh audit artifacts are the cache boundary.
+Acceptance criteria:
 
-Projected result: tests become leaner after behavior is locked, instead of blocking the initial deletion proof with premature test abstraction.
+- Seed-careers and web-search continue feeding candidates through the current queue, pending review, tombstone, and auto-approval path.
+- Browser-recovery artifact behavior remains explicit and tested.
+- Web-search C901/report complexity trends down.
+
+### 5. GameDevMap Reset
+
+Handle GameDevMap after the directory-audit adapters because it uses a larger active-source audit and recovery engine.
+
+Acceptance criteria:
+
+- Default discovery, dry-run audit, lost-recovery comparison, and explicit browser recovery keep their current invocation surfaces.
+- Artifact compatibility changes are documented and tested when needed.
+- Adapter-owned lifecycle decreases without weakening active-source yield.
+
+### 6. Test Scaffolding Cleanup
+
+After deletion slices land, consolidate repeated adapter test setup without weakening guardrails.
 
 Acceptance criteria:
 
 - Test changes are readability/LOC improvements only.
 - No production behavior changes in the same slice.
-- Existing guardrails still prove deleted legacy paths stay deleted.
-
-### 7. Repeat By Yield Priority
-
-Suggested order after the first proof point:
-
-- Gamesmap, because it still has large adapter-owned scan/category/orchestration surface.
-- Web-derived discovery, because it has high behavioral complexity and C901 risk.
-- GameDevMap, because it has the largest artifact/recovery surface and should wait until the spec-runner contract is proven elsewhere.
-
-Projected result: adapters converge toward specs, shared runners own lifecycle, and source-discovery complexity trends down instead of sideways.
+- Existing guardrails still prove deleted paths stay deleted.
 
 ## Validation Standard
 
