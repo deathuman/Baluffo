@@ -11,6 +11,7 @@ from src.source_discovery.directory_page_recovery import (
     default_recovery_summary,
     fetch_recovery_jobs,
     looks_like_js_shell,
+    merge_scan_result_payloads,
     page_outcome_scan_rows,
     plan_recovery_fetch_job_waves,
     plan_recovery_urls,
@@ -416,6 +417,82 @@ def test_page_outcome_scan_rows_preserves_adapter_scan_payload_shape() -> None:
         "recoveryRequests": [request],
         "fallbackStaticCandidates": [{"key": "fallback"}],
         "badProviderInferences": 2,
+    }
+
+
+def test_merge_scan_result_payloads_preserves_rows_and_callback_summaries() -> None:
+    def dedupe(rows):
+        seen: set[str] = set()
+        output = []
+        for row in rows:
+            url = str(row.get("url") or "")
+            if url in seen:
+                continue
+            seen.add(url)
+            output.append(row)
+        return output
+
+    def browser_summary(rows):
+        return {
+            "browserRecoveryCandidates": len(rows),
+            "browserRecoveredActiveCandidates": 0,
+        }
+
+    merged = merge_scan_result_payloads(
+        [
+            {
+                "providerCandidates": [{"adapter": "greenhouse"}],
+                "staticCandidates": [{"adapter": "static", "listing_url": "https://one/jobs"}],
+                "browserRecoveryCandidates": [{"url": "https://one"}, {"url": "https://dup"}],
+                "failures": [{"stage": "search"}],
+                "summary": {
+                    "recoveryFetchAttempts": 1,
+                    "recoveryFailures": 1,
+                    "webSearchSuccesses": 1,
+                },
+                "batchTiming": {"searchMs": 5},
+                "completedUrlIdentities": ["https://one"],
+            },
+            {
+                "providerCandidates": [{"adapter": "lever"}],
+                "staticCandidates": [{"adapter": "static", "listing_url": "https://two/jobs"}],
+                "browserRecoveryCandidates": [{"url": "https://dup"}, {"url": "https://two"}],
+                "failures": [{"stage": "page_fetch"}],
+                "summary": {
+                    "recoveryFetchAttempts": 2,
+                    "webSearchSuccesses": 3,
+                },
+                "batchTiming": {"searchMs": 9, "pageFetchMs": 4},
+                "completedUrlIdentities": ["https://two", ""],
+            },
+        ],
+        additive_summary_keys=("recoveryFetchAttempts", "recoveryFailures"),
+        browser_recovery_dedupe=dedupe,
+        browser_recovery_summary=browser_summary,
+        summary_defaults={"browserRecoveredActiveCandidates": 0},
+    )
+
+    assert merged == {
+        "providerCandidates": [{"adapter": "greenhouse"}, {"adapter": "lever"}],
+        "staticCandidates": [
+            {"adapter": "static", "listing_url": "https://one/jobs"},
+            {"adapter": "static", "listing_url": "https://two/jobs"},
+        ],
+        "browserRecoveryCandidates": [
+            {"url": "https://one"},
+            {"url": "https://dup"},
+            {"url": "https://two"},
+        ],
+        "failures": [{"stage": "search"}, {"stage": "page_fetch"}],
+        "summary": {
+            "recoveryFetchAttempts": 3,
+            "recoveryFailures": 1,
+            "webSearchSuccesses": 3,
+            "browserRecoveryCandidates": 3,
+            "browserRecoveredActiveCandidates": 0,
+        },
+        "batchTiming": {"searchMs": 9, "pageFetchMs": 4},
+        "completedUrlIdentities": ["https://one", "https://two"],
     }
 
 

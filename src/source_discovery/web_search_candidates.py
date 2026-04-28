@@ -36,6 +36,7 @@ from .directory_page_recovery import (
     RECOVERY_LOGIC_VERSION,
     DirectoryRecoveryRequest,
     apply_recovery_to_scan_result,
+    merge_scan_result_payloads,
     resolve_recovery_url_limit,
     run_recovery_for_requests,
 )
@@ -990,39 +991,13 @@ def _scan_web_search_candidates(
 
 
 def _merge_web_scan_results(results: list[dict[str, Any]]) -> dict[str, Any]:
-    provider_candidates: list[dict[str, Any]] = []
-    static_candidates: list[dict[str, Any]] = []
-    browser_recovery_candidates: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
-    summary: dict[str, Any] = {}
-    batch_timing: dict[str, Any] = {}
-    completed_url_identities: list[str] = []
-    for result in results:
-        provider_candidates.extend(list(result.get("providerCandidates") or []))
-        static_candidates.extend(list(result.get("staticCandidates") or []))
-        browser_recovery_candidates.extend(list(result.get("browserRecoveryCandidates") or []))
-        failures.extend(list(result.get("failures") or []))
-        result_summary = dict(result.get("summary") or {})
-        for key in WEB_SEARCH_RECOVERY_SUMMARY_KEYS:
-            if key in result_summary:
-                summary[key] = int(summary.get(key) or 0) + int(result_summary.pop(key) or 0)
-        summary.update(result_summary)
-        batch_timing.update(dict(result.get("batchTiming") or {}))
-        completed_url_identities.extend(
-            str(url) for url in list(result.get("completedUrlIdentities") or []) if str(url)
-        )
-    browser_recovery_rows = unique_sources(browser_recovery_candidates)
-    summary.update(_browser_recovery_summary(browser_recovery_rows))
-    summary.setdefault("browserRecoveredActiveCandidates", 0)
-    return {
-        "providerCandidates": provider_candidates,
-        "staticCandidates": static_candidates,
-        "browserRecoveryCandidates": browser_recovery_rows,
-        "failures": failures,
-        "summary": summary,
-        "batchTiming": batch_timing,
-        "completedUrlIdentities": completed_url_identities,
-    }
+    return merge_scan_result_payloads(
+        results,
+        additive_summary_keys=WEB_SEARCH_RECOVERY_SUMMARY_KEYS,
+        browser_recovery_dedupe=unique_sources,
+        browser_recovery_summary=_browser_recovery_summary,
+        summary_defaults={"browserRecoveredActiveCandidates": 0},
+    )
 
 
 def _candidate_with_probe_evidence(candidate: dict[str, Any], jobs_found: int) -> dict[str, Any]:

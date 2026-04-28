@@ -90,6 +90,7 @@ RecoveryJobNameFactory = Callable[[str, int], str]
 RecoveryRowsDedupe = Callable[[list[dict[str, Any]]], list[dict[str, Any]]]
 RecoveryFallbackKey = Callable[[Any], str]
 RecoveryFallbackCandidate = Callable[[Any], dict[str, Any] | None]
+ScanSummaryBuilder = Callable[[list[dict[str, Any]]], dict[str, int]]
 
 
 @dataclass
@@ -146,6 +147,55 @@ def page_outcome_scan_rows(
         "recoveryRequests": outcome.recovery_requests,
         "fallbackStaticCandidates": outcome.fallback_static_candidates,
         "badProviderInferences": outcome.bad_provider_inferences,
+    }
+
+
+def merge_scan_result_payloads(
+    results: list[dict[str, Any]],
+    *,
+    additive_summary_keys: tuple[str, ...] = (),
+    browser_recovery_dedupe: RecoveryRowsDedupe | None = None,
+    browser_recovery_summary: ScanSummaryBuilder | None = None,
+    summary_defaults: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    provider_candidates: list[dict[str, Any]] = []
+    static_candidates: list[dict[str, Any]] = []
+    browser_recovery_candidates: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    summary: dict[str, Any] = {}
+    batch_timing: dict[str, Any] = {}
+    completed_url_identities: list[str] = []
+    for result in results:
+        provider_candidates.extend(list(result.get("providerCandidates") or []))
+        static_candidates.extend(list(result.get("staticCandidates") or []))
+        browser_recovery_candidates.extend(list(result.get("browserRecoveryCandidates") or []))
+        failures.extend(list(result.get("failures") or []))
+        result_summary = dict(result.get("summary") or {})
+        for key in additive_summary_keys:
+            if key in result_summary:
+                summary[key] = int(summary.get(key) or 0) + int(result_summary.pop(key) or 0)
+        summary.update(result_summary)
+        batch_timing.update(dict(result.get("batchTiming") or {}))
+        completed_url_identities.extend(
+            str(url) for url in list(result.get("completedUrlIdentities") or []) if str(url)
+        )
+    browser_rows = (
+        browser_recovery_dedupe(browser_recovery_candidates)
+        if browser_recovery_dedupe is not None
+        else browser_recovery_candidates
+    )
+    if browser_recovery_summary is not None:
+        summary.update(browser_recovery_summary(browser_rows))
+    for key, value in dict(summary_defaults or {}).items():
+        summary.setdefault(key, value)
+    return {
+        "providerCandidates": provider_candidates,
+        "staticCandidates": static_candidates,
+        "browserRecoveryCandidates": browser_rows,
+        "failures": failures,
+        "summary": summary,
+        "batchTiming": batch_timing,
+        "completedUrlIdentities": completed_url_identities,
     }
 
 
