@@ -122,6 +122,7 @@ Acceptance criteria:
 - GameDevMap local `_as_list`, `_as_dict`, and `_safe_int` now delegate to shared active-audit helpers while preserving copy/default compatibility covered by targeted report tests.
 - Deferred active-audit API cleanup: the shared batch strategy still needs adapter-provided wiring for GameDevMap-specific labels and artifact bucket names; consider a named factory only if another active-source adapter needs the same lifecycle shape.
 - GameDevMap no longer ships default legacy `cachePath` or `cacheTtlMinutes`; external `cacheTtlMinutes` remains accepted as a temporary fallback for `activeAuditTtlMinutes` while legacy config compatibility is reviewed.
+- GameDevMap `activeAuditEnabled` remains accepted as harmless legacy input but no longer participates in the active-audit cache signature.
 - Deferred web-derived lifecycle cleanup: a shared browser-recovery save/merge wrapper is not currently equivalent. Web-search persists direct directory-audit summary counts, while GameDevMap persists through active-audit completed URL summarization.
 
 ### 6. Test Scaffolding Cleanup

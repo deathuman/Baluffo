@@ -310,6 +310,18 @@ def test_gamedevmap_active_audit_ttl_prefers_active_key_and_accepts_legacy_cache
     assert dry_run._active_audit_ttl_minutes({"cacheTtlMinutes": "bad"}) == 360
 
 
+def test_gamedevmap_cache_signature_ignores_legacy_active_audit_flag() -> None:
+    enabled_signature = gamedevmap._gamedevmap_cache_signature(
+        _config(activeAuditEnabled=True)["gamedevmap"]
+    )
+    disabled_signature = gamedevmap._gamedevmap_cache_signature(
+        _config(activeAuditEnabled=False)["gamedevmap"]
+    )
+
+    assert enabled_signature == disabled_signature
+    assert "activeAuditEnabled" not in enabled_signature
+
+
 def test_gamedevmap_followup_cli_flags_parse() -> None:
     args = discovery_orchestrator.parse_args(
         [

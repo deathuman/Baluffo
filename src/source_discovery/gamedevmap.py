@@ -47,7 +47,6 @@ def _gamedevmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "csvUrl": str(cfg.get("csvUrl") or "").strip(),
         "indexUrl": str(cfg.get("indexUrl") or "").strip(),
-        "activeAuditEnabled": bool(cfg.get("activeAuditEnabled", True)),
         "promoteValidatedStatic": bool(cfg.get("promoteValidatedStatic", True)),
         "activeAuditBatchSize": max(1, int(cfg.get("activeAuditBatchSize") or 1000)),
         "activeAuditHomepageFetchConcurrency": max(
