@@ -64,6 +64,7 @@ GameDevMap created much of the better logic but still has the largest local acti
 - Completed batch-runtime slice: GameDevMap active audit one-batch execution now uses shared sequencing for homepage fetch, recovery waves, candidate merge/probe dispatch, timing, progress, and completed-URL updates.
 - Completed run-loop slice: GameDevMap active audit outer loop now uses shared batch selection, cursor progress, max-batch stopping, completion writes, and per-batch write sequencing.
 - Completed strategy-contract slice: GameDevMap active audit now wires shared batch and loop runtime through compact strategy dataclasses instead of long ad hoc callback lists.
+- Completed active-batch contract slice: GameDevMap active audit now uses shared helpers for batch artifact candidate/browser merges, failure recording, rejected-row appends, summary increments, probe classification application, and recovery fetch-result application while keeping GameDevMap evidence and bucket names local.
 - Completed browser-analysis slice: `gamedevmap_active_dry_run.py::_analyze_browser_recovery_fetches` now uses shared rendered-fetch analysis.
 - Completed browser-merge slice: `gamedevmap_active_dry_run.py::_merge_browser_recovery_artifact_updates` and web-derived browser recovery now share merge orchestration, while adapter-specific artifact writes remain local.
 - Completed diagnostics slice: `gamedevmap_active_dry_run.py` now calls the shared browser recovery fetch fallback directly; the private `_default_browser_fetcher` wrapper was pruned.

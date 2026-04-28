@@ -13,6 +13,7 @@ from typing import Any
 from src.shared.utils import now_iso
 
 from . import audit_ledger
+from . import directory_page_recovery as directory_recovery_helpers
 
 
 @dataclass
@@ -408,6 +409,105 @@ def append_artifact_rows(
     rows: list[dict[str, Any]],
 ) -> None:
     artifact[field_name] = [*_as_list(artifact.get(field_name)), *[dict(row) for row in rows]]
+
+
+def merge_active_audit_batch_artifact_updates(
+    artifact: dict[str, Any],
+    *,
+    all_candidates: list[dict[str, Any]],
+    browser_recovery_rows: list[dict[str, Any]],
+    homepage_failures: list[dict[str, Any]],
+    recovery_failures: list[dict[str, Any]],
+    rejected_rows: list[dict[str, Any]],
+    all_candidates_key: str,
+    browser_candidates_key: str,
+    rejected_key: str,
+    unique_rows: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],
+    failure_sample_limit: int,
+) -> None:
+    artifact[all_candidates_key] = merge_unique_candidate_rows(
+        artifact.get(all_candidates_key),
+        all_candidates,
+        unique_rows=unique_rows,
+    )
+    artifact[browser_candidates_key] = merge_unique_candidate_rows(
+        artifact.get(browser_candidates_key),
+        browser_recovery_rows,
+        unique_rows=unique_rows,
+    )
+    record_failure_rows(artifact, homepage_failures, sample_limit=failure_sample_limit)
+    record_failure_rows(artifact, recovery_failures, sample_limit=failure_sample_limit)
+    append_artifact_rows(artifact, rejected_key, rejected_rows)
+
+
+def increment_active_audit_summary(
+    artifact: dict[str, Any],
+    batch_counts: dict[str, Any],
+) -> None:
+    summary = _as_dict(artifact.get("summary"))
+    for key, value in batch_counts.items():
+        summary[key] = _safe_int(summary.get(key)) + int(value or 0)
+    artifact["summary"] = summary
+
+
+def apply_active_audit_probe_results(
+    artifact: dict[str, Any],
+    probe_results: Any,
+    *,
+    classify_probe_results: Callable[..., Any],
+    probe_failed_rejection: Callable[..., dict[str, Any]],
+    zero_jobs_rejection: Callable[..., dict[str, Any]],
+    active_key: str,
+    zero_candidates_key: str,
+    rejected_key: str,
+    identity_fn: Callable[[dict[str, Any]], str],
+) -> None:
+    classification = classify_probe_results(
+        probe_results,
+        probe_failed_rejection=probe_failed_rejection,
+        zero_jobs_rejection=zero_jobs_rejection,
+    )
+    artifact[active_key] = merge_rows_by_identity(
+        artifact.get(active_key),
+        list(getattr(classification, "positive_candidates", []) or []),
+        identity_fn=identity_fn,
+    )
+    artifact[zero_candidates_key] = merge_rows_by_identity(
+        artifact.get(zero_candidates_key),
+        list(getattr(classification, "zero_job_candidates", []) or []),
+        identity_fn=identity_fn,
+    )
+    append_artifact_rows(
+        artifact,
+        rejected_key,
+        list(getattr(classification, "rejected_rows", []) or []),
+    )
+
+
+def apply_active_audit_recovery_fetch_results(
+    recovery_fetch_results: list[dict[str, Any]],
+    *,
+    grouped: dict[str, dict[str, Any]] | None = None,
+    finalize: bool = True,
+    apply_payload: directory_recovery_helpers.RecoveryPayloadApplier,
+    finalize_group: directory_recovery_helpers.RecoveryGroupFinalizer,
+) -> ActiveAuditRecoveryApplicationResult:
+    output = directory_recovery_helpers.apply_recovery_fetch_results(
+        recovery_fetch_results,
+        grouped=grouped,
+        finalize=finalize,
+        apply_payload=apply_payload,
+        finalize_group=finalize_group,
+    )
+    return ActiveAuditRecoveryApplicationResult(
+        provider_candidates=list(output.provider_candidates),
+        static_candidates=list(output.static_candidates),
+        rejected_rows=list(output.rejected_rows),
+        failures=list(output.failures),
+        pages_fetched=int(output.pages_fetched),
+        grouped_state=dict(output.grouped),
+        recovered_homepages=set(output.recovered_homepages),
+    )
 
 
 def append_batch_timing(artifact: dict[str, Any], timing: dict[str, Any]) -> None:

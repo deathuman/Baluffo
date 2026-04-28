@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from src.source_discovery import active_audit_runtime
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
 from src.source_discovery.directory_page_recovery import (
     build_recovery_fetch_job,
@@ -373,7 +374,11 @@ def test_gamedevmap_failure_aggregation_bounds_samples() -> None:
         for index in range(dry_run.FAILURE_SAMPLE_LIMIT + 5)
     ]
 
-    dry_run._record_failures(artifact, failures)
+    active_audit_runtime.record_failure_rows(
+        artifact,
+        failures,
+        sample_limit=dry_run.FAILURE_SAMPLE_LIMIT,
+    )
 
     assert artifact["failureCounts"] == {"x": dry_run.FAILURE_SAMPLE_LIMIT + 5}
     assert len(artifact["failureSamples"]) == dry_run.FAILURE_SAMPLE_LIMIT

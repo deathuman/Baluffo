@@ -50,6 +50,7 @@
     "tests/source_discovery/test_candidate_generation.py": 763,
     "tests/source_discovery/test_config_and_helpers.py": 570,
     "tests/source_discovery/test_coverage_targets.py": 403,
+    "tests/source_discovery/test_active_audit_runtime.py": 964,
     "tests/source_discovery/test_directory_sources.py": 926,
     "tests/source_discovery/test_run_discovery_flow.py": 1467,
     "tests/test_build_ship_bundle.py": 558,

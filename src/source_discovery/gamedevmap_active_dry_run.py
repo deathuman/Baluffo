@@ -321,14 +321,6 @@ def _append_batch_timing(artifact: dict[str, Any], timing: dict[str, Any]) -> No
     active_audit_runtime.append_batch_timing(artifact, timing)
 
 
-def _record_failures(artifact: dict[str, Any], failures: list[dict[str, Any]]) -> None:
-    active_audit_runtime.record_failure_rows(
-        artifact,
-        failures,
-        sample_limit=FAILURE_SAMPLE_LIMIT,
-    )
-
-
 def _summarize_artifact(
     artifact: dict[str, Any],
     *,
@@ -1311,7 +1303,7 @@ def _apply_recovery_results(
             )
         ]
 
-    output = directory_recovery_helpers.apply_recovery_fetch_results(
+    output = active_audit_runtime.apply_active_audit_recovery_fetch_results(
         recovery_fetch_results,
         grouped=grouped,
         finalize=finalize,
@@ -1325,7 +1317,7 @@ def _apply_recovery_results(
         output.rejected_rows,
         output.failures,
         output.pages_fetched,
-        output.grouped,
+        output.grouped_state,
         output.recovered_homepages,
     )
 
@@ -1417,8 +1409,10 @@ def _apply_probe_results(
     artifact: dict[str, Any],
     probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
 ) -> None:
-    classification = classify_probe_results(
+    active_audit_runtime.apply_active_audit_probe_results(
+        artifact,
         probe_results,
+        classify_probe_results=classify_probe_results,
         probe_failed_rejection=lambda candidate, error: _rejection(
             reason="probe_failed",
             candidate=candidate,
@@ -1431,21 +1425,10 @@ def _apply_probe_results(
             jobs_found=jobs_found,
             reason_detail="zero_jobs",
         ),
-    )
-    artifact["activeCandidates"] = active_audit_runtime.merge_rows_by_identity(
-        artifact.get("activeCandidates"),
-        classification.positive_candidates,
+        active_key="activeCandidates",
+        zero_candidates_key="zeroJobCandidates",
+        rejected_key="rejectedForActivation",
         identity_fn=_candidate_id,
-    )
-    artifact["zeroJobCandidates"] = active_audit_runtime.merge_rows_by_identity(
-        artifact.get("zeroJobCandidates"),
-        classification.zero_job_candidates,
-        identity_fn=_candidate_id,
-    )
-    active_audit_runtime.append_artifact_rows(
-        artifact,
-        "rejectedForActivation",
-        classification.rejected_rows,
     )
 
 
@@ -1640,22 +1623,18 @@ def _merge_gamedevmap_active_batch_artifact_updates(
     recovery_failures: list[dict[str, Any]],
     rejected_rows: list[dict[str, Any]],
 ) -> None:
-    artifact["allCandidates"] = active_audit_runtime.merge_unique_candidate_rows(
-        artifact.get("allCandidates"),
-        all_candidates,
-        unique_rows=unique_sources,
-    )
-    artifact["browserRecoveryCandidates"] = active_audit_runtime.merge_unique_candidate_rows(
-        artifact.get("browserRecoveryCandidates"),
-        browser_recovery_rows,
-        unique_rows=unique_sources,
-    )
-    _record_failures(artifact, homepage_failures)
-    _record_failures(artifact, recovery_failures)
-    active_audit_runtime.append_artifact_rows(
+    active_audit_runtime.merge_active_audit_batch_artifact_updates(
         artifact,
-        "rejectedForActivation",
-        rejected_rows,
+        all_candidates=all_candidates,
+        browser_recovery_rows=browser_recovery_rows,
+        homepage_failures=homepage_failures,
+        recovery_failures=recovery_failures,
+        rejected_rows=rejected_rows,
+        all_candidates_key="allCandidates",
+        browser_candidates_key="browserRecoveryCandidates",
+        rejected_key="rejectedForActivation",
+        unique_rows=unique_sources,
+        failure_sample_limit=FAILURE_SAMPLE_LIMIT,
     )
 
 
@@ -1663,10 +1642,7 @@ def _update_gamedevmap_active_batch_summary(
     artifact: dict[str, Any],
     batch_counts: dict[str, Any],
 ) -> None:
-    summary = _as_dict(artifact.get("summary"))
-    for key, value in batch_counts.items():
-        summary[key] = _safe_int(summary.get(key)) + int(value or 0)
-    artifact["summary"] = summary
+    active_audit_runtime.increment_active_audit_summary(artifact, batch_counts)
 
 
 def _build_gamedevmap_active_batch_strategy(

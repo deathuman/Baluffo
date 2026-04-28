@@ -4,7 +4,9 @@ from collections.abc import Iterable
 from typing import Any
 
 
-def _capture_index_call_failure(*, name: str, adapter: str, stage: str, call: Any) -> tuple[Any, Any]:
+def _capture_index_call_failure(
+    *, name: str, adapter: str, stage: str, call: Any
+) -> tuple[Any, Any]:
     try:
         return call(), None
     except Exception as exc:  # noqa: BLE001
@@ -66,7 +68,7 @@ def collect_directory_index_entries(
             name=url,
             adapter=adapter,
             stage=fetch_failure_stage,
-            call=lambda: fetcher(url, timeout_s),
+            call=lambda url=url: fetcher(url, timeout_s),
         )
         if failure:
             failures.append(failure)
@@ -76,7 +78,7 @@ def collect_directory_index_entries(
             name=url,
             adapter=adapter,
             stage=parse_failure_stage,
-            call=lambda: parse_index_entries(index_html, base_url, **kwargs),
+            call=lambda index_html=index_html: parse_index_entries(index_html, base_url, **kwargs),
         )
         if failure:
             failures.append(failure)

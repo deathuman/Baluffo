@@ -4,15 +4,19 @@ import json
 from pathlib import Path
 
 from src.source_discovery.active_audit_runtime import (
+    ActiveAuditRecoveryApplicationResult,
     HomepagePageOutcome,
     NoCandidateOutcome,
     active_audit_artifact_counts,
     append_artifact_rows,
+    apply_active_audit_probe_results,
+    apply_active_audit_recovery_fetch_results,
     compare_recovered_active_maps,
     create_active_audit_artifact,
     finalize_active_audit_artifact,
     index_rejections_by_identity,
     load_or_initialize_active_audit_artifact,
+    merge_active_audit_batch_artifact_updates,
     merge_rows_by_identity,
     merge_unique_candidate_rows,
     prune_rerun_rejections,
@@ -225,6 +229,195 @@ def test_append_rows_and_record_failures_preserve_artifact_state() -> None:
     assert artifact["rejectedForActivation"] == [{"reason": "old"}, {"reason": "new"}]
     assert artifact["failureCounts"] == {"homepage_fetch": 2}
     assert artifact["failures"] == [{"stage": "homepage_fetch", "error": "timeout"}]
+
+
+def test_merge_active_audit_batch_artifact_updates_uses_configured_buckets() -> None:
+    artifact: dict[str, object] = {
+        "allRows": [{"url": "https://old.example"}],
+        "browserRows": [{"url": "https://shell.example"}],
+        "rejections": [{"reason": "old"}],
+    }
+
+    def unique_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+        output: dict[str, dict[str, object]] = {}
+        for row in rows:
+            output[str(row.get("url") or row.get("reason") or len(output))] = row
+        return list(output.values())
+
+    merge_active_audit_batch_artifact_updates(
+        artifact,
+        all_candidates=[
+            {"url": "https://old.example", "updated": True},
+            {"url": "https://new.example"},
+        ],
+        browser_recovery_rows=[
+            {"url": "https://shell.example", "updated": True},
+            {"url": "https://new-shell.example"},
+        ],
+        homepage_failures=[{"stage": "homepage_fetch", "error": "timeout"}],
+        recovery_failures=[{"stage": "recovery_fetch", "error": "dns"}],
+        rejected_rows=[{"reason": "new"}],
+        all_candidates_key="allRows",
+        browser_candidates_key="browserRows",
+        rejected_key="rejections",
+        unique_rows=unique_rows,
+        failure_sample_limit=5,
+    )
+
+    assert artifact["allRows"] == [
+        {"url": "https://old.example", "updated": True},
+        {"url": "https://new.example"},
+    ]
+    assert artifact["browserRows"] == [
+        {"url": "https://shell.example", "updated": True},
+        {"url": "https://new-shell.example"},
+    ]
+    assert artifact["rejections"] == [{"reason": "old"}, {"reason": "new"}]
+    assert artifact["failureCounts"] == {"homepage_fetch": 1, "recovery_fetch": 1}
+
+
+def test_increment_active_audit_summary_accumulates_repeated_batches() -> None:
+    from src.source_discovery.active_audit_runtime import increment_active_audit_summary
+
+    artifact: dict[str, object] = {"summary": {"homepageFetchAttempts": 2}}
+
+    increment_active_audit_summary(
+        artifact,
+        {"homepageFetchAttempts": 3, "recoveryFetchAttempts": 1},
+    )
+    increment_active_audit_summary(
+        artifact,
+        {"homepageFetchAttempts": 4, "recoveryFetchAttempts": 2},
+    )
+
+    assert artifact["summary"] == {
+        "homepageFetchAttempts": 9,
+        "recoveryFetchAttempts": 3,
+    }
+
+
+def test_apply_active_audit_probe_results_uses_configured_buckets() -> None:
+    class Classification:
+        positive_candidates = [{"sourceId": "active", "jobsFound": 3}]
+        zero_job_candidates = [{"sourceId": "zero", "jobsFound": 0}]
+        rejected_rows = [{"reason": "zero_jobs"}]
+
+    calls: list[object] = []
+    artifact: dict[str, object] = {
+        "activeRows": [{"sourceId": "active", "old": True}],
+        "zeroRows": [],
+        "rejections": [],
+    }
+
+    apply_active_audit_probe_results(
+        artifact,
+        [("probe",)],
+        classify_probe_results=lambda probe_results, **kwargs: (
+            calls.append((probe_results, kwargs)) or Classification()
+        ),
+        probe_failed_rejection=lambda *_args: {"reason": "probe_failed"},
+        zero_jobs_rejection=lambda *_args: {"reason": "zero_jobs"},
+        active_key="activeRows",
+        zero_candidates_key="zeroRows",
+        rejected_key="rejections",
+        identity_fn=lambda row: str(row.get("sourceId") or ""),
+    )
+
+    assert artifact["activeRows"] == [{"sourceId": "active", "jobsFound": 3}]
+    assert artifact["zeroRows"] == [{"sourceId": "zero", "jobsFound": 0}]
+    assert artifact["rejections"] == [{"reason": "zero_jobs"}]
+    assert calls[0][0] == [("probe",)]
+    assert set(calls[0][1]) == {"probe_failed_rejection", "zero_jobs_rejection"}
+
+
+def test_apply_active_audit_recovery_fetch_results_preserves_group_state() -> None:
+    grouped = {
+        "https://one.example": {
+            "row": {"studio": "One"},
+            "attempts": 1,
+            "fetched": 1,
+            "candidates": 0,
+            "failures": 0,
+        }
+    }
+
+    def apply_payload(
+        payload: dict[str, object],
+        result: dict[str, object],
+        grouped_rows: dict[str, dict[str, object]],
+        provider_candidates: list[dict[str, object]],
+        static_candidates: list[dict[str, object]],
+    ) -> str:
+        homepage = str(payload.get("homepageUrl") or "")
+        group = grouped_rows.setdefault(homepage, {"attempts": 0, "candidates": 0})
+        group["attempts"] = int(group.get("attempts") or 0) + 1
+        if bool(result.get("ok")):
+            group["candidates"] = int(group.get("candidates") or 0) + 1
+            static_candidates.append({"url": result["url"], "homepage": homepage})
+            return homepage
+        return ""
+
+    def finalize_group(group: dict[str, object]) -> list[dict[str, object]]:
+        if int(group.get("candidates") or 0) > 0:
+            return []
+        return [{"reason": "no_careers_evidence", "studio": group.get("row", {}).get("studio")}]
+
+    wave1 = apply_active_audit_recovery_fetch_results(
+        [
+            {
+                "ok": True,
+                "url": "https://one.example/careers",
+                "payload": {"homepageUrl": "https://one.example"},
+            }
+        ],
+        grouped=grouped,
+        finalize=False,
+        apply_payload=apply_payload,
+        finalize_group=finalize_group,
+    )
+    wave2 = apply_active_audit_recovery_fetch_results(
+        [],
+        grouped=wave1.grouped_state,
+        finalize=True,
+        apply_payload=apply_payload,
+        finalize_group=finalize_group,
+    )
+
+    assert isinstance(wave1, ActiveAuditRecoveryApplicationResult)
+    assert wave1.pages_fetched == 1
+    assert wave1.static_candidates == [
+        {"url": "https://one.example/careers", "homepage": "https://one.example"}
+    ]
+    assert wave1.recovered_homepages == {"https://one.example"}
+    assert wave2.rejected_rows == []
+
+
+def test_apply_active_audit_recovery_fetch_results_finalizes_unrecovered_groups() -> None:
+    grouped = {
+        "https://quiet.example": {
+            "row": {"studio": "Quiet"},
+            "attempts": 1,
+            "fetched": 1,
+            "candidates": 0,
+            "failures": 0,
+        }
+    }
+
+    result = apply_active_audit_recovery_fetch_results(
+        [],
+        grouped=grouped,
+        finalize=True,
+        apply_payload=lambda *_args: "",
+        finalize_group=lambda group: [
+            {
+                "reason": "no_careers_evidence",
+                "studio": dict(group.get("row") or {}).get("studio"),
+            }
+        ],
+    )
+
+    assert result.grouped_state == grouped
+    assert result.rejected_rows == [{"reason": "no_careers_evidence", "studio": "Quiet"}]
 
 
 def test_active_audit_artifact_counts_uses_caller_bucket_names() -> None:
