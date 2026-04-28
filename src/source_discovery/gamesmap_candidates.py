@@ -23,6 +23,7 @@ from .directory_audit import (
     run_directory_audit_spec,
 )
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
+from .directory_index_collection import collect_directory_index_entries
 from .directory_page_recovery import (
     DEFAULT_RECOVERY_URL_LIMIT,
     DirectoryRecoveryRequest,
@@ -452,54 +453,16 @@ def _gamesmap_collect_detail_entries(
     prefer_english: bool,
     max_detail_pages: int,
 ) -> dict[str, Any]:
-    failures: list[dict[str, Any]] = []
-    detail_entries: list[dict[str, Any]] = []
-    seen_details = set()
-    unresolved_reference_count = 0
-    for index_url in index_urls:
-        try:
-            index_html = fetcher(index_url, timeout_s)
-        except Exception as exc:  # noqa: BLE001
-            failures.append(
-                {
-                    "name": index_url,
-                    "adapter": "gamesmap",
-                    "error": str(exc),
-                    "stage": "directory_index_fetch",
-                }
-            )
-            continue
-        parsed_entries, diagnostics = parse_index_entries(
-            index_html,
-            base_url,
-            prefer_english=prefer_english,
-        )
-        unresolved_reference_count += int(diagnostics.get("unresolvedReferenceCount") or 0)
-        if not parsed_entries:
-            failures.append(
-                {
-                    "name": index_url,
-                    "adapter": "gamesmap",
-                    "error": "no entries parsed from index",
-                    "stage": "directory_index_parse",
-                }
-            )
-            continue
-        for entry in parsed_entries:
-            detail_url = str(entry.get("detailUrl") or "").strip()
-            if not detail_url or detail_url in seen_details:
-                continue
-            seen_details.add(detail_url)
-            detail_entries.append(entry)
-            if max_detail_pages and len(detail_entries) >= max_detail_pages:
-                break
-        if max_detail_pages and len(detail_entries) >= max_detail_pages:
-            break
-    return {
-        "detailEntries": detail_entries,
-        "failures": failures,
-        "unresolvedReferenceCount": unresolved_reference_count,
-    }
+    return collect_directory_index_entries(
+        timeout_s=timeout_s,
+        fetcher=fetcher,
+        parse_index_entries=parse_index_entries,
+        base_url=base_url,
+        index_urls=index_urls,
+        adapter="gamesmap",
+        parse_kwargs={"prefer_english": prefer_english},
+        max_entries=max_detail_pages,
+    )
 
 
 def _gamesmap_select_homepage_entries(

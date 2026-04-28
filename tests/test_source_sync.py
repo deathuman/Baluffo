@@ -155,7 +155,10 @@ def test_missing_packaged_sync_status_lists_search_paths(monkeypatch, tmp_path):
 
     assert "packaged_github_app_config" in status["missing"]
     assert str(missing_default.resolve()) in status["configSearchPaths"]
-    assert str((tmp_path / "home" / ".baluffo" / "github-app-sync-config.json").resolve()) in status["configSearchPaths"]
+    assert (
+        str((tmp_path / "home" / ".baluffo" / "github-app-sync-config.json").resolve())
+        in status["configSearchPaths"]
+    )
     assert "Searched:" in status["message"]
 
 

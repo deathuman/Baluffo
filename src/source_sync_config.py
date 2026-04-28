@@ -51,7 +51,9 @@ def candidate_packaged_sync_config_paths(
     _append_unique_path(
         paths,
         seen,
-        env_map.get(getattr(module, "PACKAGED_SYNC_BUILD_CONFIG_ENV", PACKAGED_SYNC_BUILD_CONFIG_ENV)),
+        env_map.get(
+            getattr(module, "PACKAGED_SYNC_BUILD_CONFIG_ENV", PACKAGED_SYNC_BUILD_CONFIG_ENV)
+        ),
     )
     appdata = str(env_map.get("APPDATA") or "").strip()
     if appdata:
@@ -96,7 +98,11 @@ def normalize_packaged_payload(module: Any, payload: dict[str, Any]) -> dict[str
 def load_packaged_sync_config(module: Any, *, env: dict[str, str] | None = None) -> Any | None:
     env_map: dict[str, str] = env if isinstance(env, dict) else dict(os.environ)
     config_path = next(
-        (path for path in candidate_packaged_sync_config_paths(module, env=env_map) if path.exists()),
+        (
+            path
+            for path in candidate_packaged_sync_config_paths(module, env=env_map)
+            if path.exists()
+        ),
         None,
     )
     if config_path is None:
@@ -230,9 +236,7 @@ def resolve_sync_config(
 def config_status(module: Any, config: Any) -> dict[str, Any]:
     missing: list[str] = []
     message = str(config.disabled_reason or "")
-    config_search_paths = [
-        str(path) for path in candidate_packaged_sync_config_paths(module)
-    ]
+    config_search_paths = [str(path) for path in candidate_packaged_sync_config_paths(module)]
     if not config.packaged_config:
         missing.append("packaged_github_app_config")
     else:

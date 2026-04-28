@@ -40,6 +40,7 @@ These are the lowest-risk, highest-certainty consolidation targets because the i
 - Completed scan-setup slice: Gameprog/Gamesmap now use a shared website-scan setup wrapper for common fetch-concurrency resolution, recovery-budget handoff, and `run_directory_website_scan(...)` call assembly.
 - Completed entry-selection slice: Gameprog/Gamesmap now share parsed-entry empty handling, selection callback timing, selection log handoff, selected summary merge, and website-scan dispatch.
 - Completed recovery-budget slice: `gameprog.activeAuditRecoveryUrlLimit` and `gamesmap.activeAuditRecoveryUrlLimit` default to `6`, fall back to `6` for invalid/non-positive values, and participate in audit signatures.
+- Completed index-collection slice: Gamesmap index fetch, parse failure routing, `detailUrl` dedupe, `maxDetailPages` capping, and unresolved reference aggregation now use a shared directory index collection helper. Gameprog remains adapter-local because its upstream fetch is JSON-specific.
 
 ### P1: GameDevMap Still Reimplements Shared Primitives
 
