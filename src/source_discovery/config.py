@@ -295,7 +295,6 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "enabled": True,
         "csvUrl": "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv",
         "indexUrl": "https://www.gamedevmap.com/index.php",
-        "cachePath": "data/gamedevmap-discovery-cache.json",
         "cacheTtlMinutes": 360,
         "activeAuditEnabled": True,
         "activeAuditTtlMinutes": 360,

@@ -202,11 +202,9 @@ def test_gamedevmap_audit_summary_is_written_to_discovery_report() -> None:
 def test_gamedevmap_audit_disabled_flag_uses_active_audit_and_skips_legacy_cache() -> None:
     with workspace_tmpdir("gamedevmap-disabled-audit-flag") as root:
         with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):
-            legacy_cache_path = root / "gamedevmap-legacy-cache.json"
             config = discovery_config_without_generator_stages(
                 gamedevmap=_config(
                     activeAuditEnabled=False,
-                    cachePath=str(legacy_cache_path),
                     cacheTtlMinutes=60,
                 )["gamedevmap"]
             )
@@ -227,7 +225,6 @@ def test_gamedevmap_audit_disabled_flag_uses_active_audit_and_skips_legacy_cache
     assert provider_rows == []
     assert len(static_rows) == 1
     assert len(failures) == 1
-    assert not legacy_cache_path.exists()
 
 
 def test_gamedevmap_audit_report_summary_shape_stays_compatible() -> None:
