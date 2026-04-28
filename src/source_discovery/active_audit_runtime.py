@@ -159,6 +159,94 @@ class ActiveAuditLoopStrategy:
     write_artifact: Callable[[bool], None]
 
 
+def build_active_audit_batch_strategy(
+    *,
+    prepare_rows: Callable[[list[dict[str, Any]]], ActiveAuditPreparedRows],
+    fetch_homepages: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],
+    analyze_homepages: Callable[[list[dict[str, Any]]], ActiveHomepageBatchResult],
+    fetch_recovery: Callable[[list[dict[str, Any]], str], ActiveAuditRecoveryFetchResult],
+    apply_recovery: Callable[
+        [list[dict[str, Any]], dict[str, Any] | None, bool],
+        ActiveAuditRecoveryApplicationResult,
+    ],
+    recovery_homepage_key: Callable[[dict[str, Any]], str],
+    merge_candidates: Callable[
+        [
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+        ],
+        ActiveAuditCandidateMergeResult,
+    ],
+    merge_artifact_updates: Callable[
+        [
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+        ],
+        None,
+    ],
+    update_summary: Callable[[dict[str, Any]], None],
+    probe_candidates: Callable[[list[dict[str, Any]]], Any],
+    apply_probe_results: Callable[[Any], None],
+    row_identity: Callable[[dict[str, Any]], str],
+    append_timing: Callable[[dict[str, Any]], None],
+) -> ActiveAuditBatchStrategy:
+    return ActiveAuditBatchStrategy(
+        prepare_rows=prepare_rows,
+        fetch_homepages=fetch_homepages,
+        analyze_homepages=analyze_homepages,
+        fetch_recovery=fetch_recovery,
+        apply_recovery=apply_recovery,
+        recovery_homepage_key=recovery_homepage_key,
+        merge_candidates=merge_candidates,
+        merge_artifact_updates=merge_artifact_updates,
+        update_summary=update_summary,
+        probe_candidates=probe_candidates,
+        apply_probe_results=apply_probe_results,
+        row_identity=row_identity,
+        append_timing=append_timing,
+    )
+
+
+def build_active_audit_loop_strategy(
+    *,
+    artifact: dict[str, Any],
+    row_identity: Callable[[dict[str, Any]], str],
+    batch_strategy: ActiveAuditBatchStrategy,
+    completed_identities: set[str],
+    emit_batch_log: Callable[[int, int, int], None],
+    before_write: Callable[[], None],
+    write_artifact: Callable[[bool], None],
+) -> ActiveAuditLoopStrategy:
+    def _run_batch(
+        batch_rows: list[dict[str, Any]],
+        cursor: int,
+        _batch_number: int,
+    ) -> None:
+        progress = _as_dict(artifact.get("progress"))
+        run_active_audit_batch(
+            artifact=artifact,
+            batch_rows=batch_rows,
+            cursor=cursor,
+            batch_number=_safe_int(progress.get("batchesCompleted")) + 1,
+            strategy=batch_strategy,
+            completed_identities=completed_identities,
+        )
+
+    return ActiveAuditLoopStrategy(
+        row_identity=row_identity,
+        emit_batch_log=emit_batch_log,
+        run_batch=_run_batch,
+        before_write=before_write,
+        write_artifact=write_artifact,
+    )
+
+
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 

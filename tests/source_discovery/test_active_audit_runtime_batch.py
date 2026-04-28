@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from src.source_discovery import active_audit_runtime
 from src.source_discovery.active_audit_runtime import (
     ActiveAuditBatchStrategy,
     ActiveAuditCandidateMergeResult,
@@ -198,3 +199,134 @@ def test_active_audit_loop_stops_after_max_batches_and_writes_incomplete() -> No
         (1, ["https://one.example", "https://two.example"], 0),
     ]
     assert order == ["emit:1:2:0", "batch", "before_write", "write:False"]
+
+
+def test_active_audit_batch_strategy_builder_wires_callbacks() -> None:
+    artifact: dict[str, object] = {"progress": {"batchesCompleted": 0}}
+    completed: set[str] = set()
+    events: list[str] = []
+
+    strategy = active_audit_runtime.build_active_audit_batch_strategy(
+        prepare_rows=lambda rows: (
+            events.append("prepare") or ActiveAuditPreparedRows(homepage_rows=rows)
+        ),
+        fetch_homepages=lambda rows: (
+            events.append("fetch")
+            or [{"ok": True, "url": row["url"], "payload": row, "text": ""} for row in rows]
+        ),
+        analyze_homepages=lambda _results: (
+            events.append("analyze") or ActiveHomepageBatchResult(homepages_fetched=1)
+        ),
+        fetch_recovery=lambda _jobs, label: (
+            events.append(f"recover:{label[-6:]}") or ActiveAuditRecoveryFetchResult()
+        ),
+        apply_recovery=lambda _results, _grouped, finalize: (
+            events.append(f"apply:{finalize}") or ActiveAuditRecoveryApplicationResult()
+        ),
+        recovery_homepage_key=lambda _job: "",
+        merge_candidates=lambda direct, provider, static, recovery_provider, recovery_static: (
+            events.append("merge")
+            or ActiveAuditCandidateMergeResult(
+                candidates=[
+                    *direct,
+                    *provider,
+                    *static,
+                    *recovery_provider,
+                    *recovery_static,
+                ]
+            )
+        ),
+        merge_artifact_updates=lambda *_args: events.append("artifact"),
+        update_summary=lambda _counts: events.append("summary"),
+        probe_candidates=lambda _candidates: events.append("probe") or [],
+        apply_probe_results=lambda _results: events.append("probe_apply"),
+        row_identity=lambda row: str(row.get("url") or ""),
+        append_timing=lambda _timing: events.append("timing"),
+    )
+
+    run_active_audit_batch(
+        artifact=artifact,
+        batch_rows=[{"url": "https://one.example"}],
+        cursor=0,
+        batch_number=1,
+        strategy=strategy,
+        completed_identities=completed,
+    )
+
+    assert events == [
+        "prepare",
+        "fetch",
+        "analyze",
+        "recover:wave 1",
+        "apply:False",
+        "recover:wave 2",
+        "apply:True",
+        "merge",
+        "artifact",
+        "summary",
+        "probe",
+        "probe_apply",
+        "timing",
+    ]
+    assert completed == {"https://one.example"}
+
+
+def test_active_audit_loop_strategy_builder_runs_batches_from_artifact_progress(
+    monkeypatch,
+) -> None:
+    artifact: dict[str, object] = {"progress": {"batchesCompleted": 4}}
+    completed: set[str] = set()
+    batch_numbers: list[int] = []
+    order: list[str] = []
+
+    def fake_run_active_audit_batch(**kwargs) -> None:
+        batch_numbers.append(kwargs["batch_number"])
+        kwargs["completed_identities"].update(str(row["url"]) for row in kwargs["batch_rows"])
+        progress = dict(kwargs["artifact"].get("progress") or {})
+        progress["batchesCompleted"] = kwargs["batch_number"]
+        kwargs["artifact"]["progress"] = progress
+
+    monkeypatch.setattr(
+        active_audit_runtime,
+        "run_active_audit_batch",
+        fake_run_active_audit_batch,
+    )
+
+    loop_strategy = active_audit_runtime.build_active_audit_loop_strategy(
+        artifact=artifact,
+        row_identity=lambda row: str(row.get("url") or ""),
+        batch_strategy=ActiveAuditBatchStrategy(
+            prepare_rows=lambda rows: ActiveAuditPreparedRows(homepage_rows=rows),
+            fetch_homepages=lambda _rows: [],
+            analyze_homepages=lambda _results: ActiveHomepageBatchResult(),
+            fetch_recovery=lambda _jobs, _label: ActiveAuditRecoveryFetchResult(),
+            apply_recovery=lambda _results, _grouped, _finalize: (
+                ActiveAuditRecoveryApplicationResult()
+            ),
+            recovery_homepage_key=lambda _job: "",
+            merge_candidates=lambda *_args: ActiveAuditCandidateMergeResult(),
+            merge_artifact_updates=lambda *_args: None,
+            update_summary=lambda _counts: None,
+            probe_candidates=lambda _candidates: [],
+            apply_probe_results=lambda _results: None,
+            row_identity=lambda row: str(row.get("url") or ""),
+            append_timing=lambda _timing: None,
+        ),
+        completed_identities=completed,
+        emit_batch_log=lambda batch, rows, cursor: order.append(f"emit:{batch}:{rows}:{cursor}"),
+        before_write=lambda: order.append("before_write"),
+        write_artifact=lambda complete: order.append(f"write:{complete}"),
+    )
+
+    result = run_active_audit_loop(
+        artifact=artifact,
+        source_rows=[{"url": "https://one.example"}],
+        completed_identities=completed,
+        batch_size=1,
+        max_batches=1,
+        strategy=loop_strategy,
+    )
+
+    assert batch_numbers == [5]
+    assert result.complete is True
+    assert order == ["emit:1:1:0", "before_write", "write:True"]

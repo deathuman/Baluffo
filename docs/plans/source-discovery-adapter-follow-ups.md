@@ -65,8 +65,10 @@ GameDevMap created much of the better logic but still has the largest local acti
 - Completed run-loop slice: GameDevMap active audit outer loop now uses shared batch selection, cursor progress, max-batch stopping, completion writes, and per-batch write sequencing.
 - Completed strategy-contract slice: GameDevMap active audit now wires shared batch and loop runtime through compact strategy dataclasses instead of long ad hoc callback lists.
 - Completed active-batch contract slice: GameDevMap active audit now uses shared helpers for batch artifact candidate/browser merges, failure recording, rejected-row appends, summary increments, probe classification application, and recovery fetch-result application while keeping GameDevMap evidence and bucket names local.
+- Completed strategy-assembly slice: GameDevMap active audit now builds batch and loop strategy dataclasses through shared active-audit assembly helpers, keeping source-specific fetch, analysis, artifact write, and log callbacks local.
 - Completed browser-analysis slice: `gamedevmap_active_dry_run.py::_analyze_browser_recovery_fetches` now uses shared rendered-fetch analysis.
 - Completed browser-merge slice: `gamedevmap_active_dry_run.py::_merge_browser_recovery_artifact_updates` and web-derived browser recovery now share merge orchestration, while adapter-specific artifact writes remain local.
+- Completed browser-assembly slice: GameDevMap and web-derived browser recovery now share processed-key selection, browser fetch/probe dispatch, merge-state counting, and recovery-state updates while preserving adapter-specific artifact/evidence merges.
 - Completed diagnostics slice: `gamedevmap_active_dry_run.py` now calls the shared browser recovery fetch fallback directly; the private `_default_browser_fetcher` wrapper was pruned.
 - Completed wrapper-pruning slice: GameDevMap now calls shared merge, recovery-fetch, browser-fetch, and audit freshness/signature helpers directly where private wrappers added no compatibility value.
 - Completed recovery-planning slice: `gamedevmap.py` legacy homepage fetch job construction now uses `directory_fetch_jobs`.

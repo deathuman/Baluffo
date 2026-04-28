@@ -536,3 +536,96 @@ def test_run_browser_recovery_batch_can_use_separate_probe_timeout(monkeypatch) 
     )
 
     assert probe_timeouts == [11]
+
+
+def test_run_browser_recovery_assembly_selects_fetches_merges_and_updates_state(
+    monkeypatch,
+) -> None:
+    rows = [
+        {"url": "https://done.example/jobs"},
+        {"url": "https://studio.example/jobs"},
+    ]
+    state: dict[str, object] = {"processedKeys": ["url:https://done.example/jobs"]}
+    active_rows: list[dict[str, object]] = []
+    merge_calls: list[tuple[list[dict[str, object]], list[object]]] = []
+    probe_result = ({"adapter": "greenhouse", "name": "Studio"}, True, 3, "", 2)
+
+    async def fake_fetch(
+        selected: list[dict[str, str]],
+        *,
+        timeout_s: int,
+        browser_fetcher,
+        concurrency: int,
+    ) -> list[browser_recovery.BrowserFetchResult]:
+        assert selected == [{"url": "https://studio.example/jobs"}]
+        assert timeout_s == 4
+        assert concurrency == 2
+        return [(selected[0], "<html>jobs</html>", "", 7)]
+
+    async def fake_probe(
+        candidates: list[dict[str, str]],
+        *,
+        timeout_s: int,
+        fetcher,
+    ) -> list[tuple[dict[str, str], bool, int, str, int]]:
+        assert candidates == [{"adapter": "greenhouse", "name": "Studio"}]
+        assert timeout_s == 9
+        return [probe_result]
+
+    def analyze(
+        fetch_results: list[browser_recovery.BrowserFetchResult],
+        _browser_recovery: dict[str, object],
+        processed: set[str],
+    ) -> browser_recovery.BrowserRecoveryAnalysis:
+        processed.add(browser_recovery.browser_recovery_processed_key(fetch_results[0][0]))
+        return browser_recovery.BrowserRecoveryAnalysis(
+            all_candidates=[{"adapter": "greenhouse", "name": "Studio"}],
+            rendered_probe_results=[],
+            fetch_failures=0,
+        )
+
+    def merge_artifact_updates(
+        batch: browser_recovery.BrowserRecoveryBatch,
+        combined_probe_results: list[object],
+    ) -> None:
+        merge_calls.append((batch.analysis.all_candidates, combined_probe_results))
+        active_rows.extend(
+            {"webSearchBrowserRecovery": True, "name": result[0]["name"]}
+            for result in combined_probe_results
+            if result[1]
+        )
+
+    monkeypatch.setattr(browser_recovery, "fetch_browser_recovery_pages_async", fake_fetch)
+    monkeypatch.setattr(browser_recovery, "probe_candidates_async", fake_probe)
+
+    result = browser_recovery.run_browser_recovery_assembly(
+        rows=rows,
+        browser_recovery=state,
+        timeout_s=4,
+        fetcher=lambda *_args: "",
+        browser_fetcher=lambda *_args: ("", ""),
+        concurrency=2,
+        analyze_fetches=analyze,
+        merge_artifact_updates=merge_artifact_updates,
+        recovered_rows=lambda: list(active_rows),
+        recovered_predicate=lambda row: bool(row.get("webSearchBrowserRecovery")),
+        probe_timeout_s=9,
+        include_fetch_counts=True,
+        include_candidate_analysis_count=True,
+    )
+
+    assert result.selected == [{"url": "https://studio.example/jobs"}]
+    assert result.processed == {
+        "url:https://done.example/jobs",
+        "url:https://studio.example/jobs",
+    }
+    assert result.combined_probe_results == [probe_result]
+    assert result.active_count == 1
+    assert merge_calls == [([{"adapter": "greenhouse", "name": "Studio"}], [probe_result])]
+    assert state["processedCount"] == 2
+    assert state["candidateCount"] == 2
+    assert state["activeCandidates"] == 1
+    assert state["probeCandidates"] == 1
+    assert state["fetchAttempts"] == 1
+    assert state["fetchFailures"] == 0
+    assert state["candidateAnalysisCount"] == 1

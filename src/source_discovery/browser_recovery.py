@@ -38,6 +38,7 @@ BrowserRecoveryProbeMergeCallback = Callable[[list[ProbeResult]], None]
 BrowserRecoveryProbeMarker = Callable[[list[ProbeResult], int], None]
 BrowserRecoveryRowsProvider = Callable[[], list[Any]]
 BrowserRecoveryActivePredicate = Callable[[dict[str, Any]], bool]
+BrowserRecoveryArtifactMergeCallback = Callable[["BrowserRecoveryBatch", list[ProbeResult]], None]
 
 
 @dataclass
@@ -63,6 +64,15 @@ class BrowserRecoveryBatch:
     analysis: BrowserRecoveryAnalysis
     probe_candidates: list[dict[str, Any]]
     probe_results: list[ProbeResult]
+
+
+@dataclass
+class BrowserRecoveryAssemblyResult:
+    selected: list[dict[str, Any]]
+    processed: set[str]
+    batch: BrowserRecoveryBatch
+    combined_probe_results: list[ProbeResult]
+    active_count: int
 
 
 def default_browser_fetcher():
@@ -322,6 +332,75 @@ def run_browser_recovery_batch(
         analysis=analysis,
         probe_candidates=probe_candidates,
         probe_results=probe_results,
+    )
+
+
+def run_browser_recovery_assembly(
+    *,
+    rows: list[dict[str, Any]],
+    browser_recovery: dict[str, Any],
+    timeout_s: int,
+    fetcher,
+    browser_fetcher,
+    concurrency: int,
+    analyze_fetches: BrowserRecoveryAnalysisCallback,
+    merge_artifact_updates: BrowserRecoveryArtifactMergeCallback,
+    recovered_rows: BrowserRecoveryRowsProvider,
+    recovered_predicate: BrowserRecoveryActivePredicate,
+    limit: int = 0,
+    probe_timeout_s: int | None = None,
+    emit_log: Callable[[str], None] | None = None,
+    log_label: str = "Browser recovery",
+    mark_probe_results: BrowserRecoveryProbeMarker | None = None,
+    include_fetch_counts: bool = False,
+    include_candidate_analysis_count: bool = False,
+) -> BrowserRecoveryAssemblyResult:
+    selected, processed = select_unprocessed_candidates(
+        rows,
+        browser_recovery=browser_recovery,
+        limit=limit,
+    )
+    batch = run_browser_recovery_batch(
+        selected=selected,
+        processed=processed,
+        browser_recovery=browser_recovery,
+        timeout_s=timeout_s,
+        fetcher=fetcher,
+        browser_fetcher=browser_fetcher,
+        concurrency=concurrency,
+        analyze_fetches=analyze_fetches,
+        probe_timeout_s=probe_timeout_s,
+        emit_log=emit_log,
+        log_label=log_label,
+    )
+
+    def _merge_probe_results(combined_probe_results: list[ProbeResult]) -> None:
+        merge_artifact_updates(batch, combined_probe_results)
+
+    combined_probe_results, active_count = merge_browser_recovery_results(
+        browser_recovery=browser_recovery,
+        processed=batch.processed,
+        started=batch.started,
+        candidate_count=len(rows),
+        probe_candidate_count=len(batch.probe_candidates),
+        rendered_probe_results=batch.analysis.rendered_probe_results,
+        probe_results=batch.probe_results,
+        mark_probe_results=mark_probe_results,
+        merge_probe_results=_merge_probe_results,
+        recovered_rows=recovered_rows,
+        recovered_predicate=recovered_predicate,
+        fetch_attempts=len(batch.fetch_results) if include_fetch_counts else None,
+        fetch_failures=batch.analysis.fetch_failures if include_fetch_counts else None,
+        candidate_analysis_count=(
+            len(batch.analysis.all_candidates) if include_candidate_analysis_count else None
+        ),
+    )
+    return BrowserRecoveryAssemblyResult(
+        selected=selected,
+        processed=batch.processed,
+        batch=batch,
+        combined_probe_results=combined_probe_results,
+        active_count=active_count,
     )
 
 

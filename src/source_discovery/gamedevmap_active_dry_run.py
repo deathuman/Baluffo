@@ -643,19 +643,6 @@ def _load_browser_recovery_artifact(
     )
 
 
-def _select_browser_recovery_candidates(
-    artifact: dict[str, Any],
-    cfg: dict[str, Any],
-    browser_recovery: dict[str, Any],
-) -> tuple[list[dict[str, Any]], set[str]]:
-    limit = max(0, int(cfg.get("activeAuditBrowserRecoveryLimit") or 0))
-    return browser_recovery_helpers.select_unprocessed_candidates(
-        [dict(row) for row in _as_list(artifact.get("browserRecoveryCandidates"))],
-        browser_recovery=browser_recovery,
-        limit=limit,
-    )
-
-
 def _analyze_browser_recovery_fetches(
     *,
     fetch_results: list[tuple[dict[str, Any], str, str, int]],
@@ -785,45 +772,20 @@ def _mark_browser_recovery_probe_results(
 def _merge_browser_recovery_artifact_updates(
     *,
     artifact: dict[str, Any],
-    browser_recovery: dict[str, Any],
-    all_candidates: list[dict[str, Any]],
-    rejected: list[dict[str, Any]],
-    processed: set[str],
-    started: float,
-    probe_candidates: list[dict[str, Any]],
-    rendered_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
-    probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
+    batch: browser_recovery_helpers.BrowserRecoveryBatch,
+    combined_probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
 ) -> None:
-    def merge_probe_results(combined_probe_results):
-        artifact["allCandidates"] = active_audit_runtime.merge_unique_candidate_rows(
-            artifact.get("allCandidates"),
-            all_candidates,
-            unique_rows=unique_sources,
-        )
-        active_audit_runtime.append_artifact_rows(
-            artifact,
-            "rejectedForActivation",
-            rejected,
-        )
-        _apply_probe_results(artifact, combined_probe_results)
-
-    browser_recovery_helpers.merge_browser_recovery_results(
-        browser_recovery=browser_recovery,
-        processed=processed,
-        started=started,
-        candidate_count=len(_as_list(artifact.get("browserRecoveryCandidates"))),
-        probe_candidate_count=len(probe_candidates),
-        rendered_probe_results=rendered_probe_results,
-        probe_results=probe_results,
-        mark_probe_results=lambda results, rendered_count: _mark_browser_recovery_probe_results(
-            results,
-            rendered_count=rendered_count,
-        ),
-        merge_probe_results=merge_probe_results,
-        recovered_rows=lambda: _as_list(artifact.get("activeCandidates")),
-        recovered_predicate=lambda row: bool(row.get("gamedevmapBrowserRecovery")),
+    artifact["allCandidates"] = active_audit_runtime.merge_unique_candidate_rows(
+        artifact.get("allCandidates"),
+        batch.analysis.all_candidates,
+        unique_rows=unique_sources,
     )
-    artifact["browserRecovery"] = browser_recovery
+    active_audit_runtime.append_artifact_rows(
+        artifact,
+        "rejectedForActivation",
+        list(batch.analysis.rejected_rows or []),
+    )
+    _apply_probe_results(artifact, combined_probe_results)
 
 
 def run_gamedevmap_browser_recovery(
@@ -849,36 +811,40 @@ def run_gamedevmap_browser_recovery(
     )
     browser_fetcher = browser_fetcher or browser_recovery_helpers.default_browser_fetcher()
     browser_recovery = _as_dict(artifact.get("browserRecovery"))
-    candidates, processed = _select_browser_recovery_candidates(artifact, cfg, browser_recovery)
+    candidates = [dict(row) for row in _as_list(artifact.get("browserRecoveryCandidates"))]
+    limit = max(0, int(cfg.get("activeAuditBrowserRecoveryLimit") or 0))
     concurrency = max(1, int(cfg.get("activeAuditBrowserRecoveryConcurrency") or 2))
     browser_timeout_s = max(
         1,
         min(max(1, int(timeout_s)), int(cfg.get("activeAuditBrowserRecoveryTimeoutSeconds") or 15)),
     )
-    batch = browser_recovery_helpers.run_browser_recovery_batch(
-        selected=candidates,
-        processed=processed,
+    browser_recovery_helpers.run_browser_recovery_assembly(
+        rows=candidates,
         browser_recovery=browser_recovery,
         timeout_s=browser_timeout_s,
         fetcher=fetcher,
         browser_fetcher=browser_fetcher,
         concurrency=concurrency,
         analyze_fetches=_analyze_browser_recovery_batch(cfg),
+        merge_artifact_updates=lambda batch, combined_probe_results: (
+            _merge_browser_recovery_artifact_updates(
+                artifact=artifact,
+                batch=batch,
+                combined_probe_results=combined_probe_results,
+            )
+        ),
+        recovered_rows=lambda: _as_list(artifact.get("activeCandidates")),
+        recovered_predicate=lambda row: bool(row.get("gamedevmapBrowserRecovery")),
+        limit=limit,
         probe_timeout_s=timeout_s,
         emit_log=emit_log,
         log_label="GameDevMap browser recovery",
+        mark_probe_results=lambda results, rendered_count: _mark_browser_recovery_probe_results(
+            results,
+            rendered_count=rendered_count,
+        ),
     )
-    _merge_browser_recovery_artifact_updates(
-        artifact=artifact,
-        browser_recovery=browser_recovery,
-        all_candidates=batch.analysis.all_candidates,
-        rejected=list(batch.analysis.rejected_rows or []),
-        processed=batch.processed,
-        started=batch.started,
-        probe_candidates=batch.probe_candidates,
-        rendered_probe_results=batch.analysis.rendered_probe_results,
-        probe_results=batch.probe_results,
-    )
+    artifact["browserRecovery"] = browser_recovery
     _save_updated_artifact(artifact, output_path)
     return artifact
 
@@ -1658,7 +1624,7 @@ def _build_gamedevmap_active_batch_strategy(
     recovery_per_host_concurrency: int,
     recovery_cache: dict[str, dict[str, Any]],
 ) -> active_audit_runtime.ActiveAuditBatchStrategy:
-    return active_audit_runtime.ActiveAuditBatchStrategy(
+    return active_audit_runtime.build_active_audit_batch_strategy(
         prepare_rows=lambda rows: _prepare_gamedevmap_active_batch_rows(
             rows,
             index_url=index_url,
@@ -1718,24 +1684,15 @@ def _build_gamedevmap_active_loop_strategy(
     compare_artifact_path: Path | str | None,
     batch_strategy: active_audit_runtime.ActiveAuditBatchStrategy,
 ) -> active_audit_runtime.ActiveAuditLoopStrategy:
-    def _run_batch(batch_rows: list[dict[str, Any]], cursor: int, batch_number: int) -> None:
-        progress = _as_dict(artifact.get("progress"))
-        active_audit_runtime.run_active_audit_batch(
-            artifact=artifact,
-            batch_rows=batch_rows,
-            cursor=cursor,
-            batch_number=_safe_int(progress.get("batchesCompleted")) + 1,
-            strategy=batch_strategy,
-            completed_identities=completed_urls,
-        )
-
-    return active_audit_runtime.ActiveAuditLoopStrategy(
+    return active_audit_runtime.build_active_audit_loop_strategy(
+        artifact=artifact,
         row_identity=_row_url,
+        batch_strategy=batch_strategy,
+        completed_identities=completed_urls,
         emit_batch_log=lambda batch_number, row_count, cursor: emit_log(
             "GameDevMap active-source dry run: "
             f"batch={batch_number}, rows={row_count}, cursor={cursor}."
         ),
-        run_batch=_run_batch,
         before_write=lambda: apply_gamedevmap_lost_recovery_audit(
             artifact,
             compare_artifact_path=compare_artifact_path,
