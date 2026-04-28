@@ -313,14 +313,6 @@ def _load_or_initialize_artifact(
     )
 
 
-def _duration_ms(started: float) -> int:
-    return audit_ledger.duration_ms(started)
-
-
-def _append_batch_timing(artifact: dict[str, Any], timing: dict[str, Any]) -> None:
-    active_audit_runtime.append_batch_timing(artifact, timing)
-
-
 def _summarize_artifact(
     artifact: dict[str, Any],
     *,
@@ -397,31 +389,6 @@ def _summarize_artifact(
         "browserRecoveredActiveCandidates": counts.browser_recovered_active_count,
         "lostRecoveredActiveCandidates": counts.lost_recovered_active_count,
     }
-
-
-def _write_artifact(
-    artifact: dict[str, Any],
-    output_path: Path,
-    *,
-    parsed_rows: list[dict[str, str]],
-    representative_rows: list[dict[str, Any]],
-    completed_urls: set[str],
-    complete: bool,
-) -> None:
-    active_audit_runtime.finalize_active_audit_artifact(
-        artifact,
-        output_path,
-        completed_identities=completed_urls,
-        complete=complete,
-        completed_cursor_position=len(representative_rows),
-        completed_key="completedUrls",
-        summarize=lambda current, identities: _summarize_artifact(
-            current,
-            parsed_rows=parsed_rows,
-            representative_rows=representative_rows,
-            completed_urls=identities,
-        ),
-    )
 
 
 def _recovered_active_by_id(artifact: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -575,23 +542,6 @@ def gamedevmap_audit_report_summary(
 
 def latest_gamedevmap_audit_report_summary() -> dict[str, Any]:
     return dict(LAST_GAMEDEVMAP_AUDIT_REPORT_SUMMARY)
-
-
-def _save_updated_artifact(artifact: dict[str, Any], output_path: Path) -> None:
-    completed_urls = {
-        str(item).strip() for item in _as_list(artifact.get("completedUrls")) if str(item).strip()
-    }
-    active_audit_runtime.save_updated_active_audit_artifact(
-        artifact,
-        output_path,
-        completed_identities=completed_urls,
-        summarize=lambda current, identities: _summarize_artifact(
-            current,
-            parsed_rows=[],
-            representative_rows=[],
-            completed_urls=identities,
-        ),
-    )
 
 
 def _browser_static_probe_result_from_rendered_html(
@@ -845,7 +795,20 @@ def run_gamedevmap_browser_recovery(
         ),
     )
     artifact["browserRecovery"] = browser_recovery
-    _save_updated_artifact(artifact, output_path)
+    completed_urls = {
+        str(item).strip() for item in _as_list(artifact.get("completedUrls")) if str(item).strip()
+    }
+    active_audit_runtime.save_updated_active_audit_artifact(
+        artifact,
+        output_path,
+        completed_identities=completed_urls,
+        summarize=lambda current, identities: _summarize_artifact(
+            current,
+            parsed_rows=[],
+            representative_rows=[],
+            completed_urls=identities,
+        ),
+    )
     return artifact
 
 
@@ -1670,7 +1633,10 @@ def _build_gamedevmap_active_batch_strategy(
         ),
         apply_probe_results=lambda probe_results: _apply_probe_results(artifact, probe_results),
         row_identity=_row_url,
-        append_timing=lambda batch_timing: _append_batch_timing(artifact, batch_timing),
+        append_timing=lambda batch_timing: active_audit_runtime.append_batch_timing(
+            artifact,
+            batch_timing,
+        ),
     )
 
 
@@ -1697,13 +1663,19 @@ def _build_gamedevmap_active_loop_strategy(
             artifact,
             compare_artifact_path=compare_artifact_path,
         ),
-        write_artifact=lambda complete: _write_artifact(
+        write_artifact=lambda complete: active_audit_runtime.finalize_active_audit_artifact(
             artifact,
             output_path,
-            parsed_rows=parsed_rows,
-            representative_rows=representative_rows,
-            completed_urls=completed_urls,
+            completed_identities=completed_urls,
             complete=complete,
+            completed_cursor_position=len(representative_rows),
+            completed_key="completedUrls",
+            summarize=lambda current, identities: _summarize_artifact(
+                current,
+                parsed_rows=parsed_rows,
+                representative_rows=representative_rows,
+                completed_urls=identities,
+            ),
         ),
     )
 
