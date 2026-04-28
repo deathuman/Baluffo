@@ -38,7 +38,6 @@ Limit Sheet Studio,yes,https://limit.example.com/
             gid="1",
             config={
                 "sheetDirectory": {
-                    "activeAuditEnabled": True,
                     "activeAuditRecoveryEnabled": True,
                     "activeAuditRecoveryUrlLimit": 1,
                     "activeAuditPath": str(audit_path),
@@ -53,7 +52,6 @@ Limit Sheet Studio,yes,https://limit.example.com/
             gid="1",
             config={
                 "sheetDirectory": {
-                    "activeAuditEnabled": True,
                     "activeAuditRecoveryEnabled": True,
                     "activeAuditRecoveryUrlLimit": 2,
                     "activeAuditPath": str(audit_path),
@@ -90,7 +88,6 @@ def test_web_search_recovery_url_limit_changes_attempts_and_signature() -> None:
             include_web_search=False,
             config={
                 "webSearch": {
-                    "activeAuditEnabled": True,
                     "activeAuditRecoveryEnabled": True,
                     "activeAuditRecoveryUrlLimit": 1,
                     "activeAuditPath": str(audit_path),
@@ -106,7 +103,6 @@ def test_web_search_recovery_url_limit_changes_attempts_and_signature() -> None:
             include_web_search=False,
             config={
                 "webSearch": {
-                    "activeAuditEnabled": True,
                     "activeAuditRecoveryEnabled": True,
                     "activeAuditRecoveryUrlLimit": 2,
                     "activeAuditPath": str(audit_path),

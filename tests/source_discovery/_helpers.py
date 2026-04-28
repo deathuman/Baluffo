@@ -26,8 +26,6 @@ from tests.helpers.temp_paths import workspace_tmpdir
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 GENERATOR_DISABLED_DISCOVERY_CONFIG = {
-    "sheetDirectory": {"activeAuditEnabled": False},
-    "webSearch": {"activeAuditEnabled": False},
     "gamesmap": {"enabled": False},
     "gameprog": {"enabled": False},
     "gamedevmap": {"enabled": False},

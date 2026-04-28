@@ -37,7 +37,6 @@ def test_gameprog_audit_missing_artifact_executes_and_writes_boundaries() -> Non
         config = {
             "gameprog": {
                 "enabled": True,
-                "activeAuditEnabled": True,
                 "activeAuditPath": str(audit_path),
                 "activeAuditTtlMinutes": 60,
                 "teamsUrl": "https://gameprog.it/teams.json",
@@ -74,7 +73,7 @@ def test_gameprog_audit_missing_artifact_executes_and_writes_boundaries() -> Non
         assert saved["summary"]["artifactSizeBytes"] > 0
 
 
-def test_gameprog_audit_enabled_defaults_to_true_when_config_field_missing() -> None:
+def test_gameprog_public_discovery_uses_audit_path_by_default() -> None:
     with workspace_tmpdir("gameprog-audit-default-enabled") as root:
         audit_path = root / "gameprog-audit.json"
         config = {
@@ -106,7 +105,6 @@ def test_gameprog_audit_reuses_fresh_completed_artifact_without_network_work() -
         config = {
             "gameprog": {
                 "enabled": True,
-                "activeAuditEnabled": True,
                 "activeAuditPath": str(audit_path),
                 "activeAuditTtlMinutes": 60,
                 "teamsUrl": "https://gameprog.it/teams.json",
@@ -145,15 +143,14 @@ def test_gameprog_audit_reuses_fresh_completed_artifact_without_network_work() -
         assert failures == first_artifact["failures"]
 
 
-def test_gameprog_audit_output_matches_legacy_scan_for_same_inputs() -> None:
+def test_gameprog_audit_output_matches_same_inputs_across_artifacts() -> None:
     with workspace_tmpdir("gameprog-audit-equivalence") as root:
-        legacy_flag_path = root / "gameprog-disabled-flag-audit.json"
+        first_audit_path = root / "gameprog-first-audit.json"
         audit_path = root / "gameprog-audit.json"
         base_config = {
             "gameprog": {
                 "enabled": True,
-                "activeAuditEnabled": False,
-                "activeAuditPath": str(legacy_flag_path),
+                "activeAuditPath": str(first_audit_path),
                 "activeAuditTtlMinutes": 0,
                 "teamsUrl": "https://gameprog.it/teams.json",
                 "websiteOnlyFallback": True,
@@ -163,13 +160,12 @@ def test_gameprog_audit_output_matches_legacy_scan_for_same_inputs() -> None:
         audit_config = {
             "gameprog": {
                 **base_config["gameprog"],
-                "activeAuditEnabled": True,
                 "activeAuditPath": str(audit_path),
                 "activeAuditTtlMinutes": 60,
             }
         }
 
-        legacy_rows = sd.discover_gameprog_candidates(
+        first_rows = sd.discover_gameprog_candidates(
             5,
             config=base_config,
             fetcher=_fetch_from(_gameprog_payloads()),
@@ -180,7 +176,7 @@ def test_gameprog_audit_output_matches_legacy_scan_for_same_inputs() -> None:
             fetcher=_fetch_from(_gameprog_payloads()),
         )
 
-        assert audit_rows == legacy_rows
+        assert audit_rows == first_rows
 
 
 def test_gameprog_audit_records_website_fetch_failures_in_failure_channel() -> None:
@@ -189,7 +185,6 @@ def test_gameprog_audit_records_website_fetch_failures_in_failure_channel() -> N
         config = {
             "gameprog": {
                 "enabled": True,
-                "activeAuditEnabled": True,
                 "activeAuditPath": str(audit_path),
                 "activeAuditTtlMinutes": 60,
                 "teamsUrl": "https://gameprog.it/teams.json",
@@ -228,7 +223,6 @@ def test_gameprog_audit_recovers_static_candidate_before_weak_fallback() -> None
         config = {
             "gameprog": {
                 "enabled": True,
-                "activeAuditEnabled": True,
                 "activeAuditRecoveryEnabled": True,
                 "activeAuditPath": str(audit_path),
                 "activeAuditTtlMinutes": 60,
@@ -269,7 +263,6 @@ def test_gameprog_audit_recovery_miss_keeps_existing_weak_fallback() -> None:
         config = {
             "gameprog": {
                 "enabled": True,
-                "activeAuditEnabled": True,
                 "activeAuditRecoveryEnabled": True,
                 "activeAuditPath": str(audit_path),
                 "activeAuditTtlMinutes": 60,
@@ -308,7 +301,6 @@ def test_gameprog_audit_signature_rebuilds_when_recovery_toggle_changes() -> Non
         base_config = {
             "gameprog": {
                 "enabled": True,
-                "activeAuditEnabled": True,
                 "activeAuditPath": str(audit_path),
                 "activeAuditTtlMinutes": 60,
                 "teamsUrl": "https://gameprog.it/teams.json",
@@ -348,20 +340,16 @@ def test_gameprog_audit_signature_rebuilds_when_recovery_toggle_changes() -> Non
         assert second_artifact["summary"]["recoveryFetchAttempts"] == 2
 
 
-def test_gameprog_audit_disabled_flag_uses_audit_cache_and_skips_legacy_cache() -> None:
-    with workspace_tmpdir("gameprog-audit-disabled") as root:
+def test_gameprog_audit_reuses_modern_audit_artifact() -> None:
+    with workspace_tmpdir("gameprog-audit-reuse-modern") as root:
         audit_path = root / "gameprog-audit.json"
-        cache_path = root / "gameprog-cache.json"
         config = {
             "gameprog": {
                 "enabled": True,
-                "activeAuditEnabled": False,
                 "activeAuditPath": str(audit_path),
                 "teamsUrl": "https://gameprog.it/teams.json",
                 "websiteOnlyFallback": True,
                 "maxStudios": 1,
-                "cachePath": str(cache_path),
-                "cacheTtlMinutes": 60,
             }
         }
         payloads = _gameprog_payloads()
@@ -383,4 +371,3 @@ def test_gameprog_audit_disabled_flag_uses_audit_cache_and_skips_legacy_cache() 
         assert first_rows == second_rows
         assert calls
         assert audit_path.exists()
-        assert not cache_path.exists()

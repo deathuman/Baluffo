@@ -60,7 +60,6 @@ def test_discover_gameprog_candidates_emits_provider_and_static() -> None:
     config = {
         "gameprog": {
             "enabled": True,
-            "activeAuditEnabled": False,
             "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
@@ -110,7 +109,6 @@ def test_discover_gameprog_candidates_handles_fetch_failure() -> None:
     config = {
         "gameprog": {
             "enabled": True,
-            "activeAuditEnabled": False,
             "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
@@ -175,18 +173,14 @@ def test_discover_gameprog_candidates_keeps_guessed_careers_fallback() -> None:
 def test_discover_gameprog_candidates_reuses_fresh_cache() -> None:
     with workspace_tmpdir("gameprog-cache") as root:
         audit_path = root / "gameprog-audit.json"
-        cache_path = root / "gameprog-cache.json"
         config = {
             "gameprog": {
                 "enabled": True,
-                "activeAuditEnabled": False,
                 "activeAuditPath": str(audit_path),
                 "activeAuditTtlMinutes": 60,
                 "teamsUrl": "https://gameprog.it/teams.json",
                 "websiteOnlyFallback": True,
                 "maxStudios": 10,
-                "cachePath": str(cache_path),
-                "cacheTtlMinutes": 60,
             }
         }
         teams_json = """[
@@ -410,7 +404,6 @@ def test_discover_gamesmap_candidates_reports_parse_failure_when_index_shape_is_
 def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
     with workspace_tmpdir("gamesmap-cache") as root:
         audit_path = root / "gamesmap-audit.json"
-        cache_path = root / "gamesmap-cache.json"
         config = {
             "gamesmap": {
                 "enabled": True,
@@ -422,8 +415,6 @@ def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
                 "blockedCategoryTokens": ["association", "education"],
                 "activeAuditPath": str(audit_path),
                 "activeAuditTtlMinutes": 60,
-                "cachePath": str(cache_path),
-                "cacheTtlMinutes": 60,
             }
         }
         payloads = {
@@ -461,7 +452,6 @@ def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
         assert static_rows_1 == static_rows_2
         assert failures_1 == failures_2
         assert audit_path.exists()
-        assert not cache_path.exists()
 
 
 def test_gamesmap_category_filter_rejects_blocked_entries() -> None:

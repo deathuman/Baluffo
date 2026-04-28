@@ -17,7 +17,6 @@ def _audit_config(
     recovery_enabled: bool | None = None,
 ) -> dict[str, object]:
     web_search: dict[str, object] = {
-        "activeAuditEnabled": True,
         "activeAuditPath": audit_path,
         "activeAuditTtlMinutes": 60,
     }
@@ -274,7 +273,7 @@ def test_web_search_directory_audit_reruns_stale_wrong_schema_incomplete_or_sign
             assert artifact["summary"]["providerCandidates"] == 2
 
 
-def test_web_search_directory_audit_output_matches_legacy_scans() -> None:
+def test_web_search_directory_audit_output_matches_direct_scans() -> None:
     with workspace_tmpdir("web-search-audit-equivalence") as root:
         audit_path = root / "web-audit.json"
 

@@ -8,7 +8,6 @@ from ._helpers import discovery_orchestrator, mock, override_discovery_runtime, 
 def _stage_config(
     *,
     audit_path: str | None = None,
-    active_audit_enabled: bool | None = None,
 ) -> dict[str, object]:
     config: dict[str, object] = {
         "stageToggles": {
@@ -30,22 +29,19 @@ def _stage_config(
             "activeAuditPath": audit_path,
             "activeAuditTtlMinutes": 60,
         }
-        if active_audit_enabled is not None:
-            web_search_config["activeAuditEnabled"] = active_audit_enabled
         config["webSearch"] = web_search_config
     return config
 
 
-def test_run_discovery_audit_disabled_web_search_flag_still_uses_audit_artifact() -> None:
-    with workspace_tmpdir("web-search-audit-flow-disabled") as root:
+def test_run_discovery_web_search_uses_audit_artifact_without_direct_scanners() -> None:
+    with workspace_tmpdir("web-search-audit-flow-direct-scanner-guard") as root:
         with override_discovery_runtime(
             root,
             studio_seeds=[{"studio": "Example Studio", "careersUrl": "https://example.com/jobs"}],
             static_candidates=[],
         ):
             config = _stage_config(
-                audit_path=str(root / "disabled-web-audit.json"),
-                active_audit_enabled=False,
+                audit_path=str(root / "web-audit.json"),
             )
             with (
                 mock.patch.object(
@@ -72,7 +68,7 @@ def test_run_discovery_audit_disabled_web_search_flag_still_uses_audit_artifact(
             web_scan.assert_not_called()
             assert "web_search" in report["directoryAuditSummaries"]
             assert "web_search" in report["summary"]["directoryAudits"]
-            assert (root / "disabled-web-audit.json").exists()
+            assert (root / "web-audit.json").exists()
 
 
 def test_run_discovery_default_web_search_audit_reuses_artifact() -> None:

@@ -8,7 +8,6 @@ from ._helpers import workspace_tmpdir
 def _audit_config(audit_path: str) -> dict[str, object]:
     return {
         "webSearch": {
-            "activeAuditEnabled": True,
             "activeAuditPath": audit_path,
             "activeAuditTtlMinutes": 60,
         }

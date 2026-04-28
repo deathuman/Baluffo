@@ -28,7 +28,6 @@ from .directory_audit import (
     directory_audit_rows,
     run_directory_audit_spec,
 )
-from .directory_cache import directory_cache_ttl_minutes
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .directory_page_recovery import (
     DEFAULT_RECOVERY_URL_LIMIT,
@@ -78,10 +77,6 @@ def _gameprog_enabled(config: dict[str, Any] | None) -> bool:
     return bool(_gameprog_config_value(config, "enabled", True))
 
 
-def _gameprog_cache_ttl_minutes(config: dict[str, Any] | None) -> int:
-    return directory_cache_ttl_minutes(config, "gameprog")
-
-
 def _gameprog_audit_path(config: dict[str, Any] | None) -> Path:
     return audit_artifact_path(
         config,
@@ -94,7 +89,6 @@ def _gameprog_audit_ttl_minutes(config: dict[str, Any] | None) -> int:
     return audit_ttl_minutes(
         config,
         "gameprog",
-        fallback_ttl=_gameprog_cache_ttl_minutes(config),
     )
 
 

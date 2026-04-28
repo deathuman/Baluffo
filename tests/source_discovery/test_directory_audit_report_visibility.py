@@ -201,14 +201,13 @@ def test_run_discovery_keeps_gamesmap_adapter_disabled_by_default() -> None:
             assert report["summary"]["directoryAudits"] == {}
 
 
-def test_run_discovery_gameprog_uses_audit_metadata_even_when_legacy_flag_disabled() -> None:
-    with workspace_tmpdir("directory-audit-report-gameprog-legacy-flag") as root:
+def test_run_discovery_gameprog_uses_audit_metadata() -> None:
+    with workspace_tmpdir("directory-audit-report-gameprog") as root:
         with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):
             config = _stage_config(
                 "gameprog",
                 {
                     "enabled": True,
-                    "activeAuditEnabled": False,
                     "activeAuditPath": str(root / "gameprog-audit.json"),
                     "activeAuditTtlMinutes": 60,
                     "teamsUrl": "https://gameprog.it/teams.json",
@@ -313,8 +312,8 @@ x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
             assert all(str(row.get("discoveryMethod") or "") == "sheet_directory" for row in queued)
 
 
-def test_run_discovery_sheet_directory_legacy_flag_uses_audit_path() -> None:
-    with workspace_tmpdir("directory-audit-report-sheet-disabled") as root:
+def test_run_discovery_sheet_directory_uses_audit_path() -> None:
+    with workspace_tmpdir("directory-audit-report-sheet") as root:
         with override_discovery_runtime(
             root,
             studio_seeds=[],
@@ -336,7 +335,6 @@ def test_run_discovery_sheet_directory_legacy_flag_uses_audit_path() -> None:
                     "webSearch": False,
                 },
                 "sheetDirectory": {
-                    "activeAuditEnabled": False,
                     "activeAuditPath": str(root / "sheet-audit.json"),
                 },
                 "gamesmap": {"enabled": False},

@@ -10,7 +10,6 @@ from src.bridge.registry_tombstones import filter_tombstoned_rows, load_tombston
 from src.source_registry import load_json_array, source_identity
 
 from . import config as discovery_config_module
-from .audit_config import audit_enabled
 from .config import DISCOVERY_STAGES, LOW_EVIDENCE_PROBE_LIMIT
 from .core import (
     _evidence_threshold_for_probe,
@@ -537,10 +536,7 @@ def _capture_gamedevmap_summary(
 ) -> None:
     from .gamedevmap_active_dry_run import latest_gamedevmap_audit_report_summary
 
-    gamedevmap_cfg = deps.effective_config.get("gamedevmap")
-    gamedevmap_cfg = gamedevmap_cfg if isinstance(gamedevmap_cfg, dict) else {}
-    if audit_enabled(gamedevmap_cfg):
-        state.gamedevmap_audit_summary = latest_gamedevmap_audit_report_summary()
+    state.gamedevmap_audit_summary = latest_gamedevmap_audit_report_summary()
 
 
 def _run_gamedevmap_stage(

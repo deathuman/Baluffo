@@ -24,7 +24,6 @@ from .gamedevmap_test_helpers import (
 def _config(**overrides) -> dict[str, object]:
     defaults = {
         "blockedCategories": [],
-        "activeAuditEnabled": True,
         "activeAuditTtlMinutes": 360,
         "validatedStaticQueueCap": 500,
         "validatedStaticDomainCap": 8,
@@ -199,15 +198,10 @@ def test_gamedevmap_audit_summary_is_written_to_discovery_report() -> None:
     assert report["summary"]["gamedevmapAudit"]["auditDurationMs"] == 123
 
 
-def test_gamedevmap_audit_disabled_flag_uses_active_audit_and_skips_legacy_cache() -> None:
-    with workspace_tmpdir("gamedevmap-disabled-audit-flag") as root:
+def test_gamedevmap_discovery_reuses_active_audit_artifact() -> None:
+    with workspace_tmpdir("gamedevmap-active-audit-reuse") as root:
         with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):
-            config = discovery_config_without_generator_stages(
-                gamedevmap=_config(
-                    activeAuditEnabled=False,
-                    cacheTtlMinutes=60,
-                )["gamedevmap"]
-            )
+            config = discovery_config_without_generator_stages(gamedevmap=_config()["gamedevmap"])
             _write_artifact(
                 root / "gamedevmap-active-source-dry-run.json",
                 config=config,
@@ -301,25 +295,10 @@ def test_gamedevmap_artifact_helpers_keep_report_compatibility() -> None:
     assert summary["browserRecoveryCandidates"] == 0
 
 
-def test_gamedevmap_active_audit_ttl_prefers_active_key_and_accepts_legacy_cache_key() -> None:
+def test_gamedevmap_active_audit_ttl_uses_active_key_only() -> None:
     assert dry_run._active_audit_ttl_minutes({"activeAuditTtlMinutes": 42}) == 42
-    assert (
-        dry_run._active_audit_ttl_minutes({"activeAuditTtlMinutes": 42, "cacheTtlMinutes": 7}) == 42
-    )
-    assert dry_run._active_audit_ttl_minutes({"cacheTtlMinutes": 7}) == 7
-    assert dry_run._active_audit_ttl_minutes({"cacheTtlMinutes": "bad"}) == 360
-
-
-def test_gamedevmap_cache_signature_ignores_legacy_active_audit_flag() -> None:
-    enabled_signature = gamedevmap._gamedevmap_cache_signature(
-        _config(activeAuditEnabled=True)["gamedevmap"]
-    )
-    disabled_signature = gamedevmap._gamedevmap_cache_signature(
-        _config(activeAuditEnabled=False)["gamedevmap"]
-    )
-
-    assert enabled_signature == disabled_signature
-    assert "activeAuditEnabled" not in enabled_signature
+    assert dry_run._active_audit_ttl_minutes({}) == 360
+    assert dry_run._active_audit_ttl_minutes({"activeAuditTtlMinutes": "bad"}) == 360
 
 
 def test_gamedevmap_followup_cli_flags_parse() -> None:

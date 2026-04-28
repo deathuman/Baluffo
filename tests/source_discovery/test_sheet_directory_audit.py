@@ -39,7 +39,6 @@ def _audit_config(
     recovery_enabled: bool | None = None,
 ) -> dict[str, object]:
     sheet_config: dict[str, object] = {
-        "activeAuditEnabled": True,
         "activeAuditPath": audit_path,
         "activeAuditTtlMinutes": 60,
     }

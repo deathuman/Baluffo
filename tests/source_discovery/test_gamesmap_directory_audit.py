@@ -63,7 +63,6 @@ def _gamesmap_config(audit_path: str | None = None) -> dict[str, object]:
     if audit_path is not None:
         cfg.update(
             {
-                "activeAuditEnabled": True,
                 "activeAuditPath": audit_path,
                 "activeAuditTtlMinutes": 60,
             }
@@ -101,7 +100,7 @@ def test_gamesmap_audit_missing_artifact_executes_and_writes_boundaries() -> Non
         assert artifact["timings"]["totalsMs"]["websiteFetchMs"] >= 0
 
 
-def test_gamesmap_audit_enabled_defaults_to_true_when_config_field_missing() -> None:
+def test_gamesmap_public_discovery_uses_audit_path_by_default() -> None:
     with workspace_tmpdir("gamesmap-audit-default-enabled") as root:
         audit_path = root / "gamesmap-audit.json"
         config = _gamesmap_config()
@@ -244,15 +243,11 @@ def test_gamesmap_audit_recovers_static_candidate_with_provenance() -> None:
         assert artifact["summary"]["recoveredStaticCandidates"] == 1
 
 
-def test_gamesmap_audit_disabled_flag_uses_audit_cache_and_skips_legacy_cache() -> None:
-    with workspace_tmpdir("gamesmap-audit-disabled") as root:
+def test_gamesmap_audit_reuses_modern_audit_artifact() -> None:
+    with workspace_tmpdir("gamesmap-audit-reuse-modern") as root:
         audit_path = root / "gamesmap-audit.json"
-        cache_path = root / "gamesmap-cache.json"
         config = _gamesmap_config()
-        config["gamesmap"]["activeAuditEnabled"] = False
         config["gamesmap"]["activeAuditPath"] = str(audit_path)
-        config["gamesmap"]["cachePath"] = str(cache_path)
-        config["gamesmap"]["cacheTtlMinutes"] = 60
         calls: list[str] = []
 
         def fake_fetch(url: str, timeout_s: int) -> str:
@@ -271,4 +266,3 @@ def test_gamesmap_audit_disabled_flag_uses_audit_cache_and_skips_legacy_cache() 
         assert second_rows == first_rows
         assert calls
         assert audit_path.exists()
-        assert not cache_path.exists()

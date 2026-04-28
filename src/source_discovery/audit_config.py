@@ -33,23 +33,6 @@ def positive_int(value: Any, default: int, *, minimum: int = 0) -> int:
         return max(minimum, int(default))
 
 
-def audit_enabled(
-    config: dict[str, Any] | None,
-    section_name: str | None = None,
-    *,
-    default: bool = True,
-    defaults: dict[str, Any] | None = None,
-    flat_fallback: bool = True,
-) -> bool:
-    cfg = config_section(
-        config,
-        section_name,
-        defaults=defaults,
-        flat_fallback=flat_fallback,
-    )
-    return bool(cfg.get("activeAuditEnabled", default))
-
-
 def audit_artifact_path(
     config: dict[str, Any] | None,
     section_name: str | None = None,

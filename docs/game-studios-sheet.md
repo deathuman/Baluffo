@@ -5,7 +5,7 @@ The **game studios directory sheet** is a single Google Sheet used by source dis
 - **Config:** `GAME_STUDIOS_SHEET_ID` and `GAME_STUDIOS_SHEET_GID` in [src/source_discovery/config.py](../src/source_discovery/config.py).
 - **Fetch:** CSV is fetched via export/gviz/pub URLs in [src/source_discovery/sheet_directory.py](../src/source_discovery/sheet_directory.py).
 - **Parse:** [parse_game_studio_sheet_csv](../src/source_discovery/sheet_directory.py) expects the following.
-- **Audit:** Sheet-directory discovery writes/reuses `data/sheet-directory-discovery-audit.json` by default while preserving the same provider/static/failure output rows. `sheetDirectory.activeAuditEnabled=false` is accepted as harmless legacy input and no longer rolls back to the direct CSV scan. HTTP-only same-site recovery for static sheet rows runs by default in the audit path; set `sheetDirectory.activeAuditRecoveryEnabled=false` to disable it.
+- **Audit:** Sheet-directory discovery writes/reuses `data/sheet-directory-discovery-audit.json` by default while preserving the same provider/static/failure output rows. `sheetDirectory.activeAuditEnabled` is no longer a supported input; enabled sheet-directory discovery uses the audit path. HTTP-only same-site recovery for static sheet rows runs by default in the audit path; set `sheetDirectory.activeAuditRecoveryEnabled=false` to disable it.
 
 ## Expected sheet structure
 

@@ -7,7 +7,6 @@ def test_gameprog_audit_readiness_caps_entries_before_website_fetch_jobs() -> No
     config = {
         "gameprog": {
             "enabled": True,
-            "activeAuditEnabled": False,
             "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
@@ -52,7 +51,6 @@ def test_gamesmap_audit_readiness_caps_entries_before_website_fetch_jobs() -> No
     config = {
         "gamesmap": {
             "enabled": True,
-            "activeAuditEnabled": False,
             "baseUrl": "https://www.gamesmap.de",
             "indexUrls": ["https://www.gamesmap.de/en"],
             "websiteOnlyFallback": True,
@@ -145,7 +143,6 @@ def test_directory_audit_readiness_website_fetch_failures_stay_in_failure_channe
     gamesmap_config = {
         "gamesmap": {
             "enabled": True,
-            "activeAuditEnabled": False,
             "baseUrl": "https://www.gamesmap.de",
             "indexUrls": ["https://www.gamesmap.de/en"],
             "websiteOnlyFallback": True,
@@ -191,7 +188,6 @@ def test_directory_audit_readiness_website_fetch_failures_stay_in_failure_channe
 def test_directory_audit_contract_cache_hit_bypasses_boundary_work() -> None:
     with workspace_tmpdir("directory-audit-cache-contract") as root:
         gameprog_audit_path = root / "gameprog-audit.json"
-        gameprog_cache_path = root / "gameprog-cache.json"
         gameprog_config = {
             "gameprog": {
                 "enabled": True,
@@ -200,8 +196,6 @@ def test_directory_audit_contract_cache_hit_bypasses_boundary_work() -> None:
                 "teamsUrl": "https://gameprog.it/teams.json",
                 "websiteOnlyFallback": True,
                 "maxStudios": 1,
-                "cachePath": str(gameprog_cache_path),
-                "cacheTtlMinutes": 60,
             }
         }
         gameprog_payloads = {
@@ -237,7 +231,6 @@ def test_directory_audit_contract_cache_hit_bypasses_boundary_work() -> None:
         assert first_gameprog == second_gameprog
 
         gamesmap_audit_path = root / "gamesmap-audit.json"
-        gamesmap_cache_path = root / "gamesmap-cache.json"
         gamesmap_config = {
             "gamesmap": {
                 "enabled": True,
@@ -249,8 +242,6 @@ def test_directory_audit_contract_cache_hit_bypasses_boundary_work() -> None:
                 "blockedCategoryTokens": [],
                 "activeAuditPath": str(gamesmap_audit_path),
                 "activeAuditTtlMinutes": 60,
-                "cachePath": str(gamesmap_cache_path),
-                "cacheTtlMinutes": 60,
             }
         }
         gamesmap_entries = [
@@ -300,14 +291,12 @@ def test_directory_audit_contract_cache_hit_bypasses_boundary_work() -> None:
 
         assert first_gamesmap == second_gamesmap
         assert gamesmap_audit_path.exists()
-        assert not gamesmap_cache_path.exists()
 
 
 def test_directory_audit_contract_candidate_outputs_keep_boundary_provenance() -> None:
     gameprog_config = {
         "gameprog": {
             "enabled": True,
-            "activeAuditEnabled": False,
             "activeAuditPath": str(Path(".tmp") / "gameprog-boundary-audit.json"),
             "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
@@ -344,7 +333,6 @@ def test_directory_audit_contract_candidate_outputs_keep_boundary_provenance() -
     gamesmap_config = {
         "gamesmap": {
             "enabled": True,
-            "activeAuditEnabled": False,
             "activeAuditPath": str(Path(".tmp") / "gamesmap-boundary-audit.json"),
             "activeAuditTtlMinutes": 0,
             "baseUrl": "https://www.gamesmap.de",

@@ -34,7 +34,6 @@ from .directory_page_recovery import (
 )
 from .gamesmap_cache import (
     gamesmap_cache_signature,
-    gamesmap_cache_ttl_minutes,
     gamesmap_config_value,
 )
 from .gamesmap_parsing import _parse_gamesmap_index_entries_with_diagnostics
@@ -266,8 +265,8 @@ def _gamesmap_audit_path(cfg: dict[str, Any]) -> Path:
     return audit_artifact_path(cfg, default_filename="gamesmap-discovery-audit.json")
 
 
-def _gamesmap_audit_ttl_minutes(config: dict[str, Any] | None, cfg: dict[str, Any]) -> int:
-    return audit_ttl_minutes(cfg, fallback_ttl=gamesmap_cache_ttl_minutes(config))
+def _gamesmap_audit_ttl_minutes(_config: dict[str, Any] | None, cfg: dict[str, Any]) -> int:
+    return audit_ttl_minutes(cfg)
 
 
 def _gamesmap_homepage_result_candidates(

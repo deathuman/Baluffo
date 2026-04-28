@@ -1810,7 +1810,7 @@ def run_gamedevmap_active_source_dry_run(
 
 
 def _active_audit_ttl_minutes(cfg: dict[str, Any]) -> int:
-    raw = cfg.get("activeAuditTtlMinutes", cfg.get("cacheTtlMinutes", 360))
+    raw = cfg.get("activeAuditTtlMinutes", 360)
     try:
         return max(0, int(raw))
     except (TypeError, ValueError):

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from .directory_cache import directory_cache_ttl_minutes
 from .directory_page_recovery import RECOVERY_LOGIC_VERSION, resolve_recovery_url_limit
 
 GAMESMAP_PARSER_CACHE_VERSION = 2
@@ -11,10 +10,6 @@ GAMESMAP_PARSER_CACHE_VERSION = 2
 def gamesmap_config_value(config: dict[str, Any] | None, key: str, default: Any) -> Any:
     source = config if isinstance(config, dict) else {}
     return source.get(key, default)
-
-
-def gamesmap_cache_ttl_minutes(config: dict[str, Any] | None) -> int:
-    return directory_cache_ttl_minutes(config, "gamesmap")
 
 
 def gamesmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:

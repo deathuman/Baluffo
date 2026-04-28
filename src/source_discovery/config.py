@@ -226,7 +226,6 @@ DEFAULT_STUDIO_SEEDS: list[dict[str, Any]] = [
 DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     "gameprog": {
         "enabled": True,
-        "activeAuditEnabled": True,
         "activeAuditRecoveryEnabled": True,
         "activeAuditRecoveryUrlLimit": 6,
         "teamsUrl": "https://gameprog.it/teams.json",
@@ -237,7 +236,6 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
     },
     "gamesmap": {
         "enabled": False,
-        "activeAuditEnabled": True,
         "activeAuditRecoveryEnabled": True,
         "activeAuditRecoveryUrlLimit": 6,
         "baseUrl": "https://www.gamesmap.de",
@@ -272,14 +270,12 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "perHostConcurrency": 3,
     },
     "sheetDirectory": {
-        "activeAuditEnabled": True,
         "activeAuditRecoveryEnabled": True,
         "activeAuditRecoveryUrlLimit": 6,
         "activeAuditPath": "data/sheet-directory-discovery-audit.json",
         "activeAuditTtlMinutes": 360,
     },
     "webSearch": {
-        "activeAuditEnabled": True,
         "activeAuditRecoveryEnabled": True,
         "activeAuditRecoveryUrlLimit": 6,
         "activeAuditPath": "data/web-search-discovery-audit.json",
@@ -295,7 +291,6 @@ DEFAULT_DISCOVERY_CONFIG: dict[str, Any] = {
         "enabled": True,
         "csvUrl": "https://www.gamedevmap.com/cmsdata/gamedevmapdata.csv",
         "indexUrl": "https://www.gamedevmap.com/index.php",
-        "activeAuditEnabled": True,
         "activeAuditTtlMinutes": 360,
         "activeAuditBatchSize": 1000,
         "activeAuditMaxBatchesPerDiscoveryRun": 0,
