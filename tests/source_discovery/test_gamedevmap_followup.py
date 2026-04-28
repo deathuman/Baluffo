@@ -301,6 +301,15 @@ def test_gamedevmap_artifact_helpers_keep_report_compatibility() -> None:
     assert summary["browserRecoveryCandidates"] == 0
 
 
+def test_gamedevmap_active_audit_ttl_prefers_active_key_and_accepts_legacy_cache_key() -> None:
+    assert dry_run._active_audit_ttl_minutes({"activeAuditTtlMinutes": 42}) == 42
+    assert (
+        dry_run._active_audit_ttl_minutes({"activeAuditTtlMinutes": 42, "cacheTtlMinutes": 7}) == 42
+    )
+    assert dry_run._active_audit_ttl_minutes({"cacheTtlMinutes": 7}) == 7
+    assert dry_run._active_audit_ttl_minutes({"cacheTtlMinutes": "bad"}) == 360
+
+
 def test_gamedevmap_followup_cli_flags_parse() -> None:
     args = discovery_orchestrator.parse_args(
         [
