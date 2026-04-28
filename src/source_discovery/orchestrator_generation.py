@@ -360,26 +360,14 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
         orchestrator.emit_log("Curated seed stage disabled, skipping.")
 
     def _scan_sheet_directory() -> ProviderStaticScanRows:
-        sheet_cfg = deps.effective_config.get("sheetDirectory")
-        sheet_cfg = sheet_cfg if isinstance(sheet_cfg, dict) else {}
-        if audit_enabled(sheet_cfg):
-            sheet_artifact, _sheet_cache_hit = orchestrator.run_sheet_directory_audit(
-                deps.timeout_s,
-                sheet_id=str(discovery_config_module.GAME_STUDIOS_SHEET_ID or "") or None,
-                gid=str(discovery_config_module.GAME_STUDIOS_SHEET_GID or "") or None,
-                config=deps.effective_config,
-                fetcher=deps.fetcher,
-            )
-            return directory_audit_rows(sheet_artifact)
-        return cast(
-            ProviderStaticScanRows,
-            orchestrator.discover_game_studio_sheet_candidates(
-                deps.timeout_s,
-                sheet_id=str(discovery_config_module.GAME_STUDIOS_SHEET_ID or "") or None,
-                gid=str(discovery_config_module.GAME_STUDIOS_SHEET_GID or "") or None,
-                fetcher=deps.fetcher,
-            ),
+        sheet_artifact, _sheet_cache_hit = orchestrator.run_sheet_directory_audit(
+            deps.timeout_s,
+            sheet_id=str(discovery_config_module.GAME_STUDIOS_SHEET_ID or "") or None,
+            gid=str(discovery_config_module.GAME_STUDIOS_SHEET_GID or "") or None,
+            config=deps.effective_config,
+            fetcher=deps.fetcher,
         )
+        return directory_audit_rows(sheet_artifact)
 
     def _route_sheet_failures(
         provider_rows: list[dict[str, Any]],

@@ -217,15 +217,17 @@ def test_sheet_directory_audit_reruns_stale_wrong_schema_incomplete_or_signature
             assert artifact["summary"]["providerCandidates"] == 1
 
 
-def test_sheet_directory_audit_output_matches_legacy_scan_for_same_inputs() -> None:
+def test_sheet_directory_public_discovery_returns_audit_rows_for_same_inputs() -> None:
     with workspace_tmpdir("sheet-directory-audit-equivalence") as root:
-        audit_path = root / "sheet-audit.json"
+        public_audit_path = root / "sheet-public-audit.json"
+        audit_path = root / "sheet-direct-audit.json"
         payloads = {_sheet_url(): _sheet_csv()}
 
-        legacy_rows = sd.discover_game_studio_sheet_candidates(
+        public_rows = sd.discover_game_studio_sheet_candidates(
             5,
             sheet_id="sheet_test",
             gid="1",
+            config=_audit_config(str(public_audit_path), recovery_enabled=False),
             fetcher=_fetch_from(payloads),
         )
         artifact, _cache_hit = sd.run_sheet_directory_audit(
@@ -237,7 +239,7 @@ def test_sheet_directory_audit_output_matches_legacy_scan_for_same_inputs() -> N
         )
         audit_rows = directory_audit.directory_audit_rows(artifact)
 
-        assert audit_rows == legacy_rows
+        assert audit_rows == public_rows
 
 
 def test_sheet_directory_audit_records_fetch_parse_and_invalid_url_failures() -> None:

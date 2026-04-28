@@ -313,7 +313,7 @@ x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
             assert all(str(row.get("discoveryMethod") or "") == "sheet_directory" for row in queued)
 
 
-def test_run_discovery_explicit_sheet_directory_audit_disabled_uses_legacy_path() -> None:
+def test_run_discovery_sheet_directory_legacy_flag_uses_audit_path() -> None:
     with workspace_tmpdir("directory-audit-report-sheet-disabled") as root:
         with override_discovery_runtime(
             root,
@@ -337,43 +337,41 @@ def test_run_discovery_explicit_sheet_directory_audit_disabled_uses_legacy_path(
                 },
                 "sheetDirectory": {
                     "activeAuditEnabled": False,
+                    "activeAuditPath": str(root / "sheet-audit.json"),
                 },
                 "gamesmap": {"enabled": False},
                 "gameprog": {"enabled": False},
                 "gamedevmap": {"enabled": False},
             }
+            sheet_url = sd.game_studios_sheet_candidate_urls("sheet_test", "1")[0]
+            provider_api = (
+                "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true"
+            )
+            payloads = {
+                sheet_url: """x,x,x,x
+x,Studio,Hiring Location,Roles open,Link
+x,Example Studio,Remote,yes,https://boards.greenhouse.io/examplestudio
+""",
+                provider_api: json.dumps({"jobs": [{}, {}]}),
+            }
 
             with mock.patch.object(
                 discovery_orchestrator,
                 "discover_game_studio_sheet_candidates",
-                return_value=(
-                    [
-                        {
-                            "adapter": "greenhouse",
-                            "slug": "examplestudio",
-                            "api_url": "https://boards-api.greenhouse.io/v1/boards/examplestudio/jobs?content=true",
-                            "name": "Example Studio",
-                            "discoveryMethod": "sheet_directory",
-                            "discoveryStage": "sheet_directory",
-                            "evidenceScore": 46,
-                        }
-                    ],
-                    [],
-                    [],
-                ),
-            ) as legacy_scan:
+                side_effect=AssertionError("sheet directory should use audit path"),
+            ) as direct_scan:
                 report = sd.run_discovery(
                     timeout_s=5,
                     top_n=0,
                     mode="dynamic",
                     include_web_search=False,
                     discovery_config=config,
-                    fetcher=lambda *_args: json.dumps({"jobs": [{}, {}]}),
+                    fetcher=lambda url, _timeout: payloads[url],
                 )
 
-            legacy_scan.assert_called_once()
-            assert "sheet_directory" not in report["directoryAuditSummaries"]
-            assert "sheet_directory" not in report["summary"]["directoryAudits"]
+            direct_scan.assert_not_called()
+            assert report["directoryAuditSummaries"]["sheet_directory"]["cacheHit"] is False
+            assert report["summary"]["directoryAudits"]["sheet_directory"]["complete"] is True
             queued = json.loads(paths.discovery_candidates_path.read_text(encoding="utf-8"))
             assert len(queued) == 1
             assert str(queued[0].get("discoveryMethod") or "") == "sheet_directory"

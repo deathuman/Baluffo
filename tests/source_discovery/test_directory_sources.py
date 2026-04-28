@@ -30,25 +30,30 @@ from ._helpers import (
 
 def test_discover_game_studio_sheet_candidates_reports_parse_failure_when_csv_empty_parse() -> None:
     """When CSV is non-empty but no rows are parsed, discovery returns a directory_parse failure."""
-    csv_with_wrong_header = "Column A,Column B,Column C\nx,y,z\n"
-    payloads = {
-        sd.game_studios_sheet_candidate_urls(sd.GAME_STUDIOS_SHEET_ID, sd.GAME_STUDIOS_SHEET_GID)[
-            0
-        ]: csv_with_wrong_header,
-    }
+    with workspace_tmpdir("sheet-directory-public-parse-failure") as root:
+        csv_with_wrong_header = "Column A,Column B,Column C\nx,y,z\n"
+        payloads = {
+            sd.game_studios_sheet_candidate_urls(
+                sd.GAME_STUDIOS_SHEET_ID, sd.GAME_STUDIOS_SHEET_GID
+            )[0]: csv_with_wrong_header,
+        }
 
-    def fake_fetch(url: str, _: int) -> str:
-        if url not in payloads:
-            raise RuntimeError(f"unexpected URL: {url}")
-        return payloads[url]
+        def fake_fetch(url: str, _: int) -> str:
+            if url not in payloads:
+                raise RuntimeError(f"unexpected URL: {url}")
+            return payloads[url]
 
-    provider, static, failures = sd.discover_game_studio_sheet_candidates(5, fetcher=fake_fetch)
-    assert provider == []
-    assert static == []
-    assert len(failures) == 1
-    assert str(failures[0].get("adapter")) == "sheet_directory"
-    assert str(failures[0].get("stage")) == "directory_parse"
-    assert "no rows parsed" in str(failures[0].get("error"))
+        provider, static, failures = sd.discover_game_studio_sheet_candidates(
+            5,
+            config={"sheetDirectory": {"activeAuditPath": str(root / "sheet-audit.json")}},
+            fetcher=fake_fetch,
+        )
+        assert provider == []
+        assert static == []
+        assert len(failures) == 1
+        assert str(failures[0].get("adapter")) == "sheet_directory"
+        assert str(failures[0].get("stage")) == "directory_parse"
+        assert "no rows parsed" in str(failures[0].get("error"))
 
 
 def test_discover_gameprog_candidates_emits_provider_and_static() -> None:

@@ -7,28 +7,27 @@ from ._helpers import (
     _fixture_json,
     _fixture_text,
     _gamesmap_next_payload_html,
-    async_fetch_text_httpx,
-    asyncio,
-    classify_probe_failure_stage,
     discovery_config_module,
     discovery_config_without_generator_stages,
     discovery_orchestrator,
     discovery_url_patches,
-    gamesmap_adapter,
-    importlib,
     json,
     mock,
-    os,
     override_discovery_config,
     override_discovery_runtime,
     patch_empty_generator_stages,
     sd,
     sr,
-    sys,
-    threading,
-    time,
     workspace_tmpdir,
 )
+
+
+def _directory_audit_result(provider=None, static=None, failures=None):
+    return dict(
+        providerCandidates=list(provider or []),
+        staticCandidates=list(static or []),
+        failures=list(failures or []),
+    ), False
 
 
 def test_apply_sheet_directory_static_probe_cap_limits_overproducing_sheet_static_rows() -> None:
@@ -296,8 +295,8 @@ def test_run_discovery_default_and_uncapped_report_runtime_cap_bypass_flags() ->
                 with (
                     mock.patch.object(
                         discovery_orchestrator,
-                        "discover_game_studio_sheet_candidates",
-                        return_value=([], list(dynamic_candidates), []),
+                        "run_sheet_directory_audit",
+                        return_value=_directory_audit_result(static=list(dynamic_candidates)),
                     ),
                     mock.patch.object(
                         discovery_orchestrator, "stage_curated_seed_candidates", return_value=[]
@@ -657,7 +656,7 @@ def test_run_discovery_gamedevmap_candidates_flow_into_report_and_queue() -> Non
 def test_run_discovery_does_not_auto_approve_weak_pending_only_rows() -> None:
     with workspace_tmpdir("source-discovery-auto-approval") as root:
         prev_approval_state_path = discovery_orchestrator.DEFAULT_APPROVAL_STATE_PATH
-        prev_sheet = discovery_orchestrator.discover_game_studio_sheet_candidates
+        prev_sheet = discovery_orchestrator.run_sheet_directory_audit
         prev_gamesmap = discovery_orchestrator.discover_gamesmap_candidates
         prev_gameprog = discovery_orchestrator.discover_gameprog_candidates
         prev_web = discovery_orchestrator.discover_web_search_candidates
@@ -689,8 +688,8 @@ def test_run_discovery_does_not_auto_approve_weak_pending_only_rows() -> None:
                 )
                 sr.save_json_atomic(paths.rejected_path, [])
 
-                discovery_orchestrator.discover_game_studio_sheet_candidates = (
-                    lambda *args, **kwargs: ([], [], [])
+                discovery_orchestrator.run_sheet_directory_audit = lambda *_a, **_k: (
+                    _directory_audit_result()
                 )
                 discovery_orchestrator.discover_gamesmap_candidates = lambda *args, **kwargs: (
                     [],
@@ -748,7 +747,7 @@ def test_run_discovery_does_not_auto_approve_weak_pending_only_rows() -> None:
                 assert not (root / "source-approval-state.json").exists()
         finally:
             discovery_orchestrator.DEFAULT_APPROVAL_STATE_PATH = prev_approval_state_path
-            discovery_orchestrator.discover_game_studio_sheet_candidates = prev_sheet
+            discovery_orchestrator.run_sheet_directory_audit = prev_sheet
             discovery_orchestrator.discover_gamesmap_candidates = prev_gamesmap
             discovery_orchestrator.discover_gameprog_candidates = prev_gameprog
             discovery_orchestrator.discover_web_search_candidates = prev_web
@@ -769,7 +768,7 @@ def test_run_discovery_only_gamedevmap_skips_other_generator_stages() -> None:
                 ),
                 mock.patch.object(
                     discovery_orchestrator,
-                    "discover_game_studio_sheet_candidates",
+                    "run_sheet_directory_audit",
                     side_effect=AssertionError("sheet directory stage should be disabled"),
                 ),
                 mock.patch.object(
@@ -907,9 +906,9 @@ def test_run_discovery_persists_deferred_candidates_in_candidates_file() -> None
                 ),
                 mock.patch.object(
                     discovery_orchestrator,
-                    "discover_game_studio_sheet_candidates",
-                    return_value=(
-                        [
+                    "run_sheet_directory_audit",
+                    return_value=_directory_audit_result(
+                        provider=[
                             {
                                 "name": "Demo Greenhouse",
                                 "studio": "Demo",
@@ -943,9 +942,7 @@ def test_run_discovery_persists_deferred_candidates_in_candidates_file() -> None
                                 "evidenceScore": 46,
                                 "evidenceTypes": ["sheet_directory"],
                             },
-                        ],
-                        [],
-                        [],
+                        ]
                     ),
                 ),
                 mock.patch.object(
@@ -1222,9 +1219,9 @@ def test_run_discovery_uses_previous_deferred_review_history_in_ranking() -> Non
                 ),
                 mock.patch.object(
                     discovery_orchestrator,
-                    "discover_game_studio_sheet_candidates",
-                    return_value=(
-                        [
+                    "run_sheet_directory_audit",
+                    return_value=_directory_audit_result(
+                        provider=[
                             {
                                 "name": "Demo Deferred",
                                 "studio": "Demo Deferred",
@@ -1236,9 +1233,7 @@ def test_run_discovery_uses_previous_deferred_review_history_in_ranking() -> Non
                                 "evidenceScore": 46,
                                 "evidenceTypes": ["sheet_directory"],
                             }
-                        ],
-                        [],
-                        [],
+                        ]
                     ),
                 ),
                 mock.patch.object(
@@ -1336,7 +1331,7 @@ def test_run_discovery_uses_seed_careers_pages_without_web_search() -> None:
 
 def test_run_discovery_writes_m5_backlog_snapshot() -> None:
     with workspace_tmpdir("source-discovery") as root:
-        prev_sheet = discovery_orchestrator.discover_game_studio_sheet_candidates
+        prev_sheet = discovery_orchestrator.run_sheet_directory_audit
         prev_gamesmap = discovery_orchestrator.discover_gamesmap_candidates
         prev_gameprog = discovery_orchestrator.discover_gameprog_candidates
         prev_web = discovery_orchestrator.discover_web_search_candidates
@@ -1367,8 +1362,8 @@ def test_run_discovery_writes_m5_backlog_snapshot() -> None:
                 ):
                     return True, 4, ""
 
-                discovery_orchestrator.discover_game_studio_sheet_candidates = (
-                    lambda *args, **kwargs: ([], [], [])
+                discovery_orchestrator.run_sheet_directory_audit = lambda *_a, **_k: (
+                    _directory_audit_result()
                 )
                 discovery_orchestrator.discover_gamesmap_candidates = lambda *args, **kwargs: (
                     [],
@@ -1422,7 +1417,7 @@ def test_run_discovery_writes_m5_backlog_snapshot() -> None:
                 assert backlog[0]["coverageLane"] == "lane_c_asia_custom"
                 assert backlog[0]["ownerMilestone"] == "M5"
         finally:
-            discovery_orchestrator.discover_game_studio_sheet_candidates = prev_sheet
+            discovery_orchestrator.run_sheet_directory_audit = prev_sheet
             discovery_orchestrator.discover_gamesmap_candidates = prev_gamesmap
             discovery_orchestrator.discover_gameprog_candidates = prev_gameprog
             discovery_orchestrator.discover_web_search_candidates = prev_web

@@ -22,7 +22,7 @@ from .directory_adapter_templates import (
 )
 from .directory_audit import (
     DirectoryAuditRunSpec,
-    discover_directory_scan_candidates,
+    directory_audit_rows,
     run_directory_audit_spec,
 )
 from .directory_index_scan import run_directory_index_scan
@@ -675,21 +675,17 @@ def discover_game_studio_sheet_candidates(
     *,
     sheet_id: str | None = None,
     gid: str | None = None,
+    config: dict[str, Any] | None = None,
     fetcher=None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    from .reporting import emit_log
     from .web_search import fetch_text
 
     fetcher = fetcher or fetch_text
-    sheet_id = str(sheet_id or GAME_STUDIOS_SHEET_ID)
-    gid = str(gid or GAME_STUDIOS_SHEET_GID)
-    return discover_directory_scan_candidates(
+    artifact, _cache_hit = run_sheet_directory_audit(
         timeout_s,
-        lambda scan_timeout_s: _sheet_directory_scan(
-            scan_timeout_s,
-            sheet_id=sheet_id,
-            gid=gid,
-            fetcher=fetcher,
-            emit_log=emit_log,
-        ),
+        sheet_id=sheet_id,
+        gid=gid,
+        config=config,
+        fetcher=fetcher,
     )
+    return directory_audit_rows(artifact)
