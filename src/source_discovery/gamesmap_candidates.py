@@ -9,7 +9,7 @@ from typing import Any
 from src.source_registry import unique_sources
 
 from . import audit_ledger
-from .audit_config import audit_artifact_path, audit_enabled, audit_ttl_minutes
+from .audit_config import audit_artifact_path, audit_ttl_minutes
 from .config import DEFAULT_DISCOVERY_CONFIG
 from .directory_adapter_templates import (
     apply_directory_provenance,
@@ -19,7 +19,7 @@ from .directory_adapter_templates import (
 )
 from .directory_audit import (
     DirectoryAuditRunSpec,
-    discover_directory_adapter_candidates,
+    directory_audit_rows,
     run_directory_audit_spec,
 )
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
@@ -36,8 +36,6 @@ from .gamesmap_cache import (
     gamesmap_cache_signature,
     gamesmap_cache_ttl_minutes,
     gamesmap_config_value,
-    load_gamesmap_cache,
-    write_gamesmap_cache,
 )
 from .gamesmap_parsing import _parse_gamesmap_index_entries_with_diagnostics
 from .page_analysis import analyze_fetched_page
@@ -242,10 +240,6 @@ def _apply_gamesmap_static_provenance(
         careers_url_fallback=website_url,
         name_suffix="Gamesmap",
     )
-
-
-def _gamesmap_audit_enabled(cfg: dict[str, Any]) -> bool:
-    return audit_enabled(cfg)
 
 
 def _gamesmap_audit_path(cfg: dict[str, Any]) -> Path:
@@ -684,35 +678,12 @@ def discover_gamesmap_candidates(
     from .reporting import emit_log
 
     cfg = dict(gamesmap_config_value(config, "gamesmap", DEFAULT_DISCOVERY_CONFIG["gamesmap"]))
-    return discover_directory_adapter_candidates(
+    if not bool(cfg.get("enabled")):
+        emit_log("Gamesmap directory disabled, skipping.")
+        return [], [], []
+    artifact, _cache_hit = run_gamesmap_directory_audit(
         timeout_s,
-        enabled=bool(cfg.get("enabled")),
-        disabled_log="Gamesmap directory disabled, skipping.",
-        audit_enabled=_gamesmap_audit_enabled(cfg),
-        run_audit=lambda: run_gamesmap_directory_audit(
-            timeout_s,
-            config=config,
-            fetcher=fetcher,
-        ),
-        load_cache=lambda: load_gamesmap_cache(
-            config,
-            cfg,
-            fetcher=fetcher,
-            default_fetcher=_root_attr("fetch_text", fetch_text),
-        ),
-        scan=lambda scan_timeout_s: _gamesmap_scan(
-            scan_timeout_s,
-            cfg=cfg,
-            fetcher=fetcher,
-            emit_log=emit_log,
-            enable_recovery=False,
-        ),
-        write_cache=lambda provider_candidates, static_candidates, failures: write_gamesmap_cache(
-            config,
-            cfg,
-            provider_candidates=provider_candidates,
-            static_candidates=static_candidates,
-            failures=failures,
-        ),
-        emit_log=emit_log,
+        config=config,
+        fetcher=fetcher,
     )
+    return directory_audit_rows(artifact)

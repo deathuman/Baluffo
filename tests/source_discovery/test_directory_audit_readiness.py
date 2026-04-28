@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ._helpers import gamesmap_adapter, mock, sd, workspace_tmpdir
+from ._helpers import Path, gamesmap_adapter, mock, sd, workspace_tmpdir
 
 
 def test_gameprog_audit_readiness_caps_entries_before_website_fetch_jobs() -> None:
@@ -236,6 +236,7 @@ def test_directory_audit_contract_cache_hit_bypasses_boundary_work() -> None:
 
         assert first_gameprog == second_gameprog
 
+        gamesmap_audit_path = root / "gamesmap-audit.json"
         gamesmap_cache_path = root / "gamesmap-cache.json"
         gamesmap_config = {
             "gamesmap": {
@@ -246,6 +247,8 @@ def test_directory_audit_contract_cache_hit_bypasses_boundary_work() -> None:
                 "maxDetailPages": 1,
                 "allowedCategoryTokens": ["developer"],
                 "blockedCategoryTokens": [],
+                "activeAuditPath": str(gamesmap_audit_path),
+                "activeAuditTtlMinutes": 60,
                 "cachePath": str(gamesmap_cache_path),
                 "cacheTtlMinutes": 60,
             }
@@ -296,6 +299,8 @@ def test_directory_audit_contract_cache_hit_bypasses_boundary_work() -> None:
             )
 
         assert first_gamesmap == second_gamesmap
+        assert gamesmap_audit_path.exists()
+        assert not gamesmap_cache_path.exists()
 
 
 def test_directory_audit_contract_candidate_outputs_keep_boundary_provenance() -> None:
@@ -303,6 +308,7 @@ def test_directory_audit_contract_candidate_outputs_keep_boundary_provenance() -
         "gameprog": {
             "enabled": True,
             "activeAuditEnabled": False,
+            "activeAuditPath": str(Path(".tmp") / "gameprog-boundary-audit.json"),
             "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
@@ -339,6 +345,8 @@ def test_directory_audit_contract_candidate_outputs_keep_boundary_provenance() -
         "gamesmap": {
             "enabled": True,
             "activeAuditEnabled": False,
+            "activeAuditPath": str(Path(".tmp") / "gamesmap-boundary-audit.json"),
+            "activeAuditTtlMinutes": 0,
             "baseUrl": "https://www.gamesmap.de",
             "indexUrls": ["https://www.gamesmap.de/en"],
             "websiteOnlyFallback": True,

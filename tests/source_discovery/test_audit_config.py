@@ -6,7 +6,6 @@ from src.source_discovery import (
     audit_config,
     directory_cache,
     gameprog,
-    gamesmap_candidates,
     sheet_directory,
     web_search_candidates,
 )
@@ -57,13 +56,7 @@ def test_audit_config_ttl_invalid_value_uses_fallback() -> None:
     )
 
 
-def test_adapter_audit_config_wrappers_preserve_defaults_and_rollbacks() -> None:
-    assert gamesmap_candidates._gamesmap_audit_enabled({"enabled": True}) is True
-    assert (
-        gamesmap_candidates._gamesmap_audit_enabled({"enabled": True, "activeAuditEnabled": False})
-        is False
-    )
-
+def test_adapter_audit_config_wrappers_preserve_defaults() -> None:
     assert (
         sheet_directory._sheet_directory_audit_ttl_minutes(
             {"sheetDirectory": {"activeAuditTtlMinutes": "bad"}}

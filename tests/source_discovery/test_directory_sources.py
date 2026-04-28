@@ -238,6 +238,8 @@ def test_discover_gamesmap_candidates_emits_direct_provider_homepage_provider_an
             "maxDetailPages": 10,
             "allowedCategoryTokens": ["developer", "publisher", "mobile", "pc", "console"],
             "blockedCategoryTokens": ["association", "education"],
+            "activeAuditPath": str(Path(".tmp") / "gamesmap-direct-provider-audit.json"),
+            "activeAuditTtlMinutes": 0,
         }
     }
 
@@ -296,6 +298,8 @@ def test_discover_gamesmap_candidates_emits_explicit_careers_links_without_websi
             "maxDetailPages": 10,
             "allowedCategoryTokens": ["developer", "publisher", "mobile", "pc", "console"],
             "blockedCategoryTokens": ["association", "education"],
+            "activeAuditPath": str(Path(".tmp") / "gamesmap-explicit-careers-audit.json"),
+            "activeAuditTtlMinutes": 0,
         }
     }
     index_html = """
@@ -347,6 +351,8 @@ def test_discover_gamesmap_candidates_marks_manual_website_only_rows() -> None:
             "maxDetailPages": 10,
             "allowedCategoryTokens": ["publisher"],
             "blockedCategoryTokens": ["association", "education"],
+            "activeAuditPath": str(Path(".tmp") / "gamesmap-manual-website-audit.json"),
+            "activeAuditTtlMinutes": 0,
         }
     }
     payloads = {
@@ -382,6 +388,8 @@ def test_discover_gamesmap_candidates_reports_parse_failure_when_index_shape_is_
             "maxDetailPages": 10,
             "allowedCategoryTokens": ["developer"],
             "blockedCategoryTokens": [],
+            "activeAuditPath": str(Path(".tmp") / "gamesmap-parse-failure-audit.json"),
+            "activeAuditTtlMinutes": 0,
         }
     }
 
@@ -401,6 +409,7 @@ def test_discover_gamesmap_candidates_reports_parse_failure_when_index_shape_is_
 
 def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
     with workspace_tmpdir("gamesmap-cache") as root:
+        audit_path = root / "gamesmap-audit.json"
         cache_path = root / "gamesmap-cache.json"
         config = {
             "gamesmap": {
@@ -411,6 +420,8 @@ def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
                 "maxDetailPages": 10,
                 "allowedCategoryTokens": ["developer", "publisher", "mobile", "pc", "console"],
                 "blockedCategoryTokens": ["association", "education"],
+                "activeAuditPath": str(audit_path),
+                "activeAuditTtlMinutes": 60,
                 "cachePath": str(cache_path),
                 "cacheTtlMinutes": 60,
             }
@@ -449,6 +460,8 @@ def test_discover_gamesmap_candidates_reuses_fresh_cache() -> None:
         assert provider_rows_1 == provider_rows_2
         assert static_rows_1 == static_rows_2
         assert failures_1 == failures_2
+        assert audit_path.exists()
+        assert not cache_path.exists()
 
 
 def test_gamesmap_category_filter_rejects_blocked_entries() -> None:

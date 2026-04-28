@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 
+from src.source_discovery import directory_audit
+from src.source_discovery.gamesmap_candidates import run_gamesmap_directory_audit
+
 from ._helpers import _gamesmap_next_payload_html, sd, workspace_tmpdir
 
 
@@ -138,25 +141,26 @@ def test_gamesmap_audit_reuses_fresh_artifact_without_network_work() -> None:
         assert second_rows == first_rows
 
 
-def test_gamesmap_audit_output_matches_legacy_scan_for_same_inputs() -> None:
+def test_gamesmap_public_discovery_returns_audit_rows_for_same_inputs() -> None:
     with workspace_tmpdir("gamesmap-audit-equivalence") as root:
-        audit_path = root / "gamesmap-audit.json"
-        legacy_config = _gamesmap_config()
-        legacy_config["gamesmap"]["activeAuditEnabled"] = False
+        public_audit_path = root / "gamesmap-public-audit.json"
+        audit_path = root / "gamesmap-direct-audit.json"
+        public_config = _gamesmap_config(str(public_audit_path))
         audit_config = _gamesmap_config(str(audit_path))
 
-        legacy_rows = sd.discover_gamesmap_candidates(
+        public_rows = sd.discover_gamesmap_candidates(
             5,
-            config=legacy_config,
+            config=public_config,
             fetcher=_fetch_from(_gamesmap_payloads()),
         )
-        audit_rows = sd.discover_gamesmap_candidates(
+        artifact, _cache_hit = run_gamesmap_directory_audit(
             5,
             config=audit_config,
             fetcher=_fetch_from(_gamesmap_payloads()),
         )
+        audit_rows = directory_audit.directory_audit_rows(artifact)
 
-        assert audit_rows == legacy_rows
+        assert audit_rows == public_rows
 
 
 def test_gamesmap_audit_records_index_and_homepage_failures() -> None:
@@ -240,7 +244,7 @@ def test_gamesmap_audit_recovers_static_candidate_with_provenance() -> None:
         assert artifact["summary"]["recoveredStaticCandidates"] == 1
 
 
-def test_gamesmap_audit_disabled_preserves_legacy_cache_behavior_and_writes_no_artifact() -> None:
+def test_gamesmap_audit_disabled_flag_uses_audit_cache_and_skips_legacy_cache() -> None:
     with workspace_tmpdir("gamesmap-audit-disabled") as root:
         audit_path = root / "gamesmap-audit.json"
         cache_path = root / "gamesmap-cache.json"
@@ -260,11 +264,11 @@ def test_gamesmap_audit_disabled_preserves_legacy_cache_behavior_and_writes_no_a
             5,
             config=config,
             fetcher=lambda *_args: (_ for _ in ()).throw(
-                AssertionError("legacy cache should bypass fetches")
+                AssertionError("fresh audit artifact should bypass fetches")
             ),
         )
 
         assert second_rows == first_rows
         assert calls
-        assert cache_path.exists()
-        assert not audit_path.exists()
+        assert audit_path.exists()
+        assert not cache_path.exists()

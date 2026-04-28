@@ -15,9 +15,9 @@ The product goal is simple: find active job sources and real openings in accepta
 
 | Area | Current state | Next pressure |
 | --- | --- | --- |
-| Shared audit runner | [`DirectoryAuditRunSpec`](../../src/source_discovery/directory_audit.py) and `run_directory_audit_spec` already exist; `discover_directory_adapter_candidates` still preserves rollback/direct-scan wiring for some adapters. | Thin adapter-owned lifecycle around the existing runner; do not plan as if the first audit runner still needs to be created. |
+| Shared audit runner | [`DirectoryAuditRunSpec`](../../src/source_discovery/directory_audit.py) and `run_directory_audit_spec` already exist; the old shared direct-scan rollback wrapper has been deleted. | Keep the remaining work focused on thin adapter-owned lifecycle around the existing runner; do not plan as if the first audit runner still needs to be created. |
 | Gameprog | Migrated proof point. [`discover_gameprog_candidates`](../../src/source_discovery/gameprog.py) always returns rows from the audit artifact when enabled; `activeAuditEnabled=false` is accepted as legacy input but no longer routes to the old cache branch. | Keep as the deletion proof and later remove/rename the stale config field when other adapters no longer need the rollback convention. |
-| Gamesmap | Uses `DirectoryAuditRunSpec` in [`gamesmap_candidates.py`](../../src/source_discovery/gamesmap_candidates.py), but still has rollback/direct-path wiring and large scan/category/parser surfaces. | Delete rollback path after audit behavior is locked; reduce orchestration complexity before parser-only complexity. |
+| Gamesmap | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. Large scan/category/parser surfaces remain. | Reduce orchestration complexity before parser-only complexity. |
 | Sheet-directory | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. It still owns CSV parsing, recovery, summary, and scan glue. | Later cleanup can split source metadata/evidence from scan/recovery plumbing after higher-value rollback paths are deleted. |
 | Web-derived discovery | Uses `DirectoryAuditRunSpec` in [`web_search_candidates.py`](../../src/source_discovery/web_search_candidates.py), but still owns seed-careers/web-search scan, recovery, browser-recovery, and report complexity. | Keep after one simpler adapter proof because behavior is broader and failure modes are higher. |
 | GameDevMap | Uses a separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`; artifact/recovery behavior is larger than the directory-audit adapters. | Keep last until the source-discovery reset pattern is proven elsewhere. |
@@ -108,11 +108,12 @@ Acceptance criteria:
 
 ### 3. Gamesmap Thinning
 
-Delete rollback/direct-path wiring after audit behavior is locked, then reduce adapter-owned scan/category orchestration before touching source-format parser complexity.
+Gamesmap public discovery now routes through the existing directory-audit runner. Further work should reduce adapter-owned scan/category orchestration before touching source-format parser complexity.
 
 Acceptance criteria:
 
-- No runtime/UI caller depends on the deleted path.
+- Public discovery returns audit-artifact rows when the adapter is enabled.
+- The legacy cache/direct rollback path is not restored.
 - Gamesmap audit rows remain acceptable for current discovery behavior.
 - C901 pressure in `gamesmap_candidates.py` trends down.
 
