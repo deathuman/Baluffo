@@ -20,7 +20,7 @@ The product goal is simple: find active job sources and real openings in accepta
 | Gamesmap | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. Large scan/category/parser surfaces remain. | Reduce orchestration complexity before parser-only complexity. |
 | Sheet-directory | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. It still owns CSV parsing, recovery, summary, and scan glue. | Later cleanup can split source metadata/evidence from scan/recovery plumbing after higher-value rollback paths are deleted. |
 | Web-derived discovery | Seed-careers and web-search runtime paths now return shared audit-artifact rows; `activeAuditEnabled=false` is harmless legacy input. Browser-recovery artifact loading, fetch analysis, probe-result validation, summary update, and persistence have been split into narrower helpers. | Shared browser-recovery save/merge remains deferred because web-search and GameDevMap persistence semantics are not equivalent. |
-| GameDevMap | Uses the separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`; `activeAuditEnabled=false` is harmless legacy input and no longer routes to the old cache/direct CSV scan. Artifact/cache lifecycle, active-audit batch lifecycle, default legacy `cachePath`, and local artifact helper cleanup are complete. | Next pressure is legacy TTL/default cleanup and making the harmless audit flag cache-neutral without removing config compatibility. |
+| GameDevMap | Uses the separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`; `activeAuditEnabled=false` is harmless legacy input and no longer routes to the old cache/direct CSV scan. Artifact/cache lifecycle, active-audit batch lifecycle, default legacy `cachePath` / `cacheTtlMinutes`, and local artifact helper cleanup are complete. | Remaining pressure is the broader source-discovery config compatibility review, not GameDevMap-specific rollback behavior. |
 | Stage wiring | [`orchestrator_generation.py`](../../src/source_discovery/orchestrator_generation.py) owns stage invocation and compatibility with current discovery flows. | Treat route changes as compatibility work and preserve task-start, busy-state, queue, pending review, and report behavior. |
 
 ## Protected Surfaces
@@ -141,10 +141,10 @@ Acceptance criteria:
 
 Remaining same-goal cleanup should land as small compatibility-preserving slices:
 
-- Remove any remaining GameDevMap test/doc wording that treats legacy `cachePath` as a meaningful discovery input.
-- Continue removing local GameDevMap helper wrappers only when copy/default compatibility can be preserved without weakening report/artifact behavior.
 - Browser-recovery artifact save/merge sharing remains deferred until web-search and GameDevMap persistence semantics converge enough to delete real lifecycle code instead of adding callback-only indirection.
-- Keep `activeAuditEnabled=false` accepted as harmless legacy input until all source-discovery config compatibility is reviewed together.
+- Gameprog and Gamesmap tests still cover legacy `cachePath` / `cacheTtlMinutes` inputs as compatibility evidence; review those after their directory-cache compatibility boundary is explicitly retired.
+- `activeAuditEnabled=false` remains accepted as harmless legacy input across source-discovery adapters until shared config compatibility is reviewed together.
+- GameDevMap still accepts external `cacheTtlMinutes` only as a temporary fallback for `activeAuditTtlMinutes`; remove the fallback in the same broader config review if no external config dependency is found.
 
 ## Validation Standard
 
