@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 import src.source_discovery.web_search_candidates as web_candidates
 from src.source_discovery import directory_audit
 
-from ._helpers import workspace_tmpdir
+from ._helpers import workspace_tmpdir, write_web_search_browser_recovery_artifact
 
 
 def _audit_config(
@@ -661,32 +661,23 @@ def test_web_search_browser_recovery_merges_only_validated_rendered_sources() ->
 def test_web_search_browser_recovery_keeps_zero_and_failed_rows_as_diagnostics() -> None:
     with workspace_tmpdir("web-search-browser-recovery-diagnostics") as root:
         audit_path = root / "web-audit.json"
-        audit_path.write_text(
-            json.dumps(
+        write_web_search_browser_recovery_artifact(
+            audit_path,
+            schema_version=web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
+            browser_candidates=[
                 {
-                    "schemaVersion": web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
-                    "adapter": "web_search",
-                    "summary": {"browserRecoveryCandidates": 2},
-                    "providerCandidates": [],
-                    "staticCandidates": [],
-                    "browserRecoveryCandidates": [
-                        {
-                            "name": "Zero Studio",
-                            "studio": "Zero Studio",
-                            "url": "https://zero.example/jobs",
-                            "discoveryMethod": "web_search",
-                        },
-                        {
-                            "name": "Failed Studio",
-                            "studio": "Failed Studio",
-                            "url": "https://failed.example/jobs",
-                            "discoveryMethod": "web_search",
-                        },
-                    ],
-                    "browserRecovery": {},
-                }
-            ),
-            encoding="utf-8",
+                    "name": "Zero Studio",
+                    "studio": "Zero Studio",
+                    "url": "https://zero.example/jobs",
+                    "discoveryMethod": "web_search",
+                },
+                {
+                    "name": "Failed Studio",
+                    "studio": "Failed Studio",
+                    "url": "https://failed.example/jobs",
+                    "discoveryMethod": "web_search",
+                },
+            ],
         )
 
         def fake_browser(url: str, _timeout_s: int) -> tuple[str, str]:
@@ -716,22 +707,13 @@ def test_web_search_browser_recovery_respects_batch_size_and_max_batches() -> No
         config = _audit_config(str(audit_path))
         config["webSearch"]["browserRecoveryBatchSize"] = 1
         config["webSearch"]["browserRecoveryMaxBatchesPerRun"] = 1
-        audit_path.write_text(
-            json.dumps(
-                {
-                    "schemaVersion": web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
-                    "adapter": "web_search",
-                    "summary": {"browserRecoveryCandidates": 2},
-                    "providerCandidates": [],
-                    "staticCandidates": [],
-                    "browserRecoveryCandidates": [
-                        {"name": "One", "studio": "One", "url": "https://one.example/jobs"},
-                        {"name": "Two", "studio": "Two", "url": "https://two.example/jobs"},
-                    ],
-                    "browserRecovery": {},
-                }
-            ),
-            encoding="utf-8",
+        write_web_search_browser_recovery_artifact(
+            audit_path,
+            schema_version=web_candidates.WEB_SEARCH_AUDIT_SCHEMA_VERSION,
+            browser_candidates=[
+                {"name": "One", "studio": "One", "url": "https://one.example/jobs"},
+                {"name": "Two", "studio": "Two", "url": "https://two.example/jobs"},
+            ],
         )
         calls: list[str] = []
 

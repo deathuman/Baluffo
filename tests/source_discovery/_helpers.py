@@ -65,6 +65,34 @@ def _directory_audit_result(provider=None, static=None, failures=None):
     ), False
 
 
+def write_web_search_browser_recovery_artifact(
+    path: Path,
+    *,
+    schema_version: int,
+    browser_candidates: list[dict[str, object]],
+    summary: dict[str, object] | None = None,
+    provider_candidates: list[dict[str, object]] | None = None,
+    static_candidates: list[dict[str, object]] | None = None,
+    browser_recovery: dict[str, object] | None = None,
+) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": schema_version,
+                "adapter": "web_search",
+                "summary": summary
+                if summary is not None
+                else {"browserRecoveryCandidates": len(browser_candidates)},
+                "providerCandidates": list(provider_candidates or []),
+                "staticCandidates": list(static_candidates or []),
+                "browserRecoveryCandidates": list(browser_candidates),
+                "browserRecovery": dict(browser_recovery or {}),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 @contextlib.contextmanager
 def patch_empty_generator_stages(*, probe):
     with (
@@ -122,5 +150,6 @@ __all__ = [
     "sys",
     "threading",
     "time",
+    "write_web_search_browser_recovery_artifact",
     "workspace_tmpdir",
 ]
