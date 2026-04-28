@@ -19,7 +19,7 @@ The product goal is simple: find active job sources and real openings in accepta
 | Gameprog | Migrated proof point. [`discover_gameprog_candidates`](../../src/source_discovery/gameprog.py) always returns rows from the audit artifact when enabled; `activeAuditEnabled=false` is accepted as legacy input but no longer routes to the old cache branch. | Keep as the deletion proof and later remove/rename the stale config field when other adapters no longer need the rollback convention. |
 | Gamesmap | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. Large scan/category/parser surfaces remain. | Reduce orchestration complexity before parser-only complexity. |
 | Sheet-directory | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. It still owns CSV parsing, recovery, summary, and scan glue. | Later cleanup can split source metadata/evidence from scan/recovery plumbing after higher-value rollback paths are deleted. |
-| Web-derived discovery | Uses `DirectoryAuditRunSpec` in [`web_search_candidates.py`](../../src/source_discovery/web_search_candidates.py), but still owns seed-careers/web-search scan, recovery, browser-recovery, and report complexity. | Keep after one simpler adapter proof because behavior is broader and failure modes are higher. |
+| Web-derived discovery | Seed-careers and web-search runtime paths now return shared audit-artifact rows; `activeAuditEnabled=false` is harmless legacy input. It still owns seed-careers/web-search scan, recovery, browser-recovery, and report complexity. | Split report/browser-recovery complexity only after the rollback deletion is protected. |
 | GameDevMap | Uses a separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`; artifact/recovery behavior is larger than the directory-audit adapters. | Keep last until the source-discovery reset pattern is proven elsewhere. |
 | Stage wiring | [`orchestrator_generation.py`](../../src/source_discovery/orchestrator_generation.py) owns stage invocation and compatibility with current discovery flows. | Treat route changes as compatibility work and preserve task-start, busy-state, queue, pending review, and report behavior. |
 
@@ -119,13 +119,14 @@ Acceptance criteria:
 
 ### 4. Web-derived Discovery Thinning
 
-Apply the proven pattern to seed-careers and web-search after a simpler adapter has landed.
+Seed-careers and web-search now use the shared audit artifact as the runtime path when their stages are enabled. Further work should shrink report, browser-recovery, and scan orchestration complexity without changing queue semantics.
 
 Acceptance criteria:
 
+- `webSearch.activeAuditEnabled=false` remains harmless legacy input and is no longer a runtime direct-scan selector.
 - Seed-careers and web-search continue feeding candidates through the current queue, pending review, tombstone, and auto-approval path.
 - Browser-recovery artifact behavior remains explicit and tested.
-- Web-search C901/report complexity trends down.
+- Web-search C901/report complexity follow-ups remain deferred.
 
 ### 5. GameDevMap Reset
 

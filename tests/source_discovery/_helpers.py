@@ -77,13 +77,11 @@ def patch_empty_generator_stages(*, probe):
         ),
         mock.patch.object(
             discovery_orchestrator,
-            "discover_web_search_candidates",
-            return_value=([], []),
-        ),
-        mock.patch.object(
-            discovery_orchestrator,
-            "discover_seed_careers_page_candidates",
-            return_value=([], [], []),
+            "run_web_search_directory_audit",
+            return_value=(
+                {"providerCandidates": [], "staticCandidates": [], "failures": []},
+                False,
+            ),
         ),
         mock.patch.object(discovery_orchestrator, "async_probe_candidate", side_effect=probe),
     ):

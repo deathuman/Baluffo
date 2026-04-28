@@ -186,10 +186,6 @@ def _route_valid_probe_candidate(
     return False, low_evidence_probes_used + 1
 
 
-def _web_search_audit_enabled(discovery_config: dict[str, Any]) -> bool:
-    return audit_enabled(discovery_config, "webSearch", flat_fallback=False)
-
-
 def _load_web_search_audit_rows(
     *,
     orchestrator: Any,
@@ -236,24 +232,14 @@ def _seed_careers_scan_rows(
     orchestrator: Any,
     deps: DiscoveryRunDeps,
     stage_enabled: dict[str, bool],
-    web_audit_enabled: bool,
     web_audit_cache: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    if web_audit_enabled:
-        return _web_search_audit_rows_for_method(
-            orchestrator=orchestrator,
-            deps=deps,
-            stage_enabled=stage_enabled,
-            cache=web_audit_cache,
-            discovery_method="seed_careers_page",
-        )
-    return cast(
-        ProviderStaticScanRows,
-        orchestrator.discover_seed_careers_page_candidates(
-            deps.timeout_s,
-            studio_seeds=list(discovery_config_module.STUDIO_SEEDS),
-            fetcher=deps.fetcher,
-        ),
+    return _web_search_audit_rows_for_method(
+        orchestrator=orchestrator,
+        deps=deps,
+        stage_enabled=stage_enabled,
+        cache=web_audit_cache,
+        discovery_method="seed_careers_page",
     )
 
 
@@ -262,24 +248,14 @@ def _web_search_scan_rows(
     orchestrator: Any,
     deps: DiscoveryRunDeps,
     stage_enabled: dict[str, bool],
-    web_audit_enabled: bool,
     web_audit_cache: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    if web_audit_enabled:
-        return _web_search_audit_rows_for_method(
-            orchestrator=orchestrator,
-            deps=deps,
-            stage_enabled=stage_enabled,
-            cache=web_audit_cache,
-            discovery_method="web_search",
-        )
-    return cast(
-        ProviderStaticScanRows,
-        orchestrator.discover_web_search_candidates(
-            deps.timeout_s,
-            studio_seeds=list(discovery_config_module.STUDIO_SEEDS),
-            fetcher=deps.fetcher,
-        ),
+    return _web_search_audit_rows_for_method(
+        orchestrator=orchestrator,
+        deps=deps,
+        stage_enabled=stage_enabled,
+        cache=web_audit_cache,
+        discovery_method="web_search",
     )
 
 
@@ -424,7 +400,6 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
         else:
             orchestrator.emit_log("Provider-pattern stage disabled, skipping.")
 
-        web_audit_enabled = _web_search_audit_enabled(deps.effective_config)
         web_audit_cache: dict[str, Any] = {}
 
         _run_provider_static_scan_stage(
@@ -442,7 +417,6 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
                 orchestrator=orchestrator,
                 deps=deps,
                 stage_enabled=stage_enabled,
-                web_audit_enabled=web_audit_enabled,
                 web_audit_cache=web_audit_cache,
             ),
             provider_stream="web_provider",
@@ -557,7 +531,6 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
                     orchestrator=orchestrator,
                     deps=deps,
                     stage_enabled=stage_enabled,
-                    web_audit_enabled=web_audit_enabled,
                     web_audit_cache=web_audit_cache,
                 ),
                 provider_stream="web_provider",

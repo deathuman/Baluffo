@@ -36,7 +36,7 @@ def _stage_config(
     return config
 
 
-def test_run_discovery_audit_disabled_web_search_uses_direct_paths_without_metadata() -> None:
+def test_run_discovery_audit_disabled_web_search_flag_still_uses_audit_artifact() -> None:
     with workspace_tmpdir("web-search-audit-flow-disabled") as root:
         with override_discovery_runtime(
             root,
@@ -51,12 +51,12 @@ def test_run_discovery_audit_disabled_web_search_uses_direct_paths_without_metad
                 mock.patch.object(
                     discovery_orchestrator,
                     "discover_seed_careers_page_candidates",
-                    return_value=([], [], []),
+                    side_effect=AssertionError("seed direct scan should not run"),
                 ) as seed_scan,
                 mock.patch.object(
                     discovery_orchestrator,
                     "discover_web_search_candidates",
-                    return_value=([], [], []),
+                    side_effect=AssertionError("web direct scan should not run"),
                 ) as web_scan,
             ):
                 report = sd.run_discovery(
@@ -65,13 +65,14 @@ def test_run_discovery_audit_disabled_web_search_uses_direct_paths_without_metad
                     mode="dynamic",
                     include_web_search=True,
                     discovery_config=config,
-                    fetcher=lambda *_args: "",
+                    fetcher=lambda *_args: "<html></html>",
                 )
 
-            seed_scan.assert_called_once()
-            web_scan.assert_called_once()
-            assert "web_search" not in report["directoryAuditSummaries"]
-            assert "web_search" not in report["summary"]["directoryAudits"]
+            seed_scan.assert_not_called()
+            web_scan.assert_not_called()
+            assert "web_search" in report["directoryAuditSummaries"]
+            assert "web_search" in report["summary"]["directoryAudits"]
+            assert (root / "disabled-web-audit.json").exists()
 
 
 def test_run_discovery_default_web_search_audit_reuses_artifact() -> None:

@@ -306,13 +306,8 @@ def test_run_discovery_default_and_uncapped_report_runtime_cap_bypass_flags() ->
                     ),
                     mock.patch.object(
                         discovery_orchestrator,
-                        "discover_seed_careers_page_candidates",
-                        return_value=([], [], []),
-                    ),
-                    mock.patch.object(
-                        discovery_orchestrator,
-                        "discover_web_search_candidates",
-                        return_value=([], []),
+                        "run_web_search_directory_audit",
+                        return_value=_directory_audit_result(),
                     ),
                     mock.patch.object(
                         discovery_orchestrator,
@@ -659,8 +654,7 @@ def test_run_discovery_does_not_auto_approve_weak_pending_only_rows() -> None:
         prev_sheet = discovery_orchestrator.run_sheet_directory_audit
         prev_gamesmap = discovery_orchestrator.discover_gamesmap_candidates
         prev_gameprog = discovery_orchestrator.discover_gameprog_candidates
-        prev_web = discovery_orchestrator.discover_web_search_candidates
-        prev_seed_scan = discovery_orchestrator.discover_seed_careers_page_candidates
+        prev_web_audit = discovery_orchestrator.run_web_search_directory_audit
         prev_probe = discovery_orchestrator.async_probe_candidate
         try:
             with override_discovery_runtime(
@@ -701,13 +695,8 @@ def test_run_discovery_does_not_auto_approve_weak_pending_only_rows() -> None:
                     [],
                     [],
                 )
-                discovery_orchestrator.discover_web_search_candidates = lambda *args, **kwargs: (
-                    [],
-                    [],
-                    [],
-                )
-                discovery_orchestrator.discover_seed_careers_page_candidates = (
-                    lambda *args, **kwargs: ([], [], [])
+                discovery_orchestrator.run_web_search_directory_audit = lambda *_a, **_k: (
+                    _directory_audit_result()
                 )
                 discovery_orchestrator.async_probe_candidate = lambda *args, **kwargs: (
                     False,
@@ -750,8 +739,7 @@ def test_run_discovery_does_not_auto_approve_weak_pending_only_rows() -> None:
             discovery_orchestrator.run_sheet_directory_audit = prev_sheet
             discovery_orchestrator.discover_gamesmap_candidates = prev_gamesmap
             discovery_orchestrator.discover_gameprog_candidates = prev_gameprog
-            discovery_orchestrator.discover_web_search_candidates = prev_web
-            discovery_orchestrator.discover_seed_careers_page_candidates = prev_seed_scan
+            discovery_orchestrator.run_web_search_directory_audit = prev_web_audit
             discovery_orchestrator.async_probe_candidate = prev_probe
 
 
@@ -950,11 +938,8 @@ def test_run_discovery_persists_deferred_candidates_in_candidates_file() -> None
                 ),
                 mock.patch.object(
                     discovery_orchestrator,
-                    "discover_seed_careers_page_candidates",
-                    return_value=([], [], []),
-                ),
-                mock.patch.object(
-                    discovery_orchestrator, "discover_web_search_candidates", return_value=([], [])
+                    "run_web_search_directory_audit",
+                    return_value=_directory_audit_result(),
                 ),
                 mock.patch.object(
                     discovery_orchestrator,
@@ -1241,11 +1226,8 @@ def test_run_discovery_uses_previous_deferred_review_history_in_ranking() -> Non
                 ),
                 mock.patch.object(
                     discovery_orchestrator,
-                    "discover_seed_careers_page_candidates",
-                    return_value=([], [], []),
-                ),
-                mock.patch.object(
-                    discovery_orchestrator, "discover_web_search_candidates", return_value=([], [])
+                    "run_web_search_directory_audit",
+                    return_value=_directory_audit_result(),
                 ),
                 mock.patch.object(
                     discovery_orchestrator,
@@ -1334,8 +1316,7 @@ def test_run_discovery_writes_m5_backlog_snapshot() -> None:
         prev_sheet = discovery_orchestrator.run_sheet_directory_audit
         prev_gamesmap = discovery_orchestrator.discover_gamesmap_candidates
         prev_gameprog = discovery_orchestrator.discover_gameprog_candidates
-        prev_web = discovery_orchestrator.discover_web_search_candidates
-        prev_seed_scan = discovery_orchestrator.discover_seed_careers_page_candidates
+        prev_web_audit = discovery_orchestrator.run_web_search_directory_audit
         prev_probe = discovery_orchestrator.async_probe_candidate
         try:
             with override_discovery_runtime(
@@ -1375,13 +1356,8 @@ def test_run_discovery_writes_m5_backlog_snapshot() -> None:
                     [],
                     [],
                 )
-                discovery_orchestrator.discover_web_search_candidates = lambda *args, **kwargs: (
-                    [],
-                    [],
-                    [],
-                )
-                discovery_orchestrator.discover_seed_careers_page_candidates = (
-                    lambda *args, **kwargs: ([], [], [])
+                discovery_orchestrator.run_web_search_directory_audit = lambda *_a, **_k: (
+                    _directory_audit_result()
                 )
                 discovery_orchestrator.async_probe_candidate = fake_probe
 
@@ -1420,8 +1396,7 @@ def test_run_discovery_writes_m5_backlog_snapshot() -> None:
             discovery_orchestrator.run_sheet_directory_audit = prev_sheet
             discovery_orchestrator.discover_gamesmap_candidates = prev_gamesmap
             discovery_orchestrator.discover_gameprog_candidates = prev_gameprog
-            discovery_orchestrator.discover_web_search_candidates = prev_web
-            discovery_orchestrator.discover_seed_careers_page_candidates = prev_seed_scan
+            discovery_orchestrator.run_web_search_directory_audit = prev_web_audit
             discovery_orchestrator.async_probe_candidate = prev_probe
 
 
