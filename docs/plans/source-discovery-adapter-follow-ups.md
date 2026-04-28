@@ -106,7 +106,7 @@ Acceptance criteria:
 - Browser-recovery artifact behavior remains explicit and tested.
 - Browser-recovery artifact loading/defaulting, fetch-failure recording, success-page analysis, probe-result validation, summary update, and persistence are now split into narrower helpers.
 - Web-search C901/report complexity follow-ups remain deferred.
-- Deferred browser-recovery cleanup: web-search and GameDevMap still need source-specific callbacks for rendered-page analysis, artifact bucket names, and prevalidated queue caps; consider a shared save/merge wrapper only after those callback seams stabilize.
+- Deferred browser-recovery cleanup: web-search and GameDevMap still need source-specific callbacks for rendered-page analysis, artifact bucket names, and prevalidated queue caps. Do not add a shared save/merge wrapper until it can delete more than callback plumbing.
 
 ### 5. GameDevMap Reset
 
@@ -122,7 +122,7 @@ Acceptance criteria:
 - GameDevMap local `_as_list`, `_as_dict`, and `_safe_int` now delegate to shared active-audit helpers while preserving copy/default compatibility covered by targeted report tests.
 - Deferred active-audit API cleanup: the shared batch strategy still needs adapter-provided wiring for GameDevMap-specific labels and artifact bucket names; consider a named factory only if another active-source adapter needs the same lifecycle shape.
 - GameDevMap no longer ships a default legacy `cachePath`; `cacheTtlMinutes` remains accepted as a temporary fallback for `activeAuditTtlMinutes` while legacy config compatibility is reviewed.
-- Deferred web-derived lifecycle cleanup: consider shared browser-recovery artifact save/merge wrappers only after web-search and GameDevMap callback seams stabilize.
+- Deferred web-derived lifecycle cleanup: a shared browser-recovery save/merge wrapper is not currently equivalent. Web-search persists direct directory-audit summary counts, while GameDevMap persists through active-audit completed URL summarization.
 
 ### 6. Test Scaffolding Cleanup
 
@@ -142,7 +142,7 @@ Remaining same-goal cleanup should land as small compatibility-preserving slices
 
 - Remove any remaining GameDevMap test/doc wording that treats legacy `cachePath` as a meaningful discovery input.
 - Continue removing local GameDevMap helper wrappers only when copy/default compatibility can be preserved without weakening report/artifact behavior.
-- Share browser-recovery artifact save/merge lifecycle only if the same slice deletes equivalent web-search and GameDevMap code.
+- Browser-recovery artifact save/merge sharing is deferred until web-search and GameDevMap persistence semantics converge enough to delete real lifecycle code instead of adding callback-only indirection.
 - Keep `activeAuditEnabled=false` accepted as harmless legacy input until all source-discovery config compatibility is reviewed together.
 
 ## Validation Standard
