@@ -20,7 +20,7 @@ The product goal is simple: find active job sources and real openings in accepta
 | Gamesmap | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. Large scan/category/parser surfaces remain. | Reduce orchestration complexity before parser-only complexity. |
 | Sheet-directory | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. It still owns CSV parsing, recovery, summary, and scan glue. | Later cleanup can split source metadata/evidence from scan/recovery plumbing after higher-value rollback paths are deleted. |
 | Web-derived discovery | Seed-careers and web-search runtime paths now return shared audit-artifact rows; `activeAuditEnabled=false` is harmless legacy input. It still owns seed-careers/web-search scan, recovery, browser-recovery, and report complexity. | Split report/browser-recovery complexity only after the rollback deletion is protected. |
-| GameDevMap | Uses the separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`; `activeAuditEnabled=false` is harmless legacy input and no longer routes to the old cache/direct CSV scan. | Split artifact/recovery lifecycle in smaller follow-ups because the surface is larger than the directory-audit adapters. |
+| GameDevMap | Uses the separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`; `activeAuditEnabled=false` is harmless legacy input and no longer routes to the old cache/direct CSV scan. | Next lifecycle target: move generic active-audit artifact/cache, batch-loop, recovery, and probe-result responsibilities toward `active_audit_runtime.py` while keeping source parsing/provenance local. |
 | Stage wiring | [`orchestrator_generation.py`](../../src/source_discovery/orchestrator_generation.py) owns stage invocation and compatibility with current discovery flows. | Treat route changes as compatibility work and preserve task-start, busy-state, queue, pending review, and report behavior. |
 
 ## Protected Surfaces
@@ -57,7 +57,7 @@ Keep source-specific semantics local: source id, display name, stage labels, ent
 
 ## Current C901 Baseline
 
-From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json), current source-discovery C901 offenders are cleared.
+From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json), current source-discovery C901 offenders are cleared. The next pressure is lifecycle ownership rather than cyclomatic-complexity suppression.
 
 Parser complexity can remain temporarily when it is genuinely source-format complexity. Orchestration complexity should not.
 
@@ -115,8 +115,10 @@ Acceptance criteria:
 - Default discovery, dry-run audit, lost-recovery comparison, and explicit browser recovery keep their current invocation surfaces.
 - `gamedevmap.activeAuditEnabled=false` remains harmless legacy input and is no longer a direct CSV/cache rollback selector.
 - Artifact compatibility changes are documented and tested when needed.
-- Deferred implementation slice: move GameDevMap audit/cache/report lifecycle toward shared active-audit helpers while leaving CSV parsing, representative row selection, and source provenance in `gamedevmap.py`.
+- Next implementation slice: move GameDevMap artifact/cache/report lifecycle toward shared active-audit helpers where behavior is equivalent, while leaving CSV parsing, representative row selection, and source provenance in `gamedevmap.py`.
+- Next implementation slice after artifact/cache cleanup: move generic GameDevMap active-audit batch-loop responsibilities toward `ActiveAuditBatchStrategy` / `ActiveAuditLoopStrategy` while keeping source-specific callbacks local.
 - Deferred config cleanup: remove or repurpose stale GameDevMap `cachePath` / `cacheTtlMinutes` defaults and tests after compatibility review confirms no external config depends on the deleted legacy cache.
+- Deferred web-derived lifecycle cleanup: thin web-search browser-recovery artifact loading, fetch analysis, probe-result application, and artifact update merging after GameDevMap active-audit lifecycle is smaller.
 
 ### 6. Test Scaffolding Cleanup
 
