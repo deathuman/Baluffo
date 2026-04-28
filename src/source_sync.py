@@ -54,6 +54,7 @@ DEFAULT_BRANCH = str(_SYNC_DEFAULTS["default_branch"])
 DEFAULT_PATH = str(_SYNC_DEFAULTS["default_path"])
 DEFAULT_TIMEOUT_S = 20
 PACKAGED_SYNC_CONFIG_ENV = "BALUFFO_SYNC_APP_CONFIG_PATH"
+PACKAGED_SYNC_BUILD_CONFIG_ENV = "BALUFFO_SYNC_BUILD_CONFIG_PATH"
 PACKAGED_SYNC_PASSPHRASE_ENV = "BALUFFO_SYNC_KEY_PASSPHRASE"
 SYNC_CA_BUNDLE_ENV = "BALUFFO_SYNC_CA_BUNDLE"
 GITHUB_API_BASE_ENV = "BALUFFO_SYNC_GITHUB_API_BASE"
@@ -302,6 +303,18 @@ def _allowlist_error(
 
 def _normalize_packaged_payload(payload: dict[str, Any]) -> dict[str, str]:
     return _source_sync_config.normalize_packaged_payload(_self_module(), payload)
+
+
+def _candidate_packaged_sync_config_paths(
+    *,
+    env: dict[str, str] | None = None,
+    default_path: Path | None = None,
+) -> list[Path]:
+    return _source_sync_config.candidate_packaged_sync_config_paths(
+        _self_module(),
+        env=env,
+        default_path=default_path,
+    )
 
 
 def load_packaged_sync_config(

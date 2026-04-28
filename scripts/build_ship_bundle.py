@@ -136,7 +136,6 @@ SYNC_DEFAULTS = get_sync_defaults()
 PACKAGED_SYNC_CONFIG_PATH = Path(SYNC_DEFAULTS["packaged_config_path"])
 PACKAGED_SYNC_CONFIG_TEMPLATE_PATH = ROOT / "packaging" / "github-app-sync-config.template.json"
 PACKAGED_SYNC_LOCAL_CONFIG_ENV = "BALUFFO_SYNC_BUILD_CONFIG_PATH"
-PACKAGED_SYNC_LOCAL_CANDIDATE_PATHS = (ROOT / "packaging" / "github-app-sync-config.localkey.json",)
 DESKTOP_UPDATE_PUBLIC_KEYS_PATH = ROOT / "packaging" / "desktop-update-public-keys.json"
 DESKTOP_UPDATE_PUBLIC_KEYS_ENV = "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_JSON"
 DESKTOP_UPDATE_PUBLIC_KEYS_PATH_ENV = "BALUFFO_DESKTOP_UPDATE_PUBLIC_KEYS_PATH"
@@ -364,20 +363,17 @@ def _seed_version_contract_data(data_dir: Path) -> None:
 
 
 def _resolve_packaged_sync_config() -> Path | None:
-    if PACKAGED_SYNC_CONFIG_PATH.exists():
-        return _ensure_portable_packaged_sync_config(PACKAGED_SYNC_CONFIG_PATH)
-    restored_path = _maybe_restore_packaged_sync_config_from_local()
-    if restored_path is not None and restored_path.exists():
-        return _ensure_portable_packaged_sync_config(restored_path)
+    for candidate_path in _candidate_packaged_sync_config_paths():
+        if candidate_path.exists():
+            return _ensure_portable_packaged_sync_config(candidate_path)
     generated_path = _maybe_generate_packaged_sync_config()
     if generated_path is not None and generated_path.exists():
         return generated_path
-    searched_paths = ", ".join(str(path) for path in _candidate_local_packaged_sync_config_paths())
+    searched_paths = ", ".join(str(path) for path in _candidate_packaged_sync_config_paths())
     print(
         f"WARNING: Packaged GitHub App sync config not found. "
         f"Sync will be disabled in this build. "
-        f"Searched: {PACKAGED_SYNC_CONFIG_PATH}, "
-        f"{PACKAGED_SYNC_LOCAL_CONFIG_ENV} + defaults: {searched_paths}. "
+        f"Searched: {searched_paths}. "
         f"To enable sync, provide a config file or build env vars "
         f"({PACKAGED_SYNC_BUILD_ENV['app_id']}, {PACKAGED_SYNC_BUILD_ENV['installation_id']}, "
         f"{PACKAGED_SYNC_BUILD_ENV['repo']}, and {PACKAGED_SYNC_BUILD_ENV['private_key_path']} or "
@@ -504,19 +500,29 @@ def _validate_private_key_pem(private_key_pem: str, *, source: str) -> None:
 
 
 def _candidate_local_packaged_sync_config_paths() -> list[Path]:
+    from src import source_sync
+
+    candidates = source_sync._candidate_packaged_sync_config_paths(  # noqa: SLF001
+        env=dict(os.environ),
+        default_path=PACKAGED_SYNC_CONFIG_PATH,
+    )
+    skipped: set[str] = {str(PACKAGED_SYNC_CONFIG_PATH.resolve()).lower()}
+    app_config_env = _env_value(source_sync.PACKAGED_SYNC_CONFIG_ENV)
+    if app_config_env:
+        skipped.add(str(Path(app_config_env).expanduser().resolve()).lower())
+
+    return [path for path in candidates if str(path).lower() not in skipped]
+
+
+def _candidate_packaged_sync_config_paths() -> list[Path]:
+    from src import source_sync
+
     candidates: list[Path] = []
-    env_path = _env_value(PACKAGED_SYNC_LOCAL_CONFIG_ENV)
-    if env_path:
-        candidates.append(Path(env_path).expanduser())
-    for path in PACKAGED_SYNC_LOCAL_CANDIDATE_PATHS:
-        candidates.append(path)
-    appdata = str(os.environ.get("APPDATA") or "").strip()
-    if appdata:
-        candidates.append(Path(appdata) / "Baluffo" / "github-app-sync-config.json")
-    local_appdata = str(os.environ.get("LOCALAPPDATA") or "").strip()
-    if local_appdata:
-        candidates.append(Path(local_appdata) / "Baluffo" / "github-app-sync-config.json")
-    candidates.append(Path.home() / ".baluffo" / "github-app-sync-config.json")
+    app_config_env = _env_value(source_sync.PACKAGED_SYNC_CONFIG_ENV)
+    if app_config_env:
+        candidates.append(Path(app_config_env).expanduser().resolve())
+    candidates.append(PACKAGED_SYNC_CONFIG_PATH.resolve())
+    candidates.extend(_candidate_local_packaged_sync_config_paths())
 
     normalized: list[Path] = []
     seen: set[str] = set()

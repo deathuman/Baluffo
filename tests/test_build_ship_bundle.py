@@ -383,6 +383,46 @@ def test_bundle_restores_packaged_sync_config_from_local_env_path() -> None:
         assert bundled_config["installationId"] == source_payload["installationId"]
 
 
+def test_bundle_uses_sync_app_config_env_path_before_local_paths() -> None:
+    with workspace_tmpdir("build-ship-bundle") as tmp:
+        source_config_path = Path(tmp) / "secrets" / "github-app-sync-config.json"
+        source_config_path.parent.mkdir(parents=True, exist_ok=True)
+        source_payload = {
+            "schemaVersion": 1,
+            "appId": "123456",
+            "installationId": "999999",
+            "repo": "env/repo",
+            "branch": "main",
+            "path": "baluffo/source-sync.json",
+            "allowedRepo": "env/repo",
+            "allowedBranch": "main",
+            "allowedPathPrefix": "baluffo/source-sync.json",
+            "keyDerivation": "embedded",
+            "embeddedKeyHint": "hint",
+            "embeddedKeyVersion": "v1",
+            "keySalt": "salt",
+            "privateKeyPemEnc": "ciphertext",
+        }
+        source_config_path.write_text(json.dumps(source_payload), encoding="utf-8")
+        with (
+            mock.patch(
+                "scripts.build_ship_bundle._copy_app_version",
+                side_effect=copy_minimal_app_version,
+            ),
+            mock.patch("scripts.build_ship_bundle.refresh_runtime_bootstrap"),
+        ):
+            output = _build_with_temp_packaged_config(
+                tmp,
+                env={source_sync.PACKAGED_SYNC_CONFIG_ENV: str(source_config_path)},
+            )
+        bundled_config = json.loads(
+            (
+                output / "app" / "versions" / "1.2.3" / "packaging" / "github-app-sync-config.json"
+            ).read_text(encoding="utf-8")
+        )
+        assert bundled_config["repo"] == "env/repo"
+
+
 def test_bundle_normalizes_machine_bound_packaged_sync_config_for_portable_build() -> None:
     with workspace_tmpdir("build-ship-bundle") as tmp:
         private_key_pem = "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----\n"

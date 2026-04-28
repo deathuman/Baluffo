@@ -80,7 +80,7 @@ export async function fetchBridge(baseUrl, path, options = {}) {
  * GET path and parse JSON. Rejects with Error on non-ok or parse failure.
  * @param {string} baseUrl
  * @param {string} path
- * @param {{ timeoutMs?: number }} [options]
+ * @param {{ timeoutMs?: number, allowStatuses?: number[] }} [options]
  * @returns {Promise<object>}
  */
 export async function fetchJson(baseUrl, path, options = {}) {
@@ -93,7 +93,7 @@ export async function fetchJson(baseUrl, path, options = {}) {
  * @param {string} baseUrl
  * @param {string} path
  * @param {object} payload
- * @param {{ timeoutMs?: number }} [options]
+ * @param {{ timeoutMs?: number, allowStatuses?: number[] }} [options]
  * @returns {Promise<object>}
  */
 export async function postJson(baseUrl, path, payload, options = {}) {

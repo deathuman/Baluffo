@@ -136,8 +136,8 @@ function appendLogRow(container, event) {
   });
 }
 
-function getBridge(path) {
-  return callBridge(() => getBridgeFromData(ADMIN_BRIDGE_BASE, path));
+function getBridge(path, options = {}) {
+  return callBridge(() => getBridgeFromData(ADMIN_BRIDGE_BASE, path, options));
 }
 
 function postBridge(path, payload, options = {}) {

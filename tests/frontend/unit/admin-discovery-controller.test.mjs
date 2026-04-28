@@ -1039,3 +1039,100 @@ test("admin discovery controller hydrates progress from the report when live pay
     timerStub.restore();
   }
 });
+
+test("admin discovery controller skips overlapping live and log polls", async () => {
+  const scheduled = [];
+  const previousSetTimeout = global.setTimeout;
+  const previousClearTimeout = global.clearTimeout;
+  global.setTimeout = callback => {
+    scheduled.push(callback);
+    return scheduled.length;
+  };
+  global.clearTimeout = () => {};
+
+  let resolveLive;
+  let resolveLog;
+  let liveCalls = 0;
+  let logCalls = 0;
+
+  try {
+    const fixture = createDiscoveryControllerFixture();
+    fixture.options.getBridge = async path => {
+      if (path === "/ops/task-live/discovery") {
+        liveCalls += 1;
+        return new Promise(resolve => {
+          resolveLive = resolve;
+        });
+      }
+      if (String(path).startsWith("/discovery/log?offset=")) {
+        logCalls += 1;
+        return new Promise(resolve => {
+          resolveLog = resolve;
+        });
+      }
+      if (path === "/discovery/report") return {};
+      throw new Error(`unexpected path ${path}`);
+    };
+    const controller = createAdminDiscoveryController(fixture.options);
+
+    controller.startDiscoveryCompletionWatch();
+    const firstPoll = scheduled[0]();
+    const secondPoll = scheduled[0]();
+    await Promise.resolve();
+
+    assert.equal(liveCalls, 1);
+    assert.equal(logCalls, 1);
+
+    resolveLive({});
+    resolveLog({ text: "", nextOffset: 0 });
+    await Promise.all([firstPoll, secondPoll]);
+  } finally {
+    global.setTimeout = previousSetTimeout;
+    global.clearTimeout = previousClearTimeout;
+  }
+});
+
+test("admin discovery controller backs off after transport failures and resets after success", async () => {
+  const scheduled = [];
+  const delays = [];
+  const previousSetTimeout = global.setTimeout;
+  const previousClearTimeout = global.clearTimeout;
+  global.setTimeout = (callback, delay) => {
+    scheduled.push(callback);
+    delays.push(delay);
+    return scheduled.length;
+  };
+  global.clearTimeout = () => {};
+
+  let failLive = true;
+
+  try {
+    const fixture = createDiscoveryControllerFixture();
+    fixture.options.getBridge = async path => {
+      if (path === "/ops/task-live/discovery") {
+        if (failLive) throw new Error("Network error: bridge unreachable");
+        return {};
+      }
+      if (String(path).startsWith("/discovery/log?offset=")) {
+        return { text: "", nextOffset: 0 };
+      }
+      if (path === "/discovery/report") return {};
+      throw new Error(`unexpected path ${path}`);
+    };
+    const controller = createAdminDiscoveryController(fixture.options);
+
+    controller.startDiscoveryCompletionWatch();
+    await scheduled[0]();
+    await scheduled[1]();
+    failLive = false;
+    await scheduled[2]();
+
+    assert.equal(delays[0], 0);
+    assert.ok(delays[1] >= 500);
+    assert.ok(delays[2] >= 500);
+    assert.equal(delays[3], 500);
+  } finally {
+    global.setTimeout = previousSetTimeout;
+    global.clearTimeout = previousClearTimeout;
+  }
+});

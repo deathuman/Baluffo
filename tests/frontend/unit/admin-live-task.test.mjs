@@ -5,8 +5,11 @@ import {
   appendLiveTaskActivity,
   buildTaskWorkItemActivitySignature,
   createBoundedSignatureSet,
+  createLiveTaskPollGuard,
+  getLiveTaskPollBackoffDelay,
   pickTaskLivePayload,
   createRestoreActiveRunWatches,
+  runGuardedLiveTaskPoll,
   scheduleAsyncWatchTimer
 } from "../../../frontend/admin/app/live-task.js";
 import { applyAdminTaskProgress } from "../../../frontend/admin/app/progress-ui.js";
@@ -131,6 +134,45 @@ test("createBoundedSignatureSet caps unique signatures without growing unbounded
   assert.equal(tracker.has("b"), true);
   assert.equal(tracker.has("c"), true);
   assert.equal(tracker.has("d"), true);
+});
+
+test("live task poll guard skips overlaps, backs off, and resets on success", async () => {
+  const guard = createLiveTaskPollGuard({ baseDelayMs: 500, maxDelayMs: 5000 });
+  let resolveFirst;
+  let calls = 0;
+
+  const first = runGuardedLiveTaskPoll(guard, () => {
+    calls += 1;
+    return new Promise(resolve => {
+      resolveFirst = resolve;
+    });
+  });
+  const overlapping = await runGuardedLiveTaskPoll(guard, async () => {
+    calls += 1;
+    return {};
+  });
+
+  assert.equal(overlapping.skipped, true);
+  assert.equal(calls, 1);
+
+  resolveFirst({});
+  assert.equal((await first).ok, true);
+  assert.equal(getLiveTaskPollBackoffDelay(guard, 500), 500);
+
+  const failedOnce = await runGuardedLiveTaskPoll(guard, async () => {
+    throw new Error("network");
+  });
+  const failedTwice = await runGuardedLiveTaskPoll(guard, async () => {
+    throw new Error("network");
+  });
+
+  assert.equal(failedOnce.ok, false);
+  assert.equal(failedTwice.ok, false);
+  assert.equal(getLiveTaskPollBackoffDelay(guard, 500), 1000);
+
+  const recovered = await runGuardedLiveTaskPoll(guard, async () => ({}));
+  assert.equal(recovered.ok, true);
+  assert.equal(getLiveTaskPollBackoffDelay(guard, 500), 500);
 });
 
 test("scheduleAsyncWatchTimer exposes the inner async task through the timer callback", async () => {

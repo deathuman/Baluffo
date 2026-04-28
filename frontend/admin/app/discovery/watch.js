@@ -1,12 +1,15 @@
 import {
   clearOptimisticRun,
   createBoundedSignatureSet,
+  createLiveTaskPollGuard,
   attachToActiveRun,
+  getLiveTaskPollBackoffDelay,
   loadTaskLivePayload,
   parseReportTimestampMs,
   pickMeaningfulTaskLivePayload,
   pickTaskLivePayload,
   restartCompletionWatch,
+  runGuardedLiveTaskPoll,
   scheduleAsyncWatchTimer,
   setOptimisticRun,
   shouldApplyTimestampGate,
@@ -14,6 +17,9 @@ import {
   stopLiveTaskWatch
 } from "../live-task.js";
 import { deriveDiscoveryQueuedCount } from "../../domain/progress.js";
+
+const DISCOVERY_LIVE_POLL_TIMEOUT_MS = 3500;
+const DISCOVERY_LIVE_POLL_BACKOFF_MAX_MS = 5000;
 
 export function createAdminDiscoveryWatchController({
   state,
@@ -39,10 +45,11 @@ export function createAdminDiscoveryWatchController({
     clearOptimisticRun(state, "discoveryOptimisticRun");
   }
 
-  async function loadDiscoveryLivePayload() {
+  async function loadDiscoveryLivePayload(options = {}) {
     return loadTaskLivePayload({
       getBridge,
-      taskType: "discovery"
+      taskType: "discovery",
+      requestOptions: options?.requestOptions || {}
     });
   }
 
@@ -143,11 +150,22 @@ export function createAdminDiscoveryWatchController({
         recentEventSignatures: createBoundedSignatureSet(),
         serverLogSignatures: createBoundedSignatureSet(),
         lastHeartbeatAtMs: 0,
-        lastActivityAtMs: Date.now()
+        lastActivityAtMs: Date.now(),
+        livePollGuard: createLiveTaskPollGuard({
+          baseDelayMs: activeProgressPollIntervalMs,
+          maxDelayMs: DISCOVERY_LIVE_POLL_BACKOFF_MAX_MS
+        }),
+        logPollGuard: createLiveTaskPollGuard({
+          baseDelayMs: activeProgressPollIntervalMs,
+          maxDelayMs: DISCOVERY_LIVE_POLL_BACKOFF_MAX_MS
+        })
       }),
       setProgress: () => updateDiscoveryProgressFromReport(null, { running: true }),
       onStart: announceStart ? () => appendDiscoveryLog("Discovery started. Watching live progress...", "info") : null,
-      loadInitialLogChunk: () => loadDiscoveryLogChunk({ reset: true }).catch(() => {}),
+      loadInitialLogChunk: () => loadDiscoveryLogChunk({
+        reset: true,
+        requestOptions: { timeoutMs: DISCOVERY_LIVE_POLL_TIMEOUT_MS }
+      }).catch(() => {}),
       scheduleCompletionPoll: () => scheduleDiscoveryCompletionPoll(0)
     });
   }
@@ -177,20 +195,34 @@ export function createAdminDiscoveryWatchController({
 
   async function pollDiscoveryCompletion() {
     const now = Date.now();
-    const [livePayload] = await Promise.all([
-      loadDiscoveryLivePayload().catch(() => null),
-      loadDiscoveryLogChunk().catch(() => null)
+    const liveState = state.discoveryLiveProgressState;
+    const [liveResult] = await Promise.all([
+      runGuardedLiveTaskPoll(
+        liveState?.livePollGuard,
+        () => loadDiscoveryLivePayload({
+          requestOptions: { timeoutMs: DISCOVERY_LIVE_POLL_TIMEOUT_MS }
+        })
+      ),
+      loadDiscoveryLogChunk({
+        requestOptions: { timeoutMs: DISCOVERY_LIVE_POLL_TIMEOUT_MS }
+      }).catch(() => null)
     ]);
+    const livePayload = liveResult?.ok ? liveResult.value : null;
     const identityLivePayload = pickTaskLivePayload(livePayload);
     const meaningfulLivePayload = pickMeaningfulTaskLivePayload(livePayload);
     const liveFinishedMs = parseReportTimestampMs((meaningfulLivePayload || identityLivePayload)?.finishedAt);
+    const nextPollDelayMs = Math.max(
+      activeProgressPollIntervalMs,
+      getLiveTaskPollBackoffDelay(liveState?.livePollGuard, 0),
+      getLiveTaskPollBackoffDelay(liveState?.logPollGuard, 0)
+    );
 
     if (meaningfulLivePayload && liveFinishedMs <= 0) {
       if (shouldApplyDiscoveryLiveProgressGate(meaningfulLivePayload)) {
         runProgressAppend(meaningfulLivePayload, now);
       }
       updateDiscoveryProgressFromReport(meaningfulLivePayload, { running: true });
-      scheduleDiscoveryCompletionPoll(activeProgressPollIntervalMs);
+      scheduleDiscoveryCompletionPoll(nextPollDelayMs);
       return;
     }
 
@@ -227,7 +259,7 @@ export function createAdminDiscoveryWatchController({
       return;
     }
 
-    scheduleDiscoveryCompletionPoll(activeProgressPollIntervalMs);
+    scheduleDiscoveryCompletionPoll(nextPollDelayMs);
   }
 
   return {

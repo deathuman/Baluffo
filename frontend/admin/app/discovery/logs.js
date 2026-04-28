@@ -1,6 +1,7 @@
 import {
   loadLiveTaskLogChunk,
   markLiveTaskActivity,
+  runGuardedLiveTaskPoll,
   resetLiveTaskPlaceholder
 } from "../live-task.js";
 
@@ -113,14 +114,25 @@ export function createAdminDiscoveryLogController({
   }
 
   async function loadDiscoveryLogChunk(options = {}) {
-    return loadLiveTaskLogChunk({
+    const loadChunk = () => loadLiveTaskLogChunk({
       getBridge,
       path: "/discovery/log",
       state,
       offsetKey: "discoveryLogRemoteOffset",
       reset: Boolean(options?.reset),
+      requestOptions: options?.requestOptions || {},
       onText: appendDiscoveryServerLogText
     });
+    const guard = options?.guarded === false
+      ? null
+      : state.discoveryLiveProgressState?.logPollGuard;
+    if (!guard) {
+      return loadChunk();
+    }
+    const result = await runGuardedLiveTaskPoll(guard, loadChunk);
+    if (result.skipped) return null;
+    if (!result.ok) throw result.error;
+    return result.value;
   }
 
   return {

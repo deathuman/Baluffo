@@ -20,8 +20,8 @@ export function emitAdminStartupMetric(adminBridgeBase, event, payload = {}) {
   postJson(adminBridgeBase, "/desktop-local-data/startup-metric", { event, payload: payload || {} }).catch(() => {});
 }
 
-export async function getBridge(adminBridgeBase, path) {
-  return fetchJson(adminBridgeBase, path);
+export async function getBridge(adminBridgeBase, path, options = {}) {
+  return fetchJson(adminBridgeBase, path, options);
 }
 
 export async function postBridge(adminBridgeBase, path, payload, options = {}) {

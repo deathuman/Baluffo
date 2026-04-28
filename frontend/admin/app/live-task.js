@@ -1,6 +1,8 @@
 import { getLiveTaskWorkItems } from "../../shared/live-task.js";
 
 const DEFAULT_SIGNATURE_TRACKER_CAP = 256;
+const DEFAULT_POLL_BACKOFF_BASE_MS = 500;
+const DEFAULT_POLL_BACKOFF_MAX_MS = 5000;
 
 class BoundedSignatureSet extends Set {
   constructor(limit = DEFAULT_SIGNATURE_TRACKER_CAP) {
@@ -33,6 +35,51 @@ class BoundedSignatureSet extends Set {
 
 export function createBoundedSignatureSet(limit = DEFAULT_SIGNATURE_TRACKER_CAP) {
   return new BoundedSignatureSet(limit);
+}
+
+export function createLiveTaskPollGuard({
+  baseDelayMs = DEFAULT_POLL_BACKOFF_BASE_MS,
+  maxDelayMs = DEFAULT_POLL_BACKOFF_MAX_MS
+} = {}) {
+  return {
+    inFlight: false,
+    failureCount: 0,
+    backoffDelayMs: 0,
+    baseDelayMs: Math.max(1, Number(baseDelayMs) || DEFAULT_POLL_BACKOFF_BASE_MS),
+    maxDelayMs: Math.max(1, Number(maxDelayMs) || DEFAULT_POLL_BACKOFF_MAX_MS)
+  };
+}
+
+export function getLiveTaskPollBackoffDelay(guard, fallbackDelayMs = 0) {
+  if (!guard || typeof guard !== "object") return Math.max(0, Number(fallbackDelayMs) || 0);
+  return Math.max(
+    Math.max(0, Number(fallbackDelayMs) || 0),
+    Math.max(0, Number(guard.backoffDelayMs) || 0)
+  );
+}
+
+export async function runGuardedLiveTaskPoll(guard, task) {
+  if (!guard || typeof guard !== "object") {
+    return { skipped: false, ok: true, value: await task() };
+  }
+  if (guard.inFlight) {
+    return { skipped: true, ok: false, value: null };
+  }
+  guard.inFlight = true;
+  try {
+    const value = await task();
+    guard.failureCount = 0;
+    guard.backoffDelayMs = 0;
+    return { skipped: false, ok: true, value };
+  } catch (error) {
+    guard.failureCount = Math.max(1, Number(guard.failureCount || 0) + 1);
+    const baseDelay = Math.max(1, Number(guard.baseDelayMs) || DEFAULT_POLL_BACKOFF_BASE_MS);
+    const maxDelay = Math.max(baseDelay, Number(guard.maxDelayMs) || DEFAULT_POLL_BACKOFF_MAX_MS);
+    guard.backoffDelayMs = Math.min(maxDelay, baseDelay * (2 ** (guard.failureCount - 1)));
+    return { skipped: false, ok: false, value: null, error };
+  } finally {
+    guard.inFlight = false;
+  }
 }
 
 function maybeUnrefTimer(timer) {
@@ -68,11 +115,12 @@ export function loadLiveTaskLogChunk({
   state,
   offsetKey,
   reset = false,
+  requestOptions = {},
   onText,
   onNextOffset
 }) {
   const offset = reset ? 0 : Math.max(0, Number(state[offsetKey]) || 0);
-  return getBridge(`${path}?offset=${offset}`).then(payload => {
+  return getBridge(`${path}?offset=${offset}`, requestOptions).then(payload => {
     if (reset) {
       state[offsetKey] = 0;
     }
@@ -85,9 +133,13 @@ export function loadLiveTaskLogChunk({
 
 export function loadTaskLivePayload({
   getBridge,
-  taskType
+  taskType,
+  requestOptions = {}
 }) {
-  return getBridge(`/ops/task-live/${encodeURIComponent(String(taskType || "").trim().toLowerCase())}`)
+  return getBridge(
+    `/ops/task-live/${encodeURIComponent(String(taskType || "").trim().toLowerCase())}`,
+    requestOptions
+  )
     .then(payload => (payload && typeof payload === "object" ? payload : null));
 }
 

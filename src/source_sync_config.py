@@ -14,6 +14,58 @@ from src.shared.github_https import (
     wrap_github_request_error,
 )
 
+PACKAGED_SYNC_BUILD_CONFIG_ENV = "BALUFFO_SYNC_BUILD_CONFIG_PATH"
+
+
+def _append_unique_path(paths: list[Path], seen: set[str], raw: Any) -> None:
+    token = str(raw or "").strip()
+    if not token:
+        return
+    path = Path(token).expanduser().resolve()
+    key = str(path).lower()
+    if key in seen:
+        return
+    seen.add(key)
+    paths.append(path)
+
+
+def _home_dir_from_env(env_map: dict[str, str]) -> Path:
+    for key in ("USERPROFILE", "HOME"):
+        raw = str(env_map.get(key) or "").strip()
+        if raw:
+            return Path(raw).expanduser()
+    return Path.home()
+
+
+def candidate_packaged_sync_config_paths(
+    module: Any,
+    *,
+    env: dict[str, str] | None = None,
+    default_path: Path | None = None,
+) -> list[Path]:
+    env_map: dict[str, str] = env if isinstance(env, dict) else dict(os.environ)
+    paths: list[Path] = []
+    seen: set[str] = set()
+    _append_unique_path(paths, seen, env_map.get(module.PACKAGED_SYNC_CONFIG_ENV))
+    _append_unique_path(paths, seen, default_path or module.DEFAULT_PACKAGED_SYNC_CONFIG_PATH)
+    _append_unique_path(
+        paths,
+        seen,
+        env_map.get(getattr(module, "PACKAGED_SYNC_BUILD_CONFIG_ENV", PACKAGED_SYNC_BUILD_CONFIG_ENV)),
+    )
+    appdata = str(env_map.get("APPDATA") or "").strip()
+    if appdata:
+        _append_unique_path(paths, seen, Path(appdata) / "Baluffo" / "github-app-sync-config.json")
+    local_appdata = str(env_map.get("LOCALAPPDATA") or "").strip()
+    if local_appdata:
+        _append_unique_path(
+            paths, seen, Path(local_appdata) / "Baluffo" / "github-app-sync-config.json"
+        )
+    _append_unique_path(
+        paths, seen, _home_dir_from_env(env_map) / ".baluffo" / "github-app-sync-config.json"
+    )
+    return paths
+
 
 def normalize_packaged_payload(module: Any, payload: dict[str, Any]) -> dict[str, str]:
     data = payload if isinstance(payload, dict) else {}
@@ -43,11 +95,11 @@ def normalize_packaged_payload(module: Any, payload: dict[str, Any]) -> dict[str
 
 def load_packaged_sync_config(module: Any, *, env: dict[str, str] | None = None) -> Any | None:
     env_map: dict[str, str] = env if isinstance(env, dict) else dict(os.environ)
-    path_raw = str(
-        env_map.get(module.PACKAGED_SYNC_CONFIG_ENV) or module.DEFAULT_PACKAGED_SYNC_CONFIG_PATH
-    ).strip()
-    config_path = Path(path_raw).expanduser().resolve()
-    if not config_path.exists():
+    config_path = next(
+        (path for path in candidate_packaged_sync_config_paths(module, env=env_map) if path.exists()),
+        None,
+    )
+    if config_path is None:
         return None
     try:
         payload = json.loads(config_path.read_text(encoding="utf-8"))
@@ -178,6 +230,9 @@ def resolve_sync_config(
 def config_status(module: Any, config: Any) -> dict[str, Any]:
     missing: list[str] = []
     message = str(config.disabled_reason or "")
+    config_search_paths = [
+        str(path) for path in candidate_packaged_sync_config_paths(module)
+    ]
     if not config.packaged_config:
         missing.append("packaged_github_app_config")
     else:
@@ -201,7 +256,9 @@ def config_status(module: Any, config: Any) -> dict[str, Any]:
         if "packaged_github_app_config" in missing:
             message = (
                 "Missing packaged GitHub App config. "
-                f"Expected {module.PACKAGED_SYNC_CONFIG_ENV} or {module.DEFAULT_PACKAGED_SYNC_CONFIG_PATH.name}."
+                f"Expected {module.PACKAGED_SYNC_CONFIG_ENV} or "
+                f"{module.DEFAULT_PACKAGED_SYNC_CONFIG_PATH.name}. "
+                f"Searched: {', '.join(config_search_paths)}."
             )
         else:
             message = "Packaged GitHub App config is incomplete."
@@ -229,6 +286,7 @@ def config_status(module: Any, config: Any) -> dict[str, Any]:
         "authMode": str(config.auth_mode or "github_app"),
         "credentialsPackaged": bool(config.packaged_config),
         "configPath": str(config.packaged_config.config_path if config.packaged_config else ""),
+        "configSearchPaths": config_search_paths,
         "runtimeState": runtime_state,
         "keyDerivation": str(
             config.packaged_config.key_derivation if config.packaged_config else ""

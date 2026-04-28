@@ -54,6 +54,111 @@ class _Recorder:
         return item
 
 
+def _write_packaged_sync_config(path, *, repo: str = "owner/repo") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "appId": "123456",
+                "installationId": "999999",
+                "repo": repo,
+                "branch": "main",
+                "path": "baluffo/source-sync.json",
+                "privateKeyPem": "-----BEGIN RSA PRIVATE KEY-----\nTEST\n-----END RSA PRIVATE KEY-----",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_packaged_sync_config_env_path_wins(monkeypatch, tmp_path):
+    default_path = tmp_path / "default" / "github-app-sync-config.json"
+    env_path = tmp_path / "env" / "github-app-sync-config.json"
+    _write_packaged_sync_config(default_path, repo="default/repo")
+    _write_packaged_sync_config(env_path, repo="env/repo")
+    monkeypatch.setattr(sync, "DEFAULT_PACKAGED_SYNC_CONFIG_PATH", default_path)
+
+    cfg = sync.load_packaged_sync_config(env={sync.PACKAGED_SYNC_CONFIG_ENV: str(env_path)})
+
+    assert cfg is not None
+    assert cfg.repo == "env/repo"
+    assert cfg.config_path == str(env_path.resolve())
+
+
+def test_packaged_sync_config_default_path_is_used(monkeypatch, tmp_path):
+    default_path = tmp_path / "packaging" / "github-app-sync-config.json"
+    _write_packaged_sync_config(default_path, repo="bundled/repo")
+    monkeypatch.setattr(sync, "DEFAULT_PACKAGED_SYNC_CONFIG_PATH", default_path)
+
+    cfg = sync.load_packaged_sync_config(env={})
+
+    assert cfg is not None
+    assert cfg.repo == "bundled/repo"
+
+
+def test_packaged_sync_config_falls_back_to_user_locations(monkeypatch, tmp_path):
+    missing_default = tmp_path / "missing" / "github-app-sync-config.json"
+    build_config = tmp_path / "build" / "github-app-sync-config.json"
+    appdata_config = tmp_path / "appdata" / "Baluffo" / "github-app-sync-config.json"
+    local_appdata_config = tmp_path / "localappdata" / "Baluffo" / "github-app-sync-config.json"
+    home_config = tmp_path / "home" / ".baluffo" / "github-app-sync-config.json"
+    monkeypatch.setattr(sync, "DEFAULT_PACKAGED_SYNC_CONFIG_PATH", missing_default)
+
+    cases = [
+        (
+            build_config,
+            {sync.PACKAGED_SYNC_BUILD_CONFIG_ENV: str(build_config)},
+            "build/repo",
+        ),
+        (
+            appdata_config,
+            {"APPDATA": str(tmp_path / "appdata")},
+            "appdata/repo",
+        ),
+        (
+            local_appdata_config,
+            {"LOCALAPPDATA": str(tmp_path / "localappdata")},
+            "localappdata/repo",
+        ),
+        (
+            home_config,
+            {"HOME": str(tmp_path / "home")},
+            "home/repo",
+        ),
+    ]
+
+    for path, env, repo in cases:
+        _write_packaged_sync_config(path, repo=repo)
+        cfg = sync.load_packaged_sync_config(env=env)
+        assert cfg is not None
+        assert cfg.repo == repo
+        path.unlink()
+
+
+def test_missing_packaged_sync_status_lists_search_paths(monkeypatch, tmp_path):
+    missing_default = tmp_path / "packaging" / "github-app-sync-config.json"
+    monkeypatch.setattr(sync, "DEFAULT_PACKAGED_SYNC_CONFIG_PATH", missing_default)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "localappdata"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+
+    env = {
+        "APPDATA": str(tmp_path / "appdata"),
+        "LOCALAPPDATA": str(tmp_path / "localappdata"),
+        "HOME": str(tmp_path / "home"),
+        "USERPROFILE": str(tmp_path / "home"),
+    }
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=env)
+    status = sync.config_status(cfg)
+
+    assert "packaged_github_app_config" in status["missing"]
+    assert str(missing_default.resolve()) in status["configSearchPaths"]
+    assert str((tmp_path / "home" / ".baluffo" / "github-app-sync-config.json").resolve()) in status["configSearchPaths"]
+    assert "Searched:" in status["message"]
+
+
 def test_encrypt_and_decrypt_private_key_round_trip():
     salt_b64 = sync._base64url_encode(b"unit-test-salt-123")  # noqa: SLF001
     private_key = "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
