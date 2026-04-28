@@ -62,14 +62,8 @@ From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json
 | Function | Score |
 | --- | ---: |
 | `src/source_discovery/orchestrator_probe.py::probe_and_recover` | 19 |
-| `src/source_discovery/probe.py::parse_probe_count` | 18 |
-| `src/source_discovery/provider_patterns.py::build_pattern_candidates` | 16 |
 | `src/source_discovery/sheet_directory.py::parse_game_studio_sheet_csv` | 16 |
-| `src/source_discovery/probe.py::fallback_probe_urls` | 15 |
-| `src/source_discovery/probe.py::async_probe_candidate` | 13 |
-| `src/source_discovery/provider_patterns.py::provider_reinforcement_score` | 13 |
 | `src/source_discovery/core_scoring.py::compute_candidate_rank` | 12 |
-| `src/source_discovery/probe.py::probe_candidate` | 11 |
 
 Parser complexity can remain temporarily when it is genuinely source-format complexity. Orchestration complexity should not.
 
@@ -129,6 +123,7 @@ Acceptance criteria:
 - Artifact compatibility changes are documented and tested when needed.
 - Deferred implementation slice: move GameDevMap audit/cache/report lifecycle toward shared active-audit helpers while leaving CSV parsing, representative row selection, and source provenance in `gamedevmap.py`.
 - Deferred config cleanup: remove or repurpose stale GameDevMap `cachePath` / `cacheTtlMinutes` defaults and tests after compatibility review confirms no external config depends on the deleted legacy cache.
+- Deferred probe cleanup: split `orchestrator_probe.py::probe_and_recover` into initial probe accounting, URL-patch recovery, reprobe accounting, and progress-report helpers after the adapter-local probe parsers are thin.
 
 ### 6. Test Scaffolding Cleanup
 

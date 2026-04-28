@@ -106,71 +106,81 @@ def validate_candidate_for_probe(candidate: dict[str, Any]) -> tuple[bool, str]:
 
 def fallback_probe_urls(candidate: dict[str, Any]) -> list[str]:
     adapter = str(candidate.get("adapter") or "").strip().lower()
-    urls: list[str] = []
+    url = _fallback_probe_url(candidate, adapter)
+    return [url] if url else []
+
+
+def _fallback_probe_url(candidate: dict[str, Any], adapter: str) -> str:
+    if adapter in {"greenhouse", "lever", "smartrecruiters", "workable"}:
+        return _provider_homepage_probe_url(candidate, adapter)
+    if adapter in {"recruitee", "pinpoint"}:
+        return _host_probe_url(str(candidate.get("api_url") or ""))
+    if adapter == "personio":
+        return _host_probe_url(str(candidate.get("feed_url") or ""))
+    return ""
+
+
+def _provider_homepage_probe_url(candidate: dict[str, Any], adapter: str) -> str:
     if adapter == "greenhouse":
         slug = str(candidate.get("slug") or "").strip()
-        if slug:
-            urls.append(f"https://boards.greenhouse.io/{slug}")
-    elif adapter == "lever":
-        account = str(candidate.get("account") or "").strip()
-        if account:
-            urls.append(f"https://jobs.lever.co/{account}")
-    elif adapter == "smartrecruiters":
+        return f"https://boards.greenhouse.io/{slug}" if slug else ""
+    if adapter == "smartrecruiters":
         company_id = str(candidate.get("company_id") or "").strip()
-        if company_id:
-            urls.append(f"https://jobs.smartrecruiters.com/{company_id}")
-    elif adapter == "workable":
-        account = str(candidate.get("account") or "").strip()
-        if account:
-            urls.append(f"https://apply.workable.com/{account}")
-    elif adapter == "recruitee":
-        host = (urlparse(str(candidate.get("api_url") or "")).netloc or "").strip()
-        if host:
-            urls.append(f"https://{host}/")
-    elif adapter == "pinpoint":
-        host = (urlparse(str(candidate.get("api_url") or "")).netloc or "").strip()
-        if host:
-            urls.append(f"https://{host}/")
-    elif adapter == "personio":
-        host = (urlparse(str(candidate.get("feed_url") or "")).netloc or "").strip()
-        if host:
-            urls.append(f"https://{host}/")
-    return urls
+        return f"https://jobs.smartrecruiters.com/{company_id}" if company_id else ""
+    account = str(candidate.get("account") or "").strip()
+    if not account:
+        return ""
+    if adapter == "lever":
+        return f"https://jobs.lever.co/{account}"
+    if adapter == "workable":
+        return f"https://apply.workable.com/{account}"
+    return ""
+
+
+def _host_probe_url(raw_url: str) -> str:
+    host = (urlparse(str(raw_url or "")).netloc or "").strip()
+    return f"https://{host}/" if host else ""
+
+
+def _json_count(text: str, key: str | None = None) -> int:
+    payload = json.loads(text)
+    if key is None:
+        return len(payload) if isinstance(payload, list) else 0
+    return len(payload.get(key, [])) if isinstance(payload, dict) else 0
+
+
+def _html_link_count(text: str, pattern: str) -> int:
+    return len(set(re.findall(pattern, text)))
+
+
+def _json_or_html_count(text: str, *, json_key: str | None, html_pattern: str) -> int:
+    if text.strip().startswith("{"):
+        return _json_count(text, json_key)
+    return _html_link_count(text, html_pattern)
+
+
+def _parse_provider_probe_count(adapter: str, text: str) -> int | None:
+    provider_specs = {
+        "lever": (None, r'(?is)href=["\'][^"\']+/jobs/[^"\']+["\']'),
+        "greenhouse": ("jobs", r'(?is)href=["\'][^"\']+/jobs/\d+[^"\']*["\']'),
+        "smartrecruiters": ("content", r'(?is)href=["\'][^"\']+/job/[^"\']+["\']'),
+        "workable": ("jobs", r'(?is)href=["\'][^"\']+/j/[^"\']+["\']'),
+        "recruitee": ("offers", r'(?is)href=["\'][^"\']+/o/[^"\']+["\']'),
+        "pinpoint": ("data", r'(?is)href=["\'][^"\']+/postings/[^"\']+["\']'),
+    }
+    spec = provider_specs.get(adapter)
+    if spec is None:
+        return None
+    json_key, html_pattern = spec
+    if adapter == "lever":
+        return _json_count(text, "data") if text.strip().startswith("{") else _json_count(text)
+    return _json_or_html_count(text, json_key=json_key, html_pattern=html_pattern)
 
 
 def parse_probe_count(adapter: str, text: str) -> int:
-    if adapter == "lever":
-        if text.strip().startswith("{"):
-            payload = json.loads(text)
-            postings = payload.get("data", []) if isinstance(payload, dict) else []
-            return len(postings) if isinstance(postings, list) else 0
-        payload = json.loads(text)
-        return len(payload) if isinstance(payload, list) else 0
-    if adapter == "greenhouse":
-        if text.strip().startswith("{"):
-            payload = json.loads(text)
-            return len(payload.get("jobs", [])) if isinstance(payload, dict) else 0
-        return len(set(re.findall(r'(?is)href=["\'][^"\']+/jobs/\d+[^"\']*["\']', text)))
-    if adapter == "smartrecruiters":
-        if text.strip().startswith("{"):
-            payload = json.loads(text)
-            return len(payload.get("content", [])) if isinstance(payload, dict) else 0
-        return len(set(re.findall(r'(?is)href=["\'][^"\']+/job/[^"\']+["\']', text)))
-    if adapter == "workable":
-        if text.strip().startswith("{"):
-            payload = json.loads(text)
-            return len(payload.get("jobs", [])) if isinstance(payload, dict) else 0
-        return len(set(re.findall(r'(?is)href=["\'][^"\']+/j/[^"\']+["\']', text)))
-    if adapter == "recruitee":
-        if text.strip().startswith("{"):
-            payload = json.loads(text)
-            return len(payload.get("offers", [])) if isinstance(payload, dict) else 0
-        return len(set(re.findall(r'(?is)href=["\'][^"\']+/o/[^"\']+["\']', text)))
-    if adapter == "pinpoint":
-        if text.strip().startswith("{"):
-            payload = json.loads(text)
-            return len(payload.get("data", [])) if isinstance(payload, dict) else 0
-        return len(set(re.findall(r'(?is)href=["\'][^"\']+/postings/[^"\']+["\']', text)))
+    provider_count = _parse_provider_probe_count(adapter, text)
+    if provider_count is not None:
+        return provider_count
     if adapter == "personio":
         if text.lstrip().startswith("<"):
             return len(ET.fromstring(text).findall(".//position"))
@@ -182,6 +192,54 @@ def parse_probe_count(adapter: str, text: str) -> int:
     if adapter == "static":
         return len(extract_jobish_links(text, ""))
     raise ValueError("unsupported adapter")
+
+
+def _probe_urls(candidate: dict[str, Any]) -> list[str]:
+    return [endpoint_url(candidate), *fallback_probe_urls(candidate)]
+
+
+def _probe_fetch_urls(
+    probe_urls: list[str],
+    *,
+    adapter: str,
+    timeout_s: int,
+    fetcher: Callable[[str, int], str],
+) -> tuple[bool, int, str]:
+    seen_urls = set()
+    last_error = "probe failed"
+    for probe_url in probe_urls:
+        if not probe_url or probe_url in seen_urls:
+            continue
+        seen_urls.add(probe_url)
+        try:
+            text = fetch_text_with_retry(probe_url, timeout_s, adapter=adapter, fetcher=fetcher)
+            return True, max(0, int(parse_probe_count(adapter, text))), ""
+        except Exception as exc:  # noqa: BLE001
+            last_error = f"{probe_url}: {exc}"
+    return False, 0, last_error
+
+
+def _probe_with_playwright(
+    probe_urls: list[str], *, timeout_s: int, try_playwright: TryPlaywrightFn | None
+) -> tuple[bool, int, str] | None:
+    if try_playwright is None:
+        return None
+    for probe_url in probe_urls[:3]:
+        if not probe_url:
+            continue
+        html, pw_err = try_playwright(probe_url, timeout_s)
+        if html and not pw_err:
+            try:
+                count = parse_probe_count("static", html)
+            except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
+                continue
+            print(
+                f"[discovery] probe_playwright_fallback url={probe_url!r} success=True count={count}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return True, max(0, int(count)), ""
+    return None
 
 
 def probe_candidate(
@@ -198,7 +256,33 @@ def probe_candidate(
     valid, reason = validate_candidate_for_probe(candidate)
     if not valid:
         return False, 0, reason
-    probe_urls = [url, *fallback_probe_urls(candidate)]
+    probe_urls = _probe_urls(candidate)
+    ok, count, last_error = _probe_fetch_urls(
+        probe_urls,
+        adapter=adapter,
+        timeout_s=timeout_s,
+        fetcher=fetcher,
+    )
+    if ok:
+        return ok, count, last_error
+    if adapter == "static" and try_playwright and _is_playwright_fallback_error(last_error):
+        playwright_result = _probe_with_playwright(
+            probe_urls,
+            timeout_s=timeout_s,
+            try_playwright=try_playwright,
+        )
+        if playwright_result is not None:
+            return playwright_result
+    return False, 0, last_error
+
+
+async def _async_probe_fetch_urls(
+    probe_urls: list[str],
+    *,
+    adapter: str,
+    timeout_s: int,
+    fetcher: Callable[[str, int], str],
+) -> tuple[bool, int, str]:
     seen_urls = set()
     last_error = "probe failed"
     for probe_url in probe_urls:
@@ -206,27 +290,61 @@ def probe_candidate(
             continue
         seen_urls.add(probe_url)
         try:
-            text = fetch_text_with_retry(probe_url, timeout_s, adapter=adapter, fetcher=fetcher)
+            text = await async_fetch_text_with_retry(
+                probe_url, timeout_s, adapter=adapter, fetcher=fetcher
+            )
             return True, max(0, int(parse_probe_count(adapter, text))), ""
         except Exception as exc:  # noqa: BLE001
             last_error = f"{probe_url}: {exc}"
-    if adapter == "static" and try_playwright and _is_playwright_fallback_error(last_error):
-        for probe_url in probe_urls[:3]:
-            if not probe_url:
-                continue
-            html, pw_err = try_playwright(probe_url, timeout_s)
-            if html and not pw_err:
-                try:
-                    count = parse_probe_count("static", html)
-                    print(
-                        f"[discovery] probe_playwright_fallback url={probe_url!r} success=True count={count}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    return True, max(0, int(count)), ""
-                except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
-                    continue
     return False, 0, last_error
+
+
+async def _async_playwright_fetch(
+    probe_url: str,
+    *,
+    timeout_s: int,
+    try_playwright: TryPlaywrightFn,
+    playwright_semaphore: asyncio.Semaphore | None,
+) -> tuple[str, str]:
+    if playwright_semaphore is not None:
+        await playwright_semaphore.acquire()
+    try:
+        return await asyncio.to_thread(try_playwright, probe_url, timeout_s)
+    finally:
+        if playwright_semaphore is not None:
+            playwright_semaphore.release()
+
+
+async def _async_probe_with_playwright(
+    probe_urls: list[str],
+    *,
+    timeout_s: int,
+    try_playwright: TryPlaywrightFn | None,
+    playwright_semaphore: asyncio.Semaphore | None,
+) -> tuple[bool, int, str] | None:
+    if try_playwright is None:
+        return None
+    for probe_url in probe_urls[:3]:
+        if not probe_url:
+            continue
+        html, pw_err = await _async_playwright_fetch(
+            probe_url,
+            timeout_s=timeout_s,
+            try_playwright=try_playwright,
+            playwright_semaphore=playwright_semaphore,
+        )
+        if html and not pw_err:
+            try:
+                count = parse_probe_count("static", html)
+            except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
+                continue
+            print(
+                f"[discovery] probe_playwright_fallback url={probe_url!r} success=True count={count}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return True, max(0, int(count)), ""
+    return None
 
 
 async def async_probe_candidate(
@@ -244,41 +362,22 @@ async def async_probe_candidate(
     valid, reason = validate_candidate_for_probe(candidate)
     if not valid:
         return False, 0, reason
-    probe_urls = [url, *fallback_probe_urls(candidate)]
-    seen_urls = set()
-    last_error = "probe failed"
-    for probe_url in probe_urls:
-        if not probe_url or probe_url in seen_urls:
-            continue
-        seen_urls.add(probe_url)
-        try:
-            text = await async_fetch_text_with_retry(
-                probe_url, timeout_s, adapter=adapter, fetcher=fetcher
-            )
-            return True, max(0, int(parse_probe_count(adapter, text))), ""
-        except Exception as exc:  # noqa: BLE001
-            last_error = f"{probe_url}: {exc}"
+    probe_urls = _probe_urls(candidate)
+    ok, count, last_error = await _async_probe_fetch_urls(
+        probe_urls,
+        adapter=adapter,
+        timeout_s=timeout_s,
+        fetcher=fetcher,
+    )
+    if ok:
+        return ok, count, last_error
     if adapter == "static" and try_playwright and _is_playwright_fallback_error(last_error):
-        sem = playwright_semaphore
-        for probe_url in probe_urls[:3]:
-            if not probe_url:
-                continue
-            if sem is not None:
-                await sem.acquire()
-            try:
-                html, pw_err = await asyncio.to_thread(try_playwright, probe_url, timeout_s)
-                if html and not pw_err:
-                    try:
-                        count = parse_probe_count("static", html)
-                        print(
-                            f"[discovery] probe_playwright_fallback url={probe_url!r} success=True count={count}",
-                            file=sys.stderr,
-                            flush=True,
-                        )
-                        return True, max(0, int(count)), ""
-                    except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
-                        pass
-            finally:
-                if sem is not None:
-                    sem.release()
+        playwright_result = await _async_probe_with_playwright(
+            probe_urls,
+            timeout_s=timeout_s,
+            try_playwright=try_playwright,
+            playwright_semaphore=playwright_semaphore,
+        )
+        if playwright_result is not None:
+            return playwright_result
     return False, 0, last_error
