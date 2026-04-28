@@ -94,52 +94,72 @@ def _gamesmap_phrase_matches(category_words: list[str], target_words: list[str])
     )
 
 
-def gamesmap_matches_category(
-    categories: Iterable[str], allowed: Iterable[str], blocked: Iterable[str]
+def _gamesmap_normalized_word_groups(values: Iterable[str]) -> list[list[str]]:
+    return [
+        words
+        for words in (
+            _gamesmap_category_words(str(item)) for item in values if str(item or "").strip()
+        )
+        if words
+    ]
+
+
+def _gamesmap_has_blocked_phrase(
+    category_words: list[list[str]], blocked_phrases: list[list[str]]
 ) -> bool:
-    category_words = [
-        _gamesmap_category_words(str(item)) for item in categories if str(item or "").strip()
-    ]
-    category_words = [words for words in category_words if words]
-    if not category_words:
-        return False
-    blocked_phrases = [
-        _gamesmap_category_words(str(item)) for item in blocked if str(item or "").strip()
-    ]
-    blocked_phrases = [phrase for phrase in blocked_phrases if phrase]
-    if any(
+    return any(
         _gamesmap_phrase_matches(words, blocked_phrase)
         for words in category_words
         for blocked_phrase in blocked_phrases
-    ):
+    )
+
+
+def _gamesmap_allowed_token_matches(
+    token: str, *, words: list[str], aggregate_word_set: set[str]
+) -> bool:
+    if not token:
+        return False
+    word_set = set(words)
+    if token == "developer and publisher":
+        return {"developer", "publisher"} <= aggregate_word_set
+    if token in {"developer", "publisher", "mobile", "browser", "online", "vr", "ar"}:
+        return token in word_set
+    if token in {"pc", "console"}:
+        return token in word_set or {"console", "pc"} <= word_set
+    target_words = _gamesmap_category_words(token)
+    return bool(target_words and _gamesmap_phrase_matches(words, target_words))
+
+
+def _gamesmap_has_allowed_phrase(
+    category_words: list[list[str]], allowed_tokens: list[str]
+) -> bool:
+    aggregate_word_set = {word for words in category_words for word in words}
+    return any(
+        _gamesmap_allowed_token_matches(
+            token,
+            words=words,
+            aggregate_word_set=aggregate_word_set,
+        )
+        for words in category_words
+        for token in allowed_tokens
+    )
+
+
+def gamesmap_matches_category(
+    categories: Iterable[str], allowed: Iterable[str], blocked: Iterable[str]
+) -> bool:
+    category_words = _gamesmap_normalized_word_groups(categories)
+    if not category_words:
+        return False
+    blocked_phrases = _gamesmap_normalized_word_groups(blocked)
+    if _gamesmap_has_blocked_phrase(category_words, blocked_phrases):
         return False
     allowed_tokens = [
         normalize_gamesmap_category_token(item) for item in allowed if str(item or "").strip()
     ]
     if not allowed_tokens:
         return True
-    aggregate_word_set = {word for words in category_words for word in words}
-    for words in category_words:
-        word_set = set(words)
-        for token in allowed_tokens:
-            if not token:
-                continue
-            if token == "developer and publisher":
-                if {"developer", "publisher"} <= aggregate_word_set:
-                    return True
-                continue
-            if token in {"developer", "publisher", "mobile", "browser", "online", "vr", "ar"}:
-                if token in word_set:
-                    return True
-                continue
-            if token in {"pc", "console"}:
-                if token in word_set or {"console", "pc"} <= word_set:
-                    return True
-                continue
-            target_words = _gamesmap_category_words(token)
-            if target_words and _gamesmap_phrase_matches(words, target_words):
-                return True
-    return False
+    return _gamesmap_has_allowed_phrase(category_words, allowed_tokens)
 
 
 def build_gamesmap_static_candidate(

@@ -61,18 +61,14 @@ From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json
 
 | Function | Score |
 | --- | ---: |
-| `src/source_discovery/gamesmap_parsing.py::parse_gamesmap_detail_page` | 20 |
 | `src/source_discovery/orchestrator_probe.py::probe_and_recover` | 19 |
 | `src/source_discovery/probe.py::parse_probe_count` | 18 |
 | `src/source_discovery/provider_patterns.py::build_pattern_candidates` | 16 |
 | `src/source_discovery/sheet_directory.py::parse_game_studio_sheet_csv` | 16 |
 | `src/source_discovery/probe.py::fallback_probe_urls` | 15 |
-| `src/source_discovery/gamesmap_candidates.py::gamesmap_matches_category` | 14 |
 | `src/source_discovery/probe.py::async_probe_candidate` | 13 |
 | `src/source_discovery/provider_patterns.py::provider_reinforcement_score` | 13 |
-| `src/source_discovery/gamesmap_parsing.py::_parse_gamesmap_index_entries_with_diagnostics` | 13 |
 | `src/source_discovery/core_scoring.py::compute_candidate_rank` | 12 |
-| `src/source_discovery/gamesmap_parsing.py::_extract_json_array` | 11 |
 | `src/source_discovery/probe.py::probe_candidate` | 11 |
 
 Parser complexity can remain temporarily when it is genuinely source-format complexity. Orchestration complexity should not.

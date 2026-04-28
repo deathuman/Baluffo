@@ -68,37 +68,55 @@ def _extract_gamesmap_js_data_container(markup: str) -> list[Any] | None:
     return None
 
 
-def _extract_json_array(markup: str, array_start: int) -> list[Any] | None:
+def _advance_json_string_state(
+    char: str, *, in_string: bool, escape: bool
+) -> tuple[bool, bool, bool]:
+    if not in_string:
+        return char == '"', False, False
+    if escape:
+        return True, False, True
+    if char == "\\":
+        return True, True, True
+    if char == '"':
+        return False, False, True
+    return True, False, True
+
+
+def _json_array_end(markup: str, array_start: int) -> int | None:
     depth = 0
     in_string = False
     escape = False
     for idx in range(array_start, len(markup)):
         char = markup[idx]
-        if in_string:
-            if escape:
-                escape = False
-                continue
-            if char == "\\":
-                escape = True
-                continue
-            if char == '"':
-                in_string = False
-            continue
-        if char == '"':
-            in_string = True
+        in_string, escape, consumed = _advance_json_string_state(
+            char,
+            in_string=in_string,
+            escape=escape,
+        )
+        if consumed:
             continue
         if char == "[":
             depth += 1
-            continue
-        if char == "]":
+        elif char == "]":
             depth -= 1
             if depth == 0:
-                try:
-                    payload = json.loads(markup[array_start : idx + 1])
-                except json.JSONDecodeError:
-                    return None
-                return payload if isinstance(payload, list) else None
+                return idx
     return None
+
+
+def _decode_json_array(markup: str, array_start: int, array_end: int) -> list[Any] | None:
+    try:
+        payload = json.loads(markup[array_start : array_end + 1])
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, list) else None
+
+
+def _extract_json_array(markup: str, array_start: int) -> list[Any] | None:
+    array_end = _json_array_end(markup, array_start)
+    if array_end is None:
+        return None
+    return _decode_json_array(markup, array_start, array_end)
 
 
 def _extract_gamesmap_next_companies(markup: str) -> list[dict[str, Any]] | None:
@@ -317,6 +335,110 @@ def _normalize_gamesmap_company_entries(
     return out, diagnostics
 
 
+def _gamesmap_js_industry_points(payload: list[Any]) -> list[dict[str, Any]]:
+    for item in payload:
+        if not (
+            isinstance(item, list)
+            and len(item) >= 2
+            and item[0] == "map.coordinates"
+            and isinstance(item[1], dict)
+        ):
+            continue
+        item_payload = _as_dict(item[1])
+        points = _as_dict(item_payload.get("points"))
+        return [point for point in _as_list(points.get("industry")) if isinstance(point, dict)]
+    return []
+
+
+def _gamesmap_industry_point_detail_url(
+    point: dict[str, Any], base_url: str, *, prefer_english: bool
+) -> str:
+    slug = str(point.get("slug") or "").strip().strip("/")
+    if not slug:
+        return ""
+    detail_url = f"/en/detail/industry/{slug}" if prefer_english else f"/detail/industry/{slug}"
+    return urljoin(base_url.rstrip("/") + "/", detail_url.lstrip("/"))
+
+
+def _gamesmap_industry_point_location(point: dict[str, Any], *, prefer_english: bool) -> str:
+    province = _as_dict(point.get("province"))
+    return str(
+        (province.get("nameEn") if prefer_english else province.get("name"))
+        or province.get("nameEn")
+        or province.get("name")
+        or ""
+    ).strip()
+
+
+def _normalize_gamesmap_industry_point(
+    point: dict[str, Any], base_url: str, *, prefer_english: bool
+) -> dict[str, Any] | None:
+    studio = str(point.get("name") or "").strip()
+    slug = str(point.get("slug") or "").strip().strip("/")
+    detail_url = _gamesmap_industry_point_detail_url(
+        point,
+        base_url,
+        prefer_english=prefer_english,
+    )
+    if not detail_url or not studio:
+        return None
+    return {
+        "detailUrl": detail_url,
+        "studio": studio,
+        "location": _gamesmap_industry_point_location(point, prefer_english=prefer_english),
+        "categories": [],
+        "websiteUrl": "",
+        "slug": slug,
+    }
+
+
+def _append_unique_gamesmap_entry(
+    out: list[dict[str, Any]], seen: set[str], row: dict[str, Any] | None
+) -> None:
+    if not isinstance(row, dict):
+        return
+    detail_url = str(row.get("detailUrl") or "").strip()
+    if not detail_url or detail_url in seen:
+        return
+    seen.add(detail_url)
+    out.append(row)
+
+
+def _parse_gamesmap_js_data_entries(
+    html: str,
+    base_url: str,
+    *,
+    prefer_english: bool,
+    seen: set[str],
+) -> list[dict[str, Any]]:
+    payload = _extract_gamesmap_js_data_container(html)
+    if not isinstance(payload, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for point in _gamesmap_js_industry_points(payload):
+        _append_unique_gamesmap_entry(
+            out,
+            seen,
+            _normalize_gamesmap_industry_point(
+                point,
+                base_url,
+                prefer_english=prefer_english,
+            ),
+        )
+    return out
+
+
+def _gamesmap_link_entry(detail_url: str) -> dict[str, Any]:
+    return {
+        "detailUrl": detail_url,
+        "studio": "",
+        "location": "",
+        "categories": [],
+        "websiteUrl": "",
+        "slug": "",
+    }
+
+
 def _parse_gamesmap_index_entries_with_diagnostics(
     html: str, base_url: str, *, prefer_english: bool = True
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
@@ -332,67 +454,16 @@ def _parse_gamesmap_index_entries_with_diagnostics(
         )
         if normalized_rows:
             return normalized_rows, diagnostics
-    payload = _extract_gamesmap_js_data_container(html)
-    if isinstance(payload, list):
-        for item in payload:
-            if not (
-                isinstance(item, list)
-                and len(item) >= 2
-                and item[0] == "map.coordinates"
-                and isinstance(item[1], dict)
-            ):
-                continue
-            item_payload = _as_dict(item[1])
-            points = _as_dict(item_payload.get("points"))
-            industry_points = _as_list(points.get("industry"))
-            if not industry_points:
-                continue
-            for point in industry_points:
-                if not isinstance(point, dict):
-                    continue
-                slug = str(point.get("slug") or "").strip().strip("/")
-                studio = str(point.get("name") or "").strip()
-                if not slug or not studio:
-                    continue
-                detail_url = (
-                    f"/en/detail/industry/{slug}" if prefer_english else f"/detail/industry/{slug}"
-                )
-                detail_url = urljoin(base_url.rstrip("/") + "/", detail_url.lstrip("/"))
-                province = _as_dict(point.get("province"))
-                location = str(
-                    (province.get("nameEn") if prefer_english else province.get("name"))
-                    or province.get("nameEn")
-                    or province.get("name")
-                    or ""
-                ).strip()
-                if detail_url in seen:
-                    continue
-                seen.add(detail_url)
-                out.append(
-                    {
-                        "detailUrl": detail_url,
-                        "studio": studio,
-                        "location": location,
-                        "categories": [],
-                        "websiteUrl": "",
-                        "slug": slug,
-                    }
-                )
-            break
-    for detail_url in parse_gamesmap_index_links(html, base_url):
-        if detail_url in seen:
-            continue
-        seen.add(detail_url)
-        out.append(
-            {
-                "detailUrl": detail_url,
-                "studio": "",
-                "location": "",
-                "categories": [],
-                "websiteUrl": "",
-                "slug": "",
-            }
+    out.extend(
+        _parse_gamesmap_js_data_entries(
+            html,
+            base_url,
+            prefer_english=prefer_english,
+            seen=seen,
         )
+    )
+    for detail_url in parse_gamesmap_index_links(html, base_url):
+        _append_unique_gamesmap_entry(out, seen, _gamesmap_link_entry(detail_url))
     return out, diagnostics
 
 
@@ -428,84 +499,127 @@ def parse_gamesmap_index_entries(
     return rows
 
 
-def parse_gamesmap_detail_page(page_url: str, html: str) -> dict[str, Any] | None:
-    markup = str(html or "")
+def _gamesmap_detail_name(markup: str) -> str:
     name_match = re.search(r"(?is)<h1[^>]*>(.*?)</h1>", markup)
-    if not name_match:
-        title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", markup)
-        name = _strip_html_tags(title_match.group(1)) if title_match else ""
-    else:
-        name = _strip_html_tags(name_match.group(1))
-    if not name:
-        return None
+    if name_match:
+        return _strip_html_tags(name_match.group(1))
+    title_match = re.search(r"(?is)<title[^>]*>(.*?)</title>", markup)
+    return _strip_html_tags(title_match.group(1)) if title_match else ""
 
-    categories: list[str] = []
-    for match in re.finditer(
-        r'(?is)<[^>]+class=["\'][^"\']*(?:tag|badge|category|chip)[^"\']*["\'][^>]*>(.*?)</[^>]+>',
-        markup,
-    ):
-        token = _strip_html_tags(match.group(1))
-        if token:
-            categories.append(token)
+
+def _gamesmap_detail_tag_categories(markup: str) -> list[str]:
+    return [
+        token
+        for token in (
+            _strip_html_tags(match.group(1))
+            for match in re.finditer(
+                r'(?is)<[^>]+class=["\'][^"\']*(?:tag|badge|category|chip)[^"\']*["\'][^>]*>(.*?)</[^>]+>',
+                markup,
+            )
+        )
+        if token
+    ]
+
+
+def _gamesmap_detail_label_categories(markup: str) -> list[str]:
+    out: list[str] = []
     for match in re.finditer(
         r"(?is)(?:Category|Categories|Branche|Branchen)\s*</[^>]+>\s*<[^>]+>(.*?)</[^>]+>",
         markup,
     ):
         chunk = _strip_html_tags(match.group(1))
-        for part in re.split(r"[|,/]| â€¢ |\s{2,}", chunk):
-            token = part.strip()
-            if token:
-                categories.append(token)
-    categories = unique_string_list(categories)
+        out.extend(part.strip() for part in re.split(r"[|,/]| â€¢ |\s{2,}", chunk) if part.strip())
+    return out
 
-    location = ""
+
+def _gamesmap_detail_categories(markup: str) -> list[str]:
+    return unique_string_list(
+        [*_gamesmap_detail_tag_categories(markup), *_gamesmap_detail_label_categories(markup)]
+    )
+
+
+def _gamesmap_detail_location(markup: str) -> str:
     for match in re.finditer(
         r"(?is)(?:Location|Standort|City)\s*</[^>]+>\s*<[^>]+>(.*?)</[^>]+>", markup
     ):
         token = _strip_html_tags(match.group(1))
         if token:
-            location = token
-            break
+            return token
+    return ""
 
+
+def _gamesmap_external_link(page_url: str, href: str) -> str:
+    raw_href = str(href or "").strip()
+    if not raw_href or raw_href.startswith(("mailto:", "javascript:", "#")):
+        return ""
+    absolute = urljoin(page_url, raw_href).split("#", 1)[0]
+    try:
+        parsed = urlparse(absolute)
+        page_host = (urlparse(page_url).netloc or "").lower()
+    except ValueError:
+        return ""
+    host = (parsed.netloc or "").lower()
+    if not host or host.endswith("gamesmap.de") or host == page_host:
+        return ""
+    if any(
+        host == blocked or host.endswith(f".{blocked}")
+        for blocked in GAMESMAP_IGNORED_WEBSITE_HOSTS
+    ):
+        return ""
+    return absolute
+
+
+def _gamesmap_link_hint_blob(markup: str, match: re.Match[str], absolute: str) -> str:
+    label = _strip_html_tags(match.group(2))
+    context_start = max(0, match.start() - 140)
+    context = _strip_html_tags(markup[context_start : match.end()])
+    return f"{label} {absolute} {context}".lower()
+
+
+def _gamesmap_link_is_careers(markup: str, match: re.Match[str], absolute: str) -> bool:
+    hint_blob = _gamesmap_link_hint_blob(markup, match, absolute)
+    return any(
+        token in hint_blob
+        for token in CAREERS_URL_HINTS + ("job page", "job pages", "stellen", "karriere")
+    )
+
+
+def _gamesmap_detail_external_links(page_url: str, markup: str) -> tuple[str, str]:
     website_url = ""
     careers_url = ""
     for match in re.finditer(r'(?is)<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', markup):
-        href = str(match.group(1) or "").strip()
-        if not href or href.startswith(("mailto:", "javascript:", "#")):
+        absolute = _gamesmap_external_link(page_url, str(match.group(1) or ""))
+        if not absolute:
             continue
-        absolute = urljoin(page_url, href).split("#", 1)[0]
-        try:
-            parsed = urlparse(absolute)
-            page_host = (urlparse(page_url).netloc or "").lower()
-        except ValueError:
+        if _gamesmap_link_is_careers(markup, match, absolute) and not careers_url:
+            careers_url = absolute
             continue
-        host = (parsed.netloc or "").lower()
-        if not host or host.endswith("gamesmap.de") or host == page_host:
-            continue
-        if any(
-            host == blocked or host.endswith(f".{blocked}")
-            for blocked in GAMESMAP_IGNORED_WEBSITE_HOSTS
-        ):
-            continue
-        label = _strip_html_tags(match.group(2))
-        context_start = max(0, match.start() - 140)
-        context = _strip_html_tags(markup[context_start : match.end()])
-        hint_blob = f"{label} {absolute} {context}".lower()
-        if any(
-            token in hint_blob
-            for token in CAREERS_URL_HINTS + ("job page", "job pages", "stellen", "karriere")
-        ):
-            if not careers_url:
-                careers_url = absolute
-                continue
         if not website_url:
             website_url = absolute
+    return website_url, careers_url
+
+
+def _gamesmap_website_from_careers(careers_url: str) -> str:
+    if not careers_url:
+        return ""
+    try:
+        parsed = urlparse(careers_url)
+    except ValueError:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def parse_gamesmap_detail_page(page_url: str, html: str) -> dict[str, Any] | None:
+    markup = str(html or "")
+    name = _gamesmap_detail_name(markup)
+    if not name:
+        return None
+
+    categories = _gamesmap_detail_categories(markup)
+    location = _gamesmap_detail_location(markup)
+    website_url, careers_url = _gamesmap_detail_external_links(page_url, markup)
     if not website_url and careers_url:
-        try:
-            parsed = urlparse(careers_url)
-            website_url = f"{parsed.scheme}://{parsed.netloc}"
-        except ValueError:
-            website_url = ""
+        website_url = _gamesmap_website_from_careers(careers_url)
 
     return {
         "studio": name,
