@@ -173,7 +173,21 @@ Acceptance criteria:
 - Tests prove current discovery output remains acceptable for active-source behavior.
 - Config docs no longer imply rollback flags are long-term architecture.
 
-### 6. Repeat By Yield Priority
+### 6. Thin Test Scaffolding After Deletion Proofs
+
+After a deletion slice lands and the new behavior is protected, consolidate repeated adapter test setup without weakening the guardrails.
+
+For Gameprog specifically, later cleanup should reduce repeated audit-path, TTL, payload, and legacy-flag setup in the focused tests. Keep explicit assertions that the legacy Gameprog cache/direct branch is gone and fresh audit artifacts are the cache boundary.
+
+Projected result: tests become leaner after behavior is locked, instead of blocking the initial deletion proof with premature test abstraction.
+
+Acceptance criteria:
+
+- Test changes are readability/LOC improvements only.
+- No production behavior changes in the same slice.
+- Existing guardrails still prove deleted legacy paths stay deleted.
+
+### 7. Repeat By Yield Priority
 
 Suggested order after the first proof point:
 
