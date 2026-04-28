@@ -61,7 +61,6 @@ From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json
 
 | Function | Score |
 | --- | ---: |
-| `src/source_discovery/reporting_backlog.py::build_m5_strategic_backlog` | 32 |
 | `src/source_discovery/orchestrator_generation.py::prepare_probe_inputs` | 27 |
 | `src/source_discovery/gamesmap_parsing.py::parse_gamesmap_detail_page` | 20 |
 | `src/source_discovery/orchestrator_probe.py::probe_and_recover` | 19 |

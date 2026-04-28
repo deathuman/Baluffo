@@ -317,6 +317,262 @@ def _m5_structured_migration_comparison(
     return comparison
 
 
+def _m5_index_rows(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {_candidate_join_key(row): dict(row) for row in rows or [] if isinstance(row, dict)}
+
+
+def _m5_region_counts(
+    active_rows: list[dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
+) -> tuple[Counter[str], Counter[str]]:
+    live_counts: Counter[str] = Counter()
+    kept_counts: Counter[str] = Counter()
+    for row in active_rows:
+        region = _region_category(row)
+        if region == "unknown":
+            continue
+        live_counts[region] += 1
+        kept_count = int(_lookup_state_entry(row, source_state_rows).get("lastKeptCount") or 0)
+        if kept_count > 0:
+            kept_counts[region] += 1
+    return live_counts, kept_counts
+
+
+def _m5_initial_exclusion_reason(row: dict[str, Any], failure: dict[str, Any]) -> str:
+    return str(
+        failure.get("dropReason")
+        or row.get("dropReason")
+        or row.get("deferReason")
+        or row.get("error")
+        or ""
+    ).strip()
+
+
+def _m5_exception_fields(row: dict[str, Any]) -> tuple[str, str, bool]:
+    reason = str(row.get("coverageExceptionReason") or row.get("exceptionReason") or "").strip()
+    approved_by = str(row.get("approvedExceptionBy") or row.get("approvedBy") or "").strip()
+    return reason, approved_by, bool(reason and approved_by)
+
+
+def _m5_deferred(row: dict[str, Any]) -> bool:
+    return bool(row.get("deferred")) or (
+        str(row.get("dropStage") or "").strip().lower() == "deferred_by_cap"
+    )
+
+
+def _m5_exclusion_status(
+    row: dict[str, Any],
+    *,
+    is_m4_family: bool,
+    has_exception: bool,
+    exclusion_reason: str,
+) -> tuple[str, str]:
+    if is_m4_family and not has_exception:
+        return "excluded", exclusion_reason or "m4_family_followup"
+    if exclusion_reason and not has_exception:
+        return "excluded", exclusion_reason
+    if _m5_deferred(row):
+        return "deferred", exclusion_reason or str(row.get("deferReason") or "deferred").strip()
+    return "included", exclusion_reason
+
+
+def _m5_coverage_lane(
+    *,
+    is_m4_family: bool,
+    region: str,
+    exclusion_status: str,
+) -> str:
+    if is_m4_family:
+        return "lane_a_m4_followup"
+    if region == "asia":
+        return "lane_c_asia_custom"
+    if exclusion_status in {"excluded", "deferred"}:
+        return "lane_d_defer"
+    return "lane_b_custom"
+
+
+def _m5_jobs_found(row: dict[str, Any]) -> int:
+    return max(0, int(row.get("jobsFound") or row.get("sampleCount") or 0))
+
+
+def _m5_weak_region_coverage(
+    region: str,
+    *,
+    live_counts: Counter[str],
+    kept_counts: Counter[str],
+) -> bool:
+    return region != "unknown" and (
+        int(live_counts.get(region) or 0) < 5 or int(kept_counts.get(region) or 0) < 3
+    )
+
+
+def _m5_priority_and_reasons(
+    row: dict[str, Any],
+    *,
+    region: str,
+    jobs_found: int,
+    weak_region_coverage: bool,
+    is_m4_family: bool,
+    exclusion_reason: str,
+) -> tuple[int, list[str]]:
+    rank_reasons = _m5_rank_reasons(row)
+    if exclusion_reason and exclusion_reason not in rank_reasons:
+        rank_reasons = unique_string_list([*rank_reasons, exclusion_reason])
+    priority = _m5_base_priority(row)
+    if region == "asia":
+        priority += 2
+        rank_reasons = unique_string_list([*rank_reasons, "asia_hq"])
+    if jobs_found > 0:
+        priority += 2
+        rank_reasons = unique_string_list([*rank_reasons, "open_role_evidence"])
+    if weak_region_coverage:
+        priority += 2
+        rank_reasons = unique_string_list([*rank_reasons, "weak_regional_coverage"])
+    if is_m4_family:
+        priority -= 3
+        rank_reasons = unique_string_list([*rank_reasons, "m4_family_followup"])
+    if exclusion_reason in {"existing_id", "existing_domain"}:
+        priority -= 3
+        rank_reasons = unique_string_list([*rank_reasons, "existing_coverage_match"])
+    return max(0, min(100, int(priority))), rank_reasons
+
+
+def _m5_coverage_justification(
+    *,
+    is_m4_family: bool,
+    region: str,
+    jobs_found: int,
+    weak_region_coverage: bool,
+    exclusion_status: str,
+    exclusion_reason: str,
+    has_exception: bool,
+    approved_exception_reason: str,
+) -> str:
+    bits = []
+    if is_m4_family:
+        bits.append("structured-family follow-up")
+    elif region == "asia":
+        bits.append("asia-priority custom target")
+    else:
+        bits.append("custom coverage target")
+    if jobs_found > 0:
+        bits.append("open-role evidence")
+    if weak_region_coverage:
+        bits.append("weak regional coverage")
+    if exclusion_status == "excluded" and exclusion_reason:
+        bits.append(f"excluded:{exclusion_reason}")
+    elif exclusion_status == "deferred" and exclusion_reason:
+        bits.append(f"deferred:{exclusion_reason}")
+    if has_exception:
+        bits.append(f"approved exception:{approved_exception_reason}")
+    return "; ".join(part for part in bits if part)
+
+
+def _m5_backlog_row(
+    *,
+    identity_key: str,
+    row: dict[str, Any],
+    failure: dict[str, Any],
+    source_state_rows: dict[str, dict[str, Any]],
+    live_counts: Counter[str],
+    kept_counts: Counter[str],
+) -> dict[str, Any]:
+    adapter = str(row.get("adapter") or failure.get("adapter") or "").strip().lower()
+    region = _region_category(row)
+    state_entry = _lookup_state_entry(row, source_state_rows)
+    kept_count = int(
+        row.get("firstRunKeptCount")
+        or state_entry.get("lastKeptCount")
+        or row.get("lastKeptCount")
+        or 0
+    )
+    exclusion_reason = _m5_hard_exclusion_reason(
+        row,
+        failure,
+        exclusion_reason=_m5_initial_exclusion_reason(row, failure),
+    )
+    approved_exception_reason, approved_exception_by, has_exception = _m5_exception_fields(row)
+    is_m4_family = adapter in M5_ALLOWED_M4_FAMILIES
+    exclusion_status, exclusion_reason = _m5_exclusion_status(
+        row,
+        is_m4_family=is_m4_family,
+        has_exception=has_exception,
+        exclusion_reason=exclusion_reason,
+    )
+    coverage_lane = _m5_coverage_lane(
+        is_m4_family=is_m4_family,
+        region=region,
+        exclusion_status=exclusion_status,
+    )
+    if coverage_lane not in M5_COVERAGE_LANES:
+        coverage_lane = "lane_d_defer"
+    jobs_found = _m5_jobs_found(row)
+    weak_region_coverage = _m5_weak_region_coverage(
+        region,
+        live_counts=live_counts,
+        kept_counts=kept_counts,
+    )
+    coverage_priority, rank_reasons = _m5_priority_and_reasons(
+        row,
+        region=region,
+        jobs_found=jobs_found,
+        weak_region_coverage=weak_region_coverage,
+        is_m4_family=is_m4_family,
+        exclusion_reason=exclusion_reason,
+    )
+    justification = _m5_coverage_justification(
+        is_m4_family=is_m4_family,
+        region=region,
+        jobs_found=jobs_found,
+        weak_region_coverage=weak_region_coverage,
+        exclusion_status=exclusion_status,
+        exclusion_reason=exclusion_reason,
+        has_exception=has_exception,
+        approved_exception_reason=approved_exception_reason,
+    )
+    return {
+        "candidateIdentityKey": identity_key,
+        "sourceId": str(row.get("sourceId") or row.get("id") or identity_key),
+        "studio": str(row.get("studio") or row.get("name") or row.get("source") or ""),
+        "sourceName": str(row.get("name") or row.get("studio") or row.get("source") or ""),
+        "adapter": adapter,
+        "lane": coverage_lane,
+        "coverageLane": coverage_lane,
+        "score": coverage_priority,
+        "coveragePriority": coverage_priority,
+        "rankReasons": rank_reasons,
+        "coverageJustification": justification,
+        "justification": justification,
+        "exclusionStatus": exclusion_status,
+        "exclusionReason": exclusion_reason,
+        "coverageExceptionReason": approved_exception_reason,
+        "approvedExceptionBy": approved_exception_by,
+        "hqRegion": str(row.get("hqRegion") or row.get("region") or ""),
+        "region": region,
+        "firstRunOutcome": _m5_first_run_outcome(
+            row,
+            state_entry=state_entry,
+            kept_count=kept_count,
+        ),
+        "firstRunKeptCount": kept_count,
+        "migrationComparison": _m5_structured_migration_comparison(
+            row,
+            state_entry=state_entry,
+        ),
+        "ownerMilestone": "M5",
+    }
+
+
+def _m5_backlog_sort_key(row: dict[str, Any]) -> tuple[int, int, str]:
+    status = str(row.get("exclusionStatus") or "")
+    status_rank = 0 if status == "included" else (1 if status == "deferred" else 2)
+    return (
+        status_rank,
+        -int(row.get("coveragePriority") or 0),
+        str(row.get("candidateIdentityKey") or ""),
+    )
+
+
 def build_m5_strategic_backlog(
     *,
     report_candidates: list[dict[str, Any]],
@@ -326,25 +582,9 @@ def build_m5_strategic_backlog(
 ) -> list[dict[str, Any]]:
     active_rows = [dict(row) for row in active_rows or [] if isinstance(row, dict)]
     source_state_rows = source_state_rows if isinstance(source_state_rows, dict) else {}
-    candidate_rows: dict[str, dict[str, Any]] = {}
-    failure_rows: dict[str, dict[str, Any]] = {}
-    for row in report_candidates or []:
-        if isinstance(row, dict):
-            candidate_rows[_candidate_join_key(row)] = dict(row)
-    for row in failures or []:
-        if isinstance(row, dict):
-            failure_rows[_candidate_join_key(row)] = dict(row)
-
-    region_live_counts: Counter[str] = Counter()
-    region_kept_counts: Counter[str] = Counter()
-    for row in active_rows:
-        region = _region_category(row)
-        if region == "unknown":
-            continue
-        region_live_counts[region] += 1
-        kept_count = int(_lookup_state_entry(row, source_state_rows).get("lastKeptCount") or 0)
-        if kept_count > 0:
-            region_kept_counts[region] += 1
+    candidate_rows = _m5_index_rows(report_candidates)
+    failure_rows = _m5_index_rows(failures)
+    region_live_counts, region_kept_counts = _m5_region_counts(active_rows, source_state_rows)
 
     backlog_rows: list[dict[str, Any]] = []
     for identity_key in sorted({*candidate_rows.keys(), *failure_rows.keys()}):
@@ -353,145 +593,16 @@ def build_m5_strategic_backlog(
         row = dict(candidate or failure)
         if not row:
             continue
-        adapter = str(row.get("adapter") or failure.get("adapter") or "").strip().lower()
-        region = _region_category(row)
-        state_entry = _lookup_state_entry(row, source_state_rows)
-        kept_count = int(
-            row.get("firstRunKeptCount")
-            or state_entry.get("lastKeptCount")
-            or row.get("lastKeptCount")
-            or 0
-        )
-        exclusion_reason = str(
-            failure.get("dropReason")
-            or row.get("dropReason")
-            or row.get("deferReason")
-            or row.get("error")
-            or ""
-        ).strip()
-        exclusion_reason = _m5_hard_exclusion_reason(
-            row,
-            failure,
-            exclusion_reason=exclusion_reason,
-        )
-        approved_exception_reason = str(
-            row.get("coverageExceptionReason") or row.get("exceptionReason") or ""
-        ).strip()
-        approved_exception_by = str(
-            row.get("approvedExceptionBy") or row.get("approvedBy") or ""
-        ).strip()
-        has_exception = bool(approved_exception_reason and approved_exception_by)
-        is_m4_family = adapter in M5_ALLOWED_M4_FAMILIES
-        is_deferred = bool(row.get("deferred")) or (
-            str(row.get("dropStage") or "").strip().lower() == "deferred_by_cap"
-        )
-        exclusion_status = "included"
-        if is_m4_family and not has_exception:
-            exclusion_status = "excluded"
-            if not exclusion_reason:
-                exclusion_reason = "m4_family_followup"
-        elif exclusion_reason and not has_exception:
-            exclusion_status = "excluded"
-        elif is_deferred:
-            exclusion_status = "deferred"
-            if not exclusion_reason:
-                exclusion_reason = str(row.get("deferReason") or "deferred").strip()
-
-        coverage_lane = "lane_b_custom"
-        if is_m4_family:
-            coverage_lane = "lane_a_m4_followup"
-        elif region == "asia":
-            coverage_lane = "lane_c_asia_custom"
-        elif exclusion_status in {"excluded", "deferred"}:
-            coverage_lane = "lane_d_defer"
-        if coverage_lane not in M5_COVERAGE_LANES:
-            coverage_lane = "lane_d_defer"
-
-        rank_reasons = _m5_rank_reasons(row)
-        if exclusion_reason and exclusion_reason not in rank_reasons:
-            rank_reasons = unique_string_list([*rank_reasons, exclusion_reason])
-        coverage_priority = _m5_base_priority(row)
-        if region == "asia":
-            coverage_priority += 2
-            rank_reasons = unique_string_list([*rank_reasons, "asia_hq"])
-        jobs_found = max(0, int(row.get("jobsFound") or row.get("sampleCount") or 0))
-        if jobs_found > 0:
-            coverage_priority += 2
-            rank_reasons = unique_string_list([*rank_reasons, "open_role_evidence"])
-        if region != "unknown" and (
-            int(region_live_counts.get(region) or 0) < 5
-            or int(region_kept_counts.get(region) or 0) < 3
-        ):
-            coverage_priority += 2
-            rank_reasons = unique_string_list([*rank_reasons, "weak_regional_coverage"])
-        if is_m4_family:
-            coverage_priority -= 3
-            rank_reasons = unique_string_list([*rank_reasons, "m4_family_followup"])
-        if exclusion_reason in {"existing_id", "existing_domain"}:
-            coverage_priority -= 3
-            rank_reasons = unique_string_list([*rank_reasons, "existing_coverage_match"])
-        coverage_priority = max(0, min(100, int(coverage_priority)))
-        coverage_justification_bits = []
-        if is_m4_family:
-            coverage_justification_bits.append("structured-family follow-up")
-        elif region == "asia":
-            coverage_justification_bits.append("asia-priority custom target")
-        else:
-            coverage_justification_bits.append("custom coverage target")
-        if jobs_found > 0:
-            coverage_justification_bits.append("open-role evidence")
-        if region != "unknown" and (
-            int(region_live_counts.get(region) or 0) < 5
-            or int(region_kept_counts.get(region) or 0) < 3
-        ):
-            coverage_justification_bits.append("weak regional coverage")
-        if exclusion_status == "excluded" and exclusion_reason:
-            coverage_justification_bits.append(f"excluded:{exclusion_reason}")
-        elif exclusion_status == "deferred" and exclusion_reason:
-            coverage_justification_bits.append(f"deferred:{exclusion_reason}")
-        if has_exception:
-            coverage_justification_bits.append(f"approved exception:{approved_exception_reason}")
-        first_run_outcome = _m5_first_run_outcome(
-            row,
-            state_entry=state_entry,
-            kept_count=kept_count,
-        )
-        migration_comparison = _m5_structured_migration_comparison(row, state_entry=state_entry)
-        justification = "; ".join(part for part in coverage_justification_bits if part)
         backlog_rows.append(
-            {
-                "candidateIdentityKey": identity_key,
-                "sourceId": str(row.get("sourceId") or row.get("id") or identity_key),
-                "studio": str(row.get("studio") or row.get("name") or row.get("source") or ""),
-                "sourceName": str(row.get("name") or row.get("studio") or row.get("source") or ""),
-                "adapter": adapter,
-                "lane": coverage_lane,
-                "coverageLane": coverage_lane,
-                "score": coverage_priority,
-                "coveragePriority": coverage_priority,
-                "rankReasons": rank_reasons,
-                "coverageJustification": justification,
-                "justification": justification,
-                "exclusionStatus": exclusion_status,
-                "exclusionReason": exclusion_reason,
-                "coverageExceptionReason": approved_exception_reason,
-                "approvedExceptionBy": approved_exception_by,
-                "hqRegion": str(row.get("hqRegion") or row.get("region") or ""),
-                "region": region,
-                "firstRunOutcome": first_run_outcome,
-                "firstRunKeptCount": kept_count,
-                "migrationComparison": migration_comparison,
-                "ownerMilestone": "M5",
-            }
+            _m5_backlog_row(
+                identity_key=identity_key,
+                row=row,
+                failure=failure,
+                source_state_rows=source_state_rows,
+                live_counts=region_live_counts,
+                kept_counts=region_kept_counts,
+            )
         )
 
-    backlog_rows.sort(
-        key=lambda row: (
-            0
-            if str(row.get("exclusionStatus") or "") == "included"
-            else (1 if str(row.get("exclusionStatus") or "") == "deferred" else 2),
-            -int(row.get("coveragePriority") or 0),
-            str(row.get("candidateIdentityKey") or ""),
-        )
-    )
+    backlog_rows.sort(key=_m5_backlog_sort_key)
     return backlog_rows

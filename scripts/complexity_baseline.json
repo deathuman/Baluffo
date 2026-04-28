@@ -140,7 +140,6 @@
     "src/source_discovery/probe.py::probe_candidate": 11,
     "src/source_discovery/provider_patterns.py::build_pattern_candidates": 16,
     "src/source_discovery/provider_patterns.py::provider_reinforcement_score": 13,
-    "src/source_discovery/reporting_backlog.py::build_m5_strategic_backlog": 32,
     "src/source_discovery/sheet_directory.py::parse_game_studio_sheet_csv": 16,
     "src/source_registry_auto_approval.py::apply_discovery_auto_approval": 14,
     "src/source_sync_config.py::config_status": 12,
