@@ -132,7 +132,6 @@
     "src/source_discovery/gamesmap_parsing.py::_extract_json_array": 11,
     "src/source_discovery/gamesmap_parsing.py::_parse_gamesmap_index_entries_with_diagnostics": 13,
     "src/source_discovery/gamesmap_parsing.py::parse_gamesmap_detail_page": 20,
-    "src/source_discovery/orchestrator_generation.py::prepare_probe_inputs": 27,
     "src/source_discovery/orchestrator_probe.py::probe_and_recover": 19,
     "src/source_discovery/probe.py::async_probe_candidate": 13,
     "src/source_discovery/probe.py::fallback_probe_urls": 15,
