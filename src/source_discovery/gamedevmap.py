@@ -14,22 +14,13 @@ import io
 from typing import Any
 from urllib.parse import urlencode
 
-from src.source_registry import normalize_source_url, unique_sources
+from src.source_registry import normalize_source_url
 
 from .config import DEFAULT_DISCOVERY_CONFIG
-from .directory_cache import (
-    load_adapter_directory_cache,
-    write_adapter_directory_cache,
-)
-from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
-from .directory_fetch_jobs import build_directory_fetch_jobs
-from .page_analysis import analyze_fetched_page
 from .reporting import emit_log
 from .scoring import unique_string_list
-from .static_candidates import build_known_careers_url_candidate
 from .web_search import (
     fetch_text,
-    infer_web_candidate,
     is_blocked_generic_static_url,
 )
 
@@ -77,40 +68,6 @@ def _gamedevmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
         "blockedCategories": list(cfg.get("blockedCategories") or []),
         "requireAiReviewed": bool(cfg.get("requireAiReviewed", False)),
     }
-
-
-def _load_gamedevmap_cache(
-    config: dict[str, Any] | None, cfg: dict[str, Any], *, fetcher: Any
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
-    return load_adapter_directory_cache(
-        config,
-        section_name="gamedevmap",
-        default_filename="gamedevmap-discovery-cache.json",
-        expected_signature=_gamedevmap_cache_signature(cfg),
-        fetcher=fetcher,
-        default_fetcher=fetch_text,
-        flat_fallback=False,
-    )
-
-
-def _write_gamedevmap_cache(
-    config: dict[str, Any] | None,
-    cfg: dict[str, Any],
-    *,
-    provider_candidates: list[dict[str, Any]],
-    static_candidates: list[dict[str, Any]],
-    failures: list[dict[str, Any]],
-) -> None:
-    write_adapter_directory_cache(
-        config,
-        section_name="gamedevmap",
-        default_filename="gamedevmap-discovery-cache.json",
-        signature=_gamedevmap_cache_signature(cfg),
-        provider_candidates=provider_candidates,
-        static_candidates=static_candidates,
-        failures=failures,
-        flat_fallback=False,
-    )
 
 
 def _clean_csv_value(value: Any) -> str:
@@ -311,28 +268,6 @@ def _apply_gamedevmap_provenance(
     return enriched
 
 
-def _gamedevmap_initial_result(
-    timeout_s: int,
-    *,
-    config: dict[str, Any] | None,
-    cfg: dict[str, Any],
-    fetcher,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
-    if not bool(cfg.get("enabled")):
-        emit_log("GameDevMap directory disabled, skipping.")
-        return [], [], []
-    if not bool(cfg.get("activeAuditEnabled", True)):
-        return None
-
-    from .gamedevmap_active_dry_run import discover_gamedevmap_audit_candidates
-
-    return discover_gamedevmap_audit_candidates(
-        timeout_s,
-        config=config,
-        fetcher=fetcher,
-    )
-
-
 def discover_gamedevmap_candidates(
     timeout_s: int,
     *,
@@ -342,179 +277,14 @@ def discover_gamedevmap_candidates(
     cfg = dict(
         _gamedevmap_config_value(config, "gamedevmap", DEFAULT_DISCOVERY_CONFIG["gamedevmap"])
     )
-    initial_result = _gamedevmap_initial_result(
+    if not bool(cfg.get("enabled")):
+        emit_log("GameDevMap directory disabled, skipping.")
+        return [], [], []
+
+    from .gamedevmap_active_dry_run import discover_gamedevmap_audit_candidates
+
+    return discover_gamedevmap_audit_candidates(
         timeout_s,
         config=config,
-        cfg=cfg,
         fetcher=fetcher,
     )
-    if initial_result is not None:
-        return initial_result
-    cached = _load_gamedevmap_cache(config, cfg, fetcher=fetcher)
-    if cached is not None:
-        return cached
-
-    csv_url = str(cfg.get("csvUrl") or GAMEDEVMAP_CSV_URL).strip() or GAMEDEVMAP_CSV_URL
-    index_url = str(cfg.get("indexUrl") or GAMEDEVMAP_INDEX_URL).strip() or GAMEDEVMAP_INDEX_URL
-    max_rows = max(0, int(cfg.get("maxRows") or 0))
-    max_homepage_fetches = max(0, int(cfg.get("maxHomepageFetches") or 0))
-    allowed_categories = [
-        str(item).strip() for item in (cfg.get("allowedCategories") or []) if str(item).strip()
-    ]
-    blocked_categories = [
-        str(item).strip() for item in (cfg.get("blockedCategories") or []) if str(item).strip()
-    ]
-    require_ai_reviewed = bool(cfg.get("requireAiReviewed", False))
-    fetch_concurrency, per_host_concurrency = resolve_directory_fetch_limits(cfg)
-
-    failures: list[dict[str, Any]] = []
-    provider_candidates: list[dict[str, Any]] = []
-    static_candidates: list[dict[str, Any]] = []
-
-    try:
-        csv_text = fetcher(csv_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
-        failures.append(
-            {
-                "name": csv_url,
-                "adapter": "gamedevmap",
-                "error": str(exc),
-                "stage": "csv_fetch",
-            }
-        )
-        return [], [], failures
-
-    parsed_rows = parse_gamedevmap_csv(csv_text)
-    if not parsed_rows:
-        failures.append(
-            {
-                "name": csv_url,
-                "adapter": "gamedevmap",
-                "error": "no rows parsed from csv",
-                "stage": "csv_parse",
-            }
-        )
-        return [], [], failures
-
-    representative_rows = select_gamedevmap_representative_rows(
-        parsed_rows,
-        allowed_categories=allowed_categories,
-        blocked_categories=blocked_categories,
-        require_ai_reviewed=require_ai_reviewed,
-        index_url=index_url,
-    )
-    if max_rows:
-        representative_rows = representative_rows[:max_rows]
-    emit_log(
-        f"GameDevMap representative rows: {len(representative_rows)} from parsed rows={len(parsed_rows)}."
-    )
-
-    homepage_candidates: list[dict[str, Any]] = []
-    for row in representative_rows:
-        studio = str(row.get("studio") or "").strip()
-        target_url = str(row.get("url") or "").strip()
-        if not studio or not target_url:
-            continue
-        inferred = infer_web_candidate(
-            target_url,
-            studio,
-            nl_priority=False,
-            discovery_method="gamedevmap",
-        )
-        if inferred:
-            inferred["careersUrl"] = target_url
-            provider_candidates.append(
-                _apply_gamedevmap_provenance(
-                    inferred,
-                    row,
-                    index_url=index_url,
-                    include_direct_url=True,
-                )
-            )
-            continue
-        homepage_candidates.append(row)
-
-    homepage_fetch_results = fetch_directory_pages(
-        timeout_s,
-        build_directory_fetch_jobs(
-            homepage_candidates[:max_homepage_fetches],
-            url_field="url",
-            adapter="gamedevmap",
-            failure_stage="homepage_fetch",
-            required_fields=("studio",),
-        ),
-        fetcher=fetcher,
-        total_concurrency=fetch_concurrency,
-        per_host_concurrency=per_host_concurrency,
-        progress_label="GameDevMap homepage fetch",
-    )
-
-    for result in homepage_fetch_results:
-        row = dict(result.get("payload") or {})
-        target_url = str(result.get("url") or row.get("url") or "").strip()
-        studio = str(row.get("studio") or "").strip()
-        if not bool(result.get("ok")):
-            failure = result.get("failure")
-            if isinstance(failure, dict):
-                failures.append(failure)
-            continue
-        homepage_html = str(result.get("text") or "")
-        analyzed = analyze_fetched_page(
-            target_url,
-            homepage_html,
-            studio=studio,
-            nl_priority=False,
-            discovery_method="gamedevmap",
-        )
-        inferred_rows = list(analyzed.get("provider_candidates") or [])
-        if inferred_rows:
-            for inferred in inferred_rows:
-                provider_candidates.append(
-                    _apply_gamedevmap_provenance(
-                        inferred,
-                        row,
-                        index_url=index_url,
-                        include_homepage_fetch=True,
-                    )
-                )
-            continue
-        explicit_careers_url = str(analyzed.get("explicit_careers_url") or "").strip()
-        static_candidate: dict[str, Any] | None = None
-        if explicit_careers_url:
-            static_candidate = build_known_careers_url_candidate(
-                explicit_careers_url,
-                studio=studio,
-                name_suffix="GameDevMap",
-                nl_priority=False,
-                discovery_method="gamedevmap",
-                evidence_source="gamedevmap",
-                evidence_types=["gamedevmap_careers_url"],
-                evidence_score=40,
-                enabled_by_default=False,
-            )
-        else:
-            static_candidate = analyzed.get("generic_static_candidate")
-        if static_candidate:
-            static_candidates.append(
-                _apply_gamedevmap_provenance(
-                    static_candidate,
-                    row,
-                    index_url=index_url,
-                    include_homepage_fetch=True,
-                )
-            )
-
-    provider_candidates = unique_sources(provider_candidates)
-    static_candidates = unique_sources(static_candidates)
-    emit_log(
-        "GameDevMap candidates: "
-        f"provider={len(provider_candidates)}, static={len(static_candidates)}, failures={len(failures)}."
-    )
-    _write_gamedevmap_cache(
-        config,
-        cfg,
-        provider_candidates=provider_candidates,
-        static_candidates=static_candidates,
-        failures=failures,
-    )
-    return provider_candidates, static_candidates, failures

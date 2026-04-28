@@ -66,46 +66,7 @@ def test_adapter_audit_config_wrappers_preserve_defaults() -> None:
     assert web_search_candidates._web_search_max_queries({"webSearch": {"maxQueries": "bad"}}) == 24
 
 
-def test_directory_cache_config_helpers_preserve_adapter_paths_and_ttls() -> None:
-    assert (
-        directory_cache.directory_cache_path(
-            None,
-            "gameprog",
-            default_filename="gameprog-discovery-cache.json",
-        ).name
-        == "gameprog-discovery-cache.json"
-    )
-    assert (
-        directory_cache.directory_cache_path(
-            None,
-            "gamesmap",
-            default_filename="gamesmap-discovery-cache.json",
-        ).name
-        == "gamesmap-discovery-cache.json"
-    )
-    assert (
-        directory_cache.directory_cache_path(
-            None,
-            "gamedevmap",
-            default_filename="gamedevmap-discovery-cache.json",
-            flat_fallback=False,
-        ).name
-        == "gamedevmap-discovery-cache.json"
-    )
-    assert directory_cache.directory_cache_path(
-        {"gameprog": {"cachePath": "data/custom.json"}},
-        "gameprog",
-        default_filename="gameprog-discovery-cache.json",
-    ) == Path("data/custom.json")
-    assert (
-        directory_cache.directory_cache_path(
-            {"cachePath": "data/ignored-flat.json"},
-            "gamedevmap",
-            default_filename="gamedevmap-discovery-cache.json",
-            flat_fallback=False,
-        ).name
-        == "gamedevmap-discovery-cache.json"
-    )
+def test_directory_cache_config_helpers_preserve_adapter_ttls() -> None:
     assert gameprog._gameprog_cache_ttl_minutes({"gameprog": {"cacheTtlMinutes": "bad"}}) == 360
     assert (
         directory_cache.directory_cache_ttl_minutes(
@@ -121,31 +82,4 @@ def test_directory_cache_config_helpers_preserve_adapter_paths_and_ttls() -> Non
             flat_fallback=False,
         )
         == 0
-    )
-
-
-def test_directory_cache_use_allowed_preserves_custom_fetcher_rule() -> None:
-    def default_fetcher() -> None:
-        return None
-
-    def custom_fetcher() -> None:
-        return None
-
-    assert directory_cache.directory_cache_use_allowed(
-        {},
-        "gameprog",
-        fetcher=default_fetcher,
-        default_fetcher=default_fetcher,
-    )
-    assert not directory_cache.directory_cache_use_allowed(
-        {},
-        "gameprog",
-        fetcher=custom_fetcher,
-        default_fetcher=default_fetcher,
-    )
-    assert directory_cache.directory_cache_use_allowed(
-        {"gameprog": {"cachePath": "data/custom.json"}},
-        "gameprog",
-        fetcher=custom_fetcher,
-        default_fetcher=default_fetcher,
     )

@@ -20,7 +20,7 @@ The product goal is simple: find active job sources and real openings in accepta
 | Gamesmap | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. Large scan/category/parser surfaces remain. | Reduce orchestration complexity before parser-only complexity. |
 | Sheet-directory | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. It still owns CSV parsing, recovery, summary, and scan glue. | Later cleanup can split source metadata/evidence from scan/recovery plumbing after higher-value rollback paths are deleted. |
 | Web-derived discovery | Seed-careers and web-search runtime paths now return shared audit-artifact rows; `activeAuditEnabled=false` is harmless legacy input. It still owns seed-careers/web-search scan, recovery, browser-recovery, and report complexity. | Split report/browser-recovery complexity only after the rollback deletion is protected. |
-| GameDevMap | Uses a separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`; artifact/recovery behavior is larger than the directory-audit adapters. | Keep last until the source-discovery reset pattern is proven elsewhere. |
+| GameDevMap | Uses the separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`; `activeAuditEnabled=false` is harmless legacy input and no longer routes to the old cache/direct CSV scan. | Split artifact/recovery lifecycle in smaller follow-ups because the surface is larger than the directory-audit adapters. |
 | Stage wiring | [`orchestrator_generation.py`](../../src/source_discovery/orchestrator_generation.py) owns stage invocation and compatibility with current discovery flows. | Treat route changes as compatibility work and preserve task-start, busy-state, queue, pending review, and report behavior. |
 
 ## Protected Surfaces
@@ -130,13 +130,15 @@ Acceptance criteria:
 
 ### 5. GameDevMap Reset
 
-Handle GameDevMap after the directory-audit adapters because it uses a larger active-source audit and recovery engine.
+GameDevMap now always uses the active-source audit path when enabled. Next slices should reduce active-source lifecycle ownership without changing default discovery, explicit dry-run maintenance, lost-recovery comparison, or browser recovery.
 
 Acceptance criteria:
 
 - Default discovery, dry-run audit, lost-recovery comparison, and explicit browser recovery keep their current invocation surfaces.
+- `gamedevmap.activeAuditEnabled=false` remains harmless legacy input and is no longer a direct CSV/cache rollback selector.
 - Artifact compatibility changes are documented and tested when needed.
-- Adapter-owned lifecycle decreases without weakening active-source yield.
+- Deferred implementation slice: move GameDevMap audit/cache/report lifecycle toward shared active-audit helpers while leaving CSV parsing, representative row selection, and source provenance in `gamedevmap.py`.
+- Deferred config cleanup: remove or repurpose stale GameDevMap `cachePath` / `cacheTtlMinutes` defaults and tests after compatibility review confirms no external config depends on the deleted legacy cache.
 
 ### 6. Test Scaffolding Cleanup
 

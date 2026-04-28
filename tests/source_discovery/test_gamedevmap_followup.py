@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from src.source_discovery import gamedevmap
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
 
 from ._helpers import (
@@ -196,6 +197,37 @@ def test_gamedevmap_audit_summary_is_written_to_discovery_report() -> None:
     assert audit_summary["browserRecoveryCandidates"] == 1
     assert audit_summary["artifactSizeBytes"] == 1234
     assert report["summary"]["gamedevmapAudit"]["auditDurationMs"] == 123
+
+
+def test_gamedevmap_audit_disabled_flag_uses_active_audit_and_skips_legacy_cache() -> None:
+    with workspace_tmpdir("gamedevmap-disabled-audit-flag") as root:
+        with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):
+            legacy_cache_path = root / "gamedevmap-legacy-cache.json"
+            config = discovery_config_without_generator_stages(
+                gamedevmap=_config(
+                    activeAuditEnabled=False,
+                    cachePath=str(legacy_cache_path),
+                    cacheTtlMinutes=60,
+                )["gamedevmap"]
+            )
+            _write_artifact(
+                root / "gamedevmap-active-source-dry-run.json",
+                config=config,
+                active_candidates=[_validated_static_candidate(1)],
+            )
+
+            provider_rows, static_rows, failures = gamedevmap.discover_gamedevmap_candidates(
+                5,
+                config=config,
+                fetcher=lambda _url, _timeout: (_ for _ in ()).throw(
+                    AssertionError("fresh active-source audit artifact should bypass fetch")
+                ),
+            )
+
+    assert provider_rows == []
+    assert len(static_rows) == 1
+    assert len(failures) == 1
+    assert not legacy_cache_path.exists()
 
 
 def test_gamedevmap_audit_report_summary_shape_stays_compatible() -> None:
