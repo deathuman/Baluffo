@@ -8,11 +8,25 @@ from src import source_sync as sync
 
 
 @pytest.fixture()
-def source_sync_test_root(make_test_root):
+def source_sync_test_root(make_test_root, monkeypatch):
     """Temp root for source_sync tests: clears runtime state, provides config_path and env."""
     root = make_test_root("source-sync")
     config_path = root / "github-app-sync-config.json"
-    env = {sync.PACKAGED_SYNC_CONFIG_ENV: str(config_path)}
+    home = root / "home"
+    appdata = root / "appdata"
+    local_appdata = root / "localappdata"
+    env = {
+        sync.PACKAGED_SYNC_CONFIG_ENV: str(config_path),
+        "APPDATA": str(appdata),
+        "HOME": str(home),
+        "LOCALAPPDATA": str(local_appdata),
+        "USERPROFILE": str(home),
+    }
+    monkeypatch.setattr(
+        sync,
+        "DEFAULT_PACKAGED_SYNC_CONFIG_PATH",
+        root / "missing-default-github-app-sync-config.json",
+    )
     sync._clear_runtime_state()  # noqa: SLF001
     with sync._RATE_LIMIT_LOCK:  # noqa: SLF001
         sync._RATE_LIMIT_STATE["calls"] = []  # noqa: SLF001
