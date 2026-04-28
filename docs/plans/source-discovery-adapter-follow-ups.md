@@ -57,11 +57,7 @@ Keep source-specific semantics local: source id, display name, stage labels, ent
 
 ## Current C901 Baseline
 
-From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json), current source-discovery C901 offenders include:
-
-| Function | Score |
-| --- | ---: |
-| `src/source_discovery/orchestrator_probe.py::probe_and_recover` | 19 |
+From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json), current source-discovery C901 offenders are cleared.
 
 Parser complexity can remain temporarily when it is genuinely source-format complexity. Orchestration complexity should not.
 
@@ -121,7 +117,6 @@ Acceptance criteria:
 - Artifact compatibility changes are documented and tested when needed.
 - Deferred implementation slice: move GameDevMap audit/cache/report lifecycle toward shared active-audit helpers while leaving CSV parsing, representative row selection, and source provenance in `gamedevmap.py`.
 - Deferred config cleanup: remove or repurpose stale GameDevMap `cachePath` / `cacheTtlMinutes` defaults and tests after compatibility review confirms no external config depends on the deleted legacy cache.
-- Deferred probe cleanup: split `orchestrator_probe.py::probe_and_recover` into initial probe accounting, URL-patch recovery, reprobe accounting, and progress-report helpers after the adapter-local probe parsers are thin.
 
 ### 6. Test Scaffolding Cleanup
 
