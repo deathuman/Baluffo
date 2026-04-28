@@ -62,8 +62,6 @@ From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json
 | Function | Score |
 | --- | ---: |
 | `src/source_discovery/orchestrator_probe.py::probe_and_recover` | 19 |
-| `src/source_discovery/sheet_directory.py::parse_game_studio_sheet_csv` | 16 |
-| `src/source_discovery/core_scoring.py::compute_candidate_rank` | 12 |
 
 Parser complexity can remain temporarily when it is genuinely source-format complexity. Orchestration complexity should not.
 

@@ -58,29 +58,35 @@ def game_studios_sheet_candidate_urls(sheet_id: str, gid: str) -> list[str]:
     return [gviz_csv_url, pub_csv_url, csv_url]
 
 
-def parse_game_studio_sheet_csv(csv_text: str) -> list[dict[str, Any]]:
-    from .scoring import _norm_header, _parse_sheet_openings_flag
+def _sheet_csv_rows(csv_text: str) -> list[list[str]]:
+    return list(csv.reader(StringIO(str(csv_text or ""))))
 
-    rows = list(csv.reader(StringIO(str(csv_text or ""))))
-    if len(rows) < 2:
-        return []
 
-    header_idx = -1
+def _normalized_sheet_headers(row: list[str]) -> list[str]:
+    from .scoring import _norm_header
+
+    return [_norm_header(cell) for cell in row]
+
+
+def _sheet_row_is_header(row: list[str]) -> bool:
+    normalized_full = _normalized_sheet_headers(row)
+    normalized = [cell for cell in normalized_full if cell]
+    if not normalized:
+        return False
+    has_studio = "studio" in normalized_full or "company" in normalized_full
+    has_link = "link" in normalized_full or "url" in normalized_full
+    has_roles = any("roles" in cell or "hiring" in cell for cell in normalized_full if cell)
+    return has_studio and has_link and has_roles
+
+
+def _sheet_header_index(rows: list[list[str]]) -> int:
     for idx, row in enumerate(rows[:250]):
-        normalized_full = [_norm_header(cell) for cell in row]
-        normalized = [cell for cell in normalized_full if cell]
-        if not normalized:
-            continue
-        has_studio = "studio" in normalized_full or "company" in normalized_full
-        has_link = "link" in normalized_full or "url" in normalized_full
-        has_roles = any("roles" in cell or "hiring" in cell for cell in normalized_full if cell)
-        if has_studio and has_link and has_roles:
-            header_idx = idx
-            break
-    if header_idx < 0:
-        return []
+        if _sheet_row_is_header(row):
+            return idx
+    return -1
 
-    headers = [_norm_header(cell) for cell in rows[header_idx]]
+
+def _sheet_column_indices(headers: list[str]) -> tuple[int, int, int]:
     studio_idx = -1
     link_idx = -1
     openings_idx = -1
@@ -93,30 +99,66 @@ def parse_game_studio_sheet_csv(csv_text: str) -> list[dict[str, Any]]:
             "roles open" in h or "roles" == h or "openings" in h or h == "open"
         ):
             openings_idx = i
+    return studio_idx, link_idx, openings_idx
+
+
+def _sheet_cell(row: list[str], index: int) -> str:
+    return str(row[index]).strip() if 0 <= index < len(row) else ""
+
+
+def _sheet_row_entry(
+    row: list[str],
+    *,
+    studio_idx: int,
+    link_idx: int,
+    openings_idx: int,
+) -> dict[str, Any] | None:
+    from .scoring import _norm_header, _parse_sheet_openings_flag
+
+    studio = _sheet_cell(row, studio_idx)
+    link = _sheet_cell(row, link_idx)
+    if not studio or not link:
+        return None
+    if _norm_header(studio) in {"studio", "studios", "company"}:
+        return None
+    if not (link.startswith("http://") or link.startswith("https://")):
+        return None
+    openings_flag = (
+        _parse_sheet_openings_flag(row[openings_idx]) if 0 <= openings_idx < len(row) else "unknown"
+    )
+    return {"studio": studio, "careersUrl": link, "openingsFlag": openings_flag}
+
+
+def parse_game_studio_sheet_csv(csv_text: str) -> list[dict[str, Any]]:
+    rows = _sheet_csv_rows(csv_text)
+    if len(rows) < 2:
+        return []
+
+    header_idx = _sheet_header_index(rows)
+    if header_idx < 0:
+        return []
+
+    headers = _normalized_sheet_headers(rows[header_idx])
+    studio_idx, link_idx, openings_idx = _sheet_column_indices(headers)
     if studio_idx < 0 or link_idx < 0:
         return []
 
     out: list[dict[str, Any]] = []
     seen = set()
     for row in rows[header_idx + 1 :]:
-        studio = str(row[studio_idx]).strip() if studio_idx < len(row) else ""
-        link = str(row[link_idx]).strip() if link_idx < len(row) else ""
-        if not studio or not link:
-            continue
-        if _norm_header(studio) in {"studio", "studios", "company"}:
-            continue
-        if not (link.startswith("http://") or link.startswith("https://")):
-            continue
-        openings_flag = (
-            _parse_sheet_openings_flag(row[openings_idx])
-            if 0 <= openings_idx < len(row)
-            else "unknown"
+        entry = _sheet_row_entry(
+            row,
+            studio_idx=studio_idx,
+            link_idx=link_idx,
+            openings_idx=openings_idx,
         )
-        key = f"{studio}|{link}".lower()
+        if entry is None:
+            continue
+        key = f"{entry['studio']}|{entry['careersUrl']}".lower()
         if key in seen:
             continue
         seen.add(key)
-        out.append({"studio": studio, "careersUrl": link, "openingsFlag": openings_flag})
+        out.append(entry)
     return out
 
 

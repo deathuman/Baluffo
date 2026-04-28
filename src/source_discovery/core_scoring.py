@@ -68,6 +68,85 @@ def compute_candidate_score(candidate: dict[str, Any], jobs_found: int) -> tuple
     return min(100, score), reasons
 
 
+def _rank_confidence_bonus(confidence: str) -> tuple[int, list[str]]:
+    confidence_bonus = {"high": 18, "medium": 10}.get(confidence, 0)
+    return confidence_bonus, [f"{confidence}_confidence"] if confidence_bonus else []
+
+
+def _rank_jobs_bonus(jobs_found: int) -> tuple[int, list[str]]:
+    if jobs_found <= 0:
+        return 0, []
+    return min(12, jobs_found * 3), ["jobs_found_bonus"]
+
+
+def _rank_evidence_bonus(evidence: int) -> tuple[int, list[str]]:
+    evidence_bonus = min(10, evidence // 8) if evidence > 0 else 0
+    return evidence_bonus, ["evidence_rank_bonus"] if evidence_bonus else []
+
+
+def _rank_adapter_bonus(adapter: str) -> tuple[int, list[str]]:
+    if adapter in STRUCTURED_BATCH_ADAPTERS:
+        return 10, ["structured_batch_family"]
+    if adapter != "static":
+        return 4, ["structured_family"]
+    return 0, []
+
+
+def _rank_candidate_flags(candidate: dict[str, Any], discovery_stage: str) -> tuple[int, list[str]]:
+    rank = 0
+    reasons: list[str] = []
+    if bool(candidate.get("nlPriority")):
+        rank += 5
+        reasons.append("nl_priority")
+    if discovery_stage == "curated_seed":
+        rank += 4
+        reasons.append("curated_seed")
+    return rank, reasons
+
+
+def _rank_registry_penalty(
+    candidate: dict[str, Any], existing: list[dict[str, Any]]
+) -> tuple[int, list[str]]:
+    candidate_id = source_identity(candidate)
+    candidate_family = queue_family_key(candidate)
+    exact_match = any(source_identity(row) == candidate_id for row in existing)
+    family_match = bool(
+        candidate_family and any(queue_family_key(row) == candidate_family for row in existing)
+    )
+    if exact_match:
+        return -20, ["existing_registry_match"]
+    if family_match:
+        return -8, ["existing_family_match"]
+    return 0, []
+
+
+def _rank_deferred_backlog_bonus(
+    *, prior_candidate: dict[str, Any] | None, ranked_at: str
+) -> tuple[int, list[str]]:
+    prior = prior_candidate if isinstance(prior_candidate, dict) else {}
+    prior_defer_count = max(0, int(prior.get("deferCount") or 0))
+    ranked_dt = _parse_iso_datetime(ranked_at)
+    first_deferred_dt = _parse_iso_datetime(
+        prior.get("firstDeferredAt") or prior.get("lastDeferredAt")
+    )
+    if not (ranked_dt and first_deferred_dt and prior_defer_count > 0):
+        return 0, []
+    age_days = max(0, int((ranked_dt - first_deferred_dt).total_seconds() // 86400))
+    return min(15, 2 + prior_defer_count + (age_days // 3)), ["deferred_backlog_age"]
+
+
+def _rank_promotion_lane(adapter: str, confidence: str) -> str:
+    if adapter in STRUCTURED_BATCH_ADAPTERS and confidence != "low":
+        return "structured_batch"
+    return "manual_review"
+
+
+def _apply_rank_factor(rank: int, reasons: list[str], factor: tuple[int, list[str]]) -> int:
+    bonus, factor_reasons = factor
+    reasons.extend(factor_reasons)
+    return rank + bonus
+
+
 def compute_candidate_rank(
     candidate: dict[str, Any],
     *,
@@ -84,66 +163,18 @@ def compute_candidate_rank(
     discovery_stage = str(candidate.get("discoveryStage") or "").strip().lower()
     existing = [row for row in (existing_rows or []) if isinstance(row, dict)]
 
-    confidence_bonus = {"high": 18, "medium": 10}.get(confidence, 0)
-    if confidence_bonus:
-        rank += confidence_bonus
-        reasons.append(f"{confidence}_confidence")
+    for factor in (
+        _rank_confidence_bonus(confidence),
+        _rank_jobs_bonus(jobs_found),
+        _rank_evidence_bonus(evidence),
+        _rank_adapter_bonus(adapter),
+        _rank_candidate_flags(candidate, discovery_stage),
+        _rank_registry_penalty(candidate, existing),
+        _rank_deferred_backlog_bonus(prior_candidate=prior_candidate, ranked_at=ranked_at),
+    ):
+        rank = _apply_rank_factor(rank, reasons, factor)
 
-    if jobs_found > 0:
-        jobs_bonus = min(12, jobs_found * 3)
-        rank += jobs_bonus
-        reasons.append("jobs_found_bonus")
-
-    evidence_bonus = min(10, evidence // 8) if evidence > 0 else 0
-    if evidence_bonus:
-        rank += evidence_bonus
-        reasons.append("evidence_rank_bonus")
-
-    if adapter in STRUCTURED_BATCH_ADAPTERS:
-        rank += 10
-        reasons.append("structured_batch_family")
-    elif adapter != "static":
-        rank += 4
-        reasons.append("structured_family")
-
-    if bool(candidate.get("nlPriority")):
-        rank += 5
-        reasons.append("nl_priority")
-
-    if discovery_stage == "curated_seed":
-        rank += 4
-        reasons.append("curated_seed")
-
-    candidate_id = source_identity(candidate)
-    candidate_family = queue_family_key(candidate)
-    exact_match = any(source_identity(row) == candidate_id for row in existing)
-    family_match = bool(
-        candidate_family and any(queue_family_key(row) == candidate_family for row in existing)
-    )
-    if exact_match:
-        rank -= 20
-        reasons.append("existing_registry_match")
-    elif family_match:
-        rank -= 8
-        reasons.append("existing_family_match")
-
-    prior = prior_candidate if isinstance(prior_candidate, dict) else {}
-    prior_defer_count = max(0, int(prior.get("deferCount") or 0))
-    ranked_dt = _parse_iso_datetime(ranked_at)
-    first_deferred_dt = _parse_iso_datetime(
-        prior.get("firstDeferredAt") or prior.get("lastDeferredAt")
-    )
-    if ranked_dt and first_deferred_dt and prior_defer_count > 0:
-        age_days = max(0, int((ranked_dt - first_deferred_dt).total_seconds() // 86400))
-        age_bonus = min(15, 2 + prior_defer_count + (age_days // 3))
-        rank += age_bonus
-        reasons.append("deferred_backlog_age")
-
-    promotion_lane = "manual_review"
-    if adapter in STRUCTURED_BATCH_ADAPTERS and confidence != "low":
-        promotion_lane = "structured_batch"
-
-    return max(0, rank), unique_string_list(reasons), promotion_lane
+    return max(0, rank), unique_string_list(reasons), _rank_promotion_lane(adapter, confidence)
 
 
 def compute_confidence(candidate: dict[str, Any], jobs_found: int) -> str:
