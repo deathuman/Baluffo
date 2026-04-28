@@ -4,8 +4,8 @@
 > - **Use this when:** picking the next work after the 2026-04-25 repo-analysis follow-up
 > - **Canonical for:** current pickup order, rebaseline expectations, and boundaries for future work from this analysis pass
 > - **Not canonical for:** completed implementation history, long-term data contracts, source-registry policy, adapter implementation details, or release requirements
-> - **Then inspect:** [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md), [`scraping-pipeline.md`](scraping-pipeline.md), and [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md)
-> - **Last updated:** 2026-04-26
+> - **Then inspect:** [`discovery-fetch-failure-snapshot-2026-04-25.md`](../snapshots/discovery-fetch-failure-snapshot-2026-04-25.md), [`scraping-pipeline.md`](../scraping-pipeline.md), and [`adapter-plugin-inventory.md`](../adapter-plugin-inventory.md)
+> - **Last updated:** 2026-04-28
 
 This tracker owns only current and future pickup work. Completed implementation history lives in git history, while current runtime behavior belongs in the contract docs linked above.
 
@@ -16,7 +16,7 @@ This tracker owns only current and future pickup work. Completed implementation 
 | P0-P3 numbered items | Complete | `social_x`, safe static redirects, needs-review counters, operational-noise policy, adapter inventory refresh, output-size policy, failure-snapshot validation, and deferred-module budgets are implemented. |
 | Static/provider/browser triage | Complete | Broad static failures, stale/dead rows, site-changed rows, and browser-required rows have been reduced or reclassified through fresh isolated validation. |
 | Anti-bot/rate-limit follow-up | Complete with residual runbook | Scoped browser retry coverage reduced fresh isolated failures from `5` to `1`; scoped static `429` rows no longer fail. |
-| Failure snapshot | Active external-access runbook | [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) now tracks only current external-access residuals. |
+| Failure snapshot | Active external-access runbook | [`discovery-fetch-failure-snapshot-2026-04-25.md`](../snapshots/discovery-fetch-failure-snapshot-2026-04-25.md) now tracks only current external-access residuals. |
 | Deferred large modules | Closed | The five former deferred roots are now thin compatibility facades under 500 LOC; `tools/repo_health/deferred_source_line_budget.json` has no active entries. |
 
 ## Active Residuals
@@ -50,7 +50,7 @@ Known residuals:
    - Success condition: a fresh isolated run leaves no unexpected source-level static/provider/browser failures, allowing the April 25 snapshot to be archived or converted into a short stable external-access note.
 
 2. **Behavior-tied adapter work only.**
-   - Use [`adapter-plugin-inventory.md`](adapter-plugin-inventory.md) before changing provider, social, or static loader boundaries.
+   - Use [`adapter-plugin-inventory.md`](../adapter-plugin-inventory.md) before changing provider, social, or static loader boundaries.
    - Provider plugin extraction is no longer a default task; most provider lanes already dispatch through registered plugins.
    - Social or parser extraction should only happen with behavior work or a separate explicit refactor charter.
 

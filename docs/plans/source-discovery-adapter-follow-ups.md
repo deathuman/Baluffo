@@ -4,8 +4,8 @@
 > - **Use this when:** planning source-discovery adapter reuse, deduplication, and yield improvements
 > - **Canonical for:** follow-up opportunities only; not current implementation commitments
 > - **Not canonical for:** current discovery behavior, data contracts, or verification commands
-> - **Then inspect:** [`scraping-pipeline.md`](scraping-pipeline.md), [`architecture-ai-map.md`](architecture-ai-map.md), and the owning adapter modules
-> - **Last updated:** 2026-04-27
+> - **Then inspect:** [`scraping-pipeline.md`](../scraping-pipeline.md), [`architecture-ai-map.md`](../architecture-ai-map.md), and the owning adapter modules
+> - **Last updated:** 2026-04-28
 
 The discovery adapters now have enough shared infrastructure to stop treating reuse as opportunistic cleanup. The next work should aggressively migrate adapters onto shared primitives, delete duplicate inline logic, and document the rare cases where source-specific behavior must stay local.
 
@@ -83,7 +83,7 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - Completed diagnostics slice: `web_search_candidates.py` now calls the shared browser recovery fetch fallback directly; the private `_default_browser_fetcher` wrapper was pruned.
 - Completed default-recovery slice: web-derived audits run shared HTTP-only same-site recovery by default; `webSearch.activeAuditRecoveryEnabled=false` remains the rollback.
 - Completed recovery-budget slice: `webSearch.activeAuditRecoveryUrlLimit` defaults to `6`, falls back to `6` for invalid/non-positive values, and participates in audit signatures.
-- Evidence snapshot: [`source-discovery-http-recovery-evidence-2026-04-27.md`](source-discovery-http-recovery-evidence-2026-04-27.md) supports default-enabling both sheet-directory and web-derived HTTP recovery.
+- Evidence snapshot: [`source-discovery-http-recovery-evidence-2026-04-27.md`](../snapshots/source-discovery-http-recovery-evidence-2026-04-27.md) supports default-enabling both sheet-directory and web-derived HTTP recovery.
 
 ### P1: Directory Audit Runner Assembly
 

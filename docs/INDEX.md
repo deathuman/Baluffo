@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-04-26
+> - **Last updated:** 2026-04-28
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -57,15 +57,16 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Document | Scope | Use it when |
 |----------|-------|-------------|
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
-| [`discovery-fetch-failure-snapshot-2026-04-25.md`](discovery-fetch-failure-snapshot-2026-04-25.md) | Time-bound failure snapshot | You are picking up the discovery/fetch failures observed in the 2026-04-25 fresh build runs |
-| [`source-discovery-adapter-follow-ups.md`](source-discovery-adapter-follow-ups.md) | Active follow-up tracker | You are evaluating reusable adapter improvements after the GameDevMap audit migration |
-| [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md) | Active follow-up tracker | You are picking the next residual follow-up after the completed 2026-04-25 repo-analysis closeout |
+| [`plans/source-discovery-adapter-follow-ups.md`](plans/source-discovery-adapter-follow-ups.md) | Plans / Follow-Ups | You are evaluating reusable adapter improvements after the GameDevMap audit migration |
+| [`plans/repo-analysis-follow-up-2026-04-25.md`](plans/repo-analysis-follow-up-2026-04-25.md) | Plans / Follow-Ups | You are picking the next residual follow-up after the completed 2026-04-25 repo-analysis closeout |
+| [`snapshots/discovery-fetch-failure-snapshot-2026-04-25.md`](snapshots/discovery-fetch-failure-snapshot-2026-04-25.md) | Snapshots / Evidence | You are picking up the discovery/fetch failures observed in the 2026-04-25 fresh build runs |
+| [`snapshots/source-discovery-http-recovery-evidence-2026-04-27.md`](snapshots/source-discovery-http-recovery-evidence-2026-04-27.md) | Snapshots / Evidence | You need evidence for default HTTP recovery coverage in source discovery |
 | [`../tools/mcp/INDEX.md`](../tools/mcp/INDEX.md) | MCP tooling index | You are choosing which MCP tooling doc to load under `tools/mcp/` |
 | [`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md) | AI dev tooling | You are setting up the required Serena MCP workflow for Codex CLI or OpenCode, or checking the repo's Serena-memory rules |
 | [`RELEASE.md`](RELEASE.md) | Build and release | You are changing packaging, versioning, release flow, or artifact expectations |
 | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | Debugging help | You are investigating a known issue or checking common failure modes |
 | [`CHANGELOG.md`](CHANGELOG.md) | Historical product change log | You need recent project history or release notes context |
-| [`refactor-charter-template.md`](refactor-charter-template.md) | Planning template | You are drafting a structured refactor proposal without loading archived refactor records |
+| [`plans/refactor-charter-template.md`](plans/refactor-charter-template.md) | Planning template | You are drafting a structured refactor proposal without loading archived refactor records |
 
 ## Archive
 

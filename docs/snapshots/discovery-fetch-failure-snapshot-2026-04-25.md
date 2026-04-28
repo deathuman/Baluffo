@@ -4,8 +4,8 @@
 > - **Use this when:** picking up the remaining source-access residuals from the 2026-04-25 repo-analysis follow-up
 > - **Canonical for:** current external-access residuals and the latest isolated validation evidence
 > - **Not canonical for:** discovery contracts, fetch contracts, bridge APIs, long-term source-registry policy, or historical implementation notes
-> - **Then inspect:** [`repo-analysis-follow-up-2026-04-25.md`](repo-analysis-follow-up-2026-04-25.md), [`scraping-pipeline.md`](scraping-pipeline.md), and [`fetcher-runtime-contracts.md`](fetcher-runtime-contracts.md)
-> - **Last updated:** 2026-04-26
+> - **Then inspect:** [`repo-analysis-follow-up-2026-04-25.md`](../plans/repo-analysis-follow-up-2026-04-25.md), [`scraping-pipeline.md`](../scraping-pipeline.md), and [`fetcher-runtime-contracts.md`](../fetcher-runtime-contracts.md)
+> - **Last updated:** 2026-04-28
 
 This page is no longer a broad historical snapshot. It now records only the live external-access residuals that still block archival of the April 25 failure handoff.
 

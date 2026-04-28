@@ -5,7 +5,7 @@
 > - **Canonical for:** documentation discovery, ownership, freshness checks, and maintenance workflow
 > - **Not canonical for:** subsystem behavior, data contracts, release notes, or runtime behavior outside this guide's process scope
 > - **Then inspect:** [`INDEX.md`](INDEX.md), then the smallest authoritative doc set for the task
-> - **Last updated:** 2026-04-26
+> - **Last updated:** 2026-04-28
 
 ## Core Rules
 
@@ -36,6 +36,8 @@ Active docs should start with a compact metadata block using this order:
 6. `Last updated`
 
 Archive docs should stay rare and short. Use [`archive/README.md`](archive/README.md) for retired cleanup/refactor context and git history for detailed provenance instead of reintroducing long historical logs.
+
+Active refactor plans, planning templates, and follow-up trackers belong in [`plans/`](plans/). Dated failure snapshots, evidence notes, and validation snapshots belong in [`snapshots/`](snapshots/). Retired records remain in [`archive/`](archive/).
 
 ## Gap Handling
 
