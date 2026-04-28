@@ -119,7 +119,7 @@ Acceptance criteria:
 - Artifact compatibility changes are documented and tested when needed.
 - GameDevMap artifact/timing save/finalize wrappers now call shared `active_audit_runtime.py` helpers directly; keep the GameDevMap report summary and cache signature local until artifact compatibility is explicitly reviewed.
 - GameDevMap batch-loop artifact merging, summary increments, timing, probe-result application, and progress writes now run through `active_audit_runtime.py`; the adapter keeps source-specific row preparation, provenance, homepage analysis, recovery paths, and rejection factories local.
-- Deferred helper cleanup: GameDevMap local `_as_list`, `_as_dict`, and `_safe_int` have copy/default semantics that are not identical to the shared active-audit runtime helpers; normalize them only with targeted artifact/report tests.
+- GameDevMap local `_as_list`, `_as_dict`, and `_safe_int` now delegate to shared active-audit helpers while preserving copy/default compatibility covered by targeted report tests.
 - Deferred active-audit API cleanup: the shared batch strategy still needs adapter-provided wiring for GameDevMap-specific labels and artifact bucket names; consider a named factory only if another active-source adapter needs the same lifecycle shape.
 - GameDevMap no longer ships a default legacy `cachePath`; `cacheTtlMinutes` remains accepted as a temporary fallback for `activeAuditTtlMinutes` while legacy config compatibility is reviewed.
 - Deferred web-derived lifecycle cleanup: consider shared browser-recovery artifact save/merge wrappers only after web-search and GameDevMap callback seams stabilize.
@@ -141,7 +141,7 @@ Acceptance criteria:
 Remaining same-goal cleanup should land as small compatibility-preserving slices:
 
 - Remove any remaining GameDevMap test/doc wording that treats legacy `cachePath` as a meaningful discovery input.
-- Normalize GameDevMap local artifact helpers only where shared helper semantics are covered by targeted report/artifact tests.
+- Continue removing local GameDevMap helper wrappers only when copy/default compatibility can be preserved without weakening report/artifact behavior.
 - Share browser-recovery artifact save/merge lifecycle only if the same slice deletes equivalent web-search and GameDevMap code.
 - Keep `activeAuditEnabled=false` accepted as harmless legacy input until all source-discovery config compatibility is reviewed together.
 

@@ -98,14 +98,16 @@ def gamedevmap_active_dry_run_path() -> Path:
 
 
 def _as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
+    return list(active_audit_runtime._as_list(value))
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {}
+    return dict(active_audit_runtime._as_dict(value))
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
+    if int(default) == 0:
+        return active_audit_runtime._safe_int(value)
     try:
         return int(value)
     except (TypeError, ValueError):

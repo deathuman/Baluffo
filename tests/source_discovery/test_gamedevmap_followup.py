@@ -269,6 +269,38 @@ def test_gamedevmap_audit_report_summary_shape_stays_compatible() -> None:
     }
 
 
+def test_gamedevmap_artifact_helpers_keep_report_compatibility() -> None:
+    source_list = [{"name": "one"}]
+    copied_list = dry_run._as_list(source_list)
+    copied_list.append({"name": "two"})
+    assert source_list == [{"name": "one"}]
+
+    source_dict = {"count": 1}
+    copied_dict = dry_run._as_dict(source_dict)
+    copied_dict["count"] = 2
+    assert source_dict == {"count": 1}
+
+    assert dry_run._safe_int("bad", 7) == 7
+
+    summary = dry_run.gamedevmap_audit_report_summary(
+        {
+            "summary": "not-a-dict",
+            "runtime": "not-a-dict",
+            "timings": {"totalsMs": {"totalMs": "9"}},
+            "activeCandidates": "not-a-list",
+            "rejectedForActivation": "not-a-list",
+            "failureSamples": "not-a-list",
+            "browserRecovery": "not-a-dict",
+            "lostRecoveryAudit": "not-a-dict",
+        },
+        cache_hit=False,
+    )
+
+    assert summary["activeCandidates"] == 0
+    assert summary["artifactSizeBytes"] == 0
+    assert summary["browserRecoveryCandidates"] == 0
+
+
 def test_gamedevmap_followup_cli_flags_parse() -> None:
     args = discovery_orchestrator.parse_args(
         [
