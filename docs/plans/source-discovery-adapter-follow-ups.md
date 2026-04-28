@@ -149,6 +149,7 @@ Acceptance criteria:
 - Test changes are readability/LOC improvements only.
 - No production behavior changes in the same slice.
 - Existing guardrails still prove deleted paths stay deleted.
+- Shared empty directory-audit fixture setup lives in `tests/source_discovery/_helpers.py`.
 
 ## Validation Standard
 

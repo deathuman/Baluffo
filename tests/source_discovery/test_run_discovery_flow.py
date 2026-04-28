@@ -4,6 +4,7 @@ from ._helpers import (
     GENERATOR_DISABLED_DISCOVERY_CONFIG,
     DiscoveryReportSummarySchema,
     Path,
+    _directory_audit_result,
     _fixture_json,
     _fixture_text,
     _gamesmap_next_payload_html,
@@ -20,14 +21,6 @@ from ._helpers import (
     sr,
     workspace_tmpdir,
 )
-
-
-def _directory_audit_result(provider=None, static=None, failures=None):
-    return dict(
-        providerCandidates=list(provider or []),
-        staticCandidates=list(static or []),
-        failures=list(failures or []),
-    ), False
 
 
 def test_apply_sheet_directory_static_probe_cap_limits_overproducing_sheet_static_rows() -> None:

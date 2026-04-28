@@ -57,6 +57,14 @@ def discovery_config_without_generator_stages(**overrides: object) -> dict[str, 
     return config
 
 
+def _directory_audit_result(provider=None, static=None, failures=None):
+    return dict(
+        providerCandidates=list(provider or []),
+        staticCandidates=list(static or []),
+        failures=list(failures or []),
+    ), False
+
+
 @contextlib.contextmanager
 def patch_empty_generator_stages(*, probe):
     with (
@@ -78,10 +86,7 @@ def patch_empty_generator_stages(*, probe):
         mock.patch.object(
             discovery_orchestrator,
             "run_web_search_directory_audit",
-            return_value=(
-                {"providerCandidates": [], "staticCandidates": [], "failures": []},
-                False,
-            ),
+            return_value=_directory_audit_result(),
         ),
         mock.patch.object(discovery_orchestrator, "async_probe_candidate", side_effect=probe),
     ):
@@ -93,6 +98,7 @@ __all__ = [
     "FIXTURES_DIR",
     "GENERATOR_DISABLED_DISCOVERY_CONFIG",
     "Path",
+    "_directory_audit_result",
     "_fixture_json",
     "_fixture_text",
     "_gamesmap_next_payload_html",
