@@ -62,14 +62,10 @@ From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json
 | Function | Score |
 | --- | ---: |
 | `src/source_discovery/reporting_backlog.py::build_m5_strategic_backlog` | 32 |
-| `src/source_discovery/orchestrator_generation.py::prepare_probe_inputs` | 30 |
-| `src/source_discovery/gamesmap_candidates.py::discover_gamesmap_candidates` | 23 |
-| `src/source_discovery/web_search_candidates.py::_provider_candidate` | 23 |
+| `src/source_discovery/orchestrator_generation.py::prepare_probe_inputs` | 27 |
 | `src/source_discovery/gamesmap_parsing.py::parse_gamesmap_detail_page` | 20 |
-| `src/source_discovery/orchestrator_probe.py::probe_and_recover` | 20 |
+| `src/source_discovery/orchestrator_probe.py::probe_and_recover` | 19 |
 | `src/source_discovery/probe.py::parse_probe_count` | 18 |
-| `src/source_discovery/sheet_directory.py::discover_game_studio_sheet_candidates` | 17 |
-| `src/source_discovery/gamedevmap.py::discover_gamedevmap_candidates` | 16 |
 | `src/source_discovery/provider_patterns.py::build_pattern_candidates` | 16 |
 | `src/source_discovery/sheet_directory.py::parse_game_studio_sheet_csv` | 16 |
 | `src/source_discovery/probe.py::fallback_probe_urls` | 15 |
