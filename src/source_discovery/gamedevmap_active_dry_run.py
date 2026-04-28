@@ -735,7 +735,17 @@ def _merge_browser_recovery_artifact_updates(
         "rejectedForActivation",
         list(batch.analysis.rejected_rows or []),
     )
-    _apply_probe_results(artifact, combined_probe_results)
+    active_audit_runtime.apply_active_audit_probe_results(
+        artifact,
+        combined_probe_results,
+        classify_probe_results=classify_probe_results,
+        probe_failed_rejection=_gamedevmap_probe_failed_rejection,
+        zero_jobs_rejection=_gamedevmap_zero_jobs_rejection,
+        active_key="activeCandidates",
+        zero_candidates_key="zeroJobCandidates",
+        rejected_key="rejectedForActivation",
+        identity_fn=_candidate_id,
+    )
 
 
 def run_gamedevmap_browser_recovery(
@@ -1334,30 +1344,21 @@ async def _probe_candidates_async(
     return await shared_probe_candidates_async(candidates, timeout_s=timeout_s, fetcher=fetcher)
 
 
-def _apply_probe_results(
-    artifact: dict[str, Any],
-    probe_results: list[tuple[dict[str, Any], bool, int, str, int]],
-) -> None:
-    active_audit_runtime.apply_active_audit_probe_results(
-        artifact,
-        probe_results,
-        classify_probe_results=classify_probe_results,
-        probe_failed_rejection=lambda candidate, error: _rejection(
-            reason="probe_failed",
-            candidate=candidate,
-            error=error,
-            reason_detail="probe_failed",
-        ),
-        zero_jobs_rejection=lambda candidate, jobs_found: _rejection(
-            reason="zero_jobs",
-            candidate=candidate,
-            jobs_found=jobs_found,
-            reason_detail="zero_jobs",
-        ),
-        active_key="activeCandidates",
-        zero_candidates_key="zeroJobCandidates",
-        rejected_key="rejectedForActivation",
-        identity_fn=_candidate_id,
+def _gamedevmap_probe_failed_rejection(candidate: dict[str, Any], error: str) -> dict[str, Any]:
+    return _rejection(
+        reason="probe_failed",
+        candidate=candidate,
+        error=error,
+        reason_detail="probe_failed",
+    )
+
+
+def _gamedevmap_zero_jobs_rejection(candidate: dict[str, Any], jobs_found: int) -> dict[str, Any]:
+    return _rejection(
+        reason="zero_jobs",
+        candidate=candidate,
+        jobs_found=jobs_found,
+        reason_detail="zero_jobs",
     )
 
 
@@ -1544,36 +1545,6 @@ def _merge_gamedevmap_active_batch_candidates(
     )
 
 
-def _merge_gamedevmap_active_batch_artifact_updates(
-    artifact: dict[str, Any],
-    all_candidates: list[dict[str, Any]],
-    browser_recovery_rows: list[dict[str, Any]],
-    homepage_failures: list[dict[str, Any]],
-    recovery_failures: list[dict[str, Any]],
-    rejected_rows: list[dict[str, Any]],
-) -> None:
-    active_audit_runtime.merge_active_audit_batch_artifact_updates(
-        artifact,
-        all_candidates=all_candidates,
-        browser_recovery_rows=browser_recovery_rows,
-        homepage_failures=homepage_failures,
-        recovery_failures=recovery_failures,
-        rejected_rows=rejected_rows,
-        all_candidates_key="allCandidates",
-        browser_candidates_key="browserRecoveryCandidates",
-        rejected_key="rejectedForActivation",
-        unique_rows=unique_sources,
-        failure_sample_limit=FAILURE_SAMPLE_LIMIT,
-    )
-
-
-def _update_gamedevmap_active_batch_summary(
-    artifact: dict[str, Any],
-    batch_counts: dict[str, Any],
-) -> None:
-    active_audit_runtime.increment_active_audit_summary(artifact, batch_counts)
-
-
 def _build_gamedevmap_active_batch_strategy(
     *,
     artifact: dict[str, Any],
@@ -1622,16 +1593,41 @@ def _build_gamedevmap_active_batch_strategy(
             _as_dict(job.get("payload")).get("homepageUrl") or ""
         ).strip(),
         merge_candidates=_merge_gamedevmap_active_batch_candidates,
-        merge_artifact_updates=lambda *args: _merge_gamedevmap_active_batch_artifact_updates(
-            artifact, *args
+        merge_artifact_updates=lambda all_candidates, browser_recovery_rows, homepage_failures, recovery_failures, rejected_rows: (
+            active_audit_runtime.merge_active_audit_batch_artifact_updates(
+                artifact,
+                all_candidates=all_candidates,
+                browser_recovery_rows=browser_recovery_rows,
+                homepage_failures=homepage_failures,
+                recovery_failures=recovery_failures,
+                rejected_rows=rejected_rows,
+                all_candidates_key="allCandidates",
+                browser_candidates_key="browserRecoveryCandidates",
+                rejected_key="rejectedForActivation",
+                unique_rows=unique_sources,
+                failure_sample_limit=FAILURE_SAMPLE_LIMIT,
+            )
         ),
-        update_summary=lambda batch_counts: _update_gamedevmap_active_batch_summary(
-            artifact, batch_counts
+        update_summary=lambda batch_counts: active_audit_runtime.increment_active_audit_summary(
+            artifact,
+            batch_counts,
         ),
         probe_candidates=lambda all_candidates: asyncio.run(
             _probe_candidates_async(all_candidates, timeout_s=timeout_s, fetcher=fetcher)
         ),
-        apply_probe_results=lambda probe_results: _apply_probe_results(artifact, probe_results),
+        apply_probe_results=lambda probe_results: (
+            active_audit_runtime.apply_active_audit_probe_results(
+                artifact,
+                probe_results,
+                classify_probe_results=classify_probe_results,
+                probe_failed_rejection=_gamedevmap_probe_failed_rejection,
+                zero_jobs_rejection=_gamedevmap_zero_jobs_rejection,
+                active_key="activeCandidates",
+                zero_candidates_key="zeroJobCandidates",
+                rejected_key="rejectedForActivation",
+                identity_fn=_candidate_id,
+            )
+        ),
         row_identity=_row_url,
         append_timing=lambda batch_timing: active_audit_runtime.append_batch_timing(
             artifact,

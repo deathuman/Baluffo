@@ -116,8 +116,9 @@ Acceptance criteria:
 - `gamedevmap.activeAuditEnabled=false` remains harmless legacy input and is no longer a direct CSV/cache rollback selector.
 - Artifact compatibility changes are documented and tested when needed.
 - GameDevMap artifact/timing save/finalize wrappers now call shared `active_audit_runtime.py` helpers directly; keep the GameDevMap report summary and cache signature local until artifact compatibility is explicitly reviewed.
-- Next implementation slice after artifact/cache cleanup: move generic GameDevMap active-audit batch-loop responsibilities toward `ActiveAuditBatchStrategy` / `ActiveAuditLoopStrategy` while keeping source-specific callbacks local.
+- GameDevMap batch-loop artifact merging, summary increments, timing, probe-result application, and progress writes now run through `active_audit_runtime.py`; the adapter keeps source-specific row preparation, provenance, homepage analysis, recovery paths, and rejection factories local.
 - Deferred helper cleanup: GameDevMap local `_as_list`, `_as_dict`, and `_safe_int` have copy/default semantics that are not identical to the shared active-audit runtime helpers; normalize them only with targeted artifact/report tests.
+- Deferred active-audit API cleanup: the shared batch strategy still needs adapter-provided wiring for GameDevMap-specific labels and artifact bucket names; consider a named factory only if another active-source adapter needs the same lifecycle shape.
 - Deferred config cleanup: remove or repurpose stale GameDevMap `cachePath` / `cacheTtlMinutes` defaults and tests after compatibility review confirms no external config depends on the deleted legacy cache.
 - Deferred web-derived lifecycle cleanup: thin web-search browser-recovery artifact loading, fetch analysis, probe-result application, and artifact update merging after GameDevMap active-audit lifecycle is smaller.
 
