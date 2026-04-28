@@ -104,7 +104,9 @@ Acceptance criteria:
 - `webSearch.activeAuditEnabled=false` remains harmless legacy input and is no longer a runtime direct-scan selector.
 - Seed-careers and web-search continue feeding candidates through the current queue, pending review, tombstone, and auto-approval path.
 - Browser-recovery artifact behavior remains explicit and tested.
+- Browser-recovery artifact loading/defaulting, fetch-failure recording, success-page analysis, probe-result validation, summary update, and persistence are now split into narrower helpers.
 - Web-search C901/report complexity follow-ups remain deferred.
+- Deferred browser-recovery cleanup: web-search and GameDevMap still need source-specific callbacks for rendered-page analysis, artifact bucket names, and prevalidated queue caps; consider a shared save/merge wrapper only after those callback seams stabilize.
 
 ### 5. GameDevMap Reset
 
@@ -120,7 +122,7 @@ Acceptance criteria:
 - Deferred helper cleanup: GameDevMap local `_as_list`, `_as_dict`, and `_safe_int` have copy/default semantics that are not identical to the shared active-audit runtime helpers; normalize them only with targeted artifact/report tests.
 - Deferred active-audit API cleanup: the shared batch strategy still needs adapter-provided wiring for GameDevMap-specific labels and artifact bucket names; consider a named factory only if another active-source adapter needs the same lifecycle shape.
 - Deferred config cleanup: remove or repurpose stale GameDevMap `cachePath` / `cacheTtlMinutes` defaults and tests after compatibility review confirms no external config depends on the deleted legacy cache.
-- Deferred web-derived lifecycle cleanup: thin web-search browser-recovery artifact loading, fetch analysis, probe-result application, and artifact update merging after GameDevMap active-audit lifecycle is smaller.
+- Deferred web-derived lifecycle cleanup: consider shared browser-recovery artifact save/merge wrappers only after web-search and GameDevMap callback seams stabilize.
 
 ### 6. Test Scaffolding Cleanup
 
