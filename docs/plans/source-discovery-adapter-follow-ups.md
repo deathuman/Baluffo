@@ -19,8 +19,8 @@ The product goal is simple: find active job sources and real openings in accepta
 | Gameprog | Migrated proof point. [`discover_gameprog_candidates`](../../src/source_discovery/gameprog.py) always returns rows from the audit artifact when enabled; `activeAuditEnabled=false` is accepted as legacy input but no longer routes to the old cache branch. | Keep as the deletion proof and later remove/rename the stale config field when other adapters no longer need the rollback convention. |
 | Gamesmap | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. Large scan/category/parser surfaces remain. | Reduce orchestration complexity before parser-only complexity. |
 | Sheet-directory | Public discovery now returns rows from the shared directory audit artifact; `activeAuditEnabled=false` is harmless legacy input. It still owns CSV parsing, recovery, summary, and scan glue. | Later cleanup can split source metadata/evidence from scan/recovery plumbing after higher-value rollback paths are deleted. |
-| Web-derived discovery | Seed-careers and web-search runtime paths now return shared audit-artifact rows; `activeAuditEnabled=false` is harmless legacy input. It still owns seed-careers/web-search scan, recovery, browser-recovery, and report complexity. | Split report/browser-recovery complexity only after the rollback deletion is protected. |
-| GameDevMap | Uses the separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`; `activeAuditEnabled=false` is harmless legacy input and no longer routes to the old cache/direct CSV scan. | Next lifecycle target: move generic active-audit artifact/cache, batch-loop, recovery, and probe-result responsibilities toward `active_audit_runtime.py` while keeping source parsing/provenance local. |
+| Web-derived discovery | Seed-careers and web-search runtime paths now return shared audit-artifact rows; `activeAuditEnabled=false` is harmless legacy input. Browser-recovery artifact loading, fetch analysis, probe-result validation, summary update, and persistence have been split into narrower helpers. | Next pressure is shared browser-recovery persistence only where web-search and GameDevMap seams are equivalent; report-shape cleanup remains deferred. |
+| GameDevMap | Uses the separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`; `activeAuditEnabled=false` is harmless legacy input and no longer routes to the old cache/direct CSV scan. Artifact/cache and active-audit batch lifecycle now use shared `active_audit_runtime.py` helpers where equivalent. | Next pressure is legacy cache config cleanup, local artifact-helper normalization, and shared browser-recovery persistence only where artifact behavior stays compatible. |
 | Stage wiring | [`orchestrator_generation.py`](../../src/source_discovery/orchestrator_generation.py) owns stage invocation and compatibility with current discovery flows. | Treat route changes as compatibility work and preserve task-start, busy-state, queue, pending review, and report behavior. |
 
 ## Protected Surfaces
@@ -135,6 +135,15 @@ Acceptance criteria:
 - Existing guardrails still prove deleted paths stay deleted.
 - Shared empty directory-audit fixture setup lives in `tests/source_discovery/_helpers.py`.
 - Shared web-search browser-recovery artifact setup lives in `tests/source_discovery/_helpers.py`.
+
+### 7. Deferred Cleanup Sequence
+
+Remaining same-goal cleanup should land as small compatibility-preserving slices:
+
+- Remove stale GameDevMap legacy `cachePath` defaults and stop tests from passing it as a meaningful discovery input.
+- Normalize GameDevMap local artifact helpers only where shared helper semantics are covered by targeted report/artifact tests.
+- Share browser-recovery artifact save/merge lifecycle only if the same slice deletes equivalent web-search and GameDevMap code.
+- Keep `activeAuditEnabled=false` accepted as harmless legacy input until all source-discovery config compatibility is reviewed together.
 
 ## Validation Standard
 
