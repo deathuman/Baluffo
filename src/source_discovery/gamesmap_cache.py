@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from .directory_cache import load_directory_cache, write_directory_cache
+from .directory_cache import (
+    directory_cache_ttl_minutes,
+    load_adapter_directory_cache,
+    write_adapter_directory_cache,
+)
 from .directory_page_recovery import RECOVERY_LOGIC_VERSION, resolve_recovery_url_limit
 
 GAMESMAP_PARSER_CACHE_VERSION = 2
-
-
-def _gamesmap_source_config(config: dict[str, Any] | None) -> dict[str, Any]:
-    source = config if isinstance(config, dict) else {}
-    if isinstance(source.get("gamesmap"), dict):
-        source = source.get("gamesmap") or {}
-    return source
 
 
 def gamesmap_config_value(config: dict[str, Any] | None, key: str, default: Any) -> Any:
@@ -21,22 +17,8 @@ def gamesmap_config_value(config: dict[str, Any] | None, key: str, default: Any)
     return source.get(key, default)
 
 
-def gamesmap_cache_path(config: dict[str, Any] | None) -> Path | None:
-    source = _gamesmap_source_config(config)
-    raw = str(source.get("cachePath") or "").strip()
-    if not raw:
-        return Path(__file__).resolve().parents[2] / "data" / "gamesmap-discovery-cache.json"
-    return Path(raw)
-
-
 def gamesmap_cache_ttl_minutes(config: dict[str, Any] | None) -> int:
-    raw = _gamesmap_source_config(config).get("cacheTtlMinutes", "")
-    if raw in {"", None}:
-        raw = 360
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 360
+    return directory_cache_ttl_minutes(config, "gamesmap")
 
 
 def gamesmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -65,14 +47,13 @@ def load_gamesmap_cache(
     fetcher: Any,
     default_fetcher: Any,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
-    cache_path = gamesmap_cache_path(config)
-    ttl_minutes = gamesmap_cache_ttl_minutes(config)
-    source = _gamesmap_source_config(config)
-    return load_directory_cache(
-        cache_path,
-        ttl_minutes=ttl_minutes,
+    return load_adapter_directory_cache(
+        config,
+        section_name="gamesmap",
+        default_filename="gamesmap-discovery-cache.json",
         expected_signature=gamesmap_cache_signature(cfg),
-        use_cache=fetcher is default_fetcher or bool(str(source.get("cachePath") or "").strip()),
+        fetcher=fetcher,
+        default_fetcher=default_fetcher,
     )
 
 
@@ -84,8 +65,10 @@ def write_gamesmap_cache(
     static_candidates: list[dict[str, Any]],
     failures: list[dict[str, Any]],
 ) -> None:
-    write_directory_cache(
-        gamesmap_cache_path(config),
+    write_adapter_directory_cache(
+        config,
+        section_name="gamesmap",
+        default_filename="gamesmap-discovery-cache.json",
         signature=gamesmap_cache_signature(cfg),
         provider_candidates=provider_candidates,
         static_candidates=static_candidates,

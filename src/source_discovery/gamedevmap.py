@@ -11,14 +11,16 @@ Responsibilities:
 
 import csv
 import io
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
 from src.source_registry import normalize_source_url, unique_sources
 
 from .config import DEFAULT_DISCOVERY_CONFIG
-from .directory_cache import load_directory_cache, write_directory_cache
+from .directory_cache import (
+    load_adapter_directory_cache,
+    write_adapter_directory_cache,
+)
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .directory_fetch_jobs import build_directory_fetch_jobs
 from .page_analysis import analyze_fetched_page
@@ -48,23 +50,6 @@ def _gamedevmap_config_value(config: dict[str, Any] | None, key: str, default: A
 
 def _gamedevmap_enabled(config: dict[str, Any] | None) -> bool:
     return bool(_gamedevmap_config_value(config, "enabled", False))
-
-
-def _gamedevmap_cache_path(config: dict[str, Any] | None) -> Path | None:
-    raw = str(_gamedevmap_config_value(config, "cachePath", "") or "").strip()
-    if not raw:
-        return Path(__file__).resolve().parents[2] / "data" / "gamedevmap-discovery-cache.json"
-    return Path(raw)
-
-
-def _gamedevmap_cache_ttl_minutes(config: dict[str, Any] | None) -> int:
-    raw = _gamedevmap_config_value(config, "cacheTtlMinutes", 360)
-    if raw in {"", None}:
-        raw = 360
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 360
 
 
 def _gamedevmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -97,16 +82,14 @@ def _gamedevmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
 def _load_gamedevmap_cache(
     config: dict[str, Any] | None, cfg: dict[str, Any], *, fetcher: Any
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
-    cache_path = _gamedevmap_cache_path(config)
-    ttl_minutes = _gamedevmap_cache_ttl_minutes(config)
-    source = config if isinstance(config, dict) else {}
-    if isinstance(source.get("gamedevmap"), dict):
-        source = source.get("gamedevmap") or {}
-    return load_directory_cache(
-        cache_path,
-        ttl_minutes=ttl_minutes,
+    return load_adapter_directory_cache(
+        config,
+        section_name="gamedevmap",
+        default_filename="gamedevmap-discovery-cache.json",
         expected_signature=_gamedevmap_cache_signature(cfg),
-        use_cache=fetcher is fetch_text or bool(str(source.get("cachePath") or "").strip()),
+        fetcher=fetcher,
+        default_fetcher=fetch_text,
+        flat_fallback=False,
     )
 
 
@@ -118,12 +101,15 @@ def _write_gamedevmap_cache(
     static_candidates: list[dict[str, Any]],
     failures: list[dict[str, Any]],
 ) -> None:
-    write_directory_cache(
-        _gamedevmap_cache_path(config),
+    write_adapter_directory_cache(
+        config,
+        section_name="gamedevmap",
+        default_filename="gamedevmap-discovery-cache.json",
         signature=_gamedevmap_cache_signature(cfg),
         provider_candidates=provider_candidates,
         static_candidates=static_candidates,
         failures=failures,
+        flat_fallback=False,
     )
 
 

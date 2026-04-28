@@ -28,7 +28,11 @@ from .directory_audit import (
     discover_directory_adapter_candidates,
     run_directory_audit_spec,
 )
-from .directory_cache import load_directory_cache, write_directory_cache
+from .directory_cache import (
+    directory_cache_ttl_minutes,
+    load_adapter_directory_cache,
+    write_adapter_directory_cache,
+)
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .directory_page_recovery import (
     DEFAULT_RECOVERY_URL_LIMIT,
@@ -77,27 +81,8 @@ def _gameprog_enabled(config: dict[str, Any] | None) -> bool:
     return bool(_gameprog_config_value(config, "enabled", True))
 
 
-def _gameprog_cache_path(config: dict[str, Any] | None) -> Path | None:
-    source = config if isinstance(config, dict) else {}
-    if isinstance(source.get("gameprog"), dict):
-        source = source.get("gameprog") or {}
-    raw = str(source.get("cachePath") or "").strip()
-    if not raw:
-        return Path(__file__).resolve().parents[2] / "data" / "gameprog-discovery-cache.json"
-    return Path(raw)
-
-
 def _gameprog_cache_ttl_minutes(config: dict[str, Any] | None) -> int:
-    source = config if isinstance(config, dict) else {}
-    if isinstance(source.get("gameprog"), dict):
-        source = source.get("gameprog") or {}
-    raw = source.get("cacheTtlMinutes", "")
-    if raw in {"", None}:
-        raw = 360
-    try:
-        return max(0, int(raw))
-    except (TypeError, ValueError):
-        return 360
+    return directory_cache_ttl_minutes(config, "gameprog")
 
 
 def _gameprog_audit_enabled(config: dict[str, Any] | None) -> bool:
@@ -135,16 +120,13 @@ def _gameprog_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
 def _load_gameprog_cache(
     config: dict[str, Any] | None, cfg: dict[str, Any], *, fetcher: Any
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
-    cache_path = _gameprog_cache_path(config)
-    ttl_minutes = _gameprog_cache_ttl_minutes(config)
-    source = config if isinstance(config, dict) else {}
-    if isinstance(source.get("gameprog"), dict):
-        source = source.get("gameprog") or {}
-    return load_directory_cache(
-        cache_path,
-        ttl_minutes=ttl_minutes,
+    return load_adapter_directory_cache(
+        config,
+        section_name="gameprog",
+        default_filename="gameprog-discovery-cache.json",
         expected_signature=_gameprog_cache_signature(cfg),
-        use_cache=fetcher is fetch_text or bool(str(source.get("cachePath") or "").strip()),
+        fetcher=fetcher,
+        default_fetcher=fetch_text,
     )
 
 
@@ -156,8 +138,10 @@ def _write_gameprog_cache(
     static_candidates: list[dict[str, Any]],
     failures: list[dict[str, Any]],
 ) -> None:
-    write_directory_cache(
-        _gameprog_cache_path(config),
+    write_adapter_directory_cache(
+        config,
+        section_name="gameprog",
+        default_filename="gameprog-discovery-cache.json",
         signature=_gameprog_cache_signature(cfg),
         provider_candidates=provider_candidates,
         static_candidates=static_candidates,

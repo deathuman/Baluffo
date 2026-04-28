@@ -1,15 +1,33 @@
 # Source Discovery Adapter Follow-Ups
 
-> - **Status:** Active
+> - **Status:** Active roadmap, mostly completed infrastructure extraction
 > - **Use this when:** planning source-discovery adapter reuse, deduplication, and yield improvements
-> - **Canonical for:** follow-up opportunities only; not current implementation commitments
+> - **Canonical for:** follow-up opportunities, migration status, and refactor guardrails
 > - **Not canonical for:** current discovery behavior, data contracts, or verification commands
 > - **Then inspect:** [`scraping-pipeline.md`](../scraping-pipeline.md), [`architecture-ai-map.md`](../architecture-ai-map.md), and the owning adapter modules
 > - **Last updated:** 2026-04-28
 
-The discovery adapters now have enough shared infrastructure to stop treating reuse as opportunistic cleanup. The next work should aggressively migrate adapters onto shared primitives, delete duplicate inline logic, and document the rare cases where source-specific behavior must stay local.
+The discovery adapter reuse effort has moved from "build the shared primitives" to "finish the remaining safe migrations without changing runtime behavior." Most high-duplication paths now have shared contracts. The remaining work is split between small safe refactors, strategy-contract cleanup, and deliberately behavior-changing tuning that should not be mixed into cleanup slices.
 
-## Operating Principle
+## Current Status Dashboard
+
+| Area | Status | Readout |
+| --- | --- | --- |
+| P0 Gameprog/Gamesmap twins | Complete for behavior-preserving extraction | Shared row templates, provenance, website scan skeleton, recovery contracts, scan setup, entry selection, recovery budgets, and Gamesmap index collection are in place. Remaining parser/index/category differences are source semantics, not shared skeleton backlog. |
+| P1a helper backfill | Complete for the current exhaustive sweep | Current mechanical helper backfills are shared across fetch/cache/probe/page/recovery/browser/audit runner paths. Future helper ideas should be filed as new scoped slices, not as open-ended P1a debt. |
+| P1b GameDevMap active-audit extraction | Largely complete | Lifecycle, cache, rerun state, homepage runtime, batch runtime, loop runtime, recovery contracts, probe classification, artifact updates, strategy assembly, and browser-recovery assembly are shared. Remaining work should focus on semantic strategy shape cleanup, not another broad extraction. |
+| P1c strategy contract normalization | Partially complete | `PageOutcomeStrategy`, active-audit strategies, and browser-recovery assembly exist. Broader contracts for provenance, no-candidate diagnostics, recovery requests, and audit merge result shapes are still future cleanup. |
+| P2 recovery/browser/queue behavior | Mostly future work | HTTP recovery is shared and defaulted where already proven. Browser eligibility expansion and queue override adoption remain behavior-changing and need explicit before/after coverage. |
+| P3 evidence-led tuning and legacy cleanup | Future work | Use audit evidence to tune recovery budgets, skip rules, browser coverage, and old wrapper deletion after shared behavior is proven. |
+
+## What This Means Operationally
+
+- The big scary duplication problem is mostly behind us: GameDevMap is no longer a one-off active-audit island.
+- The document should now guide smaller, safer slices instead of inviting another open-ended extraction marathon.
+- Future commits should avoid adding more "Completed slice" bullets to the roadmap sections. Put history under **Completed Migration Log** and keep **Remaining Roadmap** focused on work that is still actionable.
+- Behavior-preserving refactors and behavior-changing discovery improvements should stay separate. Queue, pending, tombstone, suppression, auto-approval, browser eligibility, and recovery coverage changes need their own explicit plans.
+
+## Operating Principles
 
 - Default to shared primitives. Keep logic local only when source-specific semantics materially differ, and name the exception.
 - A new helper is incomplete unless it removes or thins adapter-owned code in the same slice, or records the exact adopter that will be migrated next.
@@ -23,14 +41,66 @@ The discovery adapters now have enough shared infrastructure to stop treating re
 - **Fetch, cache, and scan seams:** `directory_cache`, `directory_fetch_jobs`, `directory_fetch`, `directory_adapter_templates`, shared directory adapter wrappers, and scan-stage orchestration own common cache shape, fetch-job shape, static/provenance row templates, cache-compatible discovery wrappers, and provider/static/failure stage plumbing.
 - **Candidate, probe, and queue mechanics:** `candidate_collections`, `probe_runtime`, and `prevalidated_queue_policy` own provider/static row normalization, append-with-dedupe, bounded async probing, rendered static shortcuts, and internal queue-cap override fields.
 - **Page and recovery classification:** `page_outcomes`, `page_diagnostics`, `recovery_url_planner`, `directory_page_recovery`, and `provider_inference_filters` own provider-first page classification, explicit/static fallback ordering, JS-shell diagnostics, same-site recovery planning, HTTP-only recovery fetches, and bad provider inference filtering.
-- **Browser recovery:** `browser_recovery` owns default browser fetch fallback, processed-key selection, bounded browser fetch, rendered-result probe filtering, probe dispatch, and recovery state/sample bookkeeping. GameDevMap and web-derived discovery now share the runtime while keeping artifact merge semantics local.
+- **Active-audit runtime:** `active_audit_runtime` owns active-audit lifecycle, cache reuse, rerun selection, homepage batch sequencing, recovery application, probe/artifact bucket helpers, batch and loop runtimes, and strategy assembly.
+- **Browser recovery:** `browser_recovery` owns default browser fetch fallback, processed-key selection, bounded browser fetch, rendered-result probe filtering, probe dispatch, recovery state/sample bookkeeping, and shared browser-recovery run/merge assembly.
 - **Default audit adoption:** Gameprog, Gamesmap, sheet-directory, seed-careers, and web-search use default audit paths when their stages are enabled. GameDevMap uses its audit/recovery path as the canonical adapter behavior while keeping the active-source artifact schema local.
 
-## Current Duplication Inventory
+## Remaining Roadmap
+
+### P1b: Finish GameDevMap Active-Audit Cleanup
+
+**Type:** Safe refactor if behavior-preserving; high risk if artifact semantics change.
+
+- Treat the major extraction as complete. Future GameDevMap work should be targeted cleanup around remaining local callback bodies.
+- Preserve GameDevMap's artifact shape, `jobsFound > 0` active-candidate requirement, zero-job buckets, rejection rows, rerun modes, browser-recovery CLI behavior, cache signatures, and log text.
+- Only extract further when the adapter-specific semantics remain explicit through callbacks such as rejection formatting, candidate IDs, provenance/evidence fields, and artifact writes.
+
+### P1c: Standardize Adapter Strategy Contracts
+
+**Type:** Safe refactor when callback-only; potentially behavior-changing if output shapes move.
+
+- Page-outcome callback wiring now uses `PageOutcomeStrategy`; remaining strategy work should target broader scan/recovery assembly, not provider/static classification callback plumbing.
+- Define shared strategy shapes for directory provenance, static fallback rows, no-candidate diagnostics, recovery requests, browser-recovery candidate rows, and audit merge results.
+- Prefer callback-driven shared flow over adapter-owned branching.
+- Keep strategy contracts narrow enough that source-specific evidence fields stay explicit and testable.
+
+### P2: Tune Default HTTP Recovery
+
+**Type:** Behavior-changing.
+
+- Use sheet-directory and web-derived recovery audit evidence to tune recovery URL limits, skip rules, profile-host handling, and timing budgets.
+- The first shared knob is `activeAuditRecoveryUrlLimit`, defaulting to `6` for Gameprog, Gamesmap, sheet-directory, and web-search.
+- Document true semantic exceptions, such as rows that contain only a direct careers URL with no recoverable company homepage.
+- Keep browser rendering opt-in and separate from default HTTP recovery.
+- Evidence snapshot: [`source-discovery-http-recovery-evidence-2026-04-27.md`](../snapshots/source-discovery-http-recovery-evidence-2026-04-27.md) supports default-enabling both sheet-directory and web-derived HTTP recovery.
+
+### P2: Promote Browser-Recovery Eligibility
+
+**Type:** Behavior-changing.
+
+- Browser-recovery candidate row construction, reason summary counting, run/probe assembly, and merge-state updates are shared.
+- Adopt rendered browser recovery for any additional directory adapter only when it emits HTTP-only JS-shell or browser-recoverable fetch failures and has before/after artifact coverage.
+- Keep rendered recovery commands explicit and artifact-only until a separate plan changes default behavior.
+
+### P2: Adopt Prevalidated Queue Overrides Deliberately
+
+**Type:** Behavior-changing.
+
+- GameDevMap and web-derived browser recovery now use the shared prevalidated queue policy for probe-validated `jobsFound > 0` candidates.
+- Migrate future probe-validated adapters to the same policy only with tests for queued/deferred output, active/pending movement, disabled auto-approval, static suppression, tombstones, and internal override-field stripping.
+- If normal queue caps should still apply for an adapter, document that as an intentional exception.
+
+### P3: Evidence-Led Tuning And Legacy Cleanup
+
+**Type:** Evidence/tuning backlog.
+
+- Use audit summaries to rank adapters by no-candidate count, JS-shell count, browser-recoverable fetch failures, profile-host misses, timeout/429 rate, zero-job probes, and recovered-candidate yield.
+- Remove or quarantine legacy direct paths only after shared defaults are proven equivalent and rollback tests exist.
+- Prefer deleting adapter wrappers that simply delegate to shared helpers over adding another compatibility layer.
+
+## Completed Migration Log
 
 ### P0: Gameprog/Gamesmap Twins
-
-These are the lowest-risk, highest-certainty consolidation targets because the implementations are structurally parallel but still live in separate adapter modules.
 
 - Completed first slice: `gameprog.py::build_gameprog_static_candidate` and `gamesmap_candidates.py::build_gamesmap_static_candidate` now use shared directory static row templates.
 - Completed first slice: `gameprog.py::_apply_gameprog_static_page_provenance`, `gamesmap_candidates.py::_apply_gamesmap_provider_provenance`, and `gamesmap_candidates.py::_apply_gamesmap_static_provenance` now use shared provenance enrichment templates.
@@ -41,10 +111,9 @@ These are the lowest-risk, highest-certainty consolidation targets because the i
 - Completed entry-selection slice: Gameprog/Gamesmap now share parsed-entry empty handling, selection callback timing, selection log handoff, selected summary merge, and website-scan dispatch.
 - Completed recovery-budget slice: `gameprog.activeAuditRecoveryUrlLimit` and `gamesmap.activeAuditRecoveryUrlLimit` default to `6`, fall back to `6` for invalid/non-positive values, and participate in audit signatures.
 - Completed index-collection slice: Gamesmap index fetch, parse failure routing, `detailUrl` dedupe, `maxDetailPages` capping, and unresolved reference aggregation now use a shared directory index collection helper. Gameprog remains adapter-local because its upstream fetch is JSON-specific.
+- Completed P0 closure slice: Gameprog/Gamesmap scan skeletons were rechecked after shared entry-selection and website-scan adoption; the remaining parser/index/category differences are intentional source semantics rather than shared control-flow backlog.
 
-### P1: GameDevMap Still Reimplements Shared Primitives
-
-GameDevMap created much of the better logic but still has the largest local active-audit surface. It should be decomposed into reusable strategy contracts instead of remaining a special case.
+### P1: GameDevMap Active Audit
 
 - Completed diagnostics slice: `gamedevmap_active_dry_run.py::_looks_like_js_shell` and `_no_careers_reason_detail` now delegate to shared page diagnostics while preserving GameDevMap reason buckets.
 - Completed provider/page-outcome slice: `gamedevmap_active_dry_run.py::_provider_candidates_from_html_text` now uses shared provider HTML inference instead of local provider URL extraction.
@@ -73,9 +142,7 @@ GameDevMap created much of the better logic but still has the largest local acti
 - Completed wrapper-pruning slice: GameDevMap now calls shared merge, recovery-fetch, browser-fetch, and audit freshness/signature helpers directly where private wrappers added no compatibility value.
 - Completed recovery-planning slice: `gamedevmap.py` legacy homepage fetch job construction now uses `directory_fetch_jobs`.
 
-### P1: Web-Derived Browser Recovery Duplication
-
-The runtime is shared, but web-derived discovery still owns analysis and merge code that mirrors GameDevMap.
+### P1: Web-Derived Browser Recovery And Page Stages
 
 - Completed provider-inference slice: `web_search_candidates.py::_provider_candidate_base`, `_provider_candidate`, and provider adapter detection now live in shared `provider_inference`, while `infer_web_candidate(...)` remains the public compatibility wrapper.
 - Completed provider/page-outcome slice: `web_search_candidates.py::_append_page_analysis_outcome` now uses shared static page-outcome callback builders instead of local callback boilerplate.
@@ -87,16 +154,15 @@ The runtime is shared, but web-derived discovery still owns analysis and merge c
 - Completed diagnostics slice: `web_search_candidates.py` now calls the shared browser recovery fetch fallback directly; the private `_default_browser_fetcher` wrapper was pruned.
 - Completed default-recovery slice: web-derived audits run shared HTTP-only same-site recovery by default; `webSearch.activeAuditRecoveryEnabled=false` remains the rollback.
 - Completed recovery-budget slice: `webSearch.activeAuditRecoveryUrlLimit` defaults to `6`, falls back to `6` for invalid/non-positive values, and participates in audit signatures.
-- Evidence snapshot: [`source-discovery-http-recovery-evidence-2026-04-27.md`](../snapshots/source-discovery-http-recovery-evidence-2026-04-27.md) supports default-enabling both sheet-directory and web-derived HTTP recovery.
 
 ### P1: Directory Audit Runner Assembly
 
 - Completed audit-spec slice: Gameprog, Gamesmap, sheet-directory, and web-derived audit runners now build `DirectoryAuditRunSpec` objects and call shared audit assembly instead of repeating long `run_directory_audit(...)` argument lists.
 - Remaining local audit code should be source-specific scan setup, signatures, runtime metadata values, and rollback seams.
+- Completed cache/config backfill slice: Gameprog, GameDevMap legacy discovery, and Gamesmap cache wrappers now share directory cache path, TTL, explicit-cache, load, and write helpers while preserving filenames, signatures, and custom-fetcher cache behavior.
+- Completed P1a closure slice: The current behavior-preserving helper sweep is complete; remaining roadmap entries are semantic strategy cleanup, behavior-changing recovery/browser/queue changes, or evidence-led tuning rather than P1a helper debt.
 
 ### P1: Sheet-Directory Manual Implementations
-
-Sheet-directory now has a default audit path. Its low-level fetch and row templates are shared; the remaining duplication is scan orchestration.
 
 - Completed sheet-foundation slice: `sheet_directory.py::_fetch_sheet_csv` now delegates to a shared multi-source text fetch helper.
 - Completed sheet-foundation slice: `sheet_directory.py::_append_sheet_entry_candidate` now uses a shared provider-or-static directory entry builder while preserving sheet evidence and provider-first ordering.
@@ -106,60 +172,10 @@ Sheet-directory now has a default audit path. Its low-level fetch and row templa
 - Completed default-recovery slice: sheet-directory audits run shared HTTP-only same-site recovery by default; `sheetDirectory.activeAuditRecoveryEnabled=false` remains the rollback.
 - Completed recovery-budget slice: `sheetDirectory.activeAuditRecoveryUrlLimit` defaults to `6`, falls back to `6` for invalid/non-positive values, and participates in audit signatures.
 
-### P2: Prevalidated Queue Policy Adoption
+### P2: Queue Policy Adoption Already Landed
 
 - GameDevMap uses shared prevalidated queue-cap overrides for validated static sources.
 - Completed merge-policy slice: web-derived browser recovery now applies `apply_prevalidated_queue_overrides` to `jobsFound > 0` recovered candidates.
-- Extending queue-cap overrides to future probe-validated adapters is a behavior change, not a pure refactor. It should be tested against adapter/domain deferral behavior, pending/active promotion, tombstones, static suppression, and disabled auto-approval.
-
-## Prioritized Reuse Roadmap
-
-### P0: Continue Gameprog/Gamesmap Scan Skeleton Thinning
-
-- Further thin `_gameprog_scan` and `_gamesmap_scan` only where parser/index/category setup can use shared callbacks without hiding adapter-specific evidence semantics.
-- Keep directory-specific evidence fields local through callback data, not duplicated control flow.
-
-### P1a: Backfill Existing Helpers Across All Adapters
-
-- Replace remaining inline fetch-job, cache, candidate collection, probe batch, report summary, scan-row extraction, page outcome, and browser fetch helper code with existing shared modules.
-- Every slice should name the exact adapter functions removed or reduced.
-- If an existing helper is too private or too narrow, first expose a stable public-internal API, then migrate the adapter.
-
-### P1b: Extract GameDevMap's Active-Audit Pipeline
-
-- Split GameDevMap's active-source logic into strategy callbacks for page analysis, recovery planning/fetching, bad-provider rejection, probe classification, browser recovery analysis, and artifact merge.
-- Preserve GameDevMap's artifact shape, `jobsFound > 0` active-candidate requirement, zero-job buckets, rejection rows, rerun modes, and browser-recovery CLI behavior.
-- After extraction, use the shared contracts as the default implementation for future adapters that need active-source audits.
-
-### P1c: Standardize Adapter Strategy Contracts
-
-- Page-outcome callback wiring now uses `PageOutcomeStrategy`; remaining strategy work should target broader scan/recovery assembly, not provider/static classification callback plumbing.
-- Define shared strategy shapes for directory provenance, static fallback rows, no-candidate diagnostics, recovery requests, browser-recovery candidate rows, and audit merge results.
-- Prefer callback-driven shared flow over adapter-owned branching.
-- Keep strategy contracts narrow enough that source-specific evidence fields stay explicit and testable.
-
-### P2: Tune Default HTTP Recovery
-
-- Use sheet-directory and web-derived recovery audit evidence to tune recovery URL limits, skip rules, profile-host handling, and timing budgets. The first shared knob is `activeAuditRecoveryUrlLimit`, defaulting to `6` for Gameprog, Gamesmap, sheet-directory, and web-search.
-- Document true semantic exceptions, such as rows that contain only a direct careers URL with no recoverable company homepage.
-- Keep browser rendering opt-in and separate from default HTTP recovery.
-
-### P2: Promote Browser-Recovery Eligibility
-
-- Browser-recovery candidate row construction and reason summary counting are shared.
-- Adopt it for GameDevMap, web-derived discovery, and any directory adapter that emits HTTP-only JS-shell or browser-recoverable fetch failures.
-- Keep rendered recovery commands explicit and artifact-only until a separate plan changes default behavior.
-
-### P2: Adopt Prevalidated Queue Overrides Deliberately
-
-- GameDevMap and web-derived browser recovery now use the shared prevalidated queue policy for probe-validated `jobsFound > 0` candidates. Migrate future probe-validated adapters to the same policy, or document why normal queue caps should still apply.
-- Treat each adoption as behavior-changing and test queued/deferred output, active/pending movement, disabled auto-approval, and internal override-field stripping.
-
-### P3: Evidence-Led Tuning And Legacy Cleanup
-
-- Use audit summaries to rank adapters by no-candidate count, JS-shell count, browser-recoverable fetch failures, profile-host misses, timeout/429 rate, zero-job probes, and recovered-candidate yield.
-- Remove or quarantine legacy direct paths only after shared defaults are proven equivalent and rollback tests exist.
-- Prefer deleting adapter wrappers that simply delegate to shared helpers over adding another compatibility layer.
 
 ## Lean-ness Targets
 
