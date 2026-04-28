@@ -11,12 +11,16 @@ from src.source_discovery.directory_page_recovery import (
     default_recovery_summary,
     fetch_recovery_jobs,
     looks_like_js_shell,
+    page_outcome_scan_rows,
     plan_recovery_fetch_job_waves,
     plan_recovery_urls,
     recovery_cache_result,
+    recovery_request_from_context,
+    recovery_result_candidates_from_strategy,
     resolve_recovery_url_limit,
     run_directory_page_recovery,
 )
+from src.source_discovery.page_outcomes import FetchedPageContext, PageOutcome, PageOutcomeStrategy
 from src.source_discovery.provider_inference_filters import split_bad_provider_inferences
 
 
@@ -369,6 +373,84 @@ def test_default_recovery_summary_preserves_report_keys() -> None:
         "recoveryFailures": 0,
         "browserRecoveryCandidates": 0,
     }
+
+
+def test_recovery_request_from_context_preserves_directory_request_shape() -> None:
+    context = FetchedPageContext(
+        page_url="https://studio.example/",
+        html="<html></html>",
+        studio="Studio",
+        nl_priority=False,
+        discovery_method="gameprog",
+        payload={"detailUrl": "https://directory.example/studio"},
+        recovery_key="https://studio.example/",
+    )
+
+    assert recovery_request_from_context(context, adapter="gameprog") == DirectoryRecoveryRequest(
+        key="https://studio.example/",
+        adapter="gameprog",
+        discovery_method="gameprog",
+        name="Studio",
+        studio="Studio",
+        page_url="https://studio.example/",
+        html="<html></html>",
+        payload={"detailUrl": "https://directory.example/studio"},
+    )
+
+
+def test_page_outcome_scan_rows_preserves_adapter_scan_payload_shape() -> None:
+    request = _request()
+    outcome = PageOutcome(
+        provider_candidates=[{"adapter": "greenhouse"}],
+        static_candidates=[{"adapter": "static"}],
+        recovery_requests=[request],
+        fallback_static_candidates=[{"key": "fallback"}],
+        bad_provider_inferences=2,
+    )
+
+    assert page_outcome_scan_rows(outcome) == {
+        "providerCandidates": [{"adapter": "greenhouse"}],
+        "staticCandidates": [{"adapter": "static"}],
+        "failures": [],
+        "fetchFailed": False,
+        "recoveryRequests": [request],
+        "fallbackStaticCandidates": [{"key": "fallback"}],
+        "badProviderInferences": 2,
+    }
+
+
+def test_recovery_result_candidates_from_strategy_threads_context_and_payload() -> None:
+    contexts: list[FetchedPageContext] = []
+
+    def analyze_page(**kwargs):
+        assert kwargs["page_url"] == "https://studio.example/careers"
+        return {"provider_candidates": [{"adapter": "greenhouse", "slug": "studio"}]}
+
+    def provider_rows(rows, context):
+        contexts.append(context)
+        return [{**row, "sourcePageUrl": context.payload["sourcePageUrl"]} for row in rows]
+
+    provider_rows_out, static_rows = recovery_result_candidates_from_strategy(
+        {"url": "https://studio.example/careers", "text": "<html>jobs</html>"},
+        _request("https://studio.example/"),
+        strategy=PageOutcomeStrategy(
+            provider_rows=provider_rows,
+            explicit_static=lambda url, _context: {"listing_url": url},
+            generic_static=lambda candidate, _context: candidate,
+            analyze_page=analyze_page,
+        ),
+    )
+
+    assert provider_rows_out == [
+        {
+            "adapter": "greenhouse",
+            "slug": "studio",
+            "sourcePageUrl": "https://studio.example/",
+        }
+    ]
+    assert static_rows == []
+    assert contexts[0].recovery_key == "https://studio.example/"
+    assert contexts[0].payload["sourcePageUrl"] == "https://studio.example/"
 
 
 def test_resolve_recovery_url_limit_defaults_and_rejects_invalid_values() -> None:

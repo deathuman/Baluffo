@@ -27,6 +27,9 @@ from .directory_index_collection import collect_directory_index_entries
 from .directory_page_recovery import (
     DEFAULT_RECOVERY_URL_LIMIT,
     DirectoryRecoveryRequest,
+    page_outcome_scan_rows,
+    recovery_request_from_context,
+    recovery_result_candidates_from_strategy,
     resolve_recovery_url_limit,
 )
 from .gamesmap_cache import (
@@ -40,10 +43,8 @@ from .gamesmap_parsing import _parse_gamesmap_index_entries_with_diagnostics
 from .page_analysis import analyze_fetched_page
 from .page_outcomes import (
     FetchedPageContext,
-    PageOutcome,
     PageOutcomeStrategy,
     classify_fetched_page_with_strategy,
-    classify_recovery_page_with_strategy,
 )
 from .scoring import unique_string_list
 from .web_search import fetch_text, infer_web_candidate
@@ -316,7 +317,7 @@ def _gamesmap_homepage_result_candidates(
         filter_bad_providers=True,
         analyze_page=analyze_page,
     )
-    return _gamesmap_rows_from_outcome(
+    return page_outcome_scan_rows(
         classify_fetched_page_with_strategy(
             context,
             strategy,
@@ -392,55 +393,23 @@ def _gamesmap_generic_static(
 
 
 def _gamesmap_recovery_request(context: FetchedPageContext) -> DirectoryRecoveryRequest:
-    return DirectoryRecoveryRequest(
-        key=context.recovery_key or context.page_url,
-        adapter="gamesmap",
-        discovery_method=context.discovery_method,
-        name=context.studio or context.page_url,
-        studio=context.studio,
-        page_url=context.page_url,
-        html=context.html,
-        payload=dict(context.payload),
-    )
-
-
-def _gamesmap_rows_from_outcome(outcome: PageOutcome) -> dict[str, Any]:
-    return {
-        "providerCandidates": outcome.provider_candidates,
-        "staticCandidates": outcome.static_candidates,
-        "failures": [],
-        "fetchFailed": False,
-        "recoveryRequests": outcome.recovery_requests,
-        "fallbackStaticCandidates": outcome.fallback_static_candidates,
-        "badProviderInferences": outcome.bad_provider_inferences,
-    }
+    return recovery_request_from_context(context, adapter="gamesmap")
 
 
 def _gamesmap_recovery_result_candidates(
     result: dict[str, Any],
     request: DirectoryRecoveryRequest,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    entry = dict(request.payload or {})
-    recovery_url = str(result.get("url") or request.page_url or "").strip()
-    context = FetchedPageContext(
-        page_url=recovery_url,
-        html=str(result.get("text") or ""),
-        studio=request.studio,
-        nl_priority=False,
-        discovery_method="gamesmap",
-        payload={**entry, "sourcePageUrl": request.page_url},
-        recovery_key=request.key,
-    )
-    outcome = classify_recovery_page_with_strategy(
-        context,
-        PageOutcomeStrategy(
+    return recovery_result_candidates_from_strategy(
+        result,
+        request,
+        strategy=PageOutcomeStrategy(
             provider_rows=_gamesmap_provider_rows,
             explicit_static=_gamesmap_explicit_static,
             generic_static=_gamesmap_generic_static,
             filter_bad_providers=True,
         ),
     )
-    return outcome.provider_candidates, outcome.static_candidates
 
 
 def _gamesmap_collect_detail_entries(

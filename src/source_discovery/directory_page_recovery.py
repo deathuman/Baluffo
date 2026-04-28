@@ -19,6 +19,11 @@ from .page_diagnostics import (
 from .page_diagnostics import (
     no_candidate_reason_detail as page_no_candidate_reason_detail,
 )
+from .page_outcomes import (
+    FetchedPageContext,
+    PageOutcome,
+    classify_recovery_page_with_strategy,
+)
 from .recovery_url_planner import recovery_urls, same_party_jobish_urls
 
 RECOVERY_LOGIC_VERSION = 1
@@ -107,6 +112,69 @@ def default_recovery_summary() -> dict[str, int]:
         "recoveryFailures": 0,
         "browserRecoveryCandidates": 0,
     }
+
+
+def recovery_request_from_context(
+    context: FetchedPageContext,
+    *,
+    adapter: str,
+    discovery_method: str | None = None,
+) -> DirectoryRecoveryRequest:
+    return DirectoryRecoveryRequest(
+        key=context.recovery_key or context.page_url,
+        adapter=adapter,
+        discovery_method=discovery_method or context.discovery_method,
+        name=context.studio or context.page_url,
+        studio=context.studio,
+        page_url=context.page_url,
+        html=context.html,
+        payload=dict(context.payload),
+    )
+
+
+def page_outcome_scan_rows(
+    outcome: PageOutcome,
+    *,
+    failures: list[dict[str, Any]] | None = None,
+    fetch_failed: bool = False,
+) -> dict[str, Any]:
+    return {
+        "providerCandidates": outcome.provider_candidates,
+        "staticCandidates": outcome.static_candidates,
+        "failures": list(failures or []),
+        "fetchFailed": bool(fetch_failed),
+        "recoveryRequests": outcome.recovery_requests,
+        "fallbackStaticCandidates": outcome.fallback_static_candidates,
+        "badProviderInferences": outcome.bad_provider_inferences,
+    }
+
+
+def recovery_result_candidates_from_strategy(
+    result: dict[str, Any],
+    request: DirectoryRecoveryRequest,
+    *,
+    strategy: Any,
+    discovery_method: str | None = None,
+    nl_priority: bool = False,
+    payload_updates: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    payload = {
+        **dict(request.payload or {}),
+        "sourcePageUrl": request.page_url,
+        **dict(payload_updates or {}),
+    }
+    recovery_url = str(result.get("url") or request.page_url or "").strip()
+    context = FetchedPageContext(
+        page_url=recovery_url,
+        html=str(result.get("text") or ""),
+        studio=request.studio,
+        nl_priority=bool(nl_priority),
+        discovery_method=discovery_method or request.discovery_method,
+        payload=payload,
+        recovery_key=request.key,
+    )
+    outcome = classify_recovery_page_with_strategy(context, strategy)
+    return outcome.provider_candidates, outcome.static_candidates
 
 
 def resolve_recovery_url_limit(

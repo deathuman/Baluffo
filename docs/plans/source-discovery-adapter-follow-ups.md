@@ -16,7 +16,7 @@ The discovery adapter reuse effort has moved from "build the shared primitives" 
 | P0 Gameprog/Gamesmap twins | Complete for behavior-preserving extraction | Shared row templates, provenance, website scan skeleton, recovery contracts, scan setup, entry selection, recovery budgets, and Gamesmap index collection are in place. Remaining parser/index/category differences are source semantics, not shared skeleton backlog. |
 | P1a helper backfill | Complete for the current exhaustive sweep | Current mechanical helper backfills are shared across fetch/cache/probe/page/recovery/browser/audit runner paths. Future helper ideas should be filed as new scoped slices, not as open-ended P1a debt. |
 | P1b GameDevMap active-audit extraction | Largely complete | Lifecycle, cache, rerun state, homepage runtime, batch runtime, loop runtime, recovery contracts, probe classification, artifact updates, strategy assembly, and browser-recovery assembly are shared. Remaining work should focus on semantic strategy shape cleanup, not another broad extraction. |
-| P1c strategy contract normalization | Partially complete | `PageOutcomeStrategy`, active-audit strategies, and browser-recovery assembly exist. Broader contracts for provenance, no-candidate diagnostics, recovery requests, and audit merge result shapes are still future cleanup. |
+| P1c strategy contract normalization | In progress | `PageOutcomeStrategy`, active-audit strategies, browser-recovery assembly, and shared recovery request/result payload contracts exist. Broader contracts for provenance and audit merge result shapes are still future cleanup. |
 | P2 recovery/browser/queue behavior | Mostly future work | HTTP recovery is shared and defaulted where already proven. Browser eligibility expansion and queue override adoption remain behavior-changing and need explicit before/after coverage. |
 | P3 evidence-led tuning and legacy cleanup | Future work | Use audit evidence to tune recovery budgets, skip rules, browser coverage, and old wrapper deletion after shared behavior is proven. |
 
@@ -161,6 +161,7 @@ The discovery adapter reuse effort has moved from "build the shared primitives" 
 - Remaining local audit code should be source-specific scan setup, signatures, runtime metadata values, and rollback seams.
 - Completed cache/config backfill slice: Gameprog, GameDevMap legacy discovery, and Gamesmap cache wrappers now share directory cache path, TTL, explicit-cache, load, and write helpers while preserving filenames, signatures, and custom-fetcher cache behavior.
 - Completed P1a closure slice: The current behavior-preserving helper sweep is complete; remaining roadmap entries are semantic strategy cleanup, behavior-changing recovery/browser/queue changes, or evidence-led tuning rather than P1a helper debt.
+- Completed recovery-contract shape slice: Gameprog and Gamesmap now share directory recovery request construction, page-outcome scan payloads, and recovery-result strategy assembly while keeping provider/static evidence callbacks local.
 
 ### P1: Sheet-Directory Manual Implementations
 
