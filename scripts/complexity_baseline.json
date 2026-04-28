@@ -129,7 +129,6 @@
     "src/source_audit_sweep.py::_classify_source": 13,
     "src/source_discovery/core_scoring.py::compute_candidate_rank": 12,
     "src/source_discovery/gamedevmap.py::discover_gamedevmap_candidates": 16,
-    "src/source_discovery/gameprog.py::discover_gameprog_candidates": 17,
     "src/source_discovery/gamesmap_candidates.py::discover_gamesmap_candidates": 23,
     "src/source_discovery/gamesmap_candidates.py::gamesmap_matches_category": 14,
     "src/source_discovery/gamesmap_parsing.py::_extract_json_array": 11,

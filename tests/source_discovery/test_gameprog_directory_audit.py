@@ -147,11 +147,14 @@ def test_gameprog_audit_reuses_fresh_completed_artifact_without_network_work() -
 
 def test_gameprog_audit_output_matches_legacy_scan_for_same_inputs() -> None:
     with workspace_tmpdir("gameprog-audit-equivalence") as root:
+        legacy_flag_path = root / "gameprog-disabled-flag-audit.json"
         audit_path = root / "gameprog-audit.json"
         base_config = {
             "gameprog": {
                 "enabled": True,
                 "activeAuditEnabled": False,
+                "activeAuditPath": str(legacy_flag_path),
+                "activeAuditTtlMinutes": 0,
                 "teamsUrl": "https://gameprog.it/teams.json",
                 "websiteOnlyFallback": True,
                 "maxStudios": 2,
@@ -345,7 +348,7 @@ def test_gameprog_audit_signature_rebuilds_when_recovery_toggle_changes() -> Non
         assert second_artifact["summary"]["recoveryFetchAttempts"] == 2
 
 
-def test_gameprog_audit_disabled_preserves_legacy_cache_behavior_and_writes_no_artifact() -> None:
+def test_gameprog_audit_disabled_flag_uses_audit_cache_and_skips_legacy_cache() -> None:
     with workspace_tmpdir("gameprog-audit-disabled") as root:
         audit_path = root / "gameprog-audit.json"
         cache_path = root / "gameprog-cache.json"
@@ -373,11 +376,11 @@ def test_gameprog_audit_disabled_preserves_legacy_cache_behavior_and_writes_no_a
             5,
             config=config,
             fetcher=lambda *_args: (_ for _ in ()).throw(
-                AssertionError("legacy cache should bypass fetches")
+                AssertionError("fresh audit artifact should bypass fetches")
             ),
         )
 
         assert first_rows == second_rows
         assert calls
-        assert cache_path.exists()
-        assert not audit_path.exists()
+        assert audit_path.exists()
+        assert not cache_path.exists()

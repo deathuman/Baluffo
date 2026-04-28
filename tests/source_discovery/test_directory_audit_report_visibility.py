@@ -201,14 +201,16 @@ def test_run_discovery_keeps_gamesmap_adapter_disabled_by_default() -> None:
             assert report["summary"]["directoryAudits"] == {}
 
 
-def test_run_discovery_omits_directory_audit_metadata_when_audits_disabled() -> None:
-    with workspace_tmpdir("directory-audit-report-disabled") as root:
+def test_run_discovery_gameprog_uses_audit_metadata_even_when_legacy_flag_disabled() -> None:
+    with workspace_tmpdir("directory-audit-report-gameprog-legacy-flag") as root:
         with override_discovery_runtime(root, studio_seeds=[], static_candidates=[]):
             config = _stage_config(
                 "gameprog",
                 {
                     "enabled": True,
                     "activeAuditEnabled": False,
+                    "activeAuditPath": str(root / "gameprog-audit.json"),
+                    "activeAuditTtlMinutes": 60,
                     "teamsUrl": "https://gameprog.it/teams.json",
                     "maxStudios": 0,
                 },
@@ -223,8 +225,10 @@ def test_run_discovery_omits_directory_audit_metadata_when_audits_disabled() -> 
                 fetcher=lambda url, _timeout: "[]" if url.endswith("teams.json") else "",
             )
 
-            assert report["directoryAuditSummaries"] == {}
-            assert report["summary"]["directoryAudits"] == {}
+            summary = report["directoryAuditSummaries"]["gameprog"]
+            assert report["summary"]["directoryAudits"]["gameprog"] == summary
+            assert summary["cacheHit"] is False
+            assert summary["complete"] is True
 
 
 def test_run_discovery_default_sheet_directory_reports_audit_summary_and_reuses_cache() -> None:

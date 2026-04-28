@@ -56,6 +56,7 @@ def test_discover_gameprog_candidates_emits_provider_and_static() -> None:
         "gameprog": {
             "enabled": True,
             "activeAuditEnabled": False,
+            "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 10,
@@ -105,6 +106,7 @@ def test_discover_gameprog_candidates_handles_fetch_failure() -> None:
         "gameprog": {
             "enabled": True,
             "activeAuditEnabled": False,
+            "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 10,
@@ -136,6 +138,7 @@ def test_discover_gameprog_candidates_keeps_guessed_careers_fallback() -> None:
     config = {
         "gameprog": {
             "enabled": True,
+            "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 10,
@@ -166,11 +169,14 @@ def test_discover_gameprog_candidates_keeps_guessed_careers_fallback() -> None:
 
 def test_discover_gameprog_candidates_reuses_fresh_cache() -> None:
     with workspace_tmpdir("gameprog-cache") as root:
+        audit_path = root / "gameprog-audit.json"
         cache_path = root / "gameprog-cache.json"
         config = {
             "gameprog": {
                 "enabled": True,
                 "activeAuditEnabled": False,
+                "activeAuditPath": str(audit_path),
+                "activeAuditTtlMinutes": 60,
                 "teamsUrl": "https://gameprog.it/teams.json",
                 "websiteOnlyFallback": True,
                 "maxStudios": 10,

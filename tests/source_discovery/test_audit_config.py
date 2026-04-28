@@ -58,13 +58,6 @@ def test_audit_config_ttl_invalid_value_uses_fallback() -> None:
 
 
 def test_adapter_audit_config_wrappers_preserve_defaults_and_rollbacks() -> None:
-    assert gameprog._gameprog_audit_enabled({"gameprog": {"enabled": True}}) is True
-    assert (
-        gameprog._gameprog_audit_enabled(
-            {"gameprog": {"enabled": True, "activeAuditEnabled": False}}
-        )
-        is False
-    )
     assert gamesmap_candidates._gamesmap_audit_enabled({"enabled": True}) is True
     assert (
         gamesmap_candidates._gamesmap_audit_enabled({"enabled": True, "activeAuditEnabled": False})

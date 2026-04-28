@@ -16,7 +16,7 @@ Source-discovery internals are now considered removable unless they demonstrably
 | Area | Verdict | Readout |
 | --- | --- | --- |
 | Shared logic adoption | Partially achieved | Shared fetch, audit, page outcome, recovery, probe, browser, queue, and reporting primitives exist and are used by multiple adapters. |
-| Thin adapters | Not achieved | Gameprog, Gamesmap, Sheet-directory, Web-derived discovery, and GameDevMap still own substantial orchestration, wrappers, summaries, config glue, and artifact/report behavior. |
+| Thin adapters | In progress | Gameprog's public discovery entrypoint now delegates to the audit path and no longer owns the legacy cache branch. Gamesmap, Sheet-directory, Web-derived discovery, and GameDevMap still own substantial orchestration, wrappers, summaries, config glue, and artifact/report behavior. |
 | Complexity/LOC reduction | Not convincingly achieved | Complexity moved into shared helpers and callback surfaces, while many adapter modules remain large and several source-discovery C901 offenders remain in the baseline. |
 | Next direction | Deletion-first reset | Stop adding helpers as the success metric. Migrate adapters toward specs, delete legacy paths, and require net simplification. |
 
@@ -97,7 +97,6 @@ From `scripts/complexity_baseline.json`, current source-discovery C901 offenders
 | `src/source_discovery/gamesmap_parsing.py::parse_gamesmap_detail_page` | 20 |
 | `src/source_discovery/orchestrator_probe.py::probe_and_recover` | 20 |
 | `src/source_discovery/probe.py::parse_probe_count` | 18 |
-| `src/source_discovery/gameprog.py::discover_gameprog_candidates` | 17 |
 | `src/source_discovery/sheet_directory.py::discover_game_studio_sheet_candidates` | 17 |
 | `src/source_discovery/gamedevmap.py::discover_gamedevmap_candidates` | 16 |
 | `src/source_discovery/provider_patterns.py::build_pattern_candidates` | 16 |
@@ -121,7 +120,20 @@ Replace helper-first roadmap language with this deletion-first charter, protecte
 
 Projected result: future work has a clear simplification standard instead of rewarding abstraction without adapter thinning.
 
-### 2. Create Source-Spec Runner Contract
+### 2. Gameprog Proof Point: Delete Legacy Discovery Branch
+
+**Status:** Completed first code slice.
+
+Gameprog now treats the directory audit path as the public discovery path when the adapter is enabled. The old `activeAuditEnabled=false` legacy cache branch was removed from `discover_gameprog_candidates(...)`; fresh audit artifacts are the cache boundary.
+
+Projected result: the first deletion-first proof point is net LOC-negative, and `src/source_discovery/gameprog.py::discover_gameprog_candidates` no longer appears in the C901 baseline.
+
+Remaining removal criteria:
+
+- Keep `activeAuditEnabled=false` accepted as harmless legacy config input for now, but do not route Gameprog through a separate legacy implementation.
+- Remove or rename the Gameprog `activeAuditEnabled` config field from docs/defaults in a later config cleanup once other adapters no longer use the same rollback convention.
+
+### 3. Create Source-Spec Runner Contract
 
 Define a generic source-spec runner that accepts source metadata, entrypoints, parser callbacks, evidence metadata, and source limits.
 
@@ -134,11 +146,11 @@ Acceptance criteria:
 - No new source-discovery C901 offender is added.
 - Protected UI/runtime and saved/local-user surfaces are untouched.
 
-### 3. Migrate One Low-Risk Adapter Spec-First
+### 4. Migrate One Low-Risk Adapter Spec-First
 
-Recommended first candidate: Gameprog or Sheet-directory.
+Recommended next candidate: Sheet-directory.
 
-Gameprog is attractive because its source-specific core is mostly teams JSON parsing plus evidence. Sheet-directory is attractive because CSV parsing and evidence are clear, but the current sheet path has more candidate/recovery wrinkles.
+Gameprog proved the deletion gate by removing its legacy public discovery branch. Sheet-directory is now attractive because CSV parsing and evidence are clear, but the current sheet path has more candidate/recovery wrinkles.
 
 Projected result: one adapter stops owning fetch/recovery/probe/dedupe/report/audit lifecycle and becomes the proof point for deletion-first migration.
 
@@ -149,7 +161,7 @@ Acceptance criteria:
 - Adapter-specific parser and evidence semantics remain local.
 - Targeted adapter tests and `tests/source_discovery` pass.
 
-### 4. Remove Legacy Fallback Path For Migrated Adapter
+### 5. Remove Legacy Fallback Path For Migrated Adapter
 
 Delete permanent rollback paths after the spec-runner path is validated.
 
@@ -161,7 +173,7 @@ Acceptance criteria:
 - Tests prove current discovery output remains acceptable for active-source behavior.
 - Config docs no longer imply rollback flags are long-term architecture.
 
-### 5. Repeat By Yield Priority
+### 6. Repeat By Yield Priority
 
 Suggested order after the first proof point:
 

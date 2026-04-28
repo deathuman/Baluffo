@@ -16,7 +16,7 @@ from typing import Any
 from src.source_registry import unique_sources
 
 from . import audit_ledger
-from .audit_config import audit_artifact_path, audit_enabled, audit_ttl_minutes, config_section
+from .audit_config import audit_artifact_path, audit_ttl_minutes, config_section
 from .directory_adapter_templates import (
     apply_directory_provenance,
     build_directory_static_candidate,
@@ -25,14 +25,10 @@ from .directory_adapter_templates import (
 )
 from .directory_audit import (
     DirectoryAuditRunSpec,
-    discover_directory_adapter_candidates,
+    directory_audit_rows,
     run_directory_audit_spec,
 )
-from .directory_cache import (
-    directory_cache_ttl_minutes,
-    load_adapter_directory_cache,
-    write_adapter_directory_cache,
-)
+from .directory_cache import directory_cache_ttl_minutes
 from .directory_fetch import fetch_directory_pages, resolve_directory_fetch_limits
 from .directory_page_recovery import (
     DEFAULT_RECOVERY_URL_LIMIT,
@@ -86,10 +82,6 @@ def _gameprog_cache_ttl_minutes(config: dict[str, Any] | None) -> int:
     return directory_cache_ttl_minutes(config, "gameprog")
 
 
-def _gameprog_audit_enabled(config: dict[str, Any] | None) -> bool:
-    return audit_enabled(config, "gameprog")
-
-
 def _gameprog_audit_path(config: dict[str, Any] | None) -> Path:
     return audit_artifact_path(
         config,
@@ -116,38 +108,6 @@ def _gameprog_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
         "activeAuditRecoveryUrlLimit": resolve_recovery_url_limit(cfg),
         "recoveryLogicVersion": RECOVERY_LOGIC_VERSION,
     }
-
-
-def _load_gameprog_cache(
-    config: dict[str, Any] | None, cfg: dict[str, Any], *, fetcher: Any
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]] | None:
-    return load_adapter_directory_cache(
-        config,
-        section_name="gameprog",
-        default_filename="gameprog-discovery-cache.json",
-        expected_signature=_gameprog_cache_signature(cfg),
-        fetcher=fetcher,
-        default_fetcher=fetch_text,
-    )
-
-
-def _write_gameprog_cache(
-    config: dict[str, Any] | None,
-    cfg: dict[str, Any],
-    *,
-    provider_candidates: list[dict[str, Any]],
-    static_candidates: list[dict[str, Any]],
-    failures: list[dict[str, Any]],
-) -> None:
-    write_adapter_directory_cache(
-        config,
-        section_name="gameprog",
-        default_filename="gameprog-discovery-cache.json",
-        signature=_gameprog_cache_signature(cfg),
-        provider_candidates=provider_candidates,
-        static_candidates=static_candidates,
-        failures=failures,
-    )
 
 
 def parse_gameprog_teams_json(json_text: str) -> list[dict[str, Any]]:
@@ -591,38 +551,12 @@ def discover_gameprog_candidates(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     from .reporting import emit_log
 
-    fetcher = fetcher or fetch_text
-    cfg = _gameprog_config_section(config)
-    return discover_directory_adapter_candidates(
+    if not _gameprog_enabled(config):
+        emit_log("Gameprog directory disabled, skipping.")
+        return [], [], []
+    artifact, _cache_hit = run_gameprog_directory_audit(
         timeout_s,
-        enabled=_gameprog_enabled(config),
-        disabled_log="Gameprog directory disabled, skipping.",
-        audit_enabled=_gameprog_audit_enabled(config),
-        run_audit=lambda: run_gameprog_directory_audit(
-            timeout_s,
-            config=config,
-            fetcher=fetcher,
-        ),
-        load_cache=lambda: _load_gameprog_cache(config, cfg, fetcher=fetcher),
-        scan=lambda scan_timeout_s: _gameprog_scan(
-            scan_timeout_s,
-            cfg=cfg,
-            fetcher=fetcher,
-            emit_log=emit_log,
-            enable_recovery=False,
-        ),
-        write_cache=lambda provider_candidates, static_candidates, failures: _write_gameprog_cache(
-            config,
-            cfg,
-            provider_candidates=provider_candidates,
-            static_candidates=static_candidates,
-            failures=failures,
-        ),
-        emit_log=emit_log,
-        scan_summary_log=lambda provider_candidates, static_candidates, failures: (
-            "Gameprog candidates: "
-            f"provider={len(provider_candidates)}, "
-            f"static={len(static_candidates)}, "
-            f"failures={len(failures)}."
-        ),
+        config=config,
+        fetcher=fetcher or fetch_text,
     )
+    return directory_audit_rows(artifact)

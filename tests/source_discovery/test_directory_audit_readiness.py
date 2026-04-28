@@ -8,6 +8,7 @@ def test_gameprog_audit_readiness_caps_entries_before_website_fetch_jobs() -> No
         "gameprog": {
             "enabled": True,
             "activeAuditEnabled": False,
+            "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 1,
@@ -114,6 +115,7 @@ def test_directory_audit_readiness_website_fetch_failures_stay_in_failure_channe
     gameprog_config = {
         "gameprog": {
             "enabled": True,
+            "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": False,
             "maxStudios": 1,
@@ -188,10 +190,13 @@ def test_directory_audit_readiness_website_fetch_failures_stay_in_failure_channe
 
 def test_directory_audit_contract_cache_hit_bypasses_boundary_work() -> None:
     with workspace_tmpdir("directory-audit-cache-contract") as root:
+        gameprog_audit_path = root / "gameprog-audit.json"
         gameprog_cache_path = root / "gameprog-cache.json"
         gameprog_config = {
             "gameprog": {
                 "enabled": True,
+                "activeAuditPath": str(gameprog_audit_path),
+                "activeAuditTtlMinutes": 60,
                 "teamsUrl": "https://gameprog.it/teams.json",
                 "websiteOnlyFallback": True,
                 "maxStudios": 1,
@@ -298,6 +303,7 @@ def test_directory_audit_contract_candidate_outputs_keep_boundary_provenance() -
         "gameprog": {
             "enabled": True,
             "activeAuditEnabled": False,
+            "activeAuditTtlMinutes": 0,
             "teamsUrl": "https://gameprog.it/teams.json",
             "websiteOnlyFallback": True,
             "maxStudios": 1,
