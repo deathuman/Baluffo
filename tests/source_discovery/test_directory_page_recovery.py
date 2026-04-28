@@ -530,6 +530,44 @@ def test_recovery_result_candidates_from_strategy_threads_context_and_payload() 
     assert contexts[0].payload["sourcePageUrl"] == "https://studio.example/"
 
 
+def test_recovery_result_candidates_from_strategy_can_preserve_payload_shape() -> None:
+    contexts: list[FetchedPageContext] = []
+
+    def analyze_page(**_kwargs):
+        return {"provider_candidates": [{"adapter": "greenhouse", "slug": "studio"}]}
+
+    def provider_rows(rows, context):
+        contexts.append(context)
+        return rows
+
+    provider_rows_out, static_rows = recovery_result_candidates_from_strategy(
+        {"url": "https://studio.example/careers", "text": "<html>jobs</html>"},
+        DirectoryRecoveryRequest(
+            key="https://studio.example/",
+            adapter="sheet_directory",
+            discovery_method="sheet_directory",
+            name="Studio",
+            studio="Studio",
+            page_url="https://studio.example/",
+            html="",
+            payload={"nlPriority": True},
+        ),
+        strategy=PageOutcomeStrategy(
+            provider_rows=provider_rows,
+            explicit_static=lambda url, _context: {"listing_url": url},
+            generic_static=lambda candidate, _context: candidate,
+            analyze_page=analyze_page,
+        ),
+        nl_priority=True,
+        include_source_page_url=False,
+    )
+
+    assert provider_rows_out == [{"adapter": "greenhouse", "slug": "studio"}]
+    assert static_rows == []
+    assert contexts[0].nl_priority is True
+    assert contexts[0].payload == {"nlPriority": True}
+
+
 def test_resolve_recovery_url_limit_defaults_and_rejects_invalid_values() -> None:
     assert resolve_recovery_url_limit({}) == 6
     assert resolve_recovery_url_limit({"activeAuditRecoveryUrlLimit": 4}) == 4

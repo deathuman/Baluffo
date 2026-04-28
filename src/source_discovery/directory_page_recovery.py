@@ -207,12 +207,12 @@ def recovery_result_candidates_from_strategy(
     discovery_method: str | None = None,
     nl_priority: bool = False,
     payload_updates: dict[str, Any] | None = None,
+    include_source_page_url: bool = True,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    payload = {
-        **dict(request.payload or {}),
-        "sourcePageUrl": request.page_url,
-        **dict(payload_updates or {}),
-    }
+    payload = dict(request.payload or {})
+    if include_source_page_url:
+        payload["sourcePageUrl"] = request.page_url
+    payload.update(dict(payload_updates or {}))
     recovery_url = str(result.get("url") or request.page_url or "").strip()
     context = FetchedPageContext(
         page_url=recovery_url,

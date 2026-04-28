@@ -37,6 +37,7 @@ from .directory_page_recovery import (
     DirectoryRecoveryRequest,
     apply_recovery_to_scan_result,
     merge_scan_result_payloads,
+    recovery_result_candidates_from_strategy,
     resolve_recovery_url_limit,
     run_recovery_for_requests,
 )
@@ -51,7 +52,6 @@ from .page_outcomes import (
     PageOutcome,
     PageOutcomeStrategy,
     classify_fetched_page_with_strategy,
-    classify_recovery_page_with_strategy,
     static_page_outcome_builders,
 )
 from .prevalidated_queue_policy import apply_prevalidated_queue_overrides
@@ -271,35 +271,6 @@ def _web_recovery_result_candidates(
     result: dict[str, Any],
     request: DirectoryRecoveryRequest,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    outcome = _web_recovery_page_outcome(
-        page_url=str(result.get("url") or request.page_url or "").strip(),
-        page_html=str(result.get("text") or ""),
-        studio=request.studio,
-        nl_priority=bool((request.payload or {}).get("nlPriority")),
-        discovery_method=request.discovery_method,
-        payload=dict(request.payload or {}),
-    )
-    return outcome.provider_candidates, outcome.static_candidates
-
-
-def _web_recovery_page_outcome(
-    *,
-    page_url: str,
-    page_html: str,
-    studio: str,
-    nl_priority: bool,
-    discovery_method: str,
-    payload: dict[str, Any] | None = None,
-):
-    context = FetchedPageContext(
-        page_url=page_url,
-        html=page_html,
-        studio=studio,
-        nl_priority=nl_priority,
-        discovery_method=discovery_method,
-        payload=dict(payload or {}),
-        recovery_key=page_url,
-    )
     provider_rows, explicit_static, generic_static = static_page_outcome_builders(
         name_suffix="Manual Website",
         evidence_source="careers_page",
@@ -307,13 +278,17 @@ def _web_recovery_page_outcome(
         evidence_score=40,
         enabled_by_default=False,
     )
-    return classify_recovery_page_with_strategy(
-        context,
-        PageOutcomeStrategy(
+    return recovery_result_candidates_from_strategy(
+        result,
+        request,
+        strategy=PageOutcomeStrategy(
             provider_rows=provider_rows,
             explicit_static=explicit_static,
             generic_static=generic_static,
         ),
+        discovery_method=request.discovery_method,
+        nl_priority=bool((request.payload or {}).get("nlPriority")),
+        include_source_page_url=False,
     )
 
 

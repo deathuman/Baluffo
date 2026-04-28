@@ -31,6 +31,7 @@ from .directory_page_recovery import (
     RECOVERY_LOGIC_VERSION,
     DirectoryRecoveryRequest,
     apply_recovery_to_scan_result,
+    recovery_result_candidates_from_strategy,
     resolve_recovery_url_limit,
     run_recovery_for_requests,
 )
@@ -39,7 +40,6 @@ from .multi_source_text import fetch_first_nonempty_text
 from .page_outcomes import (
     FetchedPageContext,
     PageOutcomeStrategy,
-    classify_recovery_page_with_strategy,
 )
 from .web_search import infer_web_candidate
 
@@ -428,25 +428,18 @@ def _sheet_recovery_result_candidates(
     result: dict[str, Any],
     request: DirectoryRecoveryRequest,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    recovery_url = str(result.get("url") or request.page_url or "").strip()
-    context = FetchedPageContext(
-        page_url=recovery_url,
-        html=str(result.get("text") or ""),
-        studio=request.studio,
-        nl_priority=bool((request.payload or {}).get("nlPriority")),
-        discovery_method="sheet_directory",
-        payload=dict(request.payload or {}),
-        recovery_key=request.key,
-    )
-    outcome = classify_recovery_page_with_strategy(
-        context,
-        PageOutcomeStrategy(
+    return recovery_result_candidates_from_strategy(
+        result,
+        request,
+        strategy=PageOutcomeStrategy(
             provider_rows=_sheet_recovery_provider_rows,
             explicit_static=_sheet_recovery_explicit_static,
             generic_static=_sheet_recovery_generic_static,
         ),
+        discovery_method="sheet_directory",
+        nl_priority=bool((request.payload or {}).get("nlPriority")),
+        include_source_page_url=False,
     )
-    return outcome.provider_candidates, outcome.static_candidates
 
 
 def _apply_sheet_directory_recovery(
