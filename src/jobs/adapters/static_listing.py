@@ -1026,61 +1026,55 @@ def _run_static_detail_traversal(
     return state.stop_source
 
 
-def process_static_source(ctx: StaticSourceContext) -> None:
-    if _handle_skip_and_revalidation(ctx):
-        return
-    if _run_plugin_fast_path(ctx):
-        return
-
-    cleaned_pages = [clean_text(page) for page in ctx.pages if clean_text(page)]
-    listing_batch_size = max(
-        1,
-        min(
-            ctx.runtime_config.static_detail_concurrency, len(cleaned_pages) if cleaned_pages else 1
-        ),
-    )
-    stage_state = StaticListingStageState()
-    stop_source = False
-
-    def _fetch_listing_html_sync(url: str, *, effective_timeout_s: int) -> str:
-        return fetch_with_retries(
-            url,
-            ctx.run_deps.fetch_text,
-            timeout_s=effective_timeout_s,
-            retries=ctx.run_deps.retries,
-            backoff_s=ctx.run_deps.backoff_s,
+class StaticFetchRunner:
+    def __init__(self, ctx: StaticSourceContext) -> None:
+        self.ctx = ctx
+        self.config = ctx.runtime_config
+        self.deps = ctx.run_deps
+        self.entry_report = ctx.entry_report
+        self.pages = ctx.pages
+        self.progress_state = ctx.progress_state
+        self.source_name = ctx.source_name
+        self.stats = ctx.stats
+        self.cleaned_pages = [clean_text(page) for page in ctx.pages if clean_text(page)]
+        self.listing_batch_size = max(
+            1,
+            min(
+                self.config.static_detail_concurrency,
+                len(self.cleaned_pages) if self.cleaned_pages else 1,
+            ),
         )
+        self.stage_state = StaticListingStageState()
+        self.stop_source = False
+        self.anti_bot_browser_retry = bool(ctx.source.get("antiBotBrowserRetry"))
 
-    for batch_start in range(0, len(cleaned_pages), listing_batch_size):
-        if stop_source:
-            break
-        if static_source_budget_exhausted(
-            deadline_monotonic=float(ctx.source_deadline),
-            reserve_s=1.0,
-        ):
-            ctx.stop_for_budget_exhaustion(
-                target_url=clean_text(cleaned_pages[batch_start]) or ctx.source_name,
-                source_budget_s=ctx.runtime_config.static_source_time_budget_s,
-            )
-            break
-        page_batch = cleaned_pages[batch_start : batch_start + listing_batch_size]
+    def run(self) -> None:
+        for batch_start in range(0, len(self.cleaned_pages), self.listing_batch_size):
+            if self.stop_source:
+                break
+            target_url = clean_text(self.cleaned_pages[batch_start]) or self.source_name
+            if self._page_budget_exhausted(
+                target_url, self.config.static_source_time_budget_s, 1.0
+            ):
+                break
+            listing_batch_jobs = self._build_listing_batch(batch_start)
+            if self.stop_source or not listing_batch_jobs:
+                break
+            self._run_listing_batch(listing_batch_jobs)
+        _finish_generic_source(self.ctx, self.stage_state)
+
+    def _build_listing_batch(self, batch_start: int) -> list[dict[str, Any]]:
         listing_batch_jobs: list[dict[str, Any]] = []
+        page_batch = self.cleaned_pages[batch_start : batch_start + self.listing_batch_size]
         for page_url in page_batch:
             domain_profile = domain_profile_for_url(page_url)
             source_budget_s = int(
                 domain_profile.get("static_source_time_budget_s")
-                or ctx.runtime_config.static_source_time_budget_s
+                or self.config.static_source_time_budget_s
             )
-            ctx.sync_source_deadline(source_budget_s)
-            if static_source_budget_exhausted(
-                deadline_monotonic=float(ctx.source_deadline),
-                reserve_s=1.0,
-            ):
-                ctx.stop_for_budget_exhaustion(
-                    target_url=page_url,
-                    source_budget_s=source_budget_s,
-                )
-                stop_source = True
+            self.ctx.sync_source_deadline(source_budget_s)
+            if self._page_budget_exhausted(page_url, source_budget_s, 1.0):
+                self.stop_source = True
                 break
             listing_batch_jobs.append(
                 {
@@ -1091,187 +1085,201 @@ def process_static_source(ctx: StaticSourceContext) -> None:
                     },
                 }
             )
-        if stop_source or not listing_batch_jobs:
-            break
+        return listing_batch_jobs
 
-        stage_state.clear_batch_meta()
-        anti_bot_browser_retry = bool(ctx.source.get("antiBotBrowserRetry"))
+    def _page_budget_exhausted(self, page_url, source_budget_s, reserve_s) -> bool:
+        if not static_source_budget_exhausted(
+            deadline_monotonic=float(self.ctx.source_deadline),
+            reserve_s=reserve_s,
+        ):
+            return False
+        self.ctx.stop_for_budget_exhaustion(target_url=page_url, source_budget_s=source_budget_s)
+        return True
 
-        def _fetch_listing_job(
-            batch_job: dict[str, Any],
-            url: str,
-            _timeout_s: int,
-            *,
-            anti_bot_browser_retry: bool = anti_bot_browser_retry,
-        ) -> str:
-            del _timeout_s
-            fetch_started = time.perf_counter()
-            payload = _as_dict(batch_job.get("payload") if isinstance(batch_job, dict) else {})
-            source_budget_s = int(
-                payload.get("sourceBudgetS") or ctx.runtime_config.static_source_time_budget_s
+    def _fetch_listing_html_sync(self, url: str, *, effective_timeout_s: int) -> str:
+        return fetch_with_retries(
+            url,
+            self.deps.fetch_text,
+            timeout_s=effective_timeout_s,
+            retries=self.deps.retries,
+            backoff_s=self.deps.backoff_s,
+        )
+
+    def _listing_fetch_timeout(self, batch_job: dict[str, Any]) -> int:
+        payload = _as_dict(batch_job.get("payload") if isinstance(batch_job, dict) else {})
+        source_budget_s = int(
+            payload.get("sourceBudgetS") or self.config.static_source_time_budget_s
+        )
+        self.ctx.sync_source_deadline(source_budget_s)
+        effective_timeout_s = effective_timeout_for_remaining_budget(
+            timeout_s=self.deps.timeout_s,
+            remaining_budget_s=self.ctx.remaining_budget_s(),
+        )
+        if effective_timeout_s <= 0:
+            raise TimeoutError(f"time budget exceeded ({source_budget_s}s)")
+        return effective_timeout_s
+
+    def _record_fetch_meta(self, url, started, timeout_s, fallback_used, fallback_error) -> None:
+        self.stage_state.record_batch_meta(
+            url,
+            durationMs=int((time.perf_counter() - started) * 1000),
+            timeoutS=timeout_s,
+            cacheHit=False,
+            browserFallbackUsed=fallback_used,
+            browserFallbackError=fallback_error,
+        )
+
+    def _note_listing_fetch_failure(self, err_str: str, attempted: bool, reason: str) -> None:
+        if not attempted:
+            if reason != "timeout":
+                return
+            self.stage_state.note_terminal_reason("listing_timeout", self.ctx)
+            return
+        blocked = "403" in err_str or (
+            self.anti_bot_browser_retry
+            and ("429" in err_str or "too many requests" in err_str.lower())
+        )
+        terminal_reason = "blocked_after_browser_fallback" if blocked else "browser_fallback_empty"
+        self.stage_state.note_terminal_reason(terminal_reason, self.ctx)
+
+    def _log_playwright_fallback(self, url: str, reason: str, html: str) -> None:
+        print(
+            f"[static] playwright_fallback_used url={url!r} reason={reason} got_html={bool(html)}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    def _listing_position_label(self) -> str:
+        return f"Listing {self.progress_state['listingPagesVisited']}/{max(1, len(self.pages))}"
+
+    def _fetch_listing_job(self, batch_job: dict[str, Any], url: str, _timeout_s: int) -> str:
+        del _timeout_s
+        fetch_started = time.perf_counter()
+        effective_timeout_s = self._listing_fetch_timeout(batch_job)
+        html = ""
+        browser_fallback_attempted = False
+        browser_fallback_error = ""
+        try:
+            html = self._fetch_listing_html_sync(url, effective_timeout_s=effective_timeout_s)
+        except Exception as exc:  # noqa: BLE001
+            html, browser_fallback_attempted, browser_fallback_error = self._sync_browser_fallback(
+                url, str(exc)
             )
-            ctx.sync_source_deadline(source_budget_s)
-            remaining_budget_s = ctx.remaining_budget_s()
-            effective_timeout_s = effective_timeout_for_remaining_budget(
-                timeout_s=ctx.run_deps.timeout_s,
-                remaining_budget_s=remaining_budget_s,
+        self._record_fetch_meta(
+            url,
+            fetch_started,
+            effective_timeout_s,
+            browser_fallback_attempted,
+            browser_fallback_error,
+        )
+        return html
+
+    def _sync_browser_fallback(self, url: str, err_str: str) -> tuple[str, bool, str]:
+        html = ""
+        fallback_error = ""
+        should_fallback, reason = _should_try_listing_browser_fallback(
+            url,
+            err_str,
+            anti_bot_browser_retry=self.anti_bot_browser_retry,
+        )
+        attempted = bool(self.deps.try_playwright and should_fallback)
+        if attempted:
+            browser_budget_s = effective_timeout_for_remaining_budget(
+                timeout_s=self.deps.timeout_s,
+                remaining_budget_s=self.ctx.remaining_budget_s(),
             )
-            if effective_timeout_s <= 0:
-                raise TimeoutError(f"time budget exceeded ({source_budget_s}s)")
-            html = ""
-            browser_fallback_attempted = False
-            browser_fallback_error = ""
-            try:
-                html = _fetch_listing_html_sync(url, effective_timeout_s=effective_timeout_s)
-            except Exception as exc:  # noqa: BLE001
-                err_str = str(exc)
-                should_fallback, reason = _should_try_listing_browser_fallback(
+            if browser_budget_s > 0:
+                self.stage_state.increment_browser_fallbacks()
+                html, fallback_error = self.deps.try_playwright(url, browser_budget_s)
+            self._log_playwright_fallback(url, reason, html)
+        if not html:
+            self._note_listing_fetch_failure(err_str, attempted, reason)
+            raise RuntimeError(err_str)
+        return html, attempted, fallback_error
+
+    async def _fetch_listing_job_async(self, client, batch_job, url, _timeout_s):
+        del _timeout_s
+        fetch_started = time.perf_counter()
+        effective_timeout_s = self._listing_fetch_timeout(batch_job)
+        html = ""
+        browser_fallback_attempted = False
+        browser_fallback_error = ""
+        try:
+            if self.deps.listing_async_fetch is None:
+                html = await asyncio.to_thread(
+                    self._fetch_listing_html_sync,
                     url,
-                    err_str,
-                    anti_bot_browser_retry=anti_bot_browser_retry,
+                    effective_timeout_s=effective_timeout_s,
                 )
-                if ctx.run_deps.try_playwright and should_fallback:
-                    browser_budget_s = effective_timeout_for_remaining_budget(
-                        timeout_s=ctx.run_deps.timeout_s,
-                        remaining_budget_s=ctx.remaining_budget_s(),
-                    )
-                    if browser_budget_s > 0:
-                        browser_fallback_attempted = True
-                        stage_state.increment_browser_fallbacks()
-                        html, browser_fallback_error = ctx.run_deps.try_playwright(
-                            url, browser_budget_s
-                        )
-                    print(
-                        f"[static] playwright_fallback_used url={url!r} reason={reason} got_html={bool(html)}",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                if not html:
-                    if browser_fallback_attempted:
-                        if "403" in err_str or (
-                            anti_bot_browser_retry
-                            and ("429" in err_str or "too many requests" in err_str.lower())
-                        ):
-                            stage_state.note_terminal_reason("blocked_after_browser_fallback", ctx)
-                        else:
-                            stage_state.note_terminal_reason("browser_fallback_empty", ctx)
-                    elif reason == "timeout":
-                        stage_state.note_terminal_reason("listing_timeout", ctx)
-                    raise
-            stage_state.record_batch_meta(
-                url,
-                durationMs=int((time.perf_counter() - fetch_started) * 1000),
-                timeoutS=effective_timeout_s,
-                cacheHit=False,
-                browserFallbackUsed=browser_fallback_attempted,
-                browserFallbackError=browser_fallback_error,
-            )
-            return html
-
-        async def _fetch_listing_job_async(
-            client: Any,
-            batch_job: dict[str, Any],
-            url: str,
-            _timeout_s: int,
-            *,
-            anti_bot_browser_retry: bool = anti_bot_browser_retry,
-        ) -> str:
-            del _timeout_s
-            fetch_started = time.perf_counter()
-            payload = _as_dict(batch_job.get("payload") if isinstance(batch_job, dict) else {})
-            source_budget_s = int(
-                payload.get("sourceBudgetS") or ctx.runtime_config.static_source_time_budget_s
-            )
-            ctx.sync_source_deadline(source_budget_s)
-            remaining_budget_s = ctx.remaining_budget_s()
-            effective_timeout_s = effective_timeout_for_remaining_budget(
-                timeout_s=ctx.run_deps.timeout_s,
-                remaining_budget_s=remaining_budget_s,
-            )
-            if effective_timeout_s <= 0:
-                raise TimeoutError(f"time budget exceeded ({source_budget_s}s)")
-            html = ""
-            browser_fallback_attempted = False
-            browser_fallback_error = ""
-            try:
-                if ctx.run_deps.listing_async_fetch is None:
-                    html = await asyncio.to_thread(
-                        _fetch_listing_html_sync,
-                        url,
-                        effective_timeout_s=effective_timeout_s,
-                    )
-                else:
-                    html = await ctx.run_deps.listing_async_fetch(
-                        client,
-                        batch_job,
-                        url,
-                        effective_timeout_s,
-                    )
-            except Exception as exc:  # noqa: BLE001
-                err_str = str(exc)
-                should_fallback, reason = _should_try_listing_browser_fallback(
+            else:
+                html = await self.deps.listing_async_fetch(
+                    client,
+                    batch_job,
                     url,
-                    err_str,
-                    anti_bot_browser_retry=anti_bot_browser_retry,
+                    effective_timeout_s,
                 )
-                if ctx.run_deps.try_playwright and should_fallback:
-                    browser_budget_s = effective_timeout_for_remaining_budget(
-                        timeout_s=ctx.run_deps.timeout_s,
-                        remaining_budget_s=ctx.remaining_budget_s(),
-                    )
-                    if browser_budget_s > 0:
-                        browser_fallback_attempted = True
-                        stage_state.increment_browser_fallbacks()
-                        html, browser_fallback_error = await asyncio.to_thread(
-                            ctx.run_deps.try_playwright,
-                            url,
-                            browser_budget_s,
-                        )
-                        print(
-                            f"[static] playwright_fallback_used url={url!r} reason={reason} got_html={bool(html)}",
-                            file=sys.stderr,
-                            flush=True,
-                        )
-                if not html:
-                    if browser_fallback_attempted:
-                        if "403" in err_str or (
-                            anti_bot_browser_retry
-                            and ("429" in err_str or "too many requests" in err_str.lower())
-                        ):
-                            stage_state.note_terminal_reason("blocked_after_browser_fallback", ctx)
-                        else:
-                            stage_state.note_terminal_reason("browser_fallback_empty", ctx)
-                    elif reason == "timeout":
-                        stage_state.note_terminal_reason("listing_timeout", ctx)
-                    raise
-            stage_state.record_batch_meta(
-                url,
-                durationMs=int((time.perf_counter() - fetch_started) * 1000),
-                timeoutS=effective_timeout_s,
-                cacheHit=False,
-                browserFallbackUsed=browser_fallback_attempted,
-                browserFallbackError=browser_fallback_error,
-            )
-            return html
+        except Exception as exc:  # noqa: BLE001
+            (
+                html,
+                browser_fallback_attempted,
+                browser_fallback_error,
+            ) = await self._async_browser_fallback(url, str(exc))
+        self._record_fetch_meta(
+            url,
+            fetch_started,
+            effective_timeout_s,
+            browser_fallback_attempted,
+            browser_fallback_error,
+        )
+        return html
 
-        def _on_listing_batch_progress(completed: int, total: int) -> None:
-            completed_count = max(0, int(completed or 0))
-            total_count = max(1, int(total or 0))
-            ctx.emit_heartbeat()
-            ctx.emit_source_progress(
-                phase_key="static_listing_fetch",
-                phase_label="Fetching listing pages",
-                counts={"listingPagesFetched": completed_count},
-                target_label=f"Listing fetch {completed_count}/{total_count}",
-                wait_reason="listing_batch",
-                event_level="muted",
-                message=(
-                    f"Fetched {completed_count}/{total_count} listing page"
-                    f"{'' if total_count == 1 else 's'} for {ctx.source_name}."
-                ),
+    async def _async_browser_fallback(self, url: str, err_str: str) -> tuple[str, bool, str]:
+        html = ""
+        fallback_error = ""
+        should_fallback, reason = _should_try_listing_browser_fallback(
+            url,
+            err_str,
+            anti_bot_browser_retry=self.anti_bot_browser_retry,
+        )
+        attempted = bool(self.deps.try_playwright and should_fallback)
+        if attempted:
+            browser_budget_s = effective_timeout_for_remaining_budget(
+                timeout_s=self.deps.timeout_s,
+                remaining_budget_s=self.ctx.remaining_budget_s(),
             )
+            if browser_budget_s > 0:
+                self.stage_state.increment_browser_fallbacks()
+                html, fallback_error = await asyncio.to_thread(
+                    self.deps.try_playwright,
+                    url,
+                    browser_budget_s,
+                )
+                self._log_playwright_fallback(url, reason, html)
+        if not html:
+            self._note_listing_fetch_failure(err_str, attempted, reason)
+            raise RuntimeError(err_str)
+        return html, attempted, fallback_error
 
-        ctx.emit_source_progress(
+    def _on_listing_batch_progress(self, completed: int, total: int) -> None:
+        completed_count = max(0, int(completed or 0))
+        total_count = max(1, int(total or 0))
+        self.ctx.emit_heartbeat()
+        self.ctx.emit_source_progress(
+            phase_key="static_listing_fetch",
+            phase_label="Fetching listing pages",
+            counts={"listingPagesFetched": completed_count},
+            target_label=f"Listing fetch {completed_count}/{total_count}",
+            wait_reason="listing_batch",
+            event_level="muted",
+            message=(
+                f"Fetched {completed_count}/{total_count} listing page"
+                f"{'' if total_count == 1 else 's'} for {self.source_name}."
+            ),
+        )
+
+    def _run_listing_batch(self, listing_batch_jobs: list[dict[str, Any]]) -> None:
+        self.stage_state.clear_batch_meta()
+        self.ctx.emit_source_progress(
             phase_key="static_listing_fetch",
             phase_label="Fetching listing pages",
             counts={"listingPagesFetched": 0},
@@ -1281,307 +1289,306 @@ def process_static_source(ctx: StaticSourceContext) -> None:
             event_level="muted",
             message=(
                 f"Fetching {max(1, len(listing_batch_jobs))} listing page"
-                f"{'' if len(listing_batch_jobs) == 1 else 's'} for {ctx.source_name}."
+                f"{'' if len(listing_batch_jobs) == 1 else 's'} for {self.source_name}."
             ),
         )
         listing_results = fetch_pages_batched(
-            ctx.run_deps.timeout_s,
+            self.deps.timeout_s,
             listing_batch_jobs,
-            sync_fetch=_fetch_listing_job,
-            async_fetch=_fetch_listing_job_async
-            if ctx.run_deps.listing_async_fetch is not None
+            sync_fetch=self._fetch_listing_job,
+            async_fetch=self._fetch_listing_job_async
+            if self.deps.listing_async_fetch is not None
             else None,
             total_concurrency=max(1, len(listing_batch_jobs)),
             per_host_concurrency=common_config.DEFAULT_STATIC_FETCH_MAX_PER_DOMAIN,
-            progress_callback=_on_listing_batch_progress,
+            progress_callback=self._on_listing_batch_progress,
         )
-        ctx.stats["listing_batch_count"] = int(ctx.stats.get("listing_batch_count") or 0) + 1
-
+        self.stats["listing_batch_count"] = int(self.stats.get("listing_batch_count") or 0) + 1
         for result in listing_results:
-            ctx.emit_heartbeat()
+            self.ctx.emit_heartbeat()
             if static_source_budget_exhausted(
-                deadline_monotonic=float(ctx.source_deadline),
+                deadline_monotonic=float(self.ctx.source_deadline),
                 reserve_s=0.0,
             ):
-                stop_source = True
+                self.stop_source = True
                 break
-            page_url = clean_text(result.get("url"))
-            if not page_url:
-                continue
-            ctx.progress_state["listingPagesVisited"] += 1
-            ctx.emit_source_progress(
-                phase_key="static_listing_fetch",
-                phase_label="Fetching listing pages",
-                target_label=(
-                    f"Listing {ctx.progress_state['listingPagesVisited']}/{max(1, len(ctx.pages))}"
-                ),
-                target_url=page_url,
-                wait_reason="listing_batch",
-                event_level="muted",
-                message=(
-                    f"Fetching listing page {ctx.progress_state['listingPagesVisited']}/{max(1, len(ctx.pages))} "
-                    f"for {ctx.source_name}."
-                ),
-            )
-            payload = _as_dict(result.get("payload"))
-            payload_domain_profile = _as_dict(payload.get("domainProfile"))
-            domain_profile = payload_domain_profile or domain_profile_for_url(page_url)
-            source_budget_s = int(
-                payload.get("sourceBudgetS") or ctx.runtime_config.static_source_time_budget_s
-            )
-            ctx.sync_source_deadline(source_budget_s)
-            try:
-                if not bool(result.get("ok")):
-                    ctx.record_static_fetch_failure(
-                        target_url=page_url,
-                        exc=str(result.get("error") or ""),
-                    )
-                    ctx.emit_heartbeat()
-                    continue
-                if static_source_budget_exhausted(
-                    deadline_monotonic=float(ctx.source_deadline),
-                    reserve_s=0.0,
-                ):
-                    ctx.stop_for_budget_exhaustion(
-                        target_url=page_url,
-                        source_budget_s=source_budget_s,
-                    )
-                    stop_source = True
-                    continue
+            self._process_listing_result(result)
 
-                listing_meta = stage_state.batch_meta.get(page_url) or {}
-                ctx.stats["listing_fetch_ms"] += int(listing_meta.get("durationMs") or 0)
-                ctx.stats["listing_browser_fallbacks"] = int(
-                    ctx.stats.get("listing_browser_fallbacks") or 0
-                ) + int(bool(listing_meta.get("browserFallbackUsed")))
-                if bool(listing_meta.get("cacheHit")):
-                    ctx.stats["fetch_cache_hits"] += 1
-                effective_timeout_s = int(listing_meta.get("timeoutS") or ctx.run_deps.timeout_s)
-                html = str(result.get("text") or "")
-                if ctx.run_deps.try_playwright and html and detect_js_shell(html):
-                    dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
-                        timeout_s=max(1, effective_timeout_s),
-                        remaining_budget_s=ctx.remaining_budget_s(),
-                    )
-                    parsed_pre = parse_jobpostings_from_html(
-                        html,
-                        base_url=page_url,
-                        fallback_company=ctx.company,
-                        fallback_source_id_prefix=f"static:{ctx.source_name}",
-                    )
-                    link_count = len(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html))
-                    if not parsed_pre and link_count < 3 and dynamic_listing_timeout_s > 0:
-                        html2, _ = ctx.run_deps.try_playwright(page_url, dynamic_listing_timeout_s)
-                        print(
-                            f"[static] playwright_fallback_used url={page_url!r} reason=js_shell got_html={bool(html2)}",
-                            file=sys.stderr,
-                            flush=True,
-                        )
-                        if html2:
-                            stage_state.increment_browser_fallbacks()
-                            html = html2
-                listing_htmls = [html]
-                try:
-                    dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
-                        timeout_s=ctx.run_deps.timeout_s,
-                        remaining_budget_s=ctx.remaining_budget_s(),
-                    )
-                    if dynamic_listing_timeout_s > 0:
-                        dynamic_listing_html = maybe_fetch_kojima_job_listing_html(
-                            page_url=page_url,
-                            page_html=html,
-                            timeout_s=dynamic_listing_timeout_s,
-                            retries=ctx.run_deps.retries,
-                            backoff_s=ctx.run_deps.backoff_s,
-                        )
-                        if dynamic_listing_html and dynamic_listing_html not in listing_htmls:
-                            listing_htmls.append(dynamic_listing_html)
-                except Exception as exc:  # noqa: BLE001
-                    ctx.errors.append(
-                        f"static:{ctx.source_name}:{page_url}: dynamic-listing-fetch failed: {exc}"
-                    )
+    def _listing_result_context(self, result: dict[str, Any]) -> tuple[str, dict[str, Any], int]:
+        page_url = clean_text(result.get("url"))
+        payload = _as_dict(result.get("payload"))
+        payload_domain_profile = _as_dict(payload.get("domainProfile"))
+        domain_profile = payload_domain_profile or domain_profile_for_url(page_url)
+        source_budget_s = int(
+            payload.get("sourceBudgetS") or self.config.static_source_time_budget_s
+        )
+        self.ctx.sync_source_deadline(source_budget_s)
+        return page_url, domain_profile, source_budget_s
 
-                extraction_started = time.perf_counter()
-                ctx.emit_source_progress(
-                    phase_key="static_candidate_extraction",
-                    phase_label="Extracting candidates",
-                    target_label=(
-                        f"Listing {ctx.progress_state['listingPagesVisited']}/{max(1, len(ctx.pages))}"
-                    ),
+    def _process_listing_result(self, result: dict[str, Any]) -> None:
+        page_url, domain_profile, source_budget_s = self._listing_result_context(result)
+        if not page_url:
+            return
+        self.progress_state["listingPagesVisited"] += 1
+        self.ctx.emit_source_progress(
+            phase_key="static_listing_fetch",
+            phase_label="Fetching listing pages",
+            target_label=self._listing_position_label(),
+            target_url=page_url,
+            wait_reason="listing_batch",
+            event_level="muted",
+            message=(
+                f"Fetching listing page {self.progress_state['listingPagesVisited']}/"
+                f"{max(1, len(self.pages))} for {self.source_name}."
+            ),
+        )
+        try:
+            if not bool(result.get("ok")):
+                self.ctx.record_static_fetch_failure(
                     target_url=page_url,
-                    wait_reason="parsing",
-                    event_level="muted",
-                    message=f"Extracting listing candidates for {ctx.source_name}.",
+                    exc=str(result.get("error") or ""),
                 )
-                listing_jobs_found, detail_links = _extract_listing_candidates(
-                    ctx,
+                self.ctx.emit_heartbeat()
+                return
+            if self._page_budget_exhausted(page_url, source_budget_s, 0.0):
+                self.stop_source = True
+                return
+            listing_htmls = self._prepare_listing_htmls(page_url, result)
+            detail_links, listing_jobs_found = self._extract_listing_page(
+                page_url, source_budget_s, listing_htmls
+            )
+            detail_links = self._apply_listing_fingerprint(detail_links, listing_htmls)
+            if not detail_links:
+                self.ctx.emit_heartbeat()
+                return
+            if self._page_budget_exhausted(page_url, source_budget_s, 1.0):
+                self.stop_source = True
+                return
+            detail_plan = self._detail_plan(
+                page_url, source_budget_s, domain_profile, detail_links, listing_jobs_found
+            )
+            if detail_plan is None:
+                self.ctx.emit_heartbeat()
+                return
+            self._emit_detail_traversal_start(page_url, detail_plan.detail_links)
+            self.stop_source = _run_static_detail_traversal(self.ctx, detail_plan)
+        except Exception as exc:  # noqa: BLE001
+            self.ctx.record_static_fetch_failure(target_url=page_url, exc=exc)
+            if self.ctx.current_source_kept_count() <= 0 and clean_text(
+                self.stage_state.terminal_reason
+            ) in {
+                "blocked_after_browser_fallback",
+                "browser_fallback_empty",
+                "listing_timeout",
+                "listing_timeout_after_browser_fallback",
+            }:
+                self.stop_source = True
+            self.ctx.emit_heartbeat()
+
+    def _prepare_listing_htmls(self, page_url: str, result: dict[str, Any]) -> list[str]:
+        listing_meta = self.stage_state.batch_meta.get(page_url) or {}
+        self.stats["listing_fetch_ms"] += int(listing_meta.get("durationMs") or 0)
+        self.stats["listing_browser_fallbacks"] = int(
+            self.stats.get("listing_browser_fallbacks") or 0
+        ) + int(bool(listing_meta.get("browserFallbackUsed")))
+        if bool(listing_meta.get("cacheHit")):
+            self.stats["fetch_cache_hits"] += 1
+        effective_timeout_s = int(listing_meta.get("timeoutS") or self.deps.timeout_s)
+        html = str(result.get("text") or "")
+        if self.deps.try_playwright and html and detect_js_shell(html):
+            dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
+                timeout_s=max(1, effective_timeout_s),
+                remaining_budget_s=self.ctx.remaining_budget_s(),
+            )
+            parsed_pre = parse_jobpostings_from_html(
+                html,
+                base_url=page_url,
+                fallback_company=self.ctx.company,
+                fallback_source_id_prefix=f"static:{self.source_name}",
+            )
+            link_count = len(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html))
+            if not parsed_pre and link_count < 3 and dynamic_listing_timeout_s > 0:
+                html2, _ = self.deps.try_playwright(page_url, dynamic_listing_timeout_s)
+                self._log_playwright_fallback(page_url, "js_shell", html2)
+                if html2:
+                    self.stage_state.increment_browser_fallbacks()
+                    html = html2
+        listing_htmls = [html]
+        try:
+            dynamic_listing_timeout_s = effective_timeout_for_remaining_budget(
+                timeout_s=self.deps.timeout_s,
+                remaining_budget_s=self.ctx.remaining_budget_s(),
+            )
+            if dynamic_listing_timeout_s > 0:
+                dynamic_listing_html = maybe_fetch_kojima_job_listing_html(
                     page_url=page_url,
-                    source_budget_s=source_budget_s,
-                    listing_htmls=listing_htmls,
+                    page_html=html,
+                    timeout_s=dynamic_listing_timeout_s,
+                    retries=self.deps.retries,
+                    backoff_s=self.deps.backoff_s,
                 )
-                ctx.stats["candidate_links_found"] += len(detail_links)
-                ctx.stats["candidate_extraction_ms"] += int(
-                    (time.perf_counter() - extraction_started) * 1000
-                )
-                ctx.emit_source_progress(
-                    phase_key="static_candidate_extraction",
-                    phase_label="Candidates extracted",
-                    counts={
-                        "detailCandidates": len(detail_links),
-                        "listingJobsFound": listing_jobs_found,
-                    },
-                    target_label=(
-                        f"Listing {ctx.progress_state['listingPagesVisited']}/{max(1, len(ctx.pages))}"
-                    ),
-                    target_url=page_url,
-                    event_level="muted",
-                    message=(
-                        f"Found {len(detail_links)} detail candidate"
-                        f"{'' if len(detail_links) == 1 else 's'} for {ctx.source_name}."
-                    ),
-                )
-                listing_fingerprint = hashlib.sha1(
-                    "\n".join(listing_htmls).encode("utf-8")
-                ).hexdigest()
-                previous_listing_fingerprint = clean_text(
-                    (ctx.state_entry or {}).get("lastListingFingerprint")
-                )
-                ctx.entry_report["listingFingerprint"] = listing_fingerprint
-                ctx.entry_report["listingCheckedAt"] = now_iso()
-                ctx.entry_report["listingChanged"] = bool(
-                    listing_fingerprint != previous_listing_fingerprint
-                )
-                if (
-                    previous_listing_fingerprint
-                    and listing_fingerprint == previous_listing_fingerprint
-                    and not ctx.run_deps.force_refresh_all
-                ):
-                    ctx.entry_report["cacheDecision"] = "listing_only"
-                    ctx.entry_report["cacheDecisionReason"] = "listing_fingerprint_unchanged"
-                    ctx.entry_report["detailSkippedByListingFingerprint"] = True
-                    ctx.stats["detail_skipped_by_listing_fingerprint"] += 1
-                    detail_links = []
+                if dynamic_listing_html and dynamic_listing_html not in listing_htmls:
+                    listing_htmls.append(dynamic_listing_html)
+        except Exception as exc:  # noqa: BLE001
+            self.ctx.errors.append(
+                f"static:{self.source_name}:{page_url}: dynamic-listing-fetch failed: {exc}"
+            )
+        return listing_htmls
 
-                if not detail_links:
-                    ctx.emit_heartbeat()
-                    continue
-                if static_source_budget_exhausted(
-                    deadline_monotonic=float(ctx.source_deadline),
-                    reserve_s=1.0,
-                ):
-                    ctx.stop_for_budget_exhaustion(
-                        target_url=page_url,
-                        source_budget_s=source_budget_s,
-                    )
-                    stop_source = True
-                    continue
-                source_key = (
-                    ctx.run_deps.diagnostics_name
-                    if ctx.selected_source_count == 1
-                    else ctx.source_name
-                )
-                plugin_meta = (
-                    ctx.source.get("_staticPluginMeta") if isinstance(ctx.source, dict) else None
-                )
-                probable_detail_links = [
-                    (detail, detail_title)
-                    for detail, detail_title in detail_links
-                    if is_probable_job_detail_url(
-                        detail,
-                        ctx.source,
-                        default_path_tokens=ctx.runtime_config.default_path_tokens,
-                        default_query_keys=ctx.runtime_config.default_query_keys,
-                    )
-                ]
-                detail_traversal_mode = choose_detail_traversal_mode(
-                    page_url,
-                    runtime_config=ctx.runtime_config,
-                    profile=domain_profile,
-                    plugin_meta=plugin_meta,
-                    listing_jobs_found=listing_jobs_found,
-                    discovered_links=len(detail_links),
-                    probable_detail_candidates=len(probable_detail_links),
-                    source_key=source_key,
-                    source_state_rows=ctx.run_deps.source_state_rows,
-                )
-                ctx.entry_report["detailTraversalMode"] = detail_traversal_mode
-                if detail_traversal_mode == "listing_only":
-                    ctx.emit_heartbeat()
-                    continue
-                source_has_listing_rows = ctx.current_source_kept_count() > 0
-                if (
-                    detail_links
-                    and probable_detail_links
-                    and (source_has_listing_rows or ctx.runtime_config.uncapped_deep_static)
-                ):
-                    detail_links = probable_detail_links
-                if not detail_links:
-                    ctx.emit_heartbeat()
-                    continue
-                detail_limit = source_detail_limit_for(
-                    source_key,
-                    source_state_rows=ctx.run_deps.source_state_rows,
-                    discovered_links=len(detail_links),
-                    listing_jobs_found=listing_jobs_found,
-                    low_yield_detail_cap=ctx.runtime_config.low_yield_detail_cap,
-                    very_low_yield_detail_cap=ctx.runtime_config.very_low_yield_detail_cap,
-                    uncapped_deep_static=ctx.runtime_config.uncapped_deep_static,
-                )
-                detail_retries = source_detail_retries_for(
-                    source_key,
-                    source_state_rows=ctx.run_deps.source_state_rows,
-                    base_retries=ctx.run_deps.retries,
-                    uncapped_deep_static=ctx.runtime_config.uncapped_deep_static,
-                )
-                profile_max_detail_links = max(0, int(domain_profile.get("max_detail_links") or 0))
-                if profile_max_detail_links > 0:
-                    detail_limit = (
-                        min(detail_limit, profile_max_detail_links)
-                        if detail_limit
-                        else profile_max_detail_links
-                    )
-                if detail_limit and detail_limit < len(detail_links):
-                    detail_links = detail_links[:detail_limit]
-                detail_concurrency = source_detail_concurrency_for(
-                    source_key,
-                    source_state_rows=ctx.run_deps.source_state_rows,
-                    static_detail_concurrency=ctx.run_deps.static_detail_concurrency,
-                )
-                ctx.emit_source_progress(
-                    phase_key="static_detail_traversal",
-                    phase_label="Traversing detail pages",
-                    counts={"detailCandidates": len(detail_links)},
-                    target_label=f"{len(detail_links)} detail page(s)",
-                    target_url=page_url,
-                    wait_reason="detail_batch",
-                    event_level="muted",
-                    message=(
-                        f"Traversing {len(detail_links)} detail page"
-                        f"{'' if len(detail_links) == 1 else 's'} for {ctx.source_name}."
-                    ),
-                )
-                ctx.emit_heartbeat()
-                stop_source = _run_static_detail_traversal(
-                    ctx,
-                    StaticDetailTraversalPlan(
-                        page_url=page_url,
-                        detail_links=detail_links,
-                        detail_concurrency=detail_concurrency,
-                        detail_retries=detail_retries,
-                        source_budget_s=source_budget_s,
-                    ),
-                )
-            except Exception as exc:  # noqa: BLE001
-                ctx.record_static_fetch_failure(target_url=page_url, exc=exc)
-                if ctx.current_source_kept_count() <= 0 and clean_text(
-                    stage_state.terminal_reason
-                ) in {
-                    "blocked_after_browser_fallback",
-                    "browser_fallback_empty",
-                    "listing_timeout",
-                    "listing_timeout_after_browser_fallback",
-                }:
-                    stop_source = True
-                ctx.emit_heartbeat()
+    def _extract_listing_page(self, page_url, source_budget_s, listing_htmls):
+        extraction_started = time.perf_counter()
+        self.ctx.emit_source_progress(
+            phase_key="static_candidate_extraction",
+            phase_label="Extracting candidates",
+            target_label=self._listing_position_label(),
+            target_url=page_url,
+            wait_reason="parsing",
+            event_level="muted",
+            message=f"Extracting listing candidates for {self.source_name}.",
+        )
+        listing_jobs_found, detail_links = _extract_listing_candidates(
+            self.ctx,
+            page_url=page_url,
+            source_budget_s=source_budget_s,
+            listing_htmls=listing_htmls,
+        )
+        self.stats["candidate_links_found"] += len(detail_links)
+        self.stats["candidate_extraction_ms"] += int(
+            (time.perf_counter() - extraction_started) * 1000
+        )
+        self.ctx.emit_source_progress(
+            phase_key="static_candidate_extraction",
+            phase_label="Candidates extracted",
+            counts={"detailCandidates": len(detail_links), "listingJobsFound": listing_jobs_found},
+            target_label=self._listing_position_label(),
+            target_url=page_url,
+            event_level="muted",
+            message=(
+                f"Found {len(detail_links)} detail candidate"
+                f"{'' if len(detail_links) == 1 else 's'} for {self.source_name}."
+            ),
+        )
+        return detail_links, listing_jobs_found
 
-    _finish_generic_source(ctx, stage_state)
+    def _apply_listing_fingerprint(self, detail_links, listing_htmls):
+        listing_fingerprint = hashlib.sha1("\n".join(listing_htmls).encode("utf-8")).hexdigest()
+        previous_listing_fingerprint = clean_text(
+            (self.ctx.state_entry or {}).get("lastListingFingerprint")
+        )
+        self.entry_report["listingFingerprint"] = listing_fingerprint
+        self.entry_report["listingCheckedAt"] = now_iso()
+        self.entry_report["listingChanged"] = bool(
+            listing_fingerprint != previous_listing_fingerprint
+        )
+        if (
+            previous_listing_fingerprint
+            and listing_fingerprint == previous_listing_fingerprint
+            and not self.deps.force_refresh_all
+        ):
+            self.entry_report["cacheDecision"] = "listing_only"
+            self.entry_report["cacheDecisionReason"] = "listing_fingerprint_unchanged"
+            self.entry_report["detailSkippedByListingFingerprint"] = True
+            self.stats["detail_skipped_by_listing_fingerprint"] += 1
+            return []
+        return detail_links
+
+    def _detail_plan(
+        self, page_url, source_budget_s, domain_profile, detail_links, listing_jobs_found
+    ):
+        source_key = (
+            self.deps.diagnostics_name if self.ctx.selected_source_count == 1 else self.source_name
+        )
+        probable_detail_links = [
+            (detail, detail_title)
+            for detail, detail_title in detail_links
+            if is_probable_job_detail_url(
+                detail,
+                self.ctx.source,
+                default_path_tokens=self.config.default_path_tokens,
+                default_query_keys=self.config.default_query_keys,
+            )
+        ]
+        plugin_meta = (
+            self.ctx.source.get("_staticPluginMeta") if isinstance(self.ctx.source, dict) else None
+        )
+        mode = choose_detail_traversal_mode(
+            page_url,
+            runtime_config=self.config,
+            profile=domain_profile,
+            plugin_meta=plugin_meta,
+            listing_jobs_found=listing_jobs_found,
+            discovered_links=len(detail_links),
+            probable_detail_candidates=len(probable_detail_links),
+            source_key=source_key,
+            source_state_rows=self.deps.source_state_rows,
+        )
+        self.entry_report["detailTraversalMode"] = mode
+        if mode == "listing_only":
+            return None
+        source_has_listing_rows = self.ctx.current_source_kept_count() > 0
+        if (
+            detail_links
+            and probable_detail_links
+            and (source_has_listing_rows or self.config.uncapped_deep_static)
+        ):
+            detail_links = probable_detail_links
+        if not detail_links:
+            return None
+        detail_limit = source_detail_limit_for(
+            source_key,
+            source_state_rows=self.deps.source_state_rows,
+            discovered_links=len(detail_links),
+            listing_jobs_found=listing_jobs_found,
+            low_yield_detail_cap=self.config.low_yield_detail_cap,
+            very_low_yield_detail_cap=self.config.very_low_yield_detail_cap,
+            uncapped_deep_static=self.config.uncapped_deep_static,
+        )
+        profile_max_detail_links = max(0, int(domain_profile.get("max_detail_links") or 0))
+        if profile_max_detail_links > 0:
+            detail_limit = (
+                min(detail_limit, profile_max_detail_links)
+                if detail_limit
+                else profile_max_detail_links
+            )
+        if detail_limit and detail_limit < len(detail_links):
+            detail_links = detail_links[:detail_limit]
+        return StaticDetailTraversalPlan(
+            page_url=page_url,
+            detail_links=detail_links,
+            detail_concurrency=source_detail_concurrency_for(
+                source_key,
+                source_state_rows=self.deps.source_state_rows,
+                static_detail_concurrency=self.deps.static_detail_concurrency,
+            ),
+            detail_retries=source_detail_retries_for(
+                source_key,
+                source_state_rows=self.deps.source_state_rows,
+                base_retries=self.deps.retries,
+                uncapped_deep_static=self.config.uncapped_deep_static,
+            ),
+            source_budget_s=source_budget_s,
+        )
+
+    def _emit_detail_traversal_start(self, page_url, detail_links) -> None:
+        self.ctx.emit_source_progress(
+            phase_key="static_detail_traversal",
+            phase_label="Traversing detail pages",
+            counts={"detailCandidates": len(detail_links)},
+            target_label=f"{len(detail_links)} detail page(s)",
+            target_url=page_url,
+            wait_reason="detail_batch",
+            event_level="muted",
+            message=(
+                f"Traversing {len(detail_links)} detail page"
+                f"{'' if len(detail_links) == 1 else 's'} for {self.source_name}."
+            ),
+        )
+        self.ctx.emit_heartbeat()
+
+
+def process_static_source(ctx: StaticSourceContext) -> None:
+    if _handle_skip_and_revalidation(ctx):
+        return
+    if _run_plugin_fast_path(ctx):
+        return
+    StaticFetchRunner(ctx).run()
