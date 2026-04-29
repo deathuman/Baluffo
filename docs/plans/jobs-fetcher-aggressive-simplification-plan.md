@@ -287,7 +287,9 @@ Each implementation slice should record:
 
 Do not accept a large helper-creation slice unless it immediately deletes repeated lifecycle code or unlocks a named deletion in the next commit.
 
-For the deletion-first round, prefer static plugin lifecycle collapse, static rendered/list extraction sharing, social subsource lifecycle sharing, and community fetch lifecycle cleanup over more standalone helper extraction.
+For the deletion-first round, prefer static plugin lifecycle collapse, static rendered/list extraction sharing, and social subsource lifecycle sharing over more standalone helper extraction.
+
+Community Google Sheets fetch was inspected during this round and should not be forced into the same lifecycle shape yet. The current path is a single source-specific fetch/parse/diagnostic attempt loop; extracting it now would add helper surface without deleting repeated branches. Revisit only if another community source path grows the same fetch/parse/diagnostic lifecycle or if Google Sheets moves into a broader source execution engine slice.
 
 ## Validation Rules
 
