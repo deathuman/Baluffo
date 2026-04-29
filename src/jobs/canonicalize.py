@@ -144,23 +144,13 @@ def _record_sector_quality_issue(
             )
 
 
-def canonicalize_job_with_reason(
-    raw: Any,
+def _resolve_job_link(
     *,
+    raw: dict[str, Any],
     source: str,
-    fetched_at: str,
-    resolve_redirect_url: Callable[[str], str] | None = None,
-    resolved_job_link: Any = None,
-) -> tuple[CanonicalJob | None, str]:
-    if not isinstance(raw, dict):
-        return None, "invalid_payload"
-    title = sanitize_public_text(raw.get("title"))
-    company = sanitize_public_text(raw.get("company"))
-    if not title:
-        return None, "missing_title"
-    company = normalize_company_value(company)
-    if not company:
-        return None, "missing_company"
+    resolve_redirect_url: Callable[[str], str] | None,
+    resolved_job_link: Any,
+) -> tuple[str, str]:
     normalized_link_source = raw.get("jobLink") if resolved_job_link is None else resolved_job_link
     normalized_link = normalize_url(normalized_link_source)
     skip_redirect_resolution = norm_text(source) in REDIRECT_RESOLUTION_SKIP_SOURCES
@@ -176,172 +166,198 @@ def canonicalize_job_with_reason(
             resolved_link = normalized_link
         if resolved_link:
             normalized_link = resolved_link
-    raw_link = clean_text(raw.get("jobLink"))
-    if not normalized_link:
-        return None, "missing_job_link"
-    adapter = clean_text(raw.get("adapter"))
-    studio = sanitize_public_text(raw.get("studio"))
+    return normalized_link, clean_text(raw.get("jobLink"))
 
-    def normalize_source_bundle(value: Any) -> list[dict[str, Any]]:
-        entries = value
-        if isinstance(entries, str):
-            try:
-                entries = json.loads(entries)
-            except json.JSONDecodeError:
-                entries = []
-        if not isinstance(entries, list):
+
+def _normalize_source_bundle(value: Any) -> list[dict[str, Any]]:
+    entries = value
+    if isinstance(entries, str):
+        try:
+            entries = json.loads(entries)
+        except json.JSONDecodeError:
             entries = []
-        normalized_entries: list[dict[str, Any]] = []
-        seen = set()
-        for item in entries:
-            if not isinstance(item, dict):
-                continue
-            normalized_item = {
-                "source": clean_text(item.get("source")),
-                "sourceJobId": clean_text(item.get("sourceJobId")),
-                "jobLink": normalize_url(item.get("jobLink")),
-                "postedAt": to_iso(item.get("postedAt")),
-                "adapter": clean_text(item.get("adapter")),
-                "studio": sanitize_public_text(item.get("studio")),
-            }
-            token = "|".join(
-                [
-                    norm_text(normalized_item.get("source")),
-                    norm_text(normalized_item.get("sourceJobId")),
-                    norm_text(normalized_item.get("jobLink")),
-                ]
-            )
-            if token in seen:
-                continue
-            seen.add(token)
-            normalized_entries.append(normalized_item)
-        return normalized_entries
-
-    def normalize_locations(
-        value: Any, *, raw_city: Any = "", raw_country: Any = ""
-    ) -> list[dict[str, str]]:
-        details = normalize_location_details(value)
-        detail_locations = details.get("locations") or []
-        has_structured_location = (
-            any(
-                clean_text(item.get("city")) or clean_text(item.get("country"))
-                for item in detail_locations
-                if isinstance(item, dict)
-            )
-            or clean_text(details.get("city"))
-            or clean_text(details.get("country"))
-            not in {
-                "",
-                "Unknown",
-            }
+    if not isinstance(entries, list):
+        entries = []
+    normalized_entries: list[dict[str, Any]] = []
+    seen = set()
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        normalized_item = {
+            "source": clean_text(item.get("source")),
+            "sourceJobId": clean_text(item.get("sourceJobId")),
+            "jobLink": normalize_url(item.get("jobLink")),
+            "postedAt": to_iso(item.get("postedAt")),
+            "adapter": clean_text(item.get("adapter")),
+            "studio": sanitize_public_text(item.get("studio")),
+        }
+        token = "|".join(
+            [
+                norm_text(normalized_item.get("source")),
+                norm_text(normalized_item.get("sourceJobId")),
+                norm_text(normalized_item.get("jobLink")),
+            ]
         )
-        if not has_structured_location:
-            city_fragment = sanitize_location_text(raw_city, field_name="city")[0]
-            country_fragment = sanitize_location_text(raw_country, field_name="country")[0]
-            if city_fragment or (
-                country_fragment and norm_text(country_fragment) not in {"", "unknown"}
-            ):
-                raw_fragments = [city_fragment]
-                if country_fragment and norm_text(country_fragment) != "unknown":
-                    raw_fragments.append(country_fragment)
-                details = normalize_location_details(
-                    ", ".join(fragment for fragment in raw_fragments if fragment)
-                )
-        locations = [
-            {
-                "city": sanitize_location_text(item.get("city"), field_name="city")[0],
-                "country": normalize_country(
-                    sanitize_location_text(item.get("country"), field_name="country")[0]
-                )
-                if sanitize_location_text(item.get("country"), field_name="country")[0]
-                else "",
-            }
-            for item in details.get("locations") or []
-            if clean_text(item.get("city")) or clean_text(item.get("country"))
-        ]
-        if not locations:
-            city_value = sanitize_location_text(details.get("city"), field_name="city")[0]
-            country_value = sanitize_location_text(details.get("country"), field_name="country")[0]
-            if city_value or country_value:
-                locations = [
-                    {
-                        "city": city_value,
-                        "country": normalize_country(country_value) if country_value else "",
-                    }
-                ]
-        return locations
+        if token in seen:
+            continue
+        seen.add(token)
+        normalized_entries.append(normalized_item)
+    return normalized_entries
 
-    source_bundle = normalize_source_bundle(raw.get("sourceBundle"))
-    if not source_bundle:
-        source_bundle = [
-            {
-                "source": source,
-                "sourceJobId": clean_text(raw.get("sourceJobId") or raw.get("id")),
-                "jobLink": normalize_url(raw.get("jobLink")),
-                "postedAt": to_iso(raw.get("postedAt")),
-                "adapter": adapter,
-                "studio": studio,
-            }
-        ]
-    raw_sector = sanitize_public_text(raw.get("sector"))
-    normalized_sector = normalize_sector(
-        raw_sector,
-        company,
-        title,
-        source,
-        normalized_link,
-        source_bundle,
+
+def _default_source_bundle(
+    *,
+    raw: dict[str, Any],
+    source: str,
+    adapter: str,
+    studio: str,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "source": source,
+            "sourceJobId": clean_text(raw.get("sourceJobId") or raw.get("id")),
+            "jobLink": normalize_url(raw.get("jobLink")),
+            "postedAt": to_iso(raw.get("postedAt")),
+            "adapter": adapter,
+            "studio": studio,
+        }
+    ]
+
+
+def _has_structured_location(details: dict[str, Any]) -> bool:
+    detail_locations = details.get("locations") or []
+    return (
+        any(
+            clean_text(item.get("city")) or clean_text(item.get("country"))
+            for item in detail_locations
+            if isinstance(item, dict)
+        )
+        or clean_text(details.get("city"))
+        or clean_text(details.get("country"))
+        not in {
+            "",
+            "Unknown",
+        }
     )
-    _record_sector_quality_issue(
-        raw_sector=raw_sector,
-        normalized_sector=normalized_sector,
-        source=source,
-        company=company,
-        title=title,
-        job_link=normalized_link,
+
+
+def _details_with_city_country_fallback(
+    *,
+    value: Any,
+    raw_city: Any,
+    raw_country: Any,
+) -> dict[str, Any]:
+    details = normalize_location_details(value)
+    if _has_structured_location(details):
+        return details
+    city_fragment = sanitize_location_text(raw_city, field_name="city")[0]
+    country_fragment = sanitize_location_text(raw_country, field_name="country")[0]
+    if not city_fragment and (
+        not country_fragment or norm_text(country_fragment) in {"", "unknown"}
+    ):
+        return details
+    raw_fragments = [city_fragment]
+    if country_fragment and norm_text(country_fragment) != "unknown":
+        raw_fragments.append(country_fragment)
+    return normalize_location_details(", ".join(fragment for fragment in raw_fragments if fragment))
+
+
+def _locations_from_details(details: dict[str, Any]) -> list[dict[str, str]]:
+    locations = [
+        {
+            "city": sanitize_location_text(item.get("city"), field_name="city")[0],
+            "country": normalize_country(
+                sanitize_location_text(item.get("country"), field_name="country")[0]
+            )
+            if sanitize_location_text(item.get("country"), field_name="country")[0]
+            else "",
+        }
+        for item in details.get("locations") or []
+        if clean_text(item.get("city")) or clean_text(item.get("country"))
+    ]
+    if locations:
+        return locations
+    city_value = sanitize_location_text(details.get("city"), field_name="city")[0]
+    country_value = sanitize_location_text(details.get("country"), field_name="country")[0]
+    if not city_value and not country_value:
+        return []
+    return [
+        {
+            "city": city_value,
+            "country": normalize_country(country_value) if country_value else "",
+        }
+    ]
+
+
+def _normalize_job_locations(
+    value: Any, *, raw_city: Any = "", raw_country: Any = ""
+) -> list[dict[str, str]]:
+    details = _details_with_city_country_fallback(
+        value=value,
+        raw_city=raw_city,
+        raw_country=raw_country,
     )
-    normalized_locations = normalize_locations(
-        raw.get("locations"),
-        raw_city=raw.get("city"),
-        raw_country=raw.get("country"),
-    )
-    primary_location = next(
+    return _locations_from_details(details)
+
+
+def _primary_location(normalized_locations: list[dict[str, str]]) -> dict[str, str]:
+    return next(
         (item for item in normalized_locations if item.get("city") or item.get("country")),
         {},
     )
-    if (
-        env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL)
-        and raw_link
-        and not normalized_link
-    ):
-        return None, "invalid_url"
 
+
+def _raw_city_primary_location(raw_city: Any) -> dict[str, Any]:
+    raw_city_details = normalize_location_details(raw_city)
+    raw_city_locations = raw_city_details.get("locations") or []
+    return next(
+        (
+            item
+            for item in raw_city_locations
+            if isinstance(item, dict)
+            and (clean_text(item.get("city")) or clean_text(item.get("country")))
+        ),
+        {},
+    )
+
+
+def _should_promote_primary_city(
+    *,
+    raw_city: Any,
+    primary_location: dict[str, str],
+    country_value: str,
+) -> bool:
+    raw_city_primary = _raw_city_primary_location(raw_city)
+    return (
+        clean_text(raw_city_primary.get("city")) == primary_location.get("city")
+        and (
+            not clean_text(raw_city_primary.get("country"))
+            or clean_text(raw_city_primary.get("country"))
+            == clean_text(primary_location.get("country"))
+        )
+        and norm_text(country_value) in {"", "unknown"}
+    )
+
+
+def _resolve_city_country_values(
+    *,
+    raw: dict[str, Any],
+    primary_location: dict[str, str],
+) -> tuple[str, str, str, str]:
     city_value, city_reason = sanitize_location_text(raw.get("city"), field_name="city")
     country_value, country_reason = sanitize_location_text(raw.get("country"), field_name="country")
     if not city_value and primary_location.get("city"):
         city_value = primary_location["city"]
-    elif city_value and primary_location.get("city"):
-        raw_city_details = normalize_location_details(raw.get("city"))
-        raw_city_locations = raw_city_details.get("locations") or []
-        raw_city_primary = next(
-            (
-                item
-                for item in raw_city_locations
-                if isinstance(item, dict)
-                and (clean_text(item.get("city")) or clean_text(item.get("country")))
-            ),
-            {},
+    elif (
+        city_value
+        and primary_location.get("city")
+        and _should_promote_primary_city(
+            raw_city=raw.get("city"),
+            primary_location=primary_location,
+            country_value=country_value,
         )
-        if (
-            clean_text(raw_city_primary.get("city")) == primary_location.get("city")
-            and (
-                not clean_text(raw_city_primary.get("country"))
-                or clean_text(raw_city_primary.get("country"))
-                == clean_text(primary_location.get("country"))
-            )
-            and norm_text(country_value) in {"", "unknown"}
-        ):
-            city_value = primary_location["city"]
+    ):
+        city_value = primary_location["city"]
     if (
         not country_value or country_reason or norm_text(country_value) == "unknown"
     ) and primary_location.get("country"):
@@ -352,13 +368,36 @@ def canonicalize_job_with_reason(
         if promoted_country:
             country_value = promoted_country
             country_reason = ""
-    if not normalized_locations and (city_value or country_value):
-        normalized_locations = [
-            {
-                "city": city_value,
-                "country": "" if country_reason else normalize_country(country_value),
-            }
-        ]
+    return city_value, country_value, city_reason, country_reason
+
+
+def _ensure_normalized_locations(
+    *,
+    normalized_locations: list[dict[str, str]],
+    city_value: str,
+    country_value: str,
+    country_reason: str,
+) -> list[dict[str, str]]:
+    if normalized_locations or not (city_value or country_value):
+        return normalized_locations
+    return [
+        {
+            "city": city_value,
+            "country": "" if country_reason else normalize_country(country_value),
+        }
+    ]
+
+
+def _record_location_quality_issues(
+    *,
+    raw: dict[str, Any],
+    source: str,
+    company: str,
+    title: str,
+    normalized_link: str,
+    city_reason: str,
+    country_reason: str,
+) -> None:
     if city_reason:
         _record_location_quality_issue(
             field_name="city",
@@ -380,14 +419,34 @@ def canonicalize_job_with_reason(
             job_link=normalized_link,
         )
 
-    sanitized_contract_type = sanitize_public_text(raw.get("contractType"))
-    location_summary = " | ".join(
+
+def _location_summary(normalized_locations: list[dict[str, str]]) -> str:
+    return " | ".join(
         ", ".join(part for part in [item.get("city", ""), item.get("country", "")] if part)
         for item in normalized_locations
         if item.get("city", "") or item.get("country", "")
     )
 
-    normalized = CanonicalJob.from_mapping(
+
+def _build_canonical_job(
+    *,
+    raw: dict[str, Any],
+    source: str,
+    fetched_at: str,
+    title: str,
+    company: str,
+    normalized_link: str,
+    normalized_sector: str,
+    source_bundle: list[dict[str, Any]],
+    normalized_locations: list[dict[str, str]],
+    city_value: str,
+    country_value: str,
+    country_reason: str,
+    adapter: str,
+    studio: str,
+) -> CanonicalJob:
+    sanitized_contract_type = sanitize_public_text(raw.get("contractType"))
+    return CanonicalJob.from_mapping(
         {
             "id": "",
             "title": title,
@@ -417,19 +476,120 @@ def canonicalize_job_with_reason(
             "sourceBundleCount": len(source_bundle),
             "sourceBundle": source_bundle,
             "locations": normalized_locations,
-            "locationSummary": location_summary,
+            "locationSummary": _location_summary(normalized_locations),
             "adapter": adapter,
             "studio": studio,
         }
     )
-    normalized = CanonicalJob.from_mapping(
+
+
+def _score_canonical_job(normalized: CanonicalJob) -> CanonicalJob:
+    normalized_dict = normalized.to_dict()
+    return CanonicalJob.from_mapping(
         {
-            **normalized.to_dict(),
-            "qualityScore": compute_quality_score(normalized.to_dict()),
-            "focusScore": compute_focus_score(normalized.to_dict()),
+            **normalized_dict,
+            "qualityScore": compute_quality_score(normalized_dict),
+            "focusScore": compute_focus_score(normalized_dict),
         }
     )
-    return normalized, ""
+
+
+def canonicalize_job_with_reason(
+    raw: Any,
+    *,
+    source: str,
+    fetched_at: str,
+    resolve_redirect_url: Callable[[str], str] | None = None,
+    resolved_job_link: Any = None,
+) -> tuple[CanonicalJob | None, str]:
+    if not isinstance(raw, dict):
+        return None, "invalid_payload"
+    title = sanitize_public_text(raw.get("title"))
+    company = normalize_company_value(sanitize_public_text(raw.get("company")))
+    if not title:
+        return None, "missing_title"
+    if not company:
+        return None, "missing_company"
+
+    normalized_link, raw_link = _resolve_job_link(
+        raw=raw,
+        source=source,
+        resolve_redirect_url=resolve_redirect_url,
+        resolved_job_link=resolved_job_link,
+    )
+    if not normalized_link:
+        return None, "missing_job_link"
+    if env_flag("BALUFFO_CANONICAL_STRICT_URL", DEFAULT_CANONICAL_STRICT_URL) and raw_link:
+        if not normalized_link:
+            return None, "invalid_url"
+
+    adapter = clean_text(raw.get("adapter"))
+    studio = sanitize_public_text(raw.get("studio"))
+    source_bundle = _normalize_source_bundle(raw.get("sourceBundle")) or _default_source_bundle(
+        raw=raw,
+        source=source,
+        adapter=adapter,
+        studio=studio,
+    )
+    raw_sector = sanitize_public_text(raw.get("sector"))
+    normalized_sector = normalize_sector(
+        raw_sector,
+        company,
+        title,
+        source,
+        normalized_link,
+        source_bundle,
+    )
+    _record_sector_quality_issue(
+        raw_sector=raw_sector,
+        normalized_sector=normalized_sector,
+        source=source,
+        company=company,
+        title=title,
+        job_link=normalized_link,
+    )
+
+    normalized_locations = _normalize_job_locations(
+        raw.get("locations"),
+        raw_city=raw.get("city"),
+        raw_country=raw.get("country"),
+    )
+    city_value, country_value, city_reason, country_reason = _resolve_city_country_values(
+        raw=raw,
+        primary_location=_primary_location(normalized_locations),
+    )
+    normalized_locations = _ensure_normalized_locations(
+        normalized_locations=normalized_locations,
+        city_value=city_value,
+        country_value=country_value,
+        country_reason=country_reason,
+    )
+    _record_location_quality_issues(
+        raw=raw,
+        source=source,
+        company=company,
+        title=title,
+        normalized_link=normalized_link,
+        city_reason=city_reason,
+        country_reason=country_reason,
+    )
+    normalized = _build_canonical_job(
+        raw=raw,
+        source=source,
+        fetched_at=fetched_at,
+        title=title,
+        company=company,
+        normalized_link=normalized_link,
+        normalized_sector=normalized_sector,
+        source_bundle=source_bundle,
+        normalized_locations=normalized_locations,
+        city_value=city_value,
+        country_value=country_value,
+        country_reason=country_reason,
+        adapter=adapter,
+        studio=studio,
+    )
+    return _score_canonical_job(normalized), ""
 
 
 def canonicalize_job(
@@ -450,51 +610,76 @@ def canonicalize_job(
     return normalized
 
 
-def canonicalize_google_sheets_rows(
-    raw_rows: Sequence[RawJob],
-    *,
-    source: str,
-    fetched_at: str,
-    redirect_resolver: PooledRedirectResolver | None = None,
-    redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
-) -> tuple[list[CanonicalJob], Counter, dict[str, int]]:
-    redirect_concurrency = max(
-        1, int(redirect_concurrency or DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY)
-    )
+def _google_sheet_redirect_candidates(raw_rows: Sequence[RawJob]) -> list[tuple[int, str]]:
     redirect_candidates: list[tuple[int, str]] = []
-    resolved_links: dict[int, str] = {}
     for idx, raw in enumerate(raw_rows):
         normalized_link = normalize_url((raw or {}).get("jobLink"))
         if normalized_link and is_supported_redirect_url(normalized_link):
             redirect_candidates.append((idx, normalized_link))
+    return redirect_candidates
 
+
+def _resolve_google_sheet_redirects(
+    *,
+    redirect_candidates: list[tuple[int, str]],
+    redirect_resolver: PooledRedirectResolver | None,
+    redirect_concurrency: int,
+) -> tuple[dict[int, str], dict[str, Any], dict[str, Any], int]:
     snapshot_stats = getattr(redirect_resolver, "snapshot_stats", None)
     resolver_stats_before = snapshot_stats() if callable(snapshot_stats) else {}
     redirect_started = time.perf_counter()
     resolve_fn = getattr(redirect_resolver, "resolve", None)
+    resolved_links: dict[int, str] = {}
     if redirect_candidates and callable(resolve_fn):
-
-        def _resolve(item: tuple[int, str]) -> tuple[int, str]:
-            row_idx, url = item
-            return row_idx, resolve_fn(url)
-
         if redirect_concurrency <= 1 or len(redirect_candidates) <= 1:
-            for item in redirect_candidates:
-                row_idx, resolved = _resolve(item)
-                resolved_links[row_idx] = resolved
+            resolved_links = _resolve_redirects_serial(
+                redirect_candidates=redirect_candidates,
+                resolve_fn=resolve_fn,
+            )
         else:
-            with ThreadPoolExecutor(
-                max_workers=min(redirect_concurrency, len(redirect_candidates))
-            ) as executor:
-                future_map = {
-                    executor.submit(_resolve, item): item[0] for item in redirect_candidates
-                }
-                for future in as_completed(future_map):
-                    row_idx, resolved = future.result()
-                    resolved_links[row_idx] = resolved
+            resolved_links = _resolve_redirects_parallel(
+                redirect_candidates=redirect_candidates,
+                resolve_fn=resolve_fn,
+                redirect_concurrency=redirect_concurrency,
+            )
     redirect_resolve_ms = int((time.perf_counter() - redirect_started) * 1000)
     resolver_stats_after = snapshot_stats() if callable(snapshot_stats) else {}
+    return resolved_links, resolver_stats_before, resolver_stats_after, redirect_resolve_ms
 
+
+def _resolve_redirects_serial(
+    *,
+    redirect_candidates: list[tuple[int, str]],
+    resolve_fn: Callable[[str], str],
+) -> dict[int, str]:
+    return {row_idx: resolve_fn(url) for row_idx, url in redirect_candidates}
+
+
+def _resolve_redirects_parallel(
+    *,
+    redirect_candidates: list[tuple[int, str]],
+    resolve_fn: Callable[[str], str],
+    redirect_concurrency: int,
+) -> dict[int, str]:
+    resolved_links: dict[int, str] = {}
+    with ThreadPoolExecutor(
+        max_workers=min(redirect_concurrency, len(redirect_candidates))
+    ) as executor:
+        future_map = {
+            executor.submit(resolve_fn, url): row_idx for row_idx, url in redirect_candidates
+        }
+        for future in as_completed(future_map):
+            resolved_links[future_map[future]] = future.result()
+    return resolved_links
+
+
+def _canonicalize_google_sheet_rows_with_resolved_links(
+    *,
+    raw_rows: Sequence[RawJob],
+    source: str,
+    fetched_at: str,
+    resolved_links: dict[int, str],
+) -> tuple[list[CanonicalJob], Counter[str], int]:
     canonical_started = time.perf_counter()
     canonical_batch: list[CanonicalJob] = []
     drop_reasons: Counter[str] = Counter()
@@ -510,27 +695,78 @@ def canonicalize_google_sheets_rows(
         elif drop_reason:
             drop_reasons[drop_reason] += 1
     canonicalize_ms = int((time.perf_counter() - canonical_started) * 1000)
+    return canonical_batch, drop_reasons, canonicalize_ms
 
+
+def _google_sheet_redirect_stats(
+    *,
+    redirect_candidates: list[tuple[int, str]],
+    resolved_links: dict[int, str],
+    resolver_stats_before: dict[str, Any],
+    resolver_stats_after: dict[str, Any],
+    redirect_resolve_ms: int,
+    canonicalize_ms: int,
+) -> dict[str, int]:
     redirect_resolved = sum(
         1
         for idx, original in redirect_candidates
         if normalize_url(resolved_links.get(idx))
         and normalize_url(resolved_links.get(idx)) != normalize_url(original)
     )
+    return {
+        "redirect_candidates": len(redirect_candidates),
+        "redirect_resolved": int(redirect_resolved),
+        "redirect_cache_hits": max(
+            0,
+            int(resolver_stats_after.get("cacheHits", 0))
+            - int(resolver_stats_before.get("cacheHits", 0)),
+        ),
+        "redirect_resolve_ms": int(redirect_resolve_ms),
+        "canonicalize_ms": int(canonicalize_ms),
+    }
+
+
+def canonicalize_google_sheets_rows(
+    raw_rows: Sequence[RawJob],
+    *,
+    source: str,
+    fetched_at: str,
+    redirect_resolver: PooledRedirectResolver | None = None,
+    redirect_concurrency: int = DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY,
+) -> tuple[list[CanonicalJob], Counter, dict[str, int]]:
+    redirect_concurrency = max(
+        1, int(redirect_concurrency or DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY)
+    )
+    redirect_candidates = _google_sheet_redirect_candidates(raw_rows)
+    (
+        resolved_links,
+        resolver_stats_before,
+        resolver_stats_after,
+        redirect_resolve_ms,
+    ) = _resolve_google_sheet_redirects(
+        redirect_candidates=redirect_candidates,
+        redirect_resolver=redirect_resolver,
+        redirect_concurrency=redirect_concurrency,
+    )
+    canonical_batch, drop_reasons, canonicalize_ms = (
+        _canonicalize_google_sheet_rows_with_resolved_links(
+            raw_rows=raw_rows,
+            source=source,
+            fetched_at=fetched_at,
+            resolved_links=resolved_links,
+        )
+    )
     return (
         canonical_batch,
         drop_reasons,
-        {
-            "redirect_candidates": len(redirect_candidates),
-            "redirect_resolved": int(redirect_resolved),
-            "redirect_cache_hits": max(
-                0,
-                int(resolver_stats_after.get("cacheHits", 0))
-                - int(resolver_stats_before.get("cacheHits", 0)),
-            ),
-            "redirect_resolve_ms": int(redirect_resolve_ms),
-            "canonicalize_ms": int(canonicalize_ms),
-        },
+        _google_sheet_redirect_stats(
+            redirect_candidates=redirect_candidates,
+            resolved_links=resolved_links,
+            resolver_stats_before=resolver_stats_before,
+            resolver_stats_after=resolver_stats_after,
+            redirect_resolve_ms=redirect_resolve_ms,
+            canonicalize_ms=canonicalize_ms,
+        ),
     )
 
 
