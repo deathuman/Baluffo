@@ -115,10 +115,6 @@ def _row_url(row: dict[str, Any]) -> str:
     return str(row.get("url") or "").strip()
 
 
-def _candidate_id(candidate: dict[str, Any]) -> str:
-    return probe_candidate_id(candidate)
-
-
 def _candidate_url_key(candidate: dict[str, Any]) -> str:
     raw = str(
         candidate.get("listing_url")
@@ -185,7 +181,7 @@ def _rejection(
         payload["sourceDirectoryEntryUrl"] = str(row.get("sourceDirectoryEntryUrl") or "")
     if isinstance(candidate, dict):
         payload["candidate"] = dict(candidate)
-        payload["sourceId"] = _candidate_id(candidate)
+        payload["sourceId"] = probe_candidate_id(candidate)
         payload["adapter"] = str(candidate.get("adapter") or "")
         payload["name"] = str(candidate.get("name") or "")
     return payload
@@ -395,7 +391,7 @@ def _recovered_active_by_id(artifact: dict[str, Any]) -> dict[str, dict[str, Any
         artifact,
         active_key="activeCandidates",
         recovered_predicate=lambda row: bool(row.get("gamedevmapRecovery")),
-        identity_fn=_candidate_id,
+        identity_fn=probe_candidate_id,
     )
 
 
@@ -405,7 +401,7 @@ def _index_current_rejections(artifact: dict[str, Any]) -> dict[str, list[dict[s
         rejected_key="rejectedForActivation",
         lookup_keys_fn=lambda rejection: active_audit_runtime.rejection_lookup_keys(
             rejection,
-            candidate_identity_fn=_candidate_id,
+            candidate_identity_fn=probe_candidate_id,
             candidate_url_key_fn=_candidate_url_key,
         ),
     )
@@ -416,7 +412,7 @@ def _classify_lost_recovery(
     current_rejections: dict[str, list[dict[str, Any]]],
 ) -> tuple[str, dict[str, Any]]:
     keys = [
-        _candidate_id(previous_candidate),
+        probe_candidate_id(previous_candidate),
         _candidate_url_key(previous_candidate),
         f"entry:{str(previous_candidate.get('sourceDirectoryEntryUrl') or '').strip()}",
     ]
@@ -543,19 +539,6 @@ def latest_gamedevmap_audit_report_summary() -> dict[str, Any]:
     return dict(LAST_GAMEDEVMAP_AUDIT_REPORT_SUMMARY)
 
 
-def _browser_static_probe_result_from_rendered_html(
-    candidate: dict[str, Any],
-    *,
-    rendered_url: str,
-    rendered_html: str,
-) -> tuple[dict[str, Any], bool, int, str, int] | None:
-    return rendered_static_probe_result(
-        candidate,
-        rendered_url=rendered_url,
-        rendered_html=rendered_html,
-    )
-
-
 def _load_browser_recovery_artifact(
     *,
     output_path: Path,
@@ -667,7 +650,7 @@ def _analyze_browser_recovery_fetches(
         analyze_success=_analyze_success,
         handle_fetch_failure=_handle_failure,
         rendered_static_probe_result=lambda candidate, rendered_url, rendered_html: (
-            _browser_static_probe_result_from_rendered_html(
+            rendered_static_probe_result(
                 candidate,
                 rendered_url=rendered_url,
                 rendered_html=rendered_html,
@@ -743,7 +726,7 @@ def _merge_browser_recovery_artifact_updates(
         active_key="activeCandidates",
         zero_candidates_key="zeroJobCandidates",
         rejected_key="rejectedForActivation",
-        identity_fn=_candidate_id,
+        identity_fn=probe_candidate_id,
     )
 
 
@@ -835,10 +818,6 @@ def _validated_static_audit_candidate(
         adapter_cap=validated_static_queue_cap,
         domain_cap=validated_static_domain_cap,
     )
-
-
-def _html_url_candidates(html: str) -> list[str]:
-    return recovery_url_planner.html_url_candidates(html)
 
 
 def _no_careers_reason_detail(page_url: str, html: str) -> str:
@@ -1029,7 +1008,7 @@ def _queue_no_careers_recovery(
         adapter="gamedevmap",
         failure_stage="gamedevmap_recovery_fetch",
         blocked_hosts=SOCIAL_PROFILE_HOSTS | THIRD_PARTY_PROFILE_HOSTS,
-        html_url_candidate_fn=_html_url_candidates,
+        html_url_candidate_fn=recovery_url_planner.html_url_candidates,
     )
     primary_recovery_jobs.extend(primary_jobs)
     secondary_recovery_jobs.extend(secondary_jobs)
@@ -1620,7 +1599,7 @@ def _build_gamedevmap_active_batch_strategy(
                 active_key="activeCandidates",
                 zero_candidates_key="zeroJobCandidates",
                 rejected_key="rejectedForActivation",
-                identity_fn=_candidate_id,
+                identity_fn=probe_candidate_id,
             )
         ),
         row_identity=_row_url,
@@ -1873,7 +1852,7 @@ def gamedevmap_validated_candidates_from_artifact(
     return active_audit_runtime.validated_active_candidates_from_artifact(
         artifact,
         active_key="activeCandidates",
-        identity_fn=_candidate_id,
+        identity_fn=probe_candidate_id,
         validation_metadata={
             "prevalidatedDiscovery": True,
             "gamedevmapAuditValidated": True,

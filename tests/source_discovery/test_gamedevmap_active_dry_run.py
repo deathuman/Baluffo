@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.source_discovery import active_audit_runtime
+from src.source_discovery import active_audit_runtime, recovery_url_planner
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
 from src.source_discovery.directory_page_recovery import (
     build_recovery_fetch_job,
@@ -173,7 +173,7 @@ def test_gamedevmap_no_careers_recovery_urls_are_bounded() -> None:
         adapter="gamedevmap",
         failure_stage="gamedevmap_recovery_fetch",
         blocked_hosts=dry_run.SOCIAL_PROFILE_HOSTS | dry_run.THIRD_PARTY_PROFILE_HOSTS,
-        html_url_candidate_fn=dry_run._html_url_candidates,
+        html_url_candidate_fn=recovery_url_planner.html_url_candidates,
     )
 
     assert [job["url"] for job in [*primary_jobs, *secondary_jobs]] == [
