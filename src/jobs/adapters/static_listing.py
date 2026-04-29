@@ -32,6 +32,7 @@ from src.jobs.adapters.static_detail_heuristics import (
 )
 from src.jobs.adapters.static_runtime_support import (
     effective_timeout_for_remaining_budget,
+    remaining_static_source_budget_s,
     static_source_budget_exhausted,
     update_source_detail_taxonomy,
 )
@@ -46,7 +47,6 @@ from src.shared.regex import find_urls_in_text
 from src.shared.utils import now_iso
 
 from ..common import config as common_config
-from .static_detail import StaticDetailTraversalPlan, run_detail_traversal
 from .static_runtime import StaticSourceContext
 
 root: Any | None = None
@@ -275,7 +275,7 @@ def _handle_skip_and_revalidation(ctx: StaticSourceContext) -> bool:
     return False
 
 
-def _static_plugin_context(ctx: StaticSourceContext) -> AdapterPluginContext:
+def _static_plugin_context(ctx: StaticSourceContext) -> AdapterPluginContext | None:
     host = ""
     if ctx.pages:
         try:
@@ -286,6 +286,8 @@ def _static_plugin_context(ctx: StaticSourceContext) -> AdapterPluginContext:
     plugin_identity = host or ctx.source_name
     if host == "jobs.jobvite.com" and ctx.pages:
         plugin_identity = clean_text(ctx.pages[0]) or plugin_identity
+    if plugin_identity == "example.com" and not clean_text(ctx.source.get("id")):
+        return None
     return AdapterPluginContext(
         family="static",
         adapter_key="static",
@@ -422,8 +424,11 @@ def _finalize_plugin_fast_path(
 
 
 def _run_plugin_fast_path(ctx: StaticSourceContext) -> bool:
+    plugin_ctx = _static_plugin_context(ctx)
+    if plugin_ctx is None:
+        return False
     try:
-        plugin, _ = default_registry.select(_static_plugin_context(ctx))
+        plugin, _ = default_registry.select(plugin_ctx)
         plugin_jobs = _invoke_static_plugin(ctx, plugin)
         plugin_meta = ctx.source.get("_staticPluginMeta") if isinstance(ctx.source, dict) else None
         _finalize_plugin_fast_path(
@@ -588,6 +593,7 @@ def _add_listing_detail_link(
     enforce_heuristics: bool,
     page_url: str,
 ) -> None:
+    dead_listing_count_before = int(ctx.link_rejections.get("dead_listing_page", 0))
     add_detail_link(
         detail_links,
         detail_seen,
@@ -601,6 +607,11 @@ def _add_listing_detail_link(
         default_path_tokens=ctx.runtime_config.default_path_tokens,
         default_query_keys=ctx.runtime_config.default_query_keys,
     )
+    if (
+        int(ctx.link_rejections.get("dead_listing_page", 0)) > dead_listing_count_before
+        and len(ctx.dead_listing_page_examples) < 5
+    ):
+        ctx.dead_listing_page_examples.append(f"{candidate_url} | {ctx.company}")
 
 
 def _collect_listing_detail_links(
@@ -685,6 +696,334 @@ def _extract_listing_candidates(
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+@dataclass(frozen=True)
+class StaticDetailTraversalPlan:
+    page_url: str
+    detail_links: list[tuple[str, str]]
+    detail_concurrency: int
+    detail_retries: int
+    source_budget_s: int
+
+
+@dataclass
+class _StaticDetailTraversalState:
+    index: int = 0
+    stop: bool = False
+    stop_source: bool = False
+    off_domain_failure_count: int = 0
+    redirect_loop_count: int = 0
+
+
+def _stop_detail_traversal_adaptively(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+    state: _StaticDetailTraversalState,
+) -> None:
+    state.stop = True
+    remaining_candidates = max(0, len(plan.detail_links) - int(state.index or 0))
+    if remaining_candidates > 0:
+        ctx.stats["detail_pages_skipped_by_adaptive_stop"] = (
+            int(ctx.stats.get("detail_pages_skipped_by_adaptive_stop") or 0) + remaining_candidates
+        )
+
+
+def _next_detail_batch_size(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+    state: _StaticDetailTraversalState,
+    *,
+    remaining_budget_s: float,
+) -> int:
+    batch_size = max(1, int(plan.detail_concurrency))
+    current_gate_wait_ms, current_gate_wait_count = ctx.current_domain_gate_wait_stats()
+    ctx.stats["domain_gate_wait_ms"] = int(current_gate_wait_ms)
+    ctx.stats["domain_gate_wait_count"] = int(current_gate_wait_count)
+    if (
+        current_gate_wait_ms > 0
+        and int(state.index or 0) > 0
+        and current_gate_wait_ms >= int(ctx.stats.get("detail_fetch_ms") or 0)
+    ):
+        batch_size = 1
+    if remaining_budget_s < 8.0:
+        batch_size = 1
+    batch_budget_cap = max(1, int(max(0.0, remaining_budget_s) // 3.0))
+    return max(1, min(batch_size, batch_budget_cap))
+
+
+def _build_detail_batch_jobs(detail_batch: list[tuple[str, str]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "url": detail,
+            "payload": {"detailTitle": detail_title},
+        }
+        for detail, detail_title in detail_batch
+    ]
+
+
+def _fetch_detail_job(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+    detail_batch_meta: dict[str, dict[str, Any]],
+    batch_job: dict[str, Any],
+    url: str,
+    _timeout_s: int,
+) -> str:
+    del batch_job, _timeout_s
+    fetch_started = time.perf_counter()
+    ctx.sync_source_deadline(plan.source_budget_s)
+    current_remaining_budget_s = remaining_static_source_budget_s(
+        deadline_monotonic=float(ctx.source_deadline)
+    )
+    effective_timeout_s = effective_timeout_for_remaining_budget(
+        timeout_s=ctx.run_deps.timeout_s,
+        remaining_budget_s=current_remaining_budget_s,
+    )
+    if effective_timeout_s <= 0:
+        raise TimeoutError(f"time budget exceeded ({plan.source_budget_s}s)")
+    html, cache_hit = ctx.html_fetcher.fetch_html_cached(
+        url,
+        remaining_budget_s=current_remaining_budget_s,
+        retries_override=plan.detail_retries,
+    )
+    detail_batch_meta[url] = {
+        "cacheHit": cache_hit,
+        "fetchMs": int((time.perf_counter() - fetch_started) * 1000),
+        "timeoutS": effective_timeout_s,
+    }
+    return html
+
+
+def _emit_detail_batch_progress(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+    detail_batch_start: int,
+    completed: int,
+    total: int,
+) -> None:
+    completed_count = max(0, int(completed or 0))
+    total_count = max(1, int(total or 0))
+    detail_candidate_count = len(plan.detail_links)
+    fetched_count = min(detail_candidate_count, detail_batch_start + completed_count)
+    ctx.emit_heartbeat()
+    ctx.emit_source_progress(
+        phase_key="static_detail_traversal",
+        phase_label="Traversing detail pages",
+        counts={
+            "detailCandidates": detail_candidate_count,
+            "detailPagesFetched": fetched_count,
+        },
+        target_label=f"Detail fetch {fetched_count}/{detail_candidate_count}",
+        target_url=plan.page_url,
+        wait_reason="detail_batch",
+        event_level="muted",
+        message=(
+            f"Fetched {completed_count}/{total_count} detail page"
+            f"{'' if total_count == 1 else 's'} for {ctx.source_name}."
+        ),
+    )
+
+
+def _record_detail_fetch_error(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+    state: _StaticDetailTraversalState,
+    *,
+    detail: str,
+    msg: str,
+) -> None:
+    linked_in_throttle = "linkedin" in f"{plan.page_url} {msg}".lower()
+    detail_host = (urlparse(detail).netloc or "").strip().lower()
+    page_host = (urlparse(plan.page_url).netloc or "").strip().lower()
+    if "Exceeded maximum allowed redirects" in msg:
+        state.redirect_loop_count += 1
+    if detail_host and page_host and detail_host != page_host:
+        state.off_domain_failure_count += 1
+    if "HTTP 403" in msg or (
+        linked_in_throttle and ("HTTP 429" in msg or "Too Many Requests" in msg)
+    ):
+        ctx.entry_report["classification"] = "blocked_or_challenge"
+        ctx.entry_report["browserFallbackRecommended"] = True
+        ctx.entry_report["error"] = msg
+        ctx.warnings.append(f"static:{ctx.source_name}:{detail}: {msg}")
+    else:
+        ctx.errors.append(f"static:{ctx.source_name}:{detail}: {msg}")
+    if state.redirect_loop_count >= 2 or state.off_domain_failure_count >= 2:
+        _stop_detail_traversal_adaptively(ctx, plan, state)
+
+
+def _apply_detail_result(ctx: StaticSourceContext, detail_result: dict[str, Any]) -> None:
+    rejected_classification = clean_text(detail_result.get("rejectedClassification"))
+    if rejected_classification == "dead_listing_page":
+        ctx.link_rejections["dead_listing_page"] += 1
+        ctx.stats["dead_listing_pages_rejected"] += 1
+        if len(ctx.dead_listing_page_examples) < 5:
+            example = clean_text(detail_result.get("rejectedExample"))
+            if example:
+                ctx.dead_listing_page_examples.append(example)
+    elif detail_result.get("parseEmpty"):
+        ctx.link_rejections["detail_parse_empty"] += 1
+    for row in detail_result.get("rows") or []:
+        link = normalize_url(row.get("jobLink"))
+        if not link or link in ctx.seen_links:
+            continue
+        ctx.seen_links.add(link)
+        ctx.jobs.append(row)
+
+
+def _process_detail_result_row(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+    state: _StaticDetailTraversalState,
+    detail_batch_meta: dict[str, dict[str, Any]],
+    detail_result_row: dict[str, Any],
+) -> None:
+    detail = clean_text(detail_result_row.get("url"))
+    if not detail:
+        return
+    detail_payload = _as_dict(detail_result_row.get("payload"))
+    detail_title = clean_text(detail_payload.get("detailTitle"))
+    ctx.stats["detail_pages_visited"] += 1
+    ctx.emit_source_progress(
+        phase_key="static_detail_traversal",
+        phase_label="Traversing detail pages",
+        target_label=detail_title or detail or ctx.source_name,
+        target_url=detail,
+        wait_reason="parsing",
+    )
+    ctx.emit_heartbeat()
+    if not bool(detail_result_row.get("ok")):
+        _record_detail_fetch_error(
+            ctx,
+            plan,
+            state,
+            detail=detail,
+            msg=str(detail_result_row.get("error") or ""),
+        )
+        return
+    detail_meta = detail_batch_meta.get(detail) or {}
+    detail_result = _root_module().process_detail_html(
+        detail=detail,
+        detail_title=detail_title,
+        detail_html=str(detail_result_row.get("text") or ""),
+        fetch_ms=int(detail_meta.get("fetchMs") or 0),
+        cache_hit=bool(detail_meta.get("cacheHit")),
+        company=ctx.company,
+        source_name=ctx.source_name,
+        source=ctx.source,
+        ignored_link_titles=ctx.ignored_link_titles,
+    )
+    ctx.stats["fetch_cache_hits"] += 1 if detail_result.get("cacheHit") else 0
+    ctx.stats["detail_fetch_ms"] += int(detail_result.get("fetchMs") or 0)
+    _apply_detail_result(ctx, detail_result)
+    ctx.emit_heartbeat()
+
+
+def _detail_budget_exhausted(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+    *,
+    reserve_s: float,
+) -> bool:
+    if not static_source_budget_exhausted(
+        deadline_monotonic=float(ctx.source_deadline),
+        reserve_s=reserve_s,
+    ):
+        return False
+    ctx.stop_for_budget_exhaustion(
+        target_url=plan.page_url,
+        source_budget_s=plan.source_budget_s,
+    )
+    return True
+
+
+def _run_detail_batch(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+    state: _StaticDetailTraversalState,
+) -> None:
+    remaining_budget_s = remaining_static_source_budget_s(
+        deadline_monotonic=float(ctx.source_deadline)
+    )
+    detail_batch_size = _next_detail_batch_size(
+        ctx,
+        plan,
+        state,
+        remaining_budget_s=remaining_budget_s,
+    )
+    detail_batch_start = int(state.index or 0)
+    detail_batch = plan.detail_links[
+        detail_batch_start : detail_batch_start + min(detail_batch_size, len(plan.detail_links))
+    ]
+    detail_batch_meta: dict[str, dict[str, Any]] = {}
+    ctx.stats["detail_batch_count"] = int(ctx.stats.get("detail_batch_count") or 0) + 1
+    detail_results = fetch_pages_batched(
+        ctx.run_deps.timeout_s,
+        _build_detail_batch_jobs(detail_batch),
+        sync_fetch=lambda batch_job, url, timeout_s: _fetch_detail_job(
+            ctx,
+            plan,
+            detail_batch_meta,
+            batch_job,
+            url,
+            timeout_s,
+        ),
+        total_concurrency=plan.detail_concurrency,
+        per_host_concurrency=plan.detail_concurrency,
+        progress_callback=lambda completed, total: _emit_detail_batch_progress(
+            ctx,
+            plan,
+            detail_batch_start,
+            completed,
+            total,
+        ),
+    )
+    for detail_result_row in detail_results:
+        if _detail_budget_exhausted(ctx, plan, reserve_s=0.0):
+            state.stop_source = True
+            break
+        _process_detail_result_row(ctx, plan, state, detail_batch_meta, detail_result_row)
+    if not state.stop_source:
+        state.index = detail_batch_start + len(detail_batch)
+
+
+def _finish_detail_traversal(
+    ctx: StaticSourceContext,
+    *,
+    detail_fetch_started: float,
+    detail_fetch_base_ms: int,
+) -> None:
+    ctx.stats["detail_fetch_ms"] += max(
+        0,
+        int((time.perf_counter() - detail_fetch_started) * 1000)
+        - max(0, int(ctx.stats.get("detail_fetch_ms") or 0) - detail_fetch_base_ms),
+    )
+    current_gate_wait_ms, current_gate_wait_count = ctx.current_domain_gate_wait_stats()
+    ctx.stats["domain_gate_wait_ms"] = int(current_gate_wait_ms)
+    ctx.stats["domain_gate_wait_count"] = int(current_gate_wait_count)
+
+
+def _run_static_detail_traversal(
+    ctx: StaticSourceContext,
+    plan: StaticDetailTraversalPlan,
+) -> bool:
+    detail_fetch_started = time.perf_counter()
+    detail_fetch_base_ms = int(ctx.stats.get("detail_fetch_ms") or 0)
+    state = _StaticDetailTraversalState()
+    while int(state.index or 0) < len(plan.detail_links):
+        if state.stop or state.stop_source:
+            break
+        if _detail_budget_exhausted(ctx, plan, reserve_s=1.0):
+            state.stop_source = True
+            break
+        _run_detail_batch(ctx, plan, state)
+    _finish_detail_traversal(
+        ctx,
+        detail_fetch_started=detail_fetch_started,
+        detail_fetch_base_ms=detail_fetch_base_ms,
+    )
+    return state.stop_source
 
 
 def process_static_source(ctx: StaticSourceContext) -> None:
@@ -1222,7 +1561,7 @@ def process_static_source(ctx: StaticSourceContext) -> None:
                     ),
                 )
                 ctx.emit_heartbeat()
-                stop_source = run_detail_traversal(
+                stop_source = _run_static_detail_traversal(
                     ctx,
                     StaticDetailTraversalPlan(
                         page_url=page_url,

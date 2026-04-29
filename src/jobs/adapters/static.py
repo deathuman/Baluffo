@@ -25,13 +25,11 @@ from src.jobs.registry import registry_entries
 from src.jobs.text_utils import clean_text
 
 from ..common import config as common_config
-from . import static_detail as static_detail_mod
 from . import static_listing as static_listing_mod
 from . import static_runtime as static_runtime_mod
 from . import static_sources as static_sources_mod
 
 register_static_plugins()
-static_detail_mod.root = sys.modules[__name__]
 static_listing_mod.root = sys.modules[__name__]
 
 extract_rendered_card_jobs = _extract_rendered_card_jobs

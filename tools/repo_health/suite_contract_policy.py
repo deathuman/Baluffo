@@ -750,7 +750,8 @@ def test_static_adapter_root_stays_thin_orchestration_surface(repo_root: Path) -
     assert "from . import static_listing as static_listing_mod" in text
     assert "from . import static_runtime as static_runtime_mod" in text
     assert "from . import static_sources as static_sources_mod" in text
-    assert "static_detail_mod.root = sys.modules[__name__]" in text
+    assert "from . import static_detail as static_detail_mod" not in text
+    assert "static_detail_mod.root = sys.modules[__name__]" not in text
     assert "static_listing_mod.root = sys.modules[__name__]" in text
     assert "def run_static_studio_pages_source(" in text
     assert "def static_source_shard(" not in text
