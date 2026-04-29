@@ -5,7 +5,7 @@
 > - **Canonical for:** adapter plugin inventory, source-loader family routing, and future extraction guidance
 > - **Not canonical for:** data payload contracts, admin API contracts, or live registry contents
 > - **Then inspect:** [`architecture-ai-map.md`](architecture-ai-map.md), [`scraping-pipeline.md`](scraping-pipeline.md), and the owning adapter source files
-> - **Last updated:** 2026-04-26
+> - **Last updated:** 2026-04-29
 
 This note captures the current inventory for the **adapter plugin framework** and the stable loader surfaces that still wrap it.
 
@@ -129,8 +129,6 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 | cdprojektred | cdprojektred.com, www.cdprojektred.com | CD Projekt RED careers (HTML-first; Playwright fallback when JS shell detected) |
 | climax | www.climaxstudios.com | Climax Studios careers |
 | embark | careers.embark-studios.com | Embark Studios careers |
-| example_com | example.com | Demo / tests |
-| example_org | example.org | Demo / tests |
 | frontier | frontier.co.uk, www.frontier.co.uk | Frontier careers |
 | globalstep | globalstep.com | GlobalStep careers |
 | hrmos | hrmos.co | HRMOS-powered career pages |
@@ -146,7 +144,6 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 | rendered_cards | workwithindies.com, romerogames.com, starbreeze.com, stepico.com, mobge.net, and similar card/list careers pages | Shared rendered-card/list extractor for static pages |
 | riot | www.riotgames.com | Riot Games careers |
 | sheet_studios | coolgames.com, gismart.com, aspyr.com, 10chambers.com, careers.10chambers.com, 24bitgames.com, 4jstudios.com, blacksnow.tv, napsteam.com, area35east.com, chubbypixel.com, bonfirestudios.com, bandainamcostudios.my | Sheet-sourced / indie studio career pages (shared heuristics; empty-confirmed or browser fallback when extract fails) |
-| static_pilot | (none) | Placeholder; fallback used for all hosts |
 | supercell | supercell.com, www.supercell.com | Supercell careers (HTML-first; browser escalation when needed) |
 
 To add a new static plugin: (1) Add a module under `src/jobs/adapters/plugins/static/` with `can_handle(ctx)` (e.g. `ctx.source_identity == "example.org"`) and `run(..., pages, source_row, parse_jobpostings_from_html=..., **kwargs)` returning `Sequence[RawJob]`. (2) Register it in `register.py` with `default_registry.register(SimpleAdapterPlugin(...))`. (3) See `docs/architecture-ai-map.md` § Static adapter and this file § Source loaders map.

@@ -81,12 +81,38 @@ SITE_CHANGED_STATIC_IDS = {
     "static:listing_url:https://34bigthings.com/careers",
 }
 
+EVIDENCE_DELETED_STATIC_IDS = {
+    "static:listing_url:https://34bigthings.com/careers",
+    "static:listing_url:https://airstrafeinteractive.com/careers.html",
+    "static:listing_url:https://blindsquirrelentertainment.com/careers",
+    "static:listing_url:https://fusegames.com/careers",
+    "static:listing_url:https://playground-games.com/careers/",
+    "static:listing_url:https://thirdkindgames.com/careers",
+    "static:listing_url:https://www.jokergame.net/jobs/",
+    "static:listing_url:https://www.series.inc/careers",
+    "static:listing_url:https://www.thecoalitionstudio.com/careers",
+    "static:listing_url:https://www.thefarm51.com/careers/",
+    "static:listing_url:https://www.thefarm51.com/eng/careers/",
+}
+
 KRAFTON_GREENHOUSE_IDS = {
     "greenhouse:slug:krafton",
     "greenhouse:slug:studiokraftonboard",
     "greenhouse:slug:kraftonamericas",
     "greenhouse:slug:kraftonindia",
 }
+
+
+def _assert_evidence_deleted_sources_tombstoned(
+    source_ids: set[str], active_by_id: dict, pending_by_id: dict, tombstones: dict
+) -> None:
+    for source_id in source_ids:
+        assert source_id not in active_by_id
+        assert source_id not in pending_by_id
+        tombstone = tombstones[source_id]
+        assert tombstone["reason"] == "jobs_dead_source_evidence"
+        assert tombstone["deletedBy"] == "jobs_dead_source_evidence_20260429"
+
 
 KRAFTON_STATIC_BROWSER_REQUIRED_ID = "static:listing_url:https://krafton.com/en/careers/jobs/"
 BROWSER_REQUIRED_PROVIDER_MIGRATIONS = {
@@ -212,24 +238,38 @@ def test_static_residual_cleanup_preserves_rows_outside_active_defaults() -> Non
 def test_static_narrow_cleanup_preserves_dead_and_redundant_rows_as_hidden() -> None:
     active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
     pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+    tombstones = json.loads((REPO_ROOT / "data/source-registry-tombstones.json").read_text())
 
     active_by_id = {row["id"]: row for row in active}
     pending_by_id = {row["id"]: row for row in pending}
+    remaining_stale_ids = STALE_OR_DEAD_STATIC_IDS - EVIDENCE_DELETED_STATIC_IDS
+    deleted_stale_ids = STALE_OR_DEAD_STATIC_IDS & EVIDENCE_DELETED_STATIC_IDS
 
-    assert STALE_OR_DEAD_STATIC_IDS.isdisjoint(active_by_id)
-    assert STALE_OR_DEAD_STATIC_IDS <= pending_by_id.keys()
-    for source_id in STALE_OR_DEAD_STATIC_IDS:
+    assert remaining_stale_ids.isdisjoint(active_by_id)
+    assert remaining_stale_ids <= pending_by_id.keys()
+    for source_id in remaining_stale_ids:
         row = pending_by_id[source_id]
         assert row["registryState"] == "pending"
         assert row["candidateState"] == "hidden"
         assert row["hiddenFromDefault"] is True
         assert row["pendingReason"] == "stale_or_dead_static_source"
         assert row["residualFailureClass"] == "stale_or_dead_url"
+    _assert_evidence_deleted_sources_tombstoned(
+        deleted_stale_ids, active_by_id, pending_by_id, tombstones
+    )
 
-    assert set(REDUNDANT_STATIC_COVERAGE).isdisjoint(active_by_id)
-    assert set(REDUNDANT_STATIC_COVERAGE) <= pending_by_id.keys()
-    assert set(REDUNDANT_STATIC_COVERAGE.values()) <= active_by_id.keys()
-    for source_id, winner_id in REDUNDANT_STATIC_COVERAGE.items():
+    remaining_redundant = {
+        source_id: winner_id
+        for source_id, winner_id in REDUNDANT_STATIC_COVERAGE.items()
+        if source_id not in EVIDENCE_DELETED_STATIC_IDS
+    }
+    deleted_redundant_ids = (
+        set(REDUNDANT_STATIC_COVERAGE) | set(REDUNDANT_STATIC_COVERAGE.values())
+    ) & EVIDENCE_DELETED_STATIC_IDS
+    assert set(remaining_redundant).isdisjoint(active_by_id)
+    assert set(remaining_redundant) <= pending_by_id.keys()
+    assert set(remaining_redundant.values()) <= active_by_id.keys()
+    for source_id, winner_id in remaining_redundant.items():
         row = pending_by_id[source_id]
         assert row["registryState"] == "pending"
         assert row["candidateState"] == "hidden"
@@ -237,18 +277,24 @@ def test_static_narrow_cleanup_preserves_dead_and_redundant_rows_as_hidden() -> 
         assert row["pendingReason"] == "redundant_static_stronger_coverage"
         assert row["residualFailureClass"] == "redundant_provider_coverage"
         assert row["duplicateOfSourceId"] == winner_id
+    _assert_evidence_deleted_sources_tombstoned(
+        deleted_redundant_ids, active_by_id, pending_by_id, tombstones
+    )
 
 
 def test_static_site_changed_cleanup_preserves_rows_as_hidden_pending() -> None:
     active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
     pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+    tombstones = json.loads((REPO_ROOT / "data/source-registry-tombstones.json").read_text())
 
     active_by_id = {row["id"]: row for row in active}
     pending_by_id = {row["id"]: row for row in pending}
+    remaining_site_changed_ids = SITE_CHANGED_STATIC_IDS - EVIDENCE_DELETED_STATIC_IDS
+    deleted_site_changed_ids = SITE_CHANGED_STATIC_IDS & EVIDENCE_DELETED_STATIC_IDS
 
-    assert SITE_CHANGED_STATIC_IDS.isdisjoint(active_by_id)
-    assert SITE_CHANGED_STATIC_IDS <= pending_by_id.keys()
-    for source_id in SITE_CHANGED_STATIC_IDS:
+    assert remaining_site_changed_ids.isdisjoint(active_by_id)
+    assert remaining_site_changed_ids <= pending_by_id.keys()
+    for source_id in remaining_site_changed_ids:
         row = pending_by_id[source_id]
         assert row["registryState"] == "pending"
         assert row["candidateState"] == "hidden"
@@ -257,6 +303,9 @@ def test_static_site_changed_cleanup_preserves_rows_as_hidden_pending() -> None:
         assert row["pendingReason"] == "site_changed_static_source"
         assert row["residualFailureClass"] == "site_changed"
         assert row["residualFailureEvidence"]
+    _assert_evidence_deleted_sources_tombstoned(
+        deleted_site_changed_ids, active_by_id, pending_by_id, tombstones
+    )
 
 
 def test_browser_required_static_aliases_migrate_to_provider_sources() -> None:

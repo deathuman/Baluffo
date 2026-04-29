@@ -14,12 +14,8 @@ To add a new static site plugin:
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
-
 from src.jobs.adapters.plugins import default_registry
-from src.jobs.adapters.plugins.types import AdapterPluginContext, SimpleAdapterPlugin
-from src.jobs.models import RawJob
+from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
 
 from . import (
     activision,
@@ -29,8 +25,6 @@ from . import (
     cdprojektred,
     climax,
     embark,
-    example_com,
-    example_org,
     frontier,
     globalstep,
     hrmos,
@@ -51,30 +45,9 @@ from . import (
 )
 
 
-def _pilot_can_handle(ctx: AdapterPluginContext) -> bool:
-    """Pilot: handle no host yet; can_handle returns False so fallback is always used."""
-    return False
-
-
-def _pilot_run(
-    *,
-    fetch_text: Callable[[str, int], str],
-    timeout_s: int,
-    retries: int,
-    backoff_s: float,
-    pages: list[str],
-    source_row: dict[str, Any],
-    **kwargs: Any,
-) -> list[RawJob]:
-    """Pilot: no-op; real site plugins will parse pages and return RawJobs."""
-    return []
-
-
 def register_static_plugins() -> None:
     """Register static adapter plugins. Call once at adapter load."""
     for mod, name, priority in [
-        (example_com, "example_com", 90),
-        (example_org, "example_org", 90),
         (supercell, "supercell", 90),
         (remedy, "remedy", 90),
         (hrmos, "hrmos", 90),
@@ -109,11 +82,3 @@ def register_static_plugins() -> None:
                 run_fn=mod.run,
             )
         )
-    pilot = SimpleAdapterPlugin(
-        name="static_pilot",
-        family="static",
-        priority=100,
-        can_handle_fn=_pilot_can_handle,
-        run_fn=_pilot_run,
-    )
-    default_registry.register(pilot)
