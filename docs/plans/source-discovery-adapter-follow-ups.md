@@ -81,6 +81,8 @@ Use [`source-discovery-zero-job-evidence-2026-04-29.md`](../snapshots/source-dis
 
 Use [`source-discovery-fresh-audit-evidence-2026-04-29.md`](../snapshots/source-discovery-fresh-audit-evidence-2026-04-29.md) for the latest fresh-audit attempt. It records that the uncapped full run timed out in GameDevMap, so the next evidence run should split directory/web zero-job analysis from bounded or uninterrupted GameDevMap audit evidence.
 
+Use [`source-discovery-directory-web-evidence-2026-04-29.md`](../snapshots/source-discovery-directory-web-evidence-2026-04-29.md) for the current clean directory/web evidence. It confirms Sheet-directory/static zero-job pressure, high Sheet HTTP-recovery yield, and small browser-recovery volume; the next behavior slice should target Sheet/static quality before browser-recovery expansion.
+
 ## Validation Standard
 
 Documentation-only reset slices:
