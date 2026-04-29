@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.jobs.adapters.plugins.static import _heuristics
+from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
 from src.jobs.page_gating import classify_job_page, dead_listing_page_meta
 from src.jobs.text_utils import clean_text
@@ -33,6 +34,15 @@ class SimpleStaticContext:
     company: str
     source_id: str
     parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]] | None = None
+
+
+def static_identity_handler(*identities: str) -> Callable[[AdapterPluginContext], bool]:
+    normalized = {clean_text(identity).lower() for identity in identities if clean_text(identity)}
+
+    def can_handle(ctx: AdapterPluginContext) -> bool:
+        return clean_text(ctx.source_identity).lower() in normalized
+
+    return can_handle
 
 
 def static_job_row(
@@ -176,3 +186,32 @@ def run_simple_static_plugin(
             detail_traversal_mode=spec.empty_detail_traversal_mode,
         )
     return []
+
+
+def simple_static_run(
+    spec: SimpleStaticPlugin,
+    parse_html: Callable[[SimpleStaticContext], list[RawJob]],
+) -> Callable[..., list[RawJob]]:
+    def run(
+        *,
+        fetch_text: Callable[[str, int], str],
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+        pages: list[str],
+        source_row: dict[str, Any],
+        **kwargs: Any,
+    ) -> list[RawJob]:
+        return run_simple_static_plugin(
+            fetch_text=fetch_text,
+            timeout_s=timeout_s,
+            retries=retries,
+            backoff_s=backoff_s,
+            pages=pages,
+            source_row=source_row,
+            spec=spec,
+            parse_html=parse_html,
+            **kwargs,
+        )
+
+    return run

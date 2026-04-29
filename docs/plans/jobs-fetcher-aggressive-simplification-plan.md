@@ -35,8 +35,8 @@ The completed jobs adapter mass-refactor made real but narrow progress:
 
 The broader objective is not complete:
 
-- `src/jobs` is still about 134 Python files and 27,887 lines.
-- `src/jobs/adapters` is still about 75 Python files and 16,676 lines.
+- `src/jobs` is still about 134 Python files and 27,753 lines.
+- `src/jobs/adapters` is still about 75 Python files and 16,542 lines.
 - Since the jobs adapter refactor started, production `src/jobs` is roughly net-flat, not meaningfully smaller.
 - `python -m ruff check --select C901 src/jobs` still reports 64 complexity offenders.
 - Several compatibility surfaces are still preserved by docs/tests even though the current product goal allows breaking internal fetcher compatibility.
@@ -231,6 +231,13 @@ cmd /c npm run lint:precommit
 ```
 
 ### Phase 4: Static plugin declarative collapse
+
+Status: active. The first safe slice added shared exact-identity and simple-runner factories, then collapsed boilerplate in parser-local static plugins without deleting source coverage. Current milestone metrics:
+
+- Jobs Python files: 134.
+- Jobs Python lines: 27,753.
+- Broad `src/jobs` C901 offenders: 64.
+- Adapter C901 offenders: 41.
 
 - Audit registered static plugins and classify each as declarative, parser-only, or custom.
 - Convert declarative plugins to data registrations handled by the shared runner/engine.

@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
-from typing import Any
 from urllib.parse import urljoin
 
 from src.jobs.adapters.plugins.static._runner import (
     SimpleStaticContext,
     SimpleStaticPlugin,
-    run_simple_static_plugin,
+    simple_static_run,
+    static_identity_handler,
     static_job_row,
 )
-from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
 
@@ -24,9 +22,7 @@ _SPEC = SimpleStaticPlugin(
 )
 
 
-def can_handle(ctx: AdapterPluginContext) -> bool:
-    identity = (ctx.source_identity or "").strip().lower()
-    return identity in ("www.naconstudiomilan.com", "naconstudiomilan.com")
+can_handle = static_identity_handler("www.naconstudiomilan.com", "naconstudiomilan.com")
 
 
 def _parse_html(ctx: SimpleStaticContext) -> list[RawJob]:
@@ -45,24 +41,4 @@ def _parse_html(ctx: SimpleStaticContext) -> list[RawJob]:
     return jobs
 
 
-def run(
-    *,
-    fetch_text: Callable[[str, int], str],
-    timeout_s: int,
-    retries: int,
-    backoff_s: float,
-    pages: list[str],
-    source_row: dict[str, Any],
-    **kwargs: Any,
-) -> list[RawJob]:
-    return run_simple_static_plugin(
-        fetch_text=fetch_text,
-        timeout_s=timeout_s,
-        retries=retries,
-        backoff_s=backoff_s,
-        pages=pages,
-        source_row=source_row,
-        spec=_SPEC,
-        parse_html=_parse_html,
-        **kwargs,
-    )
+run = simple_static_run(_SPEC, _parse_html)

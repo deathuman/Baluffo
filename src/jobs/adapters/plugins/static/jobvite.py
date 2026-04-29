@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
 from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import html_fragment_lines, iter_anchor_fragments
 from src.jobs.adapters.plugins.static._runner import (
     SimpleStaticContext,
     SimpleStaticPlugin,
-    run_simple_static_plugin,
+    simple_static_run,
     static_job_row,
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
@@ -60,24 +58,4 @@ def _parse_html(ctx: SimpleStaticContext) -> list[RawJob]:
     return jobs
 
 
-def run(
-    *,
-    fetch_text: Callable[[str, int], str],
-    timeout_s: int,
-    retries: int,
-    backoff_s: float,
-    pages: list[str],
-    source_row: dict[str, Any],
-    **kwargs: Any,
-) -> list[RawJob]:
-    return run_simple_static_plugin(
-        fetch_text=fetch_text,
-        timeout_s=timeout_s,
-        retries=retries,
-        backoff_s=backoff_s,
-        pages=pages,
-        source_row=source_row,
-        spec=_SPEC,
-        parse_html=_parse_html,
-        **kwargs,
-    )
+run = simple_static_run(_SPEC, _parse_html)
