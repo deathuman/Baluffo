@@ -77,6 +77,8 @@ No active behavior-preserving deletion-first migration sequence remains. Future 
 
 Use [`source-discovery-yield-evidence-2026-04-29.md`](../snapshots/source-discovery-yield-evidence-2026-04-29.md) as the current handoff for choosing P2 behavior work. The next likely pressure is zero-job/static quality or a representative fresh audit run, not another shared-helper or wrapper cleanup pass.
 
+Use [`source-discovery-zero-job-evidence-2026-04-29.md`](../snapshots/source-discovery-zero-job-evidence-2026-04-29.md) for the current zero-job/static quality ranking. It points first at Sheet-directory static quality and representative fresh audit evidence before browser-recovery expansion or more adapter refactoring.
+
 ## Validation Standard
 
 Documentation-only reset slices:
