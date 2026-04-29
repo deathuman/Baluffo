@@ -78,7 +78,6 @@
     "src/jobs/pipeline_runtime_writers.py::fetch_text_limited": 11,
     "src/jobs/pipeline_runtime_writers.py::make_fetch_text_limited": 14,
     "src/jobs/pipeline_source_loop.py::run_source_execution_stage": 11,
-    "src/jobs/pipeline_source_results.py::execute_loader": 33,
     "src/jobs/pipeline.py::main": 18,
     "src/jobs/state_incremental.py::get_incremental_cache_decision": 17,
     "src/jobs/state_lifecycle.py::apply_job_lifecycle_state": 15,
