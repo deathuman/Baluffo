@@ -102,3 +102,9 @@ This run supports a targeted Sheet-directory/static quality slice before browser
 4. Keep GameDevMap as a separate evidence lane with bounded batches or a longer uninterrupted run.
 
 Do not widen browser recovery from this evidence alone. Browser-recovery candidate volume stayed small in the directory/web lane.
+
+## Completed follow-up: Playwright probe fallback containment
+
+- The `gameprog_no_current_openings` evidence vocabulary gap was fixed and shipped before this cleanup.
+- Source-discovery static probe fallback now contains Playwright launcher/environment exceptions, including Windows permission failures, so failed browser fallback remains a normal probe miss instead of escaping async probe tasks.
+- This does not change Sheet-directory/static scoring, queue policy, browser-recovery eligibility, saved jobs, frontend storage, bridge routes, registry contracts, or artifact schemas.

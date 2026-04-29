@@ -239,3 +239,30 @@ def test_probe_candidates_async_keeps_default_probe_wrapper(monkeypatch) -> None
     )
 
     assert results[0][:4] == (candidate, True, 6, "")
+
+
+def test_async_static_probe_contains_playwright_fallback_exceptions() -> None:
+    async def blocked_fetch(_url: str, _timeout: int) -> str:
+        raise RuntimeError("HTTP Error 403: challenge")
+
+    def failing_playwright(_url: str, _timeout: int) -> tuple[str, str]:
+        raise PermissionError("[WinError 5] Access is denied")
+
+    async def run_probe() -> tuple[bool, int, str]:
+        semaphore = asyncio.Semaphore(1)
+        result = await probe_module.async_probe_candidate(
+            _static_candidate(),
+            timeout_s=5,
+            fetcher=blocked_fetch,
+            try_playwright=failing_playwright,
+            playwright_semaphore=semaphore,
+        )
+        await asyncio.wait_for(semaphore.acquire(), timeout=0.1)
+        semaphore.release()
+        return result
+
+    ok, count, error = asyncio.run(run_probe())
+
+    assert not ok
+    assert count == 0
+    assert "HTTP Error 403" in error

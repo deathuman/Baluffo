@@ -227,7 +227,10 @@ def _probe_with_playwright(
     for probe_url in probe_urls[:3]:
         if not probe_url:
             continue
-        html, pw_err = try_playwright(probe_url, timeout_s)
+        try:
+            html, pw_err = try_playwright(probe_url, timeout_s)
+        except (OSError, RuntimeError):
+            continue
         if html and not pw_err:
             try:
                 count = parse_probe_count("static", html)
@@ -309,7 +312,10 @@ async def _async_playwright_fetch(
     if playwright_semaphore is not None:
         await playwright_semaphore.acquire()
     try:
-        return await asyncio.to_thread(try_playwright, probe_url, timeout_s)
+        try:
+            return await asyncio.to_thread(try_playwright, probe_url, timeout_s)
+        except (OSError, RuntimeError) as exc:
+            return "", str(exc)
     finally:
         if playwright_semaphore is not None:
             playwright_semaphore.release()
