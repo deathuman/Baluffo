@@ -16,8 +16,6 @@ from src.jobs.common.datetime_utils import to_iso
 from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.taxonomy import (
     ClassificationContext,
-    assess_zero_extract,
-    classification_context_from_source_detail,
     classify_zero_kept,
     map_error_to_failure_bucket,
 )
@@ -27,6 +25,7 @@ from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.shared.utils import coerce_int, env_flag
 
 from ..common import config as common_config
+from .static_runtime_support import _as_dict, update_source_detail_taxonomy
 
 TIMEOUT_BUCKET_SOURCE_NAMES = {
     "andarion games gmbh (gamesmap)",
@@ -38,44 +37,12 @@ SCRAPY_STATIC_QUEUE_POLL_S = 0.5
 SCRAPY_STATIC_QUEUE_WAIT_PROGRESS_S = 5.0
 
 
-def _as_dict(value: object) -> dict[str, Any]:
-    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
-
-
 def _as_list(value: object) -> list[Any]:
     return cast(list[Any], value) if isinstance(value, list) else []
 
 
 def _page_text_list(value: object) -> list[str]:
     return [text for item in _as_list(value) if (text := clean_text(item))]
-
-
-def _update_taxonomy_fields(source_detail: dict[str, Any]) -> dict[str, Any]:
-    """Update failureBucket and zeroKeptClassification based on current state."""
-    original_classification = norm_text(source_detail.get("classification"))
-    context = classification_context_from_source_detail(source_detail)
-    if int(source_detail.get("keptCount", 0)) == 0 and source_detail.get("status") != "excluded":
-        assessment = assess_zero_extract(context)
-        source_detail["zeroKeptClassification"] = classify_zero_kept(context).value
-        should_migrate = (
-            norm_text(source_detail.get("status")) == "ok"
-            or "no jobs extracted" in norm_text(source_detail.get("error"))
-            or norm_text(source_detail.get("classification"))
-            in {
-                "ok_no_jobs",
-                "fetch_ok_extract_zero",
-                "parser_stale",
-                "needs_review",
-                "empty_confirmed",
-            }
-            or assessment.diagnosis.value != "needs_review"
-        ) and original_classification != "dead_listing_page"
-        if should_migrate:
-            source_detail["classification"] = assessment.diagnosis.value
-            source_detail["browserFallbackRecommended"] = assessment.browser_fallback_recommended
-            context = classification_context_from_source_detail(source_detail)
-    source_detail["failureBucket"] = map_error_to_failure_bucket(context).value
-    return source_detail
 
 
 def _clean_errors(values: Any) -> list[str]:
@@ -346,7 +313,9 @@ def _run_scrapy_static_source_entry(
                 source_errors.append(f"{source_name}: invalid envelope type")
             else:
                 source_errors.append(f"{source_name}: invalid envelope missing 'ok'")
-            _update_taxonomy_fields(source_detail)
+            update_source_detail_taxonomy(
+                source_detail, include_browser_escalation=False, skip_dead_listing=True
+            )
             return source_rows, source_detail, source_errors
 
         envelope_dict = _as_dict(envelope)
@@ -434,7 +403,9 @@ def _run_scrapy_static_source_entry(
                     stats_payload.get("downloader/response_count")
                 )
 
-        _update_taxonomy_fields(source_detail)
+        update_source_detail_taxonomy(
+            source_detail, include_browser_escalation=False, skip_dead_listing=True
+        )
         return source_rows, source_detail, source_errors
     except subprocess.TimeoutExpired:
         source_detail.update(
@@ -445,7 +416,9 @@ def _run_scrapy_static_source_entry(
                 "browserFallbackRecommended": False,
             }
         )
-        _update_taxonomy_fields(source_detail)
+        update_source_detail_taxonomy(
+            source_detail, include_browser_escalation=False, skip_dead_listing=True
+        )
         source_errors.append(f"{source_name}: subprocess timeout")
         return source_rows, source_detail, source_errors
     except Exception as exc:  # noqa: BLE001
@@ -457,7 +430,9 @@ def _run_scrapy_static_source_entry(
                 "browserFallbackRecommended": False,
             }
         )
-        _update_taxonomy_fields(source_detail)
+        update_source_detail_taxonomy(
+            source_detail, include_browser_escalation=False, skip_dead_listing=True
+        )
         source_errors.append(f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}")
         return source_rows, source_detail, source_errors
 
@@ -622,7 +597,9 @@ def run_scrapy_static_source(
                             "browserFallbackRecommended": False,
                         }
                     )
-                    _update_taxonomy_fields(detail)
+                    update_source_detail_taxonomy(
+                        detail, include_browser_escalation=False, skip_dead_listing=True
+                    )
                     rows = []
                     errors = [f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}"]
                 ordered_rows[source_index] = rows

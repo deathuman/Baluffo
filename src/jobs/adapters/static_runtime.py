@@ -15,8 +15,10 @@ from ..common import config as common_config
 from .static_runtime_support import (
     StaticHtmlFetcher,
     StaticSourceRuntimeConfig,
+    _as_dict,
     build_static_entry_report,
     build_static_source_deadline,
+    classify_static_fetch_exception,
     remaining_static_source_budget_s,
 )
 
@@ -32,10 +34,6 @@ def _default_ignored_link_titles() -> set[str]:
         "view details",
         "view job",
     }
-
-
-def _as_dict(value: object) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def _as_pages(value: object) -> list[str]:
@@ -203,27 +201,15 @@ class StaticSourceContext:
 
     def record_static_fetch_failure(self, *, target_url: str, exc: Exception | str) -> None:
         msg = str(exc)
-        linked_in_throttle = "linkedin" in f"{target_url} {msg}".lower()
-        anti_bot_retry_rate_limited = bool(self.source.get("antiBotBrowserRetry")) and (
-            "HTTP 429" in msg or "Too Many Requests" in msg
+        classification, browser_recommended = classify_static_fetch_exception(
+            exc,
+            anti_bot_retry=bool(self.source.get("antiBotBrowserRetry")),
+            target_url=target_url,
         )
-        if (
-            "HTTP 403" in msg
-            or anti_bot_retry_rate_limited
-            or (linked_in_throttle and ("HTTP 429" in msg or "Too Many Requests" in msg))
-        ):
+        if classification in {"anti_bot_or_challenge", "blocked_or_challenge", "timeout"}:
             self.entry_report["status"] = "error"
-            self.entry_report["classification"] = (
-                "anti_bot_or_challenge" if anti_bot_retry_rate_limited else "blocked_or_challenge"
-            )
-            self.entry_report["browserFallbackRecommended"] = True
-            self.entry_report["error"] = msg
-            self.warnings.append(f"static:{self.source_name}:{target_url}: {msg}")
-            return
-        if "Network error" in msg or "timed out" in msg or "Timeout" in msg:
-            self.entry_report["status"] = "error"
-            self.entry_report["classification"] = "timeout"
-            self.entry_report["browserFallbackRecommended"] = True
+            self.entry_report["classification"] = classification
+            self.entry_report["browserFallbackRecommended"] = browser_recommended
             self.entry_report["error"] = msg
             self.warnings.append(f"static:{self.source_name}:{target_url}: {msg}")
             return

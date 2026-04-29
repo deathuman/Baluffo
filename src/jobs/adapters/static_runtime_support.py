@@ -22,6 +22,33 @@ from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from ..common import config as common_config
 
 
+def _as_dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def classify_static_fetch_exception(
+    exc: Exception | str,
+    *,
+    anti_bot_retry: bool = False,
+    target_url: str = "",
+) -> tuple[str, bool]:
+    msg = str(exc or "")
+    linked_in_throttle = "linkedin" in f"{target_url} {msg}".lower()
+    classification = "error"
+    if "HTTP 403" in msg:
+        classification = "blocked_or_challenge"
+    elif "HTTP 429" in msg or "Too Many Requests" in msg:
+        if anti_bot_retry:
+            classification = "anti_bot_or_challenge"
+        elif linked_in_throttle:
+            classification = "blocked_or_challenge"
+        else:
+            classification = "rate_limited"
+    elif "Network error" in msg or "timed out" in msg or "Timeout" in msg:
+        classification = "timeout"
+    return classification, classification in common_config.STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE
+
+
 @dataclass(frozen=True)
 class StaticSourceRuntimeConfig:
     static_profile: str
@@ -293,12 +320,17 @@ def build_static_entry_report(
     }
 
 
-def update_source_detail_taxonomy(source_detail: dict[str, Any]) -> dict[str, Any]:
+def update_source_detail_taxonomy(
+    source_detail: dict[str, Any],
+    *,
+    include_browser_escalation: bool = True,
+    skip_dead_listing: bool = False,
+) -> dict[str, Any]:
     """Update failureBucket and zeroKeptClassification based on current state."""
     original_classification = norm_text(source_detail.get("classification"))
     context = classification_context_from_source_detail(source_detail)
     if int(source_detail.get("keptCount", 0)) == 0 and source_detail.get("status") != "excluded":
-        if original_classification == "dead_listing_page":
+        if original_classification == "dead_listing_page" and not skip_dead_listing:
             source_detail["zeroKeptClassification"] = classify_zero_kept(context).value
             source_detail["browserEscalationEligible"] = False
             source_detail.pop("browserEscalationEligibilityReason", None)
@@ -316,9 +348,10 @@ def update_source_detail_taxonomy(source_detail: dict[str, Any]) -> dict[str, An
         ):
             browser_eligible = True
             browser_reason = "needs_review_high_value"
-        source_detail["browserEscalationEligible"] = browser_eligible
-        if browser_eligible:
-            source_detail["browserEscalationEligibilityReason"] = browser_reason
+        if include_browser_escalation:
+            source_detail["browserEscalationEligible"] = browser_eligible
+            if browser_eligible:
+                source_detail["browserEscalationEligibilityReason"] = browser_reason
         should_migrate = (
             norm_text(source_detail.get("status")) == "ok"
             or "no jobs extracted" in norm_text(source_detail.get("error"))

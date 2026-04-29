@@ -9,6 +9,13 @@ from src.jobs.text_utils import clean_text
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 
 
+def _float_or_zero(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _normalize_stage_totals(stage_totals: dict[str, Any]) -> dict[str, int]:
     return {
         "fetchAndParse": _clamped_int(stage_totals.get("fetchAndParse"), 0, 0),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.jobs.common.contracts_runtime import _float_or_zero
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.common.taxonomy import (
     ClassificationContext,
@@ -15,13 +16,6 @@ from src.jobs.common.taxonomy import (
 )
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.json_shapes import as_json_list, as_json_object
-
-
-def _float_or_zero(value: Any) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _clean_label(value: Any) -> str:

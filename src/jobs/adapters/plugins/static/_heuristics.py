@@ -5,7 +5,7 @@ from typing import Any
 from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import strip_html_text
-from src.jobs.common import config as common_config
+from src.jobs.adapters.static_runtime_support import classify_static_fetch_exception
 from src.jobs.text_utils import clean_text, normalize_url
 
 # Canonical classification values for static/scrapy_static diagnostics and browser queue.
@@ -17,15 +17,8 @@ CLASSIFICATION_FETCH_OK_EXTRACT_ZERO = CLASSIFICATION_NEEDS_REVIEW
 CLASSIFICATION_JS_REQUIRED = "js_required"
 CLASSIFICATION_SITE_CHANGED = "site_changed"
 CLASSIFICATION_BLOCKED_OR_CHALLENGE = "blocked_or_challenge"
-CLASSIFICATION_TIMEOUT = "timeout"
-CLASSIFICATION_RATE_LIMITED = "rate_limited"
 CLASSIFICATION_PARSER_STALE = "parser_stale"
 CLASSIFICATION_DEAD_LISTING_PAGE = "dead_listing_page"
-CLASSIFICATION_ERROR = "error"
-
-
-# Classifications that cause a source to be added to the browser fallback queue.
-CLASSIFICATIONS_FOR_BROWSER_QUEUE = common_config.STATIC_CLASSIFICATIONS_FOR_BROWSER_QUEUE
 
 
 def normalize_html(html: str) -> str:
@@ -120,18 +113,7 @@ def detect_outbound_ats_links(html: str, *, base_url: str) -> list[str]:
 
 
 def classify_fetch_exception(exc: Exception) -> tuple[str, bool]:
-    msg = str(exc or "")
-    classification = CLASSIFICATION_ERROR
-    if "HTTP 403" in msg:
-        classification = CLASSIFICATION_BLOCKED_OR_CHALLENGE
-    elif "HTTP 429" in msg:
-        if "linkedin" in msg.lower():
-            classification = CLASSIFICATION_BLOCKED_OR_CHALLENGE
-        else:
-            classification = CLASSIFICATION_RATE_LIMITED
-    elif "Network error" in msg or "timed out" in msg or "Timeout" in msg:
-        classification = CLASSIFICATION_TIMEOUT
-    return classification, classification in CLASSIFICATIONS_FOR_BROWSER_QUEUE
+    return classify_static_fetch_exception(exc)
 
 
 def build_static_plugin_meta(

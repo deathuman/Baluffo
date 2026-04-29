@@ -13,15 +13,8 @@ from src.shared.live_task import (
     normalize_live_task_payload,
 )
 
-from .contracts_runtime import normalize_runtime_payload
+from .contracts_runtime import _float_or_zero, normalize_runtime_payload
 from .contracts_source_reports import normalize_source_report_row
-
-
-def _float_or_zero(value: Any) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
 
 
 def _normalize_count_map(payload: Any) -> dict[str, int]:

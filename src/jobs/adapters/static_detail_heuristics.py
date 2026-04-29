@@ -28,7 +28,7 @@ from src.jobs.page_gating import (
 )
 from src.jobs.text_utils import clean_text, norm_text, normalize_url, sanitize_location_text
 
-from .static_runtime_support import StaticSourceRuntimeConfig
+from .static_runtime_support import StaticSourceRuntimeConfig, _as_dict
 
 extract_rendered_card_jobs = _extract_rendered_card_jobs
 
@@ -67,10 +67,6 @@ MALFORMED_DETAIL_URL_TOKENS = (
     "cvdhreftext",
     "company.website",
 )
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
 
 
 def is_known_non_job_detail_url(url: str) -> bool:
