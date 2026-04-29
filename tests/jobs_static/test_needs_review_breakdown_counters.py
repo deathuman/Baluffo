@@ -1,4 +1,4 @@
-from src.jobs import reporting as jobs_reporting
+from tests.helpers import jobs_reporting
 
 
 def test_needs_review_breakdown_reports_raw_and_included_counts() -> None:

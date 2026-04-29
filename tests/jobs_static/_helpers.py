@@ -9,7 +9,6 @@ from src import jobs_fetcher_registry as jfr
 from src.jobs import canonicalize as jobs_canonicalize
 from src.jobs import dedup as jobs_dedup
 from src.jobs import registry as jobs_registry
-from src.jobs import reporting as jobs_reporting
 from src.jobs.adapters import static_helpers, static_scrapy
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
@@ -42,6 +41,7 @@ from src.jobs.contamination_audit import (
 from src.jobs.page_gating import classify_job_page
 from src.scrapers import runner as scrapy_runner
 from src.scrapers.spiders.generic_careers import GenericCareersSpider
+from tests.helpers import jobs_reporting
 from tests.helpers.job_fixtures import _fixture
 from tests.helpers.temp_paths import workspace_tmpdir
 

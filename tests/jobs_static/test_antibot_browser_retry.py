@@ -7,9 +7,9 @@ import pytest
 
 from src import jobs_fetcher as jf
 from src.exceptions import AdapterValidationError
-from src.jobs import reporting as jobs_reporting
 from src.jobs.adapters import provider_api
 from src.jobs.adapters.plugins.provider_api import html_board as html_board_runner
+from tests.helpers import jobs_reporting
 from tests.helpers.job_fixtures import _fixture
 
 

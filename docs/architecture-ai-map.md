@@ -153,7 +153,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `pipeline_run_setup.py`, `pipeline_execution_flow.py`, `pipeline_stage_source_execution.py`, `pipeline_source_{loop,results,progress}.py`, `pipeline_runtime_{writers,summary}.py`, `pipeline_timing.py`, `pipeline_finalize.py` - current pipeline implementation. These are internal and can be collapsed or rewired when the replacement is simpler and tests cover the same source execution behavior.
 - `state.py`, `state_source_state.py`, `state_source_{records,browser,migration}.py`, `state_lifecycle.py`, `state_incremental.py` - current jobs source-state implementation. These are internal fetcher state helpers; preserve persisted source-state meaning, not historical module boundaries.
 - `common/contracts_{runtime,source_reports,task_state,fetch_report}.py` - current fetch/report payload normalization. Preserve active report fields used by the app.
-- `reporting.py`, `reporting_{summary,queues,breakdowns,social}.py` - current report assembly. Preserve active report shapes; the facade/leaf split is not a permanent contract.
+- `reporting_{summary,queues,breakdowns,social}.py` - current report assembly. Preserve active report shapes.
 - `fetcher_compat_exports.py`, `fetcher_compat_runtime.py` - lazy compatibility exports and root-backed wrapper seams behind `src/jobs_fetcher.py`
 - `adapters/` - static, provider_api, social fetchers
 - `canonicalize.py`, `dedup.py` - normalization

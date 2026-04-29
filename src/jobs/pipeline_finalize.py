@@ -8,6 +8,7 @@ from typing import Any
 from src.contracts import SCHEMA_VERSION
 from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs.canonicalize import snapshot_sector_quality_audit
+from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
 from src.jobs.contamination_audit import build_public_text_quality_report
 from src.jobs.dedup import CanonicalDeduplicator
 from src.jobs.models import CanonicalJob
@@ -18,19 +19,20 @@ from src.jobs.pipeline_runtime_summary import (
 )
 from src.jobs.pipeline_timing import build_runtime_timing_summary, percentile_ms
 from src.jobs.registry import STUDIO_SOURCE_REGISTRY
-from src.jobs.reporting import (
-    SOCIAL_EXPERIMENT_REVIEW_FILENAME,
-    SOCIAL_EXPERIMENT_SAMPLE_SIZE,
+from src.jobs.reporting_queues import (
     build_browser_fallback_queue,
     build_parser_regression_queue,
-    build_pipeline_summary,
-    build_social_experiment_review_payload,
-    build_social_experiment_review_sample,
     count_site_changed_diagnosed_sources,
     count_site_changed_missing_old_url_sources,
-    normalize_fetch_report_payload,
+)
+from src.jobs.reporting_social import (
+    SOCIAL_EXPERIMENT_REVIEW_FILENAME,
+    SOCIAL_EXPERIMENT_SAMPLE_SIZE,
+    build_social_experiment_review_payload,
+    build_social_experiment_review_sample,
     summarize_social_experiment,
 )
+from src.jobs.reporting_summary import build_pipeline_summary
 from src.jobs.state_lifecycle import (
     apply_job_lifecycle_state,
     write_job_lifecycle_state,

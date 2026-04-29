@@ -17,6 +17,8 @@ from src.jobs.common import config as common_config
 from src.jobs.common import social as common_social
 from src.jobs.common import sources as common_sources
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
+from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
+from src.jobs.common.contracts_runtime import normalize_runtime_payload
 from src.jobs.common.contracts_task_state import normalize_task_state_payload
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob
@@ -44,11 +46,7 @@ from src.jobs.pipeline_stage_source_execution import (
     resolve_fetch_browser_fallback_helper,
 )
 from src.jobs.registry import STUDIO_SOURCE_REGISTRY
-from src.jobs.reporting import (
-    build_pipeline_summary,
-    normalize_fetch_report_payload,
-    normalize_runtime_payload,
-)
+from src.jobs.reporting_summary import build_pipeline_summary
 from src.jobs.state_incremental import (
     get_incremental_cache_decision,
     should_skip_source_by_cadence,

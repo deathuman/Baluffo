@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import src.jobs.common.contracts_fetch_report as contracts_fetch_report_mod
+import src.jobs.common.contracts_runtime as contracts_runtime_mod
+import src.jobs.common.contracts_source_reports as contracts_source_reports_mod
 from src.jobs import canonicalize as canonicalize_mod
 from src.jobs import dedup as dedup_mod
 from src.jobs import parsers as parsers_mod
 from src.jobs import pipeline as pipeline_mod
 from src.jobs import registry as registry_mod
-from src.jobs import reporting as reporting_mod
 from src.jobs import state as state_mod
 from src.jobs import transport as transport_mod
 from src.jobs.adapters import community as community_mod
@@ -90,14 +92,17 @@ COMPAT_MODULE_EXPORTS.update(
     )
 )
 COMPAT_MODULE_EXPORTS.update(
-    _module_attr_exports(
-        reporting_mod,
-        (
+    {
+        "normalize_fetch_report_payload": (
+            contracts_fetch_report_mod,
             "normalize_fetch_report_payload",
-            "normalize_runtime_payload",
+        ),
+        "normalize_runtime_payload": (contracts_runtime_mod, "normalize_runtime_payload"),
+        "normalize_source_report_row": (
+            contracts_source_reports_mod,
             "normalize_source_report_row",
         ),
-    )
+    }
 )
 COMPAT_MODULE_EXPORTS.update(
     _module_attr_exports(
