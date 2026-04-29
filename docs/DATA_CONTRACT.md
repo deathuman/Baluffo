@@ -4,15 +4,15 @@
 > - **Use this when:** changing payload shape, schema fields, saved-job structure, discovery output shape, or UI interaction handles
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
-> - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, `src/jobs/common/contracts.py`, relevant tests, and the owning runtime docs
+> - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and the owning runtime docs
 > - **Last updated:** 2026-04-26
-> - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, `src/jobs/common/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` leaves, relevant tests, and any affected UI/runtime docs
+> - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
 
-**CRITICAL:** The frontend expects `camelCase` keys in all `data/*.json` files. The Python backend maps these explicitly through the stable `src/jobs/common/contracts.py` surface and its owning `contracts_{runtime,source_reports,task_state,fetch_report}.py` leaves.
+**CRITICAL:** The frontend expects `camelCase` keys in all `data/*.json` files. The Python backend maps these explicitly through the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules.
 
-**Runtime source of truth:** `src/jobs/common/contracts.py` remains the stable contract surface used by the jobs pipeline, with implementation ownership split across `src/jobs/common/contracts_runtime.py`, `contracts_source_reports.py`, `contracts_task_state.py`, and `contracts_fetch_report.py`. `src/core/schemas.py` defines the Pydantic validation models used at pipeline, bridge, and local-data boundaries, including `CanonicalJobSchema`, `SavedJobSchema`, `LocalSavedJobRowSchema`, `LocalDataActivityRowSchema`, `LocalDataAttachmentRowSchema`, `LocalDataBackupPayloadSchema`, and `ManifestSchema`. `src/core/contracts.py` uses these schemas to validate pipeline payloads before writing `jobs-unified.json`, while bridge local-data routes keep save-input validation compatibility-lenient and validate persisted/output rows separately. New fields or contract changes require updating this doc and the Pydantic schemas in `src/core/schemas.py`.
+**Runtime source of truth:** jobs pipeline contract normalization is owned directly by `src/jobs/common/contracts_runtime.py`, `contracts_source_reports.py`, `contracts_task_state.py`, and `contracts_fetch_report.py`; the old `src/jobs/common/contracts.py` re-export shim is not a stable surface. `src/core/schemas.py` defines the Pydantic validation models used at pipeline, bridge, and local-data boundaries, including `CanonicalJobSchema`, `SavedJobSchema`, `LocalSavedJobRowSchema`, `LocalDataActivityRowSchema`, `LocalDataAttachmentRowSchema`, `LocalDataBackupPayloadSchema`, and `ManifestSchema`. `src/core/contracts.py` uses these schemas to validate pipeline payloads before writing `jobs-unified.json`, while bridge local-data routes keep save-input validation compatibility-lenient and validate persisted/output rows separately. New fields or contract changes require updating this doc and the Pydantic schemas in `src/core/schemas.py`.
 
 ## 1. CanonicalJob
 Represents a single job posting retrieved from the external sources.

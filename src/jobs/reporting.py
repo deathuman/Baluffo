@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from src.jobs.common.contracts import (
-    normalize_fetch_report_payload,
-    normalize_runtime_payload,
-    normalize_source_report_row,
-)
+from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
+from src.jobs.common.contracts_runtime import normalize_runtime_payload
+from src.jobs.common.contracts_source_reports import normalize_source_report_row
 
 from .reporting_breakdowns import (
     build_blank_residue_breakdown,

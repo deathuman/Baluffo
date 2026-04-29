@@ -17,7 +17,7 @@ from src.jobs.common import config as common_config
 from src.jobs.common import social as common_social
 from src.jobs.common import sources as common_sources
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
-from src.jobs.common.contracts import normalize_task_state_payload
+from src.jobs.common.contracts_task_state import normalize_task_state_payload
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_bootstrap import PipelinePaths, build_pipeline_paths
