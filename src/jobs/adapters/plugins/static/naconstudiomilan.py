@@ -1,20 +1,48 @@
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urljoin
 
-from src.jobs.adapters.plugins.static import _heuristics
+from src.jobs.adapters.plugins.static._runner import (
+    SimpleStaticContext,
+    SimpleStaticPlugin,
+    run_simple_static_plugin,
+    static_job_row,
+)
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text
+
+_SPEC = SimpleStaticPlugin(
+    source_id="naconstudiomilan",
+    default_company="Nacon Studio Milan",
+    parser_stale_hint="listing_cards_present_but_plugin_empty",
+    empty_detail_fetch_required=None,
+    empty_detail_traversal_mode="",
+)
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
     identity = (ctx.source_identity or "").strip().lower()
     return identity in ("www.naconstudiomilan.com", "naconstudiomilan.com")
+
+
+def _parse_html(ctx: SimpleStaticContext) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    seen = set()
+    for match in re.finditer(
+        r'(?is)<h4[^>]*>\s*(.*?)\s*</h4>.*?<a[^>]+href=["\']([^"\']*/careers/[^"\']+/)["\'][^>]*>\s*Learn more\s*</a>',
+        ctx.html,
+    ):
+        title = clean_text(re.sub(r"(?is)<[^>]+>", " ", match.group(1) or ""))
+        link = clean_text(urljoin(ctx.page_url, match.group(2) or ""))
+        if not title or not link or link in seen:
+            continue
+        seen.add(link)
+        jobs.append(static_job_row(ctx, link=link, title=title))
+    return jobs
 
 
 def run(
@@ -27,62 +55,14 @@ def run(
     source_row: dict[str, Any],
     **kwargs: Any,
 ) -> list[RawJob]:
-    _ = (retries, backoff_s, kwargs)
-    if not pages:
-        return []
-    page_url = clean_text(pages[0])
-    if not page_url:
-        return []
-    company = (
-        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
-        or "Nacon Studio Milan"
+    return run_simple_static_plugin(
+        fetch_text=fetch_text,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        pages=pages,
+        source_row=source_row,
+        spec=_SPEC,
+        parse_html=_parse_html,
+        **kwargs,
     )
-    source_id = clean_text(source_row.get("id")) or "naconstudiomilan"
-    try:
-        html = fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
-        classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-            classification,
-            browser_fallback_recommended=bool(recommend),
-            extractor_hint="fetch_failed",
-            error=str(exc),
-        )
-        return []
-
-    jobs: list[RawJob] = []
-    seen = set()
-    for match in re.finditer(
-        r'(?is)<h4[^>]*>\s*(.*?)\s*</h4>.*?<a[^>]+href=["\']([^"\']*/careers/[^"\']+/)["\'][^>]*>\s*Learn more\s*</a>',
-        html,
-    ):
-        title = clean_text(re.sub(r"(?is)<[^>]+>", " ", match.group(1) or ""))
-        link = clean_text(urljoin(page_url, match.group(2) or ""))
-        if not title or not link or link in seen:
-            continue
-        seen.add(link)
-        jobs.append(
-            {
-                "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-                "title": title,
-                "company": company,
-                "city": "",
-                "country": "Unknown",
-                "workType": "",
-                "contractType": "",
-                "jobLink": link,
-                "sector": "Game",
-                "postedAt": "",
-                "adapter": "static",
-                "studio": company,
-                "source": clean_text(source_row.get("name")) or company,
-            }
-        )
-
-    if not jobs:
-        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-            _heuristics.CLASSIFICATION_PARSER_STALE,
-            browser_fallback_recommended=False,
-            extractor_hint="listing_cards_present_but_plugin_empty",
-        )
-    return jobs

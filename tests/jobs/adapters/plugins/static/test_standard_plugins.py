@@ -5,8 +5,12 @@ from typing import Any
 
 import pytest
 
-from src.jobs.adapters.plugins.static import _heuristics, climax, embark, globalstep
-
+from src.jobs.adapters.plugins.static import (
+    _heuristics,
+    climax,
+    embark,
+    globalstep,
+)
 
 _PLUGIN_CASES = [
     pytest.param(
