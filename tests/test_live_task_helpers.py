@@ -1,4 +1,4 @@
-from src.jobs.pipeline_runtime import snapshot_task_rows
+from src.jobs.pipeline_runtime_summary import snapshot_task_rows
 from src.shared.live_task import (
     append_live_task_event,
     build_live_task_contract_fields,

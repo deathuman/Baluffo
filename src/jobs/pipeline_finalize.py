@@ -11,7 +11,7 @@ from src.jobs.canonicalize import snapshot_sector_quality_audit
 from src.jobs.contamination_audit import build_public_text_quality_report
 from src.jobs.dedup import CanonicalDeduplicator
 from src.jobs.models import CanonicalJob
-from src.jobs.pipeline_runtime import (
+from src.jobs.pipeline_runtime_summary import (
     build_detailed_source_rows,
     build_fetch_task_progress_payload,
     snapshot_task_rows,

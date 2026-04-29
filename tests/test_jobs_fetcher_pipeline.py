@@ -9,7 +9,8 @@ import pytest
 import src.jobs.text_utils as jobs_text_utils
 from src import jobs_fetcher as jf
 from src.jobs.adapters import static as static_adapter
-from src.jobs.pipeline_runtime import PipelineTaskRuntime, make_task_state_writer
+from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
+from src.jobs.pipeline_runtime_writers import make_task_state_writer
 from tests.helpers.job_fixtures import _fixture, _fixture_json
 from tests.helpers.temp_paths import workspace_tmpdir
 

@@ -11,12 +11,14 @@ import pytest
 
 from src.contracts import SCHEMA_VERSION
 from src.jobs.pipeline_bootstrap import build_pipeline_paths
-from src.jobs.pipeline_runtime import (
+from src.jobs.pipeline_runtime_summary import (
     PipelineTaskRuntime,
     build_detailed_source_rows,
+    record_completed_source_report,
+)
+from src.jobs.pipeline_runtime_writers import (
     make_fetch_text_limited,
     make_progress_report_dispatcher,
-    record_completed_source_report,
     write_progress_report,
 )
 from src.pipeline_io import write_atomic_if_changed, write_hot_text_if_changed
