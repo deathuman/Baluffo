@@ -146,7 +146,9 @@ def run_simple_static_plugin(
     rows = [
         row
         for row in parse_html(
-            SimpleStaticContext(page_url, html, source_row, company, source_id, parse_jobpostings_from_html)
+            SimpleStaticContext(
+                page_url, html, source_row, company, source_id, parse_jobpostings_from_html
+            )
         )
         if isinstance(row, dict)
     ]
