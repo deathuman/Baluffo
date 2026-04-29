@@ -35,10 +35,10 @@ The completed jobs adapter mass-refactor made real but narrow progress:
 
 The broader objective is not complete:
 
-- `src/jobs` is still about 138 Python files and 30,586 lines.
-- `src/jobs/adapters` is still about 74 Python files and 18,081 lines.
+- `src/jobs` is still about 133 Python files and 27,766 lines.
+- `src/jobs/adapters` is still about 74 Python files and 16,555 lines.
 - Since the jobs adapter refactor started, production `src/jobs` is roughly net-flat, not meaningfully smaller.
-- `python -m ruff check --select C901 src/jobs` still reports 69 complexity offenders.
+- `python -m ruff check --select C901 src/jobs` still reports 68 complexity offenders.
 - Several compatibility surfaces are still preserved by docs/tests even though the current product goal allows breaking internal fetcher compatibility.
 
 The completed roadmap was removed from active docs after commit `7e62dac` completed the evidence-backed dead-source deletion slice. Use git history for historical provenance; keep this plan as the active direction.
@@ -48,8 +48,8 @@ The completed roadmap was removed from active docs after commit `7e62dac` comple
 A later "unified edition" refactor proposal was reviewed against the current repo and should not be implemented verbatim. Its useful direction is retained below, but these claims were stale or misleading:
 
 - `src/jobs` is currently about 138 Python files and 30,586 lines, not about 27,935 lines.
-- `python -m ruff check --select C901 src/jobs` currently reports 69 offenders, not a cleanable per-slice pass gate.
-- `scripts/complexity_baseline.json` currently has only a small project baseline and no `src/jobs` entries, so jobs C901 work should update the baseline only when the active check/guardrail requires it.
+- `python -m ruff check --select C901 src/jobs` currently reports 68 offenders, not a cleanable per-slice pass gate.
+- `scripts/complexity_baseline.json` now tracks jobs C901 allowances; touched hotspots should leave that baseline when a slice brings them below the threshold.
 - `static_listing_flow.py` and `static_detail.py` are already deleted; any plan entries targeting `_extract_listing_candidates` or `run_detail_traversal` are historical.
 - `static_listing.py::process_static_source` and `location_rules.py::classify_city_garbage` are no longer current broad C901 offenders.
 - Bridge route C901 offenders such as `handle_get` and `handle_post` are outside this jobs fetcher simplification scope unless the product scope is explicitly expanded.
@@ -70,7 +70,6 @@ Valuable medium-risk candidates:
 Current jobs C901 priority list:
 
 - `contracts_source_reports.py::normalize_source_report_row` at 48.
-- `plugins/provider_api/json_feed.py::_json_feed_plugin` at 39.
 - `pipeline_source_results.py::execute_loader` at 33.
 - `canonicalize.py::canonicalize_job_with_reason` at 32.
 - `dedup.py::deduplicate_jobs` at 28 and `dedup.py::merge_records` at 24.
@@ -141,7 +140,6 @@ Acceptance:
 Prioritize functions that dominate current C901 and concept count:
 
 - `contracts_source_reports.py::normalize_source_report_row` at C901 48.
-- `plugins/provider_api/json_feed.py::_json_feed_plugin` at C901 39.
 - `pipeline_source_results.py::execute_loader` at C901 33.
 - `canonicalize.py::canonicalize_job_with_reason` at C901 32.
 - `dedup.py::deduplicate_jobs` at C901 28 and `merge_records` at C901 24.
@@ -196,6 +194,8 @@ The broad C901 command is informational in this phase; record the offender count
 
 ### Phase 2: Delete internal shims and root indirection
 
+Status: completed in commits `67d46fb`, `2d39c77`, `501db44`, `68c809e`, and `d7bbcaa`.
+
 - Delete or collapse jobs fetcher shims whose only purpose is historical import compatibility.
 - Remove `sys.modules[__name__]` root indirection where direct parameters or direct imports are now simpler.
 - Update package-shape tests to assert the new simpler boundaries instead of the old facades.
@@ -209,6 +209,13 @@ cmd /c npm run lint:precommit
 ```
 
 ### Phase 3: Source execution engine migration
+
+Status: active. First JSON-feed slice converted the branch-heavy provider plugin factory into declarative specs and removed JSON-feed C901 baseline allowances. Current milestone metrics:
+
+- Jobs Python files: 133.
+- Jobs Python lines: 27,766.
+- Broad `src/jobs` C901 offenders: 68.
+- Adapter C901 offenders: 45.
 
 - Introduce or consolidate one execution engine only where the same slice migrates at least one existing source family and deletes repeated lifecycle code.
 - Migrate provider JSON feed and structured provider runners first because they repeat TTL/cache/report patterns and have high C901.

@@ -39,8 +39,6 @@
     "src/jobs/adapters/parsers/structured_listing.py::_parse_structured_listing_page": 16,
     "src/jobs/adapters/plugins/provider_api/greenhouse_runner.py::_run_greenhouse_boards": 13,
     "src/jobs/adapters/plugins/provider_api/html_board.py::_run_html_board_sources": 17,
-    "src/jobs/adapters/plugins/provider_api/json_feed.py::_json_feed_plugin": 39,
-    "src/jobs/adapters/plugins/provider_api/json_feed.py::_run_json_feed_sources": 13,
     "src/jobs/adapters/plugins/provider_api/teamtailor_runner.py::_run_teamtailor_sources": 17,
     "src/jobs/adapters/plugins/social/register.py::_run_reddit": 21,
     "src/jobs/adapters/plugins/social/register.py::_run_x": 12,
