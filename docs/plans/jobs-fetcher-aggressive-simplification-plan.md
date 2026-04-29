@@ -76,6 +76,10 @@ Current jobs C901 priority list after the large-cut C901 ratchet:
 
 ## Active Simplification Strategy
 
+### Current gate: deletion-first cuts
+
+The next implementation round must prioritize net LOC reduction or direct repeated-lifecycle deletion. A slice can still introduce or extend a helper, but only when the same commit deletes repeated fetch, cache, fallback, diagnostics, parser-stamping, or report lifecycle branches. Broad C901 remains an informational metric; touched C901 offenders should leave the baseline or have lower recorded scores.
+
 ### 1. Reset compatibility policy
 
 Update docs and package-shape tests so only saved-job/local-user contracts and actively used bridge/frontend payloads are protected. Internal jobs fetcher shims are deletion candidates, especially:
@@ -282,6 +286,8 @@ Each implementation slice should record:
 - Whether the slice deleted a compatibility surface, repeated lifecycle branch, plugin module, or source row.
 
 Do not accept a large helper-creation slice unless it immediately deletes repeated lifecycle code or unlocks a named deletion in the next commit.
+
+For the deletion-first round, prefer static plugin lifecycle collapse, static rendered/list extraction sharing, social subsource lifecycle sharing, and community fetch lifecycle cleanup over more standalone helper extraction.
 
 ## Validation Rules
 
