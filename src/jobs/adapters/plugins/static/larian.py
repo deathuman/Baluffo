@@ -8,22 +8,52 @@ When JSON-LD returns no jobs, falls back to extracting job links from the page
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urljoin, urlparse
 
-from src.jobs.adapters.html_parsers import strip_html_text
-from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
+from src.jobs.adapters.plugins.static._runner import (
+    fetch_static_plugin_html_with_browser_fallback,
+    first_static_page,
+    record_static_plugin_empty_parse,
+    render_static_plugin_js_shell,
+    stamp_static_plugin_rows,
+    static_detail_link_rows,
+    static_plugin_context_values,
+)
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
-from src.jobs.text_utils import clean_text
 from src.scrapers import domain_profiles
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
     identity = (ctx.source_identity or "").strip().lower()
     return identity == "larian.com"
+
+
+def _parse_larian_rows(
+    *,
+    html: str,
+    page_url: str,
+    company: str,
+    source_id: str,
+    parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    rows = parse_jobpostings_from_html(
+        html,
+        base_url=page_url,
+        fallback_company=company,
+        fallback_source_id_prefix=f"static:{source_id}",
+    )
+    if rows:
+        return rows
+    profile = domain_profiles.domain_profile_for_url(page_url)
+    return static_detail_link_rows(
+        html=html,
+        page_url=page_url,
+        company=company,
+        source_id=source_id,
+        is_probable_detail_url=lambda url: domain_profiles.is_probable_job_detail_url(url, profile),
+    )
 
 
 def run(
@@ -40,72 +70,39 @@ def run(
 ) -> list[RawJob]:
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    page_url = clean_text(pages[0])
+    page_url = first_static_page(pages)
     if not page_url:
         return []
-    company = (
-        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
-        or "Larian"
+    company, source_id, source_name = static_plugin_context_values(
+        source_row=source_row,
+        default_company="Larian",
+        default_source_id="larian",
+        default_source_name="larian",
     )
-    source_id = (source_row.get("id") or "").strip() or "larian"
-    html = ""
-    try:
-        html = fetch_text(page_url, timeout_s)
-    except Exception:  # noqa: BLE001
-        if try_playwright:
-            html, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
-        if not html:
-            return []
-    if try_playwright and html and detect_js_shell(html):
-        html2, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
-        if html2:
-            html = html2
-    rows = parse_jobpostings_from_html(
-        html,
-        base_url=page_url,
-        fallback_company=company,
-        fallback_source_id_prefix=f"static:{source_id}",
+    html = fetch_static_plugin_html_with_browser_fallback(
+        fetch_text=fetch_text,
+        page_url=page_url,
+        timeout_s=timeout_s,
+        source_row=source_row,
+        try_playwright=try_playwright,
+        record_failure_meta=False,
     )
-    if not rows and html:
-        profile = domain_profiles.domain_profile_for_url(page_url)
-        base_host = (urlparse(page_url).netloc or "").lower()
-        seen_links: set[str] = set()
-        for match in re.finditer(
-            r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
-            html,
-        ):
-            href = clean_text(match.group(1))
-            anchor_inner = match.group(2) or ""
-            anchor_text = (
-                strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner)).strip() or "Job"
-            )
-            if not href:
-                continue
-            absolute = urljoin(page_url, href)
-            if (urlparse(absolute).netloc or "").lower() != base_host:
-                continue
-            if not domain_profiles.is_probable_job_detail_url(absolute, profile):
-                continue
-            if absolute in seen_links:
-                continue
-            seen_links.add(absolute)
-            rows.append(
-                {
-                    "title": anchor_text[:200],
-                    "company": company,
-                    "jobLink": absolute,
-                    "sourceJobId": f"{source_id}:{absolute}",
-                    "city": "",
-                    "country": "",
-                    "workType": "",
-                    "contractType": "",
-                    "sector": "Game",
-                    "postedAt": "",
-                }
-            )
-    for row in rows:
-        if isinstance(row, dict):
-            row["adapter"] = "static"
-            row["studio"] = company
-            row["source"] = clean_text(source_row.get("name")) or "larian"
-    return [r for r in rows if isinstance(r, dict)]
+    if not html:
+        return []
+    html = render_static_plugin_js_shell(
+        html=html,
+        page_url=page_url,
+        timeout_s=timeout_s,
+        try_playwright=try_playwright,
+    )
+    rows = _parse_larian_rows(
+        html=html,
+        page_url=page_url,
+        company=company,
+        source_id=source_id,
+        parse_jobpostings_from_html=parse_jobpostings_from_html,
+    )
+    cleaned = stamp_static_plugin_rows(rows=rows, company=company, source_name=source_name)
+    if not cleaned:
+        record_static_plugin_empty_parse(html=html, page_url=page_url, source_row=source_row)
+    return cleaned

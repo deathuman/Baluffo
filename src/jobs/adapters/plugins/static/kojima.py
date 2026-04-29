@@ -6,7 +6,14 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from src.jobs.adapters.html_parsers import strip_html_text
-from src.jobs.adapters.plugins.static import _heuristics
+from src.jobs.adapters.plugins.static._runner import (
+    fetch_static_plugin_html,
+    first_static_page,
+    record_static_plugin_empty_parse,
+    stamp_static_plugin_rows,
+    static_plugin_blocked_by_js_shell,
+    static_plugin_context_values,
+)
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.provider_parsers import parse_generic_location_fields
 from src.jobs.models import RawJob
@@ -16,6 +23,77 @@ from src.jobs.text_utils import clean_text, normalize_url, sanitize_public_text
 def can_handle(ctx: AdapterPluginContext) -> bool:
     identity = (ctx.source_identity or "").strip().lower()
     return identity in ("www.kojimaproductions.jp", "kojimaproductions.jp")
+
+
+def _fetch_kojima_html(
+    *,
+    fetch_text: Callable[[str, int], str],
+    page_url: str,
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    source_row: dict[str, Any],
+    maybe_fetch_kojima_job_listing_html: Callable[..., str] | None,
+) -> str:
+    html = fetch_static_plugin_html(
+        fetch_text=fetch_text,
+        page_url=page_url,
+        timeout_s=timeout_s,
+        source_row=source_row,
+    )
+    if not html:
+        return ""
+    try:
+        if callable(maybe_fetch_kojima_job_listing_html):
+            dynamic = maybe_fetch_kojima_job_listing_html(
+                page_url=page_url,
+                page_html=html,
+                timeout_s=timeout_s,
+                retries=retries,
+                backoff_s=backoff_s,
+            )
+            if dynamic and dynamic not in html:
+                return dynamic
+    except Exception:
+        pass
+    return html
+
+
+def _parse_kojima_rows(
+    *,
+    html: str,
+    page_url: str,
+    company: str,
+    source_id: str,
+    timeout_s: int,
+    parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]],
+    try_playwright: Callable[[str, int], tuple[str, str]] | None,
+) -> list[dict[str, Any]]:
+    rows = parse_jobpostings_from_html(
+        html,
+        base_url=page_url,
+        fallback_company=company,
+        fallback_source_id_prefix=f"static:{source_id}",
+    )
+    if rows:
+        return rows
+    rows = _parse_kojima_listing_rows(
+        html=html,
+        base_url=page_url,
+        company=company,
+        source_id=source_id,
+    )
+    if rows or not callable(try_playwright):
+        return rows
+    browser_html, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
+    if not browser_html:
+        return rows
+    return _parse_kojima_listing_rows(
+        html=browser_html,
+        base_url=page_url,
+        company=company,
+        source_id=source_id,
+    )
 
 
 def run(
@@ -34,103 +112,43 @@ def run(
     _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    page_url = clean_text(pages[0])
+    page_url = first_static_page(pages)
     if not page_url:
         return []
-
-    company = (
-        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
-        or "Kojima Productions"
+    company, source_id, source_name = static_plugin_context_values(
+        source_row=source_row,
+        default_company="Kojima Productions",
+        default_source_id="kojima",
+        default_source_name="kojima",
     )
-    source_id = (source_row.get("id") or "").strip() or "kojima"
-
-    try:
-        html = fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
-        classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-            classification,
-            browser_fallback_recommended=bool(recommend),
-            extractor_hint="fetch_failed",
-            error=str(exc),
-        )
+    html = _fetch_kojima_html(
+        fetch_text=fetch_text,
+        page_url=page_url,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        source_row=source_row,
+        maybe_fetch_kojima_job_listing_html=maybe_fetch_kojima_job_listing_html,
+    )
+    if not html or static_plugin_blocked_by_js_shell(
+        html=html,
+        page_url=page_url,
+        source_row=source_row,
+    ):
         return []
 
-    # Prefer dynamic listing HTML if available; this is already a known special-case.
-    try:
-        if callable(maybe_fetch_kojima_job_listing_html):
-            dynamic = maybe_fetch_kojima_job_listing_html(
-                page_url=page_url,
-                page_html=html,
-                timeout_s=timeout_s,
-                retries=retries,
-                backoff_s=backoff_s,
-            )
-            if dynamic and dynamic not in html:
-                html = dynamic
-    except Exception:
-        # Fall back to the original HTML if the dynamic step fails.
-        pass
-
-    ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url)
-    if _heuristics.detect_js_shell(html):
-        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-            _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE,
-            browser_fallback_recommended=True,
-            extractor_hint="js_shell_detected",
-            ats_links=ats_links,
-        )
-        return []
-
-    rows = parse_jobpostings_from_html(
-        html,
-        base_url=page_url,
-        fallback_company=company,
-        fallback_source_id_prefix=f"static:{source_id}",
+    rows = _parse_kojima_rows(
+        html=html,
+        page_url=page_url,
+        company=company,
+        source_id=source_id,
+        timeout_s=timeout_s,
+        parse_jobpostings_from_html=parse_jobpostings_from_html,
+        try_playwright=try_playwright,
     )
-    if not rows:
-        rows = _parse_kojima_listing_rows(
-            html=html,
-            base_url=page_url,
-            company=company,
-            source_id=source_id,
-        )
-    if not rows and callable(try_playwright):
-        browser_html, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
-        if browser_html:
-            rows = _parse_kojima_listing_rows(
-                html=browser_html,
-                base_url=page_url,
-                company=company,
-                source_id=source_id,
-            )
-    for row in rows:
-        if isinstance(row, dict):
-            row["adapter"] = "static"
-            row["studio"] = company
-            row["source"] = clean_text(source_row.get("name")) or "kojima"
-    cleaned = [r for r in rows if isinstance(r, dict)]
+    cleaned = stamp_static_plugin_rows(rows=rows, company=company, source_name=source_name)
     if not cleaned:
-        if _heuristics.detect_no_openings(html):
-            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-                _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
-                browser_fallback_recommended=False,
-                empty_confirmed=True,
-                extractor_hint="explicit_no_openings_marker",
-                ats_links=ats_links,
-            )
-        else:
-            likely_js = (
-                _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
-            )
-            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-                _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
-                if likely_js
-                else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
-                browser_fallback_recommended=True,
-                extractor_hint="parse_empty_js_shell_suspected" if likely_js else "parse_empty",
-                ats_links=ats_links,
-            )
+        record_static_plugin_empty_parse(html=html, page_url=page_url, source_row=source_row)
     return cleaned
 
 

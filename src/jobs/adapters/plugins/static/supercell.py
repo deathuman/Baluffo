@@ -1,21 +1,52 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urljoin, urlparse
 
-from src.jobs.adapters.html_parsers import strip_html_text
-from src.jobs.adapters.plugins.static import _heuristics
+from src.jobs.adapters.plugins.static._runner import (
+    fetch_static_plugin_html_with_browser_fallback,
+    first_static_page,
+    record_static_plugin_empty_parse,
+    render_static_plugin_js_shell,
+    stamp_static_plugin_rows,
+    static_detail_link_rows,
+    static_plugin_blocked_by_js_shell,
+    static_plugin_context_values,
+)
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
-from src.jobs.text_utils import clean_text
 from src.scrapers import domain_profiles
 
 
 def can_handle(ctx: AdapterPluginContext) -> bool:
     identity = (ctx.source_identity or "").strip().lower()
     return identity in ("supercell.com", "www.supercell.com")
+
+
+def _parse_supercell_rows(
+    *,
+    html: str,
+    page_url: str,
+    company: str,
+    source_id: str,
+    parse_jobpostings_from_html: Callable[..., list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    rows = parse_jobpostings_from_html(
+        html,
+        base_url=page_url,
+        fallback_company=company,
+        fallback_source_id_prefix=f"static:{source_id}",
+    )
+    if rows:
+        return rows
+    profile = domain_profiles.domain_profile_for_url(page_url)
+    return static_detail_link_rows(
+        html=html,
+        page_url=page_url,
+        company=company,
+        source_id=source_id,
+        is_probable_detail_url=lambda url: domain_profiles.is_probable_job_detail_url(url, profile),
+    )
 
 
 def run(
@@ -33,117 +64,43 @@ def run(
     _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    page_url = clean_text(pages[0])
+    page_url = first_static_page(pages)
     if not page_url:
         return []
-
-    company = (
-        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
-        or "Supercell"
+    company, source_id, source_name = static_plugin_context_values(
+        source_row=source_row,
+        default_company="Supercell",
+        default_source_id="supercell",
+        default_source_name="supercell",
     )
-    source_id = (source_row.get("id") or "").strip() or "supercell"
-
-    html = ""
-    try:
-        html = fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
-        if try_playwright:
-            html, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
-        if not html:
-            classification, recommend = _heuristics.classify_fetch_exception(exc)
-            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-                classification,
-                browser_fallback_recommended=bool(recommend),
-                extractor_hint="fetch_failed",
-                error=str(exc),
-            )
-            return []
-
-    ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url) if html else []
-    if html and _heuristics.detect_js_shell(html) and try_playwright:
-        html2, _ = try_playwright(page_url, max(3, min(timeout_s, 30)))
-        if html2:
-            html = html2
-            ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url)
-    if _heuristics.detect_js_shell(html):
-        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-            _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE,
-            browser_fallback_recommended=True,
-            extractor_hint="js_shell_detected",
-            ats_links=ats_links,
-        )
+    html = fetch_static_plugin_html_with_browser_fallback(
+        fetch_text=fetch_text,
+        page_url=page_url,
+        timeout_s=timeout_s,
+        source_row=source_row,
+        try_playwright=try_playwright,
+    )
+    html = render_static_plugin_js_shell(
+        html=html,
+        page_url=page_url,
+        timeout_s=timeout_s,
+        try_playwright=try_playwright,
+    )
+    if not html or static_plugin_blocked_by_js_shell(
+        html=html,
+        page_url=page_url,
+        source_row=source_row,
+    ):
         return []
 
-    rows = parse_jobpostings_from_html(
-        html,
-        base_url=page_url,
-        fallback_company=company,
-        fallback_source_id_prefix=f"static:{source_id}",
+    rows = _parse_supercell_rows(
+        html=html,
+        page_url=page_url,
+        company=company,
+        source_id=source_id,
+        parse_jobpostings_from_html=parse_jobpostings_from_html,
     )
-    if not rows and html:
-        profile = domain_profiles.domain_profile_for_url(page_url)
-        base_host = (urlparse(page_url).netloc or "").lower()
-        seen_links: set[str] = set()
-        for match in re.finditer(
-            r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
-            html,
-        ):
-            href = clean_text(match.group(1))
-            anchor_inner = match.group(2) or ""
-            anchor_text = (
-                strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner)).strip() or "Job"
-            )
-            if not href:
-                continue
-            absolute = urljoin(page_url, href)
-            if (urlparse(absolute).netloc or "").lower() != base_host:
-                continue
-            if not domain_profiles.is_probable_job_detail_url(absolute, profile):
-                continue
-            if absolute in seen_links:
-                continue
-            seen_links.add(absolute)
-            rows.append(
-                {
-                    "title": anchor_text[:200],
-                    "company": company,
-                    "jobLink": absolute,
-                    "sourceJobId": f"{source_id}:{absolute}",
-                    "city": "",
-                    "country": "",
-                    "workType": "",
-                    "contractType": "",
-                    "sector": "Game",
-                    "postedAt": "",
-                }
-            )
-    for row in rows:
-        if isinstance(row, dict):
-            row["adapter"] = "static"
-            row["studio"] = company
-            row["source"] = clean_text(source_row.get("name")) or "supercell"
-    cleaned = [r for r in rows if isinstance(r, dict)]
+    cleaned = stamp_static_plugin_rows(rows=rows, company=company, source_name=source_name)
     if not cleaned:
-        if _heuristics.detect_no_openings(html):
-            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-                _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
-                browser_fallback_recommended=False,
-                empty_confirmed=True,
-                extractor_hint="explicit_no_openings_marker",
-                ats_links=ats_links,
-            )
-        else:
-            # If the HTML path yields nothing, escalate to browser fallback for this site.
-            # This avoids repeated extract-zero failures on JS-rendered listings.
-            likely_js = (
-                _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
-            )
-            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-                _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
-                if likely_js
-                else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
-                browser_fallback_recommended=True,
-                extractor_hint="parse_empty_js_shell_suspected" if likely_js else "parse_empty",
-                ats_links=ats_links,
-            )
+        record_static_plugin_empty_parse(html=html, page_url=page_url, source_row=source_row)
     return cleaned

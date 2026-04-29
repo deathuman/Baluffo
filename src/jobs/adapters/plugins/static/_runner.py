@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
+from src.jobs.adapters.html_parsers import strip_html_text
 from src.jobs.adapters.plugins.static import _heuristics
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
@@ -116,6 +119,49 @@ def fetch_static_plugin_html(
         return ""
 
 
+def fetch_static_plugin_html_with_browser_fallback(
+    *,
+    fetch_text: Callable[[str, int], str],
+    page_url: str,
+    timeout_s: int,
+    source_row: dict[str, Any],
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+    browser_timeout_s: int = 30,
+    record_failure_meta: bool = True,
+) -> str:
+    try:
+        return fetch_text(page_url, timeout_s)
+    except Exception as exc:  # noqa: BLE001
+        if try_playwright:
+            html, _ = try_playwright(page_url, max(3, min(timeout_s, browser_timeout_s)))
+            if html:
+                return html
+        if record_failure_meta:
+            classification, recommend = _heuristics.classify_fetch_exception(exc)
+            _meta(
+                source_row,
+                classification,
+                browser_fallback_recommended=bool(recommend),
+                extractor_hint="fetch_failed",
+                error=str(exc),
+            )
+        return ""
+
+
+def render_static_plugin_js_shell(
+    *,
+    html: str,
+    page_url: str,
+    timeout_s: int,
+    try_playwright: Callable[[str, int], tuple[str, str]] | None = None,
+    browser_timeout_s: int = 30,
+) -> str:
+    if html and try_playwright and _heuristics.detect_js_shell(html):
+        rendered_html, _ = try_playwright(page_url, max(3, min(timeout_s, browser_timeout_s)))
+        return rendered_html or html
+    return html
+
+
 def static_plugin_blocked_by_js_shell(
     *,
     html: str,
@@ -175,6 +221,48 @@ def record_static_plugin_empty_parse(
         extractor_hint="parse_empty_js_shell_suspected" if likely_js else "parse_empty",
         ats_links=ats_links,
     )
+
+
+def static_detail_link_rows(
+    *,
+    html: str,
+    page_url: str,
+    company: str,
+    source_id: str,
+    is_probable_detail_url: Callable[[str], bool],
+) -> list[RawJob]:
+    base_host = (urlparse(page_url).netloc or "").lower()
+    seen_links: set[str] = set()
+    rows: list[RawJob] = []
+    for match in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html or ""):
+        href = clean_text(match.group(1))
+        if not href:
+            continue
+        absolute = urljoin(page_url, href)
+        if (urlparse(absolute).netloc or "").lower() != base_host:
+            continue
+        if not is_probable_detail_url(absolute):
+            continue
+        if absolute in seen_links:
+            continue
+        seen_links.add(absolute)
+        anchor_inner = match.group(2) or ""
+        anchor_text = strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_inner)).strip() or "Job"
+        rows.append(
+            {
+                "title": anchor_text[:200],
+                "company": company,
+                "jobLink": absolute,
+                "sourceJobId": f"{source_id}:{absolute}",
+                "city": "",
+                "country": "",
+                "workType": "",
+                "contractType": "",
+                "sector": "Game",
+                "postedAt": "",
+            }
+        )
+    return rows
 
 
 def _fetch_html(
