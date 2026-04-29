@@ -594,39 +594,40 @@ def _location_candidate_words(value: str) -> list[str]:
     return re.findall(r"[A-Za-zÀ-ÿ0-9']+", value)
 
 
+def _normalized_location_name(token: str) -> str:
+    return re.sub(r"[\s_-]+", " ", norm_text(token)).strip()
+
+
 def _looks_like_location_name(token: str, words: list[str]) -> bool:
     if not words:
         return False
     lower_words = [word.lower() for word in words]
-    normalized = re.sub(r"[\s_-]+", " ", norm_text(token)).strip()
-    if any(word in _CITY_LOCATION_PREFIX_WORDS for word in lower_words):
-        return True
-    if any(word in _CITY_LOCATION_PREFIXES for word in lower_words):
-        return True
-    if any(word in {"de", "del", "da", "do", "du", "of", "and", "or"} for word in lower_words):
+    if any(
+        word in _CITY_LOCATION_PREFIX_WORDS
+        or word in _CITY_LOCATION_PREFIXES
+        or word in {"de", "del", "da", "do", "du", "of", "and", "or"}
+        for word in lower_words
+    ):
         return True
     if len(words) <= 3 and len(set(lower_words)) < len(lower_words):
         return True
-    if normalized in _CITY_LOCATION_ALLOWLIST:
+    if _normalized_location_name(token) in _CITY_LOCATION_ALLOWLIST:
         return True
     if lower_words[-1] in _CITY_LOCATION_SUFFIX_WORDS and len(words) <= 4:
-        if all(
+        return all(
             word.istitle() or word.isupper() or word.lower() in _CITY_LOCATION_PREFIX_WORDS
             for word in words[:-1]
-        ):
-            return True
-    if len(words) == 1 and "'" in words[0] and words[0].replace("'", "").isalpha():
-        return True
-    if len(words) == 1 and words[0].istitle():
-        return True
-    return False
+        )
+    return len(words) == 1 and (
+        ("'" in words[0] and words[0].replace("'", "").isalpha()) or words[0].istitle()
+    )
 
 
 def _fragment_looks_like_location_value(fragment: str) -> bool:
     text = clean_text(fragment)
     if not text:
         return False
-    normalized = re.sub(r"[\s_-]+", " ", norm_text(text)).strip()
+    normalized = _normalized_location_name(text)
     if normalized in _REMOTEISH_LOCATION_TOKENS:
         return True
     if normalized in _CITY_REGION_DESCRIPTOR_ALLOWLIST:
@@ -650,26 +651,7 @@ def _looks_like_pipe_joined_location_summary(token: str) -> bool:
     return all(_fragment_looks_like_location_value(fragment) for fragment in fragments)
 
 
-def classify_city_garbage(value: Any) -> str:
-    token = clean_text(value)
-    if not token:
-        return ""
-    lowered = norm_text(token)
-    normalized = re.sub(r"[\s_-]+", " ", lowered).strip()
-    words = _location_candidate_words(token)
-    alpha_words = [word for word in words if any(char.isalpha() for char in word)]
-    if token.endswith((")", "]", "}")) and not any(opening in token for opening in ("(", "[", "{")):
-        stripped = token.rstrip(")]}")
-        if stripped and re.fullmatch(r"[A-Za-zÀ-ÿ']+(?:\s+[A-Za-zÀ-ÿ']+)*", stripped):
-            return "role_category"
-    if normalized in _CITY_REGION_DESCRIPTOR_ALLOWLIST:
-        return ""
-    if _looks_like_pipe_joined_location_summary(token):
-        return ""
-    if normalized in _REMOTEISH_LOCATION_TOKENS or _looks_like_country_token(token):
-        return ""
-    if "student and recent graduates" in normalized:
-        return "role_category"
+def _classify_chrome_or_label_noise(token: str, normalized: str) -> str:
     if normalized in _LOCATION_LABEL_TOKENS:
         return "site_chrome"
     if normalized in _CITY_CHROME_LABELS or any(
@@ -678,6 +660,12 @@ def classify_city_garbage(value: Any) -> str:
         return "site_chrome"
     if token.endswith(":") and normalized.rstrip(":") not in _REMOTEISH_LOCATION_TOKENS:
         return "technical_noise"
+    return ""
+
+
+def _classify_prose_or_role_noise(normalized: str) -> str:
+    if "student and recent graduates" in normalized:
+        return "role_category"
     if any(normalized.startswith(prefix) for prefix in _LOCATION_PREFIX_NOISE):
         return "prose_bleed"
     if any(fragment in normalized for fragment in _LOCATION_FRAGMENT_NOISE):
@@ -688,15 +676,17 @@ def classify_city_garbage(value: Any) -> str:
         return "role_category"
     if any(indicator in normalized for indicator in _CITY_MULTI_LANGUAGE_PROSE_INDICATORS):
         return "prose_bleed"
+    return ""
+
+
+def _classify_technical_city_noise(token: str, normalized: str, words: list[str]) -> str:
     if _URL_LIKE_RE.search(token) or _EMAIL_LIKE_RE.search(token):
         return "technical_noise"
     if _PHONE_LIKE_RE.search(token):
         return "technical_noise"
     if _CSS_LIKE_RE.search(token) or _SCRIPT_LIKE_RE.search(token):
         return "technical_noise"
-    if _DATE_LIKE_RE.fullmatch(token):
-        return "technical_noise"
-    if _VERSION_LIKE_RE.fullmatch(normalized):
+    if _DATE_LIKE_RE.fullmatch(token) or _VERSION_LIKE_RE.fullmatch(normalized):
         return "technical_noise"
     if _HOURS_INFO_RE.fullmatch(normalized):
         return "technical_noise"
@@ -710,30 +700,36 @@ def classify_city_garbage(value: Any) -> str:
         return "technical_noise"
     if not words or not any(char.isalnum() for char in token):
         return "technical_noise"
-    if len(words) == 1:
-        word = words[0]
-        lowered_word = word.lower()
-        if lowered_word in _CITY_ABBREVIATION_ALLOWLIST:
-            return ""
-        if len(lowered_word) == 1 and lowered_word.isalpha() and lowered_word.islower():
-            return "technical_noise"
-        if lowered_word in _LOWERCASE_CITY_CHROME_TOKENS and (
-            token == token.lower() or token.istitle()
-        ):
-            return "site_chrome"
-        if "'" in word and word.replace("'", "").isalpha():
-            return ""
-        if lowered_word in _CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS:
-            return "role_category"
-        if word.isdigit():
-            return "technical_noise"
-        if word.isupper():
-            if len(word) <= 4:
-                return "technical_noise"
-            return "organization_bleed"
-        if not word.istitle() and not word.islower():
-            return "organization_bleed"
+    return ""
+
+
+def _classify_single_city_word(token: str, words: list[str]) -> str | None:
+    if len(words) != 1:
+        return None
+    word = words[0]
+    lowered_word = word.lower()
+    if lowered_word in _CITY_ABBREVIATION_ALLOWLIST:
         return ""
+    if len(lowered_word) == 1 and lowered_word.isalpha() and lowered_word.islower():
+        return "technical_noise"
+    if lowered_word in _LOWERCASE_CITY_CHROME_TOKENS and (
+        token == token.lower() or token.istitle()
+    ):
+        return "site_chrome"
+    if "'" in word and word.replace("'", "").isalpha():
+        return ""
+    if lowered_word in _CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS:
+        return "role_category"
+    if word.isdigit():
+        return "technical_noise"
+    if word.isupper():
+        return "technical_noise" if len(word) <= 4 else "organization_bleed"
+    if not word.istitle() and not word.islower():
+        return "organization_bleed"
+    return ""
+
+
+def _classify_multi_city_words(token: str, words: list[str], alpha_words: list[str]) -> str:
     if any(word.lower() in _CITY_GARBAGE_SINGLE_TOKEN_KEYWORDS for word in alpha_words):
         return "role_category"
     if len(alpha_words) > 6 and not any(delimiter in token for delimiter in (",", "/", "-")):
@@ -741,11 +737,53 @@ def classify_city_garbage(value: Any) -> str:
     if alpha_words and all(word.islower() for word in alpha_words):
         return "prose_bleed"
     if len(alpha_words) <= 3 and all((word.istitle() or word.isupper()) for word in alpha_words):
-        if any(delimiter in token for delimiter in (",", "/", "-", "–", "—")):
+        if any(
+            delimiter in token
+            for delimiter in (
+                ",",
+                "/",
+                "-",
+                "\u2013",
+                "\u2014",
+                "\u00e2\u20ac\u201c",
+                "\u00e2\u20ac\u201d",
+            )
+        ):
             return ""
         if not _looks_like_location_name(token, words):
             return "name_like"
     return ""
+
+
+def classify_city_garbage(value: Any) -> str:
+    token = clean_text(value)
+    if not token:
+        return ""
+    normalized = _normalized_location_name(token)
+    words = _location_candidate_words(token)
+    alpha_words = [word for word in words if any(char.isalpha() for char in word)]
+    if normalized in _CITY_REGION_DESCRIPTOR_ALLOWLIST:
+        return ""
+    if _looks_like_pipe_joined_location_summary(token):
+        return ""
+    if normalized in _REMOTEISH_LOCATION_TOKENS or _looks_like_country_token(token):
+        return ""
+    if token.endswith((")", "]", "}")) and not any(opening in token for opening in ("(", "[", "{")):
+        stripped = token.rstrip(")]}")
+        if stripped and re.fullmatch(r"[A-Za-z??-??']+(?:\s+[A-Za-z??-??']+)*", stripped):
+            return "role_category"
+    for classifier in (
+        lambda: _classify_chrome_or_label_noise(token, normalized),
+        lambda: _classify_prose_or_role_noise(normalized),
+        lambda: _classify_technical_city_noise(token, normalized, words),
+    ):
+        result = classifier()
+        if result:
+            return result
+    single_result = _classify_single_city_word(token, words)
+    if single_result is not None:
+        return single_result
+    return _classify_multi_city_words(token, words, alpha_words)
 
 
 def is_plausibly_location_candidate(value: Any) -> bool:
