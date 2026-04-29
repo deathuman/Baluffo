@@ -10,7 +10,6 @@ from collections.abc import Callable
 from typing import Any
 
 from src.jobs.adapters import provider_personio as _provider_personio
-from src.jobs.adapters import provider_structured_listing as _provider_structured_listing
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
@@ -295,7 +294,8 @@ def run_bamboohr_sources_source(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
-    return _provider_structured_listing.run_bamboohr_sources_source(
+    return _dispatch_provider_api(
+        "bamboohr_sources",
         fetch_text=fetch_text,
         timeout_s=timeout_s,
         retries=retries,
@@ -314,7 +314,8 @@ def run_workday_sources_source(
     source_state_rows: dict[str, dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
 ) -> list[RawJob]:
-    return _provider_structured_listing.run_workday_sources_source(
+    return _dispatch_provider_api(
+        "workday_sources",
         fetch_text=fetch_text,
         timeout_s=timeout_s,
         retries=retries,
