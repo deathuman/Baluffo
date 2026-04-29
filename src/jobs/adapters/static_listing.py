@@ -31,6 +31,7 @@ from src.jobs.adapters.static_detail_heuristics import (
     source_detail_retries_for,
 )
 from src.jobs.adapters.static_runtime_support import (
+    _as_dict,
     effective_timeout_for_remaining_budget,
     remaining_static_source_budget_s,
     static_source_budget_exhausted,
@@ -50,6 +51,21 @@ from ..common import config as common_config
 from .static_runtime import StaticSourceContext
 
 root: Any | None = None
+
+
+def _effective_timeout_or_raise(
+    *,
+    timeout_s: int,
+    remaining_budget_s: float,
+    source_budget_s: int,
+) -> int:
+    effective_timeout_s = effective_timeout_for_remaining_budget(
+        timeout_s=timeout_s,
+        remaining_budget_s=remaining_budget_s,
+    )
+    if effective_timeout_s <= 0:
+        raise TimeoutError(f"time budget exceeded ({source_budget_s}s)")
+    return effective_timeout_s
 
 
 @dataclass
@@ -694,10 +710,6 @@ def _extract_listing_candidates(
     return listing_jobs_found, detail_links
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
 @dataclass(frozen=True)
 class StaticDetailTraversalPlan:
     page_url: str
@@ -776,12 +788,11 @@ def _fetch_detail_job(
     current_remaining_budget_s = remaining_static_source_budget_s(
         deadline_monotonic=float(ctx.source_deadline)
     )
-    effective_timeout_s = effective_timeout_for_remaining_budget(
+    effective_timeout_s = _effective_timeout_or_raise(
         timeout_s=ctx.run_deps.timeout_s,
         remaining_budget_s=current_remaining_budget_s,
+        source_budget_s=plan.source_budget_s,
     )
-    if effective_timeout_s <= 0:
-        raise TimeoutError(f"time budget exceeded ({plan.source_budget_s}s)")
     html, cache_hit = ctx.html_fetcher.fetch_html_cached(
         url,
         remaining_budget_s=current_remaining_budget_s,
@@ -1111,13 +1122,11 @@ class StaticFetchRunner:
             payload.get("sourceBudgetS") or self.config.static_source_time_budget_s
         )
         self.ctx.sync_source_deadline(source_budget_s)
-        effective_timeout_s = effective_timeout_for_remaining_budget(
+        return _effective_timeout_or_raise(
             timeout_s=self.deps.timeout_s,
             remaining_budget_s=self.ctx.remaining_budget_s(),
+            source_budget_s=source_budget_s,
         )
-        if effective_timeout_s <= 0:
-            raise TimeoutError(f"time budget exceeded ({source_budget_s}s)")
-        return effective_timeout_s
 
     def _record_fetch_meta(self, url, started, timeout_s, fallback_used, fallback_error) -> None:
         self.stage_state.record_batch_meta(
@@ -1219,11 +1228,9 @@ class StaticFetchRunner:
                     effective_timeout_s,
                 )
         except Exception as exc:  # noqa: BLE001
-            (
-                html,
-                browser_fallback_attempted,
-                browser_fallback_error,
-            ) = await self._async_browser_fallback(url, str(exc))
+            html, browser_fallback_attempted, browser_fallback_error = await asyncio.to_thread(
+                self._sync_browser_fallback, url, str(exc)
+            )
         self._record_fetch_meta(
             url,
             fetch_started,
@@ -1232,33 +1239,6 @@ class StaticFetchRunner:
             browser_fallback_error,
         )
         return html
-
-    async def _async_browser_fallback(self, url: str, err_str: str) -> tuple[str, bool, str]:
-        html = ""
-        fallback_error = ""
-        should_fallback, reason = _should_try_listing_browser_fallback(
-            url,
-            err_str,
-            anti_bot_browser_retry=self.anti_bot_browser_retry,
-        )
-        attempted = bool(self.deps.try_playwright and should_fallback)
-        if attempted:
-            browser_budget_s = effective_timeout_for_remaining_budget(
-                timeout_s=self.deps.timeout_s,
-                remaining_budget_s=self.ctx.remaining_budget_s(),
-            )
-            if browser_budget_s > 0:
-                self.stage_state.increment_browser_fallbacks()
-                html, fallback_error = await asyncio.to_thread(
-                    self.deps.try_playwright,
-                    url,
-                    browser_budget_s,
-                )
-                self._log_playwright_fallback(url, reason, html)
-        if not html:
-            self._note_listing_fetch_failure(err_str, attempted, reason)
-            raise RuntimeError(err_str)
-        return html, attempted, fallback_error
 
     def _on_listing_batch_progress(self, completed: int, total: int) -> None:
         completed_count = max(0, int(completed or 0))
