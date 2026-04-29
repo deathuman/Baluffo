@@ -35,10 +35,10 @@ The completed jobs adapter mass-refactor made real but narrow progress:
 
 The broader objective is not complete:
 
-- `src/jobs` is still about 134 Python files and 27,790 lines.
-- `src/jobs/adapters` is still about 75 Python files and 16,560 lines.
+- `src/jobs` is still about 134 Python files and 28,340 lines.
+- `src/jobs/adapters` is still about 75 Python files and 16,620 lines.
 - Since the jobs adapter refactor started, production `src/jobs` is roughly net-flat, not meaningfully smaller.
-- `python -m ruff check --select C901 src/jobs` currently reports 59 complexity offenders.
+- `python -m ruff check --select C901 src/jobs` currently reports 47 complexity offenders.
 - Several compatibility surfaces are still preserved by docs/tests even though the current product goal allows breaking internal fetcher compatibility.
 
 The completed roadmap was removed from active docs after commit `7e62dac` completed the evidence-backed dead-source deletion slice. Use git history for historical provenance; keep this plan as the active direction.
@@ -47,8 +47,8 @@ The completed roadmap was removed from active docs after commit `7e62dac` comple
 
 A later "unified edition" refactor proposal was reviewed against the current repo and should not be implemented verbatim. Its useful direction is retained below, but these claims were stale or misleading:
 
-- `src/jobs` is currently 134 Python files and 27,790 lines.
-- `python -m ruff check --select C901 src/jobs` currently reports 59 offenders, not a cleanable per-slice pass gate.
+- `src/jobs` is currently 134 Python files and 28,340 lines.
+- `python -m ruff check --select C901 src/jobs` currently reports 47 offenders, not a cleanable per-slice pass gate.
 - `scripts/complexity_baseline.json` now tracks jobs C901 allowances; touched hotspots should leave that baseline when a slice brings them below the threshold.
 - `static_listing_flow.py` and `static_detail.py` are already deleted; any plan entries targeting `_extract_listing_candidates` or `run_detail_traversal` are historical.
 - `static_listing.py::process_static_source` and `location_rules.py::classify_city_garbage` are no longer current broad C901 offenders.
@@ -67,13 +67,12 @@ Valuable medium-risk candidates:
 - Consolidate state, reporting, and contracts leaf modules only after the compatibility-policy reset updates docs and package-shape tests. These are not current public product contracts; they are internal guardrails that can be rewritten if the replacement is simpler.
 - Break `sys.modules[__name__]` and root-protocol indirection as standalone slices with targeted package/startup tests.
 
-Current jobs C901 priority list:
+Current jobs C901 priority list after the large-cut C901 ratchet:
 
-- `pipeline_source_results.py::execute_loader` at 33.
-- `canonicalize.py::canonicalize_job_with_reason` at 32.
-- `dedup.py::deduplicate_jobs` at 28 and `dedup.py::merge_records` at 24.
-- `adapters/parsers/location.py::parse_generic_location_fields` at 26 and `text_utils.py::invalid_location_reason` at 26.
-- Static plugin runners and renderers, especially `littlechicken`, `sheet_studios`, `supercell`, `_rendered_cards`, `activision`, `kojima`, `larian`, `blizzard`, `milestone`, and `remedy`.
+- `text_utils.py::invalid_location_reason` at 26.
+- Static plugin runners and renderers, especially `littlechicken`, `sheet_studios`, `supercell`, `_rendered_cards`, `activision`, `kojima`, and `larian`.
+- Social/community source runners and parser helpers.
+- Shared taxonomy/registry helpers that still own broad branch-heavy classification logic.
 
 ## Active Simplification Strategy
 
@@ -253,12 +252,12 @@ cmd /c npm run lint:precommit
 
 ### Phase 5: Hotspot reductions and broad C901 ratchet
 
-Status: active. `contracts_source_reports.py::normalize_source_report_row` now delegates cohesive field groups and has left the C901 baseline. The next large cuts are `pipeline_source_results.py::execute_loader`, canonicalization, deduplication, location parsing, and repeated static plugin lifecycle code. Current milestone metrics:
+Status: active. `contracts_source_reports.py::normalize_source_report_row`, `pipeline_source_results.py::execute_loader`, canonicalization, deduplication, location parsing, and the first static plugin lifecycle group now leave the C901 baseline. These cuts reduced broad C901 materially but increased LOC, so the next priority should be deletion-oriented lifecycle/plugin consolidation rather than more helper-only extraction. Current milestone metrics:
 
 - Jobs Python files: 134.
-- Jobs Python lines: 27,790.
-- Broad `src/jobs` C901 offenders: 59.
-- Adapter C901 offenders: 39.
+- Jobs Python lines: 28,340.
+- Broad `src/jobs` C901 offenders: 47.
+- Adapter C901 offenders: 32.
 
 - Refactor the largest remaining hotspots after lifecycle deletion has removed duplicated branches.
 - Update `scripts/complexity_baseline.json` only when scores decrease or offenders disappear.
