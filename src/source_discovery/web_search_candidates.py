@@ -42,12 +42,7 @@ from .directory_page_recovery import (
     resolve_recovery_url_limit,
     run_recovery_for_requests,
 )
-from .page_diagnostics import (
-    browser_recoverable_error as shared_browser_recoverable_error,
-)
-from .page_diagnostics import (
-    looks_like_js_shell as shared_looks_like_js_shell,
-)
+from .page_diagnostics import browser_recoverable_error, looks_like_js_shell
 from .page_outcomes import (
     FetchedPageContext,
     PageOutcome,
@@ -248,10 +243,6 @@ def _web_page_analysis_outcome(
     return outcome
 
 
-def _web_recovery_request(context: FetchedPageContext) -> DirectoryRecoveryRequest | None:
-    return http_recovery_request_from_context(context)
-
-
 def _web_recovery_result_candidates(
     result: dict[str, Any],
     request: DirectoryRecoveryRequest,
@@ -277,14 +268,6 @@ def _web_recovery_result_candidates(
     )
 
 
-def _looks_like_js_shell(html: str) -> bool:
-    return shared_looks_like_js_shell(html)
-
-
-def _browser_recoverable_error(error: str) -> bool:
-    return shared_browser_recoverable_error(error)
-
-
 def _append_browser_recovery_candidate(
     browser_recovery_candidates: list[dict[str, Any]],
     *,
@@ -307,15 +290,6 @@ def _append_browser_recovery_candidate(
         nl_priority=nl_priority,
         reason_detail=reason_detail,
         error=error,
-    )
-
-
-def _browser_recovery_summary(
-    browser_recovery_candidates: list[dict[str, Any]],
-) -> dict[str, int]:
-    return browser_recovery_helpers.browser_recovery_summary(
-        browser_recovery_candidates,
-        include_reason_breakdown=True,
     )
 
 
@@ -533,7 +507,10 @@ def _run_web_page_job_stage(
             "staticCandidates": len(static_rows),
             "failures": len(failure_rows),
             **_recovery_summary_fields(recovery_summary),
-            **_browser_recovery_summary(browser_rows),
+            **browser_recovery_helpers.browser_recovery_summary(
+                browser_rows,
+                include_reason_breakdown=True,
+            ),
         },
         "batchTiming": {
             "pageFetchMs": page_fetch_ms,
@@ -615,7 +592,10 @@ def _scan_seed_careers_page_candidates(
             "seedStaticCandidates": int(page_summary.get("staticCandidates") or 0),
             "seedFailures": int(page_summary.get("failures") or 0),
             **_recovery_summary_fields(page_summary),
-            **_browser_recovery_summary(list(page_stage.get("browserRecoveryCandidates") or [])),
+            **browser_recovery_helpers.browser_recovery_summary(
+                list(page_stage.get("browserRecoveryCandidates") or []),
+                include_reason_breakdown=True,
+            ),
         },
         "batchTiming": {
             "seedSetupMs": setup_ms,
@@ -704,7 +684,7 @@ def _record_web_page_result(
             failures.append(failure)
             payload = dict(result.get("payload") or {})
             error = str(failure.get("error") or "")
-            if _browser_recoverable_error(error):
+            if browser_recoverable_error(error):
                 _append_browser_recovery_candidate(
                     browser_recovery_candidates,
                     url=str(result.get("url") or ""),
@@ -726,13 +706,13 @@ def _record_web_page_result(
         nl_priority=bool(payload.get("nlPriority")),
         discovery_method=discovery_method,
         payload=payload,
-        recovery_request=_web_recovery_request,
+        recovery_request=http_recovery_request_from_context,
         enable_recovery=recovery_requests is not None,
     )
     provider_candidates.extend(outcome.provider_candidates)
     static_candidates.extend(outcome.static_candidates)
     found_candidate = outcome.found_candidates
-    if not found_candidate and _looks_like_js_shell(page_html):
+    if not found_candidate and looks_like_js_shell(page_html):
         _append_browser_recovery_candidate(
             browser_recovery_candidates,
             url=page_url,
@@ -912,7 +892,10 @@ def _scan_web_search_candidates(
             "webQuerySamples": web_query_samples,
             "webFailureSamples": web_failure_samples,
             **_recovery_summary_fields(page_summary),
-            **_browser_recovery_summary(list(page_stage.get("browserRecoveryCandidates") or [])),
+            **browser_recovery_helpers.browser_recovery_summary(
+                list(page_stage.get("browserRecoveryCandidates") or []),
+                include_reason_breakdown=True,
+            ),
         },
         "batchTiming": {
             "webSearchFetchMs": search_ms,
@@ -933,7 +916,10 @@ def _merge_web_scan_results(results: list[dict[str, Any]]) -> dict[str, Any]:
         results,
         additive_summary_keys=WEB_SEARCH_RECOVERY_SUMMARY_KEYS,
         browser_recovery_dedupe=unique_sources,
-        browser_recovery_summary=_browser_recovery_summary,
+        browser_recovery_summary=lambda rows: browser_recovery_helpers.browser_recovery_summary(
+            rows,
+            include_reason_breakdown=True,
+        ),
         summary_defaults={"browserRecoveredActiveCandidates": 0},
     )
 
@@ -974,18 +960,6 @@ def _initial_web_search_browser_recovery_artifact() -> dict[str, Any]:
         "browserRecoveryCandidates": [],
         "browserRecovery": {},
     }
-
-
-def _web_search_browser_recovery_rows(artifact: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        dict(row)
-        for row in list(artifact.get("browserRecoveryCandidates") or [])
-        if isinstance(row, dict)
-    ]
-
-
-def _web_search_browser_recovery_limit(batch_size: int, max_batches: int) -> int:
-    return batch_size * max_batches if batch_size and max_batches else batch_size
 
 
 def _record_web_browser_recovery_fetch_failure(
@@ -1082,34 +1056,6 @@ def _analyze_web_browser_recovery_batch(
         rendered_probe_results=rendered_probe_results,
         fetch_failures=fetch_failures,
     )
-
-
-def _update_web_browser_recovery_summary(
-    artifact: dict[str, Any],
-    *,
-    active_browser_count: int,
-) -> None:
-    summary = dict(artifact.get("summary") or {})
-    summary["providerCandidates"] = len(list(artifact.get("providerCandidates") or []))
-    summary["staticCandidates"] = len(list(artifact.get("staticCandidates") or []))
-    summary["browserRecoveredActiveCandidates"] = active_browser_count
-    artifact["summary"] = summary
-
-
-def _merge_web_browser_recovery_updates(
-    artifact: dict[str, Any],
-    *,
-    output_path: Path,
-    browser_recovery: dict[str, Any],
-    active_browser_count: int,
-) -> None:
-    artifact["browserRecovery"] = browser_recovery
-    _update_web_browser_recovery_summary(
-        artifact,
-        active_browser_count=active_browser_count,
-    )
-    artifact["updatedAt"] = now_iso()
-    audit_ledger.save_artifact_atomic(artifact, output_path)
 
 
 def _validated_web_browser_recovery_rows(
@@ -1266,10 +1212,14 @@ def run_web_search_browser_recovery(
     if not artifact:
         artifact = _initial_web_search_browser_recovery_artifact()
     browser_recovery = dict(artifact.get("browserRecovery") or {})
-    all_recovery_rows = _web_search_browser_recovery_rows(artifact)
+    all_recovery_rows = [
+        dict(row)
+        for row in list(artifact.get("browserRecoveryCandidates") or [])
+        if isinstance(row, dict)
+    ]
     batch_size = _web_search_browser_recovery_batch_size(config)
     max_batches = _web_search_browser_recovery_max_batches(config)
-    limit = _web_search_browser_recovery_limit(batch_size, max_batches)
+    limit = batch_size * max_batches if batch_size and max_batches else batch_size
     concurrency = _web_search_browser_recovery_concurrency(config)
     browser_timeout_s = _web_search_browser_recovery_timeout_s(config, timeout_s)
     assembly_result = browser_recovery_helpers.run_browser_recovery_assembly(
@@ -1295,10 +1245,12 @@ def run_web_search_browser_recovery(
         include_fetch_counts=True,
         include_candidate_analysis_count=True,
     )
-    _merge_web_browser_recovery_updates(
-        artifact,
-        output_path=output_path,
-        browser_recovery=browser_recovery,
-        active_browser_count=assembly_result.active_count,
-    )
+    artifact["browserRecovery"] = browser_recovery
+    summary = dict(artifact.get("summary") or {})
+    summary["providerCandidates"] = len(list(artifact.get("providerCandidates") or []))
+    summary["staticCandidates"] = len(list(artifact.get("staticCandidates") or []))
+    summary["browserRecoveredActiveCandidates"] = assembly_result.active_count
+    artifact["summary"] = summary
+    artifact["updatedAt"] = now_iso()
+    audit_ledger.save_artifact_atomic(artifact, output_path)
     return artifact

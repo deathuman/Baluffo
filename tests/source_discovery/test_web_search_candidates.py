@@ -5,6 +5,7 @@ import pytest
 import src.source_discovery.directory_fetch as directory_fetch
 import src.source_discovery.web_search_candidates as web_candidates
 from src.source_discovery import directory_audit
+from src.source_discovery.directory_page_recovery import http_recovery_request_from_context
 from src.source_discovery.page_outcomes import FetchedPageContext
 
 from ._helpers import workspace_tmpdir
@@ -106,8 +107,8 @@ def test_infer_web_candidate_rejects_invalid_unknown_and_empty_provider_tokens()
     )
 
 
-def test_web_recovery_request_preserves_shape_and_validation() -> None:
-    request = web_candidates._web_recovery_request(
+def test_http_recovery_request_preserves_web_shape_and_validation() -> None:
+    request = http_recovery_request_from_context(
         FetchedPageContext(
             page_url=" https://studio.example/jobs ",
             html="<html></html>",
@@ -129,7 +130,7 @@ def test_web_recovery_request_preserves_shape_and_validation() -> None:
     assert request.html == "<html></html>"
     assert request.payload == {"nlPriority": True}
     assert (
-        web_candidates._web_recovery_request(
+        http_recovery_request_from_context(
             FetchedPageContext(
                 page_url="not a url",
                 html="",

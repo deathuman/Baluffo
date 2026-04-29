@@ -27,9 +27,6 @@ from .gamedevmap import (
 from .io_runtime import endpoint_url
 from .page_analysis import analyze_fetched_page
 from .page_diagnostics import (
-    looks_like_js_shell as shared_looks_like_js_shell,
-)
-from .page_diagnostics import (
     no_candidate_reason_detail as shared_no_candidate_reason_detail,
 )
 from .page_outcomes import (
@@ -842,10 +839,6 @@ def _validated_static_audit_candidate(
 
 def _html_url_candidates(html: str) -> list[str]:
     return recovery_url_planner.html_url_candidates(html)
-
-
-def _looks_like_js_shell(html: str) -> bool:
-    return shared_looks_like_js_shell(html, include_noscript_script_shell=True)
 
 
 def _no_careers_reason_detail(page_url: str, html: str) -> str:
