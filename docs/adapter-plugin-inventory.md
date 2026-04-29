@@ -141,7 +141,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 | naconstudiomilan | www.naconstudiomilan.com, naconstudiomilan.com | NACON Studio Milan careers |
 | nintendo_csod | jobs.nintendo.de, nintendoeurope.csod.com | Nintendo Europe CSOD careers |
 | remedy | remedygames.com, www.remedygames.com | Remedy careers (HTML-first; browser escalation when needed) |
-| rendered_cards | workwithindies.com, romerogames.com, starbreeze.com, stepico.com, mobge.net, and similar card/list careers pages | Shared rendered-card/list extractor for static pages |
+| rendered_cards | workwithindies.com, romerogames.com, starbreeze.com, stepico.com, mobge.net, and similar card/list careers pages | Registered directly from `_rendered_cards.py`; shared rendered-card/list extractor for static pages |
 | riot | www.riotgames.com | Riot Games careers |
 | sheet_studios | coolgames.com, gismart.com, aspyr.com, 10chambers.com, careers.10chambers.com, 24bitgames.com, 4jstudios.com, blacksnow.tv, napsteam.com, area35east.com, chubbypixel.com, bonfirestudios.com, bandainamcostudios.my | Sheet-sourced / indie studio career pages (shared heuristics; empty-confirmed or browser fallback when extract fails) |
 | supercell | supercell.com, www.supercell.com | Supercell careers (HTML-first; browser escalation when needed) |

@@ -18,6 +18,7 @@ from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.types import SimpleAdapterPlugin
 
 from . import (
+    _rendered_cards,
     activision,
     amanotes,
     ats_wrappers,
@@ -38,7 +39,6 @@ from . import (
     ncsoft,
     nintendo_csod,
     remedy,
-    rendered_cards,
     riot,
     sheet_studios,
     supercell,
@@ -68,7 +68,6 @@ def register_static_plugins() -> None:
         (riot, "riot", 90),
         (larian, "larian", 90),
         (littlechicken, "littlechicken", 90),
-        (rendered_cards, "rendered_cards", 90),
         (ncsoft, "ncsoft", 90),
         (nintendo_csod, "nintendo_csod", 90),
         (sheet_studios, "sheet_studios", 90),
@@ -82,3 +81,12 @@ def register_static_plugins() -> None:
                 run_fn=mod.run,
             )
         )
+    default_registry.register(
+        SimpleAdapterPlugin(
+            name="rendered_cards",
+            family="static",
+            priority=90,
+            can_handle_fn=_rendered_cards.can_handle_rendered_cards,
+            run_fn=_rendered_cards.run_rendered_cards_plugin,
+        )
+    )

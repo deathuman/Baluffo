@@ -1,6 +1,7 @@
 import hashlib
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
 from scrapy.http import HtmlResponse, Request
 
@@ -16,13 +17,14 @@ from src.jobs.adapters.plugins.static import (
     ats_wrappers,
     frontier,
     kojima,
-    rendered_cards,
     sheet_studios,
 )
 from src.jobs.adapters.plugins.static._rendered_cards import (
     _looks_like_location_cell,
     _parse_structured_locations,
+    can_handle_rendered_cards,
     extract_rendered_card_jobs,
+    run_rendered_cards_plugin,
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_helpers import (
@@ -46,6 +48,10 @@ from tests.helpers.job_fixtures import _fixture
 from tests.helpers.temp_paths import workspace_tmpdir
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
+rendered_cards = SimpleNamespace(
+    can_handle=can_handle_rendered_cards,
+    run=run_rendered_cards_plugin,
+)
 
 
 def _read_fixture(name: str) -> str:

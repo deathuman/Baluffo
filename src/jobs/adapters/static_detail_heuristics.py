@@ -16,7 +16,7 @@ from src.jobs.adapters.html_parsers import (
 )
 from src.jobs.adapters.location_rules import _looks_like_location_name, classify_city_garbage
 from src.jobs.adapters.parsers.location import parse_generic_location_fields
-from src.jobs.adapters.plugins.static.rendered_cards import (
+from src.jobs.adapters.plugins.static._rendered_cards import (
     extract_rendered_card_jobs as _extract_rendered_card_jobs,
 )
 from src.jobs.models import RawJob

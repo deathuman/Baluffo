@@ -1,4 +1,8 @@
-from src.jobs.adapters.plugins.static import ncsoft, rendered_cards
+from src.jobs.adapters.plugins.static import ncsoft
+from src.jobs.adapters.plugins.static._rendered_cards import (
+    can_handle_rendered_cards,
+    run_rendered_cards_plugin,
+)
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 
 
@@ -104,13 +108,13 @@ def test_rollic_rendered_cards_plugin_uses_browser_after_blocked_http() -> None:
             "",
         )
 
-    assert rendered_cards.can_handle(
+    assert can_handle_rendered_cards(
         AdapterPluginContext(
             family="static", adapter_key="static", source_identity="www.rollicgames.com"
         )
     )
 
-    rows = rendered_cards.run(
+    rows = run_rendered_cards_plugin(
         fetch_text=blocked_fetch,
         timeout_s=5,
         retries=0,
