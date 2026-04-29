@@ -191,10 +191,7 @@ def choose_base_record(
     return left, right
 
 
-def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJob:
-    base, other = choose_base_record(existing, candidate)
-    merged = dict(base.to_dict())
-    other_dict = other.to_dict()
+def _merge_output_fields(merged: dict[str, Any], other_dict: dict[str, Any]) -> None:
     for field in OUTPUT_FIELDS:
         if field in {"city", "country"}:
             base_empty = not _is_meaningful_location_value(merged.get(field))
@@ -204,55 +201,75 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
             continue
         if not clean_text(merged.get(field)) and clean_text(other_dict.get(field)):
             merged[field] = other_dict[field]
+
+
+def _prefer_company_and_posted_at(merged: dict[str, Any], other_dict: dict[str, Any]) -> None:
     if company_preference_score(other_dict) > company_preference_score(merged):
         merged["company"] = clean_text(other_dict.get("company"))
     if posted_ts(other_dict.get("postedAt")) > posted_ts(merged.get("postedAt")):
         merged["postedAt"] = to_iso(other_dict.get("postedAt"))
 
+
+def _normalized_bundle_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source": clean_text(item.get("source")),
+        "sourceJobId": clean_text(item.get("sourceJobId")),
+        "jobLink": normalize_url(item.get("jobLink")),
+        "postedAt": to_iso(item.get("postedAt")),
+        "adapter": clean_text(item.get("adapter")),
+        "studio": clean_text(item.get("studio")),
+    }
+
+
+def _bundle_key(item: dict[str, Any]) -> str:
+    return "|".join(
+        [
+            norm_text(item.get("source")),
+            norm_text(item.get("sourceJobId")),
+            norm_text(item.get("jobLink")),
+        ]
+    )
+
+
+def _merge_source_bundle(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     bundle: list[dict[str, Any]] = []
     seen = set()
-    for row in [existing.to_dict(), candidate.to_dict(), merged]:
+    for row in rows:
         entries = row.get("sourceBundle")
         if not isinstance(entries, list):
             continue
         for item in entries:
             if not isinstance(item, dict):
                 continue
-            normalized_item = {
-                "source": clean_text(item.get("source")),
-                "sourceJobId": clean_text(item.get("sourceJobId")),
-                "jobLink": normalize_url(item.get("jobLink")),
-                "postedAt": to_iso(item.get("postedAt")),
-                "adapter": clean_text(item.get("adapter")),
-                "studio": clean_text(item.get("studio")),
-            }
-            key = "|".join(
-                [
-                    norm_text(normalized_item.get("source")),
-                    norm_text(normalized_item.get("sourceJobId")),
-                    norm_text(normalized_item.get("jobLink")),
-                ]
-            )
+            normalized_item = _normalized_bundle_item(item)
+            key = _bundle_key(normalized_item)
             if key in seen:
                 continue
             seen.add(key)
             bundle.append(normalized_item)
-    merged["sourceBundle"] = bundle
-    merged["sourceBundleCount"] = len(bundle)
+    return bundle
 
+
+def _normalized_location_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "city": clean_text(item.get("city")),
+        "country": clean_text(item.get("country")),
+    }
+
+
+def _collect_location_entries(
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     location_entries: list[dict[str, Any]] = []
     placeholder_location_entries: list[dict[str, Any]] = []
-    for row in [existing.to_dict(), candidate.to_dict(), merged]:
+    for row in rows:
         entries = row.get("locations")
         if not isinstance(entries, list):
             continue
         for item in entries:
             if not isinstance(item, dict):
                 continue
-            normalized_item = {
-                "city": clean_text(item.get("city")),
-                "country": clean_text(item.get("country")),
-            }
+            normalized_item = _normalized_location_item(item)
             if not _is_meaningful_location_value(
                 normalized_item.get("city")
             ) and not _is_meaningful_location_value(normalized_item.get("country")):
@@ -260,33 +277,70 @@ def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJ
                     placeholder_location_entries.append(normalized_item)
                 continue
             location_entries.append(normalized_item)
+    return location_entries, placeholder_location_entries
+
+
+def _fallback_merged_locations(
+    *,
+    normalized_locations: dict[str, Any],
+    merged_locations: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if normalized_locations.get("locations"):
+        return merged_locations
+    fallback_city = clean_text(normalized_locations.get("city"))
+    fallback_country = clean_text(normalized_locations.get("country"))
+    if not any(
+        clean_text(item.get("city")) or clean_text(item.get("country")) for item in merged_locations
+    ):
+        return []
+    if not merged_locations and (fallback_city or fallback_country):
+        return [{"city": fallback_city, "country": fallback_country}]
+    return merged_locations
+
+
+def _location_summary_from_entries(entries: list[dict[str, Any]]) -> str:
+    return " | ".join(
+        ", ".join(
+            part for part in [clean_text(item.get("city")), clean_text(item.get("country"))] if part
+        )
+        for item in entries
+        if clean_text(item.get("city")) or clean_text(item.get("country"))
+    )
+
+
+def _apply_merged_locations(
+    *,
+    merged: dict[str, Any],
+    rows: list[dict[str, Any]],
+) -> None:
+    location_entries, placeholder_location_entries = _collect_location_entries(rows)
     if location_entries:
         normalized_locations = normalize_location_details(location_entries)
         merged_locations = normalized_locations.get("locations") or location_entries
-        if not normalized_locations.get("locations"):
-            fallback_city = clean_text(normalized_locations.get("city"))
-            fallback_country = clean_text(normalized_locations.get("country"))
-            if not any(
-                clean_text(item.get("city")) or clean_text(item.get("country"))
-                for item in merged_locations
-            ):
-                merged_locations = []
-            elif not merged_locations and (fallback_city or fallback_country):
-                merged_locations = [{"city": fallback_city, "country": fallback_country}]
+        merged_locations = _fallback_merged_locations(
+            normalized_locations=normalized_locations,
+            merged_locations=merged_locations,
+        )
         merged["locations"] = merged_locations
         merged["locationSummary"] = clean_text(normalized_locations.get("locationSummary"))
         if not merged["locationSummary"] and merged_locations:
-            merged["locationSummary"] = " | ".join(
-                ", ".join(
-                    part
-                    for part in [clean_text(item.get("city")), clean_text(item.get("country"))]
-                    if part
-                )
-                for item in merged_locations
-                if clean_text(item.get("city")) or clean_text(item.get("country"))
-            )
+            merged["locationSummary"] = _location_summary_from_entries(merged_locations)
     elif placeholder_location_entries:
         merged["locations"] = placeholder_location_entries
+
+
+def merge_records(existing: CanonicalJob, candidate: CanonicalJob) -> CanonicalJob:
+    base, other = choose_base_record(existing, candidate)
+    merged = dict(base.to_dict())
+    other_dict = other.to_dict()
+    _merge_output_fields(merged, other_dict)
+    _prefer_company_and_posted_at(merged, other_dict)
+
+    merge_rows = [existing.to_dict(), candidate.to_dict(), merged]
+    bundle = _merge_source_bundle(merge_rows)
+    merged["sourceBundle"] = bundle
+    merged["sourceBundleCount"] = len(bundle)
+    _apply_merged_locations(merged=merged, rows=merge_rows)
 
     merged["qualityScore"] = compute_quality_score(merged)
     merged["focusScore"] = compute_focus_score(merged)
@@ -343,6 +397,197 @@ def _enrich_unknown_company_from_gracklehq_redirect(rows: list[CanonicalJob]) ->
     return enriched
 
 
+def _social_key(payload: dict[str, Any]) -> str:
+    if clean_text(payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(
+        payload.get("sourceJobId")
+    ):
+        return f"{clean_text(payload.get('source'))}|{clean_text(payload.get('sourceJobId'))}"
+    return ""
+
+
+def _dedup_key(
+    *,
+    item: dict[str, Any],
+    primary: str,
+    secondary: str,
+    social_key: str,
+) -> str:
+    if primary:
+        return f"url:{primary}"
+    if secondary:
+        return f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
+    if social_key:
+        return f"social:{hashlib.sha1(social_key.encode('utf-8')).hexdigest()}"
+    fallback = "|".join([norm_text(item.get("company")), norm_text(item.get("title"))])
+    return f"secondary:{hashlib.sha1(fallback.encode('utf-8')).hexdigest()}"
+
+
+def _find_merge_target(
+    *,
+    primary: str,
+    secondary: str,
+    social_key: str,
+    sparse_identity: str,
+    current_has_meaningful_locations: bool,
+    merged_rows: list[CanonicalJob],
+    by_primary: dict[str, int],
+    by_secondary: dict[str, int],
+    by_social: dict[str, int],
+    by_sparse_identity: dict[str, int],
+) -> tuple[int | None, str]:
+    if primary and primary in by_primary:
+        return by_primary[primary], "primary_url"
+    if secondary and secondary in by_secondary:
+        return by_secondary[secondary], "secondary_key"
+    if social_key and social_key in by_social:
+        return by_social[social_key], "social_key"
+    if sparse_identity and sparse_identity in by_sparse_identity:
+        sparse_target_idx = by_sparse_identity[sparse_identity]
+        sparse_target = merged_rows[sparse_target_idx]
+        if not _has_meaningful_locations(sparse_target) or not current_has_meaningful_locations:
+            return sparse_target_idx, "sparse_identity"
+    return None, ""
+
+
+def _index_row_keys(
+    *,
+    idx: int,
+    primary: str,
+    secondary: str,
+    sparse_identity: str,
+    social_key: str,
+    by_primary: dict[str, int],
+    by_secondary: dict[str, int],
+    by_sparse_identity: dict[str, int],
+    by_social: dict[str, int],
+) -> None:
+    if primary:
+        by_primary[primary] = idx
+    if secondary:
+        by_secondary[secondary] = idx
+    if sparse_identity:
+        by_sparse_identity[sparse_identity] = idx
+    if social_key:
+        by_social[social_key] = idx
+
+
+def _append_new_dedup_row(
+    *,
+    payload: dict[str, Any],
+    primary: str,
+    secondary: str,
+    sparse_identity: str,
+    social_key: str,
+    merged_rows: list[CanonicalJob],
+    by_primary: dict[str, int],
+    by_secondary: dict[str, int],
+    by_sparse_identity: dict[str, int],
+    by_social: dict[str, int],
+) -> None:
+    item = dict(payload)
+    item["dedupKey"] = _dedup_key(
+        item=item,
+        primary=primary,
+        secondary=secondary,
+        social_key=social_key,
+    )
+    item["qualityScore"] = compute_quality_score(item)
+    item["focusScore"] = compute_focus_score(item)
+    merged_rows.append(CanonicalJob.from_mapping(item))
+    _index_row_keys(
+        idx=len(merged_rows) - 1,
+        primary=primary,
+        secondary=secondary,
+        sparse_identity=sparse_identity,
+        social_key=social_key,
+        by_primary=by_primary,
+        by_secondary=by_secondary,
+        by_sparse_identity=by_sparse_identity,
+        by_social=by_social,
+    )
+
+
+def _record_merge_sample(
+    *,
+    merge_samples: list[dict[str, str]],
+    merge_reason: str,
+    existing: CanonicalJob,
+    payload: dict[str, Any],
+) -> None:
+    if len(merge_samples) >= 10:
+        return
+    merge_samples.append(
+        {
+            "reason": merge_reason or "unknown",
+            "existingDedupKey": clean_text(existing.dedupKey),
+            "incomingSource": clean_text(payload.get("source")),
+            "incomingTitle": clean_text(payload.get("title")),
+            "incomingCompany": clean_text(payload.get("company")),
+            "incomingJobLink": normalize_url(payload.get("jobLink")),
+        }
+    )
+
+
+def _merge_into_target(
+    *,
+    target_idx: int,
+    current: CanonicalJob,
+    merged_rows: list[CanonicalJob],
+    by_primary: dict[str, int],
+    by_secondary: dict[str, int],
+    by_sparse_identity: dict[str, int],
+    by_social: dict[str, int],
+) -> None:
+    merged = merge_records(merged_rows[target_idx], current)
+    merged_payload = merged.to_dict()
+    primary = fingerprint_url(merged_payload.get("jobLink"))
+    secondary = dedup_secondary_key(merged)
+    merged_social_key = _social_key(merged_payload)
+    if primary or secondary or merged_social_key:
+        merged_payload["dedupKey"] = _dedup_key(
+            item=merged_payload,
+            primary=primary,
+            secondary=secondary,
+            social_key=merged_social_key,
+        )
+    merged_rows[target_idx] = CanonicalJob.from_mapping(merged_payload)
+    _index_row_keys(
+        idx=target_idx,
+        primary=primary,
+        secondary=secondary,
+        sparse_identity=_sparse_identity_key(merged_rows[target_idx]),
+        social_key=merged_social_key,
+        by_primary=by_primary,
+        by_secondary=by_secondary,
+        by_sparse_identity=by_sparse_identity,
+        by_social=by_social,
+    )
+
+
+def _merge_reason_counts(merge_reason: str) -> tuple[int, int, int]:
+    return (
+        1 if merge_reason == "primary_url" else 0,
+        1 if merge_reason == "secondary_key" else 0,
+        1 if merge_reason == "social_key" else 0,
+    )
+
+
+def _sort_enrich_and_number(rows: list[CanonicalJob]) -> list[CanonicalJob]:
+    rows.sort(
+        key=lambda item: (
+            int(item.focusScore or 0),
+            posted_ts(item.postedAt),
+            norm_text(item.title),
+        ),
+        reverse=True,
+    )
+    enriched_rows = _enrich_unknown_company_from_gracklehq_redirect(rows)
+    return [
+        CanonicalJob.from_mapping({**row.to_dict(), "id": idx})
+        for idx, row in enumerate(enriched_rows, start=1)
+    ]
+
+
 def deduplicate_jobs(
     rows: Sequence[CanonicalJob | dict[str, Any]],
 ) -> tuple[list[CanonicalJob], dict[str, Any]]:
@@ -362,123 +607,57 @@ def deduplicate_jobs(
         payload = current.to_dict()
         primary = fingerprint_url(payload.get("jobLink"))
         secondary = dedup_secondary_key(current)
-        social_key = ""
-        if clean_text(payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(
-            payload.get("sourceJobId")
-        ):
-            social_key = (
-                f"{clean_text(payload.get('source'))}|{clean_text(payload.get('sourceJobId'))}"
-            )
+        social_key = _social_key(payload)
         sparse_identity = _sparse_identity_key(current)
-        current_has_meaningful_locations = _has_meaningful_locations(current)
-
-        target_idx: int | None = None
-        merge_reason = ""
-        if primary and primary in by_primary:
-            target_idx = by_primary[primary]
-            merge_reason = "primary_url"
-        elif secondary and secondary in by_secondary:
-            target_idx = by_secondary[secondary]
-            merge_reason = "secondary_key"
-        elif social_key and social_key in by_social:
-            target_idx = by_social[social_key]
-            merge_reason = "social_key"
-        elif sparse_identity and sparse_identity in by_sparse_identity:
-            sparse_target_idx = by_sparse_identity[sparse_identity]
-            sparse_target = merged_rows[sparse_target_idx]
-            if not _has_meaningful_locations(sparse_target) or not current_has_meaningful_locations:
-                target_idx = sparse_target_idx
-                merge_reason = "sparse_identity"
-
+        target_idx, merge_reason = _find_merge_target(
+            primary=primary,
+            secondary=secondary,
+            social_key=social_key,
+            sparse_identity=sparse_identity,
+            current_has_meaningful_locations=_has_meaningful_locations(current),
+            merged_rows=merged_rows,
+            by_primary=by_primary,
+            by_secondary=by_secondary,
+            by_social=by_social,
+            by_sparse_identity=by_sparse_identity,
+        )
         if target_idx is None:
-            item = dict(payload)
-            if primary:
-                item["dedupKey"] = f"url:{primary}"
-            elif secondary:
-                item["dedupKey"] = (
-                    f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
-                )
-            elif social_key:
-                item["dedupKey"] = f"social:{hashlib.sha1(social_key.encode('utf-8')).hexdigest()}"
-            else:
-                item["dedupKey"] = (
-                    f"secondary:{hashlib.sha1('|'.join([norm_text(item.get('company')), norm_text(item.get('title'))]).encode('utf-8')).hexdigest()}"
-                )
-            item["qualityScore"] = compute_quality_score(item)
-            item["focusScore"] = compute_focus_score(item)
-            merged_rows.append(CanonicalJob.from_mapping(item))
-            idx = len(merged_rows) - 1
-            if primary:
-                by_primary[primary] = idx
-            if secondary:
-                by_secondary[secondary] = idx
-            if sparse_identity:
-                by_sparse_identity[sparse_identity] = idx
-            if social_key:
-                by_social[social_key] = idx
+            _append_new_dedup_row(
+                payload=payload,
+                primary=primary,
+                secondary=secondary,
+                sparse_identity=sparse_identity,
+                social_key=social_key,
+                merged_rows=merged_rows,
+                by_primary=by_primary,
+                by_secondary=by_secondary,
+                by_sparse_identity=by_sparse_identity,
+                by_social=by_social,
+            )
             continue
 
         merges += 1
-        if merge_reason == "primary_url":
-            merged_by_primary += 1
-        elif merge_reason == "secondary_key":
-            merged_by_secondary += 1
-        elif merge_reason == "social_key":
-            merged_by_social += 1
-        if len(merge_samples) < 10:
-            merge_samples.append(
-                {
-                    "reason": merge_reason or "unknown",
-                    "existingDedupKey": clean_text(merged_rows[target_idx].dedupKey),
-                    "incomingSource": clean_text(payload.get("source")),
-                    "incomingTitle": clean_text(payload.get("title")),
-                    "incomingCompany": clean_text(payload.get("company")),
-                    "incomingJobLink": normalize_url(payload.get("jobLink")),
-                }
-            )
-        merged = merge_records(merged_rows[target_idx], current)
-        merged_payload = merged.to_dict()
-        primary = fingerprint_url(merged_payload.get("jobLink"))
-        secondary = dedup_secondary_key(merged)
-        merged_social_key = ""
-        if clean_text(merged_payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(
-            merged_payload.get("sourceJobId")
-        ):
-            merged_social_key = f"{clean_text(merged_payload.get('source'))}|{clean_text(merged_payload.get('sourceJobId'))}"
-        if primary:
-            merged_payload["dedupKey"] = f"url:{primary}"
-        elif secondary:
-            merged_payload["dedupKey"] = (
-                f"secondary:{hashlib.sha1(secondary.encode('utf-8')).hexdigest()}"
-            )
-        elif merged_social_key:
-            merged_payload["dedupKey"] = (
-                f"social:{hashlib.sha1(merged_social_key.encode('utf-8')).hexdigest()}"
-            )
-        merged_rows[target_idx] = CanonicalJob.from_mapping(merged_payload)
-        if primary:
-            by_primary[primary] = target_idx
-        if secondary:
-            by_secondary[secondary] = target_idx
-        if merged_social_key:
-            by_social[merged_social_key] = target_idx
-        merged_sparse_identity = _sparse_identity_key(merged_rows[target_idx])
-        if merged_sparse_identity:
-            by_sparse_identity[merged_sparse_identity] = target_idx
+        primary_inc, secondary_inc, social_inc = _merge_reason_counts(merge_reason)
+        merged_by_primary += primary_inc
+        merged_by_secondary += secondary_inc
+        merged_by_social += social_inc
+        _record_merge_sample(
+            merge_samples=merge_samples,
+            merge_reason=merge_reason,
+            existing=merged_rows[target_idx],
+            payload=payload,
+        )
+        _merge_into_target(
+            target_idx=target_idx,
+            current=current,
+            merged_rows=merged_rows,
+            by_primary=by_primary,
+            by_secondary=by_secondary,
+            by_sparse_identity=by_sparse_identity,
+            by_social=by_social,
+        )
 
-    merged_rows.sort(
-        key=lambda item: (
-            int(item.focusScore or 0),
-            posted_ts(item.postedAt),
-            norm_text(item.title),
-        ),
-        reverse=True,
-    )
-    merged_rows = _enrich_unknown_company_from_gracklehq_redirect(merged_rows)
-    merged_rows = [
-        CanonicalJob.from_mapping({**row.to_dict(), "id": idx})
-        for idx, row in enumerate(merged_rows, start=1)
-    ]
+    merged_rows = _sort_enrich_and_number(merged_rows)
     return merged_rows, {
         "inputCount": len(rows),
         "mergedCount": merges,
