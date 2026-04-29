@@ -3,7 +3,6 @@ from __future__ import annotations
 import csv
 import os
 from io import StringIO
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -31,6 +30,7 @@ from .directory_page_recovery import (
     RECOVERY_LOGIC_VERSION,
     DirectoryRecoveryRequest,
     apply_recovery_to_scan_result,
+    http_recovery_request_from_context,
     recovery_result_candidates_from_strategy,
     resolve_recovery_url_limit,
     run_recovery_for_requests,
@@ -168,27 +168,6 @@ def _sheet_directory_config_section(config: dict[str, Any] | None) -> dict[str, 
         "sheetDirectory",
         defaults=dict(DEFAULT_DISCOVERY_CONFIG.get("sheetDirectory") or {}),
     )
-
-
-def _sheet_directory_audit_path(config: dict[str, Any] | None) -> Path:
-    cfg = _sheet_directory_config_section(config)
-    return audit_artifact_path(
-        cfg,
-        default_filename="sheet-directory-discovery-audit.json",
-    )
-
-
-def _sheet_directory_audit_ttl_minutes(config: dict[str, Any] | None) -> int:
-    return audit_ttl_minutes(_sheet_directory_config_section(config))
-
-
-def _sheet_directory_recovery_enabled(config: dict[str, Any] | None) -> bool:
-    cfg = _sheet_directory_config_section(config)
-    return bool(cfg.get("activeAuditRecoveryEnabled", True))
-
-
-def _sheet_directory_recovery_url_limit(config: dict[str, Any] | None) -> int:
-    return resolve_recovery_url_limit(_sheet_directory_config_section(config))
 
 
 def _sheet_directory_audit_signature(
@@ -345,26 +324,18 @@ def _sheet_static_row_key(row: dict[str, Any]) -> str:
 
 def _sheet_recovery_request(row: dict[str, Any]) -> DirectoryRecoveryRequest | None:
     page_url = _sheet_static_row_key(row)
-    if not page_url:
-        return None
-    try:
-        parsed = urlparse(page_url)
-    except ValueError:
-        return None
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return None
     studio = str(row.get("studio") or row.get("company") or row.get("name") or "").strip()
-    if not studio:
-        return None
-    return DirectoryRecoveryRequest(
-        key=page_url,
+    return http_recovery_request_from_context(
+        FetchedPageContext(
+            page_url=page_url,
+            html="",
+            studio=studio,
+            nl_priority=bool(row.get("nlPriority")),
+            discovery_method="sheet_directory",
+            payload=dict(row),
+            recovery_key=page_url,
+        ),
         adapter="sheet_directory",
-        discovery_method="sheet_directory",
-        name=studio,
-        studio=studio,
-        page_url=page_url,
-        html="",
-        payload=dict(row),
     )
 
 
@@ -668,14 +639,18 @@ def run_sheet_directory_audit(
     fetcher = fetcher or fetch_text
     sheet_id = str(sheet_id or GAME_STUDIOS_SHEET_ID)
     gid = str(gid or GAME_STUDIOS_SHEET_GID)
-    recovery_enabled = _sheet_directory_recovery_enabled(config)
-    recovery_url_limit = _sheet_directory_recovery_url_limit(config)
+    cfg = _sheet_directory_config_section(config)
+    recovery_enabled = bool(cfg.get("activeAuditRecoveryEnabled", True))
+    recovery_url_limit = resolve_recovery_url_limit(cfg)
     return run_directory_audit_spec(
         DirectoryAuditRunSpec(
             adapter="sheet_directory",
             schema_version=SHEET_DIRECTORY_AUDIT_SCHEMA_VERSION,
-            output_path=_sheet_directory_audit_path(config),
-            ttl_minutes=_sheet_directory_audit_ttl_minutes(config),
+            output_path=audit_artifact_path(
+                cfg,
+                default_filename="sheet-directory-discovery-audit.json",
+            ),
+            ttl_minutes=audit_ttl_minutes(cfg),
             signature=_sheet_directory_audit_signature(
                 sheet_id=sheet_id,
                 gid=gid,

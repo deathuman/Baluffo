@@ -52,10 +52,12 @@ def test_audit_config_ttl_invalid_value_uses_fallback() -> None:
     )
 
 
-def test_adapter_audit_config_wrappers_preserve_defaults() -> None:
+def test_adapter_audit_config_defaults_preserve_invalid_ttl_fallbacks() -> None:
     assert (
-        sheet_directory._sheet_directory_audit_ttl_minutes(
-            {"sheetDirectory": {"activeAuditTtlMinutes": "bad"}}
+        audit_config.audit_ttl_minutes(
+            sheet_directory._sheet_directory_config_section(
+                {"sheetDirectory": {"activeAuditTtlMinutes": "bad"}}
+            )
         )
         == 360
     )
