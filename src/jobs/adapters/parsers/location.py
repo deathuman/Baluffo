@@ -488,50 +488,67 @@ def _extract_location_text_and_country(location_value: Any) -> tuple[str, str]:
     return text, country
 
 
+def _split_pipe_fragments(text: str) -> list[str]:
+    return [clean_text(part) for part in re.split(r"\s*\|\s*", text) if clean_text(part)]
+
+
+def _dict_location_fragments(location_value: dict[str, Any]) -> list[str]:
+    text, country = _extract_location_text_and_country(location_value)
+    if text and "|" in text:
+        return _split_pipe_fragments(text)
+    if text and country:
+        return [f"{text}, {country}"]
+    if text:
+        return [text]
+    if country:
+        return [country]
+    return []
+
+
+def _list_item_location_fragments(item: Any) -> list[str]:
+    if isinstance(item, dict):
+        return _dict_location_fragments(item)
+    text = clean_text(item)
+    if not text:
+        return []
+    if "|" in text:
+        return _split_pipe_fragments(text)
+    return [text]
+
+
 def _iter_location_fragments(location_value: Any) -> list[str]:
     if isinstance(location_value, dict):
-        text, country = _extract_location_text_and_country(location_value)
-        if text and "|" in text:
-            return [clean_text(part) for part in re.split(r"\s*\|\s*", text) if clean_text(part)]
-        if text and country:
-            return [f"{text}, {country}"]
-        if text:
-            return [text]
-        if country:
-            return [country]
-        return []
+        return _dict_location_fragments(location_value)
     if isinstance(location_value, list):
         fragments: list[str] = []
         for item in location_value:
-            if isinstance(item, dict):
-                text, country = _extract_location_text_and_country(item)
-                if text and "|" in text:
-                    fragments.extend(
-                        clean_text(part) for part in re.split(r"\s*\|\s*", text) if clean_text(part)
-                    )
-                    continue
-                if text and country:
-                    fragments.append(f"{text}, {country}")
-                elif text:
-                    fragments.append(text)
-                elif country:
-                    fragments.append(country)
-            else:
-                text = clean_text(item)
-                if text:
-                    if "|" in text:
-                        fragments.extend(
-                            clean_text(part)
-                            for part in re.split(r"\s*\|\s*", text)
-                            if clean_text(part)
-                        )
-                    else:
-                        fragments.append(text)
+            fragments.extend(_list_item_location_fragments(item))
         return fragments
     text = clean_text(location_value)
     if not text:
         return []
-    return [clean_text(part) for part in re.split(r"\s*\|\s*", text) if clean_text(part)]
+    return _split_pipe_fragments(text)
+
+
+def _fragment_words(text: str, normalized: str) -> list[str]:
+    words = re.findall(r"[A-Za-zÀ-ÿ0-9']+", text)
+    normalized_words = re.findall(r"[a-z0-9']+", normalized) if normalized else []
+    if not normalized_words:
+        return words
+    original_signature = "".join(word.lower() for word in words)
+    normalized_signature = "".join(normalized_words)
+    if not words or original_signature != normalized_signature:
+        return normalized_words
+    return words
+
+
+def _fragment_matches_known_location(text: str, normalized: str) -> bool:
+    if normalized in _REMOTEISH_LOCATION_TOKENS:
+        return True
+    normalized_city = _normalize_city_key(text)
+    if normalized_city in _CITY_COUNTRY_HINTS or normalized_city in _AMBIGUOUS_CITY_COUNTRY_HINTS:
+        return True
+    return bool(_normalize_country_fragment(text) or _looks_like_country_token(text))
 
 
 def _fragment_looks_like_location_value(fragment: Any) -> bool:
@@ -539,105 +556,103 @@ def _fragment_looks_like_location_value(fragment: Any) -> bool:
     if not text:
         return False
     normalized = _normalize_location_key(text)
-    if normalized in _REMOTEISH_LOCATION_TOKENS:
-        return True
     if normalized in {"unknown", "n/a", "na", "none"}:
         return False
-    normalized_city = _normalize_city_key(text)
-    if normalized_city in _CITY_COUNTRY_HINTS or normalized_city in _AMBIGUOUS_CITY_COUNTRY_HINTS:
+    if _fragment_matches_known_location(text, normalized):
         return True
-    if _normalize_country_fragment(text):
-        return True
-    if _looks_like_country_token(text):
-        return True
-    words = re.findall(r"[A-Za-zÀ-ÿ0-9']+", text)
-    candidate_text = text
-    normalized_words = re.findall(r"[a-z0-9']+", normalized) if normalized else []
-    if normalized_words:
-        original_signature = "".join(word.lower() for word in words)
-        normalized_signature = "".join(normalized_words)
-        if not words or original_signature != normalized_signature:
-            words = normalized_words
+    words = _fragment_words(text, normalized)
     if not words:
         return False
     if any(separator in text for separator in (",", "/", "-")):
         city, country, work_type = parse_generic_location_fields(text)
         return bool(city or country != "Unknown" or work_type)
-    return _looks_like_location_name(candidate_text, words)
+    return _looks_like_location_name(text, words)
 
 
-def normalize_location_details(location_value: Any) -> dict[str, Any]:
-    fragments = _iter_location_fragments(location_value)
-    locations: list[dict[str, str]] = []
-    seen: set[str] = set()
-    pending_country = ""
-    fallback_country = ""
-    for fragment in fragments:
-        if is_city_noise_fragment(fragment) and not _looks_like_country_token(fragment):
-            continue
-        if invalid_location_reason(fragment, field_name="city") and fragment.count(",") >= 3:
-            continue
-        if not _fragment_looks_like_location_value(fragment):
-            continue
-        city, country, _ = parse_generic_location_fields(fragment)
-        inferred_country = _infer_country_from_city(fragment) or _infer_country_from_region(
-            fragment
+def _fragment_to_location(fragment: str) -> tuple[str, str] | None:
+    if is_city_noise_fragment(fragment) and not _looks_like_country_token(fragment):
+        return None
+    if invalid_location_reason(fragment, field_name="city") and fragment.count(",") >= 3:
+        return None
+    if not _fragment_looks_like_location_value(fragment):
+        return None
+    city, country, _ = parse_generic_location_fields(fragment)
+    inferred_country = _infer_country_from_city(fragment) or _infer_country_from_region(fragment)
+    if city and country == "Unknown" and inferred_country:
+        country = inferred_country
+    if (
+        not city
+        and country != "Unknown"
+        and inferred_country
+        and (
+            not _looks_like_country_token(fragment)
+            or _infer_country_from_city(fragment) == inferred_country
         )
-        if city and country == "Unknown":
-            if inferred_country:
-                country = inferred_country
-        if (
-            not city
-            and country != "Unknown"
-            and inferred_country
-            and (
-                not _looks_like_country_token(fragment)
-                or _infer_country_from_city(fragment) == inferred_country
-            )
+    ):
+        return clean_text(fragment), inferred_country
+    if not city and not country:
+        return None
+    return city, country
+
+
+def _country_key(country: str) -> str:
+    return _normalize_country_key(country) if country != "Unknown" else ""
+
+
+def _merge_location_with_existing_blank_country(
+    *,
+    locations: list[dict[str, str]],
+    seen: set[str],
+    city_key: str,
+    country_key: str,
+    country: str,
+) -> bool:
+    if not country_key or not city_key:
+        return False
+    blank_key = "|".join([city_key, ""])
+    if blank_key not in seen:
+        return False
+    for item in locations:
+        if _normalize_city_key(item.get("city")) == city_key and not clean_text(
+            item.get("country")
         ):
-            city = clean_text(fragment)
-            country = inferred_country
-        if not city and country != "Unknown":
-            if not locations:
-                pending_country = country
-                fallback_country = country
-            continue
-        if not city and not country:
-            continue
-        if country == "Unknown" and pending_country and not locations:
-            country = pending_country
-        if country != "Unknown":
-            country_key = _normalize_country_key(country)
-        else:
-            country_key = ""
-        city_key = _normalize_city_key(city)
-        key = "|".join([city_key, country_key])
-        if key in seen:
-            continue
-        if country_key and city_key:
-            blank_key = "|".join([city_key, ""])
-            if blank_key in seen:
-                for item in locations:
-                    if _normalize_city_key(item.get("city")) == city_key and not clean_text(
-                        item.get("country")
-                    ):
-                        item["country"] = country
-                        seen.discard(blank_key)
-                        seen.add(key)
-                        break
-                else:
-                    pass
-                continue
-        seen.add(key)
-        locations.append(
-            {
-                "city": city,
-                "country": country if country != "Unknown" else "",
-            }
-        )
-        if country != "Unknown":
-            pending_country = ""
+            item["country"] = country
+            seen.discard(blank_key)
+            seen.add("|".join([city_key, country_key]))
+            return True
+    return False
 
+
+def _append_location_entry(
+    *,
+    locations: list[dict[str, str]],
+    seen: set[str],
+    city: str,
+    country: str,
+) -> bool:
+    country_key = _country_key(country)
+    city_key = _normalize_city_key(city)
+    key = "|".join([city_key, country_key])
+    if key in seen:
+        return False
+    if _merge_location_with_existing_blank_country(
+        locations=locations,
+        seen=seen,
+        city_key=city_key,
+        country_key=country_key,
+        country=country,
+    ):
+        return False
+    seen.add(key)
+    locations.append({"city": city, "country": country if country != "Unknown" else ""})
+    return True
+
+
+def _primary_location_payload(
+    *,
+    locations: list[dict[str, str]],
+    fallback_country: str,
+) -> tuple[str, str, str]:
     primary = next((item for item in locations if item.get("city") or item.get("country")), {})
     primary_city = primary.get("city", "")
     primary_country = primary.get("country", "")
@@ -648,6 +663,41 @@ def normalize_location_details(location_value: Any) -> dict[str, Any]:
         for item in locations
         if item.get("city", "") or item.get("country", "")
     )
+    return primary_city, primary_country, location_summary
+
+
+def normalize_location_details(location_value: Any) -> dict[str, Any]:
+    locations: list[dict[str, str]] = []
+    seen: set[str] = set()
+    pending_country = ""
+    fallback_country = ""
+    for fragment in _iter_location_fragments(location_value):
+        parsed = _fragment_to_location(fragment)
+        if parsed is None:
+            continue
+        city, country = parsed
+        if not city and country != "Unknown":
+            if not locations:
+                pending_country = country
+                fallback_country = country
+            continue
+        if country == "Unknown" and pending_country and not locations:
+            country = pending_country
+        if (
+            _append_location_entry(
+                locations=locations,
+                seen=seen,
+                city=city,
+                country=country,
+            )
+            and country != "Unknown"
+        ):
+            pending_country = ""
+
+    primary_city, primary_country, location_summary = _primary_location_payload(
+        locations=locations,
+        fallback_country=fallback_country,
+    )
     return {
         "city": primary_city,
         "country": primary_country or "Unknown",
@@ -656,96 +706,129 @@ def normalize_location_details(location_value: Any) -> dict[str, Any]:
     }
 
 
-def parse_generic_location_fields(location_value: Any) -> tuple[str, str, str]:
-    text = clean_text(location_value)
-    if not text:
-        return "", "Unknown", ""
-    lower = norm_text(text)
-    if "remote" in lower:
-        return "Remote", "Remote", "Remote"
-    normalized = re.sub(r"[\s_-]+", " ", lower).strip()
-    if normalized in _REMOTEISH_LOCATION_TOKENS:
+def _remote_location_parse(text: str, normalized: str) -> tuple[str, str, str] | None:
+    if "remote" in norm_text(text) or normalized in _REMOTEISH_LOCATION_TOKENS:
         return "Remote", "Remote", "Remote"
     if normalized in _LOCATION_WORK_TYPE_TOKENS:
         return "", "Unknown", clean_text(text)
     if normalized in {"full", "part"}:
         return "", "Unknown", ""
+    return None
+
+
+def _country_from_invalid_parts(parts: list[str]) -> str:
+    for part in reversed(parts):
+        normalized_country = _normalize_country_fragment(part)
+        cleaned_part = clean_text(part)
+        if not normalized_country:
+            continue
+        if len(cleaned_part) == 2 and not cleaned_part.isupper():
+            continue
+        return normalized_country
+    return ""
+
+
+def _invalid_text_result(text: str, parts: list[str]) -> tuple[str, str, str] | None:
+    if not invalid_location_reason(text, field_name="city") or _normalize_country_fragment(text):
+        return None
+    candidate_parts = [
+        part
+        for part in parts
+        if len(clean_text(part)) > 2
+        and _is_plausibly_location_candidate(part)
+        and not invalid_location_reason(part, field_name="city")
+    ]
+    if candidate_parts:
+        return None
+    country_part = _country_from_invalid_parts(parts)
+    if country_part:
+        return "", country_part, ""
+    return "", "Unknown", ""
+
+
+def _pick_city_candidate(values: list[str]) -> str:
+    for part in reversed(values):
+        if _is_plausibly_location_candidate(part) and not _looks_like_country_token(part):
+            return part
+    return ""
+
+
+def _single_part_location(token: str) -> tuple[str, str, str]:
+    if invalid_location_reason(token, field_name="city") and not _normalize_country_fragment(token):
+        return "", "Unknown", ""
+    country = _normalize_country_fragment(token)
+    if country:
+        return "", country, ""
+    if _is_plausibly_location_candidate(token):
+        return token, "Unknown", ""
+    return "", "Unknown", ""
+
+
+def _first_country_location(parts: list[str]) -> tuple[str, str, str] | None:
+    first_country = _normalize_country_fragment(parts[0])
+    if not first_country:
+        return None
+    return _pick_city_candidate(parts[1:]), first_country, ""
+
+
+def _region_country_location(parts: list[str]) -> tuple[str, str, str] | None:
+    last = parts[-1]
+    last_region_country = _infer_country_from_region(last)
+    if not last_region_country:
+        return None
+    city = _pick_city_candidate(parts[:-1])
+    city_key = _normalize_city_key(city)
+    last_key = _normalize_location_key(last)
+    if city and (
+        (
+            city_key in _AMBIGUOUS_CITY_COUNTRY_HINTS
+            and last_key not in _REGION_COUNTRY_CODE_COLLISIONS
+        )
+        or _infer_country_from_city(city) == last_region_country
+        or not _looks_like_country_token(last)
+    ):
+        return city, last_region_country, ""
+    return None
+
+
+def _last_country_location(parts: list[str]) -> tuple[str, str, str] | None:
+    last_country = _normalize_country_fragment(parts[-1])
+    if not last_country:
+        return None
+    if len(parts) >= 3:
+        first = parts[0]
+        middle_parts = parts[1:-1]
+        if (
+            _is_plausibly_location_candidate(first)
+            and not _looks_like_region_token(first)
+            and any(_looks_like_region_token(part) for part in middle_parts)
+        ):
+            return first, last_country, ""
+    return _pick_city_candidate(parts[:-1]), last_country, ""
+
+
+def _multi_part_location(parts: list[str]) -> tuple[str, str, str]:
+    for parser in (_first_country_location, _region_country_location, _last_country_location):
+        parsed = parser(parts)
+        if parsed is not None:
+            return parsed
+    return _pick_city_candidate(parts), _normalize_country_fragment(parts[-1]) or "Unknown", ""
+
+
+def parse_generic_location_fields(location_value: Any) -> tuple[str, str, str]:
+    text = clean_text(location_value)
+    if not text:
+        return "", "Unknown", ""
+    normalized = re.sub(r"[\s_-]+", " ", norm_text(text)).strip()
+    remote_parse = _remote_location_parse(text, normalized)
+    if remote_parse is not None:
+        return remote_parse
     parts = [clean_text(part) for part in re.split(r"[,/|-]", text) if clean_text(part)]
     if not parts:
         return "", "Unknown", ""
-    if invalid_location_reason(text, field_name="city") and not _normalize_country_fragment(text):
-        candidate_parts = [
-            part
-            for part in parts
-            if len(clean_text(part)) > 2
-            if _is_plausibly_location_candidate(part)
-            and not invalid_location_reason(part, field_name="city")
-        ]
-        if not candidate_parts:
-            country_part = ""
-            for part in reversed(parts):
-                normalized_country = _normalize_country_fragment(part)
-                cleaned_part = clean_text(part)
-                if not normalized_country:
-                    continue
-                if len(cleaned_part) == 2 and not cleaned_part.isupper():
-                    continue
-                country_part = normalized_country
-                break
-            if country_part:
-                return "", country_part, ""
-            return "", "Unknown", ""
+    invalid_result = _invalid_text_result(text, parts)
+    if invalid_result is not None:
+        return invalid_result
     if len(parts) == 1:
-        token = parts[0]
-        if invalid_location_reason(token, field_name="city") and not _normalize_country_fragment(
-            token
-        ):
-            return "", "Unknown", ""
-        country = _normalize_country_fragment(token)
-        if country:
-            return "", country, ""
-        if _is_plausibly_location_candidate(token):
-            return token, "Unknown", ""
-        return "", "Unknown", ""
-
-    def _pick_city_candidate(values: list[str]) -> str:
-        for part in reversed(values):
-            if _is_plausibly_location_candidate(part) and not _looks_like_country_token(part):
-                return part
-        return ""
-
-    first, last = parts[0], parts[-1]
-    first_country = _normalize_country_fragment(first)
-    if first_country:
-        city = _pick_city_candidate(parts[1:])
-        return city, first_country, ""
-    last_region_country = _infer_country_from_region(last)
-    if last_region_country:
-        city = _pick_city_candidate(parts[:-1])
-        city_key = _normalize_city_key(city)
-        last_key = _normalize_location_key(last)
-        if city and (
-            (
-                city_key in _AMBIGUOUS_CITY_COUNTRY_HINTS
-                and last_key not in _REGION_COUNTRY_CODE_COLLISIONS
-            )
-            or _infer_country_from_city(city) == last_region_country
-            or not _looks_like_country_token(last)
-        ):
-            return city, last_region_country, ""
-    last_country = _normalize_country_fragment(last)
-    if last_country:
-        if len(parts) >= 3:
-            first = parts[0]
-            middle_parts = parts[1:-1]
-            if (
-                _is_plausibly_location_candidate(first)
-                and not _looks_like_region_token(first)
-                and any(_looks_like_region_token(part) for part in middle_parts)
-            ):
-                return first, last_country, ""
-        city = _pick_city_candidate(parts[:-1])
-        return city, last_country, ""
-    city = _pick_city_candidate(parts)
-    country = _normalize_country_fragment(last) or "Unknown"
-    return city, country, ""
+        return _single_part_location(parts[0])
+    return _multi_part_location(parts)
