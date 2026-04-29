@@ -759,11 +759,6 @@ def test_run_discovery_only_gamedevmap_skips_other_generator_stages() -> None:
                 ),
                 mock.patch.object(
                     discovery_orchestrator,
-                    "discover_seed_careers_page_candidates",
-                    side_effect=AssertionError("seed careers stage should be disabled"),
-                ),
-                mock.patch.object(
-                    discovery_orchestrator,
                     "discover_gamesmap_candidates",
                     side_effect=AssertionError("gamesmap stage should be disabled"),
                 ),
@@ -771,11 +766,6 @@ def test_run_discovery_only_gamedevmap_skips_other_generator_stages() -> None:
                     discovery_orchestrator,
                     "discover_gameprog_candidates",
                     side_effect=AssertionError("gameprog stage should be disabled"),
-                ),
-                mock.patch.object(
-                    discovery_orchestrator,
-                    "discover_web_search_candidates",
-                    side_effect=AssertionError("web search stage should be disabled"),
                 ),
                 mock.patch.object(
                     discovery_orchestrator,

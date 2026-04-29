@@ -33,8 +33,8 @@ def _stage_config(
     return config
 
 
-def test_run_discovery_web_search_uses_audit_artifact_without_direct_scanners() -> None:
-    with workspace_tmpdir("web-search-audit-flow-direct-scanner-guard") as root:
+def test_run_discovery_web_search_uses_audit_artifact_without_direct_scanner_exports() -> None:
+    with workspace_tmpdir("web-search-audit-flow-direct-scanner-retired") as root:
         with override_discovery_runtime(
             root,
             studio_seeds=[{"studio": "Example Studio", "careersUrl": "https://example.com/jobs"}],
@@ -43,29 +43,17 @@ def test_run_discovery_web_search_uses_audit_artifact_without_direct_scanners() 
             config = _stage_config(
                 audit_path=str(root / "web-audit.json"),
             )
-            with (
-                mock.patch.object(
-                    discovery_orchestrator,
-                    "discover_seed_careers_page_candidates",
-                    side_effect=AssertionError("seed direct scan should not run"),
-                ) as seed_scan,
-                mock.patch.object(
-                    discovery_orchestrator,
-                    "discover_web_search_candidates",
-                    side_effect=AssertionError("web direct scan should not run"),
-                ) as web_scan,
-            ):
-                report = sd.run_discovery(
-                    timeout_s=5,
-                    top_n=0,
-                    mode="dynamic",
-                    include_web_search=True,
-                    discovery_config=config,
-                    fetcher=lambda *_args: "<html></html>",
-                )
+            assert not hasattr(discovery_orchestrator, "discover_seed_careers_page_candidates")
+            assert not hasattr(discovery_orchestrator, "discover_web_search_candidates")
+            report = sd.run_discovery(
+                timeout_s=5,
+                top_n=0,
+                mode="dynamic",
+                include_web_search=True,
+                discovery_config=config,
+                fetcher=lambda *_args: "<html></html>",
+            )
 
-            seed_scan.assert_not_called()
-            web_scan.assert_not_called()
             assert "web_search" in report["directoryAuditSummaries"]
             assert "web_search" in report["summary"]["directoryAudits"]
             assert (root / "web-audit.json").exists()

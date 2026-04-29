@@ -311,26 +311,6 @@ def test_directory_audit_rows_for_method_filters_rows_and_failures() -> None:
     assert rows[2] == [{"adapter": "web_search", "stage": "page_fetch"}]
 
 
-def test_discover_directory_scan_candidates_calls_scan_once_with_timeout() -> None:
-    calls: list[int] = []
-
-    def scan(timeout_s: int) -> dict[str, object]:
-        calls.append(timeout_s)
-        return {
-            "providerCandidates": [{"adapter": "greenhouse", "slug": f"studio-{timeout_s}"}],
-            "staticCandidates": [],
-            "failures": [],
-        }
-
-    rows = directory_audit.discover_directory_scan_candidates(
-        9,
-        scan,
-    )
-
-    assert calls == [9]
-    assert rows == ([{"adapter": "greenhouse", "slug": "studio-9"}], [], [])
-
-
 def test_directory_audit_report_summary_normalizes_counts_and_boundaries() -> None:
     summary = directory_audit.directory_audit_report_summary(
         {

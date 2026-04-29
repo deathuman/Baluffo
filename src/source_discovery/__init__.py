@@ -146,17 +146,9 @@ from .url_patches import (
     save_url_patch_manifest,
 )
 from .web_search import (
-    discover_web_search_candidates,
     fetch_text,
     fetch_text_with_retry,
     infer_provider_candidates_from_html,
     infer_web_candidate,
 )
 from .web_search_candidates import run_web_search_browser_recovery, run_web_search_directory_audit
-
-
-def discover_seed_careers_page_candidates(timeout_s: int, *, fetcher=None):
-    """Discover candidates from seed careers pages using config-owned seed defaults."""
-    from .web_search import discover_seed_careers_page_candidates as _discover
-
-    return _discover(timeout_s, studio_seeds=_config.STUDIO_SEEDS, fetcher=fetcher or fetch_text)

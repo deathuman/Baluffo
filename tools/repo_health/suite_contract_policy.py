@@ -303,8 +303,8 @@ def test_source_discovery_web_search_root_stays_thin_compat_surface(repo_root: P
     assert _top_level_function_names(tree) == []
     assert callable(discovery_web_search.fetch_text)
     assert callable(discovery_web_search.async_fetch_text_httpx)
-    assert callable(discovery_web_search.discover_web_search_candidates)
     assert callable(discovery_web_search.infer_provider_candidates_from_html)
+    assert not hasattr(discovery_web_search, "discover_web_search_candidates")
     assert len(text.splitlines()) <= 40, (
         "source_discovery/web_search.py drifted back toward implementation ownership"
     )
@@ -964,7 +964,6 @@ def test_source_discovery_compatibility_surfaces_export_required_names() -> None
             "write_discovery_progress_report",
         },
         "src.source_discovery.web_search": {
-            "discover_web_search_candidates",
             "extract_links_from_html",
             "fetch_text",
             "infer_web_candidate",

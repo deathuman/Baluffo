@@ -1,4 +1,6 @@
 # ruff: noqa: F401
+from src.source_discovery import directory_audit
+
 from ._helpers import (
     FIXTURES_DIR,
     DiscoveryReportSummarySchema,
@@ -26,6 +28,34 @@ from ._helpers import (
     time,
     workspace_tmpdir,
 )
+
+
+def _web_audit_rows(
+    *,
+    name: str,
+    studio_seeds: list[dict[str, object]],
+    fetcher,
+    include_seed_careers: bool,
+    include_web_search: bool,
+    max_queries: int = 18,
+):
+    with workspace_tmpdir(name) as root:
+        artifact, _cache_hit = sd.run_web_search_directory_audit(
+            5,
+            studio_seeds=studio_seeds,
+            include_seed_careers=include_seed_careers,
+            include_web_search=include_web_search,
+            config={
+                "webSearch": {
+                    "activeAuditPath": str(root / "web-audit.json"),
+                    "activeAuditTtlMinutes": 0,
+                    "activeAuditRecoveryEnabled": False,
+                }
+            },
+            fetcher=fetcher,
+            max_queries=max_queries,
+        )
+        return directory_audit.directory_audit_rows(artifact)
 
 
 def test_analyze_fetched_page_falls_back_to_generic_static_without_explicit_links() -> None:
@@ -453,7 +483,7 @@ def test_classify_static_suppression_suppresses_weak_repeat_low_yield_static_can
     assert reason == "manual_only_repeat_low_yield"
 
 
-def test_discover_seed_careers_page_candidates_builds_static_candidate_without_web_search() -> None:
+def test_web_audit_seed_careers_builds_static_candidate_without_web_search() -> None:
     with override_discovery_config(
         studio_seeds=[
             {
@@ -464,14 +494,17 @@ def test_discover_seed_careers_page_candidates_builds_static_candidate_without_w
             }
         ]
     ):
-        providers, static_rows, failures = sd.discover_seed_careers_page_candidates(
-            5,
+        providers, static_rows, failures = _web_audit_rows(
+            name="candidate-generation-seed-static",
+            studio_seeds=discovery_config_module.STUDIO_SEEDS,
             fetcher=lambda *_: (
                 """
             <a href="/jobs/rendering-engineer">Rendering Engineer</a>
             <a href="/jobs/gameplay-engineer">Gameplay Engineer</a>
             """
             ),
+            include_seed_careers=True,
+            include_web_search=False,
         )
 
     assert len(failures) == 0
@@ -481,7 +514,7 @@ def test_discover_seed_careers_page_candidates_builds_static_candidate_without_w
     assert str(static_rows[0].get("discoveryMethod") or "") == "seed_careers_page"
 
 
-def test_discover_seed_careers_page_candidates_infers_provider_without_web_search() -> None:
+def test_web_audit_seed_careers_infers_provider_without_web_search() -> None:
     with override_discovery_config(
         studio_seeds=[
             {
@@ -492,11 +525,14 @@ def test_discover_seed_careers_page_candidates_infers_provider_without_web_searc
             }
         ]
     ):
-        providers, static_rows, failures = sd.discover_seed_careers_page_candidates(
-            5,
+        providers, static_rows, failures = _web_audit_rows(
+            name="candidate-generation-seed-provider",
+            studio_seeds=discovery_config_module.STUDIO_SEEDS,
             fetcher=lambda *_: (
                 '<a href="https://boards.greenhouse.io/example-studio/jobs/123">Job</a>'
             ),
+            include_seed_careers=True,
+            include_web_search=False,
         )
 
     assert len(failures) == 0
@@ -506,7 +542,7 @@ def test_discover_seed_careers_page_candidates_infers_provider_without_web_searc
     assert str(providers[0].get("discoveryMethod") or "") == "seed_careers_page"
 
 
-def test_discover_seed_careers_page_candidates_prefers_explicit_careers_links() -> None:
+def test_web_audit_seed_careers_prefers_explicit_careers_links() -> None:
     with override_discovery_config(
         studio_seeds=[
             {
@@ -517,14 +553,17 @@ def test_discover_seed_careers_page_candidates_prefers_explicit_careers_links() 
             }
         ]
     ):
-        providers, static_rows, failures = sd.discover_seed_careers_page_candidates(
-            5,
+        providers, static_rows, failures = _web_audit_rows(
+            name="candidate-generation-seed-explicit-careers",
+            studio_seeds=discovery_config_module.STUDIO_SEEDS,
             fetcher=lambda *_: (
                 """
             <a href="/careers">Careers</a>
             <a href="/jobs/rendering-engineer">Rendering Engineer</a>
             """
             ),
+            include_seed_careers=True,
+            include_web_search=False,
         )
 
     assert len(failures) == 0
@@ -534,7 +573,7 @@ def test_discover_seed_careers_page_candidates_prefers_explicit_careers_links() 
     assert str(static_rows[0].get("name") or "") == "Example Studio (Manual Website)"
 
 
-def test_discover_seed_careers_page_candidates_prefers_personio_provider_over_static() -> None:
+def test_web_audit_seed_careers_prefers_personio_provider_over_static() -> None:
     with override_discovery_config(
         studio_seeds=[
             {
@@ -549,9 +588,12 @@ def test_discover_seed_careers_page_candidates_prefers_personio_provider_over_st
         def should_not_fetch(*_: object) -> str:
             raise AssertionError("direct provider seed URLs should not be fetched")
 
-        providers, static_rows, failures = sd.discover_seed_careers_page_candidates(
-            5,
+        providers, static_rows, failures = _web_audit_rows(
+            name="candidate-generation-seed-personio",
+            studio_seeds=discovery_config_module.STUDIO_SEEDS,
             fetcher=should_not_fetch,
+            include_seed_careers=True,
+            include_web_search=False,
         )
 
     assert len(failures) == 0
@@ -560,7 +602,7 @@ def test_discover_seed_careers_page_candidates_prefers_personio_provider_over_st
     assert str(providers[0].get("adapter") or "") == "personio"
 
 
-def test_discover_web_search_candidates_prefers_explicit_careers_links_from_result_pages() -> None:
+def test_web_audit_web_search_prefers_explicit_careers_links_from_result_pages() -> None:
     studio_seeds = [
         {
             "studio": "Example Studio",
@@ -579,10 +621,12 @@ def test_discover_web_search_candidates_prefers_explicit_careers_links_from_resu
             """
         raise RuntimeError(f"unexpected URL: {url}")
 
-    providers, static_rows, failures = sd.discover_web_search_candidates(
-        5,
+    providers, static_rows, failures = _web_audit_rows(
+        name="candidate-generation-web-explicit-careers",
         studio_seeds=studio_seeds,
         fetcher=fake_fetch,
+        include_seed_careers=False,
+        include_web_search=True,
         max_queries=1,
     )
     assert failures == []

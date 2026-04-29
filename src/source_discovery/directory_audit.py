@@ -69,13 +69,6 @@ def directory_audit_rows_for_method(
     )
 
 
-def discover_directory_scan_candidates(
-    timeout_s: int,
-    scan: DirectoryAuditScan,
-) -> DirectoryAuditRows:
-    return directory_scan_result_rows(scan(timeout_s))
-
-
 def directory_audit_report_summary(
     artifact: dict[str, Any],
     *,

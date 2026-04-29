@@ -28,7 +28,6 @@ from .config import (
 )
 from .directory_audit import (
     DirectoryAuditRunSpec,
-    discover_directory_scan_candidates,
     run_directory_audit_spec,
 )
 from .directory_fetch_jobs import build_directory_fetch_job
@@ -1141,42 +1140,6 @@ def _apply_web_browser_recovery_probe_results(
         artifact,
         provider_rows=provider_validated,
         static_rows=static_validated,
-    )
-
-
-def discover_seed_careers_page_candidates(
-    timeout_s: int,
-    *,
-    studio_seeds: list[dict[str, Any]],
-    fetcher=None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    fetcher = fetcher or fetch_text
-    return discover_directory_scan_candidates(
-        timeout_s,
-        lambda scan_timeout_s: _scan_seed_careers_page_candidates(
-            scan_timeout_s,
-            studio_seeds=studio_seeds,
-            fetcher=fetcher,
-        ),
-    )
-
-
-def discover_web_search_candidates(
-    timeout_s: int,
-    *,
-    studio_seeds: list[dict[str, Any]],
-    fetcher=None,
-    max_queries: int = 18,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    fetcher = fetcher or fetch_text
-    return discover_directory_scan_candidates(
-        timeout_s,
-        lambda scan_timeout_s: _scan_web_search_candidates(
-            scan_timeout_s,
-            studio_seeds=studio_seeds,
-            fetcher=fetcher,
-            max_queries=max_queries,
-        ),
     )
 
 

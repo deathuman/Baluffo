@@ -47,7 +47,7 @@
     "tests/jobs_static/test_rendered_cards_and_plugins.py": 1402,
     "tests/jobs_static/test_scrapy_static_runtime.py": 429,
     "tests/jobs_static/test_static_source_execution.py": 1135,
-    "tests/source_discovery/test_candidate_generation.py": 763,
+    "tests/source_discovery/test_candidate_generation.py": 807,
     "tests/source_discovery/test_config_and_helpers.py": 570,
     "tests/source_discovery/test_coverage_targets.py": 403,
     "tests/source_discovery/test_active_audit_runtime.py": 964,

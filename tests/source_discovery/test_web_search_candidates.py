@@ -4,7 +4,38 @@ import pytest
 
 import src.source_discovery.directory_fetch as directory_fetch
 import src.source_discovery.web_search_candidates as web_candidates
+from src.source_discovery import directory_audit
 from src.source_discovery.page_outcomes import FetchedPageContext
+
+from ._helpers import workspace_tmpdir
+
+
+def _web_audit_rows(
+    *,
+    name: str,
+    studio_seeds: list[dict[str, object]],
+    fetcher,
+    include_seed_careers: bool,
+    include_web_search: bool,
+    max_queries: int = 18,
+):
+    with workspace_tmpdir(name) as root:
+        artifact, _cache_hit = web_candidates.run_web_search_directory_audit(
+            5,
+            studio_seeds=studio_seeds,
+            include_seed_careers=include_seed_careers,
+            include_web_search=include_web_search,
+            config={
+                "webSearch": {
+                    "activeAuditPath": str(root / "web-audit.json"),
+                    "activeAuditTtlMinutes": 0,
+                    "activeAuditRecoveryEnabled": False,
+                }
+            },
+            fetcher=fetcher,
+            max_queries=max_queries,
+        )
+        return directory_audit.directory_audit_rows(artifact)
 
 
 @pytest.mark.parametrize(
@@ -183,7 +214,7 @@ def test_infer_provider_candidates_from_html_combines_page_url_and_embedded_urls
     assert all("careers_page" in row["evidenceTypes"] for row in rows)
 
 
-def test_discover_seed_careers_page_candidates_records_fetch_failures(monkeypatch) -> None:
+def test_web_audit_seed_careers_records_fetch_failures(monkeypatch) -> None:
     def fake_fetch_directory_pages(*_args, **_kwargs):
         return [
             {
@@ -198,8 +229,8 @@ def test_discover_seed_careers_page_candidates_records_fetch_failures(monkeypatc
 
     monkeypatch.setattr(directory_fetch, "fetch_directory_pages", fake_fetch_directory_pages)
 
-    providers, static_rows, failures = web_candidates.discover_seed_careers_page_candidates(
-        5,
+    providers, static_rows, failures = _web_audit_rows(
+        name="web-audit-seed-fetch-failure",
         studio_seeds=[
             {
                 "studio": "Example Studio",
@@ -207,6 +238,8 @@ def test_discover_seed_careers_page_candidates_records_fetch_failures(monkeypatc
             }
         ],
         fetcher=lambda *_args: "",
+        include_seed_careers=True,
+        include_web_search=False,
     )
 
     assert providers == []
@@ -237,8 +270,8 @@ def test_seed_careers_page_readiness_preserves_fetch_jobs_and_provenance(monkeyp
 
     monkeypatch.setattr(directory_fetch, "fetch_directory_pages", fake_fetch_directory_pages)
 
-    providers, static_rows, failures = web_candidates.discover_seed_careers_page_candidates(
-        5,
+    providers, static_rows, failures = _web_audit_rows(
+        name="web-audit-seed-readiness",
         studio_seeds=[
             {
                 "studio": "Example Studio",
@@ -247,6 +280,8 @@ def test_seed_careers_page_readiness_preserves_fetch_jobs_and_provenance(monkeyp
             }
         ],
         fetcher=lambda *_args: "",
+        include_seed_careers=True,
+        include_web_search=False,
     )
 
     assert seen_page_jobs == [
@@ -266,13 +301,15 @@ def test_seed_careers_page_readiness_preserves_fetch_jobs_and_provenance(monkeyp
     assert providers[0]["discoveryStage"] == "web_provider"
 
 
-def test_discover_web_search_candidates_records_search_and_page_fetch_failures(
+def test_web_audit_web_search_records_search_and_page_fetch_failures(
     monkeypatch,
 ) -> None:
-    providers, static_rows, failures = web_candidates.discover_web_search_candidates(
-        5,
+    providers, static_rows, failures = _web_audit_rows(
+        name="web-audit-search-failure",
         studio_seeds=[{"studio": "Example Studio"}],
         fetcher=lambda *_args: (_ for _ in ()).throw(RuntimeError("search blocked")),
+        include_seed_careers=False,
+        include_web_search=True,
         max_queries=1,
     )
 
@@ -306,10 +343,12 @@ def test_discover_web_search_candidates_records_search_and_page_fetch_failures(
 
     monkeypatch.setattr(directory_fetch, "fetch_directory_pages", fake_fetch_directory_pages)
 
-    providers, static_rows, failures = web_candidates.discover_web_search_candidates(
-        5,
+    providers, static_rows, failures = _web_audit_rows(
+        name="web-audit-page-fetch-failure",
         studio_seeds=[{"studio": "Example Studio"}],
         fetcher=fake_fetch,
+        include_seed_careers=False,
+        include_web_search=True,
         max_queries=1,
     )
 
@@ -355,10 +394,12 @@ def test_web_search_readiness_preserves_page_jobs_failures_and_provenance(monkey
 
     monkeypatch.setattr(directory_fetch, "fetch_directory_pages", fake_fetch_directory_pages)
 
-    providers, static_rows, failures = web_candidates.discover_web_search_candidates(
-        5,
+    providers, static_rows, failures = _web_audit_rows(
+        name="web-audit-search-readiness",
         studio_seeds=[{"studio": "Example Studio", "nlPriority": True}],
         fetcher=fake_fetch,
+        include_seed_careers=False,
+        include_web_search=True,
         max_queries=1,
     )
 
@@ -386,7 +427,7 @@ def test_web_search_readiness_preserves_page_jobs_failures_and_provenance(monkey
     assert providers[0]["discoveryStage"] == "web_provider"
 
 
-def test_discover_web_search_candidates_uses_direct_provider_links_without_page_fetch(
+def test_web_audit_web_search_uses_direct_provider_links_without_page_fetch(
     monkeypatch,
 ) -> None:
     seen_page_jobs = []
@@ -402,10 +443,12 @@ def test_discover_web_search_candidates_uses_direct_provider_links_without_page_
 
     monkeypatch.setattr(directory_fetch, "fetch_directory_pages", fake_fetch_directory_pages)
 
-    providers, static_rows, failures = web_candidates.discover_web_search_candidates(
-        5,
+    providers, static_rows, failures = _web_audit_rows(
+        name="web-audit-direct-provider-link",
         studio_seeds=[{"studio": "Example Studio", "nlPriority": True}],
         fetcher=fake_fetch,
+        include_seed_careers=False,
+        include_web_search=True,
         max_queries=1,
     )
 

@@ -273,21 +273,10 @@ def test_web_search_directory_audit_reruns_stale_wrong_schema_incomplete_or_sign
             assert artifact["summary"]["providerCandidates"] == 2
 
 
-def test_web_search_directory_audit_output_matches_direct_scans() -> None:
-    with workspace_tmpdir("web-search-audit-equivalence") as root:
+def test_web_search_directory_audit_output_can_be_split_by_discovery_method() -> None:
+    with workspace_tmpdir("web-search-audit-method-rows") as root:
         audit_path = root / "web-audit.json"
 
-        legacy_seed = web_candidates.discover_seed_careers_page_candidates(
-            5,
-            studio_seeds=_seeds(),
-            fetcher=_fetcher,
-        )
-        legacy_web = web_candidates.discover_web_search_candidates(
-            5,
-            studio_seeds=_seeds(),
-            fetcher=_fetcher,
-            max_queries=1,
-        )
         artifact, _cache_hit = web_candidates.run_web_search_directory_audit(
             5,
             studio_seeds=_seeds(),
@@ -298,11 +287,13 @@ def test_web_search_directory_audit_output_matches_direct_scans() -> None:
             max_queries=1,
         )
         audit_rows = directory_audit.directory_audit_rows(artifact)
+        seed_rows = directory_audit.directory_audit_rows_for_method(artifact, "seed_careers_page")
+        web_rows = directory_audit.directory_audit_rows_for_method(artifact, "web_search")
 
         assert audit_rows == (
-            [*legacy_seed[0], *legacy_web[0]],
-            [*legacy_seed[1], *legacy_web[1]],
-            [*legacy_seed[2], *legacy_web[2]],
+            [*seed_rows[0], *web_rows[0]],
+            [*seed_rows[1], *web_rows[1]],
+            [*seed_rows[2], *web_rows[2]],
         )
 
 
