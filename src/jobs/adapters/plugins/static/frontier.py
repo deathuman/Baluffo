@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Callable
 from typing import Any
@@ -10,6 +9,7 @@ from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import html_fragment_lines, strip_html_text
 from src.jobs.adapters.plugins.static import _heuristics
+from src.jobs.adapters.plugins.static._runner import static_listing_job_row
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.provider_parsers import (
     normalize_location_details,
@@ -148,21 +148,16 @@ def _extract_from_li_blocks(
         location_details = normalize_location_details(location)
         seen_links.add(link)
         jobs.append(
-            {
-                "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-                "title": title,
-                "company": company,
-                "city": clean_text(location_details.get("city")),
-                "country": clean_text(location_details.get("country")) or "Unknown",
-                "workType": work_type,
-                "contractType": contract_type,
-                "jobLink": link,
-                "sector": "Game",
-                "postedAt": "",
-                "adapter": "static",
-                "studio": company,
-                "source": "",
-            }
+            static_listing_job_row(
+                source_id=source_id,
+                link=link,
+                title=title,
+                company=company,
+                city=clean_text(location_details.get("city")),
+                country=clean_text(location_details.get("country")) or "Unknown",
+                work_type=work_type,
+                contract_type=contract_type,
+            )
         )
     return jobs
 
@@ -192,21 +187,16 @@ def _extract_jobs(html: str, *, page_url: str, company: str, source_id: str) -> 
         location_details = normalize_location_details(location)
         seen_links.add(link)
         jobs.append(
-            {
-                "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-                "title": title,
-                "company": company,
-                "city": clean_text(location_details.get("city")),
-                "country": clean_text(location_details.get("country")) or "Unknown",
-                "workType": work_type,
-                "contractType": contract_type,
-                "jobLink": link,
-                "sector": "Game",
-                "postedAt": "",
-                "adapter": "static",
-                "studio": company,
-                "source": "",
-            }
+            static_listing_job_row(
+                source_id=source_id,
+                link=link,
+                title=title,
+                company=company,
+                city=clean_text(location_details.get("city")),
+                country=clean_text(location_details.get("country")) or "Unknown",
+                work_type=work_type,
+                contract_type=contract_type,
+            )
         )
     return jobs
 

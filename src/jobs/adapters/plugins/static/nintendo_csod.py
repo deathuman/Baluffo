@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Callable
 from typing import Any
@@ -10,6 +9,7 @@ from urllib.parse import urljoin
 
 from src.jobs.adapters.html_parsers import html_fragment_lines, strip_html_text
 from src.jobs.adapters.plugins.static import _heuristics
+from src.jobs.adapters.plugins.static._runner import static_listing_job_row
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.provider_parsers import normalize_location_details
 from src.jobs.models import RawJob
@@ -137,23 +137,18 @@ def _extract_from_li_blocks(
         seen_links.add(link)
         location_details = normalize_location_details(location)
         jobs.append(
-            {
-                "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-                "title": title,
-                "company": company,
-                "city": clean_text(location_details.get("city")),
-                "country": clean_text(location_details.get("country")) or "Unknown",
-                "workType": work_type,
-                "contractType": contract_type,
-                "jobLink": link,
-                "sector": "Game",
-                "postedAt": "",
-                "adapter": "static",
-                "studio": company,
-                "source": "",
-                "locations": location_details.get("locations") or [],
-                "locationSummary": clean_text(location_details.get("locationSummary")),
-            }
+            static_listing_job_row(
+                source_id=source_id,
+                link=link,
+                title=title,
+                company=company,
+                city=clean_text(location_details.get("city")),
+                country=clean_text(location_details.get("country")) or "Unknown",
+                work_type=work_type,
+                contract_type=contract_type,
+                locations=location_details.get("locations") or [],
+                location_summary=clean_text(location_details.get("locationSummary")),
+            )
         )
     return jobs
 
@@ -202,23 +197,18 @@ def _extract_jobs(html: str, *, page_url: str, company: str, source_id: str) -> 
         seen_links.add(link)
         location_details = normalize_location_details(location)
         jobs.append(
-            {
-                "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-                "title": title,
-                "company": company,
-                "city": clean_text(location_details.get("city")),
-                "country": clean_text(location_details.get("country")) or "Unknown",
-                "workType": work_type,
-                "contractType": contract_type,
-                "jobLink": link,
-                "sector": "Game",
-                "postedAt": "",
-                "adapter": "static",
-                "studio": company,
-                "source": "",
-                "locations": location_details.get("locations") or [],
-                "locationSummary": clean_text(location_details.get("locationSummary")),
-            }
+            static_listing_job_row(
+                source_id=source_id,
+                link=link,
+                title=title,
+                company=company,
+                city=clean_text(location_details.get("city")),
+                country=clean_text(location_details.get("country")) or "Unknown",
+                work_type=work_type,
+                contract_type=contract_type,
+                locations=location_details.get("locations") or [],
+                location_summary=clean_text(location_details.get("locationSummary")),
+            )
         )
     return jobs
 

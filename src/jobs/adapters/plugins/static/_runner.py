@@ -74,6 +74,43 @@ def static_job_row(
     }
 
 
+def static_listing_job_row(
+    *,
+    source_id: str,
+    link: str,
+    title: str,
+    company: str,
+    city: str = "",
+    country: str = "Unknown",
+    work_type: str = "",
+    contract_type: str = "",
+    locations: list[dict[str, str]] | None = None,
+    location_summary: str | None = None,
+    **extra: Any,
+) -> RawJob:
+    row: RawJob = {
+        "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
+        "title": title,
+        "company": company,
+        "city": city,
+        "country": country,
+        "workType": work_type,
+        "contractType": contract_type,
+        "jobLink": link,
+        "sector": "Game",
+        "postedAt": "",
+        "adapter": "static",
+        "studio": company,
+        "source": "",
+    }
+    if locations is not None:
+        row["locations"] = locations
+    if location_summary is not None:
+        row["locationSummary"] = location_summary
+    row.update(extra)
+    return row
+
+
 def first_static_page(pages: list[str]) -> str:
     return clean_text(pages[0]) if pages else ""
 

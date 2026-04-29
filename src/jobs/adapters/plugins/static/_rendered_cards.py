@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import re
 from typing import Any
 from urllib.parse import urljoin
@@ -19,6 +18,7 @@ from src.jobs.adapters.location_rules import (
     is_plausibly_location_candidate,
 )
 from src.jobs.adapters.parsers.location import normalize_location_details
+from src.jobs.adapters.plugins.static._runner import static_listing_job_row
 from src.jobs.adapters.provider_parsers import parse_generic_location_fields
 from src.jobs.models import RawJob
 from src.jobs.text_utils import clean_text, normalize_url
@@ -487,6 +487,140 @@ def _has_job_entry_evidence(
     return False
 
 
+def _rendered_card_location_fields(
+    *,
+    block_html: str,
+    title: str,
+    structured_cells: list[str],
+) -> tuple[str, str, str, str, list[dict[str, str]], str]:
+    locations: list[dict[str, str]] = []
+    structured_work_type = ""
+    structured_contract_type = ""
+    if structured_cells:
+        locations, structured_work_type, structured_contract_type = _parse_structured_locations(
+            structured_cells, title
+        )
+    location, work_type, contract_type = _pick_location_and_terms(block_html, title)
+    if locations:
+        location = " | ".join(
+            ", ".join(
+                part
+                for part in [
+                    clean_text(item.get("city", "")),
+                    clean_text(item.get("country", "")),
+                ]
+                if part
+            )
+            for item in locations
+            if clean_text(item.get("city", "")) or clean_text(item.get("country", ""))
+        )
+        location_details = normalize_location_details(locations)
+        primary_location: dict[str, Any] = next(
+            (
+                item
+                for item in location_details.get("locations", [])
+                if clean_text(item.get("city", "")) or clean_text(item.get("country", ""))
+            ),
+            {},
+        )
+        city = (
+            clean_text(primary_location.get("city", ""))
+            or clean_text(location_details.get("city", ""))
+            or location
+        )
+        country = (
+            clean_text(primary_location.get("country", ""))
+            or clean_text(location_details.get("country", ""))
+            or "Unknown"
+        )
+        return (
+            city,
+            country,
+            structured_work_type or work_type,
+            structured_contract_type or contract_type,
+            locations,
+            location,
+        )
+    location_details = normalize_location_details(location)
+    city = clean_text(location_details.get("city", ""))
+    country = clean_text(location_details.get("country", "")) or "Unknown"
+    locations = location_details.get("locations") or []
+    location = clean_text(location_details.get("locationSummary")) or location
+    if not city and country == "Unknown":
+        location = ""
+    return city, country, work_type, contract_type, locations, location
+
+
+def _rendered_location_hint(block_html: str, title: str) -> str:
+    for line in html_fragment_lines(block_html):
+        candidate = clean_text(strip_html_text(line))
+        if not candidate or candidate == title or candidate.lower() in _IGNORED_TOKENS:
+            continue
+        if classify_city_garbage(candidate):
+            return candidate
+    return ""
+
+
+def _append_rendered_anchor_candidate(
+    *,
+    jobs: list[RawJob],
+    seen_links: set[str],
+    anchor: dict[str, str],
+    block_html: str,
+    block_text: str,
+    mode: str,
+    page_url: str,
+    company: str,
+    source_id: str,
+    href_tokens: tuple[str, ...],
+) -> None:
+    href = clean_text(anchor.get("href"))
+    if not href:
+        return
+    link = normalize_url(urljoin(page_url, href))
+    if not link or link in seen_links:
+        return
+    anchor_body = anchor.get("body") or anchor.get("text") or ""
+    structured_cells = _extract_structured_cell_texts(anchor_body)
+    title = _pick_title(block_html, anchor_body)
+    if not title:
+        return
+    location_hint = _rendered_location_hint(block_html, title)
+    city, country, work_type, contract_type, locations, location = _rendered_card_location_fields(
+        block_html=block_html,
+        title=title,
+        structured_cells=structured_cells,
+    )
+    if not _has_job_entry_evidence(
+        href=href,
+        anchor_text=anchor.get("text") or "",
+        block_text=block_text,
+        title=title,
+        location=location,
+        work_type=work_type,
+        contract_type=contract_type,
+        href_tokens=href_tokens,
+    ):
+        return
+    seen_links.add(link)
+    jobs.append(
+        static_listing_job_row(
+            source_id=source_id,
+            link=link,
+            title=title,
+            company=company,
+            city=city,
+            country=country,
+            work_type=work_type,
+            contract_type=contract_type,
+            locations=locations,
+            location_summary=location,
+            _locationHint=location_hint,
+            _renderedCardMode=mode,
+        )
+    )
+
+
 def extract_rendered_card_jobs(
     html: str,
     *,
@@ -499,116 +633,6 @@ def extract_rendered_card_jobs(
 ) -> list[RawJob]:
     jobs: list[RawJob] = []
     seen_links: set[str] = set()
-
-    def _append_anchor_candidate(
-        *,
-        anchor: dict[str, str],
-        block_html: str,
-        block_text: str,
-        mode: str,
-    ) -> None:
-        href = clean_text(anchor.get("href"))
-        if not href:
-            return
-        link = normalize_url(urljoin(page_url, href))
-        if not link or link in seen_links:
-            return
-        anchor_body = anchor.get("body") or anchor.get("text") or ""
-        structured_cells = _extract_structured_cell_texts(anchor_body)
-        title = _pick_title(block_html, anchor_body)
-        if not title:
-            return
-        location_hint = ""
-        for line in html_fragment_lines(block_html):
-            candidate = clean_text(strip_html_text(line))
-            if not candidate or candidate == title or candidate.lower() in _IGNORED_TOKENS:
-                continue
-            if classify_city_garbage(candidate):
-                location_hint = candidate
-                break
-        locations: list[dict[str, str]] = []
-        structured_work_type = ""
-        structured_contract_type = ""
-        if structured_cells:
-            locations, structured_work_type, structured_contract_type = _parse_structured_locations(
-                structured_cells, title
-            )
-        location, work_type, contract_type = _pick_location_and_terms(block_html, title)
-        if locations:
-            location = " | ".join(
-                ", ".join(
-                    part
-                    for part in [
-                        clean_text(item.get("city", "")),
-                        clean_text(item.get("country", "")),
-                    ]
-                    if part
-                )
-                for item in locations
-                if clean_text(item.get("city", "")) or clean_text(item.get("country", ""))
-            )
-            location_details = normalize_location_details(locations)
-            primary_location: dict[str, Any] = next(
-                (
-                    item
-                    for item in location_details.get("locations", [])
-                    if clean_text(item.get("city", "")) or clean_text(item.get("country", ""))
-                ),
-                {},
-            )
-            city = (
-                clean_text(primary_location.get("city", ""))
-                or clean_text(location_details.get("city", ""))
-                or location
-            )
-            country = (
-                clean_text(primary_location.get("country", ""))
-                or clean_text(location_details.get("country", ""))
-                or "Unknown"
-            )
-            work_type = structured_work_type or work_type
-            contract_type = structured_contract_type or contract_type
-        else:
-            location_details = normalize_location_details(location)
-            city = clean_text(location_details.get("city", ""))
-            country = clean_text(location_details.get("country", "")) or "Unknown"
-            locations = location_details.get("locations") or []
-            location = clean_text(location_details.get("locationSummary")) or location
-            if not city and country == "Unknown":
-                location = ""
-        if not _has_job_entry_evidence(
-            href=href,
-            anchor_text=anchor.get("text") or "",
-            block_text=block_text,
-            title=title,
-            location=location,
-            work_type=work_type,
-            contract_type=contract_type,
-            href_tokens=href_tokens,
-        ):
-            return
-        seen_links.add(link)
-        jobs.append(
-            {
-                "sourceJobId": f"static:{source_id}:{hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-                "title": title,
-                "company": company,
-                "city": city,
-                "country": country,
-                "workType": work_type,
-                "contractType": contract_type,
-                "jobLink": link,
-                "sector": "Game",
-                "postedAt": "",
-                "adapter": "static",
-                "studio": company,
-                "source": "",
-                "locations": locations,
-                "locationSummary": location,
-                "_locationHint": location_hint,
-                "_renderedCardMode": mode,
-            }
-        )
 
     for tag in block_tags:
         for block_html in iter_block_fragments(html or "", tag):
@@ -632,19 +656,31 @@ def extract_rendered_card_jobs(
             for anchor in anchor_candidates:
                 if not anchor:
                     continue
-                _append_anchor_candidate(
+                _append_rendered_anchor_candidate(
+                    jobs=jobs,
+                    seen_links=seen_links,
                     anchor=anchor,
                     block_html=block_html,
                     block_text=block_text,
                     mode="block",
+                    page_url=page_url,
+                    company=company,
+                    source_id=source_id,
+                    href_tokens=href_tokens,
                 )
     if allow_any_anchor and not jobs:
         page_text = clean_text(strip_html_text(html or ""))
         for anchor in iter_anchor_fragments(html or ""):
-            _append_anchor_candidate(
+            _append_rendered_anchor_candidate(
+                jobs=jobs,
+                seen_links=seen_links,
                 anchor=anchor,
                 block_html=html or "",
                 block_text=page_text,
                 mode="fallback",
+                page_url=page_url,
+                company=company,
+                source_id=source_id,
+                href_tokens=href_tokens,
             )
     return jobs
