@@ -34,6 +34,9 @@ DISCOVERY_STAGES: tuple[str, ...] = (
 #   - gamedevmap_*: gamedevmap_directory, gamedevmap_category, gamedevmap_ai_reviewed,
 #     gamedevmap_homepage_fetch, gamedevmap_direct_url, gamedevmap_careers_url,
 #     gamedevmap_recovery_page
+#   - gameprog_*: gameprog_directory, gameprog_website, gameprog_website_only,
+#     gameprog_manual_website_only, gameprog_careers_url, gameprog_location,
+#     gameprog_website_fetch, gameprog_no_current_openings
 #   - gamesmap_*: gamesmap_directory, gamesmap_category_match, gamesmap_website, gamesmap_website_only,
 #     gamesmap_manual_website_only, gamesmap_careers_url, gamesmap_location, gamesmap_website_fetch
 #   - sheet_*: sheet_directory, sheet_row, sheet_roles_open_yes/no/speculative/unknown
@@ -50,6 +53,7 @@ EVIDENCE_TYPES: tuple[str, ...] = (
     "gameprog_careers_url",
     "gameprog_location",
     "gameprog_website_fetch",
+    "gameprog_no_current_openings",
     # GameDevMap evidence
     "gamedevmap_directory",
     "gamedevmap_category",

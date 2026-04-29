@@ -134,6 +134,33 @@ def test_build_known_careers_url_candidate_preserves_requested_fields() -> None:
     assert "gameprog_careers_url" in (row.get("evidenceTypes") or [])
 
 
+def test_merge_candidate_streams_preserves_gameprog_no_openings_evidence() -> None:
+    rows = sd.merge_candidate_streams(
+        [
+            (
+                "generic_static",
+                [
+                    {
+                        "name": "Fallback Studio (Gameprog)",
+                        "studio": "Fallback Studio",
+                        "adapter": "static",
+                        "listing_url": "https://fallback.example.com/",
+                        "evidenceTypes": [
+                            "gameprog_directory",
+                            "gameprog_no_current_openings",
+                        ],
+                    }
+                ],
+            )
+        ]
+    )
+
+    assert rows[0]["evidenceTypes"] == [
+        "gameprog_directory",
+        "gameprog_no_current_openings",
+    ]
+
+
 def test_build_m5_strategic_backlog_applies_frozen_lanes_and_identity_rules() -> None:
     backlog = sd.build_m5_strategic_backlog(
         report_candidates=[
