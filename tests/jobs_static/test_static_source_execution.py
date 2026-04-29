@@ -321,9 +321,11 @@ def test_run_static_studio_pages_source_force_refresh_all_reprocesses_detail_lin
         }
 
     try:
-        with mock.patch("src.jobs.adapters.static.extract_rendered_card_jobs", return_value=[]):
+        with mock.patch(
+            "src.jobs.adapters.static_listing.extract_rendered_card_jobs", return_value=[]
+        ):
             with mock.patch(
-                "src.jobs.adapters.static.process_detail_html",
+                "src.jobs.adapters.static_listing.process_detail_html",
                 side_effect=fake_process_detail_html,
             ):
                 rows_no_refresh = jf.run_static_studio_pages_source(

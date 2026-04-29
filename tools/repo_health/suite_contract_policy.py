@@ -727,7 +727,9 @@ def test_static_adapter_root_stays_thin_orchestration_surface(repo_root: Path) -
 
     assert "from . import static_detail as static_detail_mod" not in text
     assert "static_detail_mod.root = sys.modules[__name__]" not in text
-    assert "def run_static_studio_pages_source(" in text
+    assert (
+        "run_static_studio_pages_source = static_sources_mod.run_static_studio_pages_source" in text
+    )
     assert "def static_source_shard(" not in text
     assert "def static_source_name_for_registry_row(" not in text
     assert "fetch_pages_batched" not in text

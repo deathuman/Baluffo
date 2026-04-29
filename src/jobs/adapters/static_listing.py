@@ -19,12 +19,14 @@ from src.jobs.adapters.location_rules import classify_city_garbage
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.errors import NoPluginFoundError
 from src.jobs.adapters.plugins.static._heuristics import detect_js_shell
+from src.jobs.adapters.plugins.static._rendered_cards import extract_rendered_card_jobs
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.adapters.static_detail_heuristics import (
     _is_one_man_studio_noise_city,
     add_detail_link,
     choose_detail_traversal_mode,
     is_probable_job_detail_url,
+    process_detail_html,
     process_detail_link,
     source_detail_concurrency_for,
     source_detail_limit_for,
@@ -49,8 +51,6 @@ from src.shared.utils import now_iso
 
 from ..common import config as common_config
 from .static_runtime import StaticSourceContext
-
-root: Any | None = None
 
 
 def _effective_timeout_or_raise(
@@ -98,14 +98,6 @@ class StaticListingStageState:
     def increment_browser_fallbacks(self) -> None:
         with self.lock:
             self.browser_fallbacks = int(self.browser_fallbacks or 0) + 1
-
-
-def _root_module():
-    if root is not None:
-        return root
-    from src.jobs.adapters import static as static_root
-
-    return static_root
 
 
 def _needs_detail_location_resolution(
@@ -576,7 +568,7 @@ def _append_rendered_row(
 def _append_rendered_card_rows(
     ctx: StaticSourceContext, listing_html: str, page_url: str, source_budget_s: int
 ) -> tuple[int, bool]:
-    rendered_rows = _root_module().extract_rendered_card_jobs(
+    rendered_rows = extract_rendered_card_jobs(
         listing_html,
         page_url=page_url,
         company=ctx.company,
@@ -914,7 +906,7 @@ def _process_detail_result_row(
         )
         return
     detail_meta = detail_batch_meta.get(detail) or {}
-    detail_result = _root_module().process_detail_html(
+    detail_result = process_detail_html(
         detail=detail,
         detail_title=detail_title,
         detail_html=str(detail_result_row.get("text") or ""),
