@@ -5,7 +5,7 @@
 > - **Canonical for:** aggressive jobs fetcher simplification goals, current objective assessment, next refactor sequence, and validation gates
 > - **Not canonical for:** saved-job/local-user data contracts, bridge API payload contracts, or source-discovery behavior
 > - **Then inspect:** [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), [`../adapter-plugin-inventory.md`](../adapter-plugin-inventory.md), and the touched source files
-> - **Last updated:** 2026-04-29
+> - **Last updated:** 2026-04-30
 
 ## Objective
 
@@ -76,9 +76,9 @@ Current jobs C901 priority list after the large-cut C901 ratchet:
 
 ## Active Simplification Strategy
 
-### Current gate: deletion-first cuts
+### Current gate: deletion-only cuts
 
-The next implementation round must prioritize net LOC reduction or direct repeated-lifecycle deletion. A slice can still introduce or extend a helper, but only when the same commit deletes repeated fetch, cache, fallback, diagnostics, parser-stamping, or report lifecycle branches. Broad C901 remains an informational metric; touched C901 offenders should leave the baseline or have lower recorded scores.
+The next implementation round must reduce LOC, delete a file/module, or remove a repeated lifecycle branch in the same commit. Static plugin module collapse and internal facade deletion outrank C901-only extraction. A slice can still introduce or extend a helper, but only when that helper directly replaces deleted fetch, cache, fallback, diagnostics, parser-stamping, or report lifecycle code. Broad C901 remains an informational metric; touched C901 offenders should leave the baseline or have lower recorded scores.
 
 ### 1. Reset compatibility policy
 
@@ -297,7 +297,7 @@ Each implementation slice should record:
 
 Do not accept a large helper-creation slice unless it immediately deletes repeated lifecycle code or unlocks a named deletion in the next commit.
 
-For the deletion-first round, prefer static plugin lifecycle collapse, static rendered/list extraction sharing, and social subsource lifecycle sharing over more standalone helper extraction.
+For the deletion-only round, prefer static plugin module collapse and internal facade deletion over more standalone helper extraction.
 
 Community Google Sheets fetch was inspected during this round and should not be forced into the same lifecycle shape yet. The current path is a single source-specific fetch/parse/diagnostic attempt loop; extracting it now would add helper surface without deleting repeated branches. Revisit only if another community source path grows the same fetch/parse/diagnostic lifecycle or if Google Sheets moves into a broader source execution engine slice.
 
