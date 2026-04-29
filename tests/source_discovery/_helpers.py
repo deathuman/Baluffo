@@ -12,6 +12,7 @@ from unittest import mock
 from src import source_discovery as sd
 from src import source_registry as sr
 from src.source_discovery import config as discovery_config_module
+from src.source_discovery import directory_audit
 from src.source_discovery import gamesmap as gamesmap_adapter
 from src.source_discovery import orchestrator as discovery_orchestrator
 from src.source_discovery import url_patches as discovery_url_patches
@@ -61,6 +62,34 @@ def _directory_audit_result(provider=None, static=None, failures=None):
         staticCandidates=list(static or []),
         failures=list(failures or []),
     ), False
+
+
+def web_audit_rows(
+    *,
+    name: str,
+    studio_seeds: list[dict[str, object]],
+    fetcher,
+    include_seed_careers: bool,
+    include_web_search: bool,
+    max_queries: int = 18,
+):
+    with workspace_tmpdir(name) as root:
+        artifact, _cache_hit = sd.run_web_search_directory_audit(
+            5,
+            studio_seeds=studio_seeds,
+            include_seed_careers=include_seed_careers,
+            include_web_search=include_web_search,
+            config={
+                "webSearch": {
+                    "activeAuditPath": str(root / "web-audit.json"),
+                    "activeAuditTtlMinutes": 0,
+                    "activeAuditRecoveryEnabled": False,
+                }
+            },
+            fetcher=fetcher,
+            max_queries=max_queries,
+        )
+        return directory_audit.directory_audit_rows(artifact)
 
 
 def write_web_search_browser_recovery_artifact(
@@ -148,6 +177,7 @@ __all__ = [
     "sys",
     "threading",
     "time",
+    "web_audit_rows",
     "write_web_search_browser_recovery_artifact",
     "workspace_tmpdir",
 ]

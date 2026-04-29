@@ -65,6 +65,7 @@ Keep source-specific semantics local: source id, display name, stage labels, ent
 - Web-derived browser-recovery wrapper thinning is complete for request creation, shared diagnostics, summary counting, candidate row selection, and artifact summary persistence; rendered-page analysis and queue-cap semantics remain local.
 - Web-derived browser-recovery save/merge review is complete with no shared wrapper. Web-search persists direct directory-audit summary counts via `audit_ledger.save_artifact_atomic(...)`; GameDevMap persists through `active_audit_runtime.save_updated_active_audit_artifact(...)` and completed-url summarization.
 - GameDevMap reset is complete for the current deletion-first pass. Pure wrappers around active-audit/probe/recovery helpers are removed where direct shared calls stayed clear; report summary, cache signature, TTL, rejection factories, provenance, homepage/recovery analysis, and browser-recovery artifact semantics remain local by design.
+- Source-discovery test scaffolding cleanup is complete for the current pass. Shared browser-recovery artifact setup, minimal directory-audit result helpers, and web audit row helpers live in `tests/source_discovery/_helpers.py`.
 - Modern artifact controls remain: `activeAuditPath`, `activeAuditTtlMinutes`, `activeAuditRecoveryEnabled`, `activeAuditRecoveryUrlLimit`, and browser-recovery settings.
 - From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json), current source-discovery C901 offenders are cleared. The next pressure is lifecycle ownership rather than cyclomatic-complexity suppression.
 
@@ -72,17 +73,7 @@ Parser complexity can remain temporarily when it is genuinely source-format comp
 
 ## Remaining Migration Sequence
 
-### 1. Test Scaffolding Cleanup
-
-Consolidate repeated adapter test setup without weakening guardrails. Shared browser-recovery artifact setup and minimal directory-audit result helpers already exist in `tests/source_discovery/_helpers.py`; broader empty audit fixture consolidation remains.
-
-Acceptance criteria:
-
-- Test changes are readability/LOC improvements only.
-- No production behavior changes in the same slice.
-- Existing guardrails still prove deleted paths stay deleted.
-- Shared empty directory-audit fixture setup lives in `tests/source_discovery/_helpers.py`.
-- Shared web-search browser-recovery artifact setup lives in `tests/source_discovery/_helpers.py`.
+No active behavior-preserving deletion-first migration sequence remains. Future source-discovery work should be evidence-backed behavior changes or new source coverage, not compatibility-preserving helper extraction.
 
 ## Validation Standard
 

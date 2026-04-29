@@ -1,6 +1,4 @@
 # ruff: noqa: F401
-from src.source_discovery import directory_audit
-
 from ._helpers import (
     FIXTURES_DIR,
     DiscoveryReportSummarySchema,
@@ -26,36 +24,8 @@ from ._helpers import (
     sys,
     threading,
     time,
-    workspace_tmpdir,
+    web_audit_rows,
 )
-
-
-def _web_audit_rows(
-    *,
-    name: str,
-    studio_seeds: list[dict[str, object]],
-    fetcher,
-    include_seed_careers: bool,
-    include_web_search: bool,
-    max_queries: int = 18,
-):
-    with workspace_tmpdir(name) as root:
-        artifact, _cache_hit = sd.run_web_search_directory_audit(
-            5,
-            studio_seeds=studio_seeds,
-            include_seed_careers=include_seed_careers,
-            include_web_search=include_web_search,
-            config={
-                "webSearch": {
-                    "activeAuditPath": str(root / "web-audit.json"),
-                    "activeAuditTtlMinutes": 0,
-                    "activeAuditRecoveryEnabled": False,
-                }
-            },
-            fetcher=fetcher,
-            max_queries=max_queries,
-        )
-        return directory_audit.directory_audit_rows(artifact)
 
 
 def test_analyze_fetched_page_falls_back_to_generic_static_without_explicit_links() -> None:
@@ -494,7 +464,7 @@ def test_web_audit_seed_careers_builds_static_candidate_without_web_search() -> 
             }
         ]
     ):
-        providers, static_rows, failures = _web_audit_rows(
+        providers, static_rows, failures = web_audit_rows(
             name="candidate-generation-seed-static",
             studio_seeds=discovery_config_module.STUDIO_SEEDS,
             fetcher=lambda *_: (
@@ -525,7 +495,7 @@ def test_web_audit_seed_careers_infers_provider_without_web_search() -> None:
             }
         ]
     ):
-        providers, static_rows, failures = _web_audit_rows(
+        providers, static_rows, failures = web_audit_rows(
             name="candidate-generation-seed-provider",
             studio_seeds=discovery_config_module.STUDIO_SEEDS,
             fetcher=lambda *_: (
@@ -553,7 +523,7 @@ def test_web_audit_seed_careers_prefers_explicit_careers_links() -> None:
             }
         ]
     ):
-        providers, static_rows, failures = _web_audit_rows(
+        providers, static_rows, failures = web_audit_rows(
             name="candidate-generation-seed-explicit-careers",
             studio_seeds=discovery_config_module.STUDIO_SEEDS,
             fetcher=lambda *_: (
@@ -588,7 +558,7 @@ def test_web_audit_seed_careers_prefers_personio_provider_over_static() -> None:
         def should_not_fetch(*_: object) -> str:
             raise AssertionError("direct provider seed URLs should not be fetched")
 
-        providers, static_rows, failures = _web_audit_rows(
+        providers, static_rows, failures = web_audit_rows(
             name="candidate-generation-seed-personio",
             studio_seeds=discovery_config_module.STUDIO_SEEDS,
             fetcher=should_not_fetch,
@@ -621,7 +591,7 @@ def test_web_audit_web_search_prefers_explicit_careers_links_from_result_pages()
             """
         raise RuntimeError(f"unexpected URL: {url}")
 
-    providers, static_rows, failures = _web_audit_rows(
+    providers, static_rows, failures = web_audit_rows(
         name="candidate-generation-web-explicit-careers",
         studio_seeds=studio_seeds,
         fetcher=fake_fetch,
