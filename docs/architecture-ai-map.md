@@ -38,7 +38,7 @@ src/jobs_fetcher.py (stable thin CLI facade)
 src/jobs/adapters/static.py (stable static adapter surface)
   -> src/jobs/adapters/static_{runtime,listing,listing_flow,detail,sources}.py
   -> src/jobs/adapters/static_{runtime_support,detail_heuristics}.py
-  -> src/jobs/adapters/static_helpers.py (temporary internal facade) + plugins/static/*
+  -> plugins/static/*
 src/source_discovery.py (stable thin CLI entrypoint)
   -> src/source_discovery/ (package)
 
@@ -98,7 +98,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | Bridge registry | `src/bridge/registry_service.py`, `src/source_registry_{identity,io,state,canonicalize,policy,auto_approval}.py` | `src/source_registry.py` only for compatibility-surface changes, plus `src/bridge/registry_tombstones.py` |
 | Jobs pipeline / fetcher behavior | `src/jobs/pipeline.py`, `src/jobs/pipeline_{run_setup,execution_flow,finalize}.py`, `src/jobs/pipeline_{runtime_writers,runtime_summary}.py`, `src/jobs/pipeline_stage_source_execution.py`, `src/jobs/pipeline_source_{loop,results,progress}.py`, `src/jobs/pipeline_timing.py`, `src/jobs/state_{source_state,lifecycle,incremental}.py`, `src/jobs/state_source_{records,browser,migration}.py`, `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py`, `src/jobs/reporting_{summary,queues,breakdowns,social}.py`, `src/jobs/fetcher_compat_{exports,runtime}.py`, other `src/jobs/*` leaf modules | `src/jobs_fetcher.py` only for CLI/user-facing fetcher entry changes. Internal jobs-fetcher facades and package-shape shims are simplification candidates, not permanent compatibility surfaces. |
 | Jobs domain helpers | `frontend/jobs/domain/{query,feed,view}.js` | `frontend/jobs/domain.js` only for stable export-surface changes |
-| Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py` | `src/jobs/adapters/static.py` for the current adapter entrypoint. `static_helpers.py` is an internal temporary facade and may be deleted when callers move to direct leaves. |
+| Static adapter behavior | `src/jobs/adapters/static_{runtime,listing,detail,sources}.py`, `src/jobs/adapters/static_{runtime_support,detail_heuristics}.py` | `src/jobs/adapters/static.py` for the current adapter entrypoint. The old `static_helpers.py` facade was deleted; use direct leaf imports. |
 | Local-data backend store | `src/local_data_store_{shared,profiles,saved_jobs,attachments,backup}.py` | `src/local_data_store.py` only for root-surface compatibility work |
 | Desktop local-data runtime | `frontend/shared/local-data/desktop/{api,lifecycle,navigation,state}.js` | `frontend/shared/local-data/desktop-client.js` only for root bootstrap or `window.JobAppLocalData` wiring |
 | Local-data page wiring | `frontend/<page>/services.js` | `frontend/local-data/services.js` only when the shared local-data API changes |
@@ -178,7 +178,7 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 - `source_sync_runtime.py` - runtime state, auth manager, rate limiting, DPAPI, and JSON request flow
 - `source_sync_snapshot.py` - snapshot normalization, transition backfill, merge ranking, and remote read/write helpers
 - `source_sync_crypto.py` - private-key encryption, PEM/ASN.1 parsing, and JWT signing helpers
-- `adapters/static.py` - current static adapter entrypoint over `static_runtime.py`, `static_listing.py`, `static_sources.py`, `static_runtime_support.py`, and `static_detail_heuristics.py`; `static_helpers.py` is a temporary internal facade, not a permanent compatibility surface
+- `adapters/static.py` - current static adapter entrypoint over `static_runtime.py`, `static_listing.py`, `static_sources.py`, `static_runtime_support.py`, and `static_detail_heuristics.py`; use direct leaf imports for helper ownership
 
 **Local data:**
 - `local_data_store.py` - stable desktop local-data store facade

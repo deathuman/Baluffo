@@ -10,7 +10,7 @@ from src import jobs_fetcher_registry as jfr
 from src.jobs import canonicalize as jobs_canonicalize
 from src.jobs import dedup as jobs_dedup
 from src.jobs import registry as jobs_registry
-from src.jobs.adapters import static_helpers, static_scrapy
+from src.jobs.adapters import static_scrapy
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.static import (
@@ -27,11 +27,13 @@ from src.jobs.adapters.plugins.static._rendered_cards import (
     run_rendered_cards_plugin,
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.static_helpers import (
+from src.jobs.adapters.static_detail_heuristics import (
+    add_detail_link,
     process_detail_link,
     source_detail_limit_for,
     source_detail_retries_for,
 )
+from src.jobs.adapters.static_runtime_support import update_source_detail_taxonomy
 from src.jobs.common import config as jobs_common_config
 from src.jobs.common import registry as jobs_common_registry
 from src.jobs.contamination_audit import (
@@ -51,6 +53,10 @@ FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 rendered_cards = SimpleNamespace(
     can_handle=can_handle_rendered_cards,
     run=run_rendered_cards_plugin,
+)
+static_helpers = SimpleNamespace(
+    add_detail_link=add_detail_link,
+    update_source_detail_taxonomy=update_source_detail_taxonomy,
 )
 
 

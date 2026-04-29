@@ -13,7 +13,10 @@ from src.jobs.adapters.plugins.static._runner import (
     static_plugin_context_values,
 )
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.static_helpers import _is_one_man_studio_noise_city, process_detail_link
+from src.jobs.adapters.static_detail_heuristics import (
+    _is_one_man_studio_noise_city,
+    process_detail_link,
+)
 from src.jobs.models import RawJob
 from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
 from src.jobs.text_utils import clean_text, sanitize_location_text

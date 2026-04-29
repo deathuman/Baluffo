@@ -6,11 +6,14 @@ from unittest import mock
 from src import jobs_fetcher as jf
 from src import jobs_fetcher_registry as jfr
 from src.jobs import registry as jobs_registry
-from src.jobs.adapters import static_helpers
+from src.jobs.adapters import static_runtime_support
 from src.jobs.adapters.plugins import default_registry
 from src.jobs.adapters.plugins.provider_api import ensure_registered as ensure_provider_plugins
 from src.jobs.adapters.plugins.types import AdapterPluginContext
-from src.jobs.adapters.static_helpers import source_detail_limit_for, source_detail_retries_for
+from src.jobs.adapters.static_detail_heuristics import (
+    source_detail_limit_for,
+    source_detail_retries_for,
+)
 
 
 def test_jobs_fetcher_keeps_parser_compatibility_exports() -> None:
@@ -323,7 +326,7 @@ def test_build_static_source_runtime_config_reads_uncapped_deep_env_overrides() 
         },
         clear=False,
     ):
-        runtime = static_helpers.build_static_source_runtime_config(10)
+        runtime = static_runtime_support.build_static_source_runtime_config(10)
 
     assert runtime.static_source_time_budget_s == 180
     assert runtime.low_yield_detail_cap == 0
@@ -341,7 +344,7 @@ def test_build_static_source_runtime_config_regular_still_clamps_zero_caps() -> 
         },
         clear=False,
     ):
-        runtime = static_helpers.build_static_source_runtime_config(10)
+        runtime = static_runtime_support.build_static_source_runtime_config(10)
 
     assert runtime.low_yield_detail_cap == 4
     assert runtime.very_low_yield_detail_cap == 2

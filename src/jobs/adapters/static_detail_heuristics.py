@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import sys
 import time
 from collections import Counter
 from collections.abc import Callable
@@ -738,11 +737,7 @@ def process_detail_html(
     ignored_link_titles: set[str],
 ) -> dict[str, Any]:
     parse_started = time.perf_counter()
-    parser = parse_jobpostings_from_html
-    static_helpers_mod = sys.modules.get("src.jobs.adapters.static_helpers")
-    if static_helpers_mod is not None:
-        parser = getattr(static_helpers_mod, "parse_jobpostings_from_html", parser)
-    detail_jobs = parser(
+    detail_jobs = parse_jobpostings_from_html(
         detail_html,
         base_url=detail,
         fallback_company=company,

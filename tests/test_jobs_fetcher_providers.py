@@ -1325,10 +1325,8 @@ def test_lionbridge_plugin_splits_city_region_country_listing_rows() -> None:
 
 
 def test_choose_detail_traversal_mode_prefers_listing_only_for_verified_hosts() -> None:
-    from src.jobs.adapters.static_helpers import (
-        build_static_source_runtime_config,
-        choose_detail_traversal_mode,
-    )
+    from src.jobs.adapters.static_detail_heuristics import choose_detail_traversal_mode
+    from src.jobs.adapters.static_runtime_support import build_static_source_runtime_config
 
     runtime = build_static_source_runtime_config(4)
     mode = choose_detail_traversal_mode(
@@ -1347,10 +1345,8 @@ def test_choose_detail_traversal_mode_prefers_listing_only_for_verified_hosts() 
 def test_choose_detail_traversal_mode_uncapped_deep_static_overrides_listing_only_with_probable_detail_links() -> (
     None
 ):
-    from src.jobs.adapters.static_helpers import (
-        build_static_source_runtime_config,
-        choose_detail_traversal_mode,
-    )
+    from src.jobs.adapters.static_detail_heuristics import choose_detail_traversal_mode
+    from src.jobs.adapters.static_runtime_support import build_static_source_runtime_config
 
     with mock.patch.dict("os.environ", {"BALUFFO_UNCAPPED_DEEP_STATIC": "1"}, clear=False):
         runtime = build_static_source_runtime_config(4)
@@ -1371,10 +1367,8 @@ def test_choose_detail_traversal_mode_uncapped_deep_static_overrides_listing_onl
 def test_choose_detail_traversal_mode_uncapped_deep_static_keeps_listing_only_without_probable_detail_links() -> (
     None
 ):
-    from src.jobs.adapters.static_helpers import (
-        build_static_source_runtime_config,
-        choose_detail_traversal_mode,
-    )
+    from src.jobs.adapters.static_detail_heuristics import choose_detail_traversal_mode
+    from src.jobs.adapters.static_runtime_support import build_static_source_runtime_config
 
     with mock.patch.dict("os.environ", {"BALUFFO_UNCAPPED_DEEP_STATIC": "1"}, clear=False):
         runtime = build_static_source_runtime_config(4)
@@ -1395,10 +1389,8 @@ def test_choose_detail_traversal_mode_uncapped_deep_static_keeps_listing_only_wi
 def test_choose_detail_traversal_mode_uncapped_zero_caps_promotes_capped_detail_to_full_detail() -> (
     None
 ):
-    from src.jobs.adapters.static_helpers import (
-        build_static_source_runtime_config,
-        choose_detail_traversal_mode,
-    )
+    from src.jobs.adapters.static_detail_heuristics import choose_detail_traversal_mode
+    from src.jobs.adapters.static_runtime_support import build_static_source_runtime_config
 
     source_state_rows = {
         "static_source::climax": {

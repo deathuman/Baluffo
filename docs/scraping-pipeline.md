@@ -70,7 +70,7 @@ Suggested comparison:
 - Before a run: note `len(jobs-unified.json)`, the size of `jobs-browser-fallback-queue.json`, and the number of sources with `classification` in `{blocked_or_challenge, anti_bot_or_challenge, rate_limited, needs_review}` in the last fetch report.
 - After a run (with Playwright fallbacks and Scrapy-Playwright enabled): compare the same metrics. Higher unified count, a smaller browser queue, and fewer blocked / needs_review sources indicate improvement.
 
-See also: `docs/DATA_CONTRACT.md` for report shapes and `docs/architecture-ai-map.md` for static adapter and Scrapy path. Saved jobs, local-user data, and active bridge/frontend payload fields remain compatibility boundaries. Internal jobs-fetcher shims such as `pipeline_runtime.py`, `state_source_state.py`, `static_helpers.py`, `src/jobs/common/contracts.py`, and `src/jobs/reporting.py` are not stable product surfaces; simplify, collapse, or delete them when a slice updates callers and keeps current fetch/report behavior covered by tests.
+See also: `docs/DATA_CONTRACT.md` for report shapes and `docs/architecture-ai-map.md` for static adapter and Scrapy path. Saved jobs, local-user data, and active bridge/frontend payload fields remain compatibility boundaries. Internal jobs-fetcher shims such as `pipeline_runtime.py`, `state_source_state.py`, the deleted `static_helpers.py`, `src/jobs/common/contracts.py`, and `src/jobs/reporting.py` are not stable product surfaces; simplify, collapse, or delete them when a slice updates callers and keeps current fetch/report behavior covered by tests.
 
 ## 4) Running the pipeline
 

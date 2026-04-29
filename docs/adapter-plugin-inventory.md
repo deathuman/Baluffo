@@ -62,8 +62,7 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
   Detail traversal batching, adaptive stop behavior, and detail HTML result integration.
 - **`src/jobs/adapters/static_sources.py`**
   Shard naming, registry-row dynamic loader naming, and single-source/shard wrapper construction.
-- **`src/jobs/adapters/static_helpers.py`**
-  Low-level utility owner for runtime config, HTML fetch caching, detail parsing helpers, heuristics, and taxonomy helpers.
+- Static helper ownership now lives directly in `static_runtime_support.py` and `static_detail_heuristics.py`; the old `static_helpers.py` facade has been deleted.
 
 ### Jobs fetcher compatibility ownership
 

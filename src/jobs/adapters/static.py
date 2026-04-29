@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from src.jobs.adapters import static_scrapy as _static_scrapy
 from src.jobs.adapters.plugins.static import register_static_plugins
-from src.jobs.adapters.static_helpers import (
+from src.jobs.adapters.static_detail_heuristics import (
     extract_rendered_card_jobs as _extract_rendered_card_jobs,
 )
-from src.jobs.adapters.static_helpers import (
+from src.jobs.adapters.static_detail_heuristics import (
     process_detail_html as _process_detail_html,
 )
 
