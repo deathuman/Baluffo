@@ -72,6 +72,89 @@ def _request_json_with_headers(
         return parsed if isinstance(parsed, dict) else {}
 
 
+def _emit_social_progress(
+    progress_callback: Callable[..., None] | None,
+    *,
+    phase_key: str,
+    phase_label: str,
+    target_label: str = "",
+    target_url: str = "",
+    counts: dict[str, Any] | None = None,
+    event_level: str = "muted",
+    message: str = "",
+) -> None:
+    if progress_callback is None:
+        return
+    progress_callback(
+        phase_key=phase_key,
+        phase_label=phase_label,
+        target_label=target_label,
+        target_url=target_url,
+        counts=counts,
+        event_level=event_level,
+        message=message,
+    )
+
+
+def _social_subsource_entry(*, studio: str, name: str) -> dict[str, Any]:
+    return {
+        "adapter": "social",
+        "studio": studio,
+        "name": name,
+        "status": "ok",
+        "fetchedCount": 0,
+        "keptCount": 0,
+        "error": "",
+    }
+
+
+def _apply_social_cache_decision(
+    entry: dict[str, Any],
+    *,
+    source_state_rows: dict[str, dict[str, Any]] | None,
+    force_refresh_all: bool,
+) -> bool:
+    cache_decision = get_incremental_cache_decision(
+        clean_text(entry.get("name")),
+        source_state_rows or {},
+        adapter="social",
+        force_refresh_all=force_refresh_all,
+    )
+    entry["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
+    entry["cacheDecisionReason"] = (
+        clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+    )
+    if entry["cacheDecision"] not in {"skip_fresh", "cooldown_skip"}:
+        return False
+    entry["status"] = "excluded"
+    entry["error"] = entry["cacheDecisionReason"]
+    entry["exclusionReason"] = f"cache_{entry['cacheDecisionReason']}"
+    return True
+
+
+def _record_social_subsource_error(
+    entry: dict[str, Any],
+    errors: list[str],
+    *,
+    error_prefix: str,
+    exc: Exception,
+) -> None:
+    entry["status"] = "error"
+    entry["error"] = str(exc)
+    errors.append(f"{error_prefix}: {exc}")
+
+
+def _finish_social_subsource_entry(
+    entry: dict[str, Any],
+    *,
+    parsed_rows: list[RawJob],
+    reject_reason_counts: dict[str, int],
+) -> None:
+    entry["keptCount"] = len(parsed_rows)
+    if reject_reason_counts:
+        entry["rejectReasonCounts"] = reject_reason_counts
+
+
 def run_social_reddit_source(
     *,
     fetch_text: Callable[[str, int], str],
@@ -110,59 +193,21 @@ def run_social_reddit_source(
         if heartbeat_callback:
             heartbeat_callback()
 
-    def emit_progress(
-        *,
-        phase_key: str,
-        phase_label: str,
-        target_label: str = "",
-        target_url: str = "",
-        counts: dict[str, Any] | None = None,
-        event_level: str = "muted",
-        message: str = "",
-    ) -> None:
-        if progress_callback is None:
-            return
-        progress_callback(
-            phase_key=phase_key,
-            phase_label=phase_label,
-            target_label=target_label,
-            target_url=target_url,
-            counts=counts,
-            event_level=event_level,
-            message=message,
-        )
-
     for sub in subs:
         subreddit_label = f"reddit/r/{sub}"
         subreddit_url = f"https://www.reddit.com/r/{sub}/new.json"
         entry_name = f"reddit:r/{sub}"
-        entry = {
-            "adapter": "social",
-            "studio": f"reddit/{sub}",
-            "name": entry_name,
-            "status": "ok",
-            "fetchedCount": 0,
-            "keptCount": 0,
-            "error": "",
-        }
-        cache_decision = get_incremental_cache_decision(
-            entry_name,
-            source_state_rows or {},
-            adapter="social",
+        entry = _social_subsource_entry(studio=f"reddit/{sub}", name=entry_name)
+        if _apply_social_cache_decision(
+            entry,
+            source_state_rows=source_state_rows,
             force_refresh_all=force_refresh_all,
-        )
-        entry["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-        entry["cacheDecisionReason"] = (
-            clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
-        )
-        if entry["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
-            entry["status"] = "excluded"
-            entry["error"] = entry["cacheDecisionReason"]
-            entry["exclusionReason"] = f"cache_{entry['cacheDecisionReason']}"
+        ):
             details.append(entry)
             continue
         try:
-            emit_progress(
+            _emit_social_progress(
+                progress_callback,
                 phase_key="scanning_subsource",
                 phase_label="Scanning subsource",
                 target_label=subreddit_label,
@@ -181,7 +226,8 @@ def run_social_reddit_source(
             entry["fetchedCount"] = len(sub_rows)
             entry["keptCount"] = len(sub_rows)
             rows.extend(sub_rows)
-            emit_progress(
+            _emit_social_progress(
+                progress_callback,
                 phase_key="subsource_loaded",
                 phase_label="Subsource loaded",
                 target_label=subreddit_label,
@@ -191,10 +237,9 @@ def run_social_reddit_source(
             )
             tick()
         except Exception as exc:  # noqa: BLE001
-            entry["status"] = "error"
-            entry["error"] = str(exc)
-            errors.append(f"reddit:{sub}: {exc}")
-            emit_progress(
+            _record_social_subsource_error(entry, errors, error_prefix=f"reddit:{sub}", exc=exc)
+            _emit_social_progress(
+                progress_callback,
                 phase_key="subsource_error",
                 phase_label="Subsource error",
                 target_label=subreddit_label,
@@ -345,61 +390,23 @@ def run_social_x_source(
     jobs: list[RawJob] = []
     low_conf_total = 0
 
-    def emit_progress(
-        *,
-        phase_key: str,
-        phase_label: str,
-        target_label: str = "",
-        target_url: str = "",
-        counts: dict[str, Any] | None = None,
-        event_level: str = "muted",
-        message: str = "",
-    ) -> None:
-        if progress_callback is None:
-            return
-        progress_callback(
-            phase_key=phase_key,
-            phase_label=phase_label,
-            target_label=target_label,
-            target_url=target_url,
-            counts=counts,
-            event_level=event_level,
-            message=message,
-        )
-
     for query in queries:
         query_label = f"x:{query}"
         entry_name = f"x:{query}"
-        entry = {
-            "adapter": "social",
-            "studio": "x",
-            "name": entry_name,
-            "status": "ok",
-            "fetchedCount": 0,
-            "keptCount": 0,
-            "error": "",
-        }
-        cache_decision = get_incremental_cache_decision(
-            entry_name,
-            source_state_rows or {},
-            adapter="social",
-            force_refresh_all=force_refresh_all,
-        )
-        entry["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-        entry["cacheDecisionReason"] = (
-            clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
-        )
+        entry = _social_subsource_entry(studio="x", name=entry_name)
         parsed_rows: list[RawJob] = []
         low_conf_query = 0
         reject_reason_counts: dict[str, int] = {}
-        if entry["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
-            entry["status"] = "excluded"
-            entry["error"] = entry["cacheDecisionReason"]
-            entry["exclusionReason"] = f"cache_{entry['cacheDecisionReason']}"
+        if _apply_social_cache_decision(
+            entry,
+            source_state_rows=source_state_rows,
+            force_refresh_all=force_refresh_all,
+        ):
             details.append(entry)
             continue
         try:
-            emit_progress(
+            _emit_social_progress(
+                progress_callback,
                 phase_key="scanning_subsource",
                 phase_label="Scanning subsource",
                 target_label=query_label,
@@ -436,7 +443,8 @@ def run_social_x_source(
                     entry["rejectReasonCounts"] = reject_reason_counts
                 low_conf_total += int(low_conf_query)
                 jobs.extend(parsed_rows)
-                emit_progress(
+                _emit_social_progress(
+                    progress_callback,
                     phase_key="subsource_loaded",
                     phase_label="Subsource loaded",
                     target_label=query_label,
@@ -449,8 +457,8 @@ def run_social_x_source(
                 details.append(entry)
                 continue
             if payload_kind == "missing":
-                entry["status"] = "error"
                 entry["error"] = "missing x api credentials and fallbacks disabled"
+                entry["status"] = "error"
                 errors.append(f"x:{query}: {entry['error']}")
                 details.append(entry)
                 continue
@@ -468,23 +476,25 @@ def run_social_x_source(
             else:
                 entry["fetchedCount"] = len(parsed_rows) + int(low_conf_query)
         except Exception as exc:  # noqa: BLE001
-            entry["status"] = "error"
-            entry["error"] = str(exc)
-            errors.append(f"x:{query}: {exc}")
-            emit_progress(
+            _record_social_subsource_error(entry, errors, error_prefix=f"x:{query}", exc=exc)
+            _emit_social_progress(
+                progress_callback,
                 phase_key="subsource_error",
                 phase_label="Subsource error",
                 target_label=query_label,
                 event_level="warn",
                 message=f"{query_label} failed: {exc}",
             )
-        entry["keptCount"] = len(parsed_rows)
-        if reject_reason_counts:
-            entry["rejectReasonCounts"] = reject_reason_counts
+        _finish_social_subsource_entry(
+            entry,
+            parsed_rows=parsed_rows,
+            reject_reason_counts=reject_reason_counts,
+        )
         low_conf_total += int(low_conf_query)
         jobs.extend(parsed_rows)
         if entry["status"] == "ok":
-            emit_progress(
+            _emit_social_progress(
+                progress_callback,
                 phase_key="subsource_loaded",
                 phase_label="Subsource loaded",
                 target_label=query_label,
@@ -546,28 +556,6 @@ def run_social_mastodon_source(
         if heartbeat_callback:
             heartbeat_callback()
 
-    def emit_progress(
-        *,
-        phase_key: str,
-        phase_label: str,
-        target_label: str = "",
-        target_url: str = "",
-        counts: dict[str, Any] | None = None,
-        event_level: str = "muted",
-        message: str = "",
-    ) -> None:
-        if progress_callback is None:
-            return
-        progress_callback(
-            phase_key=phase_key,
-            phase_label=phase_label,
-            target_label=target_label,
-            target_url=target_url,
-            counts=counts,
-            event_level=event_level,
-            message=message,
-        )
-
     for instance in instances:
         for tag in tags:
             timeline_url = (
@@ -576,34 +564,18 @@ def run_social_mastodon_source(
             target_host = clean_text(urlparse(instance).netloc)
             target_label = f"mastodon:{target_host}:#{tag}"
             entry_name = target_label
-            entry = {
-                "adapter": "social",
-                "studio": f"mastodon/{target_host}",
-                "name": entry_name,
-                "status": "ok",
-                "fetchedCount": 0,
-                "keptCount": 0,
-                "error": "",
-            }
+            entry = _social_subsource_entry(studio=f"mastodon/{target_host}", name=entry_name)
             reject_reason_counts: dict[str, int] = {}
-            cache_decision = get_incremental_cache_decision(
-                entry_name,
-                source_state_rows or {},
-                adapter="social",
+            if _apply_social_cache_decision(
+                entry,
+                source_state_rows=source_state_rows,
                 force_refresh_all=force_refresh_all,
-            )
-            entry["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-            entry["cacheDecisionReason"] = (
-                clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
-            )
-            if entry["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
-                entry["status"] = "excluded"
-                entry["error"] = entry["cacheDecisionReason"]
-                entry["exclusionReason"] = f"cache_{entry['cacheDecisionReason']}"
+            ):
                 details.append(entry)
                 continue
             try:
-                emit_progress(
+                _emit_social_progress(
+                    progress_callback,
                     phase_key="scanning_subsource",
                     phase_label="Scanning subsource",
                     target_label=target_label,
@@ -631,7 +603,8 @@ def run_social_mastodon_source(
                     entry["rejectReasonCounts"] = reject_reason_counts
                 low_conf_total += int(low_conf_tag)
                 jobs.extend(parsed_rows)
-                emit_progress(
+                _emit_social_progress(
+                    progress_callback,
                     phase_key="subsource_loaded",
                     phase_label="Subsource loaded",
                     target_label=target_label,
@@ -641,10 +614,14 @@ def run_social_mastodon_source(
                 )
                 tick()
             except Exception as exc:  # noqa: BLE001
-                entry["status"] = "error"
-                entry["error"] = str(exc)
-                errors.append(f"mastodon:{instance}:#{tag}: {exc}")
-                emit_progress(
+                _record_social_subsource_error(
+                    entry,
+                    errors,
+                    error_prefix=f"mastodon:{instance}:#{tag}",
+                    exc=exc,
+                )
+                _emit_social_progress(
+                    progress_callback,
                     phase_key="subsource_error",
                     phase_label="Subsource error",
                     target_label=target_label,
