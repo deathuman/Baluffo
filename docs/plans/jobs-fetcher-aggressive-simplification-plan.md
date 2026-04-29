@@ -33,12 +33,12 @@ The completed jobs adapter mass-refactor made real but narrow progress:
 - Some static detail and location-rule complexity was reduced.
 - Evidence-backed dead-source deletion now exists with tombstones and dated snapshots.
 
-The broader objective is not complete:
+The broader objective is not complete, but the deletion-only round has started moving the size metrics down again:
 
-- `src/jobs` is still about 134 Python files and 28,420 lines.
-- `src/jobs/adapters` is still about 75 Python files and 16,700 lines.
+- `src/jobs` is still about 132 Python files and 28,417 lines.
+- `src/jobs/adapters` is still about 73 Python files and 16,697 lines.
 - Since the jobs adapter refactor started, production `src/jobs` is roughly net-flat, not meaningfully smaller.
-- `python -m ruff check --select C901 src/jobs` currently reports 42 complexity offenders.
+- `python -m ruff check --select C901 src/jobs` currently reports 38 complexity offenders.
 - Several compatibility surfaces are still preserved by docs/tests even though the current product goal allows breaking internal fetcher compatibility.
 
 The completed roadmap was removed from active docs after commit `7e62dac` completed the evidence-backed dead-source deletion slice. Use git history for historical provenance; keep this plan as the active direction.
@@ -67,10 +67,10 @@ Valuable medium-risk candidates:
 - Consolidate state, reporting, and contracts leaf modules only after the compatibility-policy reset updates docs and package-shape tests. These are not current public product contracts; they are internal guardrails that can be rewritten if the replacement is simpler.
 - Break `sys.modules[__name__]` and root-protocol indirection as standalone slices with targeted package/startup tests.
 
-Current jobs C901 priority list after the large-cut C901 ratchet:
+Current jobs C901 priority list after the deletion-only ratchet:
 
 - `text_utils.py::invalid_location_reason` at 26.
-- Static plugin runners and renderers, especially `littlechicken`, `sheet_studios`, `_rendered_cards`, `frontier`, and `nintendo_csod`.
+- Static renderers and parsers, especially `_rendered_cards`, `frontier`, `nintendo_csod`, and `static_scrapy`.
 - Social/community source runners and parser helpers.
 - Shared taxonomy/registry helpers that still own broad branch-heavy classification logic.
 
@@ -256,14 +256,14 @@ cmd /c npm run lint:precommit
 
 ### Phase 5: Hotspot reductions and broad C901 ratchet
 
-Status: active. `contracts_source_reports.py::normalize_source_report_row`, `pipeline_source_results.py::execute_loader`, canonicalization, deduplication, location parsing, the first static plugin lifecycle group, and the second static/social deletion-first round now reduced or removed several C901 allowances. These cuts reduced broad C901 materially but still increased LOC, so the next priority is deletion-only plugin/lifecycle removal rather than more helper-led consolidation. Current milestone metrics:
+Status: active. `contracts_source_reports.py::normalize_source_report_row`, `pipeline_source_results.py::execute_loader`, canonicalization, deduplication, location parsing, the first static plugin lifecycle group, the second static/social deletion-first round, and the deletion-only static/facade round now reduced or removed several C901 allowances. The latest round deleted module surfaces and brought LOC/file counts down instead of adding more helper-only structure. Current milestone metrics:
 
-- Jobs Python files: 134.
-- Jobs Python lines: 28,420.
-- Adapter Python files: 75.
-- Adapter Python lines: 16,700.
-- Broad `src/jobs` C901 offenders: 42.
-- Adapter C901 offenders: 27.
+- Jobs Python files: 132.
+- Jobs Python lines: 28,417.
+- Adapter Python files: 73.
+- Adapter Python lines: 16,697.
+- Broad `src/jobs` C901 offenders: 38.
+- Adapter C901 offenders: 23.
 
 Deletion-first round results:
 
@@ -271,7 +271,10 @@ Deletion-first round results:
 - Static rendered-list extraction now shares static row assembly and removed `_rendered_cards.py::_append_anchor_candidate` from the baseline; `extract_rendered_card_jobs` dropped from 22 to 11 but remains one point over the threshold.
 - Social source runners now share cache/progress/error/count entry handling; `run_social_reddit_source`, `run_social_x_source`, and `run_social_mastodon_source` all have lower baseline scores.
 - Community Google Sheets fetch was inspected and deferred because its current path is a single source-specific fetch/parse/diagnostic loop, not duplicated lifecycle code.
-- LOC still increased to 28,420, so the next implementation slice should be explicitly deletion-only: delete or collapse remaining static plugin modules into existing specs, delete internal compatibility surfaces, or remove repeated lifecycle branches without adding new helper layers.
+- The deletion-only round deleted `rendered_cards.py` by moving the small wrapper lifecycle into `_rendered_cards.py` and direct static registration.
+- `littlechicken.py::run` and both tracked `sheet_studios.py` offenders left the C901 baseline while those modules shrank.
+- `static_helpers.py` was deleted; production and tests now import directly from `static_detail_heuristics.py` and `static_runtime_support.py`.
+- Next deletion-positive targets are `_rendered_cards`/`frontier`/`nintendo_csod` extraction overlap, `static_scrapy` lifecycle duplication, and any remaining internal state facade deletion that can remove a module rather than reshuffle imports.
 
 - Refactor the largest remaining hotspots after lifecycle deletion has removed duplicated branches.
 - Update `scripts/complexity_baseline.json` only when scores decrease or offenders disappear.
