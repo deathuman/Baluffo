@@ -326,8 +326,8 @@ Recoverable Sheet Studio,yes,https://recover-sheet.example.com/
         )
 
 
-def test_sheet_directory_audit_opt_in_recovery_miss_keeps_static_fallback() -> None:
-    with workspace_tmpdir("sheet-directory-audit-recovery-miss") as root:
+def test_sheet_directory_audit_opt_in_recovery_miss_drops_static_fallback() -> None:
+    with workspace_tmpdir("sheet-directory-audit-recovery-miss-drops-fallback") as root:
         audit_path = root / "sheet-audit.json"
         csv_text = """Studio,Roles open,Link
 Fallback Sheet Studio,speculative,https://fallback-sheet.example.com/
@@ -357,10 +357,7 @@ Fallback Sheet Studio,speculative,https://fallback-sheet.example.com/
         assert artifact["summary"]["recoveryFetchAttempts"] == 6
         assert artifact["summary"]["recoveredStaticCandidates"] == 0
         assert artifact["summary"]["recoveryFailures"] == 0
-        assert len(artifact["staticCandidates"]) == 1
-        assert artifact["staticCandidates"][0]["listing_url"] == (
-            "https://fallback-sheet.example.com/"
-        )
+        assert artifact["staticCandidates"] == []
 
 
 def test_sheet_directory_audit_opt_in_recovery_failure_is_diagnostic_only() -> None:
@@ -380,8 +377,7 @@ Down Sheet Studio,yes,https://down-sheet.example.com/
 
         assert artifact["summary"]["recoveryFailures"] > 0
         assert artifact["summary"]["failures"] == 0
-        assert len(artifact["staticCandidates"]) == 1
-        assert artifact["staticCandidates"][0]["listing_url"] == "https://down-sheet.example.com/"
+        assert artifact["staticCandidates"] == []
 
 
 def test_sheet_directory_audit_opt_in_recovery_keeps_invalid_url_failures() -> None:

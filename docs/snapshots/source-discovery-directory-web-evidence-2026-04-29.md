@@ -108,3 +108,9 @@ Do not widen browser recovery from this evidence alone. Browser-recovery candida
 - The `gameprog_no_current_openings` evidence vocabulary gap was fixed and shipped before this cleanup.
 - Source-discovery static probe fallback now contains Playwright launcher/environment exceptions, including Windows permission failures, so failed browser fallback remains a normal probe miss instead of escaping async probe tasks.
 - This does not change Sheet-directory/static scoring, queue policy, browser-recovery eligibility, saved jobs, frontend storage, bridge routes, registry contracts, or artifact schemas.
+
+## Completed follow-up: Sheet static fallback quality
+
+- Sheet-directory HTTP recovery remains enabled and recovered provider/static rows remain eligible.
+- Unrecovered Sheet static homepage fallbacks are no longer carried forward after recovery has already failed to find a provider or usable jobs page.
+- This targets the observed Sheet/static zero-job pressure without changing provider inference, queue policy, browser-recovery eligibility, saved jobs, frontend storage, bridge routes, registry contracts, or artifact schemas.

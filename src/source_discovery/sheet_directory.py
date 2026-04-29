@@ -488,8 +488,6 @@ def _apply_sheet_directory_recovery(
         recovery,
         provider_dedupe=collapse_competing_candidates,
         static_dedupe=unique_sources,
-        fallback_static_candidates=static_candidates,
-        fallback_key=_sheet_static_row_key,
     )
 
 
