@@ -37,7 +37,6 @@
     "src/jobs/adapters/plugins/static/_rendered_cards.py::extract_rendered_card_jobs": 11,
     "src/jobs/adapters/plugins/static/frontier.py::_extract_from_li_blocks": 11,
     "src/jobs/adapters/plugins/static/frontier.py::_pick_location_and_terms": 13,
-    "src/jobs/adapters/plugins/static/littlechicken.py::run": 25,
     "src/jobs/adapters/plugins/static/nintendo_csod.py::_extract_from_li_blocks": 18,
     "src/jobs/adapters/plugins/static/nintendo_csod.py::_extract_jobs": 12,
     "src/jobs/adapters/plugins/static/sheet_studios.py::_sanitize_row_locations": 13,
