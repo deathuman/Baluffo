@@ -3,10 +3,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from src.jobs.adapters.plugins.static import _heuristics
+from src.jobs.adapters.plugins.static._runner import (
+    fetch_static_plugin_html,
+    first_static_page,
+    record_static_plugin_empty_parse,
+    stamp_static_plugin_rows,
+    static_plugin_blocked_by_js_shell,
+    static_plugin_context_values,
+)
 from src.jobs.adapters.plugins.types import AdapterPluginContext
 from src.jobs.models import RawJob
-from src.jobs.text_utils import clean_text
 from src.scrapers.providers.jobylon_v1 import extract_jobylon_v1_jobs
 
 
@@ -29,37 +35,26 @@ def run(
     _ = (retries, backoff_s, kwargs)
     if not pages or not callable(parse_jobpostings_from_html):
         return []
-    page_url = clean_text(pages[0])
+    page_url = first_static_page(pages)
     if not page_url:
         return []
-
-    company = (
-        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
-        or "Remedy"
+    company, source_id, source_name = static_plugin_context_values(
+        source_row=source_row,
+        default_company="Remedy",
+        default_source_id="remedy",
+        default_source_name="remedy",
     )
-    source_id = (source_row.get("id") or "").strip() or "remedy"
-    source_name = clean_text(source_row.get("name")) or "remedy"
-
-    try:
-        html = fetch_text(page_url, timeout_s)
-    except Exception as exc:  # noqa: BLE001
-        classification, recommend = _heuristics.classify_fetch_exception(exc)
-        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-            classification,
-            browser_fallback_recommended=bool(recommend),
-            extractor_hint="fetch_failed",
-            error=str(exc),
-        )
-        return []
-
-    ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url)
-    if _heuristics.detect_js_shell(html):
-        source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-            _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE,
-            browser_fallback_recommended=True,
-            extractor_hint="js_shell_detected",
-            ats_links=ats_links,
-        )
+    html = fetch_static_plugin_html(
+        fetch_text=fetch_text,
+        page_url=page_url,
+        timeout_s=timeout_s,
+        source_row=source_row,
+    )
+    if not html or static_plugin_blocked_by_js_shell(
+        html=html,
+        page_url=page_url,
+        source_row=source_row,
+    ):
         return []
 
     jobylon_jobs, _stats, _jobylon_errors, _rejects = extract_jobylon_v1_jobs(
@@ -69,14 +64,11 @@ def run(
         timeout_s=max(15, min(timeout_s, 45)),
     )
     if jobylon_jobs:
-        rows = []
-        for job in jobylon_jobs:
-            if isinstance(job, dict):
-                job["adapter"] = "static"
-                job["studio"] = company
-                job["source"] = source_name
-                rows.append(job)
-        return [r for r in rows if isinstance(r, dict)]
+        return stamp_static_plugin_rows(
+            rows=jobylon_jobs,
+            company=company,
+            source_name=source_name,
+        )
 
     rows = parse_jobpostings_from_html(
         html,
@@ -84,31 +76,7 @@ def run(
         fallback_company=company,
         fallback_source_id_prefix=f"static:{source_id}",
     )
-    for row in rows:
-        if isinstance(row, dict):
-            row["adapter"] = "static"
-            row["studio"] = company
-            row["source"] = source_name
-    cleaned = [r for r in rows if isinstance(r, dict)]
+    cleaned = stamp_static_plugin_rows(rows=rows, company=company, source_name=source_name)
     if not cleaned:
-        if _heuristics.detect_no_openings(html):
-            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-                _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
-                browser_fallback_recommended=False,
-                empty_confirmed=True,
-                extractor_hint="explicit_no_openings_marker",
-                ats_links=ats_links,
-            )
-        else:
-            likely_js = (
-                _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
-            )
-            source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(
-                _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
-                if likely_js
-                else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
-                browser_fallback_recommended=True,
-                extractor_hint="parse_empty_js_shell_suspected" if likely_js else "parse_empty",
-                ats_links=ats_links,
-            )
+        record_static_plugin_empty_parse(html=html, page_url=page_url, source_row=source_row)
     return cleaned

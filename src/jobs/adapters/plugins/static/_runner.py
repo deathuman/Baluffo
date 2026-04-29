@@ -71,8 +71,110 @@ def static_job_row(
     }
 
 
+def first_static_page(pages: list[str]) -> str:
+    return clean_text(pages[0]) if pages else ""
+
+
+def static_plugin_context_values(
+    *,
+    source_row: dict[str, Any],
+    default_company: str,
+    default_source_id: str,
+    default_source_name: str,
+) -> tuple[str, str, str]:
+    company = (
+        clean_text(source_row.get("company") or source_row.get("studio") or source_row.get("name"))
+        or default_company
+    )
+    source_id = clean_text(source_row.get("id")) or default_source_id
+    source_name = clean_text(source_row.get("name")) or default_source_name
+    return company, source_id, source_name
+
+
 def _meta(source_row: dict[str, Any], classification: str, **values: Any) -> None:
     source_row["_staticPluginMeta"] = _heuristics.build_static_plugin_meta(classification, **values)
+
+
+def fetch_static_plugin_html(
+    *,
+    fetch_text: Callable[[str, int], str],
+    page_url: str,
+    timeout_s: int,
+    source_row: dict[str, Any],
+) -> str:
+    try:
+        return fetch_text(page_url, timeout_s)
+    except Exception as exc:  # noqa: BLE001
+        classification, recommend = _heuristics.classify_fetch_exception(exc)
+        _meta(
+            source_row,
+            classification,
+            browser_fallback_recommended=bool(recommend),
+            extractor_hint="fetch_failed",
+            error=str(exc),
+        )
+        return ""
+
+
+def static_plugin_blocked_by_js_shell(
+    *,
+    html: str,
+    page_url: str,
+    source_row: dict[str, Any],
+) -> bool:
+    if not _heuristics.detect_js_shell(html):
+        return False
+    _meta(
+        source_row,
+        _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE,
+        browser_fallback_recommended=True,
+        extractor_hint="js_shell_detected",
+        ats_links=_heuristics.detect_outbound_ats_links(html, base_url=page_url),
+    )
+    return True
+
+
+def stamp_static_plugin_rows(
+    *,
+    rows: list[dict[str, Any]],
+    company: str,
+    source_name: str,
+) -> list[RawJob]:
+    for row in rows:
+        if isinstance(row, dict):
+            row["adapter"] = "static"
+            row["studio"] = company
+            row["source"] = source_name
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def record_static_plugin_empty_parse(
+    *,
+    html: str,
+    page_url: str,
+    source_row: dict[str, Any],
+) -> None:
+    ats_links = _heuristics.detect_outbound_ats_links(html, base_url=page_url)
+    if _heuristics.detect_no_openings(html):
+        _meta(
+            source_row,
+            _heuristics.CLASSIFICATION_EMPTY_CONFIRMED,
+            browser_fallback_recommended=False,
+            empty_confirmed=True,
+            extractor_hint="explicit_no_openings_marker",
+            ats_links=ats_links,
+        )
+        return
+    likely_js = _heuristics.detect_js_shell(html) or _heuristics.visible_text_len(html) < 400
+    _meta(
+        source_row,
+        _heuristics.CLASSIFICATION_BLOCKED_OR_CHALLENGE
+        if likely_js
+        else _heuristics.CLASSIFICATION_FETCH_OK_EXTRACT_ZERO,
+        browser_fallback_recommended=True,
+        extractor_hint="parse_empty_js_shell_suspected" if likely_js else "parse_empty",
+        ats_links=ats_links,
+    )
 
 
 def _fetch_html(
