@@ -378,67 +378,39 @@ def test_jobs_pipeline_root_stays_thin_orchestration_surface(repo_root: Path) ->
     assert len(text.splitlines()) <= 520, "jobs pipeline root drifted back toward monolith size"
 
 
-def test_jobs_state_root_stays_thin_compat_surface(repo_root: Path) -> None:
-    from src.jobs import state as jobs_state
-
+def test_jobs_state_root_is_optional_internal_fetcher_facade(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "state.py"
+    if not target.exists():
+        return
     tree = _module_tree(target)
     text = target.read_text(encoding="utf-8")
 
-    assert "from . import state_incremental as state_incremental_mod" in text
-    assert "from . import state_lifecycle as state_lifecycle_mod" in text
-    assert "from . import state_source_state as state_source_state_mod" in text
-    assert _top_level_function_names(tree) == []
     assert "def normalize_source_state_payload(" not in text
     assert "def apply_job_lifecycle_state(" not in text
-    assert jobs_state.BROWSER_FALLBACK_STATE_KEY
-    assert callable(jobs_state.normalize_source_state_payload)
-    assert callable(jobs_state.apply_job_lifecycle_state)
-    assert callable(jobs_state.get_incremental_cache_decision)
-    assert len(text.splitlines()) <= 140, "jobs state root drifted back toward monolith size"
+    assert "import src.jobs_fetcher" not in text
+    assert len(_top_level_function_names(tree)) <= 2
 
 
-def test_jobs_common_contracts_root_stays_thin_compat_surface(repo_root: Path) -> None:
-    import src.jobs.common.contracts as jobs_contracts
-
+def test_jobs_common_contracts_root_is_optional_internal_fetcher_facade(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "common" / "contracts.py"
+    if not target.exists():
+        return
     tree = _module_tree(target)
     text = target.read_text(encoding="utf-8")
 
-    assert "from .contracts_fetch_report import normalize_fetch_report_payload" in text
-    assert "from .contracts_runtime import normalize_runtime_payload" in text
-    assert "from .contracts_source_reports import normalize_source_report_row" in text
-    assert "from .contracts_task_state import normalize_task_state_payload" in text
-    assert _top_level_function_names(tree) == []
-    assert callable(jobs_contracts.normalize_runtime_payload)
-    assert callable(jobs_contracts.normalize_source_report_row)
-    assert callable(jobs_contracts.normalize_task_state_payload)
-    assert callable(jobs_contracts.normalize_fetch_report_payload)
-    assert len(text.splitlines()) <= 40, (
-        "jobs/common/contracts.py drifted back toward implementation ownership"
-    )
+    assert "import src.jobs_fetcher" not in text
+    assert len(_top_level_function_names(tree)) <= 4
 
 
-def test_jobs_reporting_root_stays_thin_compat_surface(repo_root: Path) -> None:
-    import src.jobs.reporting as jobs_reporting
-
+def test_jobs_reporting_root_is_optional_internal_fetcher_facade(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "reporting.py"
+    if not target.exists():
+        return
     tree = _module_tree(target)
     text = target.read_text(encoding="utf-8")
 
-    assert "from .reporting_breakdowns import (" in text
-    assert "from .reporting_queues import (" in text
-    assert "from .reporting_social import (" in text
-    assert "from .reporting_summary import build_pipeline_summary, format_source_error" in text
-    assert _top_level_function_names(tree) == []
-    assert callable(jobs_reporting.build_pipeline_summary)
-    assert callable(jobs_reporting.build_browser_fallback_queue)
-    assert callable(jobs_reporting.build_parser_regression_queue)
-    assert callable(jobs_reporting.build_social_experiment_review_sample)
-    assert callable(jobs_reporting.normalize_fetch_report_payload)
-    assert len(text.splitlines()) <= 80, (
-        "jobs/reporting.py drifted back toward implementation ownership"
-    )
+    assert "import src.jobs_fetcher" not in text
+    assert len(_top_level_function_names(tree)) <= 8
 
 
 def test_source_sync_root_stays_thin_compat_surface(repo_root: Path) -> None:
@@ -747,12 +719,8 @@ def test_static_adapter_root_stays_thin_orchestration_surface(repo_root: Path) -
     target = repo_root / "src" / "jobs" / "adapters" / "static.py"
     text = target.read_text(encoding="utf-8")
 
-    assert "from . import static_listing as static_listing_mod" in text
-    assert "from . import static_runtime as static_runtime_mod" in text
-    assert "from . import static_sources as static_sources_mod" in text
     assert "from . import static_detail as static_detail_mod" not in text
     assert "static_detail_mod.root = sys.modules[__name__]" not in text
-    assert "static_listing_mod.root = sys.modules[__name__]" in text
     assert "def run_static_studio_pages_source(" in text
     assert "def static_source_shard(" not in text
     assert "def static_source_name_for_registry_row(" not in text
@@ -760,16 +728,16 @@ def test_static_adapter_root_stays_thin_orchestration_surface(repo_root: Path) -
     assert len(text.splitlines()) <= 160, "static adapter root drifted back toward monolith size"
 
 
-def test_static_helpers_stays_thin_compat_shim_over_new_static_leaves(repo_root: Path) -> None:
+def test_static_helpers_is_optional_internal_fetcher_facade(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "adapters" / "static_helpers.py"
+    if not target.exists():
+        return
     text = target.read_text(encoding="utf-8")
 
-    assert "from .static_detail_heuristics import (" in text
-    assert "from .static_runtime_support import (" in text
     assert "def " not in text
     assert "class " not in text
     assert len(text.splitlines()) <= 80, (
-        "static_helpers.py drifted back into implementation ownership"
+        "static_helpers.py should be deleted or stay a thin temporary facade"
     )
 
 
@@ -1095,12 +1063,6 @@ def test_jobs_pipeline_stage_execution_root_stays_thin_private_surface(repo_root
     text = target.read_text(encoding="utf-8")
     function_names = set(_top_level_function_names(tree))
 
-    assert "from . import pipeline_source_loop as pipeline_source_loop_mod" in text
-    assert "from . import pipeline_source_progress as pipeline_source_progress_mod" in text
-    assert "from . import pipeline_source_results as pipeline_source_results_mod" in text
-    assert "pipeline_source_loop_mod.root = sys.modules[__name__]" in text
-    assert "pipeline_source_progress_mod.root = sys.modules[__name__]" in text
-    assert "pipeline_source_results_mod.root = sys.modules[__name__]" in text
     assert {
         "resolve_fetch_browser_fallback_helper",
         "_build_capped_try_playwright",
@@ -1117,37 +1079,34 @@ def test_jobs_pipeline_stage_execution_root_stays_thin_private_surface(repo_root
     )
 
 
-def test_jobs_pipeline_runtime_root_stays_thin_compat_surface(repo_root: Path) -> None:
+def test_jobs_pipeline_runtime_root_is_optional_internal_fetcher_facade(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "pipeline_runtime.py"
+    if not target.exists():
+        return
     tree = _module_tree(target)
     text = target.read_text(encoding="utf-8")
 
-    assert "from .pipeline_runtime_summary import (" in text
-    assert "from .pipeline_runtime_writers import (" in text
-    assert _top_level_function_names(tree) == []
     assert "def initialize_task_runtime(" not in text
     assert "def build_active_pipeline_summary(" not in text
-    assert len(text.splitlines()) <= 80, (
-        "pipeline_runtime.py drifted back toward implementation ownership"
-    )
+    assert "import src.jobs_fetcher" not in text
+    assert len(_top_level_function_names(tree)) <= 2
 
 
-def test_jobs_state_source_state_root_stays_thin_compat_surface(repo_root: Path) -> None:
+def test_jobs_state_source_state_root_is_optional_internal_fetcher_facade(
+    repo_root: Path,
+) -> None:
     target = repo_root / "src" / "jobs" / "state_source_state.py"
+    if not target.exists():
+        return
     tree = _module_tree(target)
     text = target.read_text(encoding="utf-8")
     function_names = set(_top_level_function_names(tree))
 
-    assert "from .state_source_browser import (" in text
-    assert "from .state_source_migration import (" in text
-    assert "from .state_source_records import (" in text
     assert {"_apply_report_to_entry", "update_source_state_rows"} <= function_names
     assert "def normalize_source_state_payload(" not in text
     assert "def apply_successful_source_state(" not in text
     assert "def apply_browser_escalation_state(" not in text
-    assert len(text.splitlines()) <= 240, (
-        "state_source_state.py drifted back toward implementation ownership"
-    )
+    assert "import src.jobs_fetcher" not in text
 
 
 def test_bridge_post_routes_root_stays_thin_registration_surface(repo_root: Path) -> None:

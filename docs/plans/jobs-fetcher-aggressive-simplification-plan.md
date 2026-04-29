@@ -157,6 +157,8 @@ Acceptance:
 
 ### Phase 0: Current-fact refresh and no-structure dedupe
 
+Status: completed in commits `018e281` and `8cd9954`.
+
 - Refresh the current metrics in this plan when they drift: jobs LOC, jobs file count, broad jobs C901 offender count, and adapter C901 offender count.
 - Implement only no-structure cleanup in this phase: `_as_dict` / `_float_or_zero` dedupe, static fetch error classification reuse, Scrapy taxonomy reuse, and repeated static listing progress/budget boilerplate deletion.
 - Do not delete compatibility surfaces, move modules, or change plugin signatures in this phase.
@@ -171,6 +173,13 @@ cmd /c npm run lint:precommit
 ```
 
 ### Phase 1: Docs and guardrail reset
+
+Status: active policy reset. Current milestone metrics after Phase 0B:
+
+- Jobs Python files: 138.
+- Jobs Python lines: 27,892.
+- Broad `src/jobs` C901 offenders: 69.
+- Adapter C901 offenders: 46.
 
 - Update `docs/architecture-ai-map.md`, `docs/scraping-pipeline.md`, and tests that describe jobs fetcher internals as compatibility surfaces.
 - Make the new boundary explicit: saved/local user data is protected; internal fetcher shims are not.

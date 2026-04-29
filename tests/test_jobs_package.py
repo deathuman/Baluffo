@@ -233,10 +233,9 @@ def test_pipeline_module_uses_package_private_helper_boundaries(repo_root: Path)
 
 def test_state_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "state.py"
+    if not target.exists():
+        return
     text = target.read_text(encoding="utf-8")
-    assert "from . import state_incremental as state_incremental_mod" in text
-    assert "from . import state_lifecycle as state_lifecycle_mod" in text
-    assert "from . import state_source_state as state_source_state_mod" in text
     assert "def normalize_source_state_payload(" not in text
     assert "def apply_job_lifecycle_state(" not in text
 
@@ -246,12 +245,6 @@ def test_pipeline_stage_execution_module_uses_package_private_helper_boundaries(
 ) -> None:
     target = repo_root / "src" / "jobs" / "pipeline_stage_source_execution.py"
     text = target.read_text(encoding="utf-8")
-    assert "from . import pipeline_source_loop as pipeline_source_loop_mod" in text
-    assert "from . import pipeline_source_progress as pipeline_source_progress_mod" in text
-    assert "from . import pipeline_source_results as pipeline_source_results_mod" in text
-    assert "pipeline_source_loop_mod.root = sys.modules[__name__]" in text
-    assert "pipeline_source_progress_mod.root = sys.modules[__name__]" in text
-    assert "pipeline_source_results_mod.root = sys.modules[__name__]" in text
     assert "def emit_progress_line(" not in text
     assert "def mark_task_started(" not in text
     assert "def execute_loader(" not in text
@@ -259,19 +252,18 @@ def test_pipeline_stage_execution_module_uses_package_private_helper_boundaries(
 
 def test_pipeline_runtime_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "pipeline_runtime.py"
+    if not target.exists():
+        return
     text = target.read_text(encoding="utf-8")
-    assert "from .pipeline_runtime_summary import (" in text
-    assert "from .pipeline_runtime_writers import (" in text
     assert "def initialize_task_runtime(" not in text
     assert "def build_active_pipeline_summary(" not in text
 
 
 def test_state_source_state_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "state_source_state.py"
+    if not target.exists():
+        return
     text = target.read_text(encoding="utf-8")
-    assert "from .state_source_browser import (" in text
-    assert "from .state_source_migration import (" in text
-    assert "from .state_source_records import (" in text
     assert "def normalize_source_state_payload(" not in text
     assert "def apply_successful_source_state(" not in text
     assert "def apply_browser_escalation_state(" not in text
@@ -279,34 +271,42 @@ def test_state_source_state_module_uses_package_private_helper_boundaries(repo_r
 
 def test_jobs_contracts_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "common" / "contracts.py"
+    if not target.exists():
+        return
     text = target.read_text(encoding="utf-8")
-    assert "from .contracts_fetch_report import normalize_fetch_report_payload" in text
-    assert "from .contracts_runtime import normalize_runtime_payload" in text
-    assert "from .contracts_source_reports import normalize_source_report_row" in text
-    assert "from .contracts_task_state import normalize_task_state_payload" in text
-    assert "def normalize_runtime_payload(" not in text
-    assert "def normalize_source_report_row(" not in text
-    assert "def normalize_task_state_payload(" not in text
-    assert "def normalize_fetch_report_payload(" not in text
+    assert "import src.jobs_fetcher" not in text
 
 
 def test_jobs_reporting_module_uses_package_private_helper_boundaries(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "reporting.py"
+    if not target.exists():
+        return
     text = target.read_text(encoding="utf-8")
-    assert "from .reporting_breakdowns import (" in text
-    assert "from .reporting_queues import (" in text
-    assert "from .reporting_social import (" in text
-    assert "from .reporting_summary import build_pipeline_summary, format_source_error" in text
-    assert "def build_pipeline_summary(" not in text
-    assert "def build_browser_fallback_queue(" not in text
-    assert "def build_parser_regression_queue(" not in text
-    assert "def build_social_experiment_review_sample(" not in text
+    assert "import src.jobs_fetcher" not in text
 
 
 def test_static_adapter_uses_package_private_helper_boundary(repo_root: Path) -> None:
     target = repo_root / "src" / "jobs" / "adapters" / "static.py"
     text = target.read_text(encoding="utf-8")
-    assert "from src.jobs.adapters.static_helpers import" in text
+    assert "from src.jobs_fetcher import" not in text
+
+
+def test_jobs_fetcher_internal_shims_are_not_contract_surfaces(repo_root: Path) -> None:
+    plan = (
+        repo_root / "docs" / "plans" / "jobs-fetcher-aggressive-simplification-plan.md"
+    ).read_text(encoding="utf-8")
+    assert "Preserve saved jobs, local user data" in plan
+    assert "Internal jobs fetcher shims are deletion candidates" in plan
+    for candidate in (
+        "pipeline_runtime.py",
+        "pipeline_execution_flow.py",
+        "state.py",
+        "state_source_state.py",
+        "static_helpers.py",
+        "reporting.py",
+        "common/contracts.py",
+    ):
+        assert candidate in plan
 
 
 def test_jobs_modules_avoid_new_broad_common_barrel_imports(repo_root: Path) -> None:
