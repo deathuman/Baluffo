@@ -43,7 +43,6 @@
     "src/jobs/adapters/plugins/static/_rendered_cards.py::_pick_title": 14,
     "src/jobs/adapters/plugins/static/_rendered_cards.py::extract_rendered_card_jobs": 22,
     "src/jobs/adapters/plugins/static/activision.py::run": 17,
-    "src/jobs/adapters/plugins/static/amanotes.py::run": 11,
     "src/jobs/adapters/plugins/static/blizzard.py::run": 12,
     "src/jobs/adapters/plugins/static/climax.py::run": 11,
     "src/jobs/adapters/plugins/static/frontier.py::_extract_from_li_blocks": 11,

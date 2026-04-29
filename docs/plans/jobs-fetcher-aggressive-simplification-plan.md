@@ -35,10 +35,10 @@ The completed jobs adapter mass-refactor made real but narrow progress:
 
 The broader objective is not complete:
 
-- `src/jobs` is still about 134 Python files and 27,772 lines.
-- `src/jobs/adapters` is still about 75 Python files and 16,542 lines.
+- `src/jobs` is still about 134 Python files and 27,790 lines.
+- `src/jobs/adapters` is still about 75 Python files and 16,560 lines.
 - Since the jobs adapter refactor started, production `src/jobs` is roughly net-flat, not meaningfully smaller.
-- `python -m ruff check --select C901 src/jobs` still reports 61 complexity offenders.
+- `python -m ruff check --select C901 src/jobs` still reports 60 complexity offenders.
 - Several compatibility surfaces are still preserved by docs/tests even though the current product goal allows breaking internal fetcher compatibility.
 
 The completed roadmap was removed from active docs after commit `7e62dac` completed the evidence-backed dead-source deletion slice. Use git history for historical provenance; keep this plan as the active direction.
@@ -48,7 +48,7 @@ The completed roadmap was removed from active docs after commit `7e62dac` comple
 A later "unified edition" refactor proposal was reviewed against the current repo and should not be implemented verbatim. Its useful direction is retained below, but these claims were stale or misleading:
 
 - `src/jobs` is currently about 138 Python files and 30,586 lines, not about 27,935 lines.
-- `python -m ruff check --select C901 src/jobs` currently reports 61 offenders, not a cleanable per-slice pass gate.
+- `python -m ruff check --select C901 src/jobs` currently reports 60 offenders, not a cleanable per-slice pass gate.
 - `scripts/complexity_baseline.json` now tracks jobs C901 allowances; touched hotspots should leave that baseline when a slice brings them below the threshold.
 - `static_listing_flow.py` and `static_detail.py` are already deleted; any plan entries targeting `_extract_listing_candidates` or `run_detail_traversal` are historical.
 - `static_listing.py::process_static_source` and `location_rules.py::classify_city_garbage` are no longer current broad C901 offenders.
@@ -256,9 +256,9 @@ cmd /c npm run lint:precommit
 Status: active. `contracts_source_reports.py::normalize_source_report_row` now delegates cohesive field groups and has left the C901 baseline. Current milestone metrics:
 
 - Jobs Python files: 134.
-- Jobs Python lines: 27,772.
-- Broad `src/jobs` C901 offenders: 61.
-- Adapter C901 offenders: 41.
+- Jobs Python lines: 27,790.
+- Broad `src/jobs` C901 offenders: 60.
+- Adapter C901 offenders: 40.
 
 - Refactor the largest remaining hotspots after lifecycle deletion has removed duplicated branches.
 - Update `scripts/complexity_baseline.json` only when scores decrease or offenders disappear.
