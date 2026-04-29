@@ -39,8 +39,6 @@
     "src/jobs/adapters/plugins/static/frontier.py::_pick_location_and_terms": 13,
     "src/jobs/adapters/plugins/static/nintendo_csod.py::_extract_from_li_blocks": 18,
     "src/jobs/adapters/plugins/static/nintendo_csod.py::_extract_jobs": 12,
-    "src/jobs/adapters/plugins/static/sheet_studios.py::_sanitize_row_locations": 13,
-    "src/jobs/adapters/plugins/static/sheet_studios.py::run": 25,
     "src/jobs/adapters/provider_personio.py::run_personio_sources_source": 11,
     "src/jobs/adapters/social_parser/reddit_parser.py::parse_reddit_html_payload": 11,
     "src/jobs/adapters/social.py::run_social_mastodon_source": 11,
