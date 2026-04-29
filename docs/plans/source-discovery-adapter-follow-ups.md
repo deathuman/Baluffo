@@ -75,6 +75,8 @@ Parser complexity can remain temporarily when it is genuinely source-format comp
 
 No active behavior-preserving deletion-first migration sequence remains. Future source-discovery work should be evidence-backed behavior changes or new source coverage, not compatibility-preserving helper extraction.
 
+Use [`source-discovery-yield-evidence-2026-04-29.md`](../snapshots/source-discovery-yield-evidence-2026-04-29.md) as the current handoff for choosing P2 behavior work. The next likely pressure is zero-job/static quality or a representative fresh audit run, not another shared-helper or wrapper cleanup pass.
+
 ## Validation Standard
 
 Documentation-only reset slices:

@@ -61,6 +61,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`plans/repo-analysis-follow-up-2026-04-25.md`](plans/repo-analysis-follow-up-2026-04-25.md) | Plans / Follow-Ups | You are picking the next residual follow-up after the completed 2026-04-25 repo-analysis closeout |
 | [`snapshots/discovery-fetch-failure-snapshot-2026-04-25.md`](snapshots/discovery-fetch-failure-snapshot-2026-04-25.md) | Snapshots / Evidence | You are picking up the discovery/fetch failures observed in the 2026-04-25 fresh build runs |
 | [`snapshots/source-discovery-http-recovery-evidence-2026-04-27.md`](snapshots/source-discovery-http-recovery-evidence-2026-04-27.md) | Snapshots / Evidence | You need evidence for default HTTP recovery coverage in source discovery |
+| [`snapshots/source-discovery-yield-evidence-2026-04-29.md`](snapshots/source-discovery-yield-evidence-2026-04-29.md) | Snapshots / Evidence | You are choosing evidence-backed source-discovery behavior changes after the deletion-first adapter cleanup |
 | [`../tools/mcp/INDEX.md`](../tools/mcp/INDEX.md) | MCP tooling index | You are choosing which MCP tooling doc to load under `tools/mcp/` |
 | [`../tools/mcp/SERENA.md`](../tools/mcp/SERENA.md) | AI dev tooling | You are setting up the required Serena MCP workflow for Codex CLI or OpenCode, or checking the repo's Serena-memory rules |
 | [`RELEASE.md`](RELEASE.md) | Build and release | You are changing packaging, versioning, release flow, or artifact expectations |
