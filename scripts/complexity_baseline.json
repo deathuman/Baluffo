@@ -65,7 +65,6 @@
     "src/jobs/adapters/plugins/static/sheet_studios.py::run": 25,
     "src/jobs/adapters/plugins/static/supercell.py::run": 19,
     "src/jobs/adapters/provider_personio.py::run_personio_sources_source": 11,
-    "src/jobs/adapters/provider_structured_listing.py::_run_structured_listing_sources": 24,
     "src/jobs/adapters/social.py::run_social_mastodon_source": 13,
     "src/jobs/adapters/social.py::run_social_reddit_source": 14,
     "src/jobs/adapters/social.py::run_social_x_source": 20,
