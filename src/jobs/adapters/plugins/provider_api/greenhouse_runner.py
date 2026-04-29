@@ -12,13 +12,14 @@ from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
-from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
-from src.jobs.transport import conditional_revalidate_url
 
-
-def _as_dict(value: object) -> dict[str, object]:
-    return value if isinstance(value, dict) else {}
+from .lifecycle import (
+    apply_provider_cache_decision,
+    build_provider_entry_report,
+    provider_revalidate_not_modified,
+    skip_provider_for_cache,
+)
 
 
 def _run_greenhouse_boards(
@@ -41,51 +42,30 @@ def _run_greenhouse_boards(
         label = clean_text(board.get("name")) or clean_text(board.get("studio")) or slug
         entry_name = clean_text(board.get("name")) or slug
         url = GREENHOUSE_JOBS_URL_TEMPLATE.format(slug=slug)
-        entry_report = {
-            "adapter": "greenhouse",
-            "studio": clean_text(board.get("studio")) or label,
-            "name": entry_name,
-            "status": "ok",
-            "fetchedCount": 0,
-            "keptCount": 0,
-            "error": "",
-        }
-        cache_decision = get_incremental_cache_decision(
-            entry_name,
-            source_state_rows or {},
-            adapter="greenhouse",
+        entry_report = build_provider_entry_report(
+            adapter_name="greenhouse",
+            studio=clean_text(board.get("studio")) or label,
+            source_name=entry_name,
+        )
+        apply_provider_cache_decision(
+            entry_report=entry_report,
+            source_name=entry_name,
+            adapter_name="greenhouse",
+            source_state_rows=source_state_rows,
             force_refresh_all=force_refresh_all,
         )
-        entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-        entry_report["cacheDecisionReason"] = (
-            clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
-        )
-        if entry_report["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
-            entry_report["status"] = "excluded"
-            entry_report["error"] = entry_report["cacheDecisionReason"]
-            entry_report["exclusionReason"] = f"cache_{entry_report['cacheDecisionReason']}"
+        if skip_provider_for_cache(entry_report):
             details.append(entry_report)
             continue
-        if entry_report["cacheDecision"] == "revalidate_only":
-            state_entry = _as_dict((source_state_rows or {}).get(entry_name))
-            revalidate = conditional_revalidate_url(
-                url,
-                timeout_s,
-                etag=clean_text(state_entry.get("lastHttpEtag")),
-                last_modified=clean_text(state_entry.get("lastHttpLastModified")),
-            )
-            entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
-            if clean_text(revalidate.get("etag")):
-                entry_report["httpEtag"] = clean_text(revalidate.get("etag"))
-            if clean_text(revalidate.get("lastModified")):
-                entry_report["httpLastModified"] = clean_text(revalidate.get("lastModified"))
-            if bool(revalidate.get("notModified")):
-                entry_report["status"] = "excluded"
-                entry_report["error"] = "not_modified_304"
-                entry_report["exclusionReason"] = "cache_not_modified_304"
-                entry_report["cacheDecisionReason"] = "not_modified_304"
-                details.append(entry_report)
-                continue
+        if provider_revalidate_not_modified(
+            entry_report=entry_report,
+            url=url,
+            timeout_s=timeout_s,
+            source_name=entry_name,
+            source_state_rows=source_state_rows,
+        ):
+            details.append(entry_report)
+            continue
         try:
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
             payload = json.loads(text)

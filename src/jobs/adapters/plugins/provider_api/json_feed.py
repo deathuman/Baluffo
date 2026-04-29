@@ -14,9 +14,15 @@ from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
-from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
 from src.jobs.transport import conditional_revalidate_url
+
+from .lifecycle import (
+    apply_provider_cache_decision,
+    build_provider_entry_report,
+    provider_revalidate_not_modified,
+    skip_provider_for_cache,
+)
 
 ParsePayload = Callable[[dict[str, object], Any, str], list[RawJob]]
 BuildUrl = Callable[[dict[str, object]], str]
@@ -108,82 +114,6 @@ def _json_feed_source_identity(source: dict[str, object], registry_adapter: str)
     return source_name, studio
 
 
-def _json_feed_entry_report(
-    *, adapter_name: str, studio: str, source_name: str
-) -> dict[str, object]:
-    return {
-        "adapter": adapter_name,
-        "studio": studio,
-        "name": source_name,
-        "status": "ok",
-        "fetchedCount": 0,
-        "keptCount": 0,
-        "error": "",
-    }
-
-
-def _apply_json_feed_cache_decision(
-    *,
-    entry_report: dict[str, object],
-    source_name: str,
-    adapter_name: str,
-    source_state_rows: dict[str, dict[str, object]] | None,
-    force_refresh_all: bool,
-) -> None:
-    cache_decision = get_incremental_cache_decision(
-        source_name,
-        source_state_rows or {},
-        adapter=adapter_name,
-        force_refresh_all=force_refresh_all,
-    )
-    entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-    entry_report["cacheDecisionReason"] = (
-        clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
-    )
-
-
-def _skip_json_feed_for_cache(entry_report: dict[str, object]) -> bool:
-    if entry_report["cacheDecision"] not in {"skip_fresh", "cooldown_skip"}:
-        return False
-    entry_report["status"] = "excluded"
-    entry_report["error"] = entry_report["cacheDecisionReason"]
-    entry_report["exclusionReason"] = f"cache_{entry_report['cacheDecisionReason']}"
-    return True
-
-
-def _json_feed_revalidate_not_modified(
-    *,
-    endpoint: str,
-    entry_report: dict[str, object],
-    source_name: str,
-    source_state_rows: dict[str, dict[str, object]] | None,
-    timeout_s: int,
-) -> bool:
-    if entry_report["cacheDecision"] != "revalidate_only":
-        return False
-    state_entry = (
-        (source_state_rows or {}).get(source_name) if isinstance(source_state_rows, dict) else {}
-    )
-    revalidate = conditional_revalidate_url(
-        endpoint,
-        timeout_s,
-        etag=clean_text((state_entry or {}).get("lastHttpEtag")),
-        last_modified=clean_text((state_entry or {}).get("lastHttpLastModified")),
-    )
-    entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
-    if clean_text(revalidate.get("etag")):
-        entry_report["httpEtag"] = clean_text(revalidate.get("etag"))
-    if clean_text(revalidate.get("lastModified")):
-        entry_report["httpLastModified"] = clean_text(revalidate.get("lastModified"))
-    if not bool(revalidate.get("notModified")):
-        return False
-    entry_report["status"] = "excluded"
-    entry_report["error"] = "not_modified_304"
-    entry_report["exclusionReason"] = "cache_not_modified_304"
-    entry_report["cacheDecisionReason"] = "not_modified_304"
-    return True
-
-
 def _run_json_feed_sources(
     *,
     adapter_name: str,
@@ -206,12 +136,12 @@ def _run_json_feed_sources(
     for source in registry_entries(registry_adapter):
         source_name, studio = _json_feed_source_identity(source, registry_adapter)
         endpoint = build_url(source)
-        entry_report = _json_feed_entry_report(
+        entry_report = build_provider_entry_report(
             adapter_name=adapter_name,
             studio=studio,
             source_name=source_name,
         )
-        _apply_json_feed_cache_decision(
+        apply_provider_cache_decision(
             entry_report=entry_report,
             source_name=source_name,
             adapter_name=adapter_name,
@@ -223,15 +153,16 @@ def _run_json_feed_sources(
             entry_report["error"] = default_error
             details.append(entry_report)
             continue
-        if _skip_json_feed_for_cache(entry_report):
+        if skip_provider_for_cache(entry_report):
             details.append(entry_report)
             continue
-        if _json_feed_revalidate_not_modified(
-            endpoint=endpoint,
+        if provider_revalidate_not_modified(
+            url=endpoint,
             entry_report=entry_report,
             source_name=source_name,
             source_state_rows=source_state_rows,
             timeout_s=timeout_s,
+            revalidate_url=conditional_revalidate_url,
         ):
             details.append(entry_report)
             continue

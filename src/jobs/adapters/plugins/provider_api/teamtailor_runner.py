@@ -14,9 +14,87 @@ from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
-from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
-from src.jobs.transport import conditional_revalidate_url
+
+from .lifecycle import (
+    apply_provider_cache_decision,
+    build_provider_entry_report,
+    provider_revalidate_not_modified,
+    skip_provider_for_cache,
+)
+
+
+def _teamtailor_fallback_job(
+    *,
+    job_link: str,
+    source_name: str,
+    fallback_company: str,
+    studio: str,
+) -> RawJob | None:
+    slug = urlparse(job_link).path.rstrip("/").split("/")[-1]
+    title = slug.replace("-", " ").strip()
+    if not title:
+        return None
+    return {
+        "sourceJobId": f"teamtailor:{source_name}:{slug}",
+        "title": title,
+        "company": fallback_company or "Unknown",
+        "city": "",
+        "country": "Unknown",
+        "workType": "",
+        "contractType": "",
+        "jobLink": job_link,
+        "sector": "Game",
+        "postedAt": "",
+        "adapter": "teamtailor",
+        "studio": studio,
+    }
+
+
+def _append_teamtailor_jobs(
+    *,
+    jobs: list[RawJob],
+    job_links: list[str],
+    seen_links: set[str],
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    source_name: str,
+    fallback_company: str,
+    studio: str,
+    errors: list[str],
+) -> int:
+    kept_before = len(jobs)
+    for idx, job_link in enumerate(job_links, start=1):
+        if job_link in seen_links:
+            continue
+        seen_links.add(job_link)
+        try:
+            detail_html = fetch_with_retries(job_link, fetch_text, timeout_s, retries, backoff_s)
+            parsed = parse_jobpostings_from_html(
+                detail_html,
+                base_url=job_link,
+                fallback_company=fallback_company,
+                fallback_source_id_prefix=f"teamtailor:{source_name}:{idx}",
+            )
+            if parsed:
+                for row in parsed:
+                    row["adapter"] = "teamtailor"
+                    row["studio"] = studio
+                jobs.extend(parsed)
+                continue
+            fallback_row = _teamtailor_fallback_job(
+                job_link=job_link,
+                source_name=source_name,
+                fallback_company=fallback_company,
+                studio=studio,
+            )
+            if fallback_row:
+                jobs.append(fallback_row)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"teamtailor:{source_name}:{job_link}: {exc}")
+    return max(0, len(jobs) - kept_before)
 
 
 def _run_teamtailor_sources(
@@ -37,60 +115,36 @@ def _run_teamtailor_sources(
         listing_url = clean_text(source.get("listing_url"))
         base_url = clean_text(source.get("base_url")) or listing_url
         fallback_company = clean_text(source.get("company"))
-        entry_report = {
-            "adapter": "teamtailor",
-            "studio": clean_text(source.get("studio")) or fallback_company or source_name,
-            "name": source_name,
-            "status": "ok",
-            "fetchedCount": 0,
-            "keptCount": 0,
-            "error": "",
-        }
-        cache_decision = get_incremental_cache_decision(
-            source_name,
-            source_state_rows or {},
-            adapter="teamtailor",
-            force_refresh_all=force_refresh_all,
+        studio = clean_text(source.get("studio")) or fallback_company or source_name
+        entry_report = build_provider_entry_report(
+            adapter_name="teamtailor",
+            studio=studio,
+            source_name=source_name,
         )
-        entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-        entry_report["cacheDecisionReason"] = (
-            clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
+        apply_provider_cache_decision(
+            entry_report=entry_report,
+            source_name=source_name,
+            adapter_name="teamtailor",
+            source_state_rows=source_state_rows,
+            force_refresh_all=force_refresh_all,
         )
         if not listing_url:
             entry_report["status"] = "error"
             entry_report["error"] = "missing listing_url"
             details.append(entry_report)
             continue
-        if entry_report["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
-            entry_report["status"] = "excluded"
-            entry_report["error"] = entry_report["cacheDecisionReason"]
-            entry_report["exclusionReason"] = f"cache_{entry_report['cacheDecisionReason']}"
+        if skip_provider_for_cache(entry_report):
             details.append(entry_report)
             continue
-        if entry_report["cacheDecision"] == "revalidate_only":
-            state_entry = (
-                (source_state_rows or {}).get(source_name)
-                if isinstance(source_state_rows, dict)
-                else {}
-            )
-            revalidate = conditional_revalidate_url(
-                listing_url,
-                timeout_s,
-                etag=clean_text((state_entry or {}).get("lastHttpEtag")),
-                last_modified=clean_text((state_entry or {}).get("lastHttpLastModified")),
-            )
-            entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
-            if clean_text(revalidate.get("etag")):
-                entry_report["httpEtag"] = clean_text(revalidate.get("etag"))
-            if clean_text(revalidate.get("lastModified")):
-                entry_report["httpLastModified"] = clean_text(revalidate.get("lastModified"))
-            if bool(revalidate.get("notModified")):
-                entry_report["status"] = "excluded"
-                entry_report["error"] = "not_modified_304"
-                entry_report["exclusionReason"] = "cache_not_modified_304"
-                entry_report["cacheDecisionReason"] = "not_modified_304"
-                details.append(entry_report)
-                continue
+        if provider_revalidate_not_modified(
+            entry_report=entry_report,
+            url=listing_url,
+            timeout_s=timeout_s,
+            source_name=source_name,
+            source_state_rows=source_state_rows,
+        ):
+            details.append(entry_report)
+            continue
 
         try:
             listing_html = fetch_with_retries(
@@ -98,53 +152,19 @@ def _run_teamtailor_sources(
             )
             job_links = parse_teamtailor_listing_links(listing_html, base_url=base_url)
             entry_report["fetchedCount"] = len(job_links)
-            kept_before = len(jobs)
-            for idx, job_link in enumerate(job_links, start=1):
-                if job_link in seen_links:
-                    continue
-                seen_links.add(job_link)
-                try:
-                    detail_html = fetch_with_retries(
-                        job_link, fetch_text, timeout_s, retries, backoff_s
-                    )
-                    parsed = parse_jobpostings_from_html(
-                        detail_html,
-                        base_url=job_link,
-                        fallback_company=fallback_company,
-                        fallback_source_id_prefix=f"teamtailor:{source_name}:{idx}",
-                    )
-                    if parsed:
-                        for row in parsed:
-                            row["adapter"] = "teamtailor"
-                            row["studio"] = (
-                                clean_text(source.get("studio")) or fallback_company or source_name
-                            )
-                        jobs.extend(parsed)
-                    else:
-                        slug = urlparse(job_link).path.rstrip("/").split("/")[-1]
-                        title = slug.replace("-", " ").strip()
-                        if title:
-                            jobs.append(
-                                {
-                                    "sourceJobId": f"teamtailor:{source_name}:{slug}",
-                                    "title": title,
-                                    "company": fallback_company or "Unknown",
-                                    "city": "",
-                                    "country": "Unknown",
-                                    "workType": "",
-                                    "contractType": "",
-                                    "jobLink": job_link,
-                                    "sector": "Game",
-                                    "postedAt": "",
-                                    "adapter": "teamtailor",
-                                    "studio": clean_text(source.get("studio"))
-                                    or fallback_company
-                                    or source_name,
-                                }
-                            )
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(f"teamtailor:{source_name}:{job_link}: {exc}")
-            entry_report["keptCount"] = max(0, len(jobs) - kept_before)
+            entry_report["keptCount"] = _append_teamtailor_jobs(
+                jobs=jobs,
+                job_links=job_links,
+                seen_links=seen_links,
+                fetch_text=fetch_text,
+                timeout_s=timeout_s,
+                retries=retries,
+                backoff_s=backoff_s,
+                source_name=source_name,
+                fallback_company=fallback_company,
+                studio=studio,
+                errors=errors,
+            )
         except Exception as exc:  # noqa: BLE001
             entry_report["status"] = "error"
             entry_report["error"] = str(exc)

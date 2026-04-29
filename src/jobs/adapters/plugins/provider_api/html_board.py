@@ -13,9 +13,14 @@ from src.jobs.common.diagnostics import set_source_diagnostics
 from src.jobs.common.fetch import fetch_with_retries
 from src.jobs.models import RawJob
 from src.jobs.registry import registry_entries
-from src.jobs.state import get_incremental_cache_decision
 from src.jobs.text_utils import clean_text
-from src.jobs.transport import conditional_revalidate_url
+
+from .lifecycle import (
+    apply_provider_cache_decision,
+    build_provider_entry_report,
+    provider_revalidate_not_modified,
+    skip_provider_for_cache,
+)
 
 ParseHtml = Callable[[str, str, str], list[RawJob]]
 BuildUrl = Callable[[dict[str, object]], str]
@@ -103,68 +108,16 @@ def _build_entry_report(
     source_id: str,
     board_url: str,
 ) -> dict[str, object]:
-    return {
-        "adapter": adapter_name,
-        "studio": studio,
-        "name": source_name,
-        "sourceId": source_id,
-        "pages": [board_url] if board_url else [],
-        "status": "ok",
-        "fetchedCount": 0,
-        "keptCount": 0,
-        "error": "",
-        "browserFallbackRecommended": False,
-    }
-
-
-def _set_entry_cache_decision(
-    entry_report: dict[str, object],
-    source_name: str,
-    adapter_name: str,
-    source_state_rows: dict[str, dict[str, object]] | None,
-    force_refresh_all: bool,
-) -> None:
-    cache_decision = get_incremental_cache_decision(
-        source_name,
-        source_state_rows or {},
-        adapter=adapter_name,
-        force_refresh_all=force_refresh_all,
+    return build_provider_entry_report(
+        adapter_name=adapter_name,
+        studio=studio,
+        source_name=source_name,
+        extra={
+            "sourceId": source_id,
+            "pages": [board_url] if board_url else [],
+            "browserFallbackRecommended": False,
+        },
     )
-    entry_report["cacheDecision"] = clean_text(cache_decision.get("cacheDecision")) or "run_now"
-    entry_report["cacheDecisionReason"] = (
-        clean_text(cache_decision.get("cacheDecisionReason")) or "run_now"
-    )
-
-
-def _apply_revalidate_only(
-    *,
-    entry_report: dict[str, object],
-    board_url: str,
-    timeout_s: int,
-    source_name: str,
-    source_state_rows: dict[str, dict[str, object]] | None,
-) -> bool:
-    state_entry = (
-        (source_state_rows or {}).get(source_name) if isinstance(source_state_rows, dict) else {}
-    )
-    revalidate = conditional_revalidate_url(
-        board_url,
-        timeout_s,
-        etag=clean_text((state_entry or {}).get("lastHttpEtag")),
-        last_modified=clean_text((state_entry or {}).get("lastHttpLastModified")),
-    )
-    entry_report["httpStatus"] = int(revalidate.get("statusCode") or 0)
-    if clean_text(revalidate.get("etag")):
-        entry_report["httpEtag"] = clean_text(revalidate.get("etag"))
-    if clean_text(revalidate.get("lastModified")):
-        entry_report["httpLastModified"] = clean_text(revalidate.get("lastModified"))
-    if not bool(revalidate.get("notModified")):
-        return False
-    entry_report["status"] = "excluded"
-    entry_report["error"] = "not_modified_304"
-    entry_report["exclusionReason"] = "cache_not_modified_304"
-    entry_report["cacheDecisionReason"] = "not_modified_304"
-    return True
 
 
 def _mark_empty_parse(
@@ -198,6 +151,97 @@ def _mark_antibot_retry_error(
         entry_report["browserFallbackRecommended"] = True
 
 
+def _fetch_and_parse_board_source(
+    *,
+    source: dict[str, object],
+    adapter_name: str,
+    board_url: str,
+    studio: str,
+    parse_html: ParseHtml,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    try_playwright: TryPlaywright | None,
+) -> tuple[list[RawJob], str, bool, str]:
+    candidate_urls = _iter_ashby_candidate_urls(source) if adapter_name == "ashby" else [board_url]
+    parsed: list[RawJob] = []
+    last_text = ""
+    browser_retry_used = False
+    browser_retry_error = ""
+    for candidate_url in candidate_urls:
+        last_text, used_browser, browser_error = _fetch_board_html(
+            source=source,
+            url=candidate_url,
+            fetch_text=fetch_text,
+            timeout_s=timeout_s,
+            retries=retries,
+            backoff_s=backoff_s,
+            try_playwright=try_playwright,
+        )
+        browser_retry_used = browser_retry_used or used_browser
+        if browser_error:
+            browser_retry_error = browser_error
+        parsed = parse_html(last_text, candidate_url, studio)
+        if parsed:
+            break
+    return parsed, last_text, browser_retry_used, browser_retry_error
+
+
+def _skip_html_board_before_fetch(
+    *,
+    entry_report: dict[str, object],
+    board_url: str,
+    default_error: str,
+    timeout_s: int,
+    source_name: str,
+    source_state_rows: dict[str, dict[str, object]] | None,
+) -> bool:
+    if not board_url:
+        entry_report["status"] = "error"
+        entry_report["error"] = default_error
+        return True
+    if skip_provider_for_cache(entry_report):
+        return True
+    return provider_revalidate_not_modified(
+        entry_report=entry_report,
+        url=board_url,
+        timeout_s=timeout_s,
+        source_name=source_name,
+        source_state_rows=source_state_rows,
+    )
+
+
+def _record_html_board_parse_result(
+    *,
+    entry_report: dict[str, object],
+    parsed: list[RawJob],
+    adapter_name: str,
+    studio: str,
+    last_text: str,
+    browser_retry_used: bool,
+    browser_retry_error: str,
+    anti_bot_browser_retry: bool,
+) -> None:
+    if browser_retry_used:
+        entry_report["browserRetryUsed"] = True
+        if browser_retry_error:
+            entry_report["browserRetryError"] = browser_retry_error
+    entry_report["fetchedCount"] = len(parsed)
+    entry_report["keptCount"] = len(parsed)
+    if not parsed:
+        _mark_empty_parse(
+            entry_report,
+            adapter_name=adapter_name,
+            last_text=last_text,
+            browser_retry_used=browser_retry_used,
+            anti_bot_browser_retry=anti_bot_browser_retry,
+        )
+    for row in parsed:
+        row["adapter"] = adapter_name
+        row["studio"] = studio
+
+
 def _run_html_board_sources(
     *,
     adapter_name: str,
@@ -228,75 +272,48 @@ def _run_html_board_sources(
             source_id=clean_text(source.get("id")),
             board_url=board_url,
         )
-        _set_entry_cache_decision(
-            entry_report,
-            source_name,
-            adapter_name,
-            source_state_rows,
-            force_refresh_all,
+        apply_provider_cache_decision(
+            entry_report=entry_report,
+            source_name=source_name,
+            adapter_name=adapter_name,
+            source_state_rows=source_state_rows,
+            force_refresh_all=force_refresh_all,
         )
-        if not board_url:
-            entry_report["status"] = "error"
-            entry_report["error"] = default_error
+        if _skip_html_board_before_fetch(
+            entry_report=entry_report,
+            board_url=board_url,
+            default_error=default_error,
+            timeout_s=timeout_s,
+            source_name=source_name,
+            source_state_rows=source_state_rows,
+        ):
             details.append(entry_report)
             continue
-        if entry_report["cacheDecision"] in {"skip_fresh", "cooldown_skip"}:
-            entry_report["status"] = "excluded"
-            entry_report["error"] = entry_report["cacheDecisionReason"]
-            entry_report["exclusionReason"] = f"cache_{entry_report['cacheDecisionReason']}"
-            details.append(entry_report)
-            continue
-        if entry_report["cacheDecision"] == "revalidate_only":
-            if _apply_revalidate_only(
-                entry_report=entry_report,
-                board_url=board_url,
-                timeout_s=timeout_s,
-                source_name=source_name,
-                source_state_rows=source_state_rows,
-            ):
-                details.append(entry_report)
-                continue
         try:
-            candidate_urls = (
-                _iter_ashby_candidate_urls(source) if adapter_name == "ashby" else [board_url]
-            )
-            parsed = []
-            last_text = ""
-            browser_retry_used = False
-            browser_retry_error = ""
-            for candidate_url in candidate_urls:
-                last_text, used_browser, browser_error = _fetch_board_html(
+            parsed, last_text, browser_retry_used, browser_retry_error = (
+                _fetch_and_parse_board_source(
                     source=source,
-                    url=candidate_url,
+                    adapter_name=adapter_name,
+                    board_url=board_url,
+                    studio=studio,
+                    parse_html=parse_html,
                     fetch_text=fetch_text,
                     timeout_s=timeout_s,
                     retries=retries,
                     backoff_s=backoff_s,
                     try_playwright=try_playwright,
                 )
-                browser_retry_used = browser_retry_used or used_browser
-                if browser_error:
-                    browser_retry_error = browser_error
-                parsed = parse_html(last_text, candidate_url, studio)
-                if parsed:
-                    break
-            if browser_retry_used:
-                entry_report["browserRetryUsed"] = True
-                if browser_retry_error:
-                    entry_report["browserRetryError"] = browser_retry_error
-            entry_report["fetchedCount"] = len(parsed)
-            entry_report["keptCount"] = len(parsed)
-            if not parsed:
-                _mark_empty_parse(
-                    entry_report,
-                    adapter_name=adapter_name,
-                    last_text=last_text,
-                    browser_retry_used=browser_retry_used,
-                    anti_bot_browser_retry=bool(source.get("antiBotBrowserRetry")),
-                )
-            for row in parsed:
-                row["adapter"] = adapter_name
-                row["studio"] = studio
+            )
+            _record_html_board_parse_result(
+                entry_report=entry_report,
+                parsed=parsed,
+                adapter_name=adapter_name,
+                studio=studio,
+                last_text=last_text,
+                browser_retry_used=browser_retry_used,
+                browser_retry_error=browser_retry_error,
+                anti_bot_browser_retry=bool(source.get("antiBotBrowserRetry")),
+            )
             jobs.extend(parsed)
         except Exception as exc:  # noqa: BLE001
             entry_report["status"] = "error"
