@@ -79,6 +79,8 @@ Use [`source-discovery-yield-evidence-2026-04-29.md`](../snapshots/source-discov
 
 Use [`source-discovery-zero-job-evidence-2026-04-29.md`](../snapshots/source-discovery-zero-job-evidence-2026-04-29.md) for the current zero-job/static quality ranking. It points first at Sheet-directory static quality and representative fresh audit evidence before browser-recovery expansion or more adapter refactoring.
 
+Use [`source-discovery-fresh-audit-evidence-2026-04-29.md`](../snapshots/source-discovery-fresh-audit-evidence-2026-04-29.md) for the latest fresh-audit attempt. It records that the uncapped full run timed out in GameDevMap, so the next evidence run should split directory/web zero-job analysis from bounded or uninterrupted GameDevMap audit evidence.
+
 ## Validation Standard
 
 Documentation-only reset slices:
