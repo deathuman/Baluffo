@@ -43,6 +43,40 @@ The broader objective is not complete:
 
 The completed roadmap was removed from active docs after commit `7e62dac` completed the evidence-backed dead-source deletion slice. Use git history for historical provenance; keep this plan as the active direction.
 
+## Evaluated Refactor Suggestions
+
+A later "unified edition" refactor proposal was reviewed against the current repo and should not be implemented verbatim. Its useful direction is retained below, but these claims were stale or misleading:
+
+- `src/jobs` is currently about 138 Python files and 30,586 lines, not about 27,935 lines.
+- `python -m ruff check --select C901 src/jobs` currently reports 69 offenders, not a cleanable per-slice pass gate.
+- `scripts/complexity_baseline.json` currently has only a small project baseline and no `src/jobs` entries, so jobs C901 work should update the baseline only when the active check/guardrail requires it.
+- `static_listing_flow.py` and `static_detail.py` are already deleted; any plan entries targeting `_extract_listing_candidates` or `run_detail_traversal` are historical.
+- `static_listing.py::process_static_source` and `location_rules.py::classify_city_garbage` are no longer current broad C901 offenders.
+- Bridge route C901 offenders such as `handle_get` and `handle_post` are outside this jobs fetcher simplification scope unless the product scope is explicitly expanded.
+
+Valuable low-risk candidate slices from that review:
+
+- Deduplicate small coercion helpers where this does not create new coupling: static `_as_dict` copies and contracts `_float_or_zero`.
+- Centralize static fetch exception classification so `StaticSourceContext.record_static_fetch_failure(...)` and static plugin error handling share one taxonomy path.
+- Reuse `update_source_detail_taxonomy(...)` from the Scrapy static path instead of keeping a parallel `_update_taxonomy_fields(...)` implementation.
+- Delete repeated static listing progress and budget guard boilerplate only where a small method replaces multiple blocks and reduces net lines.
+- Audit `_fetch_listing_job_async(...)` before refactoring it: delete it if unused; otherwise share only the browser-fallback branch that is truly duplicated.
+
+Valuable medium-risk candidates:
+
+- Consolidate state, reporting, and contracts leaf modules only after the compatibility-policy reset updates docs and package-shape tests. These are not current public product contracts; they are internal guardrails that can be rewritten if the replacement is simpler.
+- Break `sys.modules[__name__]` and root-protocol indirection as standalone slices with targeted package/startup tests.
+
+Current jobs C901 priority list:
+
+- `contracts_source_reports.py::normalize_source_report_row` at 48.
+- `plugins/provider_api/json_feed.py::_json_feed_plugin` at 39.
+- `pipeline_source_results.py::execute_loader` at 33.
+- `canonicalize.py::canonicalize_job_with_reason` at 32.
+- `dedup.py::deduplicate_jobs` at 28 and `dedup.py::merge_records` at 24.
+- `adapters/parsers/location.py::parse_generic_location_fields` at 26 and `text_utils.py::invalid_location_reason` at 26.
+- Static plugin runners and renderers, especially `littlechicken`, `sheet_studios`, `supercell`, `_rendered_cards`, `activision`, `kojima`, and `larian`.
+
 ## Active Simplification Strategy
 
 ### 1. Reset compatibility policy
@@ -120,6 +154,21 @@ Acceptance:
 - Refactors reduce source concepts, not just move branches into many one-off helpers.
 
 ## Execution Sequence
+
+### Phase 0: Current-fact refresh and no-structure dedupe
+
+- Refresh the current metrics in this plan when they drift: jobs LOC, jobs file count, broad jobs C901 offender count, and adapter C901 offender count.
+- Implement only no-structure cleanup in this phase: `_as_dict` / `_float_or_zero` dedupe, static fetch error classification reuse, Scrapy taxonomy reuse, and repeated static listing progress/budget boilerplate deletion.
+- Do not delete compatibility surfaces, move modules, or change plugin signatures in this phase.
+- Skip constants-only rewrites unless they delete duplicated branches or reduce typo-prone taxonomy handling in the same commit.
+
+Validation:
+
+```powershell
+python -m pytest -q tests/jobs_static tests/jobs/adapters tests/test_jobs_fetcher.py tests/test_jobs_fetcher_providers.py tests/test_jobs_fetcher_quality.py
+python -m ruff check --select C901 <touched jobs files>
+cmd /c npm run lint:precommit
+```
 
 ### Phase 1: Docs and guardrail reset
 
