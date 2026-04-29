@@ -139,6 +139,26 @@ def _resolve_contract_path(filename: str) -> Path:
     return Path(__file__).resolve().parents[2] / "data" / "contracts" / filename
 
 
+def _clean_mapping_text(value: Mapping[Any, Any]) -> str:
+    for key in ("name", "title", "value", "text", "label", "content"):
+        candidate = clean_text(value.get(key))
+        if candidate:
+            return candidate
+    for item in value.values():
+        candidate = clean_text(item)
+        if candidate:
+            return candidate
+    return ""
+
+
+def _clean_sequence_text(value: list[Any] | tuple[Any, ...]) -> str:
+    for item in value:
+        candidate = clean_text(item)
+        if candidate:
+            return candidate
+    return ""
+
+
 def clean_text(value: Any) -> str:
     if value is None:
         return ""
@@ -147,21 +167,9 @@ def clean_text(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="ignore").strip()
     if isinstance(value, Mapping):
-        for key in ("name", "title", "value", "text", "label", "content"):
-            candidate = clean_text(value.get(key))
-            if candidate:
-                return candidate
-        for item in value.values():
-            candidate = clean_text(item)
-            if candidate:
-                return candidate
-        return ""
+        return _clean_mapping_text(value)
     if isinstance(value, (list, tuple)):
-        for item in value:
-            candidate = clean_text(item)
-            if candidate:
-                return candidate
-        return ""
+        return _clean_sequence_text(value)
     return str(value).strip()
 
 
@@ -331,15 +339,7 @@ def has_html_like_fragment(value: Any) -> bool:
     return bool(HTML_TAG_RE.search(text) or HTML_LIKE_RE.search(text))
 
 
-def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
-    text = sanitize_public_text(value)
-    if not text:
-        return ""
-    lowered = norm_text(text)
-    if lowered in {"unknown", "n/a", "na", "none"}:
-        return ""
-    if lowered in REMOTEISH_TOKENS:
-        return ""
+def _invalid_location_basic_reason(text: str, *, field_name: str) -> str:
     if field_name == "city" and normalize_city_noise_text(text) in LOWERCASE_CITY_NOISE_TOKENS:
         return f"invalid_{field_name}_semantic_noise"
     if field_name == "city" and len(text) == 1 and text.isalpha() and text.islower():
@@ -350,6 +350,10 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
         return f"invalid_{field_name}_semantic_noise"
     if not any(char.isalnum() for char in text):
         return f"invalid_{field_name}_semantic_noise"
+    return ""
+
+
+def _invalid_location_length_reason(text: str, *, field_name: str) -> str:
     if len(text) > 120:
         return f"invalid_{field_name}_semantic_overlong"
     if len(text) > 72 and (text.count(",") >= 3 or text.count(";") >= 2):
@@ -358,6 +362,10 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
         return f"invalid_{field_name}_semantic_bullet_noise"
     if len(text) > 48 and len(SENTENCE_BREAK_RE.findall(text)) >= 2:
         return f"invalid_{field_name}_semantic_sentence_noise"
+    return ""
+
+
+def _invalid_location_pattern_reason(text: str, *, field_name: str) -> str:
     if LOCATION_CSS_NOISE_RE.search(text):
         return f"invalid_{field_name}_semantic_noise"
     if any(pattern.search(text) for pattern in LOCATION_NOISE_PATTERNS):
@@ -366,15 +374,19 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
         return f"invalid_{field_name}_semantic_noise"
     if "," in text and LOCATION_POSTAL_CODE_RE.search(text):
         return f"invalid_{field_name}_semantic_noise"
-    if "/" in text:
-        return f"invalid_{field_name}_semantic_noise"
-    if text.endswith(","):
-        return f"invalid_{field_name}_semantic_noise"
     if LOCATION_SCRIPT_NOISE_RE.search(text):
         return f"invalid_{field_name}_semantic_noise"
     if text.count(",") >= 3 and LOCATION_ROLE_BLOB_RE.search(text):
         return f"invalid_{field_name}_semantic_noise"
     if LOCATION_ROLE_BLOB_RE.search(text) and ("(" in text or ")" in text):
+        return f"invalid_{field_name}_semantic_noise"
+    return ""
+
+
+def _invalid_location_punctuation_reason(text: str, *, field_name: str) -> str:
+    if "/" in text:
+        return f"invalid_{field_name}_semantic_noise"
+    if text.endswith(","):
         return f"invalid_{field_name}_semantic_noise"
     if text.startswith("#"):
         return f"invalid_{field_name}_semantic_noise"
@@ -382,6 +394,27 @@ def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
         return f"invalid_{field_name}_semantic_noise"
     if "{" in text or "}" in text:
         return f"invalid_{field_name}_semantic_noise"
+    return ""
+
+
+def invalid_location_reason(value: Any, *, field_name: str = "city") -> str:
+    text = sanitize_public_text(value)
+    if not text:
+        return ""
+    lowered = norm_text(text)
+    if lowered in {"unknown", "n/a", "na", "none"}:
+        return ""
+    if lowered in REMOTEISH_TOKENS:
+        return ""
+    for check in (
+        _invalid_location_basic_reason,
+        _invalid_location_length_reason,
+        _invalid_location_pattern_reason,
+        _invalid_location_punctuation_reason,
+    ):
+        reason = check(text, field_name=field_name)
+        if reason:
+            return reason
     if field_name == "city" and is_city_noise_fragment(text):
         return f"invalid_{field_name}_semantic_noise"
     return ""

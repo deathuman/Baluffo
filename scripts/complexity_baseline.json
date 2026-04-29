@@ -97,8 +97,6 @@
     "src/jobs/state_incremental.py::get_incremental_cache_decision": 17,
     "src/jobs/state_lifecycle.py::apply_job_lifecycle_state": 15,
     "src/jobs/state_source_state.py::_apply_report_to_entry": 12,
-    "src/jobs/text_utils.py::clean_text": 12,
-    "src/jobs/text_utils.py::invalid_location_reason": 26,
     "src/pipeline_audit.py::build_issues": 16,
     "src/pipeline_audit.py::render_markdown": 13,
     "src/scrapers/domain_profiles.py::is_probable_job_detail_url": 13,
