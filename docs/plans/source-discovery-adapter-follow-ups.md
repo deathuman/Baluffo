@@ -1,27 +1,23 @@
-# Deletion-First Source Discovery Reset
+# Source Discovery Evidence-Backed Next Steps
 
-> - **Status:** Active deletion-first roadmap
-> - **Use this when:** planning source-discovery simplification, adapter deletion, active-source yield work, or discovery behavior changes
-> - **Canonical for:** source-discovery reset goals, protected surfaces, removable internals, complexity gates, and migration sequence
-> - **Not canonical for:** saved-job/local-user data contracts, bridge endpoint contracts, or current persisted discovery payload details
-> - **Then inspect:** [`scraping-pipeline.md`](../scraping-pipeline.md), [`DATA_CONTRACT.md`](../DATA_CONTRACT.md), and the owning source-discovery modules
+> - **Status:** Active next-step tracker
+> - **Use this when:** choosing the next source-discovery behavior change after the deletion-first adapter cleanup
+> - **Canonical for:** completed source-discovery reset status, protected surfaces, evidence-backed next steps, and behavior-change gates
+> - **Not canonical for:** saved-job/local-user data contracts, bridge endpoint contracts, persisted payload schemas, or fetcher adapter inventory
+> - **Then inspect:** [`source-discovery-directory-web-evidence-2026-04-29.md`](../snapshots/source-discovery-directory-web-evidence-2026-04-29.md), [`source-discovery-fresh-audit-evidence-2026-04-29.md`](../snapshots/source-discovery-fresh-audit-evidence-2026-04-29.md), [`scraping-pipeline.md`](../scraping-pipeline.md), and [`DATA_CONTRACT.md`](../DATA_CONTRACT.md)
 > - **Last updated:** 2026-04-29
 
-This tracker covers only source-discovery adapters and orchestration. Job-fetcher adapters such as static, provider API, community, and social belong to [`adapter-plugin-inventory.md`](../adapter-plugin-inventory.md) and fetch pipeline docs.
+The deletion-first adapter cleanup is complete. Keep this page active until the remaining source-discovery behavior work is either shipped or explicitly deferred. Do not restart broad compatibility-preserving helper extraction from this tracker.
+Related fetch-adapter refactoring now lives in [jobs-adapter-mass-refactoring-plan.md](jobs-adapter-mass-refactoring-plan.md). Keep this source-discovery tracker focused on discovery evidence and behavior choices.
 
-The product goal is simple: find active job sources and real openings in acceptable time while protecting saved jobs, local user data, and current UI/runtime invocation paths. Source-discovery internals are removable unless they improve current active-source yield or preserve a protected runtime surface.
 
-## Current Adapter State
+## Current Status
 
-| Area | Current state | Next pressure |
-| --- | --- | --- |
-| Shared audit runner | [`DirectoryAuditRunSpec`](../../src/source_discovery/directory_audit.py) and `run_directory_audit_spec` already exist; current runtime rollback branches, web direct-scan exports, and the now-unused generic direct-scan helper have been deleted. | Keep the remaining work focused on thin adapter-owned lifecycle around the existing runner. |
-| Gameprog | Completed deletion proof. [`discover_gameprog_candidates`](../../src/source_discovery/gameprog.py) always returns rows from the audit artifact when enabled; legacy `activeAuditEnabled`, adapter `cachePath`, and legacy `cacheTtlMinutes` support is removed. | Keep as baseline guardrail; do not recreate legacy cache/direct branches. |
-| Gamesmap | Public discovery returns rows from the shared directory audit artifact; legacy `activeAuditEnabled`, adapter `cachePath`, and legacy `cacheTtlMinutes` support is removed. Config/index-collection wrapper thinning is complete. Large scan/category/parser surfaces remain. | Defer larger scan/category cleanup until it can delete lifecycle code without hiding Gamesmap category and parser semantics. |
-| Sheet-directory | Public discovery returns rows from the shared directory audit artifact; legacy `activeAuditEnabled` support is removed. Config/recovery request wrapper thinning is complete. It still owns CSV parsing, Sheet evidence, summary, and scan glue. | Defer larger scan/recovery plumbing cleanup until it can delete adapter lifecycle code without hiding Sheet-specific evidence semantics. |
-| Web-derived discovery | Enabled seed-careers and web-search runtime stages return shared audit-artifact rows; legacy `activeAuditEnabled` support is removed. Standalone direct-scan exports are retired. Pure web browser-recovery request, diagnostic, summary, row-selection, and persistence-update wrappers are thinned. Save/merge review is closed with no shared wrapper because web-search and GameDevMap persistence semantics are not deletion-positive to merge. | Keep web-specific rendered-page analysis, queue caps, and artifact bucket naming local unless a future behavior slice changes runtime coverage. |
-| GameDevMap | Uses the separate active-source audit engine through [`gamedevmap.py`](../../src/source_discovery/gamedevmap.py) and `gamedevmap_active_dry_run.py`. Artifact/cache lifecycle, active-audit batch lifecycle, default legacy `cachePath` / `cacheTtlMinutes`, local artifact helper cleanup, remaining `activeAuditEnabled` acceptance, external `cacheTtlMinutes` fallback cleanup, and pure delegation-wrapper cleanup are complete. | Keep `activeAuditPath` and `activeAuditTtlMinutes` as the supported artifact controls; future GameDevMap changes should be evidence-backed behavior work, not more compatibility-preserving lifecycle refactor. |
-| Stage wiring | [`orchestrator_generation.py`](../../src/source_discovery/orchestrator_generation.py) owns stage invocation and compatibility with current discovery flows. | Treat route changes as compatibility work and preserve task-start, busy-state, queue, pending review, and report behavior. |
+- Gameprog, Gamesmap, Sheet-directory, Web-derived discovery, and GameDevMap public runtime paths use audit-artifact rows.
+- Legacy `activeAuditEnabled`, adapter-owned `cachePath`, legacy `cacheTtlMinutes`, web direct scanner exports, and the unused generic direct-scan helper are removed from source-discovery runtime/tests.
+- Current `src/source_discovery` C901 offenders are cleared in [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json).
+- The first evidence-backed P2 behavior change landed: unrecovered Sheet-directory static homepage fallbacks are no longer carried forward after HTTP recovery fails to find a usable provider or jobs page.
+- The local after-change rerun under `_out/source-discovery-directory-web-evidence-20260429-sheet-static-after-nobom` showed the main zero-job pressure improved: validated candidates `166 -> 89`, zero-job candidates `143 -> 67`, Sheet zero-job `125 -> 49`, and static zero-job `111 -> 19`.
 
 ## Protected Surfaces
 
@@ -31,79 +27,45 @@ The product goal is simple: find active job sources and real openings in accepta
 - Bridge/API contracts needed by the current UI/runtime.
 - Queue, pending review, tombstone, static suppression, and admin auto-approval behavior when candidates enter the current product flow.
 
-## Removable Surfaces
+## Remaining Work
 
-- Legacy direct discovery paths that duplicate the shared audit path.
-- Legacy source-discovery config compatibility for `activeAuditEnabled`, adapter-owned `cachePath`, and legacy `cacheTtlMinutes`.
-- Adapter-owned fetch, retry, recovery, probe, dedupe, report, audit, and progress lifecycle code.
-- Compatibility wrappers that exist only because older discovery internals existed.
-- Historical report/cache/artifact details that are not consumed by the current UI/runtime or active maintenance workflow.
-
-## Target Adapter Shape
-
-Adapters should become source metadata plus parsers/evidence code. Shared runners should own fetch, retry, cache reuse, HTTP/browser recovery, probe classification, candidate dedupe, queue/pending movement, report summaries, progress writing, and artifact lifecycle.
-
-Keep source-specific semantics local: source id, display name, stage labels, entry URLs, API endpoints, seed queries, parser callbacks, evidence metadata, row fields, and truly source-specific limits.
+| Priority | Slice | Goal | Acceptance signal |
+| --- | --- | --- | --- |
+| 1 | Capture tracked Sheet/static after-change evidence | Turn the local `_out` rerun into a concise checked-in snapshot or update the existing directory/web snapshot with before/after counts. | Docs clearly show the Sheet/static quality win and the command/root used; no runtime behavior changes. |
+| 2 | Run bounded GameDevMap evidence | Replace the timed-out uncapped GameDevMap attempt with bounded or longer uninterrupted evidence. | Snapshot ranks GameDevMap active/static/provider yield, zero-job probes, recovery failures, browser-recovery candidates, timeout/429/fetch buckets, and cache reuse. |
+| 3 | Choose the next P2 behavior change from evidence | Decide whether to tune remaining static fallback quality, queue/pending thresholds, browser-recovery eligibility, or provider inference. | A specific behavior slice has before/after metrics and tests around queue, pending, tombstone, suppression, auto-approval, and saved/local boundaries. |
+| 4 | Archive this tracker | Retire this page once source-discovery cleanup and evidence-backed behavior selection no longer need an active tracker. | Move only a short closure note to `docs/archive/README.md` or rely on git history if no active follow-up remains. |
 
 ## Hard Gates
 
 - No new helper unless the same slice deletes or substantially thins adapter-owned code.
 - Each source-discovery refactor should be net LOC-negative unless it adds new source coverage.
+- Do not restore legacy direct discovery or legacy config compatibility paths.
 - No adapter should own fetch, recovery, probe, dedupe, report, or audit lifecycle after migration.
 - No new source-discovery C901 offenders.
-- Existing source-discovery C901 offenders must trend down by count, score, or line footprint.
-- Rollback paths must be temporary, named, tested, and include removal criteria.
-- Behavior changes are allowed inside discovery/fetch internals when protected surfaces remain tested.
-
-## Completed Baseline
-
-- Legacy `activeAuditEnabled`, adapter-owned `cachePath`, and legacy `cacheTtlMinutes` are removed from source-discovery runtime and tests. Remaining references in docs describe that removal.
-- Enabled Gameprog, Gamesmap, Sheet-directory, Web-derived, and GameDevMap runtime paths use audit-artifact rows.
-- Sheet-directory config/recovery request wrapper thinning is complete; CSV parsing and Sheet evidence semantics remain local.
-- Gamesmap config/index-collection wrapper thinning is complete; category matching, provenance, detail/index parsing, and homepage selection semantics remain local.
-- Web-derived direct scanner exports and the unused generic direct-scan helper are retired; enabled seed-careers and web-search stages use the audit-artifact runtime path.
-- Web-derived browser-recovery wrapper thinning is complete for request creation, shared diagnostics, summary counting, candidate row selection, and artifact summary persistence; rendered-page analysis and queue-cap semantics remain local.
-- Web-derived browser-recovery save/merge review is complete with no shared wrapper. Web-search persists direct directory-audit summary counts via `audit_ledger.save_artifact_atomic(...)`; GameDevMap persists through `active_audit_runtime.save_updated_active_audit_artifact(...)` and completed-url summarization.
-- GameDevMap reset is complete for the current deletion-first pass. Pure wrappers around active-audit/probe/recovery helpers are removed where direct shared calls stayed clear; report summary, cache signature, TTL, rejection factories, provenance, homepage/recovery analysis, and browser-recovery artifact semantics remain local by design.
-- Source-discovery test scaffolding cleanup is complete for the current pass. Shared browser-recovery artifact setup, minimal directory-audit result helpers, and web audit row helpers live in `tests/source_discovery/_helpers.py`.
-- Modern artifact controls remain: `activeAuditPath`, `activeAuditTtlMinutes`, `activeAuditRecoveryEnabled`, `activeAuditRecoveryUrlLimit`, and browser-recovery settings.
-- From [`scripts/complexity_baseline.json`](../../scripts/complexity_baseline.json), current source-discovery C901 offenders are cleared. The next pressure is lifecycle ownership rather than cyclomatic-complexity suppression.
-
-Parser complexity can remain temporarily when it is genuinely source-format complexity. Orchestration complexity should not.
-
-## Remaining Migration Sequence
-
-No active behavior-preserving deletion-first migration sequence remains. Future source-discovery work should be evidence-backed behavior changes or new source coverage, not compatibility-preserving helper extraction.
-
-Use [`source-discovery-yield-evidence-2026-04-29.md`](../snapshots/source-discovery-yield-evidence-2026-04-29.md) as the current handoff for choosing P2 behavior work. The next likely pressure is zero-job/static quality or a representative fresh audit run, not another shared-helper or wrapper cleanup pass.
-
-Use [`source-discovery-zero-job-evidence-2026-04-29.md`](../snapshots/source-discovery-zero-job-evidence-2026-04-29.md) for the current zero-job/static quality ranking. It points first at Sheet-directory static quality and representative fresh audit evidence before browser-recovery expansion or more adapter refactoring.
-
-Use [`source-discovery-fresh-audit-evidence-2026-04-29.md`](../snapshots/source-discovery-fresh-audit-evidence-2026-04-29.md) for the latest fresh-audit attempt. It records that the uncapped full run timed out in GameDevMap, so the next evidence run should split directory/web zero-job analysis from bounded or uninterrupted GameDevMap audit evidence.
-
-Use [`source-discovery-directory-web-evidence-2026-04-29.md`](../snapshots/source-discovery-directory-web-evidence-2026-04-29.md) for the current clean directory/web evidence. It confirms Sheet-directory/static zero-job pressure, high Sheet HTTP-recovery yield, and small browser-recovery volume; the next behavior slice should target Sheet/static quality before browser-recovery expansion.
+- Behavior changes are allowed inside discovery/fetch internals only when protected surfaces remain tested.
+- Browser-recovery expansion must wait for evidence showing meaningful recovered yield.
 
 ## Validation Standard
 
-Documentation-only reset slices:
+Documentation-only evidence slices:
 
 ```powershell
 cmd /c npm run lint:precommit
 ```
 
-Code migration slices:
+Source-discovery behavior slices:
 
 ```powershell
 python -m pytest -q tests/source_discovery
 cmd /c npm run lint:precommit
 ```
 
-Add targeted adapter tests before the full source-discovery suite when a specific adapter is migrated.
+Add targeted adapter or queue tests before the full source-discovery suite when changing candidate promotion, probing, pending movement, tombstone handling, suppression, or auto-approval.
 
 ## Decision Rules
 
-- If a path does not improve current active-source/job discovery and is not a protected surface, prefer deletion.
-- If a helper does not delete or substantially thin adapter code in the same slice, do not add it.
-- If preserving old behavior blocks simplification, preserve only the current product behavior and test that boundary.
-- If an adapter needs source-specific semantics, keep those semantics local but move lifecycle out.
-- If a rollback flag is still needed, document why, who uses it, and exactly when it can be removed.
+- If a path does not improve current active-source/job discovery and is not a protected surface, prefer deletion or deferral.
+- If preserving old behavior blocks simplification, preserve only current product behavior and test that boundary.
+- If evidence points to operational noise rather than product yield, fix the noise narrowly and return to evidence-backed behavior work.
+- If a behavior change cannot show before/after impact, capture evidence first instead of changing runtime policy.

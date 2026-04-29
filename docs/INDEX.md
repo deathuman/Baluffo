@@ -57,7 +57,8 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Document | Scope | Use it when |
 |----------|-------|-------------|
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
-| [`plans/source-discovery-adapter-follow-ups.md`](plans/source-discovery-adapter-follow-ups.md) | Plans / Follow-Ups | You are evaluating reusable adapter improvements after the GameDevMap audit migration |
+| [`plans/source-discovery-adapter-follow-ups.md`](plans/source-discovery-adapter-follow-ups.md) | Plans / Follow-Ups | You are choosing evidence-backed source-discovery behavior changes after the deletion-first adapter cleanup |
+| [`plans/jobs-adapter-mass-refactoring-plan.md`](plans/jobs-adapter-mass-refactoring-plan.md) | Plans / Follow-Ups | You are reducing jobs fetch adapters/plugins to thin entrypoints and shared lifecycle runners |
 | [`plans/repo-analysis-follow-up-2026-04-25.md`](plans/repo-analysis-follow-up-2026-04-25.md) | Plans / Follow-Ups | You are picking the next residual follow-up after the completed 2026-04-25 repo-analysis closeout |
 | [`snapshots/discovery-fetch-failure-snapshot-2026-04-25.md`](snapshots/discovery-fetch-failure-snapshot-2026-04-25.md) | Snapshots / Evidence | You are picking up the discovery/fetch failures observed in the 2026-04-25 fresh build runs |
 | [`snapshots/source-discovery-http-recovery-evidence-2026-04-27.md`](snapshots/source-discovery-http-recovery-evidence-2026-04-27.md) | Snapshots / Evidence | You need evidence for default HTTP recovery coverage in source discovery |
