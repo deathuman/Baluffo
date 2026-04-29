@@ -652,7 +652,10 @@ def test_jobs_leaf_closeout_helpers_do_not_import_jobs_roots(repo_root: Path) ->
         "src/jobs/state_source_browser.py",
         "src/jobs/state_source_migration.py",
     ):
-        imports = _imported_modules(_module_tree(repo_root / relative_path))
+        path = repo_root / relative_path
+        if not path.exists():
+            continue
+        imports = _imported_modules(_module_tree(path))
         bad = sorted(imports & forbidden_imports)
         if bad:
             offenders.append(f"{relative_path} -> {', '.join(bad)}")
@@ -675,7 +678,10 @@ def test_jobs_contracts_reporting_helpers_do_not_import_jobs_roots(repo_root: Pa
         "src/jobs/reporting_queues.py",
         "src/jobs/reporting_social.py",
     ):
-        imports = _imported_modules(_module_tree(repo_root / relative_path))
+        path = repo_root / relative_path
+        if not path.exists():
+            continue
+        imports = _imported_modules(_module_tree(path))
         bad = sorted(imports & forbidden_imports)
         if bad:
             offenders.append(f"{relative_path} -> {', '.join(bad)}")

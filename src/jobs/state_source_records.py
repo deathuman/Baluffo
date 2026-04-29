@@ -6,10 +6,16 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from src.contracts import SCHEMA_VERSION
+from src.jobs.browser_fallback import (
+    BROWSER_FALLBACK_STATE_KEY,
+    BrowserFallbackCircuitBreaker,
+)
 from src.jobs.common.datetime_utils import parse_datetime
 from src.jobs.common.numbers import _clamped_int
+from src.jobs.common.registry import _migration_adapter_for_host
 from src.jobs.interfaces import SourceLoader
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.jobs_fetcher_registry import EXCLUDED_DEFAULT_SOURCES, SOURCE_REPORT_META
@@ -17,7 +23,197 @@ from src.pipeline_io import write_text_if_changed
 from src.shared.utils import now_iso
 
 from . import state_incremental as _state_incremental
-from .state_source_migration import normalized_google_sheets_redirect_cache
+from .common import url as common_url
+
+
+def structured_duplicate_rate(value: Any) -> float:
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def normalized_google_sheets_redirect_cache(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict) or not value:
+        return {}
+    out: dict[str, str] = {}
+    for raw_key, raw_value in value.items():
+        key = clean_text(raw_key)
+        resolved = normalize_url(raw_value)
+        if not key or not resolved or not common_url.is_supported_redirect_url(key):
+            continue
+        out[key] = resolved
+    return out
+
+
+def structured_source_host(source_row: dict[str, Any]) -> str:
+    pages = source_row.get("pages") if isinstance(source_row.get("pages"), list) else []
+    url = clean_text(source_row.get("listing_url")) or (clean_text(pages[0]) if pages else "")
+    if not url:
+        return ""
+    try:
+        host = (urlparse(url).netloc or "").strip().lower()
+    except Exception:  # noqa: BLE001
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def structured_migration_target(source_row: dict[str, Any]) -> str:
+    return _migration_adapter_for_host(structured_source_host(source_row))
+
+
+def should_skip_static_source_for_structured_migration(
+    source_name: str,
+    source_row: dict[str, Any],
+    source_state_rows: dict[str, dict[str, Any]] | None,
+) -> bool:
+    target = structured_migration_target(source_row)
+    if target not in {"bamboohr", "workday"}:
+        return False
+    entry = (
+        (source_state_rows or {}).get(clean_text(source_name))
+        if isinstance(source_state_rows, dict)
+        else {}
+    )
+    if not isinstance(entry, dict):
+        return False
+    if clean_text(entry.get("structuredMigrationPromotedAt")):
+        return True
+    return int(entry.get("structuredMigrationHealthyRunCount") or 0) >= 3
+
+
+def apply_structured_migration_state(
+    entry: dict[str, Any],
+    *,
+    report: dict[str, Any],
+    finished_at: str,
+    prior_state: dict[str, Any],
+) -> None:
+    adapter = clean_text(report.get("adapter"))
+    if adapter not in {"bamboohr", "workday"} or entry["lastStatus"] == "excluded":
+        return
+    entry["structuredMigrationTargetAdapter"] = adapter
+    if not clean_text(entry.get("structuredMigrationBaselineCapturedAt")):
+        entry["structuredMigrationBaselineCapturedAt"] = finished_at
+        entry["structuredMigrationBaselineDurationMs"] = prior_state["lastDurationMs"]
+        entry["structuredMigrationBaselineStatus"] = prior_state["lastStatus"]
+        entry["structuredMigrationBaselineError"] = prior_state["lastError"]
+        entry["structuredMigrationBaselineFailureBucket"] = prior_state["lastFailureBucket"]
+        entry["structuredMigrationBaselineKeptCount"] = prior_state["lastKeptCount"]
+    entry["structuredMigrationShadowRunCount"] = (
+        int(entry.get("structuredMigrationShadowRunCount") or 0) + 1
+    )
+    current_duplicate_rate = structured_duplicate_rate(report.get("duplicateRate"))
+    previous_duplicate_rate = structured_duplicate_rate(
+        entry.get("structuredMigrationLastDuplicateRate")
+    )
+    entry["structuredMigrationLastDuplicateRate"] = current_duplicate_rate
+    entry["structuredMigrationLastKeptCount"] = entry["lastKeptCount"]
+    healthy_run = (
+        entry["lastStatus"] == "ok"
+        and entry["lastKeptCount"] > 0
+        and current_duplicate_rate <= (previous_duplicate_rate + 0.01)
+    )
+    if healthy_run:
+        healthy_count = int(entry.get("structuredMigrationHealthyRunCount") or 0) + 1
+        entry["structuredMigrationHealthyRunCount"] = healthy_count
+        entry.pop("structuredMigrationDemotedAt", None)
+        if healthy_count >= 3 and not clean_text(entry.get("structuredMigrationPromotedAt")):
+            entry["structuredMigrationPromotedAt"] = finished_at
+        return
+    if clean_text(entry.get("structuredMigrationPromotedAt")):
+        entry["structuredMigrationDemotedAt"] = finished_at
+    entry["structuredMigrationHealthyRunCount"] = 0
+    entry.pop("structuredMigrationPromotedAt", None)
+
+
+def apply_browser_escalation_state(
+    entry: dict[str, Any],
+    *,
+    report: dict[str, Any],
+    finished_at: str,
+    circuit_breaker_cooldown_minutes: int,
+) -> None:
+    browser_eligible = bool(report.get("browserEscalationEligible"))
+    browser_enabled = bool(report.get("browserEscalationEnabled"))
+    browser_reason = clean_text(report.get("browserEscalationEligibilityReason"))
+    if browser_eligible:
+        entry["browserEscalationEligible"] = True
+        entry["browserEscalationEligibleAt"] = finished_at
+        if browser_reason:
+            entry["browserEscalationEligibilityReason"] = browser_reason
+    elif entry.get("browserEscalationEligible"):
+        entry.pop("browserEscalationEligible", None)
+        entry.pop("browserEscalationEligibleAt", None)
+        entry.pop("browserEscalationEligibilityReason", None)
+
+    if not browser_enabled:
+        return
+    attempt_fingerprint = clean_text(report.get("sourceFingerprint")) or clean_text(
+        entry.get("lastFingerprint")
+    )
+    attempt_listing_fingerprint = clean_text(report.get("listingFingerprint")) or clean_text(
+        entry.get("lastListingFingerprint")
+    )
+    entry["browserEscalationLastAttemptAt"] = finished_at
+    if attempt_fingerprint:
+        entry["browserEscalationLastAttemptFingerprint"] = attempt_fingerprint
+    if attempt_listing_fingerprint:
+        entry["browserEscalationLastAttemptListingFingerprint"] = attempt_listing_fingerprint
+    if entry["lastStatus"] == "ok" and entry["lastKeptCount"] > 0:
+        entry["browserEscalationLastSuccessAt"] = finished_at
+        entry["browserEscalationFailureCount"] = 0
+        for key in (
+            "browserEscalationLastFailureAt",
+            "browserEscalationLastError",
+            "browserEscalationQuarantinedUntilAt",
+            "browserEscalationEligible",
+            "browserEscalationEligibleAt",
+            "browserEscalationEligibilityReason",
+        ):
+            entry.pop(key, None)
+        return
+    entry["browserEscalationFailureCount"] = (
+        int(entry.get("browserEscalationFailureCount") or 0) + 1
+    )
+    entry["browserEscalationLastFailureAt"] = finished_at
+    entry["browserEscalationLastError"] = clean_text(report.get("error"))
+    if circuit_breaker_cooldown_minutes > 0:
+        entry["browserEscalationQuarantinedUntilAt"] = (
+            datetime.now(UTC) + timedelta(minutes=circuit_breaker_cooldown_minutes)
+        ).isoformat()
+
+
+def browser_fallback_state_row(
+    source_state_rows: dict[str, dict[str, Any]] | None,
+) -> dict[str, Any]:
+    if not isinstance(source_state_rows, dict):
+        return {}
+    entry = source_state_rows.get(BROWSER_FALLBACK_STATE_KEY)
+    return dict(entry) if isinstance(entry, dict) else {}
+
+
+def build_browser_fallback_circuit_breaker(
+    source_state_rows: dict[str, dict[str, Any]] | None,
+    *,
+    cooldown_minutes: int,
+) -> BrowserFallbackCircuitBreaker:
+    return BrowserFallbackCircuitBreaker.from_state(
+        source_state_rows, cooldown_minutes=cooldown_minutes
+    )
+
+
+def set_browser_fallback_state(
+    source_state_rows: dict[str, dict[str, Any]],
+    browser_state: dict[str, Any],
+) -> None:
+    if not isinstance(source_state_rows, dict):
+        return
+    row = dict(browser_state or {})
+    if row:
+        source_state_rows[BROWSER_FALLBACK_STATE_KEY] = row
+    else:
+        source_state_rows.pop(BROWSER_FALLBACK_STATE_KEY, None)
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

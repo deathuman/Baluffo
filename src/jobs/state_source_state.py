@@ -6,30 +6,26 @@ from typing import Any
 
 from src.jobs.text_utils import clean_text
 
-from .state_source_browser import (
-    apply_browser_escalation_state,
-    browser_fallback_state_row,
-    build_browser_fallback_circuit_breaker,
-    set_browser_fallback_state,
-)
-from .state_source_migration import (
-    apply_structured_migration_state,
-    should_skip_static_source_for_structured_migration,
-)
 from .state_source_records import (
     append_excluded_default_sources,
+    apply_browser_escalation_state,
     apply_circuit_breaker_exclusions,
     apply_errored_source_state,
     apply_excluded_source_state,
     apply_stage_timings,
     apply_static_detail_stats,
+    apply_structured_migration_state,
     apply_successful_source_state,
+    browser_fallback_state_row,
+    build_browser_fallback_circuit_breaker,
     circuit_breaker_until,
     normalize_source_state_payload,
     read_previously_successful_sources,
     read_source_state,
     read_success_cache,
     refresh_next_eligible_check_at,
+    set_browser_fallback_state,
+    should_skip_static_source_for_structured_migration,
     snapshot_prior_source_state,
     source_rows_fingerprint,
     write_source_state,
