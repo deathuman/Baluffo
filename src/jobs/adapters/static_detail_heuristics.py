@@ -154,6 +154,35 @@ def _source_tail_metrics(
     }
 
 
+def _detail_limit_cap(
+    metrics: dict[str, int],
+    *,
+    listing_jobs_found: int,
+    low_yield_detail_cap: int,
+    very_low_yield_detail_cap: int,
+) -> int:
+    pages = metrics["last_detail_pages"]
+    kept = metrics["last_kept"]
+    duration_ms = metrics["last_duration_ms"]
+    yield_pct = metrics["last_detail_yield_pct"]
+    fetch_ms = metrics["last_detail_fetch_ms"]
+    if fetch_ms >= 120_000 or duration_ms >= 120_000 or pages >= 60:
+        if listing_jobs_found > 0 and (yield_pct <= 20 or kept <= 1):
+            return max(1, min(very_low_yield_detail_cap, 4))
+        return very_low_yield_detail_cap
+    if fetch_ms >= 60_000 or duration_ms >= 90_000 or pages >= 30:
+        return low_yield_detail_cap if yield_pct <= 20 or kept <= 1 else very_low_yield_detail_cap
+    if fetch_ms >= 30_000 or duration_ms >= 45_000 or pages >= 20:
+        return low_yield_detail_cap if yield_pct <= 15 else very_low_yield_detail_cap
+    if pages >= 30 and kept <= 1 and duration_ms >= 45_000:
+        return very_low_yield_detail_cap if listing_jobs_found > 0 else low_yield_detail_cap
+    if pages >= 20 and duration_ms >= 20_000 and yield_pct <= 5:
+        return low_yield_detail_cap if listing_jobs_found <= 0 else very_low_yield_detail_cap
+    if listing_jobs_found > 0 and pages >= 10 and yield_pct <= 10:
+        return very_low_yield_detail_cap
+    return 0
+
+
 def source_detail_limit_for(
     source_key: str,
     *,
@@ -175,37 +204,13 @@ def source_detail_limit_for(
     metrics = _source_tail_metrics(source_key, source_state_rows=source_state_rows)
     if not metrics:
         return discovered_links
-    last_detail_pages = metrics["last_detail_pages"]
-    last_kept = metrics["last_kept"]
-    last_duration_ms = metrics["last_duration_ms"]
-    last_detail_yield_pct = metrics["last_detail_yield_pct"]
-    last_detail_fetch_ms = metrics["last_detail_fetch_ms"]
-
-    if last_detail_fetch_ms >= 120_000 or last_duration_ms >= 120_000 or last_detail_pages >= 60:
-        cap = very_low_yield_detail_cap
-        if listing_jobs_found > 0 and (last_detail_yield_pct <= 20 or last_kept <= 1):
-            cap = max(1, min(very_low_yield_detail_cap, 4))
-        return min(discovered_links, max(1, cap))
-    if last_detail_fetch_ms >= 60_000 or last_duration_ms >= 90_000 or last_detail_pages >= 30:
-        cap = (
-            low_yield_detail_cap
-            if last_detail_yield_pct <= 20 or last_kept <= 1
-            else very_low_yield_detail_cap
-        )
-        return min(discovered_links, max(1, cap))
-    if last_detail_fetch_ms >= 30_000 or last_duration_ms >= 45_000 or last_detail_pages >= 20:
-        cap = low_yield_detail_cap if last_detail_yield_pct <= 15 else very_low_yield_detail_cap
-        return min(discovered_links, max(1, cap))
-
-    if last_detail_pages >= 30 and last_kept <= 1 and last_duration_ms >= 45_000:
-        cap = very_low_yield_detail_cap if listing_jobs_found > 0 else low_yield_detail_cap
-        return min(discovered_links, max(1, cap))
-    if last_detail_pages >= 20 and last_duration_ms >= 20_000 and last_detail_yield_pct <= 5:
-        cap = low_yield_detail_cap if listing_jobs_found <= 0 else very_low_yield_detail_cap
-        return min(discovered_links, max(1, cap))
-    if listing_jobs_found > 0 and last_detail_pages >= 10 and last_detail_yield_pct <= 10:
-        return min(discovered_links, max(1, very_low_yield_detail_cap))
-    return discovered_links
+    cap = _detail_limit_cap(
+        metrics,
+        listing_jobs_found=listing_jobs_found,
+        low_yield_detail_cap=low_yield_detail_cap,
+        very_low_yield_detail_cap=very_low_yield_detail_cap,
+    )
+    return min(discovered_links, max(1, cap)) if cap else discovered_links
 
 
 def source_detail_retries_for(
@@ -234,6 +239,18 @@ def source_detail_retries_for(
     return retries
 
 
+def _should_skip_detail_for_tail(metrics: dict[str, int], *, listing_jobs_found: int) -> bool:
+    if not metrics or listing_jobs_found <= 0:
+        return False
+    slow_or_deep = (
+        metrics["last_detail_fetch_ms"] >= 120_000
+        or metrics["last_duration_ms"] >= 120_000
+        or metrics["last_detail_pages"] >= 40
+    )
+    low_yield = metrics["last_detail_yield_pct"] <= 20 or metrics["last_kept"] <= 1
+    return slow_or_deep and low_yield
+
+
 def choose_detail_traversal_mode(
     page_url: str,
     *,
@@ -248,41 +265,27 @@ def choose_detail_traversal_mode(
 ) -> str:
     plugin_meta = plugin_meta if isinstance(plugin_meta, dict) else {}
     profile = profile if isinstance(profile, dict) else {}
+    allow_override = bool(
+        runtime_config.uncapped_deep_static and int(probable_detail_candidates or 0) > 0
+    )
     explicit_mode = clean_text(plugin_meta.get("detailTraversalMode")) or clean_text(
         profile.get("detail_traversal_mode")
     )
-    allow_uncapped_deep_override = bool(
-        runtime_config.uncapped_deep_static and int(probable_detail_candidates or 0) > 0
-    )
     if explicit_mode in {"listing_only", "capped_detail", "full_detail"}:
-        if explicit_mode == "listing_only" and allow_uncapped_deep_override:
-            explicit_mode = ""
-        else:
+        if explicit_mode != "listing_only" or not allow_override:
             return explicit_mode
     detail_fetch_required = plugin_meta.get("detailFetchRequired")
     if detail_fetch_required is None:
         detail_fetch_required = profile.get("detail_fetch_required")
-    if detail_fetch_required is False and listing_jobs_found > 0:
-        if not allow_uncapped_deep_override:
-            return "listing_only"
+    if detail_fetch_required is False and listing_jobs_found > 0 and not allow_override:
+        return "listing_only"
     metrics = _source_tail_metrics(source_key, source_state_rows=source_state_rows)
-    if metrics and listing_jobs_found > 0:
-        last_detail_pages = metrics["last_detail_pages"]
-        last_kept = metrics["last_kept"]
-        last_duration_ms = metrics["last_duration_ms"]
-        last_detail_yield_pct = metrics["last_detail_yield_pct"]
-        last_detail_fetch_ms = metrics["last_detail_fetch_ms"]
-        if (
-            last_detail_fetch_ms >= 120_000
-            or last_duration_ms >= 120_000
-            or last_detail_pages >= 40
-        ) and (last_detail_yield_pct <= 20 or last_kept <= 1):
-            if not allow_uncapped_deep_override:
-                return "listing_only"
-    host = (urlparse(clean_text(page_url) or "").hostname or "").lower()
-    if host in runtime_config.listing_only_hosts and listing_jobs_found > 0:
-        if not allow_uncapped_deep_override:
+    if _should_skip_detail_for_tail(metrics, listing_jobs_found=listing_jobs_found):
+        if not allow_override:
             return "listing_only"
+    host = (urlparse(clean_text(page_url) or "").hostname or "").lower()
+    if host in runtime_config.listing_only_hosts and listing_jobs_found > 0 and not allow_override:
+        return "listing_only"
     detail_limit = source_detail_limit_for(
         source_key,
         source_state_rows=source_state_rows,
@@ -292,9 +295,7 @@ def choose_detail_traversal_mode(
         very_low_yield_detail_cap=runtime_config.very_low_yield_detail_cap,
         uncapped_deep_static=runtime_config.uncapped_deep_static,
     )
-    if detail_limit < discovered_links:
-        return "capped_detail"
-    return "full_detail"
+    return "capped_detail" if detail_limit < discovered_links else "full_detail"
 
 
 def is_probable_job_detail_url(
@@ -406,97 +407,121 @@ def _detail_page_scan_start(lines: list[str]) -> int:
     return 0
 
 
+def _line_detail_candidates(line: str, lines: list[str], absolute_index: int) -> list[str]:
+    lowered = line.lower()
+    candidates: list[str] = []
+    if lowered in {
+        "\u52e4\u52d9\u5730",
+        "\u52e4\u52d9\u5834\u6240",
+        "location",
+    } and absolute_index + 1 < len(lines):
+        candidates.append(clean_text(lines[absolute_index + 1]))
+    if " in " in lowered:
+        candidates.append(clean_text(line.rsplit(" in ", 1)[-1]))
+    if " at " in lowered:
+        candidates.append(clean_text(line.rsplit(" at ", 1)[-1]))
+    candidates.append(line)
+    return candidates
+
+
+def _tokyo_detail_fields(
+    candidate: str, normalized_candidate: str, work_type: str
+) -> tuple[str, str, str] | None:
+    if "tokyo" not in normalized_candidate and "\u6771\u4eac" not in candidate:
+        return None
+    parsed_city, parsed_country, parsed_work_type = parse_generic_location_fields(candidate)
+    if parsed_work_type and not work_type:
+        work_type = parsed_work_type
+    return (
+        parsed_city or "Tokyo",
+        "Japan" if parsed_country == "Unknown" else parsed_country,
+        work_type,
+    )
+
+
+def _consume_detail_candidate(candidate: str, state: dict[str, Any]) -> bool:
+    normalized_candidate = norm_text(candidate)
+    if not state["contract_type"] and any(
+        token in normalized_candidate
+        for token in ("full time", "full-time", "part time", "part-time")
+    ):
+        state["contract_type"] = clean_text(candidate)
+        return True
+    if normalized_candidate in {"remote", "fully remote"}:
+        state["work_type"] = "Remote"
+        state["remote_preferred"] = True
+        return True
+    if normalized_candidate in {"onsite", "on site", "hybrid"}:
+        if not state["remote_preferred"] and not state["work_type"]:
+            state["work_type"] = clean_text(candidate)
+        return True
+    return bool(classify_city_garbage(candidate))
+
+
+def _parsed_detail_candidate_fields(
+    candidate: str, state: dict[str, Any]
+) -> tuple[str, str] | None:
+    normalized_candidate = norm_text(candidate)
+    parsed_city, parsed_country, parsed_work_type = parse_generic_location_fields(candidate)
+    if clean_text(parsed_city).lower().startswith(("in ", "at ")):
+        return None
+    if parsed_work_type and not state["work_type"]:
+        state["work_type"] = parsed_work_type
+    if parsed_city == "Remote" and parsed_country == "Remote":
+        state["work_type"] = state["work_type"] or "Remote"
+        state["remote_preferred"] = True
+        return None
+    if parsed_city and parsed_country == "Unknown":
+        if parsed_city == "Tokyo" or "tokyo" in normalized_candidate or "\u6771\u4eac" in candidate:
+            parsed_country = "Japan"
+    if not parsed_city and parsed_country == "Unknown":
+        if "tokyo" in normalized_candidate or "\u6771\u4eac" in candidate:
+            parsed_city, parsed_country = "Tokyo", "Japan"
+        elif not (state["remote_preferred"] or state["work_type"] or state["contract_type"]):
+            return None
+    if (
+        not parsed_city
+        and parsed_country == "Unknown"
+        and not (state["remote_preferred"] or state["work_type"] or state["contract_type"])
+    ):
+        return None
+    return (parsed_city, parsed_country) if parsed_city or parsed_country != "Unknown" else None
+
+
+def _infer_detail_candidate_fields(candidate: str, state: dict[str, Any]) -> tuple[str, str] | None:
+    if not candidate:
+        return None
+    normalized_candidate = norm_text(candidate)
+    tokyo_fields = _tokyo_detail_fields(candidate, normalized_candidate, state["work_type"])
+    if tokyo_fields is not None:
+        city, country, work_type = tokyo_fields
+        state["work_type"] = work_type
+        return city, country
+    if _consume_detail_candidate(candidate, state):
+        return None
+    return _parsed_detail_candidate_fields(candidate, state)
+
+
 def _infer_detail_page_fields(detail_html: str, detail_title: str) -> tuple[str, str, str, str]:
     lines = [clean_text(line) for line in html_fragment_lines(detail_html) if clean_text(line)]
     title_text = clean_text(detail_title).lower()
-    city = ""
-    country = "Unknown"
-    work_type = ""
-    contract_type = ""
-    remote_preferred = False
     scan_start = _detail_page_scan_start(lines)
     scan_offset = max(0, scan_start - 2) if scan_start else 0
     scan_lines = lines[scan_offset:] if scan_start else lines
+    state: dict[str, Any] = {"work_type": "", "contract_type": "", "remote_preferred": False}
     for index, line in enumerate(scan_lines):
         absolute_index = index + scan_offset
         if title_text and title_text == line.lower():
             continue
-        candidates = []
-        lowered = line.lower()
         if scan_start and absolute_index > scan_start and line.endswith(":"):
             break
-        if lowered in {"勤務地", "勤務場所", "location"} and absolute_index + 1 < len(lines):
-            candidates.append(clean_text(lines[absolute_index + 1]))
-        if " in " in lowered:
-            candidates.append(clean_text(line.rsplit(" in ", 1)[-1]))
-        if " at " in lowered:
-            candidates.append(clean_text(line.rsplit(" at ", 1)[-1]))
-        candidates.append(line)
-        for candidate in candidates:
-            if not candidate:
-                continue
-            normalized_candidate = norm_text(candidate)
-            if "tokyo" in normalized_candidate or "東京" in candidate:
-                parsed_city, parsed_country, parsed_work_type = parse_generic_location_fields(
-                    candidate
-                )
-                if parsed_work_type and not work_type:
-                    work_type = parsed_work_type
-                if not parsed_city:
-                    parsed_city = "Tokyo"
-                if parsed_country == "Unknown":
-                    parsed_country = "Japan"
-                return parsed_city, parsed_country, work_type, contract_type
-            if not contract_type and any(
-                token in normalized_candidate
-                for token in ("full time", "full-time", "part time", "part-time")
-            ):
-                contract_type = clean_text(candidate)
-                continue
-            if normalized_candidate in {"remote", "fully remote"}:
-                work_type = "Remote"
-                remote_preferred = True
-                continue
-            if normalized_candidate in {"onsite", "on site", "hybrid"}:
-                if remote_preferred:
-                    continue
-                if not work_type:
-                    work_type = clean_text(candidate)
-                continue
-            if classify_city_garbage(candidate):
-                continue
-            if (
-                candidate.isascii()
-                and classify_city_garbage(candidate)
-                and not any(separator in candidate for separator in (",", "/", "-", "|"))
-            ):
-                continue
-            parsed_city, parsed_country, parsed_work_type = parse_generic_location_fields(candidate)
-            if clean_text(parsed_city).lower().startswith(("in ", "at ")):
-                continue
-            if parsed_work_type and not work_type:
-                work_type = parsed_work_type
-            if parsed_city == "Remote" and parsed_country == "Remote":
-                work_type = work_type or "Remote"
-                remote_preferred = True
-                continue
-            if parsed_city and parsed_country == "Unknown":
-                if parsed_city == "Tokyo" or "tokyo" in normalized_candidate or "東京" in candidate:
-                    parsed_country = "Japan"
-            if not parsed_city and parsed_country == "Unknown":
-                if "tokyo" in normalized_candidate or "東京" in candidate:
-                    parsed_city, parsed_country = "Tokyo", "Japan"
-                elif not (remote_preferred or work_type or contract_type):
-                    continue
-            if (
-                not parsed_city
-                and parsed_country == "Unknown"
-                and not (remote_preferred or work_type or contract_type)
-            ):
-                continue
-            if parsed_city or parsed_country != "Unknown":
-                return parsed_city, parsed_country, work_type, contract_type
-    return city, country, work_type or ("Remote" if remote_preferred else ""), contract_type
+        for candidate in _line_detail_candidates(line, lines, absolute_index):
+            parsed_fields = _infer_detail_candidate_fields(candidate, state)
+            if parsed_fields is not None:
+                city, country = parsed_fields
+                return city, country, state["work_type"], state["contract_type"]
+    fallback_work_type = state["work_type"] or ("Remote" if state["remote_preferred"] else "")
+    return "", "Unknown", fallback_work_type, state["contract_type"]
 
 
 def _is_one_man_studio_noise_city(
@@ -539,6 +564,171 @@ def _is_one_man_studio_noise_city(
     )
 
 
+def _sanitize_inferred_detail_location(
+    city: str, country: str, *, company: str, source_name: str, source: dict[str, Any]
+) -> tuple[str, str]:
+    sanitized_city, city_reason = sanitize_location_text(city, field_name="city")
+    if city and (city_reason or not sanitized_city):
+        city = ""
+        country = "Unknown" if country == "" else country
+    else:
+        city = sanitized_city
+    if city and norm_text(company) and norm_text(city) == norm_text(company):
+        city = ""
+        country = "Unknown" if country == "" else country
+    if _is_one_man_studio_noise_city(city, source_name=source_name, source=source):
+        city = ""
+        country = "Unknown" if country == "" else country
+    return city, country
+
+
+def _location_summary(city: str, country: str) -> str:
+    return ", ".join(part for part in [city, country if country != "Unknown" else ""] if part)
+
+
+def _normalize_detail_job_row(
+    row: dict[str, Any],
+    *,
+    inferred_city: str,
+    inferred_country: str,
+    inferred_work_type: str,
+    inferred_contract_type: str,
+    company: str,
+    source_name: str,
+    source: dict[str, Any],
+) -> None:
+    row_city, _ = sanitize_location_text(row.get("city"), field_name="city")
+    row_country, _ = sanitize_location_text(row.get("country"), field_name="country")
+    row_city = "" if row_city == "Remote" else row_city
+    row_country = "" if row_country == "Remote" else row_country
+    if row_city and norm_text(company) and norm_text(row_city) == norm_text(company):
+        row_city = ""
+    if row_country in {"", "Unknown"} and _is_one_man_studio_noise_city(
+        row_city, source_name=source_name, source=source
+    ):
+        row_city = ""
+    row["city"] = row_city
+    row["country"] = row_country
+    if (not row_city or row_country in {"", "Unknown"}) and (
+        inferred_city or inferred_country != "Unknown"
+    ):
+        row["city"] = row_city or inferred_city
+        row["country"] = row_country if row_country not in {"", "Unknown"} else inferred_country
+    if not clean_text(row.get("workType")) and inferred_work_type:
+        row["workType"] = inferred_work_type
+    if not clean_text(row.get("contractType")) and inferred_contract_type:
+        row["contractType"] = inferred_contract_type
+    updated_city = clean_text(row.get("city"))
+    updated_country = clean_text(row.get("country"))
+    if updated_city or (updated_country and updated_country != "Unknown"):
+        row["locations"] = [
+            {
+                "city": updated_city,
+                "country": updated_country if updated_country != "Unknown" else "",
+            }
+        ]
+        row["locationSummary"] = _location_summary(updated_city, updated_country)
+    else:
+        row["locations"] = []
+        row["locationSummary"] = ""
+
+
+def _detail_title_from_url(detail: str, detail_title: str, ignored_link_titles: set[str]) -> str:
+    path_parts = [part for part in urlparse(detail).path.rstrip("/").split("/") if part]
+    slug = path_parts[-1] if path_parts else ""
+    if slug.lower() == "apply" and len(path_parts) >= 2:
+        slug = path_parts[-2]
+    title = strip_html_text(re.sub(r"[-_]+", " ", re.sub(r"_[Rr]\d+(?:-\d+)?$", "", slug)))
+    parsed_title = clean_text(detail_title)
+    return (
+        parsed_title if parsed_title and parsed_title.lower() not in ignored_link_titles else title
+    )
+
+
+def _fallback_detail_rows(
+    *,
+    detail: str,
+    detail_title: str,
+    detail_html: str,
+    company: str,
+    source_name: str,
+    source: dict[str, Any],
+    ignored_link_titles: set[str],
+    inferred_city: str,
+    inferred_country: str,
+    inferred_work_type: str,
+    inferred_contract_type: str,
+) -> tuple[list[RawJob], str, str]:
+    parsed_title = clean_text(detail_title)
+    job_like, gate_reason = classify_job_page(
+        detail_html,
+        detail,
+        page_title=parsed_title,
+        profile=source if isinstance(source, dict) else None,
+    )
+    if not job_like:
+        classification = (
+            "dead_listing_page" if gate_reason == "dead_listing_page" else "needs_review"
+        )
+        return [], classification, f"{detail} | {parsed_title}" if parsed_title else detail
+    title = _detail_title_from_url(detail, detail_title, ignored_link_titles)
+    title_ok = bool(
+        title and not re.fullmatch(r"\d+", title) and looks_like_job_title_candidate(title)
+    )
+    if not title_ok:
+        return [], "dead_listing_page", f"{detail} | {title}" if title else detail
+    row = {
+        "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
+        "company": company,
+        "jobLink": detail,
+        "sector": "Game",
+        "postedAt": "",
+        "adapter": "static",
+        "studio": clean_text(source.get("studio")) or company or source_name,
+    }
+    inferred_available = (
+        inferred_city
+        or inferred_country != "Unknown"
+        or inferred_work_type
+        or inferred_contract_type
+    )
+    if inferred_available:
+        row.update(
+            {
+                "title": title,
+                "city": inferred_city,
+                "country": inferred_country,
+                "locations": [
+                    {
+                        "city": inferred_city,
+                        "country": inferred_country if inferred_country != "Unknown" else "",
+                    }
+                ]
+                if inferred_city or inferred_country != "Unknown"
+                else [],
+                "locationSummary": _location_summary(inferred_city, inferred_country),
+                "workType": inferred_work_type
+                or (
+                    "Onsite"
+                    if "in person" in clean_text(strip_html_text(detail_html)).lower()
+                    else ""
+                ),
+                "contractType": inferred_contract_type,
+            }
+        )
+    else:
+        row.update(
+            {
+                "title": title.title(),
+                "city": "",
+                "country": "Unknown",
+                "workType": "",
+                "contractType": "",
+            }
+        )
+    return [row], "", ""
+
+
 def process_detail_html(
     *,
     detail: str,
@@ -565,187 +755,46 @@ def process_detail_html(
     inferred_city, inferred_country, inferred_work_type, inferred_contract_type = (
         _infer_detail_page_fields(detail_html, detail_title)
     )
-    sanitized_inferred_city, inferred_city_reason = sanitize_location_text(
-        inferred_city,
-        field_name="city",
+    inferred_city, inferred_country = _sanitize_inferred_detail_location(
+        inferred_city, inferred_country, company=company, source_name=source_name, source=source
     )
-    if inferred_city and (inferred_city_reason or not sanitized_inferred_city):
-        inferred_city = ""
-        if inferred_country == "":
-            inferred_country = "Unknown"
-    else:
-        inferred_city = sanitized_inferred_city
-    normalized_company = norm_text(company)
-    if inferred_city and normalized_company and norm_text(inferred_city) == normalized_company:
-        inferred_city = ""
-        if inferred_country == "":
-            inferred_country = "Unknown"
-    if _is_one_man_studio_noise_city(
-        inferred_city,
-        source_name=source_name,
-        source=source,
-    ):
-        inferred_city = ""
-        if inferred_country == "":
-            inferred_country = "Unknown"
-    if detail_jobs:
-        for row in detail_jobs:
-            if not isinstance(row, dict):
-                continue
-            row_city, _ = sanitize_location_text(row.get("city"), field_name="city")
-            row_country, _ = sanitize_location_text(row.get("country"), field_name="country")
-            if row_country == "Remote":
-                row_country = ""
-            if row_city == "Remote":
-                row_city = ""
-            if row_city and normalized_company and norm_text(row_city) == normalized_company:
-                row_city = ""
-            if row_country in {"", "Unknown"} and _is_one_man_studio_noise_city(
-                row_city,
+    for row in detail_jobs:
+        if isinstance(row, dict):
+            _normalize_detail_job_row(
+                row,
+                inferred_city=inferred_city,
+                inferred_country=inferred_country,
+                inferred_work_type=inferred_work_type,
+                inferred_contract_type=inferred_contract_type,
+                company=company,
                 source_name=source_name,
                 source=source,
-            ):
-                row_city = ""
-            row["city"] = row_city
-            row["country"] = row_country
-            if (not row_city or row_country in {"", "Unknown"}) and (
-                inferred_city or inferred_country != "Unknown"
-            ):
-                row["city"] = row_city or inferred_city
-                row["country"] = (
-                    row_country if row_country not in {"", "Unknown"} else inferred_country
-                )
-            if not clean_text(row.get("workType")) and inferred_work_type:
-                row["workType"] = inferred_work_type
-            if not clean_text(row.get("contractType")) and inferred_contract_type:
-                row["contractType"] = inferred_contract_type
-            updated_city = clean_text(row.get("city"))
-            updated_country = clean_text(row.get("country"))
-            if updated_city or (updated_country and updated_country != "Unknown"):
-                row["locations"] = [
-                    {
-                        "city": updated_city,
-                        "country": updated_country if updated_country != "Unknown" else "",
-                    }
-                ]
-                row["locationSummary"] = ", ".join(
-                    part
-                    for part in [
-                        updated_city,
-                        updated_country if updated_country != "Unknown" else "",
-                    ]
-                    if part
-                )
-            else:
-                row["locations"] = []
-                row["locationSummary"] = ""
+            )
     parse_ms = int((time.perf_counter() - parse_started) * 1000)
-
-    rows: list[RawJob] = []
-    parse_empty = False
     rejected_classification = ""
     rejected_example = ""
     if detail_jobs:
+        rows = []
         for row in detail_jobs:
             row["adapter"] = "static"
             row["studio"] = clean_text(source.get("studio")) or company or source_name
             rows.append(row)
+        parse_empty = False
     else:
         parse_empty = True
-        parsed_title = clean_text(detail_title)
-        job_like, gate_reason = classify_job_page(
-            detail_html,
-            detail,
-            page_title=parsed_title,
-            profile=source if isinstance(source, dict) else None,
+        rows, rejected_classification, rejected_example = _fallback_detail_rows(
+            detail=detail,
+            detail_title=detail_title,
+            detail_html=detail_html,
+            company=company,
+            source_name=source_name,
+            source=source,
+            ignored_link_titles=ignored_link_titles,
+            inferred_city=inferred_city,
+            inferred_country=inferred_country,
+            inferred_work_type=inferred_work_type,
+            inferred_contract_type=inferred_contract_type,
         )
-        if not job_like:
-            rejected_classification = (
-                "dead_listing_page" if gate_reason == "dead_listing_page" else "needs_review"
-            )
-            rejected_example = f"{detail} | {parsed_title}" if parsed_title else detail
-        else:
-            inferred_row_available = (
-                inferred_city
-                or inferred_country != "Unknown"
-                or inferred_work_type
-                or inferred_contract_type
-            )
-            path_parts = [part for part in urlparse(detail).path.rstrip("/").split("/") if part]
-            slug = path_parts[-1] if path_parts else ""
-            if slug.lower() == "apply" and len(path_parts) >= 2:
-                slug = path_parts[-2]
-            slug = re.sub(r"_[Rr]\d+(?:-\d+)?$", "", slug)
-            title = strip_html_text(re.sub(r"[-_]+", " ", slug))
-            if parsed_title and parsed_title.lower() not in ignored_link_titles:
-                title = parsed_title
-            if (
-                inferred_row_available
-                and title
-                and not re.fullmatch(r"\d+", title)
-                and looks_like_job_title_candidate(title)
-            ):
-                rows.append(
-                    {
-                        "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
-                        "title": title,
-                        "company": company,
-                        "city": inferred_city,
-                        "country": inferred_country,
-                        "locations": [
-                            {
-                                "city": inferred_city,
-                                "country": inferred_country
-                                if inferred_country != "Unknown"
-                                else "",
-                            }
-                        ]
-                        if inferred_city or inferred_country != "Unknown"
-                        else [],
-                        "locationSummary": ", ".join(
-                            part
-                            for part in [
-                                inferred_city,
-                                inferred_country if inferred_country != "Unknown" else "",
-                            ]
-                            if part
-                        ),
-                        "workType": inferred_work_type
-                        or (
-                            "Onsite"
-                            if "in person" in clean_text(strip_html_text(detail_html)).lower()
-                            else ""
-                        ),
-                        "contractType": inferred_contract_type,
-                        "jobLink": detail,
-                        "sector": "Game",
-                        "postedAt": "",
-                        "adapter": "static",
-                        "studio": clean_text(source.get("studio")) or company or source_name,
-                    }
-                )
-            elif (
-                title and not re.fullmatch(r"\d+", title) and looks_like_job_title_candidate(title)
-            ):
-                rows.append(
-                    {
-                        "sourceJobId": f"static:{source_name}:{hashlib.sha1(detail.encode('utf-8')).hexdigest()[:10]}",
-                        "title": title.title(),
-                        "company": company,
-                        "city": "",
-                        "country": "Unknown",
-                        "workType": "",
-                        "contractType": "",
-                        "jobLink": detail,
-                        "sector": "Game",
-                        "postedAt": "",
-                        "adapter": "static",
-                        "studio": clean_text(source.get("studio")) or company or source_name,
-                    }
-                )
-            else:
-                rejected_classification = "dead_listing_page"
-                rejected_example = f"{detail} | {title}" if title else detail
     return {
         "rows": rows,
         "parseEmpty": parse_empty,
