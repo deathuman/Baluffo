@@ -4,7 +4,7 @@
 > - **Use this when:** auditing the first physical deletion batch for dead or unsupported jobs sources
 > - **Canonical for:** the 2026-04-29 jobs source deletion batch, evidence commands, and delete/defer criteria
 > - **Not canonical for:** saved jobs, local user data, bridge route contracts, source-discovery behavior, or future deletion batches
-> - **Then inspect:** [`jobs-adapter-mass-refactoring-plan.md`](../plans/jobs-adapter-mass-refactoring-plan.md), [`adapter-plugin-inventory.md`](../adapter-plugin-inventory.md), and [`DATA_CONTRACT.md`](../DATA_CONTRACT.md)
+> - **Then inspect:** [`jobs-fetcher-aggressive-simplification-plan.md`](../plans/jobs-fetcher-aggressive-simplification-plan.md), [`adapter-plugin-inventory.md`](../adapter-plugin-inventory.md), and [`DATA_CONTRACT.md`](../DATA_CONTRACT.md)
 > - **Last updated:** 2026-04-29
 
 This snapshot records the first evidence-backed deletion batch after the jobs adapter mass refactor completed. The batch used a temporary active registry under `_out/jobs-adapter-dead-source-evidence-20260429/data` so pending rows could be fetched without changing tracked registry files before the delete decision.

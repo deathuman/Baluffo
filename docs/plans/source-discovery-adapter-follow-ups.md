@@ -8,7 +8,7 @@
 > - **Last updated:** 2026-04-29
 
 The deletion-first adapter cleanup is complete. Keep this page active until the remaining source-discovery behavior work is either shipped or explicitly deferred. Do not restart broad compatibility-preserving helper extraction from this tracker.
-Related fetch-adapter refactoring now lives in [jobs-adapter-mass-refactoring-plan.md](jobs-adapter-mass-refactoring-plan.md). Keep this source-discovery tracker focused on discovery evidence and behavior choices.
+Related fetcher simplification now lives in [jobs-fetcher-aggressive-simplification-plan.md](jobs-fetcher-aggressive-simplification-plan.md). The completed jobs adapter mass-refactor was removed from active docs; use git history for historical provenance. Keep this source-discovery tracker focused on discovery evidence and behavior choices.
 
 
 ## Current Status
