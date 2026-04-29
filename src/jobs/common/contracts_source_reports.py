@@ -220,22 +220,10 @@ def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
     return clean_item
 
 
-def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
-    src = as_json_object(row)
-    normalized: dict[str, Any] = {
-        "name": clean_text(src.get("name")),
-        "status": norm_text(src.get("status")) or "error",
-        "adapter": clean_text(src.get("adapter")) or "custom",
-        "fetchStrategy": clean_text(src.get("fetchStrategy")) or "auto",
-        "studio": clean_text(src.get("studio")),
-        "fetchedCount": _clamped_int(src.get("fetchedCount"), 0, 0),
-        "keptCount": _clamped_int(src.get("keptCount"), 0, 0),
-        "lowConfidenceDropped": _clamped_int(src.get("lowConfidenceDropped"), 0, 0),
-        "duplicateRate": _float_or_zero(src.get("duplicateRate")),
-        "error": clean_text(src.get("error")),
-        "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
-    }
-
+def _apply_zero_kept_classification(
+    normalized: dict[str, Any],
+    src: dict[str, Any],
+) -> tuple[str, str, str]:
     failure_bucket = _clean_label(src.get("failureBucket"))
     classification = _clean_label(src.get("classification"))
     zk_classification = _clean_label(src.get("zeroKeptClassification"))
@@ -268,6 +256,143 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         normalized["classification"] = classification
     if zk_classification:
         normalized["zeroKeptClassification"] = zk_classification
+    return failure_bucket, classification, zk_classification
+
+
+def _apply_structured_migration_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
+    text_fields = (
+        "structuredMigrationTargetAdapter",
+        "structuredMigrationPromotedAt",
+        "structuredMigrationDemotedAt",
+    )
+    count_fields = (
+        "structuredMigrationShadowRunCount",
+        "structuredMigrationHealthyRunCount",
+        "structuredMigrationLastKeptCount",
+    )
+    for key in text_fields:
+        if key in src:
+            target[key] = clean_text(src.get(key))
+    for key in count_fields:
+        if key in src:
+            target[key] = _clamped_int(src.get(key), 0, 0)
+    if "structuredMigrationLastDuplicateRate" in src:
+        target["structuredMigrationLastDuplicateRate"] = _float_or_zero(
+            src.get("structuredMigrationLastDuplicateRate")
+        )
+
+
+def _apply_browser_fallback_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
+    text_fields = (
+        "browserFallbackQuarantinedUntilAt",
+        "browserFallbackLastAttemptAt",
+        "browserFallbackLastFailureAt",
+        "browserFallbackLastSuccessAt",
+        "browserFallbackLastError",
+    )
+    for key in text_fields:
+        if key in src:
+            target[key] = clean_text(src.get(key))
+    if "browserFallbackFailureCount" in src:
+        target["browserFallbackFailureCount"] = _clamped_int(
+            src.get("browserFallbackFailureCount"), 0, 0
+        )
+
+
+def _apply_group_cache_counts(
+    *,
+    target: dict[str, Any],
+    src: dict[str, Any],
+    prefix: str,
+    count_key: str,
+    decision_counts_key: str,
+) -> None:
+    count = _clamped_int(src.get(count_key), 0, 0)
+    if count > 0:
+        target[count_key] = count
+    decision_counts = as_json_object(src.get(decision_counts_key))
+    if decision_counts:
+        target[decision_counts_key] = {
+            clean_text(key): _clamped_int(value, 0, 0)
+            for key, value in decision_counts.items()
+            if clean_text(key)
+        }
+    for suffix in ("SkippedCount", "RevalidatedCount", "NotModifiedCount", "RefreshedCount"):
+        key = f"{prefix}{suffix}"
+        value = _clamped_int(src.get(key), 0, 0)
+        if value > 0:
+            target[key] = value
+
+
+def _apply_stage_loss_and_exclusion_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
+    clean_stage_timings = _normalize_stage_timings(src)
+    if any(clean_stage_timings.values()):
+        target["stageTimingsMs"] = clean_stage_timings
+    exclusion_reason = clean_text(src.get("exclusionReason"))
+    if exclusion_reason:
+        target["exclusionReason"] = exclusion_reason
+    loss = as_json_object(src.get("loss"))
+    if loss:
+        target["loss"] = _normalize_loss(loss)
+
+
+def _apply_site_changed_url_surface(
+    target: dict[str, Any],
+    src: dict[str, Any],
+    failure_bucket: str,
+) -> None:
+    if norm_text(src.get("adapter")) == "static" and failure_bucket == "site_changed":
+        listing_url = clean_text(src.get("listingUrl"))
+        if listing_url:
+            target["listingUrl"] = listing_url
+        clean_pages = _clean_pages(src.get("pages"))
+        if clean_pages:
+            target["pages"] = clean_pages
+        source_id = clean_text(src.get("sourceId"))
+        if source_id:
+            target["sourceId"] = source_id
+    if (
+        clean_text(src.get("name")) in {"greenhouse_boards", "workable_sources"}
+        and failure_bucket == "site_changed"
+    ):
+        provider_url = clean_text(src.get("providerUrl"))
+        if provider_url:
+            target["providerUrl"] = provider_url
+
+
+def _apply_details(target: dict[str, Any], src: dict[str, Any]) -> None:
+    details = as_json_list(src.get("details"))
+    if not details:
+        return
+    clean_details: list[Any] = []
+    for item in details:
+        if isinstance(item, dict):
+            clean_details.append(_normalize_detail_item(item))
+            continue
+        text = clean_text(item)
+        if text:
+            clean_details.append(text)
+    if clean_details:
+        target["details"] = clean_details
+
+
+def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
+    src = as_json_object(row)
+    normalized: dict[str, Any] = {
+        "name": clean_text(src.get("name")),
+        "status": norm_text(src.get("status")) or "error",
+        "adapter": clean_text(src.get("adapter")) or "custom",
+        "fetchStrategy": clean_text(src.get("fetchStrategy")) or "auto",
+        "studio": clean_text(src.get("studio")),
+        "fetchedCount": _clamped_int(src.get("fetchedCount"), 0, 0),
+        "keptCount": _clamped_int(src.get("keptCount"), 0, 0),
+        "lowConfidenceDropped": _clamped_int(src.get("lowConfidenceDropped"), 0, 0),
+        "duplicateRate": _float_or_zero(src.get("duplicateRate")),
+        "error": clean_text(src.get("error")),
+        "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
+    }
+
+    failure_bucket, _, _ = _apply_zero_kept_classification(normalized, src)
 
     _apply_browser_escalation_fields(normalized, src)
     _normalize_dead_listing_fields(normalized, src)
@@ -275,143 +400,24 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
     _apply_http_fields(normalized, src)
     _apply_listing_fields(normalized, src)
 
-    if "structuredMigrationTargetAdapter" in src:
-        normalized["structuredMigrationTargetAdapter"] = clean_text(
-            src.get("structuredMigrationTargetAdapter")
-        )
-    if "structuredMigrationShadowRunCount" in src:
-        normalized["structuredMigrationShadowRunCount"] = _clamped_int(
-            src.get("structuredMigrationShadowRunCount"), 0, 0
-        )
-    if "structuredMigrationHealthyRunCount" in src:
-        normalized["structuredMigrationHealthyRunCount"] = _clamped_int(
-            src.get("structuredMigrationHealthyRunCount"), 0, 0
-        )
-    if "structuredMigrationPromotedAt" in src:
-        normalized["structuredMigrationPromotedAt"] = clean_text(
-            src.get("structuredMigrationPromotedAt")
-        )
-    if "structuredMigrationDemotedAt" in src:
-        normalized["structuredMigrationDemotedAt"] = clean_text(
-            src.get("structuredMigrationDemotedAt")
-        )
-    if "structuredMigrationLastDuplicateRate" in src:
-        normalized["structuredMigrationLastDuplicateRate"] = _float_or_zero(
-            src.get("structuredMigrationLastDuplicateRate")
-        )
-    if "structuredMigrationLastKeptCount" in src:
-        normalized["structuredMigrationLastKeptCount"] = _clamped_int(
-            src.get("structuredMigrationLastKeptCount"), 0, 0
-        )
-    if "browserFallbackQuarantinedUntilAt" in src:
-        normalized["browserFallbackQuarantinedUntilAt"] = clean_text(
-            src.get("browserFallbackQuarantinedUntilAt")
-        )
-    if "browserFallbackLastAttemptAt" in src:
-        normalized["browserFallbackLastAttemptAt"] = clean_text(
-            src.get("browserFallbackLastAttemptAt")
-        )
-    if "browserFallbackLastFailureAt" in src:
-        normalized["browserFallbackLastFailureAt"] = clean_text(
-            src.get("browserFallbackLastFailureAt")
-        )
-    if "browserFallbackLastSuccessAt" in src:
-        normalized["browserFallbackLastSuccessAt"] = clean_text(
-            src.get("browserFallbackLastSuccessAt")
-        )
-    if "browserFallbackLastError" in src:
-        normalized["browserFallbackLastError"] = clean_text(src.get("browserFallbackLastError"))
-    if "browserFallbackFailureCount" in src:
-        normalized["browserFallbackFailureCount"] = _clamped_int(
-            src.get("browserFallbackFailureCount"), 0, 0
-        )
-
-    board_count = _clamped_int(src.get("boardCount"), 0, 0)
-    if board_count > 0:
-        normalized["boardCount"] = board_count
-    board_decision_counts = as_json_object(src.get("boardCacheDecisionCounts"))
-    if board_decision_counts:
-        normalized["boardCacheDecisionCounts"] = {
-            clean_text(key): _clamped_int(value, 0, 0)
-            for key, value in board_decision_counts.items()
-            if clean_text(key)
-        }
-    board_skipped = _clamped_int(src.get("boardSkippedCount"), 0, 0)
-    if board_skipped > 0:
-        normalized["boardSkippedCount"] = board_skipped
-    board_revalidated = _clamped_int(src.get("boardRevalidatedCount"), 0, 0)
-    if board_revalidated > 0:
-        normalized["boardRevalidatedCount"] = board_revalidated
-    board_not_modified = _clamped_int(src.get("boardNotModifiedCount"), 0, 0)
-    if board_not_modified > 0:
-        normalized["boardNotModifiedCount"] = board_not_modified
-    board_refreshed = _clamped_int(src.get("boardRefreshedCount"), 0, 0)
-    if board_refreshed > 0:
-        normalized["boardRefreshedCount"] = board_refreshed
-
-    subsource_count = _clamped_int(src.get("subsourceCount"), 0, 0)
-    if subsource_count > 0:
-        normalized["subsourceCount"] = subsource_count
-    subsource_decision_counts = as_json_object(src.get("subsourceCacheDecisionCounts"))
-    if subsource_decision_counts:
-        normalized["subsourceCacheDecisionCounts"] = {
-            clean_text(key): _clamped_int(value, 0, 0)
-            for key, value in subsource_decision_counts.items()
-            if clean_text(key)
-        }
-    subsource_skipped = _clamped_int(src.get("subsourceSkippedCount"), 0, 0)
-    if subsource_skipped > 0:
-        normalized["subsourceSkippedCount"] = subsource_skipped
-    subsource_revalidated = _clamped_int(src.get("subsourceRevalidatedCount"), 0, 0)
-    if subsource_revalidated > 0:
-        normalized["subsourceRevalidatedCount"] = subsource_revalidated
-    subsource_not_modified = _clamped_int(src.get("subsourceNotModifiedCount"), 0, 0)
-    if subsource_not_modified > 0:
-        normalized["subsourceNotModifiedCount"] = subsource_not_modified
-    subsource_refreshed = _clamped_int(src.get("subsourceRefreshedCount"), 0, 0)
-    if subsource_refreshed > 0:
-        normalized["subsourceRefreshedCount"] = subsource_refreshed
-
-    clean_stage_timings = _normalize_stage_timings(src)
-    if any(clean_stage_timings.values()):
-        normalized["stageTimingsMs"] = clean_stage_timings
-
-    exclusion_reason = clean_text(src.get("exclusionReason"))
-    if exclusion_reason:
-        normalized["exclusionReason"] = exclusion_reason
-    loss = as_json_object(src.get("loss"))
-    if loss:
-        normalized["loss"] = _normalize_loss(loss)
-
-    if norm_text(src.get("adapter")) == "static" and failure_bucket == "site_changed":
-        listing_url = clean_text(src.get("listingUrl"))
-        if listing_url:
-            normalized["listingUrl"] = listing_url
-        clean_pages = _clean_pages(src.get("pages"))
-        if clean_pages:
-            normalized["pages"] = clean_pages
-        source_id = clean_text(src.get("sourceId"))
-        if source_id:
-            normalized["sourceId"] = source_id
-    if (
-        clean_text(src.get("name")) in {"greenhouse_boards", "workable_sources"}
-        and failure_bucket == "site_changed"
-    ):
-        provider_url = clean_text(src.get("providerUrl"))
-        if provider_url:
-            normalized["providerUrl"] = provider_url
-
-    details = as_json_list(src.get("details"))
-    if details:
-        clean_details: list[Any] = []
-        for item in details:
-            if isinstance(item, dict):
-                clean_details.append(_normalize_detail_item(item))
-                continue
-            text = clean_text(item)
-            if text:
-                clean_details.append(text)
-        if clean_details:
-            normalized["details"] = clean_details
+    _apply_structured_migration_fields(normalized, src)
+    _apply_browser_fallback_fields(normalized, src)
+    _apply_group_cache_counts(
+        target=normalized,
+        src=src,
+        prefix="board",
+        count_key="boardCount",
+        decision_counts_key="boardCacheDecisionCounts",
+    )
+    _apply_group_cache_counts(
+        target=normalized,
+        src=src,
+        prefix="subsource",
+        count_key="subsourceCount",
+        decision_counts_key="subsourceCacheDecisionCounts",
+    )
+    _apply_stage_loss_and_exclusion_fields(normalized, src)
+    _apply_site_changed_url_surface(normalized, src, failure_bucket)
+    _apply_details(normalized, src)
 
     return normalized

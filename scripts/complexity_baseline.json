@@ -79,7 +79,6 @@
     "src/jobs/adapters/static_scrapy.py::run_scrapy_static_source": 19,
     "src/jobs/canonicalize.py::canonicalize_google_sheets_rows": 11,
     "src/jobs/canonicalize.py::canonicalize_job_with_reason": 32,
-    "src/jobs/common/contracts_source_reports.py::normalize_source_report_row": 48,
     "src/jobs/common/datetime_utils.py::parse_datetime": 11,
     "src/jobs/common/heuristics.py::map_profession": 19,
     "src/jobs/common/registry.py::_scrapy_static_registry_from_browser_queue": 11,

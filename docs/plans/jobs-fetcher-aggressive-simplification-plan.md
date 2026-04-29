@@ -38,7 +38,7 @@ The broader objective is not complete:
 - `src/jobs` is still about 134 Python files and 27,753 lines.
 - `src/jobs/adapters` is still about 75 Python files and 16,542 lines.
 - Since the jobs adapter refactor started, production `src/jobs` is roughly net-flat, not meaningfully smaller.
-- `python -m ruff check --select C901 src/jobs` still reports 64 complexity offenders.
+- `python -m ruff check --select C901 src/jobs` still reports 63 complexity offenders.
 - Several compatibility surfaces are still preserved by docs/tests even though the current product goal allows breaking internal fetcher compatibility.
 
 The completed roadmap was removed from active docs after commit `7e62dac` completed the evidence-backed dead-source deletion slice. Use git history for historical provenance; keep this plan as the active direction.
@@ -48,7 +48,7 @@ The completed roadmap was removed from active docs after commit `7e62dac` comple
 A later "unified edition" refactor proposal was reviewed against the current repo and should not be implemented verbatim. Its useful direction is retained below, but these claims were stale or misleading:
 
 - `src/jobs` is currently about 138 Python files and 30,586 lines, not about 27,935 lines.
-- `python -m ruff check --select C901 src/jobs` currently reports 64 offenders, not a cleanable per-slice pass gate.
+- `python -m ruff check --select C901 src/jobs` currently reports 63 offenders, not a cleanable per-slice pass gate.
 - `scripts/complexity_baseline.json` now tracks jobs C901 allowances; touched hotspots should leave that baseline when a slice brings them below the threshold.
 - `static_listing_flow.py` and `static_detail.py` are already deleted; any plan entries targeting `_extract_listing_candidates` or `run_detail_traversal` are historical.
 - `static_listing.py::process_static_source` and `location_rules.py::classify_city_garbage` are no longer current broad C901 offenders.
@@ -69,7 +69,6 @@ Valuable medium-risk candidates:
 
 Current jobs C901 priority list:
 
-- `contracts_source_reports.py::normalize_source_report_row` at 48.
 - `pipeline_source_results.py::execute_loader` at 33.
 - `canonicalize.py::canonicalize_job_with_reason` at 32.
 - `dedup.py::deduplicate_jobs` at 28 and `dedup.py::merge_records` at 24.
@@ -139,7 +138,6 @@ Acceptance:
 
 Prioritize functions that dominate current C901 and concept count:
 
-- `contracts_source_reports.py::normalize_source_report_row` at C901 48.
 - `pipeline_source_results.py::execute_loader` at C901 33.
 - `canonicalize.py::canonicalize_job_with_reason` at C901 32.
 - `dedup.py::deduplicate_jobs` at C901 28 and `merge_records` at C901 24.
@@ -254,6 +252,13 @@ cmd /c npm run lint:precommit
 ```
 
 ### Phase 5: Hotspot reductions and broad C901 ratchet
+
+Status: active. `contracts_source_reports.py::normalize_source_report_row` now delegates cohesive field groups and has left the C901 baseline. Current milestone metrics:
+
+- Jobs Python files: 134.
+- Jobs Python lines: 27,753.
+- Broad `src/jobs` C901 offenders: 63.
+- Adapter C901 offenders: 41.
 
 - Refactor the largest remaining hotspots after lifecycle deletion has removed duplicated branches.
 - Update `scripts/complexity_baseline.json` only when scores decrease or offenders disappear.
