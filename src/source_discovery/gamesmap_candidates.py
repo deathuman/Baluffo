@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterable
-from pathlib import Path
 from types import ModuleType
 from typing import Any
 
@@ -261,14 +260,6 @@ def _apply_gamesmap_static_provenance(
     )
 
 
-def _gamesmap_audit_path(cfg: dict[str, Any]) -> Path:
-    return audit_artifact_path(cfg, default_filename="gamesmap-discovery-audit.json")
-
-
-def _gamesmap_audit_ttl_minutes(_config: dict[str, Any] | None, cfg: dict[str, Any]) -> int:
-    return audit_ttl_minutes(cfg)
-
-
 def _gamesmap_homepage_result_candidates(
     result: dict[str, Any],
     *,
@@ -425,28 +416,6 @@ def _gamesmap_recovery_result_candidates(
     )
 
 
-def _gamesmap_collect_detail_entries(
-    *,
-    timeout_s: int,
-    fetcher: Any,
-    parse_index_entries: Any,
-    base_url: str,
-    index_urls: list[str],
-    prefer_english: bool,
-    max_detail_pages: int,
-) -> dict[str, Any]:
-    return collect_directory_index_entries(
-        timeout_s=timeout_s,
-        fetcher=fetcher,
-        parse_index_entries=parse_index_entries,
-        base_url=base_url,
-        index_urls=index_urls,
-        adapter="gamesmap",
-        parse_kwargs={"prefer_english": prefer_english},
-        max_entries=max_detail_pages,
-    )
-
-
 def _gamesmap_select_homepage_entries(
     detail_entries: list[dict[str, Any]],
     *,
@@ -527,14 +496,15 @@ def _gamesmap_scan(
     }
 
     started = time.perf_counter()
-    collected = _gamesmap_collect_detail_entries(
+    collected = collect_directory_index_entries(
         timeout_s=timeout_s,
         fetcher=fetcher,
         parse_index_entries=parse_index_entries,
         base_url=base_url,
         index_urls=index_urls,
-        prefer_english=prefer_english,
-        max_detail_pages=max_detail_pages,
+        adapter="gamesmap",
+        parse_kwargs={"prefer_english": prefer_english},
+        max_entries=max_detail_pages,
     )
     batch_timing["indexFetchParseMs"] = audit_ledger.duration_ms(started)
     failures = list(collected.get("failures") or [])
@@ -647,8 +617,8 @@ def run_gamesmap_directory_audit(
         DirectoryAuditRunSpec(
             adapter="gamesmap",
             schema_version=GAMESMAP_AUDIT_SCHEMA_VERSION,
-            output_path=_gamesmap_audit_path(cfg),
-            ttl_minutes=_gamesmap_audit_ttl_minutes(config, cfg),
+            output_path=audit_artifact_path(cfg, default_filename="gamesmap-discovery-audit.json"),
+            ttl_minutes=audit_ttl_minutes(cfg),
             signature=gamesmap_cache_signature(cfg),
             timeout_s=timeout_s,
             scan=lambda scan_timeout_s: _gamesmap_scan(
