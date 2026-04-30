@@ -491,6 +491,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     last_success = metrics["lastSuccessFetch"]
     latest_fetch_summary = summarize_fetch_report(latest_fetch_report)
     failed_ratio_latest = latest_fetch_summary["failedRatio"]
+    source_health = as_json_object(latest_fetch_report.get("sourceHealth"))
 
     latest_run = history[-1] if history else {}
     severity = derive_ops_severity(alerts_meta["alerts"])
@@ -535,6 +536,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             "avgFetchDurationMs7d": int(metrics["avgDurationMs7d"]),
             "failedSourceRatioLatest": round(float(failed_ratio_latest), 4),
             "pendingApprovalsCount": len(state.get("pending") or []),
+            "sourceHealth": source_health,
             "socialExperiment": {
                 "pilotWindowStartAt": str(social_summary.get("pilotWindowStartAt") or ""),
                 "pilotWindowEndAt": str(social_summary.get("pilotWindowEndAt") or ""),

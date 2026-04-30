@@ -112,6 +112,30 @@ export function renderAdminOpsSchedule(scheduleEl, schedule, latestOpsHealthCach
   `;
 }
 
+function formatSourceHealthRows(rows, emptyText, { includeDuration = false } = {}) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  if (!sourceRows.length) return escapeHtml(emptyText);
+  return sourceRows
+    .slice(0, 5)
+    .map(row => {
+      const name = sanitizeSlowSourceName(row?.name);
+      const status = String(row?.status || "unknown");
+      const kept = Number(row?.keptCount || 0);
+      const reason = String(
+        row?.failureBucket
+        || row?.classification
+        || row?.zeroKeptClassification
+        || row?.exclusionReason
+        || row?.error
+        || ""
+      );
+      const duration = includeDuration ? `, ${formatDuration(Number(row?.durationMs || 0))}` : "";
+      const reasonSuffix = reason ? `, ${reason.replaceAll("_", " ")}` : "";
+      return escapeHtml(`${name} (${status}, kept ${kept}${duration}${reasonSuffix})`);
+    })
+    .join(" | ");
+}
+
 export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};
@@ -139,6 +163,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     },
     slowestSources: Array.isArray(latest?.slowestSources) ? latest.slowestSources : [],
     stageTop: Array.isArray(latest?.stageTop) ? latest.stageTop : [],
+    sourceHealth: latest?.sourceHealth || {},
     failureSummary: summary
   });
   if (canPatchInPlace && metricsEl.dataset.opsFetcherMetricsSig === signature) return;
@@ -152,6 +177,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const slowest = Array.isArray(latest?.slowestSources) ? latest.slowestSources : [];
   const stageTop = Array.isArray(latest?.stageTop) ? latest.stageTop : [];
   const highCostLowYield = Array.isArray(latest?.highCostLowYieldSources) ? latest.highCostLowYieldSources : [];
+  const sourceHealth = latest?.sourceHealth && typeof latest.sourceHealth === "object" ? latest.sourceHealth : {};
   const slowestSummary = slowest.length
     ? slowest
       .slice(0, 3)
@@ -172,6 +198,25 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
       .join(" | ")
     : "No high-cost low-yield sources.";
   const bucketRows = Array.isArray(summary?.buckets) ? summary.buckets : [];
+  const attentionSummary = formatSourceHealthRows(
+    sourceHealth?.sourcesNeedingAttention,
+    "No sources need attention.",
+    { includeDuration: true }
+  );
+  const zeroReviewSummary = formatSourceHealthRows(
+    sourceHealth?.zeroKeptNeedsReview,
+    "No zero-kept sources need review.",
+    { includeDuration: true }
+  );
+  const browserSummary = formatSourceHealthRows(
+    sourceHealth?.browserFallbackRecommended,
+    "No browser fallback recommendations.",
+    { includeDuration: true }
+  );
+  const productiveSummary = formatSourceHealthRows(
+    sourceHealth?.topProductiveSources,
+    "No productive source ranking yet."
+  );
   const bucketSummaryHtml = bucketRows.length
     ? bucketRows.map(bucket => `
       <div class="admin-ops-schedule-item admin-ops-full-row">
@@ -230,5 +275,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest sources</strong>: ${escapeHtml(slowestSummary)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Sources needing attention</strong>: ${attentionSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Zero kept / needs review</strong>: ${zeroReviewSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Browser fallback recommended</strong>: ${browserSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top productive sources</strong>: ${productiveSummary}</div>
   `;
 }

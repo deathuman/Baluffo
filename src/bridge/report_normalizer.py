@@ -7,6 +7,8 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from src.jobs.common.contracts_source_health import normalize_source_health_payload
+
 JsonObject = dict[str, Any]
 
 
@@ -295,6 +297,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
                     "name": str(row.get("name") or "").strip(),
                     "status": str(row.get("status") or "").strip().lower(),
                     "adapter": str(row.get("adapter") or "").strip().lower(),
+                    "fetchStrategy": str(row.get("fetchStrategy") or "").strip(),
                     "studio": str(row.get("studio") or "").strip(),
                     "fetchedCount": safe_int(row.get("fetchedCount"), 0, 0, 1_000_000),
                     "keptCount": safe_int(row.get("keptCount"), 0, 0, 1_000_000),
@@ -303,6 +306,13 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
                     ),
                     "error": str(row.get("error") or "").strip(),
                     "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                    "classification": str(row.get("classification") or "").strip(),
+                    "failureBucket": str(row.get("failureBucket") or "").strip(),
+                    "zeroKeptClassification": str(row.get("zeroKeptClassification") or "").strip(),
+                    "browserFallbackRecommended": bool(row.get("browserFallbackRecommended")),
+                    "exclusionReason": str(row.get("exclusionReason") or "").strip(),
+                    "cacheDecision": str(row.get("cacheDecision") or "").strip(),
+                    "cacheDecisionReason": str(row.get("cacheDecisionReason") or "").strip(),
                     "details": normalized_details,
                 }
             )
@@ -310,6 +320,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
 
     normalized_sources = _normalize_source_rows(sources)
     normalized_source_families = _normalize_source_rows(source_families)
+    source_health = normalize_source_health_payload(src.get("sourceHealth"), normalized_sources)
     slowest_sources_raw = _as_list(runtime.get("slowestSources"))
     slowest_sources: list[dict[str, Any]] = []
     for row in slowest_sources_raw[:10]:
@@ -457,6 +468,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "taskProgress": task_progress,
         "sources": normalized_sources,
         "sourceFamilies": normalized_source_families,
+        "sourceHealth": source_health,
         "outputs": _as_dict(src.get("outputs")),
     }
     finished_at = str(normalized.get("finishedAt") or "").strip()

@@ -19,9 +19,16 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
         },
         "summary": {"inputCount": 10, "mergedCount": 2, "outputCount": 8},
         "sources": [
-            {"name": "a", "status": "ok", "durationMs": 10},
-            {"name": "b", "status": "error", "durationMs": 40},
-            {"name": "c", "status": "excluded", "durationMs": 0},
+            {"name": "a", "status": "ok", "durationMs": 10, "keptCount": 8},
+            {
+                "name": "b",
+                "status": "error",
+                "durationMs": 40,
+                "keptCount": 0,
+                "failureBucket": "timeout",
+                "browserFallbackRecommended": True,
+            },
+            {"name": "c", "status": "excluded", "durationMs": 0, "exclusionReason": "cache_skip"},
         ],
     }
     history = [
@@ -40,6 +47,9 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
     assert latest["p95SourceDurationMs"] == 40
     assert latest["stageTop"][0]["stage"] == "fetchAndParse"
     assert latest["slowestSources"][0]["name"] == "b"
+    assert latest["sourceHealth"]["totalSources"] == 3
+    assert latest["sourceHealth"]["browserFallbackRecommendedSources"] == 1
+    assert latest["sourceHealth"]["sourcesNeedingAttention"][0]["name"] == "b"
     assert metrics["history"]["windowRuns"] == 2
     assert metrics["history"]["medianDurationMs"] == 2000
 

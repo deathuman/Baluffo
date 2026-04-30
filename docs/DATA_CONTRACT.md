@@ -388,6 +388,35 @@ Fetcher and discovery reports may include a shared `taskProgress` object for the
 
 `summary.sizeGuardrailExceeded` remains the aggregate compatibility flag and is true when any `summary.sizeGuardrails.*.exceeded` value is true.
 
+### Source health triage
+
+Fetch reports and normalized bridge fetch-report payloads may include top-level `sourceHealth`.
+This additive field is derived from existing `sources` rows and is for Admin/Ops visibility only;
+it must not be copied into source registry rows or used to auto-promote, demote, hide,
+tombstone, suppress, reject, or delete sources.
+
+| Field | Type | Description |
+|---|---|---|
+| `totalSources` | `number` | Count of meaningful source report rows. |
+| `okSources` | `number` | Rows with `status="ok"`. |
+| `failedSources` | `number` | Rows with `status="error"`. |
+| `excludedSources` | `number` | Rows with `status="excluded"`. |
+| `skippedSources` | `number` | Excluded rows with an operational `exclusionReason`. |
+| `zeroKeptSources` | `number` | Non-excluded rows with `keptCount=0`. |
+| `zeroKeptNeedsReviewSources` | `number` | Zero-kept rows not classified as a known legitimate empty/no-openings result. |
+| `browserFallbackRecommendedSources` | `number` | Rows with `browserFallbackRecommended=true`. |
+| `sourcesNeedingAttention` | `array` | Compact top rows with failure, browser-fallback, or zero-kept review signals. |
+| `zeroKeptNeedsReview` | `array` | Compact zero-kept rows that need operator review. |
+| `browserFallbackRecommended` | `array` | Compact rows recommended for browser fallback. |
+| `slowestSources` | `array` | Compact source rows sorted by `durationMs` descending. |
+| `topProductiveSources` | `array` | Compact source rows sorted by `keptCount` descending. |
+| `topFailureBuckets` | `array` | `{key,count,examples}` rows derived from source `failureBucket`. |
+| `topClassifications` | `array` | `{key,count,examples}` rows derived from source `classification`. |
+
+Compact source-health rows use only existing source-report fields: `name`, `adapter`, `status`,
+`keptCount`, `fetchedCount`, `durationMs`, `failureBucket`, `classification`,
+`zeroKeptClassification`, `browserFallbackRecommended`, `error`, and `exclusionReason`.
+
 | Field | Type | Description |
 |---|---|---|
 | `byShape` | `object` | Counts and examples by diagnostic shape. |

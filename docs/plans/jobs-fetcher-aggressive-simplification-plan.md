@@ -38,6 +38,7 @@ Completed simplification facts:
 - `static_listing_flow.py`, `static_detail.py`, `static_helpers.py`, and several static/plugin/facade surfaces were deleted.
 - Static listing, static detail, static Scrapy, social, community, Personio, static plugin parser, rendered-card, location-rule, adapter parser, shared classification, state lifecycle, pipeline runtime, pipeline CLI, pipeline finalization, and contamination audit hotspots were cleared or thinned.
 - Evidence-backed dead-source deletion now exists with tombstones and dated snapshots.
+- M2 source-health triage is an observability/product-reliability lane: completed fetch reports expose `sourceHealth` so Admin/Ops can see failed, zero-kept, slow, browser-fallback, and high-yield sources before any approval-gated source deletion or provider migration.
 
 The conclusion is intentionally sharp: broad cleanup is closed. Future work should delete code, remove source families, tune product yield/performance, or explicitly retire compatibility boundaries. It should not be another compatibility-preserving C901/helper extraction pass.
 

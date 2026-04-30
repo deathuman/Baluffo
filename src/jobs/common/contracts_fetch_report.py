@@ -14,6 +14,7 @@ from src.shared.live_task import (
 )
 
 from .contracts_runtime import _float_or_zero, normalize_runtime_payload
+from .contracts_source_health import normalize_source_health_payload
 from .contracts_source_reports import normalize_source_report_row
 
 
@@ -207,6 +208,7 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     summary = copy_json_object(src.get("summary"))
     source_rows = json_object_rows(src.get("sources"))
     source_family_rows = json_object_rows(src.get("sourceFamilies"))
+    normalized_source_rows = [normalize_source_report_row(row) for row in source_rows]
     runtime = as_json_object(src.get("runtime"))
     social_summary_raw = as_json_object(src.get("socialSummary"))
     social_channels_raw = as_json_object(social_summary_raw.get("channels"))
@@ -256,8 +258,11 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "locationQualityAudit": _normalize_location_quality_audit(src.get("locationQualityAudit")),
         "cityGarbageAudit": _normalize_city_garbage_audit(src.get("cityGarbageAudit")),
         "sectorQualityAudit": _normalize_sector_quality_audit(src.get("sectorQualityAudit")),
-        "sources": [normalize_source_report_row(row) for row in source_rows],
+        "sources": normalized_source_rows,
         "sourceFamilies": [normalize_source_report_row(row) for row in source_family_rows],
+        "sourceHealth": normalize_source_health_payload(
+            src.get("sourceHealth"), normalized_source_rows
+        ),
         "healthSummary": copy_json_object(src.get("healthSummary")),
         "outputs": _normalize_outputs(src.get("outputs")),
     }
