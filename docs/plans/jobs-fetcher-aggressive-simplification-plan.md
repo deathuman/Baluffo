@@ -201,12 +201,12 @@ cmd /c npm run lint:precommit
 
 ### Phase 3: Static Scrapy lifecycle decision
 
-Status: next recommended code/evidence decision.
+Status: merge/thin, do not retire.
 
-- Confirm whether the current "No enabled scrapy_static sources" evidence is expected.
-- If yes, ask for approval to remove the default loader and dead runtime surface.
-- If no, fix the registry/config evidence gap before deleting anything.
-- Otherwise migrate `static_scrapy` into the current static execution lifecycle and remove duplicated report/cache/error branches.
+- Keep `scrapy_static_sources` as a supported fallback runtime path even when current evidence has no enabled rows.
+- Preserve the default loader, `run_scrapy_static_source(...)`, browser fallback queue behavior, compatibility exports, and frontend progress IDs.
+- Thin only duplicated report/error/progress plumbing where the slice stays LOC-negative or reduces `static_scrapy` C901.
+- Keep Scrapy child-process orchestration local unless a future shared runner can replace more code than it adds.
 
 Validation:
 

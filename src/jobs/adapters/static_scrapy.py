@@ -48,12 +48,7 @@ def _page_text_list(value: object) -> list[str]:
 def _clean_errors(values: Any) -> list[str]:
     if not isinstance(values, list):
         return []
-    cleaned = []
-    for item in values:
-        text = clean_text(item)
-        if text:
-            cleaned.append(text)
-    return cleaned
+    return [text for item in values if (text := clean_text(item))]
 
 
 def _base_detail(
@@ -148,15 +143,7 @@ def _normalize_job(raw: Any, source_row: dict[str, Any]) -> RawJob | None:
     if not title or not company:
         return None
     if not job_link and not strict_validation:
-        source_bundle_raw = raw.get("sourceBundle")
-        if isinstance(source_bundle_raw, list):
-            for item in source_bundle_raw:
-                if not isinstance(item, dict):
-                    continue
-                candidate = normalize_url(item.get("jobLink"))
-                if candidate:
-                    job_link = candidate
-                    break
+        job_link = _job_link_from_source_bundle(raw.get("sourceBundle"))
     if not job_link:
         return None
     if not source_job_id:
@@ -191,6 +178,15 @@ def _normalize_job(raw: Any, source_row: dict[str, Any]) -> RawJob | None:
         "adapter": clean_text(raw.get("adapter")) or "scrapy_static",
         "sourceBundle": source_bundle,
     }
+
+
+def _job_link_from_source_bundle(source_bundle: Any) -> str:
+    if not isinstance(source_bundle, list):
+        return ""
+    for item in source_bundle:
+        if isinstance(item, dict) and (candidate := normalize_url(item.get("jobLink"))):
+            return candidate
+    return ""
 
 
 def _build_runner_config(
@@ -228,29 +224,56 @@ def _child_timeout_window_s(*, source_name: str, timeout_s: int, pages: list[Any
     )
 
 
-def _flatten_ordered_rows(
-    ordered_rows: list[list[RawJob] | None],
-) -> list[RawJob]:
-    flattened: list[RawJob] = []
-    for rows in ordered_rows:
-        if rows:
-            flattened.extend(rows)
-    return flattened
+def _finalize_source_detail(source_detail: dict[str, Any]) -> None:
+    update_source_detail_taxonomy(
+        source_detail, include_browser_escalation=False, skip_dead_listing=True
+    )
 
 
-def _flatten_ordered_errors(
-    ordered_errors: list[list[str] | None],
-) -> list[str]:
-    flattened: list[str] = []
-    for errors in ordered_errors:
-        if errors:
-            flattened.extend(errors)
-    return flattened
+def _collect_normalized_jobs(
+    jobs: list[Any], source: dict[str, Any], *, source_name: str
+) -> tuple[list[RawJob], int, list[str]]:
+    rows: list[RawJob] = []
+    errors: list[str] = []
+    invalid = 0
+    for item in jobs:
+        normalized = _normalize_job(item, source)
+        if normalized:
+            rows.append(normalized)
+        else:
+            invalid += 1
+            errors.append(f"{source_name}: dropped invalid job payload from runner")
+    return rows, invalid, errors
 
 
-def _completed_details(
-    ordered_details: list[dict[str, Any] | None],
-) -> list[dict[str, Any]]:
+def _reject_invalid_envelope(
+    envelope: Any, source_detail: dict[str, Any], source_errors: list[str], *, source_name: str
+) -> bool:
+    if isinstance(envelope, dict) and "ok" in envelope:
+        return False
+    source_detail.update(
+        {
+            "status": "error",
+            "error": "Invalid envelope from scraper runner",
+            "classification": "parse_error",
+            "browserFallbackRecommended": False,
+        }
+    )
+    problem = "type" if not isinstance(envelope, dict) else "missing 'ok'"
+    source_errors.append(f"{source_name}: invalid envelope {problem}")
+    _finalize_source_detail(source_detail)
+    return True
+
+
+def _ordered_rows(ordered_rows: list[list[RawJob] | None]) -> list[RawJob]:
+    return [row for rows in ordered_rows if rows for row in rows]
+
+
+def _ordered_errors(ordered_errors: list[list[str] | None]) -> list[str]:
+    return [error for errors in ordered_errors if errors for error in errors]
+
+
+def _ordered_details(ordered_details: list[dict[str, Any] | None]) -> list[dict[str, Any]]:
     return [detail for detail in ordered_details if isinstance(detail, dict)]
 
 
@@ -300,22 +323,9 @@ def _run_scrapy_static_source_entry(
             if stderr_text:
                 source_errors.append(f"{source_name}: stderr: {stderr_text[:500]}")
 
-        if not isinstance(envelope, dict) or "ok" not in envelope:
-            source_detail.update(
-                {
-                    "status": "error",
-                    "error": "Invalid envelope from scraper runner",
-                    "classification": "parse_error",
-                    "browserFallbackRecommended": False,
-                }
-            )
-            if not isinstance(envelope, dict):
-                source_errors.append(f"{source_name}: invalid envelope type")
-            else:
-                source_errors.append(f"{source_name}: invalid envelope missing 'ok'")
-            update_source_detail_taxonomy(
-                source_detail, include_browser_escalation=False, skip_dead_listing=True
-            )
+        if _reject_invalid_envelope(
+            envelope, source_detail, source_errors, source_name=source_name
+        ):
             return source_rows, source_detail, source_errors
 
         envelope_dict = _as_dict(envelope)
@@ -348,16 +358,11 @@ def _run_scrapy_static_source_entry(
 
         jobs = _as_list(envelope_dict.get("jobs"))
         if bool(envelope_dict.get("ok")) and jobs:
-            kept = 0
-            parent_invalid_payload = 0
-            for item in jobs:
-                normalized = _normalize_job(item, source)
-                if normalized:
-                    kept += 1
-                    source_rows.append(normalized)
-                else:
-                    parent_invalid_payload += 1
-                    source_errors.append(f"{source_name}: dropped invalid job payload from runner")
+            source_rows, parent_invalid_payload, job_errors = _collect_normalized_jobs(
+                jobs, source, source_name=source_name
+            )
+            source_errors.extend(job_errors)
+            kept = len(source_rows)
             source_detail_loss = _as_dict(source_detail.get("loss"))
             source_detail_loss["scrapyParentInvalidPayload"] = int(parent_invalid_payload)
             source_detail["loss"] = source_detail_loss
@@ -403,9 +408,7 @@ def _run_scrapy_static_source_entry(
                     stats_payload.get("downloader/response_count")
                 )
 
-        update_source_detail_taxonomy(
-            source_detail, include_browser_escalation=False, skip_dead_listing=True
-        )
+        _finalize_source_detail(source_detail)
         return source_rows, source_detail, source_errors
     except subprocess.TimeoutExpired:
         source_detail.update(
@@ -416,9 +419,7 @@ def _run_scrapy_static_source_entry(
                 "browserFallbackRecommended": False,
             }
         )
-        update_source_detail_taxonomy(
-            source_detail, include_browser_escalation=False, skip_dead_listing=True
-        )
+        _finalize_source_detail(source_detail)
         source_errors.append(f"{source_name}: subprocess timeout")
         return source_rows, source_detail, source_errors
     except Exception as exc:  # noqa: BLE001
@@ -430,9 +431,7 @@ def _run_scrapy_static_source_entry(
                 "browserFallbackRecommended": False,
             }
         )
-        update_source_detail_taxonomy(
-            source_detail, include_browser_escalation=False, skip_dead_listing=True
-        )
+        _finalize_source_detail(source_detail)
         source_errors.append(f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}")
         return source_rows, source_detail, source_errors
 
@@ -529,8 +528,8 @@ def run_scrapy_static_source(
             "scrapy_static_sources",
             adapter="scrapy_static",
             studio="multiple",
-            details=_completed_details(ordered_details),
-            partial_errors=_flatten_ordered_errors(ordered_errors),
+            details=_ordered_details(ordered_details),
+            partial_errors=_ordered_errors(ordered_errors),
         )
 
     def _submit_source(executor: ThreadPoolExecutor, source_index: int) -> None:
@@ -597,9 +596,7 @@ def run_scrapy_static_source(
                             "browserFallbackRecommended": False,
                         }
                     )
-                    update_source_detail_taxonomy(
-                        detail, include_browser_escalation=False, skip_dead_listing=True
-                    )
+                    _finalize_source_detail(detail)
                     rows = []
                     errors = [f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}"]
                 ordered_rows[source_index] = rows
@@ -621,4 +618,4 @@ def run_scrapy_static_source(
                 _submit_source(executor, next_source_index)
                 next_source_index += 1
 
-    return _flatten_ordered_rows(ordered_rows)
+    return _ordered_rows(ordered_rows)
