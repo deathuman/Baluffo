@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-04-29
+> - **Last updated:** 2026-04-30
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -58,12 +58,9 @@ Important for maintenance, release, and support workflows, but usually not the f
 |----------|-------|-------------|
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`plans/source-discovery-adapter-follow-ups.md`](plans/source-discovery-adapter-follow-ups.md) | Plans / Follow-Ups | You are choosing evidence-backed source-discovery behavior changes after the deletion-first adapter cleanup |
-| [`plans/jobs-fetcher-aggressive-simplification-plan.md`](plans/jobs-fetcher-aggressive-simplification-plan.md) | Plans / Follow-Ups | You are aggressively simplifying the jobs fetcher, deleting internal compatibility layers, unifying source execution lifecycle, or reducing broad jobs C901/LOC |
-| [`plans/repo-analysis-follow-up-2026-04-25.md`](plans/repo-analysis-follow-up-2026-04-25.md) | Plans / Follow-Ups | You are picking the next residual follow-up after the completed 2026-04-25 repo-analysis closeout |
-| [`snapshots/discovery-fetch-failure-snapshot-2026-04-25.md`](snapshots/discovery-fetch-failure-snapshot-2026-04-25.md) | Snapshots / Evidence | You are picking up the discovery/fetch failures observed in the 2026-04-25 fresh build runs |
+| [`plans/jobs-fetcher-aggressive-simplification-plan.md`](plans/jobs-fetcher-aggressive-simplification-plan.md) | Plans / Follow-Ups | You are choosing approval-gated jobs fetcher deletion, source-family removal, compatibility-boundary removal, or product behavior tuning |
 | [`snapshots/jobs-dead-source-evidence-2026-04-29.md`](snapshots/jobs-dead-source-evidence-2026-04-29.md) | Snapshots / Evidence | You are auditing the first evidence-backed physical deletion batch for dead jobs sources |
 | [`snapshots/jobs-source-family-evidence-2026-04-30.md`](snapshots/jobs-source-family-evidence-2026-04-30.md) | Snapshots / Evidence | You are choosing the next deletion-first jobs fetcher source-family slice |
-| [`snapshots/source-discovery-http-recovery-evidence-2026-04-27.md`](snapshots/source-discovery-http-recovery-evidence-2026-04-27.md) | Snapshots / Evidence | You need evidence for default HTTP recovery coverage in source discovery |
 | [`snapshots/source-discovery-yield-evidence-2026-04-29.md`](snapshots/source-discovery-yield-evidence-2026-04-29.md) | Snapshots / Evidence | You are choosing evidence-backed source-discovery behavior changes after the deletion-first adapter cleanup |
 | [`snapshots/source-discovery-zero-job-evidence-2026-04-29.md`](snapshots/source-discovery-zero-job-evidence-2026-04-29.md) | Snapshots / Evidence | You are investigating zero-job static candidate pressure before changing source-discovery behavior |
 | [`snapshots/source-discovery-fresh-audit-evidence-2026-04-29.md`](snapshots/source-discovery-fresh-audit-evidence-2026-04-29.md) | Snapshots / Evidence | You need the latest fresh source-discovery audit attempt and blocker before behavior tuning |
