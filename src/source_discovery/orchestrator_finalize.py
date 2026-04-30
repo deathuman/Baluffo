@@ -12,9 +12,11 @@ from src.source_registry import hide_repeated_zero_job_pending, source_identity,
 from .core import apply_queue_balancing
 from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
 from .reporting import (
+    build_candidate_review_payload,
     build_discovery_task_progress,
     build_m5_strategic_backlog,
     build_stage_summary,
+    enrich_candidates_for_review,
     update_candidate_review_metadata,
 )
 from .runtime_metrics import build_discovery_runtime_payload as _build_discovery_runtime_payload
@@ -53,6 +55,11 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
             prior_candidate=state.prior_review_candidates_by_id.get(source_identity(row)),
             now_iso=review_timestamp,
         )
+    report_candidates = enrich_candidates_for_review(
+        report_candidates,
+        active_rows=state.active,
+        pending_rows=state.pending_existing,
+    )
     queued_ids = {source_identity(row) for row in queued_candidates if isinstance(row, dict)}
     queued_candidates = [
         dict(row)
@@ -98,6 +105,7 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
     orchestrator.save_json_atomic(
         source_registry_module.M5_STRATEGIC_BACKLOG_PATH, m5_strategic_backlog
     )
+    candidate_review = build_candidate_review_payload(report_candidates)
 
     summary = build_stage_summary(
         report_candidates,
@@ -206,6 +214,7 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
             },
         },
         "taskProgress": task_progress,
+        "candidateReview": candidate_review,
         "candidates": report_candidates,
         "failures": state.failures,
         "topFailures": [

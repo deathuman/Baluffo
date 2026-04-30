@@ -3,7 +3,7 @@ export {
   renderUsersEmptyHtml,
   renderUsersTableHtml
 } from "./render/overview.js";
-export { renderSourcesTableHtml } from "./render/sources.js";
+export { renderDiscoveryCandidateReviewHtml, renderSourcesTableHtml } from "./render/sources.js";
 export { appendAdminLogRow } from "./render/logs.js";
 export {
   renderAdminOpsAlerts,

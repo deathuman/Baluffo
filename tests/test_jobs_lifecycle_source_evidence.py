@@ -9,7 +9,6 @@ from src.jobs.state_lifecycle import (
 )
 from tests.helpers.temp_paths import workspace_tmpdir
 
-
 FINISHED_AT = "2026-04-30T12:00:00+00:00"
 
 

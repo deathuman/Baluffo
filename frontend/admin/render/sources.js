@@ -1,5 +1,67 @@
 import { escapeHtml } from "../../shared/ui/index.js";
 
+function formatCompactNumber(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number.toLocaleString() : "0";
+}
+
+function renderCandidateReviewRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return '<div class="no-results">No candidates in this lane.</div>';
+  }
+  return rows.slice(0, 5).map(row => {
+    const name = escapeHtml(String(row?.name || row?.sourceIdentity || "Unnamed source"));
+    const recommendation = escapeHtml(String(row?.promotionRecommendation || "review").replaceAll("_", " "));
+    const provider = row?.providerFamily ? ` · ${escapeHtml(String(row.providerFamily))}` : "";
+    const error = row?.lastProbeError ? ` · ${escapeHtml(String(row.lastProbeError))}` : "";
+    return `
+      <div class="admin-source-review-row">
+        <strong>${name}</strong>
+        <span>${escapeHtml(String(row?.adapter || "unknown"))}${provider}</span>
+        <span>${formatCompactNumber(row?.jobsFound)} jobs · score ${formatCompactNumber(row?.rankScore)} · ${recommendation}${error}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+export function renderDiscoveryCandidateReviewHtml(candidateReview) {
+  const review = candidateReview && typeof candidateReview === "object" && !Array.isArray(candidateReview)
+    ? candidateReview
+    : {};
+  const total = Number(review.totalCandidates || 0);
+  if (!total) {
+    return "";
+  }
+  const lanes = [
+    ["Top candidates", review.topCandidates],
+    ["Provider-backed", review.providerBackedCandidates],
+    ["Jobs found", review.candidatesWithJobs],
+    ["Duplicates", review.duplicateCandidates],
+    ["Hidden/deferred", review.hiddenOrDeferredCandidates],
+    ["Needs browser probe", review.needsBrowserProbeCandidates],
+    ["Likely reject/noise", review.likelyRejectCandidates]
+  ];
+  const counts = review.recommendationCounts && typeof review.recommendationCounts === "object"
+    ? Object.entries(review.recommendationCounts)
+      .map(([key, value]) => `${escapeHtml(String(key).replaceAll("_", " "))}: ${formatCompactNumber(value)}`)
+      .join(" · ")
+    : "";
+  return `
+    <section class="admin-source-review-panel" aria-label="Discovery candidate review quality">
+      <h4>Discovery Review Quality</h4>
+      <p class="muted">Candidates ${formatCompactNumber(total)}${counts ? ` · ${counts}` : ""}</p>
+      <div class="admin-source-review-grid">
+        ${lanes.map(([title, rows]) => `
+          <div class="admin-source-review-lane">
+            <h5>${escapeHtml(title)}</h5>
+            ${renderCandidateReviewRows(rows)}
+          </div>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 export function renderSourcesTableHtml(
   rows,
   mode,

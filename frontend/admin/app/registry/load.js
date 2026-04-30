@@ -1,4 +1,5 @@
 import { deriveDiscoveryLifecycleCounts, deriveDiscoveryQueuedCount } from "../../domain.js";
+import { renderDiscoveryCandidateReviewHtml } from "../../render.js";
 
 const ADMIN_SHOW_ZERO_JOBS_KEY = "baluffo_admin_show_zero_jobs_sources";
 const CAP_DEFER_REASONS = new Set(["adapter_cap", "domain_cap", "top_n_cap"]);
@@ -146,8 +147,12 @@ export function createRegistryLoadController({
         const visibleRejectedRows = applySourceFilter(rejectedRows);
 
         if (refs.adminDiscoverySummaryEl) {
-          refs.adminDiscoverySummaryEl.textContent =
-            `Found ${foundCount} | Probed ${probedCount} | Review queue ${queuedCount} | Deferred review ${deferredCount} | Deferred by caps ${capDeferredCount} | Job-positive deferred ${jobPositiveDeferredCount} | Validated ${lifecycleCounts.validated} | Auto-approved this run ${autoApprovedCount} | Active registry ${activeRegistryCount} | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
+          const summaryText = `Found ${foundCount} | Probed ${probedCount} | Review queue ${queuedCount} | Deferred review ${deferredCount} | Deferred by caps ${capDeferredCount} | Job-positive deferred ${jobPositiveDeferredCount} | Validated ${lifecycleCounts.validated} | Auto-approved this run ${autoApprovedCount} | Active registry ${activeRegistryCount} | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
+          refs.adminDiscoverySummaryEl.textContent = summaryText;
+          refs.adminDiscoverySummaryEl.innerHTML = `
+            <div>${summaryText}</div>
+            ${renderDiscoveryCandidateReviewHtml(report?.candidateReview)}
+          `;
         }
         renderSourcesTable(refs.adminPendingSourcesEl, visiblePendingRows, "pending");
         if (

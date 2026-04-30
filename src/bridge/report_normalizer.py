@@ -8,6 +8,10 @@ from collections.abc import Mapping
 from typing import Any
 
 from src.jobs.common.contracts_source_health import normalize_source_health_payload
+from src.source_discovery.candidate_review import (
+    build_candidate_review_payload,
+    enrich_candidates_for_review,
+)
 
 JsonObject = dict[str, Any]
 
@@ -526,7 +530,9 @@ def normalize_discovery_report_contract(payload: dict[str, Any]) -> dict[str, An
     src = _as_dict(payload)
     summary = _as_dict(src.get("summary"))
     runtime = _as_dict(src.get("runtime"))
-    candidates = _as_list(src.get("candidates"))
+    candidates = enrich_candidates_for_review(
+        [row for row in _as_list(src.get("candidates")) if isinstance(row, dict)]
+    )
     failures = _as_list(src.get("failures"))
     top_failures = _as_list(src.get("topFailures"))
     stage_timings_raw = _as_dict(runtime.get("stageTimingsMs"))
@@ -589,6 +595,7 @@ def normalize_discovery_report_contract(payload: dict[str, Any]) -> dict[str, An
         "runtime": normalized_runtime,
         "taskProgress": task_progress,
         "candidates": list(candidates),
+        "candidateReview": build_candidate_review_payload(candidates),
         "failures": list(failures),
         "topFailures": list(top_failures),
         "outputs": _as_dict(src.get("outputs")),
