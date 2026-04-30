@@ -43,7 +43,7 @@ What is still not done:
 - The old `docs/plans/jobs-adapter-mass-refactoring-plan.md` is historical and no longer exists. This file is the active jobs fetcher simplification tracker.
 - `src/jobs` is still about 132 tracked Python files and 31,272 tracked Python lines.
 - `src/jobs/adapters` is still about 73 tracked Python files and 18,269 tracked Python lines.
-- `python -m ruff check --select C901 src/jobs` currently reports 6 offenders.
+- `python -m ruff check --select C901 src/jobs` currently reports 3 offenders.
 - `python -m ruff check --select C901 src/jobs/adapters` currently passes with no offenders.
 - Jobs adapters still own too much lifecycle, especially social, community, static Scrapy, static plugins, parser/report shims, and fetcher compatibility facades.
 
@@ -250,13 +250,14 @@ cmd /c npm run lint:precommit
 
 ### Phase 6: Broad C901 ratchet
 
-Status: adapter parser, shared classification, and state lifecycle C901 cleanup completed on 2026-04-30.
+Status: adapter parser, shared classification, state lifecycle, and pipeline runtime C901 cleanup completed on 2026-04-30.
 
 - Reduce remaining C901 hotspots only after lifecycle deletion has removed duplicated branches.
 - Adapter parser hotspots were decomposed locally after lifecycle cleanup, with parser signatures and row shapes preserved.
 - Shared datetime, profession, and source-outcome taxonomy hotspots were decomposed locally without changing public signatures or enum/report values.
 - State lifecycle hotspots were decomposed locally without changing state JSON fields, cache decision strings, lifecycle statuses, circuit breaker fields, or browser escalation fields.
-- Next remaining C901 work is pipeline/runtime lifecycle code.
+- Pipeline runtime hotspots were decomposed locally without changing domain gate stats, live progress fields, browser fallback circuit breaker behavior, or source report ordering.
+- Next remaining C901 work is pipeline CLI/finalization plus contamination audit code.
 - Update `scripts/complexity_baseline.json` only when scores decrease or offenders disappear.
 
 Validation:

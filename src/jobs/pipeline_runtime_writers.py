@@ -32,6 +32,157 @@ class FetchTextLimited(Protocol):
     def __call__(self, url: str, timeout: int) -> str: ...
 
 
+class _FetchTextLimiter:
+    def __init__(
+        self,
+        *,
+        runtime: PipelineTaskRuntime,
+        max_per_domain: int,
+        fetch_text_impl: Callable[[str, int], str],
+        write_task_state: Callable[..., None],
+        gate_namespace: str,
+        wait_reason_label: str,
+        collect_wait_stats: bool,
+    ) -> None:
+        self.runtime = runtime
+        self.max_per_domain = max_per_domain
+        self.fetch_text_impl = fetch_text_impl
+        self.write_task_state = write_task_state
+        self.gate_namespace = gate_namespace
+        self.wait_reason_label = wait_reason_label
+        self.collect_wait_stats = collect_wait_stats
+
+    def __call__(self, url: str, timeout: int) -> str:
+        host, gate = self._domain_gate(url)
+        current = self._current_source_name()
+        wait_started = time.perf_counter()
+        self._mark_waiting(current, host, url)
+        gate.acquire()
+        try:
+            wait_ms = int((time.perf_counter() - wait_started) * 1000)
+            self._update_running_source(current, host, url, wait_ms)
+            return self.fetch_text_impl(url, timeout)
+        finally:
+            gate.release()
+
+    def _domain_gate(self, url: str) -> tuple[str, threading.BoundedSemaphore]:
+        host = clean_text(urlparse(url).netloc).lower() or "_unknown"
+        gate_key = f"{clean_text(self.gate_namespace) or 'default'}::{host}"
+        with self.runtime.domain_lock:
+            gate = self.runtime.domain_gates.get(gate_key)
+            if gate is None:
+                gate = threading.BoundedSemaphore(self.max_per_domain)
+                self.runtime.domain_gates[gate_key] = gate
+        return host, gate
+
+    def _current_source_name(self) -> str:
+        return clean_text(getattr(self.runtime.thread_local, "source_name", ""))
+
+    def _mark_waiting(self, source_name: str, host: str, url: str) -> None:
+        if not (source_name and source_name in self.runtime.task_rows and self.wait_reason_label):
+            return
+        update_fetch_work_item_progress(
+            self.runtime,
+            source_name,
+            target_label=host,
+            target_url=str(url or "").strip(),
+            wait_reason=self.wait_reason_label,
+        )
+        self.write_task_state()
+
+    def _record_gate_wait(self, source_name: str, wait_ms: int) -> None:
+        if not (self.collect_wait_stats and wait_ms > 0):
+            return
+        with self.runtime.task_lock:
+            row = self.runtime.task_rows.get(source_name)
+            if isinstance(row, dict):
+                row["_staticDomainGateWaitMs"] = int(row.get("_staticDomainGateWaitMs") or 0) + max(
+                    0, wait_ms
+                )
+                row["_staticDomainGateWaitCount"] = (
+                    int(row.get("_staticDomainGateWaitCount") or 0) + 1
+                )
+
+    def _clear_wait_reason(self, source_name: str, host: str, url: str) -> None:
+        if not self.wait_reason_label:
+            return
+        update_fetch_work_item_progress(
+            self.runtime,
+            source_name,
+            target_label=host,
+            target_url=str(url or "").strip(),
+            wait_reason="",
+        )
+
+    def _append_slow_source_warning(
+        self,
+        source_name: str,
+        row: dict[str, Any],
+        now_mono: float,
+    ) -> None:
+        started_mono = float(row.get("_startedMonotonic") or 0.0)
+        warned = bool(row.get("_slowWarned"))
+        if not (self.runtime.show_progress and started_mono > 0 and not warned):
+            return
+        if (now_mono - started_mono) < 20.0:
+            return
+        row["_slowWarned"] = True
+        running_for_ms = int((now_mono - started_mono) * 1000)
+        self.runtime.recent_events = append_live_task_event(
+            self.runtime.recent_events,
+            {
+                "timestamp": row["heartbeatAt"],
+                "level": "warn",
+                "taskType": "fetch",
+                "runId": self.runtime.run_id,
+                "workItemId": source_name,
+                "phaseKey": str(as_json_object(row.get("progress")).get("phaseKey") or ""),
+                "message": (f"Slow source: {source_name} still running after {running_for_ms}ms."),
+            },
+        )
+        print(
+            f"[jobs_fetcher] WARN source={source_name} runningForMs={running_for_ms}",
+            flush=True,
+        )
+
+    def _write_source_heartbeat(self, source_name: str, host: str, url: str) -> None:
+        with self.runtime.task_lock:
+            row = self.runtime.task_rows[source_name]
+            if row.get("status") != "running":
+                return
+            row["heartbeatAt"] = now_iso()
+            progress = as_json_object(row.get("progress"))
+            progress["targetUrl"] = str(url or "").strip()
+            progress["targetLabel"] = host
+            if self.wait_reason_label:
+                progress["waitReason"] = ""
+            progress["updatedAt"] = row["heartbeatAt"]
+            row["progress"] = progress
+            self._append_slow_source_warning(source_name, row, time.perf_counter())
+
+    def _update_running_source(self, source_name: str, host: str, url: str, wait_ms: int) -> None:
+        if not (source_name and source_name in self.runtime.task_rows):
+            return
+        self._record_gate_wait(source_name, wait_ms)
+        self._clear_wait_reason(source_name, host, url)
+        now_mono = time.perf_counter()
+        if (now_mono - float(self.runtime.last_heartbeat_write.get(source_name) or 0.0)) < 4.0:
+            return
+        self._write_source_heartbeat(source_name, host, url)
+        self.runtime.last_heartbeat_write[source_name] = now_mono
+        self.write_task_state()
+
+    def _baluffo_gate_wait_stats(self, source_name: str) -> dict[str, int]:
+        with self.runtime.task_lock:
+            row = self.runtime.task_rows.get(clean_text(source_name))
+            if not isinstance(row, dict):
+                return {"domainGateWaitMs": 0, "domainGateWaitCount": 0}
+            return {
+                "domainGateWaitMs": int(row.get("_staticDomainGateWaitMs") or 0),
+                "domainGateWaitCount": int(row.get("_staticDomainGateWaitCount") or 0),
+            }
+
+
 def initialize_task_runtime(
     selected_loaders: list[tuple[str, Any]],
     *,
@@ -275,104 +426,15 @@ def make_fetch_text_limited(
     wait_reason_label: str = "",
     collect_wait_stats: bool = False,
 ) -> FetchTextLimited:
-    def fetch_text_limited(url: str, timeout: int) -> str:
-        host = clean_text(urlparse(url).netloc).lower() or "_unknown"
-        gate_key = f"{clean_text(gate_namespace) or 'default'}::{host}"
-        with runtime.domain_lock:
-            gate = runtime.domain_gates.get(gate_key)
-            if gate is None:
-                gate = threading.BoundedSemaphore(max_per_domain)
-                runtime.domain_gates[gate_key] = gate
-        current = clean_text(getattr(runtime.thread_local, "source_name", ""))
-        wait_started = time.perf_counter()
-        if current and current in runtime.task_rows and wait_reason_label:
-            update_fetch_work_item_progress(
-                runtime,
-                current,
-                target_label=host,
-                target_url=str(url or "").strip(),
-                wait_reason=wait_reason_label,
-            )
-            write_task_state()
-        gate.acquire()
-        try:
-            wait_ms = int((time.perf_counter() - wait_started) * 1000)
-            if current and current in runtime.task_rows:
-                if collect_wait_stats and wait_ms > 0:
-                    with runtime.task_lock:
-                        row = runtime.task_rows.get(current)
-                        if isinstance(row, dict):
-                            row["_staticDomainGateWaitMs"] = int(
-                                row.get("_staticDomainGateWaitMs") or 0
-                            ) + max(0, wait_ms)
-                            row["_staticDomainGateWaitCount"] = (
-                                int(row.get("_staticDomainGateWaitCount") or 0) + 1
-                            )
-                if wait_reason_label:
-                    update_fetch_work_item_progress(
-                        runtime,
-                        current,
-                        target_label=host,
-                        target_url=str(url or "").strip(),
-                        wait_reason="",
-                    )
-                now_mono = time.perf_counter()
-                if (now_mono - float(runtime.last_heartbeat_write.get(current) or 0.0)) >= 4.0:
-                    with runtime.task_lock:
-                        row = runtime.task_rows[current]
-                        if row.get("status") == "running":
-                            row["heartbeatAt"] = now_iso()
-                            progress = as_json_object(row.get("progress"))
-                            progress["targetUrl"] = str(url or "").strip()
-                            progress["targetLabel"] = host
-                            if wait_reason_label:
-                                progress["waitReason"] = ""
-                            progress["updatedAt"] = row["heartbeatAt"]
-                            row["progress"] = progress
-                            started_mono = float(row.get("_startedMonotonic") or 0.0)
-                            warned = bool(row.get("_slowWarned"))
-                            if (
-                                runtime.show_progress
-                                and started_mono > 0
-                                and not warned
-                                and (now_mono - started_mono) >= 20.0
-                            ):
-                                row["_slowWarned"] = True
-                                runtime.recent_events = append_live_task_event(
-                                    runtime.recent_events,
-                                    {
-                                        "timestamp": row["heartbeatAt"],
-                                        "level": "warn",
-                                        "taskType": "fetch",
-                                        "runId": runtime.run_id,
-                                        "workItemId": current,
-                                        "phaseKey": str(progress.get("phaseKey") or ""),
-                                        "message": (
-                                            f"Slow source: {current} still running after "
-                                            f"{int((now_mono - started_mono) * 1000)}ms."
-                                        ),
-                                    },
-                                )
-                                print(
-                                    f"[jobs_fetcher] WARN source={current} runningForMs={int((now_mono - started_mono) * 1000)}",
-                                    flush=True,
-                                )
-                    runtime.last_heartbeat_write[current] = now_mono
-                    write_task_state()
-            return fetch_text_impl(url, timeout)
-        finally:
-            gate.release()
-
-    def _gate_wait_stats(source_name: str) -> dict[str, int]:
-        with runtime.task_lock:
-            row = runtime.task_rows.get(clean_text(source_name))
-            if not isinstance(row, dict):
-                return {"domainGateWaitMs": 0, "domainGateWaitCount": 0}
-            return {
-                "domainGateWaitMs": int(row.get("_staticDomainGateWaitMs") or 0),
-                "domainGateWaitCount": int(row.get("_staticDomainGateWaitCount") or 0),
-            }
-
-    typed_fetch_text_limited = cast(FetchTextLimited, fetch_text_limited)
-    typed_fetch_text_limited._baluffo_gate_wait_stats = _gate_wait_stats
-    return typed_fetch_text_limited
+    return cast(
+        FetchTextLimited,
+        _FetchTextLimiter(
+            runtime=runtime,
+            max_per_domain=max_per_domain,
+            fetch_text_impl=fetch_text_impl,
+            write_task_state=write_task_state,
+            gate_namespace=gate_namespace,
+            wait_reason_label=wait_reason_label,
+            collect_wait_stats=collect_wait_stats,
+        ),
+    )
