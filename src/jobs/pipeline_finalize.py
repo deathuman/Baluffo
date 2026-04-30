@@ -34,6 +34,7 @@ from src.jobs.reporting_social import (
 from src.jobs.reporting_summary import build_pipeline_summary
 from src.jobs.state_lifecycle import (
     apply_job_lifecycle_state,
+    build_lifecycle_source_evidence,
     write_job_lifecycle_state,
 )
 from src.jobs.state_source_state import (
@@ -141,22 +142,13 @@ def _lifecycle_missing_context(
     selected_loaders: list[tuple[str, Any]],
     using_default_loaders: bool,
     effective_seed_from_existing_output: bool,
-) -> tuple[bool, set[str]]:
+) -> dict[str, Any]:
     selected_loader_names = {name for name, _ in selected_loaders}
-    selected_reports = [
-        row for row in source_reports if clean_text(row.get("name")) in selected_loader_names
-    ]
-    run_is_healthy = bool(selected_reports) and all(
-        norm_text(row.get("status")) == "ok" for row in selected_reports
-    )
-    successful_source_names = {
-        clean_text(row.get("name"))
-        for row in selected_reports
-        if norm_text(row.get("status")) == "ok" and clean_text(row.get("name"))
-    }
     may_mark_missing = using_default_loaders and not effective_seed_from_existing_output
-    return bool(may_mark_missing and run_is_healthy), (
-        successful_source_names if may_mark_missing else set()
+    return build_lifecycle_source_evidence(
+        source_reports,
+        selected_source_names=selected_loader_names,
+        allow_missing=may_mark_missing,
     )
 
 
@@ -170,7 +162,7 @@ def _apply_lifecycle_state(
     effective_seed_from_existing_output: bool,
     lifecycle_finished_at: str,
 ) -> tuple[list[CanonicalJob], dict[str, dict[str, Any]], dict[str, int]]:
-    allow_mark_missing, eligible_missing_sources = _lifecycle_missing_context(
+    source_evidence = _lifecycle_missing_context(
         source_reports=source_reports,
         selected_loaders=selected_loaders,
         using_default_loaders=using_default_loaders,
@@ -180,9 +172,32 @@ def _apply_lifecycle_state(
         deduped_rows=deduped_rows,
         lifecycle_rows=lifecycle_rows,
         finished_at=lifecycle_finished_at,
-        allow_mark_missing=allow_mark_missing,
-        eligible_missing_sources=eligible_missing_sources,
+        allow_mark_missing=False,
+        eligible_missing_sources=source_evidence.get("eligibleMissingSources", set()),
+        source_evidence=source_evidence,
     )
+
+
+def _lifecycle_summary_payload(lifecycle_counts_map: dict[str, int]) -> dict[str, int]:
+    return {
+        "activeCount": int(lifecycle_counts_map.get("active") or 0),
+        "newCount": int(lifecycle_counts_map.get("new") or 0),
+        "reappearedCount": int(lifecycle_counts_map.get("reappeared") or 0),
+        "likelyRemovedCount": int(lifecycle_counts_map.get("likelyRemoved") or 0),
+        "archivedCount": int(lifecycle_counts_map.get("archived") or 0),
+        "preservedBecauseSourceFailedCount": int(
+            lifecycle_counts_map.get("preservedBecauseSourceFailed") or 0
+        ),
+        "preservedBecauseSourceSkippedCount": int(
+            lifecycle_counts_map.get("preservedBecauseSourceSkipped") or 0
+        ),
+        "eligibleMissingSourceCount": int(
+            lifecycle_counts_map.get("eligibleMissingSourceCount") or 0
+        ),
+        "ineligibleMissingSourceCount": int(
+            lifecycle_counts_map.get("ineligibleMissingSourceCount") or 0
+        ),
+    }
 
 
 def _quality_reports(deduped_payload_rows: list[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
@@ -563,6 +578,7 @@ def finalize_pipeline_run(
             "workItems": snapshot_task_rows(task_runtime.task_rows),
             "recentEvents": list(task_runtime.recent_events),
             "summary": summary_payload,
+            "lifecycleSummary": _lifecycle_summary_payload(lifecycle_counts_map),
             "sources": final_source_rows,
             "sourceFamilies": source_reports,
             "contaminationAudit": contamination_report,

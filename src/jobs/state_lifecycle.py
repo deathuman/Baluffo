@@ -23,6 +23,25 @@ LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS = common_config.LIFECYCLE_REMOVE_TO_ARCHIVE_DAY
 LIFECYCLE_ARCHIVE_RETENTION_DAYS = common_config.LIFECYCLE_ARCHIVE_RETENTION_DAYS
 fingerprint_url = common_url.fingerprint_url
 
+_BROKEN_ZERO_CLASSIFICATIONS = {
+    "blocked_or_challenge",
+    "anti_bot_or_challenge",
+    "js_required",
+    "site_changed",
+    "parser_stale",
+    "parse_error",
+    "dead_listing_page",
+}
+_BROKEN_ZERO_FAILURE_BUCKETS = {
+    "blocked_or_challenge",
+    "anti_bot_or_challenge",
+    "js_required",
+    "site_changed",
+    "parser_empty",
+    "timeout",
+    "unknown",
+}
+
 
 def normalize_job_lifecycle_payload(
     payload: dict[str, Any], *, updated_at: str = ""
@@ -89,6 +108,92 @@ def lifecycle_counts(rows: dict[str, dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def _empty_lifecycle_summary() -> dict[str, int]:
+    return {
+        "new": 0,
+        "reappeared": 0,
+        "preservedBecauseSourceFailed": 0,
+        "preservedBecauseSourceSkipped": 0,
+        "eligibleMissingSourceCount": 0,
+        "ineligibleMissingSourceCount": 0,
+    }
+
+
+def _source_key(value: Any) -> str:
+    return clean_text(value)
+
+
+def _source_report_has_broken_missing_evidence(row: dict[str, Any]) -> bool:
+    return (
+        bool(row.get("browserFallbackRecommended"))
+        or norm_text(row.get("zeroKeptClassification")) == "broken_extraction"
+        or norm_text(row.get("classification")) in _BROKEN_ZERO_CLASSIFICATIONS
+        or norm_text(row.get("failureBucket")) in _BROKEN_ZERO_FAILURE_BUCKETS
+        or bool(clean_text(row.get("error")))
+    )
+
+
+def _source_report_missing_evidence_kind(row: dict[str, Any]) -> str:
+    status = norm_text(row.get("status"))
+    if status == "error":
+        return "failed"
+    if status == "excluded":
+        return "skipped"
+    if status != "ok":
+        return "skipped"
+    kept_count = int(row.get("keptCount") or 0)
+    if kept_count > 0:
+        return "eligible"
+    if _source_report_has_broken_missing_evidence(row):
+        return "skipped"
+    return "eligible"
+
+
+def build_lifecycle_source_evidence(
+    source_reports: list[dict[str, Any]],
+    *,
+    selected_source_names: set[str] | None = None,
+    allow_missing: bool,
+) -> dict[str, Any]:
+    """Build per-source evidence that is allowed to mark missing jobs removed."""
+
+    if not allow_missing:
+        return {
+            "eligibleMissingSources": set(),
+            "failedMissingSources": set(),
+            "skippedMissingSources": set(),
+        }
+    selected = {_source_key(name) for name in (selected_source_names or set()) if _source_key(name)}
+    eligible: set[str] = set()
+    failed: set[str] = set()
+    skipped: set[str] = set()
+    for report in source_reports:
+        if not isinstance(report, dict):
+            continue
+        name = _source_key(report.get("name"))
+        if not name:
+            continue
+        if selected and name not in selected and norm_text(report.get("status")) != "excluded":
+            continue
+        if clean_text(report.get("exclusionReason")) == "only_sources_filter":
+            continue
+        kind = _source_report_missing_evidence_kind(report)
+        if kind == "eligible":
+            eligible.add(name)
+            failed.discard(name)
+            skipped.discard(name)
+        elif kind == "failed" and name not in eligible:
+            failed.add(name)
+            skipped.discard(name)
+        elif name not in eligible and name not in failed:
+            skipped.add(name)
+    return {
+        "eligibleMissingSources": eligible,
+        "failedMissingSources": failed,
+        "skippedMissingSources": skipped,
+    }
+
+
 def _job_identity_key(job: dict[str, Any]) -> str:
     dedup = clean_text(job.get("dedupKey"))
     if dedup:
@@ -129,6 +234,7 @@ def _apply_active_lifecycle_rows(
     payload_rows: list[dict[str, Any]],
     next_rows: dict[str, dict[str, Any]],
     finished_at: str,
+    summary: dict[str, int],
 ) -> set[str]:
     seen_keys: set[str] = set()
     for row in payload_rows:
@@ -137,6 +243,11 @@ def _apply_active_lifecycle_rows(
             continue
         seen_keys.add(key)
         previous = dict(next_rows.get(key) or {})
+        previous_status = norm_text(previous.get("status"))
+        if not previous:
+            summary["new"] += 1
+        elif previous_status in {"likely_removed", "archived"}:
+            summary["reappeared"] += 1
         next_rows[key] = _lifecycle_entry_from_active_job(row, previous, finished_at)
     return seen_keys
 
@@ -170,15 +281,24 @@ def _apply_missing_lifecycle_rows(
     finished_at: str,
     allow_mark_missing: bool,
     eligible_sources: set[str],
+    failed_sources: set[str],
+    skipped_sources: set[str],
+    summary: dict[str, int],
     remove_to_archive_days: int,
 ) -> datetime | None:
-    if not allow_mark_missing and not eligible_sources:
-        return None
     now_dt = parse_datetime(finished_at) or datetime.now(UTC)
+    applied_missing = False
     for key, entry in list(next_rows.items()):
         if key in seen_keys:
             continue
-        if not allow_mark_missing and clean_text(entry.get("source")) not in eligible_sources:
+        source_name = clean_text(entry.get("source"))
+        source_is_eligible = source_name in eligible_sources
+        if not source_is_eligible and not (allow_mark_missing and not eligible_sources):
+            if norm_text(entry.get("status")) in {"active", "likely_removed"}:
+                if source_name in failed_sources:
+                    summary["preservedBecauseSourceFailed"] += 1
+                else:
+                    summary["preservedBecauseSourceSkipped"] += 1
             continue
         next_rows[key] = _apply_missing_lifecycle_entry(
             entry,
@@ -186,7 +306,8 @@ def _apply_missing_lifecycle_rows(
             finished_at=finished_at,
             remove_to_archive_days=remove_to_archive_days,
         )
-    return now_dt
+        applied_missing = True
+    return now_dt if applied_missing else None
 
 
 def _prune_archived_lifecycle_rows(
@@ -214,6 +335,7 @@ def apply_job_lifecycle_state(
     finished_at: str,
     allow_mark_missing: bool,
     eligible_missing_sources: set[str] | None = None,
+    source_evidence: dict[str, Any] | None = None,
     remove_to_archive_days: int = LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS,
     archive_retention_days: int = LIFECYCLE_ARCHIVE_RETENTION_DAYS,
 ) -> tuple[list[CanonicalJob], dict[str, dict[str, Any]], dict[str, int]]:
@@ -223,18 +345,38 @@ def apply_job_lifecycle_state(
         for key, value in (lifecycle_rows or {}).items()
         if clean_text(key)
     }
-    seen_keys = _apply_active_lifecycle_rows(payload_rows, next_rows, finished_at)
+    summary = _empty_lifecycle_summary()
+    seen_keys = _apply_active_lifecycle_rows(payload_rows, next_rows, finished_at, summary)
     eligible_sources = {
         clean_text(source_name)
-        for source_name in (eligible_missing_sources or set())
+        for source_name in (
+            eligible_missing_sources
+            or (source_evidence or {}).get("eligibleMissingSources")
+            or set()
+        )
         if clean_text(source_name)
     }
+    failed_sources = {
+        clean_text(source_name)
+        for source_name in (source_evidence or {}).get("failedMissingSources", set())
+        if clean_text(source_name)
+    }
+    skipped_sources = {
+        clean_text(source_name)
+        for source_name in (source_evidence or {}).get("skippedMissingSources", set())
+        if clean_text(source_name)
+    }
+    summary["eligibleMissingSourceCount"] = len(eligible_sources)
+    summary["ineligibleMissingSourceCount"] = len(failed_sources | skipped_sources)
     now_dt = _apply_missing_lifecycle_rows(
         next_rows,
         seen_keys=seen_keys,
         finished_at=finished_at,
         allow_mark_missing=allow_mark_missing,
         eligible_sources=eligible_sources,
+        failed_sources=failed_sources,
+        skipped_sources=skipped_sources,
+        summary=summary,
         remove_to_archive_days=remove_to_archive_days,
     )
     if now_dt:
@@ -243,5 +385,5 @@ def apply_job_lifecycle_state(
             now_dt=now_dt,
             archive_retention_days=archive_retention_days,
         )
-    counts = lifecycle_counts(next_rows)
+    counts = {**lifecycle_counts(next_rows), **summary}
     return [CanonicalJob.from_mapping(row) for row in payload_rows], next_rows, counts

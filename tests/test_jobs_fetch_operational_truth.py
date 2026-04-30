@@ -31,6 +31,7 @@ def _assert_completed_fetch_report_truth(report: dict[str, object], output_dir: 
     failed_sources = int(summary.get("failedSources") or 0)
     output_count = int(summary.get("outputCount") or 0)
     source_health = report.get("sourceHealth") or {}
+    lifecycle_summary = report.get("lifecycleSummary") or {}
 
     assert str(report.get("finishedAt") or "")
     assert progress.get("active") is False
@@ -47,6 +48,12 @@ def _assert_completed_fetch_report_truth(report: dict[str, object], output_dir: 
     assert int(counts.get("outputCount") or 0) == output_count
     assert int(source_health.get("totalSources") or 0) == source_count
     assert int(source_health.get("failedSources") or 0) == failed_sources
+    assert int(lifecycle_summary.get("activeCount") or 0) == int(
+        summary.get("lifecycleActiveCount") or 0
+    )
+    assert int(lifecycle_summary.get("likelyRemovedCount") or 0) == int(
+        summary.get("lifecycleLikelyRemovedCount") or 0
+    )
 
 
 def test_completed_fetch_report_operational_truth_matches_sources_and_output() -> None:

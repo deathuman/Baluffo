@@ -443,6 +443,25 @@ Compact source-health rows use only existing source-report fields: `name`, `adap
 `keptCount`, `fetchedCount`, `durationMs`, `failureBucket`, `classification`,
 `zeroKeptClassification`, `browserFallbackRecommended`, `error`, and `exclusionReason`.
 
+### Job lifecycle summary
+
+Fetch reports and normalized bridge fetch-report payloads may include top-level `lifecycleSummary`.
+This additive field is derived during final jobs lifecycle application. It explains why missing
+previously-seen jobs were or were not transitioned, and must not be used to mutate saved jobs,
+local user data, source registry rows, tombstones, sync state, or source-family configuration.
+
+| Field | Type | Description |
+|---|---|---|
+| `activeCount` | `number` | Tracked lifecycle rows currently active after the run. |
+| `newCount` | `number` | Jobs first seen in this run. |
+| `reappearedCount` | `number` | Previously removed or archived jobs seen again and restored to active. |
+| `likelyRemovedCount` | `number` | Tracked lifecycle rows currently marked `likely_removed`. |
+| `archivedCount` | `number` | Tracked lifecycle rows currently archived. |
+| `preservedBecauseSourceFailedCount` | `number` | Missing jobs preserved because their source failed or timed out. |
+| `preservedBecauseSourceSkippedCount` | `number` | Missing jobs preserved because their source was skipped, excluded, not selected, or needed review/browser fallback. |
+| `eligibleMissingSourceCount` | `number` | Source rows with trustworthy missing-job evidence in the run. |
+| `ineligibleMissingSourceCount` | `number` | Source rows present but not eligible to mark jobs removed. |
+
 | Field | Type | Description |
 |---|---|---|
 | `byShape` | `object` | Counts and examples by diagnostic shape. |

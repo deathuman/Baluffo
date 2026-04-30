@@ -146,6 +146,35 @@ def _normalize_outputs(payload: Any) -> dict[str, Any]:
     }
 
 
+def _normalize_lifecycle_summary(payload: Any, summary: dict[str, Any]) -> dict[str, int]:
+    src = as_json_object(payload)
+    return {
+        "activeCount": _clamped_int(
+            src.get("activeCount"), _clamped_int(summary.get("lifecycleActiveCount"), 0, 0), 0
+        ),
+        "newCount": _clamped_int(src.get("newCount"), 0, 0),
+        "reappearedCount": _clamped_int(src.get("reappearedCount"), 0, 0),
+        "likelyRemovedCount": _clamped_int(
+            src.get("likelyRemovedCount"),
+            _clamped_int(summary.get("lifecycleLikelyRemovedCount"), 0, 0),
+            0,
+        ),
+        "archivedCount": _clamped_int(
+            src.get("archivedCount"),
+            _clamped_int(summary.get("lifecycleArchivedCount"), 0, 0),
+            0,
+        ),
+        "preservedBecauseSourceFailedCount": _clamped_int(
+            src.get("preservedBecauseSourceFailedCount"), 0, 0
+        ),
+        "preservedBecauseSourceSkippedCount": _clamped_int(
+            src.get("preservedBecauseSourceSkippedCount"), 0, 0
+        ),
+        "eligibleMissingSourceCount": _clamped_int(src.get("eligibleMissingSourceCount"), 0, 0),
+        "ineligibleMissingSourceCount": _clamped_int(src.get("ineligibleMissingSourceCount"), 0, 0),
+    }
+
+
 def _completed_fetch_task_progress(summary: dict[str, Any]) -> dict[str, Any]:
     source_count = _clamped_int(summary.get("sourceCount"), 0, 0)
     failed_sources = _clamped_int(summary.get("failedSources"), 0, 0)
@@ -263,6 +292,7 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "sourceHealth": normalize_source_health_payload(
             src.get("sourceHealth"), normalized_source_rows
         ),
+        "lifecycleSummary": _normalize_lifecycle_summary(src.get("lifecycleSummary"), summary),
         "healthSummary": copy_json_object(src.get("healthSummary")),
         "outputs": _normalize_outputs(src.get("outputs")),
     }
