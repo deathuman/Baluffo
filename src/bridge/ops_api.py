@@ -34,6 +34,7 @@ class OpsDeps:
     load_json_object: Callable[[Path, Any], Any]
     save_json_atomic: Callable[[Path, Any], None]
     load_state: Callable[[], dict[str, Any]]
+    load_tombstones: Callable[[], dict[str, Any]]
     now_iso: Callable[[], str]
     now_utc: Callable[[], Any]
     parse_iso: Callable[[Any], Any]
@@ -65,6 +66,8 @@ class OpsHealthDeps:
     get_history: Callable[[], list[dict[str, Any]]]
     get_fetch_report: Callable[[], dict[str, Any]]
     get_state: Callable[[], dict[str, Any]]
+    get_tombstones: Callable[[], dict[str, Any]]
+    get_sync_status_payload: Callable[[], dict[str, Any]]
     now_iso: Callable[[], str]
     desktop_mode: bool
     desktop_last_activity_at: str
@@ -157,6 +160,8 @@ class OpsApi:
                 self._deps.load_json_object(self._paths.jobs_fetch_report, {})
             ),
             get_state=self._deps.load_state,
+            get_tombstones=self._deps.load_tombstones,
+            get_sync_status_payload=self._deps.get_sync_status_payload,
             now_iso=self._deps.now_iso,
             desktop_mode=bool(self._deps.desktop_mode),
             desktop_last_activity_at=str(self._deps.get_desktop_last_activity_at() or ""),

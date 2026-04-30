@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.bridge.registry_sync_summary import derive_registry_sync_summary
 from src.shared.json_shapes import as_json_object, json_object_rows
 
 # Constants used by evaluate_alerts and compute_ops_health (mirror admin_bridge defaults)
@@ -492,6 +493,20 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     latest_fetch_summary = summarize_fetch_report(latest_fetch_report)
     failed_ratio_latest = latest_fetch_summary["failedRatio"]
     source_health = as_json_object(latest_fetch_report.get("sourceHealth"))
+    try:
+        tombstones = deps.get_tombstones()
+    except Exception:  # noqa: BLE001
+        tombstones = {}
+    try:
+        sync_status = deps.get_sync_status_payload()
+    except Exception:  # noqa: BLE001
+        sync_status = {}
+    registry_sync = derive_registry_sync_summary(
+        state=state,
+        tombstones=tombstones,
+        sync_status=sync_status,
+        history=history,
+    )
 
     latest_run = history[-1] if history else {}
     severity = derive_ops_severity(alerts_meta["alerts"])
@@ -537,6 +552,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             "failedSourceRatioLatest": round(float(failed_ratio_latest), 4),
             "pendingApprovalsCount": len(state.get("pending") or []),
             "sourceHealth": source_health,
+            "registrySync": registry_sync,
             "socialExperiment": {
                 "pilotWindowStartAt": str(social_summary.get("pilotWindowStartAt") or ""),
                 "pilotWindowEndAt": str(social_summary.get("pilotWindowEndAt") or ""),

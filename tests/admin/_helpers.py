@@ -21,6 +21,7 @@ class AdminBridgeTestPaths:
     active_registry: Path
     pending_registry: Path
     rejected_registry: Path
+    tombstones: Path
     tasks_config: Path
     task_state: Path
     sync_config: Path
@@ -40,6 +41,7 @@ def admin_bridge_test_paths(root: Path) -> AdminBridgeTestPaths:
         active_registry=root / "source-registry-active.json",
         pending_registry=root / "source-registry-pending.json",
         rejected_registry=root / "source-registry-rejected.json",
+        tombstones=root / "source-registry-tombstones.json",
         tasks_config=root / "tasks.json",
         task_state=root / "admin-task-state.json",
         sync_config=root / "source-sync-config.json",
@@ -66,6 +68,7 @@ def patch_admin_bridge_paths(monkeypatch: Any, paths: AdminBridgeTestPaths) -> N
     monkeypatch.setattr(admin_bridge, "ACTIVE_PATH", paths.active_registry)
     monkeypatch.setattr(admin_bridge, "PENDING_PATH", paths.pending_registry)
     monkeypatch.setattr(admin_bridge, "REJECTED_PATH", paths.rejected_registry)
+    monkeypatch.setattr(admin_bridge, "TOMBSTONES_PATH", paths.tombstones)
     monkeypatch.setattr(admin_bridge, "TASKS_CONFIG_PATH", paths.tasks_config)
     monkeypatch.setattr(admin_bridge, "TASK_STATE_PATH", paths.task_state)
     monkeypatch.setattr(admin_bridge, "SYNC_CONFIG_PATH", paths.sync_config)
@@ -77,6 +80,7 @@ def seed_admin_bridge_state(paths: AdminBridgeTestPaths) -> None:
     admin_bridge.save_json_atomic(paths.active_registry, [])
     admin_bridge.save_json_atomic(paths.pending_registry, [])
     admin_bridge.save_json_atomic(paths.rejected_registry, [])
+    admin_bridge.save_json_atomic(paths.tombstones, {})
     admin_bridge.save_json_atomic(paths.tasks_config, {"tasks": []})
 
 

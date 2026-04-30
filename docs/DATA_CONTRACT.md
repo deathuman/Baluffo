@@ -230,6 +230,32 @@ Remote sync snapshots now use schema version `2` and are built from canonical pe
 
 `rejected` rows are intentionally excluded from remote snapshots. Snapshot readers still accept legacy v1 input and infer the transition metadata needed to merge into the canonical model. Tombstones are never included in remote snapshots.
 
+### Admin/Ops registry sync confidence
+
+`/ops/health` may include additive `kpis.registrySync` for Admin/Ops observability. It is derived from existing local registry buckets, tombstones, sync runtime state, and sync run history; it must not be copied into source rows or used to auto-promote, demote, reject, tombstone, hide, delete, or merge sources.
+
+| Field | Type | Description |
+|---|---|---|
+| `activeCount` | `number` | Local active registry rows. |
+| `pendingCount` | `number` | Local pending registry rows. |
+| `rejectedCount` | `number` | Local rejected rows; these stay local-only for sync. |
+| `tombstoneCount` | `number` | Local tombstone records; these are never serialized remotely. |
+| `hiddenPendingCount` | `number` | Pending rows hidden from default review views. |
+| `deferredPendingCount` | `number` | Pending rows with deferred/backlog markers. |
+| `duplicatePendingCount` | `number` | Pending rows marked as duplicate variants. |
+| `lastSyncAt` | `string` | Latest known pull/push/sync-run timestamp, or empty when unavailable. |
+| `lastSyncStatus` | `string` | Latest sync result such as `ok`, `error`, `remote_conflict`, `rate_limited`, or `never`. |
+| `remoteActiveCount` | `number` | Active count from the latest sync summary when available. |
+| `remotePendingCount` | `number` | Pending count from the latest sync summary when available. |
+| `pulledCount` | `number` | Latest observed pull operation/count from existing sync history. |
+| `pushedCount` | `number` | Latest observed push operation/count from existing sync history. |
+| `ignoredRejectedCount` | `number` | Rejected local rows intentionally ignored by remote sync. |
+| `ignoredTombstonedCount` | `number` | Tombstones intentionally ignored by remote sync. |
+| `conflictCount` | `number` | Latest detected remote conflict indicator count. |
+| `localOnlyCount` | `number` | Local-only rejected plus tombstoned rows. |
+| `remoteOnlyCount` | `number` | Remote-only row count when existing sync diagnostics provide it; otherwise `0`. |
+| `invalidRowsCount` | `number` | Invalid non-object rows found while deriving local bucket counts. |
+
 ---
 
 ## 6. Runtime Configuration

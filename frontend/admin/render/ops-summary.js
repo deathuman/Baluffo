@@ -2,6 +2,7 @@ import { escapeHtml } from "../../shared/ui/index.js";
 import {
   FETCHER_FAILURE_BUCKET_LABELS,
   formatDuration,
+  formatDateTime,
   formatLastRunCell,
   formatScheduleCell,
   sanitizeSlowSourceName,
@@ -57,7 +58,8 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
     failedSourceRatioLatest: Number(kpis?.failedSourceRatioLatest || 0),
     pendingApprovalsCount: Number(kpis?.pendingApprovalsCount || 0),
     avgFetchDurationMs7d: Number(kpis?.avgFetchDurationMs7d || 0),
-    lastSuccessfulFetchAge: String(kpis?.lastSuccessfulFetchAge || "")
+    lastSuccessfulFetchAge: String(kpis?.lastSuccessfulFetchAge || ""),
+    registrySync: kpis?.registrySync || {}
   });
   if (canPatchInPlace && kpisEl.dataset.opsKpisSig === signature) return;
   if (canPatchInPlace) kpisEl.dataset.opsKpisSig = signature;
@@ -65,7 +67,12 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
   const failedRatio = Number(kpis?.failedSourceRatioLatest || 0);
   const pending = Number(kpis?.pendingApprovalsCount || 0);
   const avgMs = Number(kpis?.avgFetchDurationMs7d || 0);
+  const registrySync = kpis?.registrySync && typeof kpis.registrySync === "object"
+    ? kpis.registrySync
+    : {};
   const statusClass = status === "critical" ? "critical" : status === "warning" ? "warning" : "healthy";
+  const lastSyncAt = String(registrySync?.lastSyncAt || "");
+  const lastSyncLabel = lastSyncAt ? formatDateTime(lastSyncAt) : "Never";
   kpisEl.innerHTML = `
     <div class="admin-total-card">
       <div class="admin-total-label">Ops Status</div>
@@ -90,6 +97,29 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
     <div class="admin-total-card">
       <div class="admin-total-label">Pending Approvals</div>
       <div class="admin-total-value">${pending.toLocaleString()}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Active Sources</div>
+      <div class="admin-total-value">${Number(registrySync?.activeCount || 0).toLocaleString()}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Pending Review</div>
+      <div class="admin-total-value">${Number(registrySync?.pendingCount || 0).toLocaleString()}</div>
+    </div>
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Registry &amp; Sync</strong>:
+      hidden ${Number(registrySync?.hiddenPendingCount || 0).toLocaleString()},
+      deferred ${Number(registrySync?.deferredPendingCount || 0).toLocaleString()},
+      rejected local-only ${Number(registrySync?.ignoredRejectedCount || 0).toLocaleString()},
+      tombstones local-only ${Number(registrySync?.ignoredTombstonedCount || 0).toLocaleString()}.
+    </div>
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Last sync</strong>:
+      ${escapeHtml(String(registrySync?.lastSyncStatus || "never"))} @ ${escapeHtml(lastSyncLabel)};
+      pull ${Number(registrySync?.pulledCount || 0).toLocaleString()},
+      push ${Number(registrySync?.pushedCount || 0).toLocaleString()},
+      conflicts ${Number(registrySync?.conflictCount || 0).toLocaleString()},
+      invalid rows ${Number(registrySync?.invalidRowsCount || 0).toLocaleString()}.
     </div>
   `;
 }

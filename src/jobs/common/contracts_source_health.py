@@ -90,7 +90,11 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
         if classification:
             classification_counts[classification] += 1
             _push_example(classification_examples, classification, name)
-        if row["status"] == "error" or row["browserFallbackRecommended"] or _zero_kept_needs_review(row):
+        if (
+            row["status"] == "error"
+            or row["browserFallbackRecommended"]
+            or _zero_kept_needs_review(row)
+        ):
             attention_rows.append(row)
 
     attention_rows.sort(
@@ -127,7 +131,11 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
         )[:_TRIAGE_ROW_LIMIT],
         "topProductiveSources": sorted(
             [row for row in rows if int(row["keptCount"]) > 0],
-            key=lambda row: (-int(row["keptCount"]), -int(row["durationMs"]), clean_text(row.get("name"))),
+            key=lambda row: (
+                -int(row["keptCount"]),
+                -int(row["durationMs"]),
+                clean_text(row.get("name")),
+            ),
         )[:_TRIAGE_ROW_LIMIT],
         "topFailureBuckets": _breakdown_rows(failure_counts, failure_examples),
         "topClassifications": _breakdown_rows(classification_counts, classification_examples),
@@ -166,7 +174,9 @@ def normalize_source_health_payload(payload: Any, source_rows: Any) -> dict[str,
             {
                 "key": clean_text(row.get("key")),
                 "count": _clamped_int(row.get("count"), 0, 0),
-                "examples": [clean_text(item) for item in (row.get("examples") or []) if clean_text(item)]
+                "examples": [
+                    clean_text(item) for item in (row.get("examples") or []) if clean_text(item)
+                ]
                 if isinstance(row.get("examples"), list)
                 else [],
             }
