@@ -147,6 +147,160 @@ def _has_site_changed_signal(error_lower: str) -> bool:
     )
 
 
+def _has_anti_bot_signal(
+    context: ClassificationContext,
+    error_lower: str,
+    classification: str,
+    hint: str,
+) -> bool:
+    if context.http_status in {401, 403, 429}:
+        return True
+    if _has_any(
+        error_lower,
+        [
+            "challenge",
+            "captcha",
+            "blocked",
+            "forbidden",
+            "403",
+            "access denied",
+            "cloudflare",
+            "ddos-guard",
+        ],
+    ):
+        return True
+    if _is_linkedin_throttle_error(error_lower):
+        return True
+    if classification in {"blocked_or_challenge", "anti_bot_or_challenge"}:
+        return True
+    return hint in {"blocked_or_challenge", "challenge", "captcha"}
+
+
+def _has_js_signal(error_lower: str, explicit_js: bool) -> bool:
+    return explicit_js or _has_any(
+        error_lower,
+        [
+            "javascript",
+            "js_required",
+            "react",
+            "angular",
+            "vue",
+            "spa",
+            "dynamic",
+        ],
+    )
+
+
+def _has_strong_site_changed_signal(
+    context: ClassificationContext,
+    error_lower: str,
+    explicit_site_changed: bool,
+    signal_quality: str,
+) -> bool:
+    site_changed = (
+        context.listing_changed
+        or context.listing_fingerprint_changed
+        or _has_site_changed_signal(error_lower)
+        or explicit_site_changed
+    )
+    if not site_changed:
+        return False
+    strong_adapter_signal = (
+        context.listing_changed or context.listing_fingerprint_changed or explicit_site_changed
+    )
+    return not (signal_quality == "weak" and not strong_adapter_signal)
+
+
+def _has_empty_confirmed_signal(
+    context: ClassificationContext,
+    classification: str,
+    hint: str,
+) -> bool:
+    return (
+        context.empty_confirmed
+        or classification == "empty_confirmed"
+        or hint in {"explicit_no_openings_marker", "empty_confirmed"}
+    )
+
+
+def _has_needs_review_zero_extract_signal(
+    context: ClassificationContext,
+    status: str,
+    classification: str,
+) -> bool:
+    return status == "ok" and (
+        classification in {"ok_no_jobs", "parser_stale", "fetch_ok_extract_zero", "needs_review"}
+        or context.detail_pages_visited > 0
+        or context.candidate_links_found > 0
+        or context.listing_jobs_found > 0
+        or context.detail_parse_empty_count > 0
+    )
+
+
+ZERO_EXTRACT_FAILURE_BUCKETS: dict[str, FailureBucket] = {
+    ZeroExtractDiagnosis.EMPTY_CONFIRMED.value: FailureBucket.NO_OPENINGS,
+    ZeroExtractDiagnosis.JS_REQUIRED.value: FailureBucket.JS_REQUIRED,
+    ZeroExtractDiagnosis.SITE_CHANGED.value: FailureBucket.SITE_CHANGED,
+    ZeroExtractDiagnosis.ANTI_BOT_OR_CHALLENGE.value: FailureBucket.ANTI_BOT_OR_CHALLENGE,
+    ZeroExtractDiagnosis.NEEDS_REVIEW.value: FailureBucket.NEEDS_REVIEW,
+}
+
+
+def _classification_failure_bucket(classification: str) -> FailureBucket | None:
+    if classification in ZERO_EXTRACT_FAILURE_BUCKETS:
+        return ZERO_EXTRACT_FAILURE_BUCKETS[classification]
+    if classification in {"blocked_or_challenge", "anti_bot_or_challenge"}:
+        return FailureBucket.ANTI_BOT_OR_CHALLENGE
+    if classification == "browser_timeout":
+        return FailureBucket.TIMEOUT
+    return None
+
+
+def _error_text_failure_bucket(error_lower: str) -> FailureBucket | None:
+    if "timeout" in error_lower:
+        return FailureBucket.TIMEOUT
+    if _has_any(
+        error_lower,
+        [
+            "challenge",
+            "captcha",
+            "blocked",
+            "forbidden",
+            "403",
+            "access denied",
+            "cloudflare",
+            "ddos-guard",
+        ],
+    ):
+        return FailureBucket.ANTI_BOT_OR_CHALLENGE
+    if _is_linkedin_throttle_error(error_lower):
+        return FailureBucket.ANTI_BOT_OR_CHALLENGE
+    if _has_site_changed_signal(error_lower):
+        return FailureBucket.SITE_CHANGED
+    if _has_js_signal(error_lower, False):
+        return FailureBucket.JS_REQUIRED
+    if _is_named_static_no_jobs_offender(error_lower) or _is_static_manual_no_jobs_error(
+        error_lower
+    ):
+        return FailureBucket.JS_REQUIRED
+    if "invalid" in error_lower or "seed" in error_lower:
+        return FailureBucket.SEED_INVALID
+    return None
+
+
+def _status_classification_failure_bucket(
+    status: str,
+    classification: str,
+) -> FailureBucket | None:
+    if status == "ok" and classification in ("ok_no_jobs", "parser_stale"):
+        return FailureBucket.NO_OPENINGS
+    if classification in ("parse_error", "parser_stale"):
+        return FailureBucket.PARSER_EMPTY
+    if classification == "dead_listing_page":
+        return FailureBucket.NEEDS_REVIEW
+    return None
+
+
 def classification_context_from_source_detail(
     source_detail: dict[str, object],
 ) -> ClassificationContext:
@@ -243,57 +397,24 @@ def assess_zero_extract(context: ClassificationContext) -> ZeroExtractAssessment
         "listing_fingerprint_changed",
     }
 
-    anti_bot_signals = explicit_challenge or _has_any(
+    if explicit_challenge or _has_anti_bot_signal(
+        context,
         error_lower,
-        [
-            "challenge",
-            "captcha",
-            "blocked",
-            "forbidden",
-            "403",
-            "access denied",
-            "cloudflare",
-            "ddos-guard",
-        ],
-    )
-    if not anti_bot_signals and _is_linkedin_throttle_error(error_lower):
-        anti_bot_signals = True
-    if not anti_bot_signals:
-        anti_bot_signals = classification in {
-            "blocked_or_challenge",
-            "anti_bot_or_challenge",
-        }
-    if not anti_bot_signals and hint in {"blocked_or_challenge", "challenge", "captcha"}:
-        anti_bot_signals = True
-    if anti_bot_signals:
+        classification,
+        hint,
+    ):
         return ZeroExtractAssessment(ZeroExtractDiagnosis.ANTI_BOT_OR_CHALLENGE, True)
 
-    js_signals = explicit_js or _has_any(
-        error_lower,
-        [
-            "javascript",
-            "js_required",
-            "react",
-            "angular",
-            "vue",
-            "spa",
-            "dynamic",
-        ],
-    )
-    if js_signals and not (signal_quality == "weak" and not explicit_js):
+    if _has_js_signal(error_lower, explicit_js) and not (
+        signal_quality == "weak" and not explicit_js
+    ):
         return ZeroExtractAssessment(ZeroExtractDiagnosis.JS_REQUIRED, True)
 
-    site_changed_signals = (
-        context.listing_changed
-        or context.listing_fingerprint_changed
-        or _has_site_changed_signal(error_lower)
-        or explicit_site_changed
-    )
-    if site_changed_signals and not (
-        signal_quality == "weak"
-        and not (
-            context.listing_changed or context.listing_fingerprint_changed or explicit_site_changed
-        )
+    if _has_strong_site_changed_signal(
+        context,
+        error_lower,
+        explicit_site_changed,
+        signal_quality,
     ):
         return ZeroExtractAssessment(ZeroExtractDiagnosis.SITE_CHANGED, False)
 
@@ -303,27 +424,13 @@ def assess_zero_extract(context: ClassificationContext) -> ZeroExtractAssessment
     if _is_static_manual_no_jobs_error(error_lower):
         return ZeroExtractAssessment(ZeroExtractDiagnosis.JS_REQUIRED, False)
 
-    if (
-        context.empty_confirmed
-        or classification == "empty_confirmed"
-        or hint
-        in {
-            "explicit_no_openings_marker",
-            "empty_confirmed",
-        }
-    ):
+    if _has_empty_confirmed_signal(context, classification, hint):
         return ZeroExtractAssessment(ZeroExtractDiagnosis.EMPTY_CONFIRMED, False)
 
     if signal_quality == "weak":
         return ZeroExtractAssessment(ZeroExtractDiagnosis.NEEDS_REVIEW, False)
 
-    if status == "ok" and (
-        classification in {"ok_no_jobs", "parser_stale", "fetch_ok_extract_zero", "needs_review"}
-        or context.detail_pages_visited > 0
-        or context.candidate_links_found > 0
-        or context.listing_jobs_found > 0
-        or context.detail_parse_empty_count > 0
-    ):
+    if _has_needs_review_zero_extract_signal(context, status, classification):
         return ZeroExtractAssessment(ZeroExtractDiagnosis.NEEDS_REVIEW, False)
 
     return ZeroExtractAssessment(ZeroExtractDiagnosis.NEEDS_REVIEW, False)
@@ -335,76 +442,13 @@ def map_error_to_failure_bucket(context: ClassificationContext) -> FailureBucket
     classification = _normalized_text(context.classification)
     status = _normalized_text(context.status)
 
-    if classification in {item.value for item in ZeroExtractDiagnosis}:
-        if classification == ZeroExtractDiagnosis.EMPTY_CONFIRMED.value:
-            return FailureBucket.NO_OPENINGS
-        if classification == ZeroExtractDiagnosis.JS_REQUIRED.value:
-            return FailureBucket.JS_REQUIRED
-        if classification == ZeroExtractDiagnosis.SITE_CHANGED.value:
-            return FailureBucket.SITE_CHANGED
-        if classification == ZeroExtractDiagnosis.ANTI_BOT_OR_CHALLENGE.value:
-            return FailureBucket.ANTI_BOT_OR_CHALLENGE
-        if classification == ZeroExtractDiagnosis.NEEDS_REVIEW.value:
-            return FailureBucket.NEEDS_REVIEW
-        return FailureBucket.UNKNOWN
-
-    if classification in {"blocked_or_challenge", "anti_bot_or_challenge"}:
-        return FailureBucket.ANTI_BOT_OR_CHALLENGE
-
-    if "timeout" in error_lower or classification == "browser_timeout":
-        return FailureBucket.TIMEOUT
-
-    if any(
-        phrase in error_lower
-        for phrase in [
-            "challenge",
-            "captcha",
-            "blocked",
-            "forbidden",
-            "403",
-            "access denied",
-            "cloudflare",
-            "ddos-guard",
-        ]
+    for bucket in (
+        _classification_failure_bucket(classification),
+        _error_text_failure_bucket(error_lower),
+        _status_classification_failure_bucket(status, classification),
     ):
-        return FailureBucket.ANTI_BOT_OR_CHALLENGE
-
-    if _is_linkedin_throttle_error(error_lower):
-        return FailureBucket.ANTI_BOT_OR_CHALLENGE
-
-    if _has_site_changed_signal(error_lower):
-        return FailureBucket.SITE_CHANGED
-
-    if any(
-        phrase in error_lower
-        for phrase in [
-            "javascript",
-            "js_required",
-            "react",
-            "angular",
-            "vue",
-            "spa",
-            "dynamic",
-        ]
-    ):
-        return FailureBucket.JS_REQUIRED
-
-    if _is_named_static_no_jobs_offender(error_lower) or _is_static_manual_no_jobs_error(
-        error_lower
-    ):
-        return FailureBucket.JS_REQUIRED
-
-    if "invalid" in error_lower or "seed" in error_lower:
-        return FailureBucket.SEED_INVALID
-
-    if status == "ok" and classification in ("ok_no_jobs", "parser_stale"):
-        return FailureBucket.NO_OPENINGS
-
-    if classification in ("parse_error", "parser_stale"):
-        return FailureBucket.PARSER_EMPTY
-
-    if classification == "dead_listing_page":
-        return FailureBucket.NEEDS_REVIEW
+        if bucket is not None:
+            return bucket
 
     if not error_lower and not classification:
         return FailureBucket.UNKNOWN

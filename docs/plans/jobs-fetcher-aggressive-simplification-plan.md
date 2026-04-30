@@ -43,8 +43,8 @@ What is still not done:
 - The old `docs/plans/jobs-adapter-mass-refactoring-plan.md` is historical and no longer exists. This file is the active jobs fetcher simplification tracker.
 - `src/jobs` is still about 132 tracked Python files and 31,272 tracked Python lines.
 - `src/jobs/adapters` is still about 73 tracked Python files and 18,269 tracked Python lines.
-- `python -m ruff check --select C901 src/jobs` currently reports 38 offenders.
-- `python -m ruff check --select C901 src/jobs/adapters` currently reports 23 offenders.
+- `python -m ruff check --select C901 src/jobs` currently reports 9 offenders.
+- `python -m ruff check --select C901 src/jobs/adapters` currently passes with no offenders.
 - Jobs adapters still own too much lifecycle, especially social, community, static Scrapy, static plugins, parser/report shims, and fetcher compatibility facades.
 
 The conclusion is blunt but useful: the repo has better shared mechanics now, but the final lean objective is not closed. Future work must delete code, delete modules, remove lifecycle branches, or produce evidence for source deletion.
@@ -250,10 +250,12 @@ cmd /c npm run lint:precommit
 
 ### Phase 6: Broad C901 ratchet
 
-Status: adapter parser C901 cleanup completed on 2026-04-30; non-adapter jobs C901 remains.
+Status: adapter parser and shared classification C901 cleanup completed on 2026-04-30.
 
 - Reduce remaining C901 hotspots only after lifecycle deletion has removed duplicated branches.
 - Adapter parser hotspots were decomposed locally after lifecycle cleanup, with parser signatures and row shapes preserved.
+- Shared datetime, profession, and source-outcome taxonomy hotspots were decomposed locally without changing public signatures or enum/report values.
+- Next remaining C901 work is pipeline/state lifecycle code.
 - Update `scripts/complexity_baseline.json` only when scores decrease or offenders disappear.
 
 Validation:

@@ -13,6 +13,42 @@ from src.jobs.text_utils import clean_text, norm_text
 
 from . import config as common_config
 
+PROFESSION_RULES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    ("technical-animator", ("technical animator",), ()),
+    ("technical-director", ("technical director",), (r"\btd\b",)),
+    (
+        "technical-artist",
+        (
+            "technical artist",
+            "tech artist",
+            "tech-art",
+            "tech art",
+            "shader artist",
+            "material artist",
+        ),
+        (),
+    ),
+    (
+        "environment-artist",
+        ("environment artist", "environment art", "world artist", "terrain artist"),
+        (),
+    ),
+    ("character-artist", ("character artist",), ()),
+    ("rigging", ("rigging", "rigger"), ()),
+    ("vfx-artist", ("vfx artist", "visual effects artist", "fx artist"), ()),
+    ("ui-ux-artist", ("ui artist", "ux artist", "ui/ux"), ()),
+    ("concept-artist", ("concept artist",), ()),
+    ("3d-artist", ("3d artist", "3d modeler", "3d modeller"), ()),
+    ("art-director", ("art director",), ()),
+    ("gameplay", ("gameplay", "game mechanics"), ()),
+    ("graphics", ("graphics", "rendering", "shader"), ()),
+    ("engine", ("engine", "architecture", "systems"), ()),
+    ("ai", ("artificial intelligence", "behavior"), (r"\bai\b",)),
+    ("animator", ("animator", "animation"), ()),
+    ("tools", ("tools", "pipeline"), ()),
+    ("designer", ("designer",), ()),
+)
+
 
 def classify_company_type(
     company: Any,
@@ -31,54 +67,11 @@ def classify_company_type(
 
 def map_profession(title: Any) -> str:
     lower = norm_text(title)
-    if "technical animator" in lower:
-        return "technical-animator"
-    if "technical director" in lower or re.search(r"\btd\b", lower):
-        return "technical-director"
-    if (
-        "technical artist" in lower
-        or "tech artist" in lower
-        or "tech-art" in lower
-        or "tech art" in lower
-        or "shader artist" in lower
-        or "material artist" in lower
-    ):
-        return "technical-artist"
-    if (
-        "environment artist" in lower
-        or "environment art" in lower
-        or "world artist" in lower
-        or "terrain artist" in lower
-    ):
-        return "environment-artist"
-    if "character artist" in lower:
-        return "character-artist"
-    if "rigging" in lower or "rigger" in lower:
-        return "rigging"
-    if "vfx artist" in lower or "visual effects artist" in lower or "fx artist" in lower:
-        return "vfx-artist"
-    if "ui artist" in lower or "ux artist" in lower or "ui/ux" in lower:
-        return "ui-ux-artist"
-    if "concept artist" in lower:
-        return "concept-artist"
-    if "3d artist" in lower or "3d modeler" in lower or "3d modeller" in lower:
-        return "3d-artist"
-    if "art director" in lower:
-        return "art-director"
-    if "gameplay" in lower or "game mechanics" in lower:
-        return "gameplay"
-    if "graphics" in lower or "rendering" in lower or "shader" in lower:
-        return "graphics"
-    if "engine" in lower or "architecture" in lower or "systems" in lower:
-        return "engine"
-    if re.search(r"\bai\b", lower) or "artificial intelligence" in lower or "behavior" in lower:
-        return "ai"
-    if "animator" in lower or "animation" in lower:
-        return "animator"
-    if "tools" in lower or "pipeline" in lower:
-        return "tools"
-    if "designer" in lower:
-        return "designer"
+    for profession, phrases, patterns in PROFESSION_RULES:
+        if any(phrase in lower for phrase in phrases):
+            return profession
+        if any(re.search(pattern, lower) for pattern in patterns):
+            return profession
     return "other"
 
 
