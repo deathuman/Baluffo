@@ -13,6 +13,9 @@ from src.jobs.common.contracts_provider_coverage import build_provider_coverage_
 from src.jobs.common.contracts_provider_static_overlap import (
     build_provider_static_overlap_summary,
 )
+from src.jobs.common.contracts_redundant_static_proposals import (
+    build_redundant_static_proposals_summary,
+)
 from src.jobs.common.contracts_static_suppression_policy import (
     refresh_static_suppression_policy_with_current_evidence,
 )
@@ -654,6 +657,11 @@ def finalize_pipeline_run(
             canonical_rows=deduped_payload_rows,
             provider_static_overlap=report_payload["providerStaticOverlap"],
         )
+    )
+    report_payload["redundantStaticProposals"] = build_redundant_static_proposals_summary(
+        static_suppression_policy=report_payload["staticSuppressionPolicy"],
+        provider_static_overlap=report_payload["providerStaticOverlap"],
+        provider_coverage=report_payload["providerCoverage"],
     )
     report_payload["healthSummary"] = {
         "topFailingDomains": health_module.get_top_failing_sources(source_state_rows, limit=10),

@@ -11,6 +11,9 @@ from src.jobs.common.contracts_provider_coverage import normalize_provider_cover
 from src.jobs.common.contracts_provider_static_overlap import (
     normalize_provider_static_overlap_payload,
 )
+from src.jobs.common.contracts_redundant_static_proposals import (
+    normalize_redundant_static_proposals_payload,
+)
 from src.jobs.common.contracts_source_health import normalize_source_health_payload
 from src.jobs.common.contracts_static_suppression_policy import (
     normalize_static_suppression_policy_payload,
@@ -355,6 +358,9 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     static_suppression_policy = normalize_static_suppression_policy_payload(
         src.get("staticSuppressionPolicy")
     )
+    redundant_static_proposals = normalize_redundant_static_proposals_payload(
+        src.get("redundantStaticProposals")
+    )
     slowest_sources_raw = _as_list(runtime.get("slowestSources"))
     slowest_sources: list[dict[str, Any]] = []
     for row in slowest_sources_raw[:10]:
@@ -506,6 +512,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "providerCoverage": provider_coverage,
         "providerStaticOverlap": provider_static_overlap,
         "staticSuppressionPolicy": static_suppression_policy,
+        "redundantStaticProposals": redundant_static_proposals,
         "outputs": _as_dict(src.get("outputs")),
     }
     finished_at = str(normalized.get("finishedAt") or "").strip()

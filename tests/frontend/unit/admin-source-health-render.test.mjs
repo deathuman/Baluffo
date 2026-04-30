@@ -157,6 +157,38 @@ test("admin render: fetcher metrics render provider coverage lanes", () => {
             lastAuditStatus: "insufficient_history"
           }
         ]
+      },
+      redundantStaticProposals: {
+        totalProposalCount: 3,
+        safeRedundantCount: 1,
+        keepStaticCount: 0,
+        needsMoreHistoryCount: 1,
+        needsReviewCount: 0,
+        providerUnstableCount: 0,
+        staticOnlyDetectedCount: 1,
+        proposals: [
+          {
+            staticSourceName: "static_source::covered",
+            providerSourceName: "Studio Greenhouse",
+            proposal: "safe_redundant_static",
+            recommendedAction: "keep_runtime_suppression",
+            lastAuditStatus: "safe"
+          },
+          {
+            staticSourceName: "static_source::warning",
+            providerSourceName: "Studio Greenhouse",
+            proposal: "needs_more_history",
+            recommendedAction: "collect_more_history",
+            lastAuditStatus: "insufficient_history"
+          },
+          {
+            staticSourceName: "static_source::static-only",
+            providerSourceName: "Broken Provider",
+            proposal: "static_only_jobs_detected",
+            recommendedAction: "pause_suppression",
+            lastAuditStatus: "needs_review"
+          }
+        ]
       }
     },
     history: {}
@@ -172,4 +204,8 @@ test("admin render: fetcher metrics render provider coverage lanes", () => {
   assert.match(metricsEl.innerHTML, /Static suppression policy/i);
   assert.match(metricsEl.innerHTML, /prior static only jobs detected/i);
   assert.match(metricsEl.innerHTML, /prior insufficient history/i);
+  assert.match(metricsEl.innerHTML, /Redundant static proposals/i);
+  assert.match(metricsEl.innerHTML, /safe redundant static/i);
+  assert.match(metricsEl.innerHTML, /collect more history/i);
+  assert.match(metricsEl.innerHTML, /static only jobs detected/i);
 });

@@ -15,6 +15,9 @@ from src.shared.live_task import (
 
 from .contracts_provider_coverage import normalize_provider_coverage_payload
 from .contracts_provider_static_overlap import normalize_provider_static_overlap_payload
+from .contracts_redundant_static_proposals import (
+    normalize_redundant_static_proposals_payload,
+)
 from .contracts_runtime import _float_or_zero, normalize_runtime_payload
 from .contracts_source_health import normalize_source_health_payload
 from .contracts_source_reports import normalize_source_report_row
@@ -301,6 +304,9 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         ),
         "staticSuppressionPolicy": normalize_static_suppression_policy_payload(
             src.get("staticSuppressionPolicy")
+        ),
+        "redundantStaticProposals": normalize_redundant_static_proposals_payload(
+            src.get("redundantStaticProposals")
         ),
         "lifecycleSummary": _normalize_lifecycle_summary(src.get("lifecycleSummary"), summary),
         "healthSummary": copy_json_object(src.get("healthSummary")),

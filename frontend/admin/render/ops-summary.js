@@ -240,6 +240,22 @@ function formatStaticSuppressionPolicyRows(rows, emptyText) {
     .join(" | ");
 }
 
+function formatRedundantStaticProposalRows(rows, emptyText) {
+  const proposalRows = Array.isArray(rows) ? rows : [];
+  if (!proposalRows.length) return escapeHtml(emptyText);
+  return proposalRows
+    .slice(0, 5)
+    .map(row => {
+      const staticName = sanitizeSlowSourceName(row?.staticSourceName || row?.staticSourceId);
+      const provider = sanitizeSlowSourceName(row?.providerSourceName || row?.providerSourceId);
+      const proposal = String(row?.proposal || "proposal").replaceAll("_", " ");
+      const action = String(row?.recommendedAction || "review_pair").replaceAll("_", " ");
+      const status = String(row?.lastAuditStatus || "unknown").replaceAll("_", " ");
+      return escapeHtml(`${staticName} -> ${provider} (${proposal}, ${action}, ${status})`);
+    })
+    .join(" | ");
+}
+
 export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};
@@ -271,6 +287,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     providerCoverage: latest?.providerCoverage || {},
     providerStaticOverlap: latest?.providerStaticOverlap || {},
     staticSuppressionPolicy: latest?.staticSuppressionPolicy || {},
+    redundantStaticProposals: latest?.redundantStaticProposals || {},
     failureSummary: summary
   });
   if (canPatchInPlace && metricsEl.dataset.opsFetcherMetricsSig === signature) return;
@@ -288,6 +305,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const providerCoverage = latest?.providerCoverage && typeof latest.providerCoverage === "object" ? latest.providerCoverage : {};
   const providerStaticOverlap = latest?.providerStaticOverlap && typeof latest.providerStaticOverlap === "object" ? latest.providerStaticOverlap : {};
   const staticSuppressionPolicy = latest?.staticSuppressionPolicy && typeof latest.staticSuppressionPolicy === "object" ? latest.staticSuppressionPolicy : {};
+  const redundantStaticProposals = latest?.redundantStaticProposals && typeof latest.redundantStaticProposals === "object" ? latest.redundantStaticProposals : {};
   const slowestSummary = slowest.length
     ? slowest
       .slice(0, 3)
@@ -363,6 +381,27 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     staticSuppressionPolicy?.warningPairs,
     "No warning-suppressed pairs."
   );
+  const proposalRows = Array.isArray(redundantStaticProposals?.proposals) ? redundantStaticProposals.proposals : [];
+  const safeRedundantProposalSummary = formatRedundantStaticProposalRows(
+    proposalRows.filter(row => row?.proposal === "safe_redundant_static"),
+    "No safe redundant static proposals."
+  );
+  const keepStaticProposalSummary = formatRedundantStaticProposalRows(
+    proposalRows.filter(row => row?.proposal === "keep_static"),
+    "No keep-static proposals."
+  );
+  const moreHistoryProposalSummary = formatRedundantStaticProposalRows(
+    proposalRows.filter(row => row?.proposal === "needs_more_history"),
+    "No more-history proposals."
+  );
+  const reviewProposalSummary = formatRedundantStaticProposalRows(
+    proposalRows.filter(row => row?.proposal === "needs_review" || row?.proposal === "provider_unstable"),
+    "No review/provider-unstable proposals."
+  );
+  const staticOnlyProposalSummary = formatRedundantStaticProposalRows(
+    proposalRows.filter(row => row?.proposal === "static_only_jobs_detected"),
+    "No static-only proposals."
+  );
   const bucketSummaryHtml = bucketRows.length
     ? bucketRows.map(bucket => `
       <div class="admin-ops-schedule-item admin-ops-full-row">
@@ -432,5 +471,6 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Ready later (no static mutation)</strong>: ${readyLaterProviderSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Provider/static overlap audit</strong>: safe ${Number(providerStaticOverlap?.safePairCount || 0).toLocaleString()}, needs review ${Number(providerStaticOverlap?.needsReviewPairCount || 0).toLocaleString()}, insufficient history ${Number(providerStaticOverlap?.insufficientHistoryPairCount || 0).toLocaleString()}. ${overlapAuditSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Static suppression policy</strong>: suppressed ${Number(staticSuppressionPolicy?.suppressedCount || 0).toLocaleString()}, paused ${Number(staticSuppressionPolicy?.pausedCount || 0).toLocaleString()}, warnings ${Number(staticSuppressionPolicy?.warningCount || 0).toLocaleString()}. Suppressed: ${suppressedPolicySummary} Paused: ${pausedPolicySummary} Warnings: ${warningPolicySummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Redundant static proposals</strong>: safe ${Number(redundantStaticProposals?.safeRedundantCount || 0).toLocaleString()}, keep static ${Number(redundantStaticProposals?.keepStaticCount || 0).toLocaleString()}, more history ${Number(redundantStaticProposals?.needsMoreHistoryCount || 0).toLocaleString()}, review/unstable ${Number((redundantStaticProposals?.needsReviewCount || 0) + (redundantStaticProposals?.providerUnstableCount || 0)).toLocaleString()}, static-only ${Number(redundantStaticProposals?.staticOnlyDetectedCount || 0).toLocaleString()}. Safe: ${safeRedundantProposalSummary} Keep: ${keepStaticProposalSummary} History: ${moreHistoryProposalSummary} Review: ${reviewProposalSummary} Static-only: ${staticOnlyProposalSummary}</div>
   `;
 }

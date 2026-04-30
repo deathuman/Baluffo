@@ -15,6 +15,9 @@ from src.jobs.common.contracts_provider_coverage import normalize_provider_cover
 from src.jobs.common.contracts_provider_static_overlap import (
     normalize_provider_static_overlap_payload,
 )
+from src.jobs.common.contracts_redundant_static_proposals import (
+    normalize_redundant_static_proposals_payload,
+)
 from src.jobs.common.contracts_source_health import normalize_source_health_payload
 from src.jobs.common.contracts_static_suppression_policy import (
     normalize_static_suppression_policy_payload,
@@ -134,6 +137,9 @@ def build_metrics(
     static_suppression_policy = normalize_static_suppression_policy_payload(
         report.get("staticSuppressionPolicy")
     )
+    redundant_static_proposals = normalize_redundant_static_proposals_payload(
+        report.get("redundantStaticProposals")
+    )
     return {
         "generatedAt": datetime.now(UTC).isoformat(),
         "latestRun": {
@@ -160,6 +166,7 @@ def build_metrics(
             "providerCoverage": provider_coverage,
             "providerStaticOverlap": provider_static_overlap,
             "staticSuppressionPolicy": static_suppression_policy,
+            "redundantStaticProposals": redundant_static_proposals,
             **summarize_source_rows(sources),
         },
         "history": summarize_run_history(history, window=window),

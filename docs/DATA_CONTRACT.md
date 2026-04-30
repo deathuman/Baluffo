@@ -551,6 +551,47 @@ and `not_audited`. `safe` means only that the current reversible suppression app
 available evidence. Static cleanup, deletion, hiding, or permanent redundancy rules remain a later
 explicit evidence-backed milestone.
 
+### Redundant static proposals
+
+Fetch reports, normalized bridge payloads, `/ops/health` KPI payloads, and fetcher metrics may
+include top-level `redundantStaticProposals`. This additive field is read-only advisory diagnostics
+derived only from existing `staticSuppressionPolicy`, `providerStaticOverlap`, and
+`providerCoverage` evidence. It is not a loader-selection input, does not change runtime
+suppression eligibility, does not create source report rows, and must not mutate source registry
+rows, tombstones, sync state, saved/local data, or `REDUNDANT_STATIC_IF_PROVIDER`.
+
+Proposal candidates are only evaluated provider/static pairs already present in the current
+suppression policy or overlap audit. Unlinked static registry rows with no evaluated provider/static
+pair produce no proposal. `keep_static` means a provider/static pair was evaluated and the evidence
+does not support treating the static source as redundant; it is not a broad static registry scan.
+
+`redundantStaticProposals` summary payload:
+
+| Field | Type | Description |
+|---|---|---|
+| `totalProposalCount` | `number` | Count of evidence-backed proposal rows. |
+| `safeRedundantCount` | `number` | Rows proposing `safe_redundant_static`. |
+| `keepStaticCount` | `number` | Rows proposing `keep_static`. |
+| `needsMoreHistoryCount` | `number` | Rows proposing `needs_more_history`. |
+| `needsReviewCount` | `number` | Rows proposing `needs_review`. |
+| `providerUnstableCount` | `number` | Rows proposing `provider_unstable`. |
+| `staticOnlyDetectedCount` | `number` | Rows proposing `static_only_jobs_detected`. |
+| `proposals` | `Array<Object>` | Compact advisory proposal rows. |
+
+Proposal rows include `staticSourceId`, `staticSourceName`, `providerSourceId`,
+`providerSourceName`, `proposal`, `confidence`, `reasons`, `recommendedAction`,
+`destructiveActionAllowed`, `lastAuditStatus`, `providerCoverageStatus`,
+`providerCoverageConsecutiveSuccesses`, `providerCoverageLatestKeptCount`, `staticOnlyCount`, and
+`overlapCount`. `confidence` is a number from `0.0` to `1.0`.
+`destructiveActionAllowed` is always `false`.
+
+`proposal` values are `safe_redundant_static`, `keep_static`, `needs_more_history`,
+`needs_review`, `provider_unstable`, and `static_only_jobs_detected`. `recommendedAction` values are
+`keep_runtime_suppression`, `keep_static_active`, `collect_more_history`, `review_pair`, and
+`pause_suppression`. These are diagnostic recommendations only. `safe_redundant_static` does not
+mean delete, hide, reject, demote, tombstone, or permanently suppress a source; static cleanup and
+permanent rules remain later explicit evidence-backed milestones.
+
 ### Job lifecycle summary
 
 Fetch reports and normalized bridge fetch-report payloads may include top-level `lifecycleSummary`.
