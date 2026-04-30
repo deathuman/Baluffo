@@ -46,6 +46,51 @@ def _apply_report_to_entry(
 ) -> None:
     entry = dict(source_state_rows.get(source_name) or {})
     prior_state = snapshot_prior_source_state(entry)
+    _copy_report_fields(entry, report, finished_at)
+    _apply_browser_state(
+        entry,
+        report,
+        finished_at,
+        circuit_breaker_cooldown_minutes,
+    )
+
+    details = apply_static_detail_stats(entry, report)
+    apply_stage_timings(entry, report)
+
+    _apply_status_state(
+        entry,
+        report=report,
+        source_name=source_name,
+        canonical_rows=canonical_rows,
+        finished_at=finished_at,
+        circuit_breaker_failures=circuit_breaker_failures,
+        circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+        circuit_breaker_zero_kept=circuit_breaker_zero_kept,
+    )
+
+    apply_structured_migration_state(
+        entry,
+        report=report,
+        finished_at=finished_at,
+        prior_state=prior_state,
+    )
+    source_state_rows[source_name] = entry
+    _apply_detail_reports(
+        source_state_rows,
+        details=details,
+        canonical_rows=canonical_rows,
+        finished_at=finished_at,
+        circuit_breaker_failures=circuit_breaker_failures,
+        circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
+        circuit_breaker_zero_kept=circuit_breaker_zero_kept,
+    )
+
+
+def _copy_report_fields(
+    entry: dict[str, Any],
+    report: dict[str, Any],
+    finished_at: str,
+) -> None:
     entry["lastRunAt"] = finished_at
     entry["lastCheckedAt"] = finished_at
     entry["lastStatus"] = clean_text(report.get("status"))
@@ -70,6 +115,13 @@ def _apply_report_to_entry(
     if int(report.get("httpStatus") or 0) > 0:
         entry["lastHttpStatus"] = int(report.get("httpStatus") or 0)
 
+
+def _apply_browser_state(
+    entry: dict[str, Any],
+    report: dict[str, Any],
+    finished_at: str,
+    circuit_breaker_cooldown_minutes: int,
+) -> None:
     apply_browser_escalation_state(
         entry,
         report=report,
@@ -84,9 +136,18 @@ def _apply_report_to_entry(
         ):
             entry.pop(key, None)
 
-    details = apply_static_detail_stats(entry, report)
-    apply_stage_timings(entry, report)
 
+def _apply_status_state(
+    entry: dict[str, Any],
+    *,
+    report: dict[str, Any],
+    source_name: str,
+    canonical_rows: list[dict[str, Any]],
+    finished_at: str,
+    circuit_breaker_failures: int,
+    circuit_breaker_cooldown_minutes: int,
+    circuit_breaker_zero_kept: int,
+) -> None:
     if entry["lastStatus"] == "ok":
         apply_successful_source_state(
             entry,
@@ -97,7 +158,6 @@ def _apply_report_to_entry(
             circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
             circuit_breaker_zero_kept=circuit_breaker_zero_kept,
         )
-        refresh_next_eligible_check_at(entry, source_name=source_name, finished_at=finished_at)
     elif entry["lastStatus"] == "error":
         apply_errored_source_state(
             entry,
@@ -106,18 +166,23 @@ def _apply_report_to_entry(
             circuit_breaker_failures=circuit_breaker_failures,
             circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
         )
-        refresh_next_eligible_check_at(entry, source_name=source_name, finished_at=finished_at)
     elif entry["lastStatus"] == "excluded":
         apply_excluded_source_state(entry, report=report, finished_at=finished_at)
-        refresh_next_eligible_check_at(entry, source_name=source_name, finished_at=finished_at)
+    else:
+        return
+    refresh_next_eligible_check_at(entry, source_name=source_name, finished_at=finished_at)
 
-    apply_structured_migration_state(
-        entry,
-        report=report,
-        finished_at=finished_at,
-        prior_state=prior_state,
-    )
-    source_state_rows[source_name] = entry
+
+def _apply_detail_reports(
+    source_state_rows: dict[str, dict[str, Any]],
+    *,
+    details: list[dict[str, Any]],
+    canonical_rows: list[dict[str, Any]],
+    finished_at: str,
+    circuit_breaker_failures: int,
+    circuit_breaker_cooldown_minutes: int,
+    circuit_breaker_zero_kept: int,
+) -> None:
     for item in details:
         detail_name = clean_text(item.get("name")) if isinstance(item, dict) else ""
         if detail_name:

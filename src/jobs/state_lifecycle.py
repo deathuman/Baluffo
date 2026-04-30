@@ -102,6 +102,111 @@ def _job_identity_key(job: dict[str, Any]) -> str:
     return ""
 
 
+def _lifecycle_entry_from_active_job(
+    row: dict[str, Any],
+    previous: dict[str, Any],
+    finished_at: str,
+) -> dict[str, Any]:
+    first_seen_at = clean_text(previous.get("firstSeenAt")) or finished_at
+    row["status"] = "active"
+    row["firstSeenAt"] = first_seen_at
+    row["lastSeenAt"] = finished_at
+    row["removedAt"] = ""
+    return {
+        "status": "active",
+        "firstSeenAt": first_seen_at,
+        "lastSeenAt": finished_at,
+        "title": clean_text(row.get("title")),
+        "company": clean_text(row.get("company")),
+        "jobLink": normalize_url(row.get("jobLink")),
+        "source": clean_text(row.get("source")),
+        "sourceJobId": clean_text(row.get("sourceJobId")),
+        "postedAt": to_iso(row.get("postedAt")),
+    }
+
+
+def _apply_active_lifecycle_rows(
+    payload_rows: list[dict[str, Any]],
+    next_rows: dict[str, dict[str, Any]],
+    finished_at: str,
+) -> set[str]:
+    seen_keys: set[str] = set()
+    for row in payload_rows:
+        key = _job_identity_key(row)
+        if not key:
+            continue
+        seen_keys.add(key)
+        previous = dict(next_rows.get(key) or {})
+        next_rows[key] = _lifecycle_entry_from_active_job(row, previous, finished_at)
+    return seen_keys
+
+
+def _apply_missing_lifecycle_entry(
+    entry: dict[str, Any],
+    *,
+    now_dt: datetime,
+    finished_at: str,
+    remove_to_archive_days: int,
+) -> dict[str, Any]:
+    status = norm_text(entry.get("status")) or "active"
+    removed_at = clean_text(entry.get("removedAt")) or finished_at
+    if status == "active":
+        entry["status"] = "likely_removed"
+        entry["removedAt"] = finished_at
+    elif status == "likely_removed":
+        removed_dt = parse_datetime(removed_at)
+        age_days = int((now_dt - removed_dt).total_seconds() // (24 * 60 * 60)) if removed_dt else 0
+        if age_days >= max(1, int(remove_to_archive_days or 1)):
+            entry["status"] = "archived"
+            entry["archivedAt"] = finished_at
+            entry["removedAt"] = removed_at
+    return entry
+
+
+def _apply_missing_lifecycle_rows(
+    next_rows: dict[str, dict[str, Any]],
+    *,
+    seen_keys: set[str],
+    finished_at: str,
+    allow_mark_missing: bool,
+    eligible_sources: set[str],
+    remove_to_archive_days: int,
+) -> datetime | None:
+    if not allow_mark_missing and not eligible_sources:
+        return None
+    now_dt = parse_datetime(finished_at) or datetime.now(UTC)
+    for key, entry in list(next_rows.items()):
+        if key in seen_keys:
+            continue
+        if not allow_mark_missing and clean_text(entry.get("source")) not in eligible_sources:
+            continue
+        next_rows[key] = _apply_missing_lifecycle_entry(
+            entry,
+            now_dt=now_dt,
+            finished_at=finished_at,
+            remove_to_archive_days=remove_to_archive_days,
+        )
+    return now_dt
+
+
+def _prune_archived_lifecycle_rows(
+    next_rows: dict[str, dict[str, Any]],
+    *,
+    now_dt: datetime,
+    archive_retention_days: int,
+) -> None:
+    retention_days = max(1, int(archive_retention_days or 1))
+    for key, entry in list(next_rows.items()):
+        if norm_text(entry.get("status")) != "archived":
+            continue
+        archived_dt = parse_datetime(entry.get("archivedAt") or entry.get("removedAt"))
+        if not archived_dt:
+            continue
+        age_days = int((now_dt - archived_dt).total_seconds() // (24 * 60 * 60))
+        if age_days > retention_days:
+            next_rows.pop(key, None)
+
+
 def apply_job_lifecycle_state(
     *,
     deduped_rows: list[CanonicalJob],
@@ -118,71 +223,25 @@ def apply_job_lifecycle_state(
         for key, value in (lifecycle_rows or {}).items()
         if clean_text(key)
     }
-    seen_keys: set[str] = set()
-
-    for row in payload_rows:
-        key = _job_identity_key(row)
-        if not key:
-            continue
-        seen_keys.add(key)
-        previous = dict(next_rows.get(key) or {})
-        first_seen_at = clean_text(previous.get("firstSeenAt")) or finished_at
-        row["status"] = "active"
-        row["firstSeenAt"] = first_seen_at
-        row["lastSeenAt"] = finished_at
-        row["removedAt"] = ""
-        next_rows[key] = {
-            "status": "active",
-            "firstSeenAt": first_seen_at,
-            "lastSeenAt": finished_at,
-            "title": clean_text(row.get("title")),
-            "company": clean_text(row.get("company")),
-            "jobLink": normalize_url(row.get("jobLink")),
-            "source": clean_text(row.get("source")),
-            "sourceJobId": clean_text(row.get("sourceJobId")),
-            "postedAt": to_iso(row.get("postedAt")),
-        }
-
+    seen_keys = _apply_active_lifecycle_rows(payload_rows, next_rows, finished_at)
     eligible_sources = {
         clean_text(source_name)
         for source_name in (eligible_missing_sources or set())
         if clean_text(source_name)
     }
-    if allow_mark_missing or eligible_sources:
-        now_dt = parse_datetime(finished_at) or datetime.now(UTC)
-        for key, entry in list(next_rows.items()):
-            if key in seen_keys:
-                continue
-            if not allow_mark_missing:
-                entry_source = clean_text(entry.get("source"))
-                if entry_source not in eligible_sources:
-                    continue
-            status = norm_text(entry.get("status")) or "active"
-            removed_at = clean_text(entry.get("removedAt")) or finished_at
-            if status == "active":
-                entry["status"] = "likely_removed"
-                entry["removedAt"] = finished_at
-            elif status == "likely_removed":
-                removed_dt = parse_datetime(removed_at)
-                age_days = (
-                    int((now_dt - removed_dt).total_seconds() // (24 * 60 * 60))
-                    if removed_dt
-                    else 0
-                )
-                if age_days >= max(1, int(remove_to_archive_days or 1)):
-                    entry["status"] = "archived"
-                    entry["archivedAt"] = finished_at
-                    entry["removedAt"] = removed_at
-            next_rows[key] = entry
-        retention_days = max(1, int(archive_retention_days or 1))
-        for key, entry in list(next_rows.items()):
-            if norm_text(entry.get("status")) != "archived":
-                continue
-            archived_dt = parse_datetime(entry.get("archivedAt") or entry.get("removedAt"))
-            if not archived_dt:
-                continue
-            age_days = int((now_dt - archived_dt).total_seconds() // (24 * 60 * 60))
-            if age_days > retention_days:
-                next_rows.pop(key, None)
+    now_dt = _apply_missing_lifecycle_rows(
+        next_rows,
+        seen_keys=seen_keys,
+        finished_at=finished_at,
+        allow_mark_missing=allow_mark_missing,
+        eligible_sources=eligible_sources,
+        remove_to_archive_days=remove_to_archive_days,
+    )
+    if now_dt:
+        _prune_archived_lifecycle_rows(
+            next_rows,
+            now_dt=now_dt,
+            archive_retention_days=archive_retention_days,
+        )
     counts = lifecycle_counts(next_rows)
     return [CanonicalJob.from_mapping(row) for row in payload_rows], next_rows, counts

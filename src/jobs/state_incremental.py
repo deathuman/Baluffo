@@ -133,52 +133,81 @@ def get_incremental_cache_decision(
     next_eligible = parse_datetime(entry.get("nextEligibleCheckAt"))
     now_dt = datetime.now(UTC)
     if next_eligible and next_eligible > now_dt:
-        last_decision = clean_text(entry.get("cacheDecision")) or "skip_fresh"
-        last_reason = clean_text(entry.get("cacheDecisionReason")) or "within_freshness_window"
-        if last_decision == "run_now":
-            last_decision = "skip_fresh"
-            last_reason = "within_freshness_window"
-        return {"cacheDecision": last_decision, "cacheDecisionReason": last_reason}
-    if effective_adapter == "personio":
-        last_error = norm_text(entry.get("lastError"))
-        last_failure_at = parse_datetime(entry.get("lastFailureAt"))
-        cooldown_cutoff = now_dt - timedelta(
-            minutes=max(1, int(common_config.DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES))
-        )
-        if "429" in last_error and last_failure_at and last_failure_at >= cooldown_cutoff:
-            return {
-                "cacheDecision": "cooldown_skip",
-                "cacheDecisionReason": "personio_rate_limited",
-            }
+        return _future_next_eligible_decision(entry)
+    personio_decision = _personio_cooldown_decision(entry, now_dt, effective_adapter)
+    if personio_decision:
+        return personio_decision
     last_success = parse_datetime(entry.get("lastSuccessAt"))
     if not last_success:
         return {"cacheDecision": "run_now", "cacheDecisionReason": "no_success_history"}
     age_seconds = max(0.0, (now_dt - last_success).total_seconds())
+    if effective_adapter == "static":
+        return _static_cache_decision(entry, age_seconds)
+    return _provider_cache_decision(entry, age_seconds, now_dt)
+
+
+def _future_next_eligible_decision(entry: dict[str, Any]) -> dict[str, str]:
+    last_decision = clean_text(entry.get("cacheDecision")) or "skip_fresh"
+    last_reason = clean_text(entry.get("cacheDecisionReason")) or "within_freshness_window"
+    if last_decision == "run_now":
+        last_decision = "skip_fresh"
+        last_reason = "within_freshness_window"
+    return {"cacheDecision": last_decision, "cacheDecisionReason": last_reason}
+
+
+def _personio_cooldown_decision(
+    entry: dict[str, Any],
+    now_dt: datetime,
+    adapter: str,
+) -> dict[str, str] | None:
+    if adapter != "personio":
+        return None
+    last_error = norm_text(entry.get("lastError"))
+    last_failure_at = parse_datetime(entry.get("lastFailureAt"))
+    cooldown_cutoff = now_dt - timedelta(
+        minutes=max(1, int(common_config.DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES))
+    )
+    if "429" in last_error and last_failure_at and last_failure_at >= cooldown_cutoff:
+        return {
+            "cacheDecision": "cooldown_skip",
+            "cacheDecisionReason": "personio_rate_limited",
+        }
+    return None
+
+
+def _static_cache_decision(entry: dict[str, Any], age_seconds: float) -> dict[str, str]:
     last_kept = int(entry.get("lastKeptCount") or entry.get("lastJobsFound") or 0)
     last_status = norm_text(entry.get("lastStatus"))
     last_error = norm_text(entry.get("lastError"))
+    if (
+        clean_text(entry.get("lastListingFingerprint"))
+        and last_kept > 0
+        and age_seconds < float(DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES * 60)
+    ):
+        return {"cacheDecision": "listing_only", "cacheDecisionReason": "static_listing_fresh"}
+    if (
+        last_status == "error"
+        and any(token in last_error for token in _STATIC_DEAD_SOURCE_TOKENS)
+        and age_seconds < float(DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES * 60)
+    ):
+        return {
+            "cacheDecision": "skip_fresh",
+            "cacheDecisionReason": "static_dead_or_stale_fresh",
+        }
+    if last_kept <= 0 and age_seconds < float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60):
+        return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "static_empty_fresh"}
+    return {"cacheDecision": "run_now", "cacheDecisionReason": "static_refresh_due"}
+
+
+def _provider_cache_decision(
+    entry: dict[str, Any],
+    age_seconds: float,
+    now_dt: datetime,
+) -> dict[str, str]:
+    last_kept = int(entry.get("lastKeptCount") or entry.get("lastJobsFound") or 0)
     has_validators = bool(
         clean_text(entry.get("lastHttpEtag")) or clean_text(entry.get("lastHttpLastModified"))
     )
-    if effective_adapter == "static":
-        if (
-            clean_text(entry.get("lastListingFingerprint"))
-            and last_kept > 0
-            and age_seconds < float(DEFAULT_INCREMENTAL_STATIC_LISTING_MINUTES * 60)
-        ):
-            return {"cacheDecision": "listing_only", "cacheDecisionReason": "static_listing_fresh"}
-        if (
-            last_status == "error"
-            and any(token in last_error for token in _STATIC_DEAD_SOURCE_TOKENS)
-            and age_seconds < float(DEFAULT_INCREMENTAL_DEAD_SOURCE_MINUTES * 60)
-        ):
-            return {
-                "cacheDecision": "skip_fresh",
-                "cacheDecisionReason": "static_dead_or_stale_fresh",
-            }
-        if last_kept <= 0 and age_seconds < float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60):
-            return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "static_empty_fresh"}
-        return {"cacheDecision": "run_now", "cacheDecisionReason": "static_refresh_due"}
     if last_kept <= 0 and age_seconds < float(DEFAULT_INCREMENTAL_EMPTY_SOURCE_MINUTES * 60):
         return {"cacheDecision": "skip_fresh", "cacheDecisionReason": "empty_source_fresh"}
     changed_at = parse_datetime(entry.get("lastChangedAt"))
