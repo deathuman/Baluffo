@@ -8,6 +8,10 @@ from collections.abc import Callable
 from typing import Any
 
 from src.bridge.registry_tombstones import is_tombstoned, load_tombstones
+from src.source_discovery.provider_migration_advisory import (
+    stage_provider_candidates_from_advisories,
+)
+from src.source_registry_state import transition_registry_to_pending
 
 
 def normalize_manual_static_studio_fields(
@@ -48,7 +52,7 @@ def _build_static_success_result(
     probe_meta: dict[str, Any],
     source_identity: Callable[[dict[str, Any]], str],
 ) -> dict[str, Any]:
-    return {
+    result = {
         "started": True,
         "runId": run_id,
         "sourceId": source_identity(updated),
@@ -57,6 +61,53 @@ def _build_static_success_result(
         "weakSignal": bool(weak_signal),
         "browserFallbackAttempted": bool((probe_meta or {}).get("browserFallbackAttempted")),
         "browserFallbackUsed": bool((probe_meta or {}).get("browserFallbackUsed")),
+    }
+    staged = (probe_meta or {}).get("stagedProviderCandidate")
+    if isinstance(staged, dict):
+        result["stagedProviderCandidate"] = staged
+    return result
+
+
+def _stage_provider_candidate_from_static_check(
+    *,
+    state: dict[str, Any],
+    updated: dict[str, Any],
+    source_identity: Callable[[dict[str, Any]], str],
+    probe_meta: dict[str, Any],
+    at: str,
+) -> dict[str, Any]:
+    links = probe_meta.get("providerEvidenceLinks") if isinstance(probe_meta, dict) else None
+    if not isinstance(links, list) or not links:
+        return {}
+    evidence = dict(updated)
+    evidence["sourceIdentity"] = source_identity(updated)
+    evidence["atsLinks"] = [str(link) for link in links[:5] if str(link or "").strip()]
+    staged = stage_provider_candidates_from_advisories(
+        [evidence],
+        active_rows=state.get("active", []),
+        pending_rows=state.get("pending", []),
+        at=at,
+    )
+    if not staged:
+        return {}
+    pending = transition_registry_to_pending(
+        staged[0],
+        reason="provider_migration_candidate",
+        actor="provider_migration_advisory",
+        at=at,
+    )
+    pending["candidateState"] = "staged_provider_candidate"
+    pending_rows = state.get("pending", [])
+    if isinstance(pending_rows, list):
+        pending_rows.append(pending)
+        state["pending"] = pending_rows
+    return {
+        "sourceId": source_identity(pending),
+        "name": str(pending.get("name") or ""),
+        "adapter": str(pending.get("adapter") or ""),
+        "detectedProviderFamily": str(pending.get("detectedProviderFamily") or ""),
+        "detectedProviderUrl": str(pending.get("detectedProviderUrl") or ""),
+        "migrationSourceIdentity": str(pending.get("migrationSourceIdentity") or ""),
     }
 
 
@@ -84,6 +135,147 @@ def _build_failure_result(
     if include_browser_used:
         result["browserFallbackUsed"] = bool((probe_meta or {}).get("browserFallbackUsed"))
     return result
+
+
+def _record_static_probe_success(
+    *,
+    run_id: str,
+    state: dict[str, Any],
+    rows: list[dict[str, Any]],
+    idx: int,
+    row: dict[str, Any],
+    jobs_found: int,
+    weak_signal: bool,
+    probe_meta: dict[str, Any],
+    source_identity: Callable[[dict[str, Any]], str],
+    compute_candidate_score: Callable[[dict[str, Any], int], tuple[int, list[str]]],
+    persist_state_and_auto_sync: Callable[..., dict[str, Any]],
+    now_iso: Callable[[], str],
+) -> dict[str, Any]:
+    score, reasons = compute_candidate_score(row, jobs_found)
+    updated = dict(row)
+    probed_at = now_iso()
+    updated["lastProbedAt"] = probed_at
+    updated["jobsFound"] = int(jobs_found)
+    updated["sampleCount"] = int(jobs_found)
+    updated["score"] = int(score)
+    updated["reasons"] = reasons
+    updated["confidence"] = "high" if jobs_found >= 10 else ("medium" if jobs_found >= 1 else "low")
+    updated.pop("lastProbeError", None)
+    updated["lastProbeWeakSignal"] = bool(weak_signal)
+    rows[idx] = updated
+    staged_provider = _stage_provider_candidate_from_static_check(
+        state=state,
+        updated=updated,
+        source_identity=source_identity,
+        probe_meta=probe_meta,
+        at=probed_at,
+    )
+    if staged_provider:
+        probe_meta = dict(probe_meta)
+        probe_meta["stagedProviderCandidate"] = staged_provider
+    persist_state_and_auto_sync(state, reason="source_check_updated")
+    return _build_static_success_result(
+        run_id=run_id,
+        updated=updated,
+        jobs_found=jobs_found,
+        weak_signal=weak_signal,
+        probe_meta=probe_meta,
+        source_identity=source_identity,
+    )
+
+
+def _record_static_probe_failure(
+    *,
+    run_id: str,
+    state: dict[str, Any],
+    rows: list[dict[str, Any]],
+    idx: int,
+    row: dict[str, Any],
+    error: str,
+    probe_meta: dict[str, Any],
+    source_identity: Callable[[dict[str, Any]], str],
+    persist_state_and_auto_sync: Callable[..., dict[str, Any]],
+    normalize_source_url: Callable[[str], str],
+    build_check_failure_details: Callable[..., dict[str, Any]],
+    now_iso: Callable[[], str],
+) -> dict[str, Any]:
+    updated = dict(row)
+    updated["lastProbedAt"] = now_iso()
+    updated["lastProbeError"] = str(error or "probe failed")
+    rows[idx] = updated
+    persist_state_and_auto_sync(state, reason="source_check_updated")
+    source_url = normalize_source_url(
+        str(updated.get("listing_url") or "")
+    ) or normalize_source_url(
+        str((updated.get("pages") or [""])[0] if isinstance(updated.get("pages"), list) else "")
+    )
+    failure_details = build_check_failure_details(
+        str(error or "probe failed"),
+        source_url or "",
+        browser_fallback_attempted=bool((probe_meta or {}).get("browserFallbackAttempted")),
+    )
+    return _build_failure_result(
+        run_id=run_id,
+        updated=updated,
+        error=str(error or "probe failed"),
+        failure_details=failure_details,
+        source_identity=source_identity,
+        include_browser_used=True,
+        probe_meta=probe_meta,
+    )
+
+
+def _trigger_static_source_check(
+    *,
+    run_id: str,
+    state: dict[str, Any],
+    rows: list[dict[str, Any]],
+    idx: int,
+    row: dict[str, Any],
+    timeout_s: int,
+    source_identity: Callable[[dict[str, Any]], str],
+    normalize_manual_static_studio_fields_fn: Callable[[dict[str, Any]], dict[str, Any]],
+    check_static_source_fn: Callable[
+        [dict[str, Any], int], tuple[bool, int, str, bool, dict[str, Any]]
+    ],
+    now_iso: Callable[[], str],
+    compute_candidate_score: Callable[[dict[str, Any], int], tuple[int, list[str]]],
+    persist_state_and_auto_sync: Callable[..., dict[str, Any]],
+    normalize_source_url: Callable[[str], str],
+    build_check_failure_details: Callable[..., dict[str, Any]],
+) -> dict[str, Any]:
+    row = normalize_manual_static_studio_fields_fn(row)
+    ok, jobs_found, error, weak_signal, probe_meta = check_static_source_fn(row, timeout_s)
+    if ok:
+        return _record_static_probe_success(
+            run_id=run_id,
+            state=state,
+            rows=rows,
+            idx=idx,
+            row=row,
+            jobs_found=jobs_found,
+            weak_signal=weak_signal,
+            probe_meta=probe_meta,
+            source_identity=source_identity,
+            compute_candidate_score=compute_candidate_score,
+            persist_state_and_auto_sync=persist_state_and_auto_sync,
+            now_iso=now_iso,
+        )
+    return _record_static_probe_failure(
+        run_id=run_id,
+        state=state,
+        rows=rows,
+        idx=idx,
+        row=row,
+        error=error,
+        probe_meta=probe_meta,
+        source_identity=source_identity,
+        persist_state_and_auto_sync=persist_state_and_auto_sync,
+        normalize_source_url=normalize_source_url,
+        build_check_failure_details=build_check_failure_details,
+        now_iso=now_iso,
+    )
 
 
 def _reconstruct_probe_candidate(row: dict[str, Any]) -> dict[str, Any]:
@@ -156,64 +348,22 @@ def trigger_source_check(
             if source_identity(row) != token:
                 continue
             if str(row.get("adapter") or "").strip().lower() == "static":
-                row = normalize_manual_static_studio_fields_fn(row)
-                ok, jobs_found, error, weak_signal, probe_meta = check_static_source_fn(
-                    row, timeout_s
-                )
-                updated = dict(row)
-                updated["lastProbedAt"] = now_iso()
-                if ok:
-                    score, reasons = compute_candidate_score(updated, jobs_found)
-                    updated["jobsFound"] = int(jobs_found)
-                    updated["sampleCount"] = int(jobs_found)
-                    updated["score"] = int(score)
-                    updated["reasons"] = reasons
-                    updated["confidence"] = (
-                        "high" if jobs_found >= 10 else ("medium" if jobs_found >= 1 else "low")
-                    )
-                    updated.pop("lastProbeError", None)
-                    updated["lastProbeWeakSignal"] = bool(weak_signal)
-                    rows[idx] = updated
-                    state[bucket] = rows
-                    persist_state_and_auto_sync(state, reason="source_check_updated")
-                    return _build_static_success_result(
-                        run_id=run_id,
-                        updated=updated,
-                        jobs_found=jobs_found,
-                        weak_signal=weak_signal,
-                        probe_meta=probe_meta,
-                        source_identity=source_identity,
-                    )
-                updated["lastProbeError"] = str(error or "probe failed")
-                rows[idx] = updated
                 state[bucket] = rows
-                persist_state_and_auto_sync(state, reason="source_check_updated")
-                source_url = (
-                    normalize_source_url(str(updated.get("listing_url") or ""))
-                    or normalize_source_url(
-                        str(
-                            (updated.get("pages") or [""])[0]
-                            if isinstance(updated.get("pages"), list)
-                            else ""
-                        )
-                    )
-                    or ""
-                )
-                failure_details = build_check_failure_details(
-                    str(error or "probe failed"),
-                    source_url,
-                    browser_fallback_attempted=bool(
-                        (probe_meta or {}).get("browserFallbackAttempted")
-                    ),
-                )
-                return _build_failure_result(
+                return _trigger_static_source_check(
                     run_id=run_id,
-                    updated=updated,
-                    error=str(error or "probe failed"),
-                    failure_details=failure_details,
+                    state=state,
+                    rows=rows,
+                    idx=idx,
+                    row=row,
+                    timeout_s=timeout_s,
                     source_identity=source_identity,
-                    include_browser_used=True,
-                    probe_meta=probe_meta,
+                    normalize_manual_static_studio_fields_fn=normalize_manual_static_studio_fields_fn,
+                    check_static_source_fn=check_static_source_fn,
+                    now_iso=now_iso,
+                    compute_candidate_score=compute_candidate_score,
+                    persist_state_and_auto_sync=persist_state_and_auto_sync,
+                    normalize_source_url=normalize_source_url,
+                    build_check_failure_details=build_check_failure_details,
                 )
 
             ok, jobs_found, error = probe_candidate(row, timeout_s=timeout_s)

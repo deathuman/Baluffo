@@ -41,6 +41,8 @@ _COMPACT_KEYS = (
     "detectedProviderFamily",
     "detectedProviderUrl",
     "detectedProviderId",
+    "createdFromAdvisory",
+    "migrationSourceIdentity",
     "existingProviderSourceId",
     "existingProviderSourceState",
     "staticSourceState",
@@ -52,6 +54,7 @@ _COMPACT_KEYS = (
     "lastProbeStatus",
     "lastProbeError",
 )
+_STAGED_ACTOR = "provider_migration_advisory"
 
 
 def _text(value: Any) -> str:
@@ -215,6 +218,19 @@ def _provider_id(row: dict[str, Any], family: str, provider_url: str) -> tuple[s
     return "", ""
 
 
+def _provider_row_from_evidence(
+    row: dict[str, Any], *, family: str, provider_url: str
+) -> dict[str, Any]:
+    provider_row = _provider_row_from_url(row, family, provider_url)
+    if not provider_row:
+        return {}
+    for key in _PROVIDER_ID_FIELDS:
+        value = _text(row.get(key))
+        if value and not provider_row.get(key):
+            provider_row[key] = value
+    return provider_row
+
+
 def _provider_lookup_key(row: dict[str, Any]) -> tuple[str, str]:
     family = _provider_family(row, _candidate_url(row))
     _field, value = _provider_id(row, family, _candidate_url(row))
@@ -373,6 +389,101 @@ def enrich_provider_migration_metadata(
     return updated
 
 
+def _is_stageable_provider_advisory(row: dict[str, Any]) -> bool:
+    action = _text(row.get("recommendedAction"))
+    current_adapter = _lower(row.get("currentAdapter") or row.get("adapter"))
+    family = _lower(row.get("detectedProviderFamily"))
+    if action not in {"add_provider_source", "review_provider_migration"}:
+        return False
+    if current_adapter != "static":
+        return False
+    if family not in SUPPORTED_PROVIDERS:
+        return False
+    if bool(row.get("duplicateOfActiveSource")) or bool(row.get("duplicateOfPendingSource")):
+        return False
+    if _text(row.get("existingProviderSourceId")):
+        return False
+    if not (_text(row.get("detectedProviderUrl")) or _text(row.get("detectedProviderId"))):
+        return False
+    reasons = {_lower(item) for item in row.get("migrationReasons") or []}
+    return bool(
+        reasons
+        & {
+            "provider_url_evidence",
+            "provider_id:slug",
+            "provider_id:account",
+            "provider_id:company_id",
+            "provider_id:api_url",
+            "provider_id:feed_url",
+            "provider_id:board_url",
+            "provider_id:listing_url",
+            "provider_id:base_url",
+        }
+    )
+
+
+def staged_provider_candidate_from_advisory(
+    row: dict[str, Any],
+    *,
+    at: str,
+) -> dict[str, Any]:
+    advisory = enrich_provider_migration_metadata(row)
+    if not _is_stageable_provider_advisory(advisory):
+        return {}
+    family = _lower(advisory.get("detectedProviderFamily"))
+    provider_url = _text(advisory.get("detectedProviderUrl"))
+    provider_row = _provider_row_from_evidence(advisory, family=family, provider_url=provider_url)
+    if not provider_row:
+        return {}
+    provider_row["createdFromAdvisory"] = True
+    provider_row["migrationSourceIdentity"] = _text(
+        advisory.get("sourceIdentity")
+    ) or source_identity(row)
+    provider_row["migrationReasons"] = list(advisory.get("migrationReasons") or [])
+    provider_row["migrationConfidence"] = _as_int(advisory.get("migrationConfidence"))
+    provider_row["detectedProviderFamily"] = family
+    provider_row["detectedProviderUrl"] = provider_url
+    provider_row["detectedProviderId"] = _text(advisory.get("detectedProviderId"))
+    provider_row["candidateState"] = "staged_provider_candidate"
+    provider_row["stagedAt"] = str(at)
+    provider_row["stagedBy"] = _STAGED_ACTOR
+    provider_row["discoveryMethod"] = "provider_migration_advisory"
+    provider_row["discoveryStage"] = "provider_migration_advisory"
+    provider_row["sourceIdentity"] = source_identity(provider_row)
+    provider_row["jobsFound"] = 0
+    provider_row["sampleCount"] = 0
+    return provider_row
+
+
+def stage_provider_candidates_from_advisories(
+    rows: list[dict[str, Any]],
+    *,
+    active_rows: list[dict[str, Any]] | None = None,
+    pending_rows: list[dict[str, Any]] | None = None,
+    at: str,
+) -> list[dict[str, Any]]:
+    provider_index = _provider_registry_index(active_rows, pending_rows)
+    staged: list[dict[str, Any]] = []
+    seen_ids = {
+        source_identity(row)
+        for row in [*(active_rows or []), *(pending_rows or []), *rows]
+        if isinstance(row, dict)
+    }
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        advisory = enrich_provider_migration_metadata(row, provider_index=provider_index)
+        candidate = staged_provider_candidate_from_advisory(advisory, at=at)
+        if not candidate:
+            continue
+        candidate_id = source_identity(candidate)
+        if candidate_id in seen_ids:
+            continue
+        seen_ids.add(candidate_id)
+        staged.append(candidate)
+    return staged
+
+
 def enrich_provider_migration_rows(
     rows: list[dict[str, Any]],
     *,
@@ -412,7 +523,16 @@ def build_provider_migration_payload(rows: list[dict[str, Any]]) -> dict[str, An
     counts.pop("", None)
     return {
         "totalCandidates": len(candidates),
+        "stagedProviderCount": sum(1 for row in candidates if bool(row.get("createdFromAdvisory"))),
         "actionCounts": dict(sorted(counts.items())),
+        "stagedProviderCandidates": _top_rows(
+            [row for row in candidates if bool(row.get("createdFromAdvisory"))],
+            {
+                "add_provider_source",
+                "review_provider_migration",
+                "already_covered_by_provider",
+            },
+        ),
         "providerMigrationCandidates": _top_rows(
             candidates, {"review_provider_migration", "add_provider_source"}
         ),

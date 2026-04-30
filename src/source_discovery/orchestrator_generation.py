@@ -21,6 +21,7 @@ from .directory_audit import directory_audit_rows, directory_audit_rows_for_meth
 from .io_runtime import endpoint_url
 from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
 from .probe import validate_candidate_for_probe
+from .provider_migration_advisory import stage_provider_candidates_from_advisories
 from .runtime_metrics import (
     distribute_duration_by_adapter as _distribute_duration_by_adapter,
 )
@@ -751,8 +752,20 @@ def _prepare_dedupe_and_source_state(
     state.directory_audit_summaries = latest_directory_audit_summaries()
     stage_started = time.perf_counter()
     discovered = orchestrator.merge_candidate_streams(state.streams)
+    staged_providers = stage_provider_candidates_from_advisories(
+        discovered,
+        active_rows=state.active,
+        pending_rows=state.pending_existing,
+        at=deps.started_at,
+    )
+    if staged_providers:
+        discovered.extend(staged_providers)
+        orchestrator.emit_log(f"Staged provider migration candidate(s): {len(staged_providers)}.")
     for row in discovered:
-        state.generated_count_by_stage[str(row.get("discoveryStage") or "provider_pattern")] += 1
+        stage_key = str(row.get("discoveryStage") or "provider_pattern")
+        state.generated_count_by_stage[stage_key] = (
+            state.generated_count_by_stage.get(stage_key, 0) + 1
+        )
     state.found_endpoint_count = len(discovered)
     orchestrator.emit_log(
         "Generated candidates by stage: "

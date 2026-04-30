@@ -8,6 +8,7 @@ from src.bridge.registry_tombstones import filter_tombstoned_rows
 from src.contracts import SCHEMA_VERSION
 from src.shared.utils import now_iso
 from src.source_registry import hide_repeated_zero_job_pending, source_identity, unique_sources
+from src.source_registry_state import transition_registry_to_pending
 
 from .core import apply_queue_balancing
 from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
@@ -33,6 +34,20 @@ def _require_root() -> Any:
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _pending_registry_row(row: dict[str, Any], *, at: str) -> dict[str, Any]:
+    if not bool(row.get("createdFromAdvisory")):
+        return row
+    pending = transition_registry_to_pending(
+        row,
+        reason="provider_migration_candidate",
+        actor="provider_migration_advisory",
+        at=at,
+    )
+    pending["candidateState"] = "staged_provider_candidate"
+    pending["createdFromAdvisory"] = True
+    return pending
 
 
 def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[str, Any]:
@@ -86,7 +101,10 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
     )
 
     pending_rows = [
-        hide_repeated_zero_job_pending(row, at=review_timestamp)
+        hide_repeated_zero_job_pending(
+            _pending_registry_row(row, at=review_timestamp),
+            at=review_timestamp,
+        )
         for row in filter_tombstoned_rows(
             unique_sources([*queued_candidates, *state.pending_existing]),
             state.tombstones,

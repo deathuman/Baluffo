@@ -74,6 +74,7 @@ export function renderDiscoveryCandidateReviewHtml(candidateReview) {
     : {};
   const migrationTotal = Number(migration.totalCandidates || 0);
   const migrationLanes = [
+    ["Staged provider candidates", migration.stagedProviderCandidates],
     ["Provider migration candidates", migration.providerMigrationCandidates],
     ["Already covered by provider", migration.alreadyCoveredByProvider],
     ["Add provider source candidates", migration.addProviderSourceCandidates],

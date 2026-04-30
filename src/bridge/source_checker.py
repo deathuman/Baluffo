@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from src.source_discovery.provider_inference import infer_web_candidate
 from src.source_registry import normalize_source_url
 
 
@@ -35,6 +36,19 @@ def _extract_static_module_signals(html: str, page_url: str) -> list[str]:
     if "apply.workable.com/" in low:
         signals.append(f"signal:workable_embed:{normalize_source_url(page_url) or page_url}")
     return signals
+
+
+def _provider_evidence_links(links: set[str], *, studio: str) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for link in links:
+        text = str(link or "").strip()
+        if not text or text in seen:
+            continue
+        if infer_web_candidate(text, studio, nl_priority=False, discovery_method="source_check"):
+            seen.add(text)
+            out.append(text)
+    return out[:5]
 
 
 def _resolve_static_source_pages(row: dict[str, Any]) -> list[str]:
@@ -235,6 +249,10 @@ def check_static_source(
             {
                 "browserFallbackAttempted": browser_fallback_attempted,
                 "browserFallbackUsed": browser_fallback_used,
+                "providerEvidenceLinks": _provider_evidence_links(
+                    {*structured_links, *weak_links},
+                    studio=company,
+                ),
             },
         )
     if weak_links:
@@ -246,6 +264,10 @@ def check_static_source(
             {
                 "browserFallbackAttempted": browser_fallback_attempted,
                 "browserFallbackUsed": browser_fallback_used,
+                "providerEvidenceLinks": _provider_evidence_links(
+                    {*structured_links, *weak_links},
+                    studio=company,
+                ),
             },
         )
     if errors:

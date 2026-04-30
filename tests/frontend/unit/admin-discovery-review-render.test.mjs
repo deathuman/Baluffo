@@ -40,6 +40,15 @@ test("admin render: discovery candidate review panel shows review lanes", () => 
           recommendedAction: "add_provider_source"
         }
       ],
+      stagedProviderCandidates: [
+        {
+          name: "Staged Provider",
+          currentAdapter: "greenhouse",
+          detectedProviderFamily: "greenhouse",
+          migrationConfidence: 90,
+          recommendedAction: "add_provider_source"
+        }
+      ],
       alreadyCoveredByProvider: [
         {
           name: "Covered Static",
@@ -67,6 +76,7 @@ test("admin render: discovery candidate review panel shows review lanes", () => 
 
   assert.match(html, /Discovery Review Quality/);
   assert.match(html, /Provider Migration Advisory/);
+  assert.match(html, /Staged provider candidates/);
   assert.match(html, /Already covered by provider/);
   assert.match(html, /Unsupported provider candidates/);
   assert.match(html, /Provider-backed/);
@@ -74,5 +84,6 @@ test("admin render: discovery candidate review panel shows review lanes", () => 
   assert.match(html, /Likely reject\/noise/);
   assert.match(html, /Live Studio/);
   assert.match(html, /Static Provider/);
+  assert.match(html, /Staged Provider/);
   assert.match(html, /HTTP 403/);
 });
