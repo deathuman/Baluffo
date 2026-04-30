@@ -29,6 +29,8 @@ def build_bridge_api(config: Any) -> BridgeApi:
         discovery_report_path=root_mod.DISCOVERY_REPORT_PATH,
         discovery_candidates_path=root_mod.DISCOVERY_CANDIDATES_PATH,
         jobs_fetch_report_path=root_mod.JOBS_FETCH_REPORT_PATH,
+        source_policy_recommendations_path=root_mod.SOURCE_POLICY_RECOMMENDATIONS_PATH,
+        source_policy_review_state_path=root_mod.SOURCE_POLICY_REVIEW_STATE_PATH,
         approval_state_path=root_mod.APPROVAL_STATE_PATH,
         discovery_log_path=root_mod.DISCOVERY_LOG_PATH,
         fetcher_log_path=root_mod.FETCHER_LOG_PATH,

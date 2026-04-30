@@ -20,6 +20,9 @@ from src.jobs.common.contracts_source_policy_recommendations import (
     build_source_policy_recommendations_artifact,
     read_source_policy_recommendations_artifact,
 )
+from src.jobs.common.contracts_source_policy_review_state import (
+    read_source_policy_review_state_artifact,
+)
 from src.jobs.common.contracts_static_suppression_policy import (
     refresh_static_suppression_policy_with_current_evidence,
 )
@@ -610,6 +613,7 @@ def finalize_pipeline_run(
                 "browserFallbackQueue": str(paths.browser_fallback_queue_path),
                 "parserRegressionQueue": str(paths.parser_regression_queue_path),
                 "sourcePolicyRecommendations": str(paths.source_policy_recommendations_path),
+                "sourcePolicyReviewState": str(paths.source_policy_review_state_path),
                 "changed": {"json": wrote_json, "csv": wrote_csv, "lightJson": wrote_light_json},
             },
         }
@@ -670,7 +674,9 @@ def finalize_pipeline_run(
         provider_coverage=report_payload["providerCoverage"],
     )
     source_policy_recommendation_warning = ""
+    source_policy_review_state_warning = ""
     source_policy_recommendations_path = paths.source_policy_recommendations_path
+    source_policy_review_state_path = paths.source_policy_review_state_path
     updated_recommendation_pair_count = len(
         json_object_rows(report_payload["redundantStaticProposals"].get("proposals"))
     )
@@ -678,22 +684,35 @@ def finalize_pipeline_run(
         prior_recommendations, source_policy_recommendation_warning = (
             read_source_policy_recommendations_artifact(source_policy_recommendations_path)
         )
+        source_policy_review_state, source_policy_review_state_warning = (
+            read_source_policy_review_state_artifact(source_policy_review_state_path)
+        )
         source_policy_recommendations = build_source_policy_recommendations_artifact(
             prior_artifact=prior_recommendations,
             redundant_static_proposals=report_payload["redundantStaticProposals"],
             observed_at=finished_at,
+            review_state=source_policy_review_state,
         )
         write_atomic_if_changed(
             source_policy_recommendations_path,
             json.dumps(source_policy_recommendations, indent=2, ensure_ascii=False),
         )
+        review_summary = source_policy_review_state.get("summary", {})
         report_payload["sourcePolicyRecommendationExport"] = {
             "status": "ok",
             "artifactPath": str(source_policy_recommendations_path),
+            "reviewStatePath": str(source_policy_review_state_path),
             "updatedPairCount": updated_recommendation_pair_count,
+            "reviewStatePairCount": int(review_summary.get("totalPairs") or 0),
+            "manualForcePausedCount": int(review_summary.get("forcePausedCount") or 0),
             **(
                 {"warning": source_policy_recommendation_warning}
                 if source_policy_recommendation_warning
+                else {}
+            ),
+            **(
+                {"reviewStateWarning": source_policy_review_state_warning}
+                if source_policy_review_state_warning
                 else {}
             ),
         }
@@ -701,7 +720,10 @@ def finalize_pipeline_run(
         report_payload["sourcePolicyRecommendationExport"] = {
             "status": "warning",
             "artifactPath": str(source_policy_recommendations_path),
+            "reviewStatePath": str(source_policy_review_state_path),
             "updatedPairCount": 0,
+            "reviewStatePairCount": 0,
+            "manualForcePausedCount": 0,
             "warning": f"source_policy_recommendation_export_failed:{type(exc).__name__}",
         }
     report_payload["healthSummary"] = {

@@ -48,6 +48,13 @@ All registered sources used by the jobs fetcher are listed in `src/jobs_fetcher_
 
 **Health check:** After a run, open `data/jobs-fetch-report.json`. The `sources` array has one entry per attempted source with `name`, `status` (ok/error/excluded), `fetchedCount`, `keptCount`, `error`, and `durationMs`. Use `runtime.selectedSourceCount` and `summary.failedSources` / `summary.excludedSources` for a quick overview.
 
+**Source-policy review:** Redundant-static recommendations may be accumulated in
+`data/source-policy-recommendations.json` and locally reviewed through
+`data/source-policy-review-state.json`. These artifacts are diagnostics and Admin review state only.
+`force_pause` is the only runtime override and only pauses dynamic static suppression for a
+provider/static pair; there is no force-suppress action and no adapter registry row,
+`REDUNDANT_STATIC_IF_PROVIDER`, tombstone, sync-state, or source-cleanup mutation.
+
 **Troubleshooting:** To debug a failing source, find its entry in `sources` and check `status`, `error`, and `loss` (e.g. `canonicalDropReasons`). To run only specific sources: `python src/jobs_fetcher.py --only-sources google_sheets,remote_ok`. To force a full run ignoring circuit breaker: `--ignore-circuit-breaker`. If Playwright/browser fallback is unhealthy, the fetcher will now short-circuit further browser attempts for a short cooldown instead of retrying on every static source. To disable a source without code changes, add it to `EXCLUDED_DEFAULT_SOURCES` in `src/jobs_fetcher_registry.py` or remove it from the active registry (`data/source-registry-active.json`) for registry-driven sources.
 
 ### Static adapter ownership

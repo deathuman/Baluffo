@@ -4,6 +4,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from src.jobs.common.contracts_source_policy_review_state import find_source_policy_review_pair
 from src.jobs.common.contracts_static_suppression_policy import (
     build_static_suppression_policy_pair,
     build_static_suppression_policy_summary,
@@ -138,6 +139,7 @@ def apply_dynamic_redundant_static_exclusions(
     build_excluded_source_report: Callable[[str, str], dict[str, Any]],
     source_report_meta: dict[str, dict[str, Any]],
     prior_static_suppression_evidence: dict[str, Any] | None = None,
+    source_policy_review_state: dict[str, Any] | None = None,
 ) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]], dict[str, Any]]:
     selected_provider_adapters = {
         norm_text(source_report_meta.get(name, {}).get("adapter"))
@@ -174,7 +176,17 @@ def apply_dynamic_redundant_static_exclusions(
             provider_source_id=provider_name,
             provider_source_name=provider_name,
         )
-        decision, reason = decide_static_suppression_from_prior_pair(prior_pair)
+        review_pair = find_source_policy_review_pair(
+            source_policy_review_state or {},
+            static_source_id=static_identity,
+            static_source_name=source_name,
+            provider_source_id=provider_name,
+            provider_source_name=provider_name,
+        )
+        if review_pair.get("manualSuppressionOverride") == "force_pause":
+            decision, reason = "paused", "manual_force_pause"
+        else:
+            decision, reason = decide_static_suppression_from_prior_pair(prior_pair)
         policy_pairs.append(
             build_static_suppression_policy_pair(
                 static_source_id=static_identity,

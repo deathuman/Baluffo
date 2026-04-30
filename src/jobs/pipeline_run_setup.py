@@ -20,6 +20,9 @@ from src.jobs.common import sources as common_sources
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
 from src.jobs.common.contracts_runtime import normalize_runtime_payload
+from src.jobs.common.contracts_source_policy_review_state import (
+    read_source_policy_review_state_artifact,
+)
 from src.jobs.common.contracts_static_suppression_policy import (
     read_prior_static_suppression_evidence,
 )
@@ -275,6 +278,9 @@ def prepare_pipeline_run(
         prior_static_suppression_evidence = read_prior_static_suppression_evidence(
             paths.report_path
         )
+        source_policy_review_state, _source_policy_review_state_warning = (
+            read_source_policy_review_state_artifact(paths.source_policy_review_state_path)
+        )
         (
             selected_loaders,
             dynamic_redundant_static,
@@ -289,6 +295,7 @@ def prepare_pipeline_run(
             ),
             source_report_meta=SOURCE_REPORT_META,
             prior_static_suppression_evidence=prior_static_suppression_evidence,
+            source_policy_review_state=source_policy_review_state,
         )
         source_reports.extend(dynamic_redundant_static)
 

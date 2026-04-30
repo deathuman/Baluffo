@@ -170,7 +170,28 @@ export function createOpsHealthController({
       renderAdminOpsFetcherMetricsImpl(
         refs.adminOpsFetcherMetricsEl,
         fetcherMetrics || {},
-        deriveFetcherFailureSummary(state.latestFetcherReportCache || {})
+        deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
+        {
+          onSourcePolicyAction: async (row, action) => {
+            if (!row || !action) return;
+            try {
+              const payload = {
+                action,
+                staticSourceId: String(row?.staticSourceId || ""),
+                staticSourceName: String(row?.staticSourceName || ""),
+                providerSourceId: String(row?.providerSourceId || ""),
+                providerSourceName: String(row?.providerSourceName || "")
+              };
+              if (action === "snooze") {
+                payload.snoozedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+              }
+              await postBridge("/source-policy/review-action", payload);
+              await loadOpsHealthData();
+            } catch (err) {
+              showToast(`Could not update source policy review: ${getErrorMessage(err)}`, "error");
+            }
+          }
+        }
       );
       renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel);
       renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);

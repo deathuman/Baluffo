@@ -199,6 +199,7 @@ export const UI_TOKENS = Object.freeze({
     // Dynamic item tokens
     wipeBtn: "admin-wipe-btn",
     sourceCheckbox: "source-checkbox",
-    alertAckBtn: "admin-alert-ack-btn"
+    alertAckBtn: "admin-alert-ack-btn",
+    sourcePolicyActionBtn: "admin-source-policy-action-btn"
   }
 });

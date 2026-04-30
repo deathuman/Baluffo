@@ -17,6 +17,7 @@ class PipelinePaths:
     browser_fallback_queue_path: Path
     parser_regression_queue_path: Path
     source_policy_recommendations_path: Path
+    source_policy_review_state_path: Path
     task_state_path: Path
     pending_registry_path: Path
     approval_state_path: Path
@@ -37,6 +38,7 @@ def build_pipeline_paths(output_dir: Path) -> PipelinePaths:
         browser_fallback_queue_path=root / "jobs-browser-fallback-queue.json",
         parser_regression_queue_path=root / "jobs-parser-regression-queue.json",
         source_policy_recommendations_path=root / "source-policy-recommendations.json",
+        source_policy_review_state_path=root / "source-policy-review-state.json",
         task_state_path=root / "jobs-fetch-tasks.json",
         pending_registry_path=root / "source-registry-pending.json",
         approval_state_path=root / "source-approval-state.json",

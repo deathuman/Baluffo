@@ -17,6 +17,8 @@ class AdminBridgeTestPaths:
     jobs_fetch_report: Path
     discovery_report: Path
     discovery_candidates: Path
+    source_policy_recommendations: Path
+    source_policy_review_state: Path
     approval_state: Path
     active_registry: Path
     pending_registry: Path
@@ -37,6 +39,8 @@ def admin_bridge_test_paths(root: Path) -> AdminBridgeTestPaths:
         jobs_fetch_report=root / "jobs-fetch-report.json",
         discovery_report=root / "source-discovery-report.json",
         discovery_candidates=root / "source-discovery-candidates.json",
+        source_policy_recommendations=root / "source-policy-recommendations.json",
+        source_policy_review_state=root / "source-policy-review-state.json",
         approval_state=root / "source-approval-state.json",
         active_registry=root / "source-registry-active.json",
         pending_registry=root / "source-registry-pending.json",
@@ -56,6 +60,12 @@ def patch_admin_bridge_paths(monkeypatch: Any, paths: AdminBridgeTestPaths) -> N
     monkeypatch.setattr(admin_bridge, "JOBS_FETCH_REPORT_PATH", paths.jobs_fetch_report)
     monkeypatch.setattr(admin_bridge, "DISCOVERY_REPORT_PATH", paths.discovery_report)
     monkeypatch.setattr(admin_bridge, "DISCOVERY_CANDIDATES_PATH", paths.discovery_candidates)
+    monkeypatch.setattr(
+        admin_bridge, "SOURCE_POLICY_RECOMMENDATIONS_PATH", paths.source_policy_recommendations
+    )
+    monkeypatch.setattr(
+        admin_bridge, "SOURCE_POLICY_REVIEW_STATE_PATH", paths.source_policy_review_state
+    )
     monkeypatch.setattr(admin_bridge, "APPROVAL_STATE_PATH", paths.approval_state)
     monkeypatch.setattr(
         admin_bridge.source_registry_module,

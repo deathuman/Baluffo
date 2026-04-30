@@ -256,7 +256,41 @@ function formatRedundantStaticProposalRows(rows, emptyText) {
     .join(" | ");
 }
 
-export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null) {
+function formatSourcePolicyReviewState(row) {
+  const reviewState = String(row?.reviewState || "new").replaceAll("_", " ");
+  const override = String(row?.manualSuppressionOverride || "none").replaceAll("_", " ");
+  const snoozedUntil = String(row?.snoozedUntil || "");
+  const snooze = snoozedUntil ? `, snoozed until ${formatDateTime(snoozedUntil)}` : "";
+  return `${reviewState}, override ${override}${snooze}`;
+}
+
+function renderSourcePolicyActionRows(rows) {
+  const proposalRows = Array.isArray(rows) ? rows.slice(0, 5) : [];
+  if (!proposalRows.length) {
+    return '<div class="muted">No source-policy recommendations to review.</div>';
+  }
+  return proposalRows.map((row, index) => {
+    const staticName = sanitizeSlowSourceName(row?.staticSourceName || row?.staticSourceId);
+    const provider = sanitizeSlowSourceName(row?.providerSourceName || row?.providerSourceId);
+    const proposal = String(row?.proposal || "proposal").replaceAll("_", " ");
+    const review = formatSourcePolicyReviewState(row);
+    const hasForcePause = String(row?.manualSuppressionOverride || "") === "force_pause";
+    return `
+      <div class="admin-ops-source-policy-row" data-source-policy-index="${index}">
+        <span>${escapeHtml(`${staticName} -> ${provider} (${proposal}; ${review})`)}</span>
+        <button class="btn back-btn admin-source-policy-action-btn" data-ui="admin-source-policy-action-btn" data-source-policy-action="acknowledge" data-source-policy-index="${index}">Ack</button>
+        <button class="btn back-btn admin-source-policy-action-btn" data-ui="admin-source-policy-action-btn" data-source-policy-action="reviewed" data-source-policy-index="${index}">Reviewed</button>
+        <button class="btn back-btn admin-source-policy-action-btn" data-ui="admin-source-policy-action-btn" data-source-policy-action="snooze" data-source-policy-index="${index}">Snooze 7d</button>
+        <button class="btn back-btn admin-source-policy-action-btn" data-ui="admin-source-policy-action-btn" data-source-policy-action="force_pause" data-source-policy-index="${index}">Force pause</button>
+        ${hasForcePause
+          ? `<button class="btn back-btn admin-source-policy-action-btn" data-ui="admin-source-policy-action-btn" data-source-policy-action="clear_override" data-source-policy-index="${index}">Clear override</button>`
+          : ""}
+      </div>
+    `;
+  }).join("");
+}
+
+export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null, handlers = {}) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};
   const history = metrics?.history || {};
@@ -288,6 +322,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     providerStaticOverlap: latest?.providerStaticOverlap || {},
     staticSuppressionPolicy: latest?.staticSuppressionPolicy || {},
     redundantStaticProposals: latest?.redundantStaticProposals || {},
+    sourcePolicyRecommendationExport: latest?.sourcePolicyRecommendationExport || {},
     failureSummary: summary
   });
   if (canPatchInPlace && metricsEl.dataset.opsFetcherMetricsSig === signature) return;
@@ -306,6 +341,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const providerStaticOverlap = latest?.providerStaticOverlap && typeof latest.providerStaticOverlap === "object" ? latest.providerStaticOverlap : {};
   const staticSuppressionPolicy = latest?.staticSuppressionPolicy && typeof latest.staticSuppressionPolicy === "object" ? latest.staticSuppressionPolicy : {};
   const redundantStaticProposals = latest?.redundantStaticProposals && typeof latest.redundantStaticProposals === "object" ? latest.redundantStaticProposals : {};
+  const sourcePolicyRecommendationExport = latest?.sourcePolicyRecommendationExport && typeof latest.sourcePolicyRecommendationExport === "object" ? latest.sourcePolicyRecommendationExport : {};
   const slowestSummary = slowest.length
     ? slowest
       .slice(0, 3)
@@ -402,6 +438,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     proposalRows.filter(row => row?.proposal === "static_only_jobs_detected"),
     "No static-only proposals."
   );
+  const sourcePolicyActionRows = renderSourcePolicyActionRows(proposalRows);
   const bucketSummaryHtml = bucketRows.length
     ? bucketRows.map(bucket => `
       <div class="admin-ops-schedule-item admin-ops-full-row">
@@ -472,5 +509,17 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Provider/static overlap audit</strong>: safe ${Number(providerStaticOverlap?.safePairCount || 0).toLocaleString()}, needs review ${Number(providerStaticOverlap?.needsReviewPairCount || 0).toLocaleString()}, insufficient history ${Number(providerStaticOverlap?.insufficientHistoryPairCount || 0).toLocaleString()}. ${overlapAuditSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Static suppression policy</strong>: suppressed ${Number(staticSuppressionPolicy?.suppressedCount || 0).toLocaleString()}, paused ${Number(staticSuppressionPolicy?.pausedCount || 0).toLocaleString()}, warnings ${Number(staticSuppressionPolicy?.warningCount || 0).toLocaleString()}. Suppressed: ${suppressedPolicySummary} Paused: ${pausedPolicySummary} Warnings: ${warningPolicySummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Redundant static proposals</strong>: safe ${Number(redundantStaticProposals?.safeRedundantCount || 0).toLocaleString()}, keep static ${Number(redundantStaticProposals?.keepStaticCount || 0).toLocaleString()}, more history ${Number(redundantStaticProposals?.needsMoreHistoryCount || 0).toLocaleString()}, review/unstable ${Number((redundantStaticProposals?.needsReviewCount || 0) + (redundantStaticProposals?.providerUnstableCount || 0)).toLocaleString()}, static-only ${Number(redundantStaticProposals?.staticOnlyDetectedCount || 0).toLocaleString()}. Safe: ${safeRedundantProposalSummary} Keep: ${keepStaticProposalSummary} History: ${moreHistoryProposalSummary} Review: ${reviewProposalSummary} Static-only: ${staticOnlyProposalSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Source-policy review</strong>: local review pairs ${Number(sourcePolicyRecommendationExport?.reviewStatePairCount || 0).toLocaleString()}, force-paused ${Number(sourcePolicyRecommendationExport?.manualForcePausedCount || 0).toLocaleString()}. Actions are local, reversible, and do not delete or hide sources. ${sourcePolicyActionRows}</div>
   `;
+  if (typeof metricsEl.querySelectorAll !== "function") return;
+  metricsEl.querySelectorAll(".admin-source-policy-action-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const index = Number(btn.dataset.sourcePolicyIndex || -1);
+      const row = proposalRows[index];
+      const action = String(btn.dataset.sourcePolicyAction || "");
+      if (row && typeof handlers.onSourcePolicyAction === "function") {
+        handlers.onSourcePolicyAction(row, action);
+      }
+    });
+  });
 }

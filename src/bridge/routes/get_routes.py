@@ -19,6 +19,13 @@ from src.bridge.routes.error_boundary import (
 )
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.core.schemas import LocalSavedJobRowSchema
+from src.jobs.common.contracts_source_policy_recommendations import (
+    merge_source_policy_review_state_into_recommendations,
+    read_source_policy_recommendations_artifact,
+)
+from src.jobs.common.contracts_source_policy_review_state import (
+    read_source_policy_review_state_artifact,
+)
 from src.source_registry import is_hidden_from_default
 
 logger = logging.getLogger(__name__)
@@ -543,6 +550,29 @@ def handle_get(
         if view == "live" and isinstance(payload, dict):
             payload = _compact_live_fetch_report_payload(payload)
         handler.send_json(payload)
+        return True
+
+    if path == "/source-policy/recommendations":
+        recommendations, recommendation_warning = read_source_policy_recommendations_artifact(
+            api.SOURCE_POLICY_RECOMMENDATIONS_PATH
+        )
+        review_state, review_state_warning = read_source_policy_review_state_artifact(
+            api.SOURCE_POLICY_REVIEW_STATE_PATH
+        )
+        payload = merge_source_policy_review_state_into_recommendations(
+            recommendations_artifact=recommendations,
+            review_state=review_state,
+        )
+        handler.send_json(
+            {
+                "ok": True,
+                "recommendations": payload,
+                "reviewState": review_state,
+                "warnings": [
+                    warning for warning in (recommendation_warning, review_state_warning) if warning
+                ],
+            }
+        )
         return True
 
     if path == "/sync/status":

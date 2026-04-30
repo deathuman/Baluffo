@@ -16,6 +16,10 @@ from src.bridge.routes.error_boundary import (
     send_json_boundary,
 )
 from src.bridge.routes.response_writer import BridgeResponseWriter
+from src.jobs.common.contracts_source_policy_review_state import (
+    apply_source_policy_review_action,
+    read_source_policy_review_state_artifact,
+)
 from src.shared.json_shapes import (
     as_json_list,
     as_json_object,
@@ -77,6 +81,35 @@ def _json_error(exc: Exception) -> dict[str, Any]:
 def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, payload: Any) -> bool:
     state = api.load_state()
     data = as_json_object(payload)
+
+    if path == "/source-policy/review-action":
+
+        def _payload() -> dict[str, Any]:
+            prior_review_state, warning = read_source_policy_review_state_artifact(
+                api.SOURCE_POLICY_REVIEW_STATE_PATH
+            )
+            review_state, pair = apply_source_policy_review_action(
+                prior_artifact=prior_review_state,
+                action_payload=data,
+                updated_at=str(getattr(api, "now_iso", lambda: "")() or ""),
+                default_updated_by="admin",
+            )
+            api.save_json_atomic(api.SOURCE_POLICY_REVIEW_STATE_PATH, review_state)
+            return {
+                "ok": True,
+                "pair": pair,
+                "summary": review_state.get("summary", {}),
+                "artifactPath": str(api.SOURCE_POLICY_REVIEW_STATE_PATH),
+                **({"warning": warning} if warning else {}),
+            }
+
+        send_json_boundary(
+            handler,
+            _payload,
+            error_status=400,
+            error_payload=lambda exc: {"ok": False, "error": str(exc)},
+        )
+        return True
 
     if path == "/sources/manual":
         result = api.add_manual_source(str(data.get("url") or ""))

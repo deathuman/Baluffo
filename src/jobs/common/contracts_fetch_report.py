@@ -145,6 +145,7 @@ def _normalize_outputs(payload: Any) -> dict[str, Any]:
         "browserFallbackQueue": clean_text(outputs.get("browserFallbackQueue")),
         "parserRegressionQueue": clean_text(outputs.get("parserRegressionQueue")),
         "sourcePolicyRecommendations": clean_text(outputs.get("sourcePolicyRecommendations")),
+        "sourcePolicyReviewState": clean_text(outputs.get("sourcePolicyReviewState")),
         "changed": {
             "json": bool(changed.get("json")),
             "csv": bool(changed.get("csv")),
@@ -158,8 +159,12 @@ def _normalize_source_policy_recommendation_export(payload: Any) -> dict[str, An
     return {
         "status": clean_text(src.get("status")),
         "artifactPath": clean_text(src.get("artifactPath")),
+        "reviewStatePath": clean_text(src.get("reviewStatePath")),
         "updatedPairCount": _clamped_int(src.get("updatedPairCount"), 0, 0),
+        "reviewStatePairCount": _clamped_int(src.get("reviewStatePairCount"), 0, 0),
+        "manualForcePausedCount": _clamped_int(src.get("manualForcePausedCount"), 0, 0),
         "warning": clean_text(src.get("warning")),
+        "reviewStateWarning": clean_text(src.get("reviewStateWarning")),
     }
 
 

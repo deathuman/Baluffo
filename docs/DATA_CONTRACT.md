@@ -632,10 +632,40 @@ reject, demote, tombstone, permanently suppress, or otherwise modify a source. P
 source-policy actions remain later explicit evidence-backed milestones.
 
 Fetch reports may include top-level `sourcePolicyRecommendationExport` with `status`,
-`artifactPath`, `updatedPairCount`, and optional `warning`, plus
-`outputs.sourcePolicyRecommendations`. Corrupt, malformed, or missing prior artifacts must not fail
-the fetch; they are treated as empty prior evidence and surfaced through the export diagnostic when
-useful.
+`artifactPath`, `reviewStatePath`, `updatedPairCount`, `reviewStatePairCount`,
+`manualForcePausedCount`, and optional `warning` / `reviewStateWarning`, plus
+`outputs.sourcePolicyRecommendations` and `outputs.sourcePolicyReviewState`. Corrupt, malformed, or
+missing prior artifacts must not fail the fetch; they are treated as empty prior evidence and
+surfaced through the export diagnostic when useful.
+
+### Source-policy review state artifact
+
+Admin may update `data/source-policy-review-state.json`, or the same filename under the active
+pipeline output directory, to record local review state for source-policy recommendations. This
+artifact is local, reversible, and non-destructive. It must not delete, hide, reject, demote,
+tombstone, or mutate source rows; it must not mutate registry sync state or
+`REDUNDANT_STATIC_IF_PROVIDER`; and it must not create permanent redundancy rules.
+
+Artifact payload:
+
+| Field | Type | Description |
+|---|---|---|
+| `schemaVersion` | `string` | Review-state contract version. |
+| `updatedAt` | `string` | Last Admin action timestamp. |
+| `summary` | `object` | Counts for local review and override state. |
+| `pairs` | `object` | Map keyed by normalized static/provider identity. |
+
+Pair rows include `staticSourceId`, `staticSourceName`, `providerSourceId`,
+`providerSourceName`, `reviewState`, `manualSuppressionOverride`, `snoozedUntil`, `notes`,
+`updatedAt`, and `updatedBy`. `reviewState` values are `new`, `acknowledged`, `reviewed`, and
+`snoozed`. `manualSuppressionOverride` values are `none` and `force_pause`; there is no
+`force_suppress` or allow-suppression override.
+
+`acknowledged`, `reviewed`, and `snoozed` affect Admin/Ops visibility only. `snoozedUntil` is
+local UI/review metadata and does not change loader selection. `force_pause` is the only runtime
+override: during default fetches it conservatively pauses dynamic static suppression for the
+matching provider/static pair so the static source runs normally. Clearing the override returns the
+pair to normal `staticSuppressionPolicy` behavior.
 
 ### Job lifecycle summary
 

@@ -367,13 +367,31 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "artifactPath": str(
             source_policy_recommendation_export_raw.get("artifactPath") or ""
         ).strip(),
+        "reviewStatePath": str(
+            source_policy_recommendation_export_raw.get("reviewStatePath") or ""
+        ).strip(),
         "updatedPairCount": safe_int(
             source_policy_recommendation_export_raw.get("updatedPairCount"),
             0,
             0,
             1_000_000,
         ),
+        "reviewStatePairCount": safe_int(
+            source_policy_recommendation_export_raw.get("reviewStatePairCount"),
+            0,
+            0,
+            1_000_000,
+        ),
+        "manualForcePausedCount": safe_int(
+            source_policy_recommendation_export_raw.get("manualForcePausedCount"),
+            0,
+            0,
+            1_000_000,
+        ),
         "warning": str(source_policy_recommendation_export_raw.get("warning") or "").strip(),
+        "reviewStateWarning": str(
+            source_policy_recommendation_export_raw.get("reviewStateWarning") or ""
+        ).strip(),
     }
     slowest_sources_raw = _as_list(runtime.get("slowestSources"))
     slowest_sources: list[dict[str, Any]] = []

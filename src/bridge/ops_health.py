@@ -497,6 +497,9 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     provider_static_overlap = as_json_object(latest_fetch_report.get("providerStaticOverlap"))
     static_suppression_policy = as_json_object(latest_fetch_report.get("staticSuppressionPolicy"))
     redundant_static_proposals = as_json_object(latest_fetch_report.get("redundantStaticProposals"))
+    source_policy_recommendation_export = as_json_object(
+        latest_fetch_report.get("sourcePolicyRecommendationExport")
+    )
     try:
         tombstones = deps.get_tombstones()
     except Exception:  # noqa: BLE001
@@ -560,6 +563,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             "providerStaticOverlap": provider_static_overlap,
             "staticSuppressionPolicy": static_suppression_policy,
             "redundantStaticProposals": redundant_static_proposals,
+            "sourcePolicyRecommendationExport": source_policy_recommendation_export,
             "registrySync": registry_sync,
             "socialExperiment": {
                 "pilotWindowStartAt": str(social_summary.get("pilotWindowStartAt") or ""),

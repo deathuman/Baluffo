@@ -12,6 +12,12 @@ from src.jobs.common.contracts_redundant_static_proposals import (
     REDUNDANT_STATIC_RECOMMENDED_ACTIONS,
     normalize_redundant_static_proposal_row,
 )
+from src.jobs.common.contracts_source_policy_review_state import (
+    SOURCE_POLICY_MANUAL_SUPPRESSION_OVERRIDES,
+    SOURCE_POLICY_REVIEW_STATES,
+    find_source_policy_review_pair,
+    source_policy_review_pair_public_fields,
+)
 from src.jobs.common.numbers import _clamped_int
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.json_shapes import as_json_object, json_object_rows
@@ -68,6 +74,16 @@ def _recommendation_value(value: Any) -> str:
     return (
         recommendation if recommendation in SOURCE_POLICY_RECOMMENDATIONS else "needs_more_history"
     )
+
+
+def _review_state_value(value: Any) -> str:
+    state = norm_text(value)
+    return state if state in SOURCE_POLICY_REVIEW_STATES else "new"
+
+
+def _manual_override_value(value: Any) -> str:
+    override = norm_text(value)
+    return override if override in SOURCE_POLICY_MANUAL_SUPPRESSION_OVERRIDES else "none"
 
 
 def _action_for_recommendation(recommendation: str) -> str:
@@ -137,6 +153,12 @@ def normalize_source_policy_recommendation_pair(payload: Any) -> dict[str, Any]:
         "lastProposal": _proposal_value(src.get("lastProposal")),
         "lastAuditStatus": clean_text(src.get("lastAuditStatus")),
         "destructiveActionAllowed": False,
+        "reviewState": _review_state_value(src.get("reviewState")),
+        "manualSuppressionOverride": _manual_override_value(src.get("manualSuppressionOverride")),
+        "snoozedUntil": clean_text(src.get("snoozedUntil")),
+        "notes": clean_text(src.get("notes")),
+        "reviewUpdatedAt": clean_text(src.get("reviewUpdatedAt")),
+        "reviewUpdatedBy": clean_text(src.get("reviewUpdatedBy")),
         "history": history,
     }
 
@@ -255,6 +277,7 @@ def build_source_policy_recommendations_artifact(
     prior_artifact: Any,
     redundant_static_proposals: Any,
     observed_at: str,
+    review_state: Any = None,
 ) -> dict[str, Any]:
     prior = normalize_source_policy_recommendations_artifact(prior_artifact)
     indexed = {
@@ -269,10 +292,46 @@ def build_source_policy_recommendations_artifact(
         if key == ("", ""):
             continue
         indexed[key] = _updated_pair(indexed.get(key, {}), proposal, observed_at=observed_at)
-    pairs = [indexed[key] for key in sorted(indexed)]
+    pairs = []
+    for key in sorted(indexed):
+        pair = indexed[key]
+        review_pair = find_source_policy_review_pair(
+            review_state or {},
+            static_source_id=pair["staticSourceId"],
+            static_source_name=pair["staticSourceName"],
+            provider_source_id=pair["providerSourceId"],
+            provider_source_name=pair["providerSourceName"],
+        )
+        if review_pair:
+            pair = {**pair, **source_policy_review_pair_public_fields(review_pair)}
+        pairs.append(normalize_source_policy_recommendation_pair(pair))
     return {
         "schemaVersion": SOURCE_POLICY_RECOMMENDATION_SCHEMA_VERSION,
         "updatedAt": clean_text(observed_at),
+        "summary": _summary_from_pairs(pairs),
+        "pairs": pairs,
+    }
+
+
+def merge_source_policy_review_state_into_recommendations(
+    *, recommendations_artifact: Any, review_state: Any
+) -> dict[str, Any]:
+    artifact = normalize_source_policy_recommendations_artifact(recommendations_artifact)
+    pairs = []
+    for pair in artifact["pairs"]:
+        review_pair = find_source_policy_review_pair(
+            review_state or {},
+            static_source_id=pair["staticSourceId"],
+            static_source_name=pair["staticSourceName"],
+            provider_source_id=pair["providerSourceId"],
+            provider_source_name=pair["providerSourceName"],
+        )
+        if review_pair:
+            pair = {**pair, **source_policy_review_pair_public_fields(review_pair)}
+        pairs.append(normalize_source_policy_recommendation_pair(pair))
+    return {
+        "schemaVersion": artifact["schemaVersion"],
+        "updatedAt": artifact["updatedAt"],
         "summary": _summary_from_pairs(pairs),
         "pairs": pairs,
     }

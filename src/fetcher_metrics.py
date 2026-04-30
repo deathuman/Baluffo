@@ -140,6 +140,9 @@ def build_metrics(
     redundant_static_proposals = normalize_redundant_static_proposals_payload(
         report.get("redundantStaticProposals")
     )
+    source_policy_recommendation_export = as_json_object(
+        report.get("sourcePolicyRecommendationExport")
+    )
     return {
         "generatedAt": datetime.now(UTC).isoformat(),
         "latestRun": {
@@ -167,6 +170,7 @@ def build_metrics(
             "providerStaticOverlap": provider_static_overlap,
             "staticSuppressionPolicy": static_suppression_policy,
             "redundantStaticProposals": redundant_static_proposals,
+            "sourcePolicyRecommendationExport": source_policy_recommendation_export,
             **summarize_source_rows(sources),
         },
         "history": summarize_run_history(history, window=window),

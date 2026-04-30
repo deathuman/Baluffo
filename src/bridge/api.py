@@ -238,6 +238,8 @@ class BridgeApi:
     DISCOVERY_LOG_PATH: Path
     FETCHER_LOG_PATH: Path
     STARTUP_METRICS_PATH: Path
+    SOURCE_POLICY_RECOMMENDATIONS_PATH: Path = Path("source-policy-recommendations.json")
+    SOURCE_POLICY_REVIEW_STATE_PATH: Path = Path("source-policy-review-state.json")
     DISCOVERY_CANDIDATES_PATH: Path | None = None
     DESKTOP_UPDATE_STATE_PATH: Path | None = None
 
