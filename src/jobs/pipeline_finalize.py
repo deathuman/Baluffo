@@ -16,6 +16,10 @@ from src.jobs.common.contracts_provider_static_overlap import (
 from src.jobs.common.contracts_redundant_static_proposals import (
     build_redundant_static_proposals_summary,
 )
+from src.jobs.common.contracts_source_policy_recommendations import (
+    build_source_policy_recommendations_artifact,
+    read_source_policy_recommendations_artifact,
+)
 from src.jobs.common.contracts_static_suppression_policy import (
     refresh_static_suppression_policy_with_current_evidence,
 )
@@ -61,6 +65,7 @@ from src.pipeline_io import (
     write_hot_text_if_changed,
     write_text_if_changed,
 )
+from src.shared.json_shapes import json_object_rows
 from src.shared.utils import now_iso
 
 from .common import config as common_config
@@ -604,6 +609,7 @@ def finalize_pipeline_run(
                 "lifecycleState": str(paths.lifecycle_state_path),
                 "browserFallbackQueue": str(paths.browser_fallback_queue_path),
                 "parserRegressionQueue": str(paths.parser_regression_queue_path),
+                "sourcePolicyRecommendations": str(paths.source_policy_recommendations_path),
                 "changed": {"json": wrote_json, "csv": wrote_csv, "lightJson": wrote_light_json},
             },
         }
@@ -663,6 +669,41 @@ def finalize_pipeline_run(
         provider_static_overlap=report_payload["providerStaticOverlap"],
         provider_coverage=report_payload["providerCoverage"],
     )
+    source_policy_recommendation_warning = ""
+    source_policy_recommendations_path = paths.source_policy_recommendations_path
+    updated_recommendation_pair_count = len(
+        json_object_rows(report_payload["redundantStaticProposals"].get("proposals"))
+    )
+    try:
+        prior_recommendations, source_policy_recommendation_warning = (
+            read_source_policy_recommendations_artifact(source_policy_recommendations_path)
+        )
+        source_policy_recommendations = build_source_policy_recommendations_artifact(
+            prior_artifact=prior_recommendations,
+            redundant_static_proposals=report_payload["redundantStaticProposals"],
+            observed_at=finished_at,
+        )
+        write_atomic_if_changed(
+            source_policy_recommendations_path,
+            json.dumps(source_policy_recommendations, indent=2, ensure_ascii=False),
+        )
+        report_payload["sourcePolicyRecommendationExport"] = {
+            "status": "ok",
+            "artifactPath": str(source_policy_recommendations_path),
+            "updatedPairCount": updated_recommendation_pair_count,
+            **(
+                {"warning": source_policy_recommendation_warning}
+                if source_policy_recommendation_warning
+                else {}
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001
+        report_payload["sourcePolicyRecommendationExport"] = {
+            "status": "warning",
+            "artifactPath": str(source_policy_recommendations_path),
+            "updatedPairCount": 0,
+            "warning": f"source_policy_recommendation_export_failed:{type(exc).__name__}",
+        }
     report_payload["healthSummary"] = {
         "topFailingDomains": health_module.get_top_failing_sources(source_state_rows, limit=10),
         "topZeroKeptDomains": health_module.get_top_zero_kept_sources(source_state_rows, limit=10),

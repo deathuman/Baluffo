@@ -592,6 +592,51 @@ Proposal rows include `staticSourceId`, `staticSourceName`, `providerSourceId`,
 mean delete, hide, reject, demote, tombstone, or permanently suppress a source; static cleanup and
 permanent rules remain later explicit evidence-backed milestones.
 
+### Source-policy recommendation artifact
+
+Completed fetch runs may update `data/source-policy-recommendations.json`, or the same filename
+under the active pipeline output directory. This generated local artifact accumulates bounded
+history from completed-run `redundantStaticProposals` so provider/static evidence can be reviewed
+over time. It is not an input to loader selection, runtime suppression, registry sync, source
+cleanup, or any Admin action, and it must not mutate source registries, tombstones, sync state,
+saved/local data, static sources, or `REDUNDANT_STATIC_IF_PROVIDER`.
+
+Artifact payload:
+
+| Field | Type | Description |
+|---|---|---|
+| `schemaVersion` | `string` | Artifact contract version. |
+| `updatedAt` | `string` | Latest completed fetch timestamp used to update the artifact. |
+| `summary` | `object` | Aggregate counts for current recommendation rows. |
+| `pairs` | `Array<Object>` | Evidence-backed provider/static recommendation rows. |
+
+Summary fields are `totalPairs`, `stableSafeCount`, `needsReviewCount`,
+`staticOnlyDetectedCount`, `unstableProviderCount`, and `moreHistoryCount`.
+
+Pair rows include `staticSourceId`, `staticSourceName`, `providerSourceId`,
+`providerSourceName`, `currentRecommendation`, `currentRecommendedAction`, `confidence`,
+`firstSeenAt`, `lastSeenAt`, `safeRunCount`, `consecutiveSafeRunCount`,
+`needsReviewRunCount`, `staticOnlyDetectedRunCount`, `providerUnstableRunCount`,
+`needsMoreHistoryRunCount`, `lastProposal`, `lastAuditStatus`, `destructiveActionAllowed`, and
+`history`. `history` retains at most the latest 10 observations per pair.
+`destructiveActionAllowed` is always `false`.
+
+History rows include `observedAt`, `proposal`, `recommendedAction`, `confidence`,
+`lastAuditStatus`, `providerCoverageStatus`, `providerCoverageConsecutiveSuccesses`,
+`providerCoverageLatestKeptCount`, `staticOnlyCount`, `overlapCount`, and `reasons`.
+
+`currentRecommendation` values are `stable_safe_redundant`, `needs_review`,
+`static_only_detected`, `needs_more_history`, and `keep_static`. `stable_safe_redundant` means the
+artifact has observed repeated safe runtime-suppression evidence; it does not mean delete, hide,
+reject, demote, tombstone, permanently suppress, or otherwise modify a source. Permanent
+source-policy actions remain later explicit evidence-backed milestones.
+
+Fetch reports may include top-level `sourcePolicyRecommendationExport` with `status`,
+`artifactPath`, `updatedPairCount`, and optional `warning`, plus
+`outputs.sourcePolicyRecommendations`. Corrupt, malformed, or missing prior artifacts must not fail
+the fetch; they are treated as empty prior evidence and surfaced through the export diagnostic when
+useful.
+
 ### Job lifecycle summary
 
 Fetch reports and normalized bridge fetch-report payloads may include top-level `lifecycleSummary`.

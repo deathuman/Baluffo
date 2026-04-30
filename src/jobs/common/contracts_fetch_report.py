@@ -144,11 +144,22 @@ def _normalize_outputs(payload: Any) -> dict[str, Any]:
         "lifecycleState": clean_text(outputs.get("lifecycleState")),
         "browserFallbackQueue": clean_text(outputs.get("browserFallbackQueue")),
         "parserRegressionQueue": clean_text(outputs.get("parserRegressionQueue")),
+        "sourcePolicyRecommendations": clean_text(outputs.get("sourcePolicyRecommendations")),
         "changed": {
             "json": bool(changed.get("json")),
             "csv": bool(changed.get("csv")),
             "lightJson": bool(changed.get("lightJson")),
         },
+    }
+
+
+def _normalize_source_policy_recommendation_export(payload: Any) -> dict[str, Any]:
+    src = as_json_object(payload)
+    return {
+        "status": clean_text(src.get("status")),
+        "artifactPath": clean_text(src.get("artifactPath")),
+        "updatedPairCount": _clamped_int(src.get("updatedPairCount"), 0, 0),
+        "warning": clean_text(src.get("warning")),
     }
 
 
@@ -307,6 +318,9 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         ),
         "redundantStaticProposals": normalize_redundant_static_proposals_payload(
             src.get("redundantStaticProposals")
+        ),
+        "sourcePolicyRecommendationExport": _normalize_source_policy_recommendation_export(
+            src.get("sourcePolicyRecommendationExport")
         ),
         "lifecycleSummary": _normalize_lifecycle_summary(src.get("lifecycleSummary"), summary),
         "healthSummary": copy_json_object(src.get("healthSummary")),

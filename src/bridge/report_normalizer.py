@@ -361,6 +361,20 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     redundant_static_proposals = normalize_redundant_static_proposals_payload(
         src.get("redundantStaticProposals")
     )
+    source_policy_recommendation_export_raw = _as_dict(src.get("sourcePolicyRecommendationExport"))
+    source_policy_recommendation_export = {
+        "status": str(source_policy_recommendation_export_raw.get("status") or "").strip(),
+        "artifactPath": str(
+            source_policy_recommendation_export_raw.get("artifactPath") or ""
+        ).strip(),
+        "updatedPairCount": safe_int(
+            source_policy_recommendation_export_raw.get("updatedPairCount"),
+            0,
+            0,
+            1_000_000,
+        ),
+        "warning": str(source_policy_recommendation_export_raw.get("warning") or "").strip(),
+    }
     slowest_sources_raw = _as_list(runtime.get("slowestSources"))
     slowest_sources: list[dict[str, Any]] = []
     for row in slowest_sources_raw[:10]:
@@ -513,6 +527,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "providerStaticOverlap": provider_static_overlap,
         "staticSuppressionPolicy": static_suppression_policy,
         "redundantStaticProposals": redundant_static_proposals,
+        "sourcePolicyRecommendationExport": source_policy_recommendation_export,
         "outputs": _as_dict(src.get("outputs")),
     }
     finished_at = str(normalized.get("finishedAt") or "").strip()
