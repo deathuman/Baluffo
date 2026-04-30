@@ -36,6 +36,7 @@ What improved:
 - `static_listing_flow.py`, `static_detail.py`, `static_helpers.py`, and several static/plugin/facade surfaces were deleted.
 - Static detail, location-rule, static listing, provider, and plugin complexity were reduced in targeted places.
 - Evidence-backed dead-source deletion now exists with tombstones and dated snapshots.
+- The first source-family evidence snapshot is available at [`jobs-source-family-evidence-2026-04-30.md`](../snapshots/jobs-source-family-evidence-2026-04-30.md).
 
 What is still not done:
 
@@ -182,10 +183,10 @@ The C901 command is informational until the broad offender count is low enough t
 
 ### Phase 2: Evidence-backed source-family decisions
 
-Status: next code/evidence lane.
+Status: first snapshot captured on 2026-04-30.
 
-- Run isolated fetch evidence for `scrapy_static`, social, community, and low-yield static plugins.
-- Produce a checked-in snapshot with keep/merge/delete/defer decisions.
+- Use [`jobs-source-family-evidence-2026-04-30.md`](../snapshots/jobs-source-family-evidence-2026-04-30.md) as the starting point for `scrapy_static`, social, community, and representative static source decisions.
+- Add narrower follow-up snapshots when the evidence is channel-specific or source-specific.
 - Ask before deleting source rows, default loaders, or registered source families.
 
 Validation:
@@ -200,10 +201,12 @@ cmd /c npm run lint:precommit
 
 ### Phase 3: Static Scrapy lifecycle decision
 
-Status: pending evidence.
+Status: next recommended code/evidence decision.
 
-- Delete `static_scrapy` if evidence shows it is dead or redundant.
-- Otherwise migrate it into the current static execution lifecycle and remove duplicated report/cache/error branches.
+- Confirm whether the current "No enabled scrapy_static sources" evidence is expected.
+- If yes, ask for approval to remove the default loader and dead runtime surface.
+- If no, fix the registry/config evidence gap before deleting anything.
+- Otherwise migrate `static_scrapy` into the current static execution lifecycle and remove duplicated report/cache/error branches.
 
 Validation:
 
