@@ -13,6 +13,7 @@ from src.shared.live_task import (
     normalize_live_task_payload,
 )
 
+from .contracts_provider_coverage import normalize_provider_coverage_payload
 from .contracts_runtime import _float_or_zero, normalize_runtime_payload
 from .contracts_source_health import normalize_source_health_payload
 from .contracts_source_reports import normalize_source_report_row
@@ -292,6 +293,7 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "sourceHealth": normalize_source_health_payload(
             src.get("sourceHealth"), normalized_source_rows
         ),
+        "providerCoverage": normalize_provider_coverage_payload(src.get("providerCoverage")),
         "lifecycleSummary": _normalize_lifecycle_summary(src.get("lifecycleSummary"), summary),
         "healthSummary": copy_json_object(src.get("healthSummary")),
         "outputs": _normalize_outputs(src.get("outputs")),

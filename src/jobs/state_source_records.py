@@ -25,6 +25,24 @@ from src.shared.utils import now_iso
 from . import state_incremental as _state_incremental
 from .common import url as common_url
 
+PROVIDER_COVERAGE_ADAPTERS = frozenset(
+    {
+        "greenhouse",
+        "lever",
+        "ashby",
+        "smartrecruiters",
+        "workable",
+        "recruitee",
+        "pinpoint",
+        "teamtailor",
+        "bamboohr",
+        "workday",
+        "personio",
+        "breezy",
+        "jazzhr",
+    }
+)
+
 
 def structured_duplicate_rate(value: Any) -> float:
     try:
@@ -352,6 +370,36 @@ def normalize_source_state_payload(
             "structuredMigrationLastKeptCount": _clamped_int(
                 entry_src.get("structuredMigrationLastKeptCount"), 0, 0
             ),
+            "providerCoverageStatus": clean_text(entry_src.get("providerCoverageStatus")),
+            "providerReplacementReadiness": clean_text(
+                entry_src.get("providerReplacementReadiness")
+            ),
+            "providerCoverageFirstSuccessAt": clean_text(
+                entry_src.get("providerCoverageFirstSuccessAt")
+            ),
+            "providerCoverageLastSuccessAt": clean_text(
+                entry_src.get("providerCoverageLastSuccessAt")
+            ),
+            "providerCoverageSuccessCount": _clamped_int(
+                entry_src.get("providerCoverageSuccessCount"), 0, 0
+            ),
+            "providerCoverageConsecutiveSuccesses": _clamped_int(
+                entry_src.get("providerCoverageConsecutiveSuccesses"), 0, 0
+            ),
+            "providerCoverageConsecutiveFailures": _clamped_int(
+                entry_src.get("providerCoverageConsecutiveFailures"), 0, 0
+            ),
+            "providerCoverageLatestKeptCount": _clamped_int(
+                entry_src.get("providerCoverageLatestKeptCount"), 0, 0
+            ),
+            "providerCoverageLatestError": clean_text(entry_src.get("providerCoverageLatestError")),
+            "providerCoverageSourceBundleOverlapCount": _clamped_int(
+                entry_src.get("providerCoverageSourceBundleOverlapCount"), 0, 0
+            ),
+            "migrationSourceIdentity": clean_text(entry_src.get("migrationSourceIdentity")),
+            "detectedProviderFamily": clean_text(entry_src.get("detectedProviderFamily")),
+            "detectedProviderUrl": clean_text(entry_src.get("detectedProviderUrl")),
+            "detectedProviderId": clean_text(entry_src.get("detectedProviderId")),
         }
         raw_latencies = _as_list(entry_src.get("recentLatencies"))
         clean_latencies = [
@@ -482,6 +530,94 @@ def apply_static_detail_stats(
     entry["lastRedirectResolved"] = int(static_stats.get("redirect_resolved") or 0)
     entry["lastRedirectCacheHits"] = int(static_stats.get("redirect_cache_hits") or 0)
     return details
+
+
+def _provider_coverage_eligible(report: dict[str, Any]) -> bool:
+    adapter = norm_text(report.get("adapter"))
+    return adapter in PROVIDER_COVERAGE_ADAPTERS and bool(
+        clean_text(report.get("migrationSourceIdentity"))
+    )
+
+
+def _provider_replacement_readiness(entry: dict[str, Any]) -> str:
+    if clean_text(entry.get("providerCoverageStatus")) != "validated_provider":
+        return "none"
+    successes = int(entry.get("providerCoverageConsecutiveSuccesses") or 0)
+    return "ready_later" if successes >= 2 else "candidate"
+
+
+def _source_bundle_overlap_count(source_name: str, canonical_rows: list[dict[str, Any]]) -> int:
+    total = 0
+    for row in canonical_rows:
+        if clean_text(row.get("source")) != source_name:
+            continue
+        if int(row.get("sourceBundleCount") or 0) > 1:
+            total += 1
+    return total
+
+
+def apply_provider_coverage_state(
+    entry: dict[str, Any],
+    *,
+    report: dict[str, Any],
+    source_name: str,
+    canonical_rows: list[dict[str, Any]],
+    finished_at: str,
+) -> None:
+    if not _provider_coverage_eligible(report):
+        return
+    prior_status = clean_text(entry.get("providerCoverageStatus"))
+    status = norm_text(report.get("status"))
+    error = clean_text(report.get("error"))
+    for key in (
+        "migrationSourceIdentity",
+        "detectedProviderFamily",
+        "detectedProviderUrl",
+        "detectedProviderId",
+    ):
+        value = clean_text(report.get(key))
+        if value:
+            entry[key] = value
+    if status == "excluded":
+        if not prior_status:
+            entry["providerCoverageStatus"] = "probing"
+        entry["providerReplacementReadiness"] = _provider_replacement_readiness(entry)
+        return
+
+    kept_count = int(report.get("keptCount") or 0)
+    entry["providerCoverageLatestKeptCount"] = kept_count
+    entry["providerCoverageSourceBundleOverlapCount"] = _source_bundle_overlap_count(
+        source_name, canonical_rows
+    )
+    if status == "ok" and kept_count > 0:
+        entry["providerCoverageStatus"] = "validated_provider"
+        entry["providerCoverageFirstSuccessAt"] = (
+            clean_text(entry.get("providerCoverageFirstSuccessAt")) or finished_at
+        )
+        entry["providerCoverageLastSuccessAt"] = finished_at
+        entry["providerCoverageSuccessCount"] = (
+            int(entry.get("providerCoverageSuccessCount") or 0) + 1
+        )
+        entry["providerCoverageConsecutiveSuccesses"] = (
+            int(entry.get("providerCoverageConsecutiveSuccesses") or 0) + 1
+        )
+        entry["providerCoverageConsecutiveFailures"] = 0
+        entry["providerCoverageLatestError"] = ""
+    elif status == "ok":
+        entry["providerCoverageStatus"] = "needs_review"
+        entry["providerCoverageLatestError"] = ""
+    elif status == "error":
+        entry["providerCoverageStatus"] = (
+            "unstable_provider"
+            if clean_text(entry.get("providerCoverageLastSuccessAt"))
+            else "failed_provider"
+        )
+        entry["providerCoverageConsecutiveSuccesses"] = 0
+        entry["providerCoverageConsecutiveFailures"] = (
+            int(entry.get("providerCoverageConsecutiveFailures") or 0) + 1
+        )
+        entry["providerCoverageLatestError"] = error
+    entry["providerReplacementReadiness"] = _provider_replacement_readiness(entry)
 
 
 def apply_stage_timings(entry: dict[str, Any], report: dict[str, Any]) -> None:

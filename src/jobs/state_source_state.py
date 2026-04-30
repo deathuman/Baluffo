@@ -12,6 +12,7 @@ from .state_source_records import (
     apply_circuit_breaker_exclusions,
     apply_errored_source_state,
     apply_excluded_source_state,
+    apply_provider_coverage_state,
     apply_stage_timings,
     apply_static_detail_stats,
     apply_structured_migration_state,
@@ -73,6 +74,13 @@ def _apply_report_to_entry(
         report=report,
         finished_at=finished_at,
         prior_state=prior_state,
+    )
+    apply_provider_coverage_state(
+        entry,
+        report=report,
+        source_name=source_name,
+        canonical_rows=canonical_rows,
+        finished_at=finished_at,
     )
     source_state_rows[source_name] = entry
     _apply_detail_reports(

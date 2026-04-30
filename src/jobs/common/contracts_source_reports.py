@@ -196,6 +196,7 @@ def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
     _apply_cache_fields(clean_item, item)
     _apply_http_fields(clean_item, item)
     _apply_listing_fields(clean_item, item)
+    _apply_provider_migration_fields(clean_item, item)
     _normalize_dead_listing_fields(clean_item, item)
 
     top_reject_reasons = as_json_list(item.get("top_reject_reasons"))
@@ -336,6 +337,27 @@ def _apply_stage_loss_and_exclusion_fields(target: dict[str, Any], src: dict[str
         target["loss"] = _normalize_loss(loss)
 
 
+def _apply_provider_migration_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
+    if norm_text(src.get("adapter")) in {"static", "scrapy_static", "social", "csv", "html"}:
+        return
+    for key in (
+        "migrationSourceIdentity",
+        "detectedProviderFamily",
+        "detectedProviderUrl",
+        "detectedProviderId",
+    ):
+        value = clean_text(src.get(key))
+        if value:
+            target[key] = value
+    if "createdFromAdvisory" in src:
+        target["createdFromAdvisory"] = bool(src.get("createdFromAdvisory"))
+    if "migrationConfidence" in src:
+        target["migrationConfidence"] = _clamped_int(src.get("migrationConfidence"), 0, 0)
+    reasons = as_json_list(src.get("migrationReasons"))
+    if reasons:
+        target["migrationReasons"] = [clean_text(item) for item in reasons if clean_text(item)]
+
+
 def _apply_site_changed_url_surface(
     target: dict[str, Any],
     src: dict[str, Any],
@@ -417,6 +439,7 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         decision_counts_key="subsourceCacheDecisionCounts",
     )
     _apply_stage_loss_and_exclusion_fields(normalized, src)
+    _apply_provider_migration_fields(normalized, src)
     _apply_site_changed_url_surface(normalized, src, failure_bucket)
     _apply_details(normalized, src)
 

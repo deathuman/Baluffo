@@ -59,7 +59,8 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
     pendingApprovalsCount: Number(kpis?.pendingApprovalsCount || 0),
     avgFetchDurationMs7d: Number(kpis?.avgFetchDurationMs7d || 0),
     lastSuccessfulFetchAge: String(kpis?.lastSuccessfulFetchAge || ""),
-    registrySync: kpis?.registrySync || {}
+    registrySync: kpis?.registrySync || {},
+    providerCoverage: kpis?.providerCoverage || {}
   });
   if (canPatchInPlace && kpisEl.dataset.opsKpisSig === signature) return;
   if (canPatchInPlace) kpisEl.dataset.opsKpisSig = signature;
@@ -69,6 +70,9 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
   const avgMs = Number(kpis?.avgFetchDurationMs7d || 0);
   const registrySync = kpis?.registrySync && typeof kpis.registrySync === "object"
     ? kpis.registrySync
+    : {};
+  const providerCoverage = kpis?.providerCoverage && typeof kpis.providerCoverage === "object"
+    ? kpis.providerCoverage
     : {};
   const statusClass = status === "critical" ? "critical" : status === "warning" ? "warning" : "healthy";
   const lastSyncAt = String(registrySync?.lastSyncAt || "");
@@ -121,6 +125,14 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
       conflicts ${Number(registrySync?.conflictCount || 0).toLocaleString()},
       invalid rows ${Number(registrySync?.invalidRowsCount || 0).toLocaleString()}.
     </div>
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Provider coverage</strong>:
+      validated ${Number(providerCoverage?.statusCounts?.validated_provider || 0).toLocaleString()},
+      probing ${Number((providerCoverage?.statusCounts?.probing || 0) + (providerCoverage?.statusCounts?.untested || 0)).toLocaleString()},
+      failed/unstable ${Number((providerCoverage?.statusCounts?.failed_provider || 0) + (providerCoverage?.statusCounts?.unstable_provider || 0)).toLocaleString()},
+      ready later ${Number((providerCoverage?.readyLaterProviders || []).length || 0).toLocaleString()}.
+      Static sources are retained.
+    </div>
   `;
 }
 
@@ -166,6 +178,22 @@ function formatSourceHealthRows(rows, emptyText, { includeDuration = false } = {
     .join(" | ");
 }
 
+function formatProviderCoverageRows(rows, emptyText) {
+  const providerRows = Array.isArray(rows) ? rows : [];
+  if (!providerRows.length) return escapeHtml(emptyText);
+  return providerRows
+    .slice(0, 5)
+    .map(row => {
+      const name = sanitizeSlowSourceName(row?.name);
+      const status = String(row?.providerCoverageStatus || "unknown").replaceAll("_", " ");
+      const readiness = String(row?.providerReplacementReadiness || "none").replaceAll("_", " ");
+      const kept = Number(row?.providerCoverageLatestKeptCount || 0);
+      const successes = Number(row?.providerCoverageConsecutiveSuccesses || 0);
+      return escapeHtml(`${name} (${status}, kept ${kept}, successes ${successes}, ${readiness})`);
+    })
+    .join(" | ");
+}
+
 export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};
@@ -194,6 +222,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     slowestSources: Array.isArray(latest?.slowestSources) ? latest.slowestSources : [],
     stageTop: Array.isArray(latest?.stageTop) ? latest.stageTop : [],
     sourceHealth: latest?.sourceHealth || {},
+    providerCoverage: latest?.providerCoverage || {},
     failureSummary: summary
   });
   if (canPatchInPlace && metricsEl.dataset.opsFetcherMetricsSig === signature) return;
@@ -208,6 +237,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const stageTop = Array.isArray(latest?.stageTop) ? latest.stageTop : [];
   const highCostLowYield = Array.isArray(latest?.highCostLowYieldSources) ? latest.highCostLowYieldSources : [];
   const sourceHealth = latest?.sourceHealth && typeof latest.sourceHealth === "object" ? latest.sourceHealth : {};
+  const providerCoverage = latest?.providerCoverage && typeof latest.providerCoverage === "object" ? latest.providerCoverage : {};
   const slowestSummary = slowest.length
     ? slowest
       .slice(0, 3)
@@ -246,6 +276,22 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const productiveSummary = formatSourceHealthRows(
     sourceHealth?.topProductiveSources,
     "No productive source ranking yet."
+  );
+  const validatedProviderSummary = formatProviderCoverageRows(
+    providerCoverage?.validatedProviders,
+    "No validated staged providers yet."
+  );
+  const failedProviderSummary = formatProviderCoverageRows(
+    providerCoverage?.unstableOrFailedProviders,
+    "No unstable or failed staged providers."
+  );
+  const reviewProviderSummary = formatProviderCoverageRows(
+    providerCoverage?.needsReviewProviders,
+    "No provider coverage rows need review."
+  );
+  const readyLaterProviderSummary = formatProviderCoverageRows(
+    providerCoverage?.readyLaterProviders,
+    "No providers are replacement-ready for a later slice."
   );
   const bucketSummaryHtml = bucketRows.length
     ? bucketRows.map(bucket => `
@@ -309,5 +355,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Zero kept / needs review</strong>: ${zeroReviewSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Browser fallback recommended</strong>: ${browserSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top productive sources</strong>: ${productiveSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Validated staged providers</strong>: ${validatedProviderSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Provider coverage needs review</strong>: ${reviewProviderSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Unstable / failed providers</strong>: ${failedProviderSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Ready later (no static mutation)</strong>: ${readyLaterProviderSummary}</div>
   `;
 }

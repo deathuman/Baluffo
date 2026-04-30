@@ -34,3 +34,25 @@ test("admin render: ops KPI panel renders registry sync confidence", () => {
   assert.match(el.innerHTML, /tombstones local-only 4/i);
   assert.match(el.innerHTML, /pull 1/i);
 });
+
+test("admin render: ops KPI panel renders provider coverage confidence", () => {
+  const el = makeEl();
+  renderAdminOpsKpis(el, {
+    lastSuccessfulFetchAge: "1h",
+    providerCoverage: {
+      statusCounts: {
+        validated_provider: 1,
+        probing: 1,
+        failed_provider: 1,
+        unstable_provider: 1
+      },
+      readyLaterProviders: [{ name: "Studio Greenhouse" }]
+    }
+  }, "healthy");
+
+  assert.match(el.innerHTML, /Provider coverage/i);
+  assert.match(el.innerHTML, /validated 1/i);
+  assert.match(el.innerHTML, /probing 1/i);
+  assert.match(el.innerHTML, /failed\/unstable 2/i);
+  assert.match(el.innerHTML, /Static sources are retained/i);
+});

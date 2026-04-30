@@ -341,6 +341,7 @@ Do not change signatures or remove without a dedicated plan:
 - **Discovery review metadata** is derived observability only. Candidate rows may include additive review fields such as `sourceIdentity`, `duplicateOfActiveSource`, `duplicateOfPendingSource`, `providerDetected`, `providerFamily`, `lastProbeStatus`, `lastProbeError`, `browserFallbackRecommended`, and `promotionRecommendation`. Reports may include top-level `candidateReview` with recommendation counts and compact ranked candidate lanes. These fields help Admin review candidates and must not trigger automatic promote, hide, reject, tombstone, provider migration, or source deletion behavior by themselves.
 - **Provider migration advisory metadata** is also derived observability only. Candidate rows may include additive advisory fields such as `currentAdapter`, `currentUrl`, `detectedProviderFamily`, `detectedProviderUrl`, `detectedProviderId`, `existingProviderSourceId`, `existingProviderSourceState`, `staticSourceState`, `migrationConfidence`, `migrationReasons`, and `recommendedAction`. `candidateReview.providerMigration` may group compact read-only lanes for provider migration candidates, already-covered static sources, add-provider-source candidates, unsupported providers, needs-probe rows, and keep-static / insufficient-evidence rows. These fields must not add, promote, hide, reject, tombstone, delete, sync, or migrate source rows.
 - **Automatic provider candidate staging** may create provider-backed discovery candidates from strong static/generic provider evidence without Admin action. While a row is only in the discovery candidate stream it uses `candidateState="staged_provider_candidate"` plus advisory fields such as `createdFromAdvisory`, `migrationSourceIdentity`, `migrationReasons`, and `migrationConfidence`; it must not claim `registryState="pending"` until written to `data/source-registry-pending.json`. Pending provider rows use `pendingReason="provider_migration_candidate"` and remain subject to the existing probe and discovery auto-approval policy. Static source rows remain unchanged by staging.
+- **Provider coverage validation** is provider-fetch-only evidence. A staged provider row is considered `validated_provider` after its own provider adapter fetch succeeds with `keptCount > 0`; static `jobsFound`, static fetch output, Scrapy/static, community, social, and generic rows must not validate provider coverage. Validation proves only that the provider source is real and usable. It must not delete, hide, reject, tombstone, skip, replace, or mark the original static source redundant.
 - **Hidden pending rows** remain recoverable pending rows. `candidateState="hidden"` / `hiddenFromDefault=true` means default review views may omit them; explicit review views may request them.
 - **Candidates** and **failures** objects must retain the fields asserted in `test_discovery_report_snapshot_contract`.
 - Any contract change requires: updated snapshot fixture (`tests/fixtures/source_discovery_report_snapshot.json`), doc update, and a focused PR.
@@ -445,6 +446,45 @@ tombstone, suppress, reject, or delete sources.
 Compact source-health rows use only existing source-report fields: `name`, `adapter`, `status`,
 `keptCount`, `fetchedCount`, `durationMs`, `failureBucket`, `classification`,
 `zeroKeptClassification`, `browserFallbackRecommended`, `error`, and `exclusionReason`.
+
+### Provider coverage validation
+
+Fetch reports, normalized bridge payloads, `/ops/health` KPI payloads, and fetcher metrics may
+include top-level `providerCoverage`. This additive field is derived from existing source-state
+rows for staged/provider-migration provider sources. It is read-only diagnostic evidence for a
+later redundant-static decision; it must not mutate static sources, `REDUNDANT_STATIC_IF_PROVIDER`,
+source registry rows, tombstones, sync state, saved jobs, or local user data.
+
+Provider coverage fields may also appear additively on source-state rows for provider-family rows
+that include provider-migration metadata such as `migrationSourceIdentity`. Non-provider families,
+including static, `scrapy_static`, community, social, and generic rows, must not update provider
+coverage fields.
+
+| Field | Type | Description |
+|---|---|---|
+| `providerCoverageStatus` | `string` | One of `untested`, `probing`, `validated_provider`, `unstable_provider`, `failed_provider`, or `needs_review`. |
+| `providerCoverageFirstSuccessAt` | `string` | First provider-fetch success timestamp for this staged provider source. |
+| `providerCoverageLastSuccessAt` | `string` | Latest provider-fetch success timestamp for this staged provider source. |
+| `providerCoverageSuccessCount` | `number` | Total provider-fetch successes with `keptCount > 0`. |
+| `providerCoverageConsecutiveSuccesses` | `number` | Consecutive provider-fetch successes with `keptCount > 0`. |
+| `providerCoverageConsecutiveFailures` | `number` | Consecutive provider-fetch failures. Excluded/cache-skip rows preserve this value. |
+| `providerCoverageLatestKeptCount` | `number` | Latest provider-fetch kept count from a real provider attempt. |
+| `providerCoverageLatestError` | `string` | Latest provider-fetch error for failed/unstable provider rows. |
+| `providerCoverageSourceBundleOverlapCount` | `number` | Optional diagnostic count of output rows whose source bundle references this provider source. |
+| `providerReplacementReadiness` | `string` | Diagnostic only: `none`, `candidate`, or `ready_later`. `ready_later` means repeated provider success may be reviewed in a future explicit redundant-static slice; it does not mutate static sources. |
+| `migrationSourceIdentity` | `string` | Static/generic source identity that produced the provider migration evidence. |
+
+`providerCoverage` summary payload:
+
+| Field | Type | Description |
+|---|---|---|
+| `totalProviderCandidates` | `number` | Count of provider-migration source-state rows with coverage status. |
+| `statusCounts` | `object` | Counts by `providerCoverageStatus`. |
+| `probingProviders` | `Array<Object>` | Compact staged/provider rows that are untested or probing. |
+| `validatedProviders` | `Array<Object>` | Compact staged/provider rows validated by provider fetch evidence. |
+| `unstableOrFailedProviders` | `Array<Object>` | Compact staged/provider rows with provider failures. |
+| `needsReviewProviders` | `Array<Object>` | Compact provider rows that fetched successfully but kept zero jobs. |
+| `readyLaterProviders` | `Array<Object>` | Compact rows with diagnostic `providerReplacementReadiness="ready_later"`. No source mutation is implied. |
 
 ### Job lifecycle summary
 

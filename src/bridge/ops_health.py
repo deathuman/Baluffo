@@ -493,6 +493,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     latest_fetch_summary = summarize_fetch_report(latest_fetch_report)
     failed_ratio_latest = latest_fetch_summary["failedRatio"]
     source_health = as_json_object(latest_fetch_report.get("sourceHealth"))
+    provider_coverage = as_json_object(latest_fetch_report.get("providerCoverage"))
     try:
         tombstones = deps.get_tombstones()
     except Exception:  # noqa: BLE001
@@ -552,6 +553,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             "failedSourceRatioLatest": round(float(failed_ratio_latest), 4),
             "pendingApprovalsCount": len(state.get("pending") or []),
             "sourceHealth": source_health,
+            "providerCoverage": provider_coverage,
             "registrySync": registry_sync,
             "socialExperiment": {
                 "pilotWindowStartAt": str(social_summary.get("pilotWindowStartAt") or ""),

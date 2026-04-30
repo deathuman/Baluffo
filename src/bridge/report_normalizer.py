@@ -7,6 +7,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from src.jobs.common.contracts_provider_coverage import normalize_provider_coverage_payload
 from src.jobs.common.contracts_source_health import normalize_source_health_payload
 from src.source_discovery.candidate_review import (
     build_candidate_review_payload,
@@ -325,6 +326,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     normalized_sources = _normalize_source_rows(sources)
     normalized_source_families = _normalize_source_rows(source_families)
     source_health = normalize_source_health_payload(src.get("sourceHealth"), normalized_sources)
+    provider_coverage = normalize_provider_coverage_payload(src.get("providerCoverage"))
     slowest_sources_raw = _as_list(runtime.get("slowestSources"))
     slowest_sources: list[dict[str, Any]] = []
     for row in slowest_sources_raw[:10]:
@@ -473,6 +475,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "sources": normalized_sources,
         "sourceFamilies": normalized_source_families,
         "sourceHealth": source_health,
+        "providerCoverage": provider_coverage,
         "outputs": _as_dict(src.get("outputs")),
     }
     finished_at = str(normalized.get("finishedAt") or "").strip()

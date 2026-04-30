@@ -178,6 +178,39 @@ def test_compute_ops_health_includes_social_alerts(admin_bridge_entrypoint_root)
     assert "social_false_positive_spike" not in ids
 
 
+def test_compute_ops_health_exposes_provider_coverage_summary(admin_bridge_entrypoint_root):
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "startedAt": "2026-04-30T12:00:00+00:00",
+            "finishedAt": "2026-04-30T12:05:00+00:00",
+            "summary": {"outputCount": 8, "failedSources": 0, "sourceCount": 1},
+            "providerCoverage": {
+                "totalProviderCandidates": 1,
+                "statusCounts": {"validated_provider": 1},
+                "validatedProviders": [
+                    {
+                        "name": "Studio Greenhouse",
+                        "adapter": "greenhouse",
+                        "providerCoverageStatus": "validated_provider",
+                        "providerReplacementReadiness": "candidate",
+                        "migrationSourceIdentity": "static:listing_url:https://studio.example/jobs",
+                        "providerCoverageLatestKeptCount": 8,
+                    }
+                ],
+            },
+            "sources": [],
+        },
+    )
+
+    health = admin_bridge.compute_ops_health()
+
+    provider_coverage = health["kpis"]["providerCoverage"]
+    assert provider_coverage["totalProviderCandidates"] == 1
+    assert provider_coverage["statusCounts"]["validated_provider"] == 1
+    assert provider_coverage["validatedProviders"][0]["name"] == "Studio Greenhouse"
+
+
 def test_alert_ack_suppresses_visible_alert(admin_bridge_entrypoint_root):
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
