@@ -11,12 +11,21 @@ def test_discovery_report_normalization_derives_candidate_review_payload() -> No
             "candidates": [
                 {"name": "Live", "adapter": "greenhouse", "jobsFound": 3, "score": 80},
                 {"name": "Blocked", "adapter": "static", "lastProbeError": "HTTP 403"},
+                {
+                    "name": "Static Provider",
+                    "adapter": "static",
+                    "atsLinks": ["https://boards.greenhouse.io/staticprovider"],
+                    "jobsFound": 2,
+                },
             ],
         }
     )
 
     review = payload.get("candidateReview") or {}
-    assert review.get("totalCandidates") == 2
+    assert review.get("totalCandidates") == 3
     assert (review.get("recommendationCounts") or {}).get("promote_candidate") == 1
     assert (review.get("recommendationCounts") or {}).get("needs_browser_probe") == 1
     assert (payload.get("candidates") or [])[0]["promotionRecommendation"] == "promote_candidate"
+    migration = review.get("providerMigration") or {}
+    assert (migration.get("actionCounts") or {}).get("add_provider_source") == 1
+    assert migration["addProviderSourceCandidates"][0]["detectedProviderFamily"] == "greenhouse"

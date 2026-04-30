@@ -28,13 +28,51 @@ test("admin render: discovery candidate review panel shows review lanes", () => 
     needsBrowserProbeCandidates: [
       { name: "Blocked", adapter: "static", lastProbeError: "HTTP 403" }
     ],
-    likelyRejectCandidates: [{ name: "Noise", adapter: "static", jobsFound: 0 }]
+    likelyRejectCandidates: [{ name: "Noise", adapter: "static", jobsFound: 0 }],
+    providerMigration: {
+      totalCandidates: 3,
+      providerMigrationCandidates: [
+        {
+          name: "Static Provider",
+          currentAdapter: "static",
+          detectedProviderFamily: "greenhouse",
+          migrationConfidence: 85,
+          recommendedAction: "add_provider_source"
+        }
+      ],
+      alreadyCoveredByProvider: [
+        {
+          name: "Covered Static",
+          currentAdapter: "static",
+          detectedProviderFamily: "lever",
+          existingProviderSourceState: "active",
+          migrationConfidence: 95,
+          recommendedAction: "already_covered_by_provider"
+        }
+      ],
+      addProviderSourceCandidates: [],
+      unsupportedProviderCandidates: [
+        {
+          name: "Unsupported ATS",
+          currentAdapter: "static",
+          detectedProviderFamily: "jobvite",
+          migrationConfidence: 45,
+          recommendedAction: "unsupported_provider"
+        }
+      ],
+      needsProbeCandidates: [],
+      keepStaticOrInsufficientEvidence: []
+    }
   });
 
   assert.match(html, /Discovery Review Quality/);
+  assert.match(html, /Provider Migration Advisory/);
+  assert.match(html, /Already covered by provider/);
+  assert.match(html, /Unsupported provider candidates/);
   assert.match(html, /Provider-backed/);
   assert.match(html, /Needs browser probe/);
   assert.match(html, /Likely reject\/noise/);
   assert.match(html, /Live Studio/);
+  assert.match(html, /Static Provider/);
   assert.match(html, /HTTP 403/);
 });

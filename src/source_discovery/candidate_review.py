@@ -6,6 +6,11 @@ from typing import Any
 from src.source_registry import source_identity
 
 from .config import SUPPORTED_PROVIDERS
+from .provider_migration_advisory import (
+    build_provider_migration_payload,
+    enrich_provider_migration_metadata,
+    enrich_provider_migration_rows,
+)
 from .scoring import unique_string_list
 
 _BROWSER_FALLBACK_ERROR_TOKENS = (
@@ -99,7 +104,9 @@ def _browser_fallback_recommended(row: dict[str, Any], *, probe_error: str) -> b
     return any(token in error_text for token in _BROWSER_FALLBACK_ERROR_TOKENS)
 
 
-def _duplicate_flag(row: dict[str, Any], *, active_ids: set[str], pending_ids: set[str]) -> tuple[bool, bool]:
+def _duplicate_flag(
+    row: dict[str, Any], *, active_ids: set[str], pending_ids: set[str]
+) -> tuple[bool, bool]:
     identity = _text(row.get("sourceIdentity")) or source_identity(row)
     reasons = {_lower(item) for item in row.get("rankReasons") or row.get("reasons") or []}
     active_duplicate = (
@@ -142,7 +149,9 @@ def _recommendation(
         return "hide_pending"
     if jobs_found > 0:
         return "keep_pending"
-    if rank_score < 35 and (probe_error or _lower(row.get("dropReason")) or _lower(row.get("deferReason"))):
+    if rank_score < 35 and (
+        probe_error or _lower(row.get("dropReason")) or _lower(row.get("deferReason"))
+    ):
         return "reject_candidate"
     return "review"
 
@@ -218,7 +227,9 @@ def enrich_candidate_review_metadata(
     updated["providerFamily"] = provider_family
     updated["duplicateOfActiveSource"] = bool(duplicate_active)
     updated["duplicateOfPendingSource"] = bool(duplicate_pending)
-    updated["lastProbeStatus"] = _probe_status(updated, jobs_found=jobs_found, probe_error=probe_error)
+    updated["lastProbeStatus"] = _probe_status(
+        updated, jobs_found=jobs_found, probe_error=probe_error
+    )
     updated["lastProbeError"] = probe_error
     updated["browserFallbackRecommended"] = bool(browser_fallback)
     updated["promotionRecommendation"] = recommendation
@@ -231,7 +242,7 @@ def enrich_candidate_review_metadata(
         browser_fallback=browser_fallback,
         rank_score=rank_score,
     )
-    return updated
+    return enrich_provider_migration_metadata(updated)
 
 
 def enrich_candidates_for_review(
@@ -242,11 +253,16 @@ def enrich_candidates_for_review(
 ) -> list[dict[str, Any]]:
     active_ids = {source_identity(row) for row in active_rows or [] if isinstance(row, dict)}
     pending_ids = {source_identity(row) for row in pending_rows or [] if isinstance(row, dict)}
-    return [
+    reviewed = [
         enrich_candidate_review_metadata(row, active_ids=active_ids, pending_ids=pending_ids)
         for row in rows
         if isinstance(row, dict)
     ]
+    return enrich_provider_migration_rows(
+        reviewed,
+        active_rows=active_rows,
+        pending_rows=pending_rows,
+    )
 
 
 def _compact_candidate(row: dict[str, Any]) -> dict[str, Any]:
@@ -267,6 +283,15 @@ def _compact_candidate(row: dict[str, Any]) -> dict[str, Any]:
         "lastProbeError",
         "browserFallbackRecommended",
         "promotionRecommendation",
+        "detectedProviderFamily",
+        "detectedProviderUrl",
+        "detectedProviderId",
+        "existingProviderSourceId",
+        "existingProviderSourceState",
+        "staticSourceState",
+        "migrationConfidence",
+        "migrationReasons",
+        "recommendedAction",
     )
     compact = {key: row.get(key) for key in keys if row.get(key) not in (None, "")}
     compact["rankScore"] = _as_int(compact.get("rankScore"))
@@ -274,29 +299,34 @@ def _compact_candidate(row: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
-def _top_rows(rows: list[dict[str, Any]], predicate: Any, *, limit: int = 8) -> list[dict[str, Any]]:
+def _top_rows(
+    rows: list[dict[str, Any]], predicate: Any, *, limit: int = 8
+) -> list[dict[str, Any]]:
     selected = [row for row in rows if predicate(row)]
-    selected.sort(key=lambda row: (_as_int(row.get("rankScore")), _as_int(row.get("jobsFound"))), reverse=True)
+    selected.sort(
+        key=lambda row: (_as_int(row.get("rankScore")), _as_int(row.get("jobsFound"))), reverse=True
+    )
     return [_compact_candidate(row) for row in selected[:limit]]
 
 
 def build_candidate_review_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    candidates = [
-        enrich_candidate_review_metadata(row)
-        for row in rows
-        if isinstance(row, dict)
-    ]
+    candidates = [enrich_candidate_review_metadata(row) for row in rows if isinstance(row, dict)]
     recommendation_counts = Counter(_text(row.get("promotionRecommendation")) for row in candidates)
     recommendation_counts.pop("", None)
     return {
         "totalCandidates": len(candidates),
         "recommendationCounts": dict(sorted(recommendation_counts.items())),
         "topCandidates": _top_rows(candidates, lambda row: True),
-        "providerBackedCandidates": _top_rows(candidates, lambda row: bool(row.get("providerDetected"))),
+        "providerBackedCandidates": _top_rows(
+            candidates, lambda row: bool(row.get("providerDetected"))
+        ),
         "candidatesWithJobs": _top_rows(candidates, lambda row: _as_int(row.get("jobsFound")) > 0),
         "duplicateCandidates": _top_rows(
             candidates,
-            lambda row: bool(row.get("duplicateOfActiveSource")) or bool(row.get("duplicateOfPendingSource")),
+            lambda row: (
+                bool(row.get("duplicateOfActiveSource"))
+                or bool(row.get("duplicateOfPendingSource"))
+            ),
         ),
         "hiddenOrDeferredCandidates": _top_rows(
             candidates,
@@ -310,4 +340,5 @@ def build_candidate_review_payload(rows: list[dict[str, Any]]) -> dict[str, Any]
             candidates,
             lambda row: _text(row.get("promotionRecommendation")) == "reject_candidate",
         ),
+        "providerMigration": build_provider_migration_payload(candidates),
     }

@@ -24,6 +24,29 @@ function renderCandidateReviewRows(rows) {
   }).join("");
 }
 
+function renderProviderMigrationRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return '<div class="no-results">No candidates in this lane.</div>';
+  }
+  return rows.slice(0, 5).map(row => {
+    const name = escapeHtml(String(row?.name || row?.sourceIdentity || "Unnamed source"));
+    const provider = row?.detectedProviderFamily
+      ? ` &middot; ${escapeHtml(String(row.detectedProviderFamily))}`
+      : "";
+    const action = escapeHtml(String(row?.recommendedAction || "review").replaceAll("_", " "));
+    const existing = row?.existingProviderSourceState
+      ? ` &middot; ${escapeHtml(String(row.existingProviderSourceState))}`
+      : "";
+    return `
+      <div class="admin-source-review-row">
+        <strong>${name}</strong>
+        <span>${escapeHtml(String(row?.currentAdapter || row?.adapter || "unknown"))}${provider}${existing}</span>
+        <span>confidence ${formatCompactNumber(row?.migrationConfidence)} &middot; ${action}</span>
+      </div>
+    `;
+  }).join("");
+}
+
 export function renderDiscoveryCandidateReviewHtml(candidateReview) {
   const review = candidateReview && typeof candidateReview === "object" && !Array.isArray(candidateReview)
     ? candidateReview
@@ -46,6 +69,18 @@ export function renderDiscoveryCandidateReviewHtml(candidateReview) {
       .map(([key, value]) => `${escapeHtml(String(key).replaceAll("_", " "))}: ${formatCompactNumber(value)}`)
       .join(" · ")
     : "";
+  const migration = review.providerMigration && typeof review.providerMigration === "object" && !Array.isArray(review.providerMigration)
+    ? review.providerMigration
+    : {};
+  const migrationTotal = Number(migration.totalCandidates || 0);
+  const migrationLanes = [
+    ["Provider migration candidates", migration.providerMigrationCandidates],
+    ["Already covered by provider", migration.alreadyCoveredByProvider],
+    ["Add provider source candidates", migration.addProviderSourceCandidates],
+    ["Unsupported provider candidates", migration.unsupportedProviderCandidates],
+    ["Needs probe", migration.needsProbeCandidates],
+    ["Keep static / insufficient evidence", migration.keepStaticOrInsufficientEvidence]
+  ];
   return `
     <section class="admin-source-review-panel" aria-label="Discovery candidate review quality">
       <h4>Discovery Review Quality</h4>
@@ -58,6 +93,18 @@ export function renderDiscoveryCandidateReviewHtml(candidateReview) {
           </div>
         `).join("")}
       </div>
+      ${migrationTotal ? `
+        <h4>Provider Migration Advisory</h4>
+        <p class="muted">Read-only migration evidence for ${formatCompactNumber(migrationTotal)} candidates.</p>
+        <div class="admin-source-review-grid">
+          ${migrationLanes.map(([title, rows]) => `
+            <div class="admin-source-review-lane">
+              <h5>${escapeHtml(title)}</h5>
+              ${renderProviderMigrationRows(rows)}
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
     </section>
   `;
 }
