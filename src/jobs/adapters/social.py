@@ -155,6 +155,77 @@ def _finish_social_subsource_entry(
         entry["rejectReasonCounts"] = reject_reason_counts
 
 
+def _tick(heartbeat_callback: Callable[[], None] | None) -> None:
+    if heartbeat_callback:
+        heartbeat_callback()
+
+
+def _emit_social_loaded_progress(
+    progress_callback: Callable[..., None] | None,
+    *,
+    target_label: str,
+    fetched_count: int,
+    kept_count: int,
+    target_url: str = "",
+) -> None:
+    _emit_social_progress(
+        progress_callback,
+        phase_key="subsource_loaded",
+        phase_label="Subsource loaded",
+        target_label=target_label,
+        target_url=target_url,
+        counts={"fetchedCount": fetched_count, "keptCount": kept_count},
+        message=f"Loaded {kept_count} row(s) from {target_label}.",
+    )
+
+
+def _emit_social_error_progress(
+    progress_callback: Callable[..., None] | None,
+    *,
+    target_label: str,
+    exc: Exception,
+    target_url: str = "",
+) -> None:
+    _emit_social_progress(
+        progress_callback,
+        phase_key="subsource_error",
+        phase_label="Subsource error",
+        target_label=target_label,
+        target_url=target_url,
+        event_level="warn",
+        message=f"{target_label} failed: {exc}",
+    )
+
+
+def _finish_social_source(
+    source_name: str,
+    *,
+    studio: str,
+    details: list[dict[str, Any]],
+    errors: list[str],
+    rows: list[RawJob],
+    low_confidence_dropped: int,
+) -> list[RawJob]:
+    set_source_diagnostics(
+        source_name,
+        adapter="social",
+        studio=studio,
+        details=details,
+        partial_errors=errors,
+    )
+    SOURCE_DIAGNOSTICS[source_name]["lowConfidenceDropped"] = int(low_confidence_dropped)
+    if rows:
+        return rows
+    if errors:
+        raise AdapterValidationError.from_errors(errors)
+    return []
+
+
+def _x_fetched_count(payload: Any, parsed_rows: list[RawJob], low_confidence_dropped: int) -> int:
+    payload_data = _as_list(_as_dict(payload).get("data"))
+    return len(payload_data) if payload_data else len(parsed_rows) + int(low_confidence_dropped)
+
+
 def run_social_reddit_source(
     *,
     fetch_text: Callable[[str, int], str],
@@ -189,10 +260,6 @@ def run_social_reddit_source(
     errors: list[str] = []
     rows: list[RawJob] = []
 
-    def tick() -> None:
-        if heartbeat_callback:
-            heartbeat_callback()
-
     for sub in subs:
         subreddit_label = f"reddit/r/{sub}"
         subreddit_url = f"https://www.reddit.com/r/{sub}/new.json"
@@ -214,7 +281,7 @@ def run_social_reddit_source(
                 target_url=subreddit_url,
                 message=f"Scanning {subreddit_label}.",
             )
-            tick()
+            _tick(heartbeat_callback)
             sub_rows = plugin.run(
                 fetch_text=fetch_text,
                 timeout_s=timeout_s,
@@ -226,26 +293,21 @@ def run_social_reddit_source(
             entry["fetchedCount"] = len(sub_rows)
             entry["keptCount"] = len(sub_rows)
             rows.extend(sub_rows)
-            _emit_social_progress(
+            _emit_social_loaded_progress(
                 progress_callback,
-                phase_key="subsource_loaded",
-                phase_label="Subsource loaded",
                 target_label=subreddit_label,
                 target_url=subreddit_url,
-                counts={"fetchedCount": len(sub_rows), "keptCount": len(sub_rows)},
-                message=f"Loaded {len(sub_rows)} row(s) from {subreddit_label}.",
+                fetched_count=len(sub_rows),
+                kept_count=len(sub_rows),
             )
-            tick()
+            _tick(heartbeat_callback)
         except Exception as exc:  # noqa: BLE001
             _record_social_subsource_error(entry, errors, error_prefix=f"reddit:{sub}", exc=exc)
-            _emit_social_progress(
+            _emit_social_error_progress(
                 progress_callback,
-                phase_key="subsource_error",
-                phase_label="Subsource error",
                 target_label=subreddit_label,
                 target_url=subreddit_url,
-                event_level="warn",
-                message=f"{subreddit_label} failed: {exc}",
+                exc=exc,
             )
         details.append(entry)
 
@@ -261,17 +323,14 @@ def run_social_reddit_source(
         if isinstance(reject_reason_counts, dict) and reject_reason_counts:
             entry["rejectReasonCounts"] = dict(reject_reason_counts)
 
-    set_source_diagnostics(
-        "social_reddit", adapter="social", studio="reddit", details=details, partial_errors=errors
+    return _finish_social_source(
+        "social_reddit",
+        studio="reddit",
+        details=details,
+        errors=errors,
+        rows=rows,
+        low_confidence_dropped=_coerce_int(plugin_diag.get("lowConfidenceDropped")),
     )
-    SOURCE_DIAGNOSTICS["social_reddit"]["lowConfidenceDropped"] = _coerce_int(
-        plugin_diag.get("lowConfidenceDropped")
-    )
-    if rows:
-        return rows
-    if errors:
-        raise AdapterValidationError.from_errors(errors)
-    return []
 
 
 def _load_x_query_payload(
@@ -443,16 +502,11 @@ def run_social_x_source(
                     entry["rejectReasonCounts"] = reject_reason_counts
                 low_conf_total += int(low_conf_query)
                 jobs.extend(parsed_rows)
-                _emit_social_progress(
+                _emit_social_loaded_progress(
                     progress_callback,
-                    phase_key="subsource_loaded",
-                    phase_label="Subsource loaded",
                     target_label=query_label,
-                    counts={
-                        "fetchedCount": len(parsed_rows) + int(low_conf_query),
-                        "keptCount": len(parsed_rows),
-                    },
-                    message=f"Loaded {len(parsed_rows)} row(s) from {query_label}.",
+                    fetched_count=len(parsed_rows) + int(low_conf_query),
+                    kept_count=len(parsed_rows),
                 )
                 details.append(entry)
                 continue
@@ -470,20 +524,13 @@ def run_social_x_source(
                 reject_for_hire_posts=reject_for_hire,
                 reject_reasons=reject_reason_counts,
             )
-            payload_data = _as_list(_as_dict(payload).get("data"))
-            if payload_data:
-                entry["fetchedCount"] = len(payload_data)
-            else:
-                entry["fetchedCount"] = len(parsed_rows) + int(low_conf_query)
+            entry["fetchedCount"] = _x_fetched_count(payload, parsed_rows, low_conf_query)
         except Exception as exc:  # noqa: BLE001
             _record_social_subsource_error(entry, errors, error_prefix=f"x:{query}", exc=exc)
-            _emit_social_progress(
+            _emit_social_error_progress(
                 progress_callback,
-                phase_key="subsource_error",
-                phase_label="Subsource error",
                 target_label=query_label,
-                event_level="warn",
-                message=f"{query_label} failed: {exc}",
+                exc=exc,
             )
         _finish_social_subsource_entry(
             entry,
@@ -493,25 +540,22 @@ def run_social_x_source(
         low_conf_total += int(low_conf_query)
         jobs.extend(parsed_rows)
         if entry["status"] == "ok":
-            _emit_social_progress(
+            _emit_social_loaded_progress(
                 progress_callback,
-                phase_key="subsource_loaded",
-                phase_label="Subsource loaded",
                 target_label=query_label,
-                counts={"fetchedCount": entry["fetchedCount"], "keptCount": len(parsed_rows)},
-                message=f"Loaded {len(parsed_rows)} row(s) from {query_label}.",
+                fetched_count=int(entry["fetchedCount"]),
+                kept_count=len(parsed_rows),
             )
         details.append(entry)
 
-    set_source_diagnostics(
-        "social_x", adapter="social", studio="x", details=details, partial_errors=errors
+    return _finish_social_source(
+        "social_x",
+        studio="x",
+        details=details,
+        errors=errors,
+        rows=jobs,
+        low_confidence_dropped=low_conf_total,
     )
-    SOURCE_DIAGNOSTICS["social_x"]["lowConfidenceDropped"] = int(low_conf_total)
-    if jobs:
-        return jobs
-    if errors:
-        raise AdapterValidationError.from_errors(errors)
-    return []
 
 
 def run_social_mastodon_source(
@@ -552,10 +596,6 @@ def run_social_mastodon_source(
     jobs: list[RawJob] = []
     low_conf_total = 0
 
-    def tick() -> None:
-        if heartbeat_callback:
-            heartbeat_callback()
-
     for instance in instances:
         for tag in tags:
             timeline_url = (
@@ -583,7 +623,7 @@ def run_social_mastodon_source(
                     counts={"maxPosts": max_posts},
                     message=f"Scanning {target_label}.",
                 )
-                tick()
+                _tick(heartbeat_callback)
                 text = fetch_with_retries(timeline_url, fetch_text, timeout_s, retries, backoff_s)
                 payload = json.loads(text)
                 parsed_rows, low_conf_tag = _social_parsers.parse_mastodon_payload(
@@ -603,16 +643,14 @@ def run_social_mastodon_source(
                     entry["rejectReasonCounts"] = reject_reason_counts
                 low_conf_total += int(low_conf_tag)
                 jobs.extend(parsed_rows)
-                _emit_social_progress(
+                _emit_social_loaded_progress(
                     progress_callback,
-                    phase_key="subsource_loaded",
-                    phase_label="Subsource loaded",
                     target_label=target_label,
                     target_url=timeline_url,
-                    counts={"fetchedCount": entry["fetchedCount"], "keptCount": len(parsed_rows)},
-                    message=f"Loaded {len(parsed_rows)} row(s) from {target_label}.",
+                    fetched_count=int(entry["fetchedCount"]),
+                    kept_count=len(parsed_rows),
                 )
-                tick()
+                _tick(heartbeat_callback)
             except Exception as exc:  # noqa: BLE001
                 _record_social_subsource_error(
                     entry,
@@ -620,27 +658,19 @@ def run_social_mastodon_source(
                     error_prefix=f"mastodon:{instance}:#{tag}",
                     exc=exc,
                 )
-                _emit_social_progress(
+                _emit_social_error_progress(
                     progress_callback,
-                    phase_key="subsource_error",
-                    phase_label="Subsource error",
                     target_label=target_label,
                     target_url=timeline_url,
-                    event_level="warn",
-                    message=f"{target_label} failed: {exc}",
+                    exc=exc,
                 )
             details.append(entry)
 
-    set_source_diagnostics(
+    return _finish_social_source(
         "social_mastodon",
-        adapter="social",
         studio="mastodon",
         details=details,
-        partial_errors=errors,
+        errors=errors,
+        rows=jobs,
+        low_confidence_dropped=low_conf_total,
     )
-    SOURCE_DIAGNOSTICS["social_mastodon"]["lowConfidenceDropped"] = int(low_conf_total)
-    if jobs:
-        return jobs
-    if errors:
-        raise AdapterValidationError.from_errors(errors)
-    return []
