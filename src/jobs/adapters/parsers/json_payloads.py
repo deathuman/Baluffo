@@ -448,70 +448,78 @@ def parse_epic_games_jobs_payload(
     for row in rows:
         if not isinstance(row, dict):
             continue
-        title = clean_text(row.get("title"))
-        posting_id = clean_text(
-            row.get("id") or row.get("internal_job_id") or row.get("requisition_id")
-        )
-        link = clean_text(row.get("absolute_url"))
-        if not link and posting_id:
-            link = f"https://www.epicgames.com/site/en-US/careers/jobs/{posting_id}"
-        if not title or not link:
-            continue
-        company_name = clean_text(row.get("company_name") or row.get("company")) or company
-        location_obj = row.get("location")
-        location_text = ""
-        if isinstance(location_obj, dict):
-            city_name = clean_text(location_obj.get("name"))
-            country_name = clean_text(location_obj.get("country"))
-            location_text = ", ".join([p for p in [city_name, country_name] if p])
-        else:
-            location_text = clean_text(row.get("location"))
-        if not location_text:
-            location_text = ", ".join(
-                [
-                    part
-                    for part in [clean_text(row.get("city")), clean_text(row.get("country"))]
-                    if part
-                ]
-            )
-        city, country, work_type = parse_generic_location_fields(location_text)
-        location_details = _normalized_location_details(location_text)
-        if (
-            not clean_text(location_details.get("city"))
-            and clean_text(location_details.get("country")) == "Unknown"
-        ):
-            location_details = _infer_location_details_from_text(
-                row.get("description") or row.get("body") or row.get("content")
-            )
-        if bool(row.get("remote")):
-            city, country, work_type = "Remote", "Remote", "Remote"
-        tags = " ".join(
-            [
-                clean_text(row.get("department")),
-                clean_text(row.get("product")),
-                clean_text(row.get("type")),
-                clean_text(row.get("filterText")),
-            ]
-        )
-        if not looks_like_game_job(title, company_name, tags):
-            continue
-        jobs.append(
-            {
-                "sourceJobId": f"epic:{posting_id or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-                "title": title,
-                "company": company_name,
-                "city": clean_text(location_details.get("city")) or city,
-                "country": clean_text(location_details.get("country")) or country,
-                "workType": work_type or location_text,
-                "contractType": clean_text(row.get("type")),
-                "jobLink": link,
-                "sector": "Game",
-                "postedAt": row.get("first_published") or row.get("updated_at"),
-                "locations": location_details.get("locations") or [],
-                "locationSummary": clean_text(location_details.get("locationSummary")),
-            }
-        )
+        job = _epic_games_job_row(row, company)
+        if job:
+            jobs.append(job)
     return jobs
+
+
+def _epic_location_text(row: dict[str, Any]) -> str:
+    location_obj = row.get("location")
+    if isinstance(location_obj, dict):
+        return ", ".join(
+            part
+            for part in [
+                clean_text(location_obj.get("name")),
+                clean_text(location_obj.get("country")),
+            ]
+            if part
+        )
+    location_text = clean_text(row.get("location"))
+    if location_text:
+        return location_text
+    return ", ".join(
+        part for part in [clean_text(row.get("city")), clean_text(row.get("country"))] if part
+    )
+
+
+def _epic_location_details(row: dict[str, Any], location_text: str) -> dict[str, Any]:
+    location_details = _normalized_location_details(location_text)
+    if (
+        clean_text(location_details.get("city"))
+        or clean_text(location_details.get("country")) != "Unknown"
+    ):
+        return location_details
+    return _infer_location_details_from_text(
+        row.get("description") or row.get("body") or row.get("content")
+    )
+
+
+def _epic_games_job_row(row: dict[str, Any], company: str) -> RawJob | None:
+    title = clean_text(row.get("title"))
+    posting_id = clean_text(
+        row.get("id") or row.get("internal_job_id") or row.get("requisition_id")
+    )
+    link = clean_text(row.get("absolute_url"))
+    if not link and posting_id:
+        link = f"https://www.epicgames.com/site/en-US/careers/jobs/{posting_id}"
+    if not title or not link:
+        return None
+    company_name = clean_text(row.get("company_name") or row.get("company")) or company
+    location_text = _epic_location_text(row)
+    city, country, work_type = parse_generic_location_fields(location_text)
+    location_details = _epic_location_details(row, location_text)
+    if bool(row.get("remote")):
+        city, country, work_type = "Remote", "Remote", "Remote"
+    tags = " ".join(
+        clean_text(row.get(key)) for key in ("department", "product", "type", "filterText")
+    )
+    if not looks_like_game_job(title, company_name, tags):
+        return None
+    return {
+        "sourceJobId": f"epic:{posting_id or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
+        "title": title,
+        "company": company_name,
+        "city": clean_text(location_details.get("city")) or city,
+        "country": clean_text(location_details.get("country")) or country,
+        "workType": work_type or location_text,
+        "contractType": clean_text(row.get("type")),
+        "jobLink": link,
+        "sector": "Game",
+        "postedAt": row.get("first_published") or row.get("updated_at"),
+        "locations": location_details.get("locations") or [],
+        "locationSummary": clean_text(location_details.get("locationSummary")),
+    }
 
 
 def parse_recruitee_jobs_payload(

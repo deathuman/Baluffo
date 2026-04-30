@@ -23,6 +23,11 @@ from .signals import (
     social_should_reject_non_job_reddit_post,
 )
 
+REDDIT_ANCHOR_PATTERN = re.compile(r"(?is)<a\b[^>]*href\s*=\s*(['\"])(.*?)\1[^>]*>(.*?)</a>")
+REDDIT_TITLE_PATTERN = re.compile(
+    r"(?is)<(?:h1|h2|h3|h4|h5|h6)\b[^>]*>(.*?)</(?:h1|h2|h3|h4|h5|h6)>"
+)
+
 
 def parse_reddit_json_payload(
     payload: Any,
@@ -120,6 +125,97 @@ def parse_reddit_json_payload(
     return out, low_conf_count
 
 
+def _reddit_html_containers(html_text: str) -> list[str]:
+    block_pattern = re.compile(r"(?is)<(?:article|div)\b[^>]*>(.*?)</(?:article|div)>")
+    post_containers = [match.group(1) or "" for match in block_pattern.finditer(html_text or "")]
+    return post_containers or [html_text or ""]
+
+
+def _reddit_html_title(container: str) -> str:
+    title_match = REDDIT_TITLE_PATTERN.search(container)
+    if title_match:
+        return _clean_text(strip_html_text(title_match.group(1)))
+    first_anchor = REDDIT_ANCHOR_PATTERN.search(container)
+    return _clean_text(strip_html_text(first_anchor.group(3))) if first_anchor else ""
+
+
+def _reddit_html_first_link(container: str) -> str:
+    for anchor_match in REDDIT_ANCHOR_PATTERN.finditer(container):
+        href = _clean_text(anchor_match.group(2))
+        if href and (href.startswith("http") or href.startswith("/")):
+            return href if href.startswith("http") else f"https://www.reddit.com{href}"
+    return ""
+
+
+def _reddit_html_posted_at(container: str) -> str:
+    posted_match = re.search(r"(?is)<time\b[^>]*>(.*?)</time>", container)
+    return _clean_text(strip_html_text(posted_match.group(1))) if posted_match else ""
+
+
+def _reddit_html_reject_reason(
+    *,
+    title: str,
+    text: str,
+    min_confidence: int,
+    reject_for_hire_posts: bool,
+    apply_url: str,
+    link: str,
+) -> tuple[bool, str]:
+    keep, _confidence, reject_reason = social_evaluate_post(
+        title=title,
+        text=text,
+        min_confidence=min_confidence,
+        reject_for_hire_posts=reject_for_hire_posts,
+        has_apply_url=bool(apply_url),
+    )
+    if keep:
+        return False, ""
+    if reject_reason in {
+        "missing_apply_url",
+        "missing_valid_apply_url",
+        "social_repost_or_commentary",
+    } and social_is_content_only_url(link):
+        reject_reason = "non_job_destination_url"
+    return True, reject_reason
+
+
+def _reddit_html_job_entry(
+    *,
+    container: str,
+    subreddit: str,
+    title: str,
+    link: str,
+    apply_url: str,
+    posted_at: str,
+) -> tuple[RawJob | None, str]:
+    text = strip_html_text(container)
+    fallback_company = link
+    company = social_infer_company(title, text, fallback=fallback_company)
+    reject_reason = social_should_reject_non_job_reddit_post(
+        title=title,
+        text=text,
+        apply_url=apply_url or link,
+        company=company,
+        fallback_company=fallback_company,
+    )
+    if reject_reason:
+        return None, reject_reason
+    return (
+        {
+            "title": title,
+            "company": company,
+            "jobLink": apply_url or link,
+            "source": "social_reddit",
+            "sourceJobId": f"html:{subreddit}:{hash(title)}",
+            "postedAt": posted_at,
+            "adapter": "social",
+            "studio": subreddit,
+            "sector": "Game",
+        },
+        "",
+    )
+
+
 def parse_reddit_html_payload(
     html_text: str,
     *,
@@ -133,84 +229,38 @@ def parse_reddit_html_payload(
     low_conf_count = 0
 
     try:
-        block_pattern = re.compile(r"(?is)<(?:article|div)\b[^>]*>(.*?)</(?:article|div)>")
-        anchor_pattern = re.compile(r"(?is)<a\b[^>]*href\s*=\s*(['\"])(.*?)\1[^>]*>(.*?)</a>")
-        title_pattern = re.compile(
-            r"(?is)<(?:h1|h2|h3|h4|h5|h6)\b[^>]*>(.*?)</(?:h1|h2|h3|h4|h5|h6)>"
-        )
-
-        post_containers = [
-            match.group(1) or "" for match in block_pattern.finditer(html_text or "")
-        ]
-        if not post_containers:
-            post_containers = [html_text or ""]
-
-        for container in post_containers:
-            title_match = title_pattern.search(container)
-            if title_match:
-                title = _clean_text(strip_html_text(title_match.group(1)))
-            else:
-                first_anchor = anchor_pattern.search(container)
-                title = _clean_text(strip_html_text(first_anchor.group(3))) if first_anchor else ""
+        for container in _reddit_html_containers(html_text):
+            title = _reddit_html_title(container)
             if not title:
                 continue
-
-            link = ""
-            for anchor_match in anchor_pattern.finditer(container):
-                href = _clean_text(anchor_match.group(2))
-                if href and (href.startswith("http") or href.startswith("/")):
-                    link = href if href.startswith("http") else f"https://www.reddit.com{href}"
-                    break
-
-            posted_match = re.search(r"(?is)<time\b[^>]*>(.*?)</time>", container)
-            posted_at = _clean_text(strip_html_text(posted_match.group(1))) if posted_match else ""
-
+            link = _reddit_html_first_link(container)
+            posted_at = _reddit_html_posted_at(container)
             apply_url = social_extract_apply_url(container, link)
-            keep, confidence, reject_reason = social_evaluate_post(
+            rejected, reject_reason = _reddit_html_reject_reason(
                 title=title,
                 text=strip_html_text(container),
                 min_confidence=min_confidence,
                 reject_for_hire_posts=reject_for_hire_posts,
-                has_apply_url=bool(apply_url),
+                apply_url=apply_url,
+                link=link,
             )
-            if not keep:
+            if rejected:
                 low_conf_count += 1
-                if reject_reason in {
-                    "missing_apply_url",
-                    "missing_valid_apply_url",
-                    "social_repost_or_commentary",
-                } and social_is_content_only_url(link):
-                    reject_reason = "non_job_destination_url"
                 _increment_reason(reject_reasons, reject_reason)
                 continue
 
-            fallback_company = link
-            company = social_infer_company(
-                title, strip_html_text(container), fallback=fallback_company
-            )
-            reject_reason = social_should_reject_non_job_reddit_post(
+            job_entry, reject_reason = _reddit_html_job_entry(
+                container=container,
+                subreddit=subreddit,
                 title=title,
-                text=strip_html_text(container),
-                apply_url=apply_url or link,
-                company=company,
-                fallback_company=fallback_company,
+                link=link,
+                apply_url=apply_url,
+                posted_at=posted_at,
             )
-            if reject_reason:
+            if not job_entry:
                 low_conf_count += 1
                 _increment_reason(reject_reasons, reject_reason)
                 continue
-
-            job_entry = {
-                "title": title,
-                "company": company,
-                "jobLink": apply_url or link,
-                "source": "social_reddit",
-                "sourceJobId": f"html:{subreddit}:{hash(title)}",
-                "postedAt": posted_at,
-                "adapter": "social",
-                "studio": subreddit,
-                "sector": "Game",
-            }
             out.append(job_entry)
 
     except Exception:

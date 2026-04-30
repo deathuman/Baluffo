@@ -24,119 +24,125 @@ def _as_list(value: object) -> list[object]:
     return value if isinstance(value, list) else []
 
 
+def _ashby_structured_jobs(html_text: str, board_url: str, fallback_company: str) -> list[RawJob]:
+    app_data_match = re.search(r"window\.__appData\s*=\s*(\{.*?\});", html_text, re.S)
+    if not app_data_match:
+        return []
+    try:
+        app_data = _as_dict(json.loads(app_data_match.group(1)))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    postings = _as_list(_as_dict(app_data.get("jobBoard")).get("jobPostings"))
+    if not postings:
+        return []
+    normalized_board_url = re.sub(r"/jobs/?$", "", clean_text(board_url)) or clean_text(board_url)
+    organization = _as_dict(app_data.get("organization"))
+    company = clean_text(fallback_company) or clean_text(organization.get("name")) or "Unknown"
+    return [
+        job
+        for posting_value in postings
+        if isinstance(posting_value, dict)
+        if (job := _ashby_structured_job(posting_value, normalized_board_url, company))
+    ]
+
+
+def _ashby_structured_job(
+    posting_value: dict[str, object], normalized_board_url: str, company: str
+) -> RawJob | None:
+    posting = _as_dict(posting_value)
+    posting_id = clean_text(posting.get("id"))
+    title = clean_text(posting.get("title"))
+    if not posting_id or not title:
+        return None
+    location_parts = [clean_text(posting.get("locationName"))]
+    location_parts.extend(
+        clean_text(item.get("locationName"))
+        for item in _as_list(posting.get("secondaryLocations"))
+        if isinstance(item, dict)
+    )
+    location = "; ".join(part for part in location_parts if part)
+    location_details = normalize_location_details(location_parts)
+    contract_type = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", clean_text(posting.get("employmentType")))
+    return {
+        "sourceJobId": f"ashby:{posting_id}",
+        "title": title,
+        "company": company,
+        "city": clean_text(location_details.get("city")) or location,
+        "country": clean_text(location_details.get("country")) or "Unknown",
+        "workType": clean_text(posting.get("workplaceType")),
+        "contractType": contract_type,
+        "jobLink": f"{normalized_board_url.rstrip('/')}/{posting_id}",
+        "sector": "Game",
+        "postedAt": clean_text(posting.get("publishedDate") or posting.get("updatedAt")),
+        "locations": location_details.get("locations") or [],
+        "locationSummary": clean_text(location_details.get("locationSummary")),
+    }
+
+
+def _ashby_link_candidates(html_text: str, board_url: str) -> list[tuple[str, str]]:
+    links: list[tuple[str, str]] = []
+    seen = set()
+    board_host = clean_text(urlparse(board_url).netloc).lower()
+    for match in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html_text):
+        href = clean_text(match.group(1))
+        absolute = urljoin(board_url, clean_text(href))
+        if not _is_ashby_job_link(absolute, board_host) or absolute in seen:
+            continue
+        seen.add(absolute)
+        links.append(
+            (absolute, strip_html_text(re.sub(r"(?is)<[^>]+>", " ", match.group(2) or "")))
+        )
+    return links
+
+
+def _is_ashby_job_link(absolute: str, board_host: str) -> bool:
+    parsed = urlparse(absolute)
+    path = parsed.path.lower()
+    query = parse_qs(parsed.query)
+    ashby_jid = clean_text((query.get("ashby_jid") or [""])[0])
+    same_host = clean_text(parsed.netloc).lower() == board_host
+    uuid_like = bool(
+        re.search(r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", path)
+    )
+    return bool("/job/" in path or ashby_jid or (same_host and uuid_like))
+
+
+def _ashby_link_job(link: str, anchor_text: str, fallback_company: str) -> RawJob | None:
+    parsed = urlparse(link)
+    query = parse_qs(parsed.query)
+    ashby_jid = clean_text((query.get("ashby_jid") or [""])[0])
+    slug = parsed.path.rstrip("/").split("/")[-1]
+    title = clean_text(anchor_text) or strip_html_text(re.sub(r"[-_]+", " ", slug)).title()
+    if not title:
+        return None
+    location_details = normalize_location_details("")
+    return {
+        "sourceJobId": f"ashby:{ashby_jid or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
+        "title": title,
+        "company": clean_text(fallback_company) or "Unknown",
+        "city": "",
+        "country": "Unknown",
+        "workType": "",
+        "contractType": "",
+        "jobLink": link,
+        "sector": "Game",
+        "postedAt": "",
+        "locations": location_details.get("locations") or [],
+        "locationSummary": clean_text(location_details.get("locationSummary")),
+    }
+
+
 def parse_ashby_jobs_from_html(
     html_text: str, board_url: str, fallback_company: str = ""
 ) -> list[RawJob]:
-    app_data_match = re.search(r"window\.__appData\s*=\s*(\{.*?\});", html_text, re.S)
-    if app_data_match:
-        try:
-            app_data = _as_dict(json.loads(app_data_match.group(1)))
-            job_board = _as_dict(app_data.get("jobBoard"))
-            postings = _as_list(job_board.get("jobPostings"))
-            if postings:
-                normalized_board_url = re.sub(r"/jobs/?$", "", clean_text(board_url)) or clean_text(
-                    board_url
-                )
-                organization = _as_dict(app_data.get("organization"))
-                company = (
-                    clean_text(fallback_company)
-                    or clean_text(organization.get("name"))
-                    or "Unknown"
-                )
-                structured_jobs: list[RawJob] = []
-                for posting_value in postings:
-                    if not isinstance(posting_value, dict):
-                        continue
-                    posting = _as_dict(posting_value)
-                    posting_id = clean_text(posting.get("id"))
-                    title = clean_text(posting.get("title"))
-                    if not posting_id or not title:
-                        continue
-                    location_parts = [clean_text(posting.get("locationName"))]
-                    location_parts.extend(
-                        clean_text(item.get("locationName"))
-                        for item in _as_list(posting.get("secondaryLocations"))
-                        if isinstance(item, dict)
-                    )
-                    location = "; ".join(part for part in location_parts if part)
-                    location_details = normalize_location_details(location_parts)
-                    contract_type = clean_text(posting.get("employmentType"))
-                    contract_type = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", contract_type)
-                    structured_jobs.append(
-                        {
-                            "sourceJobId": f"ashby:{posting_id}",
-                            "title": title,
-                            "company": company,
-                            "city": clean_text(location_details.get("city")) or location,
-                            "country": clean_text(location_details.get("country")) or "Unknown",
-                            "workType": clean_text(posting.get("workplaceType")),
-                            "contractType": contract_type,
-                            "jobLink": f"{normalized_board_url.rstrip('/')}/{posting_id}",
-                            "sector": "Game",
-                            "postedAt": clean_text(
-                                posting.get("publishedDate") or posting.get("updatedAt")
-                            ),
-                            "locations": location_details.get("locations") or [],
-                            "locationSummary": clean_text(location_details.get("locationSummary")),
-                        }
-                    )
-                if structured_jobs:
-                    return structured_jobs
-        except (TypeError, ValueError, json.JSONDecodeError):
-            pass
-
-    links: list[tuple[str, str]] = []
-    seen = set()
-    board_parsed = urlparse(board_url)
-    board_host = clean_text(board_parsed.netloc).lower()
-    for match in re.finditer(r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html_text):
-        href = clean_text(match.group(1))
-        anchor_html = match.group(2) or ""
-        absolute = urljoin(board_url, clean_text(href))
-        parsed = urlparse(absolute)
-        path = parsed.path.lower()
-        query = parse_qs(parsed.query)
-        ashby_jid = clean_text((query.get("ashby_jid") or [""])[0])
-        same_host = clean_text(parsed.netloc).lower() == board_host
-        uuid_like = bool(
-            re.search(r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", path)
-        )
-        if "/job/" not in path and not ashby_jid and not (same_host and uuid_like):
-            continue
-        if absolute in seen:
-            continue
-        seen.add(absolute)
-        links.append((absolute, strip_html_text(re.sub(r"(?is)<[^>]+>", " ", anchor_html))))
-    link_jobs: list[RawJob] = []
-    for link, anchor_text in links:
-        parsed = urlparse(link)
-        query = parse_qs(parsed.query)
-        ashby_jid = clean_text((query.get("ashby_jid") or [""])[0])
-        slug = parsed.path.rstrip("/").split("/")[-1]
-        title = clean_text(anchor_text)
-        if not title:
-            title = strip_html_text(re.sub(r"[-_]+", " ", slug)).title()
-        if not title:
-            continue
-        company = clean_text(fallback_company) or "Unknown"
-        location_details = normalize_location_details("")
-        link_jobs.append(
-            {
-                "sourceJobId": f"ashby:{ashby_jid or hashlib.sha1(link.encode('utf-8')).hexdigest()[:10]}",
-                "title": title,
-                "company": company,
-                "city": "",
-                "country": "Unknown",
-                "workType": "",
-                "contractType": "",
-                "jobLink": link,
-                "sector": "Game",
-                "postedAt": "",
-                "locations": location_details.get("locations") or [],
-                "locationSummary": clean_text(location_details.get("locationSummary")),
-            }
-        )
-    return link_jobs
+    structured_jobs = _ashby_structured_jobs(html_text, board_url, fallback_company)
+    if structured_jobs:
+        return structured_jobs
+    return [
+        job
+        for link, anchor_text in _ashby_link_candidates(html_text, board_url)
+        if (job := _ashby_link_job(link, anchor_text, fallback_company))
+    ]
 
 
 def parse_breezy_jobs_html(

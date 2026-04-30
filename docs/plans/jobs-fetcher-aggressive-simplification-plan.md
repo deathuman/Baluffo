@@ -250,9 +250,10 @@ cmd /c npm run lint:precommit
 
 ### Phase 6: Broad C901 ratchet
 
-Status: after deletion passes.
+Status: adapter parser C901 cleanup completed on 2026-04-30; non-adapter jobs C901 remains.
 
 - Reduce remaining C901 hotspots only after lifecycle deletion has removed duplicated branches.
+- Adapter parser hotspots were decomposed locally after lifecycle cleanup, with parser signatures and row shapes preserved.
 - Update `scripts/complexity_baseline.json` only when scores decrease or offenders disappear.
 
 Validation:

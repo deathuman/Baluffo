@@ -313,26 +313,17 @@ def parse_teamtailor_listing_links(html_text: str, base_url: str) -> list[str]:
     return links
 
 
-def parse_gamesindustry_html(
-    html_text: str, base_url: str = "https://jobs.gamesindustry.biz"
-) -> list[RawJob]:
-    jobs: list[RawJob] = []
-    seen_links = set()
-    listing_row_pattern = re.compile(r'(?is)<div[^>]+class=["\'][^"\']*views-row[^"\']*["\'][^>]*>')
-    listing_row_starts = [match.start() for match in listing_row_pattern.finditer(html_text)]
+def _append_gamesindustry_job(jobs: list[RawJob], seen_links: set[str], row: RawJob) -> None:
+    job_link = normalize_url(row.get("jobLink"))
+    if not job_link or "/job/" not in urlparse(job_link).path or job_link in seen_links:
+        return
+    seen_links.add(job_link)
+    row["jobLink"] = job_link
+    jobs.append(row)
 
-    def push_job(row: RawJob) -> None:
-        job_link = normalize_url(row.get("jobLink"))
-        if not job_link:
-            return
-        if "/job/" not in urlparse(job_link).path:
-            return
-        if job_link in seen_links:
-            return
-        seen_links.add(job_link)
-        row["jobLink"] = job_link
-        jobs.append(row)
 
+def _gamesindustry_jsonld_rows(html_text: str, base_url: str) -> list[RawJob]:
+    rows: list[RawJob] = []
     for block in extract_json_ld_blocks(html_text):
         decoded = unescape(block.strip())
         if not decoded:
@@ -343,16 +334,13 @@ def parse_gamesindustry_html(
             continue
         for row in iter_job_postings_from_jsonld(payload):
             title = clean_text(row.get("title"))
-            org = _as_dict(row.get("hiringOrganization"))
-            company = clean_text(org.get("name"))
-            location_details = parse_jobposting_location_details(row.get("jobLocation"))
+            company = clean_text(_as_dict(row.get("hiringOrganization")).get("name"))
             link = clean_text(row.get("url"))
-            if link:
-                link = urljoin(base_url, link)
             if not title or not company:
                 continue
+            location_details = parse_jobposting_location_details(row.get("jobLocation"))
             identifier = _as_dict(row.get("identifier"))
-            push_job(
+            rows.append(
                 {
                     "sourceJobId": clean_text(identifier.get("value")),
                     "title": title,
@@ -363,95 +351,134 @@ def parse_gamesindustry_html(
                     "locationSummary": location_details["locationSummary"],
                     "workType": clean_text(row.get("jobLocationType") or ""),
                     "contractType": clean_text(row.get("employmentType") or ""),
-                    "jobLink": link,
+                    "jobLink": urljoin(base_url, link) if link else "",
                     "sector": "Game",
                     "postedAt": row.get("datePosted"),
                 }
             )
+    return rows
+
+
+def _gamesindustry_listing_context(
+    html_text: str, listing_row_starts: list[int], match: re.Match[str]
+) -> str:
+    row_start = next(
+        (start for start in reversed(listing_row_starts) if start <= match.start()), -1
+    )
+    if row_start < 0:
+        return html_text[max(0, match.start() - 500) : min(len(html_text), match.end() + 2500)]
+    next_row_start = next(
+        (start for start in listing_row_starts if start > row_start), len(html_text)
+    )
+    return html_text[row_start:next_row_start]
+
+
+def _first_match(context: str, patterns: tuple[str, ...]) -> re.Match[str] | None:
+    for pattern in patterns:
+        if match := re.search(pattern, context):
+            return match
+    return None
+
+
+def _gamesindustry_link_row(
+    match: re.Match[str],
+    *,
+    html_text: str,
+    listing_row_starts: list[int],
+    base_url: str,
+) -> RawJob | None:
+    href = clean_text(match.group(1))
+    title = strip_html_text(match.group(2))
+    if not href or not title or norm_text(title) in {"read more", "find jobs", "search for jobs"}:
+        return None
+    context = _gamesindustry_listing_context(html_text, listing_row_starts, match)
+    company_match = _first_match(
+        context,
+        (
+            r'(?is)<div[^>]*class=["\'][^"\']*company-name[^"\']*["\'][^>]*>(.*?)</div>',
+            r'(?is)<span[^>]*class=["\'][^"\']*recruiter-company-profile-job-organization[^"\']*["\'][^>]*>(.*?)</span>',
+            r'(?is)<div[^>]*class=["\'][^"\']*pane-node-recruiter-company-profile-job-organization[^"\']*["\'][^>]*>(.*?)</div>',
+        ),
+    )
+    location_match = _first_match(
+        context,
+        (
+            r'(?is)<div[^>]*class=["\'][^"\']*city[^"\']*["\'][^>]*>(.*?)</div>',
+            r'(?is)<div[^>]*class=["\'][^"\']*location[^"\']*["\'][^>]*>(.*?)</div>',
+            r'(?is)<div[^>]*class=["\'][^"\']*field-job-region[^"\']*["\'][^>]*>(.*?)</div>',
+        ),
+    )
+    changed_match = _first_match(
+        context,
+        (
+            r'(?is)<div[^>]*class=["\'][^"\']*job-changed-date[^"\']*["\'][^>]*>(.*?)</div>',
+            r'(?is)<span[^>]*class=["\'][^"\']*date[^"\']*["\'][^>]*>(.*?)</span>',
+        ),
+    )
+    location_details = normalize_location_details(
+        strip_html_text(location_match.group(1)) if location_match else ""
+    )
+    source_id_match = re.search(r"/job/[^/?#]*-(\d+)", href)
+    return {
+        "sourceJobId": clean_text(source_id_match.group(1) if source_id_match else ""),
+        "title": title,
+        "company": (strip_html_text(company_match.group(1)) if company_match else "") or "Unknown",
+        "city": clean_text(location_details.get("city")),
+        "country": clean_text(location_details.get("country")) or "Unknown",
+        "locations": location_details.get("locations") or [],
+        "locationSummary": clean_text(location_details.get("locationSummary")),
+        "workType": "",
+        "contractType": "",
+        "jobLink": urljoin(base_url, href),
+        "sector": "Game",
+        "postedAt": parse_gamesindustry_changed_date(
+            strip_html_text(changed_match.group(1)) if changed_match else ""
+        ),
+    }
+
+
+def _gamesindustry_fallback_row(href: str, inner: str, base_url: str) -> RawJob | None:
+    if "/job/" not in href:
+        return None
+    title = strip_html_text(inner)
+    if not title or norm_text(title) == "read more":
+        return None
+    source_id_match = re.search(r"/job/[^/?#]*-(\d+)", href)
+    return {
+        "sourceJobId": clean_text(source_id_match.group(1) if source_id_match else ""),
+        "title": title,
+        "company": "Unknown",
+        "city": "",
+        "country": "Unknown",
+        "locations": [],
+        "locationSummary": "",
+        "workType": "",
+        "contractType": "",
+        "jobLink": urljoin(base_url, href),
+        "sector": "Game",
+        "postedAt": "",
+    }
+
+
+def parse_gamesindustry_html(
+    html_text: str, base_url: str = "https://jobs.gamesindustry.biz"
+) -> list[RawJob]:
+    jobs: list[RawJob] = []
+    seen_links = set()
+    listing_row_pattern = re.compile(r'(?is)<div[^>]+class=["\'][^"\']*views-row[^"\']*["\'][^>]*>')
+    listing_row_starts = [match.start() for match in listing_row_pattern.finditer(html_text)]
+    for row in _gamesindustry_jsonld_rows(html_text, base_url):
+        _append_gamesindustry_job(jobs, seen_links, row)
 
     link_pattern = re.compile(
         r'(?is)<a[^>]+href=["\']([^"\']*/job/[^"\']+)["\'][^>]*class=["\'][^"\']*recruiter-job-link[^"\']*["\'][^>]*>(.*?)</a>'
     )
     for match in link_pattern.finditer(html_text):
-        href = clean_text(match.group(1))
-        title = strip_html_text(match.group(2))
-        if not href or not title:
-            continue
-        if norm_text(title) in {"read more", "find jobs", "search for jobs"}:
-            continue
-        row_context = ""
-        row_start = next(
-            (start for start in reversed(listing_row_starts) if start <= match.start()),
-            -1,
+        row = _gamesindustry_link_row(
+            match, html_text=html_text, listing_row_starts=listing_row_starts, base_url=base_url
         )
-        if row_start >= 0:
-            next_row_start = next(
-                (start for start in listing_row_starts if start > row_start),
-                len(html_text),
-            )
-            row_context = html_text[row_start:next_row_start]
-        context = (
-            row_context
-            or html_text[max(0, match.start() - 500) : min(len(html_text), match.end() + 2500)]
-        )
-        company_match = (
-            re.search(
-                r'(?is)<div[^>]*class=["\'][^"\']*company-name[^"\']*["\'][^>]*>(.*?)</div>',
-                context,
-            )
-            or re.search(
-                r'(?is)<span[^>]*class=["\'][^"\']*recruiter-company-profile-job-organization[^"\']*["\'][^>]*>(.*?)</span>',
-                context,
-            )
-            or re.search(
-                r'(?is)<div[^>]*class=["\'][^"\']*pane-node-recruiter-company-profile-job-organization[^"\']*["\'][^>]*>(.*?)</div>',
-                context,
-            )
-        )
-        location_match = (
-            re.search(
-                r'(?is)<div[^>]*class=["\'][^"\']*city[^"\']*["\'][^>]*>(.*?)</div>',
-                context,
-            )
-            or re.search(
-                r'(?is)<div[^>]*class=["\'][^"\']*location[^"\']*["\'][^>]*>(.*?)</div>',
-                context,
-            )
-            or re.search(
-                r'(?is)<div[^>]*class=["\'][^"\']*field-job-region[^"\']*["\'][^>]*>(.*?)</div>',
-                context,
-            )
-        )
-        changed_match = re.search(
-            r'(?is)<div[^>]*class=["\'][^"\']*job-changed-date[^"\']*["\'][^>]*>(.*?)</div>',
-            context,
-        ) or re.search(
-            r'(?is)<span[^>]*class=["\'][^"\']*date[^"\']*["\'][^>]*>(.*?)</span>',
-            context,
-        )
-
-        company = strip_html_text(company_match.group(1)) if company_match else ""
-        location_text = strip_html_text(location_match.group(1)) if location_match else ""
-        location_details = normalize_location_details(location_text)
-        changed_date = strip_html_text(changed_match.group(1)) if changed_match else ""
-        source_id_match = re.search(r"/job/[^/?#]*-(\d+)", href)
-
-        push_job(
-            {
-                "sourceJobId": clean_text(source_id_match.group(1) if source_id_match else ""),
-                "title": title,
-                "company": company or "Unknown",
-                "city": clean_text(location_details.get("city")),
-                "country": clean_text(location_details.get("country")) or "Unknown",
-                "locations": location_details.get("locations") or [],
-                "locationSummary": clean_text(location_details.get("locationSummary")),
-                "workType": "",
-                "contractType": "",
-                "jobLink": urljoin(base_url, href),
-                "sector": "Game",
-                "postedAt": parse_gamesindustry_changed_date(changed_date),
-            }
-        )
+        if row:
+            _append_gamesindustry_job(jobs, seen_links, row)
 
     if jobs:
         return jobs
@@ -459,28 +486,9 @@ def parse_gamesindustry_html(
     for href, inner in re.findall(
         r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html_text
     ):
-        if "/job/" not in href:
-            continue
-        title = strip_html_text(inner)
-        if not title or norm_text(title) == "read more":
-            continue
-        source_id_match = re.search(r"/job/[^/?#]*-(\d+)", href)
-        push_job(
-            {
-                "sourceJobId": clean_text(source_id_match.group(1) if source_id_match else ""),
-                "title": title,
-                "company": "Unknown",
-                "city": "",
-                "country": "Unknown",
-                "locations": [],
-                "locationSummary": "",
-                "workType": "",
-                "contractType": "",
-                "jobLink": urljoin(base_url, href),
-                "sector": "Game",
-                "postedAt": "",
-            }
-        )
+        row = _gamesindustry_fallback_row(href, inner, base_url)
+        if row:
+            _append_gamesindustry_job(jobs, seen_links, row)
     return jobs
 
 
@@ -540,50 +548,59 @@ def parse_wellfound_html(
     html_text: str, base_url: str = "https://wellfound.com/jobs"
 ) -> list[RawJob]:
     jobs: list[RawJob] = []
+    for node in _wellfound_next_data_nodes(html_text):
+        candidate = parse_wellfound_candidate(node, base_url)
+        if candidate:
+            jobs.append(candidate)
+    if jobs:
+        return jobs
+    return [
+        row
+        for href, inner in re.findall(
+            r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html_text
+        )
+        if (row := _wellfound_anchor_row(href, inner, base_url))
+    ]
+
+
+def _wellfound_next_data_nodes(html_text: str) -> list[dict[str, Any]]:
     match = re.search(
         r'(?is)<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>',
         html_text,
     )
-    if match:
-        payload_text = unescape(match.group(1).strip())
-        try:
-            payload = json.loads(payload_text)
-        except json.JSONDecodeError:
-            payload = None
-        if payload is not None:
-            stack = [payload]
-            while stack:
-                node = stack.pop()
-                if isinstance(node, dict):
-                    candidate = parse_wellfound_candidate(node, base_url)
-                    if candidate:
-                        jobs.append(candidate)
-                    stack.extend(node.values())
-                elif isinstance(node, list):
-                    stack.extend(node)
-    if jobs:
-        return jobs
+    if not match:
+        return []
+    try:
+        payload = json.loads(unescape(match.group(1).strip()))
+    except json.JSONDecodeError:
+        return []
+    nodes: list[dict[str, Any]] = []
+    stack: list[Any] = [payload]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            nodes.append(node)
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return nodes
 
-    for href, inner in re.findall(
-        r'(?is)<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html_text
-    ):
-        if "/jobs/" not in href:
-            continue
-        title = re.sub(r"(?is)<[^>]+>", " ", inner)
-        title = re.sub(r"\s+", " ", title).strip()
-        if not title or not looks_like_game_job(title):
-            continue
-        jobs.append(
-            {
-                "sourceJobId": "",
-                "title": title,
-                "company": "Unknown",
-                "city": "",
-                "country": "Unknown",
-                "workType": "",
-                "contractType": "",
-                "jobLink": urljoin(base_url, href),
-                "sector": "",
-            }
-        )
-    return jobs
+
+def _wellfound_anchor_row(href: str, inner: str, base_url: str) -> RawJob | None:
+    if "/jobs/" not in href:
+        return None
+    title = re.sub(r"(?is)<[^>]+>", " ", inner)
+    title = re.sub(r"\s+", " ", title).strip()
+    if not title or not looks_like_game_job(title):
+        return None
+    return {
+        "sourceJobId": "",
+        "title": title,
+        "company": "Unknown",
+        "city": "",
+        "country": "Unknown",
+        "workType": "",
+        "contractType": "",
+        "jobLink": urljoin(base_url, href),
+        "sector": "",
+    }
