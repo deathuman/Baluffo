@@ -121,9 +121,11 @@ def test_run_pipeline_dynamically_suppresses_default_static_source_without_mutat
     try:
         with workspace_tmpdir("jobs-fetcher-dynamic-static-suppression") as tmp:
             out = Path(tmp)
+            sources = _eligible_provider_state()
+            sources[STATIC_SOURCE_NAME] = {"lastKeptCount": 2}
             source_state = {
                 "schemaVersion": jf.SCHEMA_VERSION,
-                "sources": _eligible_provider_state(),
+                "sources": sources,
             }
             (out / "jobs-source-state.json").write_text(json.dumps(source_state), encoding="utf-8")
             jf.default_source_loaders = lambda **_: [
@@ -139,6 +141,9 @@ def test_run_pipeline_dynamically_suppresses_default_static_source_without_mutat
             assert suppressed["exclusionReason"] == "dynamic_redundant_provider"
             assert suppressed["coveredByProviderSourceId"] == "Studio Greenhouse"
             assert report["sourceHealth"]["dynamicRedundantStaticSources"] == 1
+            assert report["providerStaticOverlap"]["suppressedStaticCount"] == 1
+            assert report["providerStaticOverlap"]["safePairCount"] == 1
+            assert report["providerStaticOverlap"]["pairs"][0]["auditStatus"] == "safe"
             assert static_registry_row == original_static_registry_row
     finally:
         jf.default_source_loaders = previous_default_loaders

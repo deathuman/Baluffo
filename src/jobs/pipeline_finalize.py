@@ -10,6 +10,9 @@ from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs.canonicalize import snapshot_sector_quality_audit
 from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
 from src.jobs.common.contracts_provider_coverage import build_provider_coverage_summary
+from src.jobs.common.contracts_provider_static_overlap import (
+    build_provider_static_overlap_summary,
+)
 from src.jobs.contamination_audit import build_public_text_quality_report
 from src.jobs.dedup import CanonicalDeduplicator
 from src.jobs.models import CanonicalJob
@@ -599,6 +602,11 @@ def finalize_pipeline_run(
         }
     )
     finished_at = clean_text(report_payload.get("finishedAt")) or now_iso()
+    prior_source_state_rows = {
+        clean_text(name): dict(row)
+        for name, row in source_state_rows.items()
+        if clean_text(name) and isinstance(row, dict)
+    }
     source_state_rows = update_source_state_rows(
         source_state_rows=source_state_rows,
         source_reports=source_reports,
@@ -622,6 +630,19 @@ def finalize_pipeline_run(
                 ):
                     source_row["googleSheetsRedirectCache"] = dict(persisted_redirect_cache)
     report_payload["providerCoverage"] = build_provider_coverage_summary(source_state_rows)
+    overlap_source_state_rows = {name: dict(row) for name, row in source_state_rows.items()}
+    for row in final_source_rows:
+        source_name = clean_text(row.get("name"))
+        if (
+            clean_text(row.get("exclusionReason")) == "dynamic_redundant_provider"
+            and source_name in prior_source_state_rows
+        ):
+            overlap_source_state_rows[source_name] = dict(prior_source_state_rows[source_name])
+    report_payload["providerStaticOverlap"] = build_provider_static_overlap_summary(
+        source_rows=final_source_rows,
+        source_state_rows=overlap_source_state_rows,
+        canonical_rows=deduped_payload_rows,
+    )
     report_payload["healthSummary"] = {
         "topFailingDomains": health_module.get_top_failing_sources(source_state_rows, limit=10),
         "topZeroKeptDomains": health_module.get_top_zero_kept_sources(source_state_rows, limit=10),

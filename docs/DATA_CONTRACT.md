@@ -499,6 +499,31 @@ with `exclusionReason="dynamic_redundant_provider"` during normal default fetche
 selection bypasses this skip. This must not mutate source registry rows, tombstones, sync state,
 saved/local data, or `REDUNDANT_STATIC_IF_PROVIDER`.
 
+### Provider/static overlap audit
+
+Fetch reports, normalized bridge payloads, `/ops/health` KPI payloads, and fetcher metrics may
+include top-level `providerStaticOverlap`. This additive field is read-only diagnostics derived
+from dynamic redundant-static source rows, provider coverage state, prior static source-state
+counts, and current output `sourceBundle` evidence when available. The audit must not force-run
+suppressed static sources, change suppression eligibility, or mutate static registry rows.
+
+| Field | Type | Description |
+|---|---|---|
+| `suppressedStaticCount` | `number` | Static source rows skipped at runtime with `exclusionReason="dynamic_redundant_provider"`. |
+| `auditedPairCount` | `number` | Count of provider/static pairs included in the audit. |
+| `safePairCount` | `number` | Pairs with repeated validated provider coverage and no static-only contradiction. |
+| `needsReviewPairCount` | `number` | Pairs with provider instability, static-only evidence, or malformed/incomplete evidence. |
+| `insufficientHistoryPairCount` | `number` | Pairs lacking prior static kept-count or overlap evidence. |
+| `staticOnlyJobCount` | `number` | Current output rows whose `sourceBundle` references the static source but not the covering provider. |
+| `providerOnlyJobCount` | `number` | Current output rows whose `sourceBundle` references the covering provider but not the static source. |
+| `overlapJobCount` | `number` | Current output rows whose `sourceBundle` references both static and provider sources. |
+| `pairs` | `Array<Object>` | Compact pair rows with static/provider identities, coverage fields, counts, `auditStatus`, and `auditReasons`. |
+
+`auditStatus` values are `safe`, `needs_review`, `insufficient_history`, `provider_unstable`,
+and `not_audited`. `safe` means only that the current reversible suppression appears supported by
+available evidence. Static cleanup, deletion, hiding, or permanent redundancy rules remain a later
+explicit evidence-backed milestone.
+
 ### Job lifecycle summary
 
 Fetch reports and normalized bridge fetch-report payloads may include top-level `lifecycleSummary`.

@@ -209,6 +209,22 @@ function formatDynamicRedundantStaticRows(rows, emptyText) {
     .join(" | ");
 }
 
+function formatProviderStaticOverlapRows(rows, emptyText) {
+  const pairRows = Array.isArray(rows) ? rows : [];
+  if (!pairRows.length) return escapeHtml(emptyText);
+  return pairRows
+    .slice(0, 5)
+    .map(row => {
+      const staticName = sanitizeSlowSourceName(row?.staticSourceName || row?.staticSourceId);
+      const provider = sanitizeSlowSourceName(row?.providerSourceName || row?.providerSourceId);
+      const status = String(row?.auditStatus || "unknown").replaceAll("_", " ");
+      const overlap = Number(row?.overlapCount || 0);
+      const staticOnly = Number(row?.staticOnlyCount || 0);
+      return escapeHtml(`${staticName} covered by ${provider} (${status}, overlap ${overlap}, static-only ${staticOnly})`);
+    })
+    .join(" | ");
+}
+
 export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};
@@ -238,6 +254,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     stageTop: Array.isArray(latest?.stageTop) ? latest.stageTop : [],
     sourceHealth: latest?.sourceHealth || {},
     providerCoverage: latest?.providerCoverage || {},
+    providerStaticOverlap: latest?.providerStaticOverlap || {},
     failureSummary: summary
   });
   if (canPatchInPlace && metricsEl.dataset.opsFetcherMetricsSig === signature) return;
@@ -253,6 +270,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const highCostLowYield = Array.isArray(latest?.highCostLowYieldSources) ? latest.highCostLowYieldSources : [];
   const sourceHealth = latest?.sourceHealth && typeof latest.sourceHealth === "object" ? latest.sourceHealth : {};
   const providerCoverage = latest?.providerCoverage && typeof latest.providerCoverage === "object" ? latest.providerCoverage : {};
+  const providerStaticOverlap = latest?.providerStaticOverlap && typeof latest.providerStaticOverlap === "object" ? latest.providerStaticOverlap : {};
   const slowestSummary = slowest.length
     ? slowest
       .slice(0, 3)
@@ -311,6 +329,10 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const readyLaterProviderSummary = formatProviderCoverageRows(
     providerCoverage?.readyLaterProviders,
     "No providers are replacement-ready for a later slice."
+  );
+  const overlapAuditSummary = formatProviderStaticOverlapRows(
+    providerStaticOverlap?.pairs,
+    "No provider/static overlap audit pairs."
   );
   const bucketSummaryHtml = bucketRows.length
     ? bucketRows.map(bucket => `
@@ -379,5 +401,6 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Provider coverage needs review</strong>: ${reviewProviderSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Unstable / failed providers</strong>: ${failedProviderSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Ready later (no static mutation)</strong>: ${readyLaterProviderSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Provider/static overlap audit</strong>: safe ${Number(providerStaticOverlap?.safePairCount || 0).toLocaleString()}, needs review ${Number(providerStaticOverlap?.needsReviewPairCount || 0).toLocaleString()}, insufficient history ${Number(providerStaticOverlap?.insufficientHistoryPairCount || 0).toLocaleString()}. ${overlapAuditSummary}</div>
   `;
 }

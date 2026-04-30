@@ -8,6 +8,9 @@ from collections.abc import Mapping
 from typing import Any
 
 from src.jobs.common.contracts_provider_coverage import normalize_provider_coverage_payload
+from src.jobs.common.contracts_provider_static_overlap import (
+    normalize_provider_static_overlap_payload,
+)
 from src.jobs.common.contracts_source_health import normalize_source_health_payload
 from src.source_discovery.candidate_review import (
     build_candidate_review_payload,
@@ -316,6 +319,22 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
                     "zeroKeptClassification": str(row.get("zeroKeptClassification") or "").strip(),
                     "browserFallbackRecommended": bool(row.get("browserFallbackRecommended")),
                     "exclusionReason": str(row.get("exclusionReason") or "").strip(),
+                    "coveredByProviderSourceId": str(
+                        row.get("coveredByProviderSourceId") or ""
+                    ).strip(),
+                    "coveredByProviderAdapter": str(
+                        row.get("coveredByProviderAdapter") or ""
+                    ).strip(),
+                    "providerCoverageStatus": str(row.get("providerCoverageStatus") or "").strip(),
+                    "providerCoverageConsecutiveSuccesses": safe_int(
+                        row.get("providerCoverageConsecutiveSuccesses"), 0, 0, 1_000_000
+                    ),
+                    "providerCoverageLatestKeptCount": safe_int(
+                        row.get("providerCoverageLatestKeptCount"), 0, 0, 1_000_000
+                    ),
+                    "migrationSourceIdentity": str(
+                        row.get("migrationSourceIdentity") or ""
+                    ).strip(),
                     "cacheDecision": str(row.get("cacheDecision") or "").strip(),
                     "cacheDecisionReason": str(row.get("cacheDecisionReason") or "").strip(),
                     "details": normalized_details,
@@ -327,6 +346,9 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
     normalized_source_families = _normalize_source_rows(source_families)
     source_health = normalize_source_health_payload(src.get("sourceHealth"), normalized_sources)
     provider_coverage = normalize_provider_coverage_payload(src.get("providerCoverage"))
+    provider_static_overlap = normalize_provider_static_overlap_payload(
+        src.get("providerStaticOverlap"), source_rows=normalized_sources
+    )
     slowest_sources_raw = _as_list(runtime.get("slowestSources"))
     slowest_sources: list[dict[str, Any]] = []
     for row in slowest_sources_raw[:10]:
@@ -476,6 +498,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "sourceFamilies": normalized_source_families,
         "sourceHealth": source_health,
         "providerCoverage": provider_coverage,
+        "providerStaticOverlap": provider_static_overlap,
         "outputs": _as_dict(src.get("outputs")),
     }
     finished_at = str(normalized.get("finishedAt") or "").strip()

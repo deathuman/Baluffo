@@ -12,6 +12,9 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.jobs.common.contracts_provider_coverage import normalize_provider_coverage_payload
+from src.jobs.common.contracts_provider_static_overlap import (
+    normalize_provider_static_overlap_payload,
+)
 from src.jobs.common.contracts_source_health import normalize_source_health_payload
 from src.shared.json_io import read_json
 from src.shared.json_shapes import as_json_list, as_json_object, copy_json_object, json_object_rows
@@ -122,6 +125,9 @@ def build_metrics(
     durations = [max(0, int(row.get("durationMs") or 0)) for row in sources]
     source_health = normalize_source_health_payload(report.get("sourceHealth"), sources)
     provider_coverage = normalize_provider_coverage_payload(report.get("providerCoverage"))
+    provider_static_overlap = normalize_provider_static_overlap_payload(
+        report.get("providerStaticOverlap"), source_rows=sources
+    )
     return {
         "generatedAt": datetime.now(UTC).isoformat(),
         "latestRun": {
@@ -146,6 +152,7 @@ def build_metrics(
             ),
             "sourceHealth": source_health,
             "providerCoverage": provider_coverage,
+            "providerStaticOverlap": provider_static_overlap,
             **summarize_source_rows(sources),
         },
         "history": summarize_run_history(history, window=window),

@@ -104,6 +104,27 @@ test("admin render: fetcher metrics render provider coverage lanes", () => {
             providerCoverageConsecutiveSuccesses: 2
           }
         ]
+      },
+      providerStaticOverlap: {
+        safePairCount: 1,
+        needsReviewPairCount: 1,
+        insufficientHistoryPairCount: 0,
+        pairs: [
+          {
+            staticSourceName: "static_source::covered",
+            providerSourceName: "Studio Greenhouse",
+            auditStatus: "safe",
+            overlapCount: 2,
+            staticOnlyCount: 0
+          },
+          {
+            staticSourceName: "static_source::static-only",
+            providerSourceName: "Broken Provider",
+            auditStatus: "needs_review",
+            overlapCount: 0,
+            staticOnlyCount: 1
+          }
+        ]
       }
     },
     history: {}
@@ -114,4 +135,6 @@ test("admin render: fetcher metrics render provider coverage lanes", () => {
   assert.match(metricsEl.innerHTML, /Unstable \/ failed providers/i);
   assert.match(metricsEl.innerHTML, /Ready later \(no static mutation\)/i);
   assert.match(metricsEl.innerHTML, /Studio Greenhouse/i);
+  assert.match(metricsEl.innerHTML, /Provider\/static overlap audit/i);
+  assert.match(metricsEl.innerHTML, /static-only 1/i);
 });

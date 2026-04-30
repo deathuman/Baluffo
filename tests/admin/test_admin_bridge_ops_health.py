@@ -211,6 +211,46 @@ def test_compute_ops_health_exposes_provider_coverage_summary(admin_bridge_entry
     assert provider_coverage["validatedProviders"][0]["name"] == "Studio Greenhouse"
 
 
+def test_compute_ops_health_exposes_provider_static_overlap_audit(admin_bridge_entrypoint_root):
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "startedAt": "2026-04-30T12:00:00+00:00",
+            "finishedAt": "2026-04-30T12:05:00+00:00",
+            "summary": {"outputCount": 8, "failedSources": 0, "sourceCount": 1},
+            "providerStaticOverlap": {
+                "suppressedStaticCount": 1,
+                "auditedPairCount": 1,
+                "safePairCount": 1,
+                "needsReviewPairCount": 0,
+                "insufficientHistoryPairCount": 0,
+                "staticOnlyJobCount": 0,
+                "providerOnlyJobCount": 0,
+                "overlapJobCount": 0,
+                "pairs": [
+                    {
+                        "staticSourceName": "static_source::covered",
+                        "providerSourceName": "Studio Greenhouse",
+                        "providerAdapter": "greenhouse",
+                        "providerCoverageStatus": "validated_provider",
+                        "providerConsecutiveSuccesses": 2,
+                        "latestProviderKeptCount": 8,
+                        "auditStatus": "safe",
+                    }
+                ],
+            },
+            "sources": [],
+        },
+    )
+
+    health = admin_bridge.compute_ops_health()
+
+    overlap = health["kpis"]["providerStaticOverlap"]
+    assert overlap["suppressedStaticCount"] == 1
+    assert overlap["safePairCount"] == 1
+    assert overlap["pairs"][0]["providerSourceName"] == "Studio Greenhouse"
+
+
 def test_alert_ack_suppresses_visible_alert(admin_bridge_entrypoint_root):
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
