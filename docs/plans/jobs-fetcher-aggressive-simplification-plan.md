@@ -218,7 +218,7 @@ cmd /c npm run lint:precommit
 
 ### Phase 4: Social and community lifecycle simplification
 
-Status: social lifecycle thinning and Personio provider lifecycle cleanup completed on 2026-04-30; community lifecycle review remains pending.
+Status: social lifecycle thinning, Personio provider lifecycle cleanup, and Google Sheets community review completed on 2026-04-30.
 
 - Collapse repeated social cache/progress/error handling, or delete low-yield social paths with evidence.
 - Revisit community Google Sheets only if another community path shares the same lifecycle or evidence supports deletion/merge.

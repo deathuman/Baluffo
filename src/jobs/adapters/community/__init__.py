@@ -49,6 +49,41 @@ GRACKLEHQ_URLS = ["https://gracklehq.com/jobs"]
 GRACKLEHQ_MAX_PAGES = 40
 
 
+def _run_google_sheets_candidate_url(
+    *,
+    url: str,
+    fetch_text: Callable[[str, int], str],
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    diagnostics_name: str,
+    details: list[dict[str, Any]],
+    errors: list[str],
+    heartbeat_callback: Callable[[], None] | None,
+) -> list[RawJob]:
+    if heartbeat_callback:
+        heartbeat_callback()
+    text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+    parse_started = time.perf_counter()
+    jobs = parse_google_sheets_csv(text, heartbeat_callback=heartbeat_callback)
+    parse_csv_ms = int((time.perf_counter() - parse_started) * 1000)
+    details.append(
+        {
+            "adapter": "csv",
+            "studio": "community_sheet",
+            "name": diagnostics_name or "google_sheets",
+            "status": "ok" if jobs else "error",
+            "fetchedCount": len(jobs),
+            "keptCount": len(jobs),
+            "error": "" if jobs else "empty/invalid CSV",
+            "stats": {"parse_csv_ms": parse_csv_ms},
+        }
+    )
+    if not jobs:
+        errors.append(f"{url}: empty/invalid CSV")
+    return jobs
+
+
 def run_google_sheets_source(
     *,
     fetch_text: Callable[[str, int], str],
@@ -62,26 +97,20 @@ def run_google_sheets_source(
 ) -> list[RawJob]:
     errors: list[str] = []
     details: list[dict[str, Any]] = []
+    source_name = diagnostics_name or f"google_sheets:{sheet_id}:{gid}"
     for url in google_sheet_candidate_urls(sheet_id, gid):
 
         def _attempt(url: str = url) -> list[RawJob]:
-            if heartbeat_callback:
-                heartbeat_callback()
-            text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
-            parse_started = time.perf_counter()
-            jobs = parse_google_sheets_csv(text, heartbeat_callback=heartbeat_callback)
-            parse_csv_ms = int((time.perf_counter() - parse_started) * 1000)
-            details.append(
-                {
-                    "adapter": "csv",
-                    "studio": "community_sheet",
-                    "name": diagnostics_name or f"google_sheets:{sheet_id}:{gid}",
-                    "status": "ok" if jobs else "error",
-                    "fetchedCount": len(jobs),
-                    "keptCount": len(jobs),
-                    "error": "" if jobs else "empty/invalid CSV",
-                    "stats": {"parse_csv_ms": parse_csv_ms},
-                }
+            jobs = _run_google_sheets_candidate_url(
+                url=url,
+                fetch_text=fetch_text,
+                timeout_s=timeout_s,
+                retries=retries,
+                backoff_s=backoff_s,
+                diagnostics_name=source_name,
+                details=details,
+                errors=errors,
+                heartbeat_callback=heartbeat_callback,
             )
             if jobs:
                 if heartbeat_callback:
@@ -95,7 +124,6 @@ def run_google_sheets_source(
                         partial_errors=[],
                     )
                 return jobs
-            errors.append(f"{url}: empty/invalid CSV")
             return []
 
         def _record_error(exc: Exception, url: str = url) -> None:

@@ -237,14 +237,7 @@ def _normalize_sheet_location(city_value: Any, country_value: Any) -> dict[str, 
     return normalize_location_details("")
 
 
-def parse_google_sheets_csv(
-    csv_text: str, *, heartbeat_callback: HeartbeatCallback | None = None
-) -> list[RawJob]:
-    rows = list(csv.reader(StringIO(csv_text)))
-    if len(rows) < 2:
-        return []
-
-    header_idx = -1
+def _google_sheets_header_index(rows: list[list[str]]) -> int:
     for idx, row in enumerate(rows[:250]):
         normalized = [norm_text(cell) for cell in row if norm_text(cell)]
         if not normalized:
@@ -266,88 +259,120 @@ def parse_google_sheets_csv(
             or "location" in normalized
         )
         if has_title and has_company and has_location:
-            header_idx = idx
-            break
+            return idx
+    return -1
+
+
+def _google_sheets_column_indexes(headers: Sequence[str]) -> dict[str, Any]:
+    company_idx = find_company_column(headers)
+    title_idx = find_column_index(
+        headers, ["title", "role", "job", "position"], ["title", "role", "job", "position"]
+    )
+    return {
+        "company": company_idx,
+        "companyCandidates": company_name_candidate_indexes(headers, company_idx),
+        "title": title_idx,
+        "city": find_column_index(headers, ["city"], ["city"]),
+        "country": find_column_index(headers, ["country"], ["country"]),
+        "location": find_column_index(
+            headers,
+            ["location type", "work type", "fully remote", "remote"],
+            ["location", "work type", "remote", "fully remote"],
+        ),
+        "contract": find_column_index(
+            headers,
+            ["employment type", "contract type", "employment", "contract", "job type"],
+            ["employment", "contract", "job type"],
+        ),
+        "link": google_sheets_link_candidate_indexes(
+            headers,
+            find_column_index(
+                headers, ["job link", "url", "apply", "link"], ["job link", "url", "apply", "link"]
+            ),
+        ),
+        "sector": find_column_index(
+            headers,
+            ["sector", "industry", "company type", "company category", "job category"],
+            ["sector", "industry", "company type", "company category", "job category"],
+        ),
+    }
+
+
+def _google_sheets_default_country(csv_text: str, country_idx: int) -> str:
+    if country_idx < 0 and "german games industry" in norm_text(csv_text[:3000]):
+        return "Germany"
+    return "Unknown"
+
+
+def _cell(row: Sequence[str], index: int, default: str = "") -> str:
+    return row[index] if 0 <= index < len(row) else default
+
+
+def _google_sheets_row_to_job(
+    *,
+    idx: int,
+    row: Sequence[str],
+    columns: dict[str, Any],
+    default_country: str,
+) -> RawJob | None:
+    title = clean_text(_cell(row, columns["title"]))
+    company = _resolve_company_name(row, columns["company"], columns["companyCandidates"])
+    job_link = resolve_google_sheets_job_link(row, columns["link"])
+    if not title:
+        return None
+    if _needs_company_inference(company):
+        company = _company_from_smartrecruiters_url(job_link) or company
+    if not company:
+        return None
+    location_details = _normalize_sheet_location(
+        _cell(row, columns["city"]),
+        _cell(row, columns["country"], default_country),
+    )
+    return {
+        "sourceJobId": f"sheet-{idx}",
+        "title": title,
+        "company": company,
+        "city": clean_text(location_details.get("city")) or clean_text(_cell(row, columns["city"])),
+        "country": clean_text(location_details.get("country"))
+        or clean_text(_cell(row, columns["country"], default_country))
+        or default_country,
+        "workType": clean_text(_cell(row, columns["location"], "On-site")),
+        "contractType": clean_text(_cell(row, columns["contract"])),
+        "jobLink": job_link,
+        "sector": clean_text(_cell(row, columns["sector"])),
+        "locations": location_details.get("locations") or [],
+        "locationSummary": clean_text(location_details.get("locationSummary")),
+    }
+
+
+def parse_google_sheets_csv(
+    csv_text: str, *, heartbeat_callback: HeartbeatCallback | None = None
+) -> list[RawJob]:
+    rows = list(csv.reader(StringIO(csv_text)))
+    if len(rows) < 2:
+        return []
+
+    header_idx = _google_sheets_header_index(rows)
     if header_idx < 0:
         return []
 
     headers = [clean_text(header) for header in rows[header_idx]]
-    company_idx = find_company_column(headers)
-    company_candidates = company_name_candidate_indexes(headers, company_idx)
-    title_idx = find_column_index(
-        headers, ["title", "role", "job", "position"], ["title", "role", "job", "position"]
-    )
-    city_idx = find_column_index(headers, ["city"], ["city"])
-    country_idx = find_column_index(headers, ["country"], ["country"])
-    location_idx = find_column_index(
-        headers,
-        ["location type", "work type", "fully remote", "remote"],
-        ["location", "work type", "remote", "fully remote"],
-    )
-    contract_idx = find_column_index(
-        headers,
-        ["employment type", "contract type", "employment", "contract", "job type"],
-        ["employment", "contract", "job type"],
-    )
-    link_idx = find_column_index(
-        headers, ["job link", "url", "apply", "link"], ["job link", "url", "apply", "link"]
-    )
-    link_candidates = google_sheets_link_candidate_indexes(headers, link_idx)
-    sector_idx = find_column_index(
-        headers,
-        ["sector", "industry", "company type", "company category", "job category"],
-        ["sector", "industry", "company type", "company category", "job category"],
-    )
-
-    default_country = "Unknown"
-    if country_idx < 0 and "german games industry" in norm_text(csv_text[:3000]):
-        default_country = "Germany"
-
-    if title_idx < 0 or company_idx < 0:
+    columns = _google_sheets_column_indexes(headers)
+    if columns["title"] < 0 or columns["company"] < 0:
         return []
 
+    default_country = _google_sheets_default_country(csv_text, columns["country"])
     jobs: list[RawJob] = []
     for idx in range(header_idx + 1, len(rows)):
         if heartbeat_callback and idx % 250 == 0:
             heartbeat_callback()
-        row = rows[idx]
-        title = clean_text(row[title_idx] if title_idx < len(row) else "")
-        company = _resolve_company_name(row, company_idx, company_candidates)
-        job_link = resolve_google_sheets_job_link(row, link_candidates)
-        if not title:
-            continue
-        if _needs_company_inference(company):
-            inferred_company = _company_from_smartrecruiters_url(job_link)
-            if inferred_company:
-                company = inferred_company
-        location_details = _normalize_sheet_location(
-            row[city_idx] if 0 <= city_idx < len(row) else "",
-            row[country_idx] if 0 <= country_idx < len(row) else default_country,
-        )
-        if not company:
-            continue
-        jobs.append(
-            {
-                "sourceJobId": f"sheet-{idx}",
-                "title": title,
-                "company": company,
-                "city": clean_text(location_details.get("city"))
-                or clean_text(row[city_idx] if 0 <= city_idx < len(row) else ""),
-                "country": clean_text(location_details.get("country"))
-                or clean_text(row[country_idx] if 0 <= country_idx < len(row) else default_country)
-                or default_country,
-                "workType": clean_text(
-                    row[location_idx] if 0 <= location_idx < len(row) else "On-site"
-                ),
-                "contractType": clean_text(
-                    row[contract_idx] if 0 <= contract_idx < len(row) else ""
-                ),
-                "jobLink": job_link,
-                "sector": clean_text(row[sector_idx] if 0 <= sector_idx < len(row) else ""),
-                "locations": location_details.get("locations") or [],
-                "locationSummary": clean_text(location_details.get("locationSummary")),
-            }
-        )
+        if job := _google_sheets_row_to_job(
+            idx=idx,
+            row=rows[idx],
+            columns=columns,
+            default_country=default_country,
+        ):
+            jobs.append(job)
     if heartbeat_callback:
         heartbeat_callback()
     return jobs
