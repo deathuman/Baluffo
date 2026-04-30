@@ -113,34 +113,15 @@ def _runtime_timing_summary(
     )
 
 
-def finalize_pipeline_run(
+def _deduplicate_or_preserve_previous(
     *,
     paths,
-    source_reports: list[dict[str, Any]],
     canonical_rows: list[CanonicalJob],
-    using_default_loaders: bool,
-    selected_loaders: list[tuple[str, Any]],
-    effective_seed_from_existing_output: bool,
     preserve_previous_on_empty: bool,
-    source_state_rows: dict[str, Any],
-    lifecycle_rows: dict[str, dict[str, Any]],
-    runtime_payload: dict[str, Any],
-    redirect_resolver: Any,
-    task_runtime: Any,
-    progress_phase: dict[str, str],
-    write_progress_report,
-    write_task_state,
     started_at: str,
-    run_started_mono: float,
-    run_id: str,
-    circuit_breaker_failures: int,
-    circuit_breaker_cooldown_minutes: int,
-    circuit_breaker_zero_kept: int,
-) -> dict[str, Any]:
+) -> tuple[list[CanonicalJob], dict[str, Any], bool]:
     deduplicator = CanonicalDeduplicator()
     deduped_rows = deduplicator.process(canonical_rows)
-    dedup_stats = deduplicator.stats
-
     preserved_previous = False
     if preserve_previous_on_empty and not deduped_rows:
         previous_rows = read_existing_output(
@@ -152,7 +133,16 @@ def finalize_pipeline_run(
         if previous_rows:
             deduped_rows = [CanonicalJob.from_mapping(row) for row in previous_rows]
             preserved_previous = True
+    return deduped_rows, deduplicator.stats, preserved_previous
 
+
+def _lifecycle_missing_context(
+    *,
+    source_reports: list[dict[str, Any]],
+    selected_loaders: list[tuple[str, Any]],
+    using_default_loaders: bool,
+    effective_seed_from_existing_output: bool,
+) -> tuple[bool, set[str]]:
     selected_loader_names = {name for name, _ in selected_loaders}
     selected_reports = [
         row for row in source_reports if clean_text(row.get("name")) in selected_loader_names
@@ -165,16 +155,29 @@ def finalize_pipeline_run(
         for row in selected_reports
         if norm_text(row.get("status")) == "ok" and clean_text(row.get("name"))
     }
-    allow_mark_missing = bool(
-        using_default_loaders and not effective_seed_from_existing_output and run_is_healthy
+    may_mark_missing = using_default_loaders and not effective_seed_from_existing_output
+    return bool(may_mark_missing and run_is_healthy), (
+        successful_source_names if may_mark_missing else set()
     )
-    eligible_missing_sources = (
-        successful_source_names
-        if using_default_loaders and not effective_seed_from_existing_output
-        else set()
+
+
+def _apply_lifecycle_state(
+    *,
+    deduped_rows: list[CanonicalJob],
+    lifecycle_rows: dict[str, dict[str, Any]],
+    source_reports: list[dict[str, Any]],
+    selected_loaders: list[tuple[str, Any]],
+    using_default_loaders: bool,
+    effective_seed_from_existing_output: bool,
+    lifecycle_finished_at: str,
+) -> tuple[list[CanonicalJob], dict[str, dict[str, Any]], dict[str, int]]:
+    allow_mark_missing, eligible_missing_sources = _lifecycle_missing_context(
+        source_reports=source_reports,
+        selected_loaders=selected_loaders,
+        using_default_loaders=using_default_loaders,
+        effective_seed_from_existing_output=effective_seed_from_existing_output,
     )
-    lifecycle_finished_at = now_iso()
-    deduped_rows, lifecycle_rows, lifecycle_counts_map = apply_job_lifecycle_state(
+    return apply_job_lifecycle_state(
         deduped_rows=deduped_rows,
         lifecycle_rows=lifecycle_rows,
         finished_at=lifecycle_finished_at,
@@ -182,23 +185,34 @@ def finalize_pipeline_run(
         eligible_missing_sources=eligible_missing_sources,
     )
 
-    dedup_stats["outputCount"] = len(deduped_rows)
-    deduped_payload_rows = [row.to_dict() for row in deduped_rows]
+
+def _quality_reports(deduped_payload_rows: list[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
     location_quality_audit = _apply_final_location_quality_guardrail(deduped_payload_rows)
     sector_quality_audit = snapshot_sector_quality_audit(total_rows=len(deduped_payload_rows))
     contamination_report = build_public_text_quality_report(deduped_payload_rows)
-    city_garbage_audit = (
-        contamination_report.get("cityGarbageAudit")
-        if isinstance(contamination_report.get("cityGarbageAudit"), dict)
-        else {}
-    )
     contamination_rows = int(contamination_report.get("contaminatedRows") or 0)
     if contamination_rows > 0:
         raise ValueError(
             "Public text contamination validation failed: "
             f"{contamination_rows} row(s) still contain HTML-like fragments"
         )
+    city_garbage_audit = (
+        contamination_report.get("cityGarbageAudit")
+        if isinstance(contamination_report.get("cityGarbageAudit"), dict)
+        else {}
+    )
+    return (
+        location_quality_audit,
+        sector_quality_audit,
+        contamination_report,
+        city_garbage_audit,
+    )
 
+
+def _apply_final_output_loss_counts(
+    source_reports: list[dict[str, Any]],
+    deduped_payload_rows: list[dict[str, Any]],
+) -> None:
     final_output_by_source: Counter[str] = Counter(
         clean_text(row.get("source"))
         for row in deduped_payload_rows
@@ -216,31 +230,35 @@ def finalize_pipeline_run(
         loss["finalOutput"] = max(0, final_output)
         loss["dedupMerged"] = max(0, canonical_kept - final_output)
 
-    wrote_json = False
-    wrote_csv = False
-    wrote_light_json = False
-    progress_phase["key"] = "writing_outputs"
-    progress_phase["label"] = "Writing outputs"
-    write_progress_report(force=True)
-    if deduped_payload_rows:
-        validate_canonical_jobs_payload(deduped_payload_rows)
-        wrote_json = write_atomic_if_changed(
-            paths.json_path,
-            serialize_rows_for_json(deduped_payload_rows, OUTPUT_FIELDS),
-        )
-        wrote_csv = write_atomic_if_changed(
-            paths.csv_path,
-            serialize_rows_for_csv(deduped_payload_rows, OUTPUT_FIELDS),
-        )
-        wrote_light_json = write_atomic_if_changed(
-            paths.light_json_path,
-            serialize_rows_for_json(deduped_payload_rows, LIGHTWEIGHT_OUTPUT_FIELDS),
-        )
 
-    json_bytes = paths.json_path.stat().st_size if paths.json_path.exists() else 0
-    csv_bytes = paths.csv_path.stat().st_size if paths.csv_path.exists() else 0
-    light_json_bytes = paths.light_json_path.stat().st_size if paths.light_json_path.exists() else 0
+def _write_output_rows(
+    paths, deduped_payload_rows: list[dict[str, Any]]
+) -> tuple[bool, bool, bool]:
+    if not deduped_payload_rows:
+        return False, False, False
+    validate_canonical_jobs_payload(deduped_payload_rows)
+    wrote_json = write_atomic_if_changed(
+        paths.json_path,
+        serialize_rows_for_json(deduped_payload_rows, OUTPUT_FIELDS),
+    )
+    wrote_csv = write_atomic_if_changed(
+        paths.csv_path,
+        serialize_rows_for_csv(deduped_payload_rows, OUTPUT_FIELDS),
+    )
+    wrote_light_json = write_atomic_if_changed(
+        paths.light_json_path,
+        serialize_rows_for_json(deduped_payload_rows, LIGHTWEIGHT_OUTPUT_FIELDS),
+    )
+    return wrote_json, wrote_csv, wrote_light_json
 
+
+def _write_review_queue_artifacts(
+    *,
+    paths,
+    source_reports: list[dict[str, Any]],
+    lifecycle_finished_at: str,
+    redirect_resolver: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     browser_fallback_queue_rows = build_browser_fallback_queue(
         source_reports, generated_at=lifecycle_finished_at
     )
@@ -257,28 +275,36 @@ def finalize_pipeline_run(
         paths.parser_regression_queue_path,
         json.dumps(parser_regression_queue_rows, indent=2, ensure_ascii=False),
     )
+    return browser_fallback_queue_rows, parser_regression_queue_rows
 
-    social_review_path = paths.output_dir / SOCIAL_EXPERIMENT_REVIEW_FILENAME
-    social_review_candidates = build_social_experiment_review_sample(
-        deduped_rows,
-        sample_size=SOCIAL_EXPERIMENT_SAMPLE_SIZE,
-    )
-    existing_social_review_payload: dict[str, Any] = {}
-    if social_review_path.exists():
-        try:
-            loaded_review = json.loads(social_review_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            loaded_review = {}
-        if isinstance(loaded_review, dict):
-            existing_social_review_payload = loaded_review
-    existing_review_rows = _as_list(existing_social_review_payload.get("rows"))
+
+def _load_social_review_rows(social_review_path) -> list[Any]:
+    if not social_review_path.exists():
+        return []
+    try:
+        loaded_review = json.loads(social_review_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(loaded_review, dict):
+        return []
+    return _as_list(loaded_review.get("rows"))
+
+
+def _merge_social_review_rows(
+    deduped_rows: list[CanonicalJob],
+    *,
+    existing_review_rows: list[Any],
+) -> list[dict[str, Any]]:
     review_rows_by_key = {
         clean_text(row.get("dedupKey")): row
         for row in existing_review_rows
         if isinstance(row, dict) and clean_text(row.get("dedupKey"))
     }
-    merged_social_review_rows: list[dict[str, Any]] = []
-    for candidate in social_review_candidates:
+    merged_rows: list[dict[str, Any]] = []
+    for candidate in build_social_experiment_review_sample(
+        deduped_rows,
+        sample_size=SOCIAL_EXPERIMENT_SAMPLE_SIZE,
+    ):
         key = clean_text(candidate.get("dedupKey"))
         merged_candidate = dict(candidate)
         previous = review_rows_by_key.get(key) or {}
@@ -288,9 +314,23 @@ def finalize_pipeline_run(
             merged_candidate["reviewDecision"] = decision
         if notes:
             merged_candidate["reviewNotes"] = notes
-        merged_social_review_rows.append(merged_candidate)
+        merged_rows.append(merged_candidate)
+    return merged_rows
+
+
+def _write_social_review_artifact(
+    *,
+    paths,
+    deduped_rows: list[CanonicalJob],
+    lifecycle_finished_at: str,
+    started_at: str,
+) -> tuple[dict[str, Any], Any]:
+    social_review_path = paths.output_dir / SOCIAL_EXPERIMENT_REVIEW_FILENAME
     social_review_payload = build_social_experiment_review_payload(
-        merged_social_review_rows,
+        _merge_social_review_rows(
+            deduped_rows,
+            existing_review_rows=_load_social_review_rows(social_review_path),
+        ),
         generated_at=lifecycle_finished_at,
         pilot_window_start_at=started_at,
         pilot_window_end_at=lifecycle_finished_at,
@@ -300,7 +340,16 @@ def finalize_pipeline_run(
         social_review_path,
         json.dumps(social_review_payload, indent=2, ensure_ascii=False),
     )
+    return social_review_payload, social_review_path
 
+
+def _update_runtime_timing_payload(
+    *,
+    runtime_payload: dict[str, Any],
+    task_runtime: Any,
+    source_reports: list[dict[str, Any]],
+    run_started_mono: float,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     detailed_source_rows = build_detailed_source_rows(task_runtime.task_rows, source_reports)
     timing_summary = _runtime_timing_summary(
         detailed_source_rows,
@@ -332,6 +381,91 @@ def finalize_pipeline_run(
         "highCostLowYieldSources": list(timing_summary.get("highCostLowYieldSources") or []),
         "detailHeavySources": list(timing_summary.get("detailHeavySources") or []),
     }
+    return detailed_source_rows, timing_summary
+
+
+def _output_sizes(paths) -> tuple[int, int, int]:
+    return (
+        paths.json_path.stat().st_size if paths.json_path.exists() else 0,
+        paths.csv_path.stat().st_size if paths.csv_path.exists() else 0,
+        paths.light_json_path.stat().st_size if paths.light_json_path.exists() else 0,
+    )
+
+
+def finalize_pipeline_run(
+    *,
+    paths,
+    source_reports: list[dict[str, Any]],
+    canonical_rows: list[CanonicalJob],
+    using_default_loaders: bool,
+    selected_loaders: list[tuple[str, Any]],
+    effective_seed_from_existing_output: bool,
+    preserve_previous_on_empty: bool,
+    source_state_rows: dict[str, Any],
+    lifecycle_rows: dict[str, dict[str, Any]],
+    runtime_payload: dict[str, Any],
+    redirect_resolver: Any,
+    task_runtime: Any,
+    progress_phase: dict[str, str],
+    write_progress_report,
+    write_task_state,
+    started_at: str,
+    run_started_mono: float,
+    run_id: str,
+    circuit_breaker_failures: int,
+    circuit_breaker_cooldown_minutes: int,
+    circuit_breaker_zero_kept: int,
+) -> dict[str, Any]:
+    deduped_rows, dedup_stats, preserved_previous = _deduplicate_or_preserve_previous(
+        paths=paths,
+        canonical_rows=canonical_rows,
+        preserve_previous_on_empty=preserve_previous_on_empty,
+        started_at=started_at,
+    )
+    lifecycle_finished_at = now_iso()
+    deduped_rows, lifecycle_rows, lifecycle_counts_map = _apply_lifecycle_state(
+        deduped_rows=deduped_rows,
+        lifecycle_rows=lifecycle_rows,
+        source_reports=source_reports,
+        selected_loaders=selected_loaders,
+        using_default_loaders=using_default_loaders,
+        effective_seed_from_existing_output=effective_seed_from_existing_output,
+        lifecycle_finished_at=lifecycle_finished_at,
+    )
+
+    dedup_stats["outputCount"] = len(deduped_rows)
+    deduped_payload_rows = [row.to_dict() for row in deduped_rows]
+    (
+        location_quality_audit,
+        sector_quality_audit,
+        contamination_report,
+        city_garbage_audit,
+    ) = _quality_reports(deduped_payload_rows)
+    _apply_final_output_loss_counts(source_reports, deduped_payload_rows)
+
+    progress_phase["key"] = "writing_outputs"
+    progress_phase["label"] = "Writing outputs"
+    write_progress_report(force=True)
+    wrote_json, wrote_csv, wrote_light_json = _write_output_rows(paths, deduped_payload_rows)
+    json_bytes, csv_bytes, light_json_bytes = _output_sizes(paths)
+    _browser_fallback_queue_rows, parser_regression_queue_rows = _write_review_queue_artifacts(
+        paths=paths,
+        source_reports=source_reports,
+        lifecycle_finished_at=lifecycle_finished_at,
+        redirect_resolver=redirect_resolver,
+    )
+    social_review_payload, social_review_path = _write_social_review_artifact(
+        paths=paths,
+        deduped_rows=deduped_rows,
+        lifecycle_finished_at=lifecycle_finished_at,
+        started_at=started_at,
+    )
+    detailed_source_rows, _timing_summary = _update_runtime_timing_payload(
+        runtime_payload=runtime_payload,
+        task_runtime=task_runtime,
+        source_reports=source_reports,
+        run_started_mono=run_started_mono,
+    )
 
     report_payload = normalize_fetch_report_payload(
         {

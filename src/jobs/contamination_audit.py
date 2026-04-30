@@ -102,6 +102,85 @@ def build_location_quality_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _city_garbage_hit(value: Any) -> dict[str, str] | None:
+    text = clean_text(value)
+    category = classify_city_garbage(text)
+    if not category:
+        return None
+    return {"category": category, "value": text}
+
+
+def _record_city_garbage_hit(
+    *,
+    field: str,
+    hit: dict[str, str],
+    field_counts: Counter[str],
+    category_counts: Counter[str],
+) -> None:
+    field_counts[field] += 1
+    category_counts[hit["category"]] += 1
+
+
+def _top_level_city_garbage_fields(
+    row: dict[str, Any],
+    *,
+    field_counts: Counter[str],
+    category_counts: Counter[str],
+) -> dict[str, Any]:
+    invalid_fields: dict[str, Any] = {}
+    for field in ("city", "locationSummary"):
+        hit = _city_garbage_hit(row.get(field))
+        if not hit:
+            continue
+        invalid_fields[field] = hit
+        _record_city_garbage_hit(
+            field=field,
+            hit=hit,
+            field_counts=field_counts,
+            category_counts=category_counts,
+        )
+    return invalid_fields
+
+
+def _location_city_garbage_hits(
+    row: dict[str, Any],
+    *,
+    field_counts: Counter[str],
+    category_counts: Counter[str],
+) -> list[dict[str, str]]:
+    locations = row.get("locations")
+    if not isinstance(locations, list):
+        return []
+    location_hits: list[dict[str, str]] = []
+    for item in locations:
+        if not isinstance(item, dict):
+            continue
+        hit = _city_garbage_hit(item.get("city"))
+        if not hit:
+            continue
+        location_hits.append(hit)
+        _record_city_garbage_hit(
+            field="locations.city",
+            hit=hit,
+            field_counts=field_counts,
+            category_counts=category_counts,
+        )
+    return location_hits
+
+
+def _city_garbage_example(
+    row: dict[str, Any],
+    invalid_fields: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "company": clean_text(row.get("company")),
+        "title": clean_text(row.get("title")),
+        "source": clean_text(row.get("source")),
+        "jobLink": clean_text(row.get("jobLink")),
+        "fields": invalid_fields,
+    }
+
+
 def build_city_garbage_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     field_counts: Counter[str] = Counter()
     category_counts: Counter[str] = Counter()
@@ -112,54 +191,24 @@ def build_city_garbage_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if not isinstance(row, dict):
             continue
         total_rows += 1
-        invalid_fields: dict[str, Any] = {}
-
-        for field in ("city", "locationSummary"):
-            value = clean_text(row.get(field))
-            category = classify_city_garbage(value)
-            if not category:
-                continue
-            invalid_fields[field] = {
-                "category": category,
-                "value": value,
-            }
-            field_counts[field] += 1
-            category_counts[category] += 1
-
-        locations = row.get("locations")
-        if isinstance(locations, list):
-            location_hits: list[dict[str, str]] = []
-            for item in locations:
-                if not isinstance(item, dict):
-                    continue
-                value = clean_text(item.get("city"))
-                category = classify_city_garbage(value)
-                if not category:
-                    continue
-                location_hits.append(
-                    {
-                        "category": category,
-                        "value": value,
-                    }
-                )
-                field_counts["locations.city"] += 1
-                category_counts[category] += 1
-            if location_hits:
-                invalid_fields["locations.city"] = location_hits
+        invalid_fields = _top_level_city_garbage_fields(
+            row,
+            field_counts=field_counts,
+            category_counts=category_counts,
+        )
+        location_hits = _location_city_garbage_hits(
+            row,
+            field_counts=field_counts,
+            category_counts=category_counts,
+        )
+        if location_hits:
+            invalid_fields["locations.city"] = location_hits
 
         if not invalid_fields:
             continue
         garbage_rows += 1
         if len(examples) < 20:
-            examples.append(
-                {
-                    "company": clean_text(row.get("company")),
-                    "title": clean_text(row.get("title")),
-                    "source": clean_text(row.get("source")),
-                    "jobLink": clean_text(row.get("jobLink")),
-                    "fields": invalid_fields,
-                }
-            )
+            examples.append(_city_garbage_example(row, invalid_fields))
     return {
         "totalRows": total_rows,
         "garbageRows": garbage_rows,

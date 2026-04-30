@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
 from collections.abc import Callable
@@ -14,18 +13,10 @@ from src.jobs.adapters import community as community_adapter
 from src.jobs.adapters.api import default_source_loaders as adapters_default_source_loaders
 from src.jobs.common import config as common_config
 from src.jobs.interfaces import SourceLoader
-from src.jobs.pipeline_loader_selection import build_excluded_source_report
-from src.jobs.state_incremental import should_skip_source_by_ttl
-from src.jobs.state_source_state import (
-    read_previously_successful_sources,
-    read_source_state,
-    read_success_cache,
-)
-from src.jobs.text_utils import clean_text
 from src.jobs.transport import build_redirect_resolver as transport_build_redirect_resolver
 from src.jobs.transport import default_fetch_text
-from src.jobs_fetcher_registry import SOURCE_REPORT_META
 
+from . import pipeline_cli as pipeline_cli_pkg
 from . import pipeline_execution_flow as pipeline_execution_flow_mod
 from . import pipeline_finalize as pipeline_finalize_pkg
 from . import pipeline_run_setup as pipeline_run_setup_mod
@@ -49,14 +40,6 @@ DEFAULT_SOCIAL_CONFIG_PATH = common_config.DEFAULT_SOCIAL_CONFIG_PATH
 DEFAULT_SOCIAL_LOOKBACK_MINUTES = common_config.DEFAULT_SOCIAL_LOOKBACK_MINUTES
 
 load_social_config = common_social.load_social_config
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
 def _pipeline_redirect_resolver_builder():
@@ -348,156 +331,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    args = parse_args()
-    env_run_id = clean_text(os.environ.get("BALUFFO_FETCH_RUN_ID"))
-    env_started_at = clean_text(os.environ.get("BALUFFO_FETCH_STARTED_AT"))
-    source_loaders: list[tuple[str, SourceLoader]] | None = None
-    seed_from_existing_output = False
-    selection_exclusions: list[dict[str, Any]] = []
-    social_config = load_social_config(
-        config_path=Path(args.social_config_path),
-        enabled=bool(args.social_enabled),
-        lookback_minutes=int(args.social_lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES),
+    return pipeline_cli_pkg.run_cli(
+        parse_args(),
+        run_pipeline=run_pipeline,
+        default_source_loaders=default_source_loaders,
     )
-    try:
-        default_loaders = default_source_loaders(
-            social_enabled=bool(args.social_enabled),
-            social_config=social_config,
-        )
-    except TypeError:
-        default_loaders = default_source_loaders()
-
-    only_sources = [
-        clean_text(part) for part in str(args.only_sources or "").split(",") if clean_text(part)
-    ]
-    if only_sources:
-        wanted = set(only_sources)
-        source_loaders = [(name, loader) for name, loader in default_loaders if name in wanted]
-        seed_from_existing_output = True
-        for name, _loader in default_loaders:
-            if name in wanted:
-                continue
-            selection_exclusions.append(
-                build_excluded_source_report(
-                    name, "only_sources_filter", source_report_meta=SOURCE_REPORT_META
-                )
-            )
-        missing = [
-            name for name in only_sources if name not in {item[0] for item in source_loaders}
-        ]
-        if missing:
-            print(
-                f"[jobs_fetcher] WARN unknown --only-sources entries: {', '.join(missing)}",
-                flush=True,
-            )
-
-    if args.skip_successful_sources:
-        selected = source_loaders if source_loaders is not None else list(default_loaders)
-        source_state_path = Path(args.output_dir) / "jobs-source-state.json"
-        state_rows = read_source_state(source_state_path)
-        successful = {
-            name
-            for name, _ in selected
-            if should_skip_source_by_ttl(name, state_rows, int(args.source_ttl_minutes or 0))
-        }
-        if not successful:
-            previous_report = Path(args.output_dir) / "jobs-fetch-report.json"
-            success_cache_path = Path(args.output_dir) / "jobs-success-cache.json"
-            successful = read_success_cache(success_cache_path)
-            if not successful:
-                successful = read_previously_successful_sources(previous_report)
-        if successful:
-            selected = [(name, loader) for name, loader in selected if name not in successful]
-            for source_name in sorted(successful):
-                selection_exclusions.append(
-                    build_excluded_source_report(
-                        source_name, "skip_successful_ttl", source_report_meta=SOURCE_REPORT_META
-                    )
-                )
-        source_loaders = selected
-        seed_from_existing_output = True
-        if not args.quiet:
-            print(
-                "[jobs_fetcher] Incremental mode: "
-                f"skipping {len(successful)} previously successful sources; "
-                f"running {len(selected)}",
-                flush=True,
-            )
-
-    forced_only_sources = bool(only_sources)
-    deduped_selection_exclusions: list[dict[str, Any]] = []
-    seen_selection_exclusions = set()
-    for row in selection_exclusions:
-        name = clean_text(row.get("name"))
-        reason = clean_text(row.get("exclusionReason") or row.get("error"))
-        token = f"{name}|{reason}"
-        if not name or token in seen_selection_exclusions:
-            continue
-        seen_selection_exclusions.add(token)
-        deduped_selection_exclusions.append(row)
-
-    report = run_pipeline(
-        output_dir=Path(args.output_dir),
-        run_id=env_run_id,
-        started_at_override=env_started_at,
-        timeout_s=args.timeout,
-        retries=args.retries,
-        backoff_s=args.backoff,
-        preserve_previous_on_empty=not args.no_preserve_previous_on_empty,
-        source_loaders=source_loaders,
-        seed_from_existing_output=seed_from_existing_output,
-        source_ttl_minutes=args.source_ttl_minutes,
-        max_workers=args.max_workers,
-        max_per_domain=args.max_per_domain,
-        fetch_strategy=args.fetch_strategy,
-        adapter_http_concurrency=args.adapter_http_concurrency,
-        google_sheets_redirect_concurrency=args.google_sheets_redirect_concurrency,
-        static_detail_concurrency=args.static_detail_concurrency,
-        circuit_breaker_failures=args.circuit_breaker_failures,
-        circuit_breaker_cooldown_minutes=args.circuit_breaker_cooldown_minutes,
-        browser_fallback_cooldown_minutes=args.browser_fallback_cooldown_minutes,
-        circuit_breaker_zero_kept=args.circuit_breaker_zero_kept,
-        respect_source_cadence=bool(args.respect_source_cadence),
-        hot_source_cadence_minutes=args.hot_source_cadence_minutes,
-        cold_source_cadence_minutes=args.cold_source_cadence_minutes,
-        ignore_circuit_breaker=bool(args.ignore_circuit_breaker or forced_only_sources),
-        social_enabled=bool(args.social_enabled),
-        social_config_path=Path(args.social_config_path),
-        social_lookback_minutes=int(
-            args.social_lookback_minutes or DEFAULT_SOCIAL_LOOKBACK_MINUTES
-        ),
-        show_progress=not args.quiet,
-        selection_exclusions=deduped_selection_exclusions,
-        force_refresh_all=bool(args.force_refresh_all),
-    )
-    summary = _as_dict(report.get("summary"))
-    output_count = int(summary.get("outputCount") or 0)
-    failed_sources = int(summary.get("failedSources") or 0)
-    runtime = _as_dict(report.get("runtime"))
-    timing_summary = _as_dict(runtime.get("timingSummary"))
-    stage_top = _as_list(timing_summary.get("stageTop"))
-    slowest_sources = _as_list(runtime.get("slowestSources"))
-    print(
-        f"Jobs fetch completed. Output jobs: {output_count}. "
-        f"Failed sources: {failed_sources}. Report: {report['outputs']['report']}"
-    )
-    if stage_top:
-        top_stage_summary = " | ".join(
-            f"{clean_text(item.get('stage'))}={int(item.get('durationMs') or 0)}ms"
-            for item in stage_top[:3]
-            if isinstance(item, dict)
-        )
-        if top_stage_summary:
-            print(f"[jobs_fetcher] TIMING top-stages {top_stage_summary}", flush=True)
-    if slowest_sources:
-        slowest_summary = " | ".join(
-            f"{clean_text(item.get('name'))}={int(item.get('durationMs') or 0)}ms"
-            for item in slowest_sources[:3]
-            if isinstance(item, dict)
-        )
-        if slowest_summary:
-            print(f"[jobs_fetcher] TIMING slowest-sources {slowest_summary}", flush=True)
-    return 0 if output_count > 0 else 2
 
 
 if __name__ == "__main__":
