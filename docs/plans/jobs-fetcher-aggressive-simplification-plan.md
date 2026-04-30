@@ -1,13 +1,13 @@
-# Jobs Fetcher Deletion-First Simplification Plan
+# Jobs Fetcher Deletion-First Simplification Closeout
 
-> - **Status:** Active
-> - **Use this when:** choosing the next jobs fetcher simplification, adapter lifecycle deletion, source-family evidence run, or high-risk fetcher refactor
-> - **Canonical for:** deletion-first jobs fetcher goals, current objective assessment, protected boundaries, next refactor sequence, and validation gates
+> - **Status:** Closed for broad lifecycle/C901 cleanup
+> - **Use this when:** choosing approval-gated jobs fetcher deletion, source-family removal, compatibility-boundary removal, or product behavior tuning
+> - **Canonical for:** deletion-first jobs fetcher goals, completed simplification baseline, protected boundaries, remaining approval gates, and validation expectations
 > - **Not canonical for:** saved-job/local-user data contracts, bridge endpoint contracts, frontend payload ownership, or source-discovery behavior
 > - **Then inspect:** [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../scraping-pipeline.md`](../scraping-pipeline.md), [`../adapter-plugin-inventory.md`](../adapter-plugin-inventory.md), and the touched source files
 > - **Last updated:** 2026-04-30
 
-## Objective
+## Objective And Protected Boundaries
 
 The jobs fetcher should find active job openings reliably and quickly enough for repeated refreshes. It does not need to preserve long-standing internal fetch/discovery compatibility layers when those layers make the implementation harder to delete, reason about, or improve.
 
@@ -19,61 +19,40 @@ Protected product surfaces:
 
 Internal jobs fetcher shims are deletion candidates when current product behavior remains covered. Internal jobs fetcher imports, adapter boundaries, plugin shapes, package-shape tests, and historical compatibility shims should not be preserved only because they existed historically.
 
-Primary engineering goals:
+## Closeout Baseline
 
-- Make advanced behavior the normal path: deduplication, TTL/cache decisions, bounded concurrency, source-state updates, web page identification, redirect-aware fetches, and Playwright fallback should be owned once and reused by source execution paths.
-- Reduce duplication by deleting repeated lifecycle implementations, not by adding many tiny helpers that preserve the same complexity in more places.
-- Reduce production LOC and broad C901 pressure together. Complexity extraction alone is not enough unless it deletes concepts, branches, files, or source rows.
+The broad jobs fetcher simplification track is now functionally complete for lifecycle and C901 cleanup.
 
-## Current Assessment
+Current measured baseline:
 
-The original jobs adapter mass-refactor objective is only partially met.
-
-What improved:
-
-- Source discovery is now much closer to the deletion-first goal, and `src/source_discovery` is currently C901-clean.
-- Provider dispatch was unified.
-- `static_listing_flow.py`, `static_detail.py`, `static_helpers.py`, and several static/plugin/facade surfaces were deleted.
-- Static detail, location-rule, static listing, provider, and plugin complexity were reduced in targeted places.
-- Evidence-backed dead-source deletion now exists with tombstones and dated snapshots.
+- `src/jobs`: 133 tracked Python files, 32,342 tracked Python lines.
+- `src/jobs/adapters`: 73 tracked Python files, 18,700 tracked Python lines.
+- `python -m ruff check --select C901 src/jobs` passes with no offenders.
+- `python -m ruff check --select C901 src/jobs/adapters` passes with no offenders.
 - The first source-family evidence snapshot is available at [`jobs-source-family-evidence-2026-04-30.md`](../snapshots/jobs-source-family-evidence-2026-04-30.md).
 
-What is still not done:
+Completed simplification facts:
 
-- The old `docs/plans/jobs-adapter-mass-refactoring-plan.md` is historical and no longer exists. This file is the active jobs fetcher simplification tracker.
-- `src/jobs` is still about 132 tracked Python files and 31,272 tracked Python lines.
-- `src/jobs/adapters` is still about 73 tracked Python files and 18,269 tracked Python lines.
-- `python -m ruff check --select C901 src/jobs` currently passes with no offenders.
-- `python -m ruff check --select C901 src/jobs/adapters` currently passes with no offenders.
-- Jobs adapters still own too much lifecycle, especially social, community, static Scrapy, static plugins, parser/report shims, and fetcher compatibility facades.
+- Provider dispatch was unified.
+- Source discovery and jobs adapters are C901-clean.
+- `static_listing_flow.py`, `static_detail.py`, `static_helpers.py`, and several static/plugin/facade surfaces were deleted.
+- Static listing, static detail, static Scrapy, social, community, Personio, static plugin parser, rendered-card, location-rule, adapter parser, shared classification, state lifecycle, pipeline runtime, pipeline CLI, pipeline finalization, and contamination audit hotspots were cleared or thinned.
+- Evidence-backed dead-source deletion now exists with tombstones and dated snapshots.
 
-The conclusion is blunt but useful: the repo has better shared mechanics now, but the final lean objective is not closed. Future work must delete code, delete modules, remove lifecycle branches, or produce evidence for source deletion.
+The conclusion is intentionally sharp: broad cleanup is closed. Future work should delete code, remove source families, tune product yield/performance, or explicitly retire compatibility boundaries. It should not be another compatibility-preserving C901/helper extraction pass.
 
-## Active Simplification Strategy
+## Remaining Approval-Gated Decisions
 
-### 1. Refresh facts before each milestone
+Ask before starting these, and bring evidence where source/runtime behavior may change:
 
-Record these metrics before and after each implementation slice:
+- `scrapy_static_sources`: deletion candidate from evidence because no enabled rows were found, but do not remove the default loader, runtime surface, browser fallback lane, or compatibility export without explicit approval.
+- `social_x`: zero-yield channel candidate from the 2026-04-30 evidence run; keep Mastodon unless fresh channel-specific evidence says otherwise.
+- Static sources: investigate per-source deletion candidates such as Blizzard; do not pursue broad static deletion because the sampled static family is high-yield.
+- Community Google Sheets: keep; future work should focus on redirect/cache/canonicalization performance, not deletion.
+- `src/jobs_fetcher.py` compatibility re-exports: high-risk removal requiring explicit approval because import-style tests or external launch paths may depend on them.
+- Bridge/frontend report fields, plugin `can_handle(...)` / `run(...)` signatures, saved-job/local-user storage, source rows, and default loaders remain protected until a specific behavior or deletion plan covers them.
 
-- `src/jobs` tracked Python file count.
-- `src/jobs` tracked Python LOC.
-- `src/jobs/adapters` tracked Python file count.
-- `src/jobs/adapters` tracked Python LOC.
-- Broad `src/jobs` C901 offender count.
-- Adapter C901 offender count.
-
-Use repeatable tracked-file counts, not shell glob estimates:
-
-```powershell
-python -m ruff check --select C901 src/jobs --output-format concise
-python -m ruff check --select C901 src/jobs/adapters --output-format concise
-```
-
-### 2. Reset internal compatibility boundaries
-
-Aggressively reduce internal compatibility shims while preserving current product surfaces.
-
-Investigate first:
+Historical shim watchlist for compatibility-boundary review:
 
 - `src/jobs/fetcher_compat_exports.py`
 - `src/jobs/fetcher_compat_runtime.py`
@@ -81,192 +60,27 @@ Investigate first:
 - `src/jobs/state.py`
 - `state_source_state.py`
 - `src/jobs/pipeline_execution_flow.py`
-- `static_helpers.py`
 - `reporting.py`
 - `common/contracts.py`
 - tests that enforce old package shape instead of current runtime behavior
 
-High-risk gate: before removing broad `src/jobs_fetcher.py` compatibility re-exports, stop and confirm. That can break external/import-style tests even when current app behavior is preserved.
+## Future Work Gate
 
-Acceptance:
+A future jobs fetcher slice should meet at least one of these gates:
 
-- Docs and tests no longer describe internal jobs fetcher shims as stable product contracts.
-- Any surviving shim has a named current purpose and owner.
-- Removed shims are replaced by direct current runtime imports, not new compatibility facades.
+- Delete a source row, default loader, plugin module, compatibility facade, or lifecycle branch with explicit approval where needed.
+- Improve job-finding yield, refresh runtime, retry/cache behavior, or source reliability with before/after evidence.
+- Produce a fresh evidence snapshot that enables an approval-gated deletion or product tuning decision.
 
-### 3. Build evidence before deleting source families
+Do not add a new helper or framework unless the same slice deletes more production code than it adds or removes a current runtime branch.
 
-Run representative isolated fetch evidence before deleting registered sources or default loaders.
-
-Use `_out/` only. Do not mutate tracked `data/`.
-
-Classify source families and sources as:
-
-- `keep`: reliable yield or needed product coverage.
-- `merge`: useful yield but duplicated lifecycle.
-- `delete`: repeated zero-yield, unsupported, stale, or redundant.
-- `defer`: inconclusive because of network, browser, timeout, or anti-bot blockers.
-
-Priority evidence targets:
-
-- `scrapy_static`
-- social sources
-- community sources
-- low-yield static plugins
-- remaining static custom plugins
-
-High-risk gate: before deleting active source rows or default loaders, stop with the evidence table and ask for approval.
-
-### 4. Collapse remaining lifecycle duplication by family
-
-Implement only deletion-positive migrations.
-
-Recommended order:
-
-1. `static_scrapy`: delete if evidence says dead/redundant, otherwise merge into the current static execution lifecycle so it no longer owns report/cache/error lifecycle separately.
-2. `social`: remove duplicate cache/progress/error/source-report lifecycle, or delete low-yield social paths if evidence supports it.
-3. `provider_personio`: fold remaining provider-specific lifecycle into the provider runner path.
-4. `community`: keep Google Sheets local only if it remains genuinely source-specific; otherwise migrate fetch/report/cache lifecycle into the shared execution path.
-
-Acceptance:
-
-- Each migration reduces LOC or deletes a module.
-- No adapter owns fetch, retry, cache, report, or progress lifecycle unless it is proven source-specific.
-- Touched C901 offenders leave the baseline or have lower recorded scores.
-
-### 5. Collapse static plugins into declarations where possible
-
-Continue static plugin simplification with file deletion as the gate.
-
-Targets:
-
-- Convert simple parser-only plugins into registry declarations.
-- Delete plugin modules that become pure declarations.
-- Keep custom modules only when they own real source-specific parsing or fallback behavior.
-
-Do not add a new shared plugin framework unless the same slice deletes more plugin code than it adds.
-
-### 6. Ratchet C901 after lifecycle deletion
-
-After deletion passes, reduce remaining hotspots in priority order:
-
-- `static_scrapy`
-- social/community runners
-- static plugin parsers and rendered-card extraction
-- shared taxonomy/registry helpers
-- `pipeline_finalize`, `state_incremental`, and source-state update flow
-
-Acceptance:
-
-- Broad `src/jobs` C901 offender count trends down each milestone.
-- Touched hotspots either disappear or have lower recorded scores.
-- Avoid C901-only extraction if it increases LOC without deleting concepts.
-
-## Execution Sequence
-
-### Phase 1: Plan refresh and boundary reset
-
-Status: active.
-
-- Keep this plan aligned with measured repo facts.
-- Update architecture/scraping/plugin docs and package-shape tests where they still protect historical internal fetcher surfaces.
-- Stop treating old compatibility shims as permanent architecture.
-
-Validation:
-
-```powershell
-cmd /c npm run lint:precommit
-python -m ruff check --select C901 src/jobs --output-format concise
-```
-
-The C901 command is informational until the broad offender count is low enough to become a hard gate.
-
-### Phase 2: Evidence-backed source-family decisions
-
-Status: first snapshot captured on 2026-04-30.
-
-- Use [`jobs-source-family-evidence-2026-04-30.md`](../snapshots/jobs-source-family-evidence-2026-04-30.md) as the starting point for `scrapy_static`, social, community, and representative static source decisions.
-- Add narrower follow-up snapshots when the evidence is channel-specific or source-specific.
-- Ask before deleting source rows, default loaders, or registered source families.
-
-Validation:
+For evidence/yield work, use `_out/` only and do not mutate tracked `data/`:
 
 ```powershell
 python scripts/jobs_yield_gate.py list-static-sources --limit 20
 python -m src.jobs.pipeline --only-sources <valid-source-ids> --output-dir _out/<slice>/before --force-refresh-all --ignore-circuit-breaker --quiet
 python -m src.jobs.pipeline --only-sources <same-source-ids> --output-dir _out/<slice>/after --force-refresh-all --ignore-circuit-breaker --quiet
 python scripts/jobs_yield_gate.py compare _out/<slice>/before _out/<slice>/after --allow-drops
-cmd /c npm run lint:precommit
-```
-
-### Phase 3: Static Scrapy lifecycle decision
-
-Status: retained and C901-cleaned on 2026-04-30; registry-wide deletion remains separate.
-
-- Keep `scrapy_static_sources` as a supported fallback runtime path even when current evidence has no enabled rows.
-- Preserve the default loader, `run_scrapy_static_source(...)`, browser fallback queue behavior, compatibility exports, and frontend progress IDs.
-- Thin only duplicated report/error/progress plumbing where the slice stays LOC-negative or reduces `static_scrapy` C901.
-- Exception accepted on 2026-04-30: `static_scrapy.py` and the related browser-queue registry path were made C901-clean with a small production LOC increase because no safe fallback-lane deletion was available without widening into compatibility/source-shape removal.
-- Keep Scrapy child-process orchestration local unless a future shared runner can replace more code than it adds.
-
-Validation:
-
-```powershell
-python -m pytest -q tests/jobs_static tests/jobs/adapters
-python -m ruff check --select C901 src/jobs/adapters/static_scrapy.py src/jobs/adapters/static_listing.py
-cmd /c npm run lint:precommit
-```
-
-### Phase 4: Social and community lifecycle simplification
-
-Status: social lifecycle thinning, Personio provider lifecycle cleanup, and Google Sheets community review completed on 2026-04-30.
-
-- Collapse repeated social cache/progress/error handling, or delete low-yield social paths with evidence.
-- Revisit community Google Sheets only if another community path shares the same lifecycle or evidence supports deletion/merge.
-
-Validation:
-
-```powershell
-python -m pytest -q tests/jobs/adapters tests/test_jobs_fetcher.py tests/test_jobs_fetcher_quality.py
-python -m ruff check --select C901 src/jobs/adapters/social.py src/jobs/adapters/community
-cmd /c npm run lint:precommit
-```
-
-### Phase 5: Static plugin declaration collapse
-
-Status: custom static plugin parser and rendered-card extraction C901 cleanup completed on 2026-04-30.
-
-- Convert remaining simple plugin modules into declarations.
-- Delete modules that no longer own real source-specific logic.
-- Keep complex custom plugins local until evidence supports deletion or a smaller lifecycle merge.
-
-Validation:
-
-```powershell
-python -m pytest -q tests/jobs/adapters/plugins/static tests/jobs_static tests/test_jobs_fetcher.py
-python -m ruff check --select C901 src/jobs/adapters/plugins/static
-cmd /c npm run lint:precommit
-```
-
-### Phase 6: Broad C901 ratchet
-
-Status: jobs C901 baseline cleared on 2026-04-30.
-
-- Reduce remaining C901 hotspots only after lifecycle deletion has removed duplicated branches.
-- Adapter parser hotspots were decomposed locally after lifecycle cleanup, with parser signatures and row shapes preserved.
-- Shared datetime, profession, and source-outcome taxonomy hotspots were decomposed locally without changing public signatures or enum/report values.
-- State lifecycle hotspots were decomposed locally without changing state JSON fields, cache decision strings, lifecycle statuses, circuit breaker fields, or browser escalation fields.
-- Pipeline runtime hotspots were decomposed locally without changing domain gate stats, live progress fields, browser fallback circuit breaker behavior, or source report ordering.
-- Pipeline CLI, finalization, and contamination audit hotspots were decomposed locally without changing CLI flags, exit codes, report fields, queue artifacts, social review merging, source-state writes, or lifecycle writes.
-- Next remaining simplification work should return to deletion-first compatibility and source-family decisions, not C901-only extraction.
-- Update `scripts/complexity_baseline.json` only when scores decrease or offenders disappear.
-
-Validation:
-
-```powershell
-python -m ruff check --select C901 src/jobs --output-format concise
-python -m pytest -q tests/test_jobs_fetcher_quality.py tests/test_jobs_fetcher_pipeline.py tests/jobs/adapters
-cmd /c npm run lint:precommit
 ```
 
 ## Validation Rules
@@ -285,21 +99,11 @@ python -m ruff check --select C901 <touched jobs files>
 cmd /c npm run lint:precommit
 ```
 
-Use broad C901 as a metric until the offender count is low enough to become a hard gate:
+Baseline checks that should remain green:
 
 ```powershell
 python -m ruff check --select C901 src/jobs --output-format concise
+python -m ruff check --select C901 src/jobs/adapters --output-format concise
 ```
 
 Never use `--no-verify`.
-
-## High-Risk Decisions To Confirm Before Implementation
-
-Ask before starting these, but do not hide them:
-
-- Removing broad `src/jobs_fetcher.py` compatibility re-exports.
-- Removing bridge/frontend report fields that appear unused.
-- Replacing plugin `can_handle(...)` / `run(...)` signatures for surviving plugins.
-- Deleting active source rows, default loaders, or registered source families.
-- Changing saved-job/local-user storage or migration behavior.
-- Making broad C901 a hard pass gate before the existing offender count is reduced.
