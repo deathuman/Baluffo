@@ -225,6 +225,21 @@ function formatProviderStaticOverlapRows(rows, emptyText) {
     .join(" | ");
 }
 
+function formatStaticSuppressionPolicyRows(rows, emptyText) {
+  const pairRows = Array.isArray(rows) ? rows : [];
+  if (!pairRows.length) return escapeHtml(emptyText);
+  return pairRows
+    .slice(0, 5)
+    .map(row => {
+      const staticName = sanitizeSlowSourceName(row?.staticSourceName || row?.staticSourceId);
+      const provider = sanitizeSlowSourceName(row?.providerSourceName || row?.providerSourceId);
+      const reason = String(row?.reason || row?.lastAuditStatus || "policy").replaceAll("_", " ");
+      const status = String(row?.lastAuditStatus || "unknown").replaceAll("_", " ");
+      return escapeHtml(`${staticName} -> ${provider} (${status}, ${reason})`);
+    })
+    .join(" | ");
+}
+
 export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};
@@ -255,6 +270,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     sourceHealth: latest?.sourceHealth || {},
     providerCoverage: latest?.providerCoverage || {},
     providerStaticOverlap: latest?.providerStaticOverlap || {},
+    staticSuppressionPolicy: latest?.staticSuppressionPolicy || {},
     failureSummary: summary
   });
   if (canPatchInPlace && metricsEl.dataset.opsFetcherMetricsSig === signature) return;
@@ -271,6 +287,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const sourceHealth = latest?.sourceHealth && typeof latest.sourceHealth === "object" ? latest.sourceHealth : {};
   const providerCoverage = latest?.providerCoverage && typeof latest.providerCoverage === "object" ? latest.providerCoverage : {};
   const providerStaticOverlap = latest?.providerStaticOverlap && typeof latest.providerStaticOverlap === "object" ? latest.providerStaticOverlap : {};
+  const staticSuppressionPolicy = latest?.staticSuppressionPolicy && typeof latest.staticSuppressionPolicy === "object" ? latest.staticSuppressionPolicy : {};
   const slowestSummary = slowest.length
     ? slowest
       .slice(0, 3)
@@ -333,6 +350,18 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const overlapAuditSummary = formatProviderStaticOverlapRows(
     providerStaticOverlap?.pairs,
     "No provider/static overlap audit pairs."
+  );
+  const suppressedPolicySummary = formatStaticSuppressionPolicyRows(
+    staticSuppressionPolicy?.suppressedPairs,
+    "No policy-suppressed pairs."
+  );
+  const pausedPolicySummary = formatStaticSuppressionPolicyRows(
+    staticSuppressionPolicy?.pausedPairs,
+    "No policy-paused pairs."
+  );
+  const warningPolicySummary = formatStaticSuppressionPolicyRows(
+    staticSuppressionPolicy?.warningPairs,
+    "No warning-suppressed pairs."
   );
   const bucketSummaryHtml = bucketRows.length
     ? bucketRows.map(bucket => `
@@ -402,5 +431,6 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Unstable / failed providers</strong>: ${failedProviderSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Ready later (no static mutation)</strong>: ${readyLaterProviderSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Provider/static overlap audit</strong>: safe ${Number(providerStaticOverlap?.safePairCount || 0).toLocaleString()}, needs review ${Number(providerStaticOverlap?.needsReviewPairCount || 0).toLocaleString()}, insufficient history ${Number(providerStaticOverlap?.insufficientHistoryPairCount || 0).toLocaleString()}. ${overlapAuditSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Static suppression policy</strong>: suppressed ${Number(staticSuppressionPolicy?.suppressedCount || 0).toLocaleString()}, paused ${Number(staticSuppressionPolicy?.pausedCount || 0).toLocaleString()}, warnings ${Number(staticSuppressionPolicy?.warningCount || 0).toLocaleString()}. Suppressed: ${suppressedPolicySummary} Paused: ${pausedPolicySummary} Warnings: ${warningPolicySummary}</div>
   `;
 }

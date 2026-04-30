@@ -177,6 +177,7 @@ def run_pipeline(
             circuit_breaker_failures=circuit_breaker_failures,
             circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
             circuit_breaker_zero_kept=circuit_breaker_zero_kept,
+            static_suppression_policy=setup.runtime_payload.get("staticSuppressionPolicy"),
         )
     finally:
         if setup is not None:

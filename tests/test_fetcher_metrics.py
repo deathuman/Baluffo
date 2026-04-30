@@ -42,6 +42,23 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
                 }
             ],
         },
+        "staticSuppressionPolicy": {
+            "eligibleCount": 1,
+            "suppressedCount": 1,
+            "pausedCount": 0,
+            "warningCount": 0,
+            "suppressedPairs": [
+                {
+                    "staticSourceName": "static_source::covered",
+                    "providerSourceName": "Studio Greenhouse",
+                    "decision": "suppressed",
+                    "reason": "prior_audit_safe",
+                    "lastAuditStatus": "safe",
+                }
+            ],
+            "pausedPairs": [],
+            "warningPairs": [],
+        },
     }
     history = [
         {"type": "fetch", "durationMs": 1000, "finishedAt": "2026-03-09T10:02:00+00:00"},
@@ -64,6 +81,7 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
     assert latest["sourceHealth"]["sourcesNeedingAttention"][0]["name"] == "b"
     assert latest["providerStaticOverlap"]["safePairCount"] == 1
     assert latest["providerStaticOverlap"]["pairs"][0]["auditStatus"] == "safe"
+    assert latest["staticSuppressionPolicy"]["suppressedCount"] == 1
     assert metrics["history"]["windowRuns"] == 2
     assert metrics["history"]["medianDurationMs"] == 2000
 

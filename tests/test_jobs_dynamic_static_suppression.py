@@ -40,7 +40,7 @@ def _excluded_report(name, reason):
 
 
 def test_dynamic_static_suppression_requires_repeated_provider_successes():
-    filtered, excluded = apply_dynamic_redundant_static_exclusions(
+    filtered, excluded, policy = apply_dynamic_redundant_static_exclusions(
         [
             ("greenhouse_boards", lambda **_: []),
             (STATIC_SOURCE_NAME, lambda **_: []),
@@ -57,21 +57,27 @@ def test_dynamic_static_suppression_requires_repeated_provider_successes():
     assert excluded[0]["coveredByProviderSourceId"] == "Studio Greenhouse"
     assert excluded[0]["providerCoverageConsecutiveSuccesses"] == 2
     assert excluded[0]["migrationSourceIdentity"] == MIGRATION_SOURCE_IDENTITY
+    assert policy["suppressedCount"] == 1
+    assert policy["suppressedPairs"][0]["reason"] == "missing_prior_evidence"
 
 
 def test_dynamic_static_suppression_does_not_apply_after_one_success_or_bad_status():
     loaders = [("greenhouse_boards", lambda **_: []), (STATIC_SOURCE_NAME, lambda **_: [])]
-    one_success_filtered, one_success_excluded = apply_dynamic_redundant_static_exclusions(
-        loaders,
-        source_state_rows=_eligible_provider_state(providerCoverageConsecutiveSuccesses=1),
-        build_excluded_source_report=_excluded_report,
-        source_report_meta={"greenhouse_boards": {"adapter": "greenhouse"}},
+    one_success_filtered, one_success_excluded, one_success_policy = (
+        apply_dynamic_redundant_static_exclusions(
+            loaders,
+            source_state_rows=_eligible_provider_state(providerCoverageConsecutiveSuccesses=1),
+            build_excluded_source_report=_excluded_report,
+            source_report_meta={"greenhouse_boards": {"adapter": "greenhouse"}},
+        )
     )
-    unstable_filtered, unstable_excluded = apply_dynamic_redundant_static_exclusions(
-        loaders,
-        source_state_rows=_eligible_provider_state(providerCoverageStatus="unstable_provider"),
-        build_excluded_source_report=_excluded_report,
-        source_report_meta={"greenhouse_boards": {"adapter": "greenhouse"}},
+    unstable_filtered, unstable_excluded, unstable_policy = (
+        apply_dynamic_redundant_static_exclusions(
+            loaders,
+            source_state_rows=_eligible_provider_state(providerCoverageStatus="unstable_provider"),
+            build_excluded_source_report=_excluded_report,
+            source_report_meta={"greenhouse_boards": {"adapter": "greenhouse"}},
+        )
     )
 
     assert [name for name, _loader in one_success_filtered] == [
@@ -79,11 +85,13 @@ def test_dynamic_static_suppression_does_not_apply_after_one_success_or_bad_stat
         STATIC_SOURCE_NAME,
     ]
     assert one_success_excluded == []
+    assert one_success_policy["eligibleCount"] == 0
     assert [name for name, _loader in unstable_filtered] == [
         "greenhouse_boards",
         STATIC_SOURCE_NAME,
     ]
     assert unstable_excluded == []
+    assert unstable_policy["eligibleCount"] == 0
 
 
 def test_run_pipeline_dynamically_suppresses_default_static_source_without_mutating_registry():
@@ -144,6 +152,10 @@ def test_run_pipeline_dynamically_suppresses_default_static_source_without_mutat
             assert report["providerStaticOverlap"]["suppressedStaticCount"] == 1
             assert report["providerStaticOverlap"]["safePairCount"] == 1
             assert report["providerStaticOverlap"]["pairs"][0]["auditStatus"] == "safe"
+            assert report["staticSuppressionPolicy"]["suppressedCount"] == 1
+            assert (
+                report["staticSuppressionPolicy"]["suppressedPairs"][0]["lastAuditStatus"] == "safe"
+            )
             assert static_registry_row == original_static_registry_row
     finally:
         jf.default_source_loaders = previous_default_loaders

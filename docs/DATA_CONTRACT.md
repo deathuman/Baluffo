@@ -499,13 +499,40 @@ with `exclusionReason="dynamic_redundant_provider"` during normal default fetche
 selection bypasses this skip. This must not mutate source registry rows, tombstones, sync state,
 saved/local data, or `REDUNDANT_STATIC_IF_PROVIDER`.
 
+Fetch reports, normalized bridge payloads, `/ops/health` KPI payloads, and fetcher metrics may
+include top-level `staticSuppressionPolicy`. This runtime-only summary records eligible
+provider/static pairs and whether the current run suppressed, warning-suppressed, or paused each
+pair. Current loader-selection decisions use only the latest prior `jobs-fetch-report.json`
+`staticSuppressionPolicy`, falling back to prior `providerStaticOverlap`; current-run evidence is
+written for the next run. Missing prior evidence does not block suppression. Prior
+`insufficient_history` suppresses with a warning. Prior `needs_review`, `provider_unstable`,
+`staticOnlyCount > 0`, or `auditReasons` containing `static_only_jobs_detected` pauses suppression
+and lets the static source run normally.
+
+| Field | Type | Description |
+|---|---|---|
+| `eligibleCount` | `number` | Provider/static pairs meeting base runtime suppression eligibility. |
+| `suppressedCount` | `number` | Eligible pairs skipped with `exclusionReason="dynamic_redundant_provider"`. |
+| `pausedCount` | `number` | Eligible pairs allowed to run because prior audit evidence may be unsafe. |
+| `warningCount` | `number` | Eligible pairs skipped while recording non-blocking warning evidence. |
+| `suppressedPairs` | `Array<Object>` | Compact suppressed pair rows. |
+| `pausedPairs` | `Array<Object>` | Compact paused pair rows. |
+| `warningPairs` | `Array<Object>` | Compact warning-suppressed pair rows. |
+
+Pair rows include `staticSourceId`, `staticSourceName`, `providerSourceId`,
+`providerSourceName`, `decision`, `reason`, `lastAuditStatus`, `auditReasons`,
+`staticOnlyCount`, `overlapCount`, `providerCoverageStatus`,
+`providerCoverageConsecutiveSuccesses`, and `providerCoverageLatestKeptCount`.
+
 ### Provider/static overlap audit
 
 Fetch reports, normalized bridge payloads, `/ops/health` KPI payloads, and fetcher metrics may
 include top-level `providerStaticOverlap`. This additive field is read-only diagnostics derived
 from dynamic redundant-static source rows, provider coverage state, prior static source-state
 counts, and current output `sourceBundle` evidence when available. The audit must not force-run
-suppressed static sources, change suppression eligibility, or mutate static registry rows.
+suppressed static sources or mutate static registry rows. The latest prior audit is advisory
+evidence for the next run's runtime suppression policy; it never creates permanent redundancy
+rules and never deletes, hides, rejects, demotes, or tombstones static sources.
 
 | Field | Type | Description |
 |---|---|---|

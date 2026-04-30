@@ -125,6 +125,38 @@ test("admin render: fetcher metrics render provider coverage lanes", () => {
             staticOnlyCount: 1
           }
         ]
+      },
+      staticSuppressionPolicy: {
+        suppressedCount: 1,
+        pausedCount: 1,
+        warningCount: 1,
+        suppressedPairs: [
+          {
+            staticSourceName: "static_source::covered",
+            providerSourceName: "Studio Greenhouse",
+            decision: "suppressed",
+            reason: "prior_audit_safe",
+            lastAuditStatus: "safe"
+          }
+        ],
+        pausedPairs: [
+          {
+            staticSourceName: "static_source::static-only",
+            providerSourceName: "Broken Provider",
+            decision: "paused",
+            reason: "prior_static_only_jobs_detected",
+            lastAuditStatus: "needs_review"
+          }
+        ],
+        warningPairs: [
+          {
+            staticSourceName: "static_source::warning",
+            providerSourceName: "Studio Greenhouse",
+            decision: "warning",
+            reason: "prior_insufficient_history",
+            lastAuditStatus: "insufficient_history"
+          }
+        ]
       }
     },
     history: {}
@@ -137,4 +169,7 @@ test("admin render: fetcher metrics render provider coverage lanes", () => {
   assert.match(metricsEl.innerHTML, /Studio Greenhouse/i);
   assert.match(metricsEl.innerHTML, /Provider\/static overlap audit/i);
   assert.match(metricsEl.innerHTML, /static-only 1/i);
+  assert.match(metricsEl.innerHTML, /Static suppression policy/i);
+  assert.match(metricsEl.innerHTML, /prior static only jobs detected/i);
+  assert.match(metricsEl.innerHTML, /prior insufficient history/i);
 });

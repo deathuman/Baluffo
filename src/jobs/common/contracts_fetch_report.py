@@ -18,6 +18,7 @@ from .contracts_provider_static_overlap import normalize_provider_static_overlap
 from .contracts_runtime import _float_or_zero, normalize_runtime_payload
 from .contracts_source_health import normalize_source_health_payload
 from .contracts_source_reports import normalize_source_report_row
+from .contracts_static_suppression_policy import normalize_static_suppression_policy_payload
 
 
 def _normalize_count_map(payload: Any) -> dict[str, int]:
@@ -297,6 +298,9 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "providerCoverage": normalize_provider_coverage_payload(src.get("providerCoverage")),
         "providerStaticOverlap": normalize_provider_static_overlap_payload(
             src.get("providerStaticOverlap"), source_rows=normalized_source_rows
+        ),
+        "staticSuppressionPolicy": normalize_static_suppression_policy_payload(
+            src.get("staticSuppressionPolicy")
         ),
         "lifecycleSummary": _normalize_lifecycle_summary(src.get("lifecycleSummary"), summary),
         "healthSummary": copy_json_object(src.get("healthSummary")),

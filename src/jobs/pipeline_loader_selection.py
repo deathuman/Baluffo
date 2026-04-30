@@ -4,6 +4,12 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from src.jobs.common.contracts_static_suppression_policy import (
+    build_static_suppression_policy_pair,
+    build_static_suppression_policy_summary,
+    decide_static_suppression_from_prior_pair,
+    find_prior_static_suppression_pair,
+)
 from src.jobs.interfaces import SourceLoader
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.utils import env_flag
@@ -131,7 +137,8 @@ def apply_dynamic_redundant_static_exclusions(
     source_state_rows: dict[str, dict[str, Any]],
     build_excluded_source_report: Callable[[str, str], dict[str, Any]],
     source_report_meta: dict[str, dict[str, Any]],
-) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]]]:
+    prior_static_suppression_evidence: dict[str, Any] | None = None,
+) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]], dict[str, Any]]:
     selected_provider_adapters = {
         norm_text(source_report_meta.get(name, {}).get("adapter"))
         for name, _loader in selected_loaders
@@ -139,16 +146,17 @@ def apply_dynamic_redundant_static_exclusions(
         in BOARD_LEVEL_INCREMENTAL_PROVIDER_ADAPTERS
     }
     if not selected_provider_adapters:
-        return selected_loaders, []
+        return selected_loaders, [], build_static_suppression_policy_summary([])
     providers_by_static_identity = _eligible_dynamic_provider_rows(
         source_state_rows=source_state_rows,
         selected_provider_adapters=selected_provider_adapters,
     )
     if not providers_by_static_identity:
-        return selected_loaders, []
+        return selected_loaders, [], build_static_suppression_policy_summary([])
 
     filtered: list[tuple[str, SourceLoader]] = []
     excluded: list[dict[str, Any]] = []
+    policy_pairs: list[dict[str, Any]] = []
     for source_name, loader in selected_loaders:
         if not clean_text(source_name).startswith(_STATIC_SOURCE_PREFIX):
             filtered.append((source_name, loader))
@@ -159,6 +167,29 @@ def apply_dynamic_redundant_static_exclusions(
             filtered.append((source_name, loader))
             continue
         provider_name, provider_row = provider
+        prior_pair = find_prior_static_suppression_pair(
+            prior_static_suppression_evidence or {},
+            static_source_id=static_identity,
+            static_source_name=source_name,
+            provider_source_id=provider_name,
+            provider_source_name=provider_name,
+        )
+        decision, reason = decide_static_suppression_from_prior_pair(prior_pair)
+        policy_pairs.append(
+            build_static_suppression_policy_pair(
+                static_source_id=static_identity,
+                static_source_name=source_name,
+                provider_source_id=provider_name,
+                provider_source_name=provider_name,
+                provider_row=provider_row,
+                decision=decision,
+                reason=reason,
+                audit_pair=prior_pair,
+            )
+        )
+        if decision == "paused":
+            filtered.append((source_name, loader))
+            continue
         excluded.append(
             _dynamic_redundant_report(
                 source_name=source_name,
@@ -167,7 +198,7 @@ def apply_dynamic_redundant_static_exclusions(
                 build_excluded_source_report=build_excluded_source_report,
             )
         )
-    return filtered, excluded
+    return filtered, excluded, build_static_suppression_policy_summary(policy_pairs)
 
 
 def sort_selected_loaders(

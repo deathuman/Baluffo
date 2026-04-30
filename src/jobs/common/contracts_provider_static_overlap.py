@@ -103,25 +103,60 @@ def _pair_from_suppressed_row(
     static_name = clean_text(row.get("name"))
     static_id = _static_identity(static_name, row)
     provider_name = clean_text(row.get("coveredByProviderSourceId"))
-    provider_state = _state_for_source(source_state_rows, provider_name, provider_name)
-    static_state = _state_for_source(source_state_rows, static_name, static_id)
+    return build_provider_static_overlap_pair(
+        static_source_id=static_id,
+        static_source_name=static_name,
+        provider_source_id=provider_name,
+        provider_source_name=provider_name,
+        provider_adapter=clean_text(row.get("coveredByProviderAdapter")),
+        provider_row=row,
+        source_state_rows=source_state_rows,
+        canonical_rows=canonical_rows,
+    )
+
+
+def build_provider_static_overlap_pair(
+    *,
+    static_source_id: str,
+    static_source_name: str,
+    provider_source_id: str,
+    provider_source_name: str,
+    provider_adapter: str = "",
+    provider_row: dict[str, Any] | None = None,
+    source_state_rows: dict[str, dict[str, Any]] | None = None,
+    canonical_rows: Any = None,
+) -> dict[str, Any]:
+    static_id = clean_text(static_source_id)
+    static_name = clean_text(static_source_name)
+    provider_id = clean_text(provider_source_id)
+    provider_name = clean_text(provider_source_name) or provider_id
+    state_rows = source_state_rows or {}
+    fallback_provider = provider_row or {}
+    provider_state = _state_for_source(state_rows, provider_name, provider_name)
+    if not provider_state and provider_id and provider_id != provider_name:
+        provider_state = _state_for_source(state_rows, provider_id, provider_id)
+    static_state = _state_for_source(state_rows, static_name, static_id)
     provider_status = clean_text(provider_state.get("providerCoverageStatus")) or clean_text(
-        row.get("providerCoverageStatus")
+        fallback_provider.get("providerCoverageStatus")
     )
     provider_successes = _clamped_int(
         provider_state.get("providerCoverageConsecutiveSuccesses")
-        or row.get("providerCoverageConsecutiveSuccesses"),
+        or provider_state.get("providerConsecutiveSuccesses")
+        or fallback_provider.get("providerCoverageConsecutiveSuccesses")
+        or fallback_provider.get("providerConsecutiveSuccesses"),
         0,
         0,
     )
     provider_kept = _clamped_int(
         provider_state.get("providerCoverageLatestKeptCount")
-        or row.get("providerCoverageLatestKeptCount"),
+        or provider_state.get("latestProviderKeptCount")
+        or fallback_provider.get("providerCoverageLatestKeptCount")
+        or fallback_provider.get("latestProviderKeptCount"),
         0,
         0,
     )
     bundle_counts = _bundle_counts(
-        canonical_rows,
+        json_object_rows(canonical_rows),
         static_source_name=static_name,
         static_source_id=static_id,
         provider_name=provider_name,
@@ -141,11 +176,14 @@ def _pair_from_suppressed_row(
     return {
         "staticSourceId": static_id,
         "staticSourceName": static_name,
-        "providerSourceId": provider_name,
+        "providerSourceId": provider_id or provider_name,
         "providerSourceName": provider_name,
-        "providerAdapter": clean_text(row.get("coveredByProviderAdapter"))
+        "providerAdapter": clean_text(provider_adapter)
         or clean_text(provider_state.get("lastAdapter"))
-        or clean_text(provider_state.get("adapter")),
+        or clean_text(provider_state.get("adapter"))
+        or clean_text(fallback_provider.get("coveredByProviderAdapter"))
+        or clean_text(fallback_provider.get("lastAdapter"))
+        or clean_text(fallback_provider.get("adapter")),
         "providerCoverageStatus": provider_status,
         "providerConsecutiveSuccesses": provider_successes,
         "lastStaticKeptCount": last_static_kept,
@@ -156,6 +194,10 @@ def _pair_from_suppressed_row(
         "auditStatus": status,
         "auditReasons": reasons,
     }
+
+
+def normalize_provider_static_overlap_pair(payload: Any) -> dict[str, Any]:
+    return _normalize_pair(payload)
 
 
 def _normalize_pair(payload: Any) -> dict[str, Any]:

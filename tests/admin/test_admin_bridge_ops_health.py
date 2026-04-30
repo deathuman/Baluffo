@@ -239,6 +239,23 @@ def test_compute_ops_health_exposes_provider_static_overlap_audit(admin_bridge_e
                     }
                 ],
             },
+            "staticSuppressionPolicy": {
+                "eligibleCount": 1,
+                "suppressedCount": 1,
+                "pausedCount": 0,
+                "warningCount": 0,
+                "suppressedPairs": [
+                    {
+                        "staticSourceName": "static_source::covered",
+                        "providerSourceName": "Studio Greenhouse",
+                        "decision": "suppressed",
+                        "reason": "prior_audit_safe",
+                        "lastAuditStatus": "safe",
+                    }
+                ],
+                "pausedPairs": [],
+                "warningPairs": [],
+            },
             "sources": [],
         },
     )
@@ -249,6 +266,9 @@ def test_compute_ops_health_exposes_provider_static_overlap_audit(admin_bridge_e
     assert overlap["suppressedStaticCount"] == 1
     assert overlap["safePairCount"] == 1
     assert overlap["pairs"][0]["providerSourceName"] == "Studio Greenhouse"
+    policy = health["kpis"]["staticSuppressionPolicy"]
+    assert policy["suppressedCount"] == 1
+    assert policy["suppressedPairs"][0]["reason"] == "prior_audit_safe"
 
 
 def test_alert_ack_suppresses_visible_alert(admin_bridge_entrypoint_root):

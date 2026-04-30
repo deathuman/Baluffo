@@ -13,6 +13,9 @@ from src.jobs.common.contracts_provider_coverage import build_provider_coverage_
 from src.jobs.common.contracts_provider_static_overlap import (
     build_provider_static_overlap_summary,
 )
+from src.jobs.common.contracts_static_suppression_policy import (
+    refresh_static_suppression_policy_with_current_evidence,
+)
 from src.jobs.contamination_audit import build_public_text_quality_report
 from src.jobs.dedup import CanonicalDeduplicator
 from src.jobs.models import CanonicalJob
@@ -489,6 +492,7 @@ def finalize_pipeline_run(
     circuit_breaker_failures: int,
     circuit_breaker_cooldown_minutes: int,
     circuit_breaker_zero_kept: int,
+    static_suppression_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     deduped_rows, dedup_stats, preserved_previous = _deduplicate_or_preserve_previous(
         paths=paths,
@@ -642,6 +646,14 @@ def finalize_pipeline_run(
         source_rows=final_source_rows,
         source_state_rows=overlap_source_state_rows,
         canonical_rows=deduped_payload_rows,
+    )
+    report_payload["staticSuppressionPolicy"] = (
+        refresh_static_suppression_policy_with_current_evidence(
+            static_suppression_policy or {},
+            source_state_rows=overlap_source_state_rows,
+            canonical_rows=deduped_payload_rows,
+            provider_static_overlap=report_payload["providerStaticOverlap"],
+        )
     )
     report_payload["healthSummary"] = {
         "topFailingDomains": health_module.get_top_failing_sources(source_state_rows, limit=10),

@@ -16,6 +16,9 @@ from src.jobs.common.contracts_provider_static_overlap import (
     normalize_provider_static_overlap_payload,
 )
 from src.jobs.common.contracts_source_health import normalize_source_health_payload
+from src.jobs.common.contracts_static_suppression_policy import (
+    normalize_static_suppression_policy_payload,
+)
 from src.shared.json_io import read_json
 from src.shared.json_shapes import as_json_list, as_json_object, copy_json_object, json_object_rows
 from src.shared.utils import parse_iso
@@ -128,6 +131,9 @@ def build_metrics(
     provider_static_overlap = normalize_provider_static_overlap_payload(
         report.get("providerStaticOverlap"), source_rows=sources
     )
+    static_suppression_policy = normalize_static_suppression_policy_payload(
+        report.get("staticSuppressionPolicy")
+    )
     return {
         "generatedAt": datetime.now(UTC).isoformat(),
         "latestRun": {
@@ -153,6 +159,7 @@ def build_metrics(
             "sourceHealth": source_health,
             "providerCoverage": provider_coverage,
             "providerStaticOverlap": provider_static_overlap,
+            "staticSuppressionPolicy": static_suppression_policy,
             **summarize_source_rows(sources),
         },
         "history": summarize_run_history(history, window=window),

@@ -412,7 +412,6 @@ class TestAdminPanelTaskDisplay:
         from src.bridge import ops_health
         from src.bridge.ops_api import OpsHealthDeps
 
-        # Create minimal history for health computation
         history = [
             {
                 "id": "pipeline-1",
@@ -429,11 +428,12 @@ class TestAdminPanelTaskDisplay:
                 },
             },
         ]
-
         deps = OpsHealthDeps(
             get_history=lambda: history,
             get_fetch_report=lambda: {"summary": {}},
             get_state=lambda: {"active": False, "pending": []},
+            get_tombstones=lambda: {},
+            get_sync_status_payload=lambda: {},
             now_iso=lambda: "2026-03-22T12:10:00Z",
             desktop_mode=True,
             desktop_last_activity_at="2026-03-22T12:10:00Z",

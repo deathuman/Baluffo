@@ -20,6 +20,9 @@ from src.jobs.common import sources as common_sources
 from src.jobs.common.config import SOURCE_DIAGNOSTICS
 from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
 from src.jobs.common.contracts_runtime import normalize_runtime_payload
+from src.jobs.common.contracts_static_suppression_policy import (
+    read_prior_static_suppression_evidence,
+)
 from src.jobs.common.contracts_task_state import normalize_task_state_payload
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob
@@ -259,8 +262,24 @@ def prepare_pipeline_run(
         source_report_meta=SOURCE_REPORT_META,
         source_state_rows=source_state_rows,
     )
+    dynamic_static_suppression_policy: dict[str, Any] = {
+        "eligibleCount": 0,
+        "suppressedCount": 0,
+        "pausedCount": 0,
+        "warningCount": 0,
+        "suppressedPairs": [],
+        "pausedPairs": [],
+        "warningPairs": [],
+    }
     if using_default_loaders:
-        selected_loaders, dynamic_redundant_static = apply_dynamic_redundant_static_exclusions(
+        prior_static_suppression_evidence = read_prior_static_suppression_evidence(
+            paths.report_path
+        )
+        (
+            selected_loaders,
+            dynamic_redundant_static,
+            dynamic_static_suppression_policy,
+        ) = apply_dynamic_redundant_static_exclusions(
             selected_loaders,
             source_state_rows=source_state_rows,
             build_excluded_source_report=lambda name, reason: build_excluded_source_report(
@@ -269,6 +288,7 @@ def prepare_pipeline_run(
                 source_report_meta=SOURCE_REPORT_META,
             ),
             source_report_meta=SOURCE_REPORT_META,
+            prior_static_suppression_evidence=prior_static_suppression_evidence,
         )
         source_reports.extend(dynamic_redundant_static)
 
@@ -309,6 +329,7 @@ def prepare_pipeline_run(
         default_canonical_strict_url=common_config.DEFAULT_CANONICAL_STRICT_URL,
         normalize_runtime_payload=normalize_runtime_payload,
     )
+    runtime_payload["staticSuppressionPolicy"] = dynamic_static_suppression_policy
     selected_loaders, incremental_skipped = apply_incremental_cache_exclusions(
         selected_loaders,
         incremental_cache_enabled=incremental_cache_enabled,
