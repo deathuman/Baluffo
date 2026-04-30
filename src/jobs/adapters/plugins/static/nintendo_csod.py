@@ -65,6 +65,92 @@ def _pick_title(window_before: str, window: str, anchor_body: str) -> str:
     return ""
 
 
+def _nintendo_detail_href(li_html: str) -> str:
+    href_match = re.search(
+        r"(?is)<a\b[^>]*href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)[^>]*>\s*Details\s*</a>",
+        li_html,
+    )
+    href = clean_text(href_match.group("href")) if href_match else ""
+    return href if "target-req" in href.lower() else ""
+
+
+def _nintendo_title_from_li(li_html: str) -> str:
+    title_match = re.search(r"(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]>", li_html)
+    if title_match:
+        return clean_text(strip_html_text(title_match.group(1) or ""))
+    for line in html_fragment_lines(li_html):
+        candidate = clean_text(line)
+        if candidate and candidate.lower() not in _IGNORED_TOKENS:
+            return candidate
+    return ""
+
+
+def _nintendo_location_from_li(li_html: str) -> str:
+    location_match = re.search(
+        r"(?is)<p\b[^>]*class\s*=\s*(?P<quote>[\"\'])SearchResult_job_item__location[^\"\']*(?P=quote)[^>]*>(.*?)</p>",
+        li_html,
+    )
+    if location_match:
+        return clean_text(strip_html_text(location_match.group(2) or ""))
+    for line in html_fragment_lines(li_html):
+        lower = line.lower()
+        if " | " in line or "," in line or "germany" in lower or "netherlands" in lower:
+            return line
+    return ""
+
+
+def _nintendo_terms_from_sub_items(li_html: str) -> tuple[str, str]:
+    sub_match = re.search(
+        r"(?is)<ul\b[^>]*class\s*=\s*(?P<quote>[\"\'])SearchResult_job_item__sub[^\"\']*(?P=quote)[^>]*>(.*?)</ul>",
+        li_html,
+    )
+    if not sub_match:
+        return "", ""
+    work_type = ""
+    contract_type = ""
+    sub_items = [
+        clean_text(strip_html_text(item))
+        for item in re.findall(r"(?is)<li\b[^>]*>(.*?)</li>", sub_match.group(2) or "")
+    ]
+    for item in [item for item in sub_items if item]:
+        lower = item.lower()
+        if not work_type and any(
+            token in lower for token in ("full-time", "part-time", "remote", "hybrid")
+        ):
+            work_type = item
+            continue
+        if not contract_type and any(
+            token in lower for token in ("temporary", "permanent", "contract", "fixed-term")
+        ):
+            contract_type = item
+    return work_type, contract_type
+
+
+def _nintendo_job_row(
+    *,
+    source_id: str,
+    link: str,
+    title: str,
+    company: str,
+    location: str,
+    work_type: str,
+    contract_type: str,
+) -> RawJob:
+    location_details = normalize_location_details(location)
+    return static_listing_job_row(
+        source_id=source_id,
+        link=link,
+        title=title,
+        company=company,
+        city=clean_text(location_details.get("city")),
+        country=clean_text(location_details.get("country")) or "Unknown",
+        work_type=work_type,
+        contract_type=contract_type,
+        locations=location_details.get("locations") or [],
+        location_summary=clean_text(location_details.get("locationSummary")),
+    )
+
+
 def _extract_from_li_blocks(
     html: str, *, page_url: str, company: str, source_id: str
 ) -> list[RawJob]:
@@ -75,82 +161,53 @@ def _extract_from_li_blocks(
         li_html = li_match.group("body") or ""
         if "SearchResult_job_item" not in li_class and "target-req" not in li_html:
             continue
-        href_match = re.search(
-            r"(?is)<a\b[^>]*href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)[^>]*>\s*Details\s*</a>",
-            li_html,
-        )
-        if not href_match:
-            continue
-        href = clean_text(href_match.group("href"))
-        if "target-req" not in href.lower():
+        href = _nintendo_detail_href(li_html)
+        if not href:
             continue
         link = normalize_url(urljoin(page_url, href))
         if not link or link in seen_links:
             continue
-        title_match = re.search(r"(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]>", li_html)
-        title = clean_text(strip_html_text(title_match.group(1) or "")) if title_match else ""
-        if not title:
-            for line in html_fragment_lines(li_html):
-                candidate = clean_text(line)
-                if candidate and candidate.lower() not in _IGNORED_TOKENS:
-                    title = candidate
-                    break
+        title = _nintendo_title_from_li(li_html)
         if not title:
             continue
-        location = ""
-        work_type = ""
-        contract_type = ""
-        location_match = re.search(
-            r"(?is)<p\b[^>]*class\s*=\s*(?P<quote>[\"\'])SearchResult_job_item__location[^\"\']*(?P=quote)[^>]*>(.*?)</p>",
-            li_html,
-        )
-        if location_match:
-            location = clean_text(strip_html_text(location_match.group(2) or ""))
-        if not location:
-            for line in html_fragment_lines(li_html):
-                lower = line.lower()
-                if " | " in line or "," in line or "germany" in lower or "netherlands" in lower:
-                    location = line
-                    break
-        sub_match = re.search(
-            r"(?is)<ul\b[^>]*class\s*=\s*(?P<quote>[\"\'])SearchResult_job_item__sub[^\"\']*(?P=quote)[^>]*>(.*?)</ul>",
-            li_html,
-        )
-        if sub_match:
-            sub_items = [
-                clean_text(strip_html_text(item))
-                for item in re.findall(r"(?is)<li\b[^>]*>(.*?)</li>", sub_match.group(2) or "")
-            ]
-            sub_items = [item for item in sub_items if item]
-            for item in sub_items:
-                lower = item.lower()
-                if not work_type and any(
-                    token in lower for token in ("full-time", "part-time", "remote", "hybrid")
-                ):
-                    work_type = item
-                    continue
-                if not contract_type and any(
-                    token in lower for token in ("temporary", "permanent", "contract", "fixed-term")
-                ):
-                    contract_type = item
-                    continue
+        location = _nintendo_location_from_li(li_html)
+        work_type, contract_type = _nintendo_terms_from_sub_items(li_html)
         seen_links.add(link)
-        location_details = normalize_location_details(location)
         jobs.append(
-            static_listing_job_row(
+            _nintendo_job_row(
                 source_id=source_id,
                 link=link,
                 title=title,
                 company=company,
-                city=clean_text(location_details.get("city")),
-                country=clean_text(location_details.get("country")) or "Unknown",
+                location=location,
                 work_type=work_type,
                 contract_type=contract_type,
-                locations=location_details.get("locations") or [],
-                location_summary=clean_text(location_details.get("locationSummary")),
             )
         )
     return jobs
+
+
+def _nintendo_anchor_terms(lines: list[str], title: str) -> tuple[str, str, str]:
+    location = ""
+    work_type = ""
+    contract_type = ""
+    for line in lines:
+        lower = line.lower()
+        if line == title or line.lower() in _IGNORED_TOKENS:
+            continue
+        if not location and ("," in line or "germany" in lower or "netherlands" in lower):
+            location = line
+            continue
+        if not work_type and any(
+            token in lower for token in ("full time", "part time", "hybrid", "remote")
+        ):
+            work_type = line
+            continue
+        if not contract_type and any(
+            token in lower for token in ("permanent", "contract", "temporary", "fixed term")
+        ):
+            contract_type = line
+    return location, work_type, contract_type
 
 
 def _extract_jobs(html: str, *, page_url: str, company: str, source_id: str) -> list[RawJob]:
@@ -174,40 +231,17 @@ def _extract_jobs(html: str, *, page_url: str, company: str, source_id: str) -> 
         if not title:
             continue
         lines = [clean_text(line) for line in html_fragment_lines(window) if clean_text(line)]
-        location = ""
-        work_type = ""
-        contract_type = ""
-        for line in lines:
-            lower = line.lower()
-            if line == title or line.lower() in _IGNORED_TOKENS:
-                continue
-            if not location and ("," in line or "germany" in lower or "netherlands" in lower):
-                location = line
-                continue
-            if not work_type and any(
-                token in lower for token in ("full time", "part time", "hybrid", "remote")
-            ):
-                work_type = line
-                continue
-            if not contract_type and any(
-                token in lower for token in ("permanent", "contract", "temporary", "fixed term")
-            ):
-                contract_type = line
-                continue
+        location, work_type, contract_type = _nintendo_anchor_terms(lines, title)
         seen_links.add(link)
-        location_details = normalize_location_details(location)
         jobs.append(
-            static_listing_job_row(
+            _nintendo_job_row(
                 source_id=source_id,
                 link=link,
                 title=title,
                 company=company,
-                city=clean_text(location_details.get("city")),
-                country=clean_text(location_details.get("country")) or "Unknown",
+                location=location,
                 work_type=work_type,
                 contract_type=contract_type,
-                locations=location_details.get("locations") or [],
-                location_summary=clean_text(location_details.get("locationSummary")),
             )
         )
     return jobs

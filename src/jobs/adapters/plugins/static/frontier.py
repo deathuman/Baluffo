@@ -77,33 +77,98 @@ def _pick_location_and_terms(window: str) -> tuple[str, str, str]:
     work_type = ""
     contract_type = ""
     for value in dd_values:
-        lower = value.lower()
-        city, country, parsed_work_type = parse_generic_location_fields(value)
-        if any(token in lower for token in ("full time", "part time", "fixed term", "permanent")):
-            if not contract_type:
-                contract_type = value
-            continue
-        if any(token in lower for token in ("remote", "hybrid", "onsite", "on site", "in person")):
-            if not work_type:
-                work_type = value
-            continue
-        if city or country != "Unknown":
-            location = value
-            continue
-        if any(
-            token in lower
-            for token in ("contract", "permanent", "temporary", "fixed term", "intern")
-        ):
-            if not contract_type:
-                contract_type = value
-            continue
-        if parsed_work_type:
-            if not work_type:
-                work_type = parsed_work_type
-            continue
-        if not work_type:
-            work_type = value
+        location, work_type, contract_type = _apply_frontier_dd_value(
+            value,
+            location=location,
+            work_type=work_type,
+            contract_type=contract_type,
+        )
     return location, work_type, contract_type
+
+
+def _apply_frontier_dd_value(
+    value: str, *, location: str, work_type: str, contract_type: str
+) -> tuple[str, str, str]:
+    kind, parsed_value = _frontier_dd_kind(value)
+    if kind == "contract" and not contract_type:
+        contract_type = value
+    elif kind == "work_type" and not work_type:
+        work_type = value
+    elif kind == "location":
+        location = value
+    elif kind == "parsed_work_type" and not work_type:
+        work_type = parsed_value
+    elif not work_type:
+        work_type = value
+    return location, work_type, contract_type
+
+
+def _frontier_dd_kind(value: str) -> tuple[str, str]:
+    lower = value.lower()
+    city, country, parsed_work_type = parse_generic_location_fields(value)
+    if any(token in lower for token in ("full time", "part time", "fixed term", "permanent")):
+        return "contract", ""
+    if any(token in lower for token in ("remote", "hybrid", "onsite", "on site", "in person")):
+        return "work_type", ""
+    if city or country != "Unknown":
+        return "location", ""
+    if any(
+        token in lower for token in ("contract", "permanent", "temporary", "fixed term", "intern")
+    ):
+        return "contract", ""
+    if parsed_work_type:
+        return "parsed_work_type", parsed_work_type
+    return "fallback", ""
+
+
+def _frontier_li_detail_href(li_html: str) -> str:
+    href_match = re.search(
+        r"(?is)<a\b[^>]*href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)[^>]*>\s*Details\s*</a>",
+        li_html,
+    )
+    href = clean_text(href_match.group("href")) if href_match else ""
+    return href if href and "/careers/" in href.lower() else ""
+
+
+def _frontier_li_detail_html(li_html: str) -> str:
+    detail_match = re.search(
+        r"(?is)<div\b[^>]*class\s*=\s*(?P<quote>[\"\'])c-careers-job-listing__department-list-detail(?P=quote)[^>]*>(.*?)</div>",
+        li_html,
+    )
+    return detail_match.group(2) if detail_match else li_html
+
+
+def _frontier_title_from_detail_html(detail_html: str) -> str:
+    heading_match = re.search(r"(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]>", detail_html)
+    if heading_match:
+        return clean_text(strip_html_text(heading_match.group(1) or ""))
+    for line in html_fragment_lines(detail_html):
+        candidate = clean_text(line)
+        if candidate and candidate.lower() not in _IGNORED_TOKENS:
+            return candidate
+    return ""
+
+
+def _frontier_job_row(
+    *,
+    source_id: str,
+    link: str,
+    title: str,
+    company: str,
+    detail_html: str,
+) -> RawJob:
+    location, work_type, contract_type = _pick_location_and_terms(detail_html)
+    location_details = normalize_location_details(location)
+    return static_listing_job_row(
+        source_id=source_id,
+        link=link,
+        title=title,
+        company=company,
+        city=clean_text(location_details.get("city")),
+        country=clean_text(location_details.get("country")) or "Unknown",
+        work_type=work_type,
+        contract_type=contract_type,
+    )
 
 
 def _extract_from_li_blocks(
@@ -115,48 +180,24 @@ def _extract_from_li_blocks(
         li_html = li_match.group(1) or ""
         if "Details" not in li_html and "details" not in li_html.lower():
             continue
-        href_match = re.search(
-            r"(?is)<a\b[^>]*href\s*=\s*(?P<quote>[\"\'])(?P<href>.*?)(?P=quote)[^>]*>\s*Details\s*</a>",
-            li_html,
-        )
-        if not href_match:
-            continue
-        href = clean_text(href_match.group("href"))
-        if not href or "/careers/" not in href.lower():
+        href = _frontier_li_detail_href(li_html)
+        if not href:
             continue
         link = normalize_url(urljoin(page_url, href))
         if not link or link in seen_links:
             continue
-        detail_match = re.search(
-            r"(?is)<div\b[^>]*class\s*=\s*(?P<quote>[\"\'])c-careers-job-listing__department-list-detail(?P=quote)[^>]*>(.*?)</div>",
-            li_html,
-        )
-        detail_html = detail_match.group(2) if detail_match else li_html
-        title = ""
-        heading_match = re.search(r"(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]>", detail_html)
-        if heading_match:
-            title = clean_text(strip_html_text(heading_match.group(1) or ""))
-        if not title:
-            for line in html_fragment_lines(detail_html):
-                candidate = clean_text(line)
-                if candidate and candidate.lower() not in _IGNORED_TOKENS:
-                    title = candidate
-                    break
+        detail_html = _frontier_li_detail_html(li_html)
+        title = _frontier_title_from_detail_html(detail_html)
         if not title:
             continue
-        location, work_type, contract_type = _pick_location_and_terms(detail_html)
-        location_details = normalize_location_details(location)
         seen_links.add(link)
         jobs.append(
-            static_listing_job_row(
+            _frontier_job_row(
                 source_id=source_id,
                 link=link,
                 title=title,
                 company=company,
-                city=clean_text(location_details.get("city")),
-                country=clean_text(location_details.get("country")) or "Unknown",
-                work_type=work_type,
-                contract_type=contract_type,
+                detail_html=detail_html,
             )
         )
     return jobs
