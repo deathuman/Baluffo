@@ -51,14 +51,27 @@ def test_derive_source_health_ranks_mixed_source_rows() -> None:
                 "keptCount": 0,
                 "exclusionReason": "cache_skip",
             },
+            {
+                "name": "static_source::covered",
+                "adapter": "static",
+                "status": "excluded",
+                "keptCount": 0,
+                "exclusionReason": "dynamic_redundant_provider",
+                "coveredByProviderSourceId": "Studio Greenhouse",
+                "coveredByProviderAdapter": "greenhouse",
+                "providerCoverageStatus": "validated_provider",
+                "providerCoverageConsecutiveSuccesses": 2,
+            },
         ]
     )
 
-    assert health["totalSources"] == 5
+    assert health["totalSources"] == 6
     assert health["okSources"] == 3
     assert health["failedSources"] == 1
-    assert health["excludedSources"] == 1
-    assert health["skippedSources"] == 1
+    assert health["excludedSources"] == 2
+    assert health["skippedSources"] == 2
+    assert health["dynamicRedundantStaticSources"] == 1
+    assert health["dynamicRedundantStatic"][0]["coveredByProviderSourceId"] == "Studio Greenhouse"
     assert health["zeroKeptSources"] == 3
     assert health["zeroKeptNeedsReviewSources"] == 2
     assert health["browserFallbackRecommendedSources"] == 1

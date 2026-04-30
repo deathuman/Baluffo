@@ -97,6 +97,27 @@ def test_excluded_or_skipped_source_preserves_missing_previous_job() -> None:
     assert summary["likelyRemoved"] == 0
 
 
+def test_dynamic_redundant_provider_suppression_preserves_missing_previous_static_job() -> None:
+    entry, summary = _apply_with_reports(
+        [
+            {
+                "name": "static_source::static:listing_url:https://studio.example/jobs",
+                "adapter": "static",
+                "status": "excluded",
+                "exclusionReason": "dynamic_redundant_provider",
+                "coveredByProviderSourceId": "Studio Greenhouse",
+                "providerCoverageStatus": "validated_provider",
+            }
+        ],
+        previous_source="static_source::static:listing_url:https://studio.example/jobs",
+    )
+
+    assert entry["status"] == "active"
+    assert not entry.get("removedAt")
+    assert summary["preservedBecauseSourceSkipped"] == 1
+    assert summary["likelyRemoved"] == 0
+
+
 def test_absent_source_evidence_preserves_missing_previous_job() -> None:
     entry, summary = _apply_with_reports([], previous_source="not_selected")
 

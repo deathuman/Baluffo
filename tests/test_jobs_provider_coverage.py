@@ -1,10 +1,10 @@
-from src.jobs.common.contracts_provider_coverage import build_provider_coverage_summary
 from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
+from src.jobs.common.contracts_provider_coverage import build_provider_coverage_summary
 from src.jobs.common.contracts_source_reports import normalize_source_report_row
 from src.jobs.state_source_state import update_source_state_rows
 
-
 FINISHED_AT = "2026-04-30T12:00:00+00:00"
+MIGRATION_SOURCE_IDENTITY = "static:listing_url:https://studio.example/jobs"
 
 
 def _update(existing, report, *, canonical_rows=None, finished_at=FINISHED_AT):
@@ -25,7 +25,7 @@ def _provider_report(**overrides):
         "status": "ok",
         "keptCount": 2,
         "fetchedCount": 2,
-        "migrationSourceIdentity": "static:listing_url:https://studio.example/jobs",
+        "migrationSourceIdentity": MIGRATION_SOURCE_IDENTITY,
         "detectedProviderFamily": "greenhouse",
         "detectedProviderUrl": "https://boards.greenhouse.io/studio",
         "detectedProviderId": "studio",

@@ -194,6 +194,21 @@ function formatProviderCoverageRows(rows, emptyText) {
     .join(" | ");
 }
 
+function formatDynamicRedundantStaticRows(rows, emptyText) {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  if (!sourceRows.length) return escapeHtml(emptyText);
+  return sourceRows
+    .slice(0, 5)
+    .map(row => {
+      const name = sanitizeSlowSourceName(row?.name);
+      const provider = String(row?.coveredByProviderSourceId || "provider");
+      const adapter = String(row?.coveredByProviderAdapter || "provider");
+      const successes = Number(row?.providerCoverageConsecutiveSuccesses || 0);
+      return escapeHtml(`${name} (covered by ${provider}, ${adapter}, successes ${successes})`);
+    })
+    .join(" | ");
+}
+
 export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};
@@ -277,6 +292,10 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     sourceHealth?.topProductiveSources,
     "No productive source ranking yet."
   );
+  const dynamicRedundantSummary = formatDynamicRedundantStaticRows(
+    sourceHealth?.dynamicRedundantStatic,
+    "No runtime-only static suppression."
+  );
   const validatedProviderSummary = formatProviderCoverageRows(
     providerCoverage?.validatedProviders,
     "No validated staged providers yet."
@@ -355,6 +374,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Zero kept / needs review</strong>: ${zeroReviewSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Browser fallback recommended</strong>: ${browserSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top productive sources</strong>: ${productiveSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Runtime-suppressed static sources</strong>: ${dynamicRedundantSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Validated staged providers</strong>: ${validatedProviderSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Provider coverage needs review</strong>: ${reviewProviderSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Unstable / failed providers</strong>: ${failedProviderSummary}</div>

@@ -34,6 +34,16 @@ def _source_health_row(row: dict[str, Any]) -> dict[str, Any]:
         "browserFallbackRecommended": bool(row.get("browserFallbackRecommended")),
         "error": clean_text(row.get("error")),
         "exclusionReason": clean_text(row.get("exclusionReason")),
+        "coveredByProviderSourceId": clean_text(row.get("coveredByProviderSourceId")),
+        "coveredByProviderAdapter": clean_text(row.get("coveredByProviderAdapter")),
+        "providerCoverageStatus": clean_text(row.get("providerCoverageStatus")),
+        "providerCoverageConsecutiveSuccesses": _clamped_int(
+            row.get("providerCoverageConsecutiveSuccesses"), 0, 0
+        ),
+        "providerCoverageLatestKeptCount": _clamped_int(
+            row.get("providerCoverageLatestKeptCount"), 0, 0
+        ),
+        "migrationSourceIdentity": clean_text(row.get("migrationSourceIdentity")),
     }
 
 
@@ -70,6 +80,9 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
     rows = [_source_health_row(row) for row in json_object_rows(source_rows)]
     failed_rows = [row for row in rows if row["status"] == "error"]
     excluded_rows = [row for row in rows if row["status"] == "excluded"]
+    dynamic_redundant_rows = [
+        row for row in excluded_rows if row["exclusionReason"] == "dynamic_redundant_provider"
+    ]
     zero_kept_rows = [row for row in rows if row["keptCount"] == 0 and row["status"] != "excluded"]
     zero_review_rows = [row for row in zero_kept_rows if _zero_kept_needs_review(row)]
     browser_rows = [row for row in rows if row["browserFallbackRecommended"]]
@@ -113,6 +126,7 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
         "failedSources": len(failed_rows),
         "excludedSources": len(excluded_rows),
         "skippedSources": sum(1 for row in excluded_rows if clean_text(row.get("exclusionReason"))),
+        "dynamicRedundantStaticSources": len(dynamic_redundant_rows),
         "zeroKeptSources": len(zero_kept_rows),
         "zeroKeptNeedsReviewSources": len(zero_review_rows),
         "browserFallbackRecommendedSources": len(browser_rows),
@@ -124,6 +138,10 @@ def derive_source_health(source_rows: Any) -> dict[str, Any]:
         "browserFallbackRecommended": sorted(
             browser_rows,
             key=lambda row: (-int(row["durationMs"]), clean_text(row.get("name"))),
+        )[:_TRIAGE_ROW_LIMIT],
+        "dynamicRedundantStatic": sorted(
+            dynamic_redundant_rows,
+            key=lambda row: clean_text(row.get("name")),
         )[:_TRIAGE_ROW_LIMIT],
         "slowestSources": sorted(
             [row for row in rows if int(row["durationMs"]) > 0],
@@ -154,6 +172,7 @@ def normalize_source_health_payload(payload: Any, source_rows: Any) -> dict[str,
         "failedSources",
         "excludedSources",
         "skippedSources",
+        "dynamicRedundantStaticSources",
         "zeroKeptSources",
         "zeroKeptNeedsReviewSources",
         "browserFallbackRecommendedSources",
@@ -163,12 +182,17 @@ def normalize_source_health_payload(payload: Any, source_rows: Any) -> dict[str,
         "sourcesNeedingAttention",
         "zeroKeptNeedsReview",
         "browserFallbackRecommended",
+        "dynamicRedundantStatic",
         "slowestSources",
         "topProductiveSources",
     ):
+        if key not in src:
+            continue
         payload_rows = json_object_rows(src.get(key))
         normalized[key] = [_source_health_row(row) for row in payload_rows[:_TRIAGE_ROW_LIMIT]]
     for key in ("topFailureBuckets", "topClassifications"):
+        if key not in src:
+            continue
         payload_rows = json_object_rows(src.get(key))
         normalized[key] = [
             {

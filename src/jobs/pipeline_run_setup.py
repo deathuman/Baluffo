@@ -25,6 +25,7 @@ from src.jobs.interfaces import SourceLoader
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_bootstrap import PipelinePaths, build_pipeline_paths
 from src.jobs.pipeline_loader_selection import (
+    apply_dynamic_redundant_static_exclusions,
     apply_incremental_cache_exclusions,
     apply_source_cadence_exclusions,
     build_excluded_source_report,
@@ -258,6 +259,18 @@ def prepare_pipeline_run(
         source_report_meta=SOURCE_REPORT_META,
         source_state_rows=source_state_rows,
     )
+    if using_default_loaders:
+        selected_loaders, dynamic_redundant_static = apply_dynamic_redundant_static_exclusions(
+            selected_loaders,
+            source_state_rows=source_state_rows,
+            build_excluded_source_report=lambda name, reason: build_excluded_source_report(
+                name,
+                reason,
+                source_report_meta=SOURCE_REPORT_META,
+            ),
+            source_report_meta=SOURCE_REPORT_META,
+        )
+        source_reports.extend(dynamic_redundant_static)
 
     browser_fallback_enabled = resolve_fetch_browser_fallback_helper() is not None
     browser_fallback_cap = max_workers if browser_fallback_enabled else 0

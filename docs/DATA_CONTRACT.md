@@ -432,12 +432,14 @@ tombstone, suppress, reject, or delete sources.
 | `failedSources` | `number` | Rows with `status="error"`. |
 | `excludedSources` | `number` | Rows with `status="excluded"`. |
 | `skippedSources` | `number` | Excluded rows with an operational `exclusionReason`. |
+| `dynamicRedundantStaticSources` | `number` | Static rows skipped at runtime because a linked provider has repeated validated coverage. |
 | `zeroKeptSources` | `number` | Non-excluded rows with `keptCount=0`. |
 | `zeroKeptNeedsReviewSources` | `number` | Zero-kept rows not classified as a known legitimate empty/no-openings result. |
 | `browserFallbackRecommendedSources` | `number` | Rows with `browserFallbackRecommended=true`. |
 | `sourcesNeedingAttention` | `array` | Compact top rows with failure, browser-fallback, or zero-kept review signals. |
 | `zeroKeptNeedsReview` | `array` | Compact zero-kept rows that need operator review. |
 | `browserFallbackRecommended` | `array` | Compact rows recommended for browser fallback. |
+| `dynamicRedundantStatic` | `array` | Compact runtime-only static suppression rows, including the provider that covered the static source. |
 | `slowestSources` | `array` | Compact source rows sorted by `durationMs` descending. |
 | `topProductiveSources` | `array` | Compact source rows sorted by `keptCount` descending. |
 | `topFailureBuckets` | `array` | `{key,count,examples}` rows derived from source `failureBucket`. |
@@ -446,6 +448,10 @@ tombstone, suppress, reject, or delete sources.
 Compact source-health rows use only existing source-report fields: `name`, `adapter`, `status`,
 `keptCount`, `fetchedCount`, `durationMs`, `failureBucket`, `classification`,
 `zeroKeptClassification`, `browserFallbackRecommended`, `error`, and `exclusionReason`.
+Runtime-only dynamic redundant-static rows may also include additive diagnostics:
+`coveredByProviderSourceId`, `coveredByProviderAdapter`, `providerCoverageStatus`,
+`providerCoverageConsecutiveSuccesses`, `providerCoverageLatestKeptCount`, and
+`migrationSourceIdentity`. These diagnostics are not registry fields.
 
 ### Provider coverage validation
 
@@ -485,6 +491,13 @@ coverage fields.
 | `unstableOrFailedProviders` | `Array<Object>` | Compact staged/provider rows with provider failures. |
 | `needsReviewProviders` | `Array<Object>` | Compact provider rows that fetched successfully but kept zero jobs. |
 | `readyLaterProviders` | `Array<Object>` | Compact rows with diagnostic `providerReplacementReadiness="ready_later"`. No source mutation is implied. |
+
+Dynamic redundant-static suppression is a reversible runtime skip layered on top of provider
+coverage. One successful provider fetch validates provider usability. Two or more consecutive
+successful provider fetches may cause the matching static loader to emit an excluded source report
+with `exclusionReason="dynamic_redundant_provider"` during normal default fetches. Explicit source
+selection bypasses this skip. This must not mutate source registry rows, tombstones, sync state,
+saved/local data, or `REDUNDANT_STATIC_IF_PROVIDER`.
 
 ### Job lifecycle summary
 

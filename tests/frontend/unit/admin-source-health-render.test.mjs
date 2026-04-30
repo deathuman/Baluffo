@@ -42,6 +42,16 @@ test("admin render: fetcher metrics render source-health triage", () => {
         ],
         topProductiveSources: [
           { name: "greenhouse_boards", status: "ok", keptCount: 120, durationMs: 1000 }
+        ],
+        dynamicRedundantStatic: [
+          {
+            name: "static_source::covered",
+            status: "excluded",
+            exclusionReason: "dynamic_redundant_provider",
+            coveredByProviderSourceId: "Studio Greenhouse",
+            coveredByProviderAdapter: "greenhouse",
+            providerCoverageConsecutiveSuccesses: 2
+          }
         ]
       }
     },
@@ -52,6 +62,8 @@ test("admin render: fetcher metrics render source-health triage", () => {
   assert.match(metricsEl.innerHTML, /Zero kept \/ needs review/i);
   assert.match(metricsEl.innerHTML, /Browser fallback recommended/i);
   assert.match(metricsEl.innerHTML, /Top productive sources/i);
+  assert.match(metricsEl.innerHTML, /Runtime-suppressed static sources/i);
+  assert.match(metricsEl.innerHTML, /Studio Greenhouse/i);
   assert.match(metricsEl.innerHTML, /greenhouse_boards/i);
 });
 

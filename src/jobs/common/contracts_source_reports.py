@@ -337,6 +337,23 @@ def _apply_stage_loss_and_exclusion_fields(target: dict[str, Any], src: dict[str
         target["loss"] = _normalize_loss(loss)
 
 
+def _apply_dynamic_redundant_provider_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
+    if clean_text(src.get("exclusionReason")) != "dynamic_redundant_provider":
+        return
+    for key in (
+        "coveredByProviderSourceId",
+        "coveredByProviderAdapter",
+        "providerCoverageStatus",
+        "migrationSourceIdentity",
+    ):
+        value = clean_text(src.get(key))
+        if value:
+            target[key] = value
+    for key in ("providerCoverageConsecutiveSuccesses", "providerCoverageLatestKeptCount"):
+        if key in src:
+            target[key] = _clamped_int(src.get(key), 0, 0)
+
+
 def _apply_provider_migration_fields(target: dict[str, Any], src: dict[str, Any]) -> None:
     if norm_text(src.get("adapter")) in {"static", "scrapy_static", "social", "csv", "html"}:
         return
@@ -439,6 +456,7 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         decision_counts_key="subsourceCacheDecisionCounts",
     )
     _apply_stage_loss_and_exclusion_fields(normalized, src)
+    _apply_dynamic_redundant_provider_fields(normalized, src)
     _apply_provider_migration_fields(normalized, src)
     _apply_site_changed_url_surface(normalized, src, failure_bucket)
     _apply_details(normalized, src)

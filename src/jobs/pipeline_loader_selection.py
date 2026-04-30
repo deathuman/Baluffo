@@ -27,6 +27,9 @@ DETAIL_LEVEL_INCREMENTAL_SOURCE_NAMES = {
     "social_x",
 }
 
+DYNAMIC_REDUNDANT_PROVIDER_REASON = "dynamic_redundant_provider"
+_STATIC_SOURCE_PREFIX = "static_source::"
+
 
 def build_excluded_source_report(
     source_name: str,
@@ -65,6 +68,106 @@ def select_pipeline_loaders(
         ), True
     except TypeError:
         return default_source_loaders(), True
+
+
+def _eligible_dynamic_provider_rows(
+    *,
+    source_state_rows: dict[str, dict[str, Any]],
+    selected_provider_adapters: set[str],
+) -> dict[str, tuple[str, dict[str, Any]]]:
+    providers_by_static_identity: dict[str, tuple[str, dict[str, Any]]] = {}
+    for source_name, row in source_state_rows.items():
+        if not isinstance(row, dict):
+            continue
+        adapter = norm_text(row.get("lastAdapter")) or norm_text(row.get("adapter"))
+        if adapter not in selected_provider_adapters:
+            continue
+        if norm_text(row.get("providerCoverageStatus")) != "validated_provider":
+            continue
+        if int(row.get("providerCoverageConsecutiveSuccesses") or 0) < 2:
+            continue
+        if int(row.get("providerCoverageLatestKeptCount") or 0) <= 0:
+            continue
+        migration_source_identity = clean_text(row.get("migrationSourceIdentity"))
+        if migration_source_identity:
+            providers_by_static_identity[migration_source_identity] = (clean_text(source_name), row)
+    return providers_by_static_identity
+
+
+def _dynamic_redundant_report(
+    *,
+    source_name: str,
+    provider_name: str,
+    provider_row: dict[str, Any],
+    build_excluded_source_report: Callable[[str, str], dict[str, Any]],
+) -> dict[str, Any]:
+    row = build_excluded_source_report(source_name, DYNAMIC_REDUNDANT_PROVIDER_REASON)
+    row.update(
+        {
+            "adapter": "static",
+            "fetchStrategy": "auto",
+            "exclusionReason": DYNAMIC_REDUNDANT_PROVIDER_REASON,
+            "error": DYNAMIC_REDUNDANT_PROVIDER_REASON,
+            "coveredByProviderSourceId": provider_name,
+            "coveredByProviderAdapter": clean_text(provider_row.get("lastAdapter"))
+            or clean_text(provider_row.get("adapter"))
+            or clean_text(provider_row.get("detectedProviderFamily")),
+            "providerCoverageStatus": clean_text(provider_row.get("providerCoverageStatus")),
+            "providerCoverageConsecutiveSuccesses": int(
+                provider_row.get("providerCoverageConsecutiveSuccesses") or 0
+            ),
+            "providerCoverageLatestKeptCount": int(
+                provider_row.get("providerCoverageLatestKeptCount") or 0
+            ),
+            "migrationSourceIdentity": clean_text(provider_row.get("migrationSourceIdentity")),
+        }
+    )
+    return row
+
+
+def apply_dynamic_redundant_static_exclusions(
+    selected_loaders: list[tuple[str, SourceLoader]],
+    *,
+    source_state_rows: dict[str, dict[str, Any]],
+    build_excluded_source_report: Callable[[str, str], dict[str, Any]],
+    source_report_meta: dict[str, dict[str, Any]],
+) -> tuple[list[tuple[str, SourceLoader]], list[dict[str, Any]]]:
+    selected_provider_adapters = {
+        norm_text(source_report_meta.get(name, {}).get("adapter"))
+        for name, _loader in selected_loaders
+        if norm_text(source_report_meta.get(name, {}).get("adapter"))
+        in BOARD_LEVEL_INCREMENTAL_PROVIDER_ADAPTERS
+    }
+    if not selected_provider_adapters:
+        return selected_loaders, []
+    providers_by_static_identity = _eligible_dynamic_provider_rows(
+        source_state_rows=source_state_rows,
+        selected_provider_adapters=selected_provider_adapters,
+    )
+    if not providers_by_static_identity:
+        return selected_loaders, []
+
+    filtered: list[tuple[str, SourceLoader]] = []
+    excluded: list[dict[str, Any]] = []
+    for source_name, loader in selected_loaders:
+        if not clean_text(source_name).startswith(_STATIC_SOURCE_PREFIX):
+            filtered.append((source_name, loader))
+            continue
+        static_identity = clean_text(source_name)[len(_STATIC_SOURCE_PREFIX) :]
+        provider = providers_by_static_identity.get(static_identity)
+        if provider is None:
+            filtered.append((source_name, loader))
+            continue
+        provider_name, provider_row = provider
+        excluded.append(
+            _dynamic_redundant_report(
+                source_name=source_name,
+                provider_name=provider_name,
+                provider_row=provider_row,
+                build_excluded_source_report=build_excluded_source_report,
+            )
+        )
+    return filtered, excluded
 
 
 def sort_selected_loaders(
