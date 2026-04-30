@@ -412,41 +412,48 @@ def _extract_structured_cell_texts(fragment: str) -> list[str]:
 
 
 def _pick_title(block_html: str, anchor_body: str) -> str:
+    return (
+        _pick_structured_cell_title(anchor_body)
+        or _normalize_title_candidate(strip_html_text(anchor_body))
+        or _pick_heading_title(block_html)
+        or _pick_line_title(block_html)
+    )
+
+
+def _looks_like_title_metadata(text: str) -> bool:
+    lowered = clean_text(text).lower()
+    return any(
+        hint in lowered for hint in ("location", "term", "type", "contract", "department", "team")
+    )
+
+
+def _pick_structured_cell_title(anchor_body: str) -> str:
     for candidate in _extract_structured_cell_texts(anchor_body):
         normalized = _normalize_title_candidate(candidate)
-        if not normalized:
-            continue
         lowered = normalized.lower()
-        if lowered in _IGNORED_TOKENS:
+        if not normalized or lowered in _IGNORED_TOKENS:
             continue
-        if any(
-            hint in lowered
-            for hint in ("location", "term", "type", "contract", "department", "team")
-        ):
-            continue
-        if _looks_like_non_job_title(lowered):
+        if _looks_like_title_metadata(lowered) or _looks_like_non_job_title(lowered):
             continue
         if _looks_like_job_title(normalized):
             return normalized
-    anchor_title = _normalize_title_candidate(strip_html_text(anchor_body))
-    if anchor_title:
-        return anchor_title
+    return ""
+
+
+def _pick_heading_title(block_html: str) -> str:
     for match in re.finditer(r"(?is)<h[1-6]\b[^>]*>(.*?)</h[1-6]>", block_html or ""):
         heading = _normalize_title_candidate(strip_html_text(match.group(1) or ""))
         if heading:
             return heading
+    return ""
+
+
+def _pick_line_title(block_html: str) -> str:
     for line in html_fragment_lines(block_html):
         candidate = _normalize_title_candidate(line)
-        if not candidate:
-            continue
         lower = candidate.lower()
-        if lower in _IGNORED_TOKENS:
-            continue
-        if any(
-            hint in lower for hint in ("location", "term", "type", "contract", "department", "team")
-        ):
-            continue
-        return candidate
+        if candidate and lower not in _IGNORED_TOKENS and not _looks_like_title_metadata(lower):
+            return candidate
     return ""
 
 
@@ -775,6 +782,90 @@ def _append_rendered_anchor_candidate(
     )
 
 
+def _rendered_card_block_has_candidates(block_text: str, *, allow_any_anchor: bool) -> bool:
+    if not block_text:
+        return False
+    if allow_any_anchor:
+        return True
+    return any(token in block_text.lower() for token in _JOB_HINT_TOKENS | _CTA_TOKENS)
+
+
+def _rendered_card_anchor_candidates(
+    anchors: list[dict[str, str]],
+    *,
+    href_tokens: tuple[str, ...],
+    allow_any_anchor: bool,
+) -> list[dict[str, str]]:
+    if allow_any_anchor:
+        return anchors
+    anchor = _pick_job_anchor(anchors, href_tokens=href_tokens, allow_any_anchor=allow_any_anchor)
+    return [anchor] if anchor else []
+
+
+def _scan_rendered_card_blocks(
+    *,
+    html: str,
+    jobs: list[RawJob],
+    seen_links: set[str],
+    page_url: str,
+    company: str,
+    source_id: str,
+    href_tokens: tuple[str, ...],
+    allow_any_anchor: bool,
+    block_tags: tuple[str, ...],
+) -> None:
+    for tag in block_tags:
+        for block_html in iter_block_fragments(html or "", tag):
+            block_text = clean_text(strip_html_text(block_html))
+            if not _rendered_card_block_has_candidates(
+                block_text, allow_any_anchor=allow_any_anchor
+            ):
+                continue
+            for anchor in _rendered_card_anchor_candidates(
+                list(iter_anchor_fragments(block_html)),
+                href_tokens=href_tokens,
+                allow_any_anchor=allow_any_anchor,
+            ):
+                _append_rendered_anchor_candidate(
+                    jobs=jobs,
+                    seen_links=seen_links,
+                    anchor=anchor,
+                    block_html=block_html,
+                    block_text=block_text,
+                    mode="block",
+                    page_url=page_url,
+                    company=company,
+                    source_id=source_id,
+                    href_tokens=href_tokens,
+                )
+
+
+def _scan_rendered_card_fallback_anchors(
+    *,
+    html: str,
+    jobs: list[RawJob],
+    seen_links: set[str],
+    page_url: str,
+    company: str,
+    source_id: str,
+    href_tokens: tuple[str, ...],
+) -> None:
+    page_text = clean_text(strip_html_text(html or ""))
+    for anchor in iter_anchor_fragments(html or ""):
+        _append_rendered_anchor_candidate(
+            jobs=jobs,
+            seen_links=seen_links,
+            anchor=anchor,
+            block_html=html or "",
+            block_text=page_text,
+            mode="fallback",
+            page_url=page_url,
+            company=company,
+            source_id=source_id,
+            href_tokens=href_tokens,
+        )
+
+
 def extract_rendered_card_jobs(
     html: str,
     *,
@@ -788,55 +879,27 @@ def extract_rendered_card_jobs(
     jobs: list[RawJob] = []
     seen_links: set[str] = set()
 
-    for tag in block_tags:
-        for block_html in iter_block_fragments(html or "", tag):
-            block_text = clean_text(strip_html_text(block_html))
-            if not block_text:
-                continue
-            lower = block_text.lower()
-            if not allow_any_anchor and not any(
-                token in lower for token in _JOB_HINT_TOKENS | _CTA_TOKENS
-            ):
-                continue
-            anchors = list(iter_anchor_fragments(block_html))
-            if not anchors:
-                continue
-            anchor_candidates = anchors
-            if not allow_any_anchor:
-                anchor = _pick_job_anchor(
-                    anchors, href_tokens=href_tokens, allow_any_anchor=allow_any_anchor
-                )
-                anchor_candidates = [anchor] if anchor else []
-            for anchor in anchor_candidates:
-                if not anchor:
-                    continue
-                _append_rendered_anchor_candidate(
-                    jobs=jobs,
-                    seen_links=seen_links,
-                    anchor=anchor,
-                    block_html=block_html,
-                    block_text=block_text,
-                    mode="block",
-                    page_url=page_url,
-                    company=company,
-                    source_id=source_id,
-                    href_tokens=href_tokens,
-                )
+    _scan_rendered_card_blocks(
+        html=html,
+        jobs=jobs,
+        seen_links=seen_links,
+        page_url=page_url,
+        company=company,
+        source_id=source_id,
+        href_tokens=href_tokens,
+        allow_any_anchor=allow_any_anchor,
+        block_tags=block_tags,
+    )
     if allow_any_anchor and not jobs:
-        page_text = clean_text(strip_html_text(html or ""))
-        for anchor in iter_anchor_fragments(html or ""):
-            _append_rendered_anchor_candidate(
-                jobs=jobs,
-                seen_links=seen_links,
-                anchor=anchor,
-                block_html=html or "",
-                block_text=page_text,
-                mode="fallback",
-                page_url=page_url,
-                company=company,
-                source_id=source_id,
-                href_tokens=href_tokens,
-            )
+        _scan_rendered_card_fallback_anchors(
+            html=html,
+            jobs=jobs,
+            seen_links=seen_links,
+            page_url=page_url,
+            company=company,
+            source_id=source_id,
+            href_tokens=href_tokens,
+        )
     return jobs
 
 

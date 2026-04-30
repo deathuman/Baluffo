@@ -233,7 +233,7 @@ cmd /c npm run lint:precommit
 
 ### Phase 5: Static plugin declaration collapse
 
-Status: custom static plugin parser C901 cleanup completed on 2026-04-30; rendered-card extraction remains pending.
+Status: custom static plugin parser and rendered-card extraction C901 cleanup completed on 2026-04-30.
 
 - Convert remaining simple plugin modules into declarations.
 - Delete modules that no longer own real source-specific logic.
