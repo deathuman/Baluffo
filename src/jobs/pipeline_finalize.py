@@ -14,7 +14,6 @@ from src.jobs.dedup import CanonicalDeduplicator
 from src.jobs.models import CanonicalJob
 from src.jobs.pipeline_runtime_summary import (
     build_detailed_source_rows,
-    build_fetch_task_progress_payload,
     snapshot_task_rows,
 )
 from src.jobs.pipeline_timing import build_runtime_timing_summary, percentile_ms
@@ -234,9 +233,8 @@ def _apply_final_output_loss_counts(
 def _write_output_rows(
     paths, deduped_payload_rows: list[dict[str, Any]]
 ) -> tuple[bool, bool, bool]:
-    if not deduped_payload_rows:
-        return False, False, False
-    validate_canonical_jobs_payload(deduped_payload_rows)
+    if deduped_payload_rows:
+        validate_canonical_jobs_payload(deduped_payload_rows)
     wrote_json = write_atomic_if_changed(
         paths.json_path,
         serialize_rows_for_json(deduped_payload_rows, OUTPUT_FIELDS),
@@ -392,6 +390,63 @@ def _output_sizes(paths) -> tuple[int, int, int]:
     )
 
 
+def _is_operational_excluded_row(row: dict[str, Any]) -> bool:
+    if norm_text(row.get("status")) != "excluded":
+        return False
+    reason = clean_text(row.get("exclusionReason"))
+    return reason != "only_sources_filter" and not reason.startswith("disabled_by_default:")
+
+
+def _final_source_rows(
+    detailed_source_rows: list[dict[str, Any]],
+    source_reports: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in [item for item in detailed_source_rows if isinstance(item, dict)]:
+        name = clean_text(row.get("name"))
+        if not name:
+            continue
+        rows.append(row)
+        seen.add(name)
+    for row in [item for item in source_reports if isinstance(item, dict)]:
+        name = clean_text(row.get("name"))
+        if not name or name in seen:
+            continue
+        if not _is_operational_excluded_row(row):
+            continue
+        rows.append(dict(row))
+        seen.add(name)
+    return rows
+
+
+def _completed_task_progress(summary: dict[str, Any]) -> dict[str, Any]:
+    source_count = max(0, int(summary.get("sourceCount") or 0))
+    failed_sources = max(0, int(summary.get("failedSources") or 0))
+    excluded_sources = max(0, int(summary.get("excludedSources") or 0))
+    successful_sources = max(0, int(summary.get("successfulSources") or 0))
+    resolved_sources = successful_sources + failed_sources + excluded_sources
+    output_count = max(0, int(summary.get("outputCount") or 0))
+    return {
+        "active": False,
+        "phaseKey": "completed",
+        "phaseLabel": "Completed",
+        "mode": "determinate",
+        "ratio": 1.0,
+        "counts": {
+            "sourceCount": source_count,
+            "totalTasks": source_count,
+            "queuedTasks": 0,
+            "runningTasks": 0,
+            "completedTasks": resolved_sources,
+            "resolvedSources": resolved_sources,
+            "outputCount": output_count,
+            "failedSources": failed_sources,
+            "excludedSources": excluded_sources,
+        },
+    }
+
+
 def finalize_pipeline_run(
     *,
     paths,
@@ -466,6 +521,22 @@ def finalize_pipeline_run(
         source_reports=source_reports,
         run_started_mono=run_started_mono,
     )
+    final_source_rows = _final_source_rows(detailed_source_rows, source_reports)
+    summary_payload = build_pipeline_summary(
+        dedup_stats,
+        deduped_rows,
+        source_reports,
+        len(canonical_rows),
+        preserved_previous,
+        len([row for row in STUDIO_SOURCE_REGISTRY if bool(row.get("enabledByDefault", True))]),
+        len(common_sources.load_registry_from_file(paths.pending_registry_path, [])),
+        common_sources.read_approved_since_last_run(paths.approval_state_path),
+        json_bytes=json_bytes,
+        csv_bytes=csv_bytes,
+        light_json_bytes=light_json_bytes,
+        lifecycle_counts_map=lifecycle_counts_map,
+        summary_source_rows=final_source_rows,
+    )
 
     report_payload = normalize_fetch_report_payload(
         {
@@ -488,37 +559,11 @@ def finalize_pipeline_run(
                 review_payload=social_review_payload,
                 review_artifact_path=str(social_review_path),
             ),
-            "taskProgress": build_fetch_task_progress_payload(
-                phase_key="completed",
-                phase_label="Completed",
-                task_rows=task_runtime.task_rows,
-                output_count=len(deduped_rows),
-                finished=True,
-            ),
+            "taskProgress": _completed_task_progress(summary_payload),
             "workItems": snapshot_task_rows(task_runtime.task_rows),
             "recentEvents": list(task_runtime.recent_events),
-            "summary": build_pipeline_summary(
-                dedup_stats,
-                deduped_rows,
-                source_reports,
-                len(canonical_rows),
-                preserved_previous,
-                len(
-                    [
-                        row
-                        for row in STUDIO_SOURCE_REGISTRY
-                        if bool(row.get("enabledByDefault", True))
-                    ]
-                ),
-                len(common_sources.load_registry_from_file(paths.pending_registry_path, [])),
-                common_sources.read_approved_since_last_run(paths.approval_state_path),
-                json_bytes=json_bytes,
-                csv_bytes=csv_bytes,
-                light_json_bytes=light_json_bytes,
-                lifecycle_counts_map=lifecycle_counts_map,
-                summary_source_rows=detailed_source_rows,
-            ),
-            "sources": detailed_source_rows,
+            "summary": summary_payload,
+            "sources": final_source_rows,
             "sourceFamilies": source_reports,
             "contaminationAudit": contamination_report,
             "cityGarbageAudit": city_garbage_audit,

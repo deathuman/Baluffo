@@ -145,6 +145,55 @@ def _normalize_outputs(payload: Any) -> dict[str, Any]:
     }
 
 
+def _completed_fetch_task_progress(summary: dict[str, Any]) -> dict[str, Any]:
+    source_count = _clamped_int(summary.get("sourceCount"), 0, 0)
+    failed_sources = _clamped_int(summary.get("failedSources"), 0, 0)
+    excluded_sources = _clamped_int(summary.get("excludedSources"), 0, 0)
+    successful_sources = _clamped_int(summary.get("successfulSources"), 0, 0)
+    resolved_sources = successful_sources + failed_sources + excluded_sources
+    output_count = _clamped_int(summary.get("outputCount"), 0, 0)
+    return {
+        "active": False,
+        "phaseKey": "completed",
+        "phaseLabel": "Completed",
+        "mode": "determinate",
+        "ratio": 1.0,
+        "counts": {
+            "sourceCount": source_count,
+            "totalTasks": source_count,
+            "queuedTasks": 0,
+            "runningTasks": 0,
+            "completedTasks": resolved_sources,
+            "resolvedSources": resolved_sources,
+            "outputCount": output_count,
+            "failedSources": failed_sources,
+            "excludedSources": excluded_sources,
+        },
+    }
+
+
+def _apply_completed_fetch_report_truth(payload: dict[str, Any]) -> dict[str, Any]:
+    if not clean_text(payload.get("finishedAt")):
+        return payload
+    summary = copy_json_object(payload.get("summary"))
+    source_rows = json_object_rows(payload.get("sources"))
+    if source_rows:
+        summary["sourceCount"] = len(source_rows)
+        summary["successfulSources"] = sum(
+            1 for row in source_rows if clean_text(row.get("status")).lower() == "ok"
+        )
+        summary["failedSources"] = sum(
+            1 for row in source_rows if clean_text(row.get("status")).lower() == "error"
+        )
+        summary["excludedSources"] = sum(
+            1 for row in source_rows if clean_text(row.get("status")).lower() == "excluded"
+        )
+    payload["active"] = False
+    payload["summary"] = summary
+    payload["taskProgress"] = _completed_fetch_task_progress(summary)
+    return payload
+
+
 def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     src = as_json_object(payload)
     live_task_payload = normalize_live_task_payload(
@@ -212,4 +261,4 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "healthSummary": copy_json_object(src.get("healthSummary")),
         "outputs": _normalize_outputs(src.get("outputs")),
     }
-    return normalized_payload
+    return _apply_completed_fetch_report_truth(normalized_payload)

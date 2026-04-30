@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -129,6 +130,20 @@ def _seed_redirect_cache_from_state(
         seed_redirect_cache(google_sheets_redirect_cache)
 
 
+def _existing_output_has_rows(json_path: Path) -> bool:
+    if not json_path.exists():
+        return False
+    try:
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if isinstance(payload, list):
+        return any(isinstance(row, dict) for row in payload)
+    if isinstance(payload, dict) and isinstance(payload.get("jobs"), list):
+        return any(isinstance(row, dict) for row in payload["jobs"])
+    return False
+
+
 def prepare_pipeline_run(
     *,
     output_dir: Path,
@@ -207,7 +222,9 @@ def prepare_pipeline_run(
     lifecycle_rows = read_job_lifecycle_state(paths.lifecycle_state_path)
 
     seed_existing_output_override = env_flag("BALUFFO_FETCH_SEED_EXISTING_OUTPUT", False)
-    incremental_cache_enabled = bool(not force_refresh_all and paths.json_path.exists())
+    incremental_cache_enabled = bool(
+        not force_refresh_all and _existing_output_has_rows(paths.json_path)
+    )
     effective_seed_from_existing_output = bool(
         seed_from_existing_output or incremental_cache_enabled or seed_existing_output_override
     )
