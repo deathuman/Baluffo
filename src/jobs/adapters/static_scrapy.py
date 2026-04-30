@@ -35,6 +35,17 @@ TIMEOUT_BUCKET_SOURCE_NAMES = {
 SCRAPY_STATIC_QUEUE_MAX_WORKERS = 4
 SCRAPY_STATIC_QUEUE_POLL_S = 0.5
 SCRAPY_STATIC_QUEUE_WAIT_PROGRESS_S = 5.0
+SCRAPY_STATS_INT_FIELDS = (
+    "downloader/request_count",
+    "downloader/response_count",
+    "downloader/response_status_count/200",
+    "retry/count",
+    "item_scraped_count",
+    "candidate_links_found",
+    "detail_pages_visited",
+    "jobs_emitted",
+    "jobs_rejected_validation",
+)
 
 
 def _as_list(value: object) -> list[Any]:
@@ -265,6 +276,134 @@ def _reject_invalid_envelope(
     return True
 
 
+def _run_runner_envelope(
+    *,
+    source_name: str,
+    pages: list[Any],
+    runner_path: Path,
+    config: dict[str, Any],
+    timeout_s: int,
+) -> tuple[Any, list[str]]:
+    source_errors: list[str] = []
+    result = subprocess.run(
+        _runner_command(runner_path),
+        input=json.dumps(config).encode("utf-8"),
+        capture_output=True,
+        timeout=_child_timeout_window_s(
+            source_name=source_name,
+            timeout_s=timeout_s,
+            pages=pages,
+        ),
+        check=False,
+    )
+    stderr_text = clean_text(result.stderr.decode("utf-8", errors="replace"))
+    if result.returncode != 0:
+        source_errors.append(f"{source_name}: subprocess exit {result.returncode}")
+    if stderr_text and result.returncode != 0:
+        source_errors.append(f"{source_name}: stderr: {stderr_text[:500]}")
+
+    stdout_text = result.stdout.decode("utf-8", errors="replace")
+    try:
+        return json.loads(stdout_text), source_errors
+    except json.JSONDecodeError as exc:
+        source_errors.append(f"{source_name}: JSON parse error: {exc}")
+        if stderr_text:
+            source_errors.append(f"{source_name}: stderr: {stderr_text[:500]}")
+        return {}, source_errors
+
+
+def _merge_envelope_detail(source_detail: dict[str, Any], envelope_dict: dict[str, Any]) -> None:
+    envelope_details = _as_list(envelope_dict.get("details"))
+    detail_0 = _as_dict(envelope_details[0]) if envelope_details else {}
+    if not detail_0:
+        return
+    source_detail.update(
+        {
+            "status": "ok" if clean_text(detail_0.get("status")).lower() == "ok" else "error",
+            "fetchedCount": _coerce_int(detail_0.get("fetchedCount")),
+            "keptCount": _coerce_int(detail_0.get("keptCount")),
+            "error": clean_text(detail_0.get("error")),
+            "classification": clean_text(detail_0.get("classification"))
+            or source_detail.get("classification"),
+            "browserFallbackRecommended": bool(detail_0.get("browserFallbackRecommended")),
+            "top_reject_reasons": _as_list(detail_0.get("top_reject_reasons")),
+            "deadListingPageCount": _coerce_int(detail_0.get("deadListingPageCount")),
+            "deadListingPageExamples": _as_list(detail_0.get("deadListingPageExamples")),
+            "sourceId": clean_text(detail_0.get("sourceId")) or source_detail.get("sourceId"),
+            "pages": _page_text_list(detail_0.get("pages")) or source_detail.get("pages"),
+        }
+    )
+
+
+def _merge_envelope_jobs(
+    *,
+    envelope_dict: dict[str, Any],
+    source_detail: dict[str, Any],
+    source: dict[str, Any],
+    source_name: str,
+) -> tuple[list[RawJob], list[str]]:
+    jobs = _as_list(envelope_dict.get("jobs"))
+    if not (bool(envelope_dict.get("ok")) and jobs):
+        source_detail["status"] = "error"
+        if not clean_text(source_detail.get("error")):
+            source_detail["error"] = "crawl failed"
+        source_detail["classification"] = "parse_error"
+        return [], [f"{source_name}: crawl failed"]
+
+    source_rows, parent_invalid_payload, job_errors = _collect_normalized_jobs(
+        jobs, source, source_name=source_name
+    )
+    kept = len(source_rows)
+    source_detail_loss = _as_dict(source_detail.get("loss"))
+    source_detail_loss["scrapyParentInvalidPayload"] = int(parent_invalid_payload)
+    source_detail["loss"] = source_detail_loss
+    source_detail["keptCount"] = max(int(source_detail.get("keptCount") or 0), kept)
+    source_detail["status"] = "ok"
+    if not clean_text(source_detail.get("classification")):
+        source_detail["classification"] = "ok_with_jobs" if kept > 0 else "ok_no_jobs"
+    source_detail["browserFallbackRecommended"] = False
+    return source_rows, job_errors
+
+
+def _merge_envelope_stats(source_detail: dict[str, Any], envelope_dict: dict[str, Any]) -> None:
+    stats = _as_dict(envelope_dict.get("stats"))
+    if not stats:
+        return
+    stats_payload = {key: _coerce_int(stats.get(key)) for key in SCRAPY_STATS_INT_FIELDS}
+    stats_payload["finish_reason"] = clean_text(stats.get("finish_reason"))
+    source_detail["stats"] = stats_payload
+    source_detail_loss = _as_dict(source_detail.get("loss"))
+    source_detail_loss["scrapyRunnerRejectedValidation"] = _coerce_int(
+        stats.get("jobs_rejected_validation")
+    )
+    source_detail_loss["scrapyDeadListingPageRejected"] = _coerce_int(
+        stats.get("dead_listing_pages_rejected")
+    )
+    source_detail["loss"] = source_detail_loss
+    if int(source_detail.get("fetchedCount") or 0) <= 0:
+        source_detail["fetchedCount"] = _coerce_int(stats_payload.get("downloader/response_count"))
+
+
+def _entry_error_result(
+    source_detail: dict[str, Any],
+    source_name: str,
+    *,
+    error: str,
+    classification: str,
+    source_error: str = "",
+) -> tuple[list[RawJob], dict[str, Any], list[str]]:
+    source_detail.update(
+        {
+            "status": "error",
+            "error": clean_text(error)[:500],
+            "classification": classification,
+            "browserFallbackRecommended": False,
+        }
+    )
+    _finalize_source_detail(source_detail)
+    return [], source_detail, [f"{source_name}: {clean_text(source_error or error)[:200]}"]
+
+
 def _ordered_rows(ordered_rows: list[list[RawJob] | None]) -> list[RawJob]:
     return [row for rows in ordered_rows if rows for row in rows]
 
@@ -297,133 +436,128 @@ def _run_scrapy_static_source_entry(
     source_errors: list[str] = []
     source_rows: list[RawJob] = []
     try:
-        result = subprocess.run(
-            _runner_command(runner_path),
-            input=json.dumps(config).encode("utf-8"),
-            capture_output=True,
-            timeout=_child_timeout_window_s(
-                source_name=source_name,
-                timeout_s=timeout_s,
-                pages=pages,
-            ),
-            check=False,
+        envelope, runner_errors = _run_runner_envelope(
+            source_name=source_name,
+            pages=pages,
+            runner_path=runner_path,
+            config=config,
+            timeout_s=timeout_s,
         )
-        stderr_text = clean_text(result.stderr.decode("utf-8", errors="replace"))
-        if result.returncode != 0:
-            source_errors.append(f"{source_name}: subprocess exit {result.returncode}")
-        if stderr_text and result.returncode != 0:
-            source_errors.append(f"{source_name}: stderr: {stderr_text[:500]}")
-
-        stdout_text = result.stdout.decode("utf-8", errors="replace")
-        try:
-            envelope = json.loads(stdout_text)
-        except json.JSONDecodeError as exc:
-            envelope = {}
-            source_errors.append(f"{source_name}: JSON parse error: {exc}")
-            if stderr_text:
-                source_errors.append(f"{source_name}: stderr: {stderr_text[:500]}")
-
+        source_errors.extend(runner_errors)
         if _reject_invalid_envelope(
             envelope, source_detail, source_errors, source_name=source_name
         ):
             return source_rows, source_detail, source_errors
 
         envelope_dict = _as_dict(envelope)
-        envelope_details = _as_list(envelope_dict.get("details"))
-        detail_0 = _as_dict(envelope_details[0]) if envelope_details else {}
-        if detail_0:
-            source_detail.update(
-                {
-                    "status": "ok"
-                    if clean_text(detail_0.get("status")).lower() == "ok"
-                    else "error",
-                    "fetchedCount": _coerce_int(detail_0.get("fetchedCount")),
-                    "keptCount": _coerce_int(detail_0.get("keptCount")),
-                    "error": clean_text(detail_0.get("error")),
-                    "classification": clean_text(detail_0.get("classification"))
-                    or source_detail.get("classification"),
-                    "browserFallbackRecommended": bool(detail_0.get("browserFallbackRecommended")),
-                    "top_reject_reasons": _as_list(detail_0.get("top_reject_reasons")),
-                    "deadListingPageCount": _coerce_int(detail_0.get("deadListingPageCount")),
-                    "deadListingPageExamples": _as_list(detail_0.get("deadListingPageExamples")),
-                    "sourceId": clean_text(detail_0.get("sourceId"))
-                    or source_detail.get("sourceId"),
-                    "pages": _page_text_list(detail_0.get("pages")) or source_detail.get("pages"),
-                }
-            )
-
-        partial_errors = _clean_errors(envelope_dict.get("partialErrors"))
-        for item in partial_errors:
-            source_errors.append(f"{source_name}: {item}")
-
-        jobs = _as_list(envelope_dict.get("jobs"))
-        if bool(envelope_dict.get("ok")) and jobs:
-            source_rows, parent_invalid_payload, job_errors = _collect_normalized_jobs(
-                jobs, source, source_name=source_name
-            )
-            source_errors.extend(job_errors)
-            kept = len(source_rows)
-            source_detail_loss = _as_dict(source_detail.get("loss"))
-            source_detail_loss["scrapyParentInvalidPayload"] = int(parent_invalid_payload)
-            source_detail["loss"] = source_detail_loss
-            source_detail["keptCount"] = max(int(source_detail.get("keptCount") or 0), kept)
-            source_detail["status"] = "ok"
-            if not clean_text(source_detail.get("classification")):
-                source_detail["classification"] = "ok_with_jobs" if kept > 0 else "ok_no_jobs"
-            source_detail["browserFallbackRecommended"] = False
-        else:
-            source_detail["status"] = "error"
-            if not clean_text(source_detail.get("error")):
-                source_detail["error"] = "crawl failed"
-            source_detail["classification"] = "parse_error"
-            source_errors.append(f"{source_name}: crawl failed")
-
-        stats = _as_dict(envelope_dict.get("stats"))
-        if stats:
-            stats_payload: dict[str, Any] = {
-                "downloader/request_count": _coerce_int(stats.get("downloader/request_count")),
-                "downloader/response_count": _coerce_int(stats.get("downloader/response_count")),
-                "downloader/response_status_count/200": _coerce_int(
-                    stats.get("downloader/response_status_count/200")
-                ),
-                "retry/count": _coerce_int(stats.get("retry/count")),
-                "item_scraped_count": _coerce_int(stats.get("item_scraped_count")),
-                "candidate_links_found": _coerce_int(stats.get("candidate_links_found")),
-                "detail_pages_visited": _coerce_int(stats.get("detail_pages_visited")),
-                "jobs_emitted": _coerce_int(stats.get("jobs_emitted")),
-                "jobs_rejected_validation": _coerce_int(stats.get("jobs_rejected_validation")),
-                "finish_reason": clean_text(stats.get("finish_reason")),
-            }
-            source_detail["stats"] = stats_payload
-            source_detail_loss = _as_dict(source_detail.get("loss"))
-            source_detail_loss["scrapyRunnerRejectedValidation"] = _coerce_int(
-                stats.get("jobs_rejected_validation")
-            )
-            source_detail_loss["scrapyDeadListingPageRejected"] = _coerce_int(
-                stats.get("dead_listing_pages_rejected")
-            )
-            source_detail["loss"] = source_detail_loss
-            if int(source_detail.get("fetchedCount") or 0) <= 0:
-                source_detail["fetchedCount"] = _coerce_int(
-                    stats_payload.get("downloader/response_count")
-                )
-
+        _merge_envelope_detail(source_detail, envelope_dict)
+        source_errors.extend(
+            f"{source_name}: {item}" for item in _clean_errors(envelope_dict.get("partialErrors"))
+        )
+        source_rows, job_errors = _merge_envelope_jobs(
+            envelope_dict=envelope_dict,
+            source_detail=source_detail,
+            source=source,
+            source_name=source_name,
+        )
+        source_errors.extend(job_errors)
+        _merge_envelope_stats(source_detail, envelope_dict)
         _finalize_source_detail(source_detail)
         return source_rows, source_detail, source_errors
     except subprocess.TimeoutExpired:
-        source_detail.update(
-            {
-                "status": "error",
-                "error": "subprocess timeout",
-                "classification": "browser_timeout",
-                "browserFallbackRecommended": False,
-            }
+        return _entry_error_result(
+            source_detail,
+            source_name,
+            error="subprocess timeout",
+            classification="browser_timeout",
         )
-        _finalize_source_detail(source_detail)
-        source_errors.append(f"{source_name}: subprocess timeout")
-        return source_rows, source_detail, source_errors
     except Exception as exc:  # noqa: BLE001
-        source_detail.update(
+        return _entry_error_result(
+            source_detail,
+            source_name,
+            error=clean_text(exc),
+            classification="parse_error",
+            source_error=f"{type(exc).__name__}: {clean_text(exc)[:200]}",
+        )
+
+
+def _report_no_scrapy_sources() -> list[RawJob]:
+    set_source_diagnostics(
+        "scrapy_static_sources",
+        adapter="scrapy_static",
+        studio="multiple",
+        details=[],
+        partial_errors=["No enabled scrapy_static sources"],
+    )
+    return []
+
+
+def _report_missing_scrapy_runner(runner_path: Path) -> list[RawJob]:
+    msg = f"scrapy_static runner missing: {runner_path}"
+    set_source_diagnostics(
+        "scrapy_static_sources",
+        adapter="scrapy_static",
+        studio="multiple",
+        details=[_base_detail({"name": "scrapy_static"}, error=msg)],
+        partial_errors=[msg],
+    )
+    return []
+
+
+def _scrapy_progress_payload(
+    *,
+    total_sources: int,
+    completed: int,
+    running: int,
+    error_count: int,
+    target_label: str = "",
+    target_url: str = "",
+    wait_reason: str = "",
+    message: str = "",
+    event_level: str = "muted",
+) -> dict[str, Any]:
+    return {
+        "phase_key": "loading_source",
+        "phase_label": "Processing browser fallback queue",
+        "counts": {
+            "totalSources": int(total_sources),
+            "completedSources": int(completed),
+            "runningSources": int(running),
+            "queuedSources": max(0, int(total_sources) - int(completed) - int(running)),
+            "errorSources": int(error_count),
+        },
+        "target_label": clean_text(target_label),
+        "target_url": clean_text(target_url),
+        "wait_reason": clean_text(wait_reason),
+        "message": clean_text(message),
+        "event_level": clean_text(event_level) or "muted",
+    }
+
+
+def _emit_scrapy_progress(
+    progress_callback: Callable[..., None] | None,
+    last_signature: str,
+    payload: dict[str, Any],
+) -> str:
+    if not callable(progress_callback):
+        return last_signature
+    signature = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    if signature != last_signature:
+        progress_callback(**payload)
+        return signature
+    return last_signature
+
+
+def _future_scrapy_result(
+    future: Future[tuple[list[RawJob], dict[str, Any], list[str]]],
+    source: dict[str, Any],
+) -> tuple[list[RawJob], dict[str, Any], list[str]]:
+    source_name = clean_text(source.get("name")) or "unknown"
+    try:
+        return future.result()
+    except Exception as exc:  # noqa: BLE001
+        detail = _base_detail(source, signal_quality="weak")
+        detail.update(
             {
                 "status": "error",
                 "error": clean_text(exc)[:500],
@@ -431,9 +565,154 @@ def _run_scrapy_static_source_entry(
                 "browserFallbackRecommended": False,
             }
         )
-        _finalize_source_detail(source_detail)
-        source_errors.append(f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}")
-        return source_rows, source_detail, source_errors
+        _finalize_source_detail(detail)
+        return [], detail, [f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}"]
+
+
+def _write_scrapy_diagnostics_snapshot(
+    ordered_details: list[dict[str, Any] | None],
+    ordered_errors: list[list[str] | None],
+) -> None:
+    set_source_diagnostics(
+        "scrapy_static_sources",
+        adapter="scrapy_static",
+        studio="multiple",
+        details=_ordered_details(ordered_details),
+        partial_errors=_ordered_errors(ordered_errors),
+    )
+
+
+def _handle_scrapy_wait_tick(
+    *,
+    heartbeat_callback: Callable[[], None] | None,
+    progress_callback: Callable[..., None] | None,
+    last_progress_signature: str,
+    last_wait_progress: float,
+    total: int,
+    completed: int,
+    running: int,
+    error_count: int,
+) -> tuple[float, str]:
+    if callable(heartbeat_callback):
+        heartbeat_callback()
+    now = time.monotonic()
+    if (now - last_wait_progress) < SCRAPY_STATIC_QUEUE_WAIT_PROGRESS_S:
+        return last_wait_progress, last_progress_signature
+    payload = _scrapy_progress_payload(
+        total_sources=total,
+        completed=completed,
+        running=running,
+        error_count=error_count,
+        wait_reason="awaiting_runner_completion",
+        message=f"Waiting for scrapy_static fallback queue ({completed}/{total} completed).",
+    )
+    return now, _emit_scrapy_progress(progress_callback, last_progress_signature, payload)
+
+
+def _run_scrapy_static_queue(
+    *,
+    sources: list[dict[str, Any]],
+    runner_path: Path,
+    timeout_s: int,
+    retries: int,
+    backoff_s: float,
+    heartbeat_callback: Callable[[], None] | None,
+    progress_callback: Callable[..., None] | None,
+    max_workers: int | None,
+) -> list[RawJob]:
+    total = len(sources)
+    queue_workers = min(max(1, int(max_workers or 1)), SCRAPY_STATIC_QUEUE_MAX_WORKERS, total)
+    ordered_rows: list[list[RawJob] | None] = [None] * total
+    ordered_details: list[dict[str, Any] | None] = [None] * total
+    ordered_errors: list[list[str] | None] = [None] * total
+    inflight: dict[Future[tuple[list[RawJob], dict[str, Any], list[str]]], int] = {}
+    completed = error_count = next_source_index = 0
+    last_wait_progress = 0.0
+    last_progress_signature = ""
+
+    def emit(**kwargs: Any) -> None:
+        nonlocal last_progress_signature
+        last_progress_signature = _emit_scrapy_progress(
+            progress_callback,
+            last_progress_signature,
+            _scrapy_progress_payload(
+                total_sources=total,
+                completed=completed,
+                running=len(inflight),
+                error_count=error_count,
+                **kwargs,
+            ),
+        )
+
+    def submit_source(executor: ThreadPoolExecutor, source_index: int) -> None:
+        source = sources[source_index]
+        inflight[
+            executor.submit(
+                _run_scrapy_static_source_entry,
+                source,
+                runner_path=runner_path,
+                timeout_s=timeout_s,
+                retries=retries,
+                backoff_s=backoff_s,
+            )
+        ] = source_index
+        pages = _as_list(source.get("pages"))
+        emit(
+            target_label=clean_text(source.get("name")),
+            target_url=clean_text(pages[0]) if pages else "",
+            message=f"Running scrapy_static fallback {clean_text(source.get('name')) or 'unknown'}.",
+        )
+
+    def completed_progress(source: dict[str, Any]) -> None:
+        source_name = clean_text(source.get("name")) or "unknown"
+        pages = _as_list(source.get("pages"))
+        emit(
+            target_label=source_name,
+            target_url=clean_text(pages[0]) if pages else "",
+            message=f"Completed scrapy_static fallback {source_name}.",
+        )
+
+    def fill_queue(executor: ThreadPoolExecutor) -> None:
+        nonlocal next_source_index
+        while next_source_index < total and len(inflight) < queue_workers:
+            submit_source(executor, next_source_index)
+            next_source_index += 1
+
+    with ThreadPoolExecutor(max_workers=queue_workers) as executor:
+        fill_queue(executor)
+        while inflight:
+            done, _pending = wait(
+                tuple(inflight.keys()),
+                timeout=SCRAPY_STATIC_QUEUE_POLL_S,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done:
+                last_wait_progress, last_progress_signature = _handle_scrapy_wait_tick(
+                    heartbeat_callback=heartbeat_callback,
+                    progress_callback=progress_callback,
+                    last_progress_signature=last_progress_signature,
+                    last_wait_progress=last_wait_progress,
+                    total=total,
+                    completed=completed,
+                    running=len(inflight),
+                    error_count=error_count,
+                )
+                continue
+            for future in sorted(done, key=lambda item: inflight[item]):
+                source_index = inflight.pop(future)
+                source = sources[source_index]
+                rows, detail, errors = _future_scrapy_result(future, source)
+                ordered_rows[source_index] = rows
+                ordered_details[source_index] = detail
+                ordered_errors[source_index] = errors
+                completed += 1
+                error_count += int(norm_text(detail.get("status")) != "ok")
+                _write_scrapy_diagnostics_snapshot(ordered_details, ordered_errors)
+                completed_progress(source)
+                if callable(heartbeat_callback):
+                    heartbeat_callback()
+            fill_queue(executor)
+    return _ordered_rows(ordered_rows)
 
 
 def run_scrapy_static_source(
@@ -450,172 +729,19 @@ def run_scrapy_static_source(
 
     sources = registry_entries("scrapy_static")
     if not sources:
-        set_source_diagnostics(
-            "scrapy_static_sources",
-            adapter="scrapy_static",
-            studio="multiple",
-            details=[],
-            partial_errors=["No enabled scrapy_static sources"],
-        )
-        return []
+        return _report_no_scrapy_sources()
 
     runner_path = Path(__file__).resolve().parents[2] / "scrapers" / "runner.py"
     if not runner_path.exists():
-        msg = f"scrapy_static runner missing: {runner_path}"
-        set_source_diagnostics(
-            "scrapy_static_sources",
-            adapter="scrapy_static",
-            studio="multiple",
-            details=[_base_detail({"name": "scrapy_static"}, error=msg)],
-            partial_errors=[msg],
-        )
-        return []
+        return _report_missing_scrapy_runner(runner_path)
 
-    total_sources = len(sources)
-    queue_workers = min(
-        max(1, int(max_workers or 1)),
-        SCRAPY_STATIC_QUEUE_MAX_WORKERS,
-        total_sources,
+    return _run_scrapy_static_queue(
+        sources=sources,
+        runner_path=runner_path,
+        timeout_s=timeout_s,
+        retries=retries,
+        backoff_s=backoff_s,
+        heartbeat_callback=heartbeat_callback,
+        progress_callback=progress_callback,
+        max_workers=max_workers,
     )
-    ordered_rows: list[list[RawJob] | None] = [None] * total_sources
-    ordered_details: list[dict[str, Any] | None] = [None] * total_sources
-    ordered_errors: list[list[str] | None] = [None] * total_sources
-    inflight: dict[Future[tuple[list[RawJob], dict[str, Any], list[str]]], int] = {}
-    completed = 0
-    error_count = 0
-    last_wait_progress = 0.0
-    last_progress_signature = ""
-
-    def _progress_counts() -> dict[str, int]:
-        running = len(inflight)
-        return {
-            "totalSources": int(total_sources),
-            "completedSources": int(completed),
-            "runningSources": int(running),
-            "queuedSources": max(0, int(total_sources) - int(completed) - int(running)),
-            "errorSources": int(error_count),
-        }
-
-    def _emit_progress(
-        *,
-        target_label: str = "",
-        target_url: str = "",
-        wait_reason: str = "",
-        message: str = "",
-        event_level: str = "muted",
-    ) -> None:
-        nonlocal last_progress_signature
-        if not callable(progress_callback):
-            return
-        payload = {
-            "phase_key": "loading_source",
-            "phase_label": "Processing browser fallback queue",
-            "counts": _progress_counts(),
-            "target_label": clean_text(target_label),
-            "target_url": clean_text(target_url),
-            "wait_reason": clean_text(wait_reason),
-            "message": clean_text(message),
-            "event_level": clean_text(event_level) or "muted",
-        }
-        signature = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-        if signature == last_progress_signature:
-            return
-        last_progress_signature = signature
-        progress_callback(**payload)
-
-    def _write_diagnostics_snapshot() -> None:
-        set_source_diagnostics(
-            "scrapy_static_sources",
-            adapter="scrapy_static",
-            studio="multiple",
-            details=_ordered_details(ordered_details),
-            partial_errors=_ordered_errors(ordered_errors),
-        )
-
-    def _submit_source(executor: ThreadPoolExecutor, source_index: int) -> None:
-        future: Future[tuple[list[RawJob], dict[str, Any], list[str]]] = executor.submit(
-            _run_scrapy_static_source_entry,
-            sources[source_index],
-            runner_path=runner_path,
-            timeout_s=timeout_s,
-            retries=retries,
-            backoff_s=backoff_s,
-        )
-        inflight[future] = source_index
-        source = sources[source_index]
-        pages = _as_list(source.get("pages"))
-        _emit_progress(
-            target_label=clean_text(source.get("name")),
-            target_url=clean_text(pages[0]) if pages else "",
-            message=(
-                f"Running scrapy_static fallback {clean_text(source.get('name')) or 'unknown'}."
-            ),
-        )
-
-    with ThreadPoolExecutor(max_workers=queue_workers) as executor:
-        next_source_index = 0
-        while next_source_index < total_sources and len(inflight) < queue_workers:
-            _submit_source(executor, next_source_index)
-            next_source_index += 1
-
-        while inflight:
-            done, _pending = wait(
-                tuple(inflight.keys()),
-                timeout=SCRAPY_STATIC_QUEUE_POLL_S,
-                return_when=FIRST_COMPLETED,
-            )
-            if not done:
-                if callable(heartbeat_callback):
-                    heartbeat_callback()
-                now = time.monotonic()
-                if (now - last_wait_progress) >= SCRAPY_STATIC_QUEUE_WAIT_PROGRESS_S:
-                    _emit_progress(
-                        wait_reason="awaiting_runner_completion",
-                        message=(
-                            "Waiting for scrapy_static fallback queue"
-                            f" ({completed}/{total_sources} completed)."
-                        ),
-                    )
-                    last_wait_progress = now
-                continue
-
-            for future in sorted(done, key=lambda item: inflight[item]):
-                source_index = inflight.pop(future)
-                source = sources[source_index]
-                source_name = clean_text(source.get("name")) or "unknown"
-                pages = _as_list(source.get("pages"))
-                try:
-                    rows, detail, errors = future.result()
-                except Exception as exc:  # noqa: BLE001
-                    detail = _base_detail(source, signal_quality="weak")
-                    detail.update(
-                        {
-                            "status": "error",
-                            "error": clean_text(exc)[:500],
-                            "classification": "parse_error",
-                            "browserFallbackRecommended": False,
-                        }
-                    )
-                    _finalize_source_detail(detail)
-                    rows = []
-                    errors = [f"{source_name}: {type(exc).__name__}: {clean_text(exc)[:200]}"]
-                ordered_rows[source_index] = rows
-                ordered_details[source_index] = detail
-                ordered_errors[source_index] = errors
-                completed += 1
-                if norm_text(detail.get("status")) != "ok":
-                    error_count += 1
-                _write_diagnostics_snapshot()
-                _emit_progress(
-                    target_label=source_name,
-                    target_url=clean_text(pages[0]) if pages else "",
-                    message=f"Completed scrapy_static fallback {source_name}.",
-                )
-                if callable(heartbeat_callback):
-                    heartbeat_callback()
-
-            while next_source_index < total_sources and len(inflight) < queue_workers:
-                _submit_source(executor, next_source_index)
-                next_source_index += 1
-
-    return _ordered_rows(ordered_rows)

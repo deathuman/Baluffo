@@ -201,11 +201,12 @@ cmd /c npm run lint:precommit
 
 ### Phase 3: Static Scrapy lifecycle decision
 
-Status: merge/thin, do not retire.
+Status: retained and C901-cleaned on 2026-04-30; registry-wide deletion remains separate.
 
 - Keep `scrapy_static_sources` as a supported fallback runtime path even when current evidence has no enabled rows.
 - Preserve the default loader, `run_scrapy_static_source(...)`, browser fallback queue behavior, compatibility exports, and frontend progress IDs.
 - Thin only duplicated report/error/progress plumbing where the slice stays LOC-negative or reduces `static_scrapy` C901.
+- Exception accepted on 2026-04-30: `static_scrapy.py` and the related browser-queue registry path were made C901-clean with a small production LOC increase because no safe fallback-lane deletion was available without widening into compatibility/source-shape removal.
 - Keep Scrapy child-process orchestration local unless a future shared runner can replace more code than it adds.
 
 Validation:

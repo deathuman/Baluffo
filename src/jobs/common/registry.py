@@ -55,58 +55,59 @@ def _migration_adapter_for_host(host: str) -> str:
 def _scrapy_static_registry_from_browser_queue(
     *, enabled_only: bool = True
 ) -> list[dict[str, Any]]:
-    queue_path = SCRAPY_BROWSER_QUEUE_PATH
+    del enabled_only
+    payload = _read_scrapy_browser_queue()
+    by_source: dict[str, list[dict[str, Any]]] = {}
+    for row in payload:
+        source_id = _scrapy_queue_source_id(row)
+        if source_id:
+            by_source.setdefault(source_id, []).append(row)
+    return [
+        source_row
+        for source_id, group in by_source.items()
+        if (source_row := _scrapy_queue_source_row(source_id, group))
+    ]
+
+
+def _read_scrapy_browser_queue() -> list[dict[str, Any]]:
     try:
-        if not queue_path.exists():
+        if not SCRAPY_BROWSER_QUEUE_PATH.exists():
             return []
-        payload = json.loads(queue_path.read_text(encoding="utf-8"))
+        payload = json.loads(SCRAPY_BROWSER_QUEUE_PATH.read_text(encoding="utf-8"))
         if not isinstance(payload, list):
             return []
     except (OSError, json.JSONDecodeError):
         return []
+    return [row for row in payload if isinstance(row, dict)]
 
-    by_source: dict[str, list[dict[str, Any]]] = {}
-    for row in payload:
-        if not isinstance(row, dict):
-            continue
-        if clean_text(row.get("adapter")) != "scrapy_static":
-            continue
-        page = clean_text(row.get("page"))
-        if not page:
-            continue
-        source_id = (
-            clean_text(row.get("sourceId"))
-            or f"scrapy_static:{hashlib.sha1(page.encode('utf-8')).hexdigest()[:12]}"
-        )
-        by_source.setdefault(source_id, []).append(row)
 
-    rows: list[dict[str, Any]] = []
-    for source_id, group in by_source.items():
+def _scrapy_queue_source_id(row: dict[str, Any]) -> str:
+    if clean_text(row.get("adapter")) != "scrapy_static":
+        return ""
+    page = clean_text(row.get("page"))
+    if not page:
+        return ""
+    return (
+        clean_text(row.get("sourceId"))
+        or f"scrapy_static:{hashlib.sha1(page.encode('utf-8')).hexdigest()[:12]}"
+    )
 
-        def path_len(r: dict[str, Any]) -> int:
-            return len(urlparse(clean_text(r.get("page")) or "").path)
 
-        best = min(group, key=path_len)
-        page = clean_text(best.get("page")) or ""
-        if not page:
-            continue
-        name = (
-            clean_text(best.get("name")) or clean_text(best.get("studio")) or "scrapy_static_source"
-        )
-        studio = clean_text(best.get("studio")) or name
-        rows.append(
-            {
-                "name": name,
-                "studio": studio,
-                "adapter": "scrapy_static",
-                "pages": [page],
-                "id": source_id,
-                "enabledByDefault": True,
-                "fetchStrategy": "http",
-                "cadenceMinutes": 0,
-            }
-        )
-    return rows
+def _scrapy_queue_source_row(source_id: str, group: list[dict[str, Any]]) -> dict[str, Any]:
+    best = min(group, key=lambda row: len(urlparse(clean_text(row.get("page"))).path))
+    page = clean_text(best.get("page"))
+    name = clean_text(best.get("name")) or clean_text(best.get("studio")) or "scrapy_static_source"
+    studio = clean_text(best.get("studio")) or name
+    return {
+        "name": name,
+        "studio": studio,
+        "adapter": "scrapy_static",
+        "pages": [page],
+        "id": source_id,
+        "enabledByDefault": True,
+        "fetchStrategy": "http",
+        "cadenceMinutes": 0,
+    }
 
 
 def _provider_keys_present_in_registry(
@@ -152,53 +153,73 @@ def registry_entries(
         normalized = dict(row)
         normalized["fetchStrategy"] = clean_text(row.get("fetchStrategy")) or "auto"
         normalized["cadenceMinutes"] = _clamped_int(row.get("cadenceMinutes"), 0, 0)
-        identity = source_url_fingerprint(normalized) or source_identity(normalized)
         if row_adapter == adapter:
-            if identity in seen_identities:
-                continue
-            seen_identities.add(identity)
-            rows.append(normalized)
+            _append_seen(rows, seen_identities, normalized)
             continue
         if adapter in {"bamboohr", "workday"} and row_adapter == "static":
-            host = _static_source_primary_host(row)
-            target_adapter = _migration_adapter_for_host(host)
-            if target_adapter != adapter:
+            derived = _provider_migration_entry(normalized, adapter)
+            if not derived:
                 continue
-            derived = dict(normalized)
-            derived["adapter"] = adapter
-            derived["fetchStrategy"] = "http"
-            derived["migrationSourceAdapter"] = "static"
-            derived["migrationSourceHost"] = host
-            identity = source_url_fingerprint(derived) or source_identity(derived)
-            if identity in seen_identities:
-                continue
-            seen_identities.add(identity)
-            rows.append(derived)
+            _append_seen(rows, seen_identities, derived)
 
     rules = redundant_static_rules if isinstance(redundant_static_rules, list) else []
     if adapter == "static" and rules:
-        provider_keys = _provider_keys_present_in_registry(
-            studio_source_registry, rules, enabled_only=enabled_only
+        rows = _filter_redundant_static_rows(
+            rows,
+            rules,
+            _provider_keys_present_in_registry(
+                studio_source_registry, rules, enabled_only=enabled_only
+            ),
         )
-        filtered: list[dict[str, Any]] = []
-        for r in rows:
-            host = _static_source_primary_host(r)
-            if not host:
-                filtered.append(r)
-                continue
-            skip = False
-            for rule in rules:
-                hosts = rule.get("hosts")
-                if not isinstance(hosts, list):
-                    continue
-                if not any(_host_matches_pattern(host, str(h)) for h in hosts):
-                    continue
-                ad = clean_text(rule.get("adapter"))
-                val = clean_text(rule.get("provider_id_value"))
-                if (ad, val) in provider_keys:
-                    skip = True
-                    break
-            if not skip:
-                filtered.append(r)
-        rows = filtered
     return rows
+
+
+def _append_seen(
+    rows: list[dict[str, Any]], seen_identities: set[str], row: dict[str, Any]
+) -> None:
+    identity = source_url_fingerprint(row) or source_identity(row)
+    if identity not in seen_identities:
+        seen_identities.add(identity)
+        rows.append(row)
+
+
+def _provider_migration_entry(row: dict[str, Any], adapter: str) -> dict[str, Any]:
+    host = _static_source_primary_host(row)
+    if _migration_adapter_for_host(host) != adapter:
+        return {}
+    derived = dict(row)
+    derived["adapter"] = adapter
+    derived["fetchStrategy"] = "http"
+    derived["migrationSourceAdapter"] = "static"
+    derived["migrationSourceHost"] = host
+    return derived
+
+
+def _matches_redundant_static_rule(
+    row: dict[str, Any], rules: list[dict[str, Any]], provider_keys: set[tuple[str, str]]
+) -> bool:
+    host = _static_source_primary_host(row)
+    if not host:
+        return False
+    for rule in rules:
+        hosts = rule.get("hosts")
+        if not isinstance(hosts, list):
+            continue
+        if (
+            any(_host_matches_pattern(host, str(h)) for h in hosts)
+            and (
+                clean_text(rule.get("adapter")),
+                clean_text(rule.get("provider_id_value")),
+            )
+            in provider_keys
+        ):
+            return True
+    return False
+
+
+def _filter_redundant_static_rows(
+    rows: list[dict[str, Any]],
+    rules: list[dict[str, Any]],
+    provider_keys: set[tuple[str, str]],
+) -> list[dict[str, Any]]:
+    return [row for row in rows if not _matches_redundant_static_rule(row, rules, provider_keys)]
