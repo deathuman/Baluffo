@@ -125,6 +125,7 @@ def test_source_policy_recommendations_tolerates_missing_and_malformed_soak_repo
 
     missing_payload = _get_recommendations_payload()
     assert missing_payload["providerCoverageLinkBackfill"]["reviewCandidates"] == []
+    assert missing_payload["suppressionEligibility"]["missingLinkedStaticRows"] == []
     assert missing_payload["warnings"] == []
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -133,9 +134,53 @@ def test_source_policy_recommendations_tolerates_missing_and_malformed_soak_repo
     malformed_payload = _get_recommendations_payload()
 
     assert malformed_payload["providerCoverageLinkBackfill"]["reviewCandidates"] == []
+    assert malformed_payload["suppressionEligibility"]["missingLinkedStaticRows"] == []
     assert any(
         "source_policy_soak_report_unreadable" in item for item in malformed_payload["warnings"]
     )
+
+
+def test_source_policy_recommendations_includes_suppression_eligibility(
+    admin_bridge_entrypoint_root,
+) -> None:
+    _write_json(
+        admin_bridge.SOURCE_POLICY_RECOMMENDATIONS_PATH,
+        {"schemaVersion": 1, "pairs": []},
+    )
+    _write_json(admin_bridge.SOURCE_POLICY_REVIEW_STATE_PATH, {"schemaVersion": 1, "pairs": {}})
+    _write_json(
+        _soak_report_path(admin_bridge_entrypoint_root),
+        {
+            "sections": {
+                "suppressionEligibility": {
+                    "readyLinkedProviderCount": 1,
+                    "selectedLinkedStaticCount": 0,
+                    "missingLinkedStaticCount": 1,
+                    "suppressedLinkedStaticCount": 0,
+                    "missingLinkedStaticRows": [
+                        {
+                            "providerSourceId": PROVIDER_ID,
+                            "providerSourceName": "Studio Greenhouse",
+                            "migrationSourceIdentity": STATIC_ID,
+                            "migrationSourceName": "Studio Static",
+                            "providerCoverageStatus": "validated_provider",
+                            "providerCoverageConsecutiveSuccesses": 2,
+                            "providerCoverageLatestKeptCount": 4,
+                            "providerReplacementReadiness": "ready_later",
+                            "reason": "linked_static_not_selected",
+                        }
+                    ],
+                }
+            }
+        },
+    )
+
+    payload = _get_recommendations_payload()
+
+    eligibility = payload["suppressionEligibility"]
+    assert eligibility["readyLinkedProviderCount"] == 1
+    assert eligibility["missingLinkedStaticCount"] == 1
+    assert eligibility["missingLinkedStaticRows"][0]["reason"] == "linked_static_not_selected"
 
 
 def test_source_policy_recommendations_includes_admin_owned_registry_link_without_soak(

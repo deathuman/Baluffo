@@ -155,3 +155,35 @@ test("linked migration identity buttons call action handler", () => {
     { action: "clear_migration_identity_link", providerSourceId: "greenhouse:slug:studio" }
   ]);
 });
+
+test("renders suppression eligibility diagnostics without actions", () => {
+  const reviewEl = makeEl();
+  renderAdminSourcePolicyReview(reviewEl, {
+    suppressionEligibility: {
+      missingLinkedStaticRows: [
+        {
+          providerSourceId: "greenhouse:slug:studio",
+          providerSourceName: "Studio Greenhouse",
+          migrationSourceIdentity: "static:listing_url:https://studio.example/jobs",
+          migrationSourceName: "Studio Static",
+          providerCoverageStatus: "validated_provider",
+          providerCoverageConsecutiveSuccesses: 2,
+          providerCoverageLatestKeptCount: 4,
+          providerReplacementReadiness: "ready_later",
+          linkedStaticRegistryState: "active",
+          reason: "linked_static_not_selected"
+        }
+      ]
+    }
+  });
+
+  assert.match(reviewEl.innerHTML, /Suppression Eligibility Visibility/);
+  assert.match(reviewEl.innerHTML, /Provider ready, static not selected/);
+  assert.match(reviewEl.innerHTML, /Studio Greenhouse/);
+  assert.match(reviewEl.innerHTML, /Studio Static/);
+  assert.match(reviewEl.innerHTML, /linked static not selected/);
+  assert.match(reviewEl.innerHTML, /Success streak<\/strong> 2/);
+  assert.match(reviewEl.innerHTML, /Latest kept<\/strong> 4/);
+  assert.doesNotMatch(reviewEl.innerHTML, />Apply link</);
+  assert.doesNotMatch(reviewEl.innerHTML, />Clear link</);
+});

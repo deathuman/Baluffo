@@ -179,6 +179,129 @@ def test_malformed_artifacts_warn_without_crashing(tmp_path: Path) -> None:
     assert "malformed_artifact" in _gate_ids(report)
 
 
+def _write_suppression_eligibility_runtime(
+    data_dir: Path,
+    *,
+    source_rows: list[dict[str, object]] | None = None,
+    include_static_registry: bool = True,
+) -> None:
+    _write_json(
+        data_dir / "jobs-fetch-report.json",
+        {
+            "providerCoverage": {
+                "totalProviderCandidates": 1,
+                "statusCounts": {"validated_provider": 1},
+            },
+            "sources": source_rows or [],
+        },
+    )
+    _write_json(
+        data_dir / "jobs-source-state.json",
+        {
+            "sources": {
+                "Studio Greenhouse": {
+                    "lastAdapter": "greenhouse",
+                    "providerCoverageStatus": "validated_provider",
+                    "providerReplacementReadiness": "ready_later",
+                    "providerCoverageConsecutiveSuccesses": 2,
+                    "providerCoverageLatestKeptCount": 4,
+                    "migrationSourceIdentity": "static:studio",
+                }
+            }
+        },
+    )
+    active_rows = [
+        {
+            "id": "provider:studio",
+            "name": "Studio Greenhouse",
+            "adapter": "greenhouse",
+            "registryState": "active",
+        }
+    ]
+    if include_static_registry:
+        active_rows.append(
+            {
+                "id": "static:studio",
+                "name": "Studio Static",
+                "adapter": "static",
+                "registryState": "active",
+            }
+        )
+    _write_json(data_dir / "source-registry-active.json", active_rows)
+    _write_json(data_dir / "source-registry-pending.json", [])
+    _write_json(data_dir / "source-registry-rejected.json", [])
+    _write_json(data_dir / "source-sync.json", {"schemaVersion": 2, "active": [], "pending": []})
+
+
+def test_ready_provider_missing_linked_static_source_row_is_reported(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _write_suppression_eligibility_runtime(data_dir)
+
+    report = soak.build_soak_report(data_dir)
+    section = report["sections"]["suppressionEligibility"]
+
+    assert section["readyLinkedProviderCount"] == 1
+    assert section["selectedLinkedStaticCount"] == 0
+    assert section["missingLinkedStaticCount"] == 1
+    assert section["suppressedLinkedStaticCount"] == 0
+    assert section["missingLinkedStaticRows"][0]["reason"] == "linked_static_not_selected"
+    assert section["missingLinkedStaticRows"][0]["providerSourceId"] == "provider:studio"
+    assert "ready_provider_linked_static_not_selected" in _gate_ids(report)
+    assert report["sections"]["sourceSyncCleanliness"]["clean"] is True
+
+
+def test_ready_provider_selected_suppressed_static_is_counted(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _write_suppression_eligibility_runtime(
+        data_dir,
+        source_rows=[
+            {
+                "name": "static_source::static:studio",
+                "status": "excluded",
+                "exclusionReason": "dynamic_redundant_provider",
+            }
+        ],
+    )
+
+    report = soak.build_soak_report(data_dir)
+    section = report["sections"]["suppressionEligibility"]
+
+    assert section["readyLinkedProviderCount"] == 1
+    assert section["selectedLinkedStaticCount"] == 1
+    assert section["missingLinkedStaticCount"] == 0
+    assert section["suppressedLinkedStaticCount"] == 1
+    assert section["missingLinkedStaticRows"] == []
+
+
+def test_ready_provider_selected_static_without_suppression_is_reported(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _write_suppression_eligibility_runtime(
+        data_dir,
+        source_rows=[{"name": "static_source::static:studio", "status": "ok"}],
+    )
+
+    report = soak.build_soak_report(data_dir)
+    section = report["sections"]["suppressionEligibility"]
+
+    assert section["selectedLinkedStaticCount"] == 1
+    assert section["suppressedLinkedStaticCount"] == 0
+    assert (
+        section["missingLinkedStaticRows"][0]["reason"] == "linked_static_selected_not_suppressed"
+    )
+
+
+def test_ready_provider_static_missing_from_registry_warns(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _write_suppression_eligibility_runtime(data_dir, include_static_registry=False)
+
+    report = soak.build_soak_report(data_dir)
+    section = report["sections"]["suppressionEligibility"]
+
+    assert section["missingLinkedStaticRows"][0]["reason"] == "linked_static_missing_from_registry"
+    assert section["missingLinkedStaticRows"][0]["linkedStaticFoundInRegistry"] is False
+    assert "ready_provider_linked_static_missing_from_registry" in _gate_ids(report)
+
+
 def test_static_only_detected_while_suppressed_warns(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     report_payload = _base_fetch_report()

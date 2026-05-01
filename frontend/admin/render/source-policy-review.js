@@ -71,6 +71,11 @@ function getMigrationLinkLinkedCandidates(payload) {
   return listValue(linkBackfill.linkedCandidates).filter(row => row && typeof row === "object");
 }
 
+function getSuppressionEligibilityRows(payload) {
+  const eligibility = objectValue(payload?.suppressionEligibility);
+  return listValue(eligibility.missingLinkedStaticRows).filter(row => row && typeof row === "object");
+}
+
 function selectedStaticSourceId(candidate) {
   return stringValue(
     candidate?.selectedStaticSourceId,
@@ -411,11 +416,58 @@ function renderMigrationLinkReviewSection(candidates, linkedCandidates) {
   `;
 }
 
+function renderSuppressionEligibilityRow(row) {
+  const providerName = stringValue(row?.providerSourceName, stringValue(row?.providerSourceId, "Unknown provider"));
+  const providerId = stringValue(row?.providerSourceId, "unknown-provider");
+  const staticName = stringValue(row?.migrationSourceName, stringValue(row?.staticSourceName, stringValue(row?.migrationSourceIdentity, "Unknown static source")));
+  const staticId = stringValue(row?.migrationSourceIdentity, stringValue(row?.staticSourceId, "unknown-static"));
+  return `
+    <div class="admin-source-policy-row admin-source-policy-suppression-eligibility-row">
+      <div class="admin-source-policy-row-main">
+        <div>
+          <div class="admin-source-policy-name">${escapeHtml(providerName)}</div>
+          <div class="admin-source-policy-id">${escapeHtml(providerId)}</div>
+        </div>
+        <div>
+          <div class="admin-source-policy-name">${escapeHtml(staticName)}</div>
+          <div class="admin-source-policy-id">${escapeHtml(staticId)}</div>
+        </div>
+      </div>
+      <div class="admin-source-policy-copy">
+        Provider ready, static not selected. Runtime suppression can emit a row only when the linked static source is selected in the current fetch.
+      </div>
+      <div class="admin-source-policy-meta">
+        <span><strong>Reason</strong> ${escapeHtml(formatMachineLabel(row?.reason))}</span>
+        <span><strong>Readiness</strong> ${escapeHtml(formatMachineLabel(row?.providerReplacementReadiness))}</span>
+        <span><strong>Coverage</strong> ${escapeHtml(formatMachineLabel(row?.providerCoverageStatus))}</span>
+        <span><strong>Success streak</strong> ${numberValue(row?.providerCoverageConsecutiveSuccesses).toLocaleString()}</span>
+        <span><strong>Latest kept</strong> ${numberValue(row?.providerCoverageLatestKeptCount).toLocaleString()}</span>
+        <span><strong>Registry state</strong> ${escapeHtml(formatMachineLabel(row?.linkedStaticRegistryState))}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderSuppressionEligibilitySection(rows) {
+  const diagnostics = Array.isArray(rows) ? rows : [];
+  if (!diagnostics.length) return "";
+  return `
+    <div class="admin-source-policy-suppression-eligibility">
+      <h4>Suppression Eligibility Visibility</h4>
+      <div class="admin-source-policy-copy">
+        These diagnostics are read-only. They explain why a ready linked provider did not emit a dynamic redundant-static suppression row in the latest fetch.
+      </div>
+      <div class="admin-source-policy-list">${diagnostics.map(renderSuppressionEligibilityRow).join("")}</div>
+    </div>
+  `;
+}
+
 export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
   if (!reviewEl) return;
   const rows = getPairs(payload);
   const migrationLinkCandidates = getMigrationLinkReviewCandidates(payload);
   const linkedMigrationCandidates = getMigrationLinkLinkedCandidates(payload);
+  const suppressionEligibilityRows = getSuppressionEligibilityRows(payload);
   const selectedFilter = normalizeFilterKey(options?.selectedFilter);
   const filteredRows = filterSourcePolicyReviewPairs(rows, selectedFilter);
   const canPatchInPlace = Boolean(reviewEl && reviewEl.dataset);
@@ -423,7 +475,8 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
     selectedFilter,
     rows,
     migrationLinkCandidates,
-    linkedMigrationCandidates
+    linkedMigrationCandidates,
+    suppressionEligibilityRows
   });
   if (canPatchInPlace && reviewEl.dataset.sourcePolicyReviewSig === signature) return;
   if (canPatchInPlace) reviewEl.dataset.sourcePolicyReviewSig = signature;
@@ -447,6 +500,7 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
         : `<div class="muted">${escapeHtml(emptyText)}</div>`}
     </div>
     ${renderMigrationLinkReviewSection(migrationLinkCandidates, linkedMigrationCandidates)}
+    ${renderSuppressionEligibilitySection(suppressionEligibilityRows)}
   `;
 
   if (typeof reviewEl.querySelectorAll !== "function") return;

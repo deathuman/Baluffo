@@ -105,6 +105,45 @@ def _load_provider_coverage_link_backfill(api: BridgeApi) -> tuple[dict[str, Any
     return result, ""
 
 
+def _empty_suppression_eligibility_payload() -> dict[str, Any]:
+    return {
+        "readyLinkedProviderCount": 0,
+        "selectedLinkedStaticCount": 0,
+        "missingLinkedStaticCount": 0,
+        "suppressedLinkedStaticCount": 0,
+        "missingLinkedStaticRows": [],
+    }
+
+
+def _load_suppression_eligibility(api: BridgeApi) -> tuple[dict[str, Any], str]:
+    path = _source_policy_soak_report_path(api)
+    empty_payload = _empty_suppression_eligibility_payload()
+    if not path.exists():
+        return empty_payload, ""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return empty_payload, f"source_policy_soak_report_unreadable: {exc}"
+    section = _as_dict(_as_dict(payload.get("sections")).get("suppressionEligibility"))
+    if not section:
+        return empty_payload, ""
+    result = {
+        key: section.get(key, empty_payload[key])
+        for key in (
+            "readyLinkedProviderCount",
+            "selectedLinkedStaticCount",
+            "missingLinkedStaticCount",
+            "suppressedLinkedStaticCount",
+        )
+    }
+    result["missingLinkedStaticRows"] = [
+        dict(row)
+        for row in _as_list(section.get("missingLinkedStaticRows"))
+        if isinstance(row, dict)
+    ]
+    return result, ""
+
+
 def _row_identity_tokens(row: dict[str, Any]) -> set[str]:
     return {
         token.lower()
@@ -913,6 +952,9 @@ def handle_get(
             api.SOURCE_POLICY_REVIEW_STATE_PATH
         )
         link_backfill, link_backfill_warning = _load_provider_coverage_link_backfill(api)
+        suppression_eligibility, suppression_eligibility_warning = _load_suppression_eligibility(
+            api
+        )
         link_backfill = _enrich_link_backfill_review_candidates(api, link_backfill)
         payload = merge_source_policy_review_state_into_recommendations(
             recommendations_artifact=recommendations,
@@ -924,12 +966,14 @@ def handle_get(
                 "recommendations": payload,
                 "reviewState": review_state,
                 "providerCoverageLinkBackfill": link_backfill,
+                "suppressionEligibility": suppression_eligibility,
                 "warnings": [
                     warning
                     for warning in (
                         recommendation_warning,
                         review_state_warning,
                         link_backfill_warning,
+                        suppression_eligibility_warning,
                     )
                     if warning
                 ],

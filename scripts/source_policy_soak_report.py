@@ -261,6 +261,188 @@ def _provider_coverage_status_by_token(
     return status_by_token
 
 
+def _source_row_tokens(row: dict[str, Any]) -> set[str]:
+    tokens = set(_source_identity_tokens(row))
+    name = clean_text(row.get("name"))
+    if name.startswith("static_source::"):
+        tokens.add(name[len("static_source::") :])
+    return {token for token in tokens if token}
+
+
+def _find_registry_row(
+    *,
+    active_rows: list[dict[str, Any]],
+    pending_rows: list[dict[str, Any]],
+    identity: str,
+) -> tuple[str, dict[str, Any]] | None:
+    target = clean_text(identity)
+    if not target:
+        return None
+    for bucket, rows in (("active", active_rows), ("pending", pending_rows)):
+        for row in rows:
+            if target in _source_identity_tokens(row):
+                return bucket, row
+    return None
+
+
+def _find_provider_registry_row(
+    *,
+    active_rows: list[dict[str, Any]],
+    pending_rows: list[dict[str, Any]],
+    source_name: str,
+    source_state_row: dict[str, Any],
+) -> tuple[str, dict[str, Any]] | None:
+    target_name = clean_text(source_name)
+    target_adapter = clean_text(
+        source_state_row.get("lastAdapter") or source_state_row.get("adapter")
+    )
+    for bucket, rows in (("active", active_rows), ("pending", pending_rows)):
+        for row in rows:
+            if target_name and clean_text(row.get("name")) == target_name:
+                return bucket, row
+            if (
+                target_name
+                and target_adapter
+                and clean_text(row.get("studio")) == target_name
+                and clean_text(row.get("adapter")) == target_adapter
+            ):
+                return bucket, row
+    return None
+
+
+def _suppression_eligibility_section(
+    *,
+    source_rows: list[dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
+    active_rows: list[dict[str, Any]],
+    pending_rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    selected_rows_by_static_identity: dict[str, dict[str, Any]] = {}
+    for row in source_rows:
+        for token in _source_row_tokens(row):
+            selected_rows_by_static_identity.setdefault(token, row)
+
+    ready_rows: list[dict[str, Any]] = []
+    gates: list[dict[str, Any]] = []
+    for source_name, raw_state_row in source_state_rows.items():
+        state_row = as_json_object(raw_state_row)
+        migration_source_identity = clean_text(state_row.get("migrationSourceIdentity"))
+        if not migration_source_identity:
+            continue
+        if clean_text(state_row.get("providerCoverageStatus")) != "validated_provider":
+            continue
+        consecutive_successes = _int_value(state_row.get("providerCoverageConsecutiveSuccesses"))
+        latest_kept = _int_value(state_row.get("providerCoverageLatestKeptCount"))
+        if consecutive_successes < 2 or latest_kept <= 0:
+            continue
+
+        provider_registry = _find_provider_registry_row(
+            active_rows=active_rows,
+            pending_rows=pending_rows,
+            source_name=source_name,
+            source_state_row=state_row,
+        )
+        provider_bucket = provider_registry[0] if provider_registry else ""
+        provider_row = provider_registry[1] if provider_registry else {}
+        static_registry = _find_registry_row(
+            active_rows=active_rows,
+            pending_rows=pending_rows,
+            identity=migration_source_identity,
+        )
+        static_bucket = static_registry[0] if static_registry else ""
+        static_row = static_registry[1] if static_registry else {}
+        selected_row = selected_rows_by_static_identity.get(migration_source_identity)
+        linked_static_selected = selected_row is not None
+        linked_static_suppressed = bool(
+            selected_row
+            and clean_text(selected_row.get("exclusionReason")) == "dynamic_redundant_provider"
+        )
+        if not static_registry:
+            reason = "linked_static_missing_from_registry"
+        elif linked_static_suppressed:
+            reason = "linked_static_suppressed"
+        elif linked_static_selected:
+            reason = "linked_static_selected_not_suppressed"
+        else:
+            reason = "linked_static_not_selected"
+
+        provider_id = clean_text(provider_row.get("id")) or clean_text(source_name)
+        static_name = clean_text(static_row.get("name")) or migration_source_identity
+        ready_rows.append(
+            {
+                "providerSourceId": provider_id,
+                "providerSourceName": clean_text(provider_row.get("name"))
+                or clean_text(source_name),
+                "providerAdapter": clean_text(provider_row.get("adapter"))
+                or clean_text(state_row.get("lastAdapter"))
+                or clean_text(state_row.get("adapter")),
+                "providerBucket": provider_bucket,
+                "staticSourceId": migration_source_identity,
+                "staticSourceName": static_name,
+                "migrationSourceIdentity": migration_source_identity,
+                "migrationSourceName": clean_text(provider_row.get("migrationSourceName"))
+                or static_name,
+                "providerCoverageStatus": clean_text(state_row.get("providerCoverageStatus")),
+                "providerCoverageConsecutiveSuccesses": consecutive_successes,
+                "providerCoverageLatestKeptCount": latest_kept,
+                "providerReplacementReadiness": clean_text(
+                    state_row.get("providerReplacementReadiness")
+                ),
+                "linkedStaticSelected": linked_static_selected,
+                "linkedStaticRegistryState": clean_text(static_row.get("registryState"))
+                or static_bucket,
+                "linkedStaticFoundInRegistry": bool(static_registry),
+                "linkedStaticFoundInSourceRows": linked_static_selected,
+                "reason": reason,
+            }
+        )
+
+    missing_rows = [
+        row
+        for row in ready_rows
+        if row["reason"]
+        in {
+            "linked_static_not_selected",
+            "linked_static_missing_from_registry",
+            "linked_static_selected_not_suppressed",
+        }
+    ]
+    not_selected = [row for row in ready_rows if row["reason"] == "linked_static_not_selected"]
+    missing_registry = [
+        row for row in ready_rows if row["reason"] == "linked_static_missing_from_registry"
+    ]
+    if not_selected:
+        gates.append(
+            _warning_gate(
+                "ready_provider_linked_static_not_selected",
+                "A ready linked provider could suppress a static source, but the linked static source was not selected in this fetch.",
+                {"pairs": [_pair_key(row) for row in not_selected]},
+            )
+        )
+    if missing_registry:
+        gates.append(
+            _warning_gate(
+                "ready_provider_linked_static_missing_from_registry",
+                "A ready linked provider points at a static source that is missing from active/pending registry rows.",
+                {"pairs": [_pair_key(row) for row in missing_registry]},
+            )
+        )
+    return (
+        {
+            "readyLinkedProviderCount": len(ready_rows),
+            "selectedLinkedStaticCount": sum(
+                1 for row in ready_rows if bool(row.get("linkedStaticSelected"))
+            ),
+            "missingLinkedStaticCount": len(missing_rows),
+            "suppressedLinkedStaticCount": sum(
+                1 for row in ready_rows if row.get("reason") == "linked_static_suppressed"
+            ),
+            "missingLinkedStaticRows": missing_rows,
+        },
+        gates,
+    )
+
+
 def _provider_migration_activation_section(
     *,
     discovery_report: dict[str, Any],
@@ -1623,6 +1805,13 @@ def _build_sections(
         source_state_rows=source_state_rows,
     )
     gates.extend(link_backfill_gates)
+    suppression_eligibility, suppression_eligibility_gates = _suppression_eligibility_section(
+        source_rows=source_rows,
+        source_state_rows=source_state_rows,
+        active_rows=active_rows,
+        pending_rows=pending_rows,
+    )
+    gates.extend(suppression_eligibility_gates)
     staged_provider_candidates_count = int(
         provider_migration_activation.get("stagedProviderCandidateCount") or 0
     )
@@ -1709,6 +1898,7 @@ def _build_sections(
         },
         "providerMigrationActivation": provider_migration_activation,
         "providerCoverageLinkBackfill": provider_coverage_link_backfill,
+        "suppressionEligibility": suppression_eligibility,
         "providerCoverageValidation": {
             **provider_counts,
             "totalProviderCandidates": int(provider_coverage.get("totalProviderCandidates") or 0),
@@ -1816,6 +2006,15 @@ def _build_sections(
         "providerCoverageBackfillAlreadyLinkedCount": int(
             provider_coverage_link_backfill.get("alreadyLinkedCount") or 0
         ),
+        "suppressionReadyLinkedProviderCount": int(
+            suppression_eligibility.get("readyLinkedProviderCount") or 0
+        ),
+        "suppressionMissingLinkedStaticCount": int(
+            suppression_eligibility.get("missingLinkedStaticCount") or 0
+        ),
+        "suppressionSuppressedLinkedStaticCount": int(
+            suppression_eligibility.get("suppressedLinkedStaticCount") or 0
+        ),
         **provider_counts,
         "dynamicRedundantStaticSuppressedCount": int(policy.get("suppressedCount") or 0),
         "suppressionPausedCount": int(policy.get("pausedCount") or 0),
@@ -1911,6 +2110,32 @@ def _review_candidates_markdown_rows(report: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _suppression_eligibility_markdown_rows(report: dict[str, Any]) -> list[str]:
+    rows = json_object_rows(
+        as_json_object(as_json_object(report.get("sections")).get("suppressionEligibility")).get(
+            "missingLinkedStaticRows"
+        )
+    )
+    lines = [
+        "| Provider | Linked static | Readiness | Successes | Latest kept | Reason |",
+        "|----------|---------------|-----------|-----------|-------------|--------|",
+    ]
+    if not rows:
+        lines.append("| none | none | none | `0` | `0` | none |")
+        return lines
+    for row in rows[:10]:
+        lines.append(
+            "| "
+            f"{clean_text(row.get('providerSourceName')) or clean_text(row.get('providerSourceId'))} | "
+            f"{clean_text(row.get('migrationSourceName')) or clean_text(row.get('migrationSourceIdentity'))} | "
+            f"`{clean_text(row.get('providerReplacementReadiness')) or 'unknown'}` | "
+            f"`{_int_value(row.get('providerCoverageConsecutiveSuccesses'))}` | "
+            f"`{_int_value(row.get('providerCoverageLatestKeptCount'))}` | "
+            f"`{clean_text(row.get('reason'))}` |"
+        )
+    return lines
+
+
 def render_markdown_report(report: dict[str, Any]) -> str:
     lines = [
         "# Source Policy Soak Report",
@@ -1960,6 +2185,22 @@ def render_markdown_report(report: dict[str, Any]) -> str:
                 ).items()
             )
         ),
+        "",
+        "## Suppression Eligibility",
+        "",
+        "Ready linked providers can only emit `dynamic_redundant_provider` when the linked static source is selected in the current fetch.",
+        "",
+        *_markdown_table(
+            list(
+                as_json_object(
+                    as_json_object(report.get("sections")).get("suppressionEligibility")
+                ).items()
+            )
+        ),
+        "",
+        "### Missing or unsuppressed linked statics",
+        "",
+        *_suppression_eligibility_markdown_rows(report),
         "",
         "## Quality Gates",
         "",
