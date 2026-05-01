@@ -878,7 +878,7 @@ def _advisory_link_rows(
                 static,
                 confidence=0.8,
                 reasons=["provider_migration_advisory_exact_identity"],
-                recommended_action="backfill_migration_identity_candidate",
+                recommended_action="needs_review",
             )
         )
     return rows
@@ -992,7 +992,9 @@ def _with_selected_link(
 ) -> dict[str, Any]:
     updated = dict(row)
     updated["confidence"] = round(confidence, 2)
-    updated["recommendedAction"] = "backfill_migration_identity_candidate"
+    updated["recommendedAction"] = (
+        "backfill_migration_identity_candidate" if confidence >= 0.9 else "needs_review"
+    )
     updated["blockers"] = []
     updated["reasons"] = sorted({*_link_reasons(row), reason})
     return updated
@@ -1027,6 +1029,122 @@ def _resolution_example(
             if clean_text(row.get("staticSourceId"))
         ],
     }
+
+
+def _source_state_evidence(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "registryState": clean_text(row.get("registryState")),
+        "hiddenFromDefault": bool(row.get("hiddenFromDefault")),
+        "duplicateOfSourceId": clean_text(row.get("duplicateOfSourceId")),
+        "pendingReason": clean_text(row.get("pendingReason")),
+        "lastKeptCount": _int_value(row.get("lastKeptCount")),
+        "lastStatus": clean_text(row.get("lastStatus")),
+        "lastSuccessfulAt": clean_text(row.get("lastSuccessfulAt")),
+        "lastFetchedAt": clean_text(row.get("lastFetchedAt")),
+        "evidenceScore": _int_value(row.get("evidenceScore")),
+        "evidenceReasons": [
+            clean_text(reason)
+            for reason in as_json_list(row.get("evidenceReasons"))
+            if clean_text(reason)
+        ],
+    }
+
+
+def _why_not_high_confidence(row: dict[str, Any]) -> str:
+    confidence = float(row.get("confidence") or 0)
+    if confidence >= 0.9:
+        return ""
+    reasons = set(_link_reasons(row))
+    if "source_state_disambiguation" in reasons:
+        return "Resolved by source-state history only; no exact advisory static identity."
+    return "Confidence is below the high-confidence threshold."
+
+
+def _ignored_alternative_row(row: dict[str, Any]) -> dict[str, Any]:
+    blockers = _link_blockers(row)
+    return {
+        "staticSourceId": clean_text(row.get("staticSourceId")),
+        "staticSourceName": clean_text(row.get("staticSourceName")),
+        "staticUrl": clean_text(row.get("staticUrl")),
+        "blockers": blockers,
+        "evidenceScore": _int_value(row.get("evidenceScore")),
+        "reasonIgnored": blockers[0] if blockers else clean_text(row.get("recommendedAction")),
+    }
+
+
+def _recommended_api_payload(row: dict[str, Any]) -> dict[str, Any]:
+    confidence = round(float(row.get("confidence") or 0), 2)
+    recommended_action = (
+        "backfill_migration_identity_candidate" if confidence >= 0.9 else "needs_review"
+    )
+    return {
+        "action": "apply_migration_identity_link",
+        "providerSourceId": clean_text(row.get("providerSourceId")),
+        "staticSourceId": clean_text(row.get("staticSourceId")),
+        "staticSourceName": clean_text(row.get("staticSourceName")),
+        "confidence": confidence,
+        "reasons": _link_reasons(row),
+        "recommendationSource": "provider_coverage_link_backfill",
+        "recommendedAction": recommended_action,
+    }
+
+
+def _review_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_provider: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        provider_id = clean_text(row.get("providerSourceId"))
+        if provider_id:
+            by_provider.setdefault(provider_id, []).append(row)
+    candidates: list[dict[str, Any]] = []
+    for row in rows:
+        confidence = round(float(row.get("confidence") or 0), 2)
+        blockers = _link_blockers(row)
+        if confidence < 0.75 or blockers:
+            continue
+        action = clean_text(row.get("recommendedAction"))
+        if action not in {"backfill_migration_identity_candidate", "needs_review"}:
+            continue
+        payload = _recommended_api_payload(row)
+        alternatives = [
+            _ignored_alternative_row(other)
+            for other in by_provider.get(clean_text(row.get("providerSourceId")), [])
+            if clean_text(other.get("staticSourceId"))
+            and clean_text(other.get("staticSourceId")) != clean_text(row.get("staticSourceId"))
+            and clean_text(other.get("recommendedAction")) == "insufficient_evidence"
+        ]
+        candidates.append(
+            {
+                "providerSourceId": clean_text(row.get("providerSourceId")),
+                "providerSourceName": clean_text(row.get("providerSourceName")),
+                "providerAdapter": clean_text(row.get("providerAdapter")),
+                "providerIdField": clean_text(row.get("providerIdField")),
+                "providerIdValue": clean_text(row.get("providerIdValue")),
+                "selectedStaticSourceId": clean_text(row.get("staticSourceId")),
+                "selectedStaticSourceName": clean_text(row.get("staticSourceName")),
+                "selectedStaticUrl": clean_text(row.get("staticUrl")),
+                "confidence": confidence,
+                "confidenceTier": "high" if confidence >= 0.9 else "medium",
+                "resolutionReason": next(
+                    (
+                        reason
+                        for reason in _link_reasons(row)
+                        if reason
+                        in {
+                            "advisory_identity_disambiguation",
+                            "source_state_disambiguation",
+                        }
+                    ),
+                    "",
+                ),
+                "whyNotHighConfidence": _why_not_high_confidence(row),
+                "evidenceReasons": _link_reasons(row),
+                "sourceStateEvidence": _source_state_evidence(row),
+                "ignoredAlternatives": alternatives,
+                "recommendedApiPayload": payload,
+                "apiEligible": confidence >= 0.75 and not blockers and bool(payload),
+            }
+        )
+    return candidates
 
 
 def _resolve_provider_link_rows(
@@ -1269,8 +1387,9 @@ def _provider_coverage_link_backfill_section(
         row
         for row in candidate_links
         if 0.75 <= float(row.get("confidence") or 0) < 0.9
-        and clean_text(row.get("recommendedAction")) == "backfill_migration_identity_candidate"
+        and clean_text(row.get("recommendedAction")) == "needs_review"
     ]
+    review_candidates = _review_candidates(links)
     section = {
         "activeProviderWithoutMigrationIdentityCount": len(active_without_identity),
         "candidateLinkCount": len(candidate_links),
@@ -1298,6 +1417,7 @@ def _provider_coverage_link_backfill_section(
         "blockerExamples": _blocker_examples(links),
         "ambiguityGroups": ambiguity_groups,
         "ambiguityResolutionExamples": resolution_examples[:8],
+        "reviewCandidates": review_candidates,
         "links": links,
     }
     gates: list[dict[str, Any]] = []
@@ -1762,6 +1882,35 @@ def _markdown_table(rows: list[tuple[str, Any]]) -> list[str]:
     return lines
 
 
+def _review_candidates_markdown_rows(report: dict[str, Any]) -> list[str]:
+    candidates = json_object_rows(
+        as_json_object(
+            as_json_object(report.get("sections")).get("providerCoverageLinkBackfill")
+        ).get("reviewCandidates")
+    )
+    lines = [
+        "| Provider | Selected static | Confidence | API eligible | Reason | Last kept | Last status | Why not high confidence |",
+        "|----------|-----------------|------------|--------------|--------|-----------|-------------|-------------------------|",
+    ]
+    if not candidates:
+        lines.append("| none | none | `0` | `false` | none | `0` | none | none |")
+        return lines
+    for candidate in candidates[:10]:
+        evidence = as_json_object(candidate.get("sourceStateEvidence"))
+        lines.append(
+            "| "
+            f"{clean_text(candidate.get('providerSourceName')) or clean_text(candidate.get('providerSourceId'))} | "
+            f"{clean_text(candidate.get('selectedStaticSourceName')) or clean_text(candidate.get('selectedStaticSourceId'))} | "
+            f"`{candidate.get('confidence')}` | "
+            f"`{bool(candidate.get('apiEligible'))}` | "
+            f"`{clean_text(candidate.get('resolutionReason'))}` | "
+            f"`{_int_value(evidence.get('lastKeptCount'))}` | "
+            f"`{clean_text(evidence.get('lastStatus'))}` | "
+            f"{clean_text(candidate.get('whyNotHighConfidence')) or 'none'} |"
+        )
+    return lines
+
+
 def render_markdown_report(report: dict[str, Any]) -> str:
     lines = [
         "# Source Policy Soak Report",
@@ -1799,6 +1948,10 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             "Resolved examples: "
             f"{len(json_object_rows(as_json_object(as_json_object(report.get('sections')).get('providerCoverageLinkBackfill')).get('ambiguityResolutionExamples')))}."
         ),
+        "",
+        "### Review candidates",
+        "",
+        *_review_candidates_markdown_rows(report),
         "",
         *_markdown_table(
             list(

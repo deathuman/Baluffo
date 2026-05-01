@@ -82,7 +82,7 @@ def test_provider_coverage_backfill_duplicate_advisory_candidate(
 
     assert section["candidateLinkCount"] == 1
     assert section["mediumConfidenceLinkCount"] == 1
-    assert link["recommendedAction"] == "backfill_migration_identity_candidate"
+    assert link["recommendedAction"] == "needs_review"
     assert link["confidence"] >= 0.75
     assert link["staticSourceId"] == "static:studio"
 
@@ -128,6 +128,7 @@ def test_provider_coverage_backfill_advisory_matches_custom_provider_id_and_gene
 
     assert section["candidateLinkCount"] == 1
     assert section["mediumConfidenceLinkCount"] == 1
+    assert link["recommendedAction"] == "needs_review"
     assert link["providerSourceId"] == "custom-provider-row"
     assert link["staticSourceId"] == "generic-static:studio"
 
@@ -174,11 +175,7 @@ def test_provider_coverage_backfill_exact_advisory_beats_company_name_only_alter
 
     report = soak.build_soak_report(data_dir)
     section = report["sections"]["providerCoverageLinkBackfill"]
-    candidate = next(
-        row
-        for row in section["links"]
-        if row["recommendedAction"] == "backfill_migration_identity_candidate"
-    )
+    candidate = next(row for row in section["links"] if row["recommendedAction"] == "needs_review")
 
     assert section["candidateLinkCount"] == 1
     assert section["mediumConfidenceLinkCount"] == 1
