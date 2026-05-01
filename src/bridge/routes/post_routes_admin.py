@@ -16,6 +16,7 @@ from src.bridge.routes.error_boundary import (
     send_json_boundary,
 )
 from src.bridge.routes.response_writer import BridgeResponseWriter
+from src.bridge.source_policy_migration_links import apply_source_policy_migration_link_action
 from src.jobs.common.contracts_source_policy_review_state import (
     apply_source_policy_review_action,
     read_source_policy_review_state_artifact,
@@ -78,10 +79,9 @@ def _json_error(exc: Exception) -> dict[str, Any]:
     return {"ok": False, "error": str(exc)}
 
 
-def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, payload: Any) -> bool:
-    state = api.load_state()
-    data = as_json_object(payload)
-
+def _handle_source_policy_post(
+    handler: BridgeResponseWriter, *, api: BridgeApi, path: str, data: dict[str, Any]
+) -> bool:
     if path == "/source-policy/review-action":
 
         def _payload() -> dict[str, Any]:
@@ -109,6 +109,29 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
             error_status=400,
             error_payload=lambda exc: {"ok": False, "error": str(exc)},
         )
+        return True
+
+    if path == "/source-policy/migration-link-action":
+
+        def _payload() -> dict[str, Any]:
+            return apply_source_policy_migration_link_action(api, data)
+
+        send_json_boundary(
+            handler,
+            _payload,
+            error_status=400,
+            error_payload=lambda exc: {"ok": False, "error": str(exc)},
+        )
+        return True
+
+    return False
+
+
+def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, payload: Any) -> bool:
+    state = api.load_state()
+    data = as_json_object(payload)
+
+    if _handle_source_policy_post(handler, api=api, path=path, data=data):
         return True
 
     if path == "/sources/manual":

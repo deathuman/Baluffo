@@ -76,6 +76,32 @@ def test_build_snapshot_excludes_source_policy_artifacts(monkeypatch):
     assert "sourcePolicyRecommendations" not in snapshot
 
 
+def test_build_snapshot_keeps_migration_identity_as_registry_provider_metadata(monkeypatch):
+    monkeypatch.setattr(sync, "now_iso", lambda: "2026-04-09T20:55:07.978053+00:00")
+    local = {
+        "active": [
+            {
+                "id": "greenhouse:slug:studio",
+                "adapter": "greenhouse",
+                "slug": "studio",
+                "migrationSourceIdentity": "static:listing_url:https://studio.example/jobs",
+                "migrationLinkedBy": "admin_provider_link_backfill",
+            }
+        ],
+        "pending": [],
+        "rejected": [],
+        "sourcePolicyReviewState": {"pairs": {}},
+    }
+
+    snapshot = sync.build_snapshot(local, source_label="admin_bridge")
+
+    assert snapshot["active"][0]["migrationSourceIdentity"] == (
+        "static:listing_url:https://studio.example/jobs"
+    )
+    assert snapshot["active"][0]["migrationLinkedBy"] == "admin_provider_link_backfill"
+    assert "sourcePolicyReviewState" not in snapshot
+
+
 def test_push_sources_snapshot_excludes_source_policy_payload(source_sync_test_root):
     source_sync_test_root.write_packaged_config()
     opener = _Recorder(

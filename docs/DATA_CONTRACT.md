@@ -492,6 +492,12 @@ coverage fields.
 | `providerCoverageSourceBundleOverlapCount` | `number` | Optional diagnostic count of output rows whose source bundle references this provider source. |
 | `providerReplacementReadiness` | `string` | Diagnostic only: `none`, `candidate`, or `ready_later`. `ready_later` means repeated provider success may be reviewed in a future explicit redundant-static slice; it does not mutate static sources. |
 | `migrationSourceIdentity` | `string` | Static/generic source identity that produced the provider migration evidence. |
+| `migrationSourceName` | `string` | Optional static/generic source display name linked by provider staging or explicit Admin migration identity backfill. |
+| `migrationConfidence` | `number` | Optional confidence score from explicit Admin migration identity backfill evidence. |
+| `migrationReasons` | `Array<string>` | Optional evidence tokens recorded by explicit Admin migration identity backfill. |
+| `migrationLinkedAt` | `string` | Timestamp for explicit Admin migration identity backfill. |
+| `migrationLinkedBy` | `string` | Actor that wrote the migration identity link. Admin backfill uses `admin_provider_link_backfill`; clear is allowed only for links owned by that actor. |
+| `migrationLinkSource` | `string` | Optional source of the Admin backfill recommendation, such as `provider_coverage_link_backfill`. |
 
 `providerCoverage` summary payload:
 
