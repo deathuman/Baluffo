@@ -7,8 +7,10 @@ import argparse
 import json
 import sys
 from collections import Counter
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -30,11 +32,13 @@ from src.jobs.common.contracts_source_policy_review_state import (
 from src.jobs.common.contracts_static_suppression_policy import (
     normalize_static_suppression_policy_payload,
 )
+from src.jobs.common.registry_defaults import REDUNDANT_STATIC_IF_PROVIDER
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.json_shapes import as_json_object, json_object_rows
 from src.shared.utils import now_iso
 from src.source_discovery.config import SUPPORTED_PROVIDERS
 from src.source_discovery.provider_migration_advisory import enrich_provider_migration_rows
+from src.source_registry_identity import source_identity
 
 SCHEMA_VERSION = "1.0"
 JSON_REPORT_NAME = "source-policy-soak-report.json"
@@ -74,6 +78,19 @@ PROVIDER_MIGRATION_ACTIONS = {
     "keep_static",
     "insufficient_evidence",
 }
+STATIC_LIKE_ADAPTERS = {"static", "scrapy_static"}
+STATIC_LIKE_STAGES = {"generic_static", "seed_careers_page", "sheet_directory"}
+PROVIDER_ID_FIELDS = (
+    "slug",
+    "account",
+    "company_id",
+    "subdomain",
+    "api_url",
+    "feed_url",
+    "board_url",
+    "listing_url",
+    "base_url",
+)
 
 
 def _read_json_artifact(path: Path) -> tuple[Any, str, str]:
@@ -474,6 +491,418 @@ def _provider_migration_activation_section(
     return section, gates
 
 
+def _url_from_row(row: dict[str, Any]) -> str:
+    for key in (
+        "listing_url",
+        "careersUrl",
+        "url",
+        "api_url",
+        "feed_url",
+        "board_url",
+        "base_url",
+        "detectedProviderUrl",
+        "currentUrl",
+    ):
+        value = clean_text(row.get(key))
+        if value:
+            return value
+    pages = row.get("pages")
+    if isinstance(pages, list):
+        for value in pages:
+            text = clean_text(value)
+            if text:
+                return text
+    return ""
+
+
+def _url_host(url: str) -> str:
+    try:
+        host = (urlparse(str(url or "")).netloc or "").strip().lower()
+    except ValueError:
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def _host_matches_pattern(host: str, pattern: str) -> bool:
+    clean_host = norm_text(host)
+    clean_pattern = norm_text(pattern)
+    if not clean_host or not clean_pattern:
+        return False
+    return (
+        fnmatch(clean_host, clean_pattern) if "*" in clean_pattern else clean_host == clean_pattern
+    )
+
+
+def _provider_id_value(row: dict[str, Any], field: str) -> str:
+    if field == "adapter":
+        return clean_text(row.get("adapter"))
+    return clean_text(row.get(field))
+
+
+def _provider_id_pair(row: dict[str, Any]) -> tuple[str, str]:
+    for field in PROVIDER_ID_FIELDS:
+        value = clean_text(row.get(field))
+        if value:
+            return field, value
+    return "", ""
+
+
+def _provider_identity_keys(row: dict[str, Any]) -> set[str]:
+    keys = _source_identity_tokens(row)
+    keys.add(source_identity(row))
+    adapter = clean_text(row.get("adapter"))
+    for field in PROVIDER_ID_FIELDS:
+        value = clean_text(row.get(field))
+        if adapter and value:
+            keys.add(f"{adapter}:{field}:{value}".lower())
+    return {key for key in keys if key}
+
+
+def _provider_matches_rule(row: dict[str, Any], rule: dict[str, Any]) -> bool:
+    adapter = clean_text(rule.get("adapter"))
+    field = clean_text(rule.get("provider_id_field"))
+    value = clean_text(rule.get("provider_id_value"))
+    if not adapter or not field or not value:
+        return False
+    return norm_text(row.get("adapter")) == norm_text(adapter) and norm_text(
+        _provider_id_value(row, field)
+    ) == norm_text(value)
+
+
+def _static_candidate(row: dict[str, Any]) -> dict[str, Any]:
+    adapter = norm_text(row.get("adapter") or row.get("currentAdapter"))
+    discovery_stage = norm_text(row.get("discoveryStage") or row.get("discoveryMethod"))
+    url = _url_from_row(row)
+    if adapter not in STATIC_LIKE_ADAPTERS and discovery_stage not in STATIC_LIKE_STAGES:
+        return {}
+    if not url:
+        return {}
+    return {
+        "staticSourceId": clean_text(row.get("id"))
+        or clean_text(row.get("sourceIdentity"))
+        or source_identity(row),
+        "staticSourceName": _source_name(row),
+        "staticUrl": url,
+        "host": _url_host(url),
+        "familyKey": norm_text(row.get("studio") or row.get("company") or row.get("name")),
+    }
+
+
+def _static_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        candidate = _static_candidate(row)
+        key = clean_text(candidate.get("staticSourceId")) if candidate else ""
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(candidate)
+    return out
+
+
+def _provider_link_row(
+    provider: dict[str, Any],
+    static: dict[str, Any],
+    *,
+    confidence: float,
+    reasons: list[str],
+    blockers: list[str] | None = None,
+    recommended_action: str,
+    provider_id_field: str = "",
+    provider_id_value: str = "",
+) -> dict[str, Any]:
+    fallback_field, fallback_value = _provider_id_pair(provider)
+    return {
+        "providerSourceId": clean_text(provider.get("id")) or source_identity(provider),
+        "providerSourceName": _source_name(provider),
+        "providerAdapter": clean_text(provider.get("adapter")),
+        "providerIdField": provider_id_field or fallback_field,
+        "providerIdValue": provider_id_value or fallback_value,
+        "staticSourceId": clean_text(static.get("staticSourceId")),
+        "staticSourceName": clean_text(static.get("staticSourceName")),
+        "staticUrl": clean_text(static.get("staticUrl")),
+        "confidence": round(float(confidence), 2),
+        "reasons": sorted({clean_text(reason) for reason in reasons if clean_text(reason)}),
+        "blockers": sorted(
+            {clean_text(blocker) for blocker in blockers or [] if clean_text(blocker)}
+        ),
+        "recommendedAction": recommended_action,
+    }
+
+
+def _linked_provider_row(provider: dict[str, Any]) -> dict[str, Any]:
+    static_id = clean_text(provider.get("migrationSourceIdentity"))
+    static = {
+        "staticSourceId": static_id,
+        "staticSourceName": static_id,
+        "staticUrl": clean_text(provider.get("migrationSourceUrl")),
+    }
+    return _provider_link_row(
+        provider,
+        static,
+        confidence=1.0,
+        reasons=["existing_migration_source_identity"],
+        recommended_action="already_linked",
+    )
+
+
+def _rule_link_rows(
+    provider: dict[str, Any], static_rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for rule in REDUNDANT_STATIC_IF_PROVIDER:
+        if not _provider_matches_rule(provider, as_json_object(rule)):
+            continue
+        hosts = rule.get("hosts")
+        if not isinstance(hosts, list):
+            continue
+        matches = [
+            static
+            for static in static_rows
+            if any(
+                _host_matches_pattern(clean_text(static.get("host")), str(host)) for host in hosts
+            )
+        ]
+        if not matches:
+            continue
+        ambiguous = len(matches) > 1
+        for static in matches:
+            rows.append(
+                _provider_link_row(
+                    provider,
+                    static,
+                    confidence=0.65 if ambiguous else 0.95,
+                    reasons=["redundant_static_rule_exact_match"],
+                    blockers=["ambiguous_static_match"] if ambiguous else [],
+                    recommended_action=(
+                        "ambiguous_static_match"
+                        if ambiguous
+                        else "backfill_migration_identity_candidate"
+                    ),
+                    provider_id_field=clean_text(rule.get("provider_id_field")),
+                    provider_id_value=clean_text(rule.get("provider_id_value")),
+                )
+            )
+    return rows
+
+
+def _advisory_provider_keys(row: dict[str, Any]) -> set[str]:
+    keys = {
+        clean_text(row.get("existingProviderSourceId")),
+        clean_text(row.get("providerStagingCandidateId")),
+    }
+    adapter = clean_text(row.get("detectedProviderFamily") or row.get("currentAdapter"))
+    provider_id = clean_text(row.get("detectedProviderId"))
+    for field in PROVIDER_ID_FIELDS:
+        if provider_id and adapter:
+            keys.add(f"{adapter}:{field}:{provider_id}".lower())
+    return {key for key in keys if key}
+
+
+def _advisory_static_candidate(row: dict[str, Any]) -> dict[str, Any]:
+    static_id = clean_text(
+        row.get("migrationSourceIdentity")
+        or row.get("staticSourceId")
+        or row.get("providerStagingSourceIdentity")
+    )
+    discovery_stage = norm_text(row.get("discoveryStage") or row.get("discoveryMethod"))
+    if not static_id and (
+        norm_text(row.get("currentAdapter") or row.get("adapter")) in STATIC_LIKE_ADAPTERS
+        or discovery_stage in STATIC_LIKE_STAGES
+    ):
+        static_id = clean_text(row.get("sourceIdentity") or row.get("id"))
+    url = clean_text(row.get("staticUrl") or row.get("currentUrl") or _url_from_row(row))
+    if not static_id or not url:
+        return {}
+    return {
+        "staticSourceId": static_id,
+        "staticSourceName": _source_name(row),
+        "staticUrl": url,
+    }
+
+
+def _advisory_link_rows(
+    provider: dict[str, Any], advisory_rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    provider_keys = _provider_identity_keys(provider)
+    rows: list[dict[str, Any]] = []
+    for advisory in advisory_rows:
+        action = clean_text(advisory.get("recommendedAction"))
+        if action != "already_covered_by_provider" and not bool(
+            advisory.get("duplicateOfActiveSource")
+        ):
+            continue
+        if not (provider_keys & _advisory_provider_keys(advisory)):
+            continue
+        static = _advisory_static_candidate(advisory)
+        if not static:
+            continue
+        rows.append(
+            _provider_link_row(
+                provider,
+                static,
+                confidence=0.8,
+                reasons=["provider_migration_advisory_exact_identity"],
+                recommended_action="backfill_migration_identity_candidate",
+            )
+        )
+    return rows
+
+
+def _company_name_only_blocker(
+    provider: dict[str, Any], static_rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    provider_family = norm_text(
+        provider.get("studio") or provider.get("company") or provider.get("name")
+    )
+    if not provider_family:
+        return {}
+    for static in static_rows:
+        if provider_family == norm_text(static.get("familyKey")):
+            return {
+                "providerSourceId": clean_text(provider.get("id")) or source_identity(provider),
+                "providerSourceName": _source_name(provider),
+                "staticSourceId": clean_text(static.get("staticSourceId")),
+                "staticSourceName": clean_text(static.get("staticSourceName")),
+                "blockers": ["company_name_only_ignored"],
+                "recommendedAction": "insufficient_evidence",
+            }
+    return {}
+
+
+def _blocker_examples(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    examples: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        for blocker in row.get("blockers", []):
+            key = clean_text(blocker)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            examples.append(
+                {
+                    "blocker": key,
+                    "providerSourceId": clean_text(row.get("providerSourceId")),
+                    "providerSourceName": clean_text(row.get("providerSourceName")),
+                    "staticSourceId": clean_text(row.get("staticSourceId")),
+                    "staticSourceName": clean_text(row.get("staticSourceName")),
+                    "recommendedAction": clean_text(row.get("recommendedAction")),
+                }
+            )
+    return examples[:8]
+
+
+def _provider_coverage_link_backfill_section(
+    *,
+    active_rows: list[dict[str, Any]],
+    pending_rows: list[dict[str, Any]],
+    discovery_candidates: list[dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    supported = {norm_text(provider) for provider in SUPPORTED_PROVIDERS}
+    active_providers = [row for row in active_rows if norm_text(row.get("adapter")) in supported]
+    active_without_identity = [
+        row for row in active_providers if not clean_text(row.get("migrationSourceIdentity"))
+    ]
+    already_linked = [
+        _linked_provider_row(row)
+        for row in active_providers
+        if clean_text(row.get("migrationSourceIdentity"))
+    ]
+    static_rows = _static_candidates([*active_rows, *pending_rows, *discovery_candidates])
+    enriched_advisory = enrich_provider_migration_rows(
+        discovery_candidates,
+        active_rows=active_rows,
+        pending_rows=pending_rows,
+    )
+    links: list[dict[str, Any]] = [*already_linked]
+    diagnostic_rows: list[dict[str, Any]] = []
+    for provider in active_without_identity:
+        provider_links = [
+            *_rule_link_rows(provider, static_rows),
+            *_advisory_link_rows(provider, [*discovery_candidates, *enriched_advisory]),
+        ]
+        if provider_links:
+            links.extend(provider_links)
+            continue
+        blocker = _company_name_only_blocker(provider, static_rows)
+        if blocker:
+            diagnostic_rows.append(blocker)
+            continue
+        field, value = _provider_id_pair(provider)
+        blockers = [] if field and value else ["provider_id_missing"]
+        if not blockers:
+            blockers = ["insufficient_evidence"]
+        diagnostic_rows.append(
+            _provider_link_row(
+                provider,
+                {},
+                confidence=0.0,
+                reasons=[],
+                blockers=blockers,
+                recommended_action="insufficient_evidence",
+                provider_id_field=field,
+                provider_id_value=value,
+            )
+        )
+    links.extend(diagnostic_rows)
+    candidate_links = [
+        row
+        for row in links
+        if clean_text(row.get("recommendedAction")) != "already_linked"
+        and clean_text(row.get("recommendedAction")) != "insufficient_evidence"
+    ]
+    blocker_counts = Counter(
+        blocker for row in links for blocker in row.get("blockers", []) if clean_text(blocker)
+    )
+    high_confidence = [
+        row
+        for row in candidate_links
+        if float(row.get("confidence") or 0) >= 0.9
+        and clean_text(row.get("recommendedAction")) == "backfill_migration_identity_candidate"
+    ]
+    medium_confidence = [
+        row
+        for row in candidate_links
+        if 0.75 <= float(row.get("confidence") or 0) < 0.9
+        and clean_text(row.get("recommendedAction")) == "backfill_migration_identity_candidate"
+    ]
+    section = {
+        "activeProviderWithoutMigrationIdentityCount": len(active_without_identity),
+        "candidateLinkCount": len(candidate_links),
+        "highConfidenceLinkCount": len(high_confidence),
+        "mediumConfidenceLinkCount": len(medium_confidence),
+        "rejectedLinkCount": sum(
+            1
+            for row in links
+            if clean_text(row.get("recommendedAction")) == "insufficient_evidence"
+        ),
+        "alreadyLinkedCount": len(already_linked),
+        "blockerCounts": dict(sorted(blocker_counts.items())),
+        "blockerExamples": _blocker_examples(links),
+        "links": links,
+    }
+    gates: list[dict[str, Any]] = []
+    if high_confidence:
+        gates.append(
+            _warning_gate(
+                "provider_coverage_link_high_confidence_candidates",
+                "High-confidence provider/static migration identity backfill candidates exist.",
+                {"highConfidenceLinkCount": len(high_confidence)},
+            )
+        )
+    ambiguous_count = int(blocker_counts.get("ambiguous_static_match") or 0)
+    if ambiguous_count > 0:
+        gates.append(
+            _warning_gate(
+                "provider_coverage_link_ambiguous_static_match",
+                "Provider coverage link backfill found ambiguous static matches.",
+                {"ambiguousStaticMatchCount": ambiguous_count},
+            )
+        )
+    return section, gates
+
+
 def _overlap_counts(overlap: dict[str, Any]) -> dict[str, int]:
     pairs = json_object_rows(overlap.get("pairs"))
     statuses = Counter(clean_text(pair.get("auditStatus")) for pair in pairs)
@@ -634,6 +1063,12 @@ def _build_sections(
         provider_coverage=provider_coverage,
     )
     gates.extend(activation_gates)
+    provider_coverage_link_backfill, link_backfill_gates = _provider_coverage_link_backfill_section(
+        active_rows=active_rows,
+        pending_rows=pending_rows,
+        discovery_candidates=discovery_candidates,
+    )
+    gates.extend(link_backfill_gates)
     staged_provider_candidates_count = int(
         provider_migration_activation.get("stagedProviderCandidateCount") or 0
     )
@@ -719,6 +1154,7 @@ def _build_sections(
             "pendingProviderMigrationCandidateCount": pending_provider_migration_count,
         },
         "providerMigrationActivation": provider_migration_activation,
+        "providerCoverageLinkBackfill": provider_coverage_link_backfill,
         "providerCoverageValidation": {
             **provider_counts,
             "totalProviderCandidates": int(provider_coverage.get("totalProviderCandidates") or 0),
@@ -814,6 +1250,18 @@ def _build_sections(
         "providerMigrationCandidatesNoFetchCount": int(
             provider_migration_activation.get("providerMigrationCandidatesNoFetchCount") or 0
         ),
+        "providerCoverageBackfillCandidateLinkCount": int(
+            provider_coverage_link_backfill.get("candidateLinkCount") or 0
+        ),
+        "providerCoverageBackfillHighConfidenceLinkCount": int(
+            provider_coverage_link_backfill.get("highConfidenceLinkCount") or 0
+        ),
+        "providerCoverageBackfillMediumConfidenceLinkCount": int(
+            provider_coverage_link_backfill.get("mediumConfidenceLinkCount") or 0
+        ),
+        "providerCoverageBackfillAlreadyLinkedCount": int(
+            provider_coverage_link_backfill.get("alreadyLinkedCount") or 0
+        ),
         **provider_counts,
         "dynamicRedundantStaticSuppressedCount": int(policy.get("suppressedCount") or 0),
         "suppressionPausedCount": int(policy.get("pausedCount") or 0),
@@ -898,6 +1346,18 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             list(
                 as_json_object(
                     as_json_object(report.get("sections")).get("providerMigrationActivation")
+                ).items()
+            )
+        ),
+        "",
+        "## Provider Coverage Link Backfill",
+        "",
+        "Advisory only: no `migrationSourceIdentity` values are written by this report.",
+        "",
+        *_markdown_table(
+            list(
+                as_json_object(
+                    as_json_object(report.get("sections")).get("providerCoverageLinkBackfill")
                 ).items()
             )
         ),
