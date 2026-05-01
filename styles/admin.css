@@ -381,6 +381,92 @@
   font-size: 0.85rem;
 }
 
+.admin-source-policy-review {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0 0 0.75rem;
+  padding: 0.62rem 0.68rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--table-row-even) 58%, transparent);
+}
+
+.admin-source-policy-copy {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.admin-source-policy-filters {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.admin-source-policy-filters .btn.active {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.admin-source-policy-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-source-policy-row {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.62rem 0.68rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-4) 72%, transparent);
+}
+
+.admin-source-policy-row-main,
+.admin-source-policy-meta {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.admin-source-policy-row-main {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-source-policy-name {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.admin-source-policy-id {
+  margin-top: 0.12rem;
+  color: var(--text-muted);
+  font-family: Consolas, Menlo, Monaco, monospace;
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-source-policy-meta {
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.admin-source-policy-meta strong {
+  color: var(--text-subtle);
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.35px;
+  text-transform: uppercase;
+}
+
+.admin-source-policy-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
 @keyframes jobs-pipeline-pulse {
   0% { opacity: 0.5; transform: scale(0.9); }
   50% { opacity: 1; transform: scale(1.02); }
@@ -1114,6 +1200,10 @@
 
   .admin-discovery-filter-card .saved-custom-filter-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-source-policy-row-main {
+    grid-template-columns: 1fr;
   }
 }
 

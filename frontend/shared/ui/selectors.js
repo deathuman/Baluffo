@@ -189,6 +189,7 @@ export const UI_TOKENS = Object.freeze({
     opsAlerts: "admin-ops-alerts",
     opsKpis: "admin-ops-kpis",
     opsSchedule: "admin-ops-schedule",
+    sourcePolicyReview: "admin-source-policy-review",
     opsFetcherMetrics: "admin-ops-fetcher-metrics",
     opsTrends: "admin-ops-trends",
     opsHistory: "admin-ops-history",
@@ -200,6 +201,7 @@ export const UI_TOKENS = Object.freeze({
     wipeBtn: "admin-wipe-btn",
     sourceCheckbox: "source-checkbox",
     alertAckBtn: "admin-alert-ack-btn",
+    sourcePolicyFilterBtn: "admin-source-policy-filter-btn",
     sourcePolicyActionBtn: "admin-source-policy-action-btn"
   }
 });

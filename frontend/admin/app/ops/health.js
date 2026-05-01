@@ -7,6 +7,7 @@ import {
   renderAdminOpsSchedule,
   renderAdminOpsTrends
 } from "../../render.js";
+import { renderAdminSourcePolicyReview } from "../../render/source-policy-review.js";
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
@@ -24,6 +25,7 @@ export function createOpsHealthController({
   renderAdminOpsKpis: renderAdminOpsKpisImpl = renderAdminOpsKpis,
   renderAdminOpsSchedule: renderAdminOpsScheduleImpl = renderAdminOpsSchedule,
   renderAdminOpsFetcherMetrics: renderAdminOpsFetcherMetricsImpl = renderAdminOpsFetcherMetrics,
+  renderAdminSourcePolicyReview: renderAdminSourcePolicyReviewImpl = renderAdminSourcePolicyReview,
   renderAdminOpsTrends: renderAdminOpsTrendsImpl = renderAdminOpsTrends,
   renderAdminOpsHistory: renderAdminOpsHistoryImpl = renderAdminOpsHistory,
   loadSyncStatus,
@@ -54,6 +56,9 @@ export function createOpsHealthController({
     }
     if (refs.adminOpsKpisEl) refs.adminOpsKpisEl.innerHTML = "";
     if (refs.adminOpsScheduleEl) refs.adminOpsScheduleEl.innerHTML = "";
+    if (refs.adminSourcePolicyReviewEl) {
+      refs.adminSourcePolicyReviewEl.innerHTML = `<div class="muted">${escapeHtml(message)}</div>`;
+    }
     if (refs.adminOpsFetcherMetricsEl) refs.adminOpsFetcherMetricsEl.innerHTML = "";
     if (refs.adminOpsTrendsEl) refs.adminOpsTrendsEl.textContent = message;
     if (refs.adminOpsHistoryEl) {
@@ -75,6 +80,41 @@ export function createOpsHealthController({
     }, waitMs));
   }
 
+  function buildSourcePolicyActionPayload(row, action) {
+    const payload = {
+      action,
+      staticSourceId: String(row?.staticSourceId || ""),
+      staticSourceName: String(row?.staticSourceName || ""),
+      providerSourceId: String(row?.providerSourceId || ""),
+      providerSourceName: String(row?.providerSourceName || "")
+    };
+    if (action === "snooze") {
+      payload.snoozedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    }
+    return payload;
+  }
+
+  async function handleSourcePolicyAction(row, action) {
+    if (!row || !action) return;
+    try {
+      await postBridge("/source-policy/review-action", buildSourcePolicyActionPayload(row, action));
+      await loadOpsHealthData();
+    } catch (err) {
+      showToast(`Could not update source policy review: ${getErrorMessage(err)}`, "error");
+    }
+  }
+
+  function renderSourcePolicyReviewQueue(payload = state.latestSourcePolicyRecommendationsPayload || {}) {
+    renderAdminSourcePolicyReviewImpl(refs.adminSourcePolicyReviewEl, payload || {}, {
+      selectedFilter: state.sourcePolicyReviewFilter || "all",
+      onSourcePolicyFilter: filter => {
+        state.sourcePolicyReviewFilter = filter || "all";
+        renderSourcePolicyReviewQueue(state.latestSourcePolicyRecommendationsPayload || payload || {});
+      },
+      onSourcePolicyAction: handleSourcePolicyAction
+    });
+  }
+
   async function loadOpsHealthData(options = {}) {
     if (state.adminBusyState.opsLoad) {
       if (options?.fromPoll) scheduleOpsHealthPolling(idlePollIntervalMs);
@@ -91,11 +131,12 @@ export function createOpsHealthController({
     const showLoadingState = !options?.fromPoll && !state.latestOpsHealthCache;
     if (showLoadingState && refs.adminOpsTrendsEl) refs.adminOpsTrendsEl.textContent = "Loading operations health...";
     try {
-      const [healthResult, historyResult, taskStateResult, fetcherMetricsResult] = await Promise.allSettled([
+      const [healthResult, historyResult, taskStateResult, fetcherMetricsResult, sourcePolicyResult] = await Promise.allSettled([
         getBridge("/ops/health"),
         getBridge("/ops/history?limit=80"),
         getBridge("/ops/task-state"),
-        getBridge("/ops/fetcher-metrics?windowRuns=80")
+        getBridge("/ops/fetcher-metrics?windowRuns=80"),
+        getBridge("/source-policy/recommendations")
       ]);
       const health = (
         healthResult.status === "fulfilled"
@@ -130,6 +171,23 @@ export function createOpsHealthController({
       const fetcherMetrics = fetcherMetricsResult.status === "fulfilled"
         ? fetcherMetricsResult.value
         : null;
+      const sourcePolicyRecommendations = (
+        sourcePolicyResult.status === "fulfilled"
+        && sourcePolicyResult.value
+        && typeof sourcePolicyResult.value === "object"
+        && !Array.isArray(sourcePolicyResult.value)
+      )
+        ? sourcePolicyResult.value
+        : (
+          state.latestSourcePolicyRecommendationsPayload
+          && typeof state.latestSourcePolicyRecommendationsPayload === "object"
+          && !Array.isArray(state.latestSourcePolicyRecommendationsPayload)
+            ? state.latestSourcePolicyRecommendationsPayload
+            : { recommendations: { pairs: [] } }
+        );
+      if (sourcePolicyResult.status === "fulfilled" && sourcePolicyRecommendations && typeof sourcePolicyRecommendations === "object") {
+        state.latestSourcePolicyRecommendationsPayload = sourcePolicyRecommendations;
+      }
       const runModel = deriveAdminRunsModel(
         {
           taskState: taskStatePayload || {},
@@ -167,31 +225,11 @@ export function createOpsHealthController({
       });
       renderAdminOpsKpisImpl(refs.adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
       renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
+      renderSourcePolicyReviewQueue(sourcePolicyRecommendations);
       renderAdminOpsFetcherMetricsImpl(
         refs.adminOpsFetcherMetricsEl,
         fetcherMetrics || {},
-        deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
-        {
-          onSourcePolicyAction: async (row, action) => {
-            if (!row || !action) return;
-            try {
-              const payload = {
-                action,
-                staticSourceId: String(row?.staticSourceId || ""),
-                staticSourceName: String(row?.staticSourceName || ""),
-                providerSourceId: String(row?.providerSourceId || ""),
-                providerSourceName: String(row?.providerSourceName || "")
-              };
-              if (action === "snooze") {
-                payload.snoozedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-              }
-              await postBridge("/source-policy/review-action", payload);
-              await loadOpsHealthData();
-            } catch (err) {
-              showToast(`Could not update source policy review: ${getErrorMessage(err)}`, "error");
-            }
-          }
-        }
+        deriveFetcherFailureSummary(state.latestFetcherReportCache || {})
       );
       renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel);
       renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);

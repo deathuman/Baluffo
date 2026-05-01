@@ -60,6 +60,7 @@ export function cacheAdminDom(doc = document) {
     adminOpsAlertsEl: doc.querySelector(ui(t.opsAlerts)),
     adminOpsKpisEl: doc.querySelector(ui(t.opsKpis)),
     adminOpsScheduleEl: doc.querySelector(ui(t.opsSchedule)),
+    adminSourcePolicyReviewEl: doc.querySelector(ui(t.sourcePolicyReview)),
     adminOpsFetcherMetricsEl: doc.querySelector(ui(t.opsFetcherMetrics)),
     adminOpsTrendsEl: doc.querySelector(ui(t.opsTrends)),
     adminOpsHistoryEl: doc.querySelector(ui(t.opsHistory)),

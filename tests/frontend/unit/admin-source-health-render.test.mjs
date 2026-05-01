@@ -67,55 +67,6 @@ test("admin render: fetcher metrics render source-health triage", () => {
   assert.match(metricsEl.innerHTML, /greenhouse_boards/i);
 });
 
-test("admin render: source policy action buttons call handler", () => {
-  const calls = [];
-  const buttons = [
-    {
-      dataset: { sourcePolicyIndex: "0", sourcePolicyAction: "force_pause" },
-      addEventListener(_event, handler) {
-        this.click = handler;
-      }
-    }
-  ];
-  const metricsEl = {
-    innerHTML: "",
-    dataset: {},
-    querySelectorAll(selector) {
-      return selector === ".admin-source-policy-action-btn" ? buttons : [];
-    }
-  };
-  renderAdminOpsFetcherMetrics(
-    metricsEl,
-    {
-      latestRun: {
-        redundantStaticProposals: {
-          proposals: [
-            {
-              staticSourceId: "static:listing_url:https://studio.example/jobs",
-              staticSourceName: "static_source::studio",
-              providerSourceId: "Studio Greenhouse",
-              providerSourceName: "Studio Greenhouse",
-              proposal: "safe_redundant_static"
-            }
-          ]
-        }
-      }
-    },
-    null,
-    {
-      onSourcePolicyAction(row, action) {
-        calls.push({ row, action });
-      }
-    }
-  );
-
-  buttons[0].click();
-
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].action, "force_pause");
-  assert.equal(calls[0].row.providerSourceId, "Studio Greenhouse");
-});
-
 test("admin render: fetcher metrics render provider coverage lanes", () => {
   const metricsEl = makeEl();
   renderAdminOpsFetcherMetrics(metricsEl, {
@@ -266,6 +217,6 @@ test("admin render: fetcher metrics render provider coverage lanes", () => {
   assert.match(metricsEl.innerHTML, /Source-policy review/i);
   assert.match(metricsEl.innerHTML, /force-paused 1/i);
   assert.match(metricsEl.innerHTML, /local, reversible/i);
-  assert.match(metricsEl.innerHTML, /Force pause/i);
-  assert.match(metricsEl.innerHTML, /Clear override/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Force pause/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Clear override/i);
 });
