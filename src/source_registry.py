@@ -19,17 +19,21 @@ from src.shared.utils import now_iso
 _io = _reload(_io)
 
 ACTIVE_PATH = _io.ACTIVE_PATH
+ACTIVE_SEED_PATH = _io.ACTIVE_SEED_PATH
 APPROVAL_STATE_PATH = _io.APPROVAL_STATE_PATH
 DATA_DIR = _io.DATA_DIR
+DEFAULTS_DIR = _io.DEFAULTS_DIR
 DISCOVERY_CANDIDATES_PATH = _io.DISCOVERY_CANDIDATES_PATH
 DISCOVERY_REPORT_PATH = _io.DISCOVERY_REPORT_PATH
 M5_STRATEGIC_BACKLOG_PATH = _io.M5_STRATEGIC_BACKLOG_PATH
 PENDING_PATH = _io.PENDING_PATH
+PENDING_SEED_PATH = _io.PENDING_SEED_PATH
 REJECTED_PATH = _io.REJECTED_PATH
 TOMBSTONES_PATH = _io.TOMBSTONES_PATH
 URL_PATCH_MANIFEST_PATH = _io.URL_PATCH_MANIFEST_PATH
 load_json_array = _io.load_json_array
 load_json_object = _io.load_json_object
+registry_seed_path_for = _io.registry_seed_path_for
 
 AUTO_APPROVAL_CAP_DEFER_REASONS = _auto.AUTO_APPROVAL_CAP_DEFER_REASONS
 AUTO_APPROVAL_EXISTING_MATCH_REASONS = _auto.AUTO_APPROVAL_EXISTING_MATCH_REASONS
@@ -105,6 +109,9 @@ transition_registry_to_rejected = _state.transition_registry_to_rejected
 
 def _sync_io_paths() -> None:
     _io.DATA_DIR = DATA_DIR
+    _io.DEFAULTS_DIR = DATA_DIR / "defaults"
+    _io.ACTIVE_SEED_PATH = _io.DEFAULTS_DIR / "source-registry-active.seed.json"
+    _io.PENDING_SEED_PATH = _io.DEFAULTS_DIR / "source-registry-pending.seed.json"
 
 
 def ensure_data_dir() -> None:

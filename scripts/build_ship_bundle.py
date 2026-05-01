@@ -117,11 +117,12 @@ APP_VERSION_CONTRACT_FILES = (
     "contracts/city_noise_contract.json",
 )
 APP_RUNTIME_DATA_FILES = APP_VERSION_CONTRACT_FILES + (
+    "defaults/source-registry-active.seed.json",
+    "defaults/source-registry-pending.seed.json",
     "jobs-unified-light.json",
     "jobs-unified.json",
     "jobs-unified.csv",
     "jobs-fetch-report.json",
-    "source-registry-active.json",
     "source-discovery-config.json",
 )
 STARTUP_PREVIEW_LIMIT = 240
@@ -307,14 +308,12 @@ def _seed_runtime_data(data_dir: Path) -> None:
             _copy_file(src, data_dir / name)
     fetch_report_path = data_dir / "jobs-fetch-report.json"
     payloads = {
-        "source-registry-pending.json": [],
         "source-registry-rejected.json": [],
         "source-discovery-candidates.json": [],
         "source-discovery-report.json": {"summary": {}, "candidates": [], "failures": []},
         "source-discovery-config.json": __import__(
             "src.source_discovery", fromlist=["DEFAULT_DISCOVERY_CONFIG"]
         ).DEFAULT_DISCOVERY_CONFIG,
-        "source-approval-state.json": {"approvedSinceLastRun": 0},
         "jobs-fetch-tasks.json": {"summary": {}, "tasks": [], "outputs": {}},
         "jobs-source-state.json": {"schemaVersion": 1, "updatedAt": "", "sources": {}},
         "jobs-success-cache.json": {"updatedAt": "", "successfulSources": []},

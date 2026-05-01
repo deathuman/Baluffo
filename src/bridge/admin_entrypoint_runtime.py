@@ -90,6 +90,9 @@ def configure_runtime_paths(config: Any) -> None:
     root_mod.DESKTOP_UPDATE_STATE_PATH = data_dir / "updater" / "install-state.json"
     root_mod.ACTIVE_PATH = data_dir / "source-registry-active.json"
     root_mod.PENDING_PATH = data_dir / "source-registry-pending.json"
+    root_mod.DEFAULTS_DIR = data_dir / "defaults"
+    root_mod.ACTIVE_SEED_PATH = root_mod.DEFAULTS_DIR / "source-registry-active.seed.json"
+    root_mod.PENDING_SEED_PATH = root_mod.DEFAULTS_DIR / "source-registry-pending.seed.json"
     root_mod.REJECTED_PATH = data_dir / "source-registry-rejected.json"
     root_mod.DISCOVERY_CANDIDATES_PATH = data_dir / "source-discovery-candidates.json"
     root_mod.TOMBSTONES_PATH = data_dir / "source-registry-tombstones.json"
@@ -98,8 +101,11 @@ def configure_runtime_paths(config: Any) -> None:
     root_mod.TASKS_CONFIG_PATH = Path(config.root) / ".vscode" / "tasks.json"
 
     root_mod.source_registry_module.DATA_DIR = data_dir
+    root_mod.source_registry_module.DEFAULTS_DIR = root_mod.DEFAULTS_DIR
     root_mod.source_registry_module.ACTIVE_PATH = root_mod.ACTIVE_PATH
     root_mod.source_registry_module.PENDING_PATH = root_mod.PENDING_PATH
+    root_mod.source_registry_module.ACTIVE_SEED_PATH = root_mod.ACTIVE_SEED_PATH
+    root_mod.source_registry_module.PENDING_SEED_PATH = root_mod.PENDING_SEED_PATH
     root_mod.source_registry_module.REJECTED_PATH = root_mod.REJECTED_PATH
     root_mod.source_registry_module.TOMBSTONES_PATH = root_mod.TOMBSTONES_PATH
     root_mod.source_registry_module.DISCOVERY_REPORT_PATH = root_mod.DISCOVERY_REPORT_PATH

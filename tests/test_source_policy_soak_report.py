@@ -139,6 +139,23 @@ def test_clean_state_reports_ok_and_writes_reports(tmp_path: Path) -> None:
     assert Path(outputs["markdown"]).exists()
 
 
+def test_registry_seed_files_are_used_when_runtime_registry_is_missing(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _write_clean_runtime(data_dir)
+    _write_json(
+        data_dir / "defaults" / "source-registry-active.seed.json",
+        [{"id": "static:seed", "adapter": "static"}],
+    )
+    _write_json(data_dir / "defaults" / "source-registry-pending.seed.json", [])
+    (data_dir / "source-registry-active.json").unlink()
+    (data_dir / "source-registry-pending.json").unlink()
+
+    report = soak.build_soak_report(data_dir)
+
+    assert report["inputs"]["sourceRegistryActive"]["status"] == "seed"
+    assert report["inputs"]["sourceRegistryPending"]["status"] == "seed"
+
+
 def test_missing_runtime_artifacts_warn_but_do_not_fail(tmp_path: Path) -> None:
     report = soak.build_soak_report(tmp_path / "data")
 

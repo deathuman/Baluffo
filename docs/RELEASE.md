@@ -237,7 +237,7 @@ Before any release:
 1. Build the ship bundle for the target version.
 2. Confirm launcher scripts exist in the bundle root.
 3. Confirm `app\versions\<app_version>\packaging\github-app-sync-config.template.json` exists.
-4. Confirm `data\` contains seeded defaults, not repo-local runtime artifacts.
+4. Confirm `data\` contains seeded defaults, including `data\defaults\source-registry-*.seed.json`, not repo-local runtime registry artifacts such as `source-registry-active.json`, `source-registry-pending.json`, or `source-approval-state.json`.
 5. Validate the manifest against `docs/update-manifest.schema.json`.
 6. Apply the update on staging with `.\apply-update.ps1`.
 7. Confirm:

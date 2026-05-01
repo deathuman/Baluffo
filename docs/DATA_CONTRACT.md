@@ -202,14 +202,23 @@ The orchestrator generates a machine-readable HUD in `_out/LATEST_MANIFEST.json`
 
 ## 5. Source Registry and Sync
 
-Baluffo's source registry is split into three local bucket files and one local-only tombstone ledger under `data/`:
+Baluffo's source registry has tracked seed defaults plus local runtime bucket files.
+The seed files are reviewable defaults bundled with the app; runtime files are local
+operational state and are ignored by Git.
 
 | File | Purpose |
 |---|---|
-| `data/source-registry-active.json` | Active sources ready for fetch/sync |
-| `data/source-registry-pending.json` | Pending sources in the probe/standby pool |
+| `data/defaults/source-registry-active.seed.json` | Tracked default active source registry |
+| `data/defaults/source-registry-pending.seed.json` | Tracked default pending source registry |
+| `data/source-registry-active.json` | Ignored runtime active sources ready for fetch/sync; overrides the seed when present |
+| `data/source-registry-pending.json` | Ignored runtime pending sources in the probe/standby pool; overrides the seed when present |
+| `data/source-approval-state.json` | Ignored runtime approval counters and timestamps |
 | `data/source-registry-rejected.json` | Local rejected sources; a normal registry bucket, not a delete sentinel |
 | `data/source-registry-tombstones.json` | Local delete ledger keyed by `source_identity()` |
+
+Registry reads use the runtime active/pending file when it exists, then the tracked
+seed file, then the in-code fallback. Registry writes always target the runtime
+active/pending paths and never mutate seed files.
 
 ### Canonical registry row
 

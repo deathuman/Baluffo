@@ -61,6 +61,10 @@ ARTIFACT_PATHS = {
     "sourceRegistryTombstones": "source-registry-tombstones.json",
     "sourceSync": "source-sync.json",
 }
+REGISTRY_SEED_PATHS = {
+    "source-registry-active.json": "defaults/source-registry-active.seed.json",
+    "source-registry-pending.json": "defaults/source-registry-pending.seed.json",
+}
 
 SOURCE_SYNC_ALLOWED_KEYS = {"schemaVersion", "generatedAt", "source", "active", "pending"}
 SOURCE_SYNC_FORBIDDEN_TOKENS = {
@@ -98,13 +102,21 @@ PROVIDER_ID_FIELDS = (
 
 
 def _read_json_artifact(path: Path) -> tuple[Any, str, str]:
-    if not path.exists():
-        return {}, "missing", ""
+    source_path = path
+    status = "ok"
+    if not source_path.exists():
+        seed_rel_path = REGISTRY_SEED_PATHS.get(path.name)
+        seed_path = path.parent / seed_rel_path if seed_rel_path else None
+        if seed_path is not None and seed_path.exists():
+            source_path = seed_path
+            status = "seed"
+        else:
+            return {}, "missing", ""
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(source_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        return {}, "malformed", f"{path.name} is malformed: {exc}"
-    return payload, "ok", ""
+        return {}, "malformed", f"{source_path.name} is malformed: {exc}"
+    return payload, status, ""
 
 
 def _artifact_inputs(data_dir: Path) -> tuple[dict[str, Any], dict[str, Any], list[str]]:

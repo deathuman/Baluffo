@@ -5,7 +5,7 @@
 > - **Canonical for:** discovery/fetch/soak/Admin migration-link validation steps and release-readiness checks
 > - **Not canonical for:** payload schemas, bridge route contracts, loader internals, or suppression thresholds
 > - **Then inspect:** [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`admin-bridge-api.md`](admin-bridge-api.md)
-> - **Last updated:** 2026-05-01
+> - **Last updated:** 2026-05-02
 
 This runbook is the operator checklist for the provider/static source-policy workflow. It explains how to gather runtime evidence, review migration link candidates, apply or clear one explicit link, validate provider coverage, and confirm source-sync cleanliness.
 
@@ -34,6 +34,13 @@ Runtime evidence changes local files. Keep these out of commits unless a change 
 - `.playwright-mcp/`
 
 Generated reports under `_out/` and runtime artifacts under `data/` are validation evidence, not code changes.
+
+The tracked registry defaults live under `data/defaults/`:
+
+- `data/defaults/source-registry-active.seed.json`
+- `data/defaults/source-registry-pending.seed.json`
+
+Runtime active/pending registry files override those seeds locally. Admin actions, discovery approval, migration link apply/clear, and source-sync reconciliation write the runtime files, not the seeds.
 
 ## Baseline Evidence
 
@@ -193,6 +200,65 @@ Source-policy artifacts must not appear in source-sync:
 | Clear button missing | The link is not owned by `admin_provider_link_backfill`, the static identity does not match the candidate, or Admin has stale data. | Reload Admin/Ops and check Linked Migration Identities. Non-admin-owned links are visible but not clearable. |
 | Source-sync warning | `source-sync.json` may contain local source-policy payloads or unexpected top-level keys. | Treat as a release blocker. Inspect the soak report quality gates and keep source-policy review/recommendation artifacts out of sync. |
 | Static-only evidence detected | The static source has evidence not covered by the provider, or overlap history is insufficient. | Do not suppress or clean up the static source. Review `providerStaticOverlap`, `staticSuppressionPolicy`, and source-policy recommendations before any further action. |
+
+## Operational Soak & Decision Log
+
+During a real-data soak period, keep a local decision log under `_out/` or in private notes. The log is operational evidence, not a repo artifact, and should not be committed by default.
+
+Copy this template for each run:
+
+```markdown
+## Source-policy operational run
+
+Date:
+Discovery completed:
+Fetch completed:
+Soak status:
+Failed gates:
+Warning gates:
+
+Review candidates:
+- Provider:
+- Static:
+- Confidence:
+- Reason:
+- Decision: apply / skip / wait / investigate
+- Why:
+
+Applied links:
+- Provider:
+- Static:
+- Result:
+- Clear tested:
+
+Provider coverage:
+- Validated providers:
+- Linked provider kept count:
+- Consecutive successes:
+
+Suppression:
+- dynamic_redundant_provider rows:
+- providerStaticOverlap pairs:
+- redundantStaticProposals:
+
+Source-sync:
+- Clean: yes/no
+
+Runtime files changed:
+- list
+
+Follow-up:
+```
+
+Use this rubric when recording decisions:
+
+- Apply at most one manually reviewed `apiEligible=true` migration link at a time.
+- Skip provider-shaped or provider-to-provider self-link candidates.
+- Wait when candidates are only ambiguous, insufficient-evidence, or missing a payload.
+- Investigate warning gates or source failure buckets that repeat across runs.
+- Never treat source-policy warnings as permission to delete, hide, reject, demote, tombstone, or clean up sources.
+
+Only consider a later conservative static-cleanup policy after several clean soak runs, no failed source-sync gates, at least one stable provider/static pair with repeated safe evidence, no static-only evidence for that pair, and apply plus clear/reversal have both been tested.
 
 ## Source-Policy Release Readiness
 

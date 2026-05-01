@@ -9,6 +9,11 @@ from typing import Any
 
 from src.jobs.common.config import SOURCE_REGISTRY_ACTIVE_PATH
 
+_REGISTRY_SEED_NAMES = {
+    "source-registry-active.json": "source-registry-active.seed.json",
+    "source-registry-pending.json": "source-registry-pending.seed.json",
+}
+
 # NOTE: The registry lists remain defined in their owning leaf modules; do not
 # recreate root-package exports in `src.jobs.common`.
 # and are imported here at runtime to avoid circularity during migration.
@@ -28,10 +33,15 @@ def _looks_like_placeholder_registry_row(row: dict[str, Any]) -> bool:
     )
 
 
-def load_registry_from_file(path: Path, fallback: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+def registry_seed_path_for(path: Path) -> Path | None:
+    seed_name = _REGISTRY_SEED_NAMES.get(Path(path).name)
+    if seed_name is None:
+        return None
+    return Path(path).parent / "defaults" / seed_name
+
+
+def _load_registry_payload(path: Path, fallback: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     try:
-        if not path.exists():
-            return [dict(row) for row in fallback]
         payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, list):
             return [dict(row) for row in fallback]
@@ -39,6 +49,16 @@ def load_registry_from_file(path: Path, fallback: Sequence[dict[str, Any]]) -> l
         return rows if rows else [dict(row) for row in fallback]
     except (OSError, json.JSONDecodeError):
         return [dict(row) for row in fallback]
+
+
+def load_registry_from_file(path: Path, fallback: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    path = Path(path)
+    if path.exists():
+        return _load_registry_payload(path, fallback)
+    seed_path = registry_seed_path_for(path)
+    if seed_path is not None and seed_path.exists():
+        return _load_registry_payload(seed_path, fallback)
+    return [dict(row) for row in fallback]
 
 
 def read_approved_since_last_run(path: Path) -> int:

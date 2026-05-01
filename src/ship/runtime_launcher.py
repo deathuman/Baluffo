@@ -48,7 +48,6 @@ ROOT_DATA_FILE_ALIASES = frozenset(
         "jobs-unified-light.json",
         "jobs-unified.json",
         "jobs-unified.csv",
-        "source-registry-active.json",
     }
 )
 

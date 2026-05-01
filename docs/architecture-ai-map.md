@@ -203,8 +203,10 @@ src/ship/desktop_updater.py (stable updater helper executable / monkeypatch surf
 | `data/jobs-unified.json` | Primary aggregated feed |
 | `data/jobs-unified.csv` | CSV fallback |
 | `data/jobs-fetch-report.json` | Last fetch diagnostics |
-| `data/source-registry-active.json` | Approved sources |
-| `data/source-registry-pending.json` | Discovered, not approved |
+| `data/defaults/source-registry-active.seed.json` | Tracked approved-source defaults |
+| `data/defaults/source-registry-pending.seed.json` | Tracked pending-source defaults |
+| `data/source-registry-active.json` | Ignored local approved-source runtime state |
+| `data/source-registry-pending.json` | Ignored local pending-source runtime state |
 | `data/source-registry-rejected.json` | Rejected sources, local-only |
 | `data/source-registry-tombstones.json` | Local-only delete ledger keyed by source identity |
 | `data/source-sync.json` | Remote sync snapshot v2 (`active` and `pending` only) |

@@ -338,7 +338,6 @@ def test_build_site_request_handler_serves_legacy_root_data_aliases() -> None:
         root.mkdir(parents=True, exist_ok=True)
         data_dir = Path(tmp) / "data"
         _write(data_dir / "jobs-fetch-report.json", '{"ok":true,"report":1}\n')
-        _write(data_dir / "source-registry-active.json", '[{"name":"Studio"}]\n')
 
         handler = rl.build_site_request_handler(
             root,
@@ -353,15 +352,12 @@ def test_build_site_request_handler_serves_legacy_root_data_aliases() -> None:
             base = f"http://127.0.0.1:{server.server_address[1]}"
             with urlopen(f"{base}/jobs-fetch-report.json?t=1", timeout=2.0) as response:
                 report_payload = response.read().decode("utf-8")
-            with urlopen(f"{base}/source-registry-active.json?t=1", timeout=2.0) as response:
-                registry_payload = response.read().decode("utf-8")
         finally:
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
 
         assert '"report":1' in report_payload
-        assert '"Studio"' in registry_payload
 
 
 def test_build_site_request_handler_serves_desktop_runtime_bridge_config() -> None:

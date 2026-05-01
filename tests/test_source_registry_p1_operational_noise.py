@@ -4,6 +4,12 @@ from pathlib import Path
 from src import source_registry as sr
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULTS_DIR = REPO_ROOT / "data" / "defaults"
+
+
+def _load_seed_registry(name: str) -> list[dict]:
+    return json.loads((DEFAULTS_DIR / f"source-registry-{name}.seed.json").read_text())
+
 
 UNSUPPORTED_STATIC_IDS = {
     "static:listing_url:https://www.ycombinator.com/companies/gym-class-by-irl-studios/jobs",
@@ -209,8 +215,8 @@ def test_hide_repeated_zero_job_pending_rows_after_threshold() -> None:
 
 
 def test_static_residual_cleanup_preserves_rows_outside_active_defaults() -> None:
-    active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
-    pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+    active = _load_seed_registry("active")
+    pending = _load_seed_registry("pending")
 
     active_by_id = {row["id"]: row for row in active}
     pending_by_id = {row["id"]: row for row in pending}
@@ -235,8 +241,8 @@ def test_static_residual_cleanup_preserves_rows_outside_active_defaults() -> Non
 
 
 def test_static_narrow_cleanup_preserves_dead_and_redundant_rows_as_hidden() -> None:
-    active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
-    pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+    active = _load_seed_registry("active")
+    pending = _load_seed_registry("pending")
     tombstones = json.loads((REPO_ROOT / "data/source-registry-tombstones.json").read_text())
 
     active_by_id = {row["id"]: row for row in active}
@@ -284,8 +290,8 @@ def test_static_narrow_cleanup_preserves_dead_and_redundant_rows_as_hidden() -> 
 
 
 def test_static_site_changed_cleanup_preserves_rows_as_hidden_pending() -> None:
-    active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
-    pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+    active = _load_seed_registry("active")
+    pending = _load_seed_registry("pending")
     tombstones = json.loads((REPO_ROOT / "data/source-registry-tombstones.json").read_text())
 
     active_by_id = {row["id"]: row for row in active}
@@ -309,8 +315,8 @@ def test_static_site_changed_cleanup_preserves_rows_as_hidden_pending() -> None:
 
 
 def test_browser_required_static_aliases_migrate_to_provider_sources() -> None:
-    active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
-    pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+    active = _load_seed_registry("active")
+    pending = _load_seed_registry("pending")
 
     active_by_id = {row["id"]: row for row in active}
     pending_by_id = {row["id"]: row for row in pending}
@@ -338,8 +344,8 @@ def test_browser_required_static_aliases_migrate_to_provider_sources() -> None:
 
 
 def test_browser_required_unresolved_static_rows_are_hidden_pending() -> None:
-    active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
-    pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+    active = _load_seed_registry("active")
+    pending = _load_seed_registry("pending")
 
     active_by_id = {row["id"]: row for row in active}
     pending_by_id = {row["id"]: row for row in pending}
@@ -358,8 +364,8 @@ def test_browser_required_unresolved_static_rows_are_hidden_pending() -> None:
 
 
 def test_anti_bot_residual_rows_remain_active_with_scoped_browser_retry_flag() -> None:
-    active = json.loads((REPO_ROOT / "data/source-registry-active.json").read_text())
-    pending = json.loads((REPO_ROOT / "data/source-registry-pending.json").read_text())
+    active = _load_seed_registry("active")
+    pending = _load_seed_registry("pending")
 
     active_by_id = {row["id"]: row for row in active}
     pending_by_id = {row["id"]: row for row in pending}
