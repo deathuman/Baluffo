@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   filterSourcePolicyReviewPairs,
+  getMigrationLinkReviewActions,
   getSourcePolicyReviewActions,
   renderAdminSourcePolicyReview
 } from "../../../frontend/admin/render/source-policy-review.js";
@@ -26,6 +27,54 @@ function makePair(overrides = {}) {
     providerUnstableRunCount: 0,
     lastProposal: "safe_redundant_static",
     lastAuditStatus: "safe",
+    ...overrides
+  };
+}
+
+function makeMigrationLinkCandidate(overrides = {}) {
+  return {
+    providerSourceId: "greenhouse:slug:studio",
+    providerSourceName: "Studio Greenhouse",
+    providerAdapter: "greenhouse",
+    providerIdField: "slug",
+    providerIdValue: "studio",
+    selectedStaticSourceId: "static:listing_url:https://studio.example/jobs",
+    selectedStaticSourceName: "Studio Static",
+    selectedStaticUrl: "https://studio.example/jobs",
+    confidence: 0.8,
+    confidenceTier: "medium",
+    whyNotHighConfidence: "source-state-only resolution",
+    evidenceReasons: ["source_state_disambiguation"],
+    sourceStateEvidence: {
+      lastKeptCount: 4,
+      lastStatus: "ok",
+      evidenceScore: 7
+    },
+    ignoredAlternatives: [
+      {
+        staticSourceId: "static:listing_url:https://studio.example/old",
+        reasonIgnored: "no useful history",
+        evidenceScore: 1,
+        blockers: ["no_history"]
+      }
+    ],
+    apiEligible: true,
+    recommendedApiPayload: {
+      action: "apply_migration_identity_link",
+      providerSourceId: "greenhouse:slug:studio",
+      staticSourceId: "static:listing_url:https://studio.example/jobs",
+      staticSourceName: "Studio Static",
+      confidence: 0.8,
+      reasons: ["source_state_disambiguation"],
+      recommendationSource: "provider_coverage_link_backfill",
+      recommendedAction: "needs_review"
+    },
+    currentProviderLinkState: {
+      providerBucket: "active",
+      migrationSourceIdentity: "",
+      migrationLinkedBy: "",
+      adminBackfillOwned: false
+    },
     ...overrides
   };
 }
@@ -138,6 +187,9 @@ test("admin source policy review never renders force suppress or destructive act
         makePair({ manualSuppressionOverride: "force_pause" }),
         makePair({ currentRecommendation: "static_only_detected", staticOnlyDetectedRunCount: 1 })
       ]
+    },
+    providerCoverageLinkBackfill: {
+      reviewCandidates: [makeMigrationLinkCandidate()]
     }
   });
 
@@ -179,5 +231,122 @@ test("admin source policy review buttons call filter and action handlers", () =>
   assert.deepEqual(calls, [
     { filter: "provider_unstable" },
     { action: "clear_override", staticSourceId: "static:listing_url:https://studio.example/jobs" }
+  ]);
+});
+
+test("admin source policy review renders migration link review candidates", () => {
+  const reviewEl = makeEl();
+  renderAdminSourcePolicyReview(reviewEl, {
+    recommendations: {
+      pairs: [makePair()]
+    },
+    providerCoverageLinkBackfill: {
+      reviewCandidates: [makeMigrationLinkCandidate()]
+    }
+  });
+
+  assert.match(reviewEl.innerHTML, /Migration Link Review/);
+  assert.match(reviewEl.innerHTML, /Studio Greenhouse/);
+  assert.match(reviewEl.innerHTML, /greenhouse:slug:studio/);
+  assert.match(reviewEl.innerHTML, /Studio Static/);
+  assert.match(reviewEl.innerHTML, /static:listing_url:https:\/\/studio\.example\/jobs/);
+  assert.match(reviewEl.innerHTML, /Medium-confidence candidate\. Review evidence before applying\./);
+  assert.match(reviewEl.innerHTML, /API eligible/);
+  assert.match(reviewEl.innerHTML, /source-state-only resolution/);
+  assert.match(reviewEl.innerHTML, /source state disambiguation/);
+  assert.match(reviewEl.innerHTML, /Ignored alternatives/);
+  assert.match(reviewEl.innerHTML, />Apply link</);
+});
+
+test("admin source policy review renders high-confidence migration copy", () => {
+  const reviewEl = makeEl();
+  renderAdminSourcePolicyReview(reviewEl, {
+    providerCoverageLinkBackfill: {
+      reviewCandidates: [
+        makeMigrationLinkCandidate({
+          confidence: 0.94,
+          confidenceTier: "high",
+          whyNotHighConfidence: "",
+          recommendedApiPayload: {
+            ...makeMigrationLinkCandidate().recommendedApiPayload,
+            confidence: 0.94,
+            recommendedAction: "backfill_migration_identity_candidate"
+          }
+        })
+      ]
+    }
+  });
+
+  assert.match(reviewEl.innerHTML, /High-confidence exact-evidence candidate\./);
+});
+
+test("migration link review action visibility is conservative", () => {
+  assert.deepEqual(
+    getMigrationLinkReviewActions(makeMigrationLinkCandidate()).map(action => action.key),
+    ["apply_migration_identity_link"]
+  );
+  assert.deepEqual(
+    getMigrationLinkReviewActions(makeMigrationLinkCandidate({ apiEligible: false })).map(action => action.key),
+    []
+  );
+  assert.deepEqual(
+    getMigrationLinkReviewActions(makeMigrationLinkCandidate({ blockers: ["ambiguous_static_match"] })).map(action => action.key),
+    []
+  );
+  assert.deepEqual(
+    getMigrationLinkReviewActions(makeMigrationLinkCandidate({
+      recommendedApiPayload: {
+        ...makeMigrationLinkCandidate().recommendedApiPayload,
+        recommendedAction: "insufficient_evidence"
+      }
+    })).map(action => action.key),
+    []
+  );
+  assert.deepEqual(
+    getMigrationLinkReviewActions(makeMigrationLinkCandidate({
+      selectedStaticSourceId: "greenhouse:slug:studio",
+      recommendedApiPayload: {
+        ...makeMigrationLinkCandidate().recommendedApiPayload,
+        staticSourceId: "greenhouse:slug:studio"
+      }
+    })).map(action => action.key),
+    []
+  );
+  assert.deepEqual(
+    getMigrationLinkReviewActions(makeMigrationLinkCandidate({
+      currentProviderLinkState: {
+        providerBucket: "active",
+        migrationSourceIdentity: "static:listing_url:https://studio.example/jobs",
+        migrationLinkedBy: "admin_provider_link_backfill",
+        adminBackfillOwned: true
+      }
+    })).map(action => action.key),
+    ["clear_migration_identity_link"]
+  );
+});
+
+test("migration link review buttons call action handler", () => {
+  const calls = [];
+  const actionButton = makeButton({
+    sourcePolicyMigrationLinkAction: "apply_migration_identity_link",
+    sourcePolicyMigrationLinkIndex: "0"
+  });
+  const reviewEl = makeEl({
+    [ui(UI_TOKENS.admin.sourcePolicyMigrationLinkActionBtn)]: [actionButton]
+  });
+  renderAdminSourcePolicyReview(reviewEl, {
+    providerCoverageLinkBackfill: {
+      reviewCandidates: [makeMigrationLinkCandidate()]
+    }
+  }, {
+    onMigrationLinkAction(candidate, action) {
+      calls.push({ action, providerSourceId: candidate.providerSourceId });
+    }
+  });
+
+  actionButton.click();
+
+  assert.deepEqual(calls, [
+    { action: "apply_migration_identity_link", providerSourceId: "greenhouse:slug:studio" }
   ]);
 });

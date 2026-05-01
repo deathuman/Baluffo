@@ -94,6 +94,20 @@ export function createOpsHealthController({
     return payload;
   }
 
+  function buildMigrationLinkActionPayload(candidate, action) {
+    if (action === "apply_migration_identity_link") {
+      return { ...(candidate?.recommendedApiPayload || {}) };
+    }
+    if (action === "clear_migration_identity_link") {
+      return {
+        action,
+        providerSourceId: String(candidate?.providerSourceId || candidate?.recommendedApiPayload?.providerSourceId || ""),
+        staticSourceId: String(candidate?.selectedStaticSourceId || candidate?.recommendedApiPayload?.staticSourceId || "")
+      };
+    }
+    return { action };
+  }
+
   async function handleSourcePolicyAction(row, action) {
     if (!row || !action) return;
     try {
@@ -104,6 +118,22 @@ export function createOpsHealthController({
     }
   }
 
+  async function handleMigrationLinkAction(candidate, action) {
+    if (!candidate || !action) return;
+    try {
+      await postBridge("/source-policy/migration-link-action", buildMigrationLinkActionPayload(candidate, action));
+      showToast(
+        action === "clear_migration_identity_link"
+          ? "Migration identity link cleared."
+          : "Migration identity link applied.",
+        "success"
+      );
+      await loadOpsHealthData();
+    } catch (err) {
+      showToast(`Could not update migration identity link: ${getErrorMessage(err)}`, "error");
+    }
+  }
+
   function renderSourcePolicyReviewQueue(payload = state.latestSourcePolicyRecommendationsPayload || {}) {
     renderAdminSourcePolicyReviewImpl(refs.adminSourcePolicyReviewEl, payload || {}, {
       selectedFilter: state.sourcePolicyReviewFilter || "all",
@@ -111,7 +141,8 @@ export function createOpsHealthController({
         state.sourcePolicyReviewFilter = filter || "all";
         renderSourcePolicyReviewQueue(state.latestSourcePolicyRecommendationsPayload || payload || {});
       },
-      onSourcePolicyAction: handleSourcePolicyAction
+      onSourcePolicyAction: handleSourcePolicyAction,
+      onMigrationLinkAction: handleMigrationLinkAction
     });
   }
 

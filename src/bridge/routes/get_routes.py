@@ -18,6 +18,7 @@ from src.bridge.routes.error_boundary import (
     send_json_boundary,
 )
 from src.bridge.routes.response_writer import BridgeResponseWriter
+from src.bridge.source_policy_migration_links import ADMIN_MIGRATION_LINK_ACTOR
 from src.core.schemas import LocalSavedJobRowSchema
 from src.jobs.common.contracts_source_policy_recommendations import (
     merge_source_policy_review_state_into_recommendations,
@@ -39,6 +40,10 @@ def _as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
 def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
     compact_payload = dict(payload or {})
     sources = _as_list(payload.get("sources"))
@@ -48,6 +53,113 @@ def _compact_live_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any
         if isinstance(row, dict)
     ]
     return compact_payload
+
+
+def _source_policy_soak_report_path(api: BridgeApi) -> Path:
+    data_dir = Path(api.SOURCE_POLICY_RECOMMENDATIONS_PATH).parent
+    return data_dir.parent / "_out" / "source-policy-soak-report.json"
+
+
+def _load_provider_coverage_link_backfill(api: BridgeApi) -> tuple[dict[str, Any], str]:
+    path = _source_policy_soak_report_path(api)
+    empty_payload = {
+        "reviewCandidates": [],
+        "candidateLinkCount": 0,
+        "highConfidenceLinkCount": 0,
+        "mediumConfidenceLinkCount": 0,
+        "activeProviderWithoutMigrationIdentityCount": 0,
+    }
+    if not path.exists():
+        return empty_payload, ""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return empty_payload, f"source_policy_soak_report_unreadable: {exc}"
+    section = _as_dict(_as_dict(payload.get("sections")).get("providerCoverageLinkBackfill"))
+    if not section:
+        return empty_payload, ""
+    result = {
+        key: section.get(key)
+        for key in (
+            "activeProviderWithoutMigrationIdentityCount",
+            "candidateLinkCount",
+            "highConfidenceLinkCount",
+            "mediumConfidenceLinkCount",
+            "ambiguousProviderCount",
+            "ambiguousStaticCandidateCount",
+            "resolvedBySourceStateCount",
+            "resolvedByAdvisoryIdentityCount",
+            "unresolvedAmbiguousCount",
+        )
+        if key in section
+    }
+    result["reviewCandidates"] = [
+        dict(row) for row in _as_list(section.get("reviewCandidates")) if isinstance(row, dict)
+    ]
+    return result, ""
+
+
+def _row_identity_tokens(row: dict[str, Any]) -> set[str]:
+    return {
+        token.lower()
+        for token in (
+            _clean_text(row.get("id")),
+            _clean_text(row.get("sourceId")),
+            _clean_text(row.get("sourceIdentity")),
+        )
+        if token
+    }
+
+
+def _find_state_row_by_id(
+    state: dict[str, list[dict[str, Any]]], source_id: str
+) -> tuple[str, dict[str, Any]] | None:
+    target = _clean_text(source_id).lower()
+    if not target:
+        return None
+    for bucket in ("active", "pending"):
+        for row in state.get(bucket) or []:
+            if isinstance(row, dict) and target in _row_identity_tokens(row):
+                return bucket, row
+    return None
+
+
+def _enrich_link_backfill_review_candidates(
+    api: BridgeApi, payload: dict[str, Any]
+) -> dict[str, Any]:
+    state = api.load_state() or {}
+    enriched = dict(payload)
+    candidates: list[dict[str, Any]] = []
+    for row in _as_list(payload.get("reviewCandidates")):
+        if not isinstance(row, dict):
+            continue
+        candidate = dict(row)
+        provider_id = _clean_text(candidate.get("providerSourceId"))
+        match = _find_state_row_by_id(state, provider_id)
+        if match:
+            bucket, provider_row = match
+            migration_source_identity = _clean_text(provider_row.get("migrationSourceIdentity"))
+            migration_linked_by = _clean_text(provider_row.get("migrationLinkedBy"))
+            admin_owned = bool(
+                migration_source_identity and migration_linked_by == ADMIN_MIGRATION_LINK_ACTOR
+            )
+            link_state = {
+                "providerBucket": bucket,
+                "migrationSourceIdentity": migration_source_identity,
+                "migrationLinkedBy": migration_linked_by,
+                "adminBackfillOwned": admin_owned,
+            }
+        else:
+            link_state = {
+                "providerBucket": "",
+                "migrationSourceIdentity": "",
+                "migrationLinkedBy": "",
+                "adminBackfillOwned": False,
+            }
+        candidate["currentProviderLinkState"] = link_state
+        candidates.append(candidate)
+    enriched["reviewCandidates"] = candidates
+    return enriched
 
 
 def _source_match_tokens(row: dict[str, Any]) -> set[str]:
@@ -559,6 +671,8 @@ def handle_get(
         review_state, review_state_warning = read_source_policy_review_state_artifact(
             api.SOURCE_POLICY_REVIEW_STATE_PATH
         )
+        link_backfill, link_backfill_warning = _load_provider_coverage_link_backfill(api)
+        link_backfill = _enrich_link_backfill_review_candidates(api, link_backfill)
         payload = merge_source_policy_review_state_into_recommendations(
             recommendations_artifact=recommendations,
             review_state=review_state,
@@ -568,8 +682,15 @@ def handle_get(
                 "ok": True,
                 "recommendations": payload,
                 "reviewState": review_state,
+                "providerCoverageLinkBackfill": link_backfill,
                 "warnings": [
-                    warning for warning in (recommendation_warning, review_state_warning) if warning
+                    warning
+                    for warning in (
+                        recommendation_warning,
+                        review_state_warning,
+                        link_backfill_warning,
+                    )
+                    if warning
                 ],
             }
         )

@@ -202,6 +202,7 @@ export const UI_TOKENS = Object.freeze({
     sourceCheckbox: "source-checkbox",
     alertAckBtn: "admin-alert-ack-btn",
     sourcePolicyFilterBtn: "admin-source-policy-filter-btn",
-    sourcePolicyActionBtn: "admin-source-policy-action-btn"
+    sourcePolicyActionBtn: "admin-source-policy-action-btn",
+    sourcePolicyMigrationLinkActionBtn: "admin-source-policy-migration-link-action-btn"
   }
 });

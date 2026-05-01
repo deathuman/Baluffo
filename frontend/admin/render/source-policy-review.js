@@ -16,6 +16,8 @@ export const SOURCE_POLICY_REVIEW_FILTERS = Object.freeze([
 const FILTER_KEYS = new Set(SOURCE_POLICY_REVIEW_FILTERS.map(filter => filter.key));
 const ACTION_TOKEN = UI_TOKENS.admin.sourcePolicyActionBtn;
 const FILTER_TOKEN = UI_TOKENS.admin.sourcePolicyFilterBtn;
+const MIGRATION_LINK_ACTION_TOKEN = UI_TOKENS.admin.sourcePolicyMigrationLinkActionBtn;
+const ADMIN_MIGRATION_LINK_ACTOR = "admin_provider_link_backfill";
 
 function normalizeFilterKey(value) {
   const key = String(value || "all");
@@ -29,6 +31,14 @@ function stringValue(value, fallback = "") {
 
 function numberValue(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function listValue(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function objectValue(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
 function formatMachineLabel(value, fallback = "unknown") {
@@ -51,6 +61,41 @@ function getPairs(payload) {
   return [];
 }
 
+function getMigrationLinkReviewCandidates(payload) {
+  const linkBackfill = objectValue(payload?.providerCoverageLinkBackfill);
+  return listValue(linkBackfill.reviewCandidates).filter(row => row && typeof row === "object");
+}
+
+function selectedStaticSourceId(candidate) {
+  return stringValue(candidate?.selectedStaticSourceId, stringValue(candidate?.recommendedApiPayload?.staticSourceId));
+}
+
+function selectedStaticSourceName(candidate) {
+  return stringValue(
+    candidate?.selectedStaticSourceName,
+    stringValue(candidate?.recommendedApiPayload?.staticSourceName, selectedStaticSourceId(candidate))
+  );
+}
+
+function isProviderShapedStaticId(candidate) {
+  const staticId = selectedStaticSourceId(candidate);
+  const providerId = stringValue(candidate?.providerSourceId, stringValue(candidate?.recommendedApiPayload?.providerSourceId));
+  return Boolean(staticId && (staticId === providerId || !staticId.startsWith("static:")));
+}
+
+function hasMigrationLinkBlockers(candidate) {
+  return listValue(candidate?.blockers).filter(Boolean).length > 0;
+}
+
+function migrationLinkRecommendedAction(candidate) {
+  return stringValue(candidate?.recommendedApiPayload?.recommendedAction, stringValue(candidate?.recommendedAction));
+}
+
+function isRejectedMigrationLinkRecommendation(candidate) {
+  const action = migrationLinkRecommendedAction(candidate);
+  return action === "ambiguous_static_match" || action === "insufficient_evidence";
+}
+
 export function getSourcePolicyReviewActions(row) {
   const reviewState = stringValue(row?.reviewState, "new");
   const override = stringValue(row?.manualSuppressionOverride, "none");
@@ -68,6 +113,34 @@ export function getSourcePolicyReviewActions(row) {
     actions.push({ key: "clear_override", label: "Clear override" });
   } else {
     actions.push({ key: "force_pause", label: "Force pause" });
+  }
+  return actions;
+}
+
+export function getMigrationLinkReviewActions(candidate) {
+  const linkState = objectValue(candidate?.currentProviderLinkState);
+  const staticId = selectedStaticSourceId(candidate);
+  const actions = [];
+  const adminOwnedLink = Boolean(
+    linkState.adminBackfillOwned
+    || (
+      stringValue(linkState.migrationLinkedBy) === ADMIN_MIGRATION_LINK_ACTOR
+      && stringValue(linkState.migrationSourceIdentity) === staticId
+    )
+  );
+  if (adminOwnedLink && stringValue(linkState.migrationSourceIdentity) === staticId) {
+    actions.push({ key: "clear_migration_identity_link", label: "Clear link" });
+  }
+  const applyEligible = Boolean(
+    candidate?.apiEligible === true
+    && objectValue(candidate?.recommendedApiPayload).action
+    && !hasMigrationLinkBlockers(candidate)
+    && !isRejectedMigrationLinkRecommendation(candidate)
+    && !isProviderShapedStaticId(candidate)
+    && !adminOwnedLink
+  );
+  if (applyEligible) {
+    actions.push({ key: "apply_migration_identity_link", label: "Apply link" });
   }
   return actions;
 }
@@ -161,15 +234,91 @@ function renderSourcePolicyReviewRow(row, index) {
   `;
 }
 
+function renderEvidenceList(items) {
+  const values = listValue(items).map(item => stringValue(item)).filter(Boolean);
+  if (!values.length) return "None";
+  return values.map(item => escapeHtml(formatMachineLabel(item))).join(", ");
+}
+
+function renderMigrationLinkReviewCandidate(candidate, index) {
+  const providerName = stringValue(candidate?.providerSourceName, stringValue(candidate?.providerSourceId, "Unknown provider"));
+  const providerId = stringValue(candidate?.providerSourceId, "unknown-provider");
+  const staticName = selectedStaticSourceName(candidate);
+  const staticId = selectedStaticSourceId(candidate);
+  const staticUrl = stringValue(candidate?.selectedStaticUrl);
+  const tier = stringValue(candidate?.confidenceTier, "medium");
+  const copy = tier === "high"
+    ? "High-confidence exact-evidence candidate."
+    : "Medium-confidence candidate. Review evidence before applying.";
+  const sourceState = objectValue(candidate?.sourceStateEvidence);
+  const ignoredAlternatives = listValue(candidate?.ignoredAlternatives);
+  const actions = getMigrationLinkReviewActions(candidate);
+  const actionButtons = actions.map(action => `
+    <button
+      type="button"
+      class="btn back-btn admin-source-policy-migration-link-action-btn"
+      data-ui="${MIGRATION_LINK_ACTION_TOKEN}"
+      data-source-policy-migration-link-action="${escapeHtml(action.key)}"
+      data-source-policy-migration-link-index="${index}"
+    >${escapeHtml(action.label)}</button>
+  `).join("");
+  return `
+    <div class="admin-source-policy-row admin-source-policy-migration-link-row" data-source-policy-migration-link-index="${index}">
+      <div class="admin-source-policy-row-main">
+        <div>
+          <div class="admin-source-policy-name">${escapeHtml(providerName)}</div>
+          <div class="admin-source-policy-id">${escapeHtml(providerId)}</div>
+        </div>
+        <div>
+          <div class="admin-source-policy-name">${escapeHtml(staticName)}</div>
+          <div class="admin-source-policy-id">${escapeHtml(staticId)}</div>
+          ${staticUrl ? `<div class="admin-source-policy-id">${escapeHtml(staticUrl)}</div>` : ""}
+        </div>
+      </div>
+      <div class="admin-source-policy-copy">${escapeHtml(copy)}</div>
+      <div class="admin-source-policy-meta">
+        <span><strong>Confidence</strong> ${escapeHtml(formatPercent(candidate?.confidence))}</span>
+        <span><strong>Tier</strong> ${escapeHtml(formatMachineLabel(tier))}</span>
+        <span><strong>API eligible</strong> ${candidate?.apiEligible === true ? "Yes" : "No"}</span>
+        <span><strong>Why not high</strong> ${escapeHtml(stringValue(candidate?.whyNotHighConfidence, "None"))}</span>
+        <span><strong>Evidence</strong> ${renderEvidenceList(candidate?.evidenceReasons)}</span>
+        <span><strong>Last kept</strong> ${numberValue(sourceState.lastKeptCount).toLocaleString()}</span>
+        <span><strong>Last status</strong> ${escapeHtml(formatMachineLabel(sourceState.lastStatus))}</span>
+        <span><strong>Evidence score</strong> ${numberValue(sourceState.evidenceScore).toLocaleString()}</span>
+        <span><strong>Ignored alternatives</strong> ${ignoredAlternatives.length.toLocaleString()}</span>
+      </div>
+      <div class="admin-source-policy-actions">${actionButtons || '<span class="muted">No safe link action available.</span>'}</div>
+    </div>
+  `;
+}
+
+function renderMigrationLinkReviewSection(candidates) {
+  const rows = Array.isArray(candidates) ? candidates : [];
+  const content = rows.length
+    ? rows.map((candidate, index) => renderMigrationLinkReviewCandidate(candidate, index)).join("")
+    : '<div class="muted">No migration link review candidates are available.</div>';
+  return `
+    <div class="admin-source-policy-migration-link-review">
+      <h4>Migration Link Review</h4>
+      <div class="admin-source-policy-copy">
+        Apply or clear one reviewed provider/static migration identity link at a time. This links coverage evidence only; it does not delete, hide, reject, demote, tombstone, or force-suppress any source.
+      </div>
+      <div class="admin-source-policy-list">${content}</div>
+    </div>
+  `;
+}
+
 export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
   if (!reviewEl) return;
   const rows = getPairs(payload);
+  const migrationLinkCandidates = getMigrationLinkReviewCandidates(payload);
   const selectedFilter = normalizeFilterKey(options?.selectedFilter);
   const filteredRows = filterSourcePolicyReviewPairs(rows, selectedFilter);
   const canPatchInPlace = Boolean(reviewEl && reviewEl.dataset);
   const signature = stableOpsSignature({
     selectedFilter,
-    rows
+    rows,
+    migrationLinkCandidates
   });
   if (canPatchInPlace && reviewEl.dataset.sourcePolicyReviewSig === signature) return;
   if (canPatchInPlace) reviewEl.dataset.sourcePolicyReviewSig = signature;
@@ -192,6 +341,7 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
         ? filteredEntries.map(entry => renderSourcePolicyReviewRow(entry.row, entry.index)).join("")
         : `<div class="muted">${escapeHtml(emptyText)}</div>`}
     </div>
+    ${renderMigrationLinkReviewSection(migrationLinkCandidates)}
   `;
 
   if (typeof reviewEl.querySelectorAll !== "function") return;
@@ -210,6 +360,16 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
       const action = stringValue(btn.dataset.sourcePolicyAction);
       if (row && action && typeof options.onSourcePolicyAction === "function") {
         options.onSourcePolicyAction(row, action);
+      }
+    });
+  });
+  reviewEl.querySelectorAll(ui(MIGRATION_LINK_ACTION_TOKEN)).forEach(btn => {
+    btn.addEventListener("click", () => {
+      const index = Number(btn.dataset.sourcePolicyMigrationLinkIndex || -1);
+      const candidate = migrationLinkCandidates[index];
+      const action = stringValue(btn.dataset.sourcePolicyMigrationLinkAction);
+      if (candidate && action && typeof options.onMigrationLinkAction === "function") {
+        options.onMigrationLinkAction(candidate, action);
       }
     });
   });
