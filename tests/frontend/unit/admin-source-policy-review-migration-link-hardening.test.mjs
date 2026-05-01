@@ -171,7 +171,17 @@ test("renders suppression eligibility diagnostics without actions", () => {
           providerCoverageLatestKeptCount: 4,
           providerReplacementReadiness: "ready_later",
           linkedStaticRegistryState: "active",
-          reason: "linked_static_not_selected"
+          reason: "linked_static_not_in_default_loader_set",
+          selectionReason: "linked_static_not_in_default_loader_set",
+          registryBucket: "active",
+          registryState: "active",
+          adapter: "static",
+          expectedLoaderName: "static_source::static:listing_url:https://studio.example/jobs",
+          foundInActiveRegistry: true,
+          foundInDefaultLoaders: false,
+          foundInSourceRows: false,
+          excludedByCadenceOrCache: false,
+          onlySourcesMode: false
         }
       ]
     }
@@ -181,7 +191,10 @@ test("renders suppression eligibility diagnostics without actions", () => {
   assert.match(reviewEl.innerHTML, /Provider ready, static not selected/);
   assert.match(reviewEl.innerHTML, /Studio Greenhouse/);
   assert.match(reviewEl.innerHTML, /Studio Static/);
-  assert.match(reviewEl.innerHTML, /linked static not selected/);
+  assert.match(reviewEl.innerHTML, /linked static not in default loader set/);
+  assert.match(reviewEl.innerHTML, /static_source::static:listing_url:https:\/\/studio.example\/jobs/);
+  assert.match(reviewEl.innerHTML, /Selected<\/strong> no/);
+  assert.match(reviewEl.innerHTML, /Only sources<\/strong> no/);
   assert.match(reviewEl.innerHTML, /Success streak<\/strong> 2/);
   assert.match(reviewEl.innerHTML, /Latest kept<\/strong> 4/);
   assert.doesNotMatch(reviewEl.innerHTML, />Apply link</);

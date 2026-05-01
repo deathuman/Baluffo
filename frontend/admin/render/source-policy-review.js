@@ -421,6 +421,10 @@ function renderSuppressionEligibilityRow(row) {
   const providerId = stringValue(row?.providerSourceId, "unknown-provider");
   const staticName = stringValue(row?.migrationSourceName, stringValue(row?.staticSourceName, stringValue(row?.migrationSourceIdentity, "Unknown static source")));
   const staticId = stringValue(row?.migrationSourceIdentity, stringValue(row?.staticSourceId, "unknown-static"));
+  const selectedLabel = row?.foundInSourceRows || row?.linkedStaticSelected ? "yes" : "no";
+  const defaultLoaderLabel = row?.foundInDefaultLoaders ? "yes" : "no";
+  const cacheLabel = row?.excludedByCadenceOrCache ? "yes" : "no";
+  const onlySourcesLabel = row?.onlySourcesMode ? "yes" : "no";
   return `
     <div class="admin-source-policy-row admin-source-policy-suppression-eligibility-row">
       <div class="admin-source-policy-row-main">
@@ -437,12 +441,19 @@ function renderSuppressionEligibilityRow(row) {
         Provider ready, static not selected. Runtime suppression can emit a row only when the linked static source is selected in the current fetch.
       </div>
       <div class="admin-source-policy-meta">
-        <span><strong>Reason</strong> ${escapeHtml(formatMachineLabel(row?.reason))}</span>
+        <span><strong>Selection reason</strong> ${escapeHtml(formatMachineLabel(row?.selectionReason || row?.reason))}</span>
         <span><strong>Readiness</strong> ${escapeHtml(formatMachineLabel(row?.providerReplacementReadiness))}</span>
         <span><strong>Coverage</strong> ${escapeHtml(formatMachineLabel(row?.providerCoverageStatus))}</span>
         <span><strong>Success streak</strong> ${numberValue(row?.providerCoverageConsecutiveSuccesses).toLocaleString()}</span>
         <span><strong>Latest kept</strong> ${numberValue(row?.providerCoverageLatestKeptCount).toLocaleString()}</span>
-        <span><strong>Registry state</strong> ${escapeHtml(formatMachineLabel(row?.linkedStaticRegistryState))}</span>
+        <span><strong>Bucket</strong> ${escapeHtml(formatMachineLabel(row?.registryBucket))}</span>
+        <span><strong>Registry state</strong> ${escapeHtml(formatMachineLabel(row?.registryState || row?.linkedStaticRegistryState))}</span>
+        <span><strong>Adapter</strong> ${escapeHtml(formatMachineLabel(row?.adapter))}</span>
+        <span><strong>Expected loader</strong> ${escapeHtml(stringValue(row?.expectedLoaderName, "unknown"))}</span>
+        <span><strong>Selected</strong> ${escapeHtml(selectedLabel)}</span>
+        <span><strong>Default loader</strong> ${escapeHtml(defaultLoaderLabel)}</span>
+        <span><strong>Cache/cadence</strong> ${escapeHtml(cacheLabel)}</span>
+        <span><strong>Only sources</strong> ${escapeHtml(onlySourcesLabel)}</span>
       </div>
     </div>
   `;

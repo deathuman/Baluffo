@@ -167,7 +167,14 @@ def test_source_policy_recommendations_includes_suppression_eligibility(
                             "providerCoverageConsecutiveSuccesses": 2,
                             "providerCoverageLatestKeptCount": 4,
                             "providerReplacementReadiness": "ready_later",
-                            "reason": "linked_static_not_selected",
+                            "reason": "linked_static_not_in_default_loader_set",
+                            "selectionReason": "linked_static_not_in_default_loader_set",
+                            "registryBucket": "active",
+                            "registryState": "active",
+                            "adapter": "static",
+                            "expectedLoaderName": "static_source::static:studio",
+                            "foundInActiveRegistry": True,
+                            "foundInSourceRows": False,
                         }
                     ],
                 }
@@ -180,7 +187,10 @@ def test_source_policy_recommendations_includes_suppression_eligibility(
     eligibility = payload["suppressionEligibility"]
     assert eligibility["readyLinkedProviderCount"] == 1
     assert eligibility["missingLinkedStaticCount"] == 1
-    assert eligibility["missingLinkedStaticRows"][0]["reason"] == "linked_static_not_selected"
+    row = eligibility["missingLinkedStaticRows"][0]
+    assert row["reason"] == "linked_static_not_in_default_loader_set"
+    assert row["selectionReason"] == "linked_static_not_in_default_loader_set"
+    assert row["expectedLoaderName"] == "static_source::static:studio"
 
 
 def test_source_policy_recommendations_includes_admin_owned_registry_link_without_soak(

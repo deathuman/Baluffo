@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections import Counter
@@ -273,16 +274,89 @@ def _find_registry_row(
     *,
     active_rows: list[dict[str, Any]],
     pending_rows: list[dict[str, Any]],
+    rejected_rows: list[dict[str, Any]] | None = None,
     identity: str,
 ) -> tuple[str, dict[str, Any]] | None:
     target = clean_text(identity)
     if not target:
         return None
-    for bucket, rows in (("active", active_rows), ("pending", pending_rows)):
+    for bucket, rows in (
+        ("active", active_rows),
+        ("pending", pending_rows),
+        ("rejected", rejected_rows or []),
+    ):
         for row in rows:
             if target in _source_identity_tokens(row):
                 return bucket, row
     return None
+
+
+def _static_loader_name_for_registry_row(row: dict[str, Any]) -> str:
+    source_id = clean_text(row.get("id"))
+    if not source_id:
+        listing_url = clean_text(row.get("listing_url"))
+        digest_seed = (
+            listing_url
+            or clean_text(row.get("name"))
+            or json.dumps(row, sort_keys=True, ensure_ascii=False)
+        )
+        source_id = f"auto:{hashlib.sha1(digest_seed.encode('utf-8')).hexdigest()[:12]}"
+    return f"static_source::{source_id}"
+
+
+def _static_source_url(row: dict[str, Any]) -> str:
+    url = clean_text(row.get("listing_url") or row.get("careersUrl") or row.get("url"))
+    if url:
+        return url
+    pages = as_json_list(row.get("pages"))
+    for item in pages:
+        url = clean_text(item)
+        if url:
+            return url
+    return ""
+
+
+def _find_likely_registry_row(
+    *,
+    active_rows: list[dict[str, Any]],
+    pending_rows: list[dict[str, Any]],
+    rejected_rows: list[dict[str, Any]],
+    identity: str,
+    static_name: str,
+) -> tuple[str, dict[str, Any]] | None:
+    target_name = norm_text(static_name)
+    target_url = norm_text(identity.removeprefix("static:listing_url:"))
+    for bucket, rows in (
+        ("active", active_rows),
+        ("pending", pending_rows),
+        ("rejected", rejected_rows),
+    ):
+        for row in rows:
+            if target_name and target_name == norm_text(row.get("name")):
+                return bucket, row
+            if target_url and target_url == norm_text(_static_source_url(row)):
+                return bucket, row
+    return None
+
+
+def _fetch_only_sources_mode(fetch_report: dict[str, Any]) -> bool:
+    runtime = as_json_object(fetch_report.get("runtime"))
+    if as_json_list(runtime.get("onlySources")):
+        return True
+    if as_json_list(fetch_report.get("onlySources")):
+        return True
+    args = as_json_object(runtime.get("args"))
+    return bool(as_json_list(args.get("onlySources")) or clean_text(args.get("onlySources")))
+
+
+def _source_row_excluded_by_cache(row: dict[str, Any] | None) -> bool:
+    if not row:
+        return False
+    cache_decision = clean_text(row.get("cacheDecision"))
+    exclusion_reason = clean_text(row.get("exclusionReason"))
+    return cache_decision in {"skip_fresh", "cooldown_skip"} or exclusion_reason.startswith(
+        "cache_"
+    )
 
 
 def _find_provider_registry_row(
@@ -312,18 +386,22 @@ def _find_provider_registry_row(
 
 def _suppression_eligibility_section(
     *,
+    fetch_report: dict[str, Any],
     source_rows: list[dict[str, Any]],
     source_state_rows: dict[str, dict[str, Any]],
     active_rows: list[dict[str, Any]],
     pending_rows: list[dict[str, Any]],
+    rejected_rows: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     selected_rows_by_static_identity: dict[str, dict[str, Any]] = {}
+    source_row_names = {clean_text(row.get("name")) for row in source_rows}
     for row in source_rows:
         for token in _source_row_tokens(row):
             selected_rows_by_static_identity.setdefault(token, row)
 
     ready_rows: list[dict[str, Any]] = []
     gates: list[dict[str, Any]] = []
+    only_sources_mode = _fetch_only_sources_mode(fetch_report)
     for source_name, raw_state_row in source_state_rows.items():
         state_row = as_json_object(raw_state_row)
         migration_source_identity = clean_text(state_row.get("migrationSourceIdentity"))
@@ -351,23 +429,69 @@ def _suppression_eligibility_section(
         )
         static_bucket = static_registry[0] if static_registry else ""
         static_row = static_registry[1] if static_registry else {}
+        static_name = (
+            clean_text(static_row.get("name"))
+            or clean_text(provider_row.get("migrationSourceName"))
+            or clean_text(state_row.get("migrationSourceName"))
+        )
+        likely_static_registry = None
+        if not static_registry:
+            likely_static_registry = _find_likely_registry_row(
+                active_rows=active_rows,
+                pending_rows=pending_rows,
+                rejected_rows=rejected_rows,
+                identity=migration_source_identity,
+                static_name=static_name,
+            )
+        display_static_row = static_row or (
+            likely_static_registry[1] if likely_static_registry else {}
+        )
+        display_static_bucket = static_bucket or (
+            likely_static_registry[0] if likely_static_registry else ""
+        )
         selected_row = selected_rows_by_static_identity.get(migration_source_identity)
         linked_static_selected = selected_row is not None
         linked_static_suppressed = bool(
             selected_row
             and clean_text(selected_row.get("exclusionReason")) == "dynamic_redundant_provider"
         )
-        if not static_registry:
-            reason = "linked_static_missing_from_registry"
-        elif linked_static_suppressed:
+        adapter = clean_text(display_static_row.get("adapter"))
+        registry_state = (
+            clean_text(display_static_row.get("registryState")) or display_static_bucket
+        )
+        hidden_from_default = bool(display_static_row.get("hiddenFromDefault")) or bool(
+            display_static_row.get("deferred")
+        )
+        pending_reason = clean_text(display_static_row.get("pendingReason"))
+        expected_loader_name = (
+            _static_loader_name_for_registry_row(display_static_row) if display_static_row else ""
+        )
+        found_in_default_loaders = bool(
+            expected_loader_name and expected_loader_name in source_row_names
+        )
+        if linked_static_suppressed:
             reason = "linked_static_suppressed"
         elif linked_static_selected:
             reason = "linked_static_selected_not_suppressed"
+        elif not static_registry and likely_static_registry:
+            reason = "linked_static_registry_identity_mismatch"
+        elif not static_registry:
+            reason = "linked_static_missing_from_registry"
+        elif display_static_bucket == "pending" and hidden_from_default:
+            reason = "linked_static_hidden_pending"
+        elif display_static_bucket == "pending":
+            reason = "linked_static_pending_not_default"
+        elif adapter and adapter not in STATIC_LIKE_ADAPTERS:
+            reason = "linked_static_adapter_not_static"
+        elif display_static_bucket == "active" and adapter in STATIC_LIKE_ADAPTERS:
+            reason = "linked_static_not_in_default_loader_set"
         else:
-            reason = "linked_static_not_selected"
+            reason = "unknown"
 
         provider_id = clean_text(provider_row.get("id")) or clean_text(source_name)
-        static_name = clean_text(static_row.get("name")) or migration_source_identity
+        static_name = (
+            clean_text(display_static_row.get("name")) or static_name or migration_source_identity
+        )
         ready_rows.append(
             {
                 "providerSourceId": provider_id,
@@ -388,9 +512,28 @@ def _suppression_eligibility_section(
                 "providerReplacementReadiness": clean_text(
                     state_row.get("providerReplacementReadiness")
                 ),
+                "selectionReason": reason,
+                "registryBucket": display_static_bucket,
+                "registryState": registry_state,
+                "hiddenFromDefault": hidden_from_default,
+                "pendingReason": pending_reason,
+                "adapter": adapter,
+                "sourceIdentity": clean_text(display_static_row.get("id"))
+                or migration_source_identity,
+                "loaderName": clean_text(selected_row.get("name")) if selected_row else "",
+                "expectedLoaderName": expected_loader_name,
+                "foundInActiveRegistry": bool(static_registry and static_bucket == "active"),
+                "foundInPendingRegistry": bool(static_registry and static_bucket == "pending"),
+                "foundInRejectedRegistry": bool(
+                    (static_registry and static_bucket == "rejected")
+                    or (likely_static_registry and likely_static_registry[0] == "rejected")
+                ),
+                "foundInDefaultLoaders": found_in_default_loaders,
+                "foundInSourceRows": linked_static_selected,
+                "excludedByCadenceOrCache": _source_row_excluded_by_cache(selected_row),
+                "onlySourcesMode": only_sources_mode,
                 "linkedStaticSelected": linked_static_selected,
-                "linkedStaticRegistryState": clean_text(static_row.get("registryState"))
-                or static_bucket,
+                "linkedStaticRegistryState": registry_state,
                 "linkedStaticFoundInRegistry": bool(static_registry),
                 "linkedStaticFoundInSourceRows": linked_static_selected,
                 "reason": reason,
@@ -402,12 +545,31 @@ def _suppression_eligibility_section(
         for row in ready_rows
         if row["reason"]
         in {
-            "linked_static_not_selected",
             "linked_static_missing_from_registry",
             "linked_static_selected_not_suppressed",
+            "linked_static_pending_not_default",
+            "linked_static_hidden_pending",
+            "linked_static_adapter_not_static",
+            "linked_static_registry_identity_mismatch",
+            "linked_static_not_in_default_loader_set",
+            "linked_static_loader_not_generated",
+            "unknown",
         }
     ]
-    not_selected = [row for row in ready_rows if row["reason"] == "linked_static_not_selected"]
+    not_selected = [
+        row
+        for row in ready_rows
+        if row["reason"]
+        in {
+            "linked_static_pending_not_default",
+            "linked_static_hidden_pending",
+            "linked_static_adapter_not_static",
+            "linked_static_registry_identity_mismatch",
+            "linked_static_not_in_default_loader_set",
+            "linked_static_loader_not_generated",
+            "unknown",
+        }
+    ]
     missing_registry = [
         row for row in ready_rows if row["reason"] == "linked_static_missing_from_registry"
     ]
@@ -1788,6 +1950,7 @@ def _build_sections(
     )
     active_rows = _list_rows(payloads["sourceRegistryActive"])
     pending_rows = _list_rows(payloads["sourceRegistryPending"])
+    rejected_rows = _list_rows(payloads["sourceRegistryRejected"])
     provider_migration_activation, activation_gates = _provider_migration_activation_section(
         discovery_report=as_json_object(payloads["sourceDiscoveryReport"]),
         discovery_candidates=discovery_candidates,
@@ -1806,10 +1969,12 @@ def _build_sections(
     )
     gates.extend(link_backfill_gates)
     suppression_eligibility, suppression_eligibility_gates = _suppression_eligibility_section(
+        fetch_report=fetch_report,
         source_rows=source_rows,
         source_state_rows=source_state_rows,
         active_rows=active_rows,
         pending_rows=pending_rows,
+        rejected_rows=rejected_rows,
     )
     gates.extend(suppression_eligibility_gates)
     staged_provider_candidates_count = int(
@@ -1831,7 +1996,7 @@ def _build_sections(
     review_pairs = list(as_json_object(review_state.get("pairs")).values())
 
     static_registry_tokens: set[str] = set()
-    for row in active_rows + pending_rows + _list_rows(payloads["sourceRegistryRejected"]):
+    for row in active_rows + pending_rows + rejected_rows:
         if clean_text(row.get("adapter")) == "static":
             static_registry_tokens.update(_source_identity_tokens(row))
     missing_static_pairs = [
@@ -2117,11 +2282,11 @@ def _suppression_eligibility_markdown_rows(report: dict[str, Any]) -> list[str]:
         )
     )
     lines = [
-        "| Provider | Linked static | Readiness | Successes | Latest kept | Reason |",
-        "|----------|---------------|-----------|-----------|-------------|--------|",
+        "| Provider | Linked static | Readiness | Successes | Latest kept | Selection reason | Bucket | Expected loader |",
+        "|----------|---------------|-----------|-----------|-------------|------------------|--------|-----------------|",
     ]
     if not rows:
-        lines.append("| none | none | none | `0` | `0` | none |")
+        lines.append("| none | none | none | `0` | `0` | none | none | none |")
         return lines
     for row in rows[:10]:
         lines.append(
@@ -2131,7 +2296,9 @@ def _suppression_eligibility_markdown_rows(report: dict[str, Any]) -> list[str]:
             f"`{clean_text(row.get('providerReplacementReadiness')) or 'unknown'}` | "
             f"`{_int_value(row.get('providerCoverageConsecutiveSuccesses'))}` | "
             f"`{_int_value(row.get('providerCoverageLatestKeptCount'))}` | "
-            f"`{clean_text(row.get('reason'))}` |"
+            f"`{clean_text(row.get('selectionReason')) or clean_text(row.get('reason'))}` | "
+            f"`{clean_text(row.get('registryBucket')) or 'unknown'}` | "
+            f"`{clean_text(row.get('expectedLoaderName')) or 'unknown'}` |"
         )
     return lines
 

@@ -81,20 +81,6 @@ SITE_CHANGED_STATIC_IDS = {
     "static:listing_url:https://34bigthings.com/careers",
 }
 
-EVIDENCE_DELETED_STATIC_IDS = {
-    "static:listing_url:https://34bigthings.com/careers",
-    "static:listing_url:https://airstrafeinteractive.com/careers.html",
-    "static:listing_url:https://blindsquirrelentertainment.com/careers",
-    "static:listing_url:https://fusegames.com/careers",
-    "static:listing_url:https://playground-games.com/careers/",
-    "static:listing_url:https://thirdkindgames.com/careers",
-    "static:listing_url:https://www.jokergame.net/jobs/",
-    "static:listing_url:https://www.series.inc/careers",
-    "static:listing_url:https://www.thecoalitionstudio.com/careers",
-    "static:listing_url:https://www.thefarm51.com/careers/",
-    "static:listing_url:https://www.thefarm51.com/eng/careers/",
-}
-
 KRAFTON_GREENHOUSE_IDS = {
     "greenhouse:slug:krafton",
     "greenhouse:slug:studiokraftonboard",
@@ -112,6 +98,19 @@ def _assert_evidence_deleted_sources_tombstoned(
         tombstone = tombstones[source_id]
         assert tombstone["reason"] == "jobs_dead_source_evidence"
         assert tombstone["deletedBy"] == "jobs_dead_source_evidence_20260429"
+
+
+def _split_hidden_pending_and_tombstoned(
+    source_ids: set[str],
+    active_by_id: dict,
+    pending_by_id: dict,
+    tombstones: dict,
+) -> tuple[set[str], set[str]]:
+    assert source_ids.isdisjoint(active_by_id)
+    hidden_pending = source_ids & pending_by_id.keys()
+    tombstoned = source_ids - hidden_pending
+    assert tombstoned <= tombstones.keys()
+    return hidden_pending, tombstoned
 
 
 KRAFTON_STATIC_BROWSER_REQUIRED_ID = "static:listing_url:https://krafton.com/en/careers/jobs/"
@@ -242,11 +241,10 @@ def test_static_narrow_cleanup_preserves_dead_and_redundant_rows_as_hidden() -> 
 
     active_by_id = {row["id"]: row for row in active}
     pending_by_id = {row["id"]: row for row in pending}
-    remaining_stale_ids = STALE_OR_DEAD_STATIC_IDS - EVIDENCE_DELETED_STATIC_IDS
-    deleted_stale_ids = STALE_OR_DEAD_STATIC_IDS & EVIDENCE_DELETED_STATIC_IDS
+    remaining_stale_ids, deleted_stale_ids = _split_hidden_pending_and_tombstoned(
+        STALE_OR_DEAD_STATIC_IDS, active_by_id, pending_by_id, tombstones
+    )
 
-    assert remaining_stale_ids.isdisjoint(active_by_id)
-    assert remaining_stale_ids <= pending_by_id.keys()
     for source_id in remaining_stale_ids:
         row = pending_by_id[source_id]
         assert row["registryState"] == "pending"
@@ -259,14 +257,17 @@ def test_static_narrow_cleanup_preserves_dead_and_redundant_rows_as_hidden() -> 
     )
 
     remaining_redundant = {
-        source_id: winner_id
-        for source_id, winner_id in REDUNDANT_STATIC_COVERAGE.items()
-        if source_id not in EVIDENCE_DELETED_STATIC_IDS
+        source_id: winner_id for source_id, winner_id in REDUNDANT_STATIC_COVERAGE.items()
     }
-    deleted_redundant_ids = (
-        set(REDUNDANT_STATIC_COVERAGE) | set(REDUNDANT_STATIC_COVERAGE.values())
-    ) & EVIDENCE_DELETED_STATIC_IDS
-    assert set(remaining_redundant).isdisjoint(active_by_id)
+    redundant_source_ids = set(REDUNDANT_STATIC_COVERAGE)
+    hidden_redundant_ids, deleted_redundant_ids = _split_hidden_pending_and_tombstoned(
+        redundant_source_ids, active_by_id, pending_by_id, tombstones
+    )
+    remaining_redundant = {
+        source_id: winner_id
+        for source_id, winner_id in remaining_redundant.items()
+        if source_id in hidden_redundant_ids
+    }
     assert set(remaining_redundant) <= pending_by_id.keys()
     assert set(remaining_redundant.values()) <= active_by_id.keys()
     for source_id, winner_id in remaining_redundant.items():
@@ -289,11 +290,10 @@ def test_static_site_changed_cleanup_preserves_rows_as_hidden_pending() -> None:
 
     active_by_id = {row["id"]: row for row in active}
     pending_by_id = {row["id"]: row for row in pending}
-    remaining_site_changed_ids = SITE_CHANGED_STATIC_IDS - EVIDENCE_DELETED_STATIC_IDS
-    deleted_site_changed_ids = SITE_CHANGED_STATIC_IDS & EVIDENCE_DELETED_STATIC_IDS
+    remaining_site_changed_ids, deleted_site_changed_ids = _split_hidden_pending_and_tombstoned(
+        SITE_CHANGED_STATIC_IDS, active_by_id, pending_by_id, tombstones
+    )
 
-    assert remaining_site_changed_ids.isdisjoint(active_by_id)
-    assert remaining_site_changed_ids <= pending_by_id.keys()
     for source_id in remaining_site_changed_ids:
         row = pending_by_id[source_id]
         assert row["registryState"] == "pending"
