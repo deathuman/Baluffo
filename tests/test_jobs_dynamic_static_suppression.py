@@ -4,10 +4,12 @@ from pathlib import Path
 
 from src import jobs_fetcher as jf
 from src.jobs.pipeline_loader_selection import apply_dynamic_redundant_static_exclusions
+from src.jobs.state_source_state import update_source_state_rows
 from tests.helpers.temp_paths import workspace_tmpdir
 
 STATIC_SOURCE_NAME = "static_source::static:listing_url:https://studio.example/jobs"
 MIGRATION_SOURCE_IDENTITY = "static:listing_url:https://studio.example/jobs"
+PROVIDER_SOURCE_NAME = "Studio Greenhouse"
 
 
 def _eligible_provider_state(**overrides):
@@ -37,6 +39,50 @@ def _excluded_report(name, reason):
         "exclusionReason": reason,
         "durationMs": 0,
     }
+
+
+def _provider_report(**overrides):
+    report = {
+        "name": PROVIDER_SOURCE_NAME,
+        "adapter": "greenhouse",
+        "status": "ok",
+        "keptCount": 2,
+        "fetchedCount": 2,
+        "migrationSourceIdentity": MIGRATION_SOURCE_IDENTITY,
+    }
+    report.update(overrides)
+    return report
+
+
+def _update_source_state(existing, report, *, finished_at):
+    return update_source_state_rows(
+        source_state_rows=existing,
+        source_reports=[report],
+        canonical_rows=[
+            {
+                "source": PROVIDER_SOURCE_NAME,
+                "sourceBundle": [{"source": PROVIDER_SOURCE_NAME}],
+            }
+        ],
+        finished_at=finished_at,
+        circuit_breaker_failures=3,
+        circuit_breaker_cooldown_minutes=60,
+    )
+
+
+def _apply_dynamic_suppression(source_state_rows):
+    return apply_dynamic_redundant_static_exclusions(
+        [
+            (PROVIDER_SOURCE_NAME, lambda **_: []),
+            (STATIC_SOURCE_NAME, lambda **_: []),
+        ],
+        source_state_rows=source_state_rows,
+        build_excluded_source_report=_excluded_report,
+        source_report_meta={
+            PROVIDER_SOURCE_NAME: {"adapter": "greenhouse"},
+            STATIC_SOURCE_NAME: {"adapter": "static"},
+        },
+    )
 
 
 def test_dynamic_static_suppression_requires_repeated_provider_successes():
@@ -92,6 +138,64 @@ def test_dynamic_static_suppression_does_not_apply_after_one_success_or_bad_stat
     ]
     assert unstable_excluded == []
     assert unstable_policy["eligibleCount"] == 0
+
+
+def test_linked_provider_success_sequence_controls_dynamic_static_suppression():
+    static_registry_row = {
+        "id": MIGRATION_SOURCE_IDENTITY,
+        "adapter": "static",
+        "name": "Static Studio",
+        "pages": ["https://studio.example/jobs"],
+    }
+    original_static_registry_row = copy.deepcopy(static_registry_row)
+
+    first = _update_source_state(
+        {},
+        _provider_report(),
+        finished_at="2026-04-30T12:00:00+00:00",
+    )
+    first_filtered, first_excluded, first_policy = _apply_dynamic_suppression(first)
+
+    assert first[PROVIDER_SOURCE_NAME]["providerCoverageStatus"] == "validated_provider"
+    assert first[PROVIDER_SOURCE_NAME]["providerCoverageConsecutiveSuccesses"] == 1
+    assert [name for name, _loader in first_filtered] == [
+        PROVIDER_SOURCE_NAME,
+        STATIC_SOURCE_NAME,
+    ]
+    assert first_excluded == []
+    assert first_policy["suppressedCount"] == 0
+
+    skipped = _update_source_state(
+        first,
+        _provider_report(status="excluded", keptCount=0, exclusionReason="cache_fresh"),
+        finished_at="2026-04-30T13:00:00+00:00",
+    )
+    skipped_filtered, skipped_excluded, skipped_policy = _apply_dynamic_suppression(skipped)
+
+    assert skipped[PROVIDER_SOURCE_NAME]["providerCoverageConsecutiveSuccesses"] == 1
+    assert [name for name, _loader in skipped_filtered] == [
+        PROVIDER_SOURCE_NAME,
+        STATIC_SOURCE_NAME,
+    ]
+    assert skipped_excluded == []
+    assert skipped_policy["suppressedCount"] == 0
+
+    second = _update_source_state(
+        skipped,
+        _provider_report(keptCount=3, fetchedCount=3),
+        finished_at="2026-04-30T14:00:00+00:00",
+    )
+    second_filtered, second_excluded, second_policy = _apply_dynamic_suppression(second)
+
+    assert second[PROVIDER_SOURCE_NAME]["providerCoverageConsecutiveSuccesses"] == 2
+    assert second[PROVIDER_SOURCE_NAME]["providerReplacementReadiness"] == "ready_later"
+    assert [name for name, _loader in second_filtered] == [PROVIDER_SOURCE_NAME]
+    assert second_excluded[0]["name"] == STATIC_SOURCE_NAME
+    assert second_excluded[0]["exclusionReason"] == "dynamic_redundant_provider"
+    assert second_excluded[0]["providerCoverageConsecutiveSuccesses"] == 2
+    assert second_excluded[0]["migrationSourceIdentity"] == MIGRATION_SOURCE_IDENTITY
+    assert second_policy["suppressedCount"] == 1
+    assert static_registry_row == original_static_registry_row
 
 
 def test_run_pipeline_dynamically_suppresses_default_static_source_without_mutating_registry():

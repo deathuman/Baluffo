@@ -128,6 +128,21 @@ def test_excluded_provider_skip_preserves_prior_coverage_counters():
     assert entry["providerCoverageLatestError"] == "previous error"
 
 
+def test_cache_fresh_provider_skip_does_not_increment_success_streak():
+    first = _update({}, _provider_report())
+    skipped = _update(
+        first,
+        _provider_report(status="excluded", keptCount=0, exclusionReason="cache_fresh"),
+        finished_at="2026-04-30T13:00:00+00:00",
+    )
+
+    entry = skipped["Studio Greenhouse"]
+    assert entry["providerCoverageStatus"] == "validated_provider"
+    assert entry["providerCoverageSuccessCount"] == 1
+    assert entry["providerCoverageConsecutiveSuccesses"] == 1
+    assert entry["providerReplacementReadiness"] == "candidate"
+
+
 def test_zero_job_provider_success_needs_review_without_counter_increment():
     rows = _update({}, _provider_report(keptCount=0, fetchedCount=0))
 
