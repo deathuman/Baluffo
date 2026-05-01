@@ -132,6 +132,61 @@ def test_provider_coverage_backfill_advisory_matches_custom_provider_id_and_gene
     assert link["staticSourceId"] == "generic-static:studio"
 
 
+def test_provider_coverage_backfill_exact_advisory_beats_company_name_only_alternative(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    _write_json(data_dir / "jobs-fetch-report.json", {})
+    _write_json(
+        data_dir / "source-registry-active.json",
+        [
+            {
+                "id": "greenhouse:slug:exactstudio",
+                "name": "Exact Studio",
+                "adapter": "greenhouse",
+                "slug": "exactstudio",
+            },
+            {
+                "id": "static:name-only",
+                "name": "Exact Studio",
+                "adapter": "static",
+                "listing_url": "https://name-only.example/jobs",
+            },
+        ],
+    )
+    _write_json(data_dir / "source-registry-pending.json", [])
+    _write_json(
+        data_dir / "source-discovery-candidates.json",
+        [
+            {
+                "sourceIdentity": "static:exact",
+                "name": "Exact Careers",
+                "adapter": "static",
+                "currentAdapter": "static",
+                "currentUrl": "https://exact.example/jobs",
+                "detectedProviderFamily": "greenhouse",
+                "detectedProviderId": "exactstudio",
+                "recommendedAction": "already_covered_by_provider",
+                "duplicateOfActiveSource": True,
+            }
+        ],
+    )
+
+    report = soak.build_soak_report(data_dir)
+    section = report["sections"]["providerCoverageLinkBackfill"]
+    candidate = next(
+        row
+        for row in section["links"]
+        if row["recommendedAction"] == "backfill_migration_identity_candidate"
+    )
+
+    assert section["candidateLinkCount"] == 1
+    assert section["mediumConfidenceLinkCount"] == 1
+    assert section["companyNameOnlyIgnoredCount"] == 1
+    assert section["blockerCounts"]["company_name_only_ignored"] == 1
+    assert candidate["staticSourceId"] == "static:exact"
+
+
 def test_provider_coverage_backfill_company_name_only_is_not_candidate(
     tmp_path: Path,
 ) -> None:
@@ -160,8 +215,55 @@ def test_provider_coverage_backfill_company_name_only_is_not_candidate(
     section = report["sections"]["providerCoverageLinkBackfill"]
 
     assert section["candidateLinkCount"] == 0
+    assert section["companyNameOnlyIgnoredCount"] == 1
     assert section["blockerCounts"]["company_name_only_ignored"] == 1
     assert section["blockerExamples"][0]["blocker"] == "company_name_only_ignored"
+
+
+def test_provider_coverage_backfill_exact_rule_beats_weak_host_only_alternative(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    _write_json(data_dir / "jobs-fetch-report.json", {})
+    _write_json(
+        data_dir / "source-registry-active.json",
+        [
+            {
+                "id": "smartrecruiters:company_id:cdprojektred",
+                "name": "CDPR Provider",
+                "adapter": "smartrecruiters",
+                "company_id": "CDPROJEKTRED",
+                "base_url": "https://weak.example/jobs",
+            },
+            {
+                "id": "static:cdpr",
+                "name": "CDPR Static",
+                "adapter": "static",
+                "listing_url": "https://cdprojektred.com/jobs",
+            },
+            {
+                "id": "static:weak-host",
+                "name": "Weak Host Static",
+                "adapter": "static",
+                "listing_url": "https://weak.example/jobs",
+            },
+        ],
+    )
+    _write_json(data_dir / "source-registry-pending.json", [])
+
+    report = soak.build_soak_report(data_dir)
+    section = report["sections"]["providerCoverageLinkBackfill"]
+    candidate = next(
+        row
+        for row in section["links"]
+        if row["recommendedAction"] == "backfill_migration_identity_candidate"
+    )
+
+    assert section["candidateLinkCount"] == 1
+    assert section["highConfidenceLinkCount"] == 1
+    assert section["hostOnlyMatchCount"] == 1
+    assert section["blockerCounts"]["host_only_match"] == 1
+    assert candidate["staticSourceId"] == "static:cdpr"
 
 
 def test_provider_coverage_backfill_ambiguous_static_matches_warn(
@@ -198,9 +300,17 @@ def test_provider_coverage_backfill_ambiguous_static_matches_warn(
     section = report["sections"]["providerCoverageLinkBackfill"]
 
     assert section["candidateLinkCount"] == 2
+    assert section["ambiguousProviderCount"] == 1
+    assert section["ambiguousStaticCandidateCount"] == 2
+    assert section["ambiguityGroups"][0]["candidateStaticCount"] == 2
+    assert {row["staticSourceId"] for row in section["ambiguityGroups"][0]["candidateStatics"]} == {
+        "static:cdpr-one",
+        "static:cdpr-two",
+    }
     assert section["blockerCounts"]["ambiguous_static_match"] == 2
     assert {row["recommendedAction"] for row in section["links"]} == {"ambiguous_static_match"}
     assert "provider_coverage_link_ambiguous_static_match" in _gate_ids(report)
+    assert "provider_coverage_link_unresolved_ambiguity_examples" in _gate_ids(report)
 
 
 def test_provider_coverage_backfill_already_linked_count_is_separate(
@@ -259,6 +369,8 @@ def test_provider_coverage_backfill_markdown_and_registry_read_only(
     markdown = Path(outputs["markdown"]).read_text(encoding="utf-8")
 
     assert "Provider Coverage Link Backfill" in markdown
+    assert "Ambiguity groups:" in markdown
+    assert "Resolved examples:" in markdown
     assert "Advisory only" in markdown
     assert report["sections"]["providerCoverageLinkBackfill"]["blockerCounts"] == {}
     assert (data_dir / "source-registry-active.json").read_text(encoding="utf-8") == before_active

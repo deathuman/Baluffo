@@ -34,7 +34,7 @@ from src.jobs.common.contracts_static_suppression_policy import (
 )
 from src.jobs.common.registry_defaults import REDUNDANT_STATIC_IF_PROVIDER
 from src.jobs.text_utils import clean_text, norm_text
-from src.shared.json_shapes import as_json_object, json_object_rows
+from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 from src.shared.utils import now_iso
 from src.source_discovery.config import SUPPORTED_PROVIDERS
 from src.source_discovery.provider_migration_advisory import enrich_provider_migration_rows
@@ -144,6 +144,13 @@ def _source_state_rows(payload: Any) -> dict[str, dict[str, Any]]:
     if not isinstance(sources, dict):
         return {}
     return {clean_text(key): value for key, value in sources.items() if isinstance(value, dict)}
+
+
+def _int_value(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _list_rows(payload: Any) -> list[dict[str, Any]]:
@@ -585,10 +592,81 @@ def _static_candidate(row: dict[str, Any]) -> dict[str, Any]:
         "staticUrl": url,
         "host": _url_host(url),
         "familyKey": norm_text(row.get("studio") or row.get("company") or row.get("name")),
+        "registryState": clean_text(row.get("registryState") or row.get("_soakRegistryState")),
+        "hiddenFromDefault": bool(row.get("hiddenFromDefault")),
+        "duplicateOfSourceId": clean_text(row.get("duplicateOfSourceId")),
+        "pendingReason": clean_text(row.get("pendingReason")),
     }
 
 
-def _static_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _source_state_for_static(
+    static: dict[str, Any], source_state_rows: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    for token in (
+        clean_text(static.get("staticSourceId")),
+        clean_text(static.get("staticSourceName")),
+    ):
+        if token and isinstance(source_state_rows.get(token), dict):
+            return source_state_rows[token]
+    return {}
+
+
+def _static_evidence(static: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+    registry_state = clean_text(static.get("registryState"))
+    hidden = bool(static.get("hiddenFromDefault"))
+    duplicate_of = clean_text(static.get("duplicateOfSourceId"))
+    pending_reason = clean_text(static.get("pendingReason"))
+    last_kept = _int_value(state.get("lastKeptCount"))
+    last_status = clean_text(state.get("lastStatus"))
+    last_successful_at = clean_text(state.get("lastSuccessfulAt"))
+    last_fetched_at = clean_text(state.get("lastFetchedAt"))
+
+    score = 0
+    reasons: list[str] = []
+    blockers: list[str] = []
+    if registry_state == "active":
+        score += 30
+        reasons.append("active_registry_row")
+    elif registry_state == "pending":
+        score += 5
+        blockers.append("pending_static_row")
+    if hidden:
+        score -= 25
+        blockers.append("hidden_from_default")
+    if duplicate_of:
+        score -= 25
+        blockers.append("duplicate_static_row")
+    if pending_reason:
+        blockers.append("pending_reason_present")
+    if last_kept > 0:
+        score += 30
+        reasons.append("source_state_kept_jobs")
+    if last_status == "ok":
+        score += 10
+        reasons.append("source_state_ok")
+    elif last_status:
+        blockers.append("source_state_not_ok")
+    if last_successful_at:
+        score += 5
+        reasons.append("source_state_success_timestamp")
+    if last_fetched_at:
+        reasons.append("source_state_fetched")
+    if not state:
+        blockers.append("no_source_state_history")
+    return {
+        "lastKeptCount": last_kept,
+        "lastStatus": last_status,
+        "lastSuccessfulAt": last_successful_at,
+        "lastFetchedAt": last_fetched_at,
+        "evidenceScore": score,
+        "evidenceReasons": reasons,
+        "disambiguationBlockers": blockers,
+    }
+
+
+def _static_candidates(
+    rows: list[dict[str, Any]], source_state_rows: dict[str, dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for row in rows:
@@ -597,6 +675,11 @@ def _static_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not key or key in seen:
             continue
         seen.add(key)
+        candidate.update(
+            _static_evidence(
+                candidate, _source_state_for_static(candidate, source_state_rows or {})
+            )
+        )
         out.append(candidate)
     return out
 
@@ -622,6 +705,28 @@ def _provider_link_row(
         "staticSourceId": clean_text(static.get("staticSourceId")),
         "staticSourceName": clean_text(static.get("staticSourceName")),
         "staticUrl": clean_text(static.get("staticUrl")),
+        "staticHost": clean_text(static.get("staticHost"))
+        or _url_host(clean_text(static.get("staticUrl"))),
+        "registryState": clean_text(static.get("registryState")),
+        "hiddenFromDefault": bool(static.get("hiddenFromDefault")),
+        "duplicateOfSourceId": clean_text(static.get("duplicateOfSourceId")),
+        "pendingReason": clean_text(static.get("pendingReason")),
+        "lastKeptCount": _int_value(static.get("lastKeptCount")),
+        "lastStatus": clean_text(static.get("lastStatus")),
+        "lastSuccessfulAt": clean_text(static.get("lastSuccessfulAt")),
+        "lastFetchedAt": clean_text(static.get("lastFetchedAt")),
+        "evidenceScore": _int_value(static.get("evidenceScore")),
+        "evidenceReasons": [
+            clean_text(reason)
+            for reason in as_json_list(static.get("evidenceReasons"))
+            if clean_text(reason)
+        ],
+        "disambiguationRank": _int_value(static.get("disambiguationRank")),
+        "disambiguationBlockers": [
+            clean_text(blocker)
+            for blocker in as_json_list(static.get("disambiguationBlockers"))
+            if clean_text(blocker)
+        ],
         "confidence": round(float(confidence), 2),
         "reasons": sorted({clean_text(reason) for reason in reasons if clean_text(reason)}),
         "blockers": sorted(
@@ -684,6 +789,35 @@ def _rule_link_rows(
                     provider_id_value=clean_text(rule.get("provider_id_value")),
                 )
             )
+    return rows
+
+
+def _provider_weak_host_rows(
+    provider: dict[str, Any],
+    static_rows: list[dict[str, Any]],
+    *,
+    excluded_static_ids: set[str],
+) -> list[dict[str, Any]]:
+    host = _url_host(_url_from_row(provider))
+    if not host:
+        return []
+    rows: list[dict[str, Any]] = []
+    for static in static_rows:
+        static_id = clean_text(static.get("staticSourceId"))
+        if not static_id or static_id in excluded_static_ids:
+            continue
+        if clean_text(static.get("host")) != host:
+            continue
+        rows.append(
+            _provider_link_row(
+                provider,
+                static,
+                confidence=0.25,
+                reasons=["host_only_match"],
+                blockers=["host_only_match"],
+                recommended_action="insufficient_evidence",
+            )
+        )
     return rows
 
 
@@ -750,25 +884,40 @@ def _advisory_link_rows(
     return rows
 
 
-def _company_name_only_blocker(
-    provider: dict[str, Any], static_rows: list[dict[str, Any]]
-) -> dict[str, Any]:
+def _company_name_only_blockers(
+    provider: dict[str, Any],
+    static_rows: list[dict[str, Any]],
+    *,
+    excluded_static_ids: set[str] | None = None,
+) -> list[dict[str, Any]]:
     provider_family = norm_text(
         provider.get("studio") or provider.get("company") or provider.get("name")
     )
     if not provider_family:
-        return {}
+        return []
+    excluded = excluded_static_ids or set()
+    rows: list[dict[str, Any]] = []
     for static in static_rows:
+        static_id = clean_text(static.get("staticSourceId"))
+        if static_id and static_id in excluded:
+            continue
         if provider_family == norm_text(static.get("familyKey")):
-            return {
-                "providerSourceId": clean_text(provider.get("id")) or source_identity(provider),
-                "providerSourceName": _source_name(provider),
-                "staticSourceId": clean_text(static.get("staticSourceId")),
-                "staticSourceName": clean_text(static.get("staticSourceName")),
-                "blockers": ["company_name_only_ignored"],
-                "recommendedAction": "insufficient_evidence",
-            }
-    return {}
+            rows.append(
+                {
+                    "providerSourceId": clean_text(provider.get("id")) or source_identity(provider),
+                    "providerSourceName": _source_name(provider),
+                    "providerAdapter": clean_text(provider.get("adapter")),
+                    "staticSourceId": static_id,
+                    "staticSourceName": clean_text(static.get("staticSourceName")),
+                    "staticUrl": clean_text(static.get("staticUrl")),
+                    "staticHost": clean_text(static.get("host")),
+                    "confidence": 0.0,
+                    "reasons": [],
+                    "blockers": ["company_name_only_ignored"],
+                    "recommendedAction": "insufficient_evidence",
+                }
+            )
+    return rows
 
 
 def _blocker_examples(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -793,11 +942,228 @@ def _blocker_examples(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return examples[:8]
 
 
+def _link_reasons(row: dict[str, Any]) -> list[str]:
+    return [clean_text(reason) for reason in as_json_list(row.get("reasons")) if clean_text(reason)]
+
+
+def _link_blockers(row: dict[str, Any]) -> list[str]:
+    return [
+        clean_text(blocker) for blocker in as_json_list(row.get("blockers")) if clean_text(blocker)
+    ]
+
+
+def _is_candidate_link(row: dict[str, Any]) -> bool:
+    action = clean_text(row.get("recommendedAction"))
+    return action not in {"already_linked", "insufficient_evidence"}
+
+
+def _has_exact_link_evidence(row: dict[str, Any]) -> bool:
+    reasons = set(_link_reasons(row))
+    return bool(
+        reasons
+        & {
+            "redundant_static_rule_exact_match",
+            "provider_migration_advisory_exact_identity",
+        }
+    )
+
+
+def _candidate_static_id(row: dict[str, Any]) -> str:
+    return clean_text(row.get("staticSourceId"))
+
+
+def _is_strong_source_state_candidate(row: dict[str, Any]) -> bool:
+    if clean_text(row.get("registryState")) != "active":
+        return False
+    if bool(row.get("hiddenFromDefault")) or clean_text(row.get("duplicateOfSourceId")):
+        return False
+    if _int_value(row.get("lastKeptCount")) <= 0:
+        return False
+    return clean_text(row.get("lastStatus")) == "ok" or bool(
+        clean_text(row.get("lastSuccessfulAt"))
+    )
+
+
+def _with_selected_link(
+    row: dict[str, Any],
+    *,
+    confidence: float,
+    reason: str,
+) -> dict[str, Any]:
+    updated = dict(row)
+    updated["confidence"] = round(confidence, 2)
+    updated["recommendedAction"] = "backfill_migration_identity_candidate"
+    updated["blockers"] = []
+    updated["reasons"] = sorted({*_link_reasons(row), reason})
+    return updated
+
+
+def _with_ignored_alternative(row: dict[str, Any], reason: str) -> dict[str, Any]:
+    updated = dict(row)
+    updated["recommendedAction"] = "insufficient_evidence"
+    updated["confidence"] = min(float(row.get("confidence") or 0), 0.5)
+    updated["blockers"] = sorted(
+        {blocker for blocker in _link_blockers(row) if blocker != "ambiguous_static_match"}
+        | {reason}
+    )
+    return updated
+
+
+def _resolution_example(
+    *,
+    selected: dict[str, Any],
+    ignored: list[dict[str, Any]],
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "providerSourceId": clean_text(selected.get("providerSourceId")),
+        "providerSourceName": clean_text(selected.get("providerSourceName")),
+        "selectedStaticSourceId": clean_text(selected.get("staticSourceId")),
+        "selectedStaticSourceName": clean_text(selected.get("staticSourceName")),
+        "resolutionReason": reason,
+        "ignoredStaticSourceIds": [
+            clean_text(row.get("staticSourceId"))
+            for row in ignored
+            if clean_text(row.get("staticSourceId"))
+        ],
+    }
+
+
+def _resolve_provider_link_rows(
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    ambiguous = [row for row in rows if "ambiguous_static_match" in set(_link_blockers(row))]
+    if len(ambiguous) <= 1:
+        return rows, None
+
+    advisory_exact = [
+        row
+        for row in rows
+        if "provider_migration_advisory_exact_identity" in set(_link_reasons(row))
+        and _candidate_static_id(row)
+    ]
+    advisory_static_ids = {_candidate_static_id(row) for row in advisory_exact}
+    if len(advisory_static_ids) == 1:
+        selected_id = next(iter(advisory_static_ids))
+        selected = next(row for row in advisory_exact if _candidate_static_id(row) == selected_id)
+        ignored = [
+            row
+            for row in rows
+            if _candidate_static_id(row)
+            and _candidate_static_id(row) != selected_id
+            and "ambiguous_static_match" in set(_link_blockers(row))
+        ]
+        return [
+            _with_selected_link(
+                selected,
+                confidence=0.95,
+                reason="advisory_identity_disambiguation",
+            ),
+            *[_with_ignored_alternative(row, "resolved_by_advisory_identity") for row in ignored],
+            *[
+                row
+                for row in rows
+                if row is not selected
+                and row not in ignored
+                and "ambiguous_static_match" not in set(_link_blockers(row))
+            ],
+        ], _resolution_example(
+            selected=selected,
+            ignored=ignored,
+            reason="advisory_identity_disambiguation",
+        )
+
+    strong = [row for row in ambiguous if _is_strong_source_state_candidate(row)]
+    if len(strong) == 1 and all(
+        row is strong[0] or not _is_strong_source_state_candidate(row) for row in ambiguous
+    ):
+        selected = strong[0]
+        ignored = [row for row in ambiguous if row is not selected]
+        return [
+            _with_selected_link(
+                selected,
+                confidence=0.8,
+                reason="source_state_disambiguation",
+            ),
+            *[_with_ignored_alternative(row, "resolved_by_source_state") for row in ignored],
+            *[row for row in rows if row not in ambiguous],
+        ], _resolution_example(
+            selected=selected,
+            ignored=ignored,
+            reason="source_state_disambiguation",
+        )
+
+    ranked = sorted(ambiguous, key=lambda row: _int_value(row.get("evidenceScore")), reverse=True)
+    for rank, row in enumerate(ranked, start=1):
+        row["disambiguationRank"] = rank
+    return rows, None
+
+
+def _ambiguity_candidate_static(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "staticSourceId": clean_text(row.get("staticSourceId")),
+        "staticSourceName": clean_text(row.get("staticSourceName")),
+        "staticUrl": clean_text(row.get("staticUrl")),
+        "staticHost": clean_text(row.get("staticHost"))
+        or _url_host(clean_text(row.get("staticUrl"))),
+        "matchReasons": _link_reasons(row),
+        "confidence": round(float(row.get("confidence") or 0), 2),
+        "blockers": _link_blockers(row),
+        "registryState": clean_text(row.get("registryState")),
+        "hiddenFromDefault": bool(row.get("hiddenFromDefault")),
+        "duplicateOfSourceId": clean_text(row.get("duplicateOfSourceId")),
+        "pendingReason": clean_text(row.get("pendingReason")),
+        "lastKeptCount": _int_value(row.get("lastKeptCount")),
+        "lastStatus": clean_text(row.get("lastStatus")),
+        "lastSuccessfulAt": clean_text(row.get("lastSuccessfulAt")),
+        "lastFetchedAt": clean_text(row.get("lastFetchedAt")),
+        "evidenceScore": _int_value(row.get("evidenceScore")),
+        "evidenceReasons": [
+            clean_text(reason)
+            for reason in as_json_list(row.get("evidenceReasons"))
+            if clean_text(reason)
+        ],
+        "disambiguationRank": _int_value(row.get("disambiguationRank")),
+        "disambiguationBlockers": [
+            clean_text(blocker)
+            for blocker in as_json_list(row.get("disambiguationBlockers"))
+            if clean_text(blocker)
+        ],
+    }
+
+
+def _ambiguity_groups(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if "ambiguous_static_match" not in set(_link_blockers(row)):
+            continue
+        key = clean_text(row.get("providerSourceId"))
+        if not key:
+            continue
+        grouped.setdefault(key, []).append(row)
+    groups: list[dict[str, Any]] = []
+    for provider_id, group_rows in sorted(grouped.items()):
+        first = group_rows[0]
+        groups.append(
+            {
+                "providerSourceId": provider_id,
+                "providerSourceName": clean_text(first.get("providerSourceName")),
+                "providerAdapter": clean_text(first.get("providerAdapter")),
+                "providerIdField": clean_text(first.get("providerIdField")),
+                "providerIdValue": clean_text(first.get("providerIdValue")),
+                "candidateStaticCount": len(group_rows),
+                "candidateStatics": [_ambiguity_candidate_static(row) for row in group_rows],
+            }
+        )
+    return groups[:20]
+
+
 def _provider_coverage_link_backfill_section(
     *,
     active_rows: list[dict[str, Any]],
     pending_rows: list[dict[str, Any]],
     discovery_candidates: list[dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     supported = {norm_text(provider) for provider in SUPPORTED_PROVIDERS}
     active_providers = [row for row in active_rows if norm_text(row.get("adapter")) in supported]
@@ -809,7 +1175,14 @@ def _provider_coverage_link_backfill_section(
         for row in active_providers
         if clean_text(row.get("migrationSourceIdentity"))
     ]
-    static_rows = _static_candidates([*active_rows, *pending_rows, *discovery_candidates])
+    static_rows = _static_candidates(
+        [
+            *[{**row, "_soakRegistryState": "active"} for row in active_rows],
+            *[{**row, "_soakRegistryState": "pending"} for row in pending_rows],
+            *discovery_candidates,
+        ],
+        source_state_rows,
+    )
     enriched_advisory = enrich_provider_migration_rows(
         discovery_candidates,
         active_rows=active_rows,
@@ -817,17 +1190,44 @@ def _provider_coverage_link_backfill_section(
     )
     links: list[dict[str, Any]] = [*already_linked]
     diagnostic_rows: list[dict[str, Any]] = []
+    resolution_examples: list[dict[str, Any]] = []
+    resolved_by_advisory = 0
+    resolved_by_source_state = 0
     for provider in active_without_identity:
         provider_links = [
             *_rule_link_rows(provider, static_rows),
             *_advisory_link_rows(provider, [*discovery_candidates, *enriched_advisory]),
         ]
+        provider_links, resolution = _resolve_provider_link_rows(provider_links)
+        if resolution:
+            resolution_examples.append(resolution)
+            if resolution.get("resolutionReason") == "advisory_identity_disambiguation":
+                resolved_by_advisory += 1
+            elif resolution.get("resolutionReason") == "source_state_disambiguation":
+                resolved_by_source_state += 1
+        exact_static_ids = {
+            clean_text(row.get("staticSourceId"))
+            for row in provider_links
+            if _has_exact_link_evidence(row)
+        }
+        provider_diagnostics = [
+            *_provider_weak_host_rows(
+                provider,
+                static_rows,
+                excluded_static_ids={static_id for static_id in exact_static_ids if static_id},
+            ),
+            *_company_name_only_blockers(
+                provider,
+                static_rows,
+                excluded_static_ids={static_id for static_id in exact_static_ids if static_id},
+            ),
+        ]
         if provider_links:
             links.extend(provider_links)
+            diagnostic_rows.extend(provider_diagnostics)
             continue
-        blocker = _company_name_only_blocker(provider, static_rows)
-        if blocker:
-            diagnostic_rows.append(blocker)
+        if provider_diagnostics:
+            diagnostic_rows.extend(provider_diagnostics)
             continue
         field, value = _provider_id_pair(provider)
         blockers = [] if field and value else ["provider_id_missing"]
@@ -846,14 +1246,18 @@ def _provider_coverage_link_backfill_section(
             )
         )
     links.extend(diagnostic_rows)
-    candidate_links = [
-        row
-        for row in links
-        if clean_text(row.get("recommendedAction")) != "already_linked"
-        and clean_text(row.get("recommendedAction")) != "insufficient_evidence"
-    ]
+    candidate_links = [row for row in links if _is_candidate_link(row)]
     blocker_counts = Counter(
         blocker for row in links for blocker in row.get("blockers", []) if clean_text(blocker)
+    )
+    ambiguity_groups = _ambiguity_groups(links)
+    exact_rule_match_count = sum(
+        1 for row in links if "redundant_static_rule_exact_match" in set(_link_reasons(row))
+    )
+    provider_url_match_count = sum(
+        1
+        for row in links
+        if "provider_migration_advisory_exact_identity" in set(_link_reasons(row))
     )
     high_confidence = [
         row
@@ -872,6 +1276,18 @@ def _provider_coverage_link_backfill_section(
         "candidateLinkCount": len(candidate_links),
         "highConfidenceLinkCount": len(high_confidence),
         "mediumConfidenceLinkCount": len(medium_confidence),
+        "ambiguousProviderCount": len(ambiguity_groups),
+        "ambiguousStaticCandidateCount": sum(
+            int(group.get("candidateStaticCount") or 0) for group in ambiguity_groups
+        ),
+        "exactRuleMatchCount": exact_rule_match_count,
+        "hostOnlyMatchCount": int(blocker_counts.get("host_only_match") or 0),
+        "providerUrlMatchCount": provider_url_match_count,
+        "companyNameOnlyIgnoredCount": int(blocker_counts.get("company_name_only_ignored") or 0),
+        "insufficientEvidenceCount": int(blocker_counts.get("insufficient_evidence") or 0),
+        "resolvedBySourceStateCount": resolved_by_source_state,
+        "resolvedByAdvisoryIdentityCount": resolved_by_advisory,
+        "unresolvedAmbiguousCount": int(blocker_counts.get("ambiguous_static_match") or 0),
         "rejectedLinkCount": sum(
             1
             for row in links
@@ -880,6 +1296,8 @@ def _provider_coverage_link_backfill_section(
         "alreadyLinkedCount": len(already_linked),
         "blockerCounts": dict(sorted(blocker_counts.items())),
         "blockerExamples": _blocker_examples(links),
+        "ambiguityGroups": ambiguity_groups,
+        "ambiguityResolutionExamples": resolution_examples[:8],
         "links": links,
     }
     gates: list[dict[str, Any]] = []
@@ -891,6 +1309,14 @@ def _provider_coverage_link_backfill_section(
                 {"highConfidenceLinkCount": len(high_confidence)},
             )
         )
+    if medium_confidence:
+        gates.append(
+            _warning_gate(
+                "provider_coverage_link_resolved_candidates",
+                "Provider/static migration identity backfill candidates were resolved by evidence enrichment.",
+                {"mediumConfidenceLinkCount": len(medium_confidence)},
+            )
+        )
     ambiguous_count = int(blocker_counts.get("ambiguous_static_match") or 0)
     if ambiguous_count > 0:
         gates.append(
@@ -898,6 +1324,13 @@ def _provider_coverage_link_backfill_section(
                 "provider_coverage_link_ambiguous_static_match",
                 "Provider coverage link backfill found ambiguous static matches.",
                 {"ambiguousStaticMatchCount": ambiguous_count},
+            )
+        )
+        gates.append(
+            _warning_gate(
+                "provider_coverage_link_unresolved_ambiguity_examples",
+                "Provider coverage link backfill has unresolved provider/static ambiguity groups.",
+                {"ambiguousProviderCount": len(ambiguity_groups)},
             )
         )
     return section, gates
@@ -1067,6 +1500,7 @@ def _build_sections(
         active_rows=active_rows,
         pending_rows=pending_rows,
         discovery_candidates=discovery_candidates,
+        source_state_rows=source_state_rows,
     )
     gates.extend(link_backfill_gates)
     staged_provider_candidates_count = int(
@@ -1353,6 +1787,18 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         "## Provider Coverage Link Backfill",
         "",
         "Advisory only: no `migrationSourceIdentity` values are written by this report.",
+        "",
+        (
+            "Ambiguity groups: "
+            f"{int(as_json_object(as_json_object(report.get('sections')).get('providerCoverageLinkBackfill')).get('ambiguousProviderCount') or 0)} "
+            "providers / "
+            f"{int(as_json_object(as_json_object(report.get('sections')).get('providerCoverageLinkBackfill')).get('ambiguousStaticCandidateCount') or 0)} "
+            "static candidates."
+        ),
+        (
+            "Resolved examples: "
+            f"{len(json_object_rows(as_json_object(as_json_object(report.get('sections')).get('providerCoverageLinkBackfill')).get('ambiguityResolutionExamples')))}."
+        ),
         "",
         *_markdown_table(
             list(
