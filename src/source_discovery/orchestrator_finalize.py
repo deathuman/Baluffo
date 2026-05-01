@@ -12,6 +12,7 @@ from src.source_registry_state import transition_registry_to_pending
 
 from .core import apply_queue_balancing
 from .orchestrator_runtime import DiscoveryRunDeps, DiscoveryRunState
+from .provider_migration_advisory import stage_provider_candidates_with_diagnostics
 from .reporting import (
     build_candidate_review_payload,
     build_discovery_task_progress,
@@ -50,15 +51,18 @@ def _pending_registry_row(row: dict[str, Any], *, at: str) -> dict[str, Any]:
     return pending
 
 
-def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[str, Any]:
-    orchestrator = _require_root()
+def _prepare_review_candidates(
+    *,
+    deps: DiscoveryRunDeps,
+    state: DiscoveryRunState,
+    review_timestamp: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     queued_candidates, report_candidates, balancing_summary = apply_queue_balancing(
         state.queueable_candidates,
         deps.top_n,
         domain_cap=deps.queue_domain_cap,
         adapter_caps=deps.queue_adapter_caps,
     )
-    review_timestamp = now_iso()
     for index, row in enumerate(report_candidates):
         if not isinstance(row, dict):
             continue
@@ -83,8 +87,113 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
         and source_identity(row) in queued_ids
         and not bool(row.get("deferred"))
     ]
+    return queued_candidates, report_candidates, balancing_summary
+
+
+def _count_queued_stages(
+    queued_candidates: list[dict[str, Any]],
+    stage_counter: Counter[str],
+) -> None:
     for row in queued_candidates:
-        state.queued_count_by_stage[str(row.get("discoveryStage") or "provider_pattern")] += 1
+        stage_counter[str(row.get("discoveryStage") or "provider_pattern")] += 1
+
+
+def _append_staged_provider_candidates(
+    *,
+    orchestrator: Any,
+    state: DiscoveryRunState,
+    queued_candidates: list[dict[str, Any]],
+    report_candidates: list[dict[str, Any]],
+    review_timestamp: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    staging_result = stage_provider_candidates_with_diagnostics(
+        report_candidates,
+        active_rows=state.active,
+        pending_rows=state.pending_existing,
+        seen_rows=queued_candidates,
+        at=review_timestamp,
+    )
+    staged_provider_candidates = [
+        dict(row) for row in staging_result.get("staged", []) if isinstance(row, dict)
+    ]
+    if not staged_provider_candidates:
+        return queued_candidates, report_candidates
+    report_candidates.extend(staged_provider_candidates)
+    queued_candidates.extend(staged_provider_candidates)
+    _count_queued_stages(staged_provider_candidates, state.queued_count_by_stage)
+    orchestrator.emit_log(
+        f"Post-probe provider migration candidate(s) staged: {len(staged_provider_candidates)}."
+    )
+    return queued_candidates, report_candidates
+
+
+def _build_failure_counter(failures: list[dict[str, Any]]) -> Counter[str]:
+    failure_counter: Counter[str] = Counter()
+    ignored_drop_reasons = {
+        "existing_id",
+        "existing_domain",
+        "run_id",
+        "run_domain",
+        "blocked_domain",
+        "sheet_directory_stage_cap",
+    }
+    for row in failures:
+        stage = str(row.get("stage") or "").strip().lower()
+        drop_stage = str(row.get("dropStage") or "").strip().lower()
+        drop_reason = str(row.get("dropReason") or "").strip().lower()
+        if stage in {"dedupe_skipped", "suppressed_static"}:
+            continue
+        if drop_stage in {"dedupe_skipped", "suppressed_static"}:
+            continue
+        if drop_reason in ignored_drop_reasons:
+            continue
+        adapter = str(row.get("adapter") or "unknown")
+        domain = str(row.get("domain") or "").strip()
+        failure_counter[f"{adapter}:{domain}" if domain else adapter] += 1
+    return failure_counter
+
+
+def _build_sheet_directory_summary(
+    *,
+    failures: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    sheet_directory_failures = [
+        failure
+        for failure in failures
+        if isinstance(failure, dict) and str(failure.get("adapter")) == "sheet_directory"
+    ]
+    return {
+        "fetchFailed": any(
+            str(failure.get("stage")) == "directory_index_fetch"
+            for failure in sheet_directory_failures
+        ),
+        "parseFailed": any(
+            str(failure.get("stage")) == "directory_parse" for failure in sheet_directory_failures
+        ),
+        "failureCount": len(sheet_directory_failures),
+        "generatedCount": int(
+            (summary.get("generatedCountByStage") or {}).get("sheet_directory", 0)
+        ),
+    }
+
+
+def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[str, Any]:
+    orchestrator = _require_root()
+    review_timestamp = now_iso()
+    queued_candidates, report_candidates, balancing_summary = _prepare_review_candidates(
+        deps=deps,
+        state=state,
+        review_timestamp=review_timestamp,
+    )
+    _count_queued_stages(queued_candidates, state.queued_count_by_stage)
+    queued_candidates, report_candidates = _append_staged_provider_candidates(
+        orchestrator=orchestrator,
+        state=state,
+        queued_candidates=queued_candidates,
+        report_candidates=report_candidates,
+        review_timestamp=review_timestamp,
+    )
 
     deferred_count = len([row for row in report_candidates if bool(row.get("deferred"))])
     probe_miss_count = len([row for row in state.failures if str(row.get("stage")) == "probe_miss"])
@@ -123,7 +232,12 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
     orchestrator.save_json_atomic(
         source_registry_module.M5_STRATEGIC_BACKLOG_PATH, m5_strategic_backlog
     )
-    candidate_review = build_candidate_review_payload(report_candidates)
+    candidate_review = build_candidate_review_payload(
+        report_candidates,
+        active_rows=state.active,
+        pending_rows=state.pending_existing,
+        at=review_timestamp,
+    )
 
     summary = build_stage_summary(
         report_candidates,
@@ -161,27 +275,7 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
     summary["directoryAudits"] = dict(state.directory_audit_summaries)
     task_progress = build_discovery_task_progress(summary=summary, finished=True)
 
-    failure_counter: Counter[str] = Counter()
-    for row in state.failures:
-        stage = str(row.get("stage") or "").strip().lower()
-        drop_stage = str(row.get("dropStage") or "").strip().lower()
-        drop_reason = str(row.get("dropReason") or "").strip().lower()
-        if stage == "dedupe_skipped" or drop_stage == "dedupe_skipped":
-            continue
-        if stage == "suppressed_static" or drop_stage == "suppressed_static":
-            continue
-        if drop_reason in {
-            "existing_id",
-            "existing_domain",
-            "run_id",
-            "run_domain",
-            "blocked_domain",
-            "sheet_directory_stage_cap",
-        }:
-            continue
-        adapter = str(row.get("adapter") or "unknown")
-        domain = str(row.get("domain") or "").strip()
-        failure_counter[f"{adapter}:{domain}" if domain else adapter] += 1
+    failure_counter = _build_failure_counter(state.failures)
 
     suppression_summary = {
         "dedupeSkippedCount": int(state.skipped_duplicate_count),
@@ -191,24 +285,10 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
         "suppressedStaticByStage": dict(state.suppressed_static_by_stage),
     }
 
-    sheet_directory_failures = [
-        failure
-        for failure in state.failures
-        if isinstance(failure, dict) and str(failure.get("adapter")) == "sheet_directory"
-    ]
-    sheet_directory_summary = {
-        "fetchFailed": any(
-            str(failure.get("stage")) == "directory_index_fetch"
-            for failure in sheet_directory_failures
-        ),
-        "parseFailed": any(
-            str(failure.get("stage")) == "directory_parse" for failure in sheet_directory_failures
-        ),
-        "failureCount": len(sheet_directory_failures),
-        "generatedCount": int(
-            (summary.get("generatedCountByStage") or {}).get("sheet_directory", 0)
-        ),
-    }
+    sheet_directory_summary = _build_sheet_directory_summary(
+        failures=state.failures,
+        summary=summary,
+    )
 
     report = {
         "schemaVersion": SCHEMA_VERSION,

@@ -309,7 +309,13 @@ def _top_rows(
     return [_compact_candidate(row) for row in selected[:limit]]
 
 
-def build_candidate_review_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def build_candidate_review_payload(
+    rows: list[dict[str, Any]],
+    *,
+    active_rows: list[dict[str, Any]] | None = None,
+    pending_rows: list[dict[str, Any]] | None = None,
+    at: str = "",
+) -> dict[str, Any]:
     candidates = [enrich_candidate_review_metadata(row) for row in rows if isinstance(row, dict)]
     recommendation_counts = Counter(_text(row.get("promotionRecommendation")) for row in candidates)
     recommendation_counts.pop("", None)
@@ -340,5 +346,10 @@ def build_candidate_review_payload(rows: list[dict[str, Any]]) -> dict[str, Any]
             candidates,
             lambda row: _text(row.get("promotionRecommendation")) == "reject_candidate",
         ),
-        "providerMigration": build_provider_migration_payload(candidates),
+        "providerMigration": build_provider_migration_payload(
+            candidates,
+            active_rows=active_rows,
+            pending_rows=pending_rows,
+            at=at,
+        ),
     }

@@ -7,8 +7,9 @@ from src.source_discovery.candidate_review import (
 from src.source_discovery.provider_migration_advisory import (
     build_provider_migration_payload,
     enrich_provider_migration_metadata,
+    provider_staging_decision_for_advisory,
     stage_provider_candidates_from_advisories,
-    staged_provider_candidate_from_advisory,
+    stage_provider_candidates_with_diagnostics,
 )
 
 
@@ -104,7 +105,7 @@ def test_provider_migration_payload_is_nested_under_candidate_review() -> None:
 
 
 def test_provider_migration_payload_tracks_staged_provider_candidates() -> None:
-    staged = staged_provider_candidate_from_advisory(
+    staged, diagnostic = provider_staging_decision_for_advisory(
         {
             "name": "Static Studio",
             "adapter": "static",
@@ -114,6 +115,7 @@ def test_provider_migration_payload_tracks_staged_provider_candidates() -> None:
         at="2026-04-30T12:00:00+00:00",
     )
 
+    assert diagnostic["providerStagingDecision"] == "staged"
     migration = build_provider_migration_payload([staged])
 
     assert migration["stagedProviderCount"] == 1
@@ -122,7 +124,7 @@ def test_provider_migration_payload_tracks_staged_provider_candidates() -> None:
 
 
 def test_stage_provider_candidate_keeps_discovery_and_registry_state_separate() -> None:
-    staged = staged_provider_candidate_from_advisory(
+    staged, diagnostic = provider_staging_decision_for_advisory(
         {
             "name": "Static Studio",
             "adapter": "static",
@@ -133,6 +135,7 @@ def test_stage_provider_candidate_keeps_discovery_and_registry_state_separate() 
         at="2026-04-30T12:00:00+00:00",
     )
 
+    assert diagnostic["providerStagingDecision"] == "staged"
     assert staged["adapter"] == "greenhouse"
     assert staged["slug"] == "staticstudio"
     assert staged["candidateState"] == "staged_provider_candidate"
@@ -182,3 +185,115 @@ def test_stage_provider_candidates_blocks_active_pending_and_weak_actions() -> N
         )
         == []
     )
+
+
+def test_provider_staging_diagnostics_explain_active_and_pending_duplicates() -> None:
+    strong = {
+        "name": "Static Studio",
+        "adapter": "static",
+        "atsLinks": ["https://boards.greenhouse.io/staticstudio"],
+        "jobsFound": 2,
+    }
+
+    active = stage_provider_candidates_with_diagnostics(
+        [strong],
+        active_rows=[{"adapter": "greenhouse", "slug": "staticstudio"}],
+        at="2026-04-30T12:00:00+00:00",
+    )
+    pending = stage_provider_candidates_with_diagnostics(
+        [strong],
+        pending_rows=[{"adapter": "greenhouse", "slug": "staticstudio"}],
+        at="2026-04-30T12:00:00+00:00",
+    )
+
+    assert active["staged"] == []
+    assert active["diagnostics"][0]["providerStagingDecision"] == "skipped"
+    assert "existing_provider" in active["diagnostics"][0]["providerStagingBlockers"]
+    assert pending["staged"] == []
+    assert "existing_provider" in pending["diagnostics"][0]["providerStagingBlockers"]
+
+
+def test_provider_staging_reports_provider_row_build_failure() -> None:
+    candidate, diagnostic = provider_staging_decision_for_advisory(
+        {
+            "name": "Broken Provider",
+            "adapter": "static",
+            "detectedProviderFamily": "greenhouse",
+            "detectedProviderUrl": "https://boards.greenhouse.io/",
+            "slug": "broken-provider",
+        },
+        at="2026-04-30T12:00:00+00:00",
+    )
+
+    assert candidate == {}
+    assert diagnostic["recommendedAction"] == "add_provider_source"
+    assert "provider_row_build_failure" in diagnostic["providerStagingBlockers"]
+
+
+def test_provider_staging_allows_static_like_generic_static_evidence() -> None:
+    staged = stage_provider_candidates_from_advisories(
+        [
+            {
+                "name": "Generic Static Studio",
+                "adapter": "generic_static",
+                "discoveryStage": "generic_static",
+                "atsLinks": ["https://boards.greenhouse.io/genericstaticstudio"],
+                "jobsFound": 3,
+            }
+        ],
+        at="2026-04-30T12:00:00+00:00",
+    )
+
+    assert len(staged) == 1
+    assert staged[0]["adapter"] == "greenhouse"
+    assert staged[0]["slug"] == "genericstaticstudio"
+
+
+def test_provider_staging_reports_adapter_mismatch_for_provider_rows() -> None:
+    candidate, diagnostic = provider_staging_decision_for_advisory(
+        {
+            "name": "Provider Row",
+            "adapter": "greenhouse",
+            "api_url": "https://boards-api.greenhouse.io/v1/boards/providerrow/jobs?content=true",
+        },
+        at="2026-04-30T12:00:00+00:00",
+    )
+
+    assert candidate == {}
+    assert diagnostic["recommendedAction"] == "add_provider_source"
+    assert "adapter_mismatch" in diagnostic["providerStagingBlockers"]
+
+
+def test_provider_staging_original_static_identity_does_not_block_provider_identity() -> None:
+    result = stage_provider_candidates_with_diagnostics(
+        [
+            {
+                "id": "greenhouse:slug:staticstudio",
+                "name": "Static Studio",
+                "adapter": "static",
+                "atsLinks": ["https://boards.greenhouse.io/staticstudio"],
+                "jobsFound": 2,
+            }
+        ],
+        at="2026-04-30T12:00:00+00:00",
+    )
+
+    assert len(result["staged"]) == 1
+    assert "identity_collision" not in result["diagnostics"][0]["providerStagingBlockers"]
+
+
+def test_provider_migration_payload_includes_staging_blocker_counts() -> None:
+    payload = build_provider_migration_payload(
+        [
+            {
+                "name": "Provider Row",
+                "adapter": "greenhouse",
+                "api_url": "https://boards-api.greenhouse.io/v1/boards/providerrow/jobs?content=true",
+            }
+        ]
+    )
+
+    assert payload["stagingSkippedCount"] == 1
+    assert payload["stagingBlockedByAdapterMismatchCount"] == 1
+    assert payload["stagingBlockerCounts"]["adapter_mismatch"] == 1
+    assert payload["stagingBlockerExamples"][0]["providerStagingDecision"] == "skipped"

@@ -71,3 +71,29 @@ def test_candidate_review_payload_builds_compact_review_lanes() -> None:
     assert payload["providerBackedCandidates"][0]["providerFamily"] == "greenhouse"
     assert payload["needsBrowserProbeCandidates"][0]["name"] == "Blocked"
     assert payload["hiddenOrDeferredCandidates"][0]["name"] == "Hidden"
+
+
+def test_candidate_review_payload_includes_provider_staging_diagnostics() -> None:
+    payload = build_candidate_review_payload(
+        [
+            {
+                "name": "Static Studio",
+                "adapter": "static",
+                "atsLinks": ["https://boards.greenhouse.io/staticstudio"],
+                "jobsFound": 3,
+            },
+            {
+                "name": "Provider Row",
+                "adapter": "greenhouse",
+                "api_url": "https://boards-api.greenhouse.io/v1/boards/providerrow/jobs?content=true",
+            },
+        ],
+        at="2026-04-30T12:00:00+00:00",
+    )
+
+    migration = payload["providerMigration"]
+    assert migration["stageableProviderCandidateCount"] == 1
+    assert migration["stagedProviderCandidateCount"] == 1
+    assert migration["stagingSkippedCount"] == 1
+    assert migration["stagingBlockedByAdapterMismatchCount"] == 1
+    assert migration["stagedProviderCandidates"][0]["providerStagingDecision"] == "staged"

@@ -53,8 +53,29 @@ _COMPACT_KEYS = (
     "rankScore",
     "lastProbeStatus",
     "lastProbeError",
+    "providerStagingDecision",
+    "providerStagingBlockers",
+    "providerStagingCandidateId",
+    "providerStagingSourceIdentity",
+    "providerStagingProviderFamily",
+    "providerStagingProviderUrl",
+    "providerStagingProviderId",
 )
 _STAGED_ACTOR = "provider_migration_advisory"
+_STAGEABLE_ACTIONS = {"add_provider_source", "review_provider_migration"}
+_STATIC_LIKE_ADAPTERS = {"static", "scrapy_static"}
+_STATIC_LIKE_STAGES = {"generic_static", "seed_careers_page", "sheet_directory"}
+_STRONG_PROVIDER_EVIDENCE_REASONS = {
+    "provider_url_evidence",
+    "provider_id:slug",
+    "provider_id:account",
+    "provider_id:company_id",
+    "provider_id:api_url",
+    "provider_id:feed_url",
+    "provider_id:board_url",
+    "provider_id:listing_url",
+    "provider_id:base_url",
+}
 
 
 def _text(value: Any) -> str:
@@ -231,6 +252,34 @@ def _provider_row_from_evidence(
     return provider_row
 
 
+def _is_static_like_advisory(row: dict[str, Any]) -> bool:
+    current_adapter = _lower(row.get("currentAdapter") or row.get("adapter"))
+    discovery_stage = _lower(row.get("discoveryStage"))
+    if current_adapter in SUPPORTED_PROVIDERS and not _text(row.get("migrationSourceIdentity")):
+        return False
+    if current_adapter in _STATIC_LIKE_ADAPTERS or discovery_stage in _STATIC_LIKE_STAGES:
+        return True
+    return bool(_text(row.get("migrationSourceIdentity")))
+
+
+def _has_strong_provider_evidence(row: dict[str, Any]) -> bool:
+    reasons = {_lower(item) for item in row.get("migrationReasons") or []}
+    return bool(reasons & _STRONG_PROVIDER_EVIDENCE_REASONS)
+
+
+def _provider_seen_identities(rows: list[dict[str, Any]] | None) -> set[str]:
+    return {
+        source_identity(row)
+        for row in rows or []
+        if isinstance(row, dict)
+        and (
+            _lower(row.get("adapter")) in SUPPORTED_PROVIDERS
+            or bool(row.get("createdFromAdvisory"))
+        )
+        and source_identity(row)
+    }
+
+
 def _provider_lookup_key(row: dict[str, Any]) -> tuple[str, str]:
     family = _provider_family(row, _candidate_url(row))
     _field, value = _provider_id(row, family, _candidate_url(row))
@@ -389,61 +438,21 @@ def enrich_provider_migration_metadata(
     return updated
 
 
-def _is_stageable_provider_advisory(row: dict[str, Any]) -> bool:
-    action = _text(row.get("recommendedAction"))
-    current_adapter = _lower(row.get("currentAdapter") or row.get("adapter"))
+def _staged_provider_row_from_enriched_advisory(row: dict[str, Any], *, at: str) -> dict[str, Any]:
     family = _lower(row.get("detectedProviderFamily"))
-    if action not in {"add_provider_source", "review_provider_migration"}:
-        return False
-    if current_adapter != "static":
-        return False
-    if family not in SUPPORTED_PROVIDERS:
-        return False
-    if bool(row.get("duplicateOfActiveSource")) or bool(row.get("duplicateOfPendingSource")):
-        return False
-    if _text(row.get("existingProviderSourceId")):
-        return False
-    if not (_text(row.get("detectedProviderUrl")) or _text(row.get("detectedProviderId"))):
-        return False
-    reasons = {_lower(item) for item in row.get("migrationReasons") or []}
-    return bool(
-        reasons
-        & {
-            "provider_url_evidence",
-            "provider_id:slug",
-            "provider_id:account",
-            "provider_id:company_id",
-            "provider_id:api_url",
-            "provider_id:feed_url",
-            "provider_id:board_url",
-            "provider_id:listing_url",
-            "provider_id:base_url",
-        }
-    )
-
-
-def staged_provider_candidate_from_advisory(
-    row: dict[str, Any],
-    *,
-    at: str,
-) -> dict[str, Any]:
-    advisory = enrich_provider_migration_metadata(row)
-    if not _is_stageable_provider_advisory(advisory):
-        return {}
-    family = _lower(advisory.get("detectedProviderFamily"))
-    provider_url = _text(advisory.get("detectedProviderUrl"))
-    provider_row = _provider_row_from_evidence(advisory, family=family, provider_url=provider_url)
+    provider_url = _text(row.get("detectedProviderUrl"))
+    provider_row = _provider_row_from_evidence(row, family=family, provider_url=provider_url)
     if not provider_row:
         return {}
     provider_row["createdFromAdvisory"] = True
-    provider_row["migrationSourceIdentity"] = _text(
-        advisory.get("sourceIdentity")
-    ) or source_identity(row)
-    provider_row["migrationReasons"] = list(advisory.get("migrationReasons") or [])
-    provider_row["migrationConfidence"] = _as_int(advisory.get("migrationConfidence"))
+    provider_row["migrationSourceIdentity"] = _text(row.get("sourceIdentity")) or source_identity(
+        row
+    )
+    provider_row["migrationReasons"] = list(row.get("migrationReasons") or [])
+    provider_row["migrationConfidence"] = _as_int(row.get("migrationConfidence"))
     provider_row["detectedProviderFamily"] = family
     provider_row["detectedProviderUrl"] = provider_url
-    provider_row["detectedProviderId"] = _text(advisory.get("detectedProviderId"))
+    provider_row["detectedProviderId"] = _text(row.get("detectedProviderId"))
     provider_row["candidateState"] = "staged_provider_candidate"
     provider_row["stagedAt"] = str(at)
     provider_row["stagedBy"] = _STAGED_ACTOR
@@ -455,6 +464,181 @@ def staged_provider_candidate_from_advisory(
     return provider_row
 
 
+def _staged_advisory_diagnostic(advisory: dict[str, Any]) -> dict[str, Any]:
+    candidate_id = source_identity(advisory)
+    return {
+        **advisory,
+        "providerStagingDecision": "staged",
+        "providerStagingBlockers": [],
+        "providerStagingCandidateId": candidate_id,
+        "providerStagingSourceIdentity": _text(advisory.get("migrationSourceIdentity")),
+        "providerStagingProviderFamily": _lower(
+            advisory.get("detectedProviderFamily") or advisory.get("adapter")
+        ),
+        "providerStagingProviderUrl": _text(advisory.get("detectedProviderUrl")),
+        "providerStagingProviderId": _text(advisory.get("detectedProviderId")),
+    }
+
+
+def _non_stageable_action_blocker(action: str) -> str:
+    if action == "unsupported_provider":
+        return "unsupported_provider"
+    if action == "needs_probe":
+        return "needs_probe"
+    if action == "insufficient_evidence":
+        return "insufficient_evidence"
+    if action == "already_covered_by_provider":
+        return "existing_provider"
+    return "non_stageable_action"
+
+
+def _provider_staging_blockers(
+    advisory: dict[str, Any],
+    *,
+    action: str,
+    family: str,
+    provider_url: str,
+    provider_id: str,
+) -> list[str]:
+    blockers: list[str] = []
+    stageable_action = action in _STAGEABLE_ACTIONS
+    if not stageable_action:
+        blockers.append(_non_stageable_action_blocker(action))
+    if stageable_action and not _is_static_like_advisory(advisory):
+        blockers.append("adapter_mismatch")
+    if family and family not in SUPPORTED_PROVIDERS:
+        blockers.append("unsupported_provider")
+    if bool(advisory.get("duplicateOfActiveSource")):
+        blockers.append("duplicate_active")
+    if bool(advisory.get("duplicateOfPendingSource")):
+        blockers.append("duplicate_pending")
+    if _text(advisory.get("existingProviderSourceId")):
+        blockers.append("existing_provider")
+    if stageable_action and not (provider_url or provider_id):
+        blockers.append("missing_provider_evidence")
+    if stageable_action and not _has_strong_provider_evidence(advisory):
+        blockers.append("insufficient_evidence")
+    return unique_string_list(blockers)
+
+
+def _provider_row_for_decision(
+    advisory: dict[str, Any],
+    *,
+    at: str,
+    blockers: list[str],
+    seen_provider_ids: set[str] | None,
+) -> tuple[dict[str, Any], str, list[str]]:
+    if blockers:
+        return {}, "", blockers
+    provider_row = _staged_provider_row_from_enriched_advisory(advisory, at=at)
+    if not provider_row:
+        return {}, "", [*blockers, "provider_row_build_failure"]
+    candidate_id = source_identity(provider_row)
+    if candidate_id in (seen_provider_ids or set()):
+        return {}, candidate_id, [*blockers, "identity_collision"]
+    return provider_row, candidate_id, blockers
+
+
+def _provider_staging_diagnostic(
+    advisory: dict[str, Any],
+    *,
+    blockers: list[str],
+    candidate_id: str,
+    family: str,
+    provider_url: str,
+    provider_id: str,
+    provider_row: dict[str, Any],
+) -> dict[str, Any]:
+    diagnostic = {
+        **advisory,
+        "providerStagingDecision": "skipped" if blockers else "staged",
+        "providerStagingBlockers": unique_string_list(blockers),
+        "providerStagingCandidateId": candidate_id,
+        "providerStagingSourceIdentity": _text(advisory.get("sourceIdentity"))
+        or source_identity(advisory),
+        "providerStagingProviderFamily": family,
+        "providerStagingProviderUrl": provider_url,
+        "providerStagingProviderId": provider_id,
+    }
+    if provider_row:
+        diagnostic["providerStagingCandidateId"] = source_identity(provider_row)
+        diagnostic["providerStagingSourceIdentity"] = provider_row.get("migrationSourceIdentity")
+    return diagnostic
+
+
+def provider_staging_decision_for_advisory(
+    row: dict[str, Any],
+    *,
+    at: str,
+    provider_index: dict[tuple[str, str], tuple[str, str]] | None = None,
+    seen_provider_ids: set[str] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    advisory = enrich_provider_migration_metadata(row, provider_index=provider_index or {})
+    if bool(advisory.get("createdFromAdvisory")):
+        return {}, _staged_advisory_diagnostic(advisory)
+
+    action = _text(advisory.get("recommendedAction"))
+    family = _lower(advisory.get("detectedProviderFamily"))
+    provider_url = _text(advisory.get("detectedProviderUrl"))
+    provider_id = _text(advisory.get("detectedProviderId"))
+    blockers = _provider_staging_blockers(
+        advisory,
+        action=action,
+        family=family,
+        provider_url=provider_url,
+        provider_id=provider_id,
+    )
+    provider_row, candidate_id, blockers = _provider_row_for_decision(
+        advisory,
+        at=at,
+        blockers=blockers,
+        seen_provider_ids=seen_provider_ids,
+    )
+    return provider_row, _provider_staging_diagnostic(
+        advisory,
+        blockers=blockers,
+        candidate_id=candidate_id,
+        family=family,
+        provider_url=provider_url,
+        provider_id=provider_id,
+        provider_row=provider_row,
+    )
+
+
+def stage_provider_candidates_with_diagnostics(
+    rows: list[dict[str, Any]],
+    *,
+    active_rows: list[dict[str, Any]] | None = None,
+    pending_rows: list[dict[str, Any]] | None = None,
+    seen_rows: list[dict[str, Any]] | None = None,
+    at: str,
+) -> dict[str, Any]:
+    provider_index = _provider_registry_index(active_rows, pending_rows)
+    seen_ids = {
+        *_provider_seen_identities(active_rows),
+        *_provider_seen_identities(pending_rows),
+        *_provider_seen_identities(seen_rows),
+    }
+    staged: list[dict[str, Any]] = []
+    diagnostics: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        candidate, diagnostic = provider_staging_decision_for_advisory(
+            row,
+            at=at,
+            provider_index=provider_index,
+            seen_provider_ids=seen_ids,
+        )
+        diagnostics.append(diagnostic)
+        if not candidate:
+            continue
+        candidate_id = source_identity(candidate)
+        seen_ids.add(candidate_id)
+        staged.append(candidate)
+    return {"staged": staged, "diagnostics": diagnostics}
+
+
 def stage_provider_candidates_from_advisories(
     rows: list[dict[str, Any]],
     *,
@@ -462,26 +646,13 @@ def stage_provider_candidates_from_advisories(
     pending_rows: list[dict[str, Any]] | None = None,
     at: str,
 ) -> list[dict[str, Any]]:
-    provider_index = _provider_registry_index(active_rows, pending_rows)
-    staged: list[dict[str, Any]] = []
-    seen_ids = {
-        source_identity(row)
-        for row in [*(active_rows or []), *(pending_rows or []), *rows]
-        if isinstance(row, dict)
-    }
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        advisory = enrich_provider_migration_metadata(row, provider_index=provider_index)
-        candidate = staged_provider_candidate_from_advisory(advisory, at=at)
-        if not candidate:
-            continue
-        candidate_id = source_identity(candidate)
-        if candidate_id in seen_ids:
-            continue
-        seen_ids.add(candidate_id)
-        staged.append(candidate)
-    return staged
+    result = stage_provider_candidates_with_diagnostics(
+        rows,
+        active_rows=active_rows,
+        pending_rows=pending_rows,
+        at=at,
+    )
+    return [dict(row) for row in result.get("staged", []) if isinstance(row, dict)]
 
 
 def enrich_provider_migration_rows(
@@ -517,16 +688,101 @@ def _top_rows(
     return [_compact(row) for row in selected[:limit]]
 
 
-def build_provider_migration_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    candidates = [enrich_provider_migration_metadata(row) for row in rows if isinstance(row, dict)]
+def _top_blocker_rows(rows: list[dict[str, Any]], *, limit: int = 8) -> list[dict[str, Any]]:
+    selected = [
+        row
+        for row in rows
+        if row.get("providerStagingDecision") == "skipped" and row.get("providerStagingBlockers")
+    ]
+    selected.sort(
+        key=lambda row: (_as_int(row.get("migrationConfidence")), _as_int(row.get("jobsFound"))),
+        reverse=True,
+    )
+    return [_compact(row) for row in selected[:limit]]
+
+
+def _staging_blocker_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for row in rows:
+        blockers = row.get("providerStagingBlockers")
+        if not isinstance(blockers, list):
+            continue
+        for blocker in blockers:
+            token = _text(blocker)
+            if token:
+                counts[token] += 1
+    return dict(sorted(counts.items()))
+
+
+def _blocker_count(counts: dict[str, int], key: str) -> int:
+    return int(counts.get(key) or 0)
+
+
+def build_provider_migration_payload(
+    rows: list[dict[str, Any]],
+    *,
+    active_rows: list[dict[str, Any]] | None = None,
+    pending_rows: list[dict[str, Any]] | None = None,
+    at: str = "",
+) -> dict[str, Any]:
+    result = stage_provider_candidates_with_diagnostics(
+        rows,
+        active_rows=active_rows,
+        pending_rows=pending_rows,
+        at=at,
+    )
+    candidates = [
+        dict(row)
+        for row in result.get("diagnostics", [])
+        if isinstance(row, dict) and _text(row.get("recommendedAction"))
+    ]
     counts = Counter(_text(row.get("recommendedAction")) for row in candidates)
     counts.pop("", None)
+    blocker_counts = _staging_blocker_counts(candidates)
+    staged_candidate_ids = {
+        _text(row.get("providerStagingCandidateId"))
+        for row in candidates
+        if row.get("providerStagingDecision") == "staged"
+        and _text(row.get("providerStagingCandidateId"))
+    }
+    staged_count = len(staged_candidate_ids)
+    stageable_count = sum(
+        1
+        for row in candidates
+        if row.get("providerStagingDecision") == "staged"
+        and not bool(row.get("createdFromAdvisory"))
+    )
     return {
         "totalCandidates": len(candidates),
         "stagedProviderCount": sum(1 for row in candidates if bool(row.get("createdFromAdvisory"))),
+        "stageableProviderCandidateCount": stageable_count,
+        "stagedProviderCandidateCount": staged_count,
+        "stagingSkippedCount": sum(
+            1 for row in candidates if row.get("providerStagingDecision") == "skipped"
+        ),
+        "stagingBlockedByDuplicateActiveCount": _blocker_count(blocker_counts, "duplicate_active"),
+        "stagingBlockedByDuplicatePendingCount": _blocker_count(
+            blocker_counts, "duplicate_pending"
+        ),
+        "stagingBlockedByUnsupportedProviderCount": _blocker_count(
+            blocker_counts, "unsupported_provider"
+        ),
+        "stagingBlockedByInsufficientEvidenceCount": _blocker_count(
+            blocker_counts, "insufficient_evidence"
+        ),
+        "stagingBlockedByNeedsProbeCount": _blocker_count(blocker_counts, "needs_probe"),
+        "stagingBlockedByProviderRowBuildFailureCount": _blocker_count(
+            blocker_counts, "provider_row_build_failure"
+        ),
+        "stagingBlockedByIdentityCollisionCount": _blocker_count(
+            blocker_counts, "identity_collision"
+        ),
+        "stagingBlockedByAdapterMismatchCount": _blocker_count(blocker_counts, "adapter_mismatch"),
+        "stagingBlockerCounts": blocker_counts,
+        "stagingBlockerExamples": _top_blocker_rows(candidates),
         "actionCounts": dict(sorted(counts.items())),
         "stagedProviderCandidates": _top_rows(
-            [row for row in candidates if bool(row.get("createdFromAdvisory"))],
+            [row for row in candidates if row.get("providerStagingDecision") == "staged"],
             {
                 "add_provider_source",
                 "review_provider_migration",

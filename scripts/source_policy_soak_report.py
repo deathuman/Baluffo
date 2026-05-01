@@ -239,6 +239,7 @@ def _provider_coverage_status_by_token(
 
 def _provider_migration_activation_section(
     *,
+    discovery_report: dict[str, Any],
     discovery_candidates: list[dict[str, Any]],
     active_rows: list[dict[str, Any]],
     pending_rows: list[dict[str, Any]],
@@ -246,6 +247,9 @@ def _provider_migration_activation_section(
     source_state_rows: dict[str, dict[str, Any]],
     provider_coverage: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    discovery_provider_migration = as_json_object(
+        as_json_object(discovery_report.get("candidateReview")).get("providerMigration")
+    )
     enriched_candidates = enrich_provider_migration_rows(
         discovery_candidates,
         active_rows=active_rows,
@@ -311,6 +315,49 @@ def _provider_migration_activation_section(
         ),
         "actionCounts": dict(sorted(action_counts.items())),
     }
+    if discovery_provider_migration:
+        discovery_action_counts = as_json_object(discovery_provider_migration.get("actionCounts"))
+        if discovery_action_counts:
+            section["actionCounts"] = {
+                clean_text(key): int(value or 0)
+                for key, value in discovery_action_counts.items()
+                if clean_text(key)
+            }
+        section["advisoryTotalCandidates"] = int(
+            discovery_provider_migration.get("totalCandidates")
+            or section["advisoryTotalCandidates"]
+        )
+        section["addProviderSourceCount"] = int(
+            section["actionCounts"].get("add_provider_source") or 0
+        )
+        section["reviewProviderMigrationCount"] = int(
+            section["actionCounts"].get("review_provider_migration") or 0
+        )
+        for key in (
+            "stageableProviderCandidateCount",
+            "stagedProviderCandidateCount",
+            "stagingSkippedCount",
+            "stagingBlockedByDuplicateActiveCount",
+            "stagingBlockedByDuplicatePendingCount",
+            "stagingBlockedByUnsupportedProviderCount",
+            "stagingBlockedByInsufficientEvidenceCount",
+            "stagingBlockedByNeedsProbeCount",
+            "stagingBlockedByProviderRowBuildFailureCount",
+            "stagingBlockedByIdentityCollisionCount",
+            "stagingBlockedByAdapterMismatchCount",
+        ):
+            section[key] = int(discovery_provider_migration.get(key) or 0)
+        section["stagingBlockerCounts"] = as_json_object(
+            discovery_provider_migration.get("stagingBlockerCounts")
+        )
+        section["stagingBlockerExamples"] = json_object_rows(
+            discovery_provider_migration.get("stagingBlockerExamples")
+        )
+        section["stagedProviderCandidateCount"] = int(
+            section.get("stagedProviderCandidateCount")
+            or discovery_provider_migration.get("stagedProviderCount")
+            or section["stagedProviderCandidateCount"]
+        )
     gates: list[dict[str, Any]] = []
     actionable_advisory_count = (
         section["addProviderSourceCount"] + section["reviewProviderMigrationCount"]
@@ -321,6 +368,57 @@ def _provider_migration_activation_section(
                 "provider_advisory_without_staging",
                 "Provider migration advisory found actionable candidates but none were staged.",
                 {"actionableAdvisoryCount": actionable_advisory_count},
+            )
+        )
+    if (
+        int(section.get("stageableProviderCandidateCount") or 0) > 0
+        and section["stagedProviderCandidateCount"] == 0
+    ):
+        gates.append(
+            _warning_gate(
+                "stageable_provider_without_staging",
+                "Provider migration diagnostics found stageable candidates but none were staged.",
+                {
+                    "stageableProviderCandidateCount": int(
+                        section.get("stageableProviderCandidateCount") or 0
+                    )
+                },
+            )
+        )
+    if int(section.get("stagingBlockedByProviderRowBuildFailureCount") or 0) > 0:
+        gates.append(
+            _warning_gate(
+                "provider_staging_row_build_failure",
+                "Provider migration staging could not build provider rows for some candidates.",
+                {
+                    "providerRowBuildFailureCount": int(
+                        section.get("stagingBlockedByProviderRowBuildFailureCount") or 0
+                    )
+                },
+            )
+        )
+    if int(section.get("stagingBlockedByIdentityCollisionCount") or 0) > 0:
+        gates.append(
+            _warning_gate(
+                "provider_staging_identity_collision",
+                "Provider migration staging found provider identity collisions.",
+                {
+                    "identityCollisionCount": int(
+                        section.get("stagingBlockedByIdentityCollisionCount") or 0
+                    )
+                },
+            )
+        )
+    if int(section.get("stagingBlockedByAdapterMismatchCount") or 0) > 0:
+        gates.append(
+            _warning_gate(
+                "provider_staging_adapter_mismatch",
+                "Provider migration staging skipped candidates because their adapter is not static-like.",
+                {
+                    "adapterMismatchCount": int(
+                        section.get("stagingBlockedByAdapterMismatchCount") or 0
+                    )
+                },
             )
         )
     if (
@@ -527,6 +625,7 @@ def _build_sections(
     active_rows = _list_rows(payloads["sourceRegistryActive"])
     pending_rows = _list_rows(payloads["sourceRegistryPending"])
     provider_migration_activation, activation_gates = _provider_migration_activation_section(
+        discovery_report=as_json_object(payloads["sourceDiscoveryReport"]),
         discovery_candidates=discovery_candidates,
         active_rows=active_rows,
         pending_rows=pending_rows,
@@ -668,6 +767,19 @@ def _build_sections(
     summary = {
         "stagedProviderCandidatesCount": staged_provider_candidates_count,
         "pendingProviderMigrationCandidateCount": pending_provider_migration_count,
+        "stageableProviderCandidateCount": int(
+            provider_migration_activation.get("stageableProviderCandidateCount") or 0
+        ),
+        "stagingSkippedCount": int(provider_migration_activation.get("stagingSkippedCount") or 0),
+        "stagingBlockedByProviderRowBuildFailureCount": int(
+            provider_migration_activation.get("stagingBlockedByProviderRowBuildFailureCount") or 0
+        ),
+        "stagingBlockedByIdentityCollisionCount": int(
+            provider_migration_activation.get("stagingBlockedByIdentityCollisionCount") or 0
+        ),
+        "stagingBlockedByAdapterMismatchCount": int(
+            provider_migration_activation.get("stagingBlockedByAdapterMismatchCount") or 0
+        ),
         "advisoryTotalCandidates": int(
             provider_migration_activation.get("advisoryTotalCandidates") or 0
         ),
