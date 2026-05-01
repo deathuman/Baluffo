@@ -421,10 +421,20 @@ function renderSuppressionEligibilityRow(row) {
   const providerId = stringValue(row?.providerSourceId, "unknown-provider");
   const staticName = stringValue(row?.migrationSourceName, stringValue(row?.staticSourceName, stringValue(row?.migrationSourceIdentity, "Unknown static source")));
   const staticId = stringValue(row?.migrationSourceIdentity, stringValue(row?.staticSourceId, "unknown-static"));
-  const selectedLabel = row?.foundInSourceRows || row?.linkedStaticSelected ? "yes" : "no";
+  const selectedLabel = row?.linkedStaticFoundInSelectedSources || row?.foundInSourceRows || row?.linkedStaticSelected ? "yes" : "no";
   const defaultLoaderLabel = row?.foundInDefaultLoaders ? "yes" : "no";
   const cacheLabel = row?.excludedByCadenceOrCache ? "yes" : "no";
   const onlySourcesLabel = row?.onlySourcesMode ? "yes" : "no";
+  const registryBucket = row?.linkedStaticRegistryBucket || row?.registryBucket;
+  const registryState = row?.linkedStaticRegistryState || row?.registryState;
+  const staticAdapter = row?.linkedStaticAdapter || row?.adapter;
+  const hiddenLabel = row?.linkedStaticHiddenFromDefault || row?.hiddenFromDefault ? "yes" : "no";
+  const pendingReason = row?.linkedStaticPendingReason || row?.pendingReason;
+  const duplicateOfSourceId = row?.linkedStaticDuplicateOfSourceId || row?.duplicateOfSourceId;
+  const expectedLoaderName = row?.expectedStaticLoaderName || row?.expectedLoaderName;
+  const generatedLoaderName = row?.generatedStaticLoaderName;
+  const actualSourceRowName = row?.actualSourceRowName || row?.loaderName;
+  const possibleLoaderNames = Array.isArray(row?.possibleLoaderNames) ? row.possibleLoaderNames.join(", ") : "";
   return `
     <div class="admin-source-policy-row admin-source-policy-suppression-eligibility-row">
       <div class="admin-source-policy-row-main">
@@ -446,10 +456,18 @@ function renderSuppressionEligibilityRow(row) {
         <span><strong>Coverage</strong> ${escapeHtml(formatMachineLabel(row?.providerCoverageStatus))}</span>
         <span><strong>Success streak</strong> ${numberValue(row?.providerCoverageConsecutiveSuccesses).toLocaleString()}</span>
         <span><strong>Latest kept</strong> ${numberValue(row?.providerCoverageLatestKeptCount).toLocaleString()}</span>
-        <span><strong>Bucket</strong> ${escapeHtml(formatMachineLabel(row?.registryBucket))}</span>
-        <span><strong>Registry state</strong> ${escapeHtml(formatMachineLabel(row?.registryState || row?.linkedStaticRegistryState))}</span>
-        <span><strong>Adapter</strong> ${escapeHtml(formatMachineLabel(row?.adapter))}</span>
-        <span><strong>Expected loader</strong> ${escapeHtml(stringValue(row?.expectedLoaderName, "unknown"))}</span>
+        <span><strong>Bucket</strong> ${escapeHtml(formatMachineLabel(registryBucket))}</span>
+        <span><strong>Registry state</strong> ${escapeHtml(formatMachineLabel(registryState))}</span>
+        <span><strong>Adapter</strong> ${escapeHtml(formatMachineLabel(staticAdapter))}</span>
+        <span><strong>Hidden</strong> ${escapeHtml(hiddenLabel)}</span>
+        <span><strong>Pending reason</strong> ${escapeHtml(formatMachineLabel(pendingReason))}</span>
+        <span><strong>Duplicate of</strong> ${escapeHtml(stringValue(duplicateOfSourceId, "none"))}</span>
+        <span><strong>Loader match</strong> ${escapeHtml(formatMachineLabel(row?.loaderNameMatchStatus))}</span>
+        <span><strong>Expected loader</strong> ${escapeHtml(stringValue(expectedLoaderName, "unknown"))}</span>
+        <span><strong>Generated loader</strong> ${escapeHtml(stringValue(generatedLoaderName, "unknown"))}</span>
+        <span><strong>Possible loaders</strong> ${escapeHtml(stringValue(possibleLoaderNames, "none"))}</span>
+        <span><strong>Actual source row</strong> ${escapeHtml(stringValue(actualSourceRowName, "none"))}</span>
+        <span><strong>Loader not generated</strong> ${escapeHtml(formatMachineLabel(row?.loaderNotGeneratedReason))}</span>
         <span><strong>Selected</strong> ${escapeHtml(selectedLabel)}</span>
         <span><strong>Default loader</strong> ${escapeHtml(defaultLoaderLabel)}</span>
         <span><strong>Cache/cadence</strong> ${escapeHtml(cacheLabel)}</span>

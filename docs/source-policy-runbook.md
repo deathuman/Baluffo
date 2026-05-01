@@ -111,15 +111,15 @@ Cache or freshness skips, such as `skip_fresh`, do not increment `providerCovera
 
 ## Validate Two Successful Provider Fetches
 
-To validate the repeated-success path without waiting for the normal freshness window, use the existing force-refresh flag:
+To validate the repeated-success path without waiting for the normal freshness window, use the existing force-refresh flag. If `suppressionEligibility` shows `loaderNotGeneratedReason=redundant_static_rule_filtered`, include the linked-static validation flag so the linked static row can be generated long enough for normal dynamic suppression to emit its excluded row:
 
 ```bash
-python src/jobs_fetcher.py --force-refresh-all
-python src/jobs_fetcher.py --force-refresh-all
+python src/jobs_fetcher.py --force-refresh-all --include-linked-static-validation
+python src/jobs_fetcher.py --force-refresh-all --include-linked-static-validation
 python scripts/source_policy_soak_report.py --data-dir data --out-dir _out
 ```
 
-This validation path does not lower thresholds and does not change default product behavior.
+This validation path does not lower thresholds and does not change default product behavior. Normal fetches still filter redundant static rows before loader generation; `--include-linked-static-validation` only includes ready linked static rows for validation/evidence collection.
 
 Confirm:
 
@@ -128,7 +128,7 @@ Confirm:
 - `staticSuppressionPolicy` shows eligible or suppressed evidence for the pair
 - `providerStaticOverlap` and `redundantStaticProposals` begin showing pair evidence when enough data exists
 
-If the provider is `ready_later` with enough consecutive successes but suppression remains `0`, check `sections.suppressionEligibility`. The row's `selectionReason` explains why the linked static source did not produce a `dynamic_redundant_provider` row. Common values include `linked_static_not_in_default_loader_set`, `linked_static_pending_not_default`, `linked_static_hidden_pending`, `linked_static_adapter_not_static`, `linked_static_registry_identity_mismatch`, and `linked_static_missing_from_registry`. These are visibility diagnostics only; they do not force-select sources.
+If the provider is `ready_later` with enough consecutive successes but suppression remains `0`, check `sections.suppressionEligibility`. The row's `selectionReason` explains why the linked static source did not produce a `dynamic_redundant_provider` row. Common values include `linked_static_not_in_default_loader_set`, `linked_static_pending_not_default`, `linked_static_hidden_pending`, `linked_static_rejected`, `linked_static_adapter_not_static`, `linked_static_registry_identity_mismatch`, and `linked_static_missing_from_registry`. The linked-static fields (`linkedStaticRegistryBucket`, `linkedStaticRegistryState`, `linkedStaticFoundInSourceRows`, `linkedStaticFoundInSelectedSources`, `expectedStaticLoaderName`, `generatedStaticLoaderName`, `actualSourceRowName`, `loaderNameMatchStatus`, and `loaderNotGeneratedReason`) are visibility diagnostics only; they do not force-select sources. `redundant_static_rule_filtered` means the active static row is loader-compatible but was removed before default loader generation by existing redundant-static rules; rerun validation with `--include-linked-static-validation` when you need to observe the suppression row.
 
 Explicit `--only-sources` selection bypasses dynamic redundant-static suppression. Use that when you deliberately need to run a static source even if the default fetch would skip it.
 
@@ -184,7 +184,7 @@ Source-policy artifacts must not appear in source-sync:
 | Only ambiguous candidates | Multiple static rows match the same provider and no deterministic evidence selects one. | Review `ambiguityGroups`, `candidateStatics`, and ignored alternatives. Do not apply a link until one candidate becomes `apiEligible=true` with clear evidence. |
 | Medium-confidence candidate only | Source-state evidence selected one static source, but exact advisory identity is missing. | Review `whyNotHighConfidence`, source-state evidence, and ignored alternatives. Apply only if the evidence is acceptable to a human reviewer. |
 | Provider linked but success streak stuck at `1` | The next fetch likely skipped the provider as fresh, so no second real success was recorded. | Use `python src/jobs_fetcher.py --force-refresh-all` for validation, or wait until the provider is no longer fresh. Do not count `skip_fresh` as success. |
-| Provider ready but suppression count is `0` | The provider has enough successful fetches, but the linked static source was not selected, is pending/hidden, has an identity mismatch, is not static-like, or is missing from active/pending registry rows. | Check `sections.suppressionEligibility.missingLinkedStaticRows[].selectionReason`, `registryBucket`, `expectedLoaderName`, and `foundInSourceRows`. These diagnostics are visibility-only; do not force-select or mutate registry rows just to create a suppression row. |
+| Provider ready but suppression count is `0` | The provider has enough successful fetches, but the linked static source was not selected, is pending/hidden/rejected, has an identity mismatch, is not static-like, is missing from registry rows, or was filtered before default loader generation. | Check `sections.suppressionEligibility.missingLinkedStaticRows[].selectionReason`, `linkedStaticRegistryBucket`, `expectedStaticLoaderName`, `generatedStaticLoaderName`, `loaderNameMatchStatus`, and `loaderNotGeneratedReason`. `redundant_static_rule_filtered` means the active static row is loader-compatible but removed before loader generation by existing redundant-static rules. These diagnostics are visibility-only; do not force-select or mutate registry rows just to create a suppression row. |
 | Clear button missing | The link is not owned by `admin_provider_link_backfill`, the static identity does not match the candidate, or Admin has stale data. | Reload Admin/Ops and check Linked Migration Identities. Non-admin-owned links are visible but not clearable. |
 | Source-sync warning | `source-sync.json` may contain local source-policy payloads or unexpected top-level keys. | Treat as a release blocker. Inspect the soak report quality gates and keep source-policy review/recommendation artifacts out of sync. |
 | Static-only evidence detected | The static source has evidence not covered by the provider, or overlap history is insufficient. | Do not suppress or clean up the static source. Review `providerStaticOverlap`, `staticSuppressionPolicy`, and source-policy recommendations before any further action. |

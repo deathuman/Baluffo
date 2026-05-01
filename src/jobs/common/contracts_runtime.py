@@ -85,6 +85,7 @@ def normalize_runtime_payload(
         ),
         "incrementalCacheEnabled": bool(src.get("incrementalCacheEnabled")),
         "forceRefreshAll": bool(src.get("forceRefreshAll")),
+        "includeLinkedStaticValidation": bool(src.get("includeLinkedStaticValidation")),
         "respectSourceCadence": bool(src.get("respectSourceCadence")),
         "hotSourceCadenceMinutes": _clamped_int(src.get("hotSourceCadenceMinutes"), 0, 1),
         "coldSourceCadenceMinutes": _clamped_int(src.get("coldSourceCadenceMinutes"), 0, 1),

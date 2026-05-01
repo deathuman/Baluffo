@@ -173,8 +173,24 @@ def test_source_policy_recommendations_includes_suppression_eligibility(
                             "registryState": "active",
                             "adapter": "static",
                             "expectedLoaderName": "static_source::static:studio",
+                            "linkedStaticRegistryBucket": "active",
+                            "linkedStaticRegistryState": "active",
+                            "linkedStaticAdapter": "static",
+                            "expectedStaticLoaderName": "static_source::static:studio",
+                            "generatedStaticLoaderName": "static_source::static:studio",
+                            "actualSourceRowName": "",
+                            "registrySourceIdentity": "static:studio",
+                            "registryId": "static:studio",
+                            "registryName": "Studio Static",
+                            "registryListingUrl": "https://studio.example/jobs",
+                            "possibleLoaderNames": ["static_source::static:studio"],
+                            "loaderNameMatchStatus": "loader_not_generated",
+                            "loaderNotGeneratedReason": "redundant_static_rule_filtered",
                             "foundInActiveRegistry": True,
                             "foundInSourceRows": False,
+                            "linkedStaticFoundInRegistry": True,
+                            "linkedStaticFoundInSourceRows": False,
+                            "linkedStaticFoundInSelectedSources": False,
                         }
                     ],
                 }
@@ -191,6 +207,12 @@ def test_source_policy_recommendations_includes_suppression_eligibility(
     assert row["reason"] == "linked_static_not_in_default_loader_set"
     assert row["selectionReason"] == "linked_static_not_in_default_loader_set"
     assert row["expectedLoaderName"] == "static_source::static:studio"
+    assert row["expectedStaticLoaderName"] == "static_source::static:studio"
+    assert row["generatedStaticLoaderName"] == "static_source::static:studio"
+    assert row["loaderNameMatchStatus"] == "loader_not_generated"
+    assert row["loaderNotGeneratedReason"] == "redundant_static_rule_filtered"
+    assert row["linkedStaticRegistryBucket"] == "active"
+    assert row["linkedStaticFoundInSelectedSources"] is False
 
 
 def test_source_policy_recommendations_includes_admin_owned_registry_link_without_soak(

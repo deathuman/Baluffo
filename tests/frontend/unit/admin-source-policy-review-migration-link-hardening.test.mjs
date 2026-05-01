@@ -176,10 +176,25 @@ test("renders suppression eligibility diagnostics without actions", () => {
           registryBucket: "active",
           registryState: "active",
           adapter: "static",
+          linkedStaticRegistryBucket: "active",
+          linkedStaticRegistryState: "active",
+          linkedStaticAdapter: "static",
+          linkedStaticHiddenFromDefault: false,
+          linkedStaticPendingReason: "",
+          linkedStaticDuplicateOfSourceId: "",
           expectedLoaderName: "static_source::static:listing_url:https://studio.example/jobs",
+          expectedStaticLoaderName: "static_source::static:listing_url:https://studio.example/jobs",
+          generatedStaticLoaderName: "static_source::static:listing_url:https://studio.example/jobs",
+          possibleLoaderNames: ["static_source::static:listing_url:https://studio.example/jobs"],
+          loaderNameMatchStatus: "loader_not_generated",
+          loaderNotGeneratedReason: "redundant_static_rule_filtered",
+          actualSourceRowName: "",
           foundInActiveRegistry: true,
           foundInDefaultLoaders: false,
           foundInSourceRows: false,
+          linkedStaticFoundInRegistry: true,
+          linkedStaticFoundInSourceRows: false,
+          linkedStaticFoundInSelectedSources: false,
           excludedByCadenceOrCache: false,
           onlySourcesMode: false
         }
@@ -193,7 +208,12 @@ test("renders suppression eligibility diagnostics without actions", () => {
   assert.match(reviewEl.innerHTML, /Studio Static/);
   assert.match(reviewEl.innerHTML, /linked static not in default loader set/);
   assert.match(reviewEl.innerHTML, /static_source::static:listing_url:https:\/\/studio.example\/jobs/);
+  assert.match(reviewEl.innerHTML, /Loader match<\/strong> loader not generated/);
+  assert.match(reviewEl.innerHTML, /Loader not generated<\/strong> redundant static rule filtered/);
   assert.match(reviewEl.innerHTML, /Selected<\/strong> no/);
+  assert.match(reviewEl.innerHTML, /Hidden<\/strong> no/);
+  assert.match(reviewEl.innerHTML, /Duplicate of<\/strong> none/);
+  assert.match(reviewEl.innerHTML, /Actual source row<\/strong> none/);
   assert.match(reviewEl.innerHTML, /Only sources<\/strong> no/);
   assert.match(reviewEl.innerHTML, /Success streak<\/strong> 2/);
   assert.match(reviewEl.innerHTML, /Latest kept<\/strong> 4/);

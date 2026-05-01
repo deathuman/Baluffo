@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from src.contracts import SCHEMA_VERSION
+from src.jobs.adapters import static_sources as static_sources_mod
 from src.jobs.canonicalize import (
     canonicalize_job,
     reset_location_quality_audit,
@@ -151,6 +152,30 @@ def _existing_output_has_rows(json_path: Path) -> bool:
     return False
 
 
+def _include_linked_static_validation_loaders(
+    selected_loaders: list[tuple[str, SourceLoader]],
+    *,
+    enabled: bool,
+    using_default_loaders: bool,
+    source_state_rows: dict[str, dict[str, Any]],
+) -> list[tuple[str, SourceLoader]]:
+    if not using_default_loaders or not enabled:
+        return selected_loaders
+    existing_loader_names = {clean_text(name) for name, _loader in selected_loaders}
+    validation_loaders = [
+        item
+        for item in static_sources_mod.build_linked_static_validation_loaders(source_state_rows)
+        if clean_text(item[0]) not in existing_loader_names
+    ]
+    if not validation_loaders:
+        return selected_loaders
+    return sort_selected_loaders(
+        [*selected_loaders, *validation_loaders],
+        source_report_meta=SOURCE_REPORT_META,
+        source_state_rows=source_state_rows,
+    )
+
+
 def prepare_pipeline_run(
     *,
     output_dir: Path,
@@ -182,6 +207,7 @@ def prepare_pipeline_run(
     show_progress: bool = True,
     selection_exclusions: list[dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
+    include_linked_static_validation: bool = False,
     default_source_loaders: Callable[..., list[tuple[str, SourceLoader]]] | None = None,
     build_redirect_resolver_fn: Callable[..., Any] | None = None,
 ) -> PipelineRunSetup:
@@ -265,6 +291,12 @@ def prepare_pipeline_run(
         source_report_meta=SOURCE_REPORT_META,
         source_state_rows=source_state_rows,
     )
+    selected_loaders = _include_linked_static_validation_loaders(
+        selected_loaders,
+        enabled=include_linked_static_validation,
+        using_default_loaders=using_default_loaders,
+        source_state_rows=source_state_rows,
+    )
     dynamic_static_suppression_policy: dict[str, Any] = {
         "eligibleCount": 0,
         "suppressedCount": 0,
@@ -313,6 +345,7 @@ def prepare_pipeline_run(
         seed_from_existing_output=effective_seed_from_existing_output,
         incremental_cache_enabled=incremental_cache_enabled,
         force_refresh_all=force_refresh_all,
+        include_linked_static_validation=include_linked_static_validation,
         source_ttl_minutes=source_ttl_minutes,
         respect_source_cadence=respect_source_cadence,
         hot_source_cadence_minutes=hot_source_cadence_minutes,

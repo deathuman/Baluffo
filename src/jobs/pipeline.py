@@ -111,6 +111,7 @@ def run_pipeline(
     show_progress: bool = True,
     selection_exclusions: list[dict[str, Any]] | None = None,
     force_refresh_all: bool = False,
+    include_linked_static_validation: bool = False,
 ) -> dict[str, Any]:
     run_started_mono = time.perf_counter()
     setup: pipeline_run_setup_mod.PipelineRunSetup | None = None
@@ -145,6 +146,7 @@ def run_pipeline(
             show_progress=show_progress,
             selection_exclusions=selection_exclusions,
             force_refresh_all=force_refresh_all,
+            include_linked_static_validation=include_linked_static_validation,
             default_source_loaders=default_source_loaders,
             build_redirect_resolver_fn=_pipeline_redirect_resolver_builder(),
         )
@@ -270,6 +272,14 @@ def parse_args() -> argparse.Namespace:
         "--force-refresh-all",
         action="store_true",
         help="Bypass incremental freshness skips and source revalidation so all sources run fully.",
+    )
+    parser.add_argument(
+        "--include-linked-static-validation",
+        action="store_true",
+        help=(
+            "Validation-only: include ready linked static sources that are otherwise filtered "
+            "by redundant-static rules so dynamic suppression evidence can be observed."
+        ),
     )
     parser.add_argument(
         "--hot-source-cadence-minutes",

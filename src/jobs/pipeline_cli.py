@@ -183,6 +183,9 @@ def _run_pipeline_from_args(
         show_progress=not args.quiet,
         selection_exclusions=selection_exclusions,
         force_refresh_all=bool(args.force_refresh_all),
+        include_linked_static_validation=bool(
+            getattr(args, "include_linked_static_validation", False)
+        ),
     )
 
 

@@ -11,9 +11,10 @@ from src.jobs.adapters.static_runtime_support import (
     build_static_source_runtime_config,
 )
 from src.jobs.common.diagnostics import set_source_diagnostics
+from src.jobs.common.registry import registry_entries as common_registry_entries
 from src.jobs.interfaces import SourceLoader
 from src.jobs.models import RawJob
-from src.jobs.registry import registry_entries
+from src.jobs.registry import STUDIO_SOURCE_REGISTRY, registry_entries
 from src.jobs.text_utils import clean_text
 
 from ..common import config as common_config
@@ -256,6 +257,60 @@ def build_static_source_loaders() -> list[tuple[str, SourceLoader]]:
     loaders: list[tuple[str, SourceLoader]] = []
     for row in registry_entries("static"):
         loader_name = static_source_name_for_registry_row(row)
+        loaders.append((loader_name, _build_static_source_loader(row, loader_name)))
+    return loaders
+
+
+def _ready_linked_static_identities(
+    source_state_rows: dict[str, dict[str, Any]],
+) -> set[str]:
+    identities: set[str] = set()
+    for row in source_state_rows.values():
+        if not isinstance(row, dict):
+            continue
+        if clean_text(row.get("providerCoverageStatus")) != "validated_provider":
+            continue
+        if int(row.get("providerCoverageConsecutiveSuccesses") or 0) < 2:
+            continue
+        if int(row.get("providerCoverageLatestKeptCount") or 0) <= 0:
+            continue
+        migration_identity = clean_text(row.get("migrationSourceIdentity"))
+        if migration_identity:
+            identities.add(migration_identity)
+    return identities
+
+
+def build_linked_static_validation_loaders(
+    source_state_rows: dict[str, dict[str, Any]],
+) -> list[tuple[str, SourceLoader]]:
+    """Build validation-only loaders for ready linked statics filtered by redundant rules."""
+
+    linked_static_identities = _ready_linked_static_identities(source_state_rows)
+    if not linked_static_identities:
+        return []
+
+    filtered_names = {
+        static_source_name_for_registry_row(row) for row in registry_entries("static")
+    }
+    unfiltered_rows = common_registry_entries(
+        "static",
+        studio_source_registry=STUDIO_SOURCE_REGISTRY,
+        redundant_static_rules=[],
+    )
+    redundant_filtered_names = {
+        static_source_name_for_registry_row(row) for row in unfiltered_rows
+    } - filtered_names
+
+    loaders: list[tuple[str, SourceLoader]] = []
+    for row in unfiltered_rows:
+        loader_name = static_source_name_for_registry_row(row)
+        if loader_name not in redundant_filtered_names:
+            continue
+        static_identity = clean_text(loader_name.removeprefix("static_source::"))
+        if static_identity not in linked_static_identities:
+            continue
+        if clean_text(row.get("adapter")) != "static":
+            continue
         loaders.append((loader_name, _build_static_source_loader(row, loader_name)))
     return loaders
 
