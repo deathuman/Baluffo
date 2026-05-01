@@ -66,14 +66,31 @@ function getMigrationLinkReviewCandidates(payload) {
   return listValue(linkBackfill.reviewCandidates).filter(row => row && typeof row === "object");
 }
 
+function getMigrationLinkLinkedCandidates(payload) {
+  const linkBackfill = objectValue(payload?.providerCoverageLinkBackfill);
+  return listValue(linkBackfill.linkedCandidates).filter(row => row && typeof row === "object");
+}
+
 function selectedStaticSourceId(candidate) {
-  return stringValue(candidate?.selectedStaticSourceId, stringValue(candidate?.recommendedApiPayload?.staticSourceId));
+  return stringValue(
+    candidate?.selectedStaticSourceId,
+    stringValue(
+      candidate?.staticSourceId,
+      stringValue(candidate?.migrationSourceIdentity, stringValue(candidate?.recommendedApiPayload?.staticSourceId))
+    )
+  );
 }
 
 function selectedStaticSourceName(candidate) {
   return stringValue(
     candidate?.selectedStaticSourceName,
-    stringValue(candidate?.recommendedApiPayload?.staticSourceName, selectedStaticSourceId(candidate))
+    stringValue(
+      candidate?.staticSourceName,
+      stringValue(
+        candidate?.migrationSourceName,
+        stringValue(candidate?.recommendedApiPayload?.staticSourceName, selectedStaticSourceId(candidate))
+      )
+    )
   );
 }
 
@@ -94,6 +111,24 @@ function migrationLinkRecommendedAction(candidate) {
 function isRejectedMigrationLinkRecommendation(candidate) {
   const action = migrationLinkRecommendedAction(candidate);
   return action === "ambiguous_static_match" || action === "insufficient_evidence";
+}
+
+function currentMigrationLinkState(candidate) {
+  const explicitState = objectValue(candidate?.currentProviderLinkState);
+  if (Object.keys(explicitState).length) return explicitState;
+  return {
+    providerBucket: stringValue(candidate?.providerBucket),
+    migrationSourceIdentity: stringValue(candidate?.migrationSourceIdentity),
+    migrationLinkedBy: stringValue(candidate?.migrationLinkedBy),
+    adminBackfillOwned: candidate?.adminBackfillOwned === true
+  };
+}
+
+function migrationLinkActionUnavailableReason(candidate) {
+  if (isProviderShapedStaticId(candidate)) return "Not applicable: selected static identity is provider-shaped.";
+  if (hasMigrationLinkBlockers(candidate)) return "No safe link action available: blockers are present.";
+  if (isRejectedMigrationLinkRecommendation(candidate)) return "No safe link action available for this recommendation.";
+  return "No safe link action available.";
 }
 
 export function getSourcePolicyReviewActions(row) {
@@ -118,7 +153,7 @@ export function getSourcePolicyReviewActions(row) {
 }
 
 export function getMigrationLinkReviewActions(candidate) {
-  const linkState = objectValue(candidate?.currentProviderLinkState);
+  const linkState = currentMigrationLinkState(candidate);
   const staticId = selectedStaticSourceId(candidate);
   const actions = [];
   const adminOwnedLink = Boolean(
@@ -143,6 +178,18 @@ export function getMigrationLinkReviewActions(candidate) {
     actions.push({ key: "apply_migration_identity_link", label: "Apply link" });
   }
   return actions;
+}
+
+export function getMigrationLinkLinkedActions(candidate) {
+  const staticId = selectedStaticSourceId(candidate);
+  const adminOwnedLink = Boolean(
+    candidate?.adminBackfillOwned === true
+    && stringValue(candidate?.migrationLinkedBy) === ADMIN_MIGRATION_LINK_ACTOR
+    && stringValue(candidate?.migrationSourceIdentity) === staticId
+  );
+  return adminOwnedLink && staticId
+    ? [{ key: "clear_migration_identity_link", label: "Clear link" }]
+    : [];
 }
 
 export function filterSourcePolicyReviewPairs(rows, filterKey) {
@@ -259,9 +306,11 @@ function renderMigrationLinkReviewCandidate(candidate, index) {
       class="btn back-btn admin-source-policy-migration-link-action-btn"
       data-ui="${MIGRATION_LINK_ACTION_TOKEN}"
       data-source-policy-migration-link-action="${escapeHtml(action.key)}"
+      data-source-policy-migration-link-kind="review"
       data-source-policy-migration-link-index="${index}"
     >${escapeHtml(action.label)}</button>
   `).join("");
+  const unavailableReason = migrationLinkActionUnavailableReason(candidate);
   return `
     <div class="admin-source-policy-row admin-source-policy-migration-link-row" data-source-policy-migration-link-index="${index}">
       <div class="admin-source-policy-row-main">
@@ -287,16 +336,65 @@ function renderMigrationLinkReviewCandidate(candidate, index) {
         <span><strong>Evidence score</strong> ${numberValue(sourceState.evidenceScore).toLocaleString()}</span>
         <span><strong>Ignored alternatives</strong> ${ignoredAlternatives.length.toLocaleString()}</span>
       </div>
-      <div class="admin-source-policy-actions">${actionButtons || '<span class="muted">No safe link action available.</span>'}</div>
+      <div class="admin-source-policy-actions">${actionButtons || `<span class="muted">${escapeHtml(unavailableReason)}</span>`}</div>
     </div>
   `;
 }
 
-function renderMigrationLinkReviewSection(candidates) {
+function renderLinkedMigrationIdentityRow(candidate, index) {
+  const providerName = stringValue(candidate?.providerSourceName, stringValue(candidate?.providerSourceId, "Unknown provider"));
+  const providerId = stringValue(candidate?.providerSourceId, "unknown-provider");
+  const staticName = selectedStaticSourceName(candidate);
+  const staticId = selectedStaticSourceId(candidate);
+  const actions = getMigrationLinkLinkedActions(candidate);
+  const actionButtons = actions.map(action => `
+    <button
+      type="button"
+      class="btn back-btn admin-source-policy-migration-link-action-btn"
+      data-ui="${MIGRATION_LINK_ACTION_TOKEN}"
+      data-source-policy-migration-link-action="${escapeHtml(action.key)}"
+      data-source-policy-migration-link-kind="linked"
+      data-source-policy-migration-link-index="${index}"
+    >${escapeHtml(action.label)}</button>
+  `).join("");
+  return `
+    <div class="admin-source-policy-row admin-source-policy-migration-link-row" data-source-policy-migration-link-index="${index}">
+      <div class="admin-source-policy-row-main">
+        <div>
+          <div class="admin-source-policy-name">${escapeHtml(providerName)}</div>
+          <div class="admin-source-policy-id">${escapeHtml(providerId)}</div>
+        </div>
+        <div>
+          <div class="admin-source-policy-name">${escapeHtml(staticName)}</div>
+          <div class="admin-source-policy-id">${escapeHtml(staticId)}</div>
+        </div>
+      </div>
+      <div class="admin-source-policy-copy">
+        Linked migration identity. Suppression evidence requires repeated successful provider fetches; one validated fetch may not be enough.
+      </div>
+      <div class="admin-source-policy-meta">
+        <span><strong>Bucket</strong> ${escapeHtml(formatMachineLabel(candidate?.providerBucket))}</span>
+        <span><strong>Linked by</strong> ${escapeHtml(formatMachineLabel(candidate?.migrationLinkedBy))}</span>
+        <span><strong>Admin-owned</strong> ${candidate?.adminBackfillOwned === true ? "Yes" : "No"}</span>
+        <span><strong>Coverage</strong> ${escapeHtml(formatMachineLabel(candidate?.providerCoverageStatus))}</span>
+        <span><strong>Success streak</strong> ${numberValue(candidate?.providerCoverageConsecutiveSuccesses).toLocaleString()}</span>
+        <span><strong>Latest kept</strong> ${numberValue(candidate?.providerCoverageLatestKeptCount).toLocaleString()}</span>
+        <span><strong>Readiness</strong> ${escapeHtml(formatMachineLabel(candidate?.providerReplacementReadiness))}</span>
+      </div>
+      <div class="admin-source-policy-actions">${actionButtons || '<span class="muted">Linked, but not clearable by this Admin action.</span>'}</div>
+    </div>
+  `;
+}
+
+function renderMigrationLinkReviewSection(candidates, linkedCandidates) {
   const rows = Array.isArray(candidates) ? candidates : [];
+  const linkedRows = Array.isArray(linkedCandidates) ? linkedCandidates : [];
   const content = rows.length
     ? rows.map((candidate, index) => renderMigrationLinkReviewCandidate(candidate, index)).join("")
     : '<div class="muted">No migration link review candidates are available.</div>';
+  const linkedContent = linkedRows.length
+    ? linkedRows.map((candidate, index) => renderLinkedMigrationIdentityRow(candidate, index)).join("")
+    : '<div class="muted">No linked migration identities are available.</div>';
   return `
     <div class="admin-source-policy-migration-link-review">
       <h4>Migration Link Review</h4>
@@ -304,6 +402,11 @@ function renderMigrationLinkReviewSection(candidates) {
         Apply or clear one reviewed provider/static migration identity link at a time. This links coverage evidence only; it does not delete, hide, reject, demote, tombstone, or force-suppress any source.
       </div>
       <div class="admin-source-policy-list">${content}</div>
+      <h4>Linked Migration Identities</h4>
+      <div class="admin-source-policy-copy">
+        Linked providers stay visible here so Admin-owned links can be cleared after fetch/soak. Suppression evidence requires repeated successful provider fetches; one validated fetch may not be enough.
+      </div>
+      <div class="admin-source-policy-list">${linkedContent}</div>
     </div>
   `;
 }
@@ -312,13 +415,15 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
   if (!reviewEl) return;
   const rows = getPairs(payload);
   const migrationLinkCandidates = getMigrationLinkReviewCandidates(payload);
+  const linkedMigrationCandidates = getMigrationLinkLinkedCandidates(payload);
   const selectedFilter = normalizeFilterKey(options?.selectedFilter);
   const filteredRows = filterSourcePolicyReviewPairs(rows, selectedFilter);
   const canPatchInPlace = Boolean(reviewEl && reviewEl.dataset);
   const signature = stableOpsSignature({
     selectedFilter,
     rows,
-    migrationLinkCandidates
+    migrationLinkCandidates,
+    linkedMigrationCandidates
   });
   if (canPatchInPlace && reviewEl.dataset.sourcePolicyReviewSig === signature) return;
   if (canPatchInPlace) reviewEl.dataset.sourcePolicyReviewSig = signature;
@@ -341,7 +446,7 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
         ? filteredEntries.map(entry => renderSourcePolicyReviewRow(entry.row, entry.index)).join("")
         : `<div class="muted">${escapeHtml(emptyText)}</div>`}
     </div>
-    ${renderMigrationLinkReviewSection(migrationLinkCandidates)}
+    ${renderMigrationLinkReviewSection(migrationLinkCandidates, linkedMigrationCandidates)}
   `;
 
   if (typeof reviewEl.querySelectorAll !== "function") return;
@@ -366,7 +471,9 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
   reviewEl.querySelectorAll(ui(MIGRATION_LINK_ACTION_TOKEN)).forEach(btn => {
     btn.addEventListener("click", () => {
       const index = Number(btn.dataset.sourcePolicyMigrationLinkIndex || -1);
-      const candidate = migrationLinkCandidates[index];
+      const kind = stringValue(btn.dataset.sourcePolicyMigrationLinkKind, "review");
+      const sourceRows = kind === "linked" ? linkedMigrationCandidates : migrationLinkCandidates;
+      const candidate = sourceRows[index];
       const action = stringValue(btn.dataset.sourcePolicyMigrationLinkAction);
       if (candidate && action && typeof options.onMigrationLinkAction === "function") {
         options.onMigrationLinkAction(candidate, action);

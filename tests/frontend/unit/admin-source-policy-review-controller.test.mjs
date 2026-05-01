@@ -68,6 +68,15 @@ function createOpsReviewQueueFixture({
       }
     }
   ];
+  const linkedCandidates = [
+    {
+      providerSourceId: "greenhouse:slug:linked-studio",
+      staticSourceId: "static:linked-studio",
+      migrationSourceIdentity: "static:linked-studio",
+      migrationLinkedBy: "admin_provider_link_backfill",
+      adminBackfillOwned: true
+    }
+  ];
   const dateStub = stubDateNow(nowMs);
   const controller = createAdminOpsController({
     state,
@@ -82,7 +91,7 @@ function createOpsReviewQueueFixture({
         return {
           ok: true,
           recommendations: { pairs: rows },
-          providerCoverageLinkBackfill: { reviewCandidates }
+          providerCoverageLinkBackfill: { reviewCandidates, linkedCandidates }
         };
       }
       throw new Error(`unexpected path ${path}`);
@@ -133,6 +142,7 @@ function createOpsReviewQueueFixture({
     rendered,
     rows,
     reviewCandidates,
+    linkedCandidates,
     toasts,
     restore() {
       controller.stopOpsHealthPolling();
@@ -233,6 +243,29 @@ test("admin ops controller posts migration link clear payload", async () => {
         action: "clear_migration_identity_link",
         providerSourceId: "greenhouse:slug:studio",
         staticSourceId: "static:studio"
+      }
+    });
+  } finally {
+    fixture.restore();
+  }
+});
+
+test("admin ops controller posts linked migration identity clear payload", async () => {
+  const fixture = createOpsReviewQueueFixture();
+  try {
+    await fixture.controller.loadOpsHealthData();
+    await fixture.rendered[0].handlers.onMigrationLinkAction(
+      fixture.linkedCandidates[0],
+      "clear_migration_identity_link"
+    );
+
+    assert.equal(fixture.posts.length, 1);
+    assert.deepEqual(fixture.posts[0], {
+      path: "/source-policy/migration-link-action",
+      payload: {
+        action: "clear_migration_identity_link",
+        providerSourceId: "greenhouse:slug:linked-studio",
+        staticSourceId: "static:linked-studio"
       }
     });
   } finally {

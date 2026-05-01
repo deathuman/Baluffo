@@ -102,7 +102,13 @@ export function createOpsHealthController({
       return {
         action,
         providerSourceId: String(candidate?.providerSourceId || candidate?.recommendedApiPayload?.providerSourceId || ""),
-        staticSourceId: String(candidate?.selectedStaticSourceId || candidate?.recommendedApiPayload?.staticSourceId || "")
+        staticSourceId: String(
+          candidate?.selectedStaticSourceId
+          || candidate?.staticSourceId
+          || candidate?.migrationSourceIdentity
+          || candidate?.recommendedApiPayload?.staticSourceId
+          || ""
+        )
       };
     }
     return { action };

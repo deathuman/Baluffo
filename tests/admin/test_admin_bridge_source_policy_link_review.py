@@ -136,3 +136,124 @@ def test_source_policy_recommendations_tolerates_missing_and_malformed_soak_repo
     assert any(
         "source_policy_soak_report_unreadable" in item for item in malformed_payload["warnings"]
     )
+
+
+def test_source_policy_recommendations_includes_admin_owned_registry_link_without_soak(
+    admin_bridge_entrypoint_root,
+) -> None:
+    admin_bridge.save_json_atomic(
+        admin_bridge.ACTIVE_PATH,
+        [
+            {
+                "id": PROVIDER_ID,
+                "name": "Studio Greenhouse",
+                "adapter": "greenhouse",
+                "migrationSourceIdentity": STATIC_ID,
+                "migrationSourceName": "Studio Static",
+                "migrationLinkedBy": ADMIN_MIGRATION_LINK_ACTOR,
+                "registryState": "active",
+            },
+            {
+                "id": STATIC_ID,
+                "name": "Studio Static",
+                "adapter": "static",
+                "registryState": "active",
+            },
+        ],
+    )
+    _write_json(
+        admin_bridge.SOURCE_POLICY_RECOMMENDATIONS_PATH,
+        {"schemaVersion": 1, "pairs": []},
+    )
+    _write_json(admin_bridge.SOURCE_POLICY_REVIEW_STATE_PATH, {"schemaVersion": 1, "pairs": {}})
+    path = _soak_report_path(admin_bridge_entrypoint_root)
+    if path.exists():
+        path.unlink()
+
+    payload = _get_recommendations_payload()
+
+    linked = payload["providerCoverageLinkBackfill"]["linkedCandidates"]
+    assert len(linked) == 1
+    assert linked[0]["providerSourceId"] == PROVIDER_ID
+    assert linked[0]["staticSourceId"] == STATIC_ID
+    assert linked[0]["adminBackfillOwned"] is True
+    assert linked[0]["migrationLinkedBy"] == ADMIN_MIGRATION_LINK_ACTOR
+
+
+def test_source_policy_recommendations_includes_soak_already_linked_rows(
+    admin_bridge_entrypoint_root,
+) -> None:
+    admin_bridge.save_json_atomic(
+        admin_bridge.ACTIVE_PATH,
+        [
+            {
+                "id": PROVIDER_ID,
+                "name": "Studio Greenhouse",
+                "adapter": "greenhouse",
+                "registryState": "active",
+            }
+        ],
+    )
+    _write_json(
+        admin_bridge.SOURCE_POLICY_RECOMMENDATIONS_PATH,
+        {"schemaVersion": 1, "pairs": []},
+    )
+    _write_json(admin_bridge.SOURCE_POLICY_REVIEW_STATE_PATH, {"schemaVersion": 1, "pairs": {}})
+    _write_json(
+        _soak_report_path(admin_bridge_entrypoint_root),
+        {
+            "sections": {
+                "providerCoverageLinkBackfill": {
+                    "links": [
+                        {
+                            "providerSourceId": PROVIDER_ID,
+                            "providerSourceName": "Studio Greenhouse",
+                            "providerAdapter": "greenhouse",
+                            "staticSourceId": STATIC_ID,
+                            "staticSourceName": "Studio Static",
+                            "recommendedAction": "already_linked",
+                        }
+                    ]
+                }
+            }
+        },
+    )
+
+    payload = _get_recommendations_payload()
+
+    linked = payload["providerCoverageLinkBackfill"]["linkedCandidates"]
+    assert len(linked) == 1
+    assert linked[0]["providerSourceId"] == PROVIDER_ID
+    assert linked[0]["staticSourceId"] == STATIC_ID
+    assert linked[0]["adminBackfillOwned"] is False
+
+
+def test_source_policy_recommendations_marks_non_admin_owned_links_not_clearable(
+    admin_bridge_entrypoint_root,
+) -> None:
+    admin_bridge.save_json_atomic(
+        admin_bridge.ACTIVE_PATH,
+        [
+            {
+                "id": PROVIDER_ID,
+                "name": "Studio Greenhouse",
+                "adapter": "greenhouse",
+                "migrationSourceIdentity": STATIC_ID,
+                "migrationSourceName": "Studio Static",
+                "migrationLinkedBy": "manual_import",
+                "registryState": "active",
+            }
+        ],
+    )
+    _write_json(
+        admin_bridge.SOURCE_POLICY_RECOMMENDATIONS_PATH,
+        {"schemaVersion": 1, "pairs": []},
+    )
+    _write_json(admin_bridge.SOURCE_POLICY_REVIEW_STATE_PATH, {"schemaVersion": 1, "pairs": {}})
+
+    payload = _get_recommendations_payload()
+
+    linked = payload["providerCoverageLinkBackfill"]["linkedCandidates"]
+    assert len(linked) == 1
+    assert linked[0]["migrationLinkedBy"] == "manual_import"
+    assert linked[0]["adminBackfillOwned"] is False
