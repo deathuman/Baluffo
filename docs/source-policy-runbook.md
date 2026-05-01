@@ -26,6 +26,11 @@ Runtime evidence changes local files. Keep these out of commits unless a change 
 - `data/source-approval-state.json`
 - `data/source-registry-active.json`
 - `data/source-registry-pending.json`
+- `data/jobs-fetch-report.json`
+- `data/jobs-source-state.json`
+- `data/source-policy-recommendations.json`
+- `data/source-policy-review-state.json`
+- `_out/`
 - `.playwright-mcp/`
 
 Generated reports under `_out/` and runtime artifacts under `data/` are validation evidence, not code changes.
@@ -189,18 +194,45 @@ Source-policy artifacts must not appear in source-sync:
 | Source-sync warning | `source-sync.json` may contain local source-policy payloads or unexpected top-level keys. | Treat as a release blocker. Inspect the soak report quality gates and keep source-policy review/recommendation artifacts out of sync. |
 | Static-only evidence detected | The static source has evidence not covered by the provider, or overlap history is insufficient. | Do not suppress or clean up the static source. Review `providerStaticOverlap`, `staticSuppressionPolicy`, and source-policy recommendations before any further action. |
 
-## Release Readiness Checklist
+## Source-Policy Release Readiness
 
-Before treating a provider/static source-policy run as release-ready:
+Before treating a provider/static source-policy change as release-ready, run the focused regression pack from the repo root:
 
-1. Discovery completes and writes current discovery artifacts.
-2. Fetch completes and `taskProgress` is completed.
-3. Soak report status is `ok`, or only expected warning gates remain.
-4. Source-sync cleanliness gates pass.
-5. Admin review candidates are inspected manually.
-6. At most one chosen candidate is applied through Admin.
-7. Provider coverage validates the linked provider.
-8. Two real provider successes are observed before expecting `dynamic_redundant_provider`.
-9. Static row remains unchanged.
-10. Clear works for the Admin-owned link if reversal is needed.
-11. Runtime data changes remain local and uncommitted.
+```bash
+python -m pytest -q tests/test_jobs_provider_coverage.py tests/test_jobs_dynamic_static_suppression.py tests/test_jobs_static_suppression_policy.py
+python -m pytest -q tests/test_source_policy_soak_report.py tests/test_source_policy_soak_report_backfill.py tests/test_source_policy_soak_report_suppression_selection.py
+python -m pytest -q tests/admin tests/source_discovery
+cmd /c npm run test:frontend:unit
+python -m ruff check --select C901 src/jobs --output-format concise
+python -m ruff check --select C901 src/jobs/adapters --output-format concise
+cmd /c npm run lint:precommit
+```
+
+For optional real-data validation, regenerate runtime evidence and the soak report:
+
+```bash
+python src/source_discovery.py
+python src/jobs_fetcher.py
+python scripts/source_policy_soak_report.py --data-dir data --out-dir _out
+```
+
+For validation-only dynamic suppression evidence after applying one reviewed link, use:
+
+```bash
+python src/jobs_fetcher.py --force-refresh-all --include-linked-static-validation
+python scripts/source_policy_soak_report.py --data-dir data --out-dir _out
+```
+
+Release-ready source-policy evidence means:
+
+1. Discovery and fetch complete and write current runtime artifacts.
+2. The soak report has no failed gates; expected warning gates are acceptable when understood.
+3. Source-sync cleanliness passes, and `source-sync.json` is absent or contains only `schemaVersion`, `generatedAt`, `source`, `active`, and `pending`.
+4. Source-policy review state, recommendation artifacts, overrides, and proposal payloads are not present in source-sync.
+5. Admin review candidates are inspected manually, and at most one chosen candidate is applied through Admin.
+6. One successful linked provider fetch validates coverage but does not imply static suppression.
+7. Two real provider successes are observed before expecting `dynamic_redundant_provider`; cache/freshness skips do not count.
+8. `--include-linked-static-validation` is used only for validation/evidence collection and does not change normal default fetch behavior.
+9. Static rows remain unchanged unless explicitly edited as part of a separate approved source-maintenance task.
+10. Clear works for Admin-owned links when reversal is needed.
+11. Runtime artifacts stay local and uncommitted.
