@@ -9,6 +9,12 @@ import shutil
 import uuid
 from typing import Any
 
+from src.jobs.common.contracts_source_policy_recommendations import (
+    normalize_source_policy_recommendations_artifact,
+)
+from src.jobs.common.contracts_source_policy_review_state import (
+    normalize_source_policy_review_state_artifact,
+)
 from src.shared.utils import now_iso
 
 from .local_data_store_profiles import (
@@ -30,6 +36,7 @@ from .local_data_store_shared import (
     _bytes_to_data_url,
     _data_url_to_bytes,
     _normalize_iso,
+    _write_json,
     ensure_user_dirs,
     load_activity_rows,
     load_attachment_rows,
@@ -39,12 +46,107 @@ from .local_data_store_shared import (
     save_saved_job_rows,
 )
 
+SOURCE_POLICY_RECOMMENDATIONS_FILENAME = "source-policy-recommendations.json"
+SOURCE_POLICY_REVIEW_STATE_FILENAME = "source-policy-review-state.json"
+
 
 def _as_int(value: Any) -> int:
     try:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _source_policy_artifact_paths(paths: LocalDataPaths) -> dict[str, Any]:
+    data_dir = paths.root.parent
+    return {
+        "reviewState": data_dir / SOURCE_POLICY_REVIEW_STATE_FILENAME,
+        "recommendations": data_dir / SOURCE_POLICY_RECOMMENDATIONS_FILENAME,
+    }
+
+
+def _load_json_object_for_backup(path: Any) -> tuple[dict[str, Any] | None, str]:
+    artifact_path = path
+    if not artifact_path.exists():
+        return None, ""
+    try:
+        payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None, "malformed"
+    if not isinstance(payload, dict):
+        return None, "malformed"
+    return payload, ""
+
+
+def _source_policy_pair_count(payload: Any, pairs_type: str) -> int:
+    pairs = payload.get("pairs") if isinstance(payload, dict) else None
+    if pairs_type == "dict":
+        return len(pairs) if isinstance(pairs, dict) else 0
+    return len(pairs) if isinstance(pairs, list) else 0
+
+
+def _export_source_policy_artifacts(paths: LocalDataPaths) -> dict[str, Any]:
+    artifact_paths = _source_policy_artifact_paths(paths)
+    warnings: list[str] = []
+
+    review_raw, review_warning = _load_json_object_for_backup(artifact_paths["reviewState"])
+    if review_warning:
+        warnings.append("sourcePolicy.reviewState malformed on disk; exported empty review state.")
+    review_state = normalize_source_policy_review_state_artifact(review_raw or {})
+
+    recommendations_raw, recommendations_warning = _load_json_object_for_backup(
+        artifact_paths["recommendations"]
+    )
+    if recommendations_warning:
+        warnings.append(
+            "sourcePolicy.recommendations malformed on disk; exported empty recommendations."
+        )
+    recommendations = normalize_source_policy_recommendations_artifact(recommendations_raw or {})
+
+    return {
+        "reviewState": review_state,
+        "recommendations": recommendations,
+        "warnings": warnings,
+    }
+
+
+def _restore_source_policy_artifacts(
+    paths: LocalDataPaths, source_policy: Any, warnings: list[str]
+) -> tuple[bool, bool]:
+    if not isinstance(source_policy, dict):
+        return False, False
+
+    artifact_paths = _source_policy_artifact_paths(paths)
+    review_restored = False
+    recommendations_restored = False
+
+    if "reviewState" in source_policy:
+        review_state = source_policy.get("reviewState")
+        if isinstance(review_state, dict):
+            _write_json(
+                artifact_paths["reviewState"],
+                normalize_source_policy_review_state_artifact(review_state),
+            )
+            review_restored = True
+        else:
+            warnings.append("Skipped malformed sourcePolicy.reviewState during import.")
+
+    if "recommendations" in source_policy:
+        recommendations = source_policy.get("recommendations")
+        if isinstance(recommendations, dict):
+            _write_json(
+                artifact_paths["recommendations"],
+                normalize_source_policy_recommendations_artifact(recommendations),
+            )
+            recommendations_restored = True
+        else:
+            warnings.append("Skipped malformed sourcePolicy.recommendations during import.")
+
+    for warning in source_policy.get("warnings") or []:
+        if isinstance(warning, str) and warning.strip():
+            warnings.append(f"Imported backup warning: {warning.strip()}")
+
+    return review_restored, recommendations_restored
 
 
 def export_profile_data(
@@ -68,6 +170,7 @@ def export_profile_data(
                     )
             attachments.append(item)
         activity = load_activity_rows(paths, uid)
+        source_policy = _export_source_policy_artifacts(paths)
         return {
             "version": 2,
             "schemaVersion": 2,
@@ -78,11 +181,18 @@ def export_profile_data(
                 "customJobs": sum(1 for row in saved_jobs if bool(row.get("isCustom"))),
                 "historyEvents": len(activity),
                 "attachments": len(attachments),
+                "sourcePolicyReviewPairs": _source_policy_pair_count(
+                    source_policy["reviewState"], "dict"
+                ),
+                "sourcePolicyRecommendationPairs": _source_policy_pair_count(
+                    source_policy["recommendations"], "list"
+                ),
             },
             "profile": profile_for_uid(paths, uid) or {"id": uid, "name": uid, "email": ""},
             "savedJobs": saved_jobs,
             "attachments": attachments,
             "activityLog": activity,
+            "sourcePolicy": source_policy,
         }
 
 
@@ -261,6 +371,9 @@ def import_profile_data(paths: LocalDataPaths, uid: str, payload: dict[str, Any]
             payload,
             warnings=warnings,
         )
+        review_restored, recommendations_restored = _restore_source_policy_artifacts(
+            paths, payload.get("sourcePolicy"), warnings
+        )
     return {
         "created": created,
         "updated": updated,
@@ -268,6 +381,8 @@ def import_profile_data(paths: LocalDataPaths, uid: str, payload: dict[str, Any]
         "historyAdded": history_added,
         "attachmentsAdded": attachments_added,
         "attachmentsHydrated": attachments_hydrated,
+        "sourcePolicyReviewRestored": review_restored,
+        "sourcePolicyRecommendationsRestored": recommendations_restored,
         "warnings": warnings,
     }
 

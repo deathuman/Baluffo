@@ -182,7 +182,7 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
     : "No source-policy recommendations are available yet.";
   reviewEl.innerHTML = `
     <div class="admin-source-policy-copy">
-      Recommendations are advisory. Force pause is reversible and conservative. No action deletes or hides sources. Admin review is optional for normal app improvement.
+      Recommendations are advisory. Review state is local to this machine, included in explicit backups, and not source-synced. Force pause is reversible and conservative. No action deletes or hides sources. Admin review is optional for normal app improvement.
     </div>
     <div class="saved-custom-filter-actions admin-source-policy-filters" role="group" aria-label="Source policy review filter">
       ${renderFilterButtons(rows, selectedFilter)}

@@ -148,6 +148,8 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
             "customJobs": 1,
             "historyEvents": activity_before_len,
             "attachments": 2,
+            "sourcePolicyReviewPairs": 0,
+            "sourcePolicyRecommendationPairs": 0,
         }
         assert (
             any(
@@ -165,6 +167,8 @@ def test_backup_export_import_roundtrip_preserves_business_fields() -> None:
             "customJobs": 1,
             "historyEvents": activity_before_len,
             "attachments": 2,
+            "sourcePolicyReviewPairs": 0,
+            "sourcePolicyRecommendationPairs": 0,
         }
         assert (
             all(

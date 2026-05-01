@@ -123,12 +123,25 @@ Desktop backup export/import uses schema version `2` and is profile-scoped.
 | `counts.customJobs` | `number` | Count of exported custom saved-job rows. |
 | `counts.historyEvents` | `number` | Count of exported activity rows. |
 | `counts.attachments` | `number` | Count of exported attachment rows. |
+| `counts.sourcePolicyReviewPairs` | `number` | Count of exported local source-policy review-state pairs. |
+| `counts.sourcePolicyRecommendationPairs` | `number` | Count of exported source-policy recommendation pairs. |
 | `profile` | `object` | Profile metadata with `id`, `name`, and `email`. |
 | `savedJobs` | `Array<LocalSavedJobRow>` | Saved-job rows using the canonical persisted shape above. |
 | `attachments` | `Array<LocalDataBackupAttachment>` | Attachment metadata rows; each row may include `blobDataUrl` when `includesFiles` is true. |
 | `activityLog` | `Array<LocalDataActivityRow>` | Activity/history rows. |
+| `sourcePolicy` | `object` | Optional desktop bridge-backed source-policy portability payload. |
 
 `blobDataUrl` is additive inside backup attachment rows. It is only populated when the caller exports with files included, and importers must remain tolerant of metadata-only backups without file contents.
+
+Desktop bridge-backed backups may include additive `sourcePolicy.reviewState`,
+`sourcePolicy.recommendations`, and `sourcePolicy.warnings`. `reviewState` is the normalized
+`source-policy-review-state.json` artifact, `recommendations` is the normalized
+`source-policy-recommendations.json` artifact, and `warnings` contains non-fatal portability
+diagnostics. Missing artifacts export as normalized empty artifacts. Malformed artifacts do not
+fail export/import; they are skipped or exported empty with warnings. This source-policy backup
+payload is explicit local backup/import portability only: source-policy review state, including
+`force_pause`, must not be included in `source-sync.json`, active/pending/rejected registry
+buckets, tombstones, or remote sync payloads.
 
 ### 2.5 Stable JS runtime contract
 
@@ -645,6 +658,9 @@ pipeline output directory, to record local review state for source-policy recomm
 artifact is local, reversible, and non-destructive. It must not delete, hide, reject, demote,
 tombstone, or mutate source rows; it must not mutate registry sync state or
 `REDUNDANT_STATIC_IF_PROVIDER`; and it must not create permanent redundancy rules.
+It may be preserved by explicit desktop local-data backup/import, but remains local-only for
+source sync. No remote machine should inherit `force_pause` or other review state through
+`source-sync.json`.
 
 Artifact payload:
 

@@ -181,6 +181,18 @@ class LocalDataBackupCountsSchema(BaseModel):
     customJobs: int = 0
     historyEvents: int = 0
     attachments: int = 0
+    sourcePolicyReviewPairs: int = 0
+    sourcePolicyRecommendationPairs: int = 0
+
+
+class LocalDataBackupSourcePolicySchema(BaseModel):
+    """Source-policy artifacts stored in explicit desktop backup payloads."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    reviewState: dict[str, Any] = Field(default_factory=dict)
+    recommendations: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class LocalDataBackupPayloadSchema(BaseModel):
@@ -197,6 +209,9 @@ class LocalDataBackupPayloadSchema(BaseModel):
     savedJobs: list[LocalSavedJobRowSchema] = Field(default_factory=list)
     attachments: list[LocalDataBackupAttachmentSchema] = Field(default_factory=list)
     activityLog: list[LocalDataActivityRowSchema] = Field(default_factory=list)
+    sourcePolicy: LocalDataBackupSourcePolicySchema = Field(
+        default_factory=LocalDataBackupSourcePolicySchema
+    )
 
 
 class ManifestArtifactsSchema(BaseModel):

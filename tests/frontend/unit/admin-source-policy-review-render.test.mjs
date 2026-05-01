@@ -58,6 +58,9 @@ test("admin source policy review renders required row fields and non-destructive
   });
 
   assert.match(reviewEl.innerHTML, /Recommendations are advisory/i);
+  assert.match(reviewEl.innerHTML, /Review state is local to this machine/i);
+  assert.match(reviewEl.innerHTML, /included in explicit backups/i);
+  assert.match(reviewEl.innerHTML, /not source-synced/i);
   assert.match(reviewEl.innerHTML, /Force pause is reversible and conservative/i);
   assert.match(reviewEl.innerHTML, /No action deletes or hides sources/i);
   assert.match(reviewEl.innerHTML, /static_source::studio/);
