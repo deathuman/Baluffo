@@ -83,3 +83,19 @@ See also: `docs/DATA_CONTRACT.md` for report shapes and `docs/architecture-ai-ma
 - Recommended (full fetcher): From repo root, set `PYTHONPATH` to the repo root and run the jobs fetcher module:
   `python src/jobs_fetcher.py` (optionally with `--ignore-circuit-breaker`). This runs all default source loaders including static and scrapy_static.
 - npm script: `npm run dev:pipeline` runs the current `src/jobs/pipeline.py` entrypoint with `PYTHONPATH` set to the current directory so that `src` resolves; runtime setup, source execution, task-state helpers, and late-stage report assembly are internal jobs-fetcher implementation details that may be collapsed when the replacement keeps the same active fetch behavior.
+
+## 5) Runtime evidence soak report
+
+Use the source-policy soak report after normal discovery/fetch/Admin usage to summarize whether provider migration, provider coverage, dynamic static suppression, overlap audit, recommendations, review overrides, backup portability, and source-sync cleanliness still agree:
+
+```bash
+python scripts/source_policy_soak_report.py --data-dir data --out-dir _out
+```
+
+To include an explicit desktop backup payload in the portability check:
+
+```bash
+python scripts/source_policy_soak_report.py --data-dir data --out-dir _out --backup-payload path/to/baluffo-backup.json
+```
+
+The command writes `_out/source-policy-soak-report.json` and `_out/source-policy-soak-report.md`. It is read-only outside `_out/`: it does not run fetch/discovery, apply recommendations, change loader selection, mutate registries, mutate `REDUNDANT_STATIC_IF_PROVIDER`, or source-sync local review state. Missing first-run artifacts are reported as warnings instead of failures. Failed status is reserved for contract violations such as source-policy review state or recommendation payloads appearing in `source-sync.json`.
