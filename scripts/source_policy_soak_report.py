@@ -33,6 +33,8 @@ from src.jobs.common.contracts_static_suppression_policy import (
 from src.jobs.text_utils import clean_text, norm_text
 from src.shared.json_shapes import as_json_object, json_object_rows
 from src.shared.utils import now_iso
+from src.source_discovery.config import SUPPORTED_PROVIDERS
+from src.source_discovery.provider_migration_advisory import enrich_provider_migration_rows
 
 SCHEMA_VERSION = "1.0"
 JSON_REPORT_NAME = "source-policy-soak-report.json"
@@ -62,6 +64,15 @@ SOURCE_SYNC_FORBIDDEN_TOKENS = {
     "force_pause",
     "recommendations",
     "redundantStaticProposals",
+}
+PROVIDER_MIGRATION_ACTIONS = {
+    "add_provider_source",
+    "review_provider_migration",
+    "already_covered_by_provider",
+    "unsupported_provider",
+    "needs_probe",
+    "keep_static",
+    "insufficient_evidence",
 }
 
 
@@ -150,6 +161,7 @@ def _source_identity_tokens(row: dict[str, Any]) -> set[str]:
         clean_text(row.get("sourceId")),
         clean_text(row.get("name")),
         clean_text(row.get("source")),
+        clean_text(row.get("sourceIdentity")),
         clean_text(row.get("migrationSourceIdentity")),
     }
     return {token for token in tokens if token}
@@ -179,6 +191,189 @@ def _provider_counts(provider_coverage: dict[str, Any]) -> dict[str, int]:
         "validatedProviderCount": validated,
         "unstableFailedProviderCount": unstable + failed,
     }
+
+
+def _source_token_index(rows: list[dict[str, Any]]) -> set[str]:
+    tokens: set[str] = set()
+    for row in rows:
+        tokens.update(_source_identity_tokens(row))
+    return tokens
+
+
+def _source_state_token_index(source_state_rows: dict[str, dict[str, Any]]) -> set[str]:
+    tokens: set[str] = set()
+    for name, row in source_state_rows.items():
+        tokens.add(clean_text(name))
+        tokens.update(_source_identity_tokens(as_json_object(row)))
+    return {token for token in tokens if token}
+
+
+def _provider_coverage_status_by_token(
+    provider_coverage: dict[str, Any],
+    source_state_rows: dict[str, dict[str, Any]],
+) -> dict[str, str]:
+    status_by_token: dict[str, str] = {}
+    for name, raw in source_state_rows.items():
+        row = as_json_object(raw)
+        status = clean_text(row.get("providerCoverageStatus"))
+        if not status:
+            continue
+        for token in {clean_text(name), *_source_identity_tokens(row)}:
+            if token:
+                status_by_token[token] = status
+    for key in (
+        "probingProviders",
+        "validatedProviders",
+        "unstableOrFailedProviders",
+        "needsReviewProviders",
+        "readyLaterProviders",
+    ):
+        for row in json_object_rows(provider_coverage.get(key)):
+            status = clean_text(row.get("providerCoverageStatus"))
+            if not status:
+                continue
+            for token in _source_identity_tokens(row):
+                status_by_token[token] = status
+    return status_by_token
+
+
+def _provider_migration_activation_section(
+    *,
+    discovery_candidates: list[dict[str, Any]],
+    active_rows: list[dict[str, Any]],
+    pending_rows: list[dict[str, Any]],
+    source_rows: list[dict[str, Any]],
+    source_state_rows: dict[str, dict[str, Any]],
+    provider_coverage: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    enriched_candidates = enrich_provider_migration_rows(
+        discovery_candidates,
+        active_rows=active_rows,
+        pending_rows=pending_rows,
+    )
+    action_counts = Counter(
+        clean_text(row.get("recommendedAction"))
+        for row in enriched_candidates
+        if clean_text(row.get("recommendedAction")) in PROVIDER_MIGRATION_ACTIONS
+    )
+    advisory_total = sum(action_counts.values())
+    staged_candidates = [
+        row
+        for row in discovery_candidates
+        if clean_text(row.get("candidateState")) == "staged_provider_candidate"
+        or bool(row.get("createdFromAdvisory"))
+    ]
+    pending_provider_migration = [
+        row
+        for row in pending_rows
+        if clean_text(row.get("pendingReason")) == "provider_migration_candidate"
+    ]
+    fetched_tokens = _source_token_index(source_rows) | _source_state_token_index(source_state_rows)
+    coverage_status_by_token = _provider_coverage_status_by_token(
+        provider_coverage, source_state_rows
+    )
+    fetched_count = 0
+    validated_count = 0
+    for row in pending_provider_migration:
+        tokens = _source_identity_tokens(row)
+        if tokens & fetched_tokens:
+            fetched_count += 1
+        if any(coverage_status_by_token.get(token) == "validated_provider" for token in tokens):
+            validated_count += 1
+
+    supported_providers = {clean_text(provider) for provider in SUPPORTED_PROVIDERS}
+    active_provider_without_identity = [
+        row
+        for row in active_rows
+        if clean_text(row.get("adapter")) in supported_providers
+        and not clean_text(row.get("migrationSourceIdentity"))
+    ]
+    section = {
+        "advisoryTotalCandidates": advisory_total,
+        "addProviderSourceCount": int(action_counts.get("add_provider_source", 0)),
+        "reviewProviderMigrationCount": int(action_counts.get("review_provider_migration", 0)),
+        "stagedProviderCandidateCount": len(staged_candidates),
+        "pendingProviderMigrationCandidateCount": len(pending_provider_migration),
+        "duplicateActiveSkippedCount": sum(
+            1 for row in enriched_candidates if bool(row.get("duplicateOfActiveSource"))
+        ),
+        "duplicatePendingSkippedCount": sum(
+            1 for row in enriched_candidates if bool(row.get("duplicateOfPendingSource"))
+        ),
+        "unsupportedProviderCount": int(action_counts.get("unsupported_provider", 0)),
+        "insufficientEvidenceCount": int(action_counts.get("insufficient_evidence", 0)),
+        "needsProbeCount": int(action_counts.get("needs_probe", 0)),
+        "activeProviderWithoutMigrationIdentityCount": len(active_provider_without_identity),
+        "providerMigrationCandidatesFetchedCount": fetched_count,
+        "providerMigrationCandidatesValidatedCount": validated_count,
+        "providerMigrationCandidatesNoFetchCount": max(
+            0, len(pending_provider_migration) - fetched_count
+        ),
+        "actionCounts": dict(sorted(action_counts.items())),
+    }
+    gates: list[dict[str, Any]] = []
+    actionable_advisory_count = (
+        section["addProviderSourceCount"] + section["reviewProviderMigrationCount"]
+    )
+    if actionable_advisory_count > 0 and section["stagedProviderCandidateCount"] == 0:
+        gates.append(
+            _warning_gate(
+                "provider_advisory_without_staging",
+                "Provider migration advisory found actionable candidates but none were staged.",
+                {"actionableAdvisoryCount": actionable_advisory_count},
+            )
+        )
+    if (
+        section["stagedProviderCandidateCount"] > 0
+        and section["pendingProviderMigrationCandidateCount"] == 0
+    ):
+        gates.append(
+            _warning_gate(
+                "staged_provider_without_pending",
+                "Staged provider migration candidates exist but none are pending.",
+                {"stagedProviderCandidateCount": section["stagedProviderCandidateCount"]},
+            )
+        )
+    if (
+        section["pendingProviderMigrationCandidateCount"] > 0
+        and section["providerMigrationCandidatesFetchedCount"] == 0
+    ):
+        gates.append(
+            _warning_gate(
+                "pending_provider_migration_not_fetched",
+                "Pending provider migration candidates exist but none have fetch evidence.",
+                {
+                    "pendingProviderMigrationCandidateCount": section[
+                        "pendingProviderMigrationCandidateCount"
+                    ]
+                },
+            )
+        )
+    if section["activeProviderWithoutMigrationIdentityCount"] > 0:
+        gates.append(
+            _warning_gate(
+                "active_provider_without_migration_identity",
+                "Active provider rows lack migrationSourceIdentity and cannot drive static coverage.",
+                {
+                    "activeProviderWithoutMigrationIdentityCount": section[
+                        "activeProviderWithoutMigrationIdentityCount"
+                    ]
+                },
+            )
+        )
+    insufficient_or_probe = section["insufficientEvidenceCount"] + section["needsProbeCount"]
+    if advisory_total > 0 and insufficient_or_probe > (advisory_total / 2):
+        gates.append(
+            _warning_gate(
+                "provider_migration_mostly_insufficient_or_probe",
+                "Most provider migration advisory candidates need more evidence or probing.",
+                {
+                    "advisoryTotalCandidates": advisory_total,
+                    "insufficientOrProbeCount": insufficient_or_probe,
+                },
+            )
+        )
+    return section, gates
 
 
 def _overlap_counts(overlap: dict[str, Any]) -> dict[str, int]:
@@ -329,18 +524,23 @@ def _build_sections(
     discovery_candidates = _discovery_rows(
         payloads["sourceDiscoveryReport"], payloads["sourceDiscoveryCandidates"]
     )
-    staged_provider_candidates = [
-        row
-        for row in discovery_candidates
-        if clean_text(row.get("candidateState")) == "staged_provider_candidate"
-        or bool(row.get("createdFromAdvisory"))
-    ]
+    active_rows = _list_rows(payloads["sourceRegistryActive"])
     pending_rows = _list_rows(payloads["sourceRegistryPending"])
-    pending_provider_migration = [
-        row
-        for row in pending_rows
-        if clean_text(row.get("pendingReason")) == "provider_migration_candidate"
-    ]
+    provider_migration_activation, activation_gates = _provider_migration_activation_section(
+        discovery_candidates=discovery_candidates,
+        active_rows=active_rows,
+        pending_rows=pending_rows,
+        source_rows=source_rows,
+        source_state_rows=source_state_rows,
+        provider_coverage=provider_coverage,
+    )
+    gates.extend(activation_gates)
+    staged_provider_candidates_count = int(
+        provider_migration_activation.get("stagedProviderCandidateCount") or 0
+    )
+    pending_provider_migration_count = int(
+        provider_migration_activation.get("pendingProviderMigrationCandidateCount") or 0
+    )
     source_sync, sync_gates = _source_sync_section(
         payloads["sourceSync"], clean_text(payloads.get("_sourceSyncStatus"))
     )
@@ -354,11 +554,7 @@ def _build_sections(
     review_pairs = list(as_json_object(review_state.get("pairs")).values())
 
     static_registry_tokens: set[str] = set()
-    for row in (
-        _list_rows(payloads["sourceRegistryActive"])
-        + pending_rows
-        + _list_rows(payloads["sourceRegistryRejected"])
-    ):
+    for row in active_rows + pending_rows + _list_rows(payloads["sourceRegistryRejected"]):
         if clean_text(row.get("adapter")) == "static":
             static_registry_tokens.update(_source_identity_tokens(row))
     missing_static_pairs = [
@@ -420,9 +616,10 @@ def _build_sections(
     overlap_counts = _overlap_counts(overlap)
     sections = {
         "discoveryProviderStaging": {
-            "stagedProviderCandidatesCount": len(staged_provider_candidates),
-            "pendingProviderMigrationCandidateCount": len(pending_provider_migration),
+            "stagedProviderCandidatesCount": staged_provider_candidates_count,
+            "pendingProviderMigrationCandidateCount": pending_provider_migration_count,
         },
+        "providerMigrationActivation": provider_migration_activation,
         "providerCoverageValidation": {
             **provider_counts,
             "totalProviderCandidates": int(provider_coverage.get("totalProviderCandidates") or 0),
@@ -469,8 +666,42 @@ def _build_sections(
         "sourceSyncCleanliness": source_sync,
     }
     summary = {
-        "stagedProviderCandidatesCount": len(staged_provider_candidates),
-        "pendingProviderMigrationCandidateCount": len(pending_provider_migration),
+        "stagedProviderCandidatesCount": staged_provider_candidates_count,
+        "pendingProviderMigrationCandidateCount": pending_provider_migration_count,
+        "advisoryTotalCandidates": int(
+            provider_migration_activation.get("advisoryTotalCandidates") or 0
+        ),
+        "addProviderSourceCount": int(
+            provider_migration_activation.get("addProviderSourceCount") or 0
+        ),
+        "reviewProviderMigrationCount": int(
+            provider_migration_activation.get("reviewProviderMigrationCount") or 0
+        ),
+        "duplicateActiveSkippedCount": int(
+            provider_migration_activation.get("duplicateActiveSkippedCount") or 0
+        ),
+        "duplicatePendingSkippedCount": int(
+            provider_migration_activation.get("duplicatePendingSkippedCount") or 0
+        ),
+        "unsupportedProviderCount": int(
+            provider_migration_activation.get("unsupportedProviderCount") or 0
+        ),
+        "insufficientEvidenceCount": int(
+            provider_migration_activation.get("insufficientEvidenceCount") or 0
+        ),
+        "needsProbeCount": int(provider_migration_activation.get("needsProbeCount") or 0),
+        "activeProviderWithoutMigrationIdentityCount": int(
+            provider_migration_activation.get("activeProviderWithoutMigrationIdentityCount") or 0
+        ),
+        "providerMigrationCandidatesFetchedCount": int(
+            provider_migration_activation.get("providerMigrationCandidatesFetchedCount") or 0
+        ),
+        "providerMigrationCandidatesValidatedCount": int(
+            provider_migration_activation.get("providerMigrationCandidatesValidatedCount") or 0
+        ),
+        "providerMigrationCandidatesNoFetchCount": int(
+            provider_migration_activation.get("providerMigrationCandidatesNoFetchCount") or 0
+        ),
         **provider_counts,
         "dynamicRedundantStaticSuppressedCount": int(policy.get("suppressedCount") or 0),
         "suppressionPausedCount": int(policy.get("pausedCount") or 0),
@@ -548,6 +779,16 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         "## Summary",
         "",
         *_markdown_table(list(as_json_object(report.get("summary")).items())),
+        "",
+        "## Provider Migration Activation",
+        "",
+        *_markdown_table(
+            list(
+                as_json_object(
+                    as_json_object(report.get("sections")).get("providerMigrationActivation")
+                ).items()
+            )
+        ),
         "",
         "## Quality Gates",
         "",

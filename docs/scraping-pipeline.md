@@ -99,3 +99,5 @@ python scripts/source_policy_soak_report.py --data-dir data --out-dir _out --bac
 ```
 
 The command writes `_out/source-policy-soak-report.json` and `_out/source-policy-soak-report.md`. It is read-only outside `_out/`: it does not run fetch/discovery, apply recommendations, change loader selection, mutate registries, mutate `REDUNDANT_STATIC_IF_PROVIDER`, or source-sync local review state. Missing first-run artifacts are reported as warnings instead of failures. Failed status is reserved for contract violations such as source-policy review state or recommendation payloads appearing in `source-sync.json`.
+
+The report also includes provider migration activation diagnostics: advisory action counts, staged and pending provider-migration candidates, fetched/validated pending candidates, duplicate/unsupported/insufficient/probe buckets, and active providers that lack `migrationSourceIdentity`. Activation gates are warnings only; they explain why provider staging or validation is dormant without changing runtime suppression, source sync, or registry behavior.
