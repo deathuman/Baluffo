@@ -79,6 +79,8 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
 | `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
 | `dedupAuditGate` | `Object` | Read-only lifecycle-readiness gate derived from current-run merges, carried source-bundle collisions, review queue causes, provider/static disagreement, and Google Sheets guard status. |
+| `providerStaticDisagreementCounts` | `Object` | Dedicated counts for provider/static disagreement rows: `total`, `currentRun`, and `carried`. |
+| `providerStaticDisagreementExamples` | `Array<Object>` | Stable capped sample of provider/static disagreement rows for manual review. |
 | `carriedBundleExamples` | `Array<Object>` | Stable capped sample of historical carried source-bundle rows that may need review or metadata rebuilding. |
 | `carriedBundleReconciliationRecommendation` | `Object` | Optional report-only recommendation to rebuild carried source-bundle metadata in a separate explicit maintenance run. |
 | `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
@@ -104,6 +106,13 @@ Risky rows also include `riskReasons`, currently including values such as
 `same_title_company_different_location`,
 `provider_static_duplicate_disagreement`, `missing_provider_ids`, and
 `weak_title_company_only_evidence`.
+
+Provider/static disagreement examples include `title`, `company`, `dedupKey`,
+`bundleEvidenceOrigin`, `sourceBundleCount`, provider/static source names, provider/static source
+job IDs when present, provider/static URLs, provider/static URL host/path-prefix samples,
+`identityQuality`, and `disagreementEvidence`. They expose cases where provider and static bundle
+entries do not share a primary URL, so operators can review whether the bundle is a safe duplicate
+or a carried historical collision before lifecycle labels rely on it.
 
 Outlier reason values are diagnostic only:
 `multi_location_strong_identity`, `location_divergence_without_strong_identity`,
@@ -132,6 +141,7 @@ controls.
 proceed. Its `status` is `pass`, `warning`, or `blocked`; `lifecycleUxReady` is true only when
 there are no blocker causes. It includes current-run and carried collision counts, current-run and
 carried high-risk review counts, `providerStaticDisagreementCount`,
+`providerStaticDisagreementCurrentRunCount`, `providerStaticDisagreementCarriedCount`,
 `googleSheetsGenericRoleGuardActive`, `carriedCollisionLikelyHistoricalCount`,
 `reviewQueueCauseCounts`, `blockers`, `warnings`, and capped `examples`. Carried historical
 source-bundle collisions may warn without blocking, while current-run non-primary merges,

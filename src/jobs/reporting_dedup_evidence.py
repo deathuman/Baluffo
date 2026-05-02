@@ -357,6 +357,22 @@ def _non_provider_source_job_id_count(bundle: Sequence[Mapping[str, Any]]) -> in
     )
 
 
+def _items_for_source_class(
+    bundle: Sequence[Mapping[str, Any]], source_class: str
+) -> list[Mapping[str, Any]]:
+    return [item for item in bundle if _source_class(item) == source_class]
+
+
+def _sample_clean_values(
+    items: Sequence[Mapping[str, Any]], field: str, *, normalize_urls: bool = False
+) -> list[str]:
+    values = {
+        normalize_url(item.get(field)) if normalize_urls else clean_text(item.get(field))
+        for item in items
+    }
+    return sorted(value for value in values if value)[:5]
+
+
 def _non_provider_items(bundle: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
     return [item for item in bundle if _source_class(item) != "provider"]
 
@@ -1172,6 +1188,66 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
     return summary
 
 
+def _provider_static_disagreement_example(
+    summary: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
+) -> dict[str, Any]:
+    provider_items = _items_for_source_class(bundle, "provider")
+    static_items = _items_for_source_class(bundle, "static")
+    provider_urls = _sample_clean_values(provider_items, "jobLink", normalize_urls=True)
+    static_urls = _sample_clean_values(static_items, "jobLink", normalize_urls=True)
+    provider_hosts = sorted({_url_host(url) for url in provider_urls if _url_host(url)})
+    static_hosts = sorted({_url_host(url) for url in static_urls if _url_host(url)})
+    provider_prefixes = sorted({_path_prefix(url) for url in provider_urls if _path_prefix(url)})
+    static_prefixes = sorted({_path_prefix(url) for url in static_urls if _path_prefix(url)})
+    evidence = [
+        f"bundle_origin:{clean_text(summary.get('bundleEvidenceOrigin')) or 'unknown'}",
+        f"provider_sources:{len(_sample_clean_values(provider_items, 'source'))}",
+        f"static_sources:{len(_sample_clean_values(static_items, 'source'))}",
+        f"provider_urls:{len(provider_urls)}",
+        f"static_urls:{len(static_urls)}",
+        f"provider_ids:{len(_sample_clean_values(provider_items, 'sourceJobId'))}",
+        f"static_ids:{len(_sample_clean_values(static_items, 'sourceJobId'))}",
+        f"shared_primary_url:{str(bool(summary.get('sharedPrimaryUrl'))).lower()}",
+        f"identity_quality:{clean_text(summary.get('identityQuality')) or 'unknown'}",
+    ]
+    return {
+        "title": clean_text(summary.get("title")),
+        "company": clean_text(summary.get("company")),
+        "dedupKey": clean_text(summary.get("dedupKey")),
+        "bundleEvidenceOrigin": clean_text(summary.get("bundleEvidenceOrigin")),
+        "sourceBundleCount": max(0, int(summary.get("sourceBundleCount") or 0)),
+        "providerSources": _sample_clean_values(provider_items, "source"),
+        "staticSources": _sample_clean_values(static_items, "source"),
+        "providerSourceJobIds": _sample_clean_values(provider_items, "sourceJobId"),
+        "staticSourceJobIds": _sample_clean_values(static_items, "sourceJobId"),
+        "providerUrls": provider_urls,
+        "staticUrls": static_urls,
+        "providerUrlHosts": provider_hosts[:5],
+        "staticUrlHosts": static_hosts[:5],
+        "providerUrlPathPrefixes": provider_prefixes[:5],
+        "staticUrlPathPrefixes": static_prefixes[:5],
+        "identityQuality": clean_text(summary.get("identityQuality")),
+        "outlierReason": clean_text(summary.get("outlierReason")),
+        "disagreementEvidence": evidence,
+    }
+
+
+def _high_risk_origin_counts(summary: Mapping[str, Any], origin: str) -> tuple[int, int]:
+    if summary.get("suspectedCause") not in DEDUP_AUDIT_GATE_BLOCKER_CAUSES:
+        return 0, 0
+    return (1, 0) if origin == "current_run" else (0, 1)
+
+
+def _provider_static_disagreement_origin_update(
+    summary: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
+) -> tuple[int, int, list[dict[str, Any]]]:
+    if summary.get("outlierReason") != "provider_static_disagreement":
+        return 0, 0, []
+    origin = clean_text(summary.get("bundleEvidenceOrigin"))
+    current_count, carried_count = (1, 0) if origin == "current_run" else (0, 1)
+    return current_count, carried_count, [_provider_static_disagreement_example(summary, bundle)]
+
+
 def _merge_reason_counts(dedup_stats: Mapping[str, Any]) -> dict[str, int]:
     primary = max(0, int(dedup_stats.get("mergedByPrimaryUrl") or 0))
     secondary = max(0, int(dedup_stats.get("mergedBySecondaryKey") or 0))
@@ -1208,10 +1284,13 @@ def _mapping_value(payload: Mapping[str, Any], key: str) -> Mapping[str, Any]:
 
 def _audit_gate_provider_static_disagreement_count(
     *,
+    provider_static_disagreement_counts: Mapping[str, Any],
     review_queue_cause_counts: Mapping[str, Any],
     risk_reason_counts: Mapping[str, Any],
     outlier_reason_counts: Mapping[str, Any],
 ) -> int:
+    if provider_static_disagreement_counts:
+        return max(0, int(provider_static_disagreement_counts.get("total") or 0))
     return max(
         int(review_queue_cause_counts.get("provider_static_disagreement") or 0),
         int(risk_reason_counts.get("provider_static_duplicate_disagreement") or 0),
@@ -1255,6 +1334,22 @@ def _audit_gate_blockers_and_warnings(
 
 
 def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, Any]]:
+    provider_static_examples = json_object_rows(
+        dedup_evidence.get("providerStaticDisagreementExamples")
+    )
+    if provider_static_examples:
+        return [
+            {
+                "title": clean_text(row.get("title")),
+                "company": clean_text(row.get("company")),
+                "recommendedReviewAction": "review_provider_static_disagreement",
+                "suspectedCause": "provider_static_disagreement",
+                "sourceBundleCount": max(0, int(row.get("sourceBundleCount") or 0)),
+                "identityQuality": clean_text(row.get("identityQuality")),
+                "bundleEvidenceOrigin": clean_text(row.get("bundleEvidenceOrigin")),
+            }
+            for row in provider_static_examples[:5]
+        ]
     examples = []
     for row in dedup_evidence.get("reviewQueue") or []:
         if not isinstance(row, Mapping):
@@ -1297,10 +1392,20 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
     )
     merge_reason_counts = _mapping_value(dedup_evidence, "mergeReasonCounts")
     review_queue_cause_counts = _mapping_value(dedup_evidence, "reviewQueueCauseCounts")
+    provider_static_disagreement_counts = _mapping_value(
+        dedup_evidence, "providerStaticDisagreementCounts"
+    )
     provider_static_disagreement_count = _audit_gate_provider_static_disagreement_count(
+        provider_static_disagreement_counts=provider_static_disagreement_counts,
         review_queue_cause_counts=review_queue_cause_counts,
         risk_reason_counts=_mapping_value(dedup_evidence, "riskReasonCounts"),
         outlier_reason_counts=_mapping_value(dedup_evidence, "outlierReasonCounts"),
+    )
+    provider_static_current_run_count = max(
+        0, int(provider_static_disagreement_counts.get("currentRun") or 0)
+    )
+    provider_static_carried_count = max(
+        0, int(provider_static_disagreement_counts.get("carried") or 0)
     )
     high_risk_review_queue_count = _audit_gate_high_risk_count(review_queue_cause_counts)
     current_run_non_primary_merges = max(
@@ -1336,6 +1441,8 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         "currentRunHighRiskReviewQueueCount": current_run_high_risk_review_queue_count,
         "carriedHighRiskReviewQueueCount": carried_high_risk_review_queue_count,
         "providerStaticDisagreementCount": provider_static_disagreement_count,
+        "providerStaticDisagreementCurrentRunCount": provider_static_current_run_count,
+        "providerStaticDisagreementCarriedCount": provider_static_carried_count,
         "googleSheetsGenericRoleGuardActive": True,
         "carriedCollisionLikelyHistoricalCount": carried_collision_likely_historical_count,
         "reviewQueueCauseCounts": {
@@ -1375,11 +1482,14 @@ def build_dedup_evidence(
     location_divergence_rows: list[dict[str, Any]] = []
     review_queue_rows: list[dict[str, Any]] = []
     carried_bundle_rows: list[dict[str, Any]] = []
+    provider_static_disagreement_rows: list[dict[str, Any]] = []
     source_bundle_collision_count = 0
     current_run_source_bundle_collision_count = 0
     carried_source_bundle_collision_count = 0
     current_run_high_risk_review_queue_count = 0
     carried_high_risk_review_queue_count = 0
+    current_run_provider_static_disagreement_count = 0
+    carried_provider_static_disagreement_count = 0
     current_run_merged_dedup_keys = {
         clean_text(value) for value in dedup_stats.get("currentRunMergedDedupKeys") or []
     }
@@ -1420,15 +1530,19 @@ def build_dedup_evidence(
             review_action = _recommended_review_action(summary)
             review_queue_counts.update([review_action])
             review_queue_cause_counts.update([summary["suspectedCause"]])
-            if summary["suspectedCause"] in DEDUP_AUDIT_GATE_BLOCKER_CAUSES:
-                if origin == "current_run":
-                    current_run_high_risk_review_queue_count += 1
-                else:
-                    carried_high_risk_review_queue_count += 1
+            current_high_risk, carried_high_risk = _high_risk_origin_counts(summary, origin)
+            current_run_high_risk_review_queue_count += current_high_risk
+            carried_high_risk_review_queue_count += carried_high_risk
             if review_action != "monitor":
                 review_queue_rows.append({**summary, "recommendedReviewAction": review_action})
             if int(summary.get("distinctLocationCount") or 0) > 1:
                 location_divergence_rows.append(summary)
+            current_disagreement, carried_disagreement, disagreement_rows = (
+                _provider_static_disagreement_origin_update(summary, bundle)
+            )
+            current_run_provider_static_disagreement_count += current_disagreement
+            carried_provider_static_disagreement_count += carried_disagreement
+            provider_static_disagreement_rows.extend(disagreement_rows)
             reasons = _risky_reasons(row, bundle)
             if reasons:
                 risk_reason_counts.update(reasons)
@@ -1477,6 +1591,17 @@ def build_dedup_evidence(
             norm_text(row.get("dedupKey")),
         )
     )
+    provider_static_disagreement_rows.sort(
+        key=lambda row: (
+            norm_text(row.get("bundleEvidenceOrigin")),
+            norm_text(row.get("company")),
+            norm_text(row.get("title")),
+            norm_text(row.get("dedupKey")),
+        )
+    )
+    provider_static_disagreement_count = (
+        current_run_provider_static_disagreement_count + carried_provider_static_disagreement_count
+    )
 
     payload = {
         "schemaVersion": 1,
@@ -1488,6 +1613,11 @@ def build_dedup_evidence(
         "carriedSourceBundleCollisionCount": carried_source_bundle_collision_count,
         "currentRunHighRiskReviewQueueCount": current_run_high_risk_review_queue_count,
         "carriedHighRiskReviewQueueCount": carried_high_risk_review_queue_count,
+        "providerStaticDisagreementCounts": {
+            "total": provider_static_disagreement_count,
+            "currentRun": current_run_provider_static_disagreement_count,
+            "carried": carried_provider_static_disagreement_count,
+        },
         "sourceBundleComposition": {
             key: int(composition.get(key, 0)) for key in ("provider", "static", "social", "other")
         },
@@ -1536,6 +1666,9 @@ def build_dedup_evidence(
             key: int(review_queue_cause_counts.get(key, 0)) for key in REVIEW_QUEUE_CAUSE_KEYS
         },
         "reviewQueue": review_queue_rows[: max(0, int(risky_limit))],
+        "providerStaticDisagreementExamples": provider_static_disagreement_rows[
+            : max(0, int(risky_limit))
+        ],
         "carriedBundleExamples": carried_bundle_rows[: max(0, int(risky_limit))],
         "carriedBundleReconciliationRecommendation": {
             "recommendedAction": "rebuild_carried_source_bundle_metadata",

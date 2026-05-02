@@ -36,6 +36,8 @@ def test_dedup_audit_gate_returns_safe_defaults_for_empty_evidence() -> None:
         "sourceBundleCollisionCount": 0,
         "highRiskReviewQueueCount": 0,
         "providerStaticDisagreementCount": 0,
+        "providerStaticDisagreementCurrentRunCount": 0,
+        "providerStaticDisagreementCarriedCount": 0,
         "googleSheetsGenericRoleGuardActive": True,
         "carriedCollisionLikelyHistoricalCount": 0,
         "currentRunSourceBundleCollisionCount": 0,
@@ -164,10 +166,45 @@ def test_dedup_audit_gate_blocks_provider_static_disagreement() -> None:
     assert gate["status"] == "blocked"
     assert gate["lifecycleUxReady"] is False
     assert gate["providerStaticDisagreementCount"] == 1
+    assert gate["providerStaticDisagreementCurrentRunCount"] == 0
+    assert gate["providerStaticDisagreementCarriedCount"] == 1
     assert gate["highRiskReviewQueueCount"] == 1
     assert gate["carriedHighRiskReviewQueueCount"] == 1
     assert "provider_static_disagreement_needs_review" in gate["blockers"]
     assert gate["examples"][0]["suspectedCause"] == "provider_static_disagreement"
+    assert gate["examples"][0]["recommendedReviewAction"] == ("review_provider_static_disagreement")
+
+
+def test_dedup_audit_gate_blocks_current_run_provider_static_disagreement() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 1, "mergedByPrimaryUrl": 1},
+        [
+            _row(
+                sourceBundleCount=2,
+                sourceBundle=[
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "gh-1",
+                        "jobLink": "https://provider.example/jobs/1",
+                        "adapter": "greenhouse",
+                    },
+                    {
+                        "source": "static_source::static:listing_url:https://studio.example/careers",
+                        "sourceJobId": "static-1",
+                        "jobLink": "https://static.example/jobs/1",
+                        "adapter": "static",
+                    },
+                ],
+            )
+        ],
+    )
+
+    gate = evidence["dedupAuditGate"]
+    assert gate["status"] == "blocked"
+    assert gate["providerStaticDisagreementCount"] == 1
+    assert gate["providerStaticDisagreementCurrentRunCount"] == 1
+    assert gate["providerStaticDisagreementCarriedCount"] == 0
+    assert "provider_static_disagreement_needs_review" in gate["blockers"]
 
 
 def test_dedup_audit_gate_counts_fresh_collisions_as_current_run() -> None:
