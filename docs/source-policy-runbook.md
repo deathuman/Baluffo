@@ -260,6 +260,36 @@ Use this rubric when recording decisions:
 
 Only consider conservative static-cleanup proposals after at least 3 clean or fully understood real-data soak runs, no failed source-sync gates, at least one stable provider/static pair with repeated safe evidence, no static-only evidence for that pair, dynamic suppression has been observed or its absence is explained, apply plus clear/reversal have both been tested, and the registry seed/runtime split is respected.
 
+## Ordered Roadmap Gates
+
+Use this order after source-policy validation is complete:
+
+1. Operational evidence gate
+2. Conservative static cleanup policy
+3. Dedup auditability closure
+4. Read-only lifecycle UX in Jobs/Saved
+
+The operational evidence gate must pass before source cleanup becomes actionable. Record at least 3 clean or fully understood source-policy soak runs and at least 1-2 post-dedup-guard audits. The pass conditions are:
+
+- no failed source-sync gates
+- runtime registry writes go to ignored runtime files, not `data/defaults/*.seed.json`
+- current-run dedup merges are absent or explainable
+- high-risk dedup review queue causes are documented
+- provider/static cleanup candidates have repeated safe evidence
+
+The first conservative cleanup action, if separately implemented, must be reversible:
+
+```text
+active static
+-> hidden/redundant pending
+```
+
+Cleanup proposals are advisory until an explicit Admin action exists. The action must require operator confirmation and must explain provider/static pair evidence, repeated provider success, suppression or suppression-eligibility evidence, overlap/audit evidence, absence of static-only evidence, and source-sync cleanliness. It must not delete, tombstone, reject, mutate tracked seeds, or mutate `REDUNDANT_STATIC_IF_PROVIDER`.
+
+Dedup auditability is the next product-risk gate before lifecycle UX. Treat the current `dedupEvidence` diagnostics as the primary review surface: current-run `mergedCount`, carried `sourceBundleCollisionCount`, review queue counts, suspected causes, identity quality, non-provider provenance, Google Sheets role-bucket diagnostics, and `dedupAuditGate`. Do not add lifecycle labels until `dedupAuditGate.lifecycleUxReady=true` in real-data evidence, current-run merges are explainable, provider/static disagreement is low or reviewed, Google Sheets generic role/category merges are blocked for new runs, and carried source-bundle collisions are clearly historical or low-risk.
+
+The first lifecycle UX slice must be read-only. It may show conservative labels such as `New`, `Reappeared`, `Recently removed`, and `Preserved because source failed`, but only when lifecycle/source-health evidence and dedup confidence support the label. Do not change retention policy, add merge/unmerge controls, perform source cleanup, or mutate registries in that first slice.
+
 ## Conservative Static Cleanup Proposals
 
 The soak report may emit `sections.conservativeStaticCleanupProposals` after repeated safe evidence. This is still reporting only. A proposal is not an action and must not be treated as permission to hide, reject, tombstone, delete, or permanently suppress a source.

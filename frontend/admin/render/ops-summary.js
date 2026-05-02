@@ -328,6 +328,45 @@ function formatDedupReviewQueueCauseCounts(causeCounts) {
   ].join(", ");
 }
 
+function formatDedupAuditGate(gate) {
+  const auditGate = gate && typeof gate === "object" ? gate : {};
+  const status = String(auditGate?.status || "unknown").replaceAll("_", " ");
+  const ready = auditGate?.lifecycleUxReady === true ? "yes" : "no";
+  const blockers = Array.isArray(auditGate?.blockers) ? auditGate.blockers : [];
+  const warnings = Array.isArray(auditGate?.warnings) ? auditGate.warnings : [];
+  const blockerText = blockers.length ? blockers.slice(0, 4).join(", ").replaceAll("_", " ") : "none";
+  const warningText = warnings.length ? warnings.slice(0, 4).join(", ").replaceAll("_", " ") : "none";
+  const guard = auditGate?.googleSheetsGenericRoleGuardActive === true ? "active" : "unknown";
+  return [
+    `status ${status}`,
+    `lifecycle UX ready ${ready}`,
+    `current-run merges ${Number(auditGate?.currentRunMergedCount || 0).toLocaleString()}`,
+    `carried collisions ${Number(auditGate?.sourceBundleCollisionCount || 0).toLocaleString()}`,
+    `historical-like ${Number(auditGate?.carriedCollisionLikelyHistoricalCount || 0).toLocaleString()}`,
+    `high-risk queue ${Number(auditGate?.highRiskReviewQueueCount || 0).toLocaleString()}`,
+    `provider/static ${Number(auditGate?.providerStaticDisagreementCount || 0).toLocaleString()}`,
+    `Google Sheets guard ${guard}`,
+    `blockers ${blockerText}`,
+    `warnings ${warningText}`
+  ].join("; ");
+}
+
+function formatDedupAuditGateExamples(rows, emptyText) {
+  const examples = Array.isArray(rows) ? rows : [];
+  if (!examples.length) return escapeHtml(emptyText);
+  return examples
+    .slice(0, 5)
+    .map(row => {
+      const title = String(row?.title || "Untitled");
+      const company = String(row?.company || "Unknown company");
+      const cause = String(row?.suspectedCause || "unknown").replaceAll("_", " ");
+      const quality = String(row?.identityQuality || "unknown").replaceAll("_", " ");
+      const action = String(row?.recommendedReviewAction || "monitor").replaceAll("_", " ");
+      return escapeHtml(`${title} @ ${company} (${cause}, ${quality}, ${action})`);
+    })
+    .join(" | ");
+}
+
 function formatDedupIdentityQualityCounts(qualityCounts) {
   const counts = qualityCounts && typeof qualityCounts === "object" ? qualityCounts : {};
   return [
@@ -756,6 +795,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const reviewQueueCauseCounts = dedupEvidence?.reviewQueueCauseCounts && typeof dedupEvidence.reviewQueueCauseCounts === "object"
     ? dedupEvidence.reviewQueueCauseCounts
     : {};
+  const dedupAuditGate = dedupEvidence?.dedupAuditGate && typeof dedupEvidence.dedupAuditGate === "object"
+    ? dedupEvidence.dedupAuditGate
+    : {};
   const topMergedSummary = formatDedupMergedRows(
     dedupEvidence?.topMergedJobs,
     "No merged canonical jobs in the latest fetch report."
@@ -843,6 +885,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Audit Gate</strong>: ${escapeHtml(formatDedupAuditGate(dedupAuditGate))}. Examples: ${formatDedupAuditGateExamples(dedupAuditGate?.examples, "No gate examples.")}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup source composition</strong>: ${escapeHtml(formatDedupSourceClasses(sourceBundleComposition))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup risk reasons</strong>: ${escapeHtml(formatDedupRiskReasonCounts(riskReasonCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup outlier reasons</strong>: ${escapeHtml(formatDedupOutlierReasonCounts(outlierReasonCounts))}</div>

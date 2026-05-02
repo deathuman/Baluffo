@@ -74,6 +74,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `googleSheetsWeakGroupingAuditCounts` | `Object` | Aggregate Google Sheets weak title/company grouping audit counts before sample capping. |
 | `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
 | `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
+| `dedupAuditGate` | `Object` | Read-only lifecycle-readiness gate derived from current-run merges, carried source-bundle collisions, review queue causes, provider/static disagreement, and Google Sheets guard status. |
 | `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
 | `topMergedJobs` | `Array<Object>` | Stable capped sample of canonical rows with the largest `sourceBundleCount`. |
 | `topSourceBundleOutliers` | `Array<Object>` | Stable capped sample of carried source-bundle outliers, sorted like `topMergedJobs`. |
@@ -120,6 +121,17 @@ Review queue rows are advisory samples derived from the same final canonical row
 Only non-monitor rows are included in the capped `reviewQueue` sample. The queue is not persisted
 review state and does not provide merge, unmerge, cleanup, lifecycle, source-policy, or registry
 controls.
+
+`dedupAuditGate` is the compact operator gate for deciding whether read-only lifecycle UX can
+proceed. Its `status` is `pass`, `warning`, or `blocked`; `lifecycleUxReady` is true only when
+there are no blocker causes. It includes `currentRunMergedCount`, `sourceBundleCollisionCount`,
+`highRiskReviewQueueCount`, `providerStaticDisagreementCount`,
+`googleSheetsGenericRoleGuardActive`, `carriedCollisionLikelyHistoricalCount`,
+`reviewQueueCauseCounts`, `blockers`, `warnings`, and capped `examples`. Carried historical
+source-bundle collisions may warn without blocking, while current-run non-primary merges,
+provider/static disagreement, unknown causes, and high-risk Google Sheets or non-provider URL
+causes block lifecycle readiness until reviewed. This gate is advisory only and does not add
+lifecycle labels or change dedup behavior.
 
 Suspected cause values are diagnostic only: `category_or_department_bucket`,
 `open_application_family`, `listing_page_bundle`, `spreadsheet_role_bucket_needs_review`,
