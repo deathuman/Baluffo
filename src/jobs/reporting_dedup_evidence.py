@@ -474,7 +474,12 @@ def _suspected_cause(summary: Mapping[str, Any]) -> str:
     if (
         dominant_source_class == "other"
         and identity_shape == "many_unique_urls_same_title"
-        and identity_quality in {"many_urls_same_host_weak", "many_urls_many_hosts_weak"}
+        and identity_quality
+        in {
+            "many_urls_same_host_weak",
+            "many_urls_many_hosts_weak",
+            "other_source_id_untrusted",
+        }
     ):
         return "non_provider_url_identity_needs_review"
     if identity_quality in {"provider_id_strong", "shared_detail_url_strong"} and (

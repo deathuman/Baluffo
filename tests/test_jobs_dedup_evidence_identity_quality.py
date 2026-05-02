@@ -102,8 +102,8 @@ def test_dedup_evidence_classifies_non_provider_source_ids_as_untrusted() -> Non
                     },
                     {
                         "source": "directory-b",
-                        "sourceJobId": "directory-job-1",
-                        "jobLink": "https://directory.example/jobs/1",
+                        "sourceJobId": "directory-job-2",
+                        "jobLink": "https://directory.example/jobs/2",
                         "adapter": "custom",
                     },
                 ],
@@ -113,8 +113,10 @@ def test_dedup_evidence_classifies_non_provider_source_ids_as_untrusted() -> Non
 
     outlier = evidence["topSourceBundleOutliers"][0]
     assert outlier["identityQuality"] == "other_source_id_untrusted"
-    assert outlier["nonProviderSourceJobIdCount"] == 1
+    assert outlier["suspectedCause"] == "non_provider_url_identity_needs_review"
+    assert outlier["nonProviderSourceJobIdCount"] == 2
     assert evidence["identityQualityCounts"]["other_source_id_untrusted"] == 1
+    assert evidence["reviewQueueCauseCounts"]["non_provider_url_identity_needs_review"] == 1
 
 
 def test_dedup_evidence_classifies_missing_identity() -> None:
