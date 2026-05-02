@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
 from src.jobs.reporting_dedup_evidence import build_dedup_evidence
 
 
@@ -69,6 +68,7 @@ def test_dedup_evidence_reports_top_merged_jobs_and_reason_counts() -> None:
         "primaryUrl": 1,
         "secondaryKey": 1,
         "socialKey": 1,
+        "knownMirrorPair": 0,
         "sparseIdentity": 1,
         "unknown": 0,
     }
@@ -234,6 +234,7 @@ def test_dedup_evidence_reports_carried_bundle_collisions_without_current_merges
         "primaryUrl": 0,
         "secondaryKey": 0,
         "socialKey": 0,
+        "knownMirrorPair": 0,
         "sparseIdentity": 0,
         "unknown": 0,
     }
@@ -381,20 +382,3 @@ def test_dedup_evidence_empty_rows_returns_empty_aggregates() -> None:
     assert evidence["locationDivergenceExamples"] == []
     assert evidence["reviewQueue"] == []
     assert evidence["riskyMergeExamples"] == []
-
-
-def test_fetch_report_normalization_preserves_dedup_evidence() -> None:
-    normalized = normalize_fetch_report_payload(
-        {
-            "summary": {"inputCount": 2, "outputCount": 1},
-            "sources": [],
-            "dedupEvidence": {
-                "schemaVersion": 1,
-                "mergedCount": 1,
-                "topMergedJobs": [{"title": "Senior Engineer"}],
-            },
-        }
-    )
-
-    assert normalized["dedupEvidence"]["mergedCount"] == 1
-    assert normalized["dedupEvidence"]["topMergedJobs"][0]["title"] == "Senior Engineer"

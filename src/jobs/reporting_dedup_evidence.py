@@ -1452,7 +1452,14 @@ def _provider_static_title_company_collision_audit(
     return "unknown", evidence[:8]
 
 
-def _high_risk_origin_counts(summary: Mapping[str, Any], origin: str) -> tuple[int, int]:
+def _high_risk_origin_counts(
+    summary: Mapping[str, Any], origin: str, current_run_known_mirror_pair_dedup_keys: set[str]
+) -> tuple[int, int]:
+    if (
+        origin == "current_run"
+        and clean_text(summary.get("dedupKey")) in current_run_known_mirror_pair_dedup_keys
+    ):
+        return 0, 0
     if summary.get("suspectedCause") not in DEDUP_AUDIT_GATE_BLOCKER_CAUSES:
         return 0, 0
     return (1, 0) if origin == "current_run" else (0, 1)
@@ -1472,21 +1479,51 @@ def _merge_reason_counts(dedup_stats: Mapping[str, Any]) -> dict[str, int]:
     primary = max(0, int(dedup_stats.get("mergedByPrimaryUrl") or 0))
     secondary = max(0, int(dedup_stats.get("mergedBySecondaryKey") or 0))
     social = max(0, int(dedup_stats.get("mergedBySocialKey") or 0))
+    known_mirror_pair = max(0, int(dedup_stats.get("mergedByKnownMirrorPair") or 0))
     sparse_explicit = dedup_stats.get("mergedBySparseIdentity")
     total = max(0, int(dedup_stats.get("mergedCount") or 0))
     sparse = (
         max(0, int(sparse_explicit or 0))
         if sparse_explicit is not None
-        else max(0, total - primary - secondary - social)
+        else max(0, total - primary - secondary - social - known_mirror_pair)
     )
-    known = primary + secondary + social + sparse
+    known = primary + secondary + social + known_mirror_pair + sparse
     return {
         "primaryUrl": primary,
         "secondaryKey": secondary,
         "socialKey": social,
+        "knownMirrorPair": known_mirror_pair,
         "sparseIdentity": sparse,
         "unknown": max(0, total - known),
     }
+
+
+def _current_run_merge_examples(dedup_stats: Mapping[str, Any]) -> list[dict[str, Any]]:
+    examples: list[dict[str, Any]] = []
+    for row in json_object_rows(dedup_stats.get("collisionSamples")):
+        merge_reason = clean_text(row.get("reason")) or "unknown"
+        blocks_lifecycle = merge_reason not in {"primary_url", "known_mirror_pair"}
+        example = {
+            "mergeReason": merge_reason,
+            "existingDedupKey": clean_text(row.get("existingDedupKey")),
+            "incomingSource": clean_text(row.get("incomingSource")),
+            "title": clean_text(row.get("incomingTitle")),
+            "company": clean_text(row.get("incomingCompany")),
+            "incomingJobLink": normalize_url(row.get("incomingJobLink")),
+            "bundleEvidenceOrigin": "current_run",
+            "blocksLifecycle": blocks_lifecycle,
+            "nonBlockingReason": "",
+            "recommendedReviewAction": (
+                "review_current_run_merge" if blocks_lifecycle else "monitor"
+            ),
+            "suspectedCause": (
+                "current_run_non_primary_merge" if blocks_lifecycle else "known_mirror_pair"
+            ),
+        }
+        if merge_reason == "known_mirror_pair":
+            example["nonBlockingReason"] = "known_gracklehq_gamesjobsdirect_mirror_pair"
+        examples.append(example)
+    return examples
 
 
 def _nonzero_counts(counts: Mapping[str, Any]) -> dict[str, int]:
@@ -1550,7 +1587,7 @@ def _provider_static_gate_alerts(
 
 def _audit_gate_blockers_and_warnings(
     *,
-    merged_count: int,
+    primary_url_merge_count: int,
     current_run_non_primary_merges: int,
     current_run_provider_static_disagreement_blocking_count: int,
     carried_provider_static_disagreement_blocking_count: int,
@@ -1566,7 +1603,7 @@ def _audit_gate_blockers_and_warnings(
     warnings: list[str] = []
     if current_run_non_primary_merges > 0:
         blockers.append("current_run_non_primary_merges_need_review")
-    elif merged_count > 0:
+    elif primary_url_merge_count > 0:
         warnings.append("current_run_primary_url_merges_present")
     provider_static_blockers, provider_static_warnings = _provider_static_gate_alerts(
         current_run_provider_static_disagreement_blocking_count=(
@@ -1620,6 +1657,25 @@ def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, An
                 ),
             }
             for row in blocking_provider_static_examples[:5]
+        ]
+    current_run_merge_examples = [
+        row
+        for row in json_object_rows(dedup_evidence.get("currentRunMergeExamples"))
+        if row.get("blocksLifecycle") is True
+    ]
+    if current_run_merge_examples:
+        return [
+            {
+                "title": clean_text(row.get("title")),
+                "company": clean_text(row.get("company")),
+                "recommendedReviewAction": clean_text(row.get("recommendedReviewAction")),
+                "suspectedCause": clean_text(row.get("suspectedCause")),
+                "incomingSource": clean_text(row.get("incomingSource")),
+                "mergeReason": clean_text(row.get("mergeReason")),
+                "existingDedupKey": clean_text(row.get("existingDedupKey")),
+                "bundleEvidenceOrigin": clean_text(row.get("bundleEvidenceOrigin")),
+            }
+            for row in current_run_merge_examples[:5]
         ]
     warning_provider_static_examples = [
         row
@@ -1729,6 +1785,10 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         0,
         merged_count - int(merge_reason_counts.get("primaryUrl") or 0),
     )
+    current_run_non_primary_merges = max(
+        0, current_run_non_primary_merges - int(merge_reason_counts.get("knownMirrorPair") or 0)
+    )
+    primary_url_merge_count = max(0, int(merge_reason_counts.get("primaryUrl") or 0))
     carried_collision_likely_historical_count = (
         carried_source_bundle_collision_count
         if carried_source_bundle_collision_count
@@ -1737,7 +1797,7 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         else 0
     )
     blockers, warnings = _audit_gate_blockers_and_warnings(
-        merged_count=merged_count,
+        primary_url_merge_count=primary_url_merge_count,
         current_run_non_primary_merges=current_run_non_primary_merges,
         current_run_provider_static_disagreement_blocking_count=(
             current_run_provider_static_disagreement_blocking_count
@@ -1828,6 +1888,9 @@ def build_dedup_evidence(
     current_run_merged_dedup_keys = {
         clean_text(value) for value in dedup_stats.get("currentRunMergedDedupKeys") or []
     }
+    current_run_known_mirror_pair_dedup_keys = {
+        clean_text(value) for value in dedup_stats.get("currentRunKnownMirrorPairDedupKeys") or []
+    }
 
     for row in rows:
         bundle = _source_bundle(row)
@@ -1865,7 +1928,9 @@ def build_dedup_evidence(
             review_action = _recommended_review_action(summary)
             review_queue_counts.update([review_action])
             review_queue_cause_counts.update([summary["suspectedCause"]])
-            current_high_risk, carried_high_risk = _high_risk_origin_counts(summary, origin)
+            current_high_risk, carried_high_risk = _high_risk_origin_counts(
+                summary, origin, current_run_known_mirror_pair_dedup_keys
+            )
             current_run_high_risk_review_queue_count += current_high_risk
             carried_high_risk_review_queue_count += carried_high_risk
             if review_action != "monitor":
@@ -2058,6 +2123,7 @@ def build_dedup_evidence(
         "mergedCount": max(0, int(dedup_stats.get("mergedCount") or 0)),
         "collisionSamplesCount": max(0, int(dedup_stats.get("collisionSamplesCount") or 0)),
         "mergeReasonCounts": _merge_reason_counts(dedup_stats),
+        "currentRunMergeExamples": _current_run_merge_examples(dedup_stats),
         "sourceBundleCollisionCount": source_bundle_collision_count,
         "currentRunSourceBundleCollisionCount": current_run_source_bundle_collision_count,
         "carriedSourceBundleCollisionCount": carried_source_bundle_collision_count,

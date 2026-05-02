@@ -139,6 +139,40 @@ def test_dedup_audit_gate_blocks_current_run_non_primary_merges() -> None:
     assert "current_run_non_primary_merges_need_review" in gate["blockers"]
 
 
+def test_dedup_audit_gate_does_not_block_when_only_current_run_merges_are_known_mirror_pairs() -> (
+    None
+):
+    evidence = build_dedup_evidence(
+        {
+            "mergedCount": 1,
+            "mergedByKnownMirrorPair": 1,
+            "collisionSamplesCount": 1,
+            "collisionSamples": [
+                {
+                    "reason": "known_mirror_pair",
+                    "existingDedupKey": "guerrilla-key-1",
+                    "incomingSource": (
+                        "static_source::static:listing_url:https://www.gamesjobsdirect.com/jobs-with-8608_guerrilla-games?page=1"
+                    ),
+                    "incomingTitle": "Senior Foundational Tools Programmer",
+                    "incomingCompany": "Guerrilla Games",
+                    "incomingJobLink": (
+                        "https://www.gamesjobsdirect.com/job/senior-foundational-tools-programmer/12345"
+                    ),
+                }
+            ],
+        },
+        [],
+    )
+
+    gate = evidence["dedupAuditGate"]
+    assert gate["status"] == "pass"
+    assert gate["lifecycleUxReady"] is True
+    assert gate["currentRunMergedCount"] == 1
+    assert gate["currentRunHighRiskReviewQueueCount"] == 0
+    assert "current_run_non_primary_merges_need_review" not in gate["blockers"]
+
+
 def test_dedup_audit_gate_blocks_provider_static_disagreement() -> None:
     evidence = build_dedup_evidence(
         {"mergedCount": 0},

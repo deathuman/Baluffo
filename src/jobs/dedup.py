@@ -74,6 +74,11 @@ _TITLE_SUFFIX_NOISE_TOKENS = {
     "tech",
     "tools",
 }
+_GRACKLEHQ_SOURCE_NAME = "gracklehq"
+_GUERRILLA_GAMESJOBSDIRECT_STATIC_SOURCE = (
+    "static_source::static:listing_url:https://www.gamesjobsdirect.com/jobs-with-"
+    "8608_guerrilla-games?page=1"
+)
 
 
 def _is_meaningful_location_value(value: Any) -> bool:
@@ -434,6 +439,19 @@ def _enrich_unknown_company_from_gracklehq_redirect(rows: list[CanonicalJob]) ->
     return enriched
 
 
+def _is_gracklehq_gamesjobsdirect_known_mirror_pair(
+    current: CanonicalJob, target: CanonicalJob
+) -> bool:
+    current_source = clean_text(current.source)
+    target_source = clean_text(target.source)
+    if not current_source or not target_source:
+        return False
+    source_pair = {current_source, target_source}
+    if _GRACKLEHQ_SOURCE_NAME not in source_pair:
+        return False
+    return _GUERRILLA_GAMESJOBSDIRECT_STATIC_SOURCE in source_pair
+
+
 def _social_key(payload: dict[str, Any]) -> str:
     if clean_text(payload.get("source")) in SOCIAL_SOURCE_NAMES and clean_text(
         payload.get("sourceJobId")
@@ -483,6 +501,8 @@ def _find_merge_target(
             target=secondary_target,
             current_primary=primary,
         ):
+            if _is_gracklehq_gamesjobsdirect_known_mirror_pair(current, secondary_target):
+                return secondary_target_idx, "known_mirror_pair"
             return secondary_target_idx, "secondary_key"
     if social_key and social_key in by_social:
         return by_social[social_key], "social_key"
@@ -629,11 +649,12 @@ def _merge_into_target(
     )
 
 
-def _merge_reason_counts(merge_reason: str) -> tuple[int, int, int]:
+def _merge_reason_counts(merge_reason: str) -> tuple[int, int, int, int]:
     return (
         1 if merge_reason == "primary_url" else 0,
         1 if merge_reason == "secondary_key" else 0,
         1 if merge_reason == "social_key" else 0,
+        1 if merge_reason == "known_mirror_pair" else 0,
     )
 
 
@@ -665,8 +686,10 @@ def deduplicate_jobs(
     merged_by_primary = 0
     merged_by_secondary = 0
     merged_by_social = 0
+    merged_by_known_mirror_pair = 0
     merge_samples: list[dict[str, str]] = []
     current_run_merged_dedup_keys: set[str] = set()
+    current_run_known_mirror_pair_dedup_keys: set[str] = set()
 
     for row in rows:
         current = row if isinstance(row, CanonicalJob) else CanonicalJob.from_mapping(row)
@@ -704,10 +727,13 @@ def deduplicate_jobs(
             continue
 
         merges += 1
-        primary_inc, secondary_inc, social_inc = _merge_reason_counts(merge_reason)
+        primary_inc, secondary_inc, social_inc, known_mirror_inc = _merge_reason_counts(
+            merge_reason
+        )
         merged_by_primary += primary_inc
         merged_by_secondary += secondary_inc
         merged_by_social += social_inc
+        merged_by_known_mirror_pair += known_mirror_inc
         _record_merge_sample(
             merge_samples=merge_samples,
             merge_reason=merge_reason,
@@ -726,6 +752,8 @@ def deduplicate_jobs(
         merged_key = clean_text(merged_rows[target_idx].dedupKey)
         if merged_key:
             current_run_merged_dedup_keys.add(merged_key)
+            if merge_reason == "known_mirror_pair":
+                current_run_known_mirror_pair_dedup_keys.add(merged_key)
 
     merged_rows = _sort_enrich_and_number(merged_rows)
     return merged_rows, {
@@ -735,9 +763,11 @@ def deduplicate_jobs(
         "mergedByPrimaryUrl": merged_by_primary,
         "mergedBySecondaryKey": merged_by_secondary,
         "mergedBySocialKey": merged_by_social,
+        "mergedByKnownMirrorPair": merged_by_known_mirror_pair,
         "collisionSamplesCount": len(merge_samples),
         "collisionSamples": merge_samples,
         "currentRunMergedDedupKeys": sorted(current_run_merged_dedup_keys),
+        "currentRunKnownMirrorPairDedupKeys": sorted(current_run_known_mirror_pair_dedup_keys),
     }
 
 

@@ -68,7 +68,8 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `schemaVersion` | `number` | Dedup evidence payload version. |
 | `mergedCount` | `number` | Count of input rows merged away during deduplication. |
 | `collisionSamplesCount` | `number` | Count of stored merge collision samples from the dedup pass. |
-| `mergeReasonCounts` | `Object` | Counts for `primaryUrl`, `secondaryKey`, `socialKey`, `sparseIdentity`, and `unknown`. |
+| `mergeReasonCounts` | `Object` | Counts for `primaryUrl`, `secondaryKey`, `knownMirrorPair`, `socialKey`, `sparseIdentity`, and `unknown`. |
+| `currentRunMergeExamples` | `Array<Object>` | Stable capped current-run merge samples from the latest dedup pass, including non-blocking known mirror pairs and unresolved fresh merge blockers. |
 | `sourceBundleCollisionCount` | `number` | Final canonical rows carrying `sourceBundleCount > 1`, including rows whose bundle evidence was carried forward from previous output. |
 | `currentRunSourceBundleCollisionCount` | `number` | Source-bundle collision rows created or touched by current-run merges. |
 | `carriedSourceBundleCollisionCount` | `number` | Source-bundle collision rows carried from seeded previous output and not touched by current-run merges. |
@@ -177,7 +178,10 @@ carried high-risk review counts, `providerStaticDisagreementCount`,
 `reviewQueueCauseCounts`, `blockers`, `warnings`, and capped `examples`. Carried historical
 source-bundle collisions may warn without blocking, while current-run non-primary merges,
 current-run high-risk causes, and provider/static disagreement block lifecycle readiness until
-reviewed. This gate is advisory only and does not add lifecycle labels or change dedup behavior.
+reviewed. Narrow current-run `knownMirrorPair` merges are excluded from the fresh non-primary merge
+blocker count when they match the reviewed-safe `gracklehq` plus Guerrilla `gamesjobsdirect`
+mirror pattern; this is not a generic secondary-key relaxation. This gate is advisory only and
+does not add lifecycle labels or change dedup behavior.
 When `carriedBundleReconciliationRecommendation.recommendedAction` is
 `rebuild_carried_source_bundle_metadata`, it is a report-only recommendation for a separate
 explicit maintenance run; this fetch report does not rewrite historical bundle metadata. Carried
@@ -248,7 +252,9 @@ cluster that needs manual review. They do not change dedup behavior or lifecycle
 
 `mergedCount` and `mergeReasonCounts` describe the current dedup pass. They can be zero while
 `sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical
-`sourceBundle` evidence from earlier runs.
+`sourceBundle` evidence from earlier runs. `currentRunMergeExamples` is a separate advisory sample
+surface for the latest merge pass so fresh blockers are still visible when broader carried-bundle
+diagnostics dominate the capped review samples.
 
 ## 2. Desktop Local Data
 
