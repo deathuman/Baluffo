@@ -50,6 +50,14 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
           sparse_title_company_bundle: 0,
           unknown: 0
         },
+        identityShapeCounts: {
+          shared_job_detail_url: 1,
+          shared_listing_or_category_url: 2,
+          many_unique_urls_same_title: 3,
+          provider_id_backed: 4,
+          missing_url_and_ids: 0,
+          mixed_or_unknown_identity: 0
+        },
         topMergedJobs: [
           {
             title: "Senior Engineer",
@@ -70,7 +78,18 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
             sharedPrimaryUrl: false,
             providerSourceJobIdCount: 0,
             hasStrongIdentity: false,
-            dominantSourceClass: "other"
+            dominantSourceClass: "other",
+            identityShape: "shared_listing_or_category_url",
+            sharedUrlHost: "kforce.example",
+            sharedUrlPath: "/jobs",
+            uniqueUrlHostCount: 1,
+            uniqueUrlPathPrefixCount: 1,
+            titleShape: "category_like",
+            identityCaveats: [
+              "shared_url_looks_like_listing_or_category",
+              "category_like_title",
+              "other_source_class_dominant"
+            ]
           }
         ],
         riskyMergeExamples: [
@@ -97,6 +116,11 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /Dedup outlier reasons/i);
   assert.match(metricsEl.innerHTML, /multi-location strong 1/i);
   assert.match(metricsEl.innerHTML, /large other 1/i);
+  assert.match(metricsEl.innerHTML, /Dedup identity shapes/i);
+  assert.match(metricsEl.innerHTML, /detail URL 1/i);
+  assert.match(metricsEl.innerHTML, /listing\/category URL 2/i);
+  assert.match(metricsEl.innerHTML, /many URLs 3/i);
+  assert.match(metricsEl.innerHTML, /provider ID 4/i);
   assert.match(metricsEl.innerHTML, /Top source-bundle outliers/i);
   assert.match(metricsEl.innerHTML, /admin-dedup-evidence-table/i);
   assert.match(metricsEl.innerHTML, /Accounting/i);
@@ -107,6 +131,10 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /0 provider IDs/i);
   assert.match(metricsEl.innerHTML, /other dominant/i);
   assert.match(metricsEl.innerHTML, /weak identity/i);
+  assert.match(metricsEl.innerHTML, /shared listing or category url/i);
+  assert.match(metricsEl.innerHTML, /title category like/i);
+  assert.match(metricsEl.innerHTML, /shared kforce\.example\/jobs/i);
+  assert.match(metricsEl.innerHTML, /caveats shared url looks like listing or category/i);
   assert.match(metricsEl.innerHTML, /Senior Engineer/i);
   assert.match(metricsEl.innerHTML, /Studio One/i);
   assert.match(metricsEl.innerHTML, /Designer/i);
@@ -126,4 +154,5 @@ test("admin render: fetcher metrics tolerate missing dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /No carried source-bundle collision outliers/i);
   assert.match(metricsEl.innerHTML, /No risky merge examples/i);
   assert.match(metricsEl.innerHTML, /Dedup outlier reasons/i);
+  assert.match(metricsEl.innerHTML, /Dedup identity shapes/i);
 });

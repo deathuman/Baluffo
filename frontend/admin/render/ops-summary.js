@@ -288,6 +288,18 @@ function formatDedupOutlierReasonCounts(reasonCounts) {
   ].join(", ");
 }
 
+function formatDedupIdentityShapeCounts(shapeCounts) {
+  const counts = shapeCounts && typeof shapeCounts === "object" ? shapeCounts : {};
+  return [
+    `detail URL ${Number(counts?.shared_job_detail_url || 0).toLocaleString()}`,
+    `listing/category URL ${Number(counts?.shared_listing_or_category_url || 0).toLocaleString()}`,
+    `many URLs ${Number(counts?.many_unique_urls_same_title || 0).toLocaleString()}`,
+    `provider ID ${Number(counts?.provider_id_backed || 0).toLocaleString()}`,
+    `missing URL/IDs ${Number(counts?.missing_url_and_ids || 0).toLocaleString()}`,
+    `mixed/unknown ${Number(counts?.mixed_or_unknown_identity || 0).toLocaleString()}`
+  ].join(", ");
+}
+
 function formatDedupMergedRows(rows, emptyText) {
   const mergedRows = Array.isArray(rows) ? rows : [];
   if (!mergedRows.length) return escapeHtml(emptyText);
@@ -333,7 +345,17 @@ function formatDedupOutlierRows(rows, emptyText) {
       const dominant = String(row?.dominantSourceClass || "unknown");
       const strong = row?.hasStrongIdentity ? "strong identity" : "weak identity";
       const shared = row?.sharedPrimaryUrl ? ", shared URL" : "";
-      const detail = `${reason}; ${locations.toLocaleString()} locations, ${links.toLocaleString()} links, ${providerIds.toLocaleString()} provider IDs, ${dominant} dominant, ${strong}${shared}`;
+      const identityShape = String(row?.identityShape || "mixed_or_unknown_identity").replaceAll("_", " ");
+      const titleShape = String(row?.titleShape || "empty_or_unknown").replaceAll("_", " ");
+      const caveats = Array.isArray(row?.identityCaveats) ? row.identityCaveats : [];
+      const caveatText = caveats.length
+        ? `; caveats ${caveats.join(", ").replaceAll("_", " ")}`
+        : "";
+      const sharedUrl = row?.sharedUrlHost || row?.sharedUrlPath
+        ? `; shared ${String(row?.sharedUrlHost || "")}${String(row?.sharedUrlPath || "")}`
+        : "";
+      const urlShape = `${identityShape}; title ${titleShape}; hosts ${Number(row?.uniqueUrlHostCount || 0).toLocaleString()}, prefixes ${Number(row?.uniqueUrlPathPrefixCount || 0).toLocaleString()}`;
+      const detail = `${reason}; ${locations.toLocaleString()} locations, ${links.toLocaleString()} links, ${providerIds.toLocaleString()} provider IDs, ${dominant} dominant, ${strong}${shared}; ${urlShape}${sharedUrl}${caveatText}`;
       return `
         <tr>
           <td>${escapeHtml(title)}</td>
@@ -542,6 +564,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const outlierReasonCounts = dedupEvidence?.outlierReasonCounts && typeof dedupEvidence.outlierReasonCounts === "object"
     ? dedupEvidence.outlierReasonCounts
     : {};
+  const identityShapeCounts = dedupEvidence?.identityShapeCounts && typeof dedupEvidence.identityShapeCounts === "object"
+    ? dedupEvidence.identityShapeCounts
+    : {};
   const topMergedSummary = formatDedupMergedRows(
     dedupEvidence?.topMergedJobs,
     "No merged canonical jobs in the latest fetch report."
@@ -628,6 +653,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup source composition</strong>: ${escapeHtml(formatDedupSourceClasses(sourceBundleComposition))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup risk reasons</strong>: ${escapeHtml(formatDedupRiskReasonCounts(riskReasonCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup outlier reasons</strong>: ${escapeHtml(formatDedupOutlierReasonCounts(outlierReasonCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup identity shapes</strong>: ${escapeHtml(formatDedupIdentityShapeCounts(identityShapeCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top source-bundle outliers</strong>: ${topOutlierSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Risky merge examples</strong>: ${riskyMergeSummary}</div>

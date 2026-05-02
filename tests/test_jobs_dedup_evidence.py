@@ -90,6 +90,8 @@ def test_dedup_evidence_reports_top_merged_jobs_and_reason_counts() -> None:
     assert evidence["topSourceBundleOutliers"][0]["providerSourceJobIdCount"] == 1
     assert evidence["topSourceBundleOutliers"][0]["hasStrongIdentity"] is True
     assert evidence["topSourceBundleOutliers"][0]["dominantSourceClass"] == "provider"
+    assert evidence["topSourceBundleOutliers"][0]["identityShape"] == "provider_id_backed"
+    assert evidence["identityShapeCounts"]["provider_id_backed"] == 1
 
 
 def test_dedup_evidence_flags_risky_location_and_provider_static_disagreement() -> None:
@@ -238,6 +240,7 @@ def test_dedup_evidence_reports_carried_bundle_collisions_without_current_merges
     assert evidence["sourceBundleCollisionCount"] == 1
     assert evidence["topSourceBundleOutliers"][0]["sourceBundleCount"] == 2
     assert evidence["topSourceBundleOutliers"][0]["outlierReason"] == "unknown"
+    assert evidence["topSourceBundleOutliers"][0]["identityShape"] == "provider_id_backed"
 
 
 def test_dedup_evidence_classifies_multi_location_strong_identity() -> None:
@@ -270,6 +273,7 @@ def test_dedup_evidence_classifies_multi_location_strong_identity() -> None:
 
     outlier = evidence["topSourceBundleOutliers"][0]
     assert outlier["outlierReason"] == "multi_location_strong_identity"
+    assert outlier["identityShape"] == "provider_id_backed"
     assert outlier["distinctLocationCount"] == 2
     assert outlier["sharedPrimaryUrl"] is True
     assert evidence["outlierReasonCounts"]["multi_location_strong_identity"] == 1
@@ -296,6 +300,7 @@ def test_dedup_evidence_classifies_location_divergence_without_strong_identity()
     assert evidence["topSourceBundleOutliers"][0]["outlierReason"] == (
         "location_divergence_without_strong_identity"
     )
+    assert evidence["topSourceBundleOutliers"][0]["identityShape"] == "missing_url_and_ids"
     assert evidence["outlierReasonCounts"]["location_divergence_without_strong_identity"] == 1
 
 
@@ -325,6 +330,7 @@ def test_dedup_evidence_classifies_large_other_source_bundles() -> None:
 
     outlier = evidence["topSourceBundleOutliers"][0]
     assert outlier["outlierReason"] == "large_other_source_bundle"
+    assert outlier["identityShape"] == "many_unique_urls_same_title"
     assert outlier["dominantSourceClass"] == "other"
     assert evidence["outlierReasonCounts"]["large_other_source_bundle"] == 1
 
@@ -347,6 +353,14 @@ def test_dedup_evidence_empty_rows_returns_empty_aggregates() -> None:
         "large_other_source_bundle": 0,
         "sparse_title_company_bundle": 0,
         "unknown": 0,
+    }
+    assert evidence["identityShapeCounts"] == {
+        "shared_job_detail_url": 0,
+        "shared_listing_or_category_url": 0,
+        "many_unique_urls_same_title": 0,
+        "provider_id_backed": 0,
+        "missing_url_and_ids": 0,
+        "mixed_or_unknown_identity": 0,
     }
     assert evidence["topSourceBundleOutliers"] == []
     assert evidence["locationDivergenceExamples"] == []

@@ -65,6 +65,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `sourceBundleComposition` | `Object` | Count of bundle entries by source class: `provider`, `static`, `social`, and `other`. |
 | `riskReasonCounts` | `Object` | Aggregate risky-row counts by risk reason before sample capping. |
 | `outlierReasonCounts` | `Object` | Aggregate source-bundle outlier counts by diagnostic reason before sample capping. |
+| `identityShapeCounts` | `Object` | Aggregate source-bundle URL/source identity shape counts before sample capping. |
 | `topMergedJobs` | `Array<Object>` | Stable capped sample of canonical rows with the largest `sourceBundleCount`. |
 | `topSourceBundleOutliers` | `Array<Object>` | Stable capped sample of carried source-bundle outliers, sorted like `topMergedJobs`. |
 | `locationDivergenceExamples` | `Array<Object>` | Stable capped sample of source-bundle rows with more than one meaningful location. |
@@ -74,7 +75,9 @@ trustworthy before user-facing lifecycle labels are expanded.
 Sample rows include `id`, `dedupKey`, `title`, `company`, `jobLink`, `locationSummary`,
 `sourceBundleCount`, `sourceClasses`, and `sources`. Outlier rows may also include
 `outlierReason`, `distinctLocationCount`, `sampleLocations`, `uniqueJobLinkCount`,
-`sharedPrimaryUrl`, `providerSourceJobIdCount`, `hasStrongIdentity`, and `dominantSourceClass`.
+`sharedPrimaryUrl`, `sharedUrlHost`, `sharedUrlPath`, `uniqueUrlHostCount`,
+`uniqueUrlPathPrefixCount`, `providerSourceJobIdCount`, `hasStrongIdentity`,
+`dominantSourceClass`, `identityShape`, `titleShape`, and `identityCaveats`.
 Risky rows also include `riskReasons`, currently including values such as
 `same_title_company_different_location`,
 `provider_static_duplicate_disagreement`, `missing_provider_ids`, and
@@ -86,6 +89,14 @@ Outlier reason values are diagnostic only:
 `sparse_title_company_bundle`, and `unknown`. They help distinguish likely multi-location
 postings, provider/static disagreement, large carried bundles dominated by unclassified source
 rows, and weak title/company-only evidence. They do not change merge policy.
+
+Identity shape values are diagnostic only: `shared_job_detail_url`,
+`shared_listing_or_category_url`, `many_unique_urls_same_title`, `provider_id_backed`,
+`missing_url_and_ids`, and `mixed_or_unknown_identity`. A shared URL is not automatically safe:
+`identityCaveats` may mark shared listing/category URLs, category-like titles, open-application
+titles, other-source dominance, many unique URLs with the same title, or missing URL/provider-id
+evidence. These fields exist to decide whether dedup behavior needs a later investigation; they do
+not change dedup or lifecycle behavior.
 
 `mergedCount` and `mergeReasonCounts` describe the current dedup pass. They can be zero while
 `sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical

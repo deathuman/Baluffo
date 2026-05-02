@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
+from urllib.parse import urlparse
 
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
@@ -19,6 +20,60 @@ OUTLIER_REASON_KEYS = (
     "large_other_source_bundle",
     "sparse_title_company_bundle",
     "unknown",
+)
+IDENTITY_SHAPE_KEYS = (
+    "shared_job_detail_url",
+    "shared_listing_or_category_url",
+    "many_unique_urls_same_title",
+    "provider_id_backed",
+    "missing_url_and_ids",
+    "mixed_or_unknown_identity",
+)
+CATEGORY_TITLE_TERMS = frozenset(
+    {
+        "accounting",
+        "art",
+        "design",
+        "engineering",
+        "finance",
+        "hr",
+        "human resources",
+        "marketing",
+        "operations",
+        "production",
+        "qa",
+        "quality assurance",
+        "research development",
+        "research-development",
+        "sales",
+        "software development",
+        "software development engineering",
+        "software-development-&-engineering",
+    }
+)
+GENERIC_LISTING_PATH_SEGMENTS = frozenset(
+    {
+        "career",
+        "careers",
+        "departments",
+        "jobs",
+        "join",
+        "join-us",
+        "openings",
+        "opportunities",
+        "positions",
+        "teams",
+        "vacancies",
+        "work-with-us",
+    }
+)
+SPECULATIVE_TITLE_MARKERS = (
+    "general application",
+    "initiativbewerbung",
+    "open application",
+    "spontaneous application",
+    "speculative application",
+    "unsolicited application",
 )
 
 PROVIDER_ADAPTERS = frozenset(
@@ -134,14 +189,36 @@ def _shared_primary_url(bundle: Sequence[Mapping[str, Any]]) -> bool:
     return len(urls) == 1
 
 
-def _unique_job_link_count(bundle: Sequence[Mapping[str, Any]]) -> int:
-    return len(
+def _unique_job_links(bundle: Sequence[Mapping[str, Any]]) -> list[str]:
+    return sorted(
         {
             normalize_url(item.get("jobLink"))
             for item in bundle
             if normalize_url(item.get("jobLink"))
         }
     )
+
+
+def _unique_job_link_count(bundle: Sequence[Mapping[str, Any]]) -> int:
+    return len(_unique_job_links(bundle))
+
+
+def _shared_url(bundle: Sequence[Mapping[str, Any]]) -> str:
+    urls = _unique_job_links(bundle)
+    return urls[0] if len(urls) == 1 else ""
+
+
+def _url_host(url: str) -> str:
+    return norm_text(urlparse(url).netloc.removeprefix("www."))
+
+
+def _url_path(url: str) -> str:
+    return urlparse(url).path or "/"
+
+
+def _path_prefix(url: str) -> str:
+    segments = [segment for segment in _url_path(url).strip("/").split("/") if segment]
+    return "/".join(segments[:2]).lower()
 
 
 def _provider_source_job_id_count(bundle: Sequence[Mapping[str, Any]]) -> int:
@@ -152,6 +229,14 @@ def _provider_source_job_id_count(bundle: Sequence[Mapping[str, Any]]) -> int:
             if _source_class(item) == "provider" and clean_text(item.get("sourceJobId"))
         }
     )
+
+
+def _unique_url_host_count(bundle: Sequence[Mapping[str, Any]]) -> int:
+    return len({_url_host(url) for url in _unique_job_links(bundle) if _url_host(url)})
+
+
+def _unique_url_path_prefix_count(bundle: Sequence[Mapping[str, Any]]) -> int:
+    return len({_path_prefix(url) for url in _unique_job_links(bundle) if _path_prefix(url)})
 
 
 def _has_any_strong_identity(bundle: Sequence[Mapping[str, Any]]) -> bool:
@@ -172,6 +257,76 @@ def _risky_reasons(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) 
     if len(bundle) > 1 and not _has_any_strong_identity(bundle):
         reasons.append("weak_title_company_only_evidence")
     return reasons
+
+
+def _looks_listing_or_category_url(url: str) -> bool:
+    path = _url_path(url).strip("/").lower()
+    if not path:
+        return True
+    segments = [segment for segment in path.split("/") if segment]
+    if not segments:
+        return True
+    last = segments[-1].removesuffix(".html").removesuffix(".htm")
+    if any(char.isdigit() for char in last):
+        return False
+    if last in GENERIC_LISTING_PATH_SEGMENTS:
+        return True
+    if len(segments) <= 2 and any(segment in GENERIC_LISTING_PATH_SEGMENTS for segment in segments):
+        return True
+    normalized_last = last.replace("-", " ").replace("_", " ").strip()
+    return normalized_last in CATEGORY_TITLE_TERMS
+
+
+def _title_shape(row: Mapping[str, Any]) -> str:
+    title = norm_text(row.get("title"))
+    if not title:
+        return "empty_or_unknown"
+    if any(marker in title for marker in SPECULATIVE_TITLE_MARKERS):
+        return "speculative_or_open_application"
+    normalized = norm_text(title.replace("-", " ").replace("_", " ").replace("&", " "))
+    if title in CATEGORY_TITLE_TERMS or normalized in CATEGORY_TITLE_TERMS:
+        return "category_like"
+    return "role_like"
+
+
+def _identity_shape(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) -> str:
+    provider_ids = _provider_source_job_id_count(bundle)
+    urls = _unique_job_links(bundle)
+    if provider_ids > 0:
+        return "provider_id_backed"
+    if not urls:
+        return "missing_url_and_ids"
+    if len(urls) == 1:
+        return (
+            "shared_listing_or_category_url"
+            if _looks_listing_or_category_url(urls[0]) or _title_shape(row) == "category_like"
+            else "shared_job_detail_url"
+        )
+    if len(urls) > 1:
+        return "many_unique_urls_same_title"
+    return "mixed_or_unknown_identity"
+
+
+def _identity_caveats(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) -> list[str]:
+    caveats: list[str] = []
+    identity_shape = _identity_shape(row, bundle)
+    title_shape = _title_shape(row)
+    source_classes = _source_class_counts(bundle)
+    if identity_shape == "shared_listing_or_category_url":
+        caveats.append("shared_url_looks_like_listing_or_category")
+    if identity_shape == "many_unique_urls_same_title":
+        caveats.append("many_unique_urls_same_title")
+    if identity_shape == "missing_url_and_ids":
+        caveats.append("missing_url_and_provider_ids")
+    if title_shape == "category_like":
+        caveats.append("category_like_title")
+    if title_shape == "speculative_or_open_application":
+        caveats.append("speculative_or_open_application_title")
+    if source_classes["other"] > 0 and source_classes["other"] >= max(source_classes.values()):
+        caveats.append("other_source_class_dominant")
+    if _shared_primary_url(bundle) and _provider_source_job_id_count(bundle) == 0:
+        caveats.append("shared_url_without_provider_ids")
+    return caveats
 
 
 def _outlier_reason(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) -> str:
@@ -205,6 +360,7 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
     )
     source_classes = _source_class_counts(bundle)
     meaningful_locations = _meaningful_locations(row)
+    shared_url = _shared_url(bundle)
     return {
         "id": clean_text(row.get("id")),
         "dedupKey": clean_text(row.get("dedupKey")),
@@ -220,9 +376,16 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
         "sampleLocations": meaningful_locations[:5],
         "uniqueJobLinkCount": _unique_job_link_count(bundle),
         "sharedPrimaryUrl": _shared_primary_url(bundle),
+        "sharedUrlHost": _url_host(shared_url) if shared_url else "",
+        "sharedUrlPath": _url_path(shared_url) if shared_url else "",
+        "uniqueUrlHostCount": _unique_url_host_count(bundle),
+        "uniqueUrlPathPrefixCount": _unique_url_path_prefix_count(bundle),
         "providerSourceJobIdCount": _provider_source_job_id_count(bundle),
         "hasStrongIdentity": _has_any_strong_identity(bundle),
         "dominantSourceClass": _dominant_source_class(source_classes),
+        "identityShape": _identity_shape(row, bundle),
+        "titleShape": _title_shape(row),
+        "identityCaveats": _identity_caveats(row, bundle),
     }
 
 
@@ -259,6 +422,7 @@ def build_dedup_evidence(
     composition: Counter[str] = Counter()
     risk_reason_counts: Counter[str] = Counter()
     outlier_reason_counts: Counter[str] = Counter()
+    identity_shape_counts: Counter[str] = Counter()
     top_rows: list[dict[str, Any]] = []
     risky_rows: list[dict[str, Any]] = []
     location_divergence_rows: list[dict[str, Any]] = []
@@ -274,6 +438,7 @@ def build_dedup_evidence(
             summary = _job_summary(row, bundle)
             top_rows.append(summary)
             outlier_reason_counts.update([summary["outlierReason"]])
+            identity_shape_counts.update([summary["identityShape"]])
             if int(summary.get("distinctLocationCount") or 0) > 1:
                 location_divergence_rows.append(summary)
             reasons = _risky_reasons(row, bundle)
@@ -327,6 +492,9 @@ def build_dedup_evidence(
         },
         "outlierReasonCounts": {
             key: int(outlier_reason_counts.get(key, 0)) for key in OUTLIER_REASON_KEYS
+        },
+        "identityShapeCounts": {
+            key: int(identity_shape_counts.get(key, 0)) for key in IDENTITY_SHAPE_KEYS
         },
         "topMergedJobs": top_rows[: max(0, int(top_limit))],
         "topSourceBundleOutliers": top_rows[: max(0, int(top_limit))],
