@@ -145,12 +145,16 @@ def test_conservative_static_cleanup_proposal_is_report_only(tmp_path: Path) -> 
     _write_clean_runtime(data_dir)
 
     report = soak.build_soak_report(data_dir)
+    cleanup = report["sections"]["conservativeStaticCleanupProposals"]
     proposal = report["sections"]["conservativeStaticCleanupProposals"]["proposals"][0]
 
+    assert cleanup["blockedReasonCounts"] == {}
+    assert cleanup["proposalReadyExamples"][0]["staticSourceId"] == proposal["staticSourceId"]
     assert proposal["recommendedAction"] == "move_static_to_hidden_pending"
     assert proposal["destructiveActionAllowed"] is False
     assert proposal["requiresExplicitAdminAction"] is True
     assert proposal["decisionLogEvidenceRequired"] is True
+    assert proposal["proposalDisposition"] == "proposal_ready"
     assert proposal["cleanRunEvidenceCount"] == 3
     assert proposal["suppressionEvidenceStatus"] == "observed_dynamic_suppression"
     assert proposal["blockers"] == []
@@ -169,6 +173,8 @@ def test_conservative_static_cleanup_blocks_static_only_evidence(tmp_path: Path)
     cleanup = report["sections"]["conservativeStaticCleanupProposals"]
 
     assert cleanup["proposalCount"] == 0
+    assert cleanup["blockedReasonCounts"]["static_only_evidence_present"] == 1
+    assert cleanup["blockedExamples"][0]["proposalDisposition"] == "blocked"
     assert cleanup["blockedCandidates"][0]["blockers"] == ["static_only_evidence_present"]
 
 

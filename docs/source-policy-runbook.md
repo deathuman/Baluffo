@@ -313,6 +313,11 @@ Proposal rows use:
 - `destructiveActionAllowed=false`
 - `requiresExplicitAdminAction=true`
 
+`proposalCount=0` is not failure by itself. Inspect `blockedCount`, `blockedReasonCounts`,
+`blockedCandidates`, and the capped `proposalReadyExamples` / `blockedExamples` samples to see why
+proposal-ready rows are still absent. This section stays report-only until a later milestone adds a
+separate explicit reversible Admin action.
+
 The intended first future action, if separately implemented and approved, is reversible:
 
 ```text

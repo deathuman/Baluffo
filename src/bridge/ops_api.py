@@ -79,6 +79,9 @@ class OpsHealthDeps:
     parse_schedule_metadata_fn: Callable[[], dict[str, Any]]
     parse_iso: Callable[[Any], Any]
     now_utc: Callable[[], Any]
+    get_source_policy_soak_report: Callable[[], dict[str, Any]] = field(
+        default_factory=lambda: lambda: {}
+    )
     get_updater_status_payload: Callable[[], dict[str, Any]] = field(
         default_factory=lambda: lambda: {}
     )
@@ -160,6 +163,12 @@ class OpsApi:
             get_history=lambda: self.get_projected_run_history().rows,
             get_fetch_report=lambda: self._deps.normalize_fetch_report_contract(
                 self._deps.load_json_object(self._paths.jobs_fetch_report, {})
+            ),
+            get_source_policy_soak_report=lambda: self._deps.load_json_object(
+                self._paths.jobs_fetch_report.parent.parent
+                / "_out"
+                / "source-policy-soak-report.json",
+                {},
             ),
             get_state=self._deps.load_state,
             get_tombstones=self._deps.load_tombstones,

@@ -89,6 +89,7 @@ PROVIDER_MIGRATION_ACTIONS = {
 STATIC_LIKE_ADAPTERS = {"static", "scrapy_static"}
 STATIC_LIKE_STAGES = {"generic_static", "seed_careers_page", "sheet_directory"}
 CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS = 3
+CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT = 5
 PROVIDER_ID_FIELDS = (
     "slug",
     "account",
@@ -2188,6 +2189,7 @@ def _conservative_static_cleanup_proposals_section(
             "staticSourceName": clean_text(pair.get("staticSourceName")),
             "providerSourceId": clean_text(pair.get("providerSourceId")),
             "providerSourceName": clean_text(pair.get("providerSourceName")),
+            "proposalDisposition": "blocked" if blockers else "proposal_ready",
             "proposal": "conservative_static_cleanup_candidate",
             "recommendedAction": "move_static_to_hidden_pending",
             "destructiveActionAllowed": False,
@@ -2235,13 +2237,40 @@ def _conservative_static_cleanup_proposals_section(
         else:
             proposals.append(row)
 
+    def row_sort_key(row: dict[str, Any]) -> tuple[str, str, str, str]:
+        blocker_text = "|".join(clean_text(item) for item in row.get("blockers", []) if item)
+        provider_key = norm_text(row.get("providerSourceName")) or norm_text(
+            row.get("providerSourceId")
+        )
+        static_key = norm_text(row.get("staticSourceName")) or norm_text(row.get("staticSourceId"))
+        return (
+            blocker_text,
+            provider_key,
+            static_key,
+            clean_text(row.get("recommendedAction")),
+        )
+
+    proposals.sort(key=row_sort_key)
+    blocked.sort(key=row_sort_key)
+    blocked_reason_counts = Counter(
+        clean_text(reason)
+        for row in blocked
+        for reason in row.get("blockers", [])
+        if clean_text(reason)
+    )
+
     return {
         "minimumCleanRunCount": CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS,
         "totalCandidateCount": len(proposals) + len(blocked),
         "proposalCount": len(proposals),
         "blockedCount": len(blocked),
+        "blockedReasonCounts": dict(
+            sorted(blocked_reason_counts.items(), key=lambda item: (-item[1], item[0]))
+        ),
         "proposals": proposals,
         "blockedCandidates": blocked,
+        "proposalReadyExamples": proposals[:CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT],
+        "blockedExamples": blocked[:CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT],
     }
 
 
@@ -2648,12 +2677,7 @@ def _suppression_eligibility_markdown_rows(report: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _conservative_cleanup_markdown_rows(report: dict[str, Any]) -> list[str]:
-    rows = json_object_rows(
-        as_json_object(
-            as_json_object(report.get("sections")).get("conservativeStaticCleanupProposals")
-        ).get("proposals")
-    )
+def _conservative_cleanup_markdown_rows(rows: list[dict[str, Any]]) -> list[str]:
     lines = [
         "| Static | Provider | Action | Clean runs | Suppression evidence | Explicit action | Destructive |",
         "|--------|----------|--------|------------|----------------------|-----------------|-------------|",
@@ -2676,7 +2700,46 @@ def _conservative_cleanup_markdown_rows(report: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _conservative_cleanup_blocked_markdown_rows(rows: list[dict[str, Any]]) -> list[str]:
+    lines = [
+        "| Static | Provider | Blockers | Clean runs | Static-only runs | Suppression evidence |",
+        "|--------|----------|----------|------------|------------------|----------------------|",
+    ]
+    if not rows:
+        lines.append("| none | none | none | `0` | `0` | none |")
+        return lines
+    for row in rows[:10]:
+        blockers = ", ".join(
+            clean_text(item) for item in row.get("blockers", []) if clean_text(item)
+        )
+        lines.append(
+            "| "
+            f"{clean_text(row.get('staticSourceName')) or clean_text(row.get('staticSourceId'))} | "
+            f"{clean_text(row.get('providerSourceName')) or clean_text(row.get('providerSourceId'))} | "
+            f"`{blockers or 'none'}` | "
+            f"`{_int_value(row.get('cleanRunEvidenceCount'))}` | "
+            f"`{_int_value(row.get('staticOnlyDetectedRunCount'))}` | "
+            f"`{clean_text(row.get('suppressionEvidenceStatus'))}:"
+            f"{clean_text(row.get('suppressionEvidenceReason'))}` |"
+        )
+    return lines
+
+
 def render_markdown_report(report: dict[str, Any]) -> str:
+    conservative_cleanup = as_json_object(
+        as_json_object(report.get("sections")).get("conservativeStaticCleanupProposals")
+    )
+    conservative_cleanup_summary_items = [
+        (key, value)
+        for key, value in conservative_cleanup.items()
+        if key
+        not in {
+            "proposals",
+            "blockedCandidates",
+            "proposalReadyExamples",
+            "blockedExamples",
+        }
+    ]
     lines = [
         "# Source Policy Soak Report",
         "",
@@ -2746,17 +2809,21 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         "",
         "Report-only: proposals require explicit future Admin action and never delete, reject, tombstone, or edit seed registry defaults.",
         "",
-        *_markdown_table(
-            list(
-                as_json_object(
-                    as_json_object(report.get("sections")).get("conservativeStaticCleanupProposals")
-                ).items()
-            )
+        *_markdown_table(conservative_cleanup_summary_items),
+        "",
+        "### Proposal-ready examples",
+        "",
+        *_conservative_cleanup_markdown_rows(
+            json_object_rows(conservative_cleanup.get("proposalReadyExamples"))
+            or json_object_rows(conservative_cleanup.get("proposals"))
         ),
         "",
-        "### Proposed cleanup candidates",
+        "### Blocked cleanup candidates",
         "",
-        *_conservative_cleanup_markdown_rows(report),
+        *_conservative_cleanup_blocked_markdown_rows(
+            json_object_rows(conservative_cleanup.get("blockedExamples"))
+            or json_object_rows(conservative_cleanup.get("blockedCandidates"))
+        ),
         "",
         "## Quality Gates",
         "",

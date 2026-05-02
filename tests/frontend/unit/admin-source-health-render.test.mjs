@@ -220,3 +220,48 @@ test("admin render: fetcher metrics render provider coverage lanes", () => {
   assert.doesNotMatch(metricsEl.innerHTML, /Force pause/i);
   assert.doesNotMatch(metricsEl.innerHTML, /Clear override/i);
 });
+
+test("admin render: fetcher metrics render conservative cleanup proposal closure", () => {
+  const metricsEl = makeEl();
+  renderAdminOpsFetcherMetrics(metricsEl, {
+    latestRun: {
+      conservativeStaticCleanupProposals: {
+        totalCandidateCount: 2,
+        proposalCount: 1,
+        blockedCount: 1,
+        blockedReasonCounts: {
+          static_only_evidence_present: 1,
+          source_sync_not_clean: 1
+        },
+        proposalReadyExamples: [
+          {
+            staticSourceName: "Static Alpha",
+            providerSourceName: "Provider Alpha",
+            recommendedAction: "move_static_to_hidden_pending",
+            cleanRunEvidenceCount: 3,
+            suppressionEvidenceStatus: "observed_dynamic_suppression"
+          }
+        ],
+        blockedExamples: [
+          {
+            staticSourceName: "Static Beta",
+            providerSourceName: "Provider Beta",
+            blockers: ["static_only_evidence_present", "source_sync_not_clean"]
+          }
+        ]
+      }
+    },
+    history: {}
+  });
+
+  assert.match(metricsEl.innerHTML, /Conservative static cleanup proposals/i);
+  assert.match(metricsEl.innerHTML, /total candidates 2/i);
+  assert.match(metricsEl.innerHTML, /proposal-ready 1/i);
+  assert.match(metricsEl.innerHTML, /blocked 1/i);
+  assert.match(metricsEl.innerHTML, /static only evidence present 1/i);
+  assert.match(metricsEl.innerHTML, /source sync not clean 1/i);
+  assert.match(metricsEl.innerHTML, /Static Alpha/i);
+  assert.match(metricsEl.innerHTML, /Static Beta/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Mark reviewed safe/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Force pause/i);
+});

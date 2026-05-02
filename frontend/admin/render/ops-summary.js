@@ -256,6 +256,53 @@ function formatRedundantStaticProposalRows(rows, emptyText) {
     .join(" | ");
 }
 
+function formatConservativeCleanupReasonCounts(reasonCounts) {
+  const counts = reasonCounts && typeof reasonCounts === "object" ? reasonCounts : {};
+  const entries = Object.entries(counts)
+    .filter(([, value]) => Number(value || 0) > 0)
+    .sort((a, b) => {
+      const countDelta = Number(b[1] || 0) - Number(a[1] || 0);
+      return countDelta || String(a[0] || "").localeCompare(String(b[0] || ""));
+    });
+  if (!entries.length) return "No blocked candidate reasons.";
+  return entries
+    .slice(0, 5)
+    .map(([reason, count]) => `${String(reason || "unknown").replaceAll("_", " ")} ${Number(count || 0).toLocaleString()}`)
+    .join(", ");
+}
+
+function formatConservativeCleanupProposalRows(rows, emptyText) {
+  const proposalRows = Array.isArray(rows) ? rows : [];
+  if (!proposalRows.length) return escapeHtml(emptyText);
+  return proposalRows
+    .slice(0, 5)
+    .map(row => {
+      const staticName = sanitizeSlowSourceName(row?.staticSourceName || row?.staticSourceId);
+      const provider = sanitizeSlowSourceName(row?.providerSourceName || row?.providerSourceId);
+      const action = String(row?.recommendedAction || "move_static_to_hidden_pending").replaceAll("_", " ");
+      const cleanRuns = Number(row?.cleanRunEvidenceCount || 0);
+      const suppression = String(row?.suppressionEvidenceStatus || "unknown").replaceAll("_", " ");
+      return escapeHtml(`${staticName} -> ${provider} (${action}, clean runs ${cleanRuns}, suppression ${suppression})`);
+    })
+    .join(" | ");
+}
+
+function formatConservativeCleanupBlockedRows(rows, emptyText) {
+  const blockedRows = Array.isArray(rows) ? rows : [];
+  if (!blockedRows.length) return escapeHtml(emptyText);
+  return blockedRows
+    .slice(0, 5)
+    .map(row => {
+      const staticName = sanitizeSlowSourceName(row?.staticSourceName || row?.staticSourceId);
+      const provider = sanitizeSlowSourceName(row?.providerSourceName || row?.providerSourceId);
+      const blockers = Array.isArray(row?.blockers) && row.blockers.length
+        ? row.blockers.slice(0, 3).map(item => String(item || "").replaceAll("_", " ")).join(", ")
+        : "blocked";
+      return escapeHtml(`${staticName} -> ${provider} (${blockers})`);
+    })
+    .join(" | ");
+}
+
 function formatDedupSourceClasses(sourceClasses) {
   const classes = sourceClasses && typeof sourceClasses === "object" ? sourceClasses : {};
   return [
@@ -857,6 +904,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     providerStaticOverlap: latest?.providerStaticOverlap || {},
     staticSuppressionPolicy: latest?.staticSuppressionPolicy || {},
     redundantStaticProposals: latest?.redundantStaticProposals || {},
+    conservativeStaticCleanupProposals: latest?.conservativeStaticCleanupProposals || {},
     sourcePolicyRecommendationExport: latest?.sourcePolicyRecommendationExport || {},
     failureSummary: summary
   });
@@ -877,6 +925,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const providerStaticOverlap = latest?.providerStaticOverlap && typeof latest.providerStaticOverlap === "object" ? latest.providerStaticOverlap : {};
   const staticSuppressionPolicy = latest?.staticSuppressionPolicy && typeof latest.staticSuppressionPolicy === "object" ? latest.staticSuppressionPolicy : {};
   const redundantStaticProposals = latest?.redundantStaticProposals && typeof latest.redundantStaticProposals === "object" ? latest.redundantStaticProposals : {};
+  const conservativeStaticCleanupProposals = latest?.conservativeStaticCleanupProposals && typeof latest.conservativeStaticCleanupProposals === "object" ? latest.conservativeStaticCleanupProposals : {};
   const sourcePolicyRecommendationExport = latest?.sourcePolicyRecommendationExport && typeof latest.sourcePolicyRecommendationExport === "object" ? latest.sourcePolicyRecommendationExport : {};
   const slowestSummary = slowest.length
     ? slowest
@@ -973,6 +1022,17 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const staticOnlyProposalSummary = formatRedundantStaticProposalRows(
     proposalRows.filter(row => row?.proposal === "static_only_jobs_detected"),
     "No static-only proposals."
+  );
+  const cleanupProposalReadySummary = formatConservativeCleanupProposalRows(
+    conservativeStaticCleanupProposals?.proposalReadyExamples || conservativeStaticCleanupProposals?.proposals,
+    "No proposal-ready cleanup pairs yet."
+  );
+  const cleanupBlockedSummary = formatConservativeCleanupBlockedRows(
+    conservativeStaticCleanupProposals?.blockedExamples || conservativeStaticCleanupProposals?.blockedCandidates,
+    "No blocked cleanup candidates."
+  );
+  const cleanupBlockedReasonSummary = formatConservativeCleanupReasonCounts(
+    conservativeStaticCleanupProposals?.blockedReasonCounts
   );
   const mergeReasonCounts = dedupEvidence?.mergeReasonCounts && typeof dedupEvidence.mergeReasonCounts === "object"
     ? dedupEvidence.mergeReasonCounts
@@ -1167,6 +1227,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Provider/static overlap audit</strong>: safe ${Number(providerStaticOverlap?.safePairCount || 0).toLocaleString()}, needs review ${Number(providerStaticOverlap?.needsReviewPairCount || 0).toLocaleString()}, insufficient history ${Number(providerStaticOverlap?.insufficientHistoryPairCount || 0).toLocaleString()}. ${overlapAuditSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Static suppression policy</strong>: suppressed ${Number(staticSuppressionPolicy?.suppressedCount || 0).toLocaleString()}, paused ${Number(staticSuppressionPolicy?.pausedCount || 0).toLocaleString()}, warnings ${Number(staticSuppressionPolicy?.warningCount || 0).toLocaleString()}. Suppressed: ${suppressedPolicySummary} Paused: ${pausedPolicySummary} Warnings: ${warningPolicySummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Redundant static proposals</strong>: safe ${Number(redundantStaticProposals?.safeRedundantCount || 0).toLocaleString()}, keep static ${Number(redundantStaticProposals?.keepStaticCount || 0).toLocaleString()}, more history ${Number(redundantStaticProposals?.needsMoreHistoryCount || 0).toLocaleString()}, review/unstable ${Number((redundantStaticProposals?.needsReviewCount || 0) + (redundantStaticProposals?.providerUnstableCount || 0)).toLocaleString()}, static-only ${Number(redundantStaticProposals?.staticOnlyDetectedCount || 0).toLocaleString()}. Safe: ${safeRedundantProposalSummary} Keep: ${keepStaticProposalSummary} History: ${moreHistoryProposalSummary} Review: ${reviewProposalSummary} Static-only: ${staticOnlyProposalSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Conservative static cleanup proposals</strong>: total candidates ${Number(conservativeStaticCleanupProposals?.totalCandidateCount || 0).toLocaleString()}, proposal-ready ${Number(conservativeStaticCleanupProposals?.proposalCount || 0).toLocaleString()}, blocked ${Number(conservativeStaticCleanupProposals?.blockedCount || 0).toLocaleString()}. Blockers: ${escapeHtml(cleanupBlockedReasonSummary)} Ready: ${cleanupProposalReadySummary} Blocked: ${cleanupBlockedSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Source-policy review</strong>: local review pairs ${Number(sourcePolicyRecommendationExport?.reviewStatePairCount || 0).toLocaleString()}, force-paused ${Number(sourcePolicyRecommendationExport?.manualForcePausedCount || 0).toLocaleString()}. Use the Source Policy Review queue for local, reversible actions.</div>
   `;
 

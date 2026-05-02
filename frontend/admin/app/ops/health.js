@@ -297,7 +297,26 @@ export function createOpsHealthController({
       renderSourcePolicyReviewQueue(sourcePolicyRecommendations);
       renderAdminOpsFetcherMetricsImpl(
         refs.adminOpsFetcherMetricsEl,
-        fetcherMetrics || {},
+        {
+          ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
+          latestRun: {
+            ...(
+              fetcherMetrics?.latestRun && typeof fetcherMetrics.latestRun === "object"
+                ? fetcherMetrics.latestRun
+                : {}
+            ),
+            conservativeStaticCleanupProposals:
+              health?.kpis?.conservativeStaticCleanupProposals
+              && typeof health.kpis.conservativeStaticCleanupProposals === "object"
+                ? health.kpis.conservativeStaticCleanupProposals
+                : (
+                  fetcherMetrics?.latestRun?.conservativeStaticCleanupProposals
+                  && typeof fetcherMetrics.latestRun.conservativeStaticCleanupProposals === "object"
+                    ? fetcherMetrics.latestRun.conservativeStaticCleanupProposals
+                    : {}
+                )
+          }
+        },
         deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
         { onDedupReviewAction: handleDedupReviewAction }
       );

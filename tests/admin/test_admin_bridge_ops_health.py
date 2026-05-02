@@ -1,3 +1,4 @@
+import json
 from unittest import mock
 
 from src import admin_bridge
@@ -293,6 +294,58 @@ def test_compute_ops_health_exposes_provider_static_overlap_audit(admin_bridge_e
     proposals = health["kpis"]["redundantStaticProposals"]
     assert proposals["safeRedundantCount"] == 1
     assert proposals["proposals"][0]["destructiveActionAllowed"] is False
+
+
+def test_compute_ops_health_exposes_conservative_cleanup_proposals(
+    admin_bridge_entrypoint_root,
+):
+    soak_report_path = (
+        admin_bridge_entrypoint_root.parent / "_out" / "source-policy-soak-report.json"
+    )
+    soak_report_path.parent.mkdir(parents=True, exist_ok=True)
+    soak_report_path.write_text(
+        json.dumps(
+            {
+                "sections": {
+                    "conservativeStaticCleanupProposals": {
+                        "totalCandidateCount": 2,
+                        "proposalCount": 1,
+                        "blockedCount": 1,
+                        "blockedReasonCounts": {
+                            "static_only_evidence_present": 1,
+                        },
+                        "proposalReadyExamples": [
+                            {
+                                "staticSourceName": "Static Studio",
+                                "providerSourceName": "Studio Provider",
+                                "recommendedAction": "move_static_to_hidden_pending",
+                                "requiresExplicitAdminAction": True,
+                                "destructiveActionAllowed": False,
+                            }
+                        ],
+                        "blockedExamples": [
+                            {
+                                "staticSourceName": "Static Blocked",
+                                "providerSourceName": "Blocked Provider",
+                                "blockers": ["static_only_evidence_present"],
+                            }
+                        ],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    health = admin_bridge.compute_ops_health()
+
+    cleanup = health["kpis"]["conservativeStaticCleanupProposals"]
+    assert cleanup["proposalCount"] == 1
+    assert cleanup["blockedCount"] == 1
+    assert cleanup["blockedReasonCounts"]["static_only_evidence_present"] == 1
+    assert (
+        cleanup["proposalReadyExamples"][0]["recommendedAction"] == "move_static_to_hidden_pending"
+    )
 
 
 def test_alert_ack_suppresses_visible_alert(admin_bridge_entrypoint_root):

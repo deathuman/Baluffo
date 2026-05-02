@@ -497,6 +497,12 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     provider_static_overlap = as_json_object(latest_fetch_report.get("providerStaticOverlap"))
     static_suppression_policy = as_json_object(latest_fetch_report.get("staticSuppressionPolicy"))
     redundant_static_proposals = as_json_object(latest_fetch_report.get("redundantStaticProposals"))
+    source_policy_soak_report = as_json_object(deps.get_source_policy_soak_report())
+    conservative_static_cleanup_proposals = as_json_object(
+        as_json_object(source_policy_soak_report.get("sections")).get(
+            "conservativeStaticCleanupProposals"
+        )
+    )
     source_policy_recommendation_export = as_json_object(
         latest_fetch_report.get("sourcePolicyRecommendationExport")
     )
@@ -563,6 +569,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             "providerStaticOverlap": provider_static_overlap,
             "staticSuppressionPolicy": static_suppression_policy,
             "redundantStaticProposals": redundant_static_proposals,
+            "conservativeStaticCleanupProposals": conservative_static_cleanup_proposals,
             "sourcePolicyRecommendationExport": source_policy_recommendation_export,
             "registrySync": registry_sync,
             "socialExperiment": {

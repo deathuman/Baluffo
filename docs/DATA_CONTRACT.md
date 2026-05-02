@@ -848,6 +848,17 @@ proposal-eligible only when repeated stable-safe evidence exists, source-sync is
 evidence is absent, the static source is currently active/static, and dynamic suppression has been
 observed or its absence is explained by suppression-eligibility diagnostics.
 
+The section may also include additive summary fields:
+
+- `blockedReasonCounts`: aggregate blocker counts across blocked candidates
+- `proposalReadyExamples`: capped stable sample of proposal-ready rows
+- `blockedExamples`: capped stable sample of blocked rows
+
+Each row may include `proposalDisposition="proposal_ready"` or `proposalDisposition="blocked"` to
+simplify read-only rendering. `proposalCount=0` is not failure by itself; blocked candidates and
+their blocker counts are the evidence to inspect before any later reversible cleanup action is
+considered.
+
 ### Source-policy recommendation artifact
 
 Completed fetch runs may update `data/source-policy-recommendations.json`, or the same filename
