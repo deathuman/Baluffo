@@ -362,8 +362,17 @@ def test_dedup_evidence_empty_rows_returns_empty_aggregates() -> None:
         "missing_url_and_ids": 0,
         "mixed_or_unknown_identity": 0,
     }
+    assert evidence["reviewQueueCounts"] == {
+        "review_many_urls_same_title": 0,
+        "review_listing_url_bundle": 0,
+        "review_category_title_bundle": 0,
+        "review_open_application_bundle": 0,
+        "review_provider_static_disagreement": 0,
+        "monitor": 0,
+    }
     assert evidence["topSourceBundleOutliers"] == []
     assert evidence["locationDivergenceExamples"] == []
+    assert evidence["reviewQueue"] == []
     assert evidence["riskyMergeExamples"] == []
 
 

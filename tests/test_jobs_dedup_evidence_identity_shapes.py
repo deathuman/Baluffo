@@ -51,6 +51,8 @@ def test_dedup_evidence_reports_shared_job_detail_url_identity() -> None:
         "shared_url_without_provider_ids",
     ]
     assert evidence["identityShapeCounts"]["shared_job_detail_url"] == 1
+    assert evidence["reviewQueueCounts"]["monitor"] == 1
+    assert evidence["reviewQueue"] == []
 
 
 def test_dedup_evidence_reports_shared_listing_url_identity_and_caveats() -> None:
@@ -87,6 +89,9 @@ def test_dedup_evidence_reports_shared_listing_url_identity_and_caveats() -> Non
     assert "shared_url_looks_like_listing_or_category" in outlier["identityCaveats"]
     assert "category_like_title" in outlier["identityCaveats"]
     assert evidence["identityShapeCounts"]["shared_listing_or_category_url"] == 1
+    assert evidence["reviewQueueCounts"]["review_listing_url_bundle"] == 1
+    assert evidence["reviewQueue"][0]["recommendedReviewAction"] == "review_listing_url_bundle"
+    assert evidence["reviewQueue"][0]["sampleSources"] == ["kforce-a", "kforce-b"]
 
 
 def test_dedup_evidence_reports_many_unique_urls_same_title() -> None:
@@ -118,6 +123,8 @@ def test_dedup_evidence_reports_many_unique_urls_same_title() -> None:
     assert outlier["uniqueUrlPathPrefixCount"] == 2
     assert "many_unique_urls_same_title" in outlier["identityCaveats"]
     assert evidence["identityShapeCounts"]["many_unique_urls_same_title"] == 1
+    assert evidence["reviewQueueCounts"]["review_many_urls_same_title"] == 1
+    assert evidence["reviewQueue"][0]["recommendedReviewAction"] == "review_many_urls_same_title"
 
 
 def test_dedup_evidence_reports_speculative_title_caveat() -> None:
@@ -147,3 +154,101 @@ def test_dedup_evidence_reports_speculative_title_caveat() -> None:
     outlier = evidence["topSourceBundleOutliers"][0]
     assert outlier["titleShape"] == "speculative_or_open_application"
     assert "speculative_or_open_application_title" in outlier["identityCaveats"]
+    assert evidence["reviewQueueCounts"]["review_open_application_bundle"] == 1
+    assert evidence["reviewQueue"][0]["recommendedReviewAction"] == (
+        "review_open_application_bundle"
+    )
+
+
+def test_dedup_evidence_review_queue_counts_category_titles() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                title="Software-development-&-engineering",
+                sourceBundle=[
+                    {
+                        "source": "apple-a",
+                        "sourceJobId": "",
+                        "jobLink": "https://jobs.example/software/a",
+                        "adapter": "custom",
+                    },
+                    {
+                        "source": "apple-b",
+                        "sourceJobId": "",
+                        "jobLink": "https://jobs.example/software/b",
+                        "adapter": "custom",
+                    },
+                ],
+            )
+        ],
+    )
+
+    assert evidence["reviewQueueCounts"]["review_category_title_bundle"] == 1
+    assert evidence["reviewQueue"][0]["recommendedReviewAction"] == ("review_category_title_bundle")
+
+
+def test_dedup_evidence_review_queue_counts_provider_static_disagreement() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                sourceBundle=[
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "",
+                        "jobLink": "https://provider.example/jobs/1",
+                        "adapter": "greenhouse",
+                    },
+                    {
+                        "source": "static_source::static:listing_url:https://studio.example/careers",
+                        "sourceJobId": "",
+                        "jobLink": "https://static.example/jobs/1",
+                        "adapter": "static",
+                    },
+                ],
+            )
+        ],
+    )
+
+    assert evidence["reviewQueueCounts"]["review_provider_static_disagreement"] == 1
+    assert evidence["reviewQueue"][0]["recommendedReviewAction"] == (
+        "review_provider_static_disagreement"
+    )
+
+
+def test_dedup_evidence_review_queue_is_capped_and_stable() -> None:
+    rows = [
+        _row(
+            id=f"job-{index}",
+            dedupKey=f"key-{index:02d}",
+            title=f"Role {index:02d}",
+            company=f"Studio {index:02d}",
+            sourceBundleCount=2,
+            sourceBundle=[
+                {
+                    "source": f"static-{index}-a",
+                    "sourceJobId": "",
+                    "jobLink": f"https://studio.example/jobs/{index}-a",
+                    "adapter": "static",
+                },
+                {
+                    "source": f"static-{index}-b",
+                    "sourceJobId": "",
+                    "jobLink": f"https://studio.example/jobs/{index}-b",
+                    "adapter": "static",
+                },
+            ],
+        )
+        for index in range(12)
+    ]
+
+    evidence = build_dedup_evidence({"mergedCount": 0}, list(reversed(rows)))
+
+    assert evidence["reviewQueueCounts"]["review_many_urls_same_title"] == 12
+    assert len(evidence["reviewQueue"]) == 10
+    assert [row["dedupKey"] for row in evidence["reviewQueue"][:3]] == [
+        "key-00",
+        "key-01",
+        "key-02",
+    ]

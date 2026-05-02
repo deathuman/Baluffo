@@ -29,6 +29,14 @@ IDENTITY_SHAPE_KEYS = (
     "missing_url_and_ids",
     "mixed_or_unknown_identity",
 )
+REVIEW_QUEUE_ACTION_KEYS = (
+    "review_many_urls_same_title",
+    "review_listing_url_bundle",
+    "review_category_title_bundle",
+    "review_open_application_bundle",
+    "review_provider_static_disagreement",
+    "monitor",
+)
 CATEGORY_TITLE_TERMS = frozenset(
     {
         "accounting",
@@ -329,6 +337,27 @@ def _identity_caveats(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]
     return caveats
 
 
+def _recommended_review_action(summary: Mapping[str, Any]) -> str:
+    caveats = {str(caveat) for caveat in summary.get("identityCaveats") or []}
+    identity_shape = str(summary.get("identityShape") or "")
+    title_shape = str(summary.get("titleShape") or "")
+    outlier_reason = str(summary.get("outlierReason") or "")
+    if outlier_reason == "provider_static_disagreement":
+        return "review_provider_static_disagreement"
+    if identity_shape == "shared_listing_or_category_url":
+        return "review_listing_url_bundle"
+    if title_shape == "category_like" or "category_like_title" in caveats:
+        return "review_category_title_bundle"
+    if (
+        title_shape == "speculative_or_open_application"
+        or "speculative_or_open_application_title" in caveats
+    ):
+        return "review_open_application_bundle"
+    if identity_shape == "many_unique_urls_same_title":
+        return "review_many_urls_same_title"
+    return "monitor"
+
+
 def _outlier_reason(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) -> str:
     if not bundle:
         return "unknown"
@@ -371,6 +400,7 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
         "sourceBundleCount": max(int(row.get("sourceBundleCount") or 0), len(bundle)),
         "sourceClasses": source_classes,
         "sources": source_names[:8],
+        "sampleSources": source_names[:8],
         "outlierReason": _outlier_reason(row, bundle),
         "distinctLocationCount": len(meaningful_locations),
         "sampleLocations": meaningful_locations[:5],
@@ -423,9 +453,11 @@ def build_dedup_evidence(
     risk_reason_counts: Counter[str] = Counter()
     outlier_reason_counts: Counter[str] = Counter()
     identity_shape_counts: Counter[str] = Counter()
+    review_queue_counts: Counter[str] = Counter()
     top_rows: list[dict[str, Any]] = []
     risky_rows: list[dict[str, Any]] = []
     location_divergence_rows: list[dict[str, Any]] = []
+    review_queue_rows: list[dict[str, Any]] = []
     source_bundle_collision_count = 0
 
     for row in rows:
@@ -439,6 +471,10 @@ def build_dedup_evidence(
             top_rows.append(summary)
             outlier_reason_counts.update([summary["outlierReason"]])
             identity_shape_counts.update([summary["identityShape"]])
+            review_action = _recommended_review_action(summary)
+            review_queue_counts.update([review_action])
+            if review_action != "monitor":
+                review_queue_rows.append({**summary, "recommendedReviewAction": review_action})
             if int(summary.get("distinctLocationCount") or 0) > 1:
                 location_divergence_rows.append(summary)
             reasons = _risky_reasons(row, bundle)
@@ -471,6 +507,16 @@ def build_dedup_evidence(
             norm_text(row.get("dedupKey")),
         )
     )
+    action_order = {action: index for index, action in enumerate(REVIEW_QUEUE_ACTION_KEYS)}
+    review_queue_rows.sort(
+        key=lambda row: (
+            action_order.get(str(row.get("recommendedReviewAction") or ""), len(action_order)),
+            -int(row.get("sourceBundleCount") or 0),
+            norm_text(row.get("company")),
+            norm_text(row.get("title")),
+            norm_text(row.get("dedupKey")),
+        )
+    )
 
     return {
         "schemaVersion": 1,
@@ -496,6 +542,10 @@ def build_dedup_evidence(
         "identityShapeCounts": {
             key: int(identity_shape_counts.get(key, 0)) for key in IDENTITY_SHAPE_KEYS
         },
+        "reviewQueueCounts": {
+            key: int(review_queue_counts.get(key, 0)) for key in REVIEW_QUEUE_ACTION_KEYS
+        },
+        "reviewQueue": review_queue_rows[: max(0, int(risky_limit))],
         "topMergedJobs": top_rows[: max(0, int(top_limit))],
         "topSourceBundleOutliers": top_rows[: max(0, int(top_limit))],
         "locationDivergenceExamples": location_divergence_rows[: max(0, int(risky_limit))],

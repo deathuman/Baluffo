@@ -300,6 +300,18 @@ function formatDedupIdentityShapeCounts(shapeCounts) {
   ].join(", ");
 }
 
+function formatDedupReviewQueueCounts(queueCounts) {
+  const counts = queueCounts && typeof queueCounts === "object" ? queueCounts : {};
+  return [
+    `many URLs ${Number(counts?.review_many_urls_same_title || 0).toLocaleString()}`,
+    `listing URL ${Number(counts?.review_listing_url_bundle || 0).toLocaleString()}`,
+    `category title ${Number(counts?.review_category_title_bundle || 0).toLocaleString()}`,
+    `open application ${Number(counts?.review_open_application_bundle || 0).toLocaleString()}`,
+    `provider/static ${Number(counts?.review_provider_static_disagreement || 0).toLocaleString()}`,
+    `monitor ${Number(counts?.monitor || 0).toLocaleString()}`
+  ].join(", ");
+}
+
 function formatDedupMergedRows(rows, emptyText) {
   const mergedRows = Array.isArray(rows) ? rows : [];
   if (!mergedRows.length) return escapeHtml(emptyText);
@@ -397,6 +409,42 @@ function formatDedupRiskRows(rows, emptyText) {
   return `
     <table class="admin-dedup-evidence-table">
       <thead><tr><th>Title</th><th>Company</th><th>Reason</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  `;
+}
+
+function formatDedupReviewQueueRows(rows, emptyText) {
+  const queueRows = Array.isArray(rows) ? rows : [];
+  if (!queueRows.length) return escapeHtml(emptyText);
+  const body = queueRows
+    .slice(0, 5)
+    .map(row => {
+      const title = String(row?.title || "Untitled");
+      const company = String(row?.company || "Unknown company");
+      const count = Number(row?.sourceBundleCount || 0);
+      const action = String(row?.recommendedReviewAction || "monitor").replaceAll("_", " ");
+      const identityShape = String(row?.identityShape || "mixed_or_unknown_identity").replaceAll("_", " ");
+      const outlierReason = String(row?.outlierReason || "unknown").replaceAll("_", " ");
+      const caveats = Array.isArray(row?.identityCaveats) ? row.identityCaveats : [];
+      const caveatText = caveats.length ? caveats.join(", ").replaceAll("_", " ") : "none";
+      const sources = Array.isArray(row?.sampleSources) ? row.sampleSources : Array.isArray(row?.sources) ? row.sources : [];
+      const sourceText = sources.length ? sources.slice(0, 3).join(" | ") : "none";
+      const detail = `${identityShape}; ${outlierReason}; caveats ${caveatText}; sources ${sourceText}`;
+      return `
+        <tr>
+          <td>${escapeHtml(action)}</td>
+          <td>${escapeHtml(title)}</td>
+          <td>${escapeHtml(company)}</td>
+          <td>${count.toLocaleString()}</td>
+          <td>${escapeHtml(detail)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+  return `
+    <table class="admin-dedup-evidence-table">
+      <thead><tr><th>Action</th><th>Title</th><th>Company</th><th>Sources</th><th>Evidence</th></tr></thead>
       <tbody>${body}</tbody>
     </table>
   `;
@@ -567,6 +615,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const identityShapeCounts = dedupEvidence?.identityShapeCounts && typeof dedupEvidence.identityShapeCounts === "object"
     ? dedupEvidence.identityShapeCounts
     : {};
+  const reviewQueueCounts = dedupEvidence?.reviewQueueCounts && typeof dedupEvidence.reviewQueueCounts === "object"
+    ? dedupEvidence.reviewQueueCounts
+    : {};
   const topMergedSummary = formatDedupMergedRows(
     dedupEvidence?.topMergedJobs,
     "No merged canonical jobs in the latest fetch report."
@@ -578,6 +629,10 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const riskyMergeSummary = formatDedupRiskRows(
     dedupEvidence?.riskyMergeExamples,
     "No risky merge examples in the latest fetch report."
+  );
+  const reviewQueueSummary = formatDedupReviewQueueRows(
+    dedupEvidence?.reviewQueue,
+    "No dedup review queue examples in the latest fetch report."
   );
   const bucketSummaryHtml = bucketRows.length
     ? bucketRows.map(bucket => `
@@ -654,8 +709,10 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup risk reasons</strong>: ${escapeHtml(formatDedupRiskReasonCounts(riskReasonCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup outlier reasons</strong>: ${escapeHtml(formatDedupOutlierReasonCounts(outlierReasonCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup identity shapes</strong>: ${escapeHtml(formatDedupIdentityShapeCounts(identityShapeCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top source-bundle outliers</strong>: ${topOutlierSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review examples</strong>: ${reviewQueueSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Risky merge examples</strong>: ${riskyMergeSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Sources needing attention</strong>: ${attentionSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Zero kept / needs review</strong>: ${zeroReviewSummary}</div>

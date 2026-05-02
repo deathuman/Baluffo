@@ -58,6 +58,14 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
           missing_url_and_ids: 0,
           mixed_or_unknown_identity: 0
         },
+        reviewQueueCounts: {
+          review_many_urls_same_title: 3,
+          review_listing_url_bundle: 2,
+          review_category_title_bundle: 1,
+          review_open_application_bundle: 1,
+          review_provider_static_disagreement: 1,
+          monitor: 4
+        },
         topMergedJobs: [
           {
             title: "Senior Engineer",
@@ -92,6 +100,18 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
             ]
           }
         ],
+        reviewQueue: [
+          {
+            title: "Accounting",
+            company: "Kforce Inc",
+            sourceBundleCount: 255,
+            recommendedReviewAction: "review_listing_url_bundle",
+            identityShape: "shared_listing_or_category_url",
+            outlierReason: "large_other_source_bundle",
+            identityCaveats: ["shared_url_looks_like_listing_or_category", "category_like_title"],
+            sampleSources: ["kforce-a", "kforce-b"]
+          }
+        ],
         riskyMergeExamples: [
           {
             title: "Designer",
@@ -121,6 +141,11 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /listing\/category URL 2/i);
   assert.match(metricsEl.innerHTML, /many URLs 3/i);
   assert.match(metricsEl.innerHTML, /provider ID 4/i);
+  assert.match(metricsEl.innerHTML, /Dedup review queue/i);
+  assert.match(metricsEl.innerHTML, /listing URL 2/i);
+  assert.match(metricsEl.innerHTML, /category title 1/i);
+  assert.match(metricsEl.innerHTML, /open application 1/i);
+  assert.match(metricsEl.innerHTML, /monitor 4/i);
   assert.match(metricsEl.innerHTML, /Top source-bundle outliers/i);
   assert.match(metricsEl.innerHTML, /admin-dedup-evidence-table/i);
   assert.match(metricsEl.innerHTML, /Accounting/i);
@@ -135,6 +160,9 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /title category like/i);
   assert.match(metricsEl.innerHTML, /shared kforce\.example\/jobs/i);
   assert.match(metricsEl.innerHTML, /caveats shared url looks like listing or category/i);
+  assert.match(metricsEl.innerHTML, /Dedup review examples/i);
+  assert.match(metricsEl.innerHTML, /review listing url bundle/i);
+  assert.match(metricsEl.innerHTML, /sources kforce-a \| kforce-b/i);
   assert.match(metricsEl.innerHTML, /Senior Engineer/i);
   assert.match(metricsEl.innerHTML, /Studio One/i);
   assert.match(metricsEl.innerHTML, /Designer/i);
@@ -155,4 +183,5 @@ test("admin render: fetcher metrics tolerate missing dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /No risky merge examples/i);
   assert.match(metricsEl.innerHTML, /Dedup outlier reasons/i);
   assert.match(metricsEl.innerHTML, /Dedup identity shapes/i);
+  assert.match(metricsEl.innerHTML, /No dedup review queue examples/i);
 });

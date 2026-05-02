@@ -66,6 +66,8 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `riskReasonCounts` | `Object` | Aggregate risky-row counts by risk reason before sample capping. |
 | `outlierReasonCounts` | `Object` | Aggregate source-bundle outlier counts by diagnostic reason before sample capping. |
 | `identityShapeCounts` | `Object` | Aggregate source-bundle URL/source identity shape counts before sample capping. |
+| `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
+| `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
 | `topMergedJobs` | `Array<Object>` | Stable capped sample of canonical rows with the largest `sourceBundleCount`. |
 | `topSourceBundleOutliers` | `Array<Object>` | Stable capped sample of carried source-bundle outliers, sorted like `topMergedJobs`. |
 | `locationDivergenceExamples` | `Array<Object>` | Stable capped sample of source-bundle rows with more than one meaningful location. |
@@ -97,6 +99,14 @@ Identity shape values are diagnostic only: `shared_job_detail_url`,
 titles, other-source dominance, many unique URLs with the same title, or missing URL/provider-id
 evidence. These fields exist to decide whether dedup behavior needs a later investigation; they do
 not change dedup or lifecycle behavior.
+
+Review queue rows are advisory samples derived from the same final canonical rows and include
+`recommendedReviewAction`. Current action values are `review_many_urls_same_title`,
+`review_listing_url_bundle`, `review_category_title_bundle`,
+`review_open_application_bundle`, `review_provider_static_disagreement`, and `monitor`.
+Only non-monitor rows are included in the capped `reviewQueue` sample. The queue is not persisted
+review state and does not provide merge, unmerge, cleanup, lifecycle, source-policy, or registry
+controls.
 
 `mergedCount` and `mergeReasonCounts` describe the current dedup pass. They can be zero while
 `sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical
