@@ -64,16 +64,28 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `sourceBundleCollisionCount` | `number` | Final canonical rows carrying `sourceBundleCount > 1`, including rows whose bundle evidence was carried forward from previous output. |
 | `sourceBundleComposition` | `Object` | Count of bundle entries by source class: `provider`, `static`, `social`, and `other`. |
 | `riskReasonCounts` | `Object` | Aggregate risky-row counts by risk reason before sample capping. |
+| `outlierReasonCounts` | `Object` | Aggregate source-bundle outlier counts by diagnostic reason before sample capping. |
 | `topMergedJobs` | `Array<Object>` | Stable capped sample of canonical rows with the largest `sourceBundleCount`. |
 | `topSourceBundleOutliers` | `Array<Object>` | Stable capped sample of carried source-bundle outliers, sorted like `topMergedJobs`. |
+| `locationDivergenceExamples` | `Array<Object>` | Stable capped sample of source-bundle rows with more than one meaningful location. |
 | `riskyMergeExamples` | `Array<Object>` | Stable capped sample of merged rows that need review because evidence is weak or conflicting. |
 | `riskyMergeExampleCount` | `number` | Total risky examples before sample capping. |
 
 Sample rows include `id`, `dedupKey`, `title`, `company`, `jobLink`, `locationSummary`,
-`sourceBundleCount`, `sourceClasses`, and `sources`. Risky rows also include `riskReasons`, currently
-including values such as `same_title_company_different_location`,
+`sourceBundleCount`, `sourceClasses`, and `sources`. Outlier rows may also include
+`outlierReason`, `distinctLocationCount`, `sampleLocations`, `uniqueJobLinkCount`,
+`sharedPrimaryUrl`, `providerSourceJobIdCount`, `hasStrongIdentity`, and `dominantSourceClass`.
+Risky rows also include `riskReasons`, currently including values such as
+`same_title_company_different_location`,
 `provider_static_duplicate_disagreement`, `missing_provider_ids`, and
 `weak_title_company_only_evidence`.
+
+Outlier reason values are diagnostic only:
+`multi_location_strong_identity`, `location_divergence_without_strong_identity`,
+`provider_static_disagreement`, `large_other_source_bundle`,
+`sparse_title_company_bundle`, and `unknown`. They help distinguish likely multi-location
+postings, provider/static disagreement, large carried bundles dominated by unclassified source
+rows, and weak title/company-only evidence. They do not change merge policy.
 
 `mergedCount` and `mergeReasonCounts` describe the current dedup pass. They can be zero while
 `sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical

@@ -276,6 +276,18 @@ function formatDedupRiskReasonCounts(reasonCounts) {
   ].join(", ");
 }
 
+function formatDedupOutlierReasonCounts(reasonCounts) {
+  const counts = reasonCounts && typeof reasonCounts === "object" ? reasonCounts : {};
+  return [
+    `multi-location strong ${Number(counts?.multi_location_strong_identity || 0).toLocaleString()}`,
+    `location weak ${Number(counts?.location_divergence_without_strong_identity || 0).toLocaleString()}`,
+    `provider/static ${Number(counts?.provider_static_disagreement || 0).toLocaleString()}`,
+    `large other ${Number(counts?.large_other_source_bundle || 0).toLocaleString()}`,
+    `sparse ${Number(counts?.sparse_title_company_bundle || 0).toLocaleString()}`,
+    `unknown ${Number(counts?.unknown || 0).toLocaleString()}`
+  ].join(", ");
+}
+
 function formatDedupMergedRows(rows, emptyText) {
   const mergedRows = Array.isArray(rows) ? rows : [];
   if (!mergedRows.length) return escapeHtml(emptyText);
@@ -299,6 +311,43 @@ function formatDedupMergedRows(rows, emptyText) {
   return `
     <table class="admin-dedup-evidence-table">
       <thead><tr><th>Title</th><th>Company</th><th>Sources</th><th>Classes</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  `;
+}
+
+function formatDedupOutlierRows(rows, emptyText) {
+  const outlierRows = Array.isArray(rows) ? rows : [];
+  if (!outlierRows.length) return escapeHtml(emptyText);
+  const body = outlierRows
+    .slice(0, 5)
+    .map(row => {
+      const title = String(row?.title || "Untitled");
+      const company = String(row?.company || "Unknown company");
+      const count = Number(row?.sourceBundleCount || 0);
+      const classes = formatDedupSourceClasses(row?.sourceClasses);
+      const reason = String(row?.outlierReason || "unknown").replaceAll("_", " ");
+      const locations = Number(row?.distinctLocationCount || 0);
+      const links = Number(row?.uniqueJobLinkCount || 0);
+      const providerIds = Number(row?.providerSourceJobIdCount || 0);
+      const dominant = String(row?.dominantSourceClass || "unknown");
+      const strong = row?.hasStrongIdentity ? "strong identity" : "weak identity";
+      const shared = row?.sharedPrimaryUrl ? ", shared URL" : "";
+      const detail = `${reason}; ${locations.toLocaleString()} locations, ${links.toLocaleString()} links, ${providerIds.toLocaleString()} provider IDs, ${dominant} dominant, ${strong}${shared}`;
+      return `
+        <tr>
+          <td>${escapeHtml(title)}</td>
+          <td>${escapeHtml(company)}</td>
+          <td>${count.toLocaleString()}</td>
+          <td>${escapeHtml(classes)}</td>
+          <td>${escapeHtml(detail)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+  return `
+    <table class="admin-dedup-evidence-table">
+      <thead><tr><th>Title</th><th>Company</th><th>Sources</th><th>Classes</th><th>Outlier evidence</th></tr></thead>
       <tbody>${body}</tbody>
     </table>
   `;
@@ -490,11 +539,14 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const riskReasonCounts = dedupEvidence?.riskReasonCounts && typeof dedupEvidence.riskReasonCounts === "object"
     ? dedupEvidence.riskReasonCounts
     : {};
+  const outlierReasonCounts = dedupEvidence?.outlierReasonCounts && typeof dedupEvidence.outlierReasonCounts === "object"
+    ? dedupEvidence.outlierReasonCounts
+    : {};
   const topMergedSummary = formatDedupMergedRows(
     dedupEvidence?.topMergedJobs,
     "No merged canonical jobs in the latest fetch report."
   );
-  const topOutlierSummary = formatDedupMergedRows(
+  const topOutlierSummary = formatDedupOutlierRows(
     dedupEvidence?.topSourceBundleOutliers,
     "No carried source-bundle collision outliers in the latest fetch report."
   );
@@ -575,6 +627,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup source composition</strong>: ${escapeHtml(formatDedupSourceClasses(sourceBundleComposition))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup risk reasons</strong>: ${escapeHtml(formatDedupRiskReasonCounts(riskReasonCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup outlier reasons</strong>: ${escapeHtml(formatDedupOutlierReasonCounts(outlierReasonCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top source-bundle outliers</strong>: ${topOutlierSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Risky merge examples</strong>: ${riskyMergeSummary}</div>

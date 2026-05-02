@@ -42,6 +42,14 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
           missing_provider_ids: 0,
           weak_title_company_only_evidence: 0
         },
+        outlierReasonCounts: {
+          multi_location_strong_identity: 1,
+          location_divergence_without_strong_identity: 2,
+          provider_static_disagreement: 1,
+          large_other_source_bundle: 1,
+          sparse_title_company_bundle: 0,
+          unknown: 0
+        },
         topMergedJobs: [
           {
             title: "Senior Engineer",
@@ -55,7 +63,14 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
             title: "Accounting",
             company: "Kforce Inc",
             sourceBundleCount: 255,
-            sourceClasses: { provider: 0, static: 0, social: 0, other: 255 }
+            sourceClasses: { provider: 0, static: 0, social: 0, other: 255 },
+            outlierReason: "large_other_source_bundle",
+            distinctLocationCount: 30,
+            uniqueJobLinkCount: 2,
+            sharedPrimaryUrl: false,
+            providerSourceJobIdCount: 0,
+            hasStrongIdentity: false,
+            dominantSourceClass: "other"
           }
         ],
         riskyMergeExamples: [
@@ -79,10 +94,19 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /provider 1, static 1/i);
   assert.match(metricsEl.innerHTML, /Dedup risk reasons/i);
   assert.match(metricsEl.innerHTML, /location 1, provider\/static 1/i);
+  assert.match(metricsEl.innerHTML, /Dedup outlier reasons/i);
+  assert.match(metricsEl.innerHTML, /multi-location strong 1/i);
+  assert.match(metricsEl.innerHTML, /large other 1/i);
   assert.match(metricsEl.innerHTML, /Top source-bundle outliers/i);
   assert.match(metricsEl.innerHTML, /admin-dedup-evidence-table/i);
   assert.match(metricsEl.innerHTML, /Accounting/i);
   assert.match(metricsEl.innerHTML, /Kforce Inc/i);
+  assert.match(metricsEl.innerHTML, /large other source bundle/i);
+  assert.match(metricsEl.innerHTML, /30 locations/i);
+  assert.match(metricsEl.innerHTML, /2 links/i);
+  assert.match(metricsEl.innerHTML, /0 provider IDs/i);
+  assert.match(metricsEl.innerHTML, /other dominant/i);
+  assert.match(metricsEl.innerHTML, /weak identity/i);
   assert.match(metricsEl.innerHTML, /Senior Engineer/i);
   assert.match(metricsEl.innerHTML, /Studio One/i);
   assert.match(metricsEl.innerHTML, /Designer/i);
@@ -101,4 +125,5 @@ test("admin render: fetcher metrics tolerate missing dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /No merged canonical jobs/i);
   assert.match(metricsEl.innerHTML, /No carried source-bundle collision outliers/i);
   assert.match(metricsEl.innerHTML, /No risky merge examples/i);
+  assert.match(metricsEl.innerHTML, /Dedup outlier reasons/i);
 });
