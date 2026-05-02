@@ -318,6 +318,7 @@ function formatDedupReviewQueueCauseCounts(causeCounts) {
     `category ${Number(counts?.category_or_department_bucket || 0).toLocaleString()}`,
     `open application ${Number(counts?.open_application_family || 0).toLocaleString()}`,
     `listing page ${Number(counts?.listing_page_bundle || 0).toLocaleString()}`,
+    `spreadsheet role ${Number(counts?.spreadsheet_role_bucket_needs_review || 0).toLocaleString()}`,
     `non-provider URL ${Number(counts?.non_provider_url_identity_needs_review || 0).toLocaleString()}`,
     `parser/text ${Number(counts?.parser_or_directory_text_pollution || 0).toLocaleString()}`,
     `provider/static ${Number(counts?.provider_static_disagreement || 0).toLocaleString()}`,
@@ -349,6 +350,19 @@ function formatDedupNonProviderIdentityProvenanceCounts(provenanceCounts) {
     `opaque other ${Number(counts?.opaque_other_source_identity || 0).toLocaleString()}`,
     `mixed ${Number(counts?.mixed_non_provider_identity || 0).toLocaleString()}`,
     `none ${Number(counts?.none || 0).toLocaleString()}`,
+    `unknown ${Number(counts?.unknown || 0).toLocaleString()}`
+  ].join(", ");
+}
+
+function formatDedupGoogleSheetsBundleShapeCounts(shapeCounts) {
+  const counts = shapeCounts && typeof shapeCounts === "object" ? shapeCounts : {};
+  return [
+    `role/category ${Number(counts?.role_category_bucket || 0).toLocaleString()}`,
+    `company role family ${Number(counts?.company_role_family || 0).toLocaleString()}`,
+    `single-location URLs ${Number(counts?.single_location_many_urls || 0).toLocaleString()}`,
+    `multi-location URLs ${Number(counts?.multi_location_many_urls || 0).toLocaleString()}`,
+    `row collision ${Number(counts?.spreadsheet_row_collision || 0).toLocaleString()}`,
+    `not sheets ${Number(counts?.not_google_sheets || 0).toLocaleString()}`,
     `unknown ${Number(counts?.unknown || 0).toLocaleString()}`
   ].join(", ");
 }
@@ -468,6 +482,7 @@ function formatDedupReviewQueueRows(rows, emptyText) {
       const identityShape = String(row?.identityShape || "mixed_or_unknown_identity").replaceAll("_", " ");
       const identityQuality = String(row?.identityQuality || "unknown").replaceAll("_", " ");
       const nonProviderProvenance = String(row?.nonProviderIdentityProvenance || "unknown").replaceAll("_", " ");
+      const googleSheetsShape = String(row?.googleSheetsBundleShape || "unknown").replaceAll("_", " ");
       const outlierReason = String(row?.outlierReason || "unknown").replaceAll("_", " ");
       const suspectedCause = String(row?.suspectedCause || "unknown").replaceAll("_", " ");
       const caveats = Array.isArray(row?.identityCaveats) ? row.identityCaveats : [];
@@ -478,9 +493,11 @@ function formatDedupReviewQueueRows(rows, emptyText) {
       const qualityText = qualityEvidence.length ? qualityEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
       const provenanceEvidence = Array.isArray(row?.nonProviderIdentityEvidence) ? row.nonProviderIdentityEvidence : [];
       const provenanceText = provenanceEvidence.length ? provenanceEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
+      const googleSheetsEvidence = Array.isArray(row?.googleSheetsBundleEvidence) ? row.googleSheetsBundleEvidence : [];
+      const googleSheetsText = googleSheetsEvidence.length ? googleSheetsEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
       const sources = Array.isArray(row?.sampleSources) ? row.sampleSources : Array.isArray(row?.sources) ? row.sources : [];
       const sourceText = sources.length ? sources.slice(0, 3).join(" | ") : "none";
-      const detail = `${suspectedCause}; ${identityShape}; quality ${identityQuality}; provenance ${nonProviderProvenance}; ${outlierReason}; caveats ${caveatText}; cause evidence ${causeText}; identity evidence ${qualityText}; provenance evidence ${provenanceText}; sources ${sourceText}`;
+      const detail = `${suspectedCause}; ${identityShape}; quality ${identityQuality}; provenance ${nonProviderProvenance}; sheets ${googleSheetsShape}; ${outlierReason}; caveats ${caveatText}; cause evidence ${causeText}; identity evidence ${qualityText}; provenance evidence ${provenanceText}; sheets evidence ${googleSheetsText}; sources ${sourceText}`;
       return `
         <tr>
           <td>${escapeHtml(action)}</td>
@@ -671,6 +688,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const nonProviderIdentityProvenanceCounts = dedupEvidence?.nonProviderIdentityProvenanceCounts && typeof dedupEvidence.nonProviderIdentityProvenanceCounts === "object"
     ? dedupEvidence.nonProviderIdentityProvenanceCounts
     : {};
+  const googleSheetsBundleShapeCounts = dedupEvidence?.googleSheetsBundleShapeCounts && typeof dedupEvidence.googleSheetsBundleShapeCounts === "object"
+    ? dedupEvidence.googleSheetsBundleShapeCounts
+    : {};
   const reviewQueueCounts = dedupEvidence?.reviewQueueCounts && typeof dedupEvidence.reviewQueueCounts === "object"
     ? dedupEvidence.reviewQueueCounts
     : {};
@@ -770,6 +790,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup identity shapes</strong>: ${escapeHtml(formatDedupIdentityShapeCounts(identityShapeCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup identity quality</strong>: ${escapeHtml(formatDedupIdentityQualityCounts(identityQualityCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup non-provider provenance</strong>: ${escapeHtml(formatDedupNonProviderIdentityProvenanceCounts(nonProviderIdentityProvenanceCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets bundle shapes</strong>: ${escapeHtml(formatDedupGoogleSheetsBundleShapeCounts(googleSheetsBundleShapeCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review causes</strong>: ${escapeHtml(formatDedupReviewQueueCauseCounts(reviewQueueCauseCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>

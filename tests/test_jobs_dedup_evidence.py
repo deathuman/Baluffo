@@ -374,6 +374,7 @@ def test_dedup_evidence_empty_rows_returns_empty_aggregates() -> None:
     assert "unknown" in evidence["identityQualityCounts"]
     assert not any(evidence["nonProviderIdentityProvenanceCounts"].values())
     assert "unknown" in evidence["nonProviderIdentityProvenanceCounts"]
+    assert "unknown" in evidence["googleSheetsBundleShapeCounts"]
     assert not any(evidence["reviewQueueCauseCounts"].values())
     assert "unknown" in evidence["reviewQueueCauseCounts"]
     assert evidence["topSourceBundleOutliers"] == []

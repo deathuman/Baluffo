@@ -41,6 +41,7 @@ REVIEW_QUEUE_CAUSE_KEYS = (
     "category_or_department_bucket",
     "open_application_family",
     "listing_page_bundle",
+    "spreadsheet_role_bucket_needs_review",
     "parser_or_directory_text_pollution",
     "non_provider_url_identity_needs_review",
     "provider_static_disagreement",
@@ -66,6 +67,15 @@ NON_PROVIDER_IDENTITY_PROVENANCE_KEYS = (
     "none",
     "unknown",
 )
+GOOGLE_SHEETS_BUNDLE_SHAPE_KEYS = (
+    "role_category_bucket",
+    "company_role_family",
+    "single_location_many_urls",
+    "multi_location_many_urls",
+    "spreadsheet_row_collision",
+    "not_google_sheets",
+    "unknown",
+)
 CATEGORY_TITLE_TERMS = frozenset(
     {
         "accounting",
@@ -86,6 +96,24 @@ CATEGORY_TITLE_TERMS = frozenset(
         "software development",
         "software development engineering",
         "software-development-&-engineering",
+    }
+)
+ROLE_BUCKET_TITLE_TERMS = frozenset(
+    {
+        "account management",
+        "account-management",
+        "community management",
+        "community-management",
+        "localization",
+        "product management",
+        "product-management",
+        "program management",
+        "program-management",
+        "programming",
+        "project management",
+        "project-management",
+        "system design",
+        "system-design",
     }
 )
 GENERIC_LISTING_PATH_SEGMENTS = frozenset(
@@ -292,6 +320,14 @@ def _non_provider_source_job_ids(bundle: Sequence[Mapping[str, Any]]) -> list[st
     )
 
 
+def _non_provider_source_job_id_values(bundle: Sequence[Mapping[str, Any]]) -> list[str]:
+    return sorted(
+        clean_text(item.get("sourceJobId"))
+        for item in _non_provider_items(bundle)
+        if clean_text(item.get("sourceJobId"))
+    )
+
+
 def _non_provider_source_names(bundle: Sequence[Mapping[str, Any]]) -> list[str]:
     return sorted(
         {
@@ -389,6 +425,88 @@ def _non_provider_identity_evidence(
     if _title_shape(row) == "category_like":
         evidence.append("title_category_like")
     return evidence[:12]
+
+
+def _sample_url_paths(bundle: Sequence[Mapping[str, Any]]) -> list[str]:
+    return sorted({_url_path(url) for url in _unique_job_links(bundle) if _url_path(url)})[:5]
+
+
+def _title_tokens(row: Mapping[str, Any]) -> list[str]:
+    normalized = norm_text(
+        clean_text(row.get("title"))
+        .replace("-", " ")
+        .replace("_", " ")
+        .replace("/", " ")
+        .replace("&", " ")
+    )
+    return sorted({token for token in normalized.split() if token})
+
+
+def _company_tokens(row: Mapping[str, Any]) -> list[str]:
+    normalized = norm_text(clean_text(row.get("company")).replace("-", " ").replace("_", " "))
+    return sorted({token for token in normalized.split() if token})
+
+
+def _looks_role_bucket_title(row: Mapping[str, Any]) -> bool:
+    title = norm_text(row.get("title"))
+    normalized = norm_text(
+        clean_text(row.get("title")).replace("-", " ").replace("_", " ").replace("&", " ")
+    )
+    if title in ROLE_BUCKET_TITLE_TERMS or normalized in ROLE_BUCKET_TITLE_TERMS:
+        return True
+    tokens = normalized.split()
+    return 1 <= len(tokens) <= 2 and any(
+        token in {"management", "programming", "design", "localization"} for token in tokens
+    )
+
+
+def _google_sheets_bundle_shape(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) -> str:
+    if _non_provider_identity_provenance(row, bundle) != "google_sheets_row_identity":
+        return "not_google_sheets"
+    ids = _non_provider_source_job_id_values(bundle)
+    if not bundle:
+        return "unknown"
+    if len(ids) != len(set(ids)):
+        return "spreadsheet_row_collision"
+    if _title_shape(row) == "category_like" or _looks_role_bucket_title(row):
+        return "role_category_bucket"
+    if _unique_job_link_count(bundle) > 1 and len(_meaningful_locations(row)) > 1:
+        return "multi_location_many_urls"
+    if _unique_job_link_count(bundle) > 1:
+        return "single_location_many_urls"
+    if len(bundle) > 1:
+        return "company_role_family"
+    return "unknown"
+
+
+def _google_sheets_bundle_evidence(
+    row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
+) -> list[str]:
+    ids = _non_provider_source_job_id_values(bundle)
+    prefixes = sorted(
+        {_source_job_id_prefix(value) for value in ids if _source_job_id_prefix(value)}
+    )
+    evidence = [
+        f"shape:{_google_sheets_bundle_shape(row, bundle)}",
+        f"source_count:{len(bundle)}",
+        f"unique_urls:{_unique_job_link_count(bundle)}",
+        f"url_hosts:{_unique_url_host_count(bundle)}",
+        f"url_path_prefixes:{_unique_url_path_prefix_count(bundle)}",
+        f"locations:{len(_meaningful_locations(row))}",
+        f"title_shape:{_title_shape(row)}",
+        f"title_tokens:{len(_title_tokens(row))}",
+        f"company_tokens:{len(_company_tokens(row))}",
+        f"source_id_prefixes:{len(prefixes)}",
+    ]
+    for path in _sample_url_paths(bundle)[:3]:
+        evidence.append(f"url_path:{path}")
+    for shape in sorted({_source_job_id_shape(value) for value in ids})[:3]:
+        evidence.append(f"id_shape:{shape}")
+    if _looks_role_bucket_title(row):
+        evidence.append("role_bucket_title")
+    for caveat in _identity_caveats(row, bundle):
+        evidence.append(f"caveat:{caveat}")
+    return evidence[:16]
 
 
 def _unique_url_host_count(bundle: Sequence[Mapping[str, Any]]) -> int:
@@ -583,10 +701,14 @@ def _suspected_cause(summary: Mapping[str, Any]) -> str:
     title_shape = str(summary.get("titleShape") or "")
     outlier_reason = str(summary.get("outlierReason") or "")
     dominant_source_class = str(summary.get("dominantSourceClass") or "")
+    provenance = str(summary.get("nonProviderIdentityProvenance") or "")
+    google_sheets_shape = str(summary.get("googleSheetsBundleShape") or "")
     if outlier_reason == "provider_static_disagreement":
         return "provider_static_disagreement"
     if title_shape == "speculative_or_open_application":
         return "open_application_family"
+    if provenance == "google_sheets_row_identity" and google_sheets_shape == "role_category_bucket":
+        return "spreadsheet_role_bucket_needs_review"
     if title_shape == "category_like" or "category_like_title" in caveats:
         return "category_or_department_bucket"
     if pollution and dominant_source_class == "other":
@@ -624,6 +746,9 @@ def _cause_evidence(summary: Mapping[str, Any]) -> list[str]:
         value = str(summary.get(key) or "")
         if value:
             evidence.append(f"{label}:{value}")
+    google_sheets_shape = str(summary.get("googleSheetsBundleShape") or "")
+    if google_sheets_shape not in {"", "not_google_sheets", "unknown"}:
+        evidence.append(f"google_sheets_shape:{google_sheets_shape}")
     if summary.get("hasStrongIdentity"):
         evidence.append("strong_identity")
     for signal in summary.get("titleCompanyPollutionSignals") or []:
@@ -699,6 +824,8 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
         "identityQualityEvidence": _identity_quality_evidence(row, bundle),
         "nonProviderIdentityProvenance": _non_provider_identity_provenance(row, bundle),
         "nonProviderIdentityEvidence": _non_provider_identity_evidence(row, bundle),
+        "googleSheetsBundleShape": _google_sheets_bundle_shape(row, bundle),
+        "googleSheetsBundleEvidence": _google_sheets_bundle_evidence(row, bundle),
         "titleShape": _title_shape(row),
         "identityCaveats": _identity_caveats(row, bundle),
         "titleCompanyPollutionSignals": _title_company_pollution_signals(row),
@@ -746,6 +873,7 @@ def build_dedup_evidence(
     review_queue_cause_counts: Counter[str] = Counter()
     identity_quality_counts: Counter[str] = Counter()
     non_provider_identity_provenance_counts: Counter[str] = Counter()
+    google_sheets_bundle_shape_counts: Counter[str] = Counter()
     top_rows: list[dict[str, Any]] = []
     risky_rows: list[dict[str, Any]] = []
     location_divergence_rows: list[dict[str, Any]] = []
@@ -767,6 +895,7 @@ def build_dedup_evidence(
             non_provider_identity_provenance_counts.update(
                 [summary["nonProviderIdentityProvenance"]]
             )
+            google_sheets_bundle_shape_counts.update([summary["googleSheetsBundleShape"]])
             review_action = _recommended_review_action(summary)
             review_queue_counts.update([review_action])
             review_queue_cause_counts.update([summary["suspectedCause"]])
@@ -845,6 +974,10 @@ def build_dedup_evidence(
         "nonProviderIdentityProvenanceCounts": {
             key: int(non_provider_identity_provenance_counts.get(key, 0))
             for key in NON_PROVIDER_IDENTITY_PROVENANCE_KEYS
+        },
+        "googleSheetsBundleShapeCounts": {
+            key: int(google_sheets_bundle_shape_counts.get(key, 0))
+            for key in GOOGLE_SHEETS_BUNDLE_SHAPE_KEYS
         },
         "reviewQueueCounts": {
             key: int(review_queue_counts.get(key, 0)) for key in REVIEW_QUEUE_ACTION_KEYS

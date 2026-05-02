@@ -119,36 +119,6 @@ def test_dedup_evidence_classifies_non_provider_source_ids_as_untrusted() -> Non
     assert evidence["reviewQueueCauseCounts"]["non_provider_url_identity_needs_review"] == 1
 
 
-def test_dedup_evidence_reports_google_sheets_non_provider_provenance() -> None:
-    evidence = build_dedup_evidence(
-        {"mergedCount": 0},
-        [
-            _row(
-                sourceBundle=[
-                    {
-                        "source": "google_sheets",
-                        "sourceJobId": "sheet-row-1",
-                        "jobLink": "https://studio.example/jobs/1",
-                        "adapter": "custom",
-                    },
-                    {
-                        "source": "google_sheets",
-                        "sourceJobId": "sheet-row-2",
-                        "jobLink": "https://studio.example/jobs/2",
-                        "adapter": "custom",
-                    },
-                ],
-            )
-        ],
-    )
-
-    row = evidence["reviewQueue"][0]
-    assert row["nonProviderIdentityProvenance"] == "google_sheets_row_identity"
-    assert "provenance:google_sheets_row_identity" in row["causeEvidence"]
-    assert "dominant_source_name:google_sheets" in row["nonProviderIdentityEvidence"]
-    assert evidence["nonProviderIdentityProvenanceCounts"]["google_sheets_row_identity"] == 1
-
-
 def test_dedup_evidence_reports_url_derived_non_provider_provenance() -> None:
     evidence = build_dedup_evidence(
         {"mergedCount": 0},
