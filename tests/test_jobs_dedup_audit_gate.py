@@ -285,6 +285,65 @@ def test_dedup_audit_gate_blocks_carried_real_multi_location_provider_static_con
     )
 
 
+def test_dedup_audit_gate_prefers_unresolved_provider_static_examples_over_pollution_only_rows() -> (
+    None
+):
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                dedupKey="key-pollution",
+                title="Concept Artist / Illustrator",
+                sourceBundleCount=2,
+                sourceBundle=[
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "gh-1",
+                        "jobLink": "https://provider.example/jobs/1",
+                        "adapter": "greenhouse",
+                    },
+                    {
+                        "source": "static_source::static:listing_url:https://studio.example/careers",
+                        "sourceJobId": "static-1",
+                        "jobLink": "https://static.example/jobs/2",
+                        "adapter": "static",
+                    },
+                ],
+                locations=[
+                    {"city": "Illustrator", "country": ""},
+                    {"city": "Salem", "country": "US"},
+                ],
+            ),
+            _row(
+                dedupKey="key-blocker",
+                title="Senior Engineer",
+                sourceBundleCount=2,
+                sourceBundle=[
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "gh-2",
+                        "jobLink": "https://provider.example/jobs/3",
+                        "adapter": "greenhouse",
+                    },
+                    {
+                        "source": "static_source::static:listing_url:https://studio.example/careers",
+                        "sourceJobId": "static-2",
+                        "jobLink": "https://static.example/jobs/4",
+                        "adapter": "static",
+                    },
+                ],
+                locations=[{"city": "Amsterdam", "country": "NL"}],
+            ),
+        ],
+        seeded_from_existing_output=True,
+    )
+
+    gate = evidence["dedupAuditGate"]
+    assert gate["status"] == "blocked"
+    assert gate["examples"][0]["recommendedReviewAction"] == "review_provider_static_disagreement"
+    assert gate["examples"][0]["disagreementClassification"] != "title_company_collision"
+
+
 def test_dedup_audit_gate_counts_fresh_collisions_as_current_run() -> None:
     evidence = build_dedup_evidence(
         {"mergedCount": 1, "mergedByPrimaryUrl": 1},

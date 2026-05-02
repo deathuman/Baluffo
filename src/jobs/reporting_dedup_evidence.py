@@ -1555,6 +1555,9 @@ def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, An
     title_company_examples = json_object_rows(
         dedup_evidence.get("providerStaticTitleCompanyCollisionExamples")
     )
+    provider_static_examples = json_object_rows(
+        dedup_evidence.get("providerStaticDisagreementExamples")
+    )
     unresolved_title_company_examples = [
         row
         for row in title_company_examples
@@ -1577,6 +1580,25 @@ def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, An
             }
             for row in unresolved_title_company_examples[:5]
         ]
+    unresolved_provider_static_examples = [
+        row
+        for row in provider_static_examples
+        if clean_text(row.get("disagreementClassification")) != "title_company_collision"
+    ]
+    if unresolved_provider_static_examples:
+        return [
+            {
+                "title": clean_text(row.get("title")),
+                "company": clean_text(row.get("company")),
+                "recommendedReviewAction": "review_provider_static_disagreement",
+                "suspectedCause": "provider_static_disagreement",
+                "sourceBundleCount": max(0, int(row.get("sourceBundleCount") or 0)),
+                "identityQuality": clean_text(row.get("identityQuality")),
+                "bundleEvidenceOrigin": clean_text(row.get("bundleEvidenceOrigin")),
+                "disagreementClassification": clean_text(row.get("disagreementClassification")),
+            }
+            for row in unresolved_provider_static_examples[:5]
+        ]
     if title_company_examples:
         return [
             {
@@ -1594,9 +1616,6 @@ def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, An
             }
             for row in title_company_examples[:5]
         ]
-    provider_static_examples = json_object_rows(
-        dedup_evidence.get("providerStaticDisagreementExamples")
-    )
     if provider_static_examples:
         return [
             {
