@@ -67,6 +67,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `outlierReasonCounts` | `Object` | Aggregate source-bundle outlier counts by diagnostic reason before sample capping. |
 | `identityShapeCounts` | `Object` | Aggregate source-bundle URL/source identity shape counts before sample capping. |
 | `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
+| `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
 | `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
 | `topMergedJobs` | `Array<Object>` | Stable capped sample of canonical rows with the largest `sourceBundleCount`. |
 | `topSourceBundleOutliers` | `Array<Object>` | Stable capped sample of carried source-bundle outliers, sorted like `topMergedJobs`. |
@@ -78,8 +79,10 @@ Sample rows include `id`, `dedupKey`, `title`, `company`, `jobLink`, `locationSu
 `sourceBundleCount`, `sourceClasses`, and `sources`. Outlier rows may also include
 `outlierReason`, `distinctLocationCount`, `sampleLocations`, `uniqueJobLinkCount`,
 `sharedPrimaryUrl`, `sharedUrlHost`, `sharedUrlPath`, `uniqueUrlHostCount`,
-`uniqueUrlPathPrefixCount`, `providerSourceJobIdCount`, `hasStrongIdentity`,
-`dominantSourceClass`, `identityShape`, `titleShape`, and `identityCaveats`.
+`uniqueUrlPathPrefixCount`, `urlHostDiversity`, `urlPathPrefixDiversity`,
+`providerSourceJobIdCount`, `hasStrongIdentity`, `dominantSourceClass`,
+`identityShape`, `titleShape`, `identityCaveats`, `titleCompanyPollutionSignals`,
+`suspectedCause`, and `causeEvidence`.
 Risky rows also include `riskReasons`, currently including values such as
 `same_title_company_different_location`,
 `provider_static_duplicate_disagreement`, `missing_provider_ids`, and
@@ -107,6 +110,13 @@ Review queue rows are advisory samples derived from the same final canonical row
 Only non-monitor rows are included in the capped `reviewQueue` sample. The queue is not persisted
 review state and does not provide merge, unmerge, cleanup, lifecycle, source-policy, or registry
 controls.
+
+Suspected cause values are diagnostic only: `category_or_department_bucket`,
+`open_application_family`, `listing_page_bundle`, `parser_or_directory_text_pollution`,
+`provider_static_disagreement`, `likely_legitimate_multi_role_family`, and `unknown`.
+`causeEvidence` is a compact list of the identity shape, title shape, outlier reason, dominant
+source class, caveats, and title/company pollution signals that led to the suspected cause. These
+fields prioritize human review; they do not persist review decisions or change dedup behavior.
 
 `mergedCount` and `mergeReasonCounts` describe the current dedup pass. They can be zero while
 `sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical

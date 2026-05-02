@@ -52,6 +52,7 @@ def test_dedup_evidence_reports_shared_job_detail_url_identity() -> None:
     ]
     assert evidence["identityShapeCounts"]["shared_job_detail_url"] == 1
     assert evidence["reviewQueueCounts"]["monitor"] == 1
+    assert evidence["reviewQueueCauseCounts"]["unknown"] == 1
     assert evidence["reviewQueue"] == []
 
 
@@ -90,7 +91,10 @@ def test_dedup_evidence_reports_shared_listing_url_identity_and_caveats() -> Non
     assert "category_like_title" in outlier["identityCaveats"]
     assert evidence["identityShapeCounts"]["shared_listing_or_category_url"] == 1
     assert evidence["reviewQueueCounts"]["review_listing_url_bundle"] == 1
+    assert evidence["reviewQueueCauseCounts"]["category_or_department_bucket"] == 1
     assert evidence["reviewQueue"][0]["recommendedReviewAction"] == "review_listing_url_bundle"
+    assert evidence["reviewQueue"][0]["suspectedCause"] == "category_or_department_bucket"
+    assert "caveat:category_like_title" in evidence["reviewQueue"][0]["causeEvidence"]
     assert evidence["reviewQueue"][0]["sampleSources"] == ["kforce-a", "kforce-b"]
 
 
@@ -124,7 +128,9 @@ def test_dedup_evidence_reports_many_unique_urls_same_title() -> None:
     assert "many_unique_urls_same_title" in outlier["identityCaveats"]
     assert evidence["identityShapeCounts"]["many_unique_urls_same_title"] == 1
     assert evidence["reviewQueueCounts"]["review_many_urls_same_title"] == 1
+    assert evidence["reviewQueueCauseCounts"]["unknown"] == 1
     assert evidence["reviewQueue"][0]["recommendedReviewAction"] == "review_many_urls_same_title"
+    assert evidence["reviewQueue"][0]["suspectedCause"] == "unknown"
 
 
 def test_dedup_evidence_reports_speculative_title_caveat() -> None:
@@ -155,9 +161,11 @@ def test_dedup_evidence_reports_speculative_title_caveat() -> None:
     assert outlier["titleShape"] == "speculative_or_open_application"
     assert "speculative_or_open_application_title" in outlier["identityCaveats"]
     assert evidence["reviewQueueCounts"]["review_open_application_bundle"] == 1
+    assert evidence["reviewQueueCauseCounts"]["open_application_family"] == 1
     assert evidence["reviewQueue"][0]["recommendedReviewAction"] == (
         "review_open_application_bundle"
     )
+    assert evidence["reviewQueue"][0]["suspectedCause"] == "open_application_family"
 
 
 def test_dedup_evidence_review_queue_counts_category_titles() -> None:
@@ -186,6 +194,7 @@ def test_dedup_evidence_review_queue_counts_category_titles() -> None:
 
     assert evidence["reviewQueueCounts"]["review_category_title_bundle"] == 1
     assert evidence["reviewQueue"][0]["recommendedReviewAction"] == ("review_category_title_bundle")
+    assert evidence["reviewQueue"][0]["suspectedCause"] == "category_or_department_bucket"
 
 
 def test_dedup_evidence_review_queue_counts_provider_static_disagreement() -> None:
@@ -212,9 +221,105 @@ def test_dedup_evidence_review_queue_counts_provider_static_disagreement() -> No
     )
 
     assert evidence["reviewQueueCounts"]["review_provider_static_disagreement"] == 1
+    assert evidence["reviewQueueCauseCounts"]["provider_static_disagreement"] == 1
     assert evidence["reviewQueue"][0]["recommendedReviewAction"] == (
         "review_provider_static_disagreement"
     )
+    assert evidence["reviewQueue"][0]["suspectedCause"] == "provider_static_disagreement"
+
+
+def test_dedup_evidence_classifies_listing_page_bundle_without_category_title() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                title="Senior Producer",
+                sourceBundle=[
+                    {
+                        "source": "studio-a",
+                        "sourceJobId": "",
+                        "jobLink": "https://studio.example/careers",
+                        "adapter": "custom",
+                    },
+                    {
+                        "source": "studio-b",
+                        "sourceJobId": "",
+                        "jobLink": "https://studio.example/careers",
+                        "adapter": "custom",
+                    },
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["recommendedReviewAction"] == "review_listing_url_bundle"
+    assert row["suspectedCause"] == "listing_page_bundle"
+    assert "identity:shared_listing_or_category_url" in row["causeEvidence"]
+    assert evidence["reviewQueueCauseCounts"]["listing_page_bundle"] == 1
+
+
+def test_dedup_evidence_classifies_parser_or_directory_text_pollution() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                title="nDreams 4",
+                company="11 bit studios 3",
+                sourceBundle=[
+                    {
+                        "source": "directory-a",
+                        "sourceJobId": "",
+                        "jobLink": "https://directory.example/studios/ndreams",
+                        "adapter": "custom",
+                    },
+                    {
+                        "source": "directory-b",
+                        "sourceJobId": "",
+                        "jobLink": "https://directory.example/studios/11-bit",
+                        "adapter": "custom",
+                    },
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["suspectedCause"] == "parser_or_directory_text_pollution"
+    assert "title_numeric_suffix" in row["titleCompanyPollutionSignals"]
+    assert "company_numeric_suffix" in row["titleCompanyPollutionSignals"]
+    assert "pollution:title_numeric_suffix" in row["causeEvidence"]
+    assert evidence["reviewQueueCauseCounts"]["parser_or_directory_text_pollution"] == 1
+
+
+def test_dedup_evidence_classifies_provider_backed_bundle_as_likely_legitimate() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                sourceBundle=[
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "job-1",
+                        "jobLink": "https://boards.greenhouse.io/studio/jobs/1",
+                        "adapter": "greenhouse",
+                    },
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "job-1",
+                        "jobLink": "https://boards.greenhouse.io/studio/jobs/1",
+                        "adapter": "greenhouse",
+                    },
+                ],
+            )
+        ],
+    )
+
+    outlier = evidence["topSourceBundleOutliers"][0]
+    assert outlier["suspectedCause"] == "likely_legitimate_multi_role_family"
+    assert "strong_identity" in outlier["causeEvidence"]
+    assert evidence["reviewQueueCauseCounts"]["likely_legitimate_multi_role_family"] == 1
+    assert evidence["reviewQueue"] == []
 
 
 def test_dedup_evidence_review_queue_is_capped_and_stable() -> None:

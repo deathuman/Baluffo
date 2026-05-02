@@ -312,6 +312,19 @@ function formatDedupReviewQueueCounts(queueCounts) {
   ].join(", ");
 }
 
+function formatDedupReviewQueueCauseCounts(causeCounts) {
+  const counts = causeCounts && typeof causeCounts === "object" ? causeCounts : {};
+  return [
+    `category ${Number(counts?.category_or_department_bucket || 0).toLocaleString()}`,
+    `open application ${Number(counts?.open_application_family || 0).toLocaleString()}`,
+    `listing page ${Number(counts?.listing_page_bundle || 0).toLocaleString()}`,
+    `parser/text ${Number(counts?.parser_or_directory_text_pollution || 0).toLocaleString()}`,
+    `provider/static ${Number(counts?.provider_static_disagreement || 0).toLocaleString()}`,
+    `likely legitimate ${Number(counts?.likely_legitimate_multi_role_family || 0).toLocaleString()}`,
+    `unknown ${Number(counts?.unknown || 0).toLocaleString()}`
+  ].join(", ");
+}
+
 function formatDedupMergedRows(rows, emptyText) {
   const mergedRows = Array.isArray(rows) ? rows : [];
   if (!mergedRows.length) return escapeHtml(emptyText);
@@ -426,11 +439,14 @@ function formatDedupReviewQueueRows(rows, emptyText) {
       const action = String(row?.recommendedReviewAction || "monitor").replaceAll("_", " ");
       const identityShape = String(row?.identityShape || "mixed_or_unknown_identity").replaceAll("_", " ");
       const outlierReason = String(row?.outlierReason || "unknown").replaceAll("_", " ");
+      const suspectedCause = String(row?.suspectedCause || "unknown").replaceAll("_", " ");
       const caveats = Array.isArray(row?.identityCaveats) ? row.identityCaveats : [];
       const caveatText = caveats.length ? caveats.join(", ").replaceAll("_", " ") : "none";
+      const causeEvidence = Array.isArray(row?.causeEvidence) ? row.causeEvidence : [];
+      const causeText = causeEvidence.length ? causeEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
       const sources = Array.isArray(row?.sampleSources) ? row.sampleSources : Array.isArray(row?.sources) ? row.sources : [];
       const sourceText = sources.length ? sources.slice(0, 3).join(" | ") : "none";
-      const detail = `${identityShape}; ${outlierReason}; caveats ${caveatText}; sources ${sourceText}`;
+      const detail = `${suspectedCause}; ${identityShape}; ${outlierReason}; caveats ${caveatText}; cause evidence ${causeText}; sources ${sourceText}`;
       return `
         <tr>
           <td>${escapeHtml(action)}</td>
@@ -618,6 +634,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const reviewQueueCounts = dedupEvidence?.reviewQueueCounts && typeof dedupEvidence.reviewQueueCounts === "object"
     ? dedupEvidence.reviewQueueCounts
     : {};
+  const reviewQueueCauseCounts = dedupEvidence?.reviewQueueCauseCounts && typeof dedupEvidence.reviewQueueCauseCounts === "object"
+    ? dedupEvidence.reviewQueueCauseCounts
+    : {};
   const topMergedSummary = formatDedupMergedRows(
     dedupEvidence?.topMergedJobs,
     "No merged canonical jobs in the latest fetch report."
@@ -710,6 +729,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup outlier reasons</strong>: ${escapeHtml(formatDedupOutlierReasonCounts(outlierReasonCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup identity shapes</strong>: ${escapeHtml(formatDedupIdentityShapeCounts(identityShapeCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review causes</strong>: ${escapeHtml(formatDedupReviewQueueCauseCounts(reviewQueueCauseCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top source-bundle outliers</strong>: ${topOutlierSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review examples</strong>: ${reviewQueueSummary}</div>

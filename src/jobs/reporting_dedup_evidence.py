@@ -37,6 +37,15 @@ REVIEW_QUEUE_ACTION_KEYS = (
     "review_provider_static_disagreement",
     "monitor",
 )
+REVIEW_QUEUE_CAUSE_KEYS = (
+    "category_or_department_bucket",
+    "open_application_family",
+    "listing_page_bundle",
+    "parser_or_directory_text_pollution",
+    "provider_static_disagreement",
+    "likely_legitimate_multi_role_family",
+    "unknown",
+)
 CATEGORY_TITLE_TERMS = frozenset(
     {
         "accounting",
@@ -297,6 +306,23 @@ def _title_shape(row: Mapping[str, Any]) -> str:
     return "role_like"
 
 
+def _title_company_pollution_signals(row: Mapping[str, Any]) -> list[str]:
+    signals: list[str] = []
+    title = clean_text(row.get("title"))
+    company = clean_text(row.get("company"))
+    if title and title[-1:].isdigit():
+        signals.append("title_numeric_suffix")
+    if company and company[-1:].isdigit():
+        signals.append("company_numeric_suffix")
+    if title and company and title == company:
+        signals.append("title_company_identical")
+    if title and len(title.split()) <= 2 and any(char.isdigit() for char in title):
+        signals.append("short_title_with_digits")
+    if company and len(company.split()) <= 4 and any(char.isdigit() for char in company):
+        signals.append("short_company_with_digits")
+    return sorted(set(signals))
+
+
 def _identity_shape(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) -> str:
     provider_ids = _provider_source_job_id_count(bundle)
     urls = _unique_job_links(bundle)
@@ -358,6 +384,57 @@ def _recommended_review_action(summary: Mapping[str, Any]) -> str:
     return "monitor"
 
 
+def _suspected_cause(summary: Mapping[str, Any]) -> str:
+    caveats = {str(caveat) for caveat in summary.get("identityCaveats") or []}
+    pollution = {str(signal) for signal in summary.get("titleCompanyPollutionSignals") or []}
+    identity_shape = str(summary.get("identityShape") or "")
+    title_shape = str(summary.get("titleShape") or "")
+    outlier_reason = str(summary.get("outlierReason") or "")
+    dominant_source_class = str(summary.get("dominantSourceClass") or "")
+    has_strong_identity = bool(summary.get("hasStrongIdentity"))
+    if outlier_reason == "provider_static_disagreement":
+        return "provider_static_disagreement"
+    if title_shape == "speculative_or_open_application":
+        return "open_application_family"
+    if title_shape == "category_like" or "category_like_title" in caveats:
+        return "category_or_department_bucket"
+    if pollution and dominant_source_class == "other":
+        return "parser_or_directory_text_pollution"
+    if identity_shape == "shared_listing_or_category_url":
+        return "listing_page_bundle"
+    if identity_shape == "provider_id_backed" or (
+        has_strong_identity and outlier_reason == "multi_location_strong_identity"
+    ):
+        return "likely_legitimate_multi_role_family"
+    return "unknown"
+
+
+def _cause_evidence(summary: Mapping[str, Any]) -> list[str]:
+    evidence: list[str] = []
+    cause = str(summary.get("suspectedCause") or "")
+    identity_shape = str(summary.get("identityShape") or "")
+    title_shape = str(summary.get("titleShape") or "")
+    outlier_reason = str(summary.get("outlierReason") or "")
+    dominant_source_class = str(summary.get("dominantSourceClass") or "")
+    if cause:
+        evidence.append(f"cause:{cause}")
+    if identity_shape:
+        evidence.append(f"identity:{identity_shape}")
+    if title_shape:
+        evidence.append(f"title:{title_shape}")
+    if outlier_reason:
+        evidence.append(f"outlier:{outlier_reason}")
+    if dominant_source_class:
+        evidence.append(f"dominant_source:{dominant_source_class}")
+    if summary.get("hasStrongIdentity"):
+        evidence.append("strong_identity")
+    for signal in summary.get("titleCompanyPollutionSignals") or []:
+        evidence.append(f"pollution:{signal}")
+    for caveat in summary.get("identityCaveats") or []:
+        evidence.append(f"caveat:{caveat}")
+    return evidence[:10]
+
+
 def _outlier_reason(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) -> str:
     if not bundle:
         return "unknown"
@@ -390,7 +467,7 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
     source_classes = _source_class_counts(bundle)
     meaningful_locations = _meaningful_locations(row)
     shared_url = _shared_url(bundle)
-    return {
+    summary = {
         "id": clean_text(row.get("id")),
         "dedupKey": clean_text(row.get("dedupKey")),
         "title": clean_text(row.get("title")),
@@ -410,13 +487,19 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
         "sharedUrlPath": _url_path(shared_url) if shared_url else "",
         "uniqueUrlHostCount": _unique_url_host_count(bundle),
         "uniqueUrlPathPrefixCount": _unique_url_path_prefix_count(bundle),
+        "urlHostDiversity": _unique_url_host_count(bundle),
+        "urlPathPrefixDiversity": _unique_url_path_prefix_count(bundle),
         "providerSourceJobIdCount": _provider_source_job_id_count(bundle),
         "hasStrongIdentity": _has_any_strong_identity(bundle),
         "dominantSourceClass": _dominant_source_class(source_classes),
         "identityShape": _identity_shape(row, bundle),
         "titleShape": _title_shape(row),
         "identityCaveats": _identity_caveats(row, bundle),
+        "titleCompanyPollutionSignals": _title_company_pollution_signals(row),
     }
+    summary["suspectedCause"] = _suspected_cause(summary)
+    summary["causeEvidence"] = _cause_evidence(summary)
+    return summary
 
 
 def _merge_reason_counts(dedup_stats: Mapping[str, Any]) -> dict[str, int]:
@@ -454,6 +537,7 @@ def build_dedup_evidence(
     outlier_reason_counts: Counter[str] = Counter()
     identity_shape_counts: Counter[str] = Counter()
     review_queue_counts: Counter[str] = Counter()
+    review_queue_cause_counts: Counter[str] = Counter()
     top_rows: list[dict[str, Any]] = []
     risky_rows: list[dict[str, Any]] = []
     location_divergence_rows: list[dict[str, Any]] = []
@@ -473,6 +557,7 @@ def build_dedup_evidence(
             identity_shape_counts.update([summary["identityShape"]])
             review_action = _recommended_review_action(summary)
             review_queue_counts.update([review_action])
+            review_queue_cause_counts.update([summary["suspectedCause"]])
             if review_action != "monitor":
                 review_queue_rows.append({**summary, "recommendedReviewAction": review_action})
             if int(summary.get("distinctLocationCount") or 0) > 1:
@@ -544,6 +629,9 @@ def build_dedup_evidence(
         },
         "reviewQueueCounts": {
             key: int(review_queue_counts.get(key, 0)) for key in REVIEW_QUEUE_ACTION_KEYS
+        },
+        "reviewQueueCauseCounts": {
+            key: int(review_queue_cause_counts.get(key, 0)) for key in REVIEW_QUEUE_CAUSE_KEYS
         },
         "reviewQueue": review_queue_rows[: max(0, int(risky_limit))],
         "topMergedJobs": top_rows[: max(0, int(top_limit))],

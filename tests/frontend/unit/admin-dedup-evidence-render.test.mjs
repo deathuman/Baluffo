@@ -66,6 +66,15 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
           review_provider_static_disagreement: 1,
           monitor: 4
         },
+        reviewQueueCauseCounts: {
+          category_or_department_bucket: 1,
+          open_application_family: 1,
+          listing_page_bundle: 2,
+          parser_or_directory_text_pollution: 1,
+          provider_static_disagreement: 1,
+          likely_legitimate_multi_role_family: 4,
+          unknown: 3
+        },
         topMergedJobs: [
           {
             title: "Senior Engineer",
@@ -106,6 +115,11 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
             company: "Kforce Inc",
             sourceBundleCount: 255,
             recommendedReviewAction: "review_listing_url_bundle",
+            suspectedCause: "listing_page_bundle",
+            causeEvidence: [
+              "cause:listing_page_bundle",
+              "identity:shared_listing_or_category_url"
+            ],
             identityShape: "shared_listing_or_category_url",
             outlierReason: "large_other_source_bundle",
             identityCaveats: ["shared_url_looks_like_listing_or_category", "category_like_title"],
@@ -146,6 +160,10 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /category title 1/i);
   assert.match(metricsEl.innerHTML, /open application 1/i);
   assert.match(metricsEl.innerHTML, /monitor 4/i);
+  assert.match(metricsEl.innerHTML, /Dedup review causes/i);
+  assert.match(metricsEl.innerHTML, /category 1/i);
+  assert.match(metricsEl.innerHTML, /parser\/text 1/i);
+  assert.match(metricsEl.innerHTML, /likely legitimate 4/i);
   assert.match(metricsEl.innerHTML, /Top source-bundle outliers/i);
   assert.match(metricsEl.innerHTML, /admin-dedup-evidence-table/i);
   assert.match(metricsEl.innerHTML, /Accounting/i);
@@ -162,6 +180,8 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /caveats shared url looks like listing or category/i);
   assert.match(metricsEl.innerHTML, /Dedup review examples/i);
   assert.match(metricsEl.innerHTML, /review listing url bundle/i);
+  assert.match(metricsEl.innerHTML, /listing page bundle; shared listing or category url/i);
+  assert.match(metricsEl.innerHTML, /cause evidence cause:listing page bundle/i);
   assert.match(metricsEl.innerHTML, /sources kforce-a \| kforce-b/i);
   assert.match(metricsEl.innerHTML, /Senior Engineer/i);
   assert.match(metricsEl.innerHTML, /Studio One/i);
