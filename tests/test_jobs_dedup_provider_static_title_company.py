@@ -80,6 +80,8 @@ def test_dedup_evidence_reports_title_company_collision_examples() -> None:
     assert collision["distinctLocationCount"] == 2
     assert collision["sampleLocations"] == ["amsterdam, nl", "rotterdam, nl"]
     assert collision["collisionReviewHint"] == "different_locations_same_title_company"
+    assert collision["carriedLocationPollutionAudit"] == "not_carried"
+    assert collision["carriedLocationPollutionEvidence"] == ["origin:current_run"]
 
 
 def test_dedup_evidence_tracks_carried_title_company_collision_counts() -> None:
@@ -105,6 +107,12 @@ def test_dedup_evidence_tracks_carried_title_company_collision_counts() -> None:
         evidence["providerStaticTitleCompanyCollisionExamples"][0]["bundleEvidenceOrigin"]
         == "carried_from_existing_output"
     )
+    assert evidence["providerStaticTitleCompanyCollisionAuditCounts"] == {
+        "carried_location_pollution": 0,
+        "possible_real_multi_location_conflict": 1,
+        "not_carried": 0,
+        "unknown": 0,
+    }
     assert evidence["dedupAuditGate"]["examples"][0]["recommendedReviewAction"] == (
         "review_provider_static_title_company_collision"
     )
@@ -140,6 +148,100 @@ def test_dedup_evidence_excludes_non_title_company_disagreement_from_collision_e
         "carried": 0,
     }
     assert evidence["providerStaticTitleCompanyCollisionExamples"] == []
+
+
+def test_dedup_evidence_audits_carried_location_pollution_from_title_overlap() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _provider_static_row(
+                title="Concept Artist / Illustrator",
+                locations=[
+                    {"city": "Illustrator", "country": ""},
+                    {"city": "Salem", "country": "US"},
+                ],
+            )
+        ],
+        seeded_from_existing_output=True,
+    )
+
+    collision = evidence["providerStaticTitleCompanyCollisionExamples"][0]
+    assert collision["carriedLocationPollutionAudit"] == "carried_location_pollution"
+    assert "location_token_overlaps_title" in collision["carriedLocationPollutionEvidence"]
+    assert "plausible_location_count:1" in collision["carriedLocationPollutionEvidence"]
+    assert "polluted_location_count:1" in collision["carriedLocationPollutionEvidence"]
+    assert evidence["providerStaticTitleCompanyCollisionAuditCounts"] == {
+        "carried_location_pollution": 1,
+        "possible_real_multi_location_conflict": 0,
+        "not_carried": 0,
+        "unknown": 0,
+    }
+
+
+def test_dedup_evidence_audits_carried_location_pollution_from_repeated_company_token() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _provider_static_row(
+                dedupKey="key-1",
+                title="3D Character Artist",
+                locations=[
+                    {"city": "Illustrator", "country": ""},
+                    {"city": "Salem", "country": "US"},
+                ],
+            ),
+            _provider_static_row(
+                dedupKey="key-2",
+                title="Lead Animator",
+                locations=[
+                    {"city": "Illustrator", "country": ""},
+                    {"city": "Salem", "country": "US"},
+                ],
+            ),
+            _provider_static_row(
+                dedupKey="key-3",
+                title="Unreal Engine Programmer",
+                locations=[
+                    {"city": "Illustrator", "country": ""},
+                    {"city": "Salem", "country": "US"},
+                ],
+            ),
+        ],
+        seeded_from_existing_output=True,
+    )
+
+    rows = evidence["providerStaticTitleCompanyCollisionExamples"]
+    assert len(rows) == 3
+    assert all(row["carriedLocationPollutionAudit"] == "carried_location_pollution" for row in rows)
+    assert any(
+        "repeated_company_location_token:illustrator" in row["carriedLocationPollutionEvidence"]
+        for row in rows
+    )
+    assert evidence["providerStaticTitleCompanyCollisionAuditCounts"] == {
+        "carried_location_pollution": 3,
+        "possible_real_multi_location_conflict": 0,
+        "not_carried": 0,
+        "unknown": 0,
+    }
+
+
+def test_dedup_evidence_audits_carried_real_multi_location_conflict() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _provider_static_row(
+                locations=[
+                    {"city": "Amsterdam", "country": "NL"},
+                    {"city": "Rotterdam", "country": "NL"},
+                ],
+            )
+        ],
+        seeded_from_existing_output=True,
+    )
+
+    collision = evidence["providerStaticTitleCompanyCollisionExamples"][0]
+    assert collision["carriedLocationPollutionAudit"] == "possible_real_multi_location_conflict"
+    assert "plausible_location_count:2" in collision["carriedLocationPollutionEvidence"]
 
 
 def test_dedup_evidence_reports_collision_review_hint_variants() -> None:

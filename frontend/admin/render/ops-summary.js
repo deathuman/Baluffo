@@ -392,6 +392,16 @@ function formatProviderStaticTitleCompanyCollisionCounts(collisionCounts) {
   ].join(", ");
 }
 
+function formatProviderStaticTitleCompanyCollisionAuditCounts(auditCounts) {
+  const counts = auditCounts && typeof auditCounts === "object" ? auditCounts : {};
+  return [
+    `location pollution ${Number(counts?.carried_location_pollution || 0).toLocaleString()}`,
+    `possible real conflict ${Number(counts?.possible_real_multi_location_conflict || 0).toLocaleString()}`,
+    `not carried ${Number(counts?.not_carried || 0).toLocaleString()}`,
+    `unknown ${Number(counts?.unknown || 0).toLocaleString()}`
+  ].join(", ");
+}
+
 function formatProviderStaticDisagreementClassificationCounts(classificationCounts) {
   const counts = classificationCounts && typeof classificationCounts === "object" ? classificationCounts : {};
   return [
@@ -471,16 +481,22 @@ function formatProviderStaticTitleCompanyCollisionRows(rows, emptyText) {
       const classificationEvidence = Array.isArray(row?.disagreementClassificationEvidence)
         ? row.disagreementClassificationEvidence
         : [];
+      const audit = String(row?.carriedLocationPollutionAudit || "unknown").replaceAll("_", " ");
+      const auditEvidence = Array.isArray(row?.carriedLocationPollutionEvidence)
+        ? row.carriedLocationPollutionEvidence
+        : [];
       const detail = [
         `origin ${origin}`,
         `hint ${hint}`,
+        `audit ${audit}`,
         `locations ${Number(row?.distinctLocationCount || 0).toLocaleString()} (${locations.slice(0, 3).join(" | ") || "none"})`,
         `shared tokens ${tokens.slice(0, 3).join(", ") || "none"}`,
         `provider IDs ${providerIds.slice(0, 2).join(" | ") || "none"}`,
         `static IDs ${staticIds.slice(0, 2).join(" | ") || "none"}`,
         `provider URLs ${providerUrls.slice(0, 2).join(" | ") || "none"}`,
         `static URLs ${staticUrls.slice(0, 2).join(" | ") || "none"}`,
-        `evidence ${classificationEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`
+        `classification evidence ${classificationEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
+        `audit evidence ${auditEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`
       ].join("; ");
       return `
         <tr>
@@ -940,6 +956,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const providerStaticTitleCompanyCollisionCounts = dedupEvidence?.providerStaticTitleCompanyCollisionCounts && typeof dedupEvidence.providerStaticTitleCompanyCollisionCounts === "object"
     ? dedupEvidence.providerStaticTitleCompanyCollisionCounts
     : {};
+  const providerStaticTitleCompanyCollisionAuditCounts = dedupEvidence?.providerStaticTitleCompanyCollisionAuditCounts && typeof dedupEvidence.providerStaticTitleCompanyCollisionAuditCounts === "object"
+    ? dedupEvidence.providerStaticTitleCompanyCollisionAuditCounts
+    : {};
   const topMergedSummary = formatDedupMergedRows(
     dedupEvidence?.topMergedJobs,
     "No merged canonical jobs in the latest fetch report."
@@ -1037,7 +1056,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Audit Gate</strong>: ${escapeHtml(formatDedupAuditGate(dedupAuditGate))}. Examples: ${formatDedupAuditGateExamples(dedupAuditGate?.examples, "No gate examples.")}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static disagreements</strong>: ${escapeHtml(formatProviderStaticDisagreementCounts(providerStaticDisagreementCounts))}. Classifications: ${escapeHtml(formatProviderStaticDisagreementClassificationCounts(providerStaticDisagreementClassificationCounts))}. ${providerStaticDisagreementSummary}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static title-company collisions</strong>: ${escapeHtml(formatProviderStaticTitleCompanyCollisionCounts(providerStaticTitleCompanyCollisionCounts))}. ${providerStaticTitleCompanyCollisionSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static title-company collisions</strong>: ${escapeHtml(formatProviderStaticTitleCompanyCollisionCounts(providerStaticTitleCompanyCollisionCounts))}. Audit: ${escapeHtml(formatProviderStaticTitleCompanyCollisionAuditCounts(providerStaticTitleCompanyCollisionAuditCounts))}. ${providerStaticTitleCompanyCollisionSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup carried bundle examples</strong>: ${formatDedupAuditGateExamples(dedupEvidence?.carriedBundleExamples, "No carried bundle examples.")}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup source composition</strong>: ${escapeHtml(formatDedupSourceClasses(sourceBundleComposition))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup risk reasons</strong>: ${escapeHtml(formatDedupRiskReasonCounts(riskReasonCounts))}</div>

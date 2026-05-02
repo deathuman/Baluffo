@@ -290,6 +290,8 @@ Dedup auditability is the next product-risk gate before lifecycle UX. Treat the 
 
 When `providerStaticDisagreementClassificationCounts.title_company_collision` is nonzero, review `providerStaticTitleCompanyCollisionExamples` before treating the gate as ready. Those rows are capped separately from general provider/static disagreements and include provider/static URLs, source IDs, shared identifier tokens, locations, and `collisionReviewHint`. They are advisory evidence only; they do not permit merge/unmerge actions, source cleanup, registry edits, or lifecycle labels by themselves.
 
+If carried title/company collision rows expose `carriedLocationPollutionAudit=carried_location_pollution`, treat them as carried metadata warnings, not proof of a real provider/static multi-location conflict. Those rows usually reflect polluted carried `locations` data such as a role token being stored as a city. The audit remains read-only: it does not rewrite `jobs-unified.json`, does not change dedup merge rules, and does not by itself clear the lifecycle gate if unresolved provider/static conflicts remain.
+
 The first lifecycle UX slice must be read-only. It may show conservative labels such as `New`, `Reappeared`, `Recently removed`, and `Preserved because source failed`, but only when lifecycle/source-health evidence and dedup confidence support the label. Do not change retention policy, add merge/unmerge controls, perform source cleanup, or mutate registries in that first slice.
 
 ## Conservative Static Cleanup Proposals

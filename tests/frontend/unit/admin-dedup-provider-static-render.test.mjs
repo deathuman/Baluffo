@@ -64,6 +64,12 @@ test("admin render: provider/static disagreement examples are read-only", () => 
           currentRun: 0,
           carried: 1
         },
+        providerStaticTitleCompanyCollisionAuditCounts: {
+          carried_location_pollution: 1,
+          possible_real_multi_location_conflict: 0,
+          not_carried: 0,
+          unknown: 0
+        },
         providerStaticDisagreementExamples: [
           {
             title: "Executive Assistant",
@@ -104,6 +110,13 @@ test("admin render: provider/static disagreement examples are read-only", () => 
             distinctLocationCount: 2,
             sampleLocations: ["remote, us", "san francisco, us"],
             collisionReviewHint: "different_locations_same_title_company",
+            carriedLocationPollutionAudit: "carried_location_pollution",
+            carriedLocationPollutionEvidence: [
+              "origin:carried_from_existing_output",
+              "sample_location:illustrator",
+              "plausible_location_count:1",
+              "polluted_location_count:1"
+            ],
             disagreementClassificationEvidence: ["multiple_locations", "shared_token:744000018988355"]
           }
         ]
@@ -125,6 +138,9 @@ test("admin render: provider/static disagreement examples are read-only", () => 
   assert.match(metricsEl.innerHTML, /3D Character Artist/i);
   assert.match(metricsEl.innerHTML, /Epoch Games/i);
   assert.match(metricsEl.innerHTML, /hint different locations same title company/i);
+  assert.match(metricsEl.innerHTML, /Audit: location pollution 1, possible real conflict 0, not carried 0, unknown 0/i);
+  assert.match(metricsEl.innerHTML, /audit carried location pollution/i);
+  assert.match(metricsEl.innerHTML, /audit evidence origin:carried from existing output, sample location:illustrator/i);
   assert.match(metricsEl.innerHTML, /shared tokens 744000018988355/i);
   assert.match(
     metricsEl.innerHTML,

@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from urllib.parse import urlparse
 
+from src.jobs.adapters.location_rules import classify_city_garbage
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.shared.json_shapes import json_object_rows
@@ -56,6 +57,12 @@ PROVIDER_STATIC_DISAGREEMENT_CLASSIFICATION_KEYS = (
     "title_company_collision",
     "stale_carried_bundle",
     "needs_manual_review",
+)
+PROVIDER_STATIC_TITLE_COMPANY_COLLISION_AUDIT_KEYS = (
+    "carried_location_pollution",
+    "possible_real_multi_location_conflict",
+    "not_carried",
+    "unknown",
 )
 DEDUP_AUDIT_GATE_BLOCKER_CAUSES = frozenset(
     {
@@ -297,6 +304,16 @@ def _meaningful_locations(row: Mapping[str, Any]) -> list[str]:
     if label and norm_text(label) not in {"unknown", "n/a", "na", "none"}:
         values.add(norm_text(label))
     return sorted(values)
+
+
+def _location_label_parts(label: str) -> tuple[str, str]:
+    cleaned = clean_text(label)
+    if not cleaned:
+        return "", ""
+    if "," not in cleaned:
+        return cleaned, ""
+    city, country = cleaned.rsplit(",", 1)
+    return clean_text(city), clean_text(country)
 
 
 def _provider_items_missing_ids(bundle: Sequence[Mapping[str, Any]]) -> bool:
@@ -1344,6 +1361,92 @@ def _provider_static_collision_review_hint(
     return "unknown"
 
 
+def _company_countryless_location_token_counts(
+    rows: Sequence[Mapping[str, Any]],
+) -> dict[str, Counter[str]]:
+    counts: dict[str, Counter[str]] = {}
+    for row in rows:
+        if clean_text(row.get("bundleEvidenceOrigin")) != "carried_from_existing_output":
+            continue
+        company = norm_text(row.get("company"))
+        if not company:
+            continue
+        for label in row.get("sampleLocations") or []:
+            city, country = _location_label_parts(clean_text(label))
+            token = norm_text(city)
+            if not token or country:
+                continue
+            counts.setdefault(company, Counter())[token] += 1
+    return counts
+
+
+def _location_token_overlaps_title_or_company(city: str, row: Mapping[str, Any]) -> bool:
+    city_tokens = {
+        token
+        for token in norm_text(city).replace("-", " ").replace("_", " ").replace("/", " ").split()
+        if token
+    }
+    if not city_tokens:
+        return False
+    return bool(city_tokens & (set(_title_tokens(row)) | set(_company_tokens(row))))
+
+
+def _provider_static_title_company_collision_audit(
+    row: Mapping[str, Any],
+    repeated_countryless_tokens: Mapping[str, Counter[str]],
+) -> tuple[str, list[str]]:
+    origin = clean_text(row.get("bundleEvidenceOrigin")) or "unknown"
+    if origin != "carried_from_existing_output":
+        return "not_carried", [f"origin:{origin}"]
+
+    company_key = norm_text(row.get("company"))
+    repeated_for_company = repeated_countryless_tokens.get(company_key, Counter())
+    plausible_labels: list[str] = []
+    polluted_labels: list[str] = []
+    evidence = [f"origin:{origin}"]
+
+    for raw_label in row.get("sampleLocations") or []:
+        label = clean_text(raw_label)
+        if not label:
+            continue
+        city, country = _location_label_parts(label)
+        city_garbage = classify_city_garbage(city) if city else ""
+        repeated_token = norm_text(city)
+        overlaps_title = _location_token_overlaps_title_or_company(city, row)
+        repeated_pollution = (
+            bool(repeated_token)
+            and repeated_for_company.get(repeated_token, 0) >= 3
+            and not country
+        )
+        if country:
+            plausible_labels.append(label)
+            continue
+        if city_garbage:
+            polluted_labels.append(label)
+            evidence.append(f"garbage_category:{city_garbage}")
+            evidence.append(f"sample_location:{norm_text(city)}")
+            continue
+        if overlaps_title:
+            polluted_labels.append(label)
+            evidence.append("location_token_overlaps_title")
+            evidence.append(f"sample_location:{norm_text(city)}")
+            continue
+        if repeated_pollution:
+            polluted_labels.append(label)
+            evidence.append(f"repeated_company_location_token:{repeated_token}")
+            evidence.append(f"sample_location:{repeated_token}")
+            continue
+        plausible_labels.append(label)
+
+    evidence.append(f"plausible_location_count:{len(plausible_labels)}")
+    evidence.append(f"polluted_location_count:{len(polluted_labels)}")
+    if polluted_labels and len(plausible_labels) == 1:
+        return "carried_location_pollution", evidence[:8]
+    if len(plausible_labels) > 1:
+        return "possible_real_multi_location_conflict", evidence[:8]
+    return "unknown", evidence[:8]
+
+
 def _high_risk_origin_counts(summary: Mapping[str, Any], origin: str) -> tuple[int, int]:
     if summary.get("suspectedCause") not in DEDUP_AUDIT_GATE_BLOCKER_CAUSES:
         return 0, 0
@@ -1420,7 +1523,8 @@ def _audit_gate_blockers_and_warnings(
     *,
     merged_count: int,
     current_run_non_primary_merges: int,
-    provider_static_disagreement_count: int,
+    provider_static_disagreement_blocking_count: int,
+    provider_static_location_pollution_count: int,
     current_run_high_risk_review_queue_count: int,
     carried_high_risk_review_queue_count: int,
     carried_collision_likely_historical_count: int,
@@ -1432,8 +1536,10 @@ def _audit_gate_blockers_and_warnings(
         blockers.append("current_run_non_primary_merges_need_review")
     elif merged_count > 0:
         warnings.append("current_run_primary_url_merges_present")
-    if provider_static_disagreement_count > 0:
+    if provider_static_disagreement_blocking_count > 0:
         blockers.append("provider_static_disagreement_needs_review")
+    if provider_static_location_pollution_count > 0:
+        warnings.append("carried_provider_static_location_pollution_present")
     if current_run_high_risk_review_queue_count > 0:
         blockers.append("high_risk_review_queue_causes_need_review")
     elif high_risk_review_queue_count and not carried_high_risk_review_queue_count:
@@ -1449,6 +1555,28 @@ def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, An
     title_company_examples = json_object_rows(
         dedup_evidence.get("providerStaticTitleCompanyCollisionExamples")
     )
+    unresolved_title_company_examples = [
+        row
+        for row in title_company_examples
+        if clean_text(row.get("carriedLocationPollutionAudit")) != "carried_location_pollution"
+    ]
+    if unresolved_title_company_examples:
+        return [
+            {
+                "title": clean_text(row.get("title")),
+                "company": clean_text(row.get("company")),
+                "recommendedReviewAction": "review_provider_static_title_company_collision",
+                "suspectedCause": "provider_static_disagreement",
+                "sourceBundleCount": max(0, int(row.get("sourceBundleCount") or 0)),
+                "identityQuality": clean_text(row.get("identityQuality")),
+                "bundleEvidenceOrigin": clean_text(row.get("bundleEvidenceOrigin")),
+                "collisionReviewHint": clean_text(row.get("collisionReviewHint")),
+                "carriedLocationPollutionAudit": clean_text(
+                    row.get("carriedLocationPollutionAudit")
+                ),
+            }
+            for row in unresolved_title_company_examples[:5]
+        ]
     if title_company_examples:
         return [
             {
@@ -1460,6 +1588,9 @@ def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, An
                 "identityQuality": clean_text(row.get("identityQuality")),
                 "bundleEvidenceOrigin": clean_text(row.get("bundleEvidenceOrigin")),
                 "collisionReviewHint": clean_text(row.get("collisionReviewHint")),
+                "carriedLocationPollutionAudit": clean_text(
+                    row.get("carriedLocationPollutionAudit")
+                ),
             }
             for row in title_company_examples[:5]
         ]
@@ -1524,6 +1655,9 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
     provider_static_disagreement_counts = _mapping_value(
         dedup_evidence, "providerStaticDisagreementCounts"
     )
+    title_company_collision_audit_counts = _mapping_value(
+        dedup_evidence, "providerStaticTitleCompanyCollisionAuditCounts"
+    )
     provider_static_disagreement_count = _audit_gate_provider_static_disagreement_count(
         provider_static_disagreement_counts=provider_static_disagreement_counts,
         review_queue_cause_counts=review_queue_cause_counts,
@@ -1535,6 +1669,12 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
     )
     provider_static_carried_count = max(
         0, int(provider_static_disagreement_counts.get("carried") or 0)
+    )
+    provider_static_location_pollution_count = max(
+        0, int(title_company_collision_audit_counts.get("carried_location_pollution") or 0)
+    )
+    provider_static_disagreement_blocking_count = max(
+        0, provider_static_disagreement_count - provider_static_location_pollution_count
     )
     high_risk_review_queue_count = _audit_gate_high_risk_count(review_queue_cause_counts)
     current_run_non_primary_merges = max(
@@ -1551,7 +1691,8 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
     blockers, warnings = _audit_gate_blockers_and_warnings(
         merged_count=merged_count,
         current_run_non_primary_merges=current_run_non_primary_merges,
-        provider_static_disagreement_count=provider_static_disagreement_count,
+        provider_static_disagreement_blocking_count=provider_static_disagreement_blocking_count,
+        provider_static_location_pollution_count=provider_static_location_pollution_count,
         current_run_high_risk_review_queue_count=current_run_high_risk_review_queue_count,
         carried_high_risk_review_queue_count=carried_high_risk_review_queue_count,
         carried_collision_likely_historical_count=carried_collision_likely_historical_count,
@@ -1738,6 +1879,20 @@ def build_dedup_evidence(
         for row in provider_static_disagreement_rows
         if row.get("disagreementClassification") == "title_company_collision"
     ]
+    repeated_countryless_tokens = _company_countryless_location_token_counts(
+        provider_static_title_company_collision_rows
+    )
+    provider_static_title_company_collision_rows = [
+        {
+            **row,
+            "carriedLocationPollutionAudit": audit,
+            "carriedLocationPollutionEvidence": evidence,
+        }
+        for row in provider_static_title_company_collision_rows
+        for audit, evidence in [
+            _provider_static_title_company_collision_audit(row, repeated_countryless_tokens)
+        ]
+    ]
     title_company_current_run_count = sum(
         1
         for row in provider_static_title_company_collision_rows
@@ -1747,6 +1902,10 @@ def build_dedup_evidence(
         1
         for row in provider_static_title_company_collision_rows
         if row.get("bundleEvidenceOrigin") != "current_run"
+    )
+    provider_static_title_company_collision_audit_counts = Counter(
+        clean_text(row.get("carriedLocationPollutionAudit")) or "unknown"
+        for row in provider_static_title_company_collision_rows
     )
     provider_static_disagreement_count = (
         current_run_provider_static_disagreement_count + carried_provider_static_disagreement_count
@@ -1775,6 +1934,10 @@ def build_dedup_evidence(
             "total": len(provider_static_title_company_collision_rows),
             "currentRun": title_company_current_run_count,
             "carried": title_company_carried_count,
+        },
+        "providerStaticTitleCompanyCollisionAuditCounts": {
+            key: int(provider_static_title_company_collision_audit_counts.get(key, 0))
+            for key in PROVIDER_STATIC_TITLE_COMPANY_COLLISION_AUDIT_KEYS
         },
         "sourceBundleComposition": {
             key: int(composition.get(key, 0)) for key in ("provider", "static", "social", "other")
