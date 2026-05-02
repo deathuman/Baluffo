@@ -114,6 +114,28 @@ export function createOpsHealthController({
     return { action };
   }
 
+  function buildDedupReviewActionPayload(row, action) {
+    return {
+      action,
+      title: String(row?.title || ""),
+      company: String(row?.company || ""),
+      dedupKey: String(row?.dedupKey || ""),
+      bundleEvidenceOrigin: String(row?.bundleEvidenceOrigin || ""),
+      disagreementClassification: String(row?.disagreementClassification || ""),
+      providerSourceJobIds: Array.isArray(row?.providerSourceJobIds) ? row.providerSourceJobIds : [],
+      staticSourceJobIds: Array.isArray(row?.staticSourceJobIds) ? row.staticSourceJobIds : [],
+      providerSources: Array.isArray(row?.providerSources) ? row.providerSources : [],
+      staticSources: Array.isArray(row?.staticSources) ? row.staticSources : [],
+      providerUrls: Array.isArray(row?.providerUrls) ? row.providerUrls : [],
+      staticUrls: Array.isArray(row?.staticUrls) ? row.staticUrls : [],
+      sharedIdentifierTokens: Array.isArray(row?.sharedIdentifierTokens) ? row.sharedIdentifierTokens : [],
+      distinctLocationCount: Number(row?.distinctLocationCount || 0),
+      sampleLocations: Array.isArray(row?.sampleLocations) ? row.sampleLocations : [],
+      identityQuality: String(row?.identityQuality || ""),
+      carriedLocationPollutionAudit: String(row?.carriedLocationPollutionAudit || "")
+    };
+  }
+
   async function handleSourcePolicyAction(row, action) {
     if (!row || !action) return;
     try {
@@ -121,6 +143,16 @@ export function createOpsHealthController({
       await loadOpsHealthData();
     } catch (err) {
       showToast(`Could not update source policy review: ${getErrorMessage(err)}`, "error");
+    }
+  }
+
+  async function handleDedupReviewAction(row, action) {
+    if (!row || !action) return;
+    try {
+      await postBridge("/dedup/review-action", buildDedupReviewActionPayload(row, action));
+      await loadOpsHealthData();
+    } catch (err) {
+      showToast(`Could not update dedup review: ${getErrorMessage(err)}`, "error");
     }
   }
 
@@ -266,7 +298,8 @@ export function createOpsHealthController({
       renderAdminOpsFetcherMetricsImpl(
         refs.adminOpsFetcherMetricsEl,
         fetcherMetrics || {},
-        deriveFetcherFailureSummary(state.latestFetcherReportCache || {})
+        deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
+        { onDedupReviewAction: handleDedupReviewAction }
       );
       renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel);
       renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);

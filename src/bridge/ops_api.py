@@ -17,12 +17,14 @@ from src.bridge import ops_history_projection as _ops_history_projection
 from src.bridge import ops_task_live as _ops_task_live
 from src.bridge import report_normalizer
 from src.bridge import run_history_api as _run_history_api
+from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 
 
 @dataclass(frozen=True)
 class OpsPaths:
     ops_alert_state: Path
     jobs_fetch_report: Path
+    dedup_review_state: Path
     jobs_fetch_tasks: Path
     discovery_report: Path
     sync_live_task: Path
@@ -200,8 +202,11 @@ class OpsApi:
         )
 
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]:
-        latest_fetch_report = self._deps.normalize_fetch_report_contract(
-            self._deps.load_json_object(self._paths.jobs_fetch_report, {})
+        latest_fetch_report, _warning = load_fetch_report_with_dedup_review_state(
+            load_json_object=self._deps.load_json_object,
+            normalize_fetch_report_contract=self._deps.normalize_fetch_report_contract,
+            jobs_fetch_report_path=self._paths.jobs_fetch_report,
+            dedup_review_state_path=self._paths.dedup_review_state,
         )
         history = self.get_projected_run_history().rows
         return fetcher_metrics_module.build_metrics(

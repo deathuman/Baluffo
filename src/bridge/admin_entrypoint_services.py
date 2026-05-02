@@ -256,6 +256,7 @@ def get_ops_api() -> _OpsApiLike:
             paths=root_mod._ops_api.OpsPaths(
                 ops_alert_state=root_mod.OPS_ALERT_STATE_PATH,
                 jobs_fetch_report=root_mod.JOBS_FETCH_REPORT_PATH,
+                dedup_review_state=root_mod.DEDUP_REVIEW_STATE_PATH,
                 jobs_fetch_tasks=root_mod.JOBS_FETCH_TASKS_PATH,
                 discovery_report=root_mod.DISCOVERY_REPORT_PATH,
                 sync_live_task=root_mod.SYNC_LIVE_TASK_PATH,

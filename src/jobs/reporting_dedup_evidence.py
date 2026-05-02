@@ -8,6 +8,11 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.jobs.adapters.location_rules import classify_city_garbage
+from src.jobs.common.contracts_dedup_review_state import (
+    dedup_disagreement_gate_disposition,
+    dedup_review_pair_public_fields,
+    find_dedup_review_pair,
+)
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.shared.json_shapes import json_object_rows
@@ -1519,12 +1524,39 @@ def _audit_gate_high_risk_count(review_queue_cause_counts: Mapping[str, Any]) ->
     )
 
 
+def _provider_static_gate_alerts(
+    *,
+    current_run_provider_static_disagreement_blocking_count: int,
+    carried_provider_static_disagreement_blocking_count: int,
+    provider_static_location_pollution_count: int,
+    provider_static_auto_safe_warning_count: int,
+    provider_static_reviewed_safe_warning_count: int,
+) -> tuple[list[str], list[str]]:
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if (
+        current_run_provider_static_disagreement_blocking_count > 0
+        or carried_provider_static_disagreement_blocking_count > 0
+    ):
+        blockers.append("provider_static_disagreement_needs_review")
+    if provider_static_location_pollution_count > 0:
+        warnings.append("carried_provider_static_location_pollution_present")
+    if provider_static_auto_safe_warning_count > 0:
+        warnings.append("carried_provider_static_auto_safe_variants_present")
+    if provider_static_reviewed_safe_warning_count > 0:
+        warnings.append("carried_provider_static_reviewed_safe_present")
+    return blockers, warnings
+
+
 def _audit_gate_blockers_and_warnings(
     *,
     merged_count: int,
     current_run_non_primary_merges: int,
-    provider_static_disagreement_blocking_count: int,
+    current_run_provider_static_disagreement_blocking_count: int,
+    carried_provider_static_disagreement_blocking_count: int,
     provider_static_location_pollution_count: int,
+    provider_static_auto_safe_warning_count: int,
+    provider_static_reviewed_safe_warning_count: int,
     current_run_high_risk_review_queue_count: int,
     carried_high_risk_review_queue_count: int,
     carried_collision_likely_historical_count: int,
@@ -1536,10 +1568,19 @@ def _audit_gate_blockers_and_warnings(
         blockers.append("current_run_non_primary_merges_need_review")
     elif merged_count > 0:
         warnings.append("current_run_primary_url_merges_present")
-    if provider_static_disagreement_blocking_count > 0:
-        blockers.append("provider_static_disagreement_needs_review")
-    if provider_static_location_pollution_count > 0:
-        warnings.append("carried_provider_static_location_pollution_present")
+    provider_static_blockers, provider_static_warnings = _provider_static_gate_alerts(
+        current_run_provider_static_disagreement_blocking_count=(
+            current_run_provider_static_disagreement_blocking_count
+        ),
+        carried_provider_static_disagreement_blocking_count=(
+            carried_provider_static_disagreement_blocking_count
+        ),
+        provider_static_location_pollution_count=provider_static_location_pollution_count,
+        provider_static_auto_safe_warning_count=provider_static_auto_safe_warning_count,
+        provider_static_reviewed_safe_warning_count=provider_static_reviewed_safe_warning_count,
+    )
+    blockers.extend(provider_static_blockers)
+    warnings.extend(provider_static_warnings)
     if current_run_high_risk_review_queue_count > 0:
         blockers.append("high_risk_review_queue_causes_need_review")
     elif high_risk_review_queue_count and not carried_high_risk_review_queue_count:
@@ -1552,40 +1593,15 @@ def _audit_gate_blockers_and_warnings(
 
 
 def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, Any]]:
-    title_company_examples = json_object_rows(
-        dedup_evidence.get("providerStaticTitleCompanyCollisionExamples")
-    )
     provider_static_examples = json_object_rows(
         dedup_evidence.get("providerStaticDisagreementExamples")
     )
-    unresolved_title_company_examples = [
-        row
-        for row in title_company_examples
-        if clean_text(row.get("carriedLocationPollutionAudit")) != "carried_location_pollution"
-    ]
-    if unresolved_title_company_examples:
-        return [
-            {
-                "title": clean_text(row.get("title")),
-                "company": clean_text(row.get("company")),
-                "recommendedReviewAction": "review_provider_static_title_company_collision",
-                "suspectedCause": "provider_static_disagreement",
-                "sourceBundleCount": max(0, int(row.get("sourceBundleCount") or 0)),
-                "identityQuality": clean_text(row.get("identityQuality")),
-                "bundleEvidenceOrigin": clean_text(row.get("bundleEvidenceOrigin")),
-                "collisionReviewHint": clean_text(row.get("collisionReviewHint")),
-                "carriedLocationPollutionAudit": clean_text(
-                    row.get("carriedLocationPollutionAudit")
-                ),
-            }
-            for row in unresolved_title_company_examples[:5]
-        ]
-    unresolved_provider_static_examples = [
+    blocking_provider_static_examples = [
         row
         for row in provider_static_examples
-        if clean_text(row.get("disagreementClassification")) != "title_company_collision"
+        if clean_text(row.get("disagreementGateDisposition")) == "blocked"
     ]
-    if unresolved_provider_static_examples:
+    if blocking_provider_static_examples:
         return [
             {
                 "title": clean_text(row.get("title")),
@@ -1596,27 +1612,21 @@ def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, An
                 "identityQuality": clean_text(row.get("identityQuality")),
                 "bundleEvidenceOrigin": clean_text(row.get("bundleEvidenceOrigin")),
                 "disagreementClassification": clean_text(row.get("disagreementClassification")),
-            }
-            for row in unresolved_provider_static_examples[:5]
-        ]
-    if title_company_examples:
-        return [
-            {
-                "title": clean_text(row.get("title")),
-                "company": clean_text(row.get("company")),
-                "recommendedReviewAction": "review_provider_static_title_company_collision",
-                "suspectedCause": "provider_static_disagreement",
-                "sourceBundleCount": max(0, int(row.get("sourceBundleCount") or 0)),
-                "identityQuality": clean_text(row.get("identityQuality")),
-                "bundleEvidenceOrigin": clean_text(row.get("bundleEvidenceOrigin")),
+                "disagreementGateDisposition": clean_text(row.get("disagreementGateDisposition")),
+                "dedupReviewStatus": clean_text(row.get("dedupReviewStatus")),
                 "collisionReviewHint": clean_text(row.get("collisionReviewHint")),
                 "carriedLocationPollutionAudit": clean_text(
                     row.get("carriedLocationPollutionAudit")
                 ),
             }
-            for row in title_company_examples[:5]
+            for row in blocking_provider_static_examples[:5]
         ]
-    if provider_static_examples:
+    warning_provider_static_examples = [
+        row
+        for row in provider_static_examples
+        if clean_text(row.get("disagreementGateDisposition")) == "warning"
+    ]
+    if warning_provider_static_examples:
         return [
             {
                 "title": clean_text(row.get("title")),
@@ -1626,8 +1636,15 @@ def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, An
                 "sourceBundleCount": max(0, int(row.get("sourceBundleCount") or 0)),
                 "identityQuality": clean_text(row.get("identityQuality")),
                 "bundleEvidenceOrigin": clean_text(row.get("bundleEvidenceOrigin")),
+                "disagreementClassification": clean_text(row.get("disagreementClassification")),
+                "disagreementGateDisposition": clean_text(row.get("disagreementGateDisposition")),
+                "dedupReviewStatus": clean_text(row.get("dedupReviewStatus")),
+                "collisionReviewHint": clean_text(row.get("collisionReviewHint")),
+                "carriedLocationPollutionAudit": clean_text(
+                    row.get("carriedLocationPollutionAudit")
+                ),
             }
-            for row in provider_static_examples[:5]
+            for row in warning_provider_static_examples[:5]
         ]
     examples = []
     for row in dedup_evidence.get("reviewQueue") or []:
@@ -1674,6 +1691,9 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
     provider_static_disagreement_counts = _mapping_value(
         dedup_evidence, "providerStaticDisagreementCounts"
     )
+    provider_static_disagreement_gate_counts = _mapping_value(
+        dedup_evidence, "providerStaticDisagreementGateCounts"
+    )
     title_company_collision_audit_counts = _mapping_value(
         dedup_evidence, "providerStaticTitleCompanyCollisionAuditCounts"
     )
@@ -1689,11 +1709,20 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
     provider_static_carried_count = max(
         0, int(provider_static_disagreement_counts.get("carried") or 0)
     )
+    current_run_provider_static_disagreement_blocking_count = max(
+        0, int(provider_static_disagreement_gate_counts.get("currentRunBlocked") or 0)
+    )
+    carried_provider_static_disagreement_blocking_count = max(
+        0, int(provider_static_disagreement_gate_counts.get("carriedBlocked") or 0)
+    )
     provider_static_location_pollution_count = max(
         0, int(title_company_collision_audit_counts.get("carried_location_pollution") or 0)
     )
-    provider_static_disagreement_blocking_count = max(
-        0, provider_static_disagreement_count - provider_static_location_pollution_count
+    provider_static_auto_safe_warning_count = max(
+        0, int(provider_static_disagreement_gate_counts.get("autoSafeWarning") or 0)
+    )
+    provider_static_reviewed_safe_warning_count = max(
+        0, int(provider_static_disagreement_gate_counts.get("reviewedSafeWarning") or 0)
     )
     high_risk_review_queue_count = _audit_gate_high_risk_count(review_queue_cause_counts)
     current_run_non_primary_merges = max(
@@ -1710,8 +1739,15 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
     blockers, warnings = _audit_gate_blockers_and_warnings(
         merged_count=merged_count,
         current_run_non_primary_merges=current_run_non_primary_merges,
-        provider_static_disagreement_blocking_count=provider_static_disagreement_blocking_count,
+        current_run_provider_static_disagreement_blocking_count=(
+            current_run_provider_static_disagreement_blocking_count
+        ),
+        carried_provider_static_disagreement_blocking_count=(
+            carried_provider_static_disagreement_blocking_count
+        ),
         provider_static_location_pollution_count=provider_static_location_pollution_count,
+        provider_static_auto_safe_warning_count=provider_static_auto_safe_warning_count,
+        provider_static_reviewed_safe_warning_count=provider_static_reviewed_safe_warning_count,
         current_run_high_risk_review_queue_count=current_run_high_risk_review_queue_count,
         carried_high_risk_review_queue_count=carried_high_risk_review_queue_count,
         carried_collision_likely_historical_count=carried_collision_likely_historical_count,
@@ -1732,6 +1768,14 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         "providerStaticDisagreementCount": provider_static_disagreement_count,
         "providerStaticDisagreementCurrentRunCount": provider_static_current_run_count,
         "providerStaticDisagreementCarriedCount": provider_static_carried_count,
+        "providerStaticDisagreementBlockedCount": max(
+            0,
+            current_run_provider_static_disagreement_blocking_count
+            + carried_provider_static_disagreement_blocking_count,
+        ),
+        "providerStaticDisagreementWarningCount": max(
+            0, int(provider_static_disagreement_gate_counts.get("warning") or 0)
+        ),
         "googleSheetsGenericRoleGuardActive": True,
         "carriedCollisionLikelyHistoricalCount": carried_collision_likely_historical_count,
         "reviewQueueCauseCounts": {
@@ -1751,6 +1795,7 @@ def build_dedup_evidence(
     top_limit: int = TOP_MERGED_LIMIT,
     risky_limit: int = RISKY_EXAMPLE_LIMIT,
     seeded_from_existing_output: bool = False,
+    review_state: Any = None,
 ) -> dict[str, Any]:
     """Build compact diagnostics without changing dedup decisions."""
     rows = [_payload(row) for row in canonical_rows]
@@ -1885,8 +1930,51 @@ def build_dedup_evidence(
             norm_text(row.get("dedupKey")),
         )
     )
+    provider_static_title_company_collision_rows = [
+        row
+        for row in provider_static_disagreement_rows
+        if row.get("disagreementClassification") == "title_company_collision"
+    ]
+    repeated_countryless_tokens = _company_countryless_location_token_counts(
+        provider_static_title_company_collision_rows
+    )
+    provider_static_disagreement_rows = [
+        {
+            **row,
+            **(
+                {
+                    "carriedLocationPollutionAudit": audit,
+                    "carriedLocationPollutionEvidence": evidence,
+                }
+                if clean_text(row.get("disagreementClassification")) == "title_company_collision"
+                else {
+                    "carriedLocationPollutionAudit": "",
+                    "carriedLocationPollutionEvidence": [],
+                }
+            ),
+        }
+        for row in provider_static_disagreement_rows
+        for audit, evidence in [
+            _provider_static_title_company_collision_audit(row, repeated_countryless_tokens)
+            if clean_text(row.get("disagreementClassification")) == "title_company_collision"
+            else ("", [])
+        ]
+    ]
+    provider_static_disagreement_rows = [
+        {
+            **row,
+            **dedup_review_pair_public_fields(review_pair),
+            "disagreementGateDisposition": disposition,
+            "disagreementGateEvidence": gate_evidence,
+        }
+        for row in provider_static_disagreement_rows
+        for review_pair in [find_dedup_review_pair(review_state or {}, row)]
+        for disposition, gate_evidence in [dedup_disagreement_gate_disposition(row, review_pair)]
+    ]
+    disposition_order = {"blocked": 0, "warning": 1}
     provider_static_disagreement_rows.sort(
         key=lambda row: (
+            disposition_order.get(clean_text(row.get("disagreementGateDisposition")), 9),
             norm_text(row.get("bundleEvidenceOrigin")),
             norm_text(row.get("company")),
             norm_text(row.get("title")),
@@ -1897,20 +1985,6 @@ def build_dedup_evidence(
         row
         for row in provider_static_disagreement_rows
         if row.get("disagreementClassification") == "title_company_collision"
-    ]
-    repeated_countryless_tokens = _company_countryless_location_token_counts(
-        provider_static_title_company_collision_rows
-    )
-    provider_static_title_company_collision_rows = [
-        {
-            **row,
-            "carriedLocationPollutionAudit": audit,
-            "carriedLocationPollutionEvidence": evidence,
-        }
-        for row in provider_static_title_company_collision_rows
-        for audit, evidence in [
-            _provider_static_title_company_collision_audit(row, repeated_countryless_tokens)
-        ]
     ]
     title_company_current_run_count = sum(
         1
@@ -1925,6 +1999,55 @@ def build_dedup_evidence(
     provider_static_title_company_collision_audit_counts = Counter(
         clean_text(row.get("carriedLocationPollutionAudit")) or "unknown"
         for row in provider_static_title_company_collision_rows
+    )
+    provider_static_disagreement_gate_counts = Counter(
+        clean_text(row.get("disagreementGateDisposition")) or "blocked"
+        for row in provider_static_disagreement_rows
+    )
+    current_run_provider_static_disagreement_blocked_count = sum(
+        1
+        for row in provider_static_disagreement_rows
+        if row.get("bundleEvidenceOrigin") == "current_run"
+        and clean_text(row.get("disagreementGateDisposition")) == "blocked"
+    )
+    carried_provider_static_disagreement_blocked_count = sum(
+        1
+        for row in provider_static_disagreement_rows
+        if row.get("bundleEvidenceOrigin") != "current_run"
+        and clean_text(row.get("disagreementGateDisposition")) == "blocked"
+    )
+    carried_provider_static_disagreement_warning_count = sum(
+        1
+        for row in provider_static_disagreement_rows
+        if row.get("bundleEvidenceOrigin") != "current_run"
+        and clean_text(row.get("disagreementGateDisposition")) == "warning"
+    )
+    provider_static_auto_safe_warning_count = sum(
+        1
+        for row in provider_static_disagreement_rows
+        if clean_text(row.get("disagreementGateDisposition")) == "warning"
+        and any(
+            clean_text(item).startswith("auto_safe_")
+            for item in row.get("disagreementGateEvidence") or []
+        )
+    )
+    provider_static_reviewed_safe_warning_count = sum(
+        1
+        for row in provider_static_disagreement_rows
+        if clean_text(row.get("dedupReviewStatus")) == "reviewed_safe"
+        and clean_text(row.get("disagreementGateDisposition")) == "warning"
+    )
+    provider_static_confirmed_blocking_count = sum(
+        1
+        for row in provider_static_disagreement_rows
+        if clean_text(row.get("dedupReviewStatus")) == "confirmed_blocking"
+        and clean_text(row.get("disagreementGateDisposition")) == "blocked"
+    )
+    provider_static_location_pollution_warning_count = sum(
+        1
+        for row in provider_static_title_company_collision_rows
+        if clean_text(row.get("carriedLocationPollutionAudit")) == "carried_location_pollution"
+        and clean_text(row.get("disagreementGateDisposition")) == "warning"
     )
     provider_static_disagreement_count = (
         current_run_provider_static_disagreement_count + carried_provider_static_disagreement_count
@@ -1944,6 +2067,17 @@ def build_dedup_evidence(
             "total": provider_static_disagreement_count,
             "currentRun": current_run_provider_static_disagreement_count,
             "carried": carried_provider_static_disagreement_count,
+        },
+        "providerStaticDisagreementGateCounts": {
+            "blocked": int(provider_static_disagreement_gate_counts.get("blocked", 0)),
+            "warning": int(provider_static_disagreement_gate_counts.get("warning", 0)),
+            "currentRunBlocked": current_run_provider_static_disagreement_blocked_count,
+            "carriedBlocked": carried_provider_static_disagreement_blocked_count,
+            "carriedWarning": carried_provider_static_disagreement_warning_count,
+            "autoSafeWarning": provider_static_auto_safe_warning_count,
+            "locationPollutionWarning": provider_static_location_pollution_warning_count,
+            "reviewedSafeWarning": provider_static_reviewed_safe_warning_count,
+            "confirmedBlocking": provider_static_confirmed_blocking_count,
         },
         "providerStaticDisagreementClassificationCounts": {
             key: int(provider_static_disagreement_classification_counts.get(key, 0))

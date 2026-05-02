@@ -8,6 +8,7 @@ from typing import Any
 from src.contracts import SCHEMA_VERSION
 from src.core.contracts import validate_canonical_jobs_payload
 from src.jobs.canonicalize import snapshot_sector_quality_audit
+from src.jobs.common.contracts_dedup_review_state import read_dedup_review_state_artifact
 from src.jobs.common.contracts_fetch_report import normalize_fetch_report_payload
 from src.jobs.common.contracts_provider_coverage import build_provider_coverage_summary
 from src.jobs.common.contracts_provider_static_overlap import (
@@ -572,10 +573,14 @@ def finalize_pipeline_run(
         lifecycle_counts_map=lifecycle_counts_map,
         summary_source_rows=final_source_rows,
     )
+    dedup_review_state, dedup_review_state_warning = read_dedup_review_state_artifact(
+        paths.dedup_review_state_path
+    )
     dedup_evidence_payload = build_dedup_evidence(
         dedup_stats,
         deduped_payload_rows,
         seeded_from_existing_output=effective_seed_from_existing_output,
+        review_state=dedup_review_state,
     )
 
     report_payload = normalize_fetch_report_payload(
@@ -621,6 +626,7 @@ def finalize_pipeline_run(
                 "parserRegressionQueue": str(paths.parser_regression_queue_path),
                 "sourcePolicyRecommendations": str(paths.source_policy_recommendations_path),
                 "sourcePolicyReviewState": str(paths.source_policy_review_state_path),
+                "dedupReviewState": str(paths.dedup_review_state_path),
                 "changed": {"json": wrote_json, "csv": wrote_csv, "lightJson": wrote_light_json},
             },
         }
@@ -680,6 +686,18 @@ def finalize_pipeline_run(
         provider_static_overlap=report_payload["providerStaticOverlap"],
         provider_coverage=report_payload["providerCoverage"],
     )
+    if dedup_review_state_warning:
+        report_payload["dedupReviewStateExport"] = {
+            "status": "warning",
+            "artifactPath": str(paths.dedup_review_state_path),
+            "warning": dedup_review_state_warning,
+        }
+    else:
+        report_payload["dedupReviewStateExport"] = {
+            "status": "ok",
+            "artifactPath": str(paths.dedup_review_state_path),
+            "reviewedPairCount": int(dedup_review_state.get("summary", {}).get("totalPairs") or 0),
+        }
     source_policy_recommendation_warning = ""
     source_policy_review_state_warning = ""
     source_policy_recommendations_path = paths.source_policy_recommendations_path

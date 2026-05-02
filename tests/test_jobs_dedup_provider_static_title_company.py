@@ -114,7 +114,7 @@ def test_dedup_evidence_tracks_carried_title_company_collision_counts() -> None:
         "unknown": 0,
     }
     assert evidence["dedupAuditGate"]["examples"][0]["recommendedReviewAction"] == (
-        "review_provider_static_title_company_collision"
+        "review_provider_static_disagreement"
     )
 
 

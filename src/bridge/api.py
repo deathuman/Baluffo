@@ -240,6 +240,7 @@ class BridgeApi:
     STARTUP_METRICS_PATH: Path
     SOURCE_POLICY_RECOMMENDATIONS_PATH: Path = Path("source-policy-recommendations.json")
     SOURCE_POLICY_REVIEW_STATE_PATH: Path = Path("source-policy-review-state.json")
+    DEDUP_REVIEW_STATE_PATH: Path = Path("data") / "dedup-review-state.json"
     DISCOVERY_CANDIDATES_PATH: Path | None = None
     DESKTOP_UPDATE_STATE_PATH: Path | None = None
 

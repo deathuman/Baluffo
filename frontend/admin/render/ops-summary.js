@@ -383,6 +383,20 @@ function formatProviderStaticDisagreementCounts(disagreementCounts) {
   ].join(", ");
 }
 
+function formatProviderStaticDisagreementGateCounts(gateCounts) {
+  const counts = gateCounts && typeof gateCounts === "object" ? gateCounts : {};
+  return [
+    `blocked ${Number(counts?.blocked || 0).toLocaleString()}`,
+    `warning ${Number(counts?.warning || 0).toLocaleString()}`,
+    `current blocked ${Number(counts?.currentRunBlocked || 0).toLocaleString()}`,
+    `carried blocked ${Number(counts?.carriedBlocked || 0).toLocaleString()}`,
+    `carried warning ${Number(counts?.carriedWarning || 0).toLocaleString()}`,
+    `auto-safe ${Number(counts?.autoSafeWarning || 0).toLocaleString()}`,
+    `reviewed safe ${Number(counts?.reviewedSafeWarning || 0).toLocaleString()}`,
+    `confirmed blocking ${Number(counts?.confirmedBlocking || 0).toLocaleString()}`
+  ].join(", ");
+}
+
 function formatProviderStaticTitleCompanyCollisionCounts(collisionCounts) {
   const counts = collisionCounts && typeof collisionCounts === "object" ? collisionCounts : {};
   return [
@@ -414,16 +428,33 @@ function formatProviderStaticDisagreementClassificationCounts(classificationCoun
   ].join(", ");
 }
 
-function formatProviderStaticDisagreementRows(rows, emptyText) {
+function renderDedupReviewActionButtons(tableKey, rowIndex, showActions) {
+  if (!showActions) return "";
+  return `
+    <div class="admin-inline-actions" data-dedup-review-actions="${escapeHtml(tableKey)}:${Number(rowIndex)}">
+      <button type="button" class="admin-pill-button" data-dedup-review-action="reviewed_safe" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Mark reviewed safe</button>
+      <button type="button" class="admin-pill-button" data-dedup-review-action="confirmed_blocking" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Mark confirmed blocking</button>
+      <button type="button" class="admin-pill-button" data-dedup-review-action="clear_review" data-dedup-review-table="${escapeHtml(tableKey)}" data-dedup-review-row="${Number(rowIndex)}">Clear review</button>
+    </div>
+  `;
+}
+
+function formatProviderStaticDisagreementRows(rows, emptyText, options = {}) {
   const disagreementRows = Array.isArray(rows) ? rows : [];
   if (!disagreementRows.length) return escapeHtml(emptyText);
+  const showActions = typeof options?.onReviewAction === "function";
+  const tableKey = String(options?.tableKey || "providerStatic");
   const body = disagreementRows
     .slice(0, 5)
-    .map(row => {
+    .map((row, rowIndex) => {
       const title = String(row?.title || "Untitled");
       const company = String(row?.company || "Unknown company");
       const origin = String(row?.bundleEvidenceOrigin || "unknown").replaceAll("_", " ");
       const quality = String(row?.identityQuality || "unknown").replaceAll("_", " ");
+      const disposition = String(row?.disagreementGateDisposition || "blocked").replaceAll("_", " ");
+      const reviewStatus = String(row?.dedupReviewStatus || "unreviewed").replaceAll("_", " ");
+      const reviewUpdatedBy = String(row?.dedupReviewUpdatedBy || "");
+      const reviewUpdatedAt = String(row?.dedupReviewUpdatedAt || "");
       const providerSources = Array.isArray(row?.providerSources) ? row.providerSources : [];
       const staticSources = Array.isArray(row?.staticSources) ? row.staticSources : [];
       const providerUrls = Array.isArray(row?.providerUrls) ? row.providerUrls : [];
@@ -433,15 +464,21 @@ function formatProviderStaticDisagreementRows(rows, emptyText) {
       const classificationEvidence = Array.isArray(row?.disagreementClassificationEvidence)
         ? row.disagreementClassificationEvidence
         : [];
+      const gateEvidence = Array.isArray(row?.disagreementGateEvidence)
+        ? row.disagreementGateEvidence
+        : [];
       const detail = [
         `origin ${origin}`,
         `classification ${classification}`,
+        `gate ${disposition}`,
+        `review ${reviewStatus}${reviewUpdatedBy ? ` by ${reviewUpdatedBy}` : ""}${reviewUpdatedAt ? ` at ${reviewUpdatedAt}` : ""}`,
         `quality ${quality}`,
         `provider ${providerSources.slice(0, 2).join(" | ") || "none"}`,
         `static ${staticSources.slice(0, 2).join(" | ") || "none"}`,
         `provider URLs ${providerUrls.slice(0, 2).join(" | ") || "none"}`,
         `static URLs ${staticUrls.slice(0, 2).join(" | ") || "none"}`,
         `classification evidence ${classificationEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
+        `gate evidence ${gateEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
         `evidence ${evidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`
       ].join("; ");
       return `
@@ -450,28 +487,35 @@ function formatProviderStaticDisagreementRows(rows, emptyText) {
           <td>${escapeHtml(company)}</td>
           <td>${Number(row?.sourceBundleCount || 0).toLocaleString()}</td>
           <td>${escapeHtml(detail)}</td>
+          <td>${renderDedupReviewActionButtons(tableKey, rowIndex, showActions)}</td>
         </tr>
       `;
     })
     .join("");
   return `
     <table class="admin-dedup-evidence-table">
-      <thead><tr><th>Title</th><th>Company</th><th>Sources</th><th>Provider/static evidence</th></tr></thead>
+      <thead><tr><th>Title</th><th>Company</th><th>Sources</th><th>Provider/static evidence</th><th>Review</th></tr></thead>
       <tbody>${body}</tbody>
     </table>
   `;
 }
 
-function formatProviderStaticTitleCompanyCollisionRows(rows, emptyText) {
+function formatProviderStaticTitleCompanyCollisionRows(rows, emptyText, options = {}) {
   const collisionRows = Array.isArray(rows) ? rows : [];
   if (!collisionRows.length) return escapeHtml(emptyText);
+  const showActions = typeof options?.onReviewAction === "function";
+  const tableKey = String(options?.tableKey || "providerStaticTitleCompany");
   const body = collisionRows
     .slice(0, 5)
-    .map(row => {
+    .map((row, rowIndex) => {
       const title = String(row?.title || "Untitled");
       const company = String(row?.company || "Unknown company");
       const origin = String(row?.bundleEvidenceOrigin || "unknown").replaceAll("_", " ");
       const hint = String(row?.collisionReviewHint || "unknown").replaceAll("_", " ");
+      const disposition = String(row?.disagreementGateDisposition || "blocked").replaceAll("_", " ");
+      const reviewStatus = String(row?.dedupReviewStatus || "unreviewed").replaceAll("_", " ");
+      const reviewUpdatedBy = String(row?.dedupReviewUpdatedBy || "");
+      const reviewUpdatedAt = String(row?.dedupReviewUpdatedAt || "");
       const providerUrls = Array.isArray(row?.providerUrls) ? row.providerUrls : [];
       const staticUrls = Array.isArray(row?.staticUrls) ? row.staticUrls : [];
       const providerIds = Array.isArray(row?.providerSourceJobIds) ? row.providerSourceJobIds : [];
@@ -485,9 +529,14 @@ function formatProviderStaticTitleCompanyCollisionRows(rows, emptyText) {
       const auditEvidence = Array.isArray(row?.carriedLocationPollutionEvidence)
         ? row.carriedLocationPollutionEvidence
         : [];
+      const gateEvidence = Array.isArray(row?.disagreementGateEvidence)
+        ? row.disagreementGateEvidence
+        : [];
       const detail = [
         `origin ${origin}`,
         `hint ${hint}`,
+        `gate ${disposition}`,
+        `review ${reviewStatus}${reviewUpdatedBy ? ` by ${reviewUpdatedBy}` : ""}${reviewUpdatedAt ? ` at ${reviewUpdatedAt}` : ""}`,
         `audit ${audit}`,
         `locations ${Number(row?.distinctLocationCount || 0).toLocaleString()} (${locations.slice(0, 3).join(" | ") || "none"})`,
         `shared tokens ${tokens.slice(0, 3).join(", ") || "none"}`,
@@ -496,7 +545,8 @@ function formatProviderStaticTitleCompanyCollisionRows(rows, emptyText) {
         `provider URLs ${providerUrls.slice(0, 2).join(" | ") || "none"}`,
         `static URLs ${staticUrls.slice(0, 2).join(" | ") || "none"}`,
         `classification evidence ${classificationEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
-        `audit evidence ${auditEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`
+        `audit evidence ${auditEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
+        `gate evidence ${gateEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`
       ].join("; ");
       return `
         <tr>
@@ -504,13 +554,14 @@ function formatProviderStaticTitleCompanyCollisionRows(rows, emptyText) {
           <td>${escapeHtml(company)}</td>
           <td>${Number(row?.sourceBundleCount || 0).toLocaleString()}</td>
           <td>${escapeHtml(detail)}</td>
+          <td>${renderDedupReviewActionButtons(tableKey, rowIndex, showActions)}</td>
         </tr>
       `;
     })
     .join("");
   return `
     <table class="admin-dedup-evidence-table">
-      <thead><tr><th>Title</th><th>Company</th><th>Sources</th><th>Collision evidence</th></tr></thead>
+      <thead><tr><th>Title</th><th>Company</th><th>Sources</th><th>Collision evidence</th><th>Review</th></tr></thead>
       <tbody>${body}</tbody>
     </table>
   `;
@@ -755,7 +806,7 @@ function formatDedupReviewQueueRows(rows, emptyText) {
   `;
 }
 
-export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null) {
+export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null, options = {}) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};
   const history = metrics?.history || {};
@@ -950,6 +1001,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const providerStaticDisagreementCounts = dedupEvidence?.providerStaticDisagreementCounts && typeof dedupEvidence.providerStaticDisagreementCounts === "object"
     ? dedupEvidence.providerStaticDisagreementCounts
     : {};
+  const providerStaticDisagreementGateCounts = dedupEvidence?.providerStaticDisagreementGateCounts && typeof dedupEvidence.providerStaticDisagreementGateCounts === "object"
+    ? dedupEvidence.providerStaticDisagreementGateCounts
+    : {};
   const providerStaticDisagreementClassificationCounts = dedupEvidence?.providerStaticDisagreementClassificationCounts && typeof dedupEvidence.providerStaticDisagreementClassificationCounts === "object"
     ? dedupEvidence.providerStaticDisagreementClassificationCounts
     : {};
@@ -975,13 +1029,21 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     dedupEvidence?.reviewQueue,
     "No dedup review queue examples in the latest fetch report."
   );
+  const providerStaticDisagreementRows = Array.isArray(dedupEvidence?.providerStaticDisagreementExamples)
+    ? dedupEvidence.providerStaticDisagreementExamples
+    : [];
+  const providerStaticTitleCompanyCollisionRows = Array.isArray(dedupEvidence?.providerStaticTitleCompanyCollisionExamples)
+    ? dedupEvidence.providerStaticTitleCompanyCollisionExamples
+    : [];
   const providerStaticDisagreementSummary = formatProviderStaticDisagreementRows(
-    dedupEvidence?.providerStaticDisagreementExamples,
-    "No provider/static disagreement examples in the latest fetch report."
+    providerStaticDisagreementRows,
+    "No provider/static disagreement examples in the latest fetch report.",
+    { onReviewAction: options?.onDedupReviewAction, tableKey: "providerStatic" }
   );
   const providerStaticTitleCompanyCollisionSummary = formatProviderStaticTitleCompanyCollisionRows(
-    dedupEvidence?.providerStaticTitleCompanyCollisionExamples,
-    "No provider/static title/company collision examples in the latest fetch report."
+    providerStaticTitleCompanyCollisionRows,
+    "No provider/static title/company collision examples in the latest fetch report.",
+    { onReviewAction: options?.onDedupReviewAction, tableKey: "providerStaticTitleCompany" }
   );
   const bucketSummaryHtml = bucketRows.length
     ? bucketRows.map(bucket => `
@@ -1055,7 +1117,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Audit Gate</strong>: ${escapeHtml(formatDedupAuditGate(dedupAuditGate))}. Examples: ${formatDedupAuditGateExamples(dedupAuditGate?.examples, "No gate examples.")}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static disagreements</strong>: ${escapeHtml(formatProviderStaticDisagreementCounts(providerStaticDisagreementCounts))}. Classifications: ${escapeHtml(formatProviderStaticDisagreementClassificationCounts(providerStaticDisagreementClassificationCounts))}. ${providerStaticDisagreementSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static disagreements</strong>: ${escapeHtml(formatProviderStaticDisagreementCounts(providerStaticDisagreementCounts))}. Gate: ${escapeHtml(formatProviderStaticDisagreementGateCounts(providerStaticDisagreementGateCounts))}. Classifications: ${escapeHtml(formatProviderStaticDisagreementClassificationCounts(providerStaticDisagreementClassificationCounts))}. ${providerStaticDisagreementSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static title-company collisions</strong>: ${escapeHtml(formatProviderStaticTitleCompanyCollisionCounts(providerStaticTitleCompanyCollisionCounts))}. Audit: ${escapeHtml(formatProviderStaticTitleCompanyCollisionAuditCounts(providerStaticTitleCompanyCollisionAuditCounts))}. ${providerStaticTitleCompanyCollisionSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup carried bundle examples</strong>: ${formatDedupAuditGateExamples(dedupEvidence?.carriedBundleExamples, "No carried bundle examples.")}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup source composition</strong>: ${escapeHtml(formatDedupSourceClasses(sourceBundleComposition))}</div>
@@ -1088,4 +1150,21 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Redundant static proposals</strong>: safe ${Number(redundantStaticProposals?.safeRedundantCount || 0).toLocaleString()}, keep static ${Number(redundantStaticProposals?.keepStaticCount || 0).toLocaleString()}, more history ${Number(redundantStaticProposals?.needsMoreHistoryCount || 0).toLocaleString()}, review/unstable ${Number((redundantStaticProposals?.needsReviewCount || 0) + (redundantStaticProposals?.providerUnstableCount || 0)).toLocaleString()}, static-only ${Number(redundantStaticProposals?.staticOnlyDetectedCount || 0).toLocaleString()}. Safe: ${safeRedundantProposalSummary} Keep: ${keepStaticProposalSummary} History: ${moreHistoryProposalSummary} Review: ${reviewProposalSummary} Static-only: ${staticOnlyProposalSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Source-policy review</strong>: local review pairs ${Number(sourcePolicyRecommendationExport?.reviewStatePairCount || 0).toLocaleString()}, force-paused ${Number(sourcePolicyRecommendationExport?.manualForcePausedCount || 0).toLocaleString()}. Use the Source Policy Review queue for local, reversible actions.</div>
   `;
+
+  if (typeof options?.onDedupReviewAction === "function") {
+    const rowGroups = {
+      providerStatic: providerStaticDisagreementRows.slice(0, 5),
+      providerStaticTitleCompany: providerStaticTitleCompanyCollisionRows.slice(0, 5)
+    };
+    metricsEl.querySelectorAll("[data-dedup-review-action]").forEach(button => {
+      button.addEventListener("click", () => {
+        const action = String(button.getAttribute("data-dedup-review-action") || "");
+        const tableKey = String(button.getAttribute("data-dedup-review-table") || "");
+        const rowIndex = Number(button.getAttribute("data-dedup-review-row") || -1);
+        const row = Array.isArray(rowGroups?.[tableKey]) ? rowGroups[tableKey][rowIndex] : null;
+        if (!row || !action) return;
+        options.onDedupReviewAction(row, action);
+      });
+    });
+  }
 }

@@ -12,6 +12,7 @@ from typing import Any
 from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
+from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
 from src.bridge.routes.error_boundary import (
     run_route_boundary,
     safe_bridge_log,
@@ -936,9 +937,14 @@ def handle_get(
 
     if path == "/ops/fetch-report":
         view = str((query.get("view") or [""])[0] or "").strip().lower()
-        payload = api.normalize_fetch_report_contract(
-            api.load_json_object(api.JOBS_FETCH_REPORT_PATH, {})
+        payload, dedup_review_state_warning = load_fetch_report_with_dedup_review_state(
+            load_json_object=api.load_json_object,
+            normalize_fetch_report_contract=api.normalize_fetch_report_contract,
+            jobs_fetch_report_path=api.JOBS_FETCH_REPORT_PATH,
+            dedup_review_state_path=api.DEDUP_REVIEW_STATE_PATH,
         )
+        if dedup_review_state_warning:
+            payload["dedupReviewStateReadWarning"] = dedup_review_state_warning
         if view == "live" and isinstance(payload, dict):
             payload = _compact_live_fetch_report_payload(payload)
         handler.send_json(payload)

@@ -17,6 +17,10 @@ from src.bridge.routes.error_boundary import (
 )
 from src.bridge.routes.response_writer import BridgeResponseWriter
 from src.bridge.source_policy_migration_links import apply_source_policy_migration_link_action
+from src.jobs.common.contracts_dedup_review_state import (
+    apply_dedup_review_action,
+    read_dedup_review_state_artifact,
+)
 from src.jobs.common.contracts_source_policy_review_state import (
     apply_source_policy_review_action,
     read_source_policy_review_state_artifact,
@@ -82,6 +86,35 @@ def _json_error(exc: Exception) -> dict[str, Any]:
 def _handle_source_policy_post(
     handler: BridgeResponseWriter, *, api: BridgeApi, path: str, data: dict[str, Any]
 ) -> bool:
+    if path == "/dedup/review-action":
+
+        def _payload() -> dict[str, Any]:
+            prior_review_state, warning = read_dedup_review_state_artifact(
+                api.DEDUP_REVIEW_STATE_PATH
+            )
+            review_state, pair = apply_dedup_review_action(
+                prior_artifact=prior_review_state,
+                action_payload=data,
+                updated_at=str(getattr(api, "now_iso", lambda: "")() or ""),
+                default_updated_by="admin",
+            )
+            api.save_json_atomic(api.DEDUP_REVIEW_STATE_PATH, review_state)
+            return {
+                "ok": True,
+                "pair": pair,
+                "summary": review_state.get("summary", {}),
+                "artifactPath": str(api.DEDUP_REVIEW_STATE_PATH),
+                **({"warning": warning} if warning else {}),
+            }
+
+        send_json_boundary(
+            handler,
+            _payload,
+            error_status=400,
+            error_payload=lambda exc: {"ok": False, "error": str(exc)},
+        )
+        return True
+
     if path == "/source-policy/review-action":
 
         def _payload() -> dict[str, Any]:

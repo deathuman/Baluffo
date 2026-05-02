@@ -19,6 +19,7 @@ class AdminBridgeTestPaths:
     discovery_candidates: Path
     source_policy_recommendations: Path
     source_policy_review_state: Path
+    dedup_review_state: Path
     approval_state: Path
     active_registry: Path
     pending_registry: Path
@@ -41,6 +42,7 @@ def admin_bridge_test_paths(root: Path) -> AdminBridgeTestPaths:
         discovery_candidates=root / "source-discovery-candidates.json",
         source_policy_recommendations=root / "source-policy-recommendations.json",
         source_policy_review_state=root / "source-policy-review-state.json",
+        dedup_review_state=root / "dedup-review-state.json",
         approval_state=root / "source-approval-state.json",
         active_registry=root / "source-registry-active.json",
         pending_registry=root / "source-registry-pending.json",
@@ -66,6 +68,7 @@ def patch_admin_bridge_paths(monkeypatch: Any, paths: AdminBridgeTestPaths) -> N
     monkeypatch.setattr(
         admin_bridge, "SOURCE_POLICY_REVIEW_STATE_PATH", paths.source_policy_review_state
     )
+    monkeypatch.setattr(admin_bridge, "DEDUP_REVIEW_STATE_PATH", paths.dedup_review_state)
     monkeypatch.setattr(admin_bridge, "APPROVAL_STATE_PATH", paths.approval_state)
     monkeypatch.setattr(
         admin_bridge.source_registry_module,

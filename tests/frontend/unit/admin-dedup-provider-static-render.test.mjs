@@ -51,6 +51,17 @@ test("admin render: provider/static disagreement examples are read-only", () => 
           currentRun: 0,
           carried: 1
         },
+        providerStaticDisagreementGateCounts: {
+          blocked: 1,
+          warning: 0,
+          currentRunBlocked: 0,
+          carriedBlocked: 1,
+          carriedWarning: 0,
+          autoSafeWarning: 0,
+          locationPollutionWarning: 0,
+          reviewedSafeWarning: 0,
+          confirmedBlocking: 0
+        },
         providerStaticDisagreementClassificationCounts: {
           same_job_different_urls: 1,
           provider_redirect_or_canonical_url: 0,
@@ -81,6 +92,13 @@ test("admin render: provider/static disagreement examples are read-only", () => 
             staticSources: ["static_source::static:listing_url:https://careers.animocabrands.com/jobs"],
             providerUrls: ["https://jobs.lever.co/animocabrands/abc"],
             staticUrls: ["https://careers.animocabrands.com/companies/animoca-brands/jobs/1"],
+            dedupReviewStatus: "confirmed_blocking",
+            dedupReviewUpdatedAt: "2026-05-02T10:00:00Z",
+            dedupReviewUpdatedBy: "admin",
+            disagreementGateDisposition: "blocked",
+            disagreementGateEvidence: [
+              "manual_review_confirmed_blocking"
+            ],
             disagreementClassification: "same_job_different_urls",
             disagreementClassificationEvidence: [
               "origin:carried_from_existing_output",
@@ -111,6 +129,8 @@ test("admin render: provider/static disagreement examples are read-only", () => 
             sampleLocations: ["remote, us", "san francisco, us"],
             collisionReviewHint: "different_locations_same_title_company",
             carriedLocationPollutionAudit: "carried_location_pollution",
+            disagreementGateDisposition: "warning",
+            disagreementGateEvidence: ["carried_location_pollution"],
             carriedLocationPollutionEvidence: [
               "origin:carried_from_existing_output",
               "sample_location:illustrator",
@@ -123,10 +143,11 @@ test("admin render: provider/static disagreement examples are read-only", () => 
       }
     },
     history: {}
-  });
+  }, null, { onDedupReviewAction() {} });
 
   assert.match(metricsEl.innerHTML, /Dedup provider\/static disagreements/i);
   assert.match(metricsEl.innerHTML, /total 1, current 0, carried 1/i);
+  assert.match(metricsEl.innerHTML, /Gate: blocked 1, warning 0, current blocked 0, carried blocked 1/i);
   assert.match(metricsEl.innerHTML, /same job\/different URLs 1/i);
   assert.match(metricsEl.innerHTML, /provider\/static current 0/i);
   assert.match(metricsEl.innerHTML, /provider\/static carried 1/i);
@@ -134,12 +155,18 @@ test("admin render: provider/static disagreement examples are read-only", () => 
   assert.match(metricsEl.innerHTML, /Animoca Brands/i);
   assert.match(metricsEl.innerHTML, /provider lever_sources/i);
   assert.match(metricsEl.innerHTML, /classification same job different urls/i);
+  assert.match(metricsEl.innerHTML, /gate blocked/i);
+  assert.match(metricsEl.innerHTML, /review confirmed blocking by admin at 2026-05-02T10:00:00Z/i);
+  assert.match(metricsEl.innerHTML, /Mark reviewed safe/i);
+  assert.match(metricsEl.innerHTML, /Mark confirmed blocking/i);
+  assert.match(metricsEl.innerHTML, /Clear review/i);
   assert.match(metricsEl.innerHTML, /Dedup provider\/static title-company collisions/i);
   assert.match(metricsEl.innerHTML, /3D Character Artist/i);
   assert.match(metricsEl.innerHTML, /Epoch Games/i);
   assert.match(metricsEl.innerHTML, /hint different locations same title company/i);
   assert.match(metricsEl.innerHTML, /Audit: location pollution 1, possible real conflict 0, not carried 0, unknown 0/i);
   assert.match(metricsEl.innerHTML, /audit carried location pollution/i);
+  assert.match(metricsEl.innerHTML, /gate warning/i);
   assert.match(metricsEl.innerHTML, /audit evidence origin:carried from existing output, sample location:illustrator/i);
   assert.match(metricsEl.innerHTML, /shared tokens 744000018988355/i);
   assert.match(

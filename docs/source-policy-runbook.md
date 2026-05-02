@@ -28,6 +28,7 @@ Runtime evidence changes local files. Keep these out of commits unless a change 
 - `data/source-registry-pending.json`
 - `data/jobs-fetch-report.json`
 - `data/jobs-source-state.json`
+- `data/dedup-review-state.json`
 - `data/source-policy-recommendations.json`
 - `data/source-policy-review-state.json`
 - `_out/`
@@ -286,7 +287,15 @@ active static
 
 Cleanup proposals are advisory until an explicit Admin action exists. The action must require operator confirmation and must explain provider/static pair evidence, repeated provider success, suppression or suppression-eligibility evidence, overlap/audit evidence, absence of static-only evidence, and source-sync cleanliness. It must not delete, tombstone, reject, mutate tracked seeds, or mutate `REDUNDANT_STATIC_IF_PROVIDER`.
 
-Dedup auditability is the next product-risk gate before lifecycle UX. Treat the current `dedupEvidence` diagnostics as the primary review surface: current-run `mergedCount`, current-vs-carried `sourceBundleCollisionCount`, review queue counts, suspected causes, identity quality, non-provider provenance, Google Sheets role-bucket diagnostics, provider/static disagreement examples/classifications, dedicated provider/static title-company collision examples, and `dedupAuditGate`. Do not add lifecycle labels until `dedupAuditGate.lifecycleUxReady=true` in real-data evidence, current-run merges are explainable, provider/static disagreement is low or reviewed with URL/source evidence, Google Sheets generic role/category merges are blocked for new runs, and carried source-bundle collisions are clearly historical, reconciled, or low-risk.
+Dedup auditability is the next product-risk gate before lifecycle UX. Treat the current `dedupEvidence` diagnostics as the primary review surface: current-run `mergedCount`, current-vs-carried `sourceBundleCollisionCount`, review queue counts, suspected causes, identity quality, non-provider provenance, Google Sheets role-bucket diagnostics, provider/static disagreement examples/classifications, `providerStaticDisagreementGateCounts`, dedicated provider/static title-company collision examples, and `dedupAuditGate`. Do not add lifecycle labels until `dedupAuditGate.lifecycleUxReady=true` in real-data evidence, current-run merges are explainable, provider/static disagreement is low or reviewed with URL/source evidence, Google Sheets generic role/category merges are blocked for new runs, and carried source-bundle collisions are clearly historical, reconciled, or low-risk.
+
+Admin/Ops may record local dedup review state in `data/dedup-review-state.json` for provider/static disagreement rows surfaced through `dedupEvidence`. Use only the explicit local actions:
+
+- `reviewed_safe` when the carried disagreement is understood and should warn, not block
+- `confirmed_blocking` when the disagreement remains a real lifecycle blocker
+- `clear_review` to restore default gate behavior
+
+These actions are local audit evidence only. They do not rewrite `jobs-unified.json`, do not change dedup merge rules, do not create lifecycle labels, and do not permit source cleanup, registry edits, or source-policy mutation. Lifecycle UX remains paused until unresolved provider/static disagreement count reaches zero.
 
 When `providerStaticDisagreementClassificationCounts.title_company_collision` is nonzero, review `providerStaticTitleCompanyCollisionExamples` before treating the gate as ready. Those rows are capped separately from general provider/static disagreements and include provider/static URLs, source IDs, shared identifier tokens, locations, and `collisionReviewHint`. They are advisory evidence only; they do not permit merge/unmerge actions, source cleanup, registry edits, or lifecycle labels by themselves.
 

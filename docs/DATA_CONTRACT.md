@@ -80,6 +80,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
 | `dedupAuditGate` | `Object` | Read-only lifecycle-readiness gate derived from current-run merges, carried source-bundle collisions, review queue causes, provider/static disagreement, and Google Sheets guard status. |
 | `providerStaticDisagreementCounts` | `Object` | Dedicated counts for provider/static disagreement rows: `total`, `currentRun`, and `carried`. |
+| `providerStaticDisagreementGateCounts` | `Object` | Dedicated blocker-vs-warning counts for provider/static disagreement rows after carried-safe URL-variant downgrades, carried location-pollution downgrades, and local dedup review-state overrides. |
 | `providerStaticDisagreementClassificationCounts` | `Object` | Dedicated provider/static disagreement counts by review classification. |
 | `providerStaticDisagreementExamples` | `Array<Object>` | Stable capped sample of provider/static disagreement rows for manual review. |
 | `providerStaticTitleCompanyCollisionCounts` | `Object` | Dedicated counts for provider/static disagreements classified as `title_company_collision`: `total`, `currentRun`, and `carried`. |
@@ -116,7 +117,9 @@ Provider/static disagreement examples include `title`, `company`, `dedupKey`,
 job IDs when present, provider/static URLs, provider/static URL host/path-prefix samples,
 `identityQuality`, `sharedIdentifierTokens`, `distinctLocationCount`, `sampleLocations`,
 `disagreementClassification`, `disagreementClassificationEvidence`, `collisionReviewHint`, and
-`disagreementEvidence`. Classification values are `same_job_different_urls`,
+`disagreementEvidence`. Rows may also include `disagreementGateDisposition`,
+`disagreementGateEvidence`, `dedupReviewStatus`, `dedupReviewNote`, `dedupReviewUpdatedAt`, and
+`dedupReviewUpdatedBy`. Classification values are `same_job_different_urls`,
 `provider_redirect_or_canonical_url`, `static_parser_url_variant`, `title_company_collision`,
 `stale_carried_bundle`, and `needs_manual_review`. They expose cases where provider and static
 bundle entries do not share a primary URL, so operators can review whether the bundle is a safe
@@ -161,6 +164,7 @@ proceed. Its `status` is `pass`, `warning`, or `blocked`; `lifecycleUxReady` is 
 there are no blocker causes. It includes current-run and carried collision counts, current-run and
 carried high-risk review counts, `providerStaticDisagreementCount`,
 `providerStaticDisagreementCurrentRunCount`, `providerStaticDisagreementCarriedCount`,
+`providerStaticDisagreementBlockedCount`, `providerStaticDisagreementWarningCount`,
 `googleSheetsGenericRoleGuardActive`, `carriedCollisionLikelyHistoricalCount`,
 `reviewQueueCauseCounts`, `blockers`, `warnings`, and capped `examples`. Carried historical
 source-bundle collisions may warn without blocking, while current-run non-primary merges,
@@ -907,6 +911,40 @@ local UI/review metadata and does not change loader selection. `force_pause` is 
 override: during default fetches it conservatively pauses dynamic static suppression for the
 matching provider/static pair so the static source runs normally. Clearing the override returns the
 pair to normal `staticSuppressionPolicy` behavior.
+
+### Dedup review state artifact
+
+Admin may update `data/dedup-review-state.json`, or the same filename under the active pipeline
+output directory, to record local review decisions for provider/static disagreement rows surfaced
+through `dedupEvidence`. This artifact is local, reversible, and read-only with respect to dedup
+behavior: it does not rewrite `jobs-unified.json`, does not change dedup merge rules, does not
+add lifecycle labels, and does not mutate registries, sync state, tombstones, or
+`REDUNDANT_STATIC_IF_PROVIDER`.
+
+Artifact payload:
+
+| Field | Type | Description |
+|---|---|---|
+| `schemaVersion` | `string` | Review-state contract version. |
+| `updatedAt` | `string` | Last Admin action timestamp. |
+| `summary` | `object` | Counts for local disagreement review state. |
+| `pairs` | `object` | Map keyed by normalized disagreement identity. |
+
+Pair rows include `reviewKey`, `title`, `company`, `dedupKey`, `bundleEvidenceOrigin`,
+`disagreementClassification`, `providerSourceJobIds`, `staticSourceJobIds`, `providerSources`,
+`staticSources`, `providerUrls`, `staticUrls`, `sharedIdentifierTokens`, `distinctLocationCount`,
+`sampleLocations`, `identityQuality`, `carriedLocationPollutionAudit`, `reviewStatus`,
+`reviewedAt`, `reviewedBy`, and `reviewNote`.
+
+`reviewStatus` values are:
+
+- `reviewed_safe`: downgrade that exact disagreement row from gate blocker to warning
+- `confirmed_blocking`: keep that exact disagreement row blocking while recording operator review
+
+Clearing a review removes the pair from the local artifact and restores default gate behavior.
+Read-only gate fields such as `disagreementGateDisposition`, `disagreementGateEvidence`,
+`providerStaticDisagreementGateCounts`, and `dedupAuditGate` may reflect this local review state in
+saved fetch reports and bridge read-time payloads.
 
 ### Job lifecycle summary
 
