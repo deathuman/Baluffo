@@ -307,6 +307,49 @@ def _find_registry_row(
     return None
 
 
+def _static_registry_identity_tokens(row: dict[str, Any]) -> set[str]:
+    url = _static_source_url(row)
+    tokens = {
+        clean_text(row.get("id")),
+        clean_text(row.get("sourceId")),
+        clean_text(row.get("sourceIdentity")),
+        clean_text(row.get("staticSourceId")),
+        clean_text(source_identity(row)),
+        url,
+        f"static:listing_url:{url}" if url else "",
+    }
+    return {token for token in tokens if token}
+
+
+def _find_linked_static_registry_row(
+    *,
+    active_rows: list[dict[str, Any]],
+    pending_rows: list[dict[str, Any]],
+    rejected_rows: list[dict[str, Any]],
+    identity: str,
+) -> tuple[str, dict[str, Any]] | None:
+    target = clean_text(identity)
+    if not target:
+        return None
+    bucket_rows = (
+        ("active", active_rows),
+        ("pending", pending_rows),
+        ("rejected", rejected_rows),
+    )
+    for bucket, rows in bucket_rows:
+        for row in rows:
+            if (
+                target in _static_registry_identity_tokens(row)
+                and clean_text(row.get("adapter")) in STATIC_LIKE_ADAPTERS
+            ):
+                return bucket, row
+    for bucket, rows in bucket_rows:
+        for row in rows:
+            if target in _static_registry_identity_tokens(row):
+                return bucket, row
+    return None
+
+
 def _static_loader_name_for_registry_row(row: dict[str, Any]) -> str:
     return runtime_static_source_name_for_registry_row(row)
 
@@ -533,7 +576,7 @@ def _suppression_eligibility_section(
         )
         provider_bucket = provider_registry[0] if provider_registry else ""
         provider_row = provider_registry[1] if provider_registry else {}
-        static_registry = _find_registry_row(
+        static_registry = _find_linked_static_registry_row(
             active_rows=active_rows,
             pending_rows=pending_rows,
             rejected_rows=rejected_rows,
