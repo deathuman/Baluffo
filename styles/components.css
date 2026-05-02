@@ -1699,10 +1699,17 @@ h1 {
   background: color-mix(in srgb, var(--surface-11) 35%, transparent);
 }
 
-.job-lifecycle-badge.active {
+.job-lifecycle-badge.active,
+.job-lifecycle-badge.reappeared {
   border-color: color-mix(in srgb, #7db4a3 60%, var(--surface-11));
   color: color-mix(in srgb, #8fd1be 72%, var(--text-subtle));
   background: color-mix(in srgb, #7db4a3 18%, transparent);
+}
+
+.job-lifecycle-badge.preserved {
+  border-color: color-mix(in srgb, #7b93cf 58%, var(--surface-11));
+  color: color-mix(in srgb, #a9b8ec 76%, var(--text-subtle));
+  background: color-mix(in srgb, #7b93cf 18%, transparent);
 }
 
 .job-lifecycle-badge.likely-removed {

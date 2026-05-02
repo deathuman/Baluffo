@@ -1,4 +1,5 @@
 import { escapeHtml } from "../shared/ui/index.js";
+import { renderLifecycleBadgeHtml } from "../shared/lifecycle-badges.js";
 
 export function renderSavedJobBlockHtml(job, options = {}) {
   const {
@@ -19,6 +20,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
     getJobHistoryEntries,
     renderWebIcon,
     renderPhaseBar,
+    lifecycleOverlay,
     currentUser,
     maxAttachmentsPerJob,
     maxAttachmentBytes
@@ -53,6 +55,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
   const reminderBadge = reminderMeta.isSoon
     ? `<span class="saved-reminder-badge" title="${escapeHtml(reminderMeta.label)}">Due soon</span>`
     : "";
+  const lifecycleBadge = renderLifecycleBadgeHtml(lifecycleOverlay);
 
   return `
     <div class="saved-job-block ${isExpanded ? "expanded" : ""} ${isSelected ? "selected" : ""}" data-job-key="${jobKey}" data-ui="saved-job-block">
@@ -64,6 +67,7 @@ export function renderSavedJobBlockHtml(job, options = {}) {
             <div class="saved-title-meta">
               ${isCustom ? `<span class="saved-custom-badge" title="Custom job source">${customSource}</span>` : ""}
               ${reminderBadge}
+              ${lifecycleBadge}
               ${missingChips}
             </div>
             ${updateHint}

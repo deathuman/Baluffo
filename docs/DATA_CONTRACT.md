@@ -39,6 +39,8 @@ Represents a single job posting retrieved from the external sources.
 | `firstSeenAt` | `string` (ISO 8601) | When this pipeline first discovered the job. |
 | `lastSeenAt` | `string` (ISO 8601) | The last pipeline run this job was detected as active. |
 | `removedAt` | `string` (ISO 8601) | When the pipeline detected a 404 or removal. |
+| `lifecycleEvent` | `string` | Additive row-level lifecycle evidence: currently `reappeared`, `preserved`, or empty. |
+| `lifecycleReason` | `string` | Additive lifecycle reason when `lifecycleEvent` is present: currently `source_failed`, `source_skipped`, or empty. |
 | `dedupKey` | `string` | A unique content hash used for deduplication. |
 | `qualityScore` | `number` | The heuristic health of the job details [0-100]. |
 | `focusScore` | `number` | Deprecated/internal score [0-100]. |
@@ -46,6 +48,12 @@ Represents a single job posting retrieved from the external sources.
 | `sourceBundle` | `Array<Object>` | Raw ATS payload of the duplicate rows. |
 | `adapter` | `string` | The Python adapter module used (e.g., `static`, `social`, `csv`). |
 | `studio` | `string` | The underlying pipeline configuration studio group. |
+
+`jobs-lifecycle-state.json` stores the lifecycle ledger keyed by dedup identity. Each row keeps the
+same lifecycle fields (`status`, `firstSeenAt`, `lastSeenAt`, `removedAt`, `lifecycleEvent`,
+`lifecycleReason`) plus enough canonical identity to reconstruct a saved-job key for read-only
+Saved-page overlays: `title`, `company`, `city`, `country`, `jobLink`, `source`, `sourceJobId`,
+and `postedAt`. This ledger is runtime state, not a user-editable Saved-job contract.
 
 ### 1.1 Fetch report dedup evidence
 

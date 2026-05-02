@@ -28,6 +28,8 @@ export function createSavedBoot(deps) {
     deps.viewState.unsubscribeSavedJobs = deps.savedPageService.subscribeSavedJobs(
       uid,
       jobs => {
+        const overlayRequestId = (Number(deps.viewState.savedLifecycleOverlayRequestId) || 0) + 1;
+        deps.viewState.savedLifecycleOverlayRequestId = overlayRequestId;
         const count = Array.isArray(jobs) ? jobs.length : 0;
         stateHubSet("savedCount", count);
         stateHubSet("savedLastUpdated", Date.now());
@@ -51,6 +53,26 @@ export function createSavedBoot(deps) {
         }
         deps.renderSavedJobs(jobs);
         deps.refreshActivityLog().catch(() => {});
+        deps.loadSavedLifecycleOverlay()
+          .then(overlayByJobKey => {
+            if (deps.viewState.savedLifecycleOverlayRequestId !== overlayRequestId) return;
+            deps.viewState.savedLifecycleOverlayByJobKey = overlayByJobKey instanceof Map
+              ? overlayByJobKey
+              : new Map();
+            if (shouldDeferSavedJobsRerender({
+              isEditingNotes: isEditingNotesField(),
+              inFlightCount: deps.noteSaveState.inFlight.size,
+              pendingCount: deps.noteSaveState.pendingValues.size,
+              lastInteractionAt: deps.noteSaveState.lastInteractionAt
+            })) {
+              return;
+            }
+            deps.renderSavedJobs(Array.isArray(jobs) ? jobs : []);
+          })
+          .catch(() => {
+            if (deps.viewState.savedLifecycleOverlayRequestId !== overlayRequestId) return;
+            deps.viewState.savedLifecycleOverlayByJobKey = new Map();
+          });
       },
       err => {
         console.error("Saved jobs subscription failed:", err);

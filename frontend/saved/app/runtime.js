@@ -209,6 +209,7 @@ savedBoot = createSavedBoot({
   applyJobDetailsTab: (...args) => savedRuntime.applyJobDetailsTab(...args),
   refreshActivityLog: (...args) => savedRuntime.refreshActivityLog(...args),
   renderSavedJobs: (...args) => savedRuntime.renderSavedJobs(...args),
+  loadSavedLifecycleOverlay: (...args) => savedRuntime.loadSavedLifecycleOverlay(...args),
   queueNotesSave: (...args) => savedNotes.queueNotesSave(...args),
   flushNotesSave: (...args) => savedNotes.flushNotesSave(...args),
   uploadAttachments: (...args) => savedRuntime.uploadAttachments(...args),

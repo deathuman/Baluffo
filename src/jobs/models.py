@@ -84,6 +84,8 @@ class CanonicalJob:
     firstSeenAt: str = ""
     lastSeenAt: str = ""
     removedAt: str = ""
+    lifecycleEvent: str = ""
+    lifecycleReason: str = ""
     dedupKey: str = ""
     qualityScore: int = 0
     focusScore: int = 0
@@ -124,6 +126,8 @@ class CanonicalJob:
             firstSeenAt=clean_text(data.get("firstSeenAt")),
             lastSeenAt=clean_text(data.get("lastSeenAt")),
             removedAt=clean_text(data.get("removedAt")),
+            lifecycleEvent=clean_text(data.get("lifecycleEvent")),
+            lifecycleReason=clean_text(data.get("lifecycleReason")),
             dedupKey=clean_text(data.get("dedupKey")),
             qualityScore=int(data.get("qualityScore") or 0),
             focusScore=int(data.get("focusScore") or 0),
@@ -138,4 +142,7 @@ class CanonicalJob:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        payload["lifecycleEvent"] = self.lifecycleEvent
+        payload["lifecycleReason"] = self.lifecycleReason
+        return payload

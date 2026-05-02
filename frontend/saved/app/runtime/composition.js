@@ -6,6 +6,7 @@ import { createSavedAttachmentsController } from "./attachments-controller.js";
 import { createSavedAuthController } from "./auth-controller.js";
 import { createSavedCustomJobController } from "./custom-job-controller.js";
 import { createSavedStartupMetrics } from "./effects.js";
+import { loadSavedLifecycleOverlayByJobKey } from "./lifecycle-overlay.js";
 import { createSavedRenderController } from "./render-controller.js";
 import { createSavedPageState } from "./state.js";
 
@@ -156,6 +157,10 @@ export function composeSavedRuntime(deps) {
     return deps.applySavedAdminBridgeStateFromModule({ ...params, viewState });
   }
 
+  function loadSavedLifecycleOverlay() {
+    return loadSavedLifecycleOverlayByJobKey();
+  }
+
   return {
     startupMetrics,
     dom,
@@ -165,6 +170,7 @@ export function composeSavedRuntime(deps) {
     savedDispatch,
     savedAuthController,
     applySavedAdminBridgeState,
+    loadSavedLifecycleOverlay,
     renderAuthRequired: message => savedRenderController.renderAuthRequired(message),
     renderSavedJobs: jobs => savedRenderController.renderSavedJobs(jobs),
     getJobDetailsTab: jobKey => savedRenderController.getJobDetailsTab(jobKey),

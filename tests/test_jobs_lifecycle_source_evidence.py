@@ -19,6 +19,8 @@ def _previous_job(source: str, *, status: str = "active") -> dict[str, str]:
         "lastSeenAt": "2026-04-20T09:00:00+00:00",
         "title": "Lifecycle Engineer",
         "company": "Evidence Studio",
+        "city": "Remote",
+        "country": "Remote",
         "jobLink": "https://example.com/jobs/lifecycle",
         "source": source,
         "sourceJobId": "life-1",
@@ -35,6 +37,8 @@ def _active_job(source: str) -> CanonicalJob:
             "dedupKey": "job-1",
             "title": "Lifecycle Engineer",
             "company": "Evidence Studio",
+            "city": "Remote",
+            "country": "Remote",
             "jobLink": "https://example.com/jobs/lifecycle",
             "source": source,
             "sourceJobId": "life-1",
@@ -49,13 +53,13 @@ def _apply_with_reports(
     previous_source: str,
     current_rows: list[CanonicalJob] | None = None,
     previous_status: str = "active",
-) -> tuple[dict[str, object], dict[str, int]]:
+) -> tuple[list[CanonicalJob], dict[str, object], dict[str, int]]:
     evidence = build_lifecycle_source_evidence(
         reports,
         selected_source_names={str(row.get("name") or "") for row in reports},
         allow_missing=True,
     )
-    _rows, lifecycle_rows, summary = apply_job_lifecycle_state(
+    rows, lifecycle_rows, summary = apply_job_lifecycle_state(
         deduped_rows=current_rows or [],
         lifecycle_rows={"job-1": _previous_job(previous_source, status=previous_status)},
         finished_at=FINISHED_AT,
@@ -63,23 +67,27 @@ def _apply_with_reports(
         eligible_missing_sources=evidence["eligibleMissingSources"],
         source_evidence=evidence,
     )
-    return lifecycle_rows["job-1"], summary
+    return rows, lifecycle_rows["job-1"], summary
 
 
 def test_source_error_preserves_missing_previous_job() -> None:
-    entry, summary = _apply_with_reports(
+    _rows, entry, summary = _apply_with_reports(
         [{"name": "error_source", "status": "error", "error": "timeout"}],
         previous_source="error_source",
     )
 
     assert entry["status"] == "active"
     assert not entry.get("removedAt")
+    assert entry["city"] == "Remote"
+    assert entry["country"] == "Remote"
+    assert entry["lifecycleEvent"] == "preserved"
+    assert entry["lifecycleReason"] == "source_failed"
     assert summary["preservedBecauseSourceFailed"] == 1
     assert summary["likelyRemoved"] == 0
 
 
 def test_excluded_or_skipped_source_preserves_missing_previous_job() -> None:
-    entry, summary = _apply_with_reports(
+    _rows, entry, summary = _apply_with_reports(
         [
             {
                 "name": "cache_skipped",
@@ -93,12 +101,14 @@ def test_excluded_or_skipped_source_preserves_missing_previous_job() -> None:
 
     assert entry["status"] == "active"
     assert not entry.get("removedAt")
+    assert entry["lifecycleEvent"] == "preserved"
+    assert entry["lifecycleReason"] == "source_skipped"
     assert summary["preservedBecauseSourceSkipped"] == 1
     assert summary["likelyRemoved"] == 0
 
 
 def test_dynamic_redundant_provider_suppression_preserves_missing_previous_static_job() -> None:
-    entry, summary = _apply_with_reports(
+    _rows, entry, summary = _apply_with_reports(
         [
             {
                 "name": "static_source::static:listing_url:https://studio.example/jobs",
@@ -114,21 +124,25 @@ def test_dynamic_redundant_provider_suppression_preserves_missing_previous_stati
 
     assert entry["status"] == "active"
     assert not entry.get("removedAt")
+    assert entry["lifecycleEvent"] == "preserved"
+    assert entry["lifecycleReason"] == "source_skipped"
     assert summary["preservedBecauseSourceSkipped"] == 1
     assert summary["likelyRemoved"] == 0
 
 
 def test_absent_source_evidence_preserves_missing_previous_job() -> None:
-    entry, summary = _apply_with_reports([], previous_source="not_selected")
+    _rows, entry, summary = _apply_with_reports([], previous_source="not_selected")
 
     assert entry["status"] == "active"
     assert not entry.get("removedAt")
+    assert entry["lifecycleEvent"] == "preserved"
+    assert entry["lifecycleReason"] == "source_skipped"
     assert summary["preservedBecauseSourceSkipped"] == 1
     assert summary["likelyRemoved"] == 0
 
 
 def test_explicit_empty_success_marks_missing_previous_job_likely_removed() -> None:
-    entry, summary = _apply_with_reports(
+    _rows, entry, summary = _apply_with_reports(
         [
             {
                 "name": "empty_source",
@@ -143,12 +157,14 @@ def test_explicit_empty_success_marks_missing_previous_job_likely_removed() -> N
 
     assert entry["status"] == "likely_removed"
     assert entry["removedAt"] == FINISHED_AT
+    assert entry.get("lifecycleEvent") == ""
+    assert entry.get("lifecycleReason") == ""
     assert summary["likelyRemoved"] == 1
     assert summary["eligibleMissingSourceCount"] == 1
 
 
 def test_needs_review_success_preserves_missing_previous_job() -> None:
-    entry, summary = _apply_with_reports(
+    _rows, entry, summary = _apply_with_reports(
         [
             {
                 "name": "needs_review_source",
@@ -164,12 +180,14 @@ def test_needs_review_success_preserves_missing_previous_job() -> None:
 
     assert entry["status"] == "active"
     assert not entry.get("removedAt")
+    assert entry["lifecycleEvent"] == "preserved"
+    assert entry["lifecycleReason"] == "source_skipped"
     assert summary["preservedBecauseSourceSkipped"] == 1
     assert summary["likelyRemoved"] == 0
 
 
 def test_reappeared_previous_removed_job_becomes_active() -> None:
-    entry, summary = _apply_with_reports(
+    rows, entry, summary = _apply_with_reports(
         [{"name": "active_source", "status": "ok", "keptCount": 1}],
         previous_source="active_source",
         current_rows=[_active_job("active_source")],
@@ -180,7 +198,10 @@ def test_reappeared_previous_removed_job_becomes_active() -> None:
     assert entry["firstSeenAt"] == "2026-04-01T09:00:00+00:00"
     assert entry["lastSeenAt"] == FINISHED_AT
     assert "removedAt" not in entry
+    assert entry["lifecycleEvent"] == "reappeared"
     assert summary["reappeared"] == 1
+    assert rows[0].lifecycleEvent == "reappeared"
+    assert rows[0].lifecycleReason == ""
 
 
 def test_pipeline_preserves_missing_job_when_owning_source_fails() -> None:

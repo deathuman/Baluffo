@@ -216,6 +216,9 @@ export function createSavedRenderController({
   }
 
   function renderSavedJobBlock(job) {
+    const lifecycleOverlay = viewState.savedLifecycleOverlayByJobKey.get(
+      String(job?.jobKey || "").trim().toLowerCase()
+    ) || null;
     return renderSavedJobBlockHtml(job, {
       isCustomJob,
       customSourceLabel,
@@ -239,6 +242,7 @@ export function createSavedRenderController({
         formatPhaseTimestamp,
         formatActivityDetail
       }),
+      lifecycleOverlay,
       renderWebIcon,
       renderPhaseBar: (jobKey, activePhase, phaseTimestamps, savedAt) => renderPhaseBar(
         jobKey,

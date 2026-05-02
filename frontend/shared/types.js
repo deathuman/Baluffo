@@ -20,6 +20,8 @@
  * @property {string} firstSeenAt - ISO 8601 timestamp.
  * @property {string} lastSeenAt - ISO 8601 timestamp.
  * @property {string} removedAt - ISO 8601 timestamp (optional).
+ * @property {string} [lifecycleEvent] - e.g. reappeared, preserved.
+ * @property {string} [lifecycleReason] - e.g. source_failed, source_skipped.
  * @property {string} dedupKey - Content hash for deduplication.
  * @property {number} qualityScore - [0-100] scale.
  * @property {number} focusScore - [0-100] scale.

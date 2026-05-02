@@ -65,10 +65,14 @@ def normalize_job_lifecycle_payload(
                 "archivedAt": clean_text(raw_entry.get("archivedAt")),
                 "title": clean_text(raw_entry.get("title")),
                 "company": clean_text(raw_entry.get("company")),
+                "city": clean_text(raw_entry.get("city")),
+                "country": clean_text(raw_entry.get("country")),
                 "jobLink": normalize_url(raw_entry.get("jobLink")),
                 "source": clean_text(raw_entry.get("source")),
                 "sourceJobId": clean_text(raw_entry.get("sourceJobId")),
                 "postedAt": to_iso(raw_entry.get("postedAt")),
+                "lifecycleEvent": clean_text(raw_entry.get("lifecycleEvent")),
+                "lifecycleReason": clean_text(raw_entry.get("lifecycleReason")),
             }
             out_jobs[key] = {
                 field: value for field, value in entry.items() if value not in {"", None}
@@ -213,20 +217,27 @@ def _lifecycle_entry_from_active_job(
     finished_at: str,
 ) -> dict[str, Any]:
     first_seen_at = clean_text(previous.get("firstSeenAt")) or finished_at
+    previous_status = norm_text(previous.get("status"))
+    lifecycle_event = "reappeared" if previous_status in {"likely_removed", "archived"} else ""
     row["status"] = "active"
     row["firstSeenAt"] = first_seen_at
     row["lastSeenAt"] = finished_at
     row["removedAt"] = ""
+    row["lifecycleEvent"] = lifecycle_event
+    row["lifecycleReason"] = ""
     return {
         "status": "active",
         "firstSeenAt": first_seen_at,
         "lastSeenAt": finished_at,
         "title": clean_text(row.get("title")),
         "company": clean_text(row.get("company")),
+        "city": clean_text(row.get("city")),
+        "country": clean_text(row.get("country")),
         "jobLink": normalize_url(row.get("jobLink")),
         "source": clean_text(row.get("source")),
         "sourceJobId": clean_text(row.get("sourceJobId")),
         "postedAt": to_iso(row.get("postedAt")),
+        "lifecycleEvent": lifecycle_event,
     }
 
 
@@ -264,6 +275,8 @@ def _apply_missing_lifecycle_entry(
     if status == "active":
         entry["status"] = "likely_removed"
         entry["removedAt"] = finished_at
+        entry["lifecycleEvent"] = ""
+        entry["lifecycleReason"] = ""
     elif status == "likely_removed":
         removed_dt = parse_datetime(removed_at)
         age_days = int((now_dt - removed_dt).total_seconds() // (24 * 60 * 60)) if removed_dt else 0
@@ -271,6 +284,8 @@ def _apply_missing_lifecycle_entry(
             entry["status"] = "archived"
             entry["archivedAt"] = finished_at
             entry["removedAt"] = removed_at
+        entry["lifecycleEvent"] = ""
+        entry["lifecycleReason"] = ""
     return entry
 
 
@@ -297,8 +312,12 @@ def _apply_missing_lifecycle_rows(
             if norm_text(entry.get("status")) in {"active", "likely_removed"}:
                 if source_name in failed_sources:
                     summary["preservedBecauseSourceFailed"] += 1
+                    entry["lifecycleEvent"] = "preserved"
+                    entry["lifecycleReason"] = "source_failed"
                 else:
                     summary["preservedBecauseSourceSkipped"] += 1
+                    entry["lifecycleEvent"] = "preserved"
+                    entry["lifecycleReason"] = "source_skipped"
             continue
         next_rows[key] = _apply_missing_lifecycle_entry(
             entry,

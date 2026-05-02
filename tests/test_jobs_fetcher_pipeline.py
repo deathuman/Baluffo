@@ -518,8 +518,7 @@ def test_pipeline_output_contract_matches_frontend() -> None:
             assert field in row
         for field in jf.OPTIONAL_FIELDS:
             assert field in row
-        assert row["workType"] == "Remote"
-        assert isinstance(row["focusScore"], int)
+        assert (row["workType"], isinstance(row["focusScore"], int)) == ("Remote", True)
 
 
 def test_pipeline_default_source_loader_contract_excludes_wellfound_and_keeps_core_families() -> (

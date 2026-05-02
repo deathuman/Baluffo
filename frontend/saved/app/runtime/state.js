@@ -72,6 +72,8 @@ function createSavedViewState({
     jobDetailTabByKey: new Map(),
     cachedActivityEntries: [],
     lastSavedJobsByKey: new Map(),
+    savedLifecycleOverlayByJobKey: new Map(),
+    savedLifecycleOverlayRequestId: 0,
     selectedJobKey: "",
     timelineScope: defaultTimelineScope,
     lastActivityPulse: null,

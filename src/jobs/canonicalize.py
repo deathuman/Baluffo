@@ -470,6 +470,8 @@ def _build_canonical_job(
             "firstSeenAt": "",
             "lastSeenAt": "",
             "removedAt": "",
+            "lifecycleEvent": "",
+            "lifecycleReason": "",
             "dedupKey": "",
             "qualityScore": 0,
             "focusScore": 0,

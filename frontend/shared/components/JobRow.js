@@ -5,6 +5,7 @@
  * @returns {string} HTML string for the row
  */
 import { escapeHtml } from "../ui/index.js";
+import { renderLifecycleBadgeHtml } from "../lifecycle-badges.js";
 
 function getFreshnessTier(score) {
   if (!Number.isFinite(score)) return "";
@@ -45,30 +46,6 @@ function renderFreshnessCell(job) {
       <span class="job-freshness-ping ${tier}" title="${escapeHtml(tooltip)}"></span>
     </div>
   `;
-}
-
-function formatDateForStatus(value) {
-  const parsed = new Date(String(value || ""));
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-}
-
-function renderLifecycleBadge(job) {
-  const status = String(job?.status || "active").trim().toLowerCase() || "active";
-  let label = "";
-  let cssClass = "";
-  if (status === "likely_removed") {
-    label = "Likely removed";
-    cssClass = "likely-removed";
-  } else if (status === "archived") {
-    label = "Archived";
-    cssClass = "archived";
-  } else {
-    return "";
-  }
-  const removedDate = formatDateForStatus(job?.removedAt);
-  const title = removedDate ? `${label} since ${removedDate}` : label;
-  return `<span class="job-lifecycle-badge ${cssClass}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
 }
 
 export function renderJobRow(job, options = {}) {
@@ -114,7 +91,7 @@ export function renderJobRow(job, options = {}) {
       <div class="job-title-wrap">
         <div class="job-title-compact">${safeTitle}</div>
         ${newBadge}
-        ${renderLifecycleBadge(job)}
+        ${renderLifecycleBadgeHtml(job)}
       </div>
     </div>
     <div class="col-company job-cell" data-label="Company">

@@ -88,7 +88,56 @@ test("jobs render shows lifecycle badge with removed date tooltip", () => {
     freshnessSource: "postedAt"
   });
   assert.match(html, /job-lifecycle-badge likely-removed/);
-  assert.match(html, /title="Likely removed since Mar 7, 2026"/);
+  assert.match(html, /Recently removed/);
+  assert.match(html, /title="Recently removed since Mar 7, 2026"/);
+});
+
+test("jobs render shows reappeared and preserved lifecycle badges", () => {
+  const reappearedHtml = render({
+    id: "4b",
+    title: "Gameplay Engineer",
+    company: "Studio",
+    sector: "Game",
+    city: "Rome",
+    country: "Italy",
+    workType: "Remote",
+    contractType: "Full-time",
+    status: "active",
+    lifecycleEvent: "reappeared"
+  });
+  assert.match(reappearedHtml, /job-lifecycle-badge reappeared/);
+  assert.match(reappearedHtml, />Reappeared<\/span>/);
+
+  const preservedHtml = render({
+    id: "4c",
+    title: "Build Engineer",
+    company: "Studio",
+    sector: "Game",
+    city: "Rome",
+    country: "Italy",
+    workType: "Remote",
+    contractType: "Full-time",
+    status: "active",
+    lifecycleEvent: "preserved",
+    lifecycleReason: "source_failed"
+  });
+  assert.match(preservedHtml, /job-lifecycle-badge preserved/);
+  assert.match(preservedHtml, />Preserved because source failed<\/span>/);
+
+  const skippedHtml = render({
+    id: "4d",
+    title: "Producer",
+    company: "Studio",
+    sector: "Game",
+    city: "Rome",
+    country: "Italy",
+    workType: "Remote",
+    contractType: "Full-time",
+    status: "active",
+    lifecycleEvent: "preserved",
+    lifecycleReason: "source_skipped"
+  });
+  assert.doesNotMatch(skippedHtml, /Preserved because source skipped/);
 });
 
 test("jobs render rewrites remoteok detail links to the listing page", () => {

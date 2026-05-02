@@ -81,6 +81,8 @@ export function createSavedAuthController({
     viewState.jobDetailTabByKey = new Map();
     viewState.cachedActivityEntries = [];
     viewState.lastSavedJobsByKey = new Map();
+    viewState.savedLifecycleOverlayByJobKey = new Map();
+    viewState.savedLifecycleOverlayRequestId = 0;
     viewState.selectedJobKey = "";
     viewState.timelineScope = timelineScopeAll;
     viewState.lastActivityPulse = null;
