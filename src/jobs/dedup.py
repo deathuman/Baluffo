@@ -28,6 +28,22 @@ from .common import url as common_url
 
 fingerprint_url = common_url.fingerprint_url
 SOCIAL_SOURCE_NAMES = common_social.SOCIAL_SOURCE_NAMES
+_GOOGLE_SHEETS_GENERIC_ROLE_TITLE_TERMS = {
+    "account management",
+    "account-management",
+    "community management",
+    "community-management",
+    "localization",
+    "product management",
+    "product-management",
+    "program management",
+    "program-management",
+    "programming",
+    "project management",
+    "project-management",
+    "system design",
+    "system-design",
+}
 _COMPANY_SUFFIX_TOKENS = {
     "company",
     "corp",
@@ -120,6 +136,27 @@ def _normalize_title_identity(value: Any) -> str:
         if len(prefix) > len(best_prefix):
             best_prefix = prefix
     return norm_text(best_prefix or title)
+
+
+def _is_google_sheets_row(job: CanonicalJob | dict[str, Any]) -> bool:
+    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+    return clean_text(payload.get("source")).startswith("google_sheets")
+
+
+def _has_google_sheets_generic_role_title(job: CanonicalJob | dict[str, Any]) -> bool:
+    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+    title = norm_text(payload.get("title"))
+    normalized = norm_text(
+        clean_text(payload.get("title")).replace("-", " ").replace("_", " ").replace("&", " ")
+    )
+    if title in _GOOGLE_SHEETS_GENERIC_ROLE_TITLE_TERMS:
+        return True
+    if normalized in _GOOGLE_SHEETS_GENERIC_ROLE_TITLE_TERMS:
+        return True
+    tokens = normalized.split()
+    return 1 <= len(tokens) <= 2 and any(
+        token in {"design", "localization", "management", "programming"} for token in tokens
+    )
 
 
 def _sparse_identity_key(job: CanonicalJob | dict[str, Any]) -> str:
@@ -428,6 +465,7 @@ def _find_merge_target(
     secondary: str,
     social_key: str,
     sparse_identity: str,
+    current: CanonicalJob,
     current_has_meaningful_locations: bool,
     merged_rows: list[CanonicalJob],
     by_primary: dict[str, int],
@@ -438,15 +476,42 @@ def _find_merge_target(
     if primary and primary in by_primary:
         return by_primary[primary], "primary_url"
     if secondary and secondary in by_secondary:
-        return by_secondary[secondary], "secondary_key"
+        secondary_target_idx = by_secondary[secondary]
+        secondary_target = merged_rows[secondary_target_idx]
+        if not _blocks_google_sheets_generic_role_url_merge(
+            current=current,
+            target=secondary_target,
+            current_primary=primary,
+        ):
+            return secondary_target_idx, "secondary_key"
     if social_key and social_key in by_social:
         return by_social[social_key], "social_key"
     if sparse_identity and sparse_identity in by_sparse_identity:
         sparse_target_idx = by_sparse_identity[sparse_identity]
         sparse_target = merged_rows[sparse_target_idx]
+        if _blocks_google_sheets_generic_role_url_merge(
+            current=current,
+            target=sparse_target,
+            current_primary=primary,
+        ):
+            return None, ""
         if not _has_meaningful_locations(sparse_target) or not current_has_meaningful_locations:
             return sparse_target_idx, "sparse_identity"
     return None, ""
+
+
+def _blocks_google_sheets_generic_role_url_merge(
+    *,
+    current: CanonicalJob,
+    target: CanonicalJob,
+    current_primary: str,
+) -> bool:
+    if not _is_google_sheets_row(current) or not _is_google_sheets_row(target):
+        return False
+    if not _has_google_sheets_generic_role_title(current):
+        return False
+    target_primary = fingerprint_url(target.jobLink)
+    return bool(current_primary and target_primary and current_primary != target_primary)
 
 
 def _index_row_keys(
@@ -614,6 +679,7 @@ def deduplicate_jobs(
             secondary=secondary,
             social_key=social_key,
             sparse_identity=sparse_identity,
+            current=current,
             current_has_meaningful_locations=_has_meaningful_locations(current),
             merged_rows=merged_rows,
             by_primary=by_primary,
