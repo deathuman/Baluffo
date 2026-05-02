@@ -55,6 +55,9 @@ def test_dedup_evidence_reports_provider_static_disagreement_examples() -> None:
         "currentRun": 1,
         "carried": 0,
     }
+    assert (
+        evidence["providerStaticDisagreementClassificationCounts"]["same_job_different_urls"] == 1
+    )
     disagreement = evidence["providerStaticDisagreementExamples"][0]
     assert disagreement["title"] == "Senior Engineer"
     assert disagreement["company"] == "Studio One"
@@ -66,6 +69,7 @@ def test_dedup_evidence_reports_provider_static_disagreement_examples() -> None:
     assert disagreement["staticSourceJobIds"] == ["static-1"]
     assert disagreement["providerUrls"] == ["https://provider.example/jobs/1"]
     assert disagreement["staticUrls"] == ["https://static.example/jobs/1"]
+    assert disagreement["disagreementClassification"] == "same_job_different_urls"
     assert "shared_primary_url:false" in disagreement["disagreementEvidence"]
 
 
@@ -99,6 +103,9 @@ def test_dedup_evidence_tracks_carried_provider_static_disagreement() -> None:
         "currentRun": 0,
         "carried": 1,
     }
+    assert (
+        evidence["providerStaticDisagreementClassificationCounts"]["same_job_different_urls"] == 1
+    )
     assert evidence["providerStaticDisagreementExamples"][0]["bundleEvidenceOrigin"] == (
         "carried_from_existing_output"
     )
@@ -130,3 +137,155 @@ def test_dedup_evidence_ignores_non_provider_static_mixed_bundle_for_disagreemen
 
     assert evidence["providerStaticDisagreementCounts"]["total"] == 0
     assert evidence["providerStaticDisagreementExamples"] == []
+
+
+def test_dedup_evidence_classifies_static_parser_url_variant() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 1},
+        [
+            _row(
+                sourceBundleCount=2,
+                sourceBundle=[
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "greenhouse:studio-one:4022147009",
+                        "jobLink": "https://job-boards.greenhouse.io/studioone/jobs/4022147009",
+                        "adapter": "greenhouse",
+                    },
+                    {
+                        "source": "static_source::static:listing_url:https://studio.example/careers",
+                        "sourceJobId": "static-1",
+                        "jobLink": "https://studio.example/work-with-us/4022147009",
+                        "adapter": "static",
+                    },
+                ],
+            )
+        ],
+    )
+
+    row = evidence["providerStaticDisagreementExamples"][0]
+    assert row["disagreementClassification"] == "static_parser_url_variant"
+    assert (
+        evidence["providerStaticDisagreementClassificationCounts"]["static_parser_url_variant"] == 1
+    )
+
+
+def test_dedup_evidence_classifies_canonical_url_disagreement() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 1},
+        [
+            _row(
+                sourceBundleCount=2,
+                sourceBundle=[
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "gh-1",
+                        "jobLink": "https://studio.example/provider/jobs/1",
+                        "adapter": "greenhouse",
+                    },
+                    {
+                        "source": "static_source::static:listing_url:https://studio.example/careers",
+                        "sourceJobId": "static-1",
+                        "jobLink": "https://studio.example/careers/jobs/1",
+                        "adapter": "static",
+                    },
+                ],
+            )
+        ],
+    )
+
+    assert evidence["providerStaticDisagreementExamples"][0]["disagreementClassification"] == (
+        "provider_redirect_or_canonical_url"
+    )
+
+
+def test_dedup_evidence_classifies_title_company_collision() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 1},
+        [
+            _row(
+                sourceBundleCount=2,
+                sourceBundle=[
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "gh-1",
+                        "jobLink": "https://provider.example/jobs/1",
+                        "adapter": "greenhouse",
+                    },
+                    {
+                        "source": "static_source::static:listing_url:https://studio.example/careers",
+                        "sourceJobId": "static-1",
+                        "jobLink": "https://static.example/jobs/2",
+                        "adapter": "static",
+                    },
+                ],
+                locations=[
+                    {"city": "Amsterdam", "country": "NL"},
+                    {"city": "Rotterdam", "country": "NL"},
+                ],
+            )
+        ],
+    )
+
+    assert evidence["providerStaticDisagreementExamples"][0]["disagreementClassification"] == (
+        "title_company_collision"
+    )
+
+
+def test_dedup_evidence_classifies_stale_carried_bundle() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                sourceBundleCount=2,
+                sourceBundle=[
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "",
+                        "jobLink": "https://provider.example/jobs/1",
+                        "adapter": "greenhouse",
+                    },
+                    {
+                        "source": "static_source::static:listing_url:https://studio.example/careers",
+                        "sourceJobId": "static-1",
+                        "jobLink": "https://static.example/jobs/1",
+                        "adapter": "static",
+                    },
+                ],
+            )
+        ],
+        seeded_from_existing_output=True,
+    )
+
+    assert evidence["providerStaticDisagreementExamples"][0]["disagreementClassification"] == (
+        "stale_carried_bundle"
+    )
+
+
+def test_dedup_evidence_classifies_manual_review_fallback() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 1},
+        [
+            _row(
+                sourceBundleCount=2,
+                sourceBundle=[
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "",
+                        "jobLink": "https://provider.example/jobs/alpha",
+                        "adapter": "greenhouse",
+                    },
+                    {
+                        "source": "static_source::static:listing_url:https://studio.example/careers",
+                        "sourceJobId": "",
+                        "jobLink": "https://static.example/jobs/beta",
+                        "adapter": "static",
+                    },
+                ],
+            )
+        ],
+    )
+
+    assert evidence["providerStaticDisagreementExamples"][0]["disagreementClassification"] == (
+        "needs_manual_review"
+    )

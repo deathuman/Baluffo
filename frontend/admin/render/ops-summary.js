@@ -383,6 +383,18 @@ function formatProviderStaticDisagreementCounts(disagreementCounts) {
   ].join(", ");
 }
 
+function formatProviderStaticDisagreementClassificationCounts(classificationCounts) {
+  const counts = classificationCounts && typeof classificationCounts === "object" ? classificationCounts : {};
+  return [
+    `same job/different URLs ${Number(counts?.same_job_different_urls || 0).toLocaleString()}`,
+    `canonical/redirect ${Number(counts?.provider_redirect_or_canonical_url || 0).toLocaleString()}`,
+    `static URL variant ${Number(counts?.static_parser_url_variant || 0).toLocaleString()}`,
+    `title/company collision ${Number(counts?.title_company_collision || 0).toLocaleString()}`,
+    `stale carried ${Number(counts?.stale_carried_bundle || 0).toLocaleString()}`,
+    `manual review ${Number(counts?.needs_manual_review || 0).toLocaleString()}`
+  ].join(", ");
+}
+
 function formatProviderStaticDisagreementRows(rows, emptyText) {
   const disagreementRows = Array.isArray(rows) ? rows : [];
   if (!disagreementRows.length) return escapeHtml(emptyText);
@@ -398,13 +410,19 @@ function formatProviderStaticDisagreementRows(rows, emptyText) {
       const providerUrls = Array.isArray(row?.providerUrls) ? row.providerUrls : [];
       const staticUrls = Array.isArray(row?.staticUrls) ? row.staticUrls : [];
       const evidence = Array.isArray(row?.disagreementEvidence) ? row.disagreementEvidence : [];
+      const classification = String(row?.disagreementClassification || "needs_manual_review").replaceAll("_", " ");
+      const classificationEvidence = Array.isArray(row?.disagreementClassificationEvidence)
+        ? row.disagreementClassificationEvidence
+        : [];
       const detail = [
         `origin ${origin}`,
+        `classification ${classification}`,
         `quality ${quality}`,
         `provider ${providerSources.slice(0, 2).join(" | ") || "none"}`,
         `static ${staticSources.slice(0, 2).join(" | ") || "none"}`,
         `provider URLs ${providerUrls.slice(0, 2).join(" | ") || "none"}`,
         `static URLs ${staticUrls.slice(0, 2).join(" | ") || "none"}`,
+        `classification evidence ${classificationEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
         `evidence ${evidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`
       ].join("; ");
       return `
@@ -859,6 +877,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const providerStaticDisagreementCounts = dedupEvidence?.providerStaticDisagreementCounts && typeof dedupEvidence.providerStaticDisagreementCounts === "object"
     ? dedupEvidence.providerStaticDisagreementCounts
     : {};
+  const providerStaticDisagreementClassificationCounts = dedupEvidence?.providerStaticDisagreementClassificationCounts && typeof dedupEvidence.providerStaticDisagreementClassificationCounts === "object"
+    ? dedupEvidence.providerStaticDisagreementClassificationCounts
+    : {};
   const topMergedSummary = formatDedupMergedRows(
     dedupEvidence?.topMergedJobs,
     "No merged canonical jobs in the latest fetch report."
@@ -951,7 +972,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Audit Gate</strong>: ${escapeHtml(formatDedupAuditGate(dedupAuditGate))}. Examples: ${formatDedupAuditGateExamples(dedupAuditGate?.examples, "No gate examples.")}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static disagreements</strong>: ${escapeHtml(formatProviderStaticDisagreementCounts(providerStaticDisagreementCounts))}. ${providerStaticDisagreementSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static disagreements</strong>: ${escapeHtml(formatProviderStaticDisagreementCounts(providerStaticDisagreementCounts))}. Classifications: ${escapeHtml(formatProviderStaticDisagreementClassificationCounts(providerStaticDisagreementClassificationCounts))}. ${providerStaticDisagreementSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup carried bundle examples</strong>: ${formatDedupAuditGateExamples(dedupEvidence?.carriedBundleExamples, "No carried bundle examples.")}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup source composition</strong>: ${escapeHtml(formatDedupSourceClasses(sourceBundleComposition))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup risk reasons</strong>: ${escapeHtml(formatDedupRiskReasonCounts(riskReasonCounts))}</div>

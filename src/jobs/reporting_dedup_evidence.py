@@ -49,6 +49,14 @@ REVIEW_QUEUE_CAUSE_KEYS = (
     "likely_legitimate_multi_role_family",
     "unknown",
 )
+PROVIDER_STATIC_DISAGREEMENT_CLASSIFICATION_KEYS = (
+    "same_job_different_urls",
+    "provider_redirect_or_canonical_url",
+    "static_parser_url_variant",
+    "title_company_collision",
+    "stale_carried_bundle",
+    "needs_manual_review",
+)
 DEDUP_AUDIT_GATE_BLOCKER_CAUSES = frozenset(
     {
         "provider_static_disagreement",
@@ -371,6 +379,16 @@ def _sample_clean_values(
         for item in items
     }
     return sorted(value for value in values if value)[:5]
+
+
+def _identifier_tokens(values: Sequence[str]) -> set[str]:
+    tokens: set[str] = set()
+    for value in values:
+        normalized = norm_text(value.replace("-", " ").replace("_", " ").replace("/", " "))
+        for token in normalized.split():
+            if len(token) >= 6 or (len(token) >= 4 and any(char.isdigit() for char in token)):
+                tokens.add(token)
+    return tokens
 
 
 def _non_provider_items(bundle: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
@@ -1199,16 +1217,28 @@ def _provider_static_disagreement_example(
     static_hosts = sorted({_url_host(url) for url in static_urls if _url_host(url)})
     provider_prefixes = sorted({_path_prefix(url) for url in provider_urls if _path_prefix(url)})
     static_prefixes = sorted({_path_prefix(url) for url in static_urls if _path_prefix(url)})
+    provider_ids = _sample_clean_values(provider_items, "sourceJobId")
+    static_ids = _sample_clean_values(static_items, "sourceJobId")
+    classification, classification_evidence = _provider_static_disagreement_classification(
+        summary=summary,
+        provider_urls=provider_urls,
+        static_urls=static_urls,
+        provider_hosts=provider_hosts,
+        static_hosts=static_hosts,
+        provider_ids=provider_ids,
+        static_ids=static_ids,
+    )
     evidence = [
         f"bundle_origin:{clean_text(summary.get('bundleEvidenceOrigin')) or 'unknown'}",
         f"provider_sources:{len(_sample_clean_values(provider_items, 'source'))}",
         f"static_sources:{len(_sample_clean_values(static_items, 'source'))}",
         f"provider_urls:{len(provider_urls)}",
         f"static_urls:{len(static_urls)}",
-        f"provider_ids:{len(_sample_clean_values(provider_items, 'sourceJobId'))}",
-        f"static_ids:{len(_sample_clean_values(static_items, 'sourceJobId'))}",
+        f"provider_ids:{len(provider_ids)}",
+        f"static_ids:{len(static_ids)}",
         f"shared_primary_url:{str(bool(summary.get('sharedPrimaryUrl'))).lower()}",
         f"identity_quality:{clean_text(summary.get('identityQuality')) or 'unknown'}",
+        f"classification:{classification}",
     ]
     return {
         "title": clean_text(summary.get("title")),
@@ -1218,8 +1248,8 @@ def _provider_static_disagreement_example(
         "sourceBundleCount": max(0, int(summary.get("sourceBundleCount") or 0)),
         "providerSources": _sample_clean_values(provider_items, "source"),
         "staticSources": _sample_clean_values(static_items, "source"),
-        "providerSourceJobIds": _sample_clean_values(provider_items, "sourceJobId"),
-        "staticSourceJobIds": _sample_clean_values(static_items, "sourceJobId"),
+        "providerSourceJobIds": provider_ids,
+        "staticSourceJobIds": static_ids,
         "providerUrls": provider_urls,
         "staticUrls": static_urls,
         "providerUrlHosts": provider_hosts[:5],
@@ -1228,8 +1258,52 @@ def _provider_static_disagreement_example(
         "staticUrlPathPrefixes": static_prefixes[:5],
         "identityQuality": clean_text(summary.get("identityQuality")),
         "outlierReason": clean_text(summary.get("outlierReason")),
+        "disagreementClassification": classification,
+        "disagreementClassificationEvidence": classification_evidence,
         "disagreementEvidence": evidence,
     }
+
+
+def _provider_static_disagreement_classification(
+    *,
+    summary: Mapping[str, Any],
+    provider_urls: Sequence[str],
+    static_urls: Sequence[str],
+    provider_hosts: Sequence[str],
+    static_hosts: Sequence[str],
+    provider_ids: Sequence[str],
+    static_ids: Sequence[str],
+) -> tuple[str, list[str]]:
+    provider_tokens = _identifier_tokens(
+        [*provider_ids, *(_url_path(url) for url in provider_urls)]
+    )
+    static_tokens = _identifier_tokens([*static_ids, *(_url_path(url) for url in static_urls)])
+    shared_tokens = sorted(provider_tokens & static_tokens)
+    same_host = bool(set(provider_hosts) & set(static_hosts))
+    origin = clean_text(summary.get("bundleEvidenceOrigin"))
+    location_count = max(0, int(summary.get("distinctLocationCount") or 0))
+    evidence = [
+        f"origin:{origin or 'unknown'}",
+        f"provider_hosts:{len(provider_hosts)}",
+        f"static_hosts:{len(static_hosts)}",
+        f"shared_identifier_tokens:{len(shared_tokens)}",
+        f"locations:{location_count}",
+    ]
+    if shared_tokens:
+        evidence.append(f"shared_token:{shared_tokens[0]}")
+    if location_count > 1:
+        return "title_company_collision", evidence + ["multiple_locations"]
+    if origin == "carried_from_existing_output" and (
+        not provider_urls or not static_urls or not provider_ids or not static_ids
+    ):
+        return "stale_carried_bundle", evidence + ["missing_url_or_id_side"]
+    if same_host:
+        return "provider_redirect_or_canonical_url", evidence + ["same_host"]
+    if shared_tokens and static_urls:
+        return "static_parser_url_variant", evidence + ["provider_static_shared_identifier"]
+    if provider_ids and static_ids and provider_urls and static_urls:
+        return "same_job_different_urls", evidence + ["both_sides_have_ids_and_urls"]
+    return "needs_manual_review", evidence
 
 
 def _high_risk_origin_counts(summary: Mapping[str, Any], origin: str) -> tuple[int, int]:
@@ -1477,6 +1551,7 @@ def build_dedup_evidence(
     google_sheets_role_bucket_audit_counts: Counter[str] = Counter()
     google_sheets_bucket_intent_counts: Counter[str] = Counter()
     google_sheets_weak_grouping_audit_counts: Counter[str] = Counter()
+    provider_static_disagreement_classification_counts: Counter[str] = Counter()
     top_rows: list[dict[str, Any]] = []
     risky_rows: list[dict[str, Any]] = []
     location_divergence_rows: list[dict[str, Any]] = []
@@ -1543,6 +1618,10 @@ def build_dedup_evidence(
             current_run_provider_static_disagreement_count += current_disagreement
             carried_provider_static_disagreement_count += carried_disagreement
             provider_static_disagreement_rows.extend(disagreement_rows)
+            provider_static_disagreement_classification_counts.update(
+                row.get("disagreementClassification", "needs_manual_review")
+                for row in disagreement_rows
+            )
             reasons = _risky_reasons(row, bundle)
             if reasons:
                 risk_reason_counts.update(reasons)
@@ -1617,6 +1696,10 @@ def build_dedup_evidence(
             "total": provider_static_disagreement_count,
             "currentRun": current_run_provider_static_disagreement_count,
             "carried": carried_provider_static_disagreement_count,
+        },
+        "providerStaticDisagreementClassificationCounts": {
+            key: int(provider_static_disagreement_classification_counts.get(key, 0))
+            for key in PROVIDER_STATIC_DISAGREEMENT_CLASSIFICATION_KEYS
         },
         "sourceBundleComposition": {
             key: int(composition.get(key, 0)) for key in ("provider", "static", "social", "other")

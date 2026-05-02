@@ -51,6 +51,14 @@ test("admin render: provider/static disagreement examples are read-only", () => 
           currentRun: 0,
           carried: 1
         },
+        providerStaticDisagreementClassificationCounts: {
+          same_job_different_urls: 1,
+          provider_redirect_or_canonical_url: 0,
+          static_parser_url_variant: 0,
+          title_company_collision: 0,
+          stale_carried_bundle: 0,
+          needs_manual_review: 0
+        },
         providerStaticDisagreementExamples: [
           {
             title: "Executive Assistant",
@@ -62,6 +70,13 @@ test("admin render: provider/static disagreement examples are read-only", () => 
             staticSources: ["static_source::static:listing_url:https://careers.animocabrands.com/jobs"],
             providerUrls: ["https://jobs.lever.co/animocabrands/abc"],
             staticUrls: ["https://careers.animocabrands.com/companies/animoca-brands/jobs/1"],
+            disagreementClassification: "same_job_different_urls",
+            disagreementClassificationEvidence: [
+              "origin:carried_from_existing_output",
+              "provider_hosts:1",
+              "static_hosts:1",
+              "both_sides_have_ids_and_urls"
+            ],
             disagreementEvidence: [
               "bundle_origin:carried_from_existing_output",
               "provider_urls:1",
@@ -77,11 +92,13 @@ test("admin render: provider/static disagreement examples are read-only", () => 
 
   assert.match(metricsEl.innerHTML, /Dedup provider\/static disagreements/i);
   assert.match(metricsEl.innerHTML, /total 1, current 0, carried 1/i);
+  assert.match(metricsEl.innerHTML, /same job\/different URLs 1/i);
   assert.match(metricsEl.innerHTML, /provider\/static current 0/i);
   assert.match(metricsEl.innerHTML, /provider\/static carried 1/i);
   assert.match(metricsEl.innerHTML, /Executive Assistant/i);
   assert.match(metricsEl.innerHTML, /Animoca Brands/i);
   assert.match(metricsEl.innerHTML, /provider lever_sources/i);
+  assert.match(metricsEl.innerHTML, /classification same job different urls/i);
   assert.match(
     metricsEl.innerHTML,
     /static static_source::static:listing_url:https:\/\/careers\.animocabrands\.com\/jobs/i
@@ -104,5 +121,6 @@ test("admin render: missing provider/static disagreement examples render safely"
 
   assert.match(metricsEl.innerHTML, /Dedup provider\/static disagreements/i);
   assert.match(metricsEl.innerHTML, /total 0, current 0, carried 0/i);
+  assert.match(metricsEl.innerHTML, /same job\/different URLs 0/i);
   assert.match(metricsEl.innerHTML, /No provider\/static disagreement examples/i);
 });

@@ -80,6 +80,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
 | `dedupAuditGate` | `Object` | Read-only lifecycle-readiness gate derived from current-run merges, carried source-bundle collisions, review queue causes, provider/static disagreement, and Google Sheets guard status. |
 | `providerStaticDisagreementCounts` | `Object` | Dedicated counts for provider/static disagreement rows: `total`, `currentRun`, and `carried`. |
+| `providerStaticDisagreementClassificationCounts` | `Object` | Dedicated provider/static disagreement counts by review classification. |
 | `providerStaticDisagreementExamples` | `Array<Object>` | Stable capped sample of provider/static disagreement rows for manual review. |
 | `carriedBundleExamples` | `Array<Object>` | Stable capped sample of historical carried source-bundle rows that may need review or metadata rebuilding. |
 | `carriedBundleReconciliationRecommendation` | `Object` | Optional report-only recommendation to rebuild carried source-bundle metadata in a separate explicit maintenance run. |
@@ -110,9 +111,12 @@ Risky rows also include `riskReasons`, currently including values such as
 Provider/static disagreement examples include `title`, `company`, `dedupKey`,
 `bundleEvidenceOrigin`, `sourceBundleCount`, provider/static source names, provider/static source
 job IDs when present, provider/static URLs, provider/static URL host/path-prefix samples,
-`identityQuality`, and `disagreementEvidence`. They expose cases where provider and static bundle
-entries do not share a primary URL, so operators can review whether the bundle is a safe duplicate
-or a carried historical collision before lifecycle labels rely on it.
+`identityQuality`, `disagreementClassification`, `disagreementClassificationEvidence`, and
+`disagreementEvidence`. Classification values are `same_job_different_urls`,
+`provider_redirect_or_canonical_url`, `static_parser_url_variant`, `title_company_collision`,
+`stale_carried_bundle`, and `needs_manual_review`. They expose cases where provider and static
+bundle entries do not share a primary URL, so operators can review whether the bundle is a safe
+duplicate or a carried historical collision before lifecycle labels rely on it.
 
 Outlier reason values are diagnostic only:
 `multi_location_strong_identity`, `location_divergence_without_strong_identity`,
