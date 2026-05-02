@@ -69,6 +69,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `identityQualityCounts` | `Object` | Aggregate source-bundle identity-quality counts before sample capping. |
 | `nonProviderIdentityProvenanceCounts` | `Object` | Aggregate non-provider source identity provenance counts before sample capping. |
 | `googleSheetsBundleShapeCounts` | `Object` | Aggregate Google Sheets bundle granularity counts before sample capping. |
+| `googleSheetsRoleBucketAuditCounts` | `Object` | Aggregate Google Sheets role-bucket audit counts before sample capping. |
 | `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
 | `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
 | `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
@@ -86,7 +87,8 @@ Sample rows include `id`, `dedupKey`, `title`, `company`, `jobLink`, `locationSu
 `providerSourceJobIdCount`, `hasStrongIdentity`, `dominantSourceClass`,
 `identityShape`, `titleShape`, `identityCaveats`, `titleCompanyPollutionSignals`,
 `nonProviderIdentityProvenance`, `nonProviderIdentityEvidence`, `googleSheetsBundleShape`,
-`googleSheetsBundleEvidence`, `suspectedCause`, and `causeEvidence`.
+`googleSheetsBundleEvidence`, `googleSheetsRoleBucketAudit`,
+`googleSheetsRoleBucketAuditEvidence`, `suspectedCause`, and `causeEvidence`.
 Risky rows also include `riskReasons`, currently including values such as
 `same_title_company_different_location`,
 `provider_static_duplicate_disagreement`, `missing_provider_ids`, and
@@ -117,7 +119,8 @@ controls.
 
 Suspected cause values are diagnostic only: `category_or_department_bucket`,
 `open_application_family`, `listing_page_bundle`, `spreadsheet_role_bucket_needs_review`,
-`parser_or_directory_text_pollution`, `provider_static_disagreement`,
+`google_sheets_role_bucket_needs_review`, `parser_or_directory_text_pollution`,
+`provider_static_disagreement`,
 `likely_legitimate_multi_role_family`, and `unknown`.
 `causeEvidence` is a compact list of the identity shape, title shape, outlier reason, dominant
 source class, caveats, and title/company pollution signals that led to the suspected cause. These
@@ -145,6 +148,14 @@ records compact bundle facts such as source count, unique URL count, URL host/pa
 sample URL paths, source ID shapes, title/location shape, and role-bucket caveats. These fields
 explain spreadsheet bundle granularity; they do not change dedup behavior and do not make Google
 Sheets row IDs provider-grade identity.
+
+Google Sheets role-bucket audit values are diagnostic only:
+`likely_spreadsheet_category_bucket`, `role_family_needs_manual_review`,
+`job_detail_urls_same_role`, `listing_or_search_url_bucket`,
+`parser_normalized_role_title`, `not_google_sheets_role_bucket`, and `unknown`.
+`googleSheetsRoleBucketAuditEvidence` records compact source, URL path, title token, source ID
+shape, location, and pollution facts. These fields explain spreadsheet role-bucket provenance;
+they do not change dedup identity strength or merge policy.
 
 `mergedCount` and `mergeReasonCounts` describe the current dedup pass. They can be zero while
 `sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical

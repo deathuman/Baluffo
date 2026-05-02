@@ -48,6 +48,106 @@ def test_dedup_evidence_reports_google_sheets_single_location_many_urls() -> Non
     assert evidence["googleSheetsBundleShapeCounts"]["single_location_many_urls"] == 1
 
 
+def test_dedup_evidence_audits_role_bucket_listing_or_search_paths() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                title="Product-management",
+                sourceBundle=[
+                    _sheet_item("sheet-row-1", "https://studio.example/jobs"),
+                    _sheet_item("sheet-row-2", "https://studio.example/careers"),
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["googleSheetsRoleBucketAudit"] == "listing_or_search_url_bucket"
+    assert "paths_listing_or_search" in row["googleSheetsRoleBucketAuditEvidence"]
+    assert evidence["googleSheetsRoleBucketAuditCounts"]["listing_or_search_url_bucket"] == 1
+
+
+def test_dedup_evidence_audits_role_bucket_job_detail_paths() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                title="Program-management",
+                sourceBundle=[
+                    _sheet_item("sheet-row-1", "https://studio.example/details/123"),
+                    _sheet_item("sheet-row-2", "https://studio.example/jobs/456"),
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["googleSheetsRoleBucketAudit"] == "job_detail_urls_same_role"
+    assert "paths_job_detail_like" in row["googleSheetsRoleBucketAuditEvidence"]
+    assert evidence["googleSheetsRoleBucketAuditCounts"]["job_detail_urls_same_role"] == 1
+
+
+def test_dedup_evidence_audits_generic_role_bucket_titles() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                title="Localization",
+                sourceBundle=[
+                    _sheet_item("sheet-row-1", "https://studio.example/openings/language"),
+                    _sheet_item("sheet-row-2", "https://studio.example/roles/localization"),
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["googleSheetsRoleBucketAudit"] == "likely_spreadsheet_category_bucket"
+    assert "title_token:localization" in row["googleSheetsRoleBucketAuditEvidence"]
+    assert evidence["googleSheetsRoleBucketAuditCounts"]["likely_spreadsheet_category_bucket"] == 1
+
+
+def test_dedup_evidence_audits_concrete_role_family_for_manual_review() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                title="Senior Gameplay Engineer",
+                sourceBundle=[
+                    _sheet_item("sheet-row-1", "https://studio.example/gameplay/a"),
+                    _sheet_item("sheet-row-2", "https://studio.example/gameplay/b"),
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["googleSheetsRoleBucketAudit"] == "role_family_needs_manual_review"
+    assert evidence["googleSheetsRoleBucketAuditCounts"]["role_family_needs_manual_review"] == 1
+
+
+def test_dedup_evidence_audits_parser_normalized_role_title() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                title="nDreams 4",
+                company="11 bit studios 3",
+                sourceBundle=[
+                    _sheet_item("sheet-row-1", "https://studio.example/jobs/a"),
+                    _sheet_item("sheet-row-2", "https://studio.example/jobs/b"),
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["googleSheetsRoleBucketAudit"] == "parser_normalized_role_title"
+    assert "pollution:title_numeric_suffix" in row["googleSheetsRoleBucketAuditEvidence"]
+    assert evidence["googleSheetsRoleBucketAuditCounts"]["parser_normalized_role_title"] == 1
+
+
 def test_dedup_evidence_reports_google_sheets_role_category_bucket() -> None:
     evidence = build_dedup_evidence(
         {"mergedCount": 0},
@@ -140,7 +240,9 @@ def test_dedup_evidence_reports_not_google_sheets_bundle_shape() -> None:
 
     outlier = evidence["topSourceBundleOutliers"][0]
     assert outlier["googleSheetsBundleShape"] == "not_google_sheets"
+    assert outlier["googleSheetsRoleBucketAudit"] == "not_google_sheets_role_bucket"
     assert evidence["googleSheetsBundleShapeCounts"]["not_google_sheets"] == 1
+    assert evidence["googleSheetsRoleBucketAuditCounts"]["not_google_sheets_role_bucket"] == 1
 
 
 def test_dedup_evidence_counts_google_sheets_shapes_before_sample_capping() -> None:
@@ -149,7 +251,7 @@ def test_dedup_evidence_counts_google_sheets_shapes_before_sample_capping() -> N
             id=f"job-{index}",
             dedupKey=f"key-{index}",
             title="Product-management",
-            company=f"Studio {index}",
+            company="Studio",
             sourceBundle=[
                 _sheet_item(f"sheet-{index}-a", f"https://studio.example/{index}/a"),
                 _sheet_item(f"sheet-{index}-b", f"https://studio.example/{index}/b"),
@@ -162,4 +264,12 @@ def test_dedup_evidence_counts_google_sheets_shapes_before_sample_capping() -> N
 
     assert evidence["googleSheetsBundleShapeCounts"]["role_category_bucket"] == 12
     assert evidence["reviewQueueCauseCounts"]["spreadsheet_role_bucket_needs_review"] == 12
+    assert evidence["googleSheetsRoleBucketAuditCounts"]["job_detail_urls_same_role"] == 12
     assert len(evidence["reviewQueue"]) == 2
+
+
+def test_dedup_evidence_reports_empty_google_sheets_role_bucket_audit_counts() -> None:
+    evidence = build_dedup_evidence({"mergedCount": 0}, [])
+
+    assert not any(evidence["googleSheetsRoleBucketAuditCounts"].values())
+    assert "unknown" in evidence["googleSheetsRoleBucketAuditCounts"]
