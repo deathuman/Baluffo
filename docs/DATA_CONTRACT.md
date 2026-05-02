@@ -70,6 +70,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `nonProviderIdentityProvenanceCounts` | `Object` | Aggregate non-provider source identity provenance counts before sample capping. |
 | `googleSheetsBundleShapeCounts` | `Object` | Aggregate Google Sheets bundle granularity counts before sample capping. |
 | `googleSheetsRoleBucketAuditCounts` | `Object` | Aggregate Google Sheets role-bucket audit counts before sample capping. |
+| `googleSheetsBucketIntentCounts` | `Object` | Aggregate Google Sheets bucket-intent diagnostic counts before sample capping. |
 | `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
 | `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
 | `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
@@ -88,7 +89,8 @@ Sample rows include `id`, `dedupKey`, `title`, `company`, `jobLink`, `locationSu
 `identityShape`, `titleShape`, `identityCaveats`, `titleCompanyPollutionSignals`,
 `nonProviderIdentityProvenance`, `nonProviderIdentityEvidence`, `googleSheetsBundleShape`,
 `googleSheetsBundleEvidence`, `googleSheetsRoleBucketAudit`,
-`googleSheetsRoleBucketAuditEvidence`, `suspectedCause`, and `causeEvidence`.
+`googleSheetsRoleBucketAuditEvidence`, `googleSheetsBucketIntent`,
+`googleSheetsBucketIntentEvidence`, `suspectedCause`, and `causeEvidence`.
 Risky rows also include `riskReasons`, currently including values such as
 `same_title_company_different_location`,
 `provider_static_duplicate_disagreement`, `missing_provider_ids`, and
@@ -156,6 +158,16 @@ Google Sheets role-bucket audit values are diagnostic only:
 `googleSheetsRoleBucketAuditEvidence` records compact source, URL path, title token, source ID
 shape, location, and pollution facts. These fields explain spreadsheet role-bucket provenance;
 they do not change dedup identity strength or merge policy.
+
+Google Sheets bucket-intent values are diagnostic only:
+`likely_spreadsheet_taxonomy_bucket`, `possible_role_family`,
+`weak_title_company_grouping`, `listing_or_search_bucket`, `parser_normalized_bucket`,
+`not_google_sheets_bucket`, and `unknown`. `googleSheetsBucketIntentEvidence` records compact
+source count, unique URL count, URL host/path-prefix count, location count, title/company token
+counts, URL path shape, generic role-bucket title markers, and pollution signals. These fields
+help operators distinguish likely intentional spreadsheet taxonomy buckets from plausible role
+families and weak title/company grouping; they do not change dedup identity strength or merge
+policy.
 
 `mergedCount` and `mergeReasonCounts` describe the current dedup pass. They can be zero while
 `sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical

@@ -95,6 +95,15 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
           not_google_sheets_role_bucket: 4,
           unknown: 0
         },
+        googleSheetsBucketIntentCounts: {
+          likely_spreadsheet_taxonomy_bucket: 3,
+          possible_role_family: 2,
+          weak_title_company_grouping: 1,
+          listing_or_search_bucket: 1,
+          parser_normalized_bucket: 1,
+          not_google_sheets_bucket: 4,
+          unknown: 0
+        },
         reviewQueueCounts: {
           review_many_urls_same_title: 3,
           review_listing_url_bundle: 2,
@@ -184,6 +193,12 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
               "shape:role_category_bucket",
               "paths_listing_or_search"
             ],
+            googleSheetsBucketIntent: "listing_or_search_bucket",
+            googleSheetsBucketIntentEvidence: [
+              "intent:listing_or_search_bucket",
+              "shape:role_category_bucket",
+              "audit:listing_or_search_url_bucket"
+            ],
             identityShape: "shared_listing_or_category_url",
             outlierReason: "large_other_source_bundle",
             identityCaveats: ["shared_url_looks_like_listing_or_category", "category_like_title"],
@@ -235,6 +250,10 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /spreadsheet category 3/i);
   assert.match(metricsEl.innerHTML, /listing\/search 1/i);
   assert.match(metricsEl.innerHTML, /parser normalized 1/i);
+  assert.match(metricsEl.innerHTML, /Dedup Google Sheets bucket intent/i);
+  assert.match(metricsEl.innerHTML, /taxonomy bucket 3/i);
+  assert.match(metricsEl.innerHTML, /possible role family 2/i);
+  assert.match(metricsEl.innerHTML, /weak title\/company 1/i);
   assert.match(metricsEl.innerHTML, /Dedup review queue/i);
   assert.match(metricsEl.innerHTML, /listing URL 2/i);
   assert.match(metricsEl.innerHTML, /category title 1/i);
@@ -268,10 +287,12 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /provenance google sheets row identity/i);
   assert.match(metricsEl.innerHTML, /sheets role category bucket/i);
   assert.match(metricsEl.innerHTML, /sheets audit listing or search url bucket/i);
+  assert.match(metricsEl.innerHTML, /sheets intent listing or search bucket/i);
   assert.match(metricsEl.innerHTML, /identity evidence quality:shared listing url weak/i);
   assert.match(metricsEl.innerHTML, /provenance evidence provenance:google sheets row identity/i);
   assert.match(metricsEl.innerHTML, /sheets evidence shape:role category bucket/i);
   assert.match(metricsEl.innerHTML, /sheets audit evidence audit:listing or search url bucket/i);
+  assert.match(metricsEl.innerHTML, /sheets intent evidence intent:listing or search bucket/i);
   assert.match(metricsEl.innerHTML, /cause evidence cause:listing page bundle/i);
   assert.match(metricsEl.innerHTML, /sources kforce-a \| kforce-b/i);
   assert.match(metricsEl.innerHTML, /Senior Engineer/i);

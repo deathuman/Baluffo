@@ -381,6 +381,19 @@ function formatDedupGoogleSheetsRoleBucketAuditCounts(auditCounts) {
   ].join(", ");
 }
 
+function formatDedupGoogleSheetsBucketIntentCounts(intentCounts) {
+  const counts = intentCounts && typeof intentCounts === "object" ? intentCounts : {};
+  return [
+    `taxonomy bucket ${Number(counts?.likely_spreadsheet_taxonomy_bucket || 0).toLocaleString()}`,
+    `possible role family ${Number(counts?.possible_role_family || 0).toLocaleString()}`,
+    `weak title/company ${Number(counts?.weak_title_company_grouping || 0).toLocaleString()}`,
+    `listing/search ${Number(counts?.listing_or_search_bucket || 0).toLocaleString()}`,
+    `parser normalized ${Number(counts?.parser_normalized_bucket || 0).toLocaleString()}`,
+    `not sheets ${Number(counts?.not_google_sheets_bucket || 0).toLocaleString()}`,
+    `unknown ${Number(counts?.unknown || 0).toLocaleString()}`
+  ].join(", ");
+}
+
 function formatDedupMergedRows(rows, emptyText) {
   const mergedRows = Array.isArray(rows) ? rows : [];
   if (!mergedRows.length) return escapeHtml(emptyText);
@@ -498,6 +511,7 @@ function formatDedupReviewQueueRows(rows, emptyText) {
       const nonProviderProvenance = String(row?.nonProviderIdentityProvenance || "unknown").replaceAll("_", " ");
       const googleSheetsShape = String(row?.googleSheetsBundleShape || "unknown").replaceAll("_", " ");
       const googleSheetsAudit = String(row?.googleSheetsRoleBucketAudit || "unknown").replaceAll("_", " ");
+      const googleSheetsIntent = String(row?.googleSheetsBucketIntent || "unknown").replaceAll("_", " ");
       const outlierReason = String(row?.outlierReason || "unknown").replaceAll("_", " ");
       const suspectedCause = String(row?.suspectedCause || "unknown").replaceAll("_", " ");
       const caveats = Array.isArray(row?.identityCaveats) ? row.identityCaveats : [];
@@ -512,9 +526,11 @@ function formatDedupReviewQueueRows(rows, emptyText) {
       const googleSheetsText = googleSheetsEvidence.length ? googleSheetsEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
       const googleSheetsAuditEvidence = Array.isArray(row?.googleSheetsRoleBucketAuditEvidence) ? row.googleSheetsRoleBucketAuditEvidence : [];
       const googleSheetsAuditText = googleSheetsAuditEvidence.length ? googleSheetsAuditEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
+      const googleSheetsIntentEvidence = Array.isArray(row?.googleSheetsBucketIntentEvidence) ? row.googleSheetsBucketIntentEvidence : [];
+      const googleSheetsIntentText = googleSheetsIntentEvidence.length ? googleSheetsIntentEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
       const sources = Array.isArray(row?.sampleSources) ? row.sampleSources : Array.isArray(row?.sources) ? row.sources : [];
       const sourceText = sources.length ? sources.slice(0, 3).join(" | ") : "none";
-      const detail = `${suspectedCause}; ${identityShape}; quality ${identityQuality}; provenance ${nonProviderProvenance}; sheets ${googleSheetsShape}; sheets audit ${googleSheetsAudit}; ${outlierReason}; caveats ${caveatText}; cause evidence ${causeText}; identity evidence ${qualityText}; provenance evidence ${provenanceText}; sheets evidence ${googleSheetsText}; sheets audit evidence ${googleSheetsAuditText}; sources ${sourceText}`;
+      const detail = `${suspectedCause}; ${identityShape}; quality ${identityQuality}; provenance ${nonProviderProvenance}; sheets ${googleSheetsShape}; sheets audit ${googleSheetsAudit}; sheets intent ${googleSheetsIntent}; ${outlierReason}; caveats ${caveatText}; cause evidence ${causeText}; identity evidence ${qualityText}; provenance evidence ${provenanceText}; sheets evidence ${googleSheetsText}; sheets audit evidence ${googleSheetsAuditText}; sheets intent evidence ${googleSheetsIntentText}; sources ${sourceText}`;
       return `
         <tr>
           <td>${escapeHtml(action)}</td>
@@ -711,6 +727,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const googleSheetsRoleBucketAuditCounts = dedupEvidence?.googleSheetsRoleBucketAuditCounts && typeof dedupEvidence.googleSheetsRoleBucketAuditCounts === "object"
     ? dedupEvidence.googleSheetsRoleBucketAuditCounts
     : {};
+  const googleSheetsBucketIntentCounts = dedupEvidence?.googleSheetsBucketIntentCounts && typeof dedupEvidence.googleSheetsBucketIntentCounts === "object"
+    ? dedupEvidence.googleSheetsBucketIntentCounts
+    : {};
   const reviewQueueCounts = dedupEvidence?.reviewQueueCounts && typeof dedupEvidence.reviewQueueCounts === "object"
     ? dedupEvidence.reviewQueueCounts
     : {};
@@ -812,6 +831,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup non-provider provenance</strong>: ${escapeHtml(formatDedupNonProviderIdentityProvenanceCounts(nonProviderIdentityProvenanceCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets bundle shapes</strong>: ${escapeHtml(formatDedupGoogleSheetsBundleShapeCounts(googleSheetsBundleShapeCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets role-bucket audit</strong>: ${escapeHtml(formatDedupGoogleSheetsRoleBucketAuditCounts(googleSheetsRoleBucketAuditCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets bucket intent</strong>: ${escapeHtml(formatDedupGoogleSheetsBucketIntentCounts(googleSheetsBucketIntentCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review causes</strong>: ${escapeHtml(formatDedupReviewQueueCauseCounts(reviewQueueCauseCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>

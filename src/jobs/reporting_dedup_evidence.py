@@ -86,6 +86,15 @@ GOOGLE_SHEETS_ROLE_BUCKET_AUDIT_KEYS = (
     "not_google_sheets_role_bucket",
     "unknown",
 )
+GOOGLE_SHEETS_BUCKET_INTENT_KEYS = (
+    "likely_spreadsheet_taxonomy_bucket",
+    "possible_role_family",
+    "weak_title_company_grouping",
+    "listing_or_search_bucket",
+    "parser_normalized_bucket",
+    "not_google_sheets_bucket",
+    "unknown",
+)
 CATEGORY_TITLE_TERMS = frozenset(
     {
         "accounting",
@@ -595,6 +604,71 @@ def _google_sheets_role_bucket_audit_evidence(
     return evidence[:16]
 
 
+def _google_sheets_bucket_intent(
+    row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
+) -> str:
+    if _non_provider_identity_provenance(row, bundle) != "google_sheets_row_identity":
+        return "not_google_sheets_bucket"
+    audit = _google_sheets_role_bucket_audit(row, bundle)
+    shape = _google_sheets_bundle_shape(row, bundle)
+    if audit == "parser_normalized_role_title":
+        return "parser_normalized_bucket"
+    if audit == "listing_or_search_url_bucket":
+        return "listing_or_search_bucket"
+    if shape == "role_category_bucket" or _has_generic_role_bucket_title(row):
+        return "likely_spreadsheet_taxonomy_bucket"
+    if audit == "role_family_needs_manual_review" and len(_title_tokens(row)) <= 2:
+        return "weak_title_company_grouping"
+    if audit == "role_family_needs_manual_review" or shape in {
+        "company_role_family",
+        "single_location_many_urls",
+        "multi_location_many_urls",
+    }:
+        return "possible_role_family"
+    if (
+        _identity_shape(row, bundle) == "many_unique_urls_same_title"
+        and _provider_source_job_id_count(bundle) == 0
+        and _non_provider_source_job_id_count(bundle) > 0
+    ):
+        return "weak_title_company_grouping"
+    return "unknown"
+
+
+def _google_sheets_bucket_intent_evidence(
+    row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
+) -> list[str]:
+    paths = _sample_url_paths(bundle)
+    evidence = [
+        f"intent:{_google_sheets_bucket_intent(row, bundle)}",
+        f"shape:{_google_sheets_bundle_shape(row, bundle)}",
+        f"audit:{_google_sheets_role_bucket_audit(row, bundle)}",
+        f"source_count:{len(bundle)}",
+        f"unique_urls:{_unique_job_link_count(bundle)}",
+        f"url_hosts:{_unique_url_host_count(bundle)}",
+        f"url_path_prefixes:{_unique_url_path_prefix_count(bundle)}",
+        f"locations:{len(_meaningful_locations(row))}",
+        f"title_tokens:{len(_title_tokens(row))}",
+        f"company_tokens:{len(_company_tokens(row))}",
+    ]
+    if paths:
+        evidence.append(
+            "paths_listing_or_search"
+            if all(_url_path_looks_listing_or_search(path) for path in paths)
+            else "paths_job_detail_like"
+            if _url_paths_look_job_detail(bundle)
+            else "paths_mixed_or_unclear"
+        )
+    if _looks_role_bucket_title(row):
+        evidence.append("role_bucket_title")
+    if _has_generic_role_bucket_title(row):
+        evidence.append("generic_role_bucket_title")
+    for signal in _title_company_pollution_signals(row):
+        evidence.append(f"pollution:{signal}")
+    for token in _title_tokens(row)[:4]:
+        evidence.append(f"title_token:{token}")
+    return evidence[:16]
+
+
 def _google_sheets_bundle_evidence(
     row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
 ) -> list[str]:
@@ -875,6 +949,9 @@ def _cause_evidence(summary: Mapping[str, Any]) -> list[str]:
     google_sheets_audit = str(summary.get("googleSheetsRoleBucketAudit") or "")
     if google_sheets_audit not in {"", "not_google_sheets_role_bucket", "unknown"}:
         evidence.append(f"google_sheets_audit:{google_sheets_audit}")
+    google_sheets_intent = str(summary.get("googleSheetsBucketIntent") or "")
+    if google_sheets_intent not in {"", "not_google_sheets_bucket", "unknown"}:
+        evidence.append(f"google_sheets_intent:{google_sheets_intent}")
     if summary.get("hasStrongIdentity"):
         evidence.append("strong_identity")
     for signal in summary.get("titleCompanyPollutionSignals") or []:
@@ -956,6 +1033,8 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
         "googleSheetsRoleBucketAuditEvidence": _google_sheets_role_bucket_audit_evidence(
             row, bundle
         ),
+        "googleSheetsBucketIntent": _google_sheets_bucket_intent(row, bundle),
+        "googleSheetsBucketIntentEvidence": _google_sheets_bucket_intent_evidence(row, bundle),
         "titleShape": _title_shape(row),
         "identityCaveats": _identity_caveats(row, bundle),
         "titleCompanyPollutionSignals": _title_company_pollution_signals(row),
@@ -1005,6 +1084,7 @@ def build_dedup_evidence(
     non_provider_identity_provenance_counts: Counter[str] = Counter()
     google_sheets_bundle_shape_counts: Counter[str] = Counter()
     google_sheets_role_bucket_audit_counts: Counter[str] = Counter()
+    google_sheets_bucket_intent_counts: Counter[str] = Counter()
     top_rows: list[dict[str, Any]] = []
     risky_rows: list[dict[str, Any]] = []
     location_divergence_rows: list[dict[str, Any]] = []
@@ -1028,6 +1108,7 @@ def build_dedup_evidence(
             )
             google_sheets_bundle_shape_counts.update([summary["googleSheetsBundleShape"]])
             google_sheets_role_bucket_audit_counts.update([summary["googleSheetsRoleBucketAudit"]])
+            google_sheets_bucket_intent_counts.update([summary["googleSheetsBucketIntent"]])
             review_action = _recommended_review_action(summary)
             review_queue_counts.update([review_action])
             review_queue_cause_counts.update([summary["suspectedCause"]])
@@ -1114,6 +1195,10 @@ def build_dedup_evidence(
         "googleSheetsRoleBucketAuditCounts": {
             key: int(google_sheets_role_bucket_audit_counts.get(key, 0))
             for key in GOOGLE_SHEETS_ROLE_BUCKET_AUDIT_KEYS
+        },
+        "googleSheetsBucketIntentCounts": {
+            key: int(google_sheets_bucket_intent_counts.get(key, 0))
+            for key in GOOGLE_SHEETS_BUCKET_INTENT_KEYS
         },
         "reviewQueueCounts": {
             key: int(review_queue_counts.get(key, 0)) for key in REVIEW_QUEUE_ACTION_KEYS
