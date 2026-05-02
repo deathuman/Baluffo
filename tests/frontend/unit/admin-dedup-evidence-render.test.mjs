@@ -104,6 +104,16 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
           not_google_sheets_bucket: 4,
           unknown: 0
         },
+        googleSheetsWeakGroupingAuditCounts: {
+          role_bucket_detail_url_grouping: 3,
+          role_bucket_listing_grouping: 1,
+          single_token_title_many_urls: 1,
+          two_token_title_many_urls: 2,
+          concrete_title_many_urls: 1,
+          parser_pollution_grouping: 1,
+          not_weak_google_sheets_grouping: 4,
+          unknown: 0
+        },
         reviewQueueCounts: {
           review_many_urls_same_title: 3,
           review_listing_url_bundle: 2,
@@ -199,6 +209,12 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
               "shape:role_category_bucket",
               "audit:listing_or_search_url_bucket"
             ],
+            googleSheetsWeakGroupingAudit: "role_bucket_listing_grouping",
+            googleSheetsWeakGroupingEvidence: [
+              "audit:role_bucket_listing_grouping",
+              "sheet_rows:255",
+              "sheet_row_span:300"
+            ],
             identityShape: "shared_listing_or_category_url",
             outlierReason: "large_other_source_bundle",
             identityCaveats: ["shared_url_looks_like_listing_or_category", "category_like_title"],
@@ -254,6 +270,11 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /taxonomy bucket 3/i);
   assert.match(metricsEl.innerHTML, /possible role family 2/i);
   assert.match(metricsEl.innerHTML, /weak title\/company 1/i);
+  assert.match(metricsEl.innerHTML, /Dedup Google Sheets weak grouping audit/i);
+  assert.match(metricsEl.innerHTML, /role detail URLs 3/i);
+  assert.match(metricsEl.innerHTML, /role listing\/search 1/i);
+  assert.match(metricsEl.innerHTML, /single-token title 1/i);
+  assert.match(metricsEl.innerHTML, /two-token title 2/i);
   assert.match(metricsEl.innerHTML, /Dedup review queue/i);
   assert.match(metricsEl.innerHTML, /listing URL 2/i);
   assert.match(metricsEl.innerHTML, /category title 1/i);
@@ -288,11 +309,13 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /sheets role category bucket/i);
   assert.match(metricsEl.innerHTML, /sheets audit listing or search url bucket/i);
   assert.match(metricsEl.innerHTML, /sheets intent listing or search bucket/i);
+  assert.match(metricsEl.innerHTML, /sheets weak audit role bucket listing grouping/i);
   assert.match(metricsEl.innerHTML, /identity evidence quality:shared listing url weak/i);
   assert.match(metricsEl.innerHTML, /provenance evidence provenance:google sheets row identity/i);
   assert.match(metricsEl.innerHTML, /sheets evidence shape:role category bucket/i);
   assert.match(metricsEl.innerHTML, /sheets audit evidence audit:listing or search url bucket/i);
   assert.match(metricsEl.innerHTML, /sheets intent evidence intent:listing or search bucket/i);
+  assert.match(metricsEl.innerHTML, /sheets weak evidence audit:role bucket listing grouping/i);
   assert.match(metricsEl.innerHTML, /cause evidence cause:listing page bundle/i);
   assert.match(metricsEl.innerHTML, /sources kforce-a \| kforce-b/i);
   assert.match(metricsEl.innerHTML, /Senior Engineer/i);

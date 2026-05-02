@@ -394,6 +394,20 @@ function formatDedupGoogleSheetsBucketIntentCounts(intentCounts) {
   ].join(", ");
 }
 
+function formatDedupGoogleSheetsWeakGroupingAuditCounts(auditCounts) {
+  const counts = auditCounts && typeof auditCounts === "object" ? auditCounts : {};
+  return [
+    `role detail URLs ${Number(counts?.role_bucket_detail_url_grouping || 0).toLocaleString()}`,
+    `role listing/search ${Number(counts?.role_bucket_listing_grouping || 0).toLocaleString()}`,
+    `single-token title ${Number(counts?.single_token_title_many_urls || 0).toLocaleString()}`,
+    `two-token title ${Number(counts?.two_token_title_many_urls || 0).toLocaleString()}`,
+    `concrete title ${Number(counts?.concrete_title_many_urls || 0).toLocaleString()}`,
+    `parser pollution ${Number(counts?.parser_pollution_grouping || 0).toLocaleString()}`,
+    `not weak sheets ${Number(counts?.not_weak_google_sheets_grouping || 0).toLocaleString()}`,
+    `unknown ${Number(counts?.unknown || 0).toLocaleString()}`
+  ].join(", ");
+}
+
 function formatDedupMergedRows(rows, emptyText) {
   const mergedRows = Array.isArray(rows) ? rows : [];
   if (!mergedRows.length) return escapeHtml(emptyText);
@@ -512,6 +526,7 @@ function formatDedupReviewQueueRows(rows, emptyText) {
       const googleSheetsShape = String(row?.googleSheetsBundleShape || "unknown").replaceAll("_", " ");
       const googleSheetsAudit = String(row?.googleSheetsRoleBucketAudit || "unknown").replaceAll("_", " ");
       const googleSheetsIntent = String(row?.googleSheetsBucketIntent || "unknown").replaceAll("_", " ");
+      const googleSheetsWeakAudit = String(row?.googleSheetsWeakGroupingAudit || "unknown").replaceAll("_", " ");
       const outlierReason = String(row?.outlierReason || "unknown").replaceAll("_", " ");
       const suspectedCause = String(row?.suspectedCause || "unknown").replaceAll("_", " ");
       const caveats = Array.isArray(row?.identityCaveats) ? row.identityCaveats : [];
@@ -528,9 +543,11 @@ function formatDedupReviewQueueRows(rows, emptyText) {
       const googleSheetsAuditText = googleSheetsAuditEvidence.length ? googleSheetsAuditEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
       const googleSheetsIntentEvidence = Array.isArray(row?.googleSheetsBucketIntentEvidence) ? row.googleSheetsBucketIntentEvidence : [];
       const googleSheetsIntentText = googleSheetsIntentEvidence.length ? googleSheetsIntentEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
+      const googleSheetsWeakEvidence = Array.isArray(row?.googleSheetsWeakGroupingEvidence) ? row.googleSheetsWeakGroupingEvidence : [];
+      const googleSheetsWeakText = googleSheetsWeakEvidence.length ? googleSheetsWeakEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
       const sources = Array.isArray(row?.sampleSources) ? row.sampleSources : Array.isArray(row?.sources) ? row.sources : [];
       const sourceText = sources.length ? sources.slice(0, 3).join(" | ") : "none";
-      const detail = `${suspectedCause}; ${identityShape}; quality ${identityQuality}; provenance ${nonProviderProvenance}; sheets ${googleSheetsShape}; sheets audit ${googleSheetsAudit}; sheets intent ${googleSheetsIntent}; ${outlierReason}; caveats ${caveatText}; cause evidence ${causeText}; identity evidence ${qualityText}; provenance evidence ${provenanceText}; sheets evidence ${googleSheetsText}; sheets audit evidence ${googleSheetsAuditText}; sheets intent evidence ${googleSheetsIntentText}; sources ${sourceText}`;
+      const detail = `${suspectedCause}; ${identityShape}; quality ${identityQuality}; provenance ${nonProviderProvenance}; sheets ${googleSheetsShape}; sheets audit ${googleSheetsAudit}; sheets intent ${googleSheetsIntent}; sheets weak audit ${googleSheetsWeakAudit}; ${outlierReason}; caveats ${caveatText}; cause evidence ${causeText}; identity evidence ${qualityText}; provenance evidence ${provenanceText}; sheets evidence ${googleSheetsText}; sheets audit evidence ${googleSheetsAuditText}; sheets intent evidence ${googleSheetsIntentText}; sheets weak evidence ${googleSheetsWeakText}; sources ${sourceText}`;
       return `
         <tr>
           <td>${escapeHtml(action)}</td>
@@ -730,6 +747,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const googleSheetsBucketIntentCounts = dedupEvidence?.googleSheetsBucketIntentCounts && typeof dedupEvidence.googleSheetsBucketIntentCounts === "object"
     ? dedupEvidence.googleSheetsBucketIntentCounts
     : {};
+  const googleSheetsWeakGroupingAuditCounts = dedupEvidence?.googleSheetsWeakGroupingAuditCounts && typeof dedupEvidence.googleSheetsWeakGroupingAuditCounts === "object"
+    ? dedupEvidence.googleSheetsWeakGroupingAuditCounts
+    : {};
   const reviewQueueCounts = dedupEvidence?.reviewQueueCounts && typeof dedupEvidence.reviewQueueCounts === "object"
     ? dedupEvidence.reviewQueueCounts
     : {};
@@ -832,6 +852,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets bundle shapes</strong>: ${escapeHtml(formatDedupGoogleSheetsBundleShapeCounts(googleSheetsBundleShapeCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets role-bucket audit</strong>: ${escapeHtml(formatDedupGoogleSheetsRoleBucketAuditCounts(googleSheetsRoleBucketAuditCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets bucket intent</strong>: ${escapeHtml(formatDedupGoogleSheetsBucketIntentCounts(googleSheetsBucketIntentCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets weak grouping audit</strong>: ${escapeHtml(formatDedupGoogleSheetsWeakGroupingAuditCounts(googleSheetsWeakGroupingAuditCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review causes</strong>: ${escapeHtml(formatDedupReviewQueueCauseCounts(reviewQueueCauseCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>

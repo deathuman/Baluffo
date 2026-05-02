@@ -71,6 +71,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `googleSheetsBundleShapeCounts` | `Object` | Aggregate Google Sheets bundle granularity counts before sample capping. |
 | `googleSheetsRoleBucketAuditCounts` | `Object` | Aggregate Google Sheets role-bucket audit counts before sample capping. |
 | `googleSheetsBucketIntentCounts` | `Object` | Aggregate Google Sheets bucket-intent diagnostic counts before sample capping. |
+| `googleSheetsWeakGroupingAuditCounts` | `Object` | Aggregate Google Sheets weak title/company grouping audit counts before sample capping. |
 | `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
 | `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
 | `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
@@ -90,7 +91,8 @@ Sample rows include `id`, `dedupKey`, `title`, `company`, `jobLink`, `locationSu
 `nonProviderIdentityProvenance`, `nonProviderIdentityEvidence`, `googleSheetsBundleShape`,
 `googleSheetsBundleEvidence`, `googleSheetsRoleBucketAudit`,
 `googleSheetsRoleBucketAuditEvidence`, `googleSheetsBucketIntent`,
-`googleSheetsBucketIntentEvidence`, `suspectedCause`, and `causeEvidence`.
+`googleSheetsBucketIntentEvidence`, `googleSheetsWeakGroupingAudit`,
+`googleSheetsWeakGroupingEvidence`, `suspectedCause`, and `causeEvidence`.
 Risky rows also include `riskReasons`, currently including values such as
 `same_title_company_different_location`,
 `provider_static_duplicate_disagreement`, `missing_provider_ids`, and
@@ -168,6 +170,17 @@ counts, URL path shape, generic role-bucket title markers, and pollution signals
 help operators distinguish likely intentional spreadsheet taxonomy buckets from plausible role
 families and weak title/company grouping; they do not change dedup identity strength or merge
 policy.
+
+Google Sheets weak grouping audit values are diagnostic only:
+`role_bucket_detail_url_grouping`, `role_bucket_listing_grouping`,
+`single_token_title_many_urls`, `two_token_title_many_urls`, `concrete_title_many_urls`,
+`parser_pollution_grouping`, `not_weak_google_sheets_grouping`, and `unknown`.
+`googleSheetsWeakGroupingEvidence` records compact source count, unique URL count, URL
+host/path-prefix count, Google Sheets row-id count and span, title/company token counts,
+location count, URL path shape, title tokens, path tokens, source ID samples, and pollution
+signals. These fields help explain whether weak Google Sheets title/company grouping looks like
+intentional spreadsheet bucketing, plausible role-family grouping, parser pollution, or a row-id
+cluster that needs manual review. They do not change dedup behavior or lifecycle labels.
 
 `mergedCount` and `mergeReasonCounts` describe the current dedup pass. They can be zero while
 `sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical

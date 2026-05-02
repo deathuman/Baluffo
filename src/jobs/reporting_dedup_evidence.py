@@ -95,6 +95,16 @@ GOOGLE_SHEETS_BUCKET_INTENT_KEYS = (
     "not_google_sheets_bucket",
     "unknown",
 )
+GOOGLE_SHEETS_WEAK_GROUPING_AUDIT_KEYS = (
+    "role_bucket_detail_url_grouping",
+    "role_bucket_listing_grouping",
+    "single_token_title_many_urls",
+    "two_token_title_many_urls",
+    "concrete_title_many_urls",
+    "parser_pollution_grouping",
+    "not_weak_google_sheets_grouping",
+    "unknown",
+)
 CATEGORY_TITLE_TERMS = frozenset(
     {
         "accounting",
@@ -408,6 +418,25 @@ def _source_job_id_prefix(value: str) -> str:
     return normalized[:12]
 
 
+def _sheet_row_indexes(bundle: Sequence[Mapping[str, Any]]) -> list[int]:
+    indexes: list[int] = []
+    for value in _non_provider_source_job_id_values(bundle):
+        normalized = clean_text(value).lower()
+        if not normalized.startswith("sheet-"):
+            continue
+        suffix = normalized.removeprefix("sheet-")
+        if suffix.isdigit():
+            indexes.append(int(suffix))
+    return sorted(indexes)
+
+
+def _sheet_row_span(bundle: Sequence[Mapping[str, Any]]) -> int:
+    indexes = _sheet_row_indexes(bundle)
+    if not indexes:
+        return 0
+    return indexes[-1] - indexes[0] + 1
+
+
 def _non_provider_identity_provenance(
     row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
 ) -> str:
@@ -667,6 +696,74 @@ def _google_sheets_bucket_intent_evidence(
     for token in _title_tokens(row)[:4]:
         evidence.append(f"title_token:{token}")
     return evidence[:16]
+
+
+def _google_sheets_weak_grouping_audit(
+    row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
+) -> str:
+    if _non_provider_identity_provenance(row, bundle) != "google_sheets_row_identity":
+        return "not_weak_google_sheets_grouping"
+    if _title_company_pollution_signals(row):
+        return "parser_pollution_grouping"
+    paths = _sample_url_paths(bundle)
+    if paths and all(_url_path_looks_listing_or_search(path) for path in paths):
+        return "role_bucket_listing_grouping"
+    if _url_paths_look_job_detail(bundle) and (
+        _looks_role_bucket_title(row) or _has_generic_role_bucket_title(row)
+    ):
+        return "role_bucket_detail_url_grouping"
+    if _google_sheets_bucket_intent(row, bundle) != "weak_title_company_grouping":
+        return "not_weak_google_sheets_grouping"
+    title_token_count = len(_title_tokens(row))
+    if title_token_count <= 1:
+        return "single_token_title_many_urls"
+    if title_token_count == 2:
+        return "two_token_title_many_urls"
+    if _unique_job_link_count(bundle) > 1:
+        return "concrete_title_many_urls"
+    return "unknown"
+
+
+def _google_sheets_weak_grouping_evidence(
+    row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
+) -> list[str]:
+    ids = _non_provider_source_job_id_values(bundle)
+    indexes = _sheet_row_indexes(bundle)
+    paths = _sample_url_paths(bundle)
+    path_tokens = sorted({token for path in paths for token in _path_tokens(path)})
+    evidence = [
+        f"audit:{_google_sheets_weak_grouping_audit(row, bundle)}",
+        f"intent:{_google_sheets_bucket_intent(row, bundle)}",
+        f"source_count:{len(bundle)}",
+        f"unique_urls:{_unique_job_link_count(bundle)}",
+        f"url_hosts:{_unique_url_host_count(bundle)}",
+        f"url_path_prefixes:{_unique_url_path_prefix_count(bundle)}",
+        f"sheet_rows:{len(indexes)}",
+        f"sheet_row_span:{_sheet_row_span(bundle)}",
+        f"locations:{len(_meaningful_locations(row))}",
+        f"title_tokens:{len(_title_tokens(row))}",
+        f"company_tokens:{len(_company_tokens(row))}",
+    ]
+    if indexes:
+        evidence.append(f"sheet_row_min:{indexes[0]}")
+        evidence.append(f"sheet_row_max:{indexes[-1]}")
+    if paths:
+        evidence.append(
+            "paths_listing_or_search"
+            if all(_url_path_looks_listing_or_search(path) for path in paths)
+            else "paths_job_detail_like"
+            if _url_paths_look_job_detail(bundle)
+            else "paths_mixed_or_unclear"
+        )
+    for signal in _title_company_pollution_signals(row):
+        evidence.append(f"pollution:{signal}")
+    for token in _title_tokens(row)[:3]:
+        evidence.append(f"title_token:{token}")
+    for token in path_tokens[:3]:
+        evidence.append(f"path_token:{token}")
+    for value in ids[:3]:
+        evidence.append(f"source_id:{value}")
+    return evidence[:20]
 
 
 def _google_sheets_bundle_evidence(
@@ -930,6 +1027,33 @@ def _suspected_cause(summary: Mapping[str, Any]) -> str:
     return "unknown"
 
 
+def _google_sheets_cause_evidence(summary: Mapping[str, Any]) -> list[str]:
+    fields = (
+        ("google_sheets_shape", "googleSheetsBundleShape", {"", "not_google_sheets", "unknown"}),
+        (
+            "google_sheets_audit",
+            "googleSheetsRoleBucketAudit",
+            {"", "not_google_sheets_role_bucket", "unknown"},
+        ),
+        (
+            "google_sheets_intent",
+            "googleSheetsBucketIntent",
+            {"", "not_google_sheets_bucket", "unknown"},
+        ),
+        (
+            "google_sheets_weak_audit",
+            "googleSheetsWeakGroupingAudit",
+            {"", "not_weak_google_sheets_grouping", "unknown"},
+        ),
+    )
+    evidence: list[str] = []
+    for label, key, ignored in fields:
+        value = str(summary.get(key) or "")
+        if value not in ignored:
+            evidence.append(f"{label}:{value}")
+    return evidence
+
+
 def _cause_evidence(summary: Mapping[str, Any]) -> list[str]:
     evidence: list[str] = []
     for label, key in (
@@ -943,15 +1067,7 @@ def _cause_evidence(summary: Mapping[str, Any]) -> list[str]:
         value = str(summary.get(key) or "")
         if value:
             evidence.append(f"{label}:{value}")
-    google_sheets_shape = str(summary.get("googleSheetsBundleShape") or "")
-    if google_sheets_shape not in {"", "not_google_sheets", "unknown"}:
-        evidence.append(f"google_sheets_shape:{google_sheets_shape}")
-    google_sheets_audit = str(summary.get("googleSheetsRoleBucketAudit") or "")
-    if google_sheets_audit not in {"", "not_google_sheets_role_bucket", "unknown"}:
-        evidence.append(f"google_sheets_audit:{google_sheets_audit}")
-    google_sheets_intent = str(summary.get("googleSheetsBucketIntent") or "")
-    if google_sheets_intent not in {"", "not_google_sheets_bucket", "unknown"}:
-        evidence.append(f"google_sheets_intent:{google_sheets_intent}")
+    evidence.extend(_google_sheets_cause_evidence(summary))
     if summary.get("hasStrongIdentity"):
         evidence.append("strong_identity")
     for signal in summary.get("titleCompanyPollutionSignals") or []:
@@ -1035,6 +1151,8 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
         ),
         "googleSheetsBucketIntent": _google_sheets_bucket_intent(row, bundle),
         "googleSheetsBucketIntentEvidence": _google_sheets_bucket_intent_evidence(row, bundle),
+        "googleSheetsWeakGroupingAudit": _google_sheets_weak_grouping_audit(row, bundle),
+        "googleSheetsWeakGroupingEvidence": _google_sheets_weak_grouping_evidence(row, bundle),
         "titleShape": _title_shape(row),
         "identityCaveats": _identity_caveats(row, bundle),
         "titleCompanyPollutionSignals": _title_company_pollution_signals(row),
@@ -1085,6 +1203,7 @@ def build_dedup_evidence(
     google_sheets_bundle_shape_counts: Counter[str] = Counter()
     google_sheets_role_bucket_audit_counts: Counter[str] = Counter()
     google_sheets_bucket_intent_counts: Counter[str] = Counter()
+    google_sheets_weak_grouping_audit_counts: Counter[str] = Counter()
     top_rows: list[dict[str, Any]] = []
     risky_rows: list[dict[str, Any]] = []
     location_divergence_rows: list[dict[str, Any]] = []
@@ -1109,6 +1228,9 @@ def build_dedup_evidence(
             google_sheets_bundle_shape_counts.update([summary["googleSheetsBundleShape"]])
             google_sheets_role_bucket_audit_counts.update([summary["googleSheetsRoleBucketAudit"]])
             google_sheets_bucket_intent_counts.update([summary["googleSheetsBucketIntent"]])
+            google_sheets_weak_grouping_audit_counts.update(
+                [summary["googleSheetsWeakGroupingAudit"]]
+            )
             review_action = _recommended_review_action(summary)
             review_queue_counts.update([review_action])
             review_queue_cause_counts.update([summary["suspectedCause"]])
@@ -1199,6 +1321,10 @@ def build_dedup_evidence(
         "googleSheetsBucketIntentCounts": {
             key: int(google_sheets_bucket_intent_counts.get(key, 0))
             for key in GOOGLE_SHEETS_BUCKET_INTENT_KEYS
+        },
+        "googleSheetsWeakGroupingAuditCounts": {
+            key: int(google_sheets_weak_grouping_audit_counts.get(key, 0))
+            for key in GOOGLE_SHEETS_WEAK_GROUPING_AUDIT_KEYS
         },
         "reviewQueueCounts": {
             key: int(review_queue_counts.get(key, 0)) for key in REVIEW_QUEUE_ACTION_KEYS

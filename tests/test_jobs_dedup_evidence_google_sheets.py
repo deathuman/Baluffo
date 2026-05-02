@@ -65,10 +65,12 @@ def test_dedup_evidence_audits_role_bucket_listing_or_search_paths() -> None:
     row = evidence["reviewQueue"][0]
     assert row["googleSheetsRoleBucketAudit"] == "listing_or_search_url_bucket"
     assert row["googleSheetsBucketIntent"] == "listing_or_search_bucket"
+    assert row["googleSheetsWeakGroupingAudit"] == "role_bucket_listing_grouping"
     assert "paths_listing_or_search" in row["googleSheetsRoleBucketAuditEvidence"]
     assert "intent:listing_or_search_bucket" in row["googleSheetsBucketIntentEvidence"]
     assert evidence["googleSheetsRoleBucketAuditCounts"]["listing_or_search_url_bucket"] == 1
     assert evidence["googleSheetsBucketIntentCounts"]["listing_or_search_bucket"] == 1
+    assert evidence["googleSheetsWeakGroupingAuditCounts"]["role_bucket_listing_grouping"] == 1
 
 
 def test_dedup_evidence_audits_role_bucket_job_detail_paths() -> None:
@@ -88,9 +90,11 @@ def test_dedup_evidence_audits_role_bucket_job_detail_paths() -> None:
     row = evidence["reviewQueue"][0]
     assert row["googleSheetsRoleBucketAudit"] == "job_detail_urls_same_role"
     assert row["googleSheetsBucketIntent"] == "likely_spreadsheet_taxonomy_bucket"
+    assert row["googleSheetsWeakGroupingAudit"] == "role_bucket_detail_url_grouping"
     assert "paths_job_detail_like" in row["googleSheetsRoleBucketAuditEvidence"]
     assert evidence["googleSheetsRoleBucketAuditCounts"]["job_detail_urls_same_role"] == 1
     assert evidence["googleSheetsBucketIntentCounts"]["likely_spreadsheet_taxonomy_bucket"] == 1
+    assert evidence["googleSheetsWeakGroupingAuditCounts"]["role_bucket_detail_url_grouping"] == 1
 
 
 def test_dedup_evidence_audits_generic_role_bucket_titles() -> None:
@@ -153,8 +157,52 @@ def test_dedup_evidence_reports_weak_google_sheets_title_company_grouping() -> N
     row = evidence["reviewQueue"][0]
     assert row["googleSheetsRoleBucketAudit"] == "role_family_needs_manual_review"
     assert row["googleSheetsBucketIntent"] == "weak_title_company_grouping"
+    assert row["googleSheetsWeakGroupingAudit"] == "single_token_title_many_urls"
     assert "title_tokens:1" in row["googleSheetsBucketIntentEvidence"]
+    assert "source_id:sheet-row-1" in row["googleSheetsWeakGroupingEvidence"]
     assert evidence["googleSheetsBucketIntentCounts"]["weak_title_company_grouping"] == 1
+    assert evidence["googleSheetsWeakGroupingAuditCounts"]["single_token_title_many_urls"] == 1
+
+
+def test_dedup_evidence_audits_two_token_google_sheets_weak_grouping() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                title="Backend Engineer",
+                sourceBundle=[
+                    _sheet_item("sheet-10", "https://studio.example/team/backend-a"),
+                    _sheet_item("sheet-14", "https://studio.example/team/backend-b"),
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["googleSheetsBucketIntent"] == "weak_title_company_grouping"
+    assert row["googleSheetsWeakGroupingAudit"] == "two_token_title_many_urls"
+    assert "sheet_row_span:5" in row["googleSheetsWeakGroupingEvidence"]
+    assert evidence["googleSheetsWeakGroupingAuditCounts"]["two_token_title_many_urls"] == 1
+
+
+def test_dedup_evidence_audits_concrete_title_google_sheets_weak_grouping() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                title="Senior Online Gameplay Engineer",
+                sourceBundle=[
+                    _sheet_item("sheet-20", "https://studio.example/team/a"),
+                    _sheet_item("sheet-21", "https://studio.example/team/b"),
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["googleSheetsBucketIntent"] == "possible_role_family"
+    assert row["googleSheetsWeakGroupingAudit"] == "not_weak_google_sheets_grouping"
+    assert evidence["googleSheetsWeakGroupingAuditCounts"]["not_weak_google_sheets_grouping"] == 1
 
 
 def test_dedup_evidence_audits_parser_normalized_role_title() -> None:
@@ -175,9 +223,11 @@ def test_dedup_evidence_audits_parser_normalized_role_title() -> None:
     row = evidence["reviewQueue"][0]
     assert row["googleSheetsRoleBucketAudit"] == "parser_normalized_role_title"
     assert row["googleSheetsBucketIntent"] == "parser_normalized_bucket"
+    assert row["googleSheetsWeakGroupingAudit"] == "parser_pollution_grouping"
     assert "pollution:title_numeric_suffix" in row["googleSheetsRoleBucketAuditEvidence"]
     assert evidence["googleSheetsRoleBucketAuditCounts"]["parser_normalized_role_title"] == 1
     assert evidence["googleSheetsBucketIntentCounts"]["parser_normalized_bucket"] == 1
+    assert evidence["googleSheetsWeakGroupingAuditCounts"]["parser_pollution_grouping"] == 1
 
 
 def test_dedup_evidence_reports_google_sheets_role_category_bucket() -> None:
@@ -310,5 +360,7 @@ def test_dedup_evidence_reports_empty_google_sheets_role_bucket_audit_counts() -
 
     assert not any(evidence["googleSheetsRoleBucketAuditCounts"].values())
     assert not any(evidence["googleSheetsBucketIntentCounts"].values())
+    assert not any(evidence["googleSheetsWeakGroupingAuditCounts"].values())
     assert "unknown" in evidence["googleSheetsRoleBucketAuditCounts"]
     assert "unknown" in evidence["googleSheetsBucketIntentCounts"]
+    assert "unknown" in evidence["googleSheetsWeakGroupingAuditCounts"]
