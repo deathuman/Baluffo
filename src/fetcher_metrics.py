@@ -140,6 +140,7 @@ def build_metrics(
     redundant_static_proposals = normalize_redundant_static_proposals_payload(
         report.get("redundantStaticProposals")
     )
+    dedup_evidence = copy_json_object(report.get("dedupEvidence"))
     source_policy_recommendation_export = as_json_object(
         report.get("sourcePolicyRecommendationExport")
     )
@@ -166,6 +167,7 @@ def build_metrics(
                 as_json_list(timing_summary.get("highCostLowYieldSources"))
             ),
             "sourceHealth": source_health,
+            "dedupEvidence": dedup_evidence,
             "providerCoverage": provider_coverage,
             "providerStaticOverlap": provider_static_overlap,
             "staticSuppressionPolicy": static_suppression_policy,

@@ -18,6 +18,12 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
             }
         },
         "summary": {"inputCount": 10, "mergedCount": 2, "outputCount": 8},
+        "dedupEvidence": {
+            "schemaVersion": 1,
+            "mergedCount": 2,
+            "riskyMergeExampleCount": 1,
+            "topMergedJobs": [{"title": "Senior Engineer"}],
+        },
         "sources": [
             {"name": "a", "status": "ok", "durationMs": 10, "keptCount": 8},
             {
@@ -79,6 +85,8 @@ def test_build_metrics_computes_duplicate_and_history_stats() -> None:
     assert latest["sourceHealth"]["totalSources"] == 3
     assert latest["sourceHealth"]["browserFallbackRecommendedSources"] == 1
     assert latest["sourceHealth"]["sourcesNeedingAttention"][0]["name"] == "b"
+    assert latest["dedupEvidence"]["mergedCount"] == 2
+    assert latest["dedupEvidence"]["topMergedJobs"][0]["title"] == "Senior Engineer"
     assert latest["providerStaticOverlap"]["safePairCount"] == 1
     assert latest["providerStaticOverlap"]["pairs"][0]["auditStatus"] == "safe"
     assert latest["staticSuppressionPolicy"]["suppressedCount"] == 1

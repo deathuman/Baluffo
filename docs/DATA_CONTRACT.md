@@ -5,7 +5,7 @@
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
 > - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and the owning runtime docs
-> - **Last updated:** 2026-04-26
+> - **Last updated:** 2026-05-02
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
@@ -46,6 +46,31 @@ Represents a single job posting retrieved from the external sources.
 | `sourceBundle` | `Array<Object>` | Raw ATS payload of the duplicate rows. |
 | `adapter` | `string` | The Python adapter module used (e.g., `static`, `social`, `csv`). |
 | `studio` | `string` | The underlying pipeline configuration studio group. |
+
+### 1.1 Fetch report dedup evidence
+
+Completed fetch reports may include top-level `dedupEvidence`. This section is read-only
+diagnostics built after deduplication from final canonical rows, `sourceBundle`, and dedup stats.
+It does not change merge policy, job lifecycle retention, source selection, registry state, or any
+source-policy behavior. Admin/Ops may surface it to help operators inspect whether merged jobs look
+trustworthy before user-facing lifecycle labels are expanded.
+
+| Field | Type | Description |
+|---|---|---|
+| `schemaVersion` | `number` | Dedup evidence payload version. |
+| `mergedCount` | `number` | Count of input rows merged away during deduplication. |
+| `collisionSamplesCount` | `number` | Count of stored merge collision samples from the dedup pass. |
+| `mergeReasonCounts` | `Object` | Counts for `primaryUrl`, `secondaryKey`, `socialKey`, `sparseIdentity`, and `unknown`. |
+| `sourceBundleComposition` | `Object` | Count of bundle entries by source class: `provider`, `static`, `social`, and `other`. |
+| `topMergedJobs` | `Array<Object>` | Stable capped sample of canonical rows with the largest `sourceBundleCount`. |
+| `riskyMergeExamples` | `Array<Object>` | Stable capped sample of merged rows that need review because evidence is weak or conflicting. |
+| `riskyMergeExampleCount` | `number` | Total risky examples before sample capping. |
+
+Sample rows include `id`, `dedupKey`, `title`, `company`, `jobLink`, `locationSummary`,
+`sourceBundleCount`, `sourceClasses`, and `sources`. Risky rows also include `riskReasons`, currently
+including values such as `same_title_company_different_location`,
+`provider_static_duplicate_disagreement`, `missing_provider_ids`, and
+`weak_title_company_only_evidence`.
 
 ## 2. Desktop Local Data
 

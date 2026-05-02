@@ -35,6 +35,7 @@ from src.jobs.pipeline_runtime_summary import (
 )
 from src.jobs.pipeline_timing import build_runtime_timing_summary, percentile_ms
 from src.jobs.registry import STUDIO_SOURCE_REGISTRY
+from src.jobs.reporting_dedup_evidence import build_dedup_evidence
 from src.jobs.reporting_queues import (
     build_browser_fallback_queue,
     build_parser_regression_queue,
@@ -571,6 +572,7 @@ def finalize_pipeline_run(
         lifecycle_counts_map=lifecycle_counts_map,
         summary_source_rows=final_source_rows,
     )
+    dedup_evidence_payload = build_dedup_evidence(dedup_stats, deduped_payload_rows)
 
     report_payload = normalize_fetch_report_payload(
         {
@@ -597,6 +599,7 @@ def finalize_pipeline_run(
             "workItems": snapshot_task_rows(task_runtime.task_rows),
             "recentEvents": list(task_runtime.recent_events),
             "summary": summary_payload,
+            "dedupEvidence": dedup_evidence_payload,
             "lifecycleSummary": _lifecycle_summary_payload(lifecycle_counts_map),
             "sources": final_source_rows,
             "sourceFamilies": source_reports,

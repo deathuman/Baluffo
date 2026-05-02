@@ -542,6 +542,7 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
         "sourceFamilies": normalized_source_families,
         "sourceHealth": source_health,
         "providerCoverage": provider_coverage,
+        "dedupEvidence": _as_dict(src.get("dedupEvidence")),
         "providerStaticOverlap": provider_static_overlap,
         "staticSuppressionPolicy": static_suppression_policy,
         "redundantStaticProposals": redundant_static_proposals,

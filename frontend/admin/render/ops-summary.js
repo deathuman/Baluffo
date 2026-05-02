@@ -175,7 +175,7 @@ function formatSourceHealthRows(rows, emptyText, { includeDuration = false } = {
       const reasonSuffix = reason ? `, ${reason.replaceAll("_", " ")}` : "";
       return escapeHtml(`${name} (${status}, kept ${kept}${duration}${reasonSuffix})`);
     })
-    .join(" | ");
+    .join("");
 }
 
 function formatProviderCoverageRows(rows, emptyText) {
@@ -191,7 +191,7 @@ function formatProviderCoverageRows(rows, emptyText) {
       const successes = Number(row?.providerCoverageConsecutiveSuccesses || 0);
       return escapeHtml(`${name} (${status}, kept ${kept}, successes ${successes}, ${readiness})`);
     })
-    .join(" | ");
+    .join("");
 }
 
 function formatDynamicRedundantStaticRows(rows, emptyText) {
@@ -256,6 +256,71 @@ function formatRedundantStaticProposalRows(rows, emptyText) {
     .join(" | ");
 }
 
+function formatDedupSourceClasses(sourceClasses) {
+  const classes = sourceClasses && typeof sourceClasses === "object" ? sourceClasses : {};
+  return [
+    `provider ${Number(classes?.provider || 0).toLocaleString()}`,
+    `static ${Number(classes?.static || 0).toLocaleString()}`,
+    `social ${Number(classes?.social || 0).toLocaleString()}`,
+    `other ${Number(classes?.other || 0).toLocaleString()}`
+  ].join(", ");
+}
+
+function formatDedupMergedRows(rows, emptyText) {
+  const mergedRows = Array.isArray(rows) ? rows : [];
+  if (!mergedRows.length) return escapeHtml(emptyText);
+  const body = mergedRows
+    .slice(0, 5)
+    .map(row => {
+      const title = String(row?.title || "Untitled");
+      const company = String(row?.company || "Unknown company");
+      const count = Number(row?.sourceBundleCount || 0);
+      const classes = formatDedupSourceClasses(row?.sourceClasses);
+      return `
+        <tr>
+          <td>${escapeHtml(title)}</td>
+          <td>${escapeHtml(company)}</td>
+          <td>${count.toLocaleString()}</td>
+          <td>${escapeHtml(classes)}</td>
+        </tr>
+      `;
+    })
+    .join(" | ");
+  return `
+    <table class="admin-dedup-evidence-table">
+      <thead><tr><th>Title</th><th>Company</th><th>Sources</th><th>Classes</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  `;
+}
+
+function formatDedupRiskRows(rows, emptyText) {
+  const riskRows = Array.isArray(rows) ? rows : [];
+  if (!riskRows.length) return escapeHtml(emptyText);
+  const body = riskRows
+    .slice(0, 5)
+    .map(row => {
+      const title = String(row?.title || "Untitled");
+      const company = String(row?.company || "Unknown company");
+      const reasons = Array.isArray(row?.riskReasons) ? row.riskReasons : [];
+      const reasonText = reasons.length ? reasons.join(", ").replaceAll("_", " ") : "review";
+      return `
+        <tr>
+          <td>${escapeHtml(title)}</td>
+          <td>${escapeHtml(company)}</td>
+          <td>${escapeHtml(reasonText)}</td>
+        </tr>
+      `;
+    })
+    .join(" | ");
+  return `
+    <table class="admin-dedup-evidence-table">
+      <thead><tr><th>Title</th><th>Company</th><th>Reason</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  `;
+}
+
 export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};
@@ -284,6 +349,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     slowestSources: Array.isArray(latest?.slowestSources) ? latest.slowestSources : [],
     stageTop: Array.isArray(latest?.stageTop) ? latest.stageTop : [],
     sourceHealth: latest?.sourceHealth || {},
+    dedupEvidence: latest?.dedupEvidence || {},
     providerCoverage: latest?.providerCoverage || {},
     providerStaticOverlap: latest?.providerStaticOverlap || {},
     staticSuppressionPolicy: latest?.staticSuppressionPolicy || {},
@@ -303,6 +369,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const stageTop = Array.isArray(latest?.stageTop) ? latest.stageTop : [];
   const highCostLowYield = Array.isArray(latest?.highCostLowYieldSources) ? latest.highCostLowYieldSources : [];
   const sourceHealth = latest?.sourceHealth && typeof latest.sourceHealth === "object" ? latest.sourceHealth : {};
+  const dedupEvidence = latest?.dedupEvidence && typeof latest.dedupEvidence === "object" ? latest.dedupEvidence : {};
   const providerCoverage = latest?.providerCoverage && typeof latest.providerCoverage === "object" ? latest.providerCoverage : {};
   const providerStaticOverlap = latest?.providerStaticOverlap && typeof latest.providerStaticOverlap === "object" ? latest.providerStaticOverlap : {};
   const staticSuppressionPolicy = latest?.staticSuppressionPolicy && typeof latest.staticSuppressionPolicy === "object" ? latest.staticSuppressionPolicy : {};
@@ -404,6 +471,20 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     proposalRows.filter(row => row?.proposal === "static_only_jobs_detected"),
     "No static-only proposals."
   );
+  const mergeReasonCounts = dedupEvidence?.mergeReasonCounts && typeof dedupEvidence.mergeReasonCounts === "object"
+    ? dedupEvidence.mergeReasonCounts
+    : {};
+  const sourceBundleComposition = dedupEvidence?.sourceBundleComposition && typeof dedupEvidence.sourceBundleComposition === "object"
+    ? dedupEvidence.sourceBundleComposition
+    : {};
+  const topMergedSummary = formatDedupMergedRows(
+    dedupEvidence?.topMergedJobs,
+    "No merged canonical jobs in the latest fetch report."
+  );
+  const riskyMergeSummary = formatDedupRiskRows(
+    dedupEvidence?.riskyMergeExamples,
+    "No risky merge examples in the latest fetch report."
+  );
   const bucketSummaryHtml = bucketRows.length
     ? bucketRows.map(bucket => `
       <div class="admin-ops-schedule-item admin-ops-full-row">
@@ -444,6 +525,18 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
       <div class="admin-total-value">${(outputYieldRate * 100).toFixed(1)}%</div>
     </div>
     <div class="admin-total-card">
+      <div class="admin-total-label">Dedup Merged</div>
+      <div class="admin-total-value">${Number(dedupEvidence?.mergedCount || latest?.mergedCount || 0).toLocaleString()}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Dedup Collisions</div>
+      <div class="admin-total-value">${Number(dedupEvidence?.collisionSamplesCount || 0).toLocaleString()}</div>
+    </div>
+    <div class="admin-total-card">
+      <div class="admin-total-label">Risky Merges</div>
+      <div class="admin-total-value">${Number(dedupEvidence?.riskyMergeExampleCount || 0).toLocaleString()}</div>
+    </div>
+    <div class="admin-total-card">
       <div class="admin-total-label">Median Source Time</div>
       <div class="admin-total-value">${formatDuration(Number(latest?.medianSourceDurationMs || 0))}</div>
     </div>
@@ -462,6 +555,10 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest sources</strong>: ${escapeHtml(slowestSummary)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics; primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}.</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup source composition</strong>: ${escapeHtml(formatDedupSourceClasses(sourceBundleComposition))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Risky merge examples</strong>: ${riskyMergeSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Sources needing attention</strong>: ${attentionSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Zero kept / needs review</strong>: ${zeroReviewSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Browser fallback recommended</strong>: ${browserSummary}</div>

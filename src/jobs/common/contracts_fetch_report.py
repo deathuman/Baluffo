@@ -315,6 +315,7 @@ def normalize_fetch_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
             src.get("sourceHealth"), normalized_source_rows
         ),
         "providerCoverage": normalize_provider_coverage_payload(src.get("providerCoverage")),
+        "dedupEvidence": copy_json_object(src.get("dedupEvidence")),
         "providerStaticOverlap": normalize_provider_static_overlap_payload(
             src.get("providerStaticOverlap"), source_rows=normalized_source_rows
         ),
