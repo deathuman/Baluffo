@@ -78,7 +78,9 @@ def test_dedup_evidence_reports_top_merged_jobs_and_reason_counts() -> None:
         "social": 1,
         "other": 0,
     }
+    assert evidence["sourceBundleCollisionCount"] == 1
     assert evidence["topMergedJobs"][0]["sourceBundleCount"] == 3
+    assert evidence["topSourceBundleOutliers"][0]["sourceBundleCount"] == 3
     assert evidence["topMergedJobs"][0]["sourceClasses"]["static"] == 1
 
 
@@ -115,6 +117,12 @@ def test_dedup_evidence_flags_risky_location_and_provider_static_disagreement() 
     assert "provider_static_duplicate_disagreement" in reasons
     assert "missing_provider_ids" in reasons
     assert "weak_title_company_only_evidence" in reasons
+    assert evidence["riskReasonCounts"] == {
+        "same_title_company_different_location": 1,
+        "provider_static_duplicate_disagreement": 1,
+        "missing_provider_ids": 1,
+        "weak_title_company_only_evidence": 1,
+    }
 
 
 def test_exact_url_bundle_is_not_risky_only_because_it_merged() -> None:
@@ -143,6 +151,7 @@ def test_exact_url_bundle_is_not_risky_only_because_it_merged() -> None:
 
     assert evidence["topMergedJobs"]
     assert evidence["riskyMergeExamples"] == []
+    assert evidence["riskReasonCounts"]["missing_provider_ids"] == 0
 
 
 def test_dedup_evidence_caps_samples_deterministically() -> None:
@@ -164,12 +173,70 @@ def test_dedup_evidence_caps_samples_deterministically() -> None:
     evidence = build_dedup_evidence({"mergedCount": 12}, list(reversed(rows)))
 
     assert evidence["riskyMergeExampleCount"] == 12
+    assert evidence["riskReasonCounts"]["weak_title_company_only_evidence"] == 12
     assert len(evidence["riskyMergeExamples"]) == 10
+    assert len(evidence["topSourceBundleOutliers"]) == 10
     assert [row["dedupKey"] for row in evidence["riskyMergeExamples"][:3]] == [
         "key-00",
         "key-01",
         "key-02",
     ]
+    assert [row["dedupKey"] for row in evidence["topSourceBundleOutliers"][:3]] == [
+        "key-00",
+        "key-01",
+        "key-02",
+    ]
+
+
+def test_dedup_evidence_reports_carried_bundle_collisions_without_current_merges() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                sourceBundleCount=2,
+                sourceBundle=[
+                    {
+                        "source": "greenhouse:slug:studio-one",
+                        "sourceJobId": "gh-1",
+                        "jobLink": "https://example.com/jobs/1",
+                        "adapter": "greenhouse",
+                    },
+                    {
+                        "source": "static_source::static:listing_url:https://studio.example/careers",
+                        "sourceJobId": "",
+                        "jobLink": "https://example.com/jobs/1",
+                        "adapter": "static",
+                    },
+                ],
+            )
+        ],
+    )
+
+    assert evidence["mergedCount"] == 0
+    assert evidence["mergeReasonCounts"] == {
+        "primaryUrl": 0,
+        "secondaryKey": 0,
+        "socialKey": 0,
+        "sparseIdentity": 0,
+        "unknown": 0,
+    }
+    assert evidence["sourceBundleCollisionCount"] == 1
+    assert evidence["topSourceBundleOutliers"][0]["sourceBundleCount"] == 2
+
+
+def test_dedup_evidence_empty_rows_returns_empty_aggregates() -> None:
+    evidence = build_dedup_evidence({}, [])
+
+    assert evidence["mergedCount"] == 0
+    assert evidence["sourceBundleCollisionCount"] == 0
+    assert evidence["riskReasonCounts"] == {
+        "same_title_company_different_location": 0,
+        "provider_static_duplicate_disagreement": 0,
+        "missing_provider_ids": 0,
+        "weak_title_company_only_evidence": 0,
+    }
+    assert evidence["topSourceBundleOutliers"] == []
+    assert evidence["riskyMergeExamples"] == []
 
 
 def test_fetch_report_normalization_preserves_dedup_evidence() -> None:

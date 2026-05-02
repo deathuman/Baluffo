@@ -184,8 +184,10 @@ def build_dedup_evidence(
     """Build compact diagnostics without changing dedup decisions."""
     rows = [_payload(row) for row in canonical_rows]
     composition: Counter[str] = Counter()
+    risk_reason_counts: Counter[str] = Counter()
     top_rows: list[dict[str, Any]] = []
     risky_rows: list[dict[str, Any]] = []
+    source_bundle_collision_count = 0
 
     for row in rows:
         bundle = _source_bundle(row)
@@ -193,9 +195,11 @@ def build_dedup_evidence(
             composition[_source_class(item)] += 1
         bundle_count = max(int(row.get("sourceBundleCount") or 0), len(bundle))
         if bundle_count > 1:
+            source_bundle_collision_count += 1
             top_rows.append(_job_summary(row, bundle))
             reasons = _risky_reasons(row, bundle)
             if reasons:
+                risk_reason_counts.update(reasons)
                 risky_rows.append({**_job_summary(row, bundle), "riskReasons": reasons})
 
     top_rows.sort(
@@ -220,10 +224,21 @@ def build_dedup_evidence(
         "mergedCount": max(0, int(dedup_stats.get("mergedCount") or 0)),
         "collisionSamplesCount": max(0, int(dedup_stats.get("collisionSamplesCount") or 0)),
         "mergeReasonCounts": _merge_reason_counts(dedup_stats),
+        "sourceBundleCollisionCount": source_bundle_collision_count,
         "sourceBundleComposition": {
             key: int(composition.get(key, 0)) for key in ("provider", "static", "social", "other")
         },
+        "riskReasonCounts": {
+            key: int(risk_reason_counts.get(key, 0))
+            for key in (
+                "same_title_company_different_location",
+                "provider_static_duplicate_disagreement",
+                "missing_provider_ids",
+                "weak_title_company_only_evidence",
+            )
+        },
         "topMergedJobs": top_rows[: max(0, int(top_limit))],
+        "topSourceBundleOutliers": top_rows[: max(0, int(top_limit))],
         "riskyMergeExamples": risky_rows[: max(0, int(risky_limit))],
         "riskyMergeExampleCount": len(risky_rows),
     }

@@ -61,8 +61,11 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `mergedCount` | `number` | Count of input rows merged away during deduplication. |
 | `collisionSamplesCount` | `number` | Count of stored merge collision samples from the dedup pass. |
 | `mergeReasonCounts` | `Object` | Counts for `primaryUrl`, `secondaryKey`, `socialKey`, `sparseIdentity`, and `unknown`. |
+| `sourceBundleCollisionCount` | `number` | Final canonical rows carrying `sourceBundleCount > 1`, including rows whose bundle evidence was carried forward from previous output. |
 | `sourceBundleComposition` | `Object` | Count of bundle entries by source class: `provider`, `static`, `social`, and `other`. |
+| `riskReasonCounts` | `Object` | Aggregate risky-row counts by risk reason before sample capping. |
 | `topMergedJobs` | `Array<Object>` | Stable capped sample of canonical rows with the largest `sourceBundleCount`. |
+| `topSourceBundleOutliers` | `Array<Object>` | Stable capped sample of carried source-bundle outliers, sorted like `topMergedJobs`. |
 | `riskyMergeExamples` | `Array<Object>` | Stable capped sample of merged rows that need review because evidence is weak or conflicting. |
 | `riskyMergeExampleCount` | `number` | Total risky examples before sample capping. |
 
@@ -71,6 +74,10 @@ Sample rows include `id`, `dedupKey`, `title`, `company`, `jobLink`, `locationSu
 including values such as `same_title_company_different_location`,
 `provider_static_duplicate_disagreement`, `missing_provider_ids`, and
 `weak_title_company_only_evidence`.
+
+`mergedCount` and `mergeReasonCounts` describe the current dedup pass. They can be zero while
+`sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical
+`sourceBundle` evidence from earlier runs.
 
 ## 2. Desktop Local Data
 
