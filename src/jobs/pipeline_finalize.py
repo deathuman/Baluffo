@@ -572,7 +572,11 @@ def finalize_pipeline_run(
         lifecycle_counts_map=lifecycle_counts_map,
         summary_source_rows=final_source_rows,
     )
-    dedup_evidence_payload = build_dedup_evidence(dedup_stats, deduped_payload_rows)
+    dedup_evidence_payload = build_dedup_evidence(
+        dedup_stats,
+        deduped_payload_rows,
+        seeded_from_existing_output=effective_seed_from_existing_output,
+    )
 
     report_payload = normalize_fetch_report_payload(
         {

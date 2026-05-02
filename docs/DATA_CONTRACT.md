@@ -62,6 +62,10 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `collisionSamplesCount` | `number` | Count of stored merge collision samples from the dedup pass. |
 | `mergeReasonCounts` | `Object` | Counts for `primaryUrl`, `secondaryKey`, `socialKey`, `sparseIdentity`, and `unknown`. |
 | `sourceBundleCollisionCount` | `number` | Final canonical rows carrying `sourceBundleCount > 1`, including rows whose bundle evidence was carried forward from previous output. |
+| `currentRunSourceBundleCollisionCount` | `number` | Source-bundle collision rows created or touched by current-run merges. |
+| `carriedSourceBundleCollisionCount` | `number` | Source-bundle collision rows carried from seeded previous output and not touched by current-run merges. |
+| `currentRunHighRiskReviewQueueCount` | `number` | High-risk review queue causes from current-run bundle evidence. |
+| `carriedHighRiskReviewQueueCount` | `number` | High-risk review queue causes from carried historical bundle evidence. |
 | `sourceBundleComposition` | `Object` | Count of bundle entries by source class: `provider`, `static`, `social`, and `other`. |
 | `riskReasonCounts` | `Object` | Aggregate risky-row counts by risk reason before sample capping. |
 | `outlierReasonCounts` | `Object` | Aggregate source-bundle outlier counts by diagnostic reason before sample capping. |
@@ -75,6 +79,8 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
 | `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
 | `dedupAuditGate` | `Object` | Read-only lifecycle-readiness gate derived from current-run merges, carried source-bundle collisions, review queue causes, provider/static disagreement, and Google Sheets guard status. |
+| `carriedBundleExamples` | `Array<Object>` | Stable capped sample of historical carried source-bundle rows that may need review or metadata rebuilding. |
+| `carriedBundleReconciliationRecommendation` | `Object` | Optional report-only recommendation to rebuild carried source-bundle metadata in a separate explicit maintenance run. |
 | `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
 | `topMergedJobs` | `Array<Object>` | Stable capped sample of canonical rows with the largest `sourceBundleCount`. |
 | `topSourceBundleOutliers` | `Array<Object>` | Stable capped sample of carried source-bundle outliers, sorted like `topMergedJobs`. |
@@ -124,14 +130,16 @@ controls.
 
 `dedupAuditGate` is the compact operator gate for deciding whether read-only lifecycle UX can
 proceed. Its `status` is `pass`, `warning`, or `blocked`; `lifecycleUxReady` is true only when
-there are no blocker causes. It includes `currentRunMergedCount`, `sourceBundleCollisionCount`,
-`highRiskReviewQueueCount`, `providerStaticDisagreementCount`,
+there are no blocker causes. It includes current-run and carried collision counts, current-run and
+carried high-risk review counts, `providerStaticDisagreementCount`,
 `googleSheetsGenericRoleGuardActive`, `carriedCollisionLikelyHistoricalCount`,
 `reviewQueueCauseCounts`, `blockers`, `warnings`, and capped `examples`. Carried historical
 source-bundle collisions may warn without blocking, while current-run non-primary merges,
-provider/static disagreement, unknown causes, and high-risk Google Sheets or non-provider URL
-causes block lifecycle readiness until reviewed. This gate is advisory only and does not add
-lifecycle labels or change dedup behavior.
+current-run high-risk causes, and provider/static disagreement block lifecycle readiness until
+reviewed. This gate is advisory only and does not add lifecycle labels or change dedup behavior.
+When `carriedBundleReconciliationRecommendation.recommendedAction` is
+`rebuild_carried_source_bundle_metadata`, it is a report-only recommendation for a separate
+explicit maintenance run; this fetch report does not rewrite historical bundle metadata.
 
 Suspected cause values are diagnostic only: `category_or_department_bucket`,
 `open_application_family`, `listing_page_bundle`, `spreadsheet_role_bucket_needs_review`,

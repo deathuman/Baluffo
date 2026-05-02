@@ -1201,49 +1201,40 @@ def _nonzero_counts(counts: Mapping[str, Any]) -> dict[str, int]:
     }
 
 
-def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
-    """Summarize whether dedup evidence is ready for read-only lifecycle UX."""
-    merged_count = max(0, int(dedup_evidence.get("mergedCount") or 0))
-    source_bundle_collision_count = max(
-        0, int(dedup_evidence.get("sourceBundleCollisionCount") or 0)
-    )
-    merge_reason_counts = (
-        dedup_evidence.get("mergeReasonCounts")
-        if isinstance(dedup_evidence.get("mergeReasonCounts"), Mapping)
-        else {}
-    )
-    review_queue_cause_counts = (
-        dedup_evidence.get("reviewQueueCauseCounts")
-        if isinstance(dedup_evidence.get("reviewQueueCauseCounts"), Mapping)
-        else {}
-    )
-    risk_reason_counts = (
-        dedup_evidence.get("riskReasonCounts")
-        if isinstance(dedup_evidence.get("riskReasonCounts"), Mapping)
-        else {}
-    )
-    outlier_reason_counts = (
-        dedup_evidence.get("outlierReasonCounts")
-        if isinstance(dedup_evidence.get("outlierReasonCounts"), Mapping)
-        else {}
-    )
+def _mapping_value(payload: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    value = payload.get(key)
+    return value if isinstance(value, Mapping) else {}
 
-    provider_static_disagreement_count = max(
+
+def _audit_gate_provider_static_disagreement_count(
+    *,
+    review_queue_cause_counts: Mapping[str, Any],
+    risk_reason_counts: Mapping[str, Any],
+    outlier_reason_counts: Mapping[str, Any],
+) -> int:
+    return max(
         int(review_queue_cause_counts.get("provider_static_disagreement") or 0),
         int(risk_reason_counts.get("provider_static_duplicate_disagreement") or 0),
         int(outlier_reason_counts.get("provider_static_disagreement") or 0),
     )
-    high_risk_review_queue_count = sum(
+
+
+def _audit_gate_high_risk_count(review_queue_cause_counts: Mapping[str, Any]) -> int:
+    return sum(
         int(review_queue_cause_counts.get(cause) or 0) for cause in DEDUP_AUDIT_GATE_BLOCKER_CAUSES
     )
-    current_run_non_primary_merges = max(
-        0,
-        merged_count - int(merge_reason_counts.get("primaryUrl") or 0),
-    )
-    carried_collision_likely_historical_count = (
-        source_bundle_collision_count if merged_count == 0 else 0
-    )
 
+
+def _audit_gate_blockers_and_warnings(
+    *,
+    merged_count: int,
+    current_run_non_primary_merges: int,
+    provider_static_disagreement_count: int,
+    current_run_high_risk_review_queue_count: int,
+    carried_high_risk_review_queue_count: int,
+    carried_collision_likely_historical_count: int,
+    high_risk_review_queue_count: int,
+) -> tuple[list[str], list[str]]:
     blockers: list[str] = []
     warnings: list[str] = []
     if current_run_non_primary_merges > 0:
@@ -1252,14 +1243,18 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         warnings.append("current_run_primary_url_merges_present")
     if provider_static_disagreement_count > 0:
         blockers.append("provider_static_disagreement_needs_review")
-    high_risk_without_provider_static = high_risk_review_queue_count - int(
-        review_queue_cause_counts.get("provider_static_disagreement") or 0
-    )
-    if high_risk_without_provider_static > 0:
+    if current_run_high_risk_review_queue_count > 0:
         blockers.append("high_risk_review_queue_causes_need_review")
+    elif high_risk_review_queue_count and not carried_high_risk_review_queue_count:
+        blockers.append("high_risk_review_queue_causes_need_review")
+    if carried_high_risk_review_queue_count > 0:
+        warnings.append("carried_high_risk_review_queue_causes_present")
     if carried_collision_likely_historical_count > 0:
         warnings.append("carried_source_bundle_collisions_present")
+    return blockers, warnings
 
+
+def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, Any]]:
     examples = []
     for row in dedup_evidence.get("reviewQueue") or []:
         if not isinstance(row, Mapping):
@@ -1279,6 +1274,55 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         )
         if len(examples) >= 5:
             break
+    return examples
+
+
+def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
+    """Summarize whether dedup evidence is ready for read-only lifecycle UX."""
+    merged_count = max(0, int(dedup_evidence.get("mergedCount") or 0))
+    source_bundle_collision_count = max(
+        0, int(dedup_evidence.get("sourceBundleCollisionCount") or 0)
+    )
+    current_run_source_bundle_collision_count = max(
+        0, int(dedup_evidence.get("currentRunSourceBundleCollisionCount") or 0)
+    )
+    carried_source_bundle_collision_count = max(
+        0, int(dedup_evidence.get("carriedSourceBundleCollisionCount") or 0)
+    )
+    current_run_high_risk_review_queue_count = max(
+        0, int(dedup_evidence.get("currentRunHighRiskReviewQueueCount") or 0)
+    )
+    carried_high_risk_review_queue_count = max(
+        0, int(dedup_evidence.get("carriedHighRiskReviewQueueCount") or 0)
+    )
+    merge_reason_counts = _mapping_value(dedup_evidence, "mergeReasonCounts")
+    review_queue_cause_counts = _mapping_value(dedup_evidence, "reviewQueueCauseCounts")
+    provider_static_disagreement_count = _audit_gate_provider_static_disagreement_count(
+        review_queue_cause_counts=review_queue_cause_counts,
+        risk_reason_counts=_mapping_value(dedup_evidence, "riskReasonCounts"),
+        outlier_reason_counts=_mapping_value(dedup_evidence, "outlierReasonCounts"),
+    )
+    high_risk_review_queue_count = _audit_gate_high_risk_count(review_queue_cause_counts)
+    current_run_non_primary_merges = max(
+        0,
+        merged_count - int(merge_reason_counts.get("primaryUrl") or 0),
+    )
+    carried_collision_likely_historical_count = (
+        carried_source_bundle_collision_count
+        if carried_source_bundle_collision_count
+        else source_bundle_collision_count
+        if merged_count == 0
+        else 0
+    )
+    blockers, warnings = _audit_gate_blockers_and_warnings(
+        merged_count=merged_count,
+        current_run_non_primary_merges=current_run_non_primary_merges,
+        provider_static_disagreement_count=provider_static_disagreement_count,
+        current_run_high_risk_review_queue_count=current_run_high_risk_review_queue_count,
+        carried_high_risk_review_queue_count=carried_high_risk_review_queue_count,
+        carried_collision_likely_historical_count=carried_collision_likely_historical_count,
+        high_risk_review_queue_count=high_risk_review_queue_count,
+    )
 
     status = "blocked" if blockers else "warning" if warnings else "pass"
     return {
@@ -1286,7 +1330,11 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         "lifecycleUxReady": not blockers,
         "currentRunMergedCount": merged_count,
         "sourceBundleCollisionCount": source_bundle_collision_count,
+        "currentRunSourceBundleCollisionCount": current_run_source_bundle_collision_count,
+        "carriedSourceBundleCollisionCount": carried_source_bundle_collision_count,
         "highRiskReviewQueueCount": high_risk_review_queue_count,
+        "currentRunHighRiskReviewQueueCount": current_run_high_risk_review_queue_count,
+        "carriedHighRiskReviewQueueCount": carried_high_risk_review_queue_count,
         "providerStaticDisagreementCount": provider_static_disagreement_count,
         "googleSheetsGenericRoleGuardActive": True,
         "carriedCollisionLikelyHistoricalCount": carried_collision_likely_historical_count,
@@ -1295,7 +1343,7 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         },
         "blockers": blockers,
         "warnings": warnings,
-        "examples": examples,
+        "examples": _audit_gate_examples(dedup_evidence),
         "nonzeroReviewQueueCauseCounts": _nonzero_counts(review_queue_cause_counts),
     }
 
@@ -1306,6 +1354,7 @@ def build_dedup_evidence(
     *,
     top_limit: int = TOP_MERGED_LIMIT,
     risky_limit: int = RISKY_EXAMPLE_LIMIT,
+    seeded_from_existing_output: bool = False,
 ) -> dict[str, Any]:
     """Build compact diagnostics without changing dedup decisions."""
     rows = [_payload(row) for row in canonical_rows]
@@ -1325,7 +1374,15 @@ def build_dedup_evidence(
     risky_rows: list[dict[str, Any]] = []
     location_divergence_rows: list[dict[str, Any]] = []
     review_queue_rows: list[dict[str, Any]] = []
+    carried_bundle_rows: list[dict[str, Any]] = []
     source_bundle_collision_count = 0
+    current_run_source_bundle_collision_count = 0
+    carried_source_bundle_collision_count = 0
+    current_run_high_risk_review_queue_count = 0
+    carried_high_risk_review_queue_count = 0
+    current_run_merged_dedup_keys = {
+        clean_text(value) for value in dedup_stats.get("currentRunMergedDedupKeys") or []
+    }
 
     for row in rows:
         bundle = _source_bundle(row)
@@ -1335,6 +1392,18 @@ def build_dedup_evidence(
         if bundle_count > 1:
             source_bundle_collision_count += 1
             summary = _job_summary(row, bundle)
+            dedup_key = clean_text(summary.get("dedupKey"))
+            origin = (
+                "current_run"
+                if not seeded_from_existing_output or dedup_key in current_run_merged_dedup_keys
+                else "carried_from_existing_output"
+            )
+            summary["bundleEvidenceOrigin"] = origin
+            if origin == "current_run":
+                current_run_source_bundle_collision_count += 1
+            else:
+                carried_source_bundle_collision_count += 1
+                carried_bundle_rows.append(summary)
             top_rows.append(summary)
             outlier_reason_counts.update([summary["outlierReason"]])
             identity_shape_counts.update([summary["identityShape"]])
@@ -1351,6 +1420,11 @@ def build_dedup_evidence(
             review_action = _recommended_review_action(summary)
             review_queue_counts.update([review_action])
             review_queue_cause_counts.update([summary["suspectedCause"]])
+            if summary["suspectedCause"] in DEDUP_AUDIT_GATE_BLOCKER_CAUSES:
+                if origin == "current_run":
+                    current_run_high_risk_review_queue_count += 1
+                else:
+                    carried_high_risk_review_queue_count += 1
             if review_action != "monitor":
                 review_queue_rows.append({**summary, "recommendedReviewAction": review_action})
             if int(summary.get("distinctLocationCount") or 0) > 1:
@@ -1395,6 +1469,14 @@ def build_dedup_evidence(
             norm_text(row.get("dedupKey")),
         )
     )
+    carried_bundle_rows.sort(
+        key=lambda row: (
+            -int(row.get("sourceBundleCount") or 0),
+            norm_text(row.get("company")),
+            norm_text(row.get("title")),
+            norm_text(row.get("dedupKey")),
+        )
+    )
 
     payload = {
         "schemaVersion": 1,
@@ -1402,6 +1484,10 @@ def build_dedup_evidence(
         "collisionSamplesCount": max(0, int(dedup_stats.get("collisionSamplesCount") or 0)),
         "mergeReasonCounts": _merge_reason_counts(dedup_stats),
         "sourceBundleCollisionCount": source_bundle_collision_count,
+        "currentRunSourceBundleCollisionCount": current_run_source_bundle_collision_count,
+        "carriedSourceBundleCollisionCount": carried_source_bundle_collision_count,
+        "currentRunHighRiskReviewQueueCount": current_run_high_risk_review_queue_count,
+        "carriedHighRiskReviewQueueCount": carried_high_risk_review_queue_count,
         "sourceBundleComposition": {
             key: int(composition.get(key, 0)) for key in ("provider", "static", "social", "other")
         },
@@ -1450,6 +1536,14 @@ def build_dedup_evidence(
             key: int(review_queue_cause_counts.get(key, 0)) for key in REVIEW_QUEUE_CAUSE_KEYS
         },
         "reviewQueue": review_queue_rows[: max(0, int(risky_limit))],
+        "carriedBundleExamples": carried_bundle_rows[: max(0, int(risky_limit))],
+        "carriedBundleReconciliationRecommendation": {
+            "recommendedAction": "rebuild_carried_source_bundle_metadata",
+            "destructiveActionAllowed": False,
+            "requiresExplicitMaintenanceRun": True,
+        }
+        if carried_source_bundle_collision_count
+        else {},
         "topMergedJobs": top_rows[: max(0, int(top_limit))],
         "topSourceBundleOutliers": top_rows[: max(0, int(top_limit))],
         "locationDivergenceExamples": location_divergence_rows[: max(0, int(risky_limit))],

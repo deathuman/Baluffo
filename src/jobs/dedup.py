@@ -666,6 +666,7 @@ def deduplicate_jobs(
     merged_by_secondary = 0
     merged_by_social = 0
     merge_samples: list[dict[str, str]] = []
+    current_run_merged_dedup_keys: set[str] = set()
 
     for row in rows:
         current = row if isinstance(row, CanonicalJob) else CanonicalJob.from_mapping(row)
@@ -722,6 +723,9 @@ def deduplicate_jobs(
             by_sparse_identity=by_sparse_identity,
             by_social=by_social,
         )
+        merged_key = clean_text(merged_rows[target_idx].dedupKey)
+        if merged_key:
+            current_run_merged_dedup_keys.add(merged_key)
 
     merged_rows = _sort_enrich_and_number(merged_rows)
     return merged_rows, {
@@ -733,6 +737,7 @@ def deduplicate_jobs(
         "mergedBySocialKey": merged_by_social,
         "collisionSamplesCount": len(merge_samples),
         "collisionSamples": merge_samples,
+        "currentRunMergedDedupKeys": sorted(current_run_merged_dedup_keys),
     }
 
 

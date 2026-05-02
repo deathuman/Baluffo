@@ -138,7 +138,11 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
           lifecycleUxReady: false,
           currentRunMergedCount: 1,
           sourceBundleCollisionCount: 2,
+          currentRunSourceBundleCollisionCount: 1,
+          carriedSourceBundleCollisionCount: 1,
           highRiskReviewQueueCount: 10,
+          currentRunHighRiskReviewQueueCount: 2,
+          carriedHighRiskReviewQueueCount: 8,
           providerStaticDisagreementCount: 1,
           googleSheetsGenericRoleGuardActive: true,
           carriedCollisionLikelyHistoricalCount: 0,
@@ -154,10 +158,22 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
               recommendedReviewAction: "review_listing_url_bundle",
               suspectedCause: "listing_page_bundle",
               sourceBundleCount: 255,
-              identityQuality: "shared_listing_url_weak"
+              identityQuality: "shared_listing_url_weak",
+              bundleEvidenceOrigin: "carried_from_existing_output"
             }
           ]
         },
+        carriedBundleExamples: [
+          {
+            title: "Accounting",
+            company: "Kforce Inc",
+            recommendedReviewAction: "review_listing_url_bundle",
+            suspectedCause: "listing_page_bundle",
+            sourceBundleCount: 255,
+            identityQuality: "shared_listing_url_weak",
+            bundleEvidenceOrigin: "carried_from_existing_output"
+          }
+        ],
         topMergedJobs: [
           {
             title: "Senior Engineer",
@@ -265,9 +281,15 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /Dedup Audit Gate/i);
   assert.match(metricsEl.innerHTML, /status blocked/i);
   assert.match(metricsEl.innerHTML, /lifecycle UX ready no/i);
+  assert.match(metricsEl.innerHTML, /current-run collisions 1/i);
+  assert.match(metricsEl.innerHTML, /carried collisions 1/i);
+  assert.match(metricsEl.innerHTML, /current high-risk 2/i);
+  assert.match(metricsEl.innerHTML, /carried high-risk 8/i);
   assert.match(metricsEl.innerHTML, /Google Sheets guard active/i);
   assert.match(metricsEl.innerHTML, /provider static disagreement needs review/i);
   assert.match(metricsEl.innerHTML, /Accounting @ Kforce Inc/i);
+  assert.match(metricsEl.innerHTML, /carried from existing output/i);
+  assert.match(metricsEl.innerHTML, /Dedup carried bundle examples/i);
   assert.match(metricsEl.innerHTML, /primary URL 1/i);
   assert.match(metricsEl.innerHTML, /Carried source-bundle collision rows: 2/i);
   assert.match(metricsEl.innerHTML, /provider 1, static 1/i);
@@ -367,6 +389,7 @@ test("admin render: fetcher metrics tolerate missing dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /Dedup Audit Gate/i);
   assert.match(metricsEl.innerHTML, /status unknown/i);
   assert.match(metricsEl.innerHTML, /No gate examples/i);
+  assert.match(metricsEl.innerHTML, /No carried bundle examples/i);
   assert.match(metricsEl.innerHTML, /No merged canonical jobs/i);
   assert.match(metricsEl.innerHTML, /No carried source-bundle collision outliers/i);
   assert.match(metricsEl.innerHTML, /No risky merge examples/i);
