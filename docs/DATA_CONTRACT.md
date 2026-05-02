@@ -82,6 +82,8 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `providerStaticDisagreementCounts` | `Object` | Dedicated counts for provider/static disagreement rows: `total`, `currentRun`, and `carried`. |
 | `providerStaticDisagreementClassificationCounts` | `Object` | Dedicated provider/static disagreement counts by review classification. |
 | `providerStaticDisagreementExamples` | `Array<Object>` | Stable capped sample of provider/static disagreement rows for manual review. |
+| `providerStaticTitleCompanyCollisionCounts` | `Object` | Dedicated counts for provider/static disagreements classified as `title_company_collision`: `total`, `currentRun`, and `carried`. |
+| `providerStaticTitleCompanyCollisionExamples` | `Array<Object>` | Stable capped sample of title/company collision rows independent of the general provider/static disagreement cap. |
 | `carriedBundleExamples` | `Array<Object>` | Stable capped sample of historical carried source-bundle rows that may need review or metadata rebuilding. |
 | `carriedBundleReconciliationRecommendation` | `Object` | Optional report-only recommendation to rebuild carried source-bundle metadata in a separate explicit maintenance run. |
 | `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
@@ -111,12 +113,19 @@ Risky rows also include `riskReasons`, currently including values such as
 Provider/static disagreement examples include `title`, `company`, `dedupKey`,
 `bundleEvidenceOrigin`, `sourceBundleCount`, provider/static source names, provider/static source
 job IDs when present, provider/static URLs, provider/static URL host/path-prefix samples,
-`identityQuality`, `disagreementClassification`, `disagreementClassificationEvidence`, and
+`identityQuality`, `sharedIdentifierTokens`, `distinctLocationCount`, `sampleLocations`,
+`disagreementClassification`, `disagreementClassificationEvidence`, `collisionReviewHint`, and
 `disagreementEvidence`. Classification values are `same_job_different_urls`,
 `provider_redirect_or_canonical_url`, `static_parser_url_variant`, `title_company_collision`,
 `stale_carried_bundle`, and `needs_manual_review`. They expose cases where provider and static
 bundle entries do not share a primary URL, so operators can review whether the bundle is a safe
 duplicate or a carried historical collision before lifecycle labels rely on it.
+`providerStaticTitleCompanyCollisionExamples` is a separate capped sample of only
+`title_company_collision` rows so lifecycle gate blockers are visible even when the general
+provider/static disagreement sample is filled by other classifications. `collisionReviewHint`
+values are `different_locations_same_title_company`,
+`same_location_different_provider_static_urls`, `provider_static_location_missing`,
+`multiple_sources_need_manual_review`, and `unknown`.
 
 Outlier reason values are diagnostic only:
 `multi_location_strong_identity`, `location_divergence_without_strong_identity`,

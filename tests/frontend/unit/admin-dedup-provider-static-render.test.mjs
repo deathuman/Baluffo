@@ -55,9 +55,14 @@ test("admin render: provider/static disagreement examples are read-only", () => 
           same_job_different_urls: 1,
           provider_redirect_or_canonical_url: 0,
           static_parser_url_variant: 0,
-          title_company_collision: 0,
+          title_company_collision: 1,
           stale_carried_bundle: 0,
           needs_manual_review: 0
+        },
+        providerStaticTitleCompanyCollisionCounts: {
+          total: 1,
+          currentRun: 0,
+          carried: 1
         },
         providerStaticDisagreementExamples: [
           {
@@ -84,6 +89,23 @@ test("admin render: provider/static disagreement examples are read-only", () => 
               "shared_primary_url:false"
             ]
           }
+        ],
+        providerStaticTitleCompanyCollisionExamples: [
+          {
+            title: "3D Character Artist",
+            company: "Epoch Games",
+            sourceBundleCount: 2,
+            bundleEvidenceOrigin: "carried_from_existing_output",
+            providerSourceJobIds: ["smartrecruiters:EpochGames:744000018988355"],
+            staticSourceJobIds: ["static:static:listing_url:https://careers.smartrecruiters.com/epochgames:cab575a102"],
+            providerUrls: ["https://jobs.smartrecruiters.com/EpochGames/744000018988355"],
+            staticUrls: ["https://jobs.smartrecruiters.com/EpochGames/744000018988355-3d-character-artist"],
+            sharedIdentifierTokens: ["744000018988355"],
+            distinctLocationCount: 2,
+            sampleLocations: ["remote, us", "san francisco, us"],
+            collisionReviewHint: "different_locations_same_title_company",
+            disagreementClassificationEvidence: ["multiple_locations", "shared_token:744000018988355"]
+          }
         ]
       }
     },
@@ -99,6 +121,11 @@ test("admin render: provider/static disagreement examples are read-only", () => 
   assert.match(metricsEl.innerHTML, /Animoca Brands/i);
   assert.match(metricsEl.innerHTML, /provider lever_sources/i);
   assert.match(metricsEl.innerHTML, /classification same job different urls/i);
+  assert.match(metricsEl.innerHTML, /Dedup provider\/static title-company collisions/i);
+  assert.match(metricsEl.innerHTML, /3D Character Artist/i);
+  assert.match(metricsEl.innerHTML, /Epoch Games/i);
+  assert.match(metricsEl.innerHTML, /hint different locations same title company/i);
+  assert.match(metricsEl.innerHTML, /shared tokens 744000018988355/i);
   assert.match(
     metricsEl.innerHTML,
     /static static_source::static:listing_url:https:\/\/careers\.animocabrands\.com\/jobs/i
@@ -123,4 +150,6 @@ test("admin render: missing provider/static disagreement examples render safely"
   assert.match(metricsEl.innerHTML, /total 0, current 0, carried 0/i);
   assert.match(metricsEl.innerHTML, /same job\/different URLs 0/i);
   assert.match(metricsEl.innerHTML, /No provider\/static disagreement examples/i);
+  assert.match(metricsEl.innerHTML, /Dedup provider\/static title-company collisions/i);
+  assert.match(metricsEl.innerHTML, /No provider\/static title\/company collision examples/i);
 });

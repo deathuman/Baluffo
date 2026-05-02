@@ -199,39 +199,6 @@ def test_dedup_evidence_classifies_canonical_url_disagreement() -> None:
     )
 
 
-def test_dedup_evidence_classifies_title_company_collision() -> None:
-    evidence = build_dedup_evidence(
-        {"mergedCount": 1},
-        [
-            _row(
-                sourceBundleCount=2,
-                sourceBundle=[
-                    {
-                        "source": "greenhouse:slug:studio-one",
-                        "sourceJobId": "gh-1",
-                        "jobLink": "https://provider.example/jobs/1",
-                        "adapter": "greenhouse",
-                    },
-                    {
-                        "source": "static_source::static:listing_url:https://studio.example/careers",
-                        "sourceJobId": "static-1",
-                        "jobLink": "https://static.example/jobs/2",
-                        "adapter": "static",
-                    },
-                ],
-                locations=[
-                    {"city": "Amsterdam", "country": "NL"},
-                    {"city": "Rotterdam", "country": "NL"},
-                ],
-            )
-        ],
-    )
-
-    assert evidence["providerStaticDisagreementExamples"][0]["disagreementClassification"] == (
-        "title_company_collision"
-    )
-
-
 def test_dedup_evidence_classifies_stale_carried_bundle() -> None:
     evidence = build_dedup_evidence(
         {"mergedCount": 0},

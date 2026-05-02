@@ -1219,6 +1219,10 @@ def _provider_static_disagreement_example(
     static_prefixes = sorted({_path_prefix(url) for url in static_urls if _path_prefix(url)})
     provider_ids = _sample_clean_values(provider_items, "sourceJobId")
     static_ids = _sample_clean_values(static_items, "sourceJobId")
+    shared_tokens = sorted(
+        _identifier_tokens([*provider_ids, *(_url_path(url) for url in provider_urls)])
+        & _identifier_tokens([*static_ids, *(_url_path(url) for url in static_urls)])
+    )
     classification, classification_evidence = _provider_static_disagreement_classification(
         summary=summary,
         provider_urls=provider_urls,
@@ -1256,10 +1260,23 @@ def _provider_static_disagreement_example(
         "staticUrlHosts": static_hosts[:5],
         "providerUrlPathPrefixes": provider_prefixes[:5],
         "staticUrlPathPrefixes": static_prefixes[:5],
+        "sharedIdentifierTokens": shared_tokens[:5],
+        "distinctLocationCount": max(0, int(summary.get("distinctLocationCount") or 0)),
+        "sampleLocations": [
+            clean_text(value) for value in summary.get("sampleLocations") or [] if clean_text(value)
+        ][:5],
         "identityQuality": clean_text(summary.get("identityQuality")),
         "outlierReason": clean_text(summary.get("outlierReason")),
         "disagreementClassification": classification,
         "disagreementClassificationEvidence": classification_evidence,
+        "collisionReviewHint": _provider_static_collision_review_hint(
+            classification=classification,
+            summary=summary,
+            provider_urls=provider_urls,
+            static_urls=static_urls,
+            provider_ids=provider_ids,
+            static_ids=static_ids,
+        ),
         "disagreementEvidence": evidence,
     }
 
@@ -1304,6 +1321,27 @@ def _provider_static_disagreement_classification(
     if provider_ids and static_ids and provider_urls and static_urls:
         return "same_job_different_urls", evidence + ["both_sides_have_ids_and_urls"]
     return "needs_manual_review", evidence
+
+
+def _provider_static_collision_review_hint(
+    *,
+    classification: str,
+    summary: Mapping[str, Any],
+    provider_urls: Sequence[str],
+    static_urls: Sequence[str],
+    provider_ids: Sequence[str],
+    static_ids: Sequence[str],
+) -> str:
+    location_count = max(0, int(summary.get("distinctLocationCount") or 0))
+    if classification == "title_company_collision" and location_count > 1:
+        return "different_locations_same_title_company"
+    if not provider_urls or not static_urls or not provider_ids or not static_ids:
+        return "provider_static_location_missing"
+    if max(0, int(summary.get("sourceBundleCount") or 0)) > 2:
+        return "multiple_sources_need_manual_review"
+    if location_count <= 1 and provider_urls and static_urls:
+        return "same_location_different_provider_static_urls"
+    return "unknown"
 
 
 def _high_risk_origin_counts(summary: Mapping[str, Any], origin: str) -> tuple[int, int]:
@@ -1408,6 +1446,23 @@ def _audit_gate_blockers_and_warnings(
 
 
 def _audit_gate_examples(dedup_evidence: Mapping[str, Any]) -> list[dict[str, Any]]:
+    title_company_examples = json_object_rows(
+        dedup_evidence.get("providerStaticTitleCompanyCollisionExamples")
+    )
+    if title_company_examples:
+        return [
+            {
+                "title": clean_text(row.get("title")),
+                "company": clean_text(row.get("company")),
+                "recommendedReviewAction": "review_provider_static_title_company_collision",
+                "suspectedCause": "provider_static_disagreement",
+                "sourceBundleCount": max(0, int(row.get("sourceBundleCount") or 0)),
+                "identityQuality": clean_text(row.get("identityQuality")),
+                "bundleEvidenceOrigin": clean_text(row.get("bundleEvidenceOrigin")),
+                "collisionReviewHint": clean_text(row.get("collisionReviewHint")),
+            }
+            for row in title_company_examples[:5]
+        ]
     provider_static_examples = json_object_rows(
         dedup_evidence.get("providerStaticDisagreementExamples")
     )
@@ -1678,6 +1733,21 @@ def build_dedup_evidence(
             norm_text(row.get("dedupKey")),
         )
     )
+    provider_static_title_company_collision_rows = [
+        row
+        for row in provider_static_disagreement_rows
+        if row.get("disagreementClassification") == "title_company_collision"
+    ]
+    title_company_current_run_count = sum(
+        1
+        for row in provider_static_title_company_collision_rows
+        if row.get("bundleEvidenceOrigin") == "current_run"
+    )
+    title_company_carried_count = sum(
+        1
+        for row in provider_static_title_company_collision_rows
+        if row.get("bundleEvidenceOrigin") != "current_run"
+    )
     provider_static_disagreement_count = (
         current_run_provider_static_disagreement_count + carried_provider_static_disagreement_count
     )
@@ -1700,6 +1770,11 @@ def build_dedup_evidence(
         "providerStaticDisagreementClassificationCounts": {
             key: int(provider_static_disagreement_classification_counts.get(key, 0))
             for key in PROVIDER_STATIC_DISAGREEMENT_CLASSIFICATION_KEYS
+        },
+        "providerStaticTitleCompanyCollisionCounts": {
+            "total": len(provider_static_title_company_collision_rows),
+            "currentRun": title_company_current_run_count,
+            "carried": title_company_carried_count,
         },
         "sourceBundleComposition": {
             key: int(composition.get(key, 0)) for key in ("provider", "static", "social", "other")
@@ -1752,6 +1827,9 @@ def build_dedup_evidence(
         "providerStaticDisagreementExamples": provider_static_disagreement_rows[
             : max(0, int(risky_limit))
         ],
+        "providerStaticTitleCompanyCollisionExamples": (
+            provider_static_title_company_collision_rows[: max(0, int(risky_limit))]
+        ),
         "carriedBundleExamples": carried_bundle_rows[: max(0, int(risky_limit))],
         "carriedBundleReconciliationRecommendation": {
             "recommendedAction": "rebuild_carried_source_bundle_metadata",
