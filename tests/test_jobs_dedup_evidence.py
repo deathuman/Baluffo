@@ -372,6 +372,8 @@ def test_dedup_evidence_empty_rows_returns_empty_aggregates() -> None:
     }
     assert not any(evidence["identityQualityCounts"].values())
     assert "unknown" in evidence["identityQualityCounts"]
+    assert not any(evidence["nonProviderIdentityProvenanceCounts"].values())
+    assert "unknown" in evidence["nonProviderIdentityProvenanceCounts"]
     assert not any(evidence["reviewQueueCauseCounts"].values())
     assert "unknown" in evidence["reviewQueueCauseCounts"]
     assert evidence["topSourceBundleOutliers"] == []

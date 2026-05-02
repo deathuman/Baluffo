@@ -119,6 +119,154 @@ def test_dedup_evidence_classifies_non_provider_source_ids_as_untrusted() -> Non
     assert evidence["reviewQueueCauseCounts"]["non_provider_url_identity_needs_review"] == 1
 
 
+def test_dedup_evidence_reports_google_sheets_non_provider_provenance() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                sourceBundle=[
+                    {
+                        "source": "google_sheets",
+                        "sourceJobId": "sheet-row-1",
+                        "jobLink": "https://studio.example/jobs/1",
+                        "adapter": "custom",
+                    },
+                    {
+                        "source": "google_sheets",
+                        "sourceJobId": "sheet-row-2",
+                        "jobLink": "https://studio.example/jobs/2",
+                        "adapter": "custom",
+                    },
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["nonProviderIdentityProvenance"] == "google_sheets_row_identity"
+    assert "provenance:google_sheets_row_identity" in row["causeEvidence"]
+    assert "dominant_source_name:google_sheets" in row["nonProviderIdentityEvidence"]
+    assert evidence["nonProviderIdentityProvenanceCounts"]["google_sheets_row_identity"] == 1
+
+
+def test_dedup_evidence_reports_url_derived_non_provider_provenance() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                sourceBundle=[
+                    {
+                        "source": "custom",
+                        "sourceJobId": "https://studio.example/jobs/1",
+                        "jobLink": "https://studio.example/jobs/1",
+                        "adapter": "custom",
+                    },
+                    {
+                        "source": "custom",
+                        "sourceJobId": "url:abcdef1234567890",
+                        "jobLink": "https://studio.example/jobs/2",
+                        "adapter": "custom",
+                    },
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["nonProviderIdentityProvenance"] == "url_derived_identity"
+    assert "id_shape:url" in row["nonProviderIdentityEvidence"]
+    assert "id_shape:url_hash" in row["nonProviderIdentityEvidence"]
+    assert evidence["nonProviderIdentityProvenanceCounts"]["url_derived_identity"] == 1
+
+
+def test_dedup_evidence_reports_category_or_directory_non_provider_provenance() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                title="Engineering",
+                sourceBundle=[
+                    {
+                        "source": "gamesmap_directory",
+                        "sourceJobId": "engineering-1",
+                        "jobLink": "https://directory.example/jobs/engineering-1",
+                        "adapter": "custom",
+                    },
+                    {
+                        "source": "gamesmap_directory",
+                        "sourceJobId": "engineering-2",
+                        "jobLink": "https://directory.example/jobs/engineering-2",
+                        "adapter": "custom",
+                    },
+                ],
+            )
+        ],
+    )
+
+    outlier = evidence["topSourceBundleOutliers"][0]
+    assert outlier["nonProviderIdentityProvenance"] == "category_or_directory_identity"
+    assert "title_category_like" in outlier["nonProviderIdentityEvidence"]
+    assert evidence["nonProviderIdentityProvenanceCounts"]["category_or_directory_identity"] == 1
+
+
+def test_dedup_evidence_reports_mixed_non_provider_provenance() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                sourceBundle=[
+                    {
+                        "source": "google_sheets",
+                        "sourceJobId": "sheet-row-1",
+                        "jobLink": "https://studio.example/jobs/1",
+                        "adapter": "custom",
+                    },
+                    {
+                        "source": "custom_directory",
+                        "sourceJobId": "directory-row-1",
+                        "jobLink": "https://studio.example/jobs/2",
+                        "adapter": "custom",
+                    },
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["nonProviderIdentityProvenance"] == "mixed_non_provider_identity"
+    assert "source_count:2" in row["nonProviderIdentityEvidence"]
+    assert evidence["nonProviderIdentityProvenanceCounts"]["mixed_non_provider_identity"] == 1
+
+
+def test_dedup_evidence_reports_opaque_non_provider_provenance() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _row(
+                sourceBundle=[
+                    {
+                        "source": "custom",
+                        "sourceJobId": "role-alpha",
+                        "jobLink": "https://studio.example/jobs/1",
+                        "adapter": "custom",
+                    },
+                    {
+                        "source": "custom",
+                        "sourceJobId": "role-beta",
+                        "jobLink": "https://studio.example/jobs/2",
+                        "adapter": "custom",
+                    },
+                ],
+            )
+        ],
+    )
+
+    row = evidence["reviewQueue"][0]
+    assert row["nonProviderIdentityProvenance"] == "opaque_other_source_identity"
+    assert "id_shape:opaque" in row["nonProviderIdentityEvidence"]
+    assert evidence["nonProviderIdentityProvenanceCounts"]["opaque_other_source_identity"] == 1
+
+
 def test_dedup_evidence_classifies_missing_identity() -> None:
     evidence = build_dedup_evidence(
         {"mergedCount": 0},
@@ -144,4 +292,6 @@ def test_dedup_evidence_classifies_missing_identity() -> None:
 
     outlier = evidence["topSourceBundleOutliers"][0]
     assert outlier["identityQuality"] == "missing_identity"
+    assert outlier["nonProviderIdentityProvenance"] == "none"
     assert evidence["identityQualityCounts"]["missing_identity"] == 1
+    assert evidence["nonProviderIdentityProvenanceCounts"]["none"] == 1

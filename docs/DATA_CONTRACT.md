@@ -67,6 +67,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `outlierReasonCounts` | `Object` | Aggregate source-bundle outlier counts by diagnostic reason before sample capping. |
 | `identityShapeCounts` | `Object` | Aggregate source-bundle URL/source identity shape counts before sample capping. |
 | `identityQualityCounts` | `Object` | Aggregate source-bundle identity-quality counts before sample capping. |
+| `nonProviderIdentityProvenanceCounts` | `Object` | Aggregate non-provider source identity provenance counts before sample capping. |
 | `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
 | `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
 | `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
@@ -125,6 +126,14 @@ Identity quality values are diagnostic only: `provider_id_strong`, `shared_detai
 records compact counts and URL/source facts such as provider IDs, non-provider source IDs, URL
 count, host count, path-prefix count, dominant source class, and shared URL shape. These fields
 separate provider-grade identity from weaker non-provider URL/source identity for audit only.
+
+Non-provider identity provenance values are diagnostic only: `google_sheets_row_identity`,
+`url_derived_identity`, `category_or_directory_identity`, `opaque_other_source_identity`,
+`mixed_non_provider_identity`, `none`, and `unknown`. `nonProviderIdentityEvidence` records compact
+source ID and source-name facts such as dominant source name, source count, non-provider source ID
+count, source ID shape samples, source ID prefix count, URL host count, and URL path-prefix count.
+These fields explain where weak non-provider identity evidence appears to come from; they do not
+promote those IDs to provider-grade dedup identity.
 
 `mergedCount` and `mergeReasonCounts` describe the current dedup pass. They can be zero while
 `sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical

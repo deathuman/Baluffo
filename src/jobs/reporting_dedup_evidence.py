@@ -57,6 +57,15 @@ IDENTITY_QUALITY_KEYS = (
     "missing_identity",
     "unknown",
 )
+NON_PROVIDER_IDENTITY_PROVENANCE_KEYS = (
+    "google_sheets_row_identity",
+    "url_derived_identity",
+    "category_or_directory_identity",
+    "opaque_other_source_identity",
+    "mixed_non_provider_identity",
+    "none",
+    "unknown",
+)
 CATEGORY_TITLE_TERMS = frozenset(
     {
         "accounting",
@@ -267,6 +276,119 @@ def _non_provider_source_job_id_count(bundle: Sequence[Mapping[str, Any]]) -> in
             if _source_class(item) != "provider" and clean_text(item.get("sourceJobId"))
         }
     )
+
+
+def _non_provider_items(bundle: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return [item for item in bundle if _source_class(item) != "provider"]
+
+
+def _non_provider_source_job_ids(bundle: Sequence[Mapping[str, Any]]) -> list[str]:
+    return sorted(
+        {
+            clean_text(item.get("sourceJobId"))
+            for item in _non_provider_items(bundle)
+            if clean_text(item.get("sourceJobId"))
+        }
+    )
+
+
+def _non_provider_source_names(bundle: Sequence[Mapping[str, Any]]) -> list[str]:
+    return sorted(
+        {
+            norm_text(item.get("source"))
+            for item in _non_provider_items(bundle)
+            if norm_text(item.get("source"))
+        }
+    )
+
+
+def _looks_url_or_hash_identity(value: str) -> bool:
+    normalized = clean_text(value).lower()
+    if not normalized:
+        return False
+    if normalized.startswith(("http://", "https://", "url:")):
+        return True
+    if len(normalized) in {32, 40, 64} and all(char in "0123456789abcdef" for char in normalized):
+        return True
+    return False
+
+
+def _source_job_id_shape(value: str) -> str:
+    normalized = clean_text(value).lower()
+    if not normalized:
+        return "empty"
+    if normalized.startswith(("http://", "https://")):
+        return "url"
+    if normalized.startswith("url:"):
+        return "url_hash"
+    if len(normalized) in {32, 40, 64} and all(char in "0123456789abcdef" for char in normalized):
+        return "hex_hash"
+    if any(char.isdigit() for char in normalized):
+        return "opaque_with_digits"
+    return "opaque"
+
+
+def _source_job_id_prefix(value: str) -> str:
+    normalized = clean_text(value).lower()
+    if not normalized:
+        return ""
+    if normalized.startswith(("http://", "https://")):
+        parsed = urlparse(normalized)
+        return norm_text(parsed.netloc.removeprefix("www."))
+    for separator in (":", "|", "#", "/", "\\"):
+        if separator in normalized:
+            return normalized.split(separator, 1)[0]
+    return normalized[:12]
+
+
+def _non_provider_identity_provenance(
+    row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
+) -> str:
+    ids = _non_provider_source_job_ids(bundle)
+    if not ids:
+        return "none"
+    source_names = _non_provider_source_names(bundle)
+    if len(source_names) > 1:
+        return "mixed_non_provider_identity"
+    source = source_names[0] if source_names else ""
+    if source == "google_sheets":
+        return "google_sheets_row_identity"
+    if all(_looks_url_or_hash_identity(value) for value in ids):
+        return "url_derived_identity"
+    if _title_shape(row) == "category_like" or any(
+        token in source for token in ("category", "directory", "gamedevmap", "gameprog", "gamesmap")
+    ):
+        return "category_or_directory_identity"
+    return "opaque_other_source_identity"
+
+
+def _non_provider_identity_evidence(
+    row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
+) -> list[str]:
+    ids = _non_provider_source_job_ids(bundle)
+    source_names = _non_provider_source_names(bundle)
+    shapes = sorted({_source_job_id_shape(value) for value in ids})
+    prefixes = sorted(
+        {_source_job_id_prefix(value) for value in ids if _source_job_id_prefix(value)}
+    )
+    provenance = _non_provider_identity_provenance(row, bundle)
+    evidence = [
+        f"provenance:{provenance}",
+        f"source_count:{len(source_names)}",
+        f"non_provider_ids:{len(ids)}",
+        f"id_prefixes:{len(prefixes)}",
+        f"url_hosts:{_unique_url_host_count(bundle)}",
+        f"url_path_prefixes:{_unique_url_path_prefix_count(bundle)}",
+    ]
+    if source_names:
+        evidence.append(f"dominant_source_name:{source_names[0]}")
+    if len(source_names) == 1:
+        evidence.append("single_non_provider_source")
+    for shape in shapes[:3]:
+        evidence.append(f"id_shape:{shape}")
+    if _title_shape(row) == "category_like":
+        evidence.append("title_category_like")
+    return evidence[:12]
 
 
 def _unique_url_host_count(bundle: Sequence[Mapping[str, Any]]) -> int:
@@ -491,27 +613,24 @@ def _suspected_cause(summary: Mapping[str, Any]) -> str:
 
 def _cause_evidence(summary: Mapping[str, Any]) -> list[str]:
     evidence: list[str] = []
-    cause = str(summary.get("suspectedCause") or "")
-    identity_shape = str(summary.get("identityShape") or "")
-    title_shape = str(summary.get("titleShape") or "")
-    outlier_reason = str(summary.get("outlierReason") or "")
-    dominant_source_class = str(summary.get("dominantSourceClass") or "")
-    if cause:
-        evidence.append(f"cause:{cause}")
-    if identity_shape:
-        evidence.append(f"identity:{identity_shape}")
-    if summary.get("identityQuality"):
-        evidence.append(f"quality:{summary.get('identityQuality')}")
-    if title_shape:
-        evidence.append(f"title:{title_shape}")
-    if outlier_reason:
-        evidence.append(f"outlier:{outlier_reason}")
-    if dominant_source_class:
-        evidence.append(f"dominant_source:{dominant_source_class}")
+    for label, key in (
+        ("cause", "suspectedCause"),
+        ("identity", "identityShape"),
+        ("quality", "identityQuality"),
+        ("title", "titleShape"),
+        ("outlier", "outlierReason"),
+        ("dominant_source", "dominantSourceClass"),
+    ):
+        value = str(summary.get(key) or "")
+        if value:
+            evidence.append(f"{label}:{value}")
     if summary.get("hasStrongIdentity"):
         evidence.append("strong_identity")
     for signal in summary.get("titleCompanyPollutionSignals") or []:
         evidence.append(f"pollution:{signal}")
+    provenance = str(summary.get("nonProviderIdentityProvenance") or "")
+    if provenance:
+        evidence.append(f"provenance:{provenance}")
     for caveat in summary.get("identityCaveats") or []:
         evidence.append(f"caveat:{caveat}")
     return evidence[:10]
@@ -578,6 +697,8 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
         "identityShape": _identity_shape(row, bundle),
         "identityQuality": _identity_quality(row, bundle),
         "identityQualityEvidence": _identity_quality_evidence(row, bundle),
+        "nonProviderIdentityProvenance": _non_provider_identity_provenance(row, bundle),
+        "nonProviderIdentityEvidence": _non_provider_identity_evidence(row, bundle),
         "titleShape": _title_shape(row),
         "identityCaveats": _identity_caveats(row, bundle),
         "titleCompanyPollutionSignals": _title_company_pollution_signals(row),
@@ -624,6 +745,7 @@ def build_dedup_evidence(
     review_queue_counts: Counter[str] = Counter()
     review_queue_cause_counts: Counter[str] = Counter()
     identity_quality_counts: Counter[str] = Counter()
+    non_provider_identity_provenance_counts: Counter[str] = Counter()
     top_rows: list[dict[str, Any]] = []
     risky_rows: list[dict[str, Any]] = []
     location_divergence_rows: list[dict[str, Any]] = []
@@ -642,6 +764,9 @@ def build_dedup_evidence(
             outlier_reason_counts.update([summary["outlierReason"]])
             identity_shape_counts.update([summary["identityShape"]])
             identity_quality_counts.update([summary["identityQuality"]])
+            non_provider_identity_provenance_counts.update(
+                [summary["nonProviderIdentityProvenance"]]
+            )
             review_action = _recommended_review_action(summary)
             review_queue_counts.update([review_action])
             review_queue_cause_counts.update([summary["suspectedCause"]])
@@ -716,6 +841,10 @@ def build_dedup_evidence(
         },
         "identityQualityCounts": {
             key: int(identity_quality_counts.get(key, 0)) for key in IDENTITY_QUALITY_KEYS
+        },
+        "nonProviderIdentityProvenanceCounts": {
+            key: int(non_provider_identity_provenance_counts.get(key, 0))
+            for key in NON_PROVIDER_IDENTITY_PROVENANCE_KEYS
         },
         "reviewQueueCounts": {
             key: int(review_queue_counts.get(key, 0)) for key in REVIEW_QUEUE_ACTION_KEYS

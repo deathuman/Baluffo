@@ -68,6 +68,15 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
           missing_identity: 0,
           unknown: 0
         },
+        nonProviderIdentityProvenanceCounts: {
+          google_sheets_row_identity: 3,
+          url_derived_identity: 2,
+          category_or_directory_identity: 1,
+          opaque_other_source_identity: 1,
+          mixed_non_provider_identity: 1,
+          none: 0,
+          unknown: 0
+        },
         reviewQueueCounts: {
           review_many_urls_same_title: 3,
           review_listing_url_bundle: 2,
@@ -136,6 +145,12 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
               "provider_ids:0",
               "non_provider_ids:0"
             ],
+            nonProviderIdentityProvenance: "google_sheets_row_identity",
+            nonProviderIdentityEvidence: [
+              "provenance:google_sheets_row_identity",
+              "dominant_source_name:google_sheets",
+              "single_non_provider_source"
+            ],
             identityShape: "shared_listing_or_category_url",
             outlierReason: "large_other_source_bundle",
             identityCaveats: ["shared_url_looks_like_listing_or_category", "category_like_title"],
@@ -175,6 +190,10 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /listing URL weak 2/i);
   assert.match(metricsEl.innerHTML, /same-host URLs weak 3/i);
   assert.match(metricsEl.innerHTML, /other source ID 1/i);
+  assert.match(metricsEl.innerHTML, /Dedup non-provider provenance/i);
+  assert.match(metricsEl.innerHTML, /google sheets 3/i);
+  assert.match(metricsEl.innerHTML, /URL-derived 2/i);
+  assert.match(metricsEl.innerHTML, /opaque other 1/i);
   assert.match(metricsEl.innerHTML, /Dedup review queue/i);
   assert.match(metricsEl.innerHTML, /listing URL 2/i);
   assert.match(metricsEl.innerHTML, /category title 1/i);
@@ -203,7 +222,9 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /review listing url bundle/i);
   assert.match(metricsEl.innerHTML, /listing page bundle; shared listing or category url/i);
   assert.match(metricsEl.innerHTML, /quality shared listing url weak/i);
+  assert.match(metricsEl.innerHTML, /provenance google sheets row identity/i);
   assert.match(metricsEl.innerHTML, /identity evidence quality:shared listing url weak/i);
+  assert.match(metricsEl.innerHTML, /provenance evidence provenance:google sheets row identity/i);
   assert.match(metricsEl.innerHTML, /cause evidence cause:listing page bundle/i);
   assert.match(metricsEl.innerHTML, /sources kforce-a \| kforce-b/i);
   assert.match(metricsEl.innerHTML, /Senior Engineer/i);

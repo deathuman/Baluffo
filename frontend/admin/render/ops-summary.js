@@ -340,6 +340,19 @@ function formatDedupIdentityQualityCounts(qualityCounts) {
   ].join(", ");
 }
 
+function formatDedupNonProviderIdentityProvenanceCounts(provenanceCounts) {
+  const counts = provenanceCounts && typeof provenanceCounts === "object" ? provenanceCounts : {};
+  return [
+    `google sheets ${Number(counts?.google_sheets_row_identity || 0).toLocaleString()}`,
+    `URL-derived ${Number(counts?.url_derived_identity || 0).toLocaleString()}`,
+    `category/directory ${Number(counts?.category_or_directory_identity || 0).toLocaleString()}`,
+    `opaque other ${Number(counts?.opaque_other_source_identity || 0).toLocaleString()}`,
+    `mixed ${Number(counts?.mixed_non_provider_identity || 0).toLocaleString()}`,
+    `none ${Number(counts?.none || 0).toLocaleString()}`,
+    `unknown ${Number(counts?.unknown || 0).toLocaleString()}`
+  ].join(", ");
+}
+
 function formatDedupMergedRows(rows, emptyText) {
   const mergedRows = Array.isArray(rows) ? rows : [];
   if (!mergedRows.length) return escapeHtml(emptyText);
@@ -454,6 +467,7 @@ function formatDedupReviewQueueRows(rows, emptyText) {
       const action = String(row?.recommendedReviewAction || "monitor").replaceAll("_", " ");
       const identityShape = String(row?.identityShape || "mixed_or_unknown_identity").replaceAll("_", " ");
       const identityQuality = String(row?.identityQuality || "unknown").replaceAll("_", " ");
+      const nonProviderProvenance = String(row?.nonProviderIdentityProvenance || "unknown").replaceAll("_", " ");
       const outlierReason = String(row?.outlierReason || "unknown").replaceAll("_", " ");
       const suspectedCause = String(row?.suspectedCause || "unknown").replaceAll("_", " ");
       const caveats = Array.isArray(row?.identityCaveats) ? row.identityCaveats : [];
@@ -462,9 +476,11 @@ function formatDedupReviewQueueRows(rows, emptyText) {
       const causeText = causeEvidence.length ? causeEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
       const qualityEvidence = Array.isArray(row?.identityQualityEvidence) ? row.identityQualityEvidence : [];
       const qualityText = qualityEvidence.length ? qualityEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
+      const provenanceEvidence = Array.isArray(row?.nonProviderIdentityEvidence) ? row.nonProviderIdentityEvidence : [];
+      const provenanceText = provenanceEvidence.length ? provenanceEvidence.slice(0, 5).join(", ").replaceAll("_", " ") : "none";
       const sources = Array.isArray(row?.sampleSources) ? row.sampleSources : Array.isArray(row?.sources) ? row.sources : [];
       const sourceText = sources.length ? sources.slice(0, 3).join(" | ") : "none";
-      const detail = `${suspectedCause}; ${identityShape}; quality ${identityQuality}; ${outlierReason}; caveats ${caveatText}; cause evidence ${causeText}; identity evidence ${qualityText}; sources ${sourceText}`;
+      const detail = `${suspectedCause}; ${identityShape}; quality ${identityQuality}; provenance ${nonProviderProvenance}; ${outlierReason}; caveats ${caveatText}; cause evidence ${causeText}; identity evidence ${qualityText}; provenance evidence ${provenanceText}; sources ${sourceText}`;
       return `
         <tr>
           <td>${escapeHtml(action)}</td>
@@ -652,6 +668,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const identityQualityCounts = dedupEvidence?.identityQualityCounts && typeof dedupEvidence.identityQualityCounts === "object"
     ? dedupEvidence.identityQualityCounts
     : {};
+  const nonProviderIdentityProvenanceCounts = dedupEvidence?.nonProviderIdentityProvenanceCounts && typeof dedupEvidence.nonProviderIdentityProvenanceCounts === "object"
+    ? dedupEvidence.nonProviderIdentityProvenanceCounts
+    : {};
   const reviewQueueCounts = dedupEvidence?.reviewQueueCounts && typeof dedupEvidence.reviewQueueCounts === "object"
     ? dedupEvidence.reviewQueueCounts
     : {};
@@ -750,6 +769,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup outlier reasons</strong>: ${escapeHtml(formatDedupOutlierReasonCounts(outlierReasonCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup identity shapes</strong>: ${escapeHtml(formatDedupIdentityShapeCounts(identityShapeCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup identity quality</strong>: ${escapeHtml(formatDedupIdentityQualityCounts(identityQualityCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup non-provider provenance</strong>: ${escapeHtml(formatDedupNonProviderIdentityProvenanceCounts(nonProviderIdentityProvenanceCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review causes</strong>: ${escapeHtml(formatDedupReviewQueueCauseCounts(reviewQueueCauseCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>
