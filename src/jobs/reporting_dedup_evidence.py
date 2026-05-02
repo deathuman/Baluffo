@@ -42,8 +42,19 @@ REVIEW_QUEUE_CAUSE_KEYS = (
     "open_application_family",
     "listing_page_bundle",
     "parser_or_directory_text_pollution",
+    "non_provider_url_identity_needs_review",
     "provider_static_disagreement",
     "likely_legitimate_multi_role_family",
+    "unknown",
+)
+IDENTITY_QUALITY_KEYS = (
+    "provider_id_strong",
+    "shared_detail_url_strong",
+    "shared_listing_url_weak",
+    "many_urls_same_host_weak",
+    "many_urls_many_hosts_weak",
+    "other_source_id_untrusted",
+    "missing_identity",
     "unknown",
 )
 CATEGORY_TITLE_TERMS = frozenset(
@@ -248,6 +259,16 @@ def _provider_source_job_id_count(bundle: Sequence[Mapping[str, Any]]) -> int:
     )
 
 
+def _non_provider_source_job_id_count(bundle: Sequence[Mapping[str, Any]]) -> int:
+    return len(
+        {
+            clean_text(item.get("sourceJobId"))
+            for item in bundle
+            if _source_class(item) != "provider" and clean_text(item.get("sourceJobId"))
+        }
+    )
+
+
 def _unique_url_host_count(bundle: Sequence[Mapping[str, Any]]) -> int:
     return len({_url_host(url) for url in _unique_job_links(bundle) if _url_host(url)})
 
@@ -363,6 +384,54 @@ def _identity_caveats(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]
     return caveats
 
 
+def _identity_quality(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) -> str:
+    provider_ids = _provider_source_job_id_count(bundle)
+    non_provider_ids = _non_provider_source_job_id_count(bundle)
+    urls = _unique_job_links(bundle)
+    if provider_ids > 0:
+        return "provider_id_strong"
+    if non_provider_ids > 0:
+        return "other_source_id_untrusted"
+    if not urls:
+        return "missing_identity"
+    if len(urls) == 1:
+        return (
+            "shared_listing_url_weak"
+            if _looks_listing_or_category_url(urls[0]) or _title_shape(row) == "category_like"
+            else "shared_detail_url_strong"
+        )
+    if len(urls) > 1:
+        return (
+            "many_urls_same_host_weak"
+            if _unique_url_host_count(bundle) == 1 and _unique_url_path_prefix_count(bundle) <= 1
+            else "many_urls_many_hosts_weak"
+        )
+    return "unknown"
+
+
+def _identity_quality_evidence(
+    row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]
+) -> list[str]:
+    quality = _identity_quality(row, bundle)
+    evidence = [
+        f"quality:{quality}",
+        f"provider_ids:{_provider_source_job_id_count(bundle)}",
+        f"non_provider_ids:{_non_provider_source_job_id_count(bundle)}",
+        f"urls:{_unique_job_link_count(bundle)}",
+        f"hosts:{_unique_url_host_count(bundle)}",
+        f"path_prefixes:{_unique_url_path_prefix_count(bundle)}",
+        f"dominant_source:{_dominant_source_class(_source_class_counts(bundle))}",
+    ]
+    shared = _shared_url(bundle)
+    if shared:
+        evidence.append(
+            "shared_url_listing_like"
+            if _looks_listing_or_category_url(shared) or _title_shape(row) == "category_like"
+            else "shared_url_detail_like"
+        )
+    return evidence
+
+
 def _recommended_review_action(summary: Mapping[str, Any]) -> str:
     caveats = {str(caveat) for caveat in summary.get("identityCaveats") or []}
     identity_shape = str(summary.get("identityShape") or "")
@@ -388,10 +457,10 @@ def _suspected_cause(summary: Mapping[str, Any]) -> str:
     caveats = {str(caveat) for caveat in summary.get("identityCaveats") or []}
     pollution = {str(signal) for signal in summary.get("titleCompanyPollutionSignals") or []}
     identity_shape = str(summary.get("identityShape") or "")
+    identity_quality = str(summary.get("identityQuality") or "")
     title_shape = str(summary.get("titleShape") or "")
     outlier_reason = str(summary.get("outlierReason") or "")
     dominant_source_class = str(summary.get("dominantSourceClass") or "")
-    has_strong_identity = bool(summary.get("hasStrongIdentity"))
     if outlier_reason == "provider_static_disagreement":
         return "provider_static_disagreement"
     if title_shape == "speculative_or_open_application":
@@ -402,8 +471,14 @@ def _suspected_cause(summary: Mapping[str, Any]) -> str:
         return "parser_or_directory_text_pollution"
     if identity_shape == "shared_listing_or_category_url":
         return "listing_page_bundle"
-    if identity_shape == "provider_id_backed" or (
-        has_strong_identity and outlier_reason == "multi_location_strong_identity"
+    if (
+        dominant_source_class == "other"
+        and identity_shape == "many_unique_urls_same_title"
+        and identity_quality in {"many_urls_same_host_weak", "many_urls_many_hosts_weak"}
+    ):
+        return "non_provider_url_identity_needs_review"
+    if identity_quality in {"provider_id_strong", "shared_detail_url_strong"} and (
+        identity_shape == "provider_id_backed" or outlier_reason == "multi_location_strong_identity"
     ):
         return "likely_legitimate_multi_role_family"
     return "unknown"
@@ -420,6 +495,8 @@ def _cause_evidence(summary: Mapping[str, Any]) -> list[str]:
         evidence.append(f"cause:{cause}")
     if identity_shape:
         evidence.append(f"identity:{identity_shape}")
+    if summary.get("identityQuality"):
+        evidence.append(f"quality:{summary.get('identityQuality')}")
     if title_shape:
         evidence.append(f"title:{title_shape}")
     if outlier_reason:
@@ -490,9 +567,12 @@ def _job_summary(row: Mapping[str, Any], bundle: Sequence[Mapping[str, Any]]) ->
         "urlHostDiversity": _unique_url_host_count(bundle),
         "urlPathPrefixDiversity": _unique_url_path_prefix_count(bundle),
         "providerSourceJobIdCount": _provider_source_job_id_count(bundle),
+        "nonProviderSourceJobIdCount": _non_provider_source_job_id_count(bundle),
         "hasStrongIdentity": _has_any_strong_identity(bundle),
         "dominantSourceClass": _dominant_source_class(source_classes),
         "identityShape": _identity_shape(row, bundle),
+        "identityQuality": _identity_quality(row, bundle),
+        "identityQualityEvidence": _identity_quality_evidence(row, bundle),
         "titleShape": _title_shape(row),
         "identityCaveats": _identity_caveats(row, bundle),
         "titleCompanyPollutionSignals": _title_company_pollution_signals(row),
@@ -538,6 +618,7 @@ def build_dedup_evidence(
     identity_shape_counts: Counter[str] = Counter()
     review_queue_counts: Counter[str] = Counter()
     review_queue_cause_counts: Counter[str] = Counter()
+    identity_quality_counts: Counter[str] = Counter()
     top_rows: list[dict[str, Any]] = []
     risky_rows: list[dict[str, Any]] = []
     location_divergence_rows: list[dict[str, Any]] = []
@@ -555,6 +636,7 @@ def build_dedup_evidence(
             top_rows.append(summary)
             outlier_reason_counts.update([summary["outlierReason"]])
             identity_shape_counts.update([summary["identityShape"]])
+            identity_quality_counts.update([summary["identityQuality"]])
             review_action = _recommended_review_action(summary)
             review_queue_counts.update([review_action])
             review_queue_cause_counts.update([summary["suspectedCause"]])
@@ -626,6 +708,9 @@ def build_dedup_evidence(
         },
         "identityShapeCounts": {
             key: int(identity_shape_counts.get(key, 0)) for key in IDENTITY_SHAPE_KEYS
+        },
+        "identityQualityCounts": {
+            key: int(identity_quality_counts.get(key, 0)) for key in IDENTITY_QUALITY_KEYS
         },
         "reviewQueueCounts": {
             key: int(review_queue_counts.get(key, 0)) for key in REVIEW_QUEUE_ACTION_KEYS

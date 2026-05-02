@@ -44,6 +44,7 @@ def test_dedup_evidence_reports_shared_job_detail_url_identity() -> None:
 
     outlier = evidence["topSourceBundleOutliers"][0]
     assert outlier["identityShape"] == "shared_job_detail_url"
+    assert outlier["identityQuality"] == "shared_detail_url_strong"
     assert outlier["sharedUrlHost"] == "studio.example"
     assert outlier["sharedUrlPath"] == "/jobs/123-senior-engineer"
     assert outlier["identityCaveats"] == [
@@ -51,6 +52,7 @@ def test_dedup_evidence_reports_shared_job_detail_url_identity() -> None:
         "shared_url_without_provider_ids",
     ]
     assert evidence["identityShapeCounts"]["shared_job_detail_url"] == 1
+    assert evidence["identityQualityCounts"]["shared_detail_url_strong"] == 1
     assert evidence["reviewQueueCounts"]["monitor"] == 1
     assert evidence["reviewQueueCauseCounts"]["unknown"] == 1
     assert evidence["reviewQueue"] == []
@@ -86,10 +88,12 @@ def test_dedup_evidence_reports_shared_listing_url_identity_and_caveats() -> Non
 
     outlier = evidence["topSourceBundleOutliers"][0]
     assert outlier["identityShape"] == "shared_listing_or_category_url"
+    assert outlier["identityQuality"] == "shared_listing_url_weak"
     assert outlier["titleShape"] == "category_like"
     assert "shared_url_looks_like_listing_or_category" in outlier["identityCaveats"]
     assert "category_like_title" in outlier["identityCaveats"]
     assert evidence["identityShapeCounts"]["shared_listing_or_category_url"] == 1
+    assert evidence["identityQualityCounts"]["shared_listing_url_weak"] == 1
     assert evidence["reviewQueueCounts"]["review_listing_url_bundle"] == 1
     assert evidence["reviewQueueCauseCounts"]["category_or_department_bucket"] == 1
     assert evidence["reviewQueue"][0]["recommendedReviewAction"] == "review_listing_url_bundle"
@@ -123,10 +127,12 @@ def test_dedup_evidence_reports_many_unique_urls_same_title() -> None:
 
     outlier = evidence["topSourceBundleOutliers"][0]
     assert outlier["identityShape"] == "many_unique_urls_same_title"
+    assert outlier["identityQuality"] == "many_urls_many_hosts_weak"
     assert outlier["uniqueUrlHostCount"] == 1
     assert outlier["uniqueUrlPathPrefixCount"] == 2
     assert "many_unique_urls_same_title" in outlier["identityCaveats"]
     assert evidence["identityShapeCounts"]["many_unique_urls_same_title"] == 1
+    assert evidence["identityQualityCounts"]["many_urls_many_hosts_weak"] == 1
     assert evidence["reviewQueueCounts"]["review_many_urls_same_title"] == 1
     assert evidence["reviewQueueCauseCounts"]["unknown"] == 1
     assert evidence["reviewQueue"][0]["recommendedReviewAction"] == "review_many_urls_same_title"
@@ -316,6 +322,8 @@ def test_dedup_evidence_classifies_provider_backed_bundle_as_likely_legitimate()
     )
 
     outlier = evidence["topSourceBundleOutliers"][0]
+    assert outlier["identityQuality"] == "provider_id_strong"
+    assert evidence["identityQualityCounts"]["provider_id_strong"] == 1
     assert outlier["suspectedCause"] == "likely_legitimate_multi_role_family"
     assert "strong_identity" in outlier["causeEvidence"]
     assert evidence["reviewQueueCauseCounts"]["likely_legitimate_multi_role_family"] == 1

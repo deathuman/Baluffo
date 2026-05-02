@@ -58,6 +58,16 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
           missing_url_and_ids: 0,
           mixed_or_unknown_identity: 0
         },
+        identityQualityCounts: {
+          provider_id_strong: 4,
+          shared_detail_url_strong: 1,
+          shared_listing_url_weak: 2,
+          many_urls_same_host_weak: 3,
+          many_urls_many_hosts_weak: 1,
+          other_source_id_untrusted: 1,
+          missing_identity: 0,
+          unknown: 0
+        },
         reviewQueueCounts: {
           review_many_urls_same_title: 3,
           review_listing_url_bundle: 2,
@@ -120,6 +130,12 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
               "cause:listing_page_bundle",
               "identity:shared_listing_or_category_url"
             ],
+            identityQuality: "shared_listing_url_weak",
+            identityQualityEvidence: [
+              "quality:shared_listing_url_weak",
+              "provider_ids:0",
+              "non_provider_ids:0"
+            ],
             identityShape: "shared_listing_or_category_url",
             outlierReason: "large_other_source_bundle",
             identityCaveats: ["shared_url_looks_like_listing_or_category", "category_like_title"],
@@ -155,6 +171,10 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /listing\/category URL 2/i);
   assert.match(metricsEl.innerHTML, /many URLs 3/i);
   assert.match(metricsEl.innerHTML, /provider ID 4/i);
+  assert.match(metricsEl.innerHTML, /Dedup identity quality/i);
+  assert.match(metricsEl.innerHTML, /listing URL weak 2/i);
+  assert.match(metricsEl.innerHTML, /same-host URLs weak 3/i);
+  assert.match(metricsEl.innerHTML, /other source ID 1/i);
   assert.match(metricsEl.innerHTML, /Dedup review queue/i);
   assert.match(metricsEl.innerHTML, /listing URL 2/i);
   assert.match(metricsEl.innerHTML, /category title 1/i);
@@ -162,6 +182,7 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /monitor 4/i);
   assert.match(metricsEl.innerHTML, /Dedup review causes/i);
   assert.match(metricsEl.innerHTML, /category 1/i);
+  assert.match(metricsEl.innerHTML, /non-provider URL/i);
   assert.match(metricsEl.innerHTML, /parser\/text 1/i);
   assert.match(metricsEl.innerHTML, /likely legitimate 4/i);
   assert.match(metricsEl.innerHTML, /Top source-bundle outliers/i);
@@ -181,6 +202,8 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /Dedup review examples/i);
   assert.match(metricsEl.innerHTML, /review listing url bundle/i);
   assert.match(metricsEl.innerHTML, /listing page bundle; shared listing or category url/i);
+  assert.match(metricsEl.innerHTML, /quality shared listing url weak/i);
+  assert.match(metricsEl.innerHTML, /identity evidence quality:shared listing url weak/i);
   assert.match(metricsEl.innerHTML, /cause evidence cause:listing page bundle/i);
   assert.match(metricsEl.innerHTML, /sources kforce-a \| kforce-b/i);
   assert.match(metricsEl.innerHTML, /Senior Engineer/i);

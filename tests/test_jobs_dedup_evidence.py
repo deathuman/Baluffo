@@ -370,6 +370,8 @@ def test_dedup_evidence_empty_rows_returns_empty_aggregates() -> None:
         "review_provider_static_disagreement": 0,
         "monitor": 0,
     }
+    assert not any(evidence["identityQualityCounts"].values())
+    assert "unknown" in evidence["identityQualityCounts"]
     assert not any(evidence["reviewQueueCauseCounts"].values())
     assert "unknown" in evidence["reviewQueueCauseCounts"]
     assert evidence["topSourceBundleOutliers"] == []

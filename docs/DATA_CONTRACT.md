@@ -66,6 +66,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `riskReasonCounts` | `Object` | Aggregate risky-row counts by risk reason before sample capping. |
 | `outlierReasonCounts` | `Object` | Aggregate source-bundle outlier counts by diagnostic reason before sample capping. |
 | `identityShapeCounts` | `Object` | Aggregate source-bundle URL/source identity shape counts before sample capping. |
+| `identityQualityCounts` | `Object` | Aggregate source-bundle identity-quality counts before sample capping. |
 | `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
 | `reviewQueueCauseCounts` | `Object` | Aggregate advisory dedup review counts by suspected root cause before sample capping. |
 | `reviewQueue` | `Array<Object>` | Stable capped sample of source-bundle rows that should be reviewed before lifecycle UX or dedup behavior changes. |
@@ -117,6 +118,13 @@ Suspected cause values are diagnostic only: `category_or_department_bucket`,
 `causeEvidence` is a compact list of the identity shape, title shape, outlier reason, dominant
 source class, caveats, and title/company pollution signals that led to the suspected cause. These
 fields prioritize human review; they do not persist review decisions or change dedup behavior.
+
+Identity quality values are diagnostic only: `provider_id_strong`, `shared_detail_url_strong`,
+`shared_listing_url_weak`, `many_urls_same_host_weak`, `many_urls_many_hosts_weak`,
+`other_source_id_untrusted`, `missing_identity`, and `unknown`. `identityQualityEvidence`
+records compact counts and URL/source facts such as provider IDs, non-provider source IDs, URL
+count, host count, path-prefix count, dominant source class, and shared URL shape. These fields
+separate provider-grade identity from weaker non-provider URL/source identity for audit only.
 
 `mergedCount` and `mergeReasonCounts` describe the current dedup pass. They can be zero while
 `sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical
