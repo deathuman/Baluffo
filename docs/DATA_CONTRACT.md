@@ -620,6 +620,25 @@ Proposal rows include `staticSourceId`, `staticSourceName`, `providerSourceId`,
 mean delete, hide, reject, demote, tombstone, or permanently suppress a source; static cleanup and
 permanent rules remain later explicit evidence-backed milestones.
 
+### Conservative static cleanup proposals
+
+The source-policy soak report may include
+`sections.conservativeStaticCleanupProposals`. This section is report-only and is derived from
+`source-policy-recommendations.json`, current suppression/overlap evidence, source-sync
+cleanliness, and effective runtime registry rows. It does not mutate registry rows, seed defaults,
+tombstones, rejected rows, source sync, or `REDUNDANT_STATIC_IF_PROVIDER`.
+
+Cleanup proposal rows use `recommendedAction="move_static_to_hidden_pending"`,
+`destructiveActionAllowed=false`, and `requiresExplicitAdminAction=true`. They are only proposals
+for a later explicit Admin action; no current report may hide, demote, reject, tombstone, delete, or
+permanently suppress a source.
+
+Rows include the provider/static identity, clean-run counters, static-only evidence counters,
+source-sync cleanliness, suppression evidence status, evidence reasons, and blockers. A pair is
+proposal-eligible only when repeated stable-safe evidence exists, source-sync is clean, static-only
+evidence is absent, the static source is currently active/static, and dynamic suppression has been
+observed or its absence is explained by suppression-eligibility diagnostics.
+
 ### Source-policy recommendation artifact
 
 Completed fetch runs may update `data/source-policy-recommendations.json`, or the same filename

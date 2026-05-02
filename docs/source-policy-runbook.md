@@ -258,7 +258,26 @@ Use this rubric when recording decisions:
 - Investigate warning gates or source failure buckets that repeat across runs.
 - Never treat source-policy warnings as permission to delete, hide, reject, demote, tombstone, or clean up sources.
 
-Only consider a later conservative static-cleanup policy after several clean soak runs, no failed source-sync gates, at least one stable provider/static pair with repeated safe evidence, no static-only evidence for that pair, and apply plus clear/reversal have both been tested.
+Only consider conservative static-cleanup proposals after at least 3 clean or fully understood real-data soak runs, no failed source-sync gates, at least one stable provider/static pair with repeated safe evidence, no static-only evidence for that pair, dynamic suppression has been observed or its absence is explained, apply plus clear/reversal have both been tested, and the registry seed/runtime split is respected.
+
+## Conservative Static Cleanup Proposals
+
+The soak report may emit `sections.conservativeStaticCleanupProposals` after repeated safe evidence. This is still reporting only. A proposal is not an action and must not be treated as permission to hide, reject, tombstone, delete, or permanently suppress a source.
+
+Proposal rows use:
+
+- `recommendedAction="move_static_to_hidden_pending"`
+- `destructiveActionAllowed=false`
+- `requiresExplicitAdminAction=true`
+
+The intended first future action, if separately implemented and approved, is reversible:
+
+```text
+active static
+-> hidden/redundant pending
+```
+
+Do not mutate `data/defaults/source-registry-*.seed.json`. Any future cleanup action must write only ignored runtime registry files.
 
 ## Source-Policy Release Readiness
 

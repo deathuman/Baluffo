@@ -88,6 +88,7 @@ PROVIDER_MIGRATION_ACTIONS = {
 }
 STATIC_LIKE_ADAPTERS = {"static", "scrapy_static"}
 STATIC_LIKE_STAGES = {"generic_static", "seed_careers_page", "sheet_directory"}
+CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS = 3
 PROVIDER_ID_FIELDS = (
     "slug",
     "account",
@@ -2069,6 +2070,138 @@ def _source_sync_section(
     }, gates
 
 
+def _active_static_row_by_token(active_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    rows_by_token: dict[str, dict[str, Any]] = {}
+    for row in active_rows:
+        if clean_text(row.get("adapter")) != "static":
+            continue
+        for token in _source_identity_tokens(row):
+            rows_by_token.setdefault(token, row)
+    return rows_by_token
+
+
+def _proposal_by_pair(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {_pair_key(row): row for row in rows if _pair_key(row) != "||"}
+
+
+def _suppression_evidence_for_pair(
+    pair_key: str,
+    *,
+    suppressed_pairs: list[dict[str, Any]],
+    suppression_eligibility: dict[str, Any],
+) -> tuple[str, str]:
+    if pair_key in {_pair_key(row) for row in suppressed_pairs}:
+        return "observed_dynamic_suppression", "dynamic_redundant_provider"
+    for row in json_object_rows(suppression_eligibility.get("missingLinkedStaticRows")):
+        if _pair_key(row) == pair_key:
+            reason = clean_text(row.get("selectionReason")) or clean_text(row.get("reason"))
+            if reason:
+                return "suppression_absence_explained", reason
+    return "", ""
+
+
+def _conservative_static_cleanup_proposals_section(
+    *,
+    recommendation_pairs: list[dict[str, Any]],
+    proposal_rows: list[dict[str, Any]],
+    suppressed_pairs: list[dict[str, Any]],
+    suppression_eligibility: dict[str, Any],
+    active_rows: list[dict[str, Any]],
+    source_sync: dict[str, Any],
+) -> dict[str, Any]:
+    active_static_by_token = _active_static_row_by_token(active_rows)
+    current_proposals_by_pair = _proposal_by_pair(proposal_rows)
+    proposals: list[dict[str, Any]] = []
+    blocked: list[dict[str, Any]] = []
+
+    for pair in recommendation_pairs:
+        if clean_text(pair.get("currentRecommendation")) != "stable_safe_redundant":
+            continue
+        pair_key = _pair_key(pair)
+        static_id = clean_text(pair.get("staticSourceId"))
+        active_static = active_static_by_token.get(static_id)
+        current = current_proposals_by_pair.get(pair_key, {})
+        suppression_status, suppression_reason = _suppression_evidence_for_pair(
+            pair_key,
+            suppressed_pairs=suppressed_pairs,
+            suppression_eligibility=suppression_eligibility,
+        )
+        blockers: list[str] = []
+        if int(pair.get("consecutiveSafeRunCount") or 0) < CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS:
+            blockers.append("insufficient_clean_soak_runs")
+        if int(pair.get("staticOnlyDetectedRunCount") or 0) > 0:
+            blockers.append("static_only_evidence_present")
+        if not bool(source_sync.get("clean")):
+            blockers.append("source_sync_not_clean")
+        if not active_static:
+            blockers.append("static_source_not_active")
+        elif clean_text(active_static.get("adapter")) != "static":
+            blockers.append("static_source_adapter_not_static")
+        if not suppression_status:
+            blockers.append("dynamic_suppression_not_observed_or_explained")
+
+        row = {
+            "staticSourceId": static_id,
+            "staticSourceName": clean_text(pair.get("staticSourceName")),
+            "providerSourceId": clean_text(pair.get("providerSourceId")),
+            "providerSourceName": clean_text(pair.get("providerSourceName")),
+            "proposal": "conservative_static_cleanup_candidate",
+            "recommendedAction": "move_static_to_hidden_pending",
+            "destructiveActionAllowed": False,
+            "requiresExplicitAdminAction": True,
+            "decisionLogEvidenceRequired": True,
+            "requiredCleanRunCount": CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS,
+            "cleanRunEvidenceCount": int(pair.get("consecutiveSafeRunCount") or 0),
+            "safeRunCount": int(pair.get("safeRunCount") or 0),
+            "staticOnlyDetectedRunCount": int(pair.get("staticOnlyDetectedRunCount") or 0),
+            "sourceSyncClean": bool(source_sync.get("clean")),
+            "suppressionEvidenceStatus": suppression_status,
+            "suppressionEvidenceReason": suppression_reason,
+            "lastProposal": clean_text(pair.get("lastProposal")),
+            "lastAuditStatus": clean_text(pair.get("lastAuditStatus"))
+            or clean_text(current.get("lastAuditStatus")),
+            "providerCoverageStatus": clean_text(current.get("providerCoverageStatus")),
+            "providerCoverageConsecutiveSuccesses": _int_value(
+                current.get("providerCoverageConsecutiveSuccesses")
+            ),
+            "providerCoverageLatestKeptCount": _int_value(
+                current.get("providerCoverageLatestKeptCount")
+            ),
+            "overlapCount": _int_value(current.get("overlapCount")),
+            "staticOnlyCount": _int_value(current.get("staticOnlyCount")),
+            "evidenceReasons": [
+                reason
+                for reason in (
+                    "source_policy_recommendation_stable_safe_redundant",
+                    "consecutive_safe_run_threshold_met"
+                    if int(pair.get("consecutiveSafeRunCount") or 0)
+                    >= CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS
+                    else "",
+                    "source_sync_clean" if bool(source_sync.get("clean")) else "",
+                    suppression_status,
+                    "static_only_evidence_absent"
+                    if int(pair.get("staticOnlyDetectedRunCount") or 0) == 0
+                    else "",
+                )
+                if reason
+            ],
+            "blockers": blockers,
+        }
+        if blockers:
+            blocked.append(row)
+        else:
+            proposals.append(row)
+
+    return {
+        "minimumCleanRunCount": CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS,
+        "totalCandidateCount": len(proposals) + len(blocked),
+        "proposalCount": len(proposals),
+        "blockedCount": len(blocked),
+        "proposals": proposals,
+        "blockedCandidates": blocked,
+    }
+
+
 def _build_sections(
     payloads: dict[str, Any],
     backup_payload_path: Path | None,
@@ -2149,6 +2282,14 @@ def _build_sections(
     proposal_rows = json_object_rows(proposals.get("proposals"))
     recommendation_pairs = json_object_rows(recommendations.get("pairs"))
     review_pairs = list(as_json_object(review_state.get("pairs")).values())
+    conservative_cleanup_proposals = _conservative_static_cleanup_proposals_section(
+        recommendation_pairs=recommendation_pairs,
+        proposal_rows=proposal_rows,
+        suppressed_pairs=suppressed_pairs,
+        suppression_eligibility=suppression_eligibility,
+        active_rows=active_rows,
+        source_sync=source_sync,
+    )
 
     static_registry_tokens: set[str] = set()
     for row in active_rows + pending_rows + rejected_rows:
@@ -2249,6 +2390,7 @@ def _build_sections(
             "providerUnstableCount": int(proposals.get("providerUnstableCount") or 0),
             "staticOnlyDetectedCount": int(proposals.get("staticOnlyDetectedCount") or 0),
         },
+        "conservativeStaticCleanupProposals": conservative_cleanup_proposals,
         "sourcePolicyRecommendations": {
             "stableSafeRedundantCount": int(
                 as_json_object(recommendations.get("summary")).get("stableSafeCount") or 0
@@ -2343,6 +2485,9 @@ def _build_sections(
         "redundantProposalCount": int(proposals.get("totalProposalCount") or 0),
         "stableSafeRedundantRecommendationCount": int(
             sections["sourcePolicyRecommendations"]["stableSafeRedundantCount"]
+        ),
+        "conservativeStaticCleanupProposalCount": int(
+            conservative_cleanup_proposals.get("proposalCount") or 0
         ),
         "forcePauseOverrideCount": int(sections["reviewStateOverrides"]["forcePauseOverrideCount"]),
         "sourcePolicyReviewPairs": int(backup.get("sourcePolicyReviewPairs") or 0),
@@ -2460,6 +2605,34 @@ def _suppression_eligibility_markdown_rows(report: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _conservative_cleanup_markdown_rows(report: dict[str, Any]) -> list[str]:
+    rows = json_object_rows(
+        as_json_object(
+            as_json_object(report.get("sections")).get("conservativeStaticCleanupProposals")
+        ).get("proposals")
+    )
+    lines = [
+        "| Static | Provider | Action | Clean runs | Suppression evidence | Explicit action | Destructive |",
+        "|--------|----------|--------|------------|----------------------|-----------------|-------------|",
+    ]
+    if not rows:
+        lines.append("| none | none | none | `0` | none | `false` | `false` |")
+        return lines
+    for row in rows[:10]:
+        lines.append(
+            "| "
+            f"{clean_text(row.get('staticSourceName')) or clean_text(row.get('staticSourceId'))} | "
+            f"{clean_text(row.get('providerSourceName')) or clean_text(row.get('providerSourceId'))} | "
+            f"`{clean_text(row.get('recommendedAction'))}` | "
+            f"`{_int_value(row.get('cleanRunEvidenceCount'))}` | "
+            f"`{clean_text(row.get('suppressionEvidenceStatus'))}:"
+            f"{clean_text(row.get('suppressionEvidenceReason'))}` | "
+            f"`{bool(row.get('requiresExplicitAdminAction'))}` | "
+            f"`{bool(row.get('destructiveActionAllowed'))}` |"
+        )
+    return lines
+
+
 def render_markdown_report(report: dict[str, Any]) -> str:
     lines = [
         "# Source Policy Soak Report",
@@ -2525,6 +2698,22 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         "### Missing or unsuppressed linked statics",
         "",
         *_suppression_eligibility_markdown_rows(report),
+        "",
+        "## Conservative Static Cleanup Proposals",
+        "",
+        "Report-only: proposals require explicit future Admin action and never delete, reject, tombstone, or edit seed registry defaults.",
+        "",
+        *_markdown_table(
+            list(
+                as_json_object(
+                    as_json_object(report.get("sections")).get("conservativeStaticCleanupProposals")
+                ).items()
+            )
+        ),
+        "",
+        "### Proposed cleanup candidates",
+        "",
+        *_conservative_cleanup_markdown_rows(report),
         "",
         "## Quality Gates",
         "",

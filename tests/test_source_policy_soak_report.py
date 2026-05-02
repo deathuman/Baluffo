@@ -135,8 +135,57 @@ def test_clean_state_reports_ok_and_writes_reports(tmp_path: Path) -> None:
     assert report["summary"]["validatedProviderCount"] == 1
     assert report["summary"]["dynamicRedundantStaticSuppressedCount"] == 1
     assert report["summary"]["stableSafeRedundantRecommendationCount"] == 1
+    assert report["summary"]["conservativeStaticCleanupProposalCount"] == 1
     assert Path(outputs["json"]).exists()
     assert Path(outputs["markdown"]).exists()
+
+
+def test_conservative_static_cleanup_proposal_is_report_only(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _write_clean_runtime(data_dir)
+
+    report = soak.build_soak_report(data_dir)
+    proposal = report["sections"]["conservativeStaticCleanupProposals"]["proposals"][0]
+
+    assert proposal["recommendedAction"] == "move_static_to_hidden_pending"
+    assert proposal["destructiveActionAllowed"] is False
+    assert proposal["requiresExplicitAdminAction"] is True
+    assert proposal["decisionLogEvidenceRequired"] is True
+    assert proposal["cleanRunEvidenceCount"] == 3
+    assert proposal["suppressionEvidenceStatus"] == "observed_dynamic_suppression"
+    assert proposal["blockers"] == []
+
+
+def test_conservative_static_cleanup_blocks_static_only_evidence(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _write_clean_runtime(data_dir)
+    recommendations = json.loads(
+        (data_dir / "source-policy-recommendations.json").read_text(encoding="utf-8")
+    )
+    recommendations["pairs"][0]["staticOnlyDetectedRunCount"] = 1
+    _write_json(data_dir / "source-policy-recommendations.json", recommendations)
+
+    report = soak.build_soak_report(data_dir)
+    cleanup = report["sections"]["conservativeStaticCleanupProposals"]
+
+    assert cleanup["proposalCount"] == 0
+    assert cleanup["blockedCandidates"][0]["blockers"] == ["static_only_evidence_present"]
+
+
+def test_conservative_static_cleanup_never_mutates_seed_or_runtime_registry(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    _write_clean_runtime(data_dir)
+    seed_path = data_dir / "defaults" / "source-registry-active.seed.json"
+    _write_json(seed_path, [{"id": "seed:static", "adapter": "static"}])
+    before_active = (data_dir / "source-registry-active.json").read_text(encoding="utf-8")
+    before_seed = seed_path.read_text(encoding="utf-8")
+
+    soak.build_soak_report(data_dir)
+
+    assert (data_dir / "source-registry-active.json").read_text(encoding="utf-8") == before_active
+    assert seed_path.read_text(encoding="utf-8") == before_seed
 
 
 def test_registry_seed_files_are_used_when_runtime_registry_is_missing(tmp_path: Path) -> None:
