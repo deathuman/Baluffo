@@ -293,7 +293,7 @@ def test_static_adapter_uses_package_private_helper_boundary(repo_root: Path) ->
 
 def test_jobs_fetcher_internal_shims_are_not_contract_surfaces(repo_root: Path) -> None:
     plan = (
-        repo_root / "docs" / "plans" / "jobs-fetcher-aggressive-simplification-plan.md"
+        repo_root / "docs" / "archive" / "jobs-fetcher-aggressive-simplification-closeout.md"
     ).read_text(encoding="utf-8")
     assert "Preserve saved jobs, local user data" in plan
     assert "Internal jobs fetcher shims are deletion candidates" in plan

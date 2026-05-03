@@ -5,10 +5,10 @@
 > - **Canonical for:** completed source-discovery reset status, protected surfaces, evidence-backed next steps, and behavior-change gates
 > - **Not canonical for:** saved-job/local-user data contracts, bridge endpoint contracts, persisted payload schemas, or fetcher adapter inventory
 > - **Then inspect:** [`source-discovery-directory-web-evidence-2026-04-29.md`](../snapshots/source-discovery-directory-web-evidence-2026-04-29.md), [`source-discovery-fresh-audit-evidence-2026-04-29.md`](../snapshots/source-discovery-fresh-audit-evidence-2026-04-29.md), [`scraping-pipeline.md`](../scraping-pipeline.md), and [`DATA_CONTRACT.md`](../DATA_CONTRACT.md)
-> - **Last updated:** 2026-04-29
+> - **Last updated:** 2026-05-03
 
 The deletion-first adapter cleanup is complete. Keep this page active until the remaining source-discovery behavior work is either shipped or explicitly deferred. Do not restart broad compatibility-preserving helper extraction from this tracker.
-Related fetcher simplification now lives in [jobs-fetcher-aggressive-simplification-plan.md](jobs-fetcher-aggressive-simplification-plan.md). The completed jobs adapter mass-refactor was removed from active docs; use git history for historical provenance. Keep this source-discovery tracker focused on discovery evidence and behavior choices.
+Completed jobs-fetcher simplification now lives in [`../archive/jobs-fetcher-aggressive-simplification-closeout.md`](../archive/jobs-fetcher-aggressive-simplification-closeout.md). The completed jobs adapter mass-refactor was removed from active docs; use git history for historical provenance. Keep this source-discovery tracker focused on discovery evidence and behavior choices.
 
 
 ## Current Status

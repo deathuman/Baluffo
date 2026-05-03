@@ -4,8 +4,8 @@
 > - **Use this when:** choosing the next deletion-first jobs fetcher source-family slice
 > - **Canonical for:** 2026-04-30 isolated `scrapy_static`, social, community, and static sample evidence
 > - **Not canonical for:** saved jobs, local user data, bridge route contracts, source-discovery behavior, or final source deletion approval
-> - **Then inspect:** [`jobs-fetcher-aggressive-simplification-plan.md`](../plans/jobs-fetcher-aggressive-simplification-plan.md), [`adapter-plugin-inventory.md`](../adapter-plugin-inventory.md), and the `_out/jobs-source-family-evidence-20260430/` local reports if available
-> - **Last updated:** 2026-04-30
+> - **Then inspect:** [`jobs-fetcher-aggressive-simplification-closeout.md`](../archive/jobs-fetcher-aggressive-simplification-closeout.md), [`adapter-plugin-inventory.md`](../adapter-plugin-inventory.md), and the `_out/jobs-source-family-evidence-20260430/` local reports if available
+> - **Last updated:** 2026-05-03
 
 This snapshot records an evidence-only jobs fetcher run before any deletion of source rows, default loaders, plugin modules, or compatibility exports. All run artifacts were written under `_out/jobs-source-family-evidence-20260430/` and are intentionally not committed.
 

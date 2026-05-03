@@ -1,6 +1,6 @@
 # Documentation Archive
 
-> Historical cleanup and refactor records were trimmed on 2026-04-26 and legacy active-plan routing was pruned again on 2026-04-30.
+> Historical cleanup and refactor records were trimmed on 2026-04-26, legacy active-plan routing was pruned again on 2026-04-30, and the completed jobs-fetcher simplification closeout was archived on 2026-05-03.
 
 This repository now keeps active documentation in `docs/` and relies on git history for detailed cleanup records, old refactor charters, and completed task logs. The archive is intentionally small so the docs remain useful for a personal project.
 
@@ -15,6 +15,9 @@ Retired archive categories:
 - Boundary/refactor charters for previous root-thinning waves.
 - Completed repo-health and repo-analysis implementation logs.
 - Time-bound scraping/fetch run notes that no longer describe current behavior.
-- April 2026 repo-analysis residual trackers and early source-discovery HTTP-recovery snapshots. Current jobs-fetcher follow-up lives in [`../plans/jobs-fetcher-aggressive-simplification-plan.md`](../plans/jobs-fetcher-aggressive-simplification-plan.md), and current source-discovery follow-up lives in [`../plans/source-discovery-adapter-follow-ups.md`](../plans/source-discovery-adapter-follow-ups.md).
+- April 2026 repo-analysis residual trackers and early source-discovery HTTP-recovery snapshots.
+- Completed jobs-fetcher broad lifecycle/C901 simplification closeout lives in [`jobs-fetcher-aggressive-simplification-closeout.md`](jobs-fetcher-aggressive-simplification-closeout.md).
+
+Current active follow-up trackers live in [`../plans/`](../plans/), including source-discovery evidence follow-ups and dedup lifecycle readiness.
 
 For exact historical detail, inspect git history around the removed file names or the commits that introduced the related behavior.

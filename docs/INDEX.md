@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-05-01
+> - **Last updated:** 2026-05-03
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -58,8 +58,8 @@ Important for maintenance, release, and support workflows, but usually not the f
 |----------|-------|-------------|
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`source-policy-runbook.md`](source-policy-runbook.md) | Operator runbook | You are running discovery/fetch/soak/Admin migration-link validation or checking provider/static source-policy release readiness |
+| [`plans/dedup-lifecycle-readiness-plan.md`](plans/dedup-lifecycle-readiness-plan.md) | Plans / Follow-Ups | You are deciding whether dedup evidence is ready for read-only lifecycle UX or choosing the next dedup auditability slice |
 | [`plans/source-discovery-adapter-follow-ups.md`](plans/source-discovery-adapter-follow-ups.md) | Plans / Follow-Ups | You are choosing evidence-backed source-discovery behavior changes after the deletion-first adapter cleanup |
-| [`plans/jobs-fetcher-aggressive-simplification-plan.md`](plans/jobs-fetcher-aggressive-simplification-plan.md) | Plans / Follow-Ups | You are choosing approval-gated jobs fetcher deletion, source-family removal, compatibility-boundary removal, or product behavior tuning |
 | [`snapshots/jobs-dead-source-evidence-2026-04-29.md`](snapshots/jobs-dead-source-evidence-2026-04-29.md) | Snapshots / Evidence | You are auditing the first evidence-backed physical deletion batch for dead jobs sources |
 | [`snapshots/jobs-source-family-evidence-2026-04-30.md`](snapshots/jobs-source-family-evidence-2026-04-30.md) | Snapshots / Evidence | You are choosing the next deletion-first jobs fetcher source-family slice |
 | [`snapshots/source-discovery-yield-evidence-2026-04-29.md`](snapshots/source-discovery-yield-evidence-2026-04-29.md) | Snapshots / Evidence | You are choosing evidence-backed source-discovery behavior changes after the deletion-first adapter cleanup |
@@ -78,6 +78,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Document | Status | Notes |
 |----------|--------|-------|
 | [`archive/README.md`](archive/README.md) | Archive index | Short note for retired cleanup/refactor records; use git history for detailed provenance |
+| [`archive/jobs-fetcher-aggressive-simplification-closeout.md`](archive/jobs-fetcher-aggressive-simplification-closeout.md) | Archived closeout | Completed jobs-fetcher broad lifecycle/C901 simplification record |
 
 ## Quick Routing by Goal
 
@@ -91,6 +92,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Package or release | [`RELEASE.md`](RELEASE.md) | [`testing.md`](testing.md) |
 | Update docs | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | [`INDEX.md`](INDEX.md), then the owning authoritative doc |
 | Validate provider/static source-policy workflow | [`source-policy-runbook.md`](source-policy-runbook.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
+| Decide lifecycle UX readiness | [`plans/dedup-lifecycle-readiness-plan.md`](plans/dedup-lifecycle-readiness-plan.md) | [`source-policy-runbook.md`](source-policy-runbook.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`scraping-pipeline.md`](scraping-pipeline.md) |
 
 ## Recommended AI read sequence
 
