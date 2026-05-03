@@ -4,7 +4,7 @@
 > - **Use this when:** checking why the broad dedup lifecycle readiness plan was closed without starting lifecycle UX
 > - **Canonical for:** 2026-05-03 real-data dedup gate read, closure decision, and transferred blocker ownership
 > - **Not canonical for:** dedup payload schema, merge rules, lifecycle label behavior, or Admin route contracts
-> - **Then inspect:** [`dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md), [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`dedup-provider-static-reconciliation-closure-2026-05-03.md`](dedup-provider-static-reconciliation-closure-2026-05-03.md), [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
 ## Real-Data Gate Read
@@ -61,7 +61,7 @@ Lifecycle UX is not ready. The latest gate is readable and specific, but it is b
 
 ## Transferred Ownership
 
-Active follow-up now lives in [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md) after the Google Sheets role-bucket audit closure.
+Later provider/static reconciliation made the gate warning-only. Current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
 
 The first read-only lifecycle UX slice remains deferred until a future real-data run reports:
 

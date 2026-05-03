@@ -4,7 +4,7 @@
 > - **Use this when:** checking why current-run blocker review was retired
 > - **Canonical for:** current-run blocker triage closure, transferred identity-audit ownership, and lifecycle UX re-entry criteria
 > - **Not canonical for:** persisted payload schemas, bridge route contracts, dedup merge rules, or saved-job storage contracts
-> - **Then inspect:** [`../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md), [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md), [`dedup-provider-static-disagreement-reconciliation-closeout.md`](dedup-provider-static-disagreement-reconciliation-closeout.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
 The broad dedup lifecycle readiness tracker is closed, and this current-run blocker review tracker is now closed too. Follow-up Google Sheets role-bucket audit later made the dominant role-bucket blocker decisionable, and active ownership moved to provider/static disagreement reconciliation.
@@ -22,7 +22,7 @@ The broad dedup lifecycle readiness tracker is closed, and this current-run bloc
 
 Closed as blocked but transferred.
 
-The gate is decisionable enough to retire this review tracker, but lifecycle UX remains paused. The next active owner is [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), after Google Sheets role-bucket audit closed as completed-but-transferred.
+The gate was decisionable enough to retire this review tracker. Later Google Sheets role-bucket audit and provider/static reconciliation closed; current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
 
 ## Deferred Work
 

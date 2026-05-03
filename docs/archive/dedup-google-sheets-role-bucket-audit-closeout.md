@@ -4,7 +4,7 @@
 > - **Use this when:** checking why Google Sheets role-bucket audit was retired
 > - **Canonical for:** Google Sheets role-bucket blocker closeout, guard-fixed evidence, and lifecycle UX transfer criteria
 > - **Not canonical for:** persisted payload schemas, bridge route contracts, dedup merge rules, or saved-job storage contracts
-> - **Then inspect:** [`../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md), [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md), [`dedup-provider-static-disagreement-reconciliation-closeout.md`](dedup-provider-static-disagreement-reconciliation-closeout.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
 The Google Sheets role-bucket audit tracker is closed. The latest real-data evidence shows the Google Sheets blocker family is decisionable: unresolved current-run Google Sheets role-bucket blockers are zero, while the remaining lifecycle gate blocker is carried provider/static disagreement.
@@ -28,7 +28,7 @@ Closed as completed but transferred.
 
 The Google Sheets role-bucket blocker is no longer the active lifecycle-readiness owner. It is now explained by existing guard behavior, same-primary-URL allowances, and carried historical evidence. Lifecycle UX remains paused because provider/static disagreement still has unresolved carried blockers.
 
-Active follow-up now lives in [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md).
+Later provider/static reconciliation closed; current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
 
 ## Deferred Work
 

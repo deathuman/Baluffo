@@ -4,7 +4,7 @@
 > - **Use this when:** checking why current-run blocker review closed without starting lifecycle UX
 > - **Canonical for:** 2026-05-03 current-run dedup blocker triage, blocker buckets, and transferred follow-up ownership
 > - **Not canonical for:** dedup payload schema, merge rules, lifecycle label behavior, or Admin route contracts
-> - **Then inspect:** [`dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md), [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md), [`dedup-provider-static-reconciliation-closure-2026-05-03.md`](dedup-provider-static-reconciliation-closure-2026-05-03.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
 ## Real-Data Gate Read
@@ -60,7 +60,7 @@ The current-run blocker review plan is closed as **blocked but transferred**.
 
 The gate is readable and the blocker families are now specific. Lifecycle UX is still not ready because high-risk review causes are dominated by Google Sheets role buckets. Current-run non-primary merge blockers remain visible through `secondaryKey` and `sparseIdentity` examples, and provider/static disagreement still blocks, but both are smaller than the Google Sheets role-bucket problem.
 
-Active follow-up now lives in [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md) after the Google Sheets role-bucket audit closure.
+Later provider/static reconciliation closed; current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
 
 ## Transferred Ownership
 

@@ -4,7 +4,7 @@
 > - **Use this when:** checking why the broad dedup lifecycle readiness tracker was retired
 > - **Canonical for:** broad readiness closure decision, transferred blocker ownership, lifecycle UX entry criteria, and deferred cleanup boundaries
 > - **Not canonical for:** persisted payload schemas, bridge route contracts, source adapter behavior, or saved-job storage contracts
-> - **Then inspect:** [`../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md), [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`../snapshots/dedup-provider-static-reconciliation-closure-2026-05-03.md`](../snapshots/dedup-provider-static-reconciliation-closure-2026-05-03.md), [`dedup-provider-static-disagreement-reconciliation-closeout.md`](dedup-provider-static-disagreement-reconciliation-closeout.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
 Dedup auditability remains the product-risk gate before read-only lifecycle UX, but this broad readiness tracker is closed. The 2026-05-03 real-data gate read produced a readable blocked result with specific blockers, and follow-up triage moved active ownership through Google Sheets role-bucket audit to provider/static disagreement reconciliation.
@@ -30,7 +30,7 @@ Fresh evidence from `python src/jobs_fetcher.py` on 2026-05-03 showed:
 - `providerStaticDisagreementGateCounts.currentRunBlocked=31`
 - `providerStaticDisagreementGateCounts.carriedBlocked=1`
 
-The gate is readable and actionable enough to close this broad tracker, but it is not ready for lifecycle UX. Remaining work now belongs to [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md).
+The gate was readable and actionable enough to close this broad tracker. Later provider/static reconciliation made the gate warning-only; current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
 
 ## Deferred Boundaries
 

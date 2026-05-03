@@ -403,6 +403,7 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
         "docs/archive/dedup-current-run-blocker-review-closeout.md",
         "docs/archive/dedup-google-sheets-role-bucket-audit-closeout.md",
         "docs/archive/dedup-lifecycle-readiness-closeout.md",
+        "docs/archive/dedup-provider-static-disagreement-reconciliation-closeout.md",
         "docs/archive/jobs-fetcher-aggressive-simplification-closeout.md",
     ]
 

@@ -18,8 +18,8 @@ Retired archive categories:
 - April 2026 repo-analysis residual trackers and early source-discovery HTTP-recovery snapshots.
 - Completed jobs-fetcher broad lifecycle/C901 simplification closeout lives in [`jobs-fetcher-aggressive-simplification-closeout.md`](jobs-fetcher-aggressive-simplification-closeout.md).
 - Closed dedup lifecycle readiness closeout lives in [`dedup-lifecycle-readiness-closeout.md`](dedup-lifecycle-readiness-closeout.md).
-- Closed current-run blocker review closeout lives in [`dedup-current-run-blocker-review-closeout.md`](dedup-current-run-blocker-review-closeout.md); later Google Sheets role-bucket audit closeout lives in [`dedup-google-sheets-role-bucket-audit-closeout.md`](dedup-google-sheets-role-bucket-audit-closeout.md), and active work moved to [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md).
+- Closed current-run blocker review closeout lives in [`dedup-current-run-blocker-review-closeout.md`](dedup-current-run-blocker-review-closeout.md); later Google Sheets role-bucket audit closeout lives in [`dedup-google-sheets-role-bucket-audit-closeout.md`](dedup-google-sheets-role-bucket-audit-closeout.md), provider/static reconciliation closeout lives in [`dedup-provider-static-disagreement-reconciliation-closeout.md`](dedup-provider-static-disagreement-reconciliation-closeout.md), and active work moved to [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
 
-Current active follow-up trackers live in [`../plans/`](../plans/), including source-discovery evidence follow-ups and provider/static disagreement reconciliation.
+Current active follow-up trackers live in [`../plans/`](../plans/), including source-discovery evidence follow-ups and read-only lifecycle UX.
 
 For exact historical detail, inspect git history around the removed file names or the commits that introduced the related behavior.

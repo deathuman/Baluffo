@@ -4,7 +4,7 @@
 > - **Use this when:** checking why provider/static disagreement blockers dropped without local review-state mutation
 > - **Canonical for:** 2026-05-03 carried provider/static location-variant gate evidence
 > - **Not canonical for:** payload schemas, dedup merge rules, local review actions, lifecycle labels, or source-policy mutation
-> - **Then inspect:** [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`dedup-provider-static-reconciliation-closure-2026-05-03.md`](dedup-provider-static-reconciliation-closure-2026-05-03.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
 ## Command
@@ -42,4 +42,4 @@ The new `carried_location_variant` row is a carried title/company collision wher
 
 ## Decision
 
-Lifecycle UX is still not ready. The refinement reduced one stale carried location-label variant without using broad local review-state or changing dedup merge behavior. Active follow-up remains [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), focused on the remaining carried provider/static blockers.
+This snapshot was an intermediate refinement. Later provider/static reconciliation made lifecycle UX ready in warning-only mode; current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).

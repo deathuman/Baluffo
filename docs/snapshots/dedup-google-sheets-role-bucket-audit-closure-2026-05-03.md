@@ -4,7 +4,7 @@
 > - **Use this when:** checking why Google Sheets role-bucket audit closed without starting lifecycle UX
 > - **Canonical for:** 2026-05-03 Google Sheets role-bucket audit result, guard-fixed counts, and transferred follow-up ownership
 > - **Not canonical for:** dedup payload schema, merge rules, lifecycle label behavior, or Admin route contracts
-> - **Then inspect:** [`../archive/dedup-google-sheets-role-bucket-audit-closeout.md`](../archive/dedup-google-sheets-role-bucket-audit-closeout.md), [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`../archive/dedup-google-sheets-role-bucket-audit-closeout.md`](../archive/dedup-google-sheets-role-bucket-audit-closeout.md), [`dedup-provider-static-reconciliation-closure-2026-05-03.md`](dedup-provider-static-reconciliation-closure-2026-05-03.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
 ## Real-Data Gate Read
@@ -62,7 +62,7 @@ The Google Sheets role-bucket audit plan is closed as **completed but transferre
 
 Google Sheets role-bucket pressure is now explainable: current-run unresolved role buckets are zero, guard-blocked attempts are explicitly counted, same-primary-URL bundles are allowed, and the remaining Google Sheets evidence is carried historical warning pressure.
 
-Lifecycle UX is still not ready because carried provider/static disagreement remains unresolved. Active follow-up now lives in [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md).
+Later provider/static reconciliation made lifecycle UX ready in warning-only mode. Current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
 
 ## Re-Entry Criteria
 

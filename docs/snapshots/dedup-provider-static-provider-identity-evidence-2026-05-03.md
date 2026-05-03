@@ -4,7 +4,7 @@
 > - **Use this when:** checking why provider/static disagreement blockers dropped to the final carried manual-review set
 > - **Canonical for:** 2026-05-03 provider-identity-backed carried location conflict evidence
 > - **Not canonical for:** payload schemas, dedup merge rules, local review actions, lifecycle labels, or source-policy mutation
-> - **Then inspect:** [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`dedup-provider-static-reconciliation-closure-2026-05-03.md`](dedup-provider-static-reconciliation-closure-2026-05-03.md), [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
 ## Command
@@ -49,4 +49,4 @@ python src/jobs_fetcher.py
 
 ## Decision
 
-Lifecycle UX is still not ready. The provider/static blocker set is now small and explicit enough for row-level review-state reconciliation or targeted source/parser evidence work. Active follow-up remains [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md).
+This snapshot was an intermediate refinement. Later row-level review-state reconciliation made lifecycle UX ready in warning-only mode; current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
