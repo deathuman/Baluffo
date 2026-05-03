@@ -438,6 +438,9 @@ function formatDedupAuditGate(gate) {
     `provider/static current ${Number(auditGate?.providerStaticDisagreementCurrentRunCount || 0).toLocaleString()}`,
     `provider/static carried ${Number(auditGate?.providerStaticDisagreementCarriedCount || 0).toLocaleString()}`,
     `Google Sheets guard ${guard}`,
+    `Sheets role unresolved ${Number(auditGate?.googleSheetsRoleBucketUnresolvedCount || 0).toLocaleString()}`,
+    `Sheets guard-blocked ${Number(auditGate?.googleSheetsRoleBucketGuardBlockedCount || 0).toLocaleString()}`,
+    `Sheets historical ${Number(auditGate?.googleSheetsRoleBucketHistoricalCount || 0).toLocaleString()}`,
     `blockers ${blockerText}`,
     `warnings ${warningText}`
   ].join("; ");
@@ -514,7 +517,10 @@ function formatDedupAuditGateCard(gate) {
     `provider/static ${Number(auditGate?.providerStaticDisagreementCount || 0).toLocaleString()}`,
     `provider/static current ${Number(auditGate?.providerStaticDisagreementCurrentRunCount || 0).toLocaleString()}`,
     `provider/static carried ${Number(auditGate?.providerStaticDisagreementCarriedCount || 0).toLocaleString()}`,
-    `Google Sheets guard ${auditGate?.googleSheetsGenericRoleGuardActive === true ? "active" : "unknown"}`
+    `Google Sheets guard ${auditGate?.googleSheetsGenericRoleGuardActive === true ? "active" : "unknown"}`,
+    `Sheets role unresolved ${Number(auditGate?.googleSheetsRoleBucketUnresolvedCount || 0).toLocaleString()}`,
+    `Sheets guard-blocked ${Number(auditGate?.googleSheetsRoleBucketGuardBlockedCount || 0).toLocaleString()}`,
+    `Sheets historical ${Number(auditGate?.googleSheetsRoleBucketHistoricalCount || 0).toLocaleString()}`
   ];
   const examples = Array.isArray(auditGate?.examples) ? auditGate.examples.slice(0, 5) : [];
   return `
@@ -848,6 +854,60 @@ function formatDedupGoogleSheetsRoleBucketAuditCounts(auditCounts) {
     `not sheets role ${Number(counts?.not_google_sheets_role_bucket || 0).toLocaleString()}`,
     `unknown ${Number(counts?.unknown || 0).toLocaleString()}`
   ].join(", ");
+}
+
+function formatDedupGoogleSheetsRoleBucketAuditSummary(audit) {
+  const summary = audit && typeof audit === "object" ? audit : {};
+  const classificationCounts = summary?.classificationCounts && typeof summary.classificationCounts === "object"
+    ? summary.classificationCounts
+    : {};
+  const countText = [
+    `total ${Number(summary?.totalRoleBucketCount || 0).toLocaleString()}`,
+    `current-run ${Number(summary?.currentRunRoleBucketCount || 0).toLocaleString()}`,
+    `carried ${Number(summary?.carriedHistoricalRoleBucketCount || 0).toLocaleString()}`,
+    `guard-blocked different URL ${Number(summary?.blockedByDifferentPrimaryUrlCount || 0).toLocaleString()}`,
+    `allowed same URL ${Number(summary?.allowedSamePrimaryUrlCount || 0).toLocaleString()}`,
+    `historical ${Number(summary?.likelyHistoricalCollisionCount || 0).toLocaleString()}`,
+    `parser/category ${Number(summary?.likelyParserCategoryBucketCount || 0).toLocaleString()}`,
+    `unresolved ${Number(summary?.unresolvedRoleBucketCount || 0).toLocaleString()}`
+  ].join(", ");
+  const classificationText = [
+    `fixed by guard ${Number(classificationCounts?.fixed_by_generic_role_guard || 0).toLocaleString()}`,
+    `allowed same URL ${Number(classificationCounts?.allowed_same_primary_url || 0).toLocaleString()}`,
+    `historical carried ${Number(classificationCounts?.historical_carried_bundle || 0).toLocaleString()}`,
+    `unresolved current-run ${Number(classificationCounts?.unresolved_current_run_role_bucket || 0).toLocaleString()}`,
+    `parser/category noise ${Number(classificationCounts?.parser_or_sheet_category_noise || 0).toLocaleString()}`,
+    `needs narrow guard ${Number(classificationCounts?.needs_narrow_dedup_guard || 0).toLocaleString()}`
+  ].join(", ");
+  const examples = Array.isArray(summary?.examples) ? summary.examples.slice(0, 5) : [];
+  const exampleHtml = examples.length
+    ? `
+      <table class="admin-dedup-evidence-table">
+        <thead><tr><th>Class</th><th>Title</th><th>Company</th><th>Origin</th><th>Evidence</th></tr></thead>
+        <tbody>${examples.map(row => {
+          const classification = String(row?.classification || "unknown").replaceAll("_", " ");
+          const title = String(row?.title || row?.targetTitle || "Untitled");
+          const company = String(row?.company || row?.targetCompany || "Unknown company");
+          const origin = String(row?.bundleEvidenceOrigin || "unknown").replaceAll("_", " ");
+          const evidence = Array.isArray(row?.evidence) ? row.evidence.slice(0, 6).join(", ").replaceAll("_", " ") : "none";
+          return `
+            <tr>
+              <td>${escapeHtml(classification)}</td>
+              <td>${escapeHtml(title)}</td>
+              <td>${escapeHtml(company)}</td>
+              <td>${escapeHtml(origin)}</td>
+              <td>${escapeHtml(evidence)}</td>
+            </tr>
+          `;
+        }).join("")}</tbody>
+      </table>
+    `
+    : escapeHtml("No Google Sheets role-bucket audit examples.");
+  return `
+    <div><strong>Summary</strong>: ${escapeHtml(countText)}</div>
+    <div><strong>Classifications</strong>: ${escapeHtml(classificationText)}</div>
+    ${exampleHtml}
+  `;
 }
 
 function formatDedupGoogleSheetsBucketIntentCounts(intentCounts) {
@@ -1235,6 +1295,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const googleSheetsRoleBucketAuditCounts = dedupEvidence?.googleSheetsRoleBucketAuditCounts && typeof dedupEvidence.googleSheetsRoleBucketAuditCounts === "object"
     ? dedupEvidence.googleSheetsRoleBucketAuditCounts
     : {};
+  const googleSheetsRoleBucketAudit = dedupEvidence?.googleSheetsRoleBucketAudit && typeof dedupEvidence.googleSheetsRoleBucketAudit === "object"
+    ? dedupEvidence.googleSheetsRoleBucketAudit
+    : {};
   const googleSheetsBucketIntentCounts = dedupEvidence?.googleSheetsBucketIntentCounts && typeof dedupEvidence.googleSheetsBucketIntentCounts === "object"
     ? dedupEvidence.googleSheetsBucketIntentCounts
     : {};
@@ -1382,6 +1445,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup non-provider provenance</strong>: ${escapeHtml(formatDedupNonProviderIdentityProvenanceCounts(nonProviderIdentityProvenanceCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets bundle shapes</strong>: ${escapeHtml(formatDedupGoogleSheetsBundleShapeCounts(googleSheetsBundleShapeCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets role-bucket audit</strong>: ${escapeHtml(formatDedupGoogleSheetsRoleBucketAuditCounts(googleSheetsRoleBucketAuditCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets role-bucket audit summary</strong>: ${formatDedupGoogleSheetsRoleBucketAuditSummary(googleSheetsRoleBucketAudit)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets bucket intent</strong>: ${escapeHtml(formatDedupGoogleSheetsBucketIntentCounts(googleSheetsBucketIntentCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets weak grouping audit</strong>: ${escapeHtml(formatDedupGoogleSheetsWeakGroupingAuditCounts(googleSheetsWeakGroupingAuditCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>

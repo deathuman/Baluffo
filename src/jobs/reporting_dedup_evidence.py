@@ -135,6 +135,14 @@ GOOGLE_SHEETS_WEAK_GROUPING_AUDIT_KEYS = (
     "not_weak_google_sheets_grouping",
     "unknown",
 )
+GOOGLE_SHEETS_ROLE_BUCKET_AUDIT_CLASSIFICATION_KEYS = (
+    "fixed_by_generic_role_guard",
+    "allowed_same_primary_url",
+    "historical_carried_bundle",
+    "unresolved_current_run_role_bucket",
+    "parser_or_sheet_category_noise",
+    "needs_narrow_dedup_guard",
+)
 CATEGORY_TITLE_TERMS = frozenset(
     {
         "accounting",
@@ -1460,9 +1468,187 @@ def _high_risk_origin_counts(
         and clean_text(summary.get("dedupKey")) in current_run_known_mirror_pair_dedup_keys
     ):
         return 0, 0
+    role_bucket_classification = _google_sheets_role_bucket_audit_classification(summary)
+    if role_bucket_classification == "allowed_same_primary_url":
+        return 0, 0
     if summary.get("suspectedCause") not in DEDUP_AUDIT_GATE_BLOCKER_CAUSES:
         return 0, 0
     return (1, 0) if origin == "current_run" else (0, 1)
+
+
+def _is_google_sheets_role_bucket_summary(summary: Mapping[str, Any]) -> bool:
+    if clean_text(summary.get("nonProviderIdentityProvenance")) != "google_sheets_row_identity":
+        return False
+    if clean_text(summary.get("googleSheetsBundleShape")) in {
+        "role_category_bucket",
+        "single_location_many_urls",
+        "multi_location_many_urls",
+        "company_role_family",
+    }:
+        return True
+    return clean_text(summary.get("suspectedCause")) in {
+        "spreadsheet_role_bucket_needs_review",
+        "google_sheets_role_bucket_needs_review",
+    }
+
+
+def _google_sheets_role_bucket_audit_classification(summary: Mapping[str, Any]) -> str:
+    if not _is_google_sheets_role_bucket_summary(summary):
+        return ""
+    if summary.get("sharedPrimaryUrl"):
+        return "allowed_same_primary_url"
+    if clean_text(summary.get("bundleEvidenceOrigin")) != "current_run":
+        return "historical_carried_bundle"
+    audit = clean_text(summary.get("googleSheetsRoleBucketAudit"))
+    intent = clean_text(summary.get("googleSheetsBucketIntent"))
+    weak_audit = clean_text(summary.get("googleSheetsWeakGroupingAudit"))
+    if (
+        audit
+        in {
+            "likely_spreadsheet_category_bucket",
+            "listing_or_search_url_bucket",
+            "parser_normalized_role_title",
+        }
+        or intent
+        in {
+            "likely_spreadsheet_taxonomy_bucket",
+            "listing_or_search_bucket",
+            "parser_normalized_bucket",
+        }
+        or weak_audit
+        in {
+            "role_bucket_listing_grouping",
+            "parser_pollution_grouping",
+        }
+    ):
+        return "parser_or_sheet_category_noise"
+    if audit == "role_family_needs_manual_review" or intent in {
+        "possible_role_family",
+        "weak_title_company_grouping",
+    }:
+        return "needs_narrow_dedup_guard"
+    return "unresolved_current_run_role_bucket"
+
+
+def _google_sheets_guard_audit_example(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "classification": "fixed_by_generic_role_guard",
+        "title": clean_text(row.get("incomingTitle")),
+        "company": clean_text(row.get("incomingCompany")),
+        "incomingSource": clean_text(row.get("incomingSource")),
+        "incomingJobLink": normalize_url(row.get("incomingJobLink")),
+        "incomingSourceJobId": clean_text(row.get("incomingSourceJobId")),
+        "targetTitle": clean_text(row.get("targetTitle")),
+        "targetCompany": clean_text(row.get("targetCompany")),
+        "targetSource": clean_text(row.get("targetSource")),
+        "targetJobLink": normalize_url(row.get("targetJobLink")),
+        "targetSourceJobId": clean_text(row.get("targetSourceJobId")),
+        "blockedMergeReason": clean_text(row.get("blockedMergeReason")) or "unknown",
+        "bundleEvidenceOrigin": "current_run",
+        "evidence": [
+            "different_concrete_primary_urls",
+            f"blocked_merge_reason:{clean_text(row.get('blockedMergeReason')) or 'unknown'}",
+        ],
+    }
+
+
+def _google_sheets_role_bucket_audit_example(summary: Mapping[str, Any]) -> dict[str, Any]:
+    classification = _google_sheets_role_bucket_audit_classification(summary)
+    evidence = [
+        f"classification:{classification or 'unknown'}",
+        f"origin:{clean_text(summary.get('bundleEvidenceOrigin')) or 'unknown'}",
+        f"shape:{clean_text(summary.get('googleSheetsBundleShape')) or 'unknown'}",
+        f"audit:{clean_text(summary.get('googleSheetsRoleBucketAudit')) or 'unknown'}",
+        f"intent:{clean_text(summary.get('googleSheetsBucketIntent')) or 'unknown'}",
+        f"weak_audit:{clean_text(summary.get('googleSheetsWeakGroupingAudit')) or 'unknown'}",
+        f"shared_primary_url:{str(bool(summary.get('sharedPrimaryUrl'))).lower()}",
+        f"unique_urls:{int(summary.get('uniqueJobLinkCount') or 0)}",
+        f"url_hosts:{int(summary.get('uniqueUrlHostCount') or 0)}",
+        f"url_path_prefixes:{int(summary.get('uniqueUrlPathPrefixCount') or 0)}",
+    ]
+    evidence.extend(str(item) for item in summary.get("googleSheetsRoleBucketAuditEvidence") or [])
+    evidence.extend(str(item) for item in summary.get("googleSheetsWeakGroupingEvidence") or [])
+    return {
+        "classification": classification or "unknown",
+        "title": clean_text(summary.get("title")),
+        "company": clean_text(summary.get("company")),
+        "dedupKey": clean_text(summary.get("dedupKey")),
+        "sourceBundleCount": max(0, int(summary.get("sourceBundleCount") or 0)),
+        "bundleEvidenceOrigin": clean_text(summary.get("bundleEvidenceOrigin")) or "unknown",
+        "suspectedCause": clean_text(summary.get("suspectedCause")),
+        "googleSheetsBundleShape": clean_text(summary.get("googleSheetsBundleShape")),
+        "googleSheetsRoleBucketAudit": clean_text(summary.get("googleSheetsRoleBucketAudit")),
+        "googleSheetsBucketIntent": clean_text(summary.get("googleSheetsBucketIntent")),
+        "googleSheetsWeakGroupingAudit": clean_text(summary.get("googleSheetsWeakGroupingAudit")),
+        "sharedPrimaryUrl": bool(summary.get("sharedPrimaryUrl")),
+        "uniqueJobLinkCount": max(0, int(summary.get("uniqueJobLinkCount") or 0)),
+        "urlHostDiversity": max(0, int(summary.get("uniqueUrlHostCount") or 0)),
+        "urlPathPrefixDiversity": max(0, int(summary.get("uniqueUrlPathPrefixCount") or 0)),
+        "evidence": list(dict.fromkeys(evidence))[:16],
+    }
+
+
+def _google_sheets_role_bucket_audit_summary(
+    *,
+    role_bucket_rows: Sequence[Mapping[str, Any]],
+    guard_samples: Sequence[Mapping[str, Any]],
+    guard_blocked_count: int,
+    limit: int = 10,
+) -> dict[str, Any]:
+    classification_counts: Counter[str] = Counter()
+    examples: list[dict[str, Any]] = []
+    current_run_count = 0
+    carried_count = 0
+    classification_counts["fixed_by_generic_role_guard"] += max(0, int(guard_blocked_count))
+    for row in role_bucket_rows:
+        classification = _google_sheets_role_bucket_audit_classification(row)
+        if not classification:
+            continue
+        classification_counts.update([classification])
+        if clean_text(row.get("bundleEvidenceOrigin")) == "current_run":
+            current_run_count += 1
+        else:
+            carried_count += 1
+        examples.append(_google_sheets_role_bucket_audit_example(row))
+    for row in guard_samples:
+        examples.append(_google_sheets_guard_audit_example(row))
+    examples.sort(
+        key=lambda row: (
+            GOOGLE_SHEETS_ROLE_BUCKET_AUDIT_CLASSIFICATION_KEYS.index(row.get("classification"))
+            if row.get("classification") in GOOGLE_SHEETS_ROLE_BUCKET_AUDIT_CLASSIFICATION_KEYS
+            else len(GOOGLE_SHEETS_ROLE_BUCKET_AUDIT_CLASSIFICATION_KEYS),
+            norm_text(row.get("company")),
+            norm_text(row.get("title") or row.get("targetTitle")),
+            norm_text(row.get("dedupKey")),
+        )
+    )
+    unresolved_count = sum(
+        classification_counts.get(key, 0)
+        for key in (
+            "unresolved_current_run_role_bucket",
+            "parser_or_sheet_category_noise",
+            "needs_narrow_dedup_guard",
+        )
+    )
+    return {
+        "totalRoleBucketCount": len(role_bucket_rows) + max(0, int(guard_blocked_count)),
+        "currentRunRoleBucketCount": current_run_count,
+        "carriedHistoricalRoleBucketCount": carried_count,
+        "blockedByDifferentPrimaryUrlCount": max(0, int(guard_blocked_count)),
+        "allowedSamePrimaryUrlCount": int(classification_counts.get("allowed_same_primary_url", 0)),
+        "likelyHistoricalCollisionCount": int(
+            classification_counts.get("historical_carried_bundle", 0)
+        ),
+        "likelyParserCategoryBucketCount": int(
+            classification_counts.get("parser_or_sheet_category_noise", 0)
+        ),
+        "unresolvedRoleBucketCount": unresolved_count,
+        "classificationCounts": {
+            key: int(classification_counts.get(key, 0))
+            for key in GOOGLE_SHEETS_ROLE_BUCKET_AUDIT_CLASSIFICATION_KEYS
+        },
+        "examples": examples[: max(0, int(limit))],
+    }
 
 
 def _provider_static_disagreement_origin_update(
@@ -1791,6 +1977,7 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
     provider_static_disagreement_gate_counts = _mapping_value(
         dedup_evidence, "providerStaticDisagreementGateCounts"
     )
+    google_sheets_role_bucket_audit = _mapping_value(dedup_evidence, "googleSheetsRoleBucketAudit")
     title_company_collision_audit_counts = _mapping_value(
         dedup_evidence, "providerStaticTitleCompanyCollisionAuditCounts"
     )
@@ -1821,7 +2008,15 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
     provider_static_reviewed_safe_warning_count = max(
         0, int(provider_static_disagreement_gate_counts.get("reviewedSafeWarning") or 0)
     )
-    high_risk_review_queue_count = _audit_gate_high_risk_count(review_queue_cause_counts)
+    if (
+        "currentRunHighRiskReviewQueueCount" in dedup_evidence
+        or "carriedHighRiskReviewQueueCount" in dedup_evidence
+    ):
+        high_risk_review_queue_count = (
+            current_run_high_risk_review_queue_count + carried_high_risk_review_queue_count
+        )
+    else:
+        high_risk_review_queue_count = _audit_gate_high_risk_count(review_queue_cause_counts)
     current_run_non_primary_merges = max(
         0,
         merged_count - int(merge_reason_counts.get("primaryUrl") or 0),
@@ -1881,6 +2076,17 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
             0, int(provider_static_disagreement_gate_counts.get("warning") or 0)
         ),
         "googleSheetsGenericRoleGuardActive": True,
+        "googleSheetsRoleBucketUnresolvedCount": max(
+            0, int(google_sheets_role_bucket_audit.get("unresolvedRoleBucketCount") or 0)
+        ),
+        "googleSheetsRoleBucketGuardBlockedCount": max(
+            0,
+            int(google_sheets_role_bucket_audit.get("blockedByDifferentPrimaryUrlCount") or 0),
+        ),
+        "googleSheetsRoleBucketHistoricalCount": max(
+            0,
+            int(google_sheets_role_bucket_audit.get("likelyHistoricalCollisionCount") or 0),
+        ),
         "carriedCollisionLikelyHistoricalCount": carried_collision_likely_historical_count,
         "reviewQueueCauseCounts": {
             key: int(review_queue_cause_counts.get(key, 0)) for key in REVIEW_QUEUE_CAUSE_KEYS
@@ -1921,6 +2127,7 @@ def build_dedup_evidence(
     location_divergence_rows: list[dict[str, Any]] = []
     review_queue_rows: list[dict[str, Any]] = []
     carried_bundle_rows: list[dict[str, Any]] = []
+    google_sheets_role_bucket_rows: list[dict[str, Any]] = []
     provider_static_disagreement_rows: list[dict[str, Any]] = []
     source_bundle_collision_count = 0
     current_run_source_bundle_collision_count = 0
@@ -1956,6 +2163,8 @@ def build_dedup_evidence(
             else:
                 carried_source_bundle_collision_count += 1
                 carried_bundle_rows.append(summary)
+            if _is_google_sheets_role_bucket_summary(summary):
+                google_sheets_role_bucket_rows.append(summary)
             top_rows.append(summary)
             outlier_reason_counts.update([summary["outlierReason"]])
             identity_shape_counts.update([summary["identityShape"]])
@@ -2161,6 +2370,18 @@ def build_dedup_evidence(
     provider_static_disagreement_count = (
         current_run_provider_static_disagreement_count + carried_provider_static_disagreement_count
     )
+    google_sheets_guard_samples = json_object_rows(
+        dedup_stats.get("googleSheetsGenericRoleGuardBlockedSamples")
+    )
+    google_sheets_guard_blocked_count = max(
+        0, int(dedup_stats.get("googleSheetsGenericRoleGuardBlockedCount") or 0)
+    )
+    google_sheets_role_bucket_audit = _google_sheets_role_bucket_audit_summary(
+        role_bucket_rows=google_sheets_role_bucket_rows,
+        guard_samples=google_sheets_guard_samples,
+        guard_blocked_count=google_sheets_guard_blocked_count,
+        limit=risky_limit,
+    )
 
     payload = {
         "schemaVersion": 1,
@@ -2169,6 +2390,28 @@ def build_dedup_evidence(
         "mergeReasonCounts": _merge_reason_counts(dedup_stats),
         "currentRunMergeExamples": _current_run_merge_examples(dedup_stats),
         "currentRunMergeExamplesByReason": _current_run_merge_examples_by_reason(dedup_stats),
+        "googleSheetsGenericRoleGuardBlockedCount": google_sheets_guard_blocked_count,
+        "googleSheetsGenericRoleGuardBlockedReasonCounts": {
+            "secondaryKey": max(
+                0,
+                int(
+                    (dedup_stats.get("googleSheetsGenericRoleGuardBlockedReasonCounts") or {}).get(
+                        "secondaryKey"
+                    )
+                    or 0
+                ),
+            ),
+            "sparseIdentity": max(
+                0,
+                int(
+                    (dedup_stats.get("googleSheetsGenericRoleGuardBlockedReasonCounts") or {}).get(
+                        "sparseIdentity"
+                    )
+                    or 0
+                ),
+            ),
+        },
+        "googleSheetsGenericRoleGuardBlockedSamples": google_sheets_guard_samples,
         "sourceBundleCollisionCount": source_bundle_collision_count,
         "currentRunSourceBundleCollisionCount": current_run_source_bundle_collision_count,
         "carriedSourceBundleCollisionCount": carried_source_bundle_collision_count,
@@ -2244,6 +2487,7 @@ def build_dedup_evidence(
             key: int(google_sheets_weak_grouping_audit_counts.get(key, 0))
             for key in GOOGLE_SHEETS_WEAK_GROUPING_AUDIT_KEYS
         },
+        "googleSheetsRoleBucketAudit": google_sheets_role_bucket_audit,
         "reviewQueueCounts": {
             key: int(review_queue_counts.get(key, 0)) for key in REVIEW_QUEUE_ACTION_KEYS
         },

@@ -228,6 +228,10 @@ def test_dedup_evidence_audits_parser_normalized_role_title() -> None:
     assert evidence["googleSheetsRoleBucketAuditCounts"]["parser_normalized_role_title"] == 1
     assert evidence["googleSheetsBucketIntentCounts"]["parser_normalized_bucket"] == 1
     assert evidence["googleSheetsWeakGroupingAuditCounts"]["parser_pollution_grouping"] == 1
+    assert evidence["googleSheetsRoleBucketAudit"]["likelyParserCategoryBucketCount"] == 1
+    assert evidence["googleSheetsRoleBucketAudit"]["examples"][0]["classification"] == (
+        "parser_or_sheet_category_noise"
+    )
 
 
 def test_dedup_evidence_reports_google_sheets_role_category_bucket() -> None:
@@ -256,6 +260,13 @@ def test_dedup_evidence_reports_google_sheets_role_category_bucket() -> None:
     assert "google_sheets_intent:likely_spreadsheet_taxonomy_bucket" in row["causeEvidence"]
     assert evidence["googleSheetsBundleShapeCounts"]["role_category_bucket"] == 1
     assert evidence["reviewQueueCauseCounts"]["spreadsheet_role_bucket_needs_review"] == 1
+    assert evidence["googleSheetsRoleBucketAudit"]["currentRunRoleBucketCount"] == 1
+    assert evidence["googleSheetsRoleBucketAudit"]["unresolvedRoleBucketCount"] == 1
+    assert evidence["googleSheetsRoleBucketAudit"]["examples"][0]["classification"] == (
+        "parser_or_sheet_category_noise"
+    )
+    assert evidence["dedupAuditGate"]["status"] == "blocked"
+    assert evidence["dedupAuditGate"]["lifecycleUxReady"] is False
 
 
 def test_dedup_evidence_reports_google_sheets_multi_location_many_urls() -> None:

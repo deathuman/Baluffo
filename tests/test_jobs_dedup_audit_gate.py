@@ -50,6 +50,9 @@ def test_dedup_audit_gate_returns_safe_defaults_for_empty_evidence() -> None:
         "providerStaticDisagreementBlockedCount": 0,
         "providerStaticDisagreementWarningCount": 0,
         "googleSheetsGenericRoleGuardActive": True,
+        "googleSheetsRoleBucketUnresolvedCount": 0,
+        "googleSheetsRoleBucketGuardBlockedCount": 0,
+        "googleSheetsRoleBucketHistoricalCount": 0,
         "carriedCollisionLikelyHistoricalCount": 0,
         "currentRunSourceBundleCollisionCount": 0,
         "carriedSourceBundleCollisionCount": 0,
@@ -129,6 +132,8 @@ def test_dedup_audit_gate_warns_on_carried_google_sheets_role_buckets() -> None:
     assert gate["lifecycleUxReady"] is True
     assert gate["carriedHighRiskReviewQueueCount"] == 1
     assert gate["currentRunHighRiskReviewQueueCount"] == 0
+    assert evidence["googleSheetsRoleBucketAudit"]["likelyHistoricalCollisionCount"] == 1
+    assert evidence["googleSheetsRoleBucketAudit"]["unresolvedRoleBucketCount"] == 0
     assert "carried_high_risk_review_queue_causes_present" in gate["warnings"]
     assert evidence["carriedBundleExamples"][0]["bundleEvidenceOrigin"] == (
         "carried_from_existing_output"

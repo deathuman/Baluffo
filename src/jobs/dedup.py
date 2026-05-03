@@ -490,17 +490,27 @@ def _find_merge_target(
     by_secondary: dict[str, int],
     by_social: dict[str, int],
     by_sparse_identity: dict[str, int],
+    google_sheets_generic_role_guard_samples: list[dict[str, str]],
+    google_sheets_generic_role_guard_counts: dict[str, int],
 ) -> tuple[int | None, str]:
     if primary and primary in by_primary:
         return by_primary[primary], "primary_url"
     if secondary and secondary in by_secondary:
         secondary_target_idx = by_secondary[secondary]
         secondary_target = merged_rows[secondary_target_idx]
-        if not _blocks_google_sheets_generic_role_url_merge(
+        if _blocks_google_sheets_generic_role_url_merge(
             current=current,
             target=secondary_target,
             current_primary=primary,
         ):
+            _record_google_sheets_generic_role_guard_sample(
+                samples=google_sheets_generic_role_guard_samples,
+                counts=google_sheets_generic_role_guard_counts,
+                blocked_merge_reason="secondary_key",
+                current=current,
+                target=secondary_target,
+            )
+        else:
             if _is_gracklehq_gamesjobsdirect_known_mirror_pair(current, secondary_target):
                 return secondary_target_idx, "known_mirror_pair"
             return secondary_target_idx, "secondary_key"
@@ -514,6 +524,13 @@ def _find_merge_target(
             target=sparse_target,
             current_primary=primary,
         ):
+            _record_google_sheets_generic_role_guard_sample(
+                samples=google_sheets_generic_role_guard_samples,
+                counts=google_sheets_generic_role_guard_counts,
+                blocked_merge_reason="sparse_identity",
+                current=current,
+                target=sparse_target,
+            )
             return None, ""
         if not _has_meaningful_locations(sparse_target) or not current_has_meaningful_locations:
             return sparse_target_idx, "sparse_identity"
@@ -532,6 +549,39 @@ def _blocks_google_sheets_generic_role_url_merge(
         return False
     target_primary = fingerprint_url(target.jobLink)
     return bool(current_primary and target_primary and current_primary != target_primary)
+
+
+def _record_google_sheets_generic_role_guard_sample(
+    *,
+    samples: list[dict[str, str]],
+    counts: dict[str, int],
+    blocked_merge_reason: str,
+    current: CanonicalJob,
+    target: CanonicalJob,
+) -> None:
+    counts["total"] = int(counts.get("total") or 0) + 1
+    counts[blocked_merge_reason] = int(counts.get(blocked_merge_reason) or 0) + 1
+    if len(samples) >= 10:
+        return
+    current_payload = current.to_dict()
+    target_payload = target.to_dict()
+    samples.append(
+        {
+            "classification": "fixed_by_generic_role_guard",
+            "blockedMergeReason": clean_text(blocked_merge_reason),
+            "existingDedupKey": clean_text(target.dedupKey),
+            "targetSource": clean_text(target_payload.get("source")),
+            "targetTitle": clean_text(target_payload.get("title")),
+            "targetCompany": clean_text(target_payload.get("company")),
+            "targetJobLink": normalize_url(target_payload.get("jobLink")),
+            "targetSourceJobId": clean_text(target_payload.get("sourceJobId")),
+            "incomingSource": clean_text(current_payload.get("source")),
+            "incomingTitle": clean_text(current_payload.get("title")),
+            "incomingCompany": clean_text(current_payload.get("company")),
+            "incomingJobLink": normalize_url(current_payload.get("jobLink")),
+            "incomingSourceJobId": clean_text(current_payload.get("sourceJobId")),
+        }
+    )
 
 
 def _index_row_keys(
@@ -690,6 +740,8 @@ def deduplicate_jobs(
     merge_samples: list[dict[str, str]] = []
     current_run_merged_dedup_keys: set[str] = set()
     current_run_known_mirror_pair_dedup_keys: set[str] = set()
+    google_sheets_generic_role_guard_samples: list[dict[str, str]] = []
+    google_sheets_generic_role_guard_counts: dict[str, int] = {}
 
     for row in rows:
         current = row if isinstance(row, CanonicalJob) else CanonicalJob.from_mapping(row)
@@ -710,6 +762,8 @@ def deduplicate_jobs(
             by_secondary=by_secondary,
             by_social=by_social,
             by_sparse_identity=by_sparse_identity,
+            google_sheets_generic_role_guard_samples=(google_sheets_generic_role_guard_samples),
+            google_sheets_generic_role_guard_counts=google_sheets_generic_role_guard_counts,
         )
         if target_idx is None:
             _append_new_dedup_row(
@@ -768,6 +822,16 @@ def deduplicate_jobs(
         "collisionSamples": merge_samples,
         "currentRunMergedDedupKeys": sorted(current_run_merged_dedup_keys),
         "currentRunKnownMirrorPairDedupKeys": sorted(current_run_known_mirror_pair_dedup_keys),
+        "googleSheetsGenericRoleGuardBlockedCount": int(
+            google_sheets_generic_role_guard_counts.get("total") or 0
+        ),
+        "googleSheetsGenericRoleGuardBlockedReasonCounts": {
+            "secondaryKey": int(google_sheets_generic_role_guard_counts.get("secondary_key") or 0),
+            "sparseIdentity": int(
+                google_sheets_generic_role_guard_counts.get("sparse_identity") or 0
+            ),
+        },
+        "googleSheetsGenericRoleGuardBlockedSamples": google_sheets_generic_role_guard_samples,
     }
 
 

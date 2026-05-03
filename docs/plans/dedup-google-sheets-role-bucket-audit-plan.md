@@ -20,10 +20,11 @@ The current-run blocker triage is closed. The dominant remaining lifecycle block
 ## Review Order
 
 1. Audit `reviewQueueCauseCounts.spreadsheet_role_bucket_needs_review` and `reviewQueueCauseCounts.google_sheets_role_bucket_needs_review` before changing dedup behavior.
-2. Use `currentRunMergeExamplesByReason.secondaryKey` and `currentRunMergeExamplesByReason.sparseIdentity` to separate supporting identity-key noise from real same-job merges.
-3. Identify whether Google Sheets rows are taxonomy buckets, listing/search buckets, parser-normalized role titles, or weak title/company groupings.
-4. Keep `knownMirrorPair` non-blocking only for the existing reviewed Guerrilla mirror pattern.
-5. Re-run `python src/jobs_fetcher.py` and require `dedupAuditGate.lifecycleUxReady=true` before starting read-only lifecycle UX.
+2. Use `googleSheetsRoleBucketAudit` to separate guard-fixed different-primary-URL rows, same-primary-URL allowed rows, carried historical bundles, parser/category noise, unresolved current-run buckets, and candidates for a narrow future guard.
+3. Use `currentRunMergeExamplesByReason.secondaryKey` and `currentRunMergeExamplesByReason.sparseIdentity` to separate supporting identity-key noise from real same-job merges.
+4. Identify whether Google Sheets rows are taxonomy buckets, listing/search buckets, parser-normalized role titles, or weak title/company groupings.
+5. Keep `knownMirrorPair` non-blocking only for the existing reviewed Guerrilla mirror pattern.
+6. Re-run `python src/jobs_fetcher.py` and require `dedupAuditGate.lifecycleUxReady=true` before starting read-only lifecycle UX.
 
 ## Deferred Work
 
@@ -31,6 +32,7 @@ The current-run blocker triage is closed. The dominant remaining lifecycle block
 - Do not add merge/unmerge controls from this track.
 - Do not loosen Google Sheets, secondary-key, or sparse-identity behavior without source-specific evidence.
 - Do not perform source cleanup, registry mutation, lifecycle retention changes, or source-policy mutation from this plan.
+- Treat `googleSheetsGenericRoleGuardBlockedCount` and `googleSheetsRoleBucketAudit` as report-only evidence; they do not create broad review-state or Admin action semantics.
 
 ## Validation Standard
 
@@ -44,6 +46,8 @@ Then inspect:
 
 - `dedupEvidence.dedupAuditGate.status`
 - `dedupEvidence.dedupAuditGate.currentRunNonPrimaryMergeCounts`
+- `dedupEvidence.googleSheetsRoleBucketAudit`
+- `dedupEvidence.googleSheetsGenericRoleGuardBlockedCount`
 - `dedupEvidence.currentRunMergeExamplesByReason.secondaryKey`
 - `dedupEvidence.currentRunMergeExamplesByReason.sparseIdentity`
 - `dedupEvidence.reviewQueueCauseCounts`

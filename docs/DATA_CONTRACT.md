@@ -71,6 +71,9 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `mergeReasonCounts` | `Object` | Counts for `primaryUrl`, `secondaryKey`, `knownMirrorPair`, `socialKey`, `sparseIdentity`, and `unknown`. |
 | `currentRunMergeExamples` | `Array<Object>` | Stable capped current-run merge samples from the latest dedup pass, including non-blocking known mirror pairs and unresolved fresh merge blockers. |
 | `currentRunMergeExamplesByReason` | `Object` | Stable capped current-run merge samples grouped by `secondaryKey`, `sparseIdentity`, `knownMirrorPair`, `primaryUrl`, and `unknown` for blocker triage. |
+| `googleSheetsGenericRoleGuardBlockedCount` | `number` | Count of Google Sheets generic role/category merge attempts blocked by the existing different-primary-URL guard. |
+| `googleSheetsGenericRoleGuardBlockedReasonCounts` | `Object` | Report-only split of guard-blocked attempts by `secondaryKey` and `sparseIdentity`. |
+| `googleSheetsGenericRoleGuardBlockedSamples` | `Array<Object>` | Capped report-only samples of Google Sheets generic role/category rows that would otherwise have merged by weak identity despite different concrete primary URLs. |
 | `sourceBundleCollisionCount` | `number` | Final canonical rows carrying `sourceBundleCount > 1`, including rows whose bundle evidence was carried forward from previous output. |
 | `currentRunSourceBundleCollisionCount` | `number` | Source-bundle collision rows created or touched by current-run merges. |
 | `carriedSourceBundleCollisionCount` | `number` | Source-bundle collision rows carried from seeded previous output and not touched by current-run merges. |
@@ -84,6 +87,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `nonProviderIdentityProvenanceCounts` | `Object` | Aggregate non-provider source identity provenance counts before sample capping. |
 | `googleSheetsBundleShapeCounts` | `Object` | Aggregate Google Sheets bundle granularity counts before sample capping. |
 | `googleSheetsRoleBucketAuditCounts` | `Object` | Aggregate Google Sheets role-bucket audit counts before sample capping. |
+| `googleSheetsRoleBucketAudit` | `Object` | Compact lifecycle-readiness audit summary for Google Sheets role-bucket blockers, including current-run, carried, guard-blocked, same-primary-URL, parser/category, unresolved counts, classification counts, and capped examples. |
 | `googleSheetsBucketIntentCounts` | `Object` | Aggregate Google Sheets bucket-intent diagnostic counts before sample capping. |
 | `googleSheetsWeakGroupingAuditCounts` | `Object` | Aggregate Google Sheets weak title/company grouping audit counts before sample capping. |
 | `reviewQueueCounts` | `Object` | Aggregate advisory dedup review queue counts by recommended review action before sample capping. |
@@ -229,6 +233,16 @@ Google Sheets role-bucket audit values are diagnostic only:
 `googleSheetsRoleBucketAuditEvidence` records compact source, URL path, title token, source ID
 shape, location, and pollution facts. These fields explain spreadsheet role-bucket provenance;
 they do not change dedup identity strength or merge policy.
+
+`googleSheetsRoleBucketAudit` is an additive summary for lifecycle-readiness triage. It reports
+total/current-run/carried role-bucket counts, Google Sheets generic role/category guard-blocked
+attempts with different concrete primary URLs, allowed same-primary-URL cases, likely historical
+collisions, likely parser/category buckets, unresolved current-run role buckets, classification
+counts, and capped examples. Example classifications are `fixed_by_generic_role_guard`,
+`allowed_same_primary_url`, `historical_carried_bundle`, `unresolved_current_run_role_bucket`,
+`parser_or_sheet_category_noise`, and `needs_narrow_dedup_guard`. The summary does not add review
+actions or change dedup output behavior; it only clarifies whether high-risk Google Sheets evidence
+is current-run blocker pressure or carried historical warning evidence.
 
 Google Sheets bucket-intent values are diagnostic only:
 `likely_spreadsheet_taxonomy_bucket`, `possible_role_family`,
