@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import subprocess
@@ -21,7 +22,6 @@ if str(ROOT) not in sys.path:
 from src.contracts import SCHEMA_VERSION
 from src.ship.desktop_app.browser import launch_browser_for_url
 from src.ship.desktop_app.process import terminate_process
-from src.ship.desktop_app.startup import watch_browser_session
 from src.ship.startup_telemetry import wait_for_url
 
 DEFAULT_SITE_PORT = 8080
@@ -29,6 +29,7 @@ DEFAULT_BRIDGE_PORT = 8877
 DEFAULT_BRIDGE_HOST = "127.0.0.1"
 DEFAULT_OPEN_PATH = "jobs.html"
 DEFAULT_OWNER_IDLE_TIMEOUT_S = 30.0
+STOP_PID_TERMINATION_TIMEOUT_S = 3.0
 LOCAL_BROWSER_EXIT_POLL_INTERVAL_S = 0.25
 LOCAL_BROWSER_EXIT_SETTLE_S = 1.0
 SESSION_FILENAME = "admin-dev-session.json"
@@ -128,13 +129,7 @@ def _terminate_pid(pid: int) -> None:
     if int(pid or 0) <= 0:
         return
     if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(int(pid)), "/T", "/F"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-            timeout=10,
-        )
+        _terminate_pid_tree_nt(int(pid))
         return
     with subprocess.Popen(
         ["kill", "-TERM", str(int(pid))],
@@ -143,6 +138,39 @@ def _terminate_pid(pid: int) -> None:
         text=True,
     ) as process:
         process.wait(timeout=5)
+
+
+if os.name == "nt":
+
+    def _terminate_pid_tree_nt(pid: int) -> None:
+        current_pid = int(os.getpid())
+        if int(pid or 0) <= 0 or int(pid) == current_pid:
+            return
+        with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+            subprocess.run(
+                ["taskkill", "/PID", str(int(pid)), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                check=False,
+                timeout=float(STOP_PID_TERMINATION_TIMEOUT_S),
+            )
+else:
+
+    def _terminate_pid_tree_nt(pid: int) -> None:
+        if int(pid or 0) <= 0:
+            return
+        with subprocess.Popen(
+            ["kill", "-TERM", str(int(pid))],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ) as process:
+            try:
+                process.wait(timeout=float(STOP_PID_TERMINATION_TIMEOUT_S))
+            except subprocess.TimeoutExpired:
+                with contextlib.suppress(Exception):
+                    process.kill()
 
 
 def load_session_state(data_dir: Path) -> dict[str, Any]:
@@ -242,26 +270,20 @@ def _reset_fetch_artifacts(data_dir: Path) -> None:
     _reset_fetch_tasks(data_dir)
 
 
-def _terminate_recorded_pids(state: dict[str, Any]) -> list[int]:
-    killed: list[int] = []
-    seen: set[int] = set()
-    for key in ("bridgePid", "sitePid", "supervisorPid"):
-        pid = int(state.get(key) or 0)
-        if pid > 0 and pid not in seen:
-            _terminate_pid(pid)
-            seen.add(pid)
-            killed.append(pid)
-    return killed
-
-
 def reclaim_previous_dev_session(
     data_dir: Path, *, kill_recorded_pids: bool = True
 ) -> dict[str, Any]:
     session_state = load_session_state(data_dir)
     task_state = _load_task_state(data_dir)
-    killed: list[int] = []
+    targets: list[int] = []
+    seen: set[int] = set()
+    current_pid = int(os.getpid())
     if kill_recorded_pids and session_state:
-        killed.extend(_terminate_recorded_pids(session_state))
+        for key in ("bridgePid", "sitePid", "supervisorPid"):
+            pid = int(session_state.get(key) or 0)
+            if pid > 0 and pid != current_pid and pid not in seen:
+                seen.add(pid)
+                targets.append(pid)
     if kill_recorded_pids and task_state:
         for task_type, entry in task_state.items():
             if not isinstance(entry, dict):
@@ -269,13 +291,16 @@ def reclaim_previous_dev_session(
             if str(task_type) not in {"discovery", "fetch"}:
                 continue
             pid = int(entry.get("pid") or 0)
-            if pid > 0 and pid not in killed:
-                _terminate_pid(pid)
-                killed.append(pid)
+            if pid > 0 and pid != current_pid and pid not in seen:
+                seen.add(pid)
+                targets.append(pid)
     clear_session_state(data_dir)
     _clear_task_state(data_dir)
     _reset_fetch_artifacts(data_dir)
-    return {"stopped": bool(killed), "killedPids": killed}
+    for pid in targets:
+        with contextlib.suppress(Exception):  # noqa: BLE001
+            _terminate_pid(pid)
+    return {"stopped": bool(targets), "killedPids": targets}
 
 
 def stop_owned_session(data_dir: Path) -> dict[str, Any]:
@@ -323,7 +348,17 @@ def run_supervised_admin_session(config: DevAdminConfig) -> int:
     try:
         site_process = _spawn(build_site_command(config))
         wait_for_url(_admin_url(config), timeout_s=20.0, interval_s=0.25)
-        bridge_process = _spawn(build_bridge_command(config, owner_token=owner_token))
+        bridge_config = DevAdminConfig(
+            root=config.root,
+            data_dir=config.data_dir,
+            site_port=config.site_port,
+            bridge_port=config.bridge_port,
+            bridge_host=config.bridge_host,
+            open_path=config.open_path,
+            owner_idle_timeout_s=0.0,
+            open_browser=config.open_browser,
+        )
+        bridge_process = _spawn(build_bridge_command(bridge_config, owner_token=owner_token))
         wait_for_url(_health_url(config), timeout_s=20.0, interval_s=0.25)
         save_session_state(
             config.data_dir,
@@ -363,20 +398,13 @@ def run_supervised_admin_session(config: DevAdminConfig) -> int:
         launch = launch_browser_for_url(_admin_url(config))
         process_obj = launch.get("process") if isinstance(launch, dict) else None
         browser_process = cast(subprocess.Popen[str] | None, process_obj)
-        started_raw = launch.get("windowShownAtMonotonic") if isinstance(launch, dict) else None
-        started_mono = (
-            float(started_raw) if isinstance(started_raw, (int, float)) else time.perf_counter()
-        )
         if browser_process is not None:
             wait_for_local_browser_exit(browser_process)
         else:
-            watch_browser_session(
-                config.data_dir,
-                started_mono,
-                bridge_port=int(config.bridge_port),
-                browser_process=browser_process,
-                heartbeat_idle_timeout_s=float(config.owner_idle_timeout_s),
-            )
+            while True:
+                if site_process.poll() is not None or bridge_process.poll() is not None:
+                    break
+                time.sleep(1.0)
         return 0
     finally:
         if browser_process is not None:
@@ -406,8 +434,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     stop_parser = sub.add_parser("stop", help="Stop the owned local admin session.")
     stop_parser.add_argument("--data-dir", default=str(ROOT / "data"))
 
+    args = list(sys.argv[1:] if argv is None else argv)
     return parser.parse_args(
-        ["start", *(argv or [])] if not argv or str(argv[0]).startswith("--") else argv
+        ["start", *args] if not args or str(args[0]).startswith("--") else args
     )
 
 
