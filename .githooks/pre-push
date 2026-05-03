@@ -1,28 +1,270 @@
 #!/bin/sh
 set -eu
 
+ms_now() {
+  if command -v python >/dev/null 2>&1; then
+    python -c 'import time; print(int(time.time() * 1000))'
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import time; print(int(time.time() * 1000))'
+  else
+    sec="$(date +%s)"
+    printf '%s\n' "$((sec * 1000))"
+  fi
+}
+
+log_timing() {
+  phase="$1"
+  status="$2"
+  elapsed_ms="$3"
+  echo "[timing] phase=${phase} status=${status} elapsed_ms=${elapsed_ms}"
+}
+
+is_truthy() {
+  case "$1" in
+    1|true|True|TRUE|yes|Yes|YES|on|On|ON)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+csv_escape() {
+  printf '%s' "$1" | sed 's/"/""/g'
+}
+
+timing_log_enabled=0
+if [ -n "${PRE_PUSH_TIMING_LOG:-}" ] || [ -n "${PRE_PUSH_TIMING_LOG_PATH:-}" ]; then
+  timing_log_enabled=1
+fi
+timing_log_path="${PRE_PUSH_TIMING_LOG_PATH:-.git/hooks/pre-push-timings.log}"
+
+log_timing_csv() {
+  if [ "$timing_log_enabled" -eq 0 ]; then
+    return 0
+  fi
+
+  command_name="$1"
+  status_ms="$2"
+  status="$3"
+  remote_ref="$4"
+
+  escaped_remote="$(csv_escape "${remote_name}")"
+  escaped_remote_ref="$(csv_escape "${remote_ref}")"
+  escaped_command="$(csv_escape "${command_name}")"
+  escaped_status_ms="$(csv_escape "${status_ms}")"
+  escaped_status="$(csv_escape "${status}")"
+  escaped_branch_context="$(csv_escape "${refs_context}")"
+
+  csv_line="\"${start_utc}\",\"${escaped_remote}\",\"${escaped_remote_ref}\",\"${escaped_command}\",\"${escaped_status_ms}\",\"${escaped_status}\",\"${escaped_branch_context}\""
+  if ! printf '%s\n' "$csv_line" >> "$timing_log_path"; then
+    echo "[timing] warning: failed to write timing log ${timing_log_path}" >&2
+  fi
+}
+
+run_timed_command() {
+  phase_name="$1"
+  shift
+
+  command_start_ms="$(ms_now)"
+  if "$@"; then
+    command_status=0
+  else
+    command_status=$?
+  fi
+  command_end_ms="$(ms_now)"
+  command_elapsed_ms="$((command_end_ms - command_start_ms))"
+  log_timing "$phase_name" "$command_status" "$command_elapsed_ms"
+  log_timing_csv "$phase_name" "$command_elapsed_ms" "$command_status" "$branch_ref"
+  return "$command_status"
+}
+
+run_timed_command_background() {
+  phase_name="$1"
+  output_path="$2"
+  shift 2
+
+  {
+    command_start_ms="$(ms_now)"
+    "$@"
+    command_status=$?
+    command_end_ms="$(ms_now)"
+    command_elapsed_ms="$((command_end_ms - command_start_ms))"
+    printf '%s %s\n' "$command_status" "$command_elapsed_ms" > "$output_path"
+    exit "$command_status"
+  } &
+  bg_pid=$!
+  bg_specs="${bg_specs} ${bg_pid}|${phase_name}|${output_path}"
+}
+
+run_full_ci_checks() {
+  full_gate_start_ms="$(ms_now)"
+  bg_specs=""
+  temp_paths=""
+  full_status=0
+
+  stage_counter=0
+  stage_counter=$((stage_counter + 1))
+  test_py_tmp="${root}/.git/hooks/.pre-push-${HOOK_PID}-${stage_counter}.timing"
+  temp_paths="${temp_paths} ${test_py_tmp}"
+  run_timed_command_background "test:py" "$test_py_tmp" npm run test:py
+
+  stage_counter=$((stage_counter + 1))
+  test_frontend_tmp="${root}/.git/hooks/.pre-push-${HOOK_PID}-${stage_counter}.timing"
+  temp_paths="${temp_paths} ${test_frontend_tmp}"
+  run_timed_command_background "test:frontend" "$test_frontend_tmp" npm run test:frontend
+
+  stage_counter=$((stage_counter + 1))
+  security_python_tmp="${root}/.git/hooks/.pre-push-${HOOK_PID}-${stage_counter}.timing"
+  temp_paths="${temp_paths} ${security_python_tmp}"
+  run_timed_command_background "security:python" "$security_python_tmp" npm run security:python
+
+  stage_counter=$((stage_counter + 1))
+  test_unit_tmp="${root}/.git/hooks/.pre-push-${HOOK_PID}-${stage_counter}.timing"
+  temp_paths="${temp_paths} ${test_unit_tmp}"
+  run_timed_command_background "test:unit" "$test_unit_tmp" npm run test:unit
+
+  for job_spec in $bg_specs
+  do
+    pid="${job_spec%%|*}"
+    remainder="${job_spec#*|}"
+    job_phase="${remainder%%|*}"
+    job_path="${remainder#*|}"
+
+    if wait "$pid"; then
+      job_status=0
+    else
+      job_status=$?
+    fi
+
+    if [ -f "$job_path" ]; then
+      read -r job_status_from_file job_elapsed_ms < "$job_path" || true
+      if [ -n "${job_status_from_file-}" ]; then
+        job_status="$job_status_from_file"
+      fi
+      if [ -n "${job_elapsed_ms-}" ]; then
+        job_elapsed_ms="${job_elapsed_ms}"
+      else
+        job_elapsed_ms=0
+      fi
+    else
+      job_elapsed_ms=0
+    fi
+
+    log_timing "$job_phase" "$job_status" "$job_elapsed_ms"
+    log_timing_csv "$job_phase" "$job_elapsed_ms" "$job_status" "$branch_ref"
+    if [ "$full_status" -eq 0 ] && [ "$job_status" -ne 0 ]; then
+      full_status="$job_status"
+    fi
+  done
+
+  for temp_file in $temp_paths
+  do
+    rm -f "$temp_file"
+  done
+
+  full_gate_end_ms="$(ms_now)"
+  full_gate_elapsed_ms="$((full_gate_end_ms - full_gate_start_ms))"
+  log_timing "pre-push-full-ci-gate" "$full_status" "$full_gate_elapsed_ms"
+  log_timing_csv "pre-push-full-ci-gate" "$full_gate_elapsed_ms" "$full_status" "$branch_ref"
+  return "$full_status"
+}
+
+hook_start_ms="$(ms_now)"
+start_utc="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+remote_name="${1:-<unknown>}"
+full_ci_enabled=0
+if is_truthy "${PRE_PUSH_FULL_CI:-0}"; then
+  full_ci_enabled=1
+fi
+warm_hooks_enabled=0
+if is_truthy "${PRE_PUSH_WARM_HOOKS:-0}"; then
+  warm_hooks_enabled=1
+fi
+
 need_gate=0
+refs_context=""
+branch_ref=""
+HOOK_PID=$$
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
 while read local_ref local_sha remote_ref remote_sha
 do
-    case "$remote_ref" in
-        refs/heads/main)
-            need_gate=1
-            ;;
-    esac
+  refs_context="${refs_context}${refs_context:+, }${remote_ref}"
+  if [ -z "$branch_ref" ]; then
+    branch_ref="$remote_ref"
+  fi
+  case "$remote_ref" in
+    refs/heads/main)
+      need_gate=1
+      branch_ref="${remote_ref}"
+      ;;
+  esac
 done
 
+log_timing "pre-push-start" 0 0
+log_timing_csv "pre-push-start" 0 0 "$branch_ref"
+echo "[timing] pre-push-context remote=${remote_name} refs=${refs_context:-<none>} utc=${start_utc}"
+
 if [ "$need_gate" -eq 1 ]; then
-    root="$(git rev-parse --show-toplevel)"
-    cd "$root"
-    configured_hooks_path="$(git config --local --get core.hooksPath || true)"
-    if [ "$configured_hooks_path" != ".githooks" ] && [ "$configured_hooks_path" != "./.githooks" ]; then
-        echo "ERROR: git hooks are not configured for this repo." >&2
-        echo "Run: npm run setup:hooks" >&2
-        exit 1
+  gate_start_ms="$(ms_now)"
+  echo "[timing] pre-push-gate: main branch push detected"
+  log_timing "pre-push-gate-start" 0 0
+  log_timing_csv "pre-push-gate-start" 0 0 "$branch_ref"
+
+  if [ "$warm_hooks_enabled" -eq 1 ]; then
+    if run_timed_command "pre-push-warm-hooks" python -m pre_commit install-hooks; then
+      warm_status=0
+    else
+      warm_status=$?
     fi
-    echo "Running release-parity gates before pushing to main..."
-    npm run lint:precommit:ci
-    npm run test:refactor:changed
-    npm run test:py:extended
-    npm run test:smoke
+    hook_end_ms="$(ms_now)"
+    warm_elapsed_ms="$((hook_end_ms - hook_start_ms))"
+    log_timing "pre-push-end" "$warm_status" "$warm_elapsed_ms"
+    log_timing_csv "pre-push-end" "$warm_elapsed_ms" "$warm_status" "$branch_ref"
+    exit "$warm_status"
+  fi
+
+  echo "Running CI-parity pre-commit gate before pushing to main..."
+  if run_timed_command "lint:precommit:ci" npm run lint:precommit:ci; then
+    lint_status=0
+  else
+    lint_status=$?
+  fi
+  if [ "$lint_status" -ne 0 ]; then
+    hook_end_ms="$(ms_now)"
+    end_elapsed_ms="$((hook_end_ms - hook_start_ms))"
+    log_timing "pre-push-end" "$lint_status" "$end_elapsed_ms"
+    log_timing_csv "pre-push-end" "$end_elapsed_ms" "$lint_status" "$branch_ref"
+    exit "$lint_status"
+  fi
+
+  gate_status=0
+  if [ "$full_ci_enabled" -eq 1 ]; then
+    if run_full_ci_checks; then
+      full_ci_status=0
+    else
+      full_ci_status=$?
+    fi
+    gate_status="$full_ci_status"
+  fi
+
+  gate_end_ms="$(ms_now)"
+  gate_elapsed_ms="$((gate_end_ms - gate_start_ms))"
+  log_timing "pre-push-gate-complete" "$gate_status" "$gate_elapsed_ms"
+  log_timing_csv "pre-push-gate-complete" "$gate_elapsed_ms" "$gate_status" "$branch_ref"
+  if [ "$gate_status" -ne 0 ]; then
+    hook_end_ms="$(ms_now)"
+    hook_elapsed_ms="$((hook_end_ms - hook_start_ms))"
+    log_timing "pre-push-end" "$gate_status" "$hook_elapsed_ms"
+    log_timing_csv "pre-push-end" "$hook_elapsed_ms" "$gate_status" "$branch_ref"
+    exit "$gate_status"
+  fi
 fi
+
+hook_end_ms="$(ms_now)"
+end_elapsed_ms="$((hook_end_ms - hook_start_ms))"
+log_timing "pre-push-end" 0 "$end_elapsed_ms"
+log_timing_csv "pre-push-end" "$end_elapsed_ms" 0 "$branch_ref"

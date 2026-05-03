@@ -182,20 +182,35 @@ def test_package_json_exposes_python_security_audit_entrypoint(repo_root: Path) 
     assert allowlist.is_file()
 
 
-def test_pre_push_hook_runs_python_and_smoke_gates() -> None:
+def test_pre_push_hook_uses_timed_lint_default_and_explicit_full_ci_mode() -> None:
     root = ROOT
     hook_path = root / ".githooks" / "pre-push"
     hook_text = hook_path.read_text(encoding="utf-8")
+    package = json.loads((root / "package.json").read_text(encoding="utf-8"))
 
-    for expected_command in (
-        "npm run lint:precommit:ci",
+    assert "npm run lint:precommit:ci" in hook_text, (
+        f"{hook_path.name} should invoke the lint gate before pushing to main."
+    )
+    assert "PRE_PUSH_FULL_CI" in hook_text, (
+        f"{hook_path.name} should expose an explicit full local CI mode."
+    )
+    assert "PRE_PUSH_WARM_HOOKS" in hook_text, f"{hook_path.name} should expose a hook warmup mode."
+    assert "phase=pre-push-start" not in hook_text, (
+        f"{hook_path.name} should keep timing output dynamic rather than hardcoded as static text."
+    )
+    for legacy_command in (
         "npm run test:refactor:changed",
         "npm run test:py:extended",
         "npm run test:smoke",
     ):
-        assert expected_command in hook_text, (
-            f"{hook_path.name} should invoke `{expected_command}` before pushing to main."
+        assert legacy_command not in hook_text, (
+            f"{hook_path.name} should not run `{legacy_command}` on the default push path."
         )
+
+    assert package["scripts"]["prepush:warm"] == (
+        "python scripts/run_pre_push_hook.py --warm-hooks"
+    )
+    assert package["scripts"]["prepush:full"] == ("python scripts/run_pre_push_hook.py --full-ci")
 
 
 def test_pre_commit_hook_runs_lint_gate() -> None:

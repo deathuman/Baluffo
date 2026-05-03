@@ -98,6 +98,36 @@ npm run lint:precommit:ci
 
 The repo-specific tuning lives in `.gitleaks.toml`, with filename-aware hook routing in `scripts/gitleaks_precommit.py`. Keep allowlists narrow: allowlist known fake fixtures and documented placeholders, not whole test or docs trees. Normal PR and push CI scans the tracked file list passed by the lint workflow, including its existing `data/` exclusion. A full-history audit is a separate manual incident or rollout task, for example `gitleaks git --config .gitleaks.toml --redact --verbose .`, and should be followed by credential rotation before any history rewrite is considered.
 
+## Pre-push gate
+
+The tracked Git pre-push hook keeps the default local push path narrow and makes the full local CI-equivalent gate explicit.
+
+- Normal push to `main`: runs only `npm run lint:precommit:ci`.
+- Optional full local CI gate: set `PRE_PUSH_FULL_CI=1` or run `npm run prepush:full`.
+- Optional hook warmup: set `PRE_PUSH_WARM_HOOKS=1` or run `npm run prepush:warm`.
+- Optional timing CSV log: set `PRE_PUSH_TIMING_LOG=1`.
+- Optional custom timing log path: set `PRE_PUSH_TIMING_LOG_PATH=<path>`.
+
+The hook emits lightweight console timing lines in this format:
+
+```text
+[timing] phase=<name> status=<code> elapsed_ms=<n>
+```
+
+Measured baseline on the primary Windows development machine:
+
+- Default `main` lint gate: about `31s`
+- Full local CI mode: about `109s`
+- Warmup path after environments exist: under `1s`
+
+The main source of the “first push timed out” complaint is usually hook environment bootstrap or accidentally using the full local CI path as the default push gate. Warm hooks once after a new clone, Python switch, or cache reset to avoid the first-run pre-commit spike:
+
+```bash
+npm run prepush:warm
+```
+
+If an external launcher or local automation wraps `git push origin main` with a hard timeout, keep the default hook behavior unchanged and raise only that outer timeout to at least `150s`. No tracked repo-side `git push` wrapper currently enforces a `120s` timeout, so any remaining cap is outside the repository hook source.
+
 ## Test layout and fixtures
 
 The Python suite is fully pytest (no `unittest.TestCase`). All tests are plain `def test_*` functions.

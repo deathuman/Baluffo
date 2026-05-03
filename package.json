@@ -11,6 +11,8 @@
     "build": "npm run check:python-version && python scripts/orchestrator.py build",
     "prepare": "python scripts/install_git_hooks.py",
     "setup:hooks": "python scripts/install_git_hooks.py",
+    "prepush:warm": "python scripts/run_pre_push_hook.py --warm-hooks",
+    "prepush:full": "python scripts/run_pre_push_hook.py --full-ci",
     "test": "npm run test:unit && npm run test:smoke",
     "verify": "npm run check:python-version && python scripts/orchestrator.py verify",
     "check:python-version": "python scripts/check_python_version.py",

@@ -477,7 +477,7 @@ def run_workflow_group() -> list[GuardFailure]:
             "test_lint_workflow_enforces_source_complexity_baseline",
             "test_package_json_exposes_repo_guardrails_entrypoint",
             "test_package_json_exposes_python_security_audit_entrypoint",
-            "test_pre_push_hook_runs_python_and_smoke_gates",
+            "test_pre_push_hook_uses_timed_lint_default_and_explicit_full_ci_mode",
             "test_pre_commit_hook_runs_lint_gate",
             "test_package_json_dev_pipeline_uses_module_entrypoint",
             "test_package_json_exposes_refactor_changed_entrypoint",
