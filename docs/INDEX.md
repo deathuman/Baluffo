@@ -58,6 +58,9 @@ Important for maintenance, release, and support workflows, but usually not the f
 |----------|-------|-------------|
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`source-policy-runbook.md`](source-policy-runbook.md) | Operator runbook | You are running discovery/fetch/soak/Admin migration-link validation or checking provider/static source-policy release readiness |
+| [`plans/task-progress-operational-console-plan.md`](plans/task-progress-operational-console-plan.md) | Plans / Follow-Ups | You are hardening Admin task/progress UX, stale-task states, run analysis, or task visibility workflows |
+| [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Plans / Follow-Ups | You are improving saved-job phase/outcome modeling, activity semantics, sorting, or Saved page operations |
+| [`plans/source-sync-production-readiness-plan.md`](plans/source-sync-production-readiness-plan.md) | Plans / Follow-Ups | You are planning source-sync production hardening for BaluffoSync, conflict handling, or registry observability |
 | [`plans/dedup-lifecycle-readiness-plan.md`](plans/dedup-lifecycle-readiness-plan.md) | Plans / Follow-Ups | You are deciding whether dedup evidence is ready for read-only lifecycle UX or choosing the next dedup auditability slice |
 | [`plans/source-discovery-adapter-follow-ups.md`](plans/source-discovery-adapter-follow-ups.md) | Plans / Follow-Ups | You are choosing evidence-backed source-discovery behavior changes after the deletion-first adapter cleanup |
 | [`snapshots/jobs-dead-source-evidence-2026-04-29.md`](snapshots/jobs-dead-source-evidence-2026-04-29.md) | Snapshots / Evidence | You are auditing the first evidence-backed physical deletion batch for dead jobs sources |
@@ -91,8 +94,10 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Run the right tests | [`testing.md`](testing.md) | [`architecture-ai-map.md`](architecture-ai-map.md) only if you need source ownership |
 | Package or release | [`RELEASE.md`](RELEASE.md) | [`testing.md`](testing.md) |
 | Update docs | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | [`INDEX.md`](INDEX.md), then the owning authoritative doc |
+| Improve saved-job tracking UX | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`frontend/local-data`](../frontend/local-data/), [`testing.md`](testing.md) |
 | Validate provider/static source-policy workflow | [`source-policy-runbook.md`](source-policy-runbook.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Decide lifecycle UX readiness | [`plans/dedup-lifecycle-readiness-plan.md`](plans/dedup-lifecycle-readiness-plan.md) | [`source-policy-runbook.md`](source-policy-runbook.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`scraping-pipeline.md`](scraping-pipeline.md) |
+| Improve task/progress operations UX | [`plans/task-progress-operational-console-plan.md`](plans/task-progress-operational-console-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`frontend/admin/domain/progress.js`](../frontend/admin/domain/progress.js), [`frontend/admin/render/ops-history.js`](../frontend/admin/render/ops-history.js) |
 
 ## Recommended AI read sequence
 
