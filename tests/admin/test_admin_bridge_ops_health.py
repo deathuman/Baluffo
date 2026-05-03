@@ -392,6 +392,148 @@ def test_compute_ops_health_exposes_conservative_cleanup_proposals(
     )
 
 
+def test_compute_ops_health_exposes_dedup_review_state_summary(admin_bridge_entrypoint_root):
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "startedAt": "2026-05-02T00:00:00+00:00",
+            "finishedAt": "2026-05-02T00:10:00+00:00",
+            "summary": {"outputCount": 8, "failedSources": 0, "sourceCount": 1},
+            "dedupEvidence": {
+                "providerStaticDisagreementGateCounts": {
+                    "blocked": 1,
+                    "warning": 0,
+                    "currentRunBlocked": 0,
+                    "carriedBlocked": 1,
+                    "carriedWarning": 0,
+                    "autoSafeWarning": 0,
+                    "locationPollutionWarning": 0,
+                    "reviewedSafeWarning": 0,
+                    "confirmedBlocking": 0,
+                },
+                "providerStaticDisagreementExamples": [
+                    {
+                        "title": "Executive Assistant",
+                        "company": "Animoca Brands",
+                        "dedupKey": "animoca-key-1",
+                        "bundleEvidenceOrigin": "carried_from_existing_output",
+                        "sourceBundleCount": 2,
+                        "providerSourceJobIds": ["lever:animoca:123"],
+                        "staticSourceJobIds": ["static:animoca:123"],
+                        "providerSources": ["lever:animoca"],
+                        "staticSources": ["static_source::animoca"],
+                        "providerUrls": ["https://jobs.lever.co/animocabrands/123"],
+                        "staticUrls": ["https://careers.animoca.com/jobs/123"],
+                        "providerUrlHosts": ["jobs.lever.co"],
+                        "staticUrlHosts": ["careers.animoca.com"],
+                        "sharedIdentifierTokens": ["123"],
+                        "distinctLocationCount": 1,
+                        "sampleLocations": ["hong kong"],
+                        "identityQuality": "provider_id_strong",
+                        "disagreementClassification": "same_job_different_urls",
+                        "disagreementGateDisposition": "blocked",
+                        "disagreementGateEvidence": [
+                            "carried_same_job_different_urls_requires_review"
+                        ],
+                    }
+                ],
+            },
+        },
+    )
+    admin_bridge.DEDUP_REVIEW_STATE_PATH.write_text(
+        """
+{
+  "pairs": {
+    "review-key": {
+      "disagreementClassification": "same_job_different_urls",
+      "providerSourceJobIds": ["lever:animoca:123"],
+      "staticSourceJobIds": ["static:animoca:123"],
+      "dedupKey": "animoca-key-1",
+      "reviewStatus": "reviewed_safe",
+      "reviewedAt": "2026-05-02T10:00:00Z",
+      "reviewedBy": "admin"
+    }
+  }
+}
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    health = admin_bridge.compute_ops_health()
+
+    review_state = health["kpis"]["dedupReviewState"]
+    assert review_state["artifactPath"].endswith("dedup-review-state.json")
+    assert review_state["status"] == "ok"
+    assert review_state["readWarning"] == ""
+    assert review_state["reviewedPairCount"] == 1
+    assert review_state["reviewedSafeCount"] == 1
+    assert review_state["confirmedBlockingCount"] == 0
+    assert review_state["unresolvedBlockingCount"] == 0
+
+
+def test_compute_ops_health_reports_missing_dedup_review_state_artifact(
+    admin_bridge_entrypoint_root,
+):
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "startedAt": "2026-05-02T00:00:00+00:00",
+            "finishedAt": "2026-05-02T00:10:00+00:00",
+            "summary": {"outputCount": 8, "failedSources": 0, "sourceCount": 1},
+            "dedupEvidence": {
+                "providerStaticDisagreementGateCounts": {
+                    "blocked": 1,
+                    "warning": 0,
+                    "currentRunBlocked": 0,
+                    "carriedBlocked": 1,
+                    "carriedWarning": 0,
+                    "autoSafeWarning": 0,
+                    "locationPollutionWarning": 0,
+                    "reviewedSafeWarning": 0,
+                    "confirmedBlocking": 0,
+                },
+                "providerStaticDisagreementExamples": [
+                    {
+                        "title": "Executive Assistant",
+                        "company": "Animoca Brands",
+                        "dedupKey": "animoca-key-1",
+                        "bundleEvidenceOrigin": "carried_from_existing_output",
+                        "sourceBundleCount": 2,
+                        "providerSourceJobIds": ["lever:animoca:123"],
+                        "staticSourceJobIds": ["static:animoca:123"],
+                        "providerSources": ["lever:animoca"],
+                        "staticSources": ["static_source::animoca"],
+                        "providerUrls": ["https://jobs.lever.co/animocabrands/123"],
+                        "staticUrls": ["https://careers.animoca.com/jobs/123"],
+                        "providerUrlHosts": ["jobs.lever.co"],
+                        "staticUrlHosts": ["careers.animoca.com"],
+                        "sharedIdentifierTokens": ["123"],
+                        "distinctLocationCount": 1,
+                        "sampleLocations": ["hong kong"],
+                        "identityQuality": "provider_id_strong",
+                        "disagreementClassification": "same_job_different_urls",
+                        "disagreementGateDisposition": "blocked",
+                        "disagreementGateEvidence": [
+                            "carried_same_job_different_urls_requires_review"
+                        ],
+                    }
+                ],
+            },
+        },
+    )
+    admin_bridge.DEDUP_REVIEW_STATE_PATH.unlink(missing_ok=True)
+
+    health = admin_bridge.compute_ops_health()
+
+    review_state = health["kpis"]["dedupReviewState"]
+    assert review_state["status"] == "warning"
+    assert review_state["readWarning"] == "missing_dedup_review_state_artifact"
+    assert review_state["reviewedPairCount"] == 0
+    assert review_state["reviewedSafeCount"] == 0
+    assert review_state["confirmedBlockingCount"] == 0
+    assert review_state["unresolvedBlockingCount"] == 1
+
+
 def test_alert_ack_suppresses_visible_alert(admin_bridge_entrypoint_root):
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,

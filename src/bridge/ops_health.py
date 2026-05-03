@@ -149,6 +149,41 @@ def summarize_fetch_report(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def summarize_dedup_review_state(report: dict[str, Any]) -> dict[str, Any]:
+    summary = as_json_object(report.get("dedupReviewStateSummary"))
+    export = as_json_object(report.get("dedupReviewStateExport"))
+    dedup_evidence = as_json_object(report.get("dedupEvidence"))
+    gate_counts = as_json_object(dedup_evidence.get("providerStaticDisagreementGateCounts"))
+    artifact_path = str(
+        summary.get("artifactPath") or export.get("artifactPath") or "data/dedup-review-state.json"
+    )
+    read_warning = str(
+        summary.get("readWarning") or report.get("dedupReviewStateReadWarning") or ""
+    )
+    reviewed_safe_count = int(
+        summary.get("reviewedSafeCount") or gate_counts.get("reviewedSafeWarning") or 0
+    )
+    confirmed_blocking_count = int(
+        summary.get("confirmedBlockingCount") or gate_counts.get("confirmedBlocking") or 0
+    )
+    reviewed_pair_count = int(
+        summary.get("reviewedPairCount") or (reviewed_safe_count + confirmed_blocking_count)
+    )
+    unresolved_blocking_count = int(
+        summary.get("unresolvedBlockingCount") or gate_counts.get("blocked") or 0
+    )
+    status = str(summary.get("status") or ("warning" if read_warning else "ok"))
+    return {
+        "artifactPath": artifact_path,
+        "status": status,
+        "readWarning": read_warning,
+        "reviewedPairCount": reviewed_pair_count,
+        "reviewedSafeCount": reviewed_safe_count,
+        "confirmedBlockingCount": confirmed_blocking_count,
+        "unresolvedBlockingCount": unresolved_blocking_count,
+    }
+
+
 def summarize_discovery_report(
     report: dict[str, Any],
     normalize_discovery_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
@@ -506,6 +541,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
     source_policy_recommendation_export = as_json_object(
         latest_fetch_report.get("sourcePolicyRecommendationExport")
     )
+    dedup_review_state = summarize_dedup_review_state(latest_fetch_report)
     try:
         tombstones = deps.get_tombstones()
     except Exception:  # noqa: BLE001
@@ -566,6 +602,7 @@ def compute_ops_health(deps: Any) -> dict[str, Any]:
             "pendingApprovalsCount": len(state.get("pending") or []),
             "sourceHealth": source_health,
             "providerCoverage": provider_coverage,
+            "dedupReviewState": dedup_review_state,
             "providerStaticOverlap": provider_static_overlap,
             "staticSuppressionPolicy": static_suppression_policy,
             "redundantStaticProposals": redundant_static_proposals,

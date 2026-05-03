@@ -296,6 +296,7 @@ Admin/Ops may record local dedup review state in `data/dedup-review-state.json` 
 - `clear_review` to restore default gate behavior
 
 These actions are local audit evidence only. They do not rewrite `jobs-unified.json`, do not change dedup merge rules, do not create lifecycle labels, and do not permit source cleanup, registry edits, or source-policy mutation. Lifecycle UX remains paused until unresolved provider/static disagreement count reaches zero.
+Ops health and Admin reporting also expose a read-only dedup review-state status block with the artifact path, any missing/malformed read warning, the reviewed pair count, the `reviewed_safe` count, the `confirmed_blocking` count, and the remaining unresolved blocking count so operators can tell when the blocker is really unresolved versus just unreadable local state.
 
 When `providerStaticDisagreementClassificationCounts.title_company_collision` is nonzero, review `providerStaticTitleCompanyCollisionExamples` before treating the gate as ready. Those rows are capped separately from general provider/static disagreements and include provider/static URLs, source IDs, shared identifier tokens, locations, and `collisionReviewHint`. They are advisory evidence only; they do not permit merge/unmerge actions, source cleanup, registry edits, or lifecycle labels by themselves.
 

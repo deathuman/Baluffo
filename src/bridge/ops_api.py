@@ -18,6 +18,7 @@ from src.bridge import ops_task_live as _ops_task_live
 from src.bridge import report_normalizer
 from src.bridge import run_history_api as _run_history_api
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
+from src.shared.json_shapes import as_json_object
 
 
 @dataclass(frozen=True)
@@ -158,12 +159,35 @@ class OpsApi:
     def _task_live_context(self) -> _ops_task_live.OpsTaskLiveContext:
         return _ops_task_live.OpsTaskLiveContext(paths=self._paths, deps=self._deps)
 
+    def _load_fetch_report_with_dedup_review_state(self) -> dict[str, Any]:
+        payload, warning = load_fetch_report_with_dedup_review_state(
+            load_json_object=self._deps.load_json_object,
+            normalize_fetch_report_contract=self._deps.normalize_fetch_report_contract,
+            jobs_fetch_report_path=self._paths.jobs_fetch_report,
+            dedup_review_state_path=self._paths.dedup_review_state,
+        )
+        if warning:
+            payload["dedupReviewStateReadWarning"] = warning
+        dedup_evidence = as_json_object(payload.get("dedupEvidence"))
+        gate_counts = as_json_object(dedup_evidence.get("providerStaticDisagreementGateCounts"))
+        export = as_json_object(payload.get("dedupReviewStateExport"))
+        reviewed_safe = int(gate_counts.get("reviewedSafeWarning") or 0)
+        confirmed_blocking = int(gate_counts.get("confirmedBlocking") or 0)
+        payload["dedupReviewStateSummary"] = {
+            "artifactPath": str(export.get("artifactPath") or self._paths.dedup_review_state),
+            "status": "warning" if warning else "ok",
+            "readWarning": warning,
+            "reviewedPairCount": reviewed_safe + confirmed_blocking,
+            "reviewedSafeCount": reviewed_safe,
+            "confirmedBlockingCount": confirmed_blocking,
+            "unresolvedBlockingCount": int(gate_counts.get("blocked") or 0),
+        }
+        return payload
+
     def build_ops_health_deps(self) -> OpsHealthDeps:
         return OpsHealthDeps(
             get_history=lambda: self.get_projected_run_history().rows,
-            get_fetch_report=lambda: self._deps.normalize_fetch_report_contract(
-                self._deps.load_json_object(self._paths.jobs_fetch_report, {})
-            ),
+            get_fetch_report=self._load_fetch_report_with_dedup_review_state,
             get_source_policy_soak_report=lambda: self._deps.load_json_object(
                 self._paths.jobs_fetch_report.parent.parent
                 / "_out"
@@ -211,12 +235,7 @@ class OpsApi:
         )
 
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]:
-        latest_fetch_report, _warning = load_fetch_report_with_dedup_review_state(
-            load_json_object=self._deps.load_json_object,
-            normalize_fetch_report_contract=self._deps.normalize_fetch_report_contract,
-            jobs_fetch_report_path=self._paths.jobs_fetch_report,
-            dedup_review_state_path=self._paths.dedup_review_state,
-        )
+        latest_fetch_report = self._load_fetch_report_with_dedup_review_state()
         history = self.get_projected_run_history().rows
         return fetcher_metrics_module.build_metrics(
             latest_fetch_report,

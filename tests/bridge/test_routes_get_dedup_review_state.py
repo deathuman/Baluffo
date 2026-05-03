@@ -124,3 +124,20 @@ def test_ops_fetch_report_tolerates_malformed_dedup_review_state(tmp_path: Path)
     assert handler.sent[-1]["status"] == 200
     payload = handler.sent[-1]["payload"]
     assert payload["dedupReviewStateReadWarning"] == "malformed_dedup_review_state_artifact"
+
+
+def test_ops_fetch_report_tolerates_missing_dedup_review_state(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.load_json_object = lambda path, default: {
+        "dedupEvidence": {"providerStaticDisagreementExamples": []}
+    }
+    api.DEDUP_REVIEW_STATE_PATH.unlink(missing_ok=True)
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/ops/fetch-report", query={})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    payload = handler.sent[-1]["payload"]
+    assert payload["dedupReviewStateReadWarning"] == "missing_dedup_review_state_artifact"

@@ -981,6 +981,11 @@ Pair rows include `reviewKey`, `title`, `company`, `dedupKey`, `bundleEvidenceOr
 - `confirmed_blocking`: keep that exact disagreement row blocking while recording operator review
 
 Clearing a review removes the pair from the local artifact and restores default gate behavior.
+Ops health and Admin fetch/report surfaces expose a read-only dedup review-state summary block
+with the artifact path, any missing/malformed read warning, the total reviewed pair count, the
+`reviewed_safe` count, the `confirmed_blocking` count, and the remaining unresolved blocking
+count derived from the merged review evidence. This is operator-visible evidence, not a hidden
+implementation detail.
 Read-only gate fields such as `disagreementGateDisposition`, `disagreementGateEvidence`,
 `providerStaticDisagreementGateCounts`, and `dedupAuditGate` may reflect this local review state in
 saved fetch reports and bridge read-time payloads.

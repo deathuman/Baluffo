@@ -60,7 +60,8 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
     avgFetchDurationMs7d: Number(kpis?.avgFetchDurationMs7d || 0),
     lastSuccessfulFetchAge: String(kpis?.lastSuccessfulFetchAge || ""),
     registrySync: kpis?.registrySync || {},
-    providerCoverage: kpis?.providerCoverage || {}
+    providerCoverage: kpis?.providerCoverage || {},
+    dedupReviewState: kpis?.dedupReviewState || {}
   });
   if (canPatchInPlace && kpisEl.dataset.opsKpisSig === signature) return;
   if (canPatchInPlace) kpisEl.dataset.opsKpisSig = signature;
@@ -73,6 +74,9 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
     : {};
   const providerCoverage = kpis?.providerCoverage && typeof kpis.providerCoverage === "object"
     ? kpis.providerCoverage
+    : {};
+  const dedupReviewState = kpis?.dedupReviewState && typeof kpis.dedupReviewState === "object"
+    ? kpis.dedupReviewState
     : {};
   const statusClass = status === "critical" ? "critical" : status === "warning" ? "warning" : "healthy";
   const lastSyncAt = String(registrySync?.lastSyncAt || "");
@@ -132,6 +136,9 @@ export function renderAdminOpsKpis(kpisEl, kpis, status) {
       failed/unstable ${Number((providerCoverage?.statusCounts?.failed_provider || 0) + (providerCoverage?.statusCounts?.unstable_provider || 0)).toLocaleString()},
       ready later ${Number((providerCoverage?.readyLaterProviders || []).length || 0).toLocaleString()}.
       Static sources are retained.
+    </div>
+    <div class="admin-ops-schedule-item admin-ops-full-row">
+      <strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewState))}
     </div>
   `;
 }
@@ -452,6 +459,26 @@ function formatDedupAuditGateExamples(rows, emptyText) {
       return escapeHtml(`${title} @ ${company} (${cause}, ${quality}, ${action}${originText})`);
     })
     .join(" | ");
+}
+
+function formatDedupReviewStateSummary(summary, readWarning = "") {
+  const state = summary && typeof summary === "object" ? summary : {};
+  const artifactPath = String(state?.artifactPath || "data/dedup-review-state.json");
+  const status = String(state?.status || (readWarning ? "warning" : "ok")).replaceAll("_", " ");
+  const warning = String(state?.readWarning || readWarning || "").replaceAll("_", " ");
+  const reviewedPairs = Number(state?.reviewedPairCount || 0);
+  const reviewedSafe = Number(state?.reviewedSafeCount || 0);
+  const confirmedBlocking = Number(state?.confirmedBlockingCount || 0);
+  const unresolvedBlocking = Number(state?.unresolvedBlockingCount || 0);
+  return [
+    `path ${artifactPath}`,
+    `status ${status}`,
+    `reviewed pairs ${reviewedPairs.toLocaleString()}`,
+    `reviewed safe ${reviewedSafe.toLocaleString()}`,
+    `confirmed blocking ${confirmedBlocking.toLocaleString()}`,
+    `unresolved blocking ${unresolvedBlocking.toLocaleString()}`,
+    warning ? `warning ${warning}` : ""
+  ].filter(Boolean).join(", ");
 }
 
 function formatCurrentRunMergeExamples(rows, emptyText) {
@@ -933,6 +960,8 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     stageTop: Array.isArray(latest?.stageTop) ? latest.stageTop : [],
     sourceHealth: latest?.sourceHealth || {},
     dedupEvidence: latest?.dedupEvidence || {},
+    dedupReviewStateSummary: latest?.dedupReviewStateSummary || {},
+    dedupReviewStateReadWarning: String(latest?.dedupReviewStateReadWarning || ""),
     providerCoverage: latest?.providerCoverage || {},
     providerStaticOverlap: latest?.providerStaticOverlap || {},
     staticSuppressionPolicy: latest?.staticSuppressionPolicy || {},
@@ -954,6 +983,10 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const highCostLowYield = Array.isArray(latest?.highCostLowYieldSources) ? latest.highCostLowYieldSources : [];
   const sourceHealth = latest?.sourceHealth && typeof latest.sourceHealth === "object" ? latest.sourceHealth : {};
   const dedupEvidence = latest?.dedupEvidence && typeof latest.dedupEvidence === "object" ? latest.dedupEvidence : {};
+  const dedupReviewStateSummary = latest?.dedupReviewStateSummary && typeof latest.dedupReviewStateSummary === "object"
+    ? latest.dedupReviewStateSummary
+    : {};
+  const dedupReviewStateReadWarning = String(latest?.dedupReviewStateReadWarning || "");
   const providerCoverage = latest?.providerCoverage && typeof latest.providerCoverage === "object" ? latest.providerCoverage : {};
   const providerStaticOverlap = latest?.providerStaticOverlap && typeof latest.providerStaticOverlap === "object" ? latest.providerStaticOverlap : {};
   const staticSuppressionPolicy = latest?.staticSuppressionPolicy && typeof latest.staticSuppressionPolicy === "object" ? latest.staticSuppressionPolicy : {};
@@ -1231,6 +1264,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, known mirror pair ${Number(mergeReasonCounts?.knownMirrorPair || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Audit Gate</strong>: ${escapeHtml(formatDedupAuditGate(dedupAuditGate))}. Examples: ${formatDedupAuditGateExamples(dedupAuditGate?.examples, "No gate examples.")}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewStateSummary, dedupReviewStateReadWarning))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup current-run merge examples</strong>: ${formatCurrentRunMergeExamples(dedupEvidence?.currentRunMergeExamples, "No current-run merge examples.")}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static disagreements</strong>: ${escapeHtml(formatProviderStaticDisagreementCounts(providerStaticDisagreementCounts))}. Gate: ${escapeHtml(formatProviderStaticDisagreementGateCounts(providerStaticDisagreementGateCounts))}. Classifications: ${escapeHtml(formatProviderStaticDisagreementClassificationCounts(providerStaticDisagreementClassificationCounts))}. ${providerStaticDisagreementSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static title-company collisions</strong>: ${escapeHtml(formatProviderStaticTitleCompanyCollisionCounts(providerStaticTitleCompanyCollisionCounts))}. Audit: ${escapeHtml(formatProviderStaticTitleCompanyCollisionAuditCounts(providerStaticTitleCompanyCollisionAuditCounts))}. ${providerStaticTitleCompanyCollisionSummary}</div>
