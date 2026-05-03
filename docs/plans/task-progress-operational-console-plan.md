@@ -181,7 +181,10 @@ Execution order is flexible:
 ### Progress
 
 - [x] First detailed Admin task-console slice: shared frontend task-run presenter plus read-only Current Runs cards.
-- [ ] Completed-run row expansion, run-scoped diagnostics copy/export, and deeper stale/orphaned remediation UX remain deferred.
+- [x] Completed-run row expansion with read-only native details disclosures.
+- [ ] Stalled/orphaned remediation guidance remains deferred.
+- [ ] Run-scoped diagnostics copy/export remains deferred.
+- [ ] Selected-run analysis and timeline panels remain deferred.
 
 ### Step 1 — Create shared task run view model
 
