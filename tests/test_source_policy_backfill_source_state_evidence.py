@@ -108,6 +108,65 @@ def test_static_evidence_uses_source_state_aliases_and_provider_coverage_history
     assert "insufficient_provider_success_history" in candidate["disambiguationBlockers"]
 
 
+def test_source_state_without_validated_provider_status_stays_blocked(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "data"
+    _write_json(data_dir / "jobs-fetch-report.json", {})
+    _write_json(
+        data_dir / "jobs-source-state.json",
+        {
+            "sources": {
+                "static:cdpr-active": {
+                    "lastStatus": "ok",
+                    "lastKeptCount": 8,
+                    "lastSuccessfulAt": "2026-01-01T00:00:00Z",
+                    "lastFetchedAt": "2026-01-01T00:00:00Z",
+                    "providerCoverageConsecutiveSuccesses": 2,
+                    "providerCoverageLatestKeptCount": 8,
+                }
+            }
+        },
+    )
+    _write_json(
+        data_dir / "source-registry-active.json",
+        [
+            _cdpr_provider(),
+            {
+                "id": "static:cdpr-active",
+                "name": "CDPR Active Static",
+                "adapter": "static",
+                "listing_url": "https://cdprojektred.com/jobs",
+            },
+        ],
+    )
+    _write_json(
+        data_dir / "source-registry-pending.json",
+        [
+            {
+                "id": "static:cdpr-hidden",
+                "name": "CDPR Hidden Static",
+                "adapter": "static",
+                "listing_url": "https://www.cdprojektred.com/en/jobs",
+                "hiddenFromDefault": True,
+                "duplicateOfSourceId": "static:cdpr-active",
+                "pendingReason": "duplicate_family_weaker_variant",
+            }
+        ],
+    )
+
+    report = soak.build_soak_report(data_dir)
+    section = report["sections"]["providerCoverageLinkBackfill"]
+
+    assert section["candidateLinkCount"] == 2
+    assert section["reviewCandidates"] == []
+    blocked = next(
+        row for row in section["blockedCandidates"] if row["staticSourceId"] == "static:cdpr-active"
+    )
+    assert "ambiguous_static_match" in blocked["blockers"]
+    assert "source_state_not_ok" in blocked["disambiguationBlockers"]
+
+
 def test_static_only_evidence_stays_explicit_when_no_source_state_history() -> None:
     evidence = soak._static_evidence({}, {})
 

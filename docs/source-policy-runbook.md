@@ -78,6 +78,10 @@ surface. The blocked-candidate surface may also include `blockedReasonCounts` an
 `disambiguationBlockerCounts` so operators can see both the top-level blocker and the lower-level
 evidence split without changing review behavior.
 
+Reviewable provider/static rows require `providerCoverageStatus="validated_provider"` and at least
+two consecutive provider successes. Rows without validated provider coverage stay in the blocked
+surface, even when they have some source-state history.
+
 Blocked migration-link rows can also surface source-state evidence fields such as `lastStatus`,
 `lastKeptCount`, `lastSuccessfulAt`, `lastFetchedAt`, `providerCoverageStatus`,
 `providerCoverageConsecutiveSuccesses`, `providerCoverageLatestKeptCount`,

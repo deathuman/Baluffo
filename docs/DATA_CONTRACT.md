@@ -765,6 +765,10 @@ success history (`insufficient_provider_success_history`), multiple static candi
 history (`multiple_static_candidates_with_equal_history`), and static-only evidence
 (`static_only_evidence_present`).
 
+Provider/static rows only graduate into `reviewCandidates` when the source-state status is
+`validated_provider` and the consecutive-success count reaches the review threshold. Rows that
+have source-state history but are not yet validated stay in the blocked surface.
+
 Dynamic redundant-static suppression is a reversible runtime skip layered on top of provider
 coverage. One successful provider fetch validates provider usability. Two or more consecutive
 successful provider fetches may cause the matching static loader to emit an excluded source report

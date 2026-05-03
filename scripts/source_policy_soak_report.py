@@ -1185,6 +1185,7 @@ def _static_evidence(static: dict[str, Any], state: dict[str, Any]) -> dict[str,
     last_successful_at = _first_clean_text(state, "lastSuccessfulAt", "lastSuccessAt")
     last_fetched_at = _first_clean_text(state, "lastFetchedAt", "lastRunAt")
     provider_coverage_status = _first_clean_text(state, "providerCoverageStatus")
+    provider_coverage_validated = provider_coverage_status == "validated_provider"
     provider_coverage_consecutive_successes = _first_int_value(
         state, "providerCoverageConsecutiveSuccesses"
     )
@@ -1216,7 +1217,7 @@ def _static_evidence(static: dict[str, Any], state: dict[str, Any]) -> dict[str,
         reasons.append("source_state_ok")
     elif last_status:
         blockers.append("source_state_not_ok")
-    if provider_coverage_status == "validated_provider":
+    if provider_coverage_validated:
         score += 10
         reasons.append("provider_coverage_validated")
     elif provider_coverage_status:
@@ -1244,12 +1245,11 @@ def _static_evidence(static: dict[str, Any], state: dict[str, Any]) -> dict[str,
         blockers.append("no_source_state_history")
         if score <= 0:
             blockers.append("static_only_evidence_present")
-    elif (
-        has_promotable_source_state_signal
-        and "source_state_not_ok" not in blockers
-        and provider_coverage_consecutive_successes < 2
-    ):
-        blockers.append("insufficient_provider_success_history")
+    elif has_promotable_source_state_signal and "source_state_not_ok" not in blockers:
+        if provider_coverage_validated and provider_coverage_consecutive_successes < 2:
+            blockers.append("insufficient_provider_success_history")
+        elif not provider_coverage_validated:
+            blockers.append("source_state_not_ok")
     return {
         "lastKeptCount": last_kept,
         "lastStatus": last_status,
@@ -1585,6 +1585,8 @@ def _is_strong_source_state_candidate(row: dict[str, Any]) -> bool:
     if clean_text(row.get("registryState")) != "active":
         return False
     if bool(row.get("hiddenFromDefault")) or clean_text(row.get("duplicateOfSourceId")):
+        return False
+    if clean_text(row.get("providerCoverageStatus")) != "validated_provider":
         return False
     if _int_value(row.get("lastKeptCount")) <= 0:
         return False
