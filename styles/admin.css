@@ -381,6 +381,131 @@
   font-size: 0.85rem;
 }
 
+.admin-dedup-audit-gate-card {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.62rem 0.68rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--table-row-even) 58%, transparent);
+}
+
+.admin-dedup-audit-gate-header {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.admin-dedup-audit-gate-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.admin-dedup-audit-gate-status,
+.admin-dedup-audit-gate-ready,
+.admin-dedup-audit-gate-chip,
+.admin-dedup-audit-gate-flag-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.42rem;
+  border-radius: 999px;
+  border: 1px solid var(--surface-11);
+  background: color-mix(in srgb, var(--table-row-odd) 65%, transparent);
+  font-size: 0.74rem;
+  line-height: 1.2;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.admin-dedup-audit-gate-status {
+  border-color: color-mix(in srgb, #c9a86c 55%, var(--surface-11));
+}
+
+.admin-dedup-audit-gate-ready {
+  border-color: color-mix(in srgb, #61aa77 55%, var(--surface-11));
+}
+
+.admin-dedup-audit-gate-summary {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.admin-dedup-audit-gate-flags,
+.admin-dedup-audit-gate-chips,
+.admin-dedup-audit-gate-example-chips {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.admin-dedup-audit-gate-flag {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.admin-dedup-audit-gate-flag-value {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.admin-dedup-audit-gate-examples {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.admin-dedup-audit-gate-example {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--table-row-odd) 70%, transparent);
+}
+
+.admin-dedup-audit-gate-example summary {
+  cursor: default;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.admin-dedup-audit-gate-example summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-dedup-audit-gate-example-summary {
+  font-weight: 600;
+}
+
+.admin-dedup-audit-gate-example-body {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.admin-dedup-audit-gate-example-section {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.admin-dedup-audit-gate-example-label {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.admin-dedup-audit-gate-empty {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
 .admin-source-policy-review {
   display: grid;
   gap: 0.6rem;

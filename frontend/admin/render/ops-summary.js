@@ -464,22 +464,30 @@ function formatDedupAuditGateExampleDetails(row) {
     : Array.isArray(row?.reviewEvidence)
       ? row.reviewEvidence
       : [];
-  const detailLines = [
-    `Classification: ${classification}`,
-    `Recommended action: ${action}`,
-    `Review status: ${status}${reviewUpdatedBy ? ` by ${reviewUpdatedBy}` : ""}${reviewUpdatedAt ? ` at ${reviewUpdatedAt}` : ""}`,
-    `Origin: ${origin}`,
-    gateDisposition ? `Gate disposition: ${gateDisposition}` : "",
-    `Sources: ${sourceBundleCount}`,
-    `Classification evidence: ${causeEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
-    `Gate evidence: ${gateEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`
-  ].filter(Boolean);
   const summary = `${title} @ ${company} — ${classification}, ${status}`;
+  const metaChips = [
+    `classification ${classification}`,
+    `action ${action}`,
+    `review ${status}${reviewUpdatedBy ? ` by ${reviewUpdatedBy}` : ""}${reviewUpdatedAt ? ` at ${reviewUpdatedAt}` : ""}`,
+    `origin ${origin}`,
+    gateDisposition ? `gate ${gateDisposition}` : "",
+    `sources ${sourceBundleCount}`
+  ].filter(Boolean);
   return `
     <details class="admin-dedup-audit-gate-example">
-      <summary>${escapeHtml(summary)}</summary>
+      <summary><span class="admin-dedup-audit-gate-example-summary">${escapeHtml(summary)}</span></summary>
       <div class="admin-dedup-audit-gate-example-body">
-        ${detailLines.map(line => `<div>${escapeHtml(line)}</div>`).join("")}
+        <div class="admin-dedup-audit-gate-example-chips">
+          ${metaChips.map(label => `<span class="admin-dedup-audit-gate-chip">${escapeHtml(label)}</span>`).join("")}
+        </div>
+        <div class="admin-dedup-audit-gate-example-section">
+          <div class="admin-dedup-audit-gate-example-label">Classification evidence</div>
+          <div>${escapeHtml(causeEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none")}</div>
+        </div>
+        <div class="admin-dedup-audit-gate-example-section">
+          <div class="admin-dedup-audit-gate-example-label">Gate evidence</div>
+          <div>${escapeHtml(gateEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none")}</div>
+        </div>
       </div>
     </details>
   `;
@@ -493,18 +501,44 @@ function formatDedupAuditGateCard(gate) {
   const warnings = Array.isArray(auditGate?.warnings) ? auditGate.warnings : [];
   const blockerText = blockers.length ? blockers.slice(0, 4).join(", ").replaceAll("_", " ") : "none";
   const warningText = warnings.length ? warnings.slice(0, 4).join(", ").replaceAll("_", " ") : "none";
+  const gateChips = [
+    `status ${status}`,
+    `lifecycle UX ready ${ready}`,
+    `current-run merges ${Number(auditGate?.currentRunMergedCount || 0).toLocaleString()}`,
+    `current-run collisions ${Number(auditGate?.currentRunSourceBundleCollisionCount || 0).toLocaleString()}`,
+    `carried collisions ${Number(auditGate?.carriedSourceBundleCollisionCount || auditGate?.sourceBundleCollisionCount || 0).toLocaleString()}`,
+    `historical-like ${Number(auditGate?.carriedCollisionLikelyHistoricalCount || 0).toLocaleString()}`,
+    `high-risk queue ${Number(auditGate?.highRiskReviewQueueCount || 0).toLocaleString()}`,
+    `current high-risk ${Number(auditGate?.currentRunHighRiskReviewQueueCount || 0).toLocaleString()}`,
+    `carried high-risk ${Number(auditGate?.carriedHighRiskReviewQueueCount || 0).toLocaleString()}`,
+    `provider/static ${Number(auditGate?.providerStaticDisagreementCount || 0).toLocaleString()}`,
+    `provider/static current ${Number(auditGate?.providerStaticDisagreementCurrentRunCount || 0).toLocaleString()}`,
+    `provider/static carried ${Number(auditGate?.providerStaticDisagreementCarriedCount || 0).toLocaleString()}`,
+    `Google Sheets guard ${auditGate?.googleSheetsGenericRoleGuardActive === true ? "active" : "unknown"}`
+  ];
   const examples = Array.isArray(auditGate?.examples) ? auditGate.examples.slice(0, 5) : [];
   return `
     <section class="admin-ops-schedule-item admin-ops-full-row admin-dedup-audit-gate-card">
       <div class="admin-dedup-audit-gate-header">
-        <strong>Dedup Audit Gate</strong>
-        <span class="admin-dedup-audit-gate-status">status ${escapeHtml(status)}</span>
-        <span class="admin-dedup-audit-gate-ready">lifecycle UX ready ${escapeHtml(ready)}</span>
+        <div class="admin-dedup-audit-gate-title">
+          <strong>Dedup Audit Gate</strong>
+          <span class="admin-dedup-audit-gate-status">status ${escapeHtml(status)}</span>
+          <span class="admin-dedup-audit-gate-ready">lifecycle UX ready ${escapeHtml(ready)}</span>
+        </div>
+        <div class="admin-dedup-audit-gate-summary">${escapeHtml(formatDedupAuditGate(auditGate))}</div>
       </div>
-      <div class="admin-dedup-audit-gate-summary">${escapeHtml(formatDedupAuditGate(auditGate))}</div>
       <div class="admin-dedup-audit-gate-flags">
-        <div><strong>Blockers</strong>: ${escapeHtml(blockerText)}</div>
-        <div><strong>Warnings</strong>: ${escapeHtml(warningText)}</div>
+        <div class="admin-dedup-audit-gate-flag">
+          <span class="admin-dedup-audit-gate-flag-label">Blockers</span>
+          <span class="admin-dedup-audit-gate-flag-value">${escapeHtml(blockerText)}</span>
+        </div>
+        <div class="admin-dedup-audit-gate-flag">
+          <span class="admin-dedup-audit-gate-flag-label">Warnings</span>
+          <span class="admin-dedup-audit-gate-flag-value">${escapeHtml(warningText)}</span>
+        </div>
+      </div>
+      <div class="admin-dedup-audit-gate-chips">
+        ${gateChips.map(label => `<span class="admin-dedup-audit-gate-chip">${escapeHtml(label)}</span>`).join("")}
       </div>
       <div class="admin-dedup-audit-gate-examples">
         <div><strong>Examples</strong></div>
