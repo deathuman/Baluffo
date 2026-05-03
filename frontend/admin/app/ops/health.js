@@ -318,7 +318,10 @@ export function createOpsHealthController({
           }
         },
         deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
-        { onDedupReviewAction: handleDedupReviewAction }
+        {
+          onDedupReviewAction: handleDedupReviewAction,
+          runModel
+        }
       );
       renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel);
       renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);

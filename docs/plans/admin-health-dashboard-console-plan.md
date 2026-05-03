@@ -286,11 +286,12 @@ Keep this dedicated active plan doc registered in [`docs/INDEX.md`](../INDEX.md)
 - [x] Keep Source Policy Review as a separate action queue and add only summary/context in health.
 - [ ] Add progressive disclosure for long example lists.
 - [ ] Add diagnostics-copy behavior for normalized/bounded section payloads.
-- [ ] Add compact task-status lane using the existing run model.
-- [ ] Keep detailed task-card/stale-state behavior deferred to the task/progress plan.
+- [x] Add compact task-status lane using the existing run model.
+- [x] Keep detailed task-card/stale-state behavior deferred to the task/progress plan.
 - [x] Add/adjust styling for compact section cards and long-list readability.
 - [x] Add unit test coverage for section rendering.
 - [ ] Add unit test coverage for bounded lists, copy behavior, and action handlers.
+- [x] Add unit test coverage for the compact task-status lane.
 - [ ] Reconcile smoke selectors that assume `#admin-ops-fetcher-metrics` is populated.
 
 ## Risks and Constraints

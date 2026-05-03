@@ -381,6 +381,76 @@
   font-size: 0.85rem;
 }
 
+.admin-ops-task-lane {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.68rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-5) 58%, transparent);
+}
+
+.admin-ops-task-lane-head {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.admin-ops-task-lane-head h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.admin-ops-task-lane-head p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.admin-ops-task-lane-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.admin-ops-task-lane-card {
+  display: grid;
+  gap: 0.38rem;
+  min-width: 0;
+  padding: 0.58rem 0.62rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--table-row-even) 62%, transparent);
+}
+
+.admin-ops-task-lane-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.admin-ops-task-lane-meta {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.admin-ops-task-lane-summary {
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .admin-ops-task-lane-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .admin-ops-metrics-section {
   grid-column: 1 / -1;
   display: grid;

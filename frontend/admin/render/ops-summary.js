@@ -1,11 +1,15 @@
 import { escapeHtml } from "../../shared/ui/index.js";
-import { buildOpsFetcherMetricSections } from "../domain/ops-health-view-model.js";
+import {
+  buildOpsFetcherMetricSections,
+  buildOpsTaskLaneRows
+} from "../domain/ops-health-view-model.js";
 import {
   FETCHER_FAILURE_BUCKET_LABELS,
   formatDuration,
   formatDateTime,
   formatLastRunCell,
   formatScheduleCell,
+  getRunStatusChipClass,
   sanitizeSlowSourceName,
   stableOpsSignature
 } from "./ops-shared.js";
@@ -589,6 +593,29 @@ function formatOpsFetcherMetricSection(section) {
   `;
 }
 
+function formatOpsTaskLane(rows) {
+  const laneRows = Array.isArray(rows) ? rows : [];
+  const body = laneRows.map(row => `
+    <div class="admin-ops-task-lane-card admin-ops-task-lane-card-${escapeHtml(row.type)}">
+      <div class="admin-ops-task-lane-card-head">
+        <strong>${escapeHtml(row.label)}</strong>
+        <span class="admin-status-chip ${getRunStatusChipClass(row.status)}">${escapeHtml(row.status.replaceAll("_", " "))}</span>
+      </div>
+      <div class="admin-ops-task-lane-meta">${escapeHtml(row.hasRun ? (row.isLive ? `Running ${formatDuration(Number(row.elapsedMs || 0))}` : `Last ${formatDuration(Number(row.elapsedMs || 0))}`) : "No run yet")}</div>
+      <div class="admin-ops-task-lane-summary">${escapeHtml(row.summary)}</div>
+    </div>
+  `).join("");
+  return `
+    <section class="admin-ops-task-lane" aria-label="Operations task status">
+      <div class="admin-ops-task-lane-head">
+        <h4>Task Status</h4>
+        <p>Compact read-only status for discovery, fetch, and sync.</p>
+      </div>
+      <div class="admin-ops-task-lane-grid">${body}</div>
+    </section>
+  `;
+}
+
 function formatDedupReviewStateSummary(summary, readWarning = "") {
   const state = summary && typeof summary === "object" ? summary : {};
   const artifactPath = String(state?.artifactPath || "data/dedup-review-state.json");
@@ -1152,6 +1179,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     redundantStaticProposals: latest?.redundantStaticProposals || {},
     conservativeStaticCleanupProposals: latest?.conservativeStaticCleanupProposals || {},
     sourcePolicyRecommendationExport: latest?.sourcePolicyRecommendationExport || {},
+    runModel: options?.runModel || {},
     failureSummary: summary
   });
   if (canPatchInPlace && metricsEl.dataset.opsFetcherMetricsSig === signature) return;
@@ -1501,13 +1529,14 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Source-policy review</strong>: local review pairs ${Number(sourcePolicyRecommendationExport?.reviewStatePairCount || 0).toLocaleString()}, force-paused ${Number(sourcePolicyRecommendationExport?.manualForcePausedCount || 0).toLocaleString()}. Use the Source Policy Review queue for local, reversible actions.</div>
   `;
 
-  metricsEl.innerHTML = buildOpsFetcherMetricSections({
+  const taskLaneHtml = formatOpsTaskLane(buildOpsTaskLaneRows(options?.runModel || {}));
+  metricsEl.innerHTML = `${taskLaneHtml}${buildOpsFetcherMetricSections({
     runtime: runtimeSectionHtml,
     failures: failuresSectionHtml,
     dedup: dedupSectionHtml,
     sourceHealth: sourceHealthSectionHtml,
     sourcePolicy: sourcePolicySectionHtml
-  }).map(formatOpsFetcherMetricSection).join("");
+  }).map(formatOpsFetcherMetricSection).join("")}`;
 
   if (typeof options?.onDedupReviewAction === "function") {
     const rowGroups = {

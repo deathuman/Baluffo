@@ -1,1 +1,1 @@
-export { boot } from "./app/runtime.js?v=1";
+export { boot } from "./app/runtime.js?v=2";
