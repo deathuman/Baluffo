@@ -70,8 +70,10 @@ def test_source_policy_recommendations_includes_link_review_candidates(
                 "providerCoverageLinkBackfill": {
                     "activeProviderWithoutMigrationIdentityCount": 4,
                     "candidateLinkCount": 1,
+                    "blockedCount": 1,
                     "highConfidenceLinkCount": 0,
                     "mediumConfidenceLinkCount": 1,
+                    "blockedReasonCounts": {"ambiguous_static_match": 1},
                     "reviewCandidates": [
                         {
                             "providerSourceId": PROVIDER_ID,
@@ -92,6 +94,40 @@ def test_source_policy_recommendations_includes_link_review_candidates(
                             },
                         }
                     ],
+                    "blockedCandidates": [
+                        {
+                            "providerSourceId": PROVIDER_ID,
+                            "providerSourceName": "Studio Greenhouse",
+                            "selectedStaticSourceId": STATIC_ID,
+                            "selectedStaticSourceName": "Studio Static",
+                            "confidence": 0.72,
+                            "apiEligible": False,
+                            "blockers": ["ambiguous_static_match"],
+                            "evidenceReasons": ["redundant_static_rule_exact_match"],
+                            "sourceStateEvidence": {
+                                "lastKeptCount": 4,
+                                "lastStatus": "ok",
+                                "evidenceScore": 7,
+                            },
+                        }
+                    ],
+                    "blockedExamples": [
+                        {
+                            "providerSourceId": PROVIDER_ID,
+                            "providerSourceName": "Studio Greenhouse",
+                            "selectedStaticSourceId": STATIC_ID,
+                            "selectedStaticSourceName": "Studio Static",
+                            "confidence": 0.72,
+                            "apiEligible": False,
+                            "blockers": ["ambiguous_static_match"],
+                            "evidenceReasons": ["redundant_static_rule_exact_match"],
+                            "sourceStateEvidence": {
+                                "lastKeptCount": 4,
+                                "lastStatus": "ok",
+                                "evidenceScore": 7,
+                            },
+                        }
+                    ],
                 }
             }
         },
@@ -101,8 +137,12 @@ def test_source_policy_recommendations_includes_link_review_candidates(
 
     link_backfill = payload["providerCoverageLinkBackfill"]
     assert link_backfill["mediumConfidenceLinkCount"] == 1
+    assert link_backfill["blockedCount"] == 1
     candidate = link_backfill["reviewCandidates"][0]
     assert candidate["providerSourceId"] == PROVIDER_ID
+    blocked_candidate = link_backfill["blockedCandidates"][0]
+    assert blocked_candidate["blockers"] == ["ambiguous_static_match"]
+    assert link_backfill["blockedReasonCounts"]["ambiguous_static_match"] == 1
     assert candidate["currentProviderLinkState"] == {
         "providerBucket": "active",
         "migrationSourceIdentity": STATIC_ID,

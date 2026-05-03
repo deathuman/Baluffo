@@ -729,6 +729,28 @@ coverage fields.
 | `needsReviewProviders` | `Array<Object>` | Compact provider rows that fetched successfully but kept zero jobs. |
 | `readyLaterProviders` | `Array<Object>` | Compact rows with diagnostic `providerReplacementReadiness="ready_later"`. No source mutation is implied. |
 
+### Provider coverage link backfill review surface
+
+Fetch reports, normalized bridge payloads, `/ops/health` KPI payloads, and fetcher metrics may
+include top-level `providerCoverageLinkBackfill`. This section is report-only and derived from
+current provider coverage, discovery candidates, source-state evidence, and current soak data. It
+does not mutate source registry rows, source sync, or migration identity links.
+
+The section may expose both actionable and blocked review queues:
+
+| Field | Type | Description |
+|---|---|---|
+| `candidateLinkCount` | `number` | Total provider/static candidate links found for the backfill review surface. |
+| `reviewCandidates` | `Array<Object>` | Actionable rows with `apiEligible=true`; these are the only rows that expose apply actions in Admin. |
+| `blockedCount` | `number` | Count of candidate links that are not yet reviewable. |
+| `blockedReasonCounts` | `object` | Aggregate blocker counts across blocked candidates. |
+| `blockedCandidates` | `Array<Object>` | Read-only blocked candidate rows with blocker reasons and evidence. |
+| `blockedExamples` | `Array<Object>` | Capped stable sample of blocked candidates for read-only rendering. |
+| `linkedCandidates` | `Array<Object>` | Already-linked provider/static rows shown for read-only visibility. |
+
+`candidateLinkCount` may be non-zero even when `reviewCandidates` is empty. In that case, the
+blocked-candidate surface explains why the review queue is empty.
+
 Dynamic redundant-static suppression is a reversible runtime skip layered on top of provider
 coverage. One successful provider fetch validates provider usability. Two or more consecutive
 successful provider fetches may cause the matching static loader to emit an excluded source report

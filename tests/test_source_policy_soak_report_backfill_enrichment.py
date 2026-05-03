@@ -202,9 +202,16 @@ def test_multiple_active_successful_statics_remain_ambiguous(tmp_path: Path) -> 
     section = report["sections"]["providerCoverageLinkBackfill"]
 
     assert section["candidateLinkCount"] == 2
+    assert section["blockedCount"] == 2
     assert section["highConfidenceLinkCount"] == 0
     assert section["mediumConfidenceLinkCount"] == 0
     assert section["reviewCandidates"] == []
+    assert len(section["blockedCandidates"]) == 2
+    assert section["blockedReasonCounts"]["ambiguous_static_match"] == 2
+    assert (
+        section["blockedExamples"][0]["staticSourceId"]
+        == section["blockedCandidates"][0]["staticSourceId"]
+    )
     assert section["unresolvedAmbiguousCount"] == 2
     assert section["ambiguityGroups"][0]["candidateStatics"][0]["evidenceScore"] > 0
     assert "provider_coverage_link_unresolved_ambiguity_examples" in _gate_ids(report)

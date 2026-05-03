@@ -65,10 +65,14 @@ def _load_provider_coverage_link_backfill(api: BridgeApi) -> tuple[dict[str, Any
     path = _source_policy_soak_report_path(api)
     empty_payload = {
         "reviewCandidates": [],
+        "blockedCandidates": [],
         "linkedCandidates": [],
         "candidateLinkCount": 0,
+        "blockedCount": 0,
         "highConfidenceLinkCount": 0,
         "mediumConfidenceLinkCount": 0,
+        "blockedReasonCounts": {},
+        "blockedExamples": [],
         "activeProviderWithoutMigrationIdentityCount": 0,
     }
     if not path.exists():
@@ -85,6 +89,7 @@ def _load_provider_coverage_link_backfill(api: BridgeApi) -> tuple[dict[str, Any
         for key in (
             "activeProviderWithoutMigrationIdentityCount",
             "candidateLinkCount",
+            "blockedCount",
             "highConfidenceLinkCount",
             "mediumConfidenceLinkCount",
             "ambiguousProviderCount",
@@ -92,16 +97,23 @@ def _load_provider_coverage_link_backfill(api: BridgeApi) -> tuple[dict[str, Any
             "resolvedBySourceStateCount",
             "resolvedByAdvisoryIdentityCount",
             "unresolvedAmbiguousCount",
+            "blockedReasonCounts",
         )
         if key in section
     }
     result["reviewCandidates"] = [
         dict(row) for row in _as_list(section.get("reviewCandidates")) if isinstance(row, dict)
     ]
+    result["blockedCandidates"] = [
+        dict(row) for row in _as_list(section.get("blockedCandidates")) if isinstance(row, dict)
+    ]
     result["linkedCandidates"] = [
         dict(row)
         for row in _as_list(section.get("links"))
         if isinstance(row, dict) and _clean_text(row.get("recommendedAction")) == "already_linked"
+    ]
+    result["blockedExamples"] = [
+        dict(row) for row in _as_list(section.get("blockedExamples")) if isinstance(row, dict)
     ]
     return result, ""
 

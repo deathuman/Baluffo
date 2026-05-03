@@ -66,6 +66,11 @@ function getMigrationLinkReviewCandidates(payload) {
   return listValue(linkBackfill.reviewCandidates).filter(row => row && typeof row === "object");
 }
 
+function getMigrationLinkBlockedCandidates(payload) {
+  const linkBackfill = objectValue(payload?.providerCoverageLinkBackfill);
+  return listValue(linkBackfill.blockedCandidates).filter(row => row && typeof row === "object");
+}
+
 function getMigrationLinkLinkedCandidates(payload) {
   const linkBackfill = objectValue(payload?.providerCoverageLinkBackfill);
   return listValue(linkBackfill.linkedCandidates).filter(row => row && typeof row === "object");
@@ -346,6 +351,45 @@ function renderMigrationLinkReviewCandidate(candidate, index) {
   `;
 }
 
+function renderBlockedMigrationLinkCandidate(candidate, index) {
+  const providerName = stringValue(candidate?.providerSourceName, stringValue(candidate?.providerSourceId, "Unknown provider"));
+  const providerId = stringValue(candidate?.providerSourceId, "unknown-provider");
+  const staticName = selectedStaticSourceName(candidate);
+  const staticId = selectedStaticSourceId(candidate);
+  const staticUrl = stringValue(candidate?.selectedStaticUrl, stringValue(candidate?.staticUrl));
+  const sourceState = objectValue(candidate?.sourceStateEvidence);
+  const blockers = listValue(candidate?.blockers);
+  const evidenceReasons = listValue(candidate?.evidenceReasons);
+  const ignoredAlternatives = listValue(candidate?.ignoredAlternatives);
+  return `
+    <div class="admin-source-policy-row admin-source-policy-migration-link-row" data-source-policy-migration-link-index="${index}">
+      <div class="admin-source-policy-row-main">
+        <div>
+          <div class="admin-source-policy-name">${escapeHtml(providerName)}</div>
+          <div class="admin-source-policy-id">${escapeHtml(providerId)}</div>
+        </div>
+        <div>
+          <div class="admin-source-policy-name">${escapeHtml(staticName)}</div>
+          <div class="admin-source-policy-id">${escapeHtml(staticId)}</div>
+          ${staticUrl ? `<div class="admin-source-policy-id">${escapeHtml(staticUrl)}</div>` : ""}
+        </div>
+      </div>
+      <div class="admin-source-policy-copy">Blocked candidate. Review the blocker evidence before any link is applied.</div>
+      <div class="admin-source-policy-meta">
+        <span><strong>Confidence</strong> ${escapeHtml(formatPercent(candidate?.confidence))}</span>
+        <span><strong>API eligible</strong> ${candidate?.apiEligible === true ? "Yes" : "No"}</span>
+        <span><strong>Blockers</strong> ${renderEvidenceList(blockers)}</span>
+        <span><strong>Evidence</strong> ${renderEvidenceList(evidenceReasons)}</span>
+        <span><strong>Last kept</strong> ${numberValue(sourceState.lastKeptCount).toLocaleString()}</span>
+        <span><strong>Last status</strong> ${escapeHtml(formatMachineLabel(sourceState.lastStatus))}</span>
+        <span><strong>Evidence score</strong> ${numberValue(sourceState.evidenceScore).toLocaleString()}</span>
+        <span><strong>Ignored alternatives</strong> ${ignoredAlternatives.length.toLocaleString()}</span>
+      </div>
+      <div class="admin-source-policy-actions"><span class="muted">Read-only blocked candidate.</span></div>
+    </div>
+  `;
+}
+
 function renderLinkedMigrationIdentityRow(candidate, index) {
   const providerName = stringValue(candidate?.providerSourceName, stringValue(candidate?.providerSourceId, "Unknown provider"));
   const providerId = stringValue(candidate?.providerSourceId, "unknown-provider");
@@ -412,6 +456,22 @@ function renderMigrationLinkReviewSection(candidates, linkedCandidates) {
         Linked providers stay visible here so Admin-owned links can be cleared after fetch/soak. Suppression evidence requires repeated successful provider fetches; one validated fetch may not be enough.
       </div>
       <div class="admin-source-policy-list">${linkedContent}</div>
+    </div>
+  `;
+}
+
+function renderBlockedMigrationLinkSection(blockedCandidates) {
+  const rows = Array.isArray(blockedCandidates) ? blockedCandidates : [];
+  const content = rows.length
+    ? rows.map((candidate, index) => renderBlockedMigrationLinkCandidate(candidate, index)).join("")
+    : '<div class="muted">No blocked migration link candidates are available.</div>';
+  return `
+    <div class="admin-source-policy-migration-link-review">
+      <h4>Blocked Migration Link Candidates</h4>
+      <div class="admin-source-policy-copy">
+        These provider/static pairs are evidence-backed but not yet reviewable. Apply actions stay limited to API-eligible review candidates.
+      </div>
+      <div class="admin-source-policy-list">${content}</div>
     </div>
   `;
 }
@@ -495,6 +555,7 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
   if (!reviewEl) return;
   const rows = getPairs(payload);
   const migrationLinkCandidates = getMigrationLinkReviewCandidates(payload);
+  const blockedMigrationLinkCandidates = getMigrationLinkBlockedCandidates(payload);
   const linkedMigrationCandidates = getMigrationLinkLinkedCandidates(payload);
   const suppressionEligibilityRows = getSuppressionEligibilityRows(payload);
   const selectedFilter = normalizeFilterKey(options?.selectedFilter);
@@ -504,6 +565,7 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
     selectedFilter,
     rows,
     migrationLinkCandidates,
+    blockedMigrationLinkCandidates,
     linkedMigrationCandidates,
     suppressionEligibilityRows
   });
@@ -529,6 +591,7 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
         : `<div class="muted">${escapeHtml(emptyText)}</div>`}
     </div>
     ${renderMigrationLinkReviewSection(migrationLinkCandidates, linkedMigrationCandidates)}
+    ${renderBlockedMigrationLinkSection(blockedMigrationLinkCandidates)}
     ${renderSuppressionEligibilitySection(suppressionEligibilityRows)}
   `;
 

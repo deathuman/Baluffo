@@ -93,6 +93,7 @@ STATIC_LIKE_STAGES = {"generic_static", "seed_careers_page", "sheet_directory"}
 CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS = 3
 CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT = 5
 CONSERVATIVE_CLEANUP_PROPOSAL_STALE_AFTER_SECONDS = 24 * 60 * 60
+PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT = 5
 PROVIDER_ID_FIELDS = (
     "slug",
     "account",
@@ -1619,6 +1620,23 @@ def _ignored_alternative_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _provider_coverage_link_backfill_sort_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        clean_text(row.get("providerSourceName")).lower(),
+        clean_text(row.get("providerSourceId")).lower(),
+        clean_text(row.get("staticSourceName")).lower(),
+        clean_text(row.get("staticSourceId")).lower(),
+        -float(row.get("confidence") or 0.0),
+        clean_text(row.get("recommendedAction")).lower(),
+    )
+
+
+def _blocked_link_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    blocked = [dict(row) for row in rows if _link_blockers(row)]
+    blocked.sort(key=_provider_coverage_link_backfill_sort_key)
+    return blocked
+
+
 def _recommended_api_payload(row: dict[str, Any]) -> dict[str, Any]:
     confidence = round(float(row.get("confidence") or 0), 2)
     recommended_action = (
@@ -1912,8 +1930,15 @@ def _provider_coverage_link_backfill_section(
         )
     links.extend(diagnostic_rows)
     candidate_links = [row for row in links if _is_candidate_link(row)]
+    blocked_candidates = _blocked_link_candidates(candidate_links)
     blocker_counts = Counter(
         blocker for row in links for blocker in row.get("blockers", []) if clean_text(blocker)
+    )
+    blocked_reason_counts = Counter(
+        blocker
+        for row in blocked_candidates
+        for blocker in row.get("blockers", [])
+        if clean_text(blocker)
     )
     ambiguity_groups = _ambiguity_groups(links)
     exact_rule_match_count = sum(
@@ -1940,6 +1965,7 @@ def _provider_coverage_link_backfill_section(
     section = {
         "activeProviderWithoutMigrationIdentityCount": len(active_without_identity),
         "candidateLinkCount": len(candidate_links),
+        "blockedCount": len(blocked_candidates),
         "highConfidenceLinkCount": len(high_confidence),
         "mediumConfidenceLinkCount": len(medium_confidence),
         "ambiguousProviderCount": len(ambiguity_groups),
@@ -1954,6 +1980,9 @@ def _provider_coverage_link_backfill_section(
         "resolvedBySourceStateCount": resolved_by_source_state,
         "resolvedByAdvisoryIdentityCount": resolved_by_advisory,
         "unresolvedAmbiguousCount": int(blocker_counts.get("ambiguous_static_match") or 0),
+        "blockedReasonCounts": dict(
+            sorted(blocked_reason_counts.items(), key=lambda item: (-item[1], item[0]))
+        ),
         "rejectedLinkCount": sum(
             1
             for row in links
@@ -1965,6 +1994,8 @@ def _provider_coverage_link_backfill_section(
         "ambiguityGroups": ambiguity_groups,
         "ambiguityResolutionExamples": resolution_examples[:8],
         "reviewCandidates": review_candidates,
+        "blockedCandidates": blocked_candidates,
+        "blockedExamples": blocked_candidates[:PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT],
         "links": links,
     }
     gates: list[dict[str, Any]] = []
@@ -2769,6 +2800,44 @@ def _review_candidates_markdown_rows(report: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _blocked_candidates_markdown_rows(report: dict[str, Any]) -> list[str]:
+    candidates = json_object_rows(
+        as_json_object(
+            as_json_object(report.get("sections")).get("providerCoverageLinkBackfill")
+        ).get("blockedCandidates")
+    )
+    lines = [
+        "| Provider | Selected static | Confidence | Blockers | Evidence | Last kept | Last status |",
+        "|----------|-----------------|------------|----------|----------|-----------|-------------|",
+    ]
+    if not candidates:
+        lines.append("| none | none | `0` | none | none | `0` | none |")
+        return lines
+    for candidate in candidates[:10]:
+        evidence = as_json_object(candidate.get("sourceStateEvidence"))
+        blockers = ", ".join(
+            clean_text(blocker)
+            for blocker in as_json_list(candidate.get("blockers"))
+            if clean_text(blocker)
+        )
+        evidence_reasons = ", ".join(
+            clean_text(reason)
+            for reason in as_json_list(candidate.get("evidenceReasons"))
+            if clean_text(reason)
+        )
+        lines.append(
+            "| "
+            f"{clean_text(candidate.get('providerSourceName')) or clean_text(candidate.get('providerSourceId'))} | "
+            f"{clean_text(candidate.get('selectedStaticSourceName')) or clean_text(candidate.get('selectedStaticSourceId'))} | "
+            f"`{candidate.get('confidence')}` | "
+            f"`{blockers or 'none'}` | "
+            f"`{evidence_reasons or 'none'}` | "
+            f"`{_int_value(evidence.get('lastKeptCount'))}` | "
+            f"`{clean_text(evidence.get('lastStatus'))}` |"
+        )
+    return lines
+
+
 def _suppression_eligibility_markdown_rows(report: dict[str, Any]) -> list[str]:
     rows = json_object_rows(
         as_json_object(as_json_object(report.get("sections")).get("suppressionEligibility")).get(
@@ -2906,6 +2975,10 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         "### Review candidates",
         "",
         *_review_candidates_markdown_rows(report),
+        "",
+        "### Blocked candidates",
+        "",
+        *_blocked_candidates_markdown_rows(report),
         "",
         *_markdown_table(
             list(

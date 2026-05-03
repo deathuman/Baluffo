@@ -71,6 +71,11 @@ Open Admin/Ops and use the Source Policy Review panel. The Migration Link Review
 sections.providerCoverageLinkBackfill.reviewCandidates
 ```
 
+The same backfill section may also include `sections.providerCoverageLinkBackfill.blockedCandidates`
+when candidate links exist but are not yet reviewable. A non-zero `candidateLinkCount` with an
+empty `reviewCandidates` list means the queue is explainable only through the blocked-candidate
+surface.
+
 For each candidate, review:
 
 - provider and selected static source identity
@@ -193,7 +198,7 @@ Source-policy artifacts must not appear in source-sync:
 
 | State | Likely meaning | Next action |
 |-------|----------------|-------------|
-| No review candidates | Discovery/fetch/soak did not find provider/static links with enough evidence for manual review. | Run discovery, fetch, and soak again. Inspect `providerMigrationActivation`, `providerCoverageLinkBackfill.blockerCounts`, and missing/malformed artifact warnings. |
+| No review candidates | Discovery/fetch/soak did not find provider/static links with enough evidence for manual review. | Run discovery, fetch, and soak again. Inspect `providerMigrationActivation`, `providerCoverageLinkBackfill.blockerCounts`, `providerCoverageLinkBackfill.blockedCandidates`, and missing/malformed artifact warnings. |
 | Only ambiguous candidates | Multiple static rows match the same provider and no deterministic evidence selects one. | Review `ambiguityGroups`, `candidateStatics`, and ignored alternatives. Do not apply a link until one candidate becomes `apiEligible=true` with clear evidence. |
 | Medium-confidence candidate only | Source-state evidence selected one static source, but exact advisory identity is missing. | Review `whyNotHighConfidence`, source-state evidence, and ignored alternatives. Apply only if the evidence is acceptable to a human reviewer. |
 | Provider linked but success streak stuck at `1` | The next fetch likely skipped the provider as fresh, so no second real success was recorded. | Use `python src/jobs_fetcher.py --force-refresh-all` for validation, or wait until the provider is no longer fresh. Do not count `skip_fresh` as success. |
