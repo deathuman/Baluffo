@@ -1,6 +1,6 @@
 # Documentation Archive
 
-> Historical cleanup and refactor records were trimmed on 2026-04-26, legacy active-plan routing was pruned again on 2026-04-30, and the completed jobs-fetcher simplification closeout was archived on 2026-05-03.
+> Historical cleanup and refactor records were trimmed on 2026-04-26, legacy active-plan routing was pruned again on 2026-04-30, and the completed jobs-fetcher plus dedup lifecycle readiness closeouts were archived on 2026-05-03.
 
 This repository now keeps active documentation in `docs/` and relies on git history for detailed cleanup records, old refactor charters, and completed task logs. The archive is intentionally small so the docs remain useful for a personal project.
 
@@ -17,7 +17,8 @@ Retired archive categories:
 - Time-bound scraping/fetch run notes that no longer describe current behavior.
 - April 2026 repo-analysis residual trackers and early source-discovery HTTP-recovery snapshots.
 - Completed jobs-fetcher broad lifecycle/C901 simplification closeout lives in [`jobs-fetcher-aggressive-simplification-closeout.md`](jobs-fetcher-aggressive-simplification-closeout.md).
+- Closed dedup lifecycle readiness closeout lives in [`dedup-lifecycle-readiness-closeout.md`](dedup-lifecycle-readiness-closeout.md); active work moved to [`../plans/dedup-current-run-blocker-review-plan.md`](../plans/dedup-current-run-blocker-review-plan.md).
 
-Current active follow-up trackers live in [`../plans/`](../plans/), including source-discovery evidence follow-ups and dedup lifecycle readiness.
+Current active follow-up trackers live in [`../plans/`](../plans/), including source-discovery evidence follow-ups and current-run dedup blocker review.
 
 For exact historical detail, inspect git history around the removed file names or the commits that introduced the related behavior.

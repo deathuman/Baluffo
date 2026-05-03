@@ -1,10 +1,10 @@
 # Task/Progress Operational Console Plan
 
-> - **Status:** Active next-step tracker
+> - **Status:** Active compatible plan
 > - **Use this when:** improving Admin task/progress UX, reducing frontend interpretation drift, and making long-running task behavior explicit for operations
 > - **Canonical for:** shared task-run presenter design, live-vs-history rendering split, stale task handling UI, and operational triage UX for fetch/discovery/sync tasks
 > - **Not canonical for:** task/task-state runtime contracts, bridge route definitions, or task execution engine behavior (use `admin-bridge-api.md`, `admin-task-state` domain code, and pipeline docs)
-> - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../testing.md`](../testing.md), and [`source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md), [`../testing.md`](../testing.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
 ## Verdict
@@ -19,6 +19,8 @@ The current foundation is correct for an internal telemetry system:
 - Frontend polling, event dedupe, and reattach behavior already exist.
 
 The remaining risk is usability, operational clarity, and duplication across frontend modules.
+
+This plan is compatible with [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md) by separating depth from overview. The health-dashboard plan owns the Operations Health layout and compact Discovery / Fetch / Sync lane. This task/progress plan owns the shared task-run presenter, detailed Current Runs cards, stale/orphaned display states, run timelines, and run-scoped diagnostics.
 
 ## Current implementation strength
 
@@ -69,6 +71,7 @@ Recommended structure:
 
 - Current Runs: card-based cards with high-signal status, target, stage, progress, and quick diagnostics.
 - Completed Runs: existing table shape preserved, but with row expansion for task details.
+- Operations Health: compact task-status lane only, owned by [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md), and fed by the same task-run interpretation once the shared presenter exists.
 
 Example card states:
 
@@ -137,7 +140,9 @@ The fetcher report already carries meaningful runtime signals:
 - failure buckets
 - static/provider quality signals
 
-Move this into persistent Admin analysis panels instead of only log lines.
+Move this into persistent run analysis panels instead of only log lines.
+
+Compatibility note: the health-dashboard plan also groups latest fetch-health metrics into dashboard sections. This plan should own run-scoped analysis attached to a specific current or completed run, while the health-dashboard plan owns the latest aggregated health view. Where possible, both should use the same normalization helpers, but they should not duplicate renderer ownership.
 
 ### 6) Pipeline stages are visually disconnected
 
@@ -153,6 +158,24 @@ Completed        Running         Waiting
 
 This turns task state into an operational picture instead of isolated status tokens.
 
+Compatibility note: the health-dashboard plan implements a compact version of this lane in Operations Health. This task/progress plan implements the richer version only after `frontend/shared/task-run-view-model.js` exists, so both surfaces can share labels, progress ratios, and severity decisions.
+
+## Compatibility with Admin Health Dashboard Plan
+
+| Area | Task/progress plan owns | Health-dashboard plan owns | Integration rule |
+|------|--------------------------|----------------------------|------------------|
+| Task interpretation | Shared `task-run-view-model` for live/history/report payloads | Health-specific view model for `/ops/health` and `/ops/fetcher-metrics` sections | Health can consume the shared task model for its compact lane, but task model should not depend on health dashboard code. |
+| Current tasks | Full cards, stale/orphaned states, timelines, diagnostics | Compact Discovery / Fetch / Sync lane | Do not build full task cards inside `#admin-ops-fetcher-metrics`. |
+| Fetch analysis | Run-scoped analysis for current/selected completed run | Latest health-oriented fetch metrics grouped in the dashboard | Share formatters where useful; keep render surfaces separate. |
+| Diagnostics | Current/last run event diagnostics, copy/export | Normalized section-summary copy for health sections | Avoid two raw-payload copy controls for the same event data. |
+| Source-policy/dedup review | Only task progress/status context | Existing review queues and health summaries | Do not move review mutations into task cards. |
+
+Execution order is flexible:
+
+- If the health-dashboard plan lands first, its compact task lane should use `deriveAdminRunsModel()` and stay deliberately shallow.
+- If this task/progress plan lands first, the health-dashboard plan should consume `frontend/shared/task-run-view-model.js` for the compact lane instead of adding a second task interpretation layer.
+- If both are implemented in the same milestone, create the shared task presenter first, then the health dashboard can depend on it for task lane labels only.
+
 ## Implementation plan
 
 ### Step 1 — Create shared task run view model
@@ -166,6 +189,8 @@ Target files:
 - `frontend/admin/domain/progress.js`
 - `frontend/admin/domain/runs.js`
 
+The shared model should be small and task-focused. It should not import Admin health-dashboard modules or understand `/ops/fetcher-metrics` section layout.
+
 ### Step 2 — Replace generic current table with live cards
 
 Keep completed history as a compact table.
@@ -174,6 +199,8 @@ Target files:
 
 - `frontend/admin/render/ops-history.js`
 - `frontend/admin/domain/runs.js`
+
+This step is separate from the compact task-status lane in Operations Health. Health may show "Fetch running, 6/12 sources" while this step owns the larger card with progress bar, current target, timeline, and diagnostics entry points.
 
 ### Step 3 — Add stalled/orphaned derived states
 
@@ -197,6 +224,8 @@ Promote key report diagnostics into viewable sections:
 - failure buckets
 - quality and confidence signals
 
+Attach these panels to the current or selected run. The dashboard-level latest fetch-health grouping remains in [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md).
+
 ### Step 5 — Keep a single event stream via `recentEvents`
 
 Do not reintroduce task-specific event shapes outside shared normalizers.
@@ -209,8 +238,16 @@ Continue using normalized `taskProgress`, `workItems`, `recentEvents` and extend
 2. Current Runs cards implemented
 3. Completed Runs table kept with row expansion
 4. Stalled/orphaned state rendered explicitly
-5. Latest fetch run analysis panel added
+5. Current/selected fetch run analysis panel added
 6. Diagnostics copy/export added for current and last run
+
+Health-dashboard dependency boundary:
+
+```text
+Operations Health overview: admin-health-dashboard-console-plan.md
+Detailed task console: this plan
+Shared task labels/progress/severity: frontend/shared/task-run-view-model.js
+```
 
 ## Success criteria
 
@@ -219,6 +256,7 @@ Continue using normalized `taskProgress`, `workItems`, `recentEvents` and extend
 - Stalled and orphaned conditions are explicit and actionable.
 - Operators can distinguish live status, completion summary, and diagnostics without mixed log streams.
 - Run analysis preserves key runtime details that currently survive only in log text.
+- Health-dashboard latest metrics and run-scoped analysis do not diverge in labels or severity.
 - Backend contracts stay unchanged during this milestone.
 
 ## Validation targets

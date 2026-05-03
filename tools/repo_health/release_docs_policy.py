@@ -400,6 +400,7 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
     assert "Refactor record" not in index_text
     assert archive_files == [
         "docs/archive/README.md",
+        "docs/archive/dedup-lifecycle-readiness-closeout.md",
         "docs/archive/jobs-fetcher-aggressive-simplification-closeout.md",
     ]
 
