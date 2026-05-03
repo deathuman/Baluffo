@@ -1,4 +1,5 @@
 import { escapeHtml } from "../../shared/ui/index.js";
+import { buildTaskRunView } from "../../shared/task-run-view-model.js";
 import {
   formatScrapyStaticSourcesTailBadge,
   formatTaskProgressDetail
@@ -146,7 +147,33 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     return;
   }
 
+  const toCardView = (row, rowArea, index) => {
+    const runView = buildTaskRunView(row);
+    const key = [
+      rowArea,
+      String(row?.id || ""),
+      String(row?.runId || ""),
+      runView.taskType,
+      String(row?.startedAt || ""),
+      String(row?.finishedAt || ""),
+      String(index)
+    ].join("|");
+    return {
+      ...runView,
+      key,
+      rowArea,
+      startedText: formatDateTime(row?.startedAt || ""),
+      statusClass: runView.severity === "critical"
+        ? "critical"
+        : runView.severity === "warning"
+          ? "warning"
+          : "healthy",
+      progressPercent: Math.round(Math.max(0, Math.min(1, Number(runView.progressRatio || 0))) * 100)
+    };
+  };
+
   const toRowView = (row, rowArea, index) => {
+    const runView = buildTaskRunView(row);
     const rawStatus = String(row?.displayStatus || row?.status || "unknown");
     const statusToken = rawStatus.toLowerCase();
     const summary = row?.summary || {};
@@ -180,12 +207,16 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     return {
       key,
       rowArea,
-      typeText: type,
-      statusText: rawStatus,
-      statusClass: getRunStatusChipClass(rawStatus),
+      typeText: runView.taskType || type,
+      statusText: runView.statusLabel || rawStatus,
+      statusClass: runView.severity === "critical"
+        ? "critical"
+        : runView.severity === "warning"
+          ? "warning"
+          : getRunStatusChipClass(rawStatus),
       statusTitle: buildRunStatusTooltip(row),
       isRunning: statusToken === "running" || statusToken === "started",
-      durationText: formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),
+      durationText: runView.durationLabel || runView.elapsedLabel || formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),
       outputOrQueuedText: (row?.isLive && liveRunDetail)
         ? liveRunDetail
         : row?.type === "discovery"
@@ -202,13 +233,21 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     };
   };
 
-  const currentViews = currentRows.map((row, index) => toRowView(row, "current", index));
-  const visibleCompletedViews = visibleCompletedRows.map((row, index) => toRowView(row, "current", currentRows.length + index));
+  const currentCardViews = currentRows.map((row, index) => toCardView(row, "current", index));
+  const visibleCompletedViews = visibleCompletedRows.map((row, index) => toRowView(row, "current", index));
   const olderCompletedViews = olderCompletedRows.map((row, index) => toRowView(row, "completed_older", index));
-  const primaryViews = [...currentViews, ...visibleCompletedViews];
 
   const structureSignature = JSON.stringify({
-    current: primaryViews.map(row => row.key),
+    currentCards: currentCardViews.map(row => [
+      row.key,
+      row.status,
+      row.progressLabel,
+      row.progressPercent,
+      row.elapsedLabel,
+      row.warningSummary,
+      row.failureSummary
+    ]),
+    currentRows: visibleCompletedViews.map(row => row.key),
     completedOlder: olderCompletedViews.map(row => row.key)
   });
 
@@ -242,7 +281,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
   };
 
   if (canPatchInPlace && historyEl.dataset.opsStructureSig === structureSignature) {
-    updateExistingRows(primaryViews, "current");
+    updateExistingRows(visibleCompletedViews, "current");
     updateExistingRows(olderCompletedViews, "completed_older");
     return;
   }
@@ -263,9 +302,49 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       </div>
     `).join("");
 
+  const renderCurrentCards = views => views.map(view => {
+    const modeClass = view.progressMode === "determinate" ? "determinate" : "indeterminate";
+    const progressStyle = view.progressMode === "determinate" ? ` style="width: ${view.progressPercent}%"` : "";
+    const targetHtml = view.currentTarget
+      ? `<div class="admin-ops-run-card-target"><strong>Current</strong> ${escapeHtml(view.currentTarget)}</div>`
+      : "";
+    const warningHtml = view.warningSummary
+      ? `<div class="admin-ops-run-card-warning">${escapeHtml(view.warningSummary)}</div>`
+      : "";
+    const failureHtml = view.failureSummary
+      ? `<div class="admin-ops-run-card-failure">${escapeHtml(view.failureSummary)}</div>`
+      : "";
+    return `
+      <article class="admin-ops-run-card admin-ops-run-card-${escapeHtml(view.status)}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
+        <div class="admin-ops-run-card-head">
+          <div>
+            <h4>${escapeHtml(view.title)}</h4>
+            <p>${escapeHtml(view.primaryLabel)}${view.secondaryLabel ? ` | ${escapeHtml(view.secondaryLabel)}` : ""}</p>
+          </div>
+          <span class="admin-status-chip ${view.statusClass}">${escapeHtml(view.statusLabel)}</span>
+        </div>
+        <div class="admin-task-progress ${modeClass}" role="progressbar" aria-label="${escapeHtml(`${view.title} ${view.progressLabel || view.statusLabel}`)}" aria-valuemin="0" aria-valuemax="100"${view.progressMode === "determinate" ? ` aria-valuenow="${view.progressPercent}"` : ""}>
+          <div class="admin-task-progress-track"><div class="admin-task-progress-bar"${progressStyle}></div></div>
+          <div class="admin-task-progress-label">${escapeHtml(view.progressLabel || view.statusLabel)}</div>
+        </div>
+        <div class="admin-ops-run-card-meta">
+          <span>Elapsed ${escapeHtml(view.elapsedLabel)}</span>
+          ${view.startedText ? `<span>Started ${escapeHtml(view.startedText)}</span>` : ""}
+        </div>
+        ${targetHtml}
+        ${warningHtml}
+        ${failureHtml}
+      </article>
+    `;
+  }).join("");
+
   historyEl.innerHTML = `
     <div class="admin-ops-current-runs">
-      <div class="admin-ops-history-title">Runs</div>
+      <div class="admin-ops-history-title">Current Runs</div>
+      ${currentCardViews.length ? `<div class="admin-ops-run-card-grid">${renderCurrentCards(currentCardViews)}</div>` : '<div class="no-results">No current runs.</div>'}
+    </div>
+    <div class="admin-ops-completed-runs">
+      <div class="admin-ops-history-title">Recent Runs</div>
       <div class="jobs-table-header">
         <div class="admin-row-header admin-ops-history-header">
           <div>Type</div>
@@ -277,7 +356,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
         </div>
       </div>
       <div class="jobs-table-body">
-        ${primaryViews.length ? renderRows(primaryViews) : '<div class="no-results">No run history yet.</div>'}
+        ${visibleCompletedViews.length ? renderRows(visibleCompletedViews) : '<div class="no-results">No completed runs yet.</div>'}
       </div>
     </div>
     ${olderCompletedViews.length ? `

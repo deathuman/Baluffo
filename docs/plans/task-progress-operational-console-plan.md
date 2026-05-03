@@ -178,6 +178,11 @@ Execution order is flexible:
 
 ## Implementation plan
 
+### Progress
+
+- [x] First detailed Admin task-console slice: shared frontend task-run presenter plus read-only Current Runs cards.
+- [ ] Completed-run row expansion, run-scoped diagnostics copy/export, and deeper stale/orphaned remediation UX remain deferred.
+
 ### Step 1 — Create shared task run view model
 
 Add a single converter for all task payload shapes.
