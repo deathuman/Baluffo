@@ -1,7 +1,7 @@
 import "../shared/local-data/app-client.js";
-import "./state.js";
+import "./state.js?v=4";
 import "./parsing-utils.js";
-import { boot as bootJobsPage } from "./app.js";
+import { boot as bootJobsPage } from "./app.js?v=4";
 import { emitStartupProbeMetric } from "../../probes/startup-probe.js";
 
 emitStartupProbeMetric("jobs_page_boot_start");

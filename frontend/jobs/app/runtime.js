@@ -1,5 +1,5 @@
 import { AdminConfig as adminConfig } from "../../shared/config/admin-config.js";
-import { JobsStateModule as jobsStateModule } from "../state.js";
+import { JobsStateModule as jobsStateModule } from "../state.js?v=4";
 import { postStartupMetricToBridge, resolveStartupProbeEnabled } from "../../../probes/startup-probe.js";
 import {
   BaluffoJobsParsing as jobsParsing,
@@ -43,7 +43,7 @@ import {
   markSeenJob,
   isJobsCacheStale
 } from "./cache.js";
-import { normalizeLifecycleStatus } from "./filters.js";
+import { normalizeLifecycleStatus } from "./filters.js?v=4";
 import {
   isDesktopRuntimeMode as isDesktopRuntimeModeFromStartup,
   buildJobsPageUrl,
@@ -55,7 +55,7 @@ import {
   compareJobsForSort,
   createFilterOptionsAccumulator,
   finalizeFilterOptions
-} from "./runtime/query.js";
+} from "./runtime/query.js?v=4";
 import { refreshJobsFeed, loadStartupPreviewJobsFeed } from "./feed.js";
 import { setProgressVisibility, setStatusText } from "./runtime/view.js";
 import {
@@ -68,9 +68,9 @@ import {
   fetchJsonFromCandidates as fetchJsonFromCandidatesFromSources,
   renderDataSources as renderDataSourcesFromSources
 } from "./sources.js";
-import { composeJobsRuntime } from "./runtime/composition.js";
+import { composeJobsRuntime } from "./runtime/composition.js?v=4";
 import { createJobsBoot } from "./runtime/boot.js";
-import { createJobsPageFlow } from "./runtime/page-flow.js";
+import { createJobsPageFlow } from "./runtime/page-flow.js?v=4";
 
 const defaultFilters = jobsStateModule.DEFAULT_FILTERS || {
   workType: "",

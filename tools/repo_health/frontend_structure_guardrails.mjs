@@ -18,10 +18,14 @@ function readImports(relPath) {
   const importRegex = /from\s+["']([^"']+)["']/g;
   let match = importRegex.exec(source);
   while (match) {
-    imports.push(match[1]);
+    imports.push(normalizeImportSpecifier(match[1]));
     match = importRegex.exec(source);
   }
   return imports;
+}
+
+function normalizeImportSpecifier(specifier) {
+  return String(specifier || "").replace(/[?#].*$/, "");
 }
 
 function countLines(relPath) {
@@ -50,8 +54,8 @@ test("cleanup structure: page indexes boot direct from sibling app modules", () 
     path.join("frontend", "admin", "index.js")
   ];
   for (const rel of checks) {
-    const source = fs.readFileSync(repoPath(rel), "utf8");
-    assert.match(source, /from "\.\/app\.js"/, `Expected direct app import in ${rel}`);
+    const imports = readImports(rel);
+    assert.equal(imports.includes("./app.js"), true, `Expected direct app import in ${rel}`);
   }
 });
 

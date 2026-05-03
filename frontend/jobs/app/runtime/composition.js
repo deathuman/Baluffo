@@ -9,14 +9,14 @@ import { createJobsBridgeRequest } from "./actions.js";
 import { createJobsAuthController } from "./auth-controller.js";
 import { createJobsEventsController } from "./events.js";
 import { createJobsFeedController } from "./feed-controller.js";
-import { createJobsFiltersController } from "./filters-ui.js";
+import { createJobsFiltersController } from "./filters-ui.js?v=4";
 import { setupJobsListDelegation as setupJobsListDelegationFromEvents } from "./jobs-list-events.js";
 import { createJobsPipelineController } from "./pipeline-controller.js";
 import { createJobsStartupPreviewController } from "./startup-preview.js";
 import { createJobsStartupMetrics } from "./effects.js";
 import { createJobsRuntimeState } from "./state.js";
 import { createJobsUrlPersistence } from "./url-persistence.js";
-import { sortJobs as sortJobsFromQuery } from "./query.js";
+import { sortJobs as sortJobsFromQuery } from "./query.js?v=4";
 
 const JOBS_LOG_SCOPE = "jobs";
 

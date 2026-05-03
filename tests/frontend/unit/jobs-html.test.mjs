@@ -30,6 +30,7 @@ test("jobs html exposes first-slice read-only lifecycle filters", () => {
   assert.match(html, /value="likely_removed">Recently removed<\/option>/);
   assert.match(html, /value="reappeared">Reappeared<\/option>/);
   assert.match(html, /value="preserved_source_failed">Preserved because source failed<\/option>/);
+  assert.match(html, /frontend\/jobs\/index\.js\?v=4/);
   assert.doesNotMatch(html, /preserved_source_skipped/);
 });
 
