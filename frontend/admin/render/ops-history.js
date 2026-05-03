@@ -147,6 +147,12 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     return;
   }
 
+  const truncateText = (value, limit = 180) => {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    return text.length > limit ? `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}...` : text;
+  };
+
   const toCardView = (row, rowArea, index) => {
     const runView = buildTaskRunView(row);
     const key = [
@@ -207,8 +213,12 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     return {
       key,
       rowArea,
+      title: runView.title,
+      primaryLabel: runView.primaryLabel,
+      secondaryLabel: runView.secondaryLabel,
       typeText: runView.taskType || type,
       statusText: runView.statusLabel || rawStatus,
+      severity: runView.severity,
       statusClass: runView.severity === "critical"
         ? "critical"
         : runView.severity === "warning"
@@ -229,7 +239,14 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
         : row?.type === "sync"
           ? Number(String(summary?.error || "").trim().length > 0 ? 1 : 0)
           : Number(summary?.failedSources || 0)).toLocaleString(),
-      finishedText: formatDateTime(row?.finishedAt || row?.startedAt || "")
+      startedText: formatDateTime(row?.startedAt || ""),
+      finishedText: formatDateTime(row?.finishedAt || row?.startedAt || ""),
+      progressLabel: runView.progressLabel || "",
+      warningSummary: runView.warningSummary || "",
+      failureSummary: runView.failureSummary || "",
+      diagnosticHints: Array.isArray(runView.diagnosticHints)
+        ? runView.diagnosticHints.map(hint => truncateText(hint, 160)).filter(Boolean).slice(0, 5)
+        : []
     };
   };
 
@@ -247,8 +264,28 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       row.warningSummary,
       row.failureSummary
     ]),
-    currentRows: visibleCompletedViews.map(row => row.key),
-    completedOlder: olderCompletedViews.map(row => row.key)
+    currentRows: visibleCompletedViews.map(row => [
+      row.key,
+      row.statusText,
+      row.durationText,
+      row.outputOrQueuedText,
+      row.failedText,
+      row.finishedText,
+      row.warningSummary,
+      row.failureSummary,
+      row.diagnosticHints.join("|")
+    ]),
+    completedOlder: olderCompletedViews.map(row => [
+      row.key,
+      row.statusText,
+      row.durationText,
+      row.outputOrQueuedText,
+      row.failedText,
+      row.finishedText,
+      row.warningSummary,
+      row.failureSummary,
+      row.diagnosticHints.join("|")
+    ])
   });
 
   const updateExistingRows = (views, rowArea) => {
@@ -291,7 +328,21 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     historyEl.dataset.opsStructureSig = structureSignature;
   }
 
-  const renderRows = views => views.map(view => `
+  const renderRows = views => views.map(view => {
+    const metaItems = [
+      view.startedText ? `<span><strong>Started</strong> ${escapeHtml(view.startedText)}</span>` : "",
+      view.finishedText ? `<span><strong>Finished</strong> ${escapeHtml(view.finishedText)}</span>` : "",
+      view.durationText ? `<span><strong>Duration</strong> ${escapeHtml(view.durationText)}</span>` : ""
+    ].filter(Boolean).join("");
+    const warningFailureItems = [
+      view.warningSummary ? `<div class="admin-ops-run-detail-warning">${escapeHtml(view.warningSummary)}</div>` : "",
+      view.failureSummary ? `<div class="admin-ops-run-detail-failure">${escapeHtml(view.failureSummary)}</div>` : ""
+    ].filter(Boolean).join("");
+    const hintItems = view.diagnosticHints.length
+      ? `<ul>${view.diagnosticHints.map(hint => `<li>${escapeHtml(hint)}</li>`).join("")}</ul>`
+      : '<div class="muted">No diagnostic hints for this run.</div>';
+    return `
+      <div class="admin-ops-history-run" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
       <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
         <div class="admin-cell">${escapeHtml(view.typeText)}</div>
         <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${view.statusTitle ? ` title="${escapeHtml(view.statusTitle)}"` : ""}>${escapeHtml(view.statusText)}</span></div>
@@ -300,7 +351,28 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
         <div class="admin-cell">${escapeHtml(view.failedText)}</div>
         <div class="admin-cell">${escapeHtml(view.finishedText)}</div>
       </div>
-    `).join("");
+        <details class="admin-ops-run-detail">
+          <summary>${escapeHtml(view.title)} details</summary>
+          <div class="admin-ops-run-detail-body">
+            <div class="admin-ops-run-detail-head">
+              <div>
+                <strong>${escapeHtml(view.primaryLabel)}</strong>
+                ${view.secondaryLabel ? `<span>${escapeHtml(view.secondaryLabel)}</span>` : ""}
+              </div>
+              <span class="admin-status-chip ${view.statusClass}">${escapeHtml(view.statusText)}</span>
+            </div>
+            <div class="admin-ops-run-detail-meta">${metaItems}</div>
+            <div class="admin-ops-run-detail-summary"><strong>Summary</strong> ${escapeHtml(view.progressLabel || view.outputOrQueuedText)}</div>
+            ${warningFailureItems || '<div class="muted">No warnings or failures recorded for this run.</div>'}
+            <div class="admin-ops-run-detail-hints">
+              <strong>Diagnostic hints</strong>
+              ${hintItems}
+            </div>
+          </div>
+        </details>
+      </div>
+    `;
+  }).join("");
 
   const renderCurrentCards = views => views.map(view => {
     const modeClass = view.progressMode === "determinate" ? "determinate" : "indeterminate";

@@ -90,6 +90,7 @@ test("admin render: schedule/trends/history render deterministic core text", () 
       {
         type: "discovery",
         status: "error",
+        startedAt: "2026-03-08T08:58:00.000Z",
         durationMs: 950,
         finishedAt: "2026-03-08T09:00:00.000Z",
         summary: { queuedCandidateCount: 5, failedProbeCount: 2 }
