@@ -275,6 +275,11 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   });
 
   assert.match(metricsEl.innerHTML, /Current Run Merges/i);
+  assert.match(metricsEl.innerHTML, /admin-ops-metrics-section-runtime/i);
+  assert.match(metricsEl.innerHTML, />Runtime</i);
+  assert.match(metricsEl.innerHTML, /admin-ops-metrics-section-dedup/i);
+  assert.match(metricsEl.innerHTML, />Dedup Review</i);
+  assert.match(metricsEl.innerHTML, /Read-only gate, review-state, and blocker evidence/i);
   assert.match(metricsEl.innerHTML, /Bundle Collisions/i);
   assert.match(metricsEl.innerHTML, /Risky Merges/i);
   assert.match(metricsEl.innerHTML, /Dedup evidence/i);

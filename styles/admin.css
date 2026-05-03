@@ -381,6 +381,44 @@
   font-size: 0.85rem;
 }
 
+.admin-ops-metrics-section {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.68rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-4) 56%, transparent);
+}
+
+.admin-ops-metrics-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.admin-ops-metrics-section-head h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.admin-ops-metrics-section-head p {
+  margin: 0.18rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.admin-ops-metrics-section-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.45rem;
+  min-width: 0;
+}
+
 .admin-dedup-audit-gate-card {
   display: grid;
   gap: 0.55rem;

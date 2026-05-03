@@ -1,4 +1,5 @@
 import { escapeHtml } from "../../shared/ui/index.js";
+import { buildOpsFetcherMetricSections } from "../domain/ops-health-view-model.js";
 import {
   FETCHER_FAILURE_BUCKET_LABELS,
   formatDuration,
@@ -570,6 +571,22 @@ function formatDedupAuditGateExamples(rows, emptyText) {
       return escapeHtml(`${title} @ ${company} (${cause}, ${quality}, ${action}${originText})`);
     })
     .join(" | ");
+}
+
+function formatOpsFetcherMetricSection(section) {
+  return `
+    <section class="admin-ops-metrics-section admin-ops-metrics-section-${escapeHtml(section.key)}">
+      <div class="admin-ops-metrics-section-head">
+        <div>
+          <h4>${escapeHtml(section.title)}</h4>
+          <p>${escapeHtml(section.description)}</p>
+        </div>
+      </div>
+      <div class="admin-ops-metrics-section-body">
+        ${section.html}
+      </div>
+    </section>
+  `;
 }
 
 function formatDedupReviewStateSummary(summary, readWarning = "") {
@@ -1376,7 +1393,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
       </div>
     `;
 
-  metricsEl.innerHTML = `
+  const runtimeSectionHtml = `
     <div class="admin-total-card">
       <div class="admin-total-label">Latest Runtime</div>
       <div class="admin-total-value">${formatDuration(Number(latest?.durationMs || 0))}</div>
@@ -1425,13 +1442,19 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
       <div class="admin-total-label">Source Failures</div>
       <div class="admin-total-value">${failed.toLocaleString()} / ${sourceCount.toLocaleString()} (${(failureRate * 100).toFixed(1)}%)</div>
     </div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest sources</strong>: ${escapeHtml(slowestSummary)}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
+  `;
+
+  const failuresSectionHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top-level failed sources</strong>: ${Number(summary?.topLevelFailedSources || 0).toLocaleString()}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Grouped detail failures</strong>: ${Number(summary?.detailFailureCount || 0).toLocaleString()}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Failure buckets</strong></div>
     ${bucketSummaryHtml}
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest sources</strong>: ${escapeHtml(slowestSummary)}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
+  `;
+
+  const dedupSectionHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, known mirror pair ${Number(mergeReasonCounts?.knownMirrorPair || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
     ${formatDedupAuditGateCard(dedupAuditGate)}
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewStateSummary, dedupReviewStateReadWarning))}</div>
@@ -1456,10 +1479,16 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top source-bundle outliers</strong>: ${topOutlierSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review examples</strong>: ${reviewQueueSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Risky merge examples</strong>: ${riskyMergeSummary}</div>
+  `;
+
+  const sourceHealthSectionHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Sources needing attention</strong>: ${attentionSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Zero kept / needs review</strong>: ${zeroReviewSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Browser fallback recommended</strong>: ${browserSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top productive sources</strong>: ${productiveSummary}</div>
+  `;
+
+  const sourcePolicySectionHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Runtime-suppressed static sources</strong>: ${dynamicRedundantSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Validated staged providers</strong>: ${validatedProviderSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Provider coverage needs review</strong>: ${reviewProviderSummary}</div>
@@ -1471,6 +1500,14 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Conservative static cleanup proposals</strong>: total candidates ${Number(conservativeStaticCleanupProposals?.totalCandidateCount || 0).toLocaleString()}, proposal-ready ${Number(conservativeStaticCleanupProposals?.proposalCount || 0).toLocaleString()}, stale ${Number(conservativeStaticCleanupProposals?.staleCount || 0).toLocaleString()}, blocked ${Number(conservativeStaticCleanupProposals?.blockedCount || 0).toLocaleString()}. Freshness: ${escapeHtml(cleanupFreshnessSummary)}. Blockers: ${escapeHtml(cleanupBlockedReasonSummary)} Ready: ${cleanupProposalReadySummary} Blocked: ${cleanupBlockedSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Source-policy review</strong>: local review pairs ${Number(sourcePolicyRecommendationExport?.reviewStatePairCount || 0).toLocaleString()}, force-paused ${Number(sourcePolicyRecommendationExport?.manualForcePausedCount || 0).toLocaleString()}. Use the Source Policy Review queue for local, reversible actions.</div>
   `;
+
+  metricsEl.innerHTML = buildOpsFetcherMetricSections({
+    runtime: runtimeSectionHtml,
+    failures: failuresSectionHtml,
+    dedup: dedupSectionHtml,
+    sourceHealth: sourceHealthSectionHtml,
+    sourcePolicy: sourcePolicySectionHtml
+  }).map(formatOpsFetcherMetricSection).join("");
 
   if (typeof options?.onDedupReviewAction === "function") {
     const rowGroups = {

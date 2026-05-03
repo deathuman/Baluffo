@@ -235,6 +235,10 @@ test("admin render: fetcher metrics render failure buckets and examples", () => 
   });
 
   assert.match(metricsEl.innerHTML, /Top-level failed sources/i);
+  assert.match(metricsEl.innerHTML, /admin-ops-metrics-section-runtime/i);
+  assert.match(metricsEl.innerHTML, /admin-ops-metrics-section-failures/i);
+  assert.match(metricsEl.innerHTML, />Failures</i);
+  assert.match(metricsEl.innerHTML, /Fetcher failure counts, buckets, and source examples/i);
   assert.match(metricsEl.innerHTML, /Grouped detail failures/i);
   assert.match(metricsEl.innerHTML, /Failure buckets/i);
   assert.match(metricsEl.innerHTML, /Extract Zero/i);

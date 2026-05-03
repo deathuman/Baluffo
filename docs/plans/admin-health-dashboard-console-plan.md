@@ -280,16 +280,17 @@ Keep this dedicated active plan doc registered in [`docs/INDEX.md`](../INDEX.md)
 - [x] Add dedicated active plan doc.
 - [x] Register it in [`docs/INDEX.md`](../INDEX.md).
 - [x] Validate current route contracts and frontend ownership.
-- [ ] Add `frontend/admin/domain/ops-health-view-model.js`.
-- [ ] Refactor `/ops/fetcher-metrics` rendering to consume sectioned view-model groups.
-- [ ] Preserve dedup review button wiring after sectionization.
-- [ ] Keep Source Policy Review as a separate action queue and add only summary/context in health.
+- [x] Add `frontend/admin/domain/ops-health-view-model.js`.
+- [x] Refactor `/ops/fetcher-metrics` rendering to consume sectioned view-model groups.
+- [x] Preserve dedup review button wiring after sectionization.
+- [x] Keep Source Policy Review as a separate action queue and add only summary/context in health.
 - [ ] Add progressive disclosure for long example lists.
 - [ ] Add diagnostics-copy behavior for normalized/bounded section payloads.
 - [ ] Add compact task-status lane using the existing run model.
 - [ ] Keep detailed task-card/stale-state behavior deferred to the task/progress plan.
-- [ ] Add/adjust styling for compact section cards and long-list readability.
-- [ ] Add unit test coverage for section rendering, bounded lists, copy behavior, and action handlers.
+- [x] Add/adjust styling for compact section cards and long-list readability.
+- [x] Add unit test coverage for section rendering.
+- [ ] Add unit test coverage for bounded lists, copy behavior, and action handlers.
 - [ ] Reconcile smoke selectors that assume `#admin-ops-fetcher-metrics` is populated.
 
 ## Risks and Constraints

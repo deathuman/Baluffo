@@ -15,7 +15,7 @@ import {
   renderTotalsHtml,
   renderUsersEmptyHtml,
   renderUsersTableHtml
-} from "../../render.js";
+} from "../../render.js?v=1";
 import { adminService } from "../../services.js";
 import { createAdminAuthController } from "../auth.js";
 import { createAdminDiscoveryController } from "../discovery.js";

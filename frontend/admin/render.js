@@ -12,4 +12,4 @@ export {
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "./render/ops.js";
+} from "./render/ops.js?v=1";
