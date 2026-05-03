@@ -1,13 +1,13 @@
 # Dedup Current-Run Blocker Review Closeout
 
-> - **Status:** Closed: transferred to Google Sheets role-bucket audit
+> - **Status:** Closed: transferred through Google Sheets audit to provider/static reconciliation
 > - **Use this when:** checking why current-run blocker review was retired
 > - **Canonical for:** current-run blocker triage closure, transferred identity-audit ownership, and lifecycle UX re-entry criteria
 > - **Not canonical for:** persisted payload schemas, bridge route contracts, dedup merge rules, or saved-job storage contracts
-> - **Then inspect:** [`../snapshots/dedup-current-run-blocker-triage-closure-2026-05-03.md`](../snapshots/dedup-current-run-blocker-triage-closure-2026-05-03.md), [`../plans/dedup-google-sheets-role-bucket-audit-plan.md`](../plans/dedup-google-sheets-role-bucket-audit-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md), [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
-The broad dedup lifecycle readiness tracker is closed, and this current-run blocker review tracker is now closed too. The latest evidence shows the remaining blocker is not a small row-review queue; it is a broad Google Sheets role-bucket audit with smaller supporting `secondaryKey` and `sparseIdentity` evidence.
+The broad dedup lifecycle readiness tracker is closed, and this current-run blocker review tracker is now closed too. Follow-up Google Sheets role-bucket audit later made the dominant role-bucket blocker decisionable, and active ownership moved to provider/static disagreement reconciliation.
 
 ## Closeout State
 
@@ -22,7 +22,7 @@ The broad dedup lifecycle readiness tracker is closed, and this current-run bloc
 
 Closed as blocked but transferred.
 
-The gate is decisionable enough to retire this review tracker, but lifecycle UX remains paused. The next owner is [`../plans/dedup-google-sheets-role-bucket-audit-plan.md`](../plans/dedup-google-sheets-role-bucket-audit-plan.md), which should determine whether broad Google Sheets role-bucket diagnostics represent taxonomy buckets, listing/search buckets, parser-normalized role titles, weak title/company grouping, or a narrow behavior change candidate.
+The gate is decisionable enough to retire this review tracker, but lifecycle UX remains paused. The next active owner is [`../plans/dedup-provider-static-disagreement-reconciliation-plan.md`](../plans/dedup-provider-static-disagreement-reconciliation-plan.md), after Google Sheets role-bucket audit closed as completed-but-transferred.
 
 ## Deferred Work
 
