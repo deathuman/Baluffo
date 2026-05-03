@@ -42,4 +42,4 @@ The new `carried_location_variant` row is a carried title/company collision wher
 
 ## Decision
 
-This snapshot was an intermediate refinement. Later provider/static reconciliation made lifecycle UX ready in warning-only mode; current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
+This snapshot was an intermediate refinement. Later provider/static reconciliation made lifecycle UX ready in warning-only mode, and the first read-only lifecycle UX slice is recorded in [`../archive/read-only-lifecycle-ux-closeout.md`](../archive/read-only-lifecycle-ux-closeout.md).

@@ -5,7 +5,7 @@
 > - **Canonical for:** data contracts between pipeline, bridge, frontend, and local user data flows
 > - **Not canonical for:** subsystem ownership or route wiring
 > - **Then inspect:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and the owning runtime docs
-> - **Last updated:** 2026-05-02
+> - **Last updated:** 2026-05-03
 > - **Also update when changing contract shape:** `src/core/schemas.py`, `src/core/contracts.py`, the owning `src/jobs/common/contracts_{runtime,source_reports,task_state,fetch_report}.py` modules, relevant tests, and any affected UI/runtime docs
 
 This document serves as the absolute boundary and source of truth for data structures passed between the Python pipeline (`src/jobs/`) and the Vanilla JS frontend (`frontend/`).
@@ -54,6 +54,12 @@ same lifecycle fields (`status`, `firstSeenAt`, `lastSeenAt`, `removedAt`, `life
 `lifecycleReason`) plus enough canonical identity to reconstruct a saved-job key for read-only
 Saved-page overlays: `title`, `company`, `city`, `country`, `jobLink`, `source`, `sourceJobId`,
 and `postedAt`. This ledger is runtime state, not a user-editable Saved-job contract.
+
+The first read-only lifecycle UX slice exposes only conservative frontend filters/labels derived
+from these existing fields: `status="likely_removed"` as `Recently removed`,
+`lifecycleEvent="reappeared"` as `Reappeared`, and `lifecycleEvent="preserved"` with
+`lifecycleReason="source_failed"` as `Preserved because source failed`. `source_skipped`
+preservation remains operational-only and is not a user-facing first-slice filter.
 
 ### 1.1 Fetch report dedup evidence
 

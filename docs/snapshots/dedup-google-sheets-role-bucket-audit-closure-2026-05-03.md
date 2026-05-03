@@ -62,7 +62,7 @@ The Google Sheets role-bucket audit plan is closed as **completed but transferre
 
 Google Sheets role-bucket pressure is now explainable: current-run unresolved role buckets are zero, guard-blocked attempts are explicitly counted, same-primary-URL bundles are allowed, and the remaining Google Sheets evidence is carried historical warning pressure.
 
-Later provider/static reconciliation made lifecycle UX ready in warning-only mode. Current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
+Later provider/static reconciliation made lifecycle UX ready in warning-only mode, and the first read-only lifecycle UX slice is recorded in [`../archive/read-only-lifecycle-ux-closeout.md`](../archive/read-only-lifecycle-ux-closeout.md).
 
 ## Re-Entry Criteria
 

@@ -28,7 +28,7 @@ Closed as completed but transferred.
 
 The Google Sheets role-bucket blocker is no longer the active lifecycle-readiness owner. It is now explained by existing guard behavior, same-primary-URL allowances, and carried historical evidence. Lifecycle UX remains paused because provider/static disagreement still has unresolved carried blockers.
 
-Later provider/static reconciliation closed; current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
+Later provider/static reconciliation closed, and the first read-only lifecycle UX slice is recorded in [`read-only-lifecycle-ux-closeout.md`](read-only-lifecycle-ux-closeout.md).
 
 ## Deferred Work
 

@@ -17,6 +17,18 @@ test("jobs quick filters expose New Only quick toggle", () => {
   assert.equal(newOnlyFilter.value, "newOnly");
 });
 
+test("jobs quick filters expose only first-slice lifecycle filters", () => {
+  const lifecycleFilters = QUICK_FILTERS.filter(item => item.type === "lifecycleStatus");
+  assert.deepEqual(
+    lifecycleFilters.map(item => item.value),
+    ["likely_removed", "reappeared", "preserved_source_failed"]
+  );
+  assert.equal(
+    lifecycleFilters.some(item => item.value === "preserved_source_skipped"),
+    false
+  );
+});
+
 test("jobs state exposes Technical Director profession filter", () => {
   assert.equal(PROFESSION_LABELS["technical-director"], "Technical Director");
   const technicalDirectorFilter = QUICK_FILTERS.find(item => item.key === "technical-director");

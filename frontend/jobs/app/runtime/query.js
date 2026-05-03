@@ -80,6 +80,21 @@ export function buildFilterOptions(allJobs, {
   });
 }
 
+export function jobMatchesLifecycleFilter(job, lifecycleFilter) {
+  if (lifecycleFilter === undefined || lifecycleFilter === null || lifecycleFilter === "") return true;
+  const filterValue = String(lifecycleFilter || "active").toLowerCase();
+  const status = String(job?.status || "active").toLowerCase() || "active";
+  const lifecycleEvent = String(job?.lifecycleEvent || "").toLowerCase();
+  const lifecycleReason = String(job?.lifecycleReason || "").toLowerCase();
+
+  if (filterValue === "all") return true;
+  if (filterValue === "reappeared") return lifecycleEvent === "reappeared";
+  if (filterValue === "preserved_source_failed") {
+    return lifecycleEvent === "preserved" && lifecycleReason === "source_failed";
+  }
+  return status === filterValue;
+}
+
 export function filterJobs(allJobs, filters, {
   currentUser = null,
   seenJobKeys = new Set(),
@@ -94,8 +109,7 @@ export function filterJobs(allJobs, filters, {
 
   return (allJobs || []).filter(job => {
     const matchesWorkType = !filters?.workType || job.workType === filters.workType;
-    const lifecycleStatus = String(job.status || "active").toLowerCase() || "active";
-    const matchesLifecycle = !filters?.lifecycleStatus || lifecycleStatus === filters.lifecycleStatus;
+    const matchesLifecycle = jobMatchesLifecycleFilter(job, filters?.lifecycleStatus);
     const locationCities = getJobLocationCities(job);
     const locationCountries = getJobLocationCountries(job);
     const matchesCountry = filterCountries.length === 0

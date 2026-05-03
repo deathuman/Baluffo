@@ -4,7 +4,7 @@
 > - **Use this when:** checking why the broad dedup lifecycle readiness plan was closed without starting lifecycle UX
 > - **Canonical for:** 2026-05-03 real-data dedup gate read, closure decision, and transferred blocker ownership
 > - **Not canonical for:** dedup payload schema, merge rules, lifecycle label behavior, or Admin route contracts
-> - **Then inspect:** [`dedup-provider-static-reconciliation-closure-2026-05-03.md`](dedup-provider-static-reconciliation-closure-2026-05-03.md), [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`dedup-provider-static-reconciliation-closure-2026-05-03.md`](dedup-provider-static-reconciliation-closure-2026-05-03.md), [`../archive/read-only-lifecycle-ux-closeout.md`](../archive/read-only-lifecycle-ux-closeout.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
 ## Real-Data Gate Read
@@ -61,7 +61,7 @@ Lifecycle UX is not ready. The latest gate is readable and specific, but it is b
 
 ## Transferred Ownership
 
-Later provider/static reconciliation made the gate warning-only. Current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
+Later provider/static reconciliation made the gate warning-only, and the first read-only lifecycle UX slice is recorded in [`../archive/read-only-lifecycle-ux-closeout.md`](../archive/read-only-lifecycle-ux-closeout.md).
 
 The first read-only lifecycle UX slice remains deferred until a future real-data run reports:
 

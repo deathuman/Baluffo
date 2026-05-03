@@ -30,7 +30,7 @@ Fresh evidence from `python src/jobs_fetcher.py` on 2026-05-03 showed:
 - `providerStaticDisagreementGateCounts.currentRunBlocked=31`
 - `providerStaticDisagreementGateCounts.carriedBlocked=1`
 
-The gate was readable and actionable enough to close this broad tracker. Later provider/static reconciliation made the gate warning-only; current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
+The gate was readable and actionable enough to close this broad tracker. Later provider/static reconciliation made the gate warning-only, and the first read-only lifecycle UX slice is recorded in [`read-only-lifecycle-ux-closeout.md`](read-only-lifecycle-ux-closeout.md).
 
 ## Deferred Boundaries
 

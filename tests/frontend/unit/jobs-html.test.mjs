@@ -25,6 +25,14 @@ test("jobs html exposes desktop update controls in the header shell", () => {
   assert.match(html, /id="desktop-update-release-notes"/);
 });
 
+test("jobs html exposes first-slice read-only lifecycle filters", () => {
+  const html = fs.readFileSync(path.join(repoRoot, "jobs.html"), "utf8");
+  assert.match(html, /value="likely_removed">Recently removed<\/option>/);
+  assert.match(html, /value="reappeared">Reappeared<\/option>/);
+  assert.match(html, /value="preserved_source_failed">Preserved because source failed<\/option>/);
+  assert.doesNotMatch(html, /preserved_source_skipped/);
+});
+
 test("desktop page titles keep the Baluffo window identity token", () => {
   const adminHtml = fs.readFileSync(path.join(repoRoot, "admin.html"), "utf8");
   const savedHtml = fs.readFileSync(path.join(repoRoot, "saved.html"), "utf8");

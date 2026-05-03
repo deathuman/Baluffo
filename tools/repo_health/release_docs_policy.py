@@ -405,6 +405,7 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
         "docs/archive/dedup-lifecycle-readiness-closeout.md",
         "docs/archive/dedup-provider-static-disagreement-reconciliation-closeout.md",
         "docs/archive/jobs-fetcher-aggressive-simplification-closeout.md",
+        "docs/archive/read-only-lifecycle-ux-closeout.md",
     ]
 
 

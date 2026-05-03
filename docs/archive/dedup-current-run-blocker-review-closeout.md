@@ -22,7 +22,7 @@ The broad dedup lifecycle readiness tracker is closed, and this current-run bloc
 
 Closed as blocked but transferred.
 
-The gate was decisionable enough to retire this review tracker. Later Google Sheets role-bucket audit and provider/static reconciliation closed; current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
+The gate was decisionable enough to retire this review tracker. Later Google Sheets role-bucket audit and provider/static reconciliation closed, and the first read-only lifecycle UX slice is recorded in [`read-only-lifecycle-ux-closeout.md`](read-only-lifecycle-ux-closeout.md).
 
 ## Deferred Work
 

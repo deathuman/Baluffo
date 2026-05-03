@@ -2,7 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createJobsUrlPersistence } from "../../../frontend/jobs/app/runtime/url-persistence.js";
-import { isDesktopRuntimeMode } from "../../../frontend/jobs/app/startup.js";
+import {
+  buildJobsPageUrl,
+  isDesktopRuntimeMode,
+  parseJobsPageUrlState
+} from "../../../frontend/jobs/app/startup.js";
+import { normalizeLifecycleStatus } from "../../../frontend/jobs/app/filters.js";
 
 function createStorageMock(seed = {}) {
   const map = new Map(Object.entries(seed).map(([key, value]) => [String(key), String(value)]));
@@ -190,6 +195,28 @@ test("jobs URL persistence skips writes in startup probe mode", () => {
     harness.calls.metrics.some(entry => entry.event === "jobs_write_state_probe_skip"),
     true
   );
+});
+
+test("jobs startup URL state preserves read-only lifecycle filter values", () => {
+  const defaultFilters = {
+    countries: [],
+    lifecycleStatus: "active",
+    workType: "",
+    city: "",
+    sector: "",
+    profession: "",
+    newOnly: false,
+    excludeInternship: false,
+    search: "",
+    sort: "relevance"
+  };
+  const state = parseJobsPageUrlState("?lifecycleStatus=reappeared", {
+    defaultFilters,
+    normalizeLifecycleStatus
+  });
+
+  assert.equal(state.filters.lifecycleStatus, "reappeared");
+  assert.equal(buildJobsPageUrl("/jobs.html", state), "/jobs.html?lifecycleStatus=reappeared");
 });
 
 test("jobs desktop mode stays enabled from sticky session storage without a desktop query", () => {

@@ -3,8 +3,28 @@ import { normalizeToken } from "../../shared/text-utils.js";
 export function normalizeLifecycleStatus(value, fallback = "active") {
   const normalized = normalizeToken(value);
   if (!normalized) return fallback;
-  if (normalized === "active" || normalized === "likely_removed" || normalized === "archived") return normalized;
+  if (
+    normalized === "all"
+    || normalized === "active"
+    || normalized === "likely_removed"
+    || normalized === "archived"
+    || normalized === "reappeared"
+    || normalized === "preserved_source_failed"
+  ) {
+    return normalized;
+  }
   return fallback;
+}
+
+export function getLifecycleStatusLabel(value) {
+  const normalized = normalizeLifecycleStatus(value, "");
+  if (normalized === "all") return "Any";
+  if (normalized === "active") return "Active";
+  if (normalized === "likely_removed") return "Recently removed";
+  if (normalized === "archived") return "Archived";
+  if (normalized === "reappeared") return "Reappeared";
+  if (normalized === "preserved_source_failed") return "Preserved because source failed";
+  return String(value || "").replace("_", " ");
 }
 
 export function optionExists(select, value) {
@@ -247,6 +267,10 @@ export function applyQuickFilterToState(quick, filters, quickFilters, {
     filters.workType = filters.workType === item.value ? "" : item.value;
     return;
   }
+  if (item.type === "lifecycleStatus") {
+    filters.lifecycleStatus = filters.lifecycleStatus === item.value ? "active" : item.value;
+    return;
+  }
   if (item.type === "profession") {
     filters.profession = filters.profession === item.value ? "" : item.value;
     return;
@@ -269,6 +293,7 @@ export function isQuickFilterActive(item, filters, {
 }) {
   if (!item) return false;
   if (item.type === "workType") return filters.workType === item.value;
+  if (item.type === "lifecycleStatus") return filters.lifecycleStatus === item.value;
   if (item.type === "profession") return filters.profession === item.value;
   if (item.type === "sector") return filters.sector === item.value;
   if (item.type === "flag" && typeof item.value === "string") return Boolean(filters[item.value]);
@@ -285,7 +310,7 @@ export function getActiveFilterSummaryItems(filters, {
   const active = [];
   if (filters.workType) active.push(filters.workType);
   if (filters.lifecycleStatus && filters.lifecycleStatus !== "active") {
-    active.push(`Status: ${filters.lifecycleStatus.replace("_", " ")}`);
+    active.push(`Status: ${getLifecycleStatusLabel(filters.lifecycleStatus)}`);
   }
   if (filters.countries.length > 0) active.push(`Countries: ${filters.countries.length}`);
   if (filters.city) active.push(`City: ${filters.city}`);

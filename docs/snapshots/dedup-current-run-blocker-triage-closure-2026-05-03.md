@@ -60,7 +60,7 @@ The current-run blocker review plan is closed as **blocked but transferred**.
 
 The gate is readable and the blocker families are now specific. Lifecycle UX is still not ready because high-risk review causes are dominated by Google Sheets role buckets. Current-run non-primary merge blockers remain visible through `secondaryKey` and `sparseIdentity` examples, and provider/static disagreement still blocks, but both are smaller than the Google Sheets role-bucket problem.
 
-Later provider/static reconciliation closed; current active follow-up lives in [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md).
+Later provider/static reconciliation closed, and the first read-only lifecycle UX slice is recorded in [`../archive/read-only-lifecycle-ux-closeout.md`](../archive/read-only-lifecycle-ux-closeout.md).
 
 ## Transferred Ownership
 

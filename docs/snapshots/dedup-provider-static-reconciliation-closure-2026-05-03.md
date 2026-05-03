@@ -4,7 +4,7 @@
 > - **Use this when:** checking the real-data gate result after local provider/static review-state reconciliation
 > - **Canonical for:** 2026-05-03 lifecycle UX readiness evidence after provider/static reconciliation
 > - **Not canonical for:** payload schemas, dedup merge rules, local review actions, lifecycle labels, or source-policy mutation
-> - **Then inspect:** [`../archive/dedup-provider-static-disagreement-reconciliation-closeout.md`](../archive/dedup-provider-static-disagreement-reconciliation-closeout.md), [`../plans/read-only-lifecycle-ux-plan.md`](../plans/read-only-lifecycle-ux-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`../archive/dedup-provider-static-disagreement-reconciliation-closeout.md`](../archive/dedup-provider-static-disagreement-reconciliation-closeout.md), [`../archive/read-only-lifecycle-ux-closeout.md`](../archive/read-only-lifecycle-ux-closeout.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-03
 
 ## Commands

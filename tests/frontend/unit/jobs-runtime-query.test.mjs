@@ -5,6 +5,7 @@ import {
   buildFilterOptions,
   filterJobs,
   isCleanFilterOptionValue,
+  jobMatchesLifecycleFilter,
   sortJobs
 } from "../../../frontend/jobs/app/runtime/query.js";
 import { sanitizeLocationField } from "../../../frontend/jobs/domain.js";
@@ -107,6 +108,46 @@ test("jobs runtime query helpers filter jobs by search, new-only, and country se
 
   assert.equal(filtered.length, 1);
   assert.equal(filtered[0].title, "Gameplay Engineer");
+});
+
+test("jobs runtime query helpers filter by read-only lifecycle evidence", () => {
+  const jobs = [
+    { id: "active", title: "Active", status: "active" },
+    { id: "removed", title: "Removed", status: "likely_removed" },
+    { id: "reappeared", title: "Reappeared", status: "active", lifecycleEvent: "reappeared" },
+    {
+      id: "preserved-failed",
+      title: "Preserved Failed",
+      status: "active",
+      lifecycleEvent: "preserved",
+      lifecycleReason: "source_failed"
+    },
+    {
+      id: "preserved-skipped",
+      title: "Preserved Skipped",
+      status: "active",
+      lifecycleEvent: "preserved",
+      lifecycleReason: "source_skipped"
+    }
+  ];
+
+  assert.deepEqual(
+    filterJobs(jobs, { lifecycleStatus: "likely_removed" }).map(job => job.id),
+    ["removed"]
+  );
+  assert.deepEqual(
+    filterJobs(jobs, { lifecycleStatus: "reappeared" }).map(job => job.id),
+    ["reappeared"]
+  );
+  assert.deepEqual(
+    filterJobs(jobs, { lifecycleStatus: "preserved_source_failed" }).map(job => job.id),
+    ["preserved-failed"]
+  );
+  assert.deepEqual(
+    filterJobs(jobs, { lifecycleStatus: "all" }).map(job => job.id),
+    ["active", "removed", "reappeared", "preserved-failed", "preserved-skipped"]
+  );
+  assert.equal(jobMatchesLifecycleFilter(jobs[4], "preserved_source_failed"), false);
 });
 
 test("jobs runtime query helpers sort jobs by relevance and title", () => {
