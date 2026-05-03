@@ -323,6 +323,8 @@ If carried title/company collision rows expose `carriedLocationPollutionAudit=ca
 
 If carried title/company collision rows expose `carriedLocationPollutionAudit=carried_location_variant`, treat them as equivalent-city carried metadata warnings only when the row also has shared provider/static URL or identifier evidence. This catches cases such as localized country spelling variants after the city normalizes to the same value. It is still report-only and does not make unrelated provider/static disagreement safe.
 
+If carried title/company collision rows expose `carriedLocationPollutionAudit=carried_provider_identity_location_conflict`, treat them as provider-identity-backed carried metadata warnings only when polluted carried location labels are present and the provider/static sides share a provider job identity. Rows without shared identity, such as cross-host provider/static URL disagreements, remain blockers until manually reviewed or fixed.
+
 The first lifecycle UX slice must be read-only. It may show conservative labels such as `New`, `Reappeared`, `Recently removed`, and `Preserved because source failed`, but only when lifecycle/source-health evidence and dedup confidence support the label. Keep `New` as the existing user-seen Jobs badge, not a pipeline lifecycle event. Do not expose `Preserved because source skipped` in the first user-facing slice; keep that operational-only until there is a clearer product reason to surface it. Saved should read lifecycle labels through a live overlay from current jobs/lifecycle artifacts, not by mutating persisted saved-job rows. Do not change retention policy, add merge/unmerge controls, perform source cleanup, or mutate registries in that first slice.
 
 ## Conservative Static Cleanup Proposals

@@ -193,12 +193,13 @@ def _carried_disagreement_auto_disposition(
         return "auto_safe_carried_static_parser_url_variant"
     if (
         classification == "title_company_collision"
-        and carried_location_pollution_audit == "carried_location_variant"
+        and carried_location_pollution_audit
+        in {"carried_location_variant", "carried_provider_identity_location_conflict"}
         and provider_backed
         and static_backed
         and (same_host or has_shared_tokens)
     ):
-        return "carried_location_variant"
+        return carried_location_pollution_audit
     return ""
 
 

@@ -98,7 +98,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `providerStaticDisagreementClassificationCounts` | `Object` | Dedicated provider/static disagreement counts by review classification. |
 | `providerStaticDisagreementExamples` | `Array<Object>` | Stable capped sample of provider/static disagreement rows for manual review. |
 | `providerStaticTitleCompanyCollisionCounts` | `Object` | Dedicated counts for provider/static disagreements classified as `title_company_collision`: `total`, `currentRun`, and `carried`. |
-| `providerStaticTitleCompanyCollisionAuditCounts` | `Object` | Dedicated audit counts for carried title/company collision rows: `carried_location_pollution`, `carried_location_variant`, `possible_real_multi_location_conflict`, `not_carried`, and `unknown`. |
+| `providerStaticTitleCompanyCollisionAuditCounts` | `Object` | Dedicated audit counts for carried title/company collision rows: `carried_location_pollution`, `carried_location_variant`, `carried_provider_identity_location_conflict`, `possible_real_multi_location_conflict`, `not_carried`, and `unknown`. |
 | `providerStaticTitleCompanyCollisionExamples` | `Array<Object>` | Stable capped sample of title/company collision rows independent of the general provider/static disagreement cap. |
 | `carriedBundleExamples` | `Array<Object>` | Stable capped sample of historical carried source-bundle rows that may need review or metadata rebuilding. |
 | `carriedBundleReconciliationRecommendation` | `Object` | Optional report-only recommendation to rebuild carried source-bundle metadata in a separate explicit maintenance run. |
@@ -146,11 +146,15 @@ values are `different_locations_same_title_company`,
 `multiple_sources_need_manual_review`, and `unknown`.
 Rows may also include `carriedLocationPollutionAudit` and `carriedLocationPollutionEvidence`.
 Audit values are `carried_location_pollution`, `carried_location_variant`,
-`possible_real_multi_location_conflict`, `not_carried`, and `unknown`.
+`carried_provider_identity_location_conflict`, `possible_real_multi_location_conflict`,
+`not_carried`, and `unknown`.
 `carried_location_variant` covers carried title/company rows whose location labels normalize to
 the same city and whose provider/static sides share strong URL or identifier evidence. This audit
-is report-only and exists to distinguish real carried multi-location conflict from polluted or
-equivalent carried location metadata before lifecycle readiness is decided.
+`carried_provider_identity_location_conflict` covers carried rows with polluted location labels,
+multiple remaining plausible labels, and shared provider/static job identity evidence. This audit
+is report-only and exists to distinguish real carried multi-location conflict from polluted,
+equivalent, or provider-identity-backed carried location metadata before lifecycle readiness is
+decided.
 
 Outlier reason values are diagnostic only:
 `multi_location_strong_identity`, `location_divergence_without_strong_identity`,
@@ -193,8 +197,9 @@ When `carriedBundleReconciliationRecommendation.recommendedAction` is
 `rebuild_carried_source_bundle_metadata`, it is a report-only recommendation for a separate
 explicit maintenance run; this fetch report does not rewrite historical bundle metadata. Carried
 provider/static title/company collisions audited as `carried_location_pollution` or
-`carried_location_variant` may warn without blocking, while current-run disagreement and carried
-unresolved provider/static conflict continue to block lifecycle readiness.
+`carried_location_variant` or `carried_provider_identity_location_conflict` may warn without
+blocking, while current-run disagreement and carried unresolved provider/static conflict continue
+to block lifecycle readiness.
 
 Suspected cause values are diagnostic only: `category_or_department_bucket`,
 `open_application_family`, `listing_page_bundle`, `spreadsheet_role_bucket_needs_review`,

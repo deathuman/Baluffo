@@ -110,6 +110,7 @@ def test_dedup_evidence_tracks_carried_title_company_collision_counts() -> None:
     assert evidence["providerStaticTitleCompanyCollisionAuditCounts"] == {
         "carried_location_pollution": 0,
         "carried_location_variant": 0,
+        "carried_provider_identity_location_conflict": 0,
         "possible_real_multi_location_conflict": 1,
         "not_carried": 0,
         "unknown": 0,
@@ -174,6 +175,7 @@ def test_dedup_evidence_audits_carried_location_pollution_from_title_overlap() -
     assert evidence["providerStaticTitleCompanyCollisionAuditCounts"] == {
         "carried_location_pollution": 1,
         "carried_location_variant": 0,
+        "carried_provider_identity_location_conflict": 0,
         "possible_real_multi_location_conflict": 0,
         "not_carried": 0,
         "unknown": 0,
@@ -222,6 +224,7 @@ def test_dedup_evidence_audits_carried_location_pollution_from_repeated_company_
     assert evidence["providerStaticTitleCompanyCollisionAuditCounts"] == {
         "carried_location_pollution": 3,
         "carried_location_variant": 0,
+        "carried_provider_identity_location_conflict": 0,
         "possible_real_multi_location_conflict": 0,
         "not_carried": 0,
         "unknown": 0,
@@ -284,6 +287,7 @@ def test_dedup_evidence_warns_on_carried_location_variants_with_shared_evidence(
     assert evidence["providerStaticTitleCompanyCollisionAuditCounts"] == {
         "carried_location_pollution": 0,
         "carried_location_variant": 1,
+        "carried_provider_identity_location_conflict": 0,
         "possible_real_multi_location_conflict": 0,
         "not_carried": 0,
         "unknown": 0,

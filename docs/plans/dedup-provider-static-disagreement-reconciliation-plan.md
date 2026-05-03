@@ -7,19 +7,20 @@
 > - **Then inspect:** [`../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md), [`../source-policy-runbook.md`](../source-policy-runbook.md), and [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md)
 > - **Last updated:** 2026-05-03
 
-Google Sheets role-bucket audit is closed. The remaining lifecycle-readiness blocker is provider/static disagreement, currently carried rather than current-run. A 2026-05-03 refinement downgraded equivalent-city carried title/company variants with shared provider/static evidence from blocking to warning; the plan remains active because unresolved carried provider/static blockers remain.
+Google Sheets role-bucket audit is closed. The remaining lifecycle-readiness blocker is provider/static disagreement, currently carried rather than current-run. 2026-05-03 refinements downgraded equivalent-city carried title/company variants and provider-identity-backed carried location conflicts from blocking to warning; the plan remains active because three carried provider/static blockers remain.
 
 ## Current State
 
 - `dedupAuditGate.status=blocked`.
 - `dedupAuditGate.lifecycleUxReady=false`.
 - The only hard blocker is `provider_static_disagreement_needs_review`.
-- `providerStaticDisagreementGateCounts.blocked=14`.
+- `providerStaticDisagreementGateCounts.blocked=3`.
 - `providerStaticDisagreementGateCounts.currentRunBlocked=0`.
-- `providerStaticDisagreementGateCounts.carriedBlocked=14`.
-- `providerStaticDisagreementGateCounts.warning=19`.
-- `providerStaticTitleCompanyCollisionAuditCounts.carried_location_variant=1`.
-- `providerStaticTitleCompanyCollisionAuditCounts.possible_real_multi_location_conflict=12`.
+- `providerStaticDisagreementGateCounts.carriedBlocked=3`.
+- `providerStaticDisagreementGateCounts.warning=30`.
+- `providerStaticTitleCompanyCollisionAuditCounts.carried_location_variant=2`.
+- `providerStaticTitleCompanyCollisionAuditCounts.carried_provider_identity_location_conflict=10`.
+- `providerStaticTitleCompanyCollisionAuditCounts.possible_real_multi_location_conflict=1`.
 - `googleSheetsRoleBucketUnresolvedCount=0`.
 
 ## Review Order
@@ -32,7 +33,13 @@ Google Sheets role-bucket audit is closed. The remaining lifecycle-readiness blo
    - `clear_review` when a local decision needs removal
 4. Re-run `python src/jobs_fetcher.py` after reconciliation and require `providerStaticDisagreementGateCounts.blocked=0` before starting read-only lifecycle UX.
 
-Equivalent-city carried variants (`carriedLocationPollutionAudit=carried_location_variant`) may warn when the provider/static sides share strong URL or identifier evidence. They are not broad `reviewed_safe` state and do not imply unrelated provider/static rows are safe.
+Equivalent-city carried variants (`carriedLocationPollutionAudit=carried_location_variant`) may warn when the provider/static sides share strong URL or identifier evidence. Provider-identity-backed carried location conflicts (`carriedLocationPollutionAudit=carried_provider_identity_location_conflict`) may warn only when polluted carried labels coexist with multiple plausible carried locations and the provider/static sides share provider job identity. These are not broad `reviewed_safe` state and do not imply unrelated provider/static rows are safe.
+
+Remaining unresolved carried blockers after the latest run:
+
+- Animoca Brands `Executive Assistant`: same-job/different-URL provider/static disagreement, no shared identifier tokens.
+- Wargaming `Global Help Desk Specialist`: same-job/different-URL provider/static disagreement, no shared identifier tokens.
+- Wargaming `Render Engineer (Unannounced project)`: title/company collision across `prague` and `prague, czechia`, cross-host provider/static evidence with no shared identifier tokens.
 
 ## Deferred Work
 

@@ -78,6 +78,7 @@ test("admin render: provider/static disagreement examples are read-only", () => 
         providerStaticTitleCompanyCollisionAuditCounts: {
           carried_location_pollution: 1,
           carried_location_variant: 1,
+          carried_provider_identity_location_conflict: 1,
           possible_real_multi_location_conflict: 0,
           not_carried: 0,
           unknown: 0
@@ -165,7 +166,7 @@ test("admin render: provider/static disagreement examples are read-only", () => 
   assert.match(metricsEl.innerHTML, /3D Character Artist/i);
   assert.match(metricsEl.innerHTML, /Epoch Games/i);
   assert.match(metricsEl.innerHTML, /hint different locations same title company/i);
-  assert.match(metricsEl.innerHTML, /Audit: location pollution 1, location variants 1, possible real conflict 0, not carried 0, unknown 0/i);
+  assert.match(metricsEl.innerHTML, /Audit: location pollution 1, location variants 1, provider identity location conflicts 1, possible real conflict 0, not carried 0, unknown 0/i);
   assert.match(metricsEl.innerHTML, /audit carried location pollution/i);
   assert.match(metricsEl.innerHTML, /gate warning/i);
   assert.match(metricsEl.innerHTML, /audit evidence origin:carried from existing output, sample location:illustrator/i);

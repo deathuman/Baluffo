@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import unicodedata
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -66,6 +67,7 @@ PROVIDER_STATIC_DISAGREEMENT_CLASSIFICATION_KEYS = (
 PROVIDER_STATIC_TITLE_COMPANY_COLLISION_AUDIT_KEYS = (
     "carried_location_pollution",
     "carried_location_variant",
+    "carried_provider_identity_location_conflict",
     "possible_real_multi_location_conflict",
     "not_carried",
     "unknown",
@@ -1405,20 +1407,45 @@ def _location_token_overlaps_title_or_company(city: str, row: Mapping[str, Any])
     return bool(city_tokens & (set(_title_tokens(row)) | set(_company_tokens(row))))
 
 
-def _carried_location_variant_city(row: Mapping[str, Any], plausible_labels: Sequence[str]) -> str:
-    city_keys = {
-        norm_text(_location_label_parts(label)[0])
-        for label in plausible_labels
-        if norm_text(_location_label_parts(label)[0])
-    }
-    strong_shared_evidence = bool(
+def _location_city_key(label: str) -> str:
+    city = norm_text(_location_label_parts(label)[0])
+    if not city:
+        return ""
+    return "".join(
+        char for char in unicodedata.normalize("NFKD", city) if not unicodedata.combining(char)
+    )
+
+
+def _has_shared_provider_static_identity(row: Mapping[str, Any]) -> bool:
+    return bool(
         row.get("sharedPrimaryUrl")
         or row.get("sharedIdentifierTokens")
         or set(row.get("providerUrlHosts") or []) & set(row.get("staticUrlHosts") or [])
     )
-    if len(plausible_labels) > 1 and len(city_keys) == 1 and strong_shared_evidence:
+
+
+def _carried_location_variant_city(row: Mapping[str, Any], plausible_labels: Sequence[str]) -> str:
+    city_keys = {
+        _location_city_key(label) for label in plausible_labels if _location_city_key(label)
+    }
+    if (
+        len(plausible_labels) > 1
+        and len(city_keys) == 1
+        and _has_shared_provider_static_identity(row)
+    ):
         return next(iter(city_keys))
     return ""
+
+
+def _has_carried_provider_identity_location_conflict(
+    row: Mapping[str, Any], plausible_labels: Sequence[str], polluted_labels: Sequence[str]
+) -> bool:
+    return bool(
+        len(plausible_labels) > 1
+        and polluted_labels
+        and row.get("sharedIdentifierTokens")
+        and set(row.get("providerUrlHosts") or []) & set(row.get("staticUrlHosts") or [])
+    )
 
 
 def _carried_location_label_bucket(
@@ -1499,6 +1526,9 @@ def _provider_static_title_company_collision_audit(
     if variant_city:
         evidence.append(f"equivalent_city:{variant_city}")
         return "carried_location_variant", evidence[:8]
+    if _has_carried_provider_identity_location_conflict(row, plausible_labels, polluted_labels):
+        evidence.append("shared_provider_identity")
+        return "carried_provider_identity_location_conflict", evidence[:8]
     if len(plausible_labels) > 1:
         return "possible_real_multi_location_conflict", evidence[:8]
     return "unknown", evidence[:8]
