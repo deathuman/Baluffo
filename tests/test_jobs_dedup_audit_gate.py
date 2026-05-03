@@ -33,6 +33,15 @@ def test_dedup_audit_gate_returns_safe_defaults_for_empty_evidence() -> None:
         "status": "pass",
         "lifecycleUxReady": True,
         "currentRunMergedCount": 0,
+        "currentRunNonPrimaryMergeCounts": {
+            "secondaryKey": 0,
+            "sparseIdentity": 0,
+            "socialKey": 0,
+            "unknown": 0,
+            "knownMirrorPair": 0,
+            "blocking": 0,
+            "nonBlockingKnownMirrorPair": 0,
+        },
         "sourceBundleCollisionCount": 0,
         "highRiskReviewQueueCount": 0,
         "providerStaticDisagreementCount": 0,
@@ -136,6 +145,8 @@ def test_dedup_audit_gate_blocks_current_run_non_primary_merges() -> None:
     assert gate["status"] == "blocked"
     assert gate["lifecycleUxReady"] is False
     assert gate["currentRunMergedCount"] == 1
+    assert gate["currentRunNonPrimaryMergeCounts"]["sparseIdentity"] == 1
+    assert gate["currentRunNonPrimaryMergeCounts"]["blocking"] == 1
     assert "current_run_non_primary_merges_need_review" in gate["blockers"]
 
 
@@ -169,6 +180,8 @@ def test_dedup_audit_gate_does_not_block_when_only_current_run_merges_are_known_
     assert gate["status"] == "pass"
     assert gate["lifecycleUxReady"] is True
     assert gate["currentRunMergedCount"] == 1
+    assert gate["currentRunNonPrimaryMergeCounts"]["knownMirrorPair"] == 1
+    assert gate["currentRunNonPrimaryMergeCounts"]["blocking"] == 0
     assert gate["currentRunHighRiskReviewQueueCount"] == 0
     assert "current_run_non_primary_merges_need_review" not in gate["blockers"]
 

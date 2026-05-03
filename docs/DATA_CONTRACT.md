@@ -70,6 +70,7 @@ trustworthy before user-facing lifecycle labels are expanded.
 | `collisionSamplesCount` | `number` | Count of stored merge collision samples from the dedup pass. |
 | `mergeReasonCounts` | `Object` | Counts for `primaryUrl`, `secondaryKey`, `knownMirrorPair`, `socialKey`, `sparseIdentity`, and `unknown`. |
 | `currentRunMergeExamples` | `Array<Object>` | Stable capped current-run merge samples from the latest dedup pass, including non-blocking known mirror pairs and unresolved fresh merge blockers. |
+| `currentRunMergeExamplesByReason` | `Object` | Stable capped current-run merge samples grouped by `secondaryKey`, `sparseIdentity`, `knownMirrorPair`, `primaryUrl`, and `unknown` for blocker triage. |
 | `sourceBundleCollisionCount` | `number` | Final canonical rows carrying `sourceBundleCount > 1`, including rows whose bundle evidence was carried forward from previous output. |
 | `currentRunSourceBundleCollisionCount` | `number` | Source-bundle collision rows created or touched by current-run merges. |
 | `carriedSourceBundleCollisionCount` | `number` | Source-bundle collision rows carried from seeded previous output and not touched by current-run merges. |
@@ -175,7 +176,7 @@ carried high-risk review counts, `providerStaticDisagreementCount`,
 `providerStaticDisagreementCurrentRunCount`, `providerStaticDisagreementCarriedCount`,
 `providerStaticDisagreementBlockedCount`, `providerStaticDisagreementWarningCount`,
 `googleSheetsGenericRoleGuardActive`, `carriedCollisionLikelyHistoricalCount`,
-`reviewQueueCauseCounts`, `blockers`, `warnings`, and capped `examples`. Carried historical
+`reviewQueueCauseCounts`, `currentRunNonPrimaryMergeCounts`, `blockers`, `warnings`, and capped `examples`. Carried historical
 source-bundle collisions may warn without blocking, while current-run non-primary merges,
 current-run high-risk causes, and provider/static disagreement block lifecycle readiness until
 reviewed. Narrow current-run `knownMirrorPair` merges are excluded from the fresh non-primary merge
@@ -254,7 +255,10 @@ cluster that needs manual review. They do not change dedup behavior or lifecycle
 `sourceBundleCollisionCount` is nonzero because canonical rows may carry forward historical
 `sourceBundle` evidence from earlier runs. `currentRunMergeExamples` is a separate advisory sample
 surface for the latest merge pass so fresh blockers are still visible when broader carried-bundle
-diagnostics dominate the capped review samples.
+diagnostics dominate the capped review samples. `currentRunMergeExamplesByReason` groups that same
+row shape into capped `secondaryKey`, `sparseIdentity`, `knownMirrorPair`, `primaryUrl`, and
+`unknown` buckets so operators can distinguish broad identity-key blockers from reviewed mirror
+pairs.
 
 ## 2. Desktop Local Data
 

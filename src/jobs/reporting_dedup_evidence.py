@@ -1526,6 +1526,47 @@ def _current_run_merge_examples(dedup_stats: Mapping[str, Any]) -> list[dict[str
     return examples
 
 
+def _current_run_merge_examples_by_reason(
+    dedup_stats: Mapping[str, Any], *, limit_per_reason: int = 5
+) -> dict[str, list[dict[str, Any]]]:
+    by_reason = {
+        "secondaryKey": [],
+        "sparseIdentity": [],
+        "knownMirrorPair": [],
+        "primaryUrl": [],
+        "unknown": [],
+    }
+    reason_keys = {
+        "secondary_key": "secondaryKey",
+        "sparse_identity": "sparseIdentity",
+        "known_mirror_pair": "knownMirrorPair",
+        "primary_url": "primaryUrl",
+    }
+    for example in _current_run_merge_examples(dedup_stats):
+        reason = clean_text(example.get("mergeReason"))
+        key = reason_keys.get(reason, "unknown")
+        if len(by_reason[key]) < max(0, int(limit_per_reason)):
+            by_reason[key].append(example)
+    return by_reason
+
+
+def _current_run_non_primary_merge_counts(merge_reason_counts: Mapping[str, Any]) -> dict[str, int]:
+    secondary = max(0, int(merge_reason_counts.get("secondaryKey") or 0))
+    sparse = max(0, int(merge_reason_counts.get("sparseIdentity") or 0))
+    social = max(0, int(merge_reason_counts.get("socialKey") or 0))
+    unknown = max(0, int(merge_reason_counts.get("unknown") or 0))
+    known_mirror_pair = max(0, int(merge_reason_counts.get("knownMirrorPair") or 0))
+    return {
+        "secondaryKey": secondary,
+        "sparseIdentity": sparse,
+        "socialKey": social,
+        "unknown": unknown,
+        "knownMirrorPair": known_mirror_pair,
+        "blocking": secondary + sparse + social + unknown,
+        "nonBlockingKnownMirrorPair": known_mirror_pair,
+    }
+
+
 def _nonzero_counts(counts: Mapping[str, Any]) -> dict[str, int]:
     return {
         str(key): int(value)
@@ -1819,6 +1860,9 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         "status": status,
         "lifecycleUxReady": not blockers,
         "currentRunMergedCount": merged_count,
+        "currentRunNonPrimaryMergeCounts": _current_run_non_primary_merge_counts(
+            merge_reason_counts
+        ),
         "sourceBundleCollisionCount": source_bundle_collision_count,
         "currentRunSourceBundleCollisionCount": current_run_source_bundle_collision_count,
         "carriedSourceBundleCollisionCount": carried_source_bundle_collision_count,
@@ -2124,6 +2168,7 @@ def build_dedup_evidence(
         "collisionSamplesCount": max(0, int(dedup_stats.get("collisionSamplesCount") or 0)),
         "mergeReasonCounts": _merge_reason_counts(dedup_stats),
         "currentRunMergeExamples": _current_run_merge_examples(dedup_stats),
+        "currentRunMergeExamplesByReason": _current_run_merge_examples_by_reason(dedup_stats),
         "sourceBundleCollisionCount": source_bundle_collision_count,
         "currentRunSourceBundleCollisionCount": current_run_source_bundle_collision_count,
         "carriedSourceBundleCollisionCount": carried_source_bundle_collision_count,

@@ -48,6 +48,62 @@ def test_dedup_evidence_marks_known_mirror_pair_current_run_examples_non_blockin
             "suspectedCause": "known_mirror_pair",
         }
     ]
+    assert (
+        evidence["currentRunMergeExamplesByReason"]["knownMirrorPair"]
+        == (evidence["currentRunMergeExamples"])
+    )
+    assert evidence["currentRunMergeExamplesByReason"]["secondaryKey"] == []
+    assert evidence["currentRunMergeExamplesByReason"]["sparseIdentity"] == []
+
+
+def test_dedup_evidence_groups_current_run_blocker_examples_by_reason() -> None:
+    evidence = build_dedup_evidence(
+        {
+            "mergedCount": 3,
+            "mergedBySecondaryKey": 2,
+            "mergedBySparseIdentity": 1,
+            "collisionSamplesCount": 3,
+            "collisionSamples": [
+                {
+                    "reason": "secondary_key",
+                    "existingDedupKey": "secondary-key-1",
+                    "incomingSource": "google_sheets",
+                    "incomingTitle": "Product-management",
+                    "incomingCompany": "Example Studio",
+                    "incomingJobLink": "https://example.com/jobs/product",
+                },
+                {
+                    "reason": "secondary_key",
+                    "existingDedupKey": "secondary-key-2",
+                    "incomingSource": "static_source::static:listing_url:https://example.com",
+                    "incomingTitle": "Engineering",
+                    "incomingCompany": "Example Studio",
+                    "incomingJobLink": "https://example.com/jobs/engineering",
+                },
+                {
+                    "reason": "sparse_identity",
+                    "existingDedupKey": "sparse-key-1",
+                    "incomingSource": "static_source::static:listing_url:https://example.org",
+                    "incomingTitle": "Senior Artist",
+                    "incomingCompany": "Example Org",
+                    "incomingJobLink": "https://example.org/jobs/senior-artist",
+                },
+            ],
+        },
+        [],
+    )
+
+    grouped = evidence["currentRunMergeExamplesByReason"]
+    assert [row["existingDedupKey"] for row in grouped["secondaryKey"]] == [
+        "secondary-key-1",
+        "secondary-key-2",
+    ]
+    assert [row["existingDedupKey"] for row in grouped["sparseIdentity"]] == ["sparse-key-1"]
+    assert all(row["blocksLifecycle"] is True for row in grouped["secondaryKey"])
+    assert all(
+        row["recommendedReviewAction"] == "review_current_run_merge"
+        for row in grouped["sparseIdentity"]
+    )
 
 
 def test_fetch_report_normalization_preserves_dedup_evidence() -> None:
