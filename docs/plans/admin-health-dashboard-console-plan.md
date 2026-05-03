@@ -292,7 +292,7 @@ Keep this dedicated active plan doc registered in [`docs/INDEX.md`](../INDEX.md)
 - [x] Add unit test coverage for section rendering.
 - [x] Add unit test coverage for bounded lists, copy behavior, and action handlers.
 - [x] Add unit test coverage for the compact task-status lane.
-- [ ] Reconcile smoke selectors that assume `#admin-ops-fetcher-metrics` is populated.
+- [x] Reconcile smoke selectors that assume `#admin-ops-fetcher-metrics` is populated.
 
 ## Risks and Constraints
 

@@ -325,7 +325,16 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
 
   // Load the fetch report - requires bridge to be running
   await page.click("#admin-refresh-report-btn");
-  await expect(page.locator("#admin-ops-fetcher-metrics")).not.toContainText(/Loading/i, { timeout: 15000 });
+  const metrics = page.locator("#admin-ops-fetcher-metrics");
+  await expect(metrics).not.toContainText(/Loading/i, { timeout: 15000 });
+  await expect(metrics.getByText("Task Status", { exact: true })).toBeVisible();
+  await expect(metrics.getByRole("heading", { name: "Runtime" })).toBeVisible();
+  await expect(metrics.getByRole("heading", { name: "Failures" })).toBeVisible();
+  await expect(metrics.getByRole("heading", { name: "Dedup Review" })).toBeVisible();
+  await expect(metrics.getByRole("heading", { name: "Source Health" })).toBeVisible();
+  await expect(metrics.getByRole("heading", { name: "Source Policy Signals" })).toBeVisible();
+  await expect(metrics.getByRole("button", { name: "Copy diagnostics" }).first()).toBeVisible();
+  await expect(metrics.locator("details").first()).toBeVisible();
 });
 
 test("admin smoke: run history trims fetch live detail and discovery omits the live table", async ({ page }) => {
