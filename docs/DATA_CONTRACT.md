@@ -850,14 +850,28 @@ observed or its absence is explained by suppression-eligibility diagnostics.
 
 The section may also include additive summary fields:
 
+- `proposalGeneratedAt`: ISO timestamp for the proposal artifact used for the report
+- `proposalReportRunId`: fetch run id used to anchor the proposal evidence
+- `proposalFreshnessStatus`: `fresh` or `stale` depending on the proposal artifact age
+- `proposalFreshnessAgeSeconds`: age of the proposal artifact at report time
+- `proposalStaleThresholdSeconds`: configured staleness threshold for proposal evidence
+- `proposalReadinessHash`: stable hash over the proposal freshness/readiness inputs
+- `staleCount`: number of proposal rows that are stale rather than actionable
 - `blockedReasonCounts`: aggregate blocker counts across blocked candidates
 - `proposalReadyExamples`: capped stable sample of proposal-ready rows
 - `blockedExamples`: capped stable sample of blocked rows
 
 Each row may include `proposalDisposition="proposal_ready"` or `proposalDisposition="blocked"` to
-simplify read-only rendering. `proposalCount=0` is not failure by itself; blocked candidates and
-their blocker counts are the evidence to inspect before any later reversible cleanup action is
-considered.
+simplify read-only rendering. Rows also carry additive readiness evidence:
+
+- `proposalReadiness`: `actionable`, `stale`, or `blocked`
+- `proposalReadinessReason`: short explanation for the readiness state
+- `proposalReadinessEvidence`: compact evidence tokens for auditing and rendering
+
+`proposalCount=0` is not failure by itself; blocked candidates, stale proposal evidence, and their
+blocker counts are the evidence to inspect before any later reversible cleanup action is
+considered. Proposal freshness only explains whether a row is still actionable. It does not
+authorize the later reversible cleanup action on its own.
 
 ### Source-policy recommendation artifact
 

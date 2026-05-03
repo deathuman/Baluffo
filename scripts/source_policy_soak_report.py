@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections import Counter
+from datetime import UTC, datetime
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
@@ -90,6 +92,7 @@ STATIC_LIKE_ADAPTERS = {"static", "scrapy_static"}
 STATIC_LIKE_STAGES = {"generic_static", "seed_careers_page", "sheet_directory"}
 CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS = 3
 CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT = 5
+CONSERVATIVE_CLEANUP_PROPOSAL_STALE_AFTER_SECONDS = 24 * 60 * 60
 PROVIDER_ID_FIELDS = (
     "slug",
     "account",
@@ -2144,6 +2147,63 @@ def _suppression_evidence_for_pair(
     return "", ""
 
 
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    text = clean_text(value)
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _timestamp_age_seconds(previous: str, current: str) -> int | None:
+    prior = _parse_iso_datetime(previous)
+    current_dt = _parse_iso_datetime(current)
+    if prior is None or current_dt is None:
+        return None
+    return max(0, int((current_dt - prior).total_seconds()))
+
+
+def _cleanup_row_readiness_key(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "staticSourceId": clean_text(row.get("staticSourceId")),
+        "providerSourceId": clean_text(row.get("providerSourceId")),
+        "proposalDisposition": clean_text(row.get("proposalDisposition")),
+        "proposalReadiness": clean_text(row.get("proposalReadiness")),
+        "proposalReadinessReason": clean_text(row.get("proposalReadinessReason")),
+        "blockers": [
+            clean_text(reason) for reason in row.get("blockers", []) if clean_text(reason)
+        ],
+    }
+
+
+def _cleanup_readiness_hash(
+    *,
+    proposal_generated_at: str,
+    proposal_report_run_id: str,
+    proposal_freshness_status: str,
+    source_sync_clean: bool,
+    rows: list[dict[str, Any]],
+) -> str:
+    payload = {
+        "proposalGeneratedAt": clean_text(proposal_generated_at),
+        "proposalReportRunId": clean_text(proposal_report_run_id),
+        "proposalFreshnessStatus": clean_text(proposal_freshness_status),
+        "sourceSyncClean": bool(source_sync_clean),
+        "rows": [_cleanup_row_readiness_key(row) for row in rows],
+    }
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    return digest
+
+
 def _conservative_static_cleanup_proposals_section(
     *,
     recommendation_pairs: list[dict[str, Any]],
@@ -2152,11 +2212,21 @@ def _conservative_static_cleanup_proposals_section(
     suppression_eligibility: dict[str, Any],
     active_rows: list[dict[str, Any]],
     source_sync: dict[str, Any],
+    proposal_generated_at: str,
+    proposal_report_run_id: str,
+    report_generated_at: str,
 ) -> dict[str, Any]:
     active_static_by_token = _active_static_row_by_token(active_rows)
     current_proposals_by_pair = _proposal_by_pair(proposal_rows)
     proposals: list[dict[str, Any]] = []
     blocked: list[dict[str, Any]] = []
+    freshness_age_seconds = _timestamp_age_seconds(proposal_generated_at, report_generated_at)
+    freshness_status = (
+        "stale"
+        if freshness_age_seconds is None
+        or freshness_age_seconds > CONSERVATIVE_CLEANUP_PROPOSAL_STALE_AFTER_SECONDS
+        else "fresh"
+    )
 
     for pair in recommendation_pairs:
         if clean_text(pair.get("currentRecommendation")) != "stable_safe_redundant":
@@ -2190,6 +2260,28 @@ def _conservative_static_cleanup_proposals_section(
             "providerSourceId": clean_text(pair.get("providerSourceId")),
             "providerSourceName": clean_text(pair.get("providerSourceName")),
             "proposalDisposition": "blocked" if blockers else "proposal_ready",
+            "proposalReadiness": (
+                "blocked"
+                if blockers
+                else ("stale" if freshness_status == "stale" else "actionable")
+            ),
+            "proposalReadinessReason": (
+                ", ".join(blockers)
+                if blockers
+                else (
+                    "proposal evidence is stale; refresh the cleanup proposal report before taking action"
+                    if freshness_status == "stale"
+                    else "proposal evidence is fresh and actionable"
+                )
+            ),
+            "proposalReadinessEvidence": [
+                *(
+                    [f"blocker:{reason}" for reason in blockers]
+                    if blockers
+                    else [f"proposal_freshness:{freshness_status}"]
+                ),
+                f"proposal_disposition:{'blocked' if blockers else 'proposal_ready'}",
+            ],
             "proposal": "conservative_static_cleanup_candidate",
             "recommendedAction": "move_static_to_hidden_pending",
             "destructiveActionAllowed": False,
@@ -2202,6 +2294,10 @@ def _conservative_static_cleanup_proposals_section(
             "sourceSyncClean": bool(source_sync.get("clean")),
             "suppressionEvidenceStatus": suppression_status,
             "suppressionEvidenceReason": suppression_reason,
+            "proposalGeneratedAt": clean_text(proposal_generated_at),
+            "proposalReportRunId": clean_text(proposal_report_run_id),
+            "proposalFreshnessStatus": freshness_status,
+            "proposalFreshnessAgeSeconds": freshness_age_seconds,
             "lastProposal": clean_text(pair.get("lastProposal")),
             "lastAuditStatus": clean_text(pair.get("lastAuditStatus"))
             or clean_text(current.get("lastAuditStatus")),
@@ -2258,12 +2354,29 @@ def _conservative_static_cleanup_proposals_section(
         for reason in row.get("blockers", [])
         if clean_text(reason)
     )
+    proposal_readiness_rows = [*proposals, *blocked]
+    readiness_hash = _cleanup_readiness_hash(
+        proposal_generated_at=proposal_generated_at,
+        proposal_report_run_id=proposal_report_run_id,
+        proposal_freshness_status=freshness_status,
+        source_sync_clean=bool(source_sync.get("clean")),
+        rows=proposal_readiness_rows,
+    )
 
     return {
         "minimumCleanRunCount": CONSERVATIVE_CLEANUP_MIN_SAFE_RUNS,
         "totalCandidateCount": len(proposals) + len(blocked),
         "proposalCount": len(proposals),
         "blockedCount": len(blocked),
+        "staleCount": sum(
+            1 for row in proposals if clean_text(row.get("proposalReadiness")) == "stale"
+        ),
+        "proposalGeneratedAt": clean_text(proposal_generated_at),
+        "proposalReportRunId": clean_text(proposal_report_run_id),
+        "proposalFreshnessStatus": freshness_status,
+        "proposalFreshnessAgeSeconds": freshness_age_seconds,
+        "proposalStaleThresholdSeconds": CONSERVATIVE_CLEANUP_PROPOSAL_STALE_AFTER_SECONDS,
+        "proposalReadinessHash": readiness_hash,
         "blockedReasonCounts": dict(
             sorted(blocked_reason_counts.items(), key=lambda item: (-item[1], item[0]))
         ),
@@ -2277,6 +2390,8 @@ def _conservative_static_cleanup_proposals_section(
 def _build_sections(
     payloads: dict[str, Any],
     backup_payload_path: Path | None,
+    *,
+    report_generated_at: str,
 ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]], list[str]]:
     warnings: list[str] = []
     gates: list[dict[str, Any]] = []
@@ -2297,6 +2412,9 @@ def _build_sections(
     )
     recommendations = normalize_source_policy_recommendations_artifact(
         payloads["sourcePolicyRecommendations"]
+    )
+    recommendations_generated_at = clean_text(recommendations.get("updatedAt")) or clean_text(
+        report_generated_at
     )
     review_state = normalize_source_policy_review_state_artifact(
         payloads["sourcePolicyReviewState"]
@@ -2361,6 +2479,9 @@ def _build_sections(
         suppression_eligibility=suppression_eligibility,
         active_rows=active_rows,
         source_sync=source_sync,
+        proposal_generated_at=recommendations_generated_at,
+        proposal_report_run_id=clean_text(fetch_report.get("runId")),
+        report_generated_at=report_generated_at,
     )
 
     static_registry_tokens: set[str] = set()
@@ -2572,6 +2693,7 @@ def _build_sections(
 def build_soak_report(data_dir: Path, backup_payload_path: Path | None = None) -> dict[str, Any]:
     payloads, inputs, warnings = _artifact_inputs(Path(data_dir))
     payloads["_sourceSyncStatus"] = inputs["sourceSync"]["status"]
+    generated_at = now_iso()
     gates = [
         _warning_gate(
             "malformed_artifact",
@@ -2582,7 +2704,7 @@ def build_soak_report(data_dir: Path, backup_payload_path: Path | None = None) -
         if value["status"] == "malformed"
     ]
     sections, summary, section_gates, section_warnings = _build_sections(
-        payloads, backup_payload_path
+        payloads, backup_payload_path, report_generated_at=generated_at
     )
     gates.extend(section_gates)
     warnings.extend(section_warnings)
@@ -2600,7 +2722,7 @@ def build_soak_report(data_dir: Path, backup_payload_path: Path | None = None) -
         status = "warning"
     return {
         "schemaVersion": SCHEMA_VERSION,
-        "generatedAt": now_iso(),
+        "generatedAt": generated_at,
         "status": status,
         "mutation": {"readOnly": True, "writesOutsideOut": False},
         "inputs": inputs,
@@ -2679,11 +2801,11 @@ def _suppression_eligibility_markdown_rows(report: dict[str, Any]) -> list[str]:
 
 def _conservative_cleanup_markdown_rows(rows: list[dict[str, Any]]) -> list[str]:
     lines = [
-        "| Static | Provider | Action | Clean runs | Suppression evidence | Explicit action | Destructive |",
-        "|--------|----------|--------|------------|----------------------|-----------------|-------------|",
+        "| Static | Provider | Action | Readiness | Freshness | Clean runs | Suppression evidence | Explicit action | Destructive |",
+        "|--------|----------|--------|-----------|-----------|------------|----------------------|-----------------|-------------|",
     ]
     if not rows:
-        lines.append("| none | none | none | `0` | none | `false` | `false` |")
+        lines.append("| none | none | none | none | none | `0` | none | `false` | `false` |")
         return lines
     for row in rows[:10]:
         lines.append(
@@ -2691,6 +2813,8 @@ def _conservative_cleanup_markdown_rows(rows: list[dict[str, Any]]) -> list[str]
             f"{clean_text(row.get('staticSourceName')) or clean_text(row.get('staticSourceId'))} | "
             f"{clean_text(row.get('providerSourceName')) or clean_text(row.get('providerSourceId'))} | "
             f"`{clean_text(row.get('recommendedAction'))}` | "
+            f"`{clean_text(row.get('proposalReadiness')) or 'actionable'}` | "
+            f"`{clean_text(row.get('proposalFreshnessStatus')) or 'fresh'}` | "
             f"`{_int_value(row.get('cleanRunEvidenceCount'))}` | "
             f"`{clean_text(row.get('suppressionEvidenceStatus'))}:"
             f"{clean_text(row.get('suppressionEvidenceReason'))}` | "
@@ -2702,11 +2826,11 @@ def _conservative_cleanup_markdown_rows(rows: list[dict[str, Any]]) -> list[str]
 
 def _conservative_cleanup_blocked_markdown_rows(rows: list[dict[str, Any]]) -> list[str]:
     lines = [
-        "| Static | Provider | Blockers | Clean runs | Static-only runs | Suppression evidence |",
-        "|--------|----------|----------|------------|------------------|----------------------|",
+        "| Static | Provider | Readiness | Freshness | Blockers | Clean runs | Static-only runs | Suppression evidence |",
+        "|--------|----------|-----------|-----------|----------|------------|------------------|----------------------|",
     ]
     if not rows:
-        lines.append("| none | none | none | `0` | `0` | none |")
+        lines.append("| none | none | none | none | none | `0` | `0` | none |")
         return lines
     for row in rows[:10]:
         blockers = ", ".join(
@@ -2716,6 +2840,8 @@ def _conservative_cleanup_blocked_markdown_rows(rows: list[dict[str, Any]]) -> l
             "| "
             f"{clean_text(row.get('staticSourceName')) or clean_text(row.get('staticSourceId'))} | "
             f"{clean_text(row.get('providerSourceName')) or clean_text(row.get('providerSourceId'))} | "
+            f"`{clean_text(row.get('proposalReadiness')) or 'blocked'}` | "
+            f"`{clean_text(row.get('proposalFreshnessStatus')) or 'fresh'}` | "
             f"`{blockers or 'none'}` | "
             f"`{_int_value(row.get('cleanRunEvidenceCount'))}` | "
             f"`{_int_value(row.get('staticOnlyDetectedRunCount'))}` | "

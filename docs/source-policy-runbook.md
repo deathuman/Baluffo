@@ -313,10 +313,17 @@ Proposal rows use:
 - `destructiveActionAllowed=false`
 - `requiresExplicitAdminAction=true`
 
-`proposalCount=0` is not failure by itself. Inspect `blockedCount`, `blockedReasonCounts`,
-`blockedCandidates`, and the capped `proposalReadyExamples` / `blockedExamples` samples to see why
-proposal-ready rows are still absent. This section stays report-only until a later milestone adds a
-separate explicit reversible Admin action.
+Proposal freshness is part of readiness. Read the additive `proposalGeneratedAt`,
+`proposalReportRunId`, `proposalFreshnessStatus`, `proposalFreshnessAgeSeconds`, and
+`proposalReadinessHash` fields before deciding whether a row is still actionable. Rows may also
+carry `proposalReadiness`, `proposalReadinessReason`, and `proposalReadinessEvidence` so stale rows
+stay visible but are not mistaken for fresh action candidates.
+
+`proposalCount=0` is not failure by itself. Inspect `staleCount`, `blockedCount`,
+`blockedReasonCounts`, `blockedCandidates`, and the capped `proposalReadyExamples` /
+`blockedExamples` samples to see why proposal-ready rows are still absent or no longer actionable.
+This section stays report-only until a later milestone adds a separate explicit reversible Admin
+action.
 
 The intended first future action, if separately implemented and approved, is reversible:
 

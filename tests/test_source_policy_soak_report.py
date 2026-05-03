@@ -91,30 +91,38 @@ def _base_fetch_report() -> dict[str, object]:
     }
 
 
-def _write_clean_runtime(data_dir: Path) -> None:
-    _write_json(data_dir / "jobs-fetch-report.json", _base_fetch_report())
+def _write_clean_runtime(
+    data_dir: Path,
+    *,
+    fetch_run_id: str = "fetch_clean_1",
+    recommendations_updated_at: str | None = None,
+) -> None:
+    fetch_report = _base_fetch_report()
+    if fetch_run_id:
+        fetch_report["runId"] = fetch_run_id
+    _write_json(data_dir / "jobs-fetch-report.json", fetch_report)
     _write_json(
         data_dir / "source-registry-active.json", [{"id": "static:studio", "adapter": "static"}]
     )
     _write_json(data_dir / "source-registry-pending.json", [])
     _write_json(data_dir / "source-registry-rejected.json", [])
     _write_json(data_dir / "source-sync.json", {"schemaVersion": 2, "active": [], "pending": []})
-    _write_json(
-        data_dir / "source-policy-recommendations.json",
-        {
-            "pairs": [
-                {
-                    "staticSourceId": "static:studio",
-                    "providerSourceId": "provider:studio",
-                    "currentRecommendation": "stable_safe_redundant",
-                    "lastProposal": "safe_redundant_static",
-                    "safeRunCount": 3,
-                    "consecutiveSafeRunCount": 3,
-                    "destructiveActionAllowed": False,
-                }
-            ]
-        },
-    )
+    recommendations = {
+        "pairs": [
+            {
+                "staticSourceId": "static:studio",
+                "providerSourceId": "provider:studio",
+                "currentRecommendation": "stable_safe_redundant",
+                "lastProposal": "safe_redundant_static",
+                "safeRunCount": 3,
+                "consecutiveSafeRunCount": 3,
+                "destructiveActionAllowed": False,
+            }
+        ]
+    }
+    if recommendations_updated_at:
+        recommendations["updatedAt"] = recommendations_updated_at
+    _write_json(data_dir / "source-policy-recommendations.json", recommendations)
     _write_json(data_dir / "source-policy-review-state.json", {"pairs": {}})
 
 
@@ -136,6 +144,18 @@ def test_clean_state_reports_ok_and_writes_reports(tmp_path: Path) -> None:
     assert report["summary"]["dynamicRedundantStaticSuppressedCount"] == 1
     assert report["summary"]["stableSafeRedundantRecommendationCount"] == 1
     assert report["summary"]["conservativeStaticCleanupProposalCount"] == 1
+    cleanup = report["sections"]["conservativeStaticCleanupProposals"]
+    assert cleanup["proposalCount"] == 1
+    assert cleanup["staleCount"] == 0
+    assert cleanup["proposalFreshnessStatus"] == "fresh"
+    assert cleanup["proposalFreshnessAgeSeconds"] == 0
+    assert cleanup["proposalStaleThresholdSeconds"] == 86400
+    assert cleanup["proposalReportRunId"] == "fetch_clean_1"
+    assert cleanup["proposalReadinessHash"]
+    assert cleanup["proposalReadyExamples"][0]["proposalReadinessEvidence"] == [
+        "proposal_freshness:fresh",
+        "proposal_disposition:proposal_ready",
+    ]
     assert Path(outputs["json"]).exists()
     assert Path(outputs["markdown"]).exists()
 
@@ -149,6 +169,8 @@ def test_conservative_static_cleanup_proposal_is_report_only(tmp_path: Path) -> 
     proposal = report["sections"]["conservativeStaticCleanupProposals"]["proposals"][0]
 
     assert cleanup["blockedReasonCounts"] == {}
+    assert cleanup["proposalFreshnessStatus"] == "fresh"
+    assert cleanup["proposalReportRunId"] == "fetch_clean_1"
     assert cleanup["proposalReadyExamples"][0]["staticSourceId"] == proposal["staticSourceId"]
     assert proposal["recommendedAction"] == "move_static_to_hidden_pending"
     assert proposal["destructiveActionAllowed"] is False
@@ -176,6 +198,12 @@ def test_conservative_static_cleanup_blocks_static_only_evidence(tmp_path: Path)
     assert cleanup["blockedReasonCounts"]["static_only_evidence_present"] == 1
     assert cleanup["blockedExamples"][0]["proposalDisposition"] == "blocked"
     assert cleanup["blockedCandidates"][0]["blockers"] == ["static_only_evidence_present"]
+    assert cleanup["blockedCandidates"][0]["proposalReadiness"] == "blocked"
+    assert cleanup["blockedCandidates"][0]["proposalFreshnessStatus"] == "fresh"
+    assert cleanup["blockedCandidates"][0]["proposalReadinessEvidence"] == [
+        "blocker:static_only_evidence_present",
+        "proposal_disposition:blocked",
+    ]
 
 
 def test_conservative_static_cleanup_never_mutates_seed_or_runtime_registry(

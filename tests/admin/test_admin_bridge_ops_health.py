@@ -310,7 +310,14 @@ def test_compute_ops_health_exposes_conservative_cleanup_proposals(
                     "conservativeStaticCleanupProposals": {
                         "totalCandidateCount": 2,
                         "proposalCount": 1,
+                        "staleCount": 0,
                         "blockedCount": 1,
+                        "proposalGeneratedAt": "2026-05-01T00:00:00Z",
+                        "proposalReportRunId": "fetch-123",
+                        "proposalFreshnessStatus": "fresh",
+                        "proposalFreshnessAgeSeconds": 0,
+                        "proposalStaleThresholdSeconds": 86400,
+                        "proposalReadinessHash": "abc123",
                         "blockedReasonCounts": {
                             "static_only_evidence_present": 1,
                         },
@@ -321,6 +328,16 @@ def test_compute_ops_health_exposes_conservative_cleanup_proposals(
                                 "recommendedAction": "move_static_to_hidden_pending",
                                 "requiresExplicitAdminAction": True,
                                 "destructiveActionAllowed": False,
+                                "proposalReadiness": "actionable",
+                                "proposalReadinessReason": "proposal evidence is fresh and actionable",
+                                "proposalFreshnessStatus": "fresh",
+                                "proposalFreshnessAgeSeconds": 0,
+                                "proposalGeneratedAt": "2026-05-01T00:00:00Z",
+                                "proposalReportRunId": "fetch-123",
+                                "proposalReadinessEvidence": [
+                                    "proposal_freshness:fresh",
+                                    "proposal_disposition:proposal_ready",
+                                ],
                             }
                         ],
                         "blockedExamples": [
@@ -328,6 +345,16 @@ def test_compute_ops_health_exposes_conservative_cleanup_proposals(
                                 "staticSourceName": "Static Blocked",
                                 "providerSourceName": "Blocked Provider",
                                 "blockers": ["static_only_evidence_present"],
+                                "proposalReadiness": "blocked",
+                                "proposalReadinessReason": "static_only_evidence_present",
+                                "proposalFreshnessStatus": "fresh",
+                                "proposalFreshnessAgeSeconds": 0,
+                                "proposalGeneratedAt": "2026-05-01T00:00:00Z",
+                                "proposalReportRunId": "fetch-123",
+                                "proposalReadinessEvidence": [
+                                    "blocker:static_only_evidence_present",
+                                    "proposal_disposition:blocked",
+                                ],
                             }
                         ],
                     }
@@ -341,10 +368,27 @@ def test_compute_ops_health_exposes_conservative_cleanup_proposals(
 
     cleanup = health["kpis"]["conservativeStaticCleanupProposals"]
     assert cleanup["proposalCount"] == 1
+    assert cleanup["staleCount"] == 0
     assert cleanup["blockedCount"] == 1
+    assert cleanup["proposalGeneratedAt"] == "2026-05-01T00:00:00Z"
+    assert cleanup["proposalReportRunId"] == "fetch-123"
+    assert cleanup["proposalFreshnessStatus"] == "fresh"
+    assert cleanup["proposalFreshnessAgeSeconds"] == 0
+    assert cleanup["proposalStaleThresholdSeconds"] == 86400
+    assert cleanup["proposalReadinessHash"] == "abc123"
     assert cleanup["blockedReasonCounts"]["static_only_evidence_present"] == 1
     assert (
         cleanup["proposalReadyExamples"][0]["recommendedAction"] == "move_static_to_hidden_pending"
+    )
+    assert cleanup["proposalReadyExamples"][0]["proposalReadiness"] == "actionable"
+    assert cleanup["proposalReadyExamples"][0]["proposalFreshnessStatus"] == "fresh"
+    assert cleanup["proposalReadyExamples"][0]["proposalReadinessReason"] == (
+        "proposal evidence is fresh and actionable"
+    )
+    assert cleanup["blockedExamples"][0]["proposalReadiness"] == "blocked"
+    assert cleanup["blockedExamples"][0]["proposalFreshnessStatus"] == "fresh"
+    assert (
+        cleanup["blockedExamples"][0]["proposalReadinessReason"] == "static_only_evidence_present"
     )
 
 

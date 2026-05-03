@@ -271,6 +271,25 @@ function formatConservativeCleanupReasonCounts(reasonCounts) {
     .join(", ");
 }
 
+function formatConservativeCleanupFreshnessSummary(cleanup) {
+  const freshnessStatus = String(cleanup?.proposalFreshnessStatus || "fresh").replaceAll("_", " ");
+  const ageSeconds = Number(cleanup?.proposalFreshnessAgeSeconds);
+  const age = Number.isFinite(ageSeconds) ? formatDuration(Math.max(0, ageSeconds) * 1000) : "unknown";
+  const generatedAt = String(cleanup?.proposalGeneratedAt || "");
+  const runId = String(cleanup?.proposalReportRunId || "");
+  const staleAfterSeconds = Number(cleanup?.proposalStaleThresholdSeconds || 0);
+  const staleAfter = staleAfterSeconds > 0 ? formatDuration(staleAfterSeconds * 1000) : "";
+  return [
+    `status ${freshnessStatus}`,
+    `age ${age}`,
+    generatedAt ? `generated ${generatedAt}` : "",
+    runId ? `run ${runId}` : "",
+    staleAfter ? `stale after ${staleAfter}` : ""
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 function formatConservativeCleanupProposalRows(rows, emptyText) {
   const proposalRows = Array.isArray(rows) ? rows : [];
   if (!proposalRows.length) return escapeHtml(emptyText);
@@ -282,7 +301,14 @@ function formatConservativeCleanupProposalRows(rows, emptyText) {
       const action = String(row?.recommendedAction || "move_static_to_hidden_pending").replaceAll("_", " ");
       const cleanRuns = Number(row?.cleanRunEvidenceCount || 0);
       const suppression = String(row?.suppressionEvidenceStatus || "unknown").replaceAll("_", " ");
-      return escapeHtml(`${staticName} -> ${provider} (${action}, clean runs ${cleanRuns}, suppression ${suppression})`);
+      const readiness = String(row?.proposalReadiness || "actionable").replaceAll("_", " ");
+      const freshness = String(row?.proposalFreshnessStatus || "fresh").replaceAll("_", " ");
+      const readinessReason = String(row?.proposalReadinessReason || "");
+      return escapeHtml(
+        `${staticName} -> ${provider} (${action}, readiness ${readiness}${
+          readinessReason ? `, ${readinessReason}` : ""
+        }, freshness ${freshness}, clean runs ${cleanRuns}, suppression ${suppression})`
+      );
     })
     .join(" | ");
 }
@@ -298,7 +324,14 @@ function formatConservativeCleanupBlockedRows(rows, emptyText) {
       const blockers = Array.isArray(row?.blockers) && row.blockers.length
         ? row.blockers.slice(0, 3).map(item => String(item || "").replaceAll("_", " ")).join(", ")
         : "blocked";
-      return escapeHtml(`${staticName} -> ${provider} (${blockers})`);
+      const readiness = String(row?.proposalReadiness || "blocked").replaceAll("_", " ");
+      const freshness = String(row?.proposalFreshnessStatus || "fresh").replaceAll("_", " ");
+      const readinessReason = String(row?.proposalReadinessReason || "");
+      return escapeHtml(
+        `${staticName} -> ${provider} (${readiness}${
+          readinessReason ? `, ${readinessReason}` : ""
+        }, freshness ${freshness}, ${blockers})`
+      );
     })
     .join(" | ");
 }
@@ -1034,6 +1067,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const cleanupBlockedReasonSummary = formatConservativeCleanupReasonCounts(
     conservativeStaticCleanupProposals?.blockedReasonCounts
   );
+  const cleanupFreshnessSummary = formatConservativeCleanupFreshnessSummary(
+    conservativeStaticCleanupProposals
+  );
   const mergeReasonCounts = dedupEvidence?.mergeReasonCounts && typeof dedupEvidence.mergeReasonCounts === "object"
     ? dedupEvidence.mergeReasonCounts
     : {};
@@ -1227,7 +1263,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Provider/static overlap audit</strong>: safe ${Number(providerStaticOverlap?.safePairCount || 0).toLocaleString()}, needs review ${Number(providerStaticOverlap?.needsReviewPairCount || 0).toLocaleString()}, insufficient history ${Number(providerStaticOverlap?.insufficientHistoryPairCount || 0).toLocaleString()}. ${overlapAuditSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Static suppression policy</strong>: suppressed ${Number(staticSuppressionPolicy?.suppressedCount || 0).toLocaleString()}, paused ${Number(staticSuppressionPolicy?.pausedCount || 0).toLocaleString()}, warnings ${Number(staticSuppressionPolicy?.warningCount || 0).toLocaleString()}. Suppressed: ${suppressedPolicySummary} Paused: ${pausedPolicySummary} Warnings: ${warningPolicySummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Redundant static proposals</strong>: safe ${Number(redundantStaticProposals?.safeRedundantCount || 0).toLocaleString()}, keep static ${Number(redundantStaticProposals?.keepStaticCount || 0).toLocaleString()}, more history ${Number(redundantStaticProposals?.needsMoreHistoryCount || 0).toLocaleString()}, review/unstable ${Number((redundantStaticProposals?.needsReviewCount || 0) + (redundantStaticProposals?.providerUnstableCount || 0)).toLocaleString()}, static-only ${Number(redundantStaticProposals?.staticOnlyDetectedCount || 0).toLocaleString()}. Safe: ${safeRedundantProposalSummary} Keep: ${keepStaticProposalSummary} History: ${moreHistoryProposalSummary} Review: ${reviewProposalSummary} Static-only: ${staticOnlyProposalSummary}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Conservative static cleanup proposals</strong>: total candidates ${Number(conservativeStaticCleanupProposals?.totalCandidateCount || 0).toLocaleString()}, proposal-ready ${Number(conservativeStaticCleanupProposals?.proposalCount || 0).toLocaleString()}, blocked ${Number(conservativeStaticCleanupProposals?.blockedCount || 0).toLocaleString()}. Blockers: ${escapeHtml(cleanupBlockedReasonSummary)} Ready: ${cleanupProposalReadySummary} Blocked: ${cleanupBlockedSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Conservative static cleanup proposals</strong>: total candidates ${Number(conservativeStaticCleanupProposals?.totalCandidateCount || 0).toLocaleString()}, proposal-ready ${Number(conservativeStaticCleanupProposals?.proposalCount || 0).toLocaleString()}, stale ${Number(conservativeStaticCleanupProposals?.staleCount || 0).toLocaleString()}, blocked ${Number(conservativeStaticCleanupProposals?.blockedCount || 0).toLocaleString()}. Freshness: ${escapeHtml(cleanupFreshnessSummary)}. Blockers: ${escapeHtml(cleanupBlockedReasonSummary)} Ready: ${cleanupProposalReadySummary} Blocked: ${cleanupBlockedSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Source-policy review</strong>: local review pairs ${Number(sourcePolicyRecommendationExport?.reviewStatePairCount || 0).toLocaleString()}, force-paused ${Number(sourcePolicyRecommendationExport?.manualForcePausedCount || 0).toLocaleString()}. Use the Source Policy Review queue for local, reversible actions.</div>
   `;
 

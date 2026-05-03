@@ -22,8 +22,10 @@ def test_conservative_static_cleanup_blocks_dirty_source_sync(tmp_path: Path) ->
     cleanup = report["sections"]["conservativeStaticCleanupProposals"]
 
     assert cleanup["proposalCount"] == 0
+    assert cleanup["proposalFreshnessStatus"] == "fresh"
     assert cleanup["blockedReasonCounts"]["source_sync_not_clean"] == 1
     assert cleanup["blockedCandidates"][0]["proposalDisposition"] == "blocked"
+    assert cleanup["blockedCandidates"][0]["proposalReadiness"] == "blocked"
     assert "source_sync_not_clean" in cleanup["blockedCandidates"][0]["blockers"]
 
 
@@ -99,6 +101,7 @@ def test_conservative_static_cleanup_examples_are_capped_and_stable(tmp_path: Pa
 
     assert cleanup["proposalCount"] == 6
     assert len(cleanup["proposalReadyExamples"]) == 5
+    assert cleanup["proposalFreshnessStatus"] == "fresh"
     assert [row["staticSourceName"] for row in cleanup["proposalReadyExamples"]] == [
         "Static Alpha",
         "Static Bravo",
@@ -106,3 +109,41 @@ def test_conservative_static_cleanup_examples_are_capped_and_stable(tmp_path: Pa
         "Static Delta",
         "Static Echo",
     ]
+
+
+def test_conservative_static_cleanup_stale_proposals_remain_read_only(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _write_clean_runtime(
+        data_dir,
+        recommendations_updated_at="2000-01-01T00:00:00+00:00",
+    )
+
+    report = soak.build_soak_report(data_dir)
+    cleanup = report["sections"]["conservativeStaticCleanupProposals"]
+
+    assert cleanup["proposalCount"] == 1
+    assert cleanup["staleCount"] == 1
+    assert cleanup["proposalFreshnessStatus"] == "stale"
+    assert cleanup["proposalReadyExamples"][0]["proposalReadiness"] == "stale"
+    assert cleanup["proposalReadyExamples"][0]["proposalFreshnessStatus"] == "stale"
+    assert cleanup["proposalReadyExamples"][0]["proposalReadinessReason"].startswith(
+        "proposal evidence is stale"
+    )
+    assert cleanup["proposalReadyExamples"][0]["proposalReadinessEvidence"] == [
+        "proposal_freshness:stale",
+        "proposal_disposition:proposal_ready",
+    ]
+
+
+def test_conservative_static_cleanup_missing_proposal_artifact_is_safe(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _write_clean_runtime(data_dir)
+    (data_dir / "source-policy-recommendations.json").unlink()
+
+    report = soak.build_soak_report(data_dir)
+    cleanup = report["sections"]["conservativeStaticCleanupProposals"]
+
+    assert cleanup["proposalCount"] == 0
+    assert cleanup["staleCount"] == 0
+    assert cleanup["proposalReadyExamples"] == []
+    assert cleanup["blockedExamples"] == []

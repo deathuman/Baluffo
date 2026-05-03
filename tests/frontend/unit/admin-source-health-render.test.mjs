@@ -228,7 +228,14 @@ test("admin render: fetcher metrics render conservative cleanup proposal closure
       conservativeStaticCleanupProposals: {
         totalCandidateCount: 2,
         proposalCount: 1,
+        staleCount: 0,
         blockedCount: 1,
+        proposalGeneratedAt: "2026-05-01T00:00:00Z",
+        proposalReportRunId: "fetch-123",
+        proposalFreshnessStatus: "fresh",
+        proposalFreshnessAgeSeconds: 0,
+        proposalStaleThresholdSeconds: 86400,
+        proposalReadinessHash: "abc123",
         blockedReasonCounts: {
           static_only_evidence_present: 1,
           source_sync_not_clean: 1
@@ -239,14 +246,22 @@ test("admin render: fetcher metrics render conservative cleanup proposal closure
             providerSourceName: "Provider Alpha",
             recommendedAction: "move_static_to_hidden_pending",
             cleanRunEvidenceCount: 3,
-            suppressionEvidenceStatus: "observed_dynamic_suppression"
+            suppressionEvidenceStatus: "observed_dynamic_suppression",
+            proposalReadiness: "actionable",
+            proposalReadinessReason: "proposal evidence is fresh and actionable",
+            proposalFreshnessStatus: "fresh",
+            proposalFreshnessAgeSeconds: 0
           }
         ],
         blockedExamples: [
           {
             staticSourceName: "Static Beta",
             providerSourceName: "Provider Beta",
-            blockers: ["static_only_evidence_present", "source_sync_not_clean"]
+            blockers: ["static_only_evidence_present", "source_sync_not_clean"],
+            proposalReadiness: "blocked",
+            proposalReadinessReason: "static_only_evidence_present, source_sync_not_clean",
+            proposalFreshnessStatus: "fresh",
+            proposalFreshnessAgeSeconds: 0
           }
         ]
       }
@@ -257,7 +272,12 @@ test("admin render: fetcher metrics render conservative cleanup proposal closure
   assert.match(metricsEl.innerHTML, /Conservative static cleanup proposals/i);
   assert.match(metricsEl.innerHTML, /total candidates 2/i);
   assert.match(metricsEl.innerHTML, /proposal-ready 1/i);
+  assert.match(metricsEl.innerHTML, /stale 0/i);
   assert.match(metricsEl.innerHTML, /blocked 1/i);
+  assert.match(metricsEl.innerHTML, /status fresh/i);
+  assert.match(metricsEl.innerHTML, /generated 2026-05-01T00:00:00Z/i);
+  assert.match(metricsEl.innerHTML, /run fetch-123/i);
+  assert.match(metricsEl.innerHTML, /stale after/i);
   assert.match(metricsEl.innerHTML, /static only evidence present 1/i);
   assert.match(metricsEl.innerHTML, /source sync not clean 1/i);
   assert.match(metricsEl.innerHTML, /Static Alpha/i);
