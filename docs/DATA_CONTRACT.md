@@ -744,12 +744,26 @@ The section may expose both actionable and blocked review queues:
 | `reviewCandidates` | `Array<Object>` | Actionable rows with `apiEligible=true`; these are the only rows that expose apply actions in Admin. |
 | `blockedCount` | `number` | Count of candidate links that are not yet reviewable. |
 | `blockedReasonCounts` | `object` | Aggregate blocker counts across blocked candidates. |
-| `blockedCandidates` | `Array<Object>` | Read-only blocked candidate rows with blocker reasons and evidence. |
+| `disambiguationBlockerCounts` | `object` | Aggregate lower-level blocker counts across blocked candidates, grouped by `disambiguationBlockers`. |
+| `blockedCandidates` | `Array<Object>` | Read-only blocked candidate rows with blocker reasons, disambiguation blockers, and evidence. |
 | `blockedExamples` | `Array<Object>` | Capped stable sample of blocked candidates for read-only rendering. |
+| `disambiguationBlockedExamples` | `Array<Object>` | Capped stable sample of blocked candidates used to explain the lower-level disambiguation blocker split. |
 | `linkedCandidates` | `Array<Object>` | Already-linked provider/static rows shown for read-only visibility. |
 
 `candidateLinkCount` may be non-zero even when `reviewCandidates` is empty. In that case, the
-blocked-candidate surface explains why the review queue is empty.
+blocked-candidate surface explains why the review queue is empty. High-level `blockedReasonCounts`
+capture the queue blocker, while `disambiguationBlockerCounts` explain the lower-level evidence gap
+for each blocked candidate.
+
+Blocked candidate rows may include source-state evidence fields such as `lastStatus`,
+`lastKeptCount`, `lastSuccessfulAt`, `lastFetchedAt`, `providerCoverageStatus`,
+`providerCoverageConsecutiveSuccesses`, `providerCoverageLatestKeptCount`,
+`providerReplacementReadiness`, `evidenceScore`, and `evidenceReasons`. The lower-level
+`disambiguationBlockers` taxonomy keeps the distinction between missing source-state history
+(`no_source_state_history`), unhealthy source-state (`source_state_not_ok`), insufficient provider
+success history (`insufficient_provider_success_history`), multiple static candidates with equal
+history (`multiple_static_candidates_with_equal_history`), and static-only evidence
+(`static_only_evidence_present`).
 
 Dynamic redundant-static suppression is a reversible runtime skip layered on top of provider
 coverage. One successful provider fetch validates provider usability. Two or more consecutive

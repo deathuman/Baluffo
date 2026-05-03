@@ -72,7 +72,9 @@ def _load_provider_coverage_link_backfill(api: BridgeApi) -> tuple[dict[str, Any
         "highConfidenceLinkCount": 0,
         "mediumConfidenceLinkCount": 0,
         "blockedReasonCounts": {},
+        "disambiguationBlockerCounts": {},
         "blockedExamples": [],
+        "disambiguationBlockedExamples": [],
         "activeProviderWithoutMigrationIdentityCount": 0,
     }
     if not path.exists():
@@ -98,6 +100,7 @@ def _load_provider_coverage_link_backfill(api: BridgeApi) -> tuple[dict[str, Any
             "resolvedByAdvisoryIdentityCount",
             "unresolvedAmbiguousCount",
             "blockedReasonCounts",
+            "disambiguationBlockerCounts",
         )
         if key in section
     }
@@ -114,6 +117,11 @@ def _load_provider_coverage_link_backfill(api: BridgeApi) -> tuple[dict[str, Any
     ]
     result["blockedExamples"] = [
         dict(row) for row in _as_list(section.get("blockedExamples")) if isinstance(row, dict)
+    ]
+    result["disambiguationBlockedExamples"] = [
+        dict(row)
+        for row in _as_list(section.get("disambiguationBlockedExamples"))
+        if isinstance(row, dict)
     ]
     return result, ""
 

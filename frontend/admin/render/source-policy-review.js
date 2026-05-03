@@ -297,6 +297,27 @@ function renderEvidenceList(items) {
   return values.map(item => escapeHtml(formatMachineLabel(item))).join(", ");
 }
 
+function formatMigrationLinkDisambiguationBlockerCounts(counts) {
+  const values = objectValue(counts);
+  const entries = Object.entries(values)
+    .map(([key, value]) => [String(key), numberValue(value)])
+    .filter(([, value]) => value > 0)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+  if (!entries.length) return "none";
+  return entries.map(([key, value]) => `${formatMachineLabel(key)} ${value.toLocaleString()}`).join(", ");
+}
+
+function formatMigrationLinkDisambiguationBlockedExamples(rows) {
+  const examples = Array.isArray(rows) ? rows : [];
+  if (!examples.length) return "none";
+  return examples.slice(0, 5).map(example => {
+    const providerName = stringValue(example?.providerSourceName, stringValue(example?.providerSourceId, "Unknown provider"));
+    const staticName = selectedStaticSourceName(example);
+    const blockers = listValue(example?.disambiguationBlockers).map(item => stringValue(item).replaceAll("_", " ")).filter(Boolean);
+    return `${providerName} / ${staticName} (${blockers.join(", ") || "none"})`;
+  }).join(" | ");
+}
+
 function renderMigrationLinkReviewCandidate(candidate, index) {
   const providerName = stringValue(candidate?.providerSourceName, stringValue(candidate?.providerSourceId, "Unknown provider"));
   const providerId = stringValue(candidate?.providerSourceId, "unknown-provider");
@@ -307,7 +328,7 @@ function renderMigrationLinkReviewCandidate(candidate, index) {
   const copy = tier === "high"
     ? "High-confidence exact-evidence candidate."
     : "Medium-confidence candidate. Review evidence before applying.";
-  const sourceState = objectValue(candidate?.sourceStateEvidence);
+  const sourceState = objectValue(candidate?.sourceStateEvidence || candidate);
   const ignoredAlternatives = listValue(candidate?.ignoredAlternatives);
   const actions = getMigrationLinkReviewActions(candidate);
   const actionButtons = actions.map(action => `
@@ -357,10 +378,14 @@ function renderBlockedMigrationLinkCandidate(candidate, index) {
   const staticName = selectedStaticSourceName(candidate);
   const staticId = selectedStaticSourceId(candidate);
   const staticUrl = stringValue(candidate?.selectedStaticUrl, stringValue(candidate?.staticUrl));
-  const sourceState = objectValue(candidate?.sourceStateEvidence);
+  const sourceState = objectValue(candidate?.sourceStateEvidence || candidate);
   const blockers = listValue(candidate?.blockers);
   const evidenceReasons = listValue(candidate?.evidenceReasons);
+  const disambiguationBlockers = listValue(candidate?.disambiguationBlockers);
   const ignoredAlternatives = listValue(candidate?.ignoredAlternatives);
+  const providerCoverageStatus = stringValue(sourceState.providerCoverageStatus);
+  const providerCoverageConsecutiveSuccesses = numberValue(sourceState.providerCoverageConsecutiveSuccesses);
+  const providerCoverageLatestKeptCount = numberValue(sourceState.providerCoverageLatestKeptCount);
   return `
     <div class="admin-source-policy-row admin-source-policy-migration-link-row" data-source-policy-migration-link-index="${index}">
       <div class="admin-source-policy-row-main">
@@ -380,9 +405,15 @@ function renderBlockedMigrationLinkCandidate(candidate, index) {
         <span><strong>API eligible</strong> ${candidate?.apiEligible === true ? "Yes" : "No"}</span>
         <span><strong>Blockers</strong> ${renderEvidenceList(blockers)}</span>
         <span><strong>Evidence</strong> ${renderEvidenceList(evidenceReasons)}</span>
+        <span><strong>Disambiguation</strong> ${renderEvidenceList(disambiguationBlockers)}</span>
         <span><strong>Last kept</strong> ${numberValue(sourceState.lastKeptCount).toLocaleString()}</span>
         <span><strong>Last status</strong> ${escapeHtml(formatMachineLabel(sourceState.lastStatus))}</span>
+        <span><strong>Last successful</strong> ${escapeHtml(formatMachineLabel(sourceState.lastSuccessfulAt))}</span>
+        <span><strong>Last fetched</strong> ${escapeHtml(formatMachineLabel(sourceState.lastFetchedAt))}</span>
         <span><strong>Evidence score</strong> ${numberValue(sourceState.evidenceScore).toLocaleString()}</span>
+        <span><strong>Coverage status</strong> ${escapeHtml(formatMachineLabel(providerCoverageStatus))}</span>
+        <span><strong>Coverage successes</strong> ${providerCoverageConsecutiveSuccesses.toLocaleString()}</span>
+        <span><strong>Coverage latest kept</strong> ${providerCoverageLatestKeptCount.toLocaleString()}</span>
         <span><strong>Ignored alternatives</strong> ${ignoredAlternatives.length.toLocaleString()}</span>
       </div>
       <div class="admin-source-policy-actions"><span class="muted">Read-only blocked candidate.</span></div>
@@ -460,8 +491,12 @@ function renderMigrationLinkReviewSection(candidates, linkedCandidates) {
   `;
 }
 
-function renderBlockedMigrationLinkSection(blockedCandidates) {
+function renderBlockedMigrationLinkSection(blockedCandidates, linkBackfill = {}) {
   const rows = Array.isArray(blockedCandidates) ? blockedCandidates : [];
+  const disambiguationSummary = formatMigrationLinkDisambiguationBlockerCounts(linkBackfill?.disambiguationBlockerCounts);
+  const disambiguationExamples = formatMigrationLinkDisambiguationBlockedExamples(
+    linkBackfill?.disambiguationBlockedExamples || rows
+  );
   const content = rows.length
     ? rows.map((candidate, index) => renderBlockedMigrationLinkCandidate(candidate, index)).join("")
     : '<div class="muted">No blocked migration link candidates are available.</div>';
@@ -470,6 +505,7 @@ function renderBlockedMigrationLinkSection(blockedCandidates) {
       <h4>Blocked Migration Link Candidates</h4>
       <div class="admin-source-policy-copy">
         These provider/static pairs are evidence-backed but not yet reviewable. Apply actions stay limited to API-eligible review candidates.
+        Disambiguation blockers: ${escapeHtml(disambiguationSummary)}. Examples: ${escapeHtml(disambiguationExamples)}.
       </div>
       <div class="admin-source-policy-list">${content}</div>
     </div>
@@ -554,6 +590,7 @@ function renderSuppressionEligibilitySection(rows) {
 export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
   if (!reviewEl) return;
   const rows = getPairs(payload);
+  const linkBackfill = objectValue(payload?.providerCoverageLinkBackfill);
   const migrationLinkCandidates = getMigrationLinkReviewCandidates(payload);
   const blockedMigrationLinkCandidates = getMigrationLinkBlockedCandidates(payload);
   const linkedMigrationCandidates = getMigrationLinkLinkedCandidates(payload);
@@ -566,6 +603,8 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
     rows,
     migrationLinkCandidates,
     blockedMigrationLinkCandidates,
+    migrationLinkDisambiguationBlockerCounts: linkBackfill.disambiguationBlockerCounts || {},
+    migrationLinkDisambiguationBlockedExamples: linkBackfill.disambiguationBlockedExamples || [],
     linkedMigrationCandidates,
     suppressionEligibilityRows
   });
@@ -591,7 +630,7 @@ export function renderAdminSourcePolicyReview(reviewEl, payload, options = {}) {
         : `<div class="muted">${escapeHtml(emptyText)}</div>`}
     </div>
     ${renderMigrationLinkReviewSection(migrationLinkCandidates, linkedMigrationCandidates)}
-    ${renderBlockedMigrationLinkSection(blockedMigrationLinkCandidates)}
+    ${renderBlockedMigrationLinkSection(blockedMigrationLinkCandidates, linkBackfill)}
     ${renderSuppressionEligibilitySection(suppressionEligibilityRows)}
   `;
 

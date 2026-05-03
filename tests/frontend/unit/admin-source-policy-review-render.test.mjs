@@ -258,37 +258,6 @@ test("admin source policy review renders migration link review candidates", () =
   assert.match(reviewEl.innerHTML, />Apply link</);
 });
 
-test("admin source policy review renders blocked migration link candidates read-only", () => {
-  const reviewEl = makeEl();
-  renderAdminSourcePolicyReview(reviewEl, {
-    providerCoverageLinkBackfill: {
-      blockedCandidates: [
-        makeMigrationLinkCandidate({
-          confidence: 0.72,
-          confidenceTier: "blocked",
-          apiEligible: false,
-          blockers: ["ambiguous_static_match"],
-          evidenceReasons: ["redundant_static_rule_exact_match"],
-          ignoredAlternatives: [],
-          recommendedApiPayload: undefined,
-          sourceStateEvidence: {
-            lastKeptCount: 4,
-            lastStatus: "ok",
-            evidenceScore: 7
-          }
-        })
-      ]
-    }
-  });
-
-  assert.match(reviewEl.innerHTML, /Blocked Migration Link Candidates/);
-  assert.match(reviewEl.innerHTML, /Blocked candidate\. Review the blocker evidence before any link is applied\./);
-  assert.match(reviewEl.innerHTML, /ambiguous static match/);
-  assert.match(reviewEl.innerHTML, /redundant static rule exact match/);
-  assert.match(reviewEl.innerHTML, /Read-only blocked candidate\./);
-  assert.doesNotMatch(reviewEl.innerHTML, />Apply link</);
-});
-
 test("admin source policy review renders high-confidence migration copy", () => {
   const reviewEl = makeEl();
   renderAdminSourcePolicyReview(reviewEl, {

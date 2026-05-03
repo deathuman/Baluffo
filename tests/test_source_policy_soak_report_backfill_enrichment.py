@@ -34,6 +34,9 @@ def test_source_state_resolves_active_successful_static(tmp_path: Path) -> None:
                     "lastKeptCount": 8,
                     "lastSuccessfulAt": "2026-01-01T00:00:00Z",
                     "lastFetchedAt": "2026-01-01T00:00:00Z",
+                    "providerCoverageStatus": "validated_provider",
+                    "providerCoverageConsecutiveSuccesses": 2,
+                    "providerCoverageLatestKeptCount": 8,
                 }
             }
         },
@@ -87,6 +90,7 @@ def test_source_state_resolves_active_successful_static(tmp_path: Path) -> None:
     assert review["whyNotHighConfidence"]
     assert review["resolutionReason"] == "source_state_disambiguation"
     assert review["sourceStateEvidence"]["lastKeptCount"] == 8
+    assert review["sourceStateEvidence"]["providerCoverageConsecutiveSuccesses"] == 2
     assert ignored["staticSourceId"] == "static:cdpr-hidden"
     assert ignored["reasonIgnored"] == "resolved_by_source_state"
     assert payload == {
@@ -224,8 +228,20 @@ def test_duplicate_pending_does_not_beat_active_canonical(tmp_path: Path) -> Non
         data_dir / "jobs-source-state.json",
         {
             "sources": {
-                "static:cdpr-active": {"lastStatus": "ok", "lastKeptCount": 1},
-                "static:cdpr-pending": {"lastStatus": "ok", "lastKeptCount": 20},
+                "static:cdpr-active": {
+                    "lastStatus": "ok",
+                    "lastKeptCount": 1,
+                    "providerCoverageStatus": "validated_provider",
+                    "providerCoverageConsecutiveSuccesses": 2,
+                    "providerCoverageLatestKeptCount": 1,
+                },
+                "static:cdpr-pending": {
+                    "lastStatus": "ok",
+                    "lastKeptCount": 20,
+                    "providerCoverageStatus": "validated_provider",
+                    "providerCoverageConsecutiveSuccesses": 3,
+                    "providerCoverageLatestKeptCount": 20,
+                },
             }
         },
     )
@@ -267,13 +283,81 @@ def test_duplicate_pending_does_not_beat_active_canonical(tmp_path: Path) -> Non
     assert "duplicate_static_row" in ignored["disambiguationBlockers"]
 
 
+def test_source_state_without_success_threshold_stays_blocked(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _write_json(data_dir / "jobs-fetch-report.json", {})
+    _write_json(
+        data_dir / "jobs-source-state.json",
+        {
+            "sources": {
+                "static:cdpr-active": {
+                    "lastStatus": "ok",
+                    "lastKeptCount": 8,
+                    "lastSuccessfulAt": "2026-01-01T00:00:00Z",
+                    "lastFetchedAt": "2026-01-01T00:00:00Z",
+                    "providerCoverageStatus": "validated_provider",
+                    "providerCoverageConsecutiveSuccesses": 1,
+                    "providerCoverageLatestKeptCount": 8,
+                }
+            }
+        },
+    )
+    _write_json(
+        data_dir / "source-registry-active.json",
+        [
+            _cdpr_provider(),
+            {
+                "id": "static:cdpr-active",
+                "name": "CDPR Active Static",
+                "adapter": "static",
+                "listing_url": "https://cdprojektred.com/jobs",
+            },
+        ],
+    )
+    _write_json(
+        data_dir / "source-registry-pending.json",
+        [
+            {
+                "id": "static:cdpr-hidden",
+                "name": "CDPR Hidden Static",
+                "adapter": "static",
+                "listing_url": "https://www.cdprojektred.com/en/jobs",
+                "hiddenFromDefault": True,
+                "duplicateOfSourceId": "static:cdpr-active",
+                "pendingReason": "duplicate_family_weaker_variant",
+            }
+        ],
+    )
+
+    report = soak.build_soak_report(data_dir)
+    section = report["sections"]["providerCoverageLinkBackfill"]
+
+    assert section["candidateLinkCount"] == 2
+    assert section["reviewCandidates"] == []
+    blocked = next(
+        row for row in section["blockedCandidates"] if row["staticSourceId"] == "static:cdpr-active"
+    )
+    assert "ambiguous_static_match" in blocked["blockers"]
+    assert "insufficient_provider_success_history" in blocked["disambiguationBlockers"]
+
+
 def test_review_candidate_markdown_and_registry_read_only(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     out_dir = tmp_path / "_out"
     _write_json(data_dir / "jobs-fetch-report.json", {})
     _write_json(
         data_dir / "jobs-source-state.json",
-        {"sources": {"static:cdpr-active": {"lastStatus": "ok", "lastKeptCount": 3}}},
+        {
+            "sources": {
+                "static:cdpr-active": {
+                    "lastStatus": "ok",
+                    "lastKeptCount": 3,
+                    "providerCoverageStatus": "validated_provider",
+                    "providerCoverageConsecutiveSuccesses": 2,
+                    "providerCoverageLatestKeptCount": 3,
+                }
+            }
+        },
     )
     active_payload = [
         _cdpr_provider(),

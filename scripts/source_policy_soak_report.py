@@ -175,6 +175,22 @@ def _int_value(value: Any) -> int:
         return 0
 
 
+def _first_clean_text(mapping: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = clean_text(mapping.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _first_int_value(mapping: dict[str, Any], *keys: str) -> int:
+    for key in keys:
+        value = mapping.get(key)
+        if value not in (None, ""):
+            return _int_value(value)
+    return 0
+
+
 def _list_rows(payload: Any) -> list[dict[str, Any]]:
     return json_object_rows(payload)
 
@@ -1166,8 +1182,14 @@ def _static_evidence(static: dict[str, Any], state: dict[str, Any]) -> dict[str,
     pending_reason = clean_text(static.get("pendingReason"))
     last_kept = _int_value(state.get("lastKeptCount"))
     last_status = clean_text(state.get("lastStatus"))
-    last_successful_at = clean_text(state.get("lastSuccessfulAt"))
-    last_fetched_at = clean_text(state.get("lastFetchedAt"))
+    last_successful_at = _first_clean_text(state, "lastSuccessfulAt", "lastSuccessAt")
+    last_fetched_at = _first_clean_text(state, "lastFetchedAt", "lastRunAt")
+    provider_coverage_status = _first_clean_text(state, "providerCoverageStatus")
+    provider_coverage_consecutive_successes = _first_int_value(
+        state, "providerCoverageConsecutiveSuccesses"
+    )
+    provider_coverage_latest_kept_count = _first_int_value(state, "providerCoverageLatestKeptCount")
+    provider_replacement_readiness = _first_clean_text(state, "providerReplacementReadiness")
 
     score = 0
     reasons: list[str] = []
@@ -1194,18 +1216,49 @@ def _static_evidence(static: dict[str, Any], state: dict[str, Any]) -> dict[str,
         reasons.append("source_state_ok")
     elif last_status:
         blockers.append("source_state_not_ok")
+    if provider_coverage_status == "validated_provider":
+        score += 10
+        reasons.append("provider_coverage_validated")
+    elif provider_coverage_status:
+        blockers.append("source_state_not_ok")
+    if provider_coverage_consecutive_successes > 0:
+        score += min(provider_coverage_consecutive_successes, 5)
+        reasons.append("provider_coverage_success_history")
+    if provider_coverage_latest_kept_count > 0:
+        reasons.append("provider_coverage_latest_kept")
     if last_successful_at:
         score += 5
         reasons.append("source_state_success_timestamp")
     if last_fetched_at:
         reasons.append("source_state_fetched")
+    has_promotable_source_state_signal = any(
+        (
+            last_kept > 0,
+            last_status == "ok",
+            bool(last_successful_at),
+            provider_coverage_status == "validated_provider",
+            provider_coverage_latest_kept_count > 0,
+        )
+    )
     if not state:
         blockers.append("no_source_state_history")
+        if score <= 0:
+            blockers.append("static_only_evidence_present")
+    elif (
+        has_promotable_source_state_signal
+        and "source_state_not_ok" not in blockers
+        and provider_coverage_consecutive_successes < 2
+    ):
+        blockers.append("insufficient_provider_success_history")
     return {
         "lastKeptCount": last_kept,
         "lastStatus": last_status,
         "lastSuccessfulAt": last_successful_at,
         "lastFetchedAt": last_fetched_at,
+        "providerCoverageStatus": provider_coverage_status,
+        "providerCoverageConsecutiveSuccesses": provider_coverage_consecutive_successes,
+        "providerCoverageLatestKeptCount": provider_coverage_latest_kept_count,
+        "providerReplacementReadiness": provider_replacement_readiness,
         "evidenceScore": score,
         "evidenceReasons": reasons,
         "disambiguationBlockers": blockers,
@@ -1261,8 +1314,16 @@ def _provider_link_row(
         "pendingReason": clean_text(static.get("pendingReason")),
         "lastKeptCount": _int_value(static.get("lastKeptCount")),
         "lastStatus": clean_text(static.get("lastStatus")),
-        "lastSuccessfulAt": clean_text(static.get("lastSuccessfulAt")),
-        "lastFetchedAt": clean_text(static.get("lastFetchedAt")),
+        "lastSuccessfulAt": _first_clean_text(static, "lastSuccessfulAt", "lastSuccessAt"),
+        "lastFetchedAt": _first_clean_text(static, "lastFetchedAt", "lastRunAt"),
+        "providerCoverageStatus": clean_text(static.get("providerCoverageStatus")),
+        "providerCoverageConsecutiveSuccesses": _int_value(
+            static.get("providerCoverageConsecutiveSuccesses")
+        ),
+        "providerCoverageLatestKeptCount": _int_value(
+            static.get("providerCoverageLatestKeptCount")
+        ),
+        "providerReplacementReadiness": clean_text(static.get("providerReplacementReadiness")),
         "evidenceScore": _int_value(static.get("evidenceScore")),
         "evidenceReasons": [
             clean_text(reason)
@@ -1527,6 +1588,8 @@ def _is_strong_source_state_candidate(row: dict[str, Any]) -> bool:
         return False
     if _int_value(row.get("lastKeptCount")) <= 0:
         return False
+    if _int_value(row.get("providerCoverageConsecutiveSuccesses")) < 2:
+        return False
     return clean_text(row.get("lastStatus")) == "ok" or bool(
         clean_text(row.get("lastSuccessfulAt"))
     )
@@ -1589,6 +1652,12 @@ def _source_state_evidence(row: dict[str, Any]) -> dict[str, Any]:
         "lastStatus": clean_text(row.get("lastStatus")),
         "lastSuccessfulAt": clean_text(row.get("lastSuccessfulAt")),
         "lastFetchedAt": clean_text(row.get("lastFetchedAt")),
+        "providerCoverageStatus": clean_text(row.get("providerCoverageStatus")),
+        "providerCoverageConsecutiveSuccesses": _int_value(
+            row.get("providerCoverageConsecutiveSuccesses")
+        ),
+        "providerCoverageLatestKeptCount": _int_value(row.get("providerCoverageLatestKeptCount")),
+        "providerReplacementReadiness": clean_text(row.get("providerReplacementReadiness")),
         "evidenceScore": _int_value(row.get("evidenceScore")),
         "evidenceReasons": [
             clean_text(reason)
@@ -1635,6 +1704,16 @@ def _blocked_link_candidates(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
     blocked = [dict(row) for row in rows if _link_blockers(row)]
     blocked.sort(key=_provider_coverage_link_backfill_sort_key)
     return blocked
+
+
+def _disambiguation_blocker_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts = Counter(
+        blocker
+        for row in rows
+        for blocker in as_json_list(row.get("disambiguationBlockers"))
+        if clean_text(blocker)
+    )
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
 def _recommended_api_payload(row: dict[str, Any]) -> dict[str, Any]:
@@ -1779,6 +1858,38 @@ def _resolve_provider_link_rows(
     ranked = sorted(ambiguous, key=lambda row: _int_value(row.get("evidenceScore")), reverse=True)
     for rank, row in enumerate(ranked, start=1):
         row["disambiguationRank"] = rank
+    strong_history = [
+        row
+        for row in ambiguous
+        if _int_value(row.get("lastKeptCount")) > 0
+        or clean_text(row.get("lastStatus"))
+        or clean_text(row.get("providerCoverageStatus"))
+    ]
+    if len(strong_history) > 1:
+        signatures = Counter(
+            (
+                clean_text(row.get("lastStatus")),
+                _int_value(row.get("lastKeptCount")),
+                clean_text(row.get("lastSuccessfulAt")),
+                clean_text(row.get("lastFetchedAt")),
+                clean_text(row.get("providerCoverageStatus")),
+                _int_value(row.get("providerCoverageConsecutiveSuccesses")),
+                _int_value(row.get("providerCoverageLatestKeptCount")),
+            )
+            for row in strong_history
+        )
+        if any(count > 1 for signature, count in signatures.items() if any(signature)):
+            for row in strong_history:
+                blockers = set(_link_blockers(row))
+                blockers.add("multiple_static_candidates_with_equal_history")
+                row["blockers"] = sorted(blockers)
+                disambiguation_blockers = {
+                    clean_text(blocker)
+                    for blocker in as_json_list(row.get("disambiguationBlockers"))
+                    if clean_text(blocker)
+                }
+                disambiguation_blockers.add("multiple_static_candidates_with_equal_history")
+                row["disambiguationBlockers"] = sorted(disambiguation_blockers)
     return rows, None
 
 
@@ -1940,6 +2051,7 @@ def _provider_coverage_link_backfill_section(
         for blocker in row.get("blockers", [])
         if clean_text(blocker)
     )
+    disambiguation_blocker_counts = _disambiguation_blocker_counts(blocked_candidates)
     ambiguity_groups = _ambiguity_groups(links)
     exact_rule_match_count = sum(
         1 for row in links if "redundant_static_rule_exact_match" in set(_link_reasons(row))
@@ -1983,6 +2095,7 @@ def _provider_coverage_link_backfill_section(
         "blockedReasonCounts": dict(
             sorted(blocked_reason_counts.items(), key=lambda item: (-item[1], item[0]))
         ),
+        "disambiguationBlockerCounts": disambiguation_blocker_counts,
         "rejectedLinkCount": sum(
             1
             for row in links
@@ -1996,6 +2109,9 @@ def _provider_coverage_link_backfill_section(
         "reviewCandidates": review_candidates,
         "blockedCandidates": blocked_candidates,
         "blockedExamples": blocked_candidates[:PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT],
+        "disambiguationBlockedExamples": blocked_candidates[
+            :PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT
+        ],
         "links": links,
     }
     gates: list[dict[str, Any]] = []
@@ -2807,11 +2923,13 @@ def _blocked_candidates_markdown_rows(report: dict[str, Any]) -> list[str]:
         ).get("blockedCandidates")
     )
     lines = [
-        "| Provider | Selected static | Confidence | Blockers | Evidence | Last kept | Last status |",
-        "|----------|-----------------|------------|----------|----------|-----------|-------------|",
+        "| Provider | Selected static | Confidence | Blockers | Evidence | Last kept | Last status | Last successful | Last fetched | Coverage status | Successes | Latest kept |",
+        "|----------|-----------------|------------|----------|----------|-----------|-------------|----------------|--------------|-----------------|-----------|-------------|",
     ]
     if not candidates:
-        lines.append("| none | none | `0` | none | none | `0` | none |")
+        lines.append(
+            "| none | none | `0` | none | none | `0` | none | none | none | none | `0` | `0` |"
+        )
         return lines
     for candidate in candidates[:10]:
         evidence = as_json_object(candidate.get("sourceStateEvidence"))
@@ -2834,8 +2952,40 @@ def _blocked_candidates_markdown_rows(report: dict[str, Any]) -> list[str]:
             f"`{evidence_reasons or 'none'}` | "
             f"`{_int_value(evidence.get('lastKeptCount'))}` | "
             f"`{clean_text(evidence.get('lastStatus'))}` |"
+            f" {clean_text(evidence.get('lastSuccessfulAt')) or 'none'} |"
+            f" {clean_text(evidence.get('lastFetchedAt')) or 'none'} |"
+            f" {clean_text(evidence.get('providerCoverageStatus')) or 'none'} |"
+            f" `{_int_value(evidence.get('providerCoverageConsecutiveSuccesses'))}` |"
+            f" `{_int_value(evidence.get('providerCoverageLatestKeptCount'))}` |"
         )
     return lines
+
+
+def _migration_link_disambiguation_blocker_summary(report: dict[str, Any]) -> str:
+    section = as_json_object(
+        as_json_object(report.get("sections")).get("providerCoverageLinkBackfill")
+    )
+    counts = as_json_object(section.get("disambiguationBlockerCounts"))
+    examples = json_object_rows(section.get("disambiguationBlockedExamples"))
+    if not counts and not examples:
+        return "none"
+    count_summary = ", ".join(
+        f"{clean_text(key).replace('_', ' ')} {int(value or 0):,}"
+        for key, value in sorted(counts.items(), key=lambda item: (-int(item[1] or 0), item[0]))
+        if clean_text(key)
+    )
+    if not count_summary:
+        count_summary = "none"
+    example_summary = " | ".join(
+        f"{clean_text(example.get('providerSourceName')) or clean_text(example.get('providerSourceId')) or 'Unknown provider'} / "
+        f"{clean_text(example.get('selectedStaticSourceName')) or clean_text(example.get('staticSourceName')) or clean_text(example.get('selectedStaticSourceId')) or clean_text(example.get('staticSourceId')) or 'Unknown static source'} / "
+        f"{', '.join(clean_text(blocker).replace('_', ' ') for blocker in as_json_list(example.get('disambiguationBlockers')) if clean_text(blocker)) or 'none'}"
+        for example in examples[:PROVIDER_COVERAGE_LINK_BACKFILL_EXAMPLE_LIMIT]
+        if isinstance(example, dict)
+    )
+    if not example_summary:
+        example_summary = "none"
+    return f"{count_summary}. Examples: {example_summary}."
 
 
 def _suppression_eligibility_markdown_rows(report: dict[str, Any]) -> list[str]:
@@ -2971,6 +3121,7 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             "Resolved examples: "
             f"{len(json_object_rows(as_json_object(as_json_object(report.get('sections')).get('providerCoverageLinkBackfill')).get('ambiguityResolutionExamples')))}."
         ),
+        (f"Disambiguation blockers: {_migration_link_disambiguation_blocker_summary(report)}"),
         "",
         "### Review candidates",
         "",
