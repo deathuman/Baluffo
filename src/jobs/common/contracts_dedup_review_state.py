@@ -167,6 +167,49 @@ def dedup_review_pair_public_fields(row: Any) -> dict[str, Any]:
     }
 
 
+def _carried_disagreement_auto_disposition(
+    classification: str,
+    carried_location_pollution_audit: str,
+    provider_backed: bool,
+    static_backed: bool,
+    single_location: bool,
+    same_host: bool,
+    has_shared_tokens: bool,
+) -> str:
+    if (
+        classification == "provider_redirect_or_canonical_url"
+        and provider_backed
+        and static_backed
+        and single_location
+        and (same_host or has_shared_tokens)
+    ):
+        return "auto_safe_carried_provider_redirect_or_canonical_url"
+    if (
+        classification == "static_parser_url_variant"
+        and provider_backed
+        and single_location
+        and has_shared_tokens
+    ):
+        return "auto_safe_carried_static_parser_url_variant"
+    if (
+        classification == "title_company_collision"
+        and carried_location_pollution_audit == "carried_location_variant"
+        and provider_backed
+        and static_backed
+        and (same_host or has_shared_tokens)
+    ):
+        return "carried_location_variant"
+    return ""
+
+
+def _carried_disagreement_blocker_reason(classification: str) -> str:
+    if classification == "same_job_different_urls":
+        return "carried_same_job_different_urls_requires_review"
+    if classification == "title_company_collision":
+        return "possible_real_multi_location_conflict"
+    return "carried_unresolved_disagreement"
+
+
 def dedup_disagreement_gate_disposition(
     row: Mapping[str, Any], review_pair: Mapping[str, Any] | None = None
 ) -> tuple[str, list[str]]:
@@ -208,26 +251,18 @@ def dedup_disagreement_gate_disposition(
         return "warning", [*evidence, "carried_location_pollution"]
     if not is_carried:
         return "blocked", [*evidence, "current_run_or_unclassified_origin"]
-    if (
-        classification == "provider_redirect_or_canonical_url"
-        and provider_backed
-        and static_backed
-        and single_location
-        and (same_host or bool(shared_tokens))
-    ):
-        return "warning", [*evidence, "auto_safe_carried_provider_redirect_or_canonical_url"]
-    if (
-        classification == "static_parser_url_variant"
-        and provider_backed
-        and single_location
-        and bool(shared_tokens)
-    ):
-        return "warning", [*evidence, "auto_safe_carried_static_parser_url_variant"]
-    if classification == "same_job_different_urls":
-        return "blocked", [*evidence, "carried_same_job_different_urls_requires_review"]
-    if classification == "title_company_collision":
-        return "blocked", [*evidence, "possible_real_multi_location_conflict"]
-    return "blocked", [*evidence, "carried_unresolved_disagreement"]
+    auto_disposition = _carried_disagreement_auto_disposition(
+        classification,
+        carried_location_pollution_audit,
+        provider_backed,
+        static_backed,
+        single_location,
+        same_host,
+        bool(shared_tokens),
+    )
+    if auto_disposition:
+        return "warning", [*evidence, auto_disposition]
+    return "blocked", [*evidence, _carried_disagreement_blocker_reason(classification)]
 
 
 def _gate_counter_fields(row: Mapping[str, Any]) -> dict[str, int]:

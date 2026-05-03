@@ -62,6 +62,7 @@ def test_ops_fetch_report_merges_dedup_review_state_at_read_time(tmp_path: Path)
             },
             "providerStaticTitleCompanyCollisionAuditCounts": {
                 "carried_location_pollution": 0,
+                "carried_location_variant": 0,
                 "possible_real_multi_location_conflict": 0,
                 "not_carried": 0,
                 "unknown": 0,

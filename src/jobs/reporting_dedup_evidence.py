@@ -65,6 +65,7 @@ PROVIDER_STATIC_DISAGREEMENT_CLASSIFICATION_KEYS = (
 )
 PROVIDER_STATIC_TITLE_COMPANY_COLLISION_AUDIT_KEYS = (
     "carried_location_pollution",
+    "carried_location_variant",
     "possible_real_multi_location_conflict",
     "not_carried",
     "unknown",
@@ -1404,6 +1405,66 @@ def _location_token_overlaps_title_or_company(city: str, row: Mapping[str, Any])
     return bool(city_tokens & (set(_title_tokens(row)) | set(_company_tokens(row))))
 
 
+def _carried_location_variant_city(row: Mapping[str, Any], plausible_labels: Sequence[str]) -> str:
+    city_keys = {
+        norm_text(_location_label_parts(label)[0])
+        for label in plausible_labels
+        if norm_text(_location_label_parts(label)[0])
+    }
+    strong_shared_evidence = bool(
+        row.get("sharedPrimaryUrl")
+        or row.get("sharedIdentifierTokens")
+        or set(row.get("providerUrlHosts") or []) & set(row.get("staticUrlHosts") or [])
+    )
+    if len(plausible_labels) > 1 and len(city_keys) == 1 and strong_shared_evidence:
+        return next(iter(city_keys))
+    return ""
+
+
+def _carried_location_label_bucket(
+    raw_label: Any, row: Mapping[str, Any], repeated_for_company: Counter[str]
+) -> tuple[str, str, list[str]]:
+    label = clean_text(raw_label)
+    if not label:
+        return "", "", []
+    city, country = _location_label_parts(label)
+    city_garbage = classify_city_garbage(city) if city else ""
+    repeated_token = norm_text(city)
+    repeated_pollution = (
+        bool(repeated_token) and repeated_for_company.get(repeated_token, 0) >= 3 and not country
+    )
+    if country:
+        return "plausible", label, []
+    if city_garbage:
+        return (
+            "polluted",
+            label,
+            [
+                f"garbage_category:{city_garbage}",
+                f"sample_location:{norm_text(city)}",
+            ],
+        )
+    if _location_token_overlaps_title_or_company(city, row):
+        return (
+            "polluted",
+            label,
+            [
+                "location_token_overlaps_title",
+                f"sample_location:{norm_text(city)}",
+            ],
+        )
+    if repeated_pollution:
+        return (
+            "polluted",
+            label,
+            [
+                f"repeated_company_location_token:{repeated_token}",
+                f"sample_location:{repeated_token}",
+            ],
+        )
+    return "plausible", label, []
+
+
 def _provider_static_title_company_collision_audit(
     row: Mapping[str, Any],
     repeated_countryless_tokens: Mapping[str, Counter[str]],
@@ -1419,42 +1480,25 @@ def _provider_static_title_company_collision_audit(
     evidence = [f"origin:{origin}"]
 
     for raw_label in row.get("sampleLocations") or []:
-        label = clean_text(raw_label)
-        if not label:
-            continue
-        city, country = _location_label_parts(label)
-        city_garbage = classify_city_garbage(city) if city else ""
-        repeated_token = norm_text(city)
-        overlaps_title = _location_token_overlaps_title_or_company(city, row)
-        repeated_pollution = (
-            bool(repeated_token)
-            and repeated_for_company.get(repeated_token, 0) >= 3
-            and not country
+        bucket, label, label_evidence = _carried_location_label_bucket(
+            raw_label, row, repeated_for_company
         )
-        if country:
+        if not bucket:
+            continue
+        if bucket == "plausible":
             plausible_labels.append(label)
             continue
-        if city_garbage:
-            polluted_labels.append(label)
-            evidence.append(f"garbage_category:{city_garbage}")
-            evidence.append(f"sample_location:{norm_text(city)}")
-            continue
-        if overlaps_title:
-            polluted_labels.append(label)
-            evidence.append("location_token_overlaps_title")
-            evidence.append(f"sample_location:{norm_text(city)}")
-            continue
-        if repeated_pollution:
-            polluted_labels.append(label)
-            evidence.append(f"repeated_company_location_token:{repeated_token}")
-            evidence.append(f"sample_location:{repeated_token}")
-            continue
-        plausible_labels.append(label)
+        polluted_labels.append(label)
+        evidence.extend(label_evidence)
 
     evidence.append(f"plausible_location_count:{len(plausible_labels)}")
     evidence.append(f"polluted_location_count:{len(polluted_labels)}")
     if polluted_labels and len(plausible_labels) == 1:
         return "carried_location_pollution", evidence[:8]
+    variant_city = _carried_location_variant_city(row, plausible_labels)
+    if variant_city:
+        evidence.append(f"equivalent_city:{variant_city}")
+        return "carried_location_variant", evidence[:8]
     if len(plausible_labels) > 1:
         return "possible_real_multi_location_conflict", evidence[:8]
     return "unknown", evidence[:8]

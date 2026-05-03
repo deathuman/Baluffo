@@ -646,6 +646,7 @@ function formatProviderStaticTitleCompanyCollisionAuditCounts(auditCounts) {
   const counts = auditCounts && typeof auditCounts === "object" ? auditCounts : {};
   return [
     `location pollution ${Number(counts?.carried_location_pollution || 0).toLocaleString()}`,
+    `location variants ${Number(counts?.carried_location_variant || 0).toLocaleString()}`,
     `possible real conflict ${Number(counts?.possible_real_multi_location_conflict || 0).toLocaleString()}`,
     `not carried ${Number(counts?.not_carried || 0).toLocaleString()}`,
     `unknown ${Number(counts?.unknown || 0).toLocaleString()}`

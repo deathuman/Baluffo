@@ -109,6 +109,7 @@ def test_dedup_evidence_tracks_carried_title_company_collision_counts() -> None:
     )
     assert evidence["providerStaticTitleCompanyCollisionAuditCounts"] == {
         "carried_location_pollution": 0,
+        "carried_location_variant": 0,
         "possible_real_multi_location_conflict": 1,
         "not_carried": 0,
         "unknown": 0,
@@ -172,6 +173,7 @@ def test_dedup_evidence_audits_carried_location_pollution_from_title_overlap() -
     assert "polluted_location_count:1" in collision["carriedLocationPollutionEvidence"]
     assert evidence["providerStaticTitleCompanyCollisionAuditCounts"] == {
         "carried_location_pollution": 1,
+        "carried_location_variant": 0,
         "possible_real_multi_location_conflict": 0,
         "not_carried": 0,
         "unknown": 0,
@@ -219,6 +221,7 @@ def test_dedup_evidence_audits_carried_location_pollution_from_repeated_company_
     )
     assert evidence["providerStaticTitleCompanyCollisionAuditCounts"] == {
         "carried_location_pollution": 3,
+        "carried_location_variant": 0,
         "possible_real_multi_location_conflict": 0,
         "not_carried": 0,
         "unknown": 0,
@@ -242,6 +245,49 @@ def test_dedup_evidence_audits_carried_real_multi_location_conflict() -> None:
     collision = evidence["providerStaticTitleCompanyCollisionExamples"][0]
     assert collision["carriedLocationPollutionAudit"] == "possible_real_multi_location_conflict"
     assert "plausible_location_count:2" in collision["carriedLocationPollutionEvidence"]
+
+
+def test_dedup_evidence_warns_on_carried_location_variants_with_shared_evidence() -> None:
+    evidence = build_dedup_evidence(
+        {"mergedCount": 0},
+        [
+            _provider_static_row(
+                sourceBundle=[
+                    {
+                        "source": "smartrecruiters:studio-one",
+                        "sourceJobId": "sr-7440001",
+                        "jobLink": "https://jobs.smartrecruiters.com/StudioOne/7440001",
+                        "adapter": "smartrecruiters",
+                    },
+                    {
+                        "source": "static_source::static:listing_url:https://studio.example/jobs",
+                        "sourceJobId": "static-1",
+                        "jobLink": "https://jobs.smartrecruiters.com/StudioOne/7440001-title",
+                        "adapter": "static",
+                    },
+                ],
+                locations=[
+                    {"city": "Warszawa", "country": "PL"},
+                    {"city": "Warszawa", "country": "Poland"},
+                ],
+            )
+        ],
+        seeded_from_existing_output=True,
+    )
+
+    collision = evidence["providerStaticTitleCompanyCollisionExamples"][0]
+    assert collision["carriedLocationPollutionAudit"] == "carried_location_variant"
+    assert collision["disagreementGateDisposition"] == "warning"
+    assert "carried_location_variant" in collision["disagreementGateEvidence"]
+    assert evidence["providerStaticDisagreementGateCounts"]["blocked"] == 0
+    assert evidence["providerStaticDisagreementGateCounts"]["warning"] == 1
+    assert evidence["providerStaticTitleCompanyCollisionAuditCounts"] == {
+        "carried_location_pollution": 0,
+        "carried_location_variant": 1,
+        "possible_real_multi_location_conflict": 0,
+        "not_carried": 0,
+        "unknown": 0,
+    }
 
 
 def test_dedup_evidence_reports_collision_review_hint_variants() -> None:

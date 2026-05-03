@@ -7,17 +7,19 @@
 > - **Then inspect:** [`../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md`](../snapshots/dedup-google-sheets-role-bucket-audit-closure-2026-05-03.md), [`../source-policy-runbook.md`](../source-policy-runbook.md), and [`../DATA_CONTRACT.md`](../DATA_CONTRACT.md)
 > - **Last updated:** 2026-05-03
 
-Google Sheets role-bucket audit is closed. The remaining lifecycle-readiness blocker is provider/static disagreement, currently carried rather than current-run.
+Google Sheets role-bucket audit is closed. The remaining lifecycle-readiness blocker is provider/static disagreement, currently carried rather than current-run. A 2026-05-03 refinement downgraded equivalent-city carried title/company variants with shared provider/static evidence from blocking to warning; the plan remains active because unresolved carried provider/static blockers remain.
 
 ## Current State
 
 - `dedupAuditGate.status=blocked`.
 - `dedupAuditGate.lifecycleUxReady=false`.
 - The only hard blocker is `provider_static_disagreement_needs_review`.
-- `providerStaticDisagreementGateCounts.blocked=15`.
+- `providerStaticDisagreementGateCounts.blocked=14`.
 - `providerStaticDisagreementGateCounts.currentRunBlocked=0`.
-- `providerStaticDisagreementGateCounts.carriedBlocked=15`.
-- `providerStaticDisagreementGateCounts.warning=18`.
+- `providerStaticDisagreementGateCounts.carriedBlocked=14`.
+- `providerStaticDisagreementGateCounts.warning=19`.
+- `providerStaticTitleCompanyCollisionAuditCounts.carried_location_variant=1`.
+- `providerStaticTitleCompanyCollisionAuditCounts.possible_real_multi_location_conflict=12`.
 - `googleSheetsRoleBucketUnresolvedCount=0`.
 
 ## Review Order
@@ -29,6 +31,8 @@ Google Sheets role-bucket audit is closed. The remaining lifecycle-readiness blo
    - `confirmed_blocking` when the exact row remains a real lifecycle blocker
    - `clear_review` when a local decision needs removal
 4. Re-run `python src/jobs_fetcher.py` after reconciliation and require `providerStaticDisagreementGateCounts.blocked=0` before starting read-only lifecycle UX.
+
+Equivalent-city carried variants (`carriedLocationPollutionAudit=carried_location_variant`) may warn when the provider/static sides share strong URL or identifier evidence. They are not broad `reviewed_safe` state and do not imply unrelated provider/static rows are safe.
 
 ## Deferred Work
 
