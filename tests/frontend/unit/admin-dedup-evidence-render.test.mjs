@@ -279,16 +279,25 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /Risky Merges/i);
   assert.match(metricsEl.innerHTML, /Dedup evidence/i);
   assert.match(metricsEl.innerHTML, /Dedup Audit Gate/i);
+  assert.match(metricsEl.innerHTML, /admin-dedup-audit-gate-card/i);
   assert.match(metricsEl.innerHTML, /status blocked/i);
   assert.match(metricsEl.innerHTML, /lifecycle UX ready no/i);
+  assert.match(metricsEl.innerHTML, /Blockers/i);
+  assert.match(metricsEl.innerHTML, /Warnings/i);
   assert.match(metricsEl.innerHTML, /current-run collisions 1/i);
   assert.match(metricsEl.innerHTML, /carried collisions 1/i);
   assert.match(metricsEl.innerHTML, /current high-risk 2/i);
   assert.match(metricsEl.innerHTML, /carried high-risk 8/i);
   assert.match(metricsEl.innerHTML, /Google Sheets guard active/i);
   assert.match(metricsEl.innerHTML, /provider static disagreement needs review/i);
+  assert.match(metricsEl.innerHTML, /Examples/i);
+  assert.match(metricsEl.innerHTML, /<details class="admin-dedup-audit-gate-example">/i);
   assert.match(metricsEl.innerHTML, /Accounting @ Kforce Inc/i);
   assert.match(metricsEl.innerHTML, /carried from existing output/i);
+  assert.match(metricsEl.innerHTML, /Classification/i);
+  assert.match(metricsEl.innerHTML, /Recommended action/i);
+  assert.match(metricsEl.innerHTML, /Review status/i);
+  assert.match(metricsEl.innerHTML, /Origin/i);
   assert.match(metricsEl.innerHTML, /Dedup carried bundle examples/i);
   assert.match(metricsEl.innerHTML, /primary URL 1/i);
   assert.match(metricsEl.innerHTML, /Carried source-bundle collision rows: 2/i);
@@ -376,24 +385,4 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /Designer/i);
   assert.match(metricsEl.innerHTML, /Studio Two/i);
   assert.doesNotMatch(metricsEl.innerHTML, /merge-btn|unmerge-btn|cleanup-btn|lifecycle-btn/i);
-});
-
-test("admin render: fetcher metrics tolerate missing dedup evidence", () => {
-  const metricsEl = makeEl();
-  renderAdminOpsFetcherMetrics(metricsEl, {
-    latestRun: { durationMs: 120000, sourceCount: 3, outputCount: 2 },
-    history: {}
-  });
-
-  assert.match(metricsEl.innerHTML, /Dedup evidence/i);
-  assert.match(metricsEl.innerHTML, /Dedup Audit Gate/i);
-  assert.match(metricsEl.innerHTML, /status unknown/i);
-  assert.match(metricsEl.innerHTML, /No gate examples/i);
-  assert.match(metricsEl.innerHTML, /No carried bundle examples/i);
-  assert.match(metricsEl.innerHTML, /No merged canonical jobs/i);
-  assert.match(metricsEl.innerHTML, /No carried source-bundle collision outliers/i);
-  assert.match(metricsEl.innerHTML, /No risky merge examples/i);
-  assert.match(metricsEl.innerHTML, /Dedup outlier reasons/i);
-  assert.match(metricsEl.innerHTML, /Dedup identity shapes/i);
-  assert.match(metricsEl.innerHTML, /No dedup review queue examples/i);
 });

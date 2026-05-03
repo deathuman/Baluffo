@@ -443,6 +443,77 @@ function formatDedupAuditGate(gate) {
   ].join("; ");
 }
 
+function formatDedupAuditGateExampleDetails(row) {
+  const title = String(row?.title || "Untitled");
+  const company = String(row?.company || "Unknown company");
+  const classification = String(row?.disagreementClassification || row?.suspectedCause || "unknown").replaceAll("_", " ");
+  const action = String(row?.recommendedReviewAction || "monitor").replaceAll("_", " ");
+  const status = String(row?.dedupReviewStatus || row?.disagreementGateDisposition || "unreviewed").replaceAll("_", " ");
+  const reviewUpdatedBy = String(row?.dedupReviewUpdatedBy || "");
+  const reviewUpdatedAt = String(row?.dedupReviewUpdatedAt || "");
+  const origin = String(row?.bundleEvidenceOrigin || "unknown").replaceAll("_", " ");
+  const gateDisposition = String(row?.disagreementGateDisposition || "").replaceAll("_", " ");
+  const sourceBundleCount = Number(row?.sourceBundleCount || 0).toLocaleString();
+  const causeEvidence = Array.isArray(row?.disagreementClassificationEvidence)
+    ? row.disagreementClassificationEvidence
+    : Array.isArray(row?.causeEvidence)
+      ? row.causeEvidence
+      : [];
+  const gateEvidence = Array.isArray(row?.disagreementGateEvidence)
+    ? row.disagreementGateEvidence
+    : Array.isArray(row?.reviewEvidence)
+      ? row.reviewEvidence
+      : [];
+  const detailLines = [
+    `Classification: ${classification}`,
+    `Recommended action: ${action}`,
+    `Review status: ${status}${reviewUpdatedBy ? ` by ${reviewUpdatedBy}` : ""}${reviewUpdatedAt ? ` at ${reviewUpdatedAt}` : ""}`,
+    `Origin: ${origin}`,
+    gateDisposition ? `Gate disposition: ${gateDisposition}` : "",
+    `Sources: ${sourceBundleCount}`,
+    `Classification evidence: ${causeEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`,
+    `Gate evidence: ${gateEvidence.slice(0, 5).join(", ").replaceAll("_", " ") || "none"}`
+  ].filter(Boolean);
+  const summary = `${title} @ ${company} — ${classification}, ${status}`;
+  return `
+    <details class="admin-dedup-audit-gate-example">
+      <summary>${escapeHtml(summary)}</summary>
+      <div class="admin-dedup-audit-gate-example-body">
+        ${detailLines.map(line => `<div>${escapeHtml(line)}</div>`).join("")}
+      </div>
+    </details>
+  `;
+}
+
+function formatDedupAuditGateCard(gate) {
+  const auditGate = gate && typeof gate === "object" ? gate : {};
+  const status = String(auditGate?.status || "unknown").replaceAll("_", " ");
+  const ready = auditGate?.lifecycleUxReady === true ? "yes" : "no";
+  const blockers = Array.isArray(auditGate?.blockers) ? auditGate.blockers : [];
+  const warnings = Array.isArray(auditGate?.warnings) ? auditGate.warnings : [];
+  const blockerText = blockers.length ? blockers.slice(0, 4).join(", ").replaceAll("_", " ") : "none";
+  const warningText = warnings.length ? warnings.slice(0, 4).join(", ").replaceAll("_", " ") : "none";
+  const examples = Array.isArray(auditGate?.examples) ? auditGate.examples.slice(0, 5) : [];
+  return `
+    <section class="admin-ops-schedule-item admin-ops-full-row admin-dedup-audit-gate-card">
+      <div class="admin-dedup-audit-gate-header">
+        <strong>Dedup Audit Gate</strong>
+        <span class="admin-dedup-audit-gate-status">status ${escapeHtml(status)}</span>
+        <span class="admin-dedup-audit-gate-ready">lifecycle UX ready ${escapeHtml(ready)}</span>
+      </div>
+      <div class="admin-dedup-audit-gate-summary">${escapeHtml(formatDedupAuditGate(auditGate))}</div>
+      <div class="admin-dedup-audit-gate-flags">
+        <div><strong>Blockers</strong>: ${escapeHtml(blockerText)}</div>
+        <div><strong>Warnings</strong>: ${escapeHtml(warningText)}</div>
+      </div>
+      <div class="admin-dedup-audit-gate-examples">
+        <div><strong>Examples</strong></div>
+        ${examples.length ? examples.map(row => formatDedupAuditGateExampleDetails(row)).join("") : `<div class="admin-dedup-audit-gate-empty">${escapeHtml("No gate examples.")}</div>`}
+      </div>
+    </section>
+  `;
+}
+
 function formatDedupAuditGateExamples(rows, emptyText) {
   const examples = Array.isArray(rows) ? rows : [];
   if (!examples.length) return escapeHtml(emptyText);
@@ -1263,7 +1334,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, known mirror pair ${Number(mergeReasonCounts?.knownMirrorPair || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Audit Gate</strong>: ${escapeHtml(formatDedupAuditGate(dedupAuditGate))}. Examples: ${formatDedupAuditGateExamples(dedupAuditGate?.examples, "No gate examples.")}</div>
+    ${formatDedupAuditGateCard(dedupAuditGate)}
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewStateSummary, dedupReviewStateReadWarning))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup current-run merge examples</strong>: ${formatCurrentRunMergeExamples(dedupEvidence?.currentRunMergeExamples, "No current-run merge examples.")}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static disagreements</strong>: ${escapeHtml(formatProviderStaticDisagreementCounts(providerStaticDisagreementCounts))}. Gate: ${escapeHtml(formatProviderStaticDisagreementGateCounts(providerStaticDisagreementGateCounts))}. Classifications: ${escapeHtml(formatProviderStaticDisagreementClassificationCounts(providerStaticDisagreementClassificationCounts))}. ${providerStaticDisagreementSummary}</div>
