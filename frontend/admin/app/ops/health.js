@@ -156,6 +156,22 @@ export function createOpsHealthController({
     }
   }
 
+  async function handleCopySectionDiagnostics(section) {
+    if (!section || typeof section !== "object" || Array.isArray(section)) return;
+    const title = String(section?.title || section?.key || "section");
+    const payload = JSON.stringify(section, null, 2);
+    if (globalThis.navigator?.clipboard?.writeText) {
+      try {
+        await globalThis.navigator.clipboard.writeText(payload);
+        showToast(`${title} diagnostics copied.`, "success");
+        return;
+      } catch {
+        // Fall through to toast-only failure below.
+      }
+    }
+    showToast(`Could not copy ${title} diagnostics.`, "warn");
+  }
+
   async function handleMigrationLinkAction(candidate, action) {
     if (!candidate || !action) return;
     try {
@@ -320,6 +336,7 @@ export function createOpsHealthController({
         deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
         {
           onDedupReviewAction: handleDedupReviewAction,
+          onCopySectionDiagnostics: handleCopySectionDiagnostics,
           runModel
         }
       );

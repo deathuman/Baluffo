@@ -1,5 +1,6 @@
 import { escapeHtml } from "../../shared/ui/index.js";
 import {
+  buildOpsFetcherDiagnosticsSections,
   buildOpsFetcherMetricSections,
   buildOpsTaskLaneRows
 } from "../domain/ops-health-view-model.js";
@@ -577,6 +578,17 @@ function formatDedupAuditGateExamples(rows, emptyText) {
     .join(" | ");
 }
 
+function formatDiagnosticsCopyButton(key) {
+  return `
+    <button
+      class="btn clear-filters-btn admin-ops-diagnostics-copy-btn"
+      type="button"
+      data-ops-diagnostics-copy="${escapeHtml(key)}"
+      title="Copy bounded diagnostics for this section"
+    >Copy diagnostics</button>
+  `;
+}
+
 function formatOpsFetcherMetricSection(section) {
   return `
     <section class="admin-ops-metrics-section admin-ops-metrics-section-${escapeHtml(section.key)}">
@@ -585,6 +597,7 @@ function formatOpsFetcherMetricSection(section) {
           <h4>${escapeHtml(section.title)}</h4>
           <p>${escapeHtml(section.description)}</p>
         </div>
+        ${section.diagnostics ? formatDiagnosticsCopyButton(section.key) : ""}
       </div>
       <div class="admin-ops-metrics-section-body">
         ${section.html}
@@ -593,7 +606,18 @@ function formatOpsFetcherMetricSection(section) {
   `;
 }
 
-function formatOpsTaskLane(rows) {
+function formatOpsMetricsDetails(summary, html, className = "") {
+  return `
+    <details class="admin-ops-metrics-details ${escapeHtml(className)}">
+      <summary>${escapeHtml(summary)}</summary>
+      <div class="admin-ops-metrics-details-body">
+        ${html}
+      </div>
+    </details>
+  `;
+}
+
+function formatOpsTaskLane(rows, diagnostics = null) {
   const laneRows = Array.isArray(rows) ? rows : [];
   const body = laneRows.map(row => `
     <div class="admin-ops-task-lane-card admin-ops-task-lane-card-${escapeHtml(row.type)}">
@@ -608,8 +632,11 @@ function formatOpsTaskLane(rows) {
   return `
     <section class="admin-ops-task-lane" aria-label="Operations task status">
       <div class="admin-ops-task-lane-head">
-        <h4>Task Status</h4>
-        <p>Compact read-only status for discovery, fetch, and sync.</p>
+        <div>
+          <h4>Task Status</h4>
+          <p>Compact read-only status for discovery, fetch, and sync.</p>
+        </div>
+        ${diagnostics ? formatDiagnosticsCopyButton("taskStatus") : ""}
       </div>
       <div class="admin-ops-task-lane-grid">${body}</div>
     </section>
@@ -1421,6 +1448,11 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
       </div>
     `;
 
+  const runtimeSecondaryHtml = `
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest sources</strong>: ${escapeHtml(slowestSummary)}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
+  `;
   const runtimeSectionHtml = `
     <div class="admin-total-card">
       <div class="admin-total-label">Latest Runtime</div>
@@ -1470,22 +1502,20 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
       <div class="admin-total-label">Source Failures</div>
       <div class="admin-total-value">${failed.toLocaleString()} / ${sourceCount.toLocaleString()} (${(failureRate * 100).toFixed(1)}%)</div>
     </div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest sources</strong>: ${escapeHtml(slowestSummary)}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Slowest stages</strong>: ${escapeHtml(slowestStageSummary)}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>High-cost low-yield</strong>: ${escapeHtml(highCostSummary)}</div>
+    ${formatOpsMetricsDetails("Runtime diagnostics", runtimeSecondaryHtml, "admin-ops-runtime-details")}
   `;
 
-  const failuresSectionHtml = `
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top-level failed sources</strong>: ${Number(summary?.topLevelFailedSources || 0).toLocaleString()}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Grouped detail failures</strong>: ${Number(summary?.detailFailureCount || 0).toLocaleString()}</div>
+  const failureBucketDetailsHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Failure buckets</strong></div>
     ${bucketSummaryHtml}
   `;
+  const failuresSectionHtml = `
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top-level failed sources</strong>: ${Number(summary?.topLevelFailedSources || 0).toLocaleString()}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Grouped detail failures</strong>: ${Number(summary?.detailFailureCount || 0).toLocaleString()}</div>
+    ${formatOpsMetricsDetails("Failure bucket details", failureBucketDetailsHtml, "admin-ops-failures-details")}
+  `;
 
-  const dedupSectionHtml = `
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, known mirror pair ${Number(mergeReasonCounts?.knownMirrorPair || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
-    ${formatDedupAuditGateCard(dedupAuditGate)}
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewStateSummary, dedupReviewStateReadWarning))}</div>
+  const dedupSecondaryHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup current-run merge examples</strong>: ${formatCurrentRunMergeExamples(dedupEvidence?.currentRunMergeExamples, "No current-run merge examples.")}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static disagreements</strong>: ${escapeHtml(formatProviderStaticDisagreementCounts(providerStaticDisagreementCounts))}. Gate: ${escapeHtml(formatProviderStaticDisagreementGateCounts(providerStaticDisagreementGateCounts))}. Classifications: ${escapeHtml(formatProviderStaticDisagreementClassificationCounts(providerStaticDisagreementClassificationCounts))}. ${providerStaticDisagreementSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static title-company collisions</strong>: ${escapeHtml(formatProviderStaticTitleCompanyCollisionCounts(providerStaticTitleCompanyCollisionCounts))}. Audit: ${escapeHtml(formatProviderStaticTitleCompanyCollisionAuditCounts(providerStaticTitleCompanyCollisionAuditCounts))}. ${providerStaticTitleCompanyCollisionSummary}</div>
@@ -1508,15 +1538,24 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review examples</strong>: ${reviewQueueSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Risky merge examples</strong>: ${riskyMergeSummary}</div>
   `;
+  const dedupSectionHtml = `
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, known mirror pair ${Number(mergeReasonCounts?.knownMirrorPair || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
+    ${formatDedupAuditGateCard(dedupAuditGate)}
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewStateSummary, dedupReviewStateReadWarning))}</div>
+    ${formatOpsMetricsDetails("Dedup supporting diagnostics", dedupSecondaryHtml, "admin-ops-dedup-details")}
+  `;
 
-  const sourceHealthSectionHtml = `
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Sources needing attention</strong>: ${attentionSummary}</div>
+  const sourceHealthSecondaryHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Zero kept / needs review</strong>: ${zeroReviewSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Browser fallback recommended</strong>: ${browserSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top productive sources</strong>: ${productiveSummary}</div>
   `;
+  const sourceHealthSectionHtml = `
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Sources needing attention</strong>: ${attentionSummary}</div>
+    ${formatOpsMetricsDetails("Source health supporting diagnostics", sourceHealthSecondaryHtml, "admin-ops-source-health-details")}
+  `;
 
-  const sourcePolicySectionHtml = `
+  const sourcePolicySecondaryHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Runtime-suppressed static sources</strong>: ${dynamicRedundantSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Validated staged providers</strong>: ${validatedProviderSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Provider coverage needs review</strong>: ${reviewProviderSummary}</div>
@@ -1526,17 +1565,27 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Static suppression policy</strong>: suppressed ${Number(staticSuppressionPolicy?.suppressedCount || 0).toLocaleString()}, paused ${Number(staticSuppressionPolicy?.pausedCount || 0).toLocaleString()}, warnings ${Number(staticSuppressionPolicy?.warningCount || 0).toLocaleString()}. Suppressed: ${suppressedPolicySummary} Paused: ${pausedPolicySummary} Warnings: ${warningPolicySummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Redundant static proposals</strong>: safe ${Number(redundantStaticProposals?.safeRedundantCount || 0).toLocaleString()}, keep static ${Number(redundantStaticProposals?.keepStaticCount || 0).toLocaleString()}, more history ${Number(redundantStaticProposals?.needsMoreHistoryCount || 0).toLocaleString()}, review/unstable ${Number((redundantStaticProposals?.needsReviewCount || 0) + (redundantStaticProposals?.providerUnstableCount || 0)).toLocaleString()}, static-only ${Number(redundantStaticProposals?.staticOnlyDetectedCount || 0).toLocaleString()}. Safe: ${safeRedundantProposalSummary} Keep: ${keepStaticProposalSummary} History: ${moreHistoryProposalSummary} Review: ${reviewProposalSummary} Static-only: ${staticOnlyProposalSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Conservative static cleanup proposals</strong>: total candidates ${Number(conservativeStaticCleanupProposals?.totalCandidateCount || 0).toLocaleString()}, proposal-ready ${Number(conservativeStaticCleanupProposals?.proposalCount || 0).toLocaleString()}, stale ${Number(conservativeStaticCleanupProposals?.staleCount || 0).toLocaleString()}, blocked ${Number(conservativeStaticCleanupProposals?.blockedCount || 0).toLocaleString()}. Freshness: ${escapeHtml(cleanupFreshnessSummary)}. Blockers: ${escapeHtml(cleanupBlockedReasonSummary)} Ready: ${cleanupProposalReadySummary} Blocked: ${cleanupBlockedSummary}</div>
+  `;
+  const sourcePolicySectionHtml = `
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Source-policy review</strong>: local review pairs ${Number(sourcePolicyRecommendationExport?.reviewStatePairCount || 0).toLocaleString()}, force-paused ${Number(sourcePolicyRecommendationExport?.manualForcePausedCount || 0).toLocaleString()}. Use the Source Policy Review queue for local, reversible actions.</div>
+    ${formatOpsMetricsDetails("Source policy supporting diagnostics", sourcePolicySecondaryHtml, "admin-ops-source-policy-details")}
   `;
 
-  const taskLaneHtml = formatOpsTaskLane(buildOpsTaskLaneRows(options?.runModel || {}));
+  const taskLaneRows = buildOpsTaskLaneRows(options?.runModel || {});
+  const diagnosticsByKey = buildOpsFetcherDiagnosticsSections({
+    latest,
+    history,
+    failureSummary: summary,
+    taskLaneRows
+  });
+  const taskLaneHtml = formatOpsTaskLane(taskLaneRows, diagnosticsByKey.taskStatus);
   metricsEl.innerHTML = `${taskLaneHtml}${buildOpsFetcherMetricSections({
     runtime: runtimeSectionHtml,
     failures: failuresSectionHtml,
     dedup: dedupSectionHtml,
     sourceHealth: sourceHealthSectionHtml,
     sourcePolicy: sourcePolicySectionHtml
-  }).map(formatOpsFetcherMetricSection).join("")}`;
+  }, diagnosticsByKey).map(formatOpsFetcherMetricSection).join("")}`;
 
   if (typeof options?.onDedupReviewAction === "function") {
     const rowGroups = {
@@ -1551,6 +1600,16 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
         const row = Array.isArray(rowGroups?.[tableKey]) ? rowGroups[tableKey][rowIndex] : null;
         if (!row || !action) return;
         options.onDedupReviewAction(row, action);
+      });
+    });
+  }
+  if (typeof options?.onCopySectionDiagnostics === "function") {
+    metricsEl.querySelectorAll("[data-ops-diagnostics-copy]").forEach(button => {
+      button.addEventListener("click", () => {
+        const key = String(button.getAttribute("data-ops-diagnostics-copy") || "");
+        const section = diagnosticsByKey[key];
+        if (!section) return;
+        options.onCopySectionDiagnostics(section);
       });
     });
   }

@@ -8,7 +8,7 @@ import {
 import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
 import {
   appendAdminLogRow
-} from "../render.js?v=2";
+} from "../render.js?v=3";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,
