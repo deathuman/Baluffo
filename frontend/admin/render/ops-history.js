@@ -262,7 +262,8 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       row.progressPercent,
       row.elapsedLabel,
       row.warningSummary,
-      row.failureSummary
+      row.failureSummary,
+      row.remediationHint
     ]),
     currentRows: visibleCompletedViews.map(row => [
       row.key,
@@ -386,6 +387,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     const failureHtml = view.failureSummary
       ? `<div class="admin-ops-run-card-failure">${escapeHtml(view.failureSummary)}</div>`
       : "";
+    const remediationHtml = view.remediationHint
+      ? `<div class="admin-ops-run-card-remediation">${escapeHtml(view.remediationHint)}</div>`
+      : "";
     return `
       <article class="admin-ops-run-card admin-ops-run-card-${escapeHtml(view.status)}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
         <div class="admin-ops-run-card-head">
@@ -406,6 +410,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
         ${targetHtml}
         ${warningHtml}
         ${failureHtml}
+        ${remediationHtml}
       </article>
     `;
   }).join("");

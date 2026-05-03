@@ -182,7 +182,7 @@ Execution order is flexible:
 
 - [x] First detailed Admin task-console slice: shared frontend task-run presenter plus read-only Current Runs cards.
 - [x] Completed-run row expansion with read-only native details disclosures.
-- [ ] Stalled/orphaned remediation guidance remains deferred.
+- [x] Stalled/orphaned remediation guidance in read-only Current Runs cards.
 - [ ] Run-scoped diagnostics copy/export remains deferred.
 - [ ] Selected-run analysis and timeline panels remain deferred.
 

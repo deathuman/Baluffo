@@ -78,17 +78,29 @@ test("task run view model derives terminal, stalled, and orphaned states", () =>
   assert.equal(buildTaskRunView({ type: "fetch", status: "ok", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).status, "completed");
   assert.equal(buildTaskRunView({ type: "fetch", status: "warning", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).status, "completed_with_warnings");
   assert.equal(buildTaskRunView({ type: "fetch", status: "error", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).status, "failed");
-  assert.equal(buildTaskRunView({
+  const stalled = buildTaskRunView({
     type: "fetch",
     active: true,
     startedAt: "2026-03-08T09:00:00.000Z",
     heartbeatAt: "2026-03-08T09:30:00.000Z"
-  }, { nowMs: NOW }).status, "stalled");
-  assert.equal(buildTaskRunView({
+  }, { nowMs: NOW });
+  const orphaned = buildTaskRunView({
     type: "fetch",
     status: "started",
     startedAt: "2026-03-08T09:00:00.000Z"
-  }, { nowMs: NOW }).status, "orphaned");
+  }, { nowMs: NOW });
+  const running = buildTaskRunView({
+    type: "fetch",
+    active: true,
+    startedAt: "2026-03-08T10:00:00.000Z",
+    heartbeatAt: "2026-03-08T10:09:30.000Z"
+  }, { nowMs: NOW });
+  assert.equal(stalled.status, "stalled");
+  assert.equal(stalled.remediationHint, "Check bridge and task logs; verify whether the task heartbeat stopped.");
+  assert.equal(orphaned.status, "orphaned");
+  assert.equal(orphaned.remediationHint, "Refresh task state and check whether the owning process exited.");
+  assert.equal(running.status, "running");
+  assert.equal(running.remediationHint, "");
 });
 
 test("task run view model tolerates missing payloads", () => {

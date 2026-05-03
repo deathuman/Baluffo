@@ -820,7 +820,8 @@
 
 .admin-ops-run-card-target,
 .admin-ops-run-card-warning,
-.admin-ops-run-card-failure {
+.admin-ops-run-card-failure,
+.admin-ops-run-card-remediation {
   overflow-wrap: anywhere;
   font-size: 0.75rem;
   line-height: 1.35;
@@ -836,6 +837,10 @@
 
 .admin-ops-run-card-failure {
   color: color-mix(in srgb, #d36d6d 82%, white 18%);
+}
+
+.admin-ops-run-card-remediation {
+  color: var(--text-secondary);
 }
 
 .admin-ops-history-title {

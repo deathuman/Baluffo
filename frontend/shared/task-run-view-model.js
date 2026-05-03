@@ -161,6 +161,12 @@ function deriveWarningSummary(taskType, summary, status) {
   return "";
 }
 
+function deriveRemediationHint(status) {
+  if (status === "stalled") return "Check bridge and task logs; verify whether the task heartbeat stopped.";
+  if (status === "orphaned") return "Refresh task state and check whether the owning process exited.";
+  return "";
+}
+
 export function buildTaskRunView(row, { nowMs = Date.now() } = {}) {
   const safeRow = row && typeof row === "object" && !Array.isArray(row) ? row : {};
   const taskType = getTaskType(safeRow);
@@ -198,6 +204,7 @@ export function buildTaskRunView(row, { nowMs = Date.now() } = {}) {
     finishedLabel: formatDateTime(finishedAt),
     warningSummary: deriveWarningSummary(taskType, summary, status),
     failureSummary: deriveFailureSummary(taskType, summary),
+    remediationHint: deriveRemediationHint(status),
     diagnosticHints: [countsLabel].filter(Boolean)
   };
 }
