@@ -248,6 +248,60 @@ test("task run analysis normalizes selected run evidence with capped examples", 
   assert.equal(analysis.slowExamples.length, 5);
   assert.equal(analysis.workItemExamples.length, 5);
   assert.equal(analysis.eventExamples.length, 5);
+  assert.equal(analysis.timelineEntries.length, 5);
+  assert.equal(analysis.timelineEntries[0].source, "event");
+  assert.match(analysis.timelineEntries[0].label, /Event 0/);
   const serialized = JSON.stringify(analysis);
   assert.doesNotMatch(serialized, /rawPayload|rawLargeThing/i);
+});
+
+test("task run analysis timeline uses progress and work items when event evidence is sparse", () => {
+  const analysis = buildTaskRunAnalysis({
+    type: "discovery",
+    runId: "discovery_selected_1",
+    active: true,
+    startedAt: "2026-03-08T10:00:00.000Z",
+    summary: { queuedCandidateCount: 4, failedProbeCount: 1 },
+    taskProgress: {
+      active: true,
+      phaseKey: "probing_candidates",
+      phaseLabel: "Probing candidates",
+      mode: "determinate",
+      ratio: 0.5,
+      updatedAt: "2026-03-08T10:05:00.000Z"
+    },
+    workItems: [
+      {
+        id: "probe_pending",
+        name: "Pending probe",
+        status: "pending"
+      },
+      {
+        id: "probe_failed",
+        name: "Failed probe",
+        status: "failed",
+        error: "timeout while probing candidate",
+        updatedAt: "2026-03-08T10:04:00.000Z"
+      },
+      {
+        id: "probe_running",
+        name: "Running probe",
+        status: "running"
+      }
+    ],
+    recentEvents: []
+  }, {
+    rowArea: "current",
+    nowMs: NOW
+  });
+
+  assert.equal(analysis.timelineEntries.length, 3);
+  assert.deepEqual(
+    analysis.timelineEntries.map(entry => entry.source),
+    ["work item", "progress", "work item"]
+  );
+  assert.equal(analysis.timelineEntries[0].severity, "critical");
+  assert.match(analysis.timelineEntries[0].detail, /timeout/);
+  assert.equal(analysis.timelineEntries[2].timestamp, "");
+  assert.match(analysis.timelineEntries[2].label, /Running probe/);
 });

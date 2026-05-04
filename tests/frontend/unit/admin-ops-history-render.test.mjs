@@ -164,9 +164,12 @@ test("admin ops history: selected run analysis renders bounded read-only evidenc
         workItems: Array.from({ length: 8 }, (_row, index) => ({
           id: `source_${index}`,
           name: `Source ${index}`,
-          status: index === 0 ? "running" : "pending"
+          status: index === 0 ? "running" : index === 1 ? "failed" : "pending",
+          error: index === 1 ? "source failed after timeout" : "",
+          updatedAt: index === 1 ? "2026-03-08T10:03:00.000Z" : ""
         })),
         recentEvents: Array.from({ length: 8 }, (_row, index) => ({
+          at: `2026-03-08T10:0${Math.min(index, 5)}:00.000Z`,
           level: "info",
           message: `Event ${index}`
         }))
@@ -196,6 +199,8 @@ test("admin ops history: selected run analysis renders bounded read-only evidenc
   assert.doesNotMatch(historyEl.innerHTML, /source_5/);
   assert.match(historyEl.innerHTML, /Event 4/);
   assert.doesNotMatch(historyEl.innerHTML, /Event 5/);
+  assert.match(historyEl.innerHTML, /Timeline/);
+  assert.match(historyEl.innerHTML, /source order|3\/8\/2026|2026/);
   assert.match(historyEl.innerHTML, /admin-ops-run-detail/);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
   assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
@@ -222,7 +227,38 @@ test("admin ops history: selected run analysis has safe empty state without sele
 
   assert.match(historyEl.innerHTML, /Selected Run Analysis/);
   assert.match(historyEl.innerHTML, /Select a run row to inspect bounded run evidence/);
+  assert.doesNotMatch(historyEl.innerHTML, /Timeline/);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-history-row-selected/);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
   assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
+});
+
+test("admin ops history: selected run analysis renders timeline empty state", () => {
+  const historyEl = makeEl();
+  const runKey = "completed||sync_no_timeline|sync||2026-03-08T09:30:00.000Z|0";
+
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [],
+    visibleCompletedRows: [
+      {
+        type: "sync",
+        status: "ok",
+        runId: "sync_no_timeline",
+        finishedAt: "2026-03-08T09:30:00.000Z",
+        durationMs: 1500,
+        summary: { action: "push", activeCount: 7, pendingCount: 2, rejectedCount: 1 }
+      }
+    ],
+    olderCompletedRows: []
+  }, {
+    selectedRunKey: runKey
+  });
+
+  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
+  assert.match(historyEl.innerHTML, /Timeline/);
+  assert.match(historyEl.innerHTML, /No timeline evidence recorded for this run/);
+  assert.match(historyEl.innerHTML, /admin-ops-run-detail/);
+  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
+  assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
+  assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
 });

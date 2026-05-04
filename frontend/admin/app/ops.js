@@ -1,5 +1,5 @@
 import { createOpsBridgeStatusController } from "./ops/bridge-status.js";
-import { createOpsHealthController } from "./ops/health.js?v=8";
+import { createOpsHealthController } from "./ops/health.js?v=9";
 import { createOpsTaskStateController } from "./ops/task-state.js";
 
 export { formatBytes } from "./ops/format.js";

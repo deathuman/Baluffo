@@ -106,6 +106,123 @@ function compactAnalysisList(value) {
     : [];
 }
 
+function getFirstString(source, keys) {
+  const row = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+  for (const key of keys) {
+    const value = String(row[key] || "").trim();
+    if (value) return trimDiagnosticText(value);
+  }
+  return "";
+}
+
+function getFirstTime(source, keys) {
+  const value = getFirstString(source, keys);
+  const ts = parseTimeMs(value);
+  return {
+    value,
+    ts
+  };
+}
+
+function timelineSeverity(status, fallback = "muted") {
+  const token = String(status || "").trim().toLowerCase();
+  if (["error", "failed", "failure", "critical"].includes(token)) return "critical";
+  if (["warning", "warn", "stalled", "orphaned"].includes(token)) return "warning";
+  if (["running", "active", "completed", "done", "success", "ok"].includes(token)) return "healthy";
+  return fallback;
+}
+
+function timelineStatusLabel(status, fallback) {
+  const token = String(status || fallback || "").trim();
+  return token ? trimDiagnosticText(token.replaceAll("_", " ")) : "";
+}
+
+function buildTimelineEntries(row, view) {
+  const safeRow = row && typeof row === "object" && !Array.isArray(row) ? row : {};
+  const progress = normalizeTaskProgressPayload(safeRow.taskProgress);
+  const entries = [];
+  let order = 0;
+
+  const addEntry = entry => {
+    const label = trimDiagnosticText(entry?.label || entry?.message || "");
+    if (!label) return;
+    const ts = Number(entry?.timestampMs || 0);
+    entries.push({
+      source: trimDiagnosticText(entry?.source || "event"),
+      timestamp: trimDiagnosticText(entry?.timestamp || ""),
+      timestampMs: Number.isFinite(ts) ? ts : 0,
+      order,
+      type: trimDiagnosticText(entry?.type || ""),
+      status: timelineStatusLabel(entry?.status, entry?.type),
+      severity: entry?.severity || timelineSeverity(entry?.status),
+      label,
+      detail: trimDiagnosticText(entry?.detail || "")
+    });
+    order += 1;
+  };
+
+  if (progress) {
+    const time = getFirstTime(progress, ["updatedAt", "timestamp", "at"]);
+    addEntry({
+      source: "progress",
+      timestamp: time.value,
+      timestampMs: time.ts,
+      type: "phase",
+      status: progress.phaseKey || progress.phaseLabel || view.status,
+      severity: timelineSeverity(view.status, view.severity),
+      label: progress.phaseLabel || progress.phaseKey || view.progressLabel,
+      detail: view.progressLabel
+    });
+  }
+
+  (Array.isArray(safeRow.recentEvents) ? safeRow.recentEvents : []).forEach(event => {
+    if (!event || typeof event !== "object" || Array.isArray(event)) return;
+    const time = getFirstTime(event, ["at", "timestamp", "time", "createdAt", "updatedAt"]);
+    const status = getFirstString(event, ["status", "level", "type"]);
+    const message = getFirstString(event, ["message", "detail", "type", "status"]);
+    addEntry({
+      source: "event",
+      timestamp: time.value,
+      timestampMs: time.ts,
+      type: getFirstString(event, ["type", "level"]),
+      status,
+      severity: timelineSeverity(status),
+      label: message,
+      detail: getFirstString(event, ["source", "target"])
+    });
+  });
+
+  (Array.isArray(safeRow.workItems) ? safeRow.workItems : []).forEach(item => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return;
+    const status = getFirstString(item, ["status", "stage", "phase"]);
+    const token = String(status || "").trim().toLowerCase();
+    if (!["running", "active", "failed", "failure", "error", "completed", "complete", "done", "warning"].includes(token)) {
+      return;
+    }
+    const time = getFirstTime(item, ["updatedAt", "finishedAt", "startedAt", "at", "timestamp", "time"]);
+    addEntry({
+      source: "work item",
+      timestamp: time.value,
+      timestampMs: time.ts,
+      type: getFirstString(item, ["stage", "phase", "adapter"]),
+      status,
+      severity: timelineSeverity(status),
+      label: getFirstString(item, ["name", "id", "sourceId", "source", "target"]),
+      detail: getFirstString(item, ["error", "message", "detail"])
+    });
+  });
+
+  return entries
+    .sort((a, b) => {
+      if (a.timestampMs && b.timestampMs && a.timestampMs !== b.timestampMs) return a.timestampMs - b.timestampMs;
+      if (a.timestampMs && !b.timestampMs) return -1;
+      if (!a.timestampMs && b.timestampMs) return 1;
+      return a.order - b.order;
+    })
+    .slice(0, DIAGNOSTIC_LIST_LIMIT)
+    .map(({ order: _order, ...entry }) => entry);
+}
+
 function formatDuration(ms) {
   const value = Math.max(0, Number(ms) || 0);
   if (!value) return "0s";
@@ -435,6 +552,7 @@ export function buildTaskRunAnalysis(row, {
     summaryCounts,
     slowExamples,
     workItemExamples,
-    eventExamples
+    eventExamples,
+    timelineEntries: buildTimelineEntries(safeRow, view)
   };
 }

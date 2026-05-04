@@ -3,7 +3,7 @@ import {
   buildTaskRunAnalysis,
   buildTaskRunDiagnostics,
   buildTaskRunView
-} from "../../shared/task-run-view-model.js?v=8";
+} from "../../shared/task-run-view-model.js?v=9";
 import {
   formatScrapyStaticSourcesTailBadge,
   formatTaskProgressDetail
@@ -340,6 +340,28 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     if (!rows.length) return '<div class="muted">No examples recorded.</div>';
     return `<ul>${rows.slice(0, 5).map(item => `<li>${escapeHtml(formatSummaryCounts(item))}</li>`).join("")}</ul>`;
   };
+  const renderTimelineEntries = entries => {
+    const rows = Array.isArray(entries) ? entries.slice(0, 5) : [];
+    if (!rows.length) return '<div class="muted">No timeline evidence recorded for this run.</div>';
+    return `
+      <ol class="admin-ops-run-timeline-list">
+        ${rows.map(entry => {
+          const timeLabel = entry.timestamp ? formatDateTime(entry.timestamp) : "source order";
+          const status = entry.status || entry.type || entry.source || "event";
+          const severity = ["critical", "warning", "healthy"].includes(String(entry.severity || ""))
+            ? entry.severity
+            : "muted";
+          return `
+            <li class="admin-ops-run-timeline-item">
+              <span class="admin-ops-run-timeline-time">${escapeHtml(timeLabel)}</span>
+              <span class="admin-status-chip ${severity}">${escapeHtml(status)}</span>
+              <span class="admin-ops-run-timeline-message">${escapeHtml(entry.label || "")}${entry.detail ? ` · ${escapeHtml(entry.detail)}` : ""}</span>
+            </li>
+          `;
+        }).join("")}
+      </ol>
+    `;
+  };
   const renderSelectedRunAnalysis = view => {
     if (!view) {
       return `
@@ -384,6 +406,10 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
           <div><strong>Slow examples</strong>${formatAnalysisExamples(analysis.slowExamples)}</div>
           <div><strong>Work examples</strong>${formatAnalysisExamples(analysis.workItemExamples)}</div>
           <div><strong>Event examples</strong>${formatAnalysisExamples(analysis.eventExamples)}</div>
+        </div>
+        <div class="admin-ops-run-timeline">
+          <strong>Timeline</strong>
+          ${renderTimelineEntries(analysis.timelineEntries)}
         </div>
         <div class="admin-ops-run-detail-hints">
           <strong>Diagnostic hints</strong>

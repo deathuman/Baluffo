@@ -3,8 +3,8 @@ export {
   renderAdminOpsFetcherMetrics,
   renderAdminOpsKpis,
   renderAdminOpsSchedule
-} from "./ops-summary.js?v=8";
+} from "./ops-summary.js?v=9";
 export {
   renderAdminOpsHistory,
   renderAdminOpsTrends
-} from "./ops-history.js?v=8";
+} from "./ops-history.js?v=9";

@@ -899,6 +899,38 @@
   color: color-mix(in srgb, #c9a86c 82%, white 18%);
 }
 
+.admin-ops-run-timeline {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.admin-ops-run-timeline-list {
+  display: grid;
+  gap: 0.28rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-ops-run-timeline-item {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 0.85fr) auto minmax(0, 2fr);
+  align-items: start;
+  gap: 0.35rem;
+}
+
+.admin-ops-run-timeline-time,
+.admin-ops-run-timeline-message {
+  overflow-wrap: anywhere;
+}
+
+.admin-ops-run-timeline-time {
+  color: var(--text-muted);
+}
+
 .admin-ops-history-older {
   margin: 0;
   border: 1px solid var(--surface-11);

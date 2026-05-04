@@ -177,7 +177,7 @@ Execution order is flexible:
 - [x] Stalled/orphaned remediation guidance in compact status-chip tooltips.
 - [x] Run-scoped diagnostics copy added as bounded clipboard JSON.
 - [x] Selected-run analysis panel added below compact run tables.
-- [ ] Timeline panels remain deferred.
+- [x] Timeline panel added inside Selected Run Analysis.
 - [ ] Downloadable run diagnostics export remains deferred.
 
 The larger Current Runs card direction was reversed by `e44e7405`; keep this surface compact and table-based.
@@ -228,7 +228,7 @@ Promote key report diagnostics into viewable sections:
 - failure buckets
 - quality and confidence signals
 
-Attach these panels to the selected run. The first selected-run analysis panel is implemented as bounded read-only evidence below the compact run tables; richer timeline visualization remains deferred. The dashboard-level latest fetch-health grouping remains in [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md).
+Attach these panels to the selected run. Selected-run analysis and its bounded timeline panel are implemented as read-only evidence below the compact run tables. The dashboard-level latest fetch-health grouping remains in [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md).
 
 ### Step 5 — Keep a single event stream via `recentEvents`
 
@@ -244,7 +244,7 @@ Continue using normalized `taskProgress`, `workItems`, `recentEvents` and extend
 4. Stalled/orphaned state rendered explicitly
 5. Bounded run diagnostics copy added for current and completed rows
 6. Selected-run analysis panel added below compact run tables
-7. Timeline panels deferred
+7. Timeline panel added inside Selected Run Analysis
 8. Downloadable diagnostics export deferred
 
 Health-dashboard dependency boundary:
