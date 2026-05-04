@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderAdminOpsFetcherMetrics } from "../../../frontend/admin/render.js";
+import {
+  renderAdminOpsDedupLists,
+  renderAdminOpsFetcherMetrics
+} from "../../../frontend/admin/render.js";
 
 function makeEl(buttonsBySelector = {}) {
   return {
@@ -21,9 +24,10 @@ function makeAttrButton(attrs) {
   };
 }
 
-test("admin render: dense diagnostics render inside native disclosure blocks", () => {
+test("admin render: health diagnostics stay compact and dedup lists render separately", () => {
   const metricsEl = makeEl();
-  renderAdminOpsFetcherMetrics(metricsEl, {
+  const dedupEl = makeEl();
+  const metrics = {
     latestRun: {
       dedupEvidence: {
         mergeReasonCounts: { secondaryKey: 2 },
@@ -37,14 +41,21 @@ test("admin render: dense diagnostics render inside native disclosure blocks", (
       }
     },
     history: {}
+  };
+  renderAdminOpsFetcherMetrics(metricsEl, {
+    ...metrics
   });
+  renderAdminOpsDedupLists(dedupEl, metrics);
 
-  assert.match(metricsEl.innerHTML, /<details class="admin-ops-metrics-details admin-ops-dedup-details">/i);
-  assert.match(metricsEl.innerHTML, /Dedup supporting diagnostics/i);
-  assert.match(metricsEl.innerHTML, /Dedup Audit Gate/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Dedup supporting diagnostics/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /Dedup Audit Gate/i);
+  assert.match(dedupEl.innerHTML, /<details class="admin-ops-metrics-details admin-ops-dedup-details">/i);
+  assert.match(dedupEl.innerHTML, /Dedup supporting diagnostics/i);
+  assert.match(dedupEl.innerHTML, /Dedup Audit Gate/i);
   assert.match(metricsEl.innerHTML, /<details class="admin-ops-metrics-details admin-ops-source-health-details">/i);
   assert.match(metricsEl.innerHTML, /<details class="admin-ops-metrics-details admin-ops-source-policy-details">/i);
   assert.doesNotMatch(metricsEl.innerHTML, /merge-btn|unmerge-btn|cleanup-btn|lifecycle-btn/i);
+  assert.doesNotMatch(dedupEl.innerHTML, /merge-btn|unmerge-btn|cleanup-btn|lifecycle-btn/i);
 });
 
 test("admin render: dedup review action wiring survives disclosure", () => {
@@ -57,7 +68,7 @@ test("admin render: dedup review action wiring survives disclosure", () => {
     "[data-dedup-review-action]": [reviewButton]
   });
   const calls = [];
-  renderAdminOpsFetcherMetrics(metricsEl, {
+  renderAdminOpsDedupLists(metricsEl, {
     latestRun: {
       dedupEvidence: {
         providerStaticDisagreementExamples: [
@@ -74,7 +85,7 @@ test("admin render: dedup review action wiring survives disclosure", () => {
       }
     },
     history: {}
-  }, null, {
+  }, {
     onDedupReviewAction: (row, action) => calls.push({ row, action })
   });
 

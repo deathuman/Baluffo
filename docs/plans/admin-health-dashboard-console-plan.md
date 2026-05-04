@@ -5,22 +5,22 @@
 > - **Canonical for:** Ops health layout plan, sectionization strategy, copy/export and progressive disclosure behavior for `/ops/health` and `/ops/fetcher-metrics` rendering, and the health dashboard's compact task/status lane
 > - **Not canonical for:** bridge contracts, runtime behavior, or actual UI implementation details (use `admin-bridge-api.md`, `DATA_CONTRACT.md`, and `frontend/admin` source files)
 > - **Then inspect:** [`admin-bridge-api.md`](../admin-bridge-api.md), [`architecture-ai-map.md`](../architecture-ai-map.md), [`task-progress-operational-console-plan.md`](task-progress-operational-console-plan.md), [`frontend/admin/app/ops/health.js`](../../frontend/admin/app/ops/health.js), [`frontend/admin/render/ops-summary.js`](../../frontend/admin/render/ops-summary.js), [`frontend/admin/domain/runs.js`](../../frontend/admin/domain/runs.js), [`frontend/admin/render/ops-history.js`](../../frontend/admin/render/ops-history.js), [`styles/admin.css`](../../styles/admin.css)
-> - **Last updated:** 2026-05-03
+> - **Last updated:** 2026-05-04
 
 ## Verdict
 
-The current Operations Health experience is functionally correct but currently reads as a single report dump. The UI is especially hard to parse where `/ops/fetcher-metrics` currently emits runtime, source-health, dedup, social, and source-policy signals into one long section.
+The current Operations Health experience is functionally correct, but it should now stay a first-glance overview. Detailed task evidence lives in Run History and selected-run analysis, while detailed dedup evidence belongs in a separate Dedup Lists panel.
 
 This plan keeps data contracts unchanged and focuses on frontend rendering structure. The right next move is a small Admin console refactor: normalize existing payloads into view-model sections, render those sections compactly, preserve existing action handlers, and keep backend lifecycle ownership untouched.
 
-This plan is compatible with [`task-progress-operational-console-plan.md`](task-progress-operational-console-plan.md) by drawing a clear boundary: this document owns the Operations Health overview and metrics layout, while the task/progress plan owns detailed live-run cards, stale/orphaned task states, run timelines, and the shared task presenter. The health dashboard may show a compact Discovery / Fetch / Sync lane, but it should not implement the full Current Runs card system.
+This plan is compatible with [`task-progress-operational-console-plan.md`](task-progress-operational-console-plan.md) by drawing a clear boundary: this document owns the Operations Health overview and compact metrics layout, while the task/progress plan owns detailed run rows, stale/orphaned task states, run analysis, timelines, and the shared task presenter. Dedup lists are a separate Admin Ops panel, not part of the general health pile-up.
 
 ## Validation Findings
 
 Validation against the current code confirms the diagnosis:
 
 - [`frontend/admin/app/ops/health.js`](../../frontend/admin/app/ops/health.js) already fetches `/ops/health`, `/ops/history?limit=80`, `/ops/task-state`, `/ops/fetcher-metrics?windowRuns=80`, and `/source-policy/recommendations` together.
-- [`frontend/admin/render/ops-summary.js`](../../frontend/admin/render/ops-summary.js) owns `renderAdminOpsFetcherMetrics()` and currently assembles a long flat sequence of KPI cards and full-row diagnostic text blocks.
+- [`frontend/admin/render/ops-summary.js`](../../frontend/admin/render/ops-summary.js) owns `renderAdminOpsFetcherMetrics()` for general health and `renderAdminOpsDedupLists()` for the separate dedup panel.
 - [`frontend/admin/render/ops-history.js`](../../frontend/admin/render/ops-history.js) already renders the run model separately, so task-lane work in this plan should reuse the existing current-run model instead of replacing run history.
 - Source-policy review actions and dedup review actions are already wired through the Ops health controller; this plan should preserve those handlers and only improve their display context.
 - Existing frontend tests import `renderAdminOpsFetcherMetrics()` through stable render exports, so the public renderer export should stay stable during the first implementation slice.
@@ -30,7 +30,7 @@ Validation against the current code confirms the diagnosis:
 
 1. Replace wall-of-text health output with a sectioned operational console.
 2. Keep source-of-truth contracts unchanged: `/ops/health`, `/ops/fetcher-metrics`, `/ops/task-state`, `/ops/history`, and `/source-policy/recommendations`.
-3. Preserve existing source-policy and dedup review actions while making their context visible in organized sections.
+3. Preserve existing source-policy and dedup review actions while moving detailed dedup evidence into its own panel.
 4. Add low-friction diagnostics access with bounded rows and progressive disclosure.
 5. Keep the dashboard dense and operator-focused, not decorative.
 
@@ -40,7 +40,8 @@ Validation against the current code confirms the diagnosis:
 
 - Admin-only dashboard layout and rendering in `frontend/admin`.
 - New view-model/formatter layer under `frontend/admin/domain`.
-- Sectioned rendering for `#admin-ops-fetcher-metrics`.
+- Sectioned overview rendering for `#admin-ops-fetcher-metrics`.
+- Separate read-only `#admin-ops-dedup-lists` rendering for pre-lifecycle dedup evidence.
 - A compact task-status lane that reuses existing run-model data and stays read-only.
 - Styling additions for compact section density in [`styles/admin.css`](../../styles/admin.css).
 - Focused frontend unit tests for rendering boundaries, bounded lists, action preservation, and diagnostics-copy behavior.
@@ -54,6 +55,7 @@ Validation against the current code confirms the diagnosis:
 - Changing `/ops/history` ownership.
 - Replacing the full Runs table with cards.
 - Implementing detailed Current Runs cards, stale/orphaned task state resolution, or run timelines; those belong to [`task-progress-operational-console-plan.md`](task-progress-operational-console-plan.md).
+- Re-embedding detailed dedup lists inside the general Health metrics section.
 - Moving source-policy review queue mutations into a different endpoint or payload shape.
 
 ## Validated Ownership Map
@@ -65,7 +67,7 @@ Validation against the current code confirms the diagnosis:
 | Fetcher metrics wall | [`frontend/admin/render/ops-summary.js`](../../frontend/admin/render/ops-summary.js) | Split into named sections with bounded rows. |
 | Current/completed run table | [`frontend/admin/render/ops-history.js`](../../frontend/admin/render/ops-history.js), [`frontend/admin/domain/runs.js`](../../frontend/admin/domain/runs.js) | Reuse for a compact task-status lane; do not replace the history renderer in this slice. |
 | Source-policy review queue | [`frontend/admin/render/source-policy-review.js`](../../frontend/admin/render/source-policy-review.js), [`frontend/admin/app/ops/health.js`](../../frontend/admin/app/ops/health.js) | Keep the queue as its own action surface; cross-link or summarize it from the health console. |
-| Dedup review actions | [`frontend/admin/render/ops-summary.js`](../../frontend/admin/render/ops-summary.js), [`frontend/admin/app/ops/health.js`](../../frontend/admin/app/ops/health.js) | Preserve row action wiring after sectionization. |
+| Dedup lists and review actions | [`frontend/admin/render/ops-summary.js`](../../frontend/admin/render/ops-summary.js), [`frontend/admin/app/ops/health.js`](../../frontend/admin/app/ops/health.js) | Render in a separate Dedup Lists panel and preserve row action wiring. |
 | Styling | [`styles/admin.css`](../../styles/admin.css) | Add page-owned compact section/card styles. |
 | Tests | `tests/frontend/unit/admin-*.test.mjs` | Extend render/controller tests around new structure and stable action wiring. |
 
@@ -73,10 +75,10 @@ Validation against the current code confirms the diagnosis:
 
 | Area | Health dashboard plan owns | Task/progress plan owns | Integration rule |
 |------|----------------------------|--------------------------|------------------|
-| Task status | Compact Discovery / Fetch / Sync lane inside Operations Health | Full Current Runs cards, stale/orphaned states, progress presenter, run timeline | Health lane should consume existing `deriveAdminRunsModel()` now and shared task presenter later. |
+| Task status | Compact Discovery / Fetch / Sync lane inside Operations Health | Compact Current Runs rows, stale/orphaned states, progress presenter, run timeline | Health lane should stay shallow and not duplicate Run History details. |
 | Run analysis | Latest health-oriented fetch metrics grouped into scannable sections | Per-run analysis attached to current/completed run detail | Keep health analysis aggregated and latest-run focused. |
 | Diagnostics copy | Section-level normalized health summaries | Current/last run diagnostics and event payloads | Avoid duplicating raw event export controls in the health dashboard. |
-| Source-policy/dedup actions | Contextual summaries plus existing action queues | Task status and progress UX only | Do not move review actions into task cards. |
+| Source-policy/dedup actions | Source Policy queue plus separate Dedup Lists panel | Task status and progress UX only | Do not move review actions into task rows or selected-run analysis. |
 | Rendering ownership | `renderAdminOpsFetcherMetrics()` and health-specific section components | `renderAdminOpsHistory()` and task presenter consumers | Preserve stable public exports until both plans intentionally converge. |
 
 ## Implementation Plan
@@ -114,13 +116,12 @@ diagnostics
 
 ### 2. Split Operations Health into sections
 
-Convert `#admin-ops-fetcher-metrics` from long-form text blocks into compact named sections:
+Convert `#admin-ops-fetcher-metrics` from long-form text blocks into compact overview sections:
 
 ```text
 Runtime
 Failures
 Source Health
-Dedup Review
 Source Policy Signals
 Social Signals
 Diagnostics
@@ -136,14 +137,18 @@ Operations Health
   KPI strip
   Schedule / sync summary
   Current task lane
-  Fetcher metrics console
+  Fetcher metrics overview
     Runtime
     Failures
     Source Health
-    Dedup Review
     Source Policy Signals
     Social Signals
     Diagnostics
+  Dedup Lists
+    Gate
+    Review state
+    Provider/static rows
+    Supporting dedup examples
   Source Policy Review queue
   Trends
   Runs
@@ -195,7 +200,6 @@ The main metrics area should be a two-column console on desktop and a single col
 ```text
 Runtime                 Failures
 Source Health           Source Policy Signals
-Dedup Review            Social Signals
 Diagnostics             full-width support strip
 ```
 
@@ -205,9 +209,10 @@ Recommended section behavior:
 - `Failures`: failed source count, grouped detail failures, top failure buckets, browser fallback recommendation count.
 - `Source Health`: zero-kept sources, sources needing attention, top productive sources, unstable/failed providers.
 - `Source Policy Signals`: runtime-suppressed static sources, provider coverage review, overlap audit, conservative cleanup readiness.
-- `Dedup Review`: audit gate, current-run merges, provider/static disagreement blockers, review queue count, top examples.
 - `Social Signals`: social kept/unique/dropped counts when present; hidden or collapsed when absent.
 - `Diagnostics`: copy normalized section summaries, expose raw-ish bounded data behind `<details>`, and avoid becoming the primary reading path.
+
+Dedup has its own panel below the overview because it contains list-oriented pre-lifecycle evidence and local review-state actions.
 
 Each section should follow the same visual rhythm:
 
@@ -241,7 +246,7 @@ The Source Policy Review queue remains a dedicated action surface because it mut
 
 ### 3. Preserve action wiring while sectionizing
 
-Dedup review buttons currently attach inside `renderAdminOpsFetcherMetrics()` using `options.onDedupReviewAction`.
+Dedup review buttons attach inside the dedicated Dedup Lists renderer using `options.onDedupReviewAction`.
 
 Source-policy review and migration-link buttons attach through `renderAdminSourcePolicyReview()`.
 
@@ -293,6 +298,7 @@ Keep this dedicated active plan doc registered in [`docs/INDEX.md`](../INDEX.md)
 - [x] Add unit test coverage for bounded lists, copy behavior, and action handlers.
 - [x] Add unit test coverage for the compact task-status lane.
 - [x] Reconcile smoke selectors that assume `#admin-ops-fetcher-metrics` is populated.
+- [x] Move detailed dedup evidence into a separate Dedup Lists panel.
 
 ## Risks and Constraints
 

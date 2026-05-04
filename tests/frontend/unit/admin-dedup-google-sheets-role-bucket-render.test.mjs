@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderAdminOpsFetcherMetrics } from "../../../frontend/admin/render.js";
+import { renderAdminOpsDedupLists } from "../../../frontend/admin/render.js";
 
 function makeEl() {
   return {
@@ -12,7 +12,7 @@ function makeEl() {
 
 test("admin render: Google Sheets role-bucket audit summary stays read-only", () => {
   const metricsEl = makeEl();
-  renderAdminOpsFetcherMetrics(metricsEl, {
+  renderAdminOpsDedupLists(metricsEl, {
     latestRun: {
       dedupEvidence: {
         googleSheetsRoleBucketAudit: {

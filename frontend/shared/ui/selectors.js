@@ -191,6 +191,7 @@ export const UI_TOKENS = Object.freeze({
     opsSchedule: "admin-ops-schedule",
     sourcePolicyReview: "admin-source-policy-review",
     opsFetcherMetrics: "admin-ops-fetcher-metrics",
+    opsDedupLists: "admin-ops-dedup-lists",
     opsTrends: "admin-ops-trends",
     opsHistory: "admin-ops-history",
     fetcherProgressBadge: "admin-fetcher-progress-badge",

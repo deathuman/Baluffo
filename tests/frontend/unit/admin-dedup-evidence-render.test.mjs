@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderAdminOpsFetcherMetrics } from "../../../frontend/admin/render.js";
+import { renderAdminOpsDedupLists } from "../../../frontend/admin/render.js";
 
 function makeEl() {
   return {
@@ -12,7 +12,7 @@ function makeEl() {
 
 test("admin render: fetcher metrics render read-only dedup evidence", () => {
   const metricsEl = makeEl();
-  renderAdminOpsFetcherMetrics(metricsEl, {
+  renderAdminOpsDedupLists(metricsEl, {
     latestRun: {
       durationMs: 120000,
       sourceCount: 3,
@@ -274,14 +274,11 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
     history: {}
   });
 
-  assert.match(metricsEl.innerHTML, /Current Run Merges/i);
-  assert.match(metricsEl.innerHTML, /admin-ops-metrics-section-runtime/i);
-  assert.match(metricsEl.innerHTML, />Runtime</i);
   assert.match(metricsEl.innerHTML, /admin-ops-metrics-section-dedup/i);
-  assert.match(metricsEl.innerHTML, />Dedup Review</i);
+  assert.match(metricsEl.innerHTML, />Dedup Lists</i);
   assert.match(metricsEl.innerHTML, /Read-only gate, review-state, and blocker evidence/i);
-  assert.match(metricsEl.innerHTML, /Bundle Collisions/i);
-  assert.match(metricsEl.innerHTML, /Risky Merges/i);
+  assert.match(metricsEl.innerHTML, /Current-run merges by reason/i);
+  assert.match(metricsEl.innerHTML, /Carried source-bundle collision rows/i);
   assert.match(metricsEl.innerHTML, /Dedup evidence/i);
   assert.match(metricsEl.innerHTML, /Dedup Audit Gate/i);
   assert.match(metricsEl.innerHTML, /admin-dedup-audit-gate-card/i);

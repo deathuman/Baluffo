@@ -1,12 +1,13 @@
 import { deriveFetcherFailureSummary } from "../../domain.js";
 import {
   renderAdminOpsAlerts,
+  renderAdminOpsDedupLists,
   renderAdminOpsFetcherMetrics,
   renderAdminOpsHistory,
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "../../render.js?v=9";
+} from "../../render.js?v=10";
 import { renderAdminSourcePolicyReview } from "../../render/source-policy-review.js";
 
 function maybeUnrefTimer(timer) {
@@ -24,6 +25,7 @@ export function createOpsHealthController({
   renderAdminOpsAlerts: renderAdminOpsAlertsImpl = renderAdminOpsAlerts,
   renderAdminOpsKpis: renderAdminOpsKpisImpl = renderAdminOpsKpis,
   renderAdminOpsSchedule: renderAdminOpsScheduleImpl = renderAdminOpsSchedule,
+  renderAdminOpsDedupLists: renderAdminOpsDedupListsImpl = renderAdminOpsDedupLists,
   renderAdminOpsFetcherMetrics: renderAdminOpsFetcherMetricsImpl = renderAdminOpsFetcherMetrics,
   renderAdminSourcePolicyReview: renderAdminSourcePolicyReviewImpl = renderAdminSourcePolicyReview,
   renderAdminOpsTrends: renderAdminOpsTrendsImpl = renderAdminOpsTrends,
@@ -60,6 +62,7 @@ export function createOpsHealthController({
       refs.adminSourcePolicyReviewEl.innerHTML = `<div class="muted">${escapeHtml(message)}</div>`;
     }
     if (refs.adminOpsFetcherMetricsEl) refs.adminOpsFetcherMetricsEl.innerHTML = "";
+    if (refs.adminOpsDedupListsEl) refs.adminOpsDedupListsEl.innerHTML = "";
     if (refs.adminOpsTrendsEl) refs.adminOpsTrendsEl.textContent = message;
     if (refs.adminOpsHistoryEl) {
       refs.adminOpsHistoryEl.innerHTML = `<div class="no-results">${escapeHtml(message)}</div>`;
@@ -327,28 +330,29 @@ export function createOpsHealthController({
       renderAdminOpsKpisImpl(refs.adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
       renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
       renderSourcePolicyReviewQueue(sourcePolicyRecommendations);
+      const fetcherMetricsPayload = {
+        ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
+        latestRun: {
+          ...(
+            fetcherMetrics?.latestRun && typeof fetcherMetrics.latestRun === "object"
+              ? fetcherMetrics.latestRun
+              : {}
+          ),
+          conservativeStaticCleanupProposals:
+            health?.kpis?.conservativeStaticCleanupProposals
+            && typeof health.kpis.conservativeStaticCleanupProposals === "object"
+              ? health.kpis.conservativeStaticCleanupProposals
+              : (
+                fetcherMetrics?.latestRun?.conservativeStaticCleanupProposals
+                && typeof fetcherMetrics.latestRun.conservativeStaticCleanupProposals === "object"
+                  ? fetcherMetrics.latestRun.conservativeStaticCleanupProposals
+                  : {}
+              )
+        }
+      };
       renderAdminOpsFetcherMetricsImpl(
         refs.adminOpsFetcherMetricsEl,
-        {
-          ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
-          latestRun: {
-            ...(
-              fetcherMetrics?.latestRun && typeof fetcherMetrics.latestRun === "object"
-                ? fetcherMetrics.latestRun
-                : {}
-            ),
-            conservativeStaticCleanupProposals:
-              health?.kpis?.conservativeStaticCleanupProposals
-              && typeof health.kpis.conservativeStaticCleanupProposals === "object"
-                ? health.kpis.conservativeStaticCleanupProposals
-                : (
-                  fetcherMetrics?.latestRun?.conservativeStaticCleanupProposals
-                  && typeof fetcherMetrics.latestRun.conservativeStaticCleanupProposals === "object"
-                    ? fetcherMetrics.latestRun.conservativeStaticCleanupProposals
-                    : {}
-                )
-          }
-        },
+        fetcherMetricsPayload,
         deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
         {
           onDedupReviewAction: handleDedupReviewAction,
@@ -356,6 +360,9 @@ export function createOpsHealthController({
           runModel
         }
       );
+      renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, fetcherMetricsPayload, {
+        onDedupReviewAction: handleDedupReviewAction
+      });
       renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
         onCopyRunDiagnostics: handleCopyRunDiagnostics
       });

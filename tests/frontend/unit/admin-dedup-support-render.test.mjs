@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderAdminOpsFetcherMetrics } from "../../../frontend/admin/render.js";
+import { renderAdminOpsDedupLists } from "../../../frontend/admin/render.js";
 
 function makeEl() {
   return {
@@ -12,7 +12,7 @@ function makeEl() {
 
 test("admin render: fetcher metrics render dedup review-state summary", () => {
   const metricsEl = makeEl();
-  renderAdminOpsFetcherMetrics(metricsEl, {
+  renderAdminOpsDedupLists(metricsEl, {
     latestRun: {
       sourceCount: 1,
       dedupReviewStateReadWarning: "malformed_dedup_review_state_artifact",
@@ -88,7 +88,7 @@ test("admin render: fetcher metrics render dedup review-state summary", () => {
 
 test("admin render: fetcher metrics tolerate missing dedup evidence", () => {
   const metricsEl = makeEl();
-  renderAdminOpsFetcherMetrics(metricsEl, {
+  renderAdminOpsDedupLists(metricsEl, {
     latestRun: { durationMs: 120000, sourceCount: 3, outputCount: 2 },
     history: {}
   });

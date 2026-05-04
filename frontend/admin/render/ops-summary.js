@@ -1169,6 +1169,182 @@ function formatDedupReviewQueueRows(rows, emptyText) {
   `;
 }
 
+function buildDedupListsContent(metrics, options = {}) {
+  const latest = metrics?.latestRun || {};
+  const dedupEvidence = latest?.dedupEvidence && typeof latest.dedupEvidence === "object" ? latest.dedupEvidence : {};
+  const dedupReviewStateSummary = latest?.dedupReviewStateSummary && typeof latest.dedupReviewStateSummary === "object"
+    ? latest.dedupReviewStateSummary
+    : {};
+  const dedupReviewStateReadWarning = String(latest?.dedupReviewStateReadWarning || "");
+  const mergeReasonCounts = dedupEvidence?.mergeReasonCounts && typeof dedupEvidence.mergeReasonCounts === "object"
+    ? dedupEvidence.mergeReasonCounts
+    : {};
+  const sourceBundleComposition = dedupEvidence?.sourceBundleComposition && typeof dedupEvidence.sourceBundleComposition === "object"
+    ? dedupEvidence.sourceBundleComposition
+    : {};
+  const riskReasonCounts = dedupEvidence?.riskReasonCounts && typeof dedupEvidence.riskReasonCounts === "object"
+    ? dedupEvidence.riskReasonCounts
+    : {};
+  const outlierReasonCounts = dedupEvidence?.outlierReasonCounts && typeof dedupEvidence.outlierReasonCounts === "object"
+    ? dedupEvidence.outlierReasonCounts
+    : {};
+  const identityShapeCounts = dedupEvidence?.identityShapeCounts && typeof dedupEvidence.identityShapeCounts === "object"
+    ? dedupEvidence.identityShapeCounts
+    : {};
+  const identityQualityCounts = dedupEvidence?.identityQualityCounts && typeof dedupEvidence.identityQualityCounts === "object"
+    ? dedupEvidence.identityQualityCounts
+    : {};
+  const nonProviderIdentityProvenanceCounts = dedupEvidence?.nonProviderIdentityProvenanceCounts && typeof dedupEvidence.nonProviderIdentityProvenanceCounts === "object"
+    ? dedupEvidence.nonProviderIdentityProvenanceCounts
+    : {};
+  const googleSheetsBundleShapeCounts = dedupEvidence?.googleSheetsBundleShapeCounts && typeof dedupEvidence.googleSheetsBundleShapeCounts === "object"
+    ? dedupEvidence.googleSheetsBundleShapeCounts
+    : {};
+  const googleSheetsRoleBucketAuditCounts = dedupEvidence?.googleSheetsRoleBucketAuditCounts && typeof dedupEvidence.googleSheetsRoleBucketAuditCounts === "object"
+    ? dedupEvidence.googleSheetsRoleBucketAuditCounts
+    : {};
+  const googleSheetsRoleBucketAudit = dedupEvidence?.googleSheetsRoleBucketAudit && typeof dedupEvidence.googleSheetsRoleBucketAudit === "object"
+    ? dedupEvidence.googleSheetsRoleBucketAudit
+    : {};
+  const googleSheetsBucketIntentCounts = dedupEvidence?.googleSheetsBucketIntentCounts && typeof dedupEvidence.googleSheetsBucketIntentCounts === "object"
+    ? dedupEvidence.googleSheetsBucketIntentCounts
+    : {};
+  const googleSheetsWeakGroupingAuditCounts = dedupEvidence?.googleSheetsWeakGroupingAuditCounts && typeof dedupEvidence.googleSheetsWeakGroupingAuditCounts === "object"
+    ? dedupEvidence.googleSheetsWeakGroupingAuditCounts
+    : {};
+  const reviewQueueCounts = dedupEvidence?.reviewQueueCounts && typeof dedupEvidence.reviewQueueCounts === "object"
+    ? dedupEvidence.reviewQueueCounts
+    : {};
+  const reviewQueueCauseCounts = dedupEvidence?.reviewQueueCauseCounts && typeof dedupEvidence.reviewQueueCauseCounts === "object"
+    ? dedupEvidence.reviewQueueCauseCounts
+    : {};
+  const dedupAuditGate = dedupEvidence?.dedupAuditGate && typeof dedupEvidence.dedupAuditGate === "object"
+    ? dedupEvidence.dedupAuditGate
+    : {};
+  const providerStaticDisagreementCounts = dedupEvidence?.providerStaticDisagreementCounts && typeof dedupEvidence.providerStaticDisagreementCounts === "object"
+    ? dedupEvidence.providerStaticDisagreementCounts
+    : {};
+  const providerStaticDisagreementGateCounts = dedupEvidence?.providerStaticDisagreementGateCounts && typeof dedupEvidence.providerStaticDisagreementGateCounts === "object"
+    ? dedupEvidence.providerStaticDisagreementGateCounts
+    : {};
+  const providerStaticDisagreementClassificationCounts = dedupEvidence?.providerStaticDisagreementClassificationCounts && typeof dedupEvidence.providerStaticDisagreementClassificationCounts === "object"
+    ? dedupEvidence.providerStaticDisagreementClassificationCounts
+    : {};
+  const providerStaticTitleCompanyCollisionCounts = dedupEvidence?.providerStaticTitleCompanyCollisionCounts && typeof dedupEvidence.providerStaticTitleCompanyCollisionCounts === "object"
+    ? dedupEvidence.providerStaticTitleCompanyCollisionCounts
+    : {};
+  const providerStaticTitleCompanyCollisionAuditCounts = dedupEvidence?.providerStaticTitleCompanyCollisionAuditCounts && typeof dedupEvidence.providerStaticTitleCompanyCollisionAuditCounts === "object"
+    ? dedupEvidence.providerStaticTitleCompanyCollisionAuditCounts
+    : {};
+  const providerStaticDisagreementRows = Array.isArray(dedupEvidence?.providerStaticDisagreementExamples)
+    ? dedupEvidence.providerStaticDisagreementExamples
+    : [];
+  const providerStaticTitleCompanyCollisionRows = Array.isArray(dedupEvidence?.providerStaticTitleCompanyCollisionExamples)
+    ? dedupEvidence.providerStaticTitleCompanyCollisionExamples
+    : [];
+  const topMergedSummary = formatDedupMergedRows(
+    dedupEvidence?.topMergedJobs,
+    "No merged canonical jobs in the latest fetch report."
+  );
+  const topOutlierSummary = formatDedupOutlierRows(
+    dedupEvidence?.topSourceBundleOutliers,
+    "No carried source-bundle collision outliers in the latest fetch report."
+  );
+  const riskyMergeSummary = formatDedupRiskRows(
+    dedupEvidence?.riskyMergeExamples,
+    "No risky merge examples in the latest fetch report."
+  );
+  const reviewQueueSummary = formatDedupReviewQueueRows(
+    dedupEvidence?.reviewQueue,
+    "No dedup review queue examples in the latest fetch report."
+  );
+  const providerStaticDisagreementSummary = formatProviderStaticDisagreementRows(
+    providerStaticDisagreementRows,
+    "No provider/static disagreement examples in the latest fetch report.",
+    { onReviewAction: options?.onDedupReviewAction, tableKey: "providerStatic" }
+  );
+  const providerStaticTitleCompanyCollisionSummary = formatProviderStaticTitleCompanyCollisionRows(
+    providerStaticTitleCompanyCollisionRows,
+    "No provider/static title/company collision examples in the latest fetch report.",
+    { onReviewAction: options?.onDedupReviewAction, tableKey: "providerStaticTitleCompany" }
+  );
+  const supportingHtml = `
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup current-run merge examples</strong>: ${formatCurrentRunMergeExamples(dedupEvidence?.currentRunMergeExamples, "No current-run merge examples.")}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static disagreements</strong>: ${escapeHtml(formatProviderStaticDisagreementCounts(providerStaticDisagreementCounts))}. Gate: ${escapeHtml(formatProviderStaticDisagreementGateCounts(providerStaticDisagreementGateCounts))}. Classifications: ${escapeHtml(formatProviderStaticDisagreementClassificationCounts(providerStaticDisagreementClassificationCounts))}. ${providerStaticDisagreementSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup provider/static title-company collisions</strong>: ${escapeHtml(formatProviderStaticTitleCompanyCollisionCounts(providerStaticTitleCompanyCollisionCounts))}. Audit: ${escapeHtml(formatProviderStaticTitleCompanyCollisionAuditCounts(providerStaticTitleCompanyCollisionAuditCounts))}. ${providerStaticTitleCompanyCollisionSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup carried bundle examples</strong>: ${formatDedupAuditGateExamples(dedupEvidence?.carriedBundleExamples, "No carried bundle examples.")}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup source composition</strong>: ${escapeHtml(formatDedupSourceClasses(sourceBundleComposition))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup risk reasons</strong>: ${escapeHtml(formatDedupRiskReasonCounts(riskReasonCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup outlier reasons</strong>: ${escapeHtml(formatDedupOutlierReasonCounts(outlierReasonCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup identity shapes</strong>: ${escapeHtml(formatDedupIdentityShapeCounts(identityShapeCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup identity quality</strong>: ${escapeHtml(formatDedupIdentityQualityCounts(identityQualityCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup non-provider provenance</strong>: ${escapeHtml(formatDedupNonProviderIdentityProvenanceCounts(nonProviderIdentityProvenanceCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets bundle shapes</strong>: ${escapeHtml(formatDedupGoogleSheetsBundleShapeCounts(googleSheetsBundleShapeCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets role-bucket audit</strong>: ${escapeHtml(formatDedupGoogleSheetsRoleBucketAuditCounts(googleSheetsRoleBucketAuditCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets role-bucket audit summary</strong>: ${formatDedupGoogleSheetsRoleBucketAuditSummary(googleSheetsRoleBucketAudit)}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets bucket intent</strong>: ${escapeHtml(formatDedupGoogleSheetsBucketIntentCounts(googleSheetsBucketIntentCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets weak grouping audit</strong>: ${escapeHtml(formatDedupGoogleSheetsWeakGroupingAuditCounts(googleSheetsWeakGroupingAuditCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review causes</strong>: ${escapeHtml(formatDedupReviewQueueCauseCounts(reviewQueueCauseCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top source-bundle outliers</strong>: ${topOutlierSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review examples</strong>: ${reviewQueueSummary}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Risky merge examples</strong>: ${riskyMergeSummary}</div>
+  `;
+  return {
+    html: `
+      <section class="admin-ops-metrics-section admin-ops-metrics-section-dedup">
+        <div class="admin-ops-metrics-section-head">
+          <div>
+            <h4>Dedup Lists</h4>
+            <p>Read-only gate, review-state, and blocker evidence before lifecycle UX.</p>
+          </div>
+        </div>
+        <div class="admin-ops-metrics-section-body">
+          <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup evidence</strong>: read-only diagnostics. Current-run merges by reason: primary URL ${Number(mergeReasonCounts?.primaryUrl || 0).toLocaleString()}, secondary key ${Number(mergeReasonCounts?.secondaryKey || 0).toLocaleString()}, known mirror pair ${Number(mergeReasonCounts?.knownMirrorPair || 0).toLocaleString()}, social key ${Number(mergeReasonCounts?.socialKey || 0).toLocaleString()}, sparse identity ${Number(mergeReasonCounts?.sparseIdentity || 0).toLocaleString()}, unknown ${Number(mergeReasonCounts?.unknown || 0).toLocaleString()}. Carried source-bundle collision rows: ${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}.</div>
+          ${formatDedupAuditGateCard(dedupAuditGate)}
+          <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review-state</strong>: ${escapeHtml(formatDedupReviewStateSummary(dedupReviewStateSummary, dedupReviewStateReadWarning))}</div>
+          ${formatOpsMetricsDetails("Dedup supporting diagnostics", supportingHtml, "admin-ops-dedup-details")}
+        </div>
+      </section>
+    `,
+    rowGroups: {
+      providerStatic: providerStaticDisagreementRows.slice(0, 5),
+      providerStaticTitleCompany: providerStaticTitleCompanyCollisionRows.slice(0, 5)
+    }
+  };
+}
+
+function wireDedupReviewActions(container, rowGroups, onDedupReviewAction) {
+  if (typeof onDedupReviewAction !== "function") return;
+  container.querySelectorAll("[data-dedup-review-action]").forEach(button => {
+    button.addEventListener("click", () => {
+      const action = String(button.getAttribute("data-dedup-review-action") || "");
+      const tableKey = String(button.getAttribute("data-dedup-review-table") || "");
+      const rowIndex = Number(button.getAttribute("data-dedup-review-row") || -1);
+      const row = Array.isArray(rowGroups?.[tableKey]) ? rowGroups[tableKey][rowIndex] : null;
+      if (!row || !action) return;
+      onDedupReviewAction(row, action);
+    });
+  });
+}
+
+export function renderAdminOpsDedupLists(dedupEl, metrics, options = {}) {
+  if (!dedupEl) return;
+  const latest = metrics?.latestRun || {};
+  const canPatchInPlace = Boolean(dedupEl && dedupEl.dataset);
+  const signature = stableOpsSignature({
+    dedupEvidence: latest?.dedupEvidence || {},
+    dedupReviewStateSummary: latest?.dedupReviewStateSummary || {},
+    dedupReviewStateReadWarning: String(latest?.dedupReviewStateReadWarning || "")
+  });
+  if (canPatchInPlace && dedupEl.dataset.opsDedupListsSig === signature) return;
+  if (canPatchInPlace) dedupEl.dataset.opsDedupListsSig = signature;
+  const content = buildDedupListsContent(metrics, options);
+  dedupEl.innerHTML = content.html;
+  wireDedupReviewActions(dedupEl, content.rowGroups, options?.onDedupReviewAction);
+}
+
 export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary = null, options = {}) {
   if (!metricsEl) return;
   const latest = metrics?.latestRun || {};
@@ -1479,18 +1655,6 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
       <div class="admin-total-value">${(outputYieldRate * 100).toFixed(1)}%</div>
     </div>
     <div class="admin-total-card">
-      <div class="admin-total-label">Current Run Merges</div>
-      <div class="admin-total-value">${Number(dedupEvidence?.mergedCount || latest?.mergedCount || 0).toLocaleString()}</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Bundle Collisions</div>
-      <div class="admin-total-value">${Number(dedupEvidence?.sourceBundleCollisionCount || 0).toLocaleString()}</div>
-    </div>
-    <div class="admin-total-card">
-      <div class="admin-total-label">Risky Merges</div>
-      <div class="admin-total-value">${Number(dedupEvidence?.riskyMergeExampleCount || 0).toLocaleString()}</div>
-    </div>
-    <div class="admin-total-card">
       <div class="admin-total-label">Median Source Time</div>
       <div class="admin-total-value">${formatDuration(Number(latest?.medianSourceDurationMs || 0))}</div>
     </div>
@@ -1579,13 +1743,19 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     taskLaneRows
   });
   const taskLaneHtml = formatOpsTaskLane(taskLaneRows, diagnosticsByKey.taskStatus);
-  metricsEl.innerHTML = `${taskLaneHtml}${buildOpsFetcherMetricSections({
+  const sectionHtmlByKey = {
     runtime: runtimeSectionHtml,
     failures: failuresSectionHtml,
-    dedup: dedupSectionHtml,
     sourceHealth: sourceHealthSectionHtml,
     sourcePolicy: sourcePolicySectionHtml
-  }, diagnosticsByKey).map(formatOpsFetcherMetricSection).join("")}`;
+  };
+  if (options?.includeDedupSection === true) {
+    sectionHtmlByKey.dedup = dedupSectionHtml;
+  }
+  metricsEl.innerHTML = `${taskLaneHtml}${buildOpsFetcherMetricSections(
+    sectionHtmlByKey,
+    diagnosticsByKey
+  ).map(formatOpsFetcherMetricSection).join("")}`;
 
   if (typeof options?.onDedupReviewAction === "function") {
     const rowGroups = {

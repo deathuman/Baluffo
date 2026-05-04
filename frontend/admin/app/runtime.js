@@ -8,7 +8,7 @@ import {
 import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
 import {
   appendAdminLogRow
-} from "../render.js?v=9";
+} from "../render.js?v=10";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,
@@ -30,7 +30,7 @@ import {
   writeJobsAutoRefreshSignal
 } from "../state-sync/index.js";
 import { requestConfirmationDialog } from "../../local-data/profile-name-dialog.js";
-import { cacheAdminDom } from "./dom.js";
+import { cacheAdminDom } from "./dom.js?v=10";
 import {
   isSyncBusy as isSyncBusyFromModule,
   syncAdminBusyUi as syncAdminBusyUiFromModule,
@@ -51,7 +51,7 @@ import {
   FETCHER_PRESET_META
 } from "./fetcher.js";
 import { createAdminRuntimeState } from "./runtime/state.js";
-import { composeAdminControllers } from "./runtime/composition.js?v=9";
+import { composeAdminControllers } from "./runtime/composition.js?v=10";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";

@@ -76,7 +76,7 @@ test("admin render: fetcher metrics render compact task lane", () => {
   assert.match(metricsEl.innerHTML, /data-ops-diagnostics-copy="taskStatus"/i);
   assert.match(metricsEl.innerHTML, /data-ops-diagnostics-copy="runtime"/i);
   assert.match(metricsEl.innerHTML, /data-ops-diagnostics-copy="failures"/i);
-  assert.match(metricsEl.innerHTML, /data-ops-diagnostics-copy="dedup"/i);
+  assert.doesNotMatch(metricsEl.innerHTML, /data-ops-diagnostics-copy="dedup"/i);
   assert.match(metricsEl.innerHTML, /data-ops-diagnostics-copy="sourceHealth"/i);
   assert.match(metricsEl.innerHTML, /data-ops-diagnostics-copy="sourcePolicy"/i);
   assert.match(metricsEl.innerHTML, /Review queue 7; failed probes 2/i);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderAdminOpsFetcherMetrics } from "../../../frontend/admin/render.js";
+import { renderAdminOpsDedupLists } from "../../../frontend/admin/render.js";
 
 function makeEl() {
   return {
@@ -12,7 +12,7 @@ function makeEl() {
 
 test("admin render: provider/static disagreement examples are read-only", () => {
   const metricsEl = makeEl();
-  renderAdminOpsFetcherMetrics(metricsEl, {
+  renderAdminOpsDedupLists(metricsEl, {
     latestRun: {
       durationMs: 120000,
       sourceCount: 3,
@@ -145,7 +145,7 @@ test("admin render: provider/static disagreement examples are read-only", () => 
       }
     },
     history: {}
-  }, null, { onDedupReviewAction() {} });
+  }, { onDedupReviewAction() {} });
 
   assert.match(metricsEl.innerHTML, /Dedup provider\/static disagreements/i);
   assert.match(metricsEl.innerHTML, /total 1, current 0, carried 1/i);
@@ -181,7 +181,7 @@ test("admin render: provider/static disagreement examples are read-only", () => 
 
 test("admin render: missing provider/static disagreement examples render safely", () => {
   const metricsEl = makeEl();
-  renderAdminOpsFetcherMetrics(metricsEl, {
+  renderAdminOpsDedupLists(metricsEl, {
     latestRun: {
       durationMs: 120000,
       sourceCount: 3,

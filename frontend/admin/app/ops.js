@@ -1,5 +1,5 @@
 import { createOpsBridgeStatusController } from "./ops/bridge-status.js";
-import { createOpsHealthController } from "./ops/health.js?v=9";
+import { createOpsHealthController } from "./ops/health.js?v=10";
 import { createOpsTaskStateController } from "./ops/task-state.js";
 
 export { formatBytes } from "./ops/format.js";
@@ -14,6 +14,7 @@ export function createAdminOpsController({
   renderAdminOpsAlerts: renderAdminOpsAlertsImpl,
   renderAdminOpsKpis: renderAdminOpsKpisImpl,
   renderAdminOpsSchedule: renderAdminOpsScheduleImpl,
+  renderAdminOpsDedupLists: renderAdminOpsDedupListsImpl,
   renderAdminOpsFetcherMetrics: renderAdminOpsFetcherMetricsImpl,
   renderAdminSourcePolicyReview: renderAdminSourcePolicyReviewImpl,
   renderAdminOpsTrends: renderAdminOpsTrendsImpl,
@@ -62,6 +63,7 @@ export function createAdminOpsController({
     renderAdminOpsAlerts: renderAdminOpsAlertsImpl,
     renderAdminOpsKpis: renderAdminOpsKpisImpl,
     renderAdminOpsSchedule: renderAdminOpsScheduleImpl,
+    renderAdminOpsDedupLists: renderAdminOpsDedupListsImpl,
     renderAdminOpsFetcherMetrics: renderAdminOpsFetcherMetricsImpl,
     renderAdminSourcePolicyReview: renderAdminSourcePolicyReviewImpl,
     renderAdminOpsTrends: renderAdminOpsTrendsImpl,

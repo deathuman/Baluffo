@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderAdminOpsFetcherMetrics } from "../../../frontend/admin/render.js";
+import { renderAdminOpsDedupLists } from "../../../frontend/admin/render.js";
 
 function makeEl() {
   return {
@@ -12,7 +12,7 @@ function makeEl() {
 
 test("admin render: fetcher metrics render current-run known mirror merge examples", () => {
   const metricsEl = makeEl();
-  renderAdminOpsFetcherMetrics(metricsEl, {
+  renderAdminOpsDedupLists(metricsEl, {
     latestRun: {
       durationMs: 1000,
       sourceCount: 1,

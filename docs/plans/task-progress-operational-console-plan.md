@@ -71,7 +71,7 @@ Recommended structure:
 
 - Current Runs: compact table rows with task-aware status chips, selected-run analysis, bounded copy diagnostics, and no progressbar/card layout.
 - Completed Runs: existing table shape preserved, with row expansion for task details.
-- Operations Health: compact task-status lane only, owned by [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md), and fed by the same task-run interpretation where useful.
+- Operations Health: compact task-status lane only, owned by [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md), and fed by the same task-run interpretation where useful. Detailed task evidence stays in Run History and Selected Run Analysis.
 
 Example compact row content:
 
@@ -158,9 +158,9 @@ Compatibility note: the health-dashboard plan implements a compact version of th
 |------|--------------------------|----------------------------|------------------|
 | Task interpretation | Shared `task-run-view-model` for live/history/report payloads | Health-specific view model for `/ops/health` and `/ops/fetcher-metrics` sections | Health can consume the shared task model for its compact lane, but task model should not depend on health dashboard code. |
 | Current tasks | Compact rows, stale/orphaned states, timelines, diagnostics | Compact Discovery / Fetch / Sync lane | Do not build full task cards inside `#admin-ops-fetcher-metrics`. |
-| Fetch analysis | Run-scoped analysis for current/selected completed run | Latest health-oriented fetch metrics grouped in the dashboard | Share formatters where useful; keep render surfaces separate. |
+| Fetch analysis | Run-scoped analysis for current/selected completed run | Latest health-oriented fetch metrics grouped in the dashboard | Share formatters where useful; keep render surfaces separate and avoid repeating row-level task details in Health. |
 | Diagnostics | Current/last run event diagnostics, copy/export | Normalized section-summary copy for health sections | Avoid two raw-payload copy controls for the same event data. |
-| Source-policy/dedup review | Only task progress/status context | Existing review queues and health summaries | Do not move review mutations into task cards. |
+| Source-policy/dedup review | Only task progress/status context | Source Policy queue, health summaries, and separate Dedup Lists panel | Do not move review mutations into task rows, selected-run analysis, or task timelines. |
 
 Execution order is flexible:
 

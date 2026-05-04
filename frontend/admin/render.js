@@ -7,9 +7,10 @@ export { renderDiscoveryCandidateReviewHtml, renderSourcesTableHtml } from "./re
 export { appendAdminLogRow } from "./render/logs.js";
 export {
   renderAdminOpsAlerts,
+  renderAdminOpsDedupLists,
   renderAdminOpsFetcherMetrics,
   renderAdminOpsHistory,
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "./render/ops.js?v=9";
+} from "./render/ops.js?v=10";

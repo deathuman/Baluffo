@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { renderAdminOpsFetcherMetrics, renderAdminOpsKpis } from "../../../frontend/admin/render/ops-summary.js";
+import {
+  renderAdminOpsDedupLists,
+  renderAdminOpsFetcherMetrics,
+  renderAdminOpsKpis
+} from "../../../frontend/admin/render/ops-summary.js";
 
 function makeEl() {
   return { innerHTML: "", dataset: {} };
@@ -223,7 +227,7 @@ test("admin render: fetcher metrics render provider coverage lanes", () => {
 
 test("admin render: fetcher metrics render dedup review-state summary", () => {
   const metricsEl = makeEl();
-  renderAdminOpsFetcherMetrics(metricsEl, {
+  renderAdminOpsDedupLists(metricsEl, {
     latestRun: {
       sourceCount: 1,
       dedupReviewStateReadWarning: "malformed_dedup_review_state_artifact",
