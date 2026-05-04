@@ -218,25 +218,7 @@ def load_json_array(
 ) -> list[dict[str, Any]]:
     fallback = default or []
     path = Path(path)
-    rows: list[dict[str, Any]] | None = None
-    for candidate in _json_storage_candidates(path):
-        if candidate.exists():
-            rows = _load_json_array_from_file(candidate, fallback)
-            metadata_path = _registry_metadata_path_for(path)
-            if metadata_path is not None:
-                metadata_payload = load_json_object(metadata_path, {})
-                if isinstance(metadata_payload, dict) and metadata_payload:
-                    rows = _merge_lean_registry_rows(rows, metadata_payload)
-            break
-    if rows is None:
-        seed_path = registry_seed_path_for(path)
-        if seed_path is not None and seed_path.exists():
-            rows = _load_json_array_from_file(seed_path, fallback)
-            metadata_path = _registry_metadata_path_for(path)
-            if metadata_path is not None:
-                metadata_payload = load_json_object(metadata_path, {})
-                if isinstance(metadata_payload, dict) and metadata_payload:
-                    rows = _merge_lean_registry_rows(rows, metadata_payload)
+    rows = _load_json_array_from_storage(path, fallback)
     if rows is None:
         rows = [dict(row) for row in fallback]
     journal_rows = _load_json_journal_latest_payload(path)
@@ -396,6 +378,50 @@ def _compact_json_journal_if_needed(path: Path, payload: Any) -> None:
     _write_text_atomic(journal_path, _json_journal_record_text(payload))
 
 
+def _load_json_journal_record_payload(record: Any) -> Any | None:
+    if not isinstance(record, dict):
+        return None
+    try:
+        schema_version = int(record.get("schemaVersion") or 0)
+    except (TypeError, ValueError):
+        return None
+    if schema_version != _JSON_JOURNAL_SCHEMA_VERSION:
+        return None
+    payload = record.get("payload")
+    try:
+        content_hash = _json_journal_payload_hash(payload)
+    except (TypeError, ValueError):
+        return None
+    if str(record.get("contentHash") or "") != content_hash:
+        return None
+    return payload
+
+
+def _load_json_array_rows_from_path(
+    registry_path: Path, source_path: Path, fallback: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    rows = _load_json_array_from_file(source_path, fallback)
+    metadata_path = _registry_metadata_path_for(registry_path)
+    if metadata_path is None:
+        return rows
+    metadata_payload = load_json_object(metadata_path, {})
+    if isinstance(metadata_payload, dict) and metadata_payload:
+        return _merge_lean_registry_rows(rows, metadata_payload)
+    return rows
+
+
+def _load_json_array_from_storage(
+    path: Path, fallback: list[dict[str, Any]]
+) -> list[dict[str, Any]] | None:
+    for candidate in _json_storage_candidates(path):
+        if candidate.exists():
+            return _load_json_array_rows_from_path(path, candidate, fallback)
+    seed_path = registry_seed_path_for(path)
+    if seed_path is not None and seed_path.exists():
+        return _load_json_array_rows_from_path(path, seed_path, fallback)
+    return None
+
+
 def _load_json_journal_latest_payload(path: Path) -> Any | None:
     journal_path = _json_journal_path_for(path)
     if not journal_path.exists():
@@ -410,22 +436,9 @@ def _load_json_journal_latest_payload(path: Path) -> Any | None:
                     record = json.loads(raw_line)
                 except json.JSONDecodeError:
                     break
-                if not isinstance(record, dict):
-                    continue
-                try:
-                    schema_version = int(record.get("schemaVersion") or 0)
-                except (TypeError, ValueError):
-                    continue
-                if schema_version != _JSON_JOURNAL_SCHEMA_VERSION:
-                    continue
-                payload = record.get("payload")
-                try:
-                    content_hash = _json_journal_payload_hash(payload)
-                except (TypeError, ValueError):
-                    continue
-                if str(record.get("contentHash") or "") != content_hash:
-                    continue
-                latest_payload = payload
+                payload = _load_json_journal_record_payload(record)
+                if payload is not None:
+                    latest_payload = payload
     except OSError:
         return None
     return latest_payload

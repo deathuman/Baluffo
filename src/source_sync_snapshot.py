@@ -391,15 +391,16 @@ def _remote_snapshot_error(detail: str) -> RuntimeError:
     return RuntimeError(message)
 
 
-def _validate_remote_snapshot_payload(payload: Any) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        raise _remote_snapshot_error("expected a JSON object")
+def _warn_unexpected_remote_snapshot_keys(payload: dict[str, Any]) -> None:
     unexpected_keys = sorted(key for key in payload if key not in _REMOTE_SNAPSHOT_TOP_LEVEL_KEYS)
     if unexpected_keys:
         logger.warning(
             "Remote sync snapshot contains unexpected top-level keys: %s",
             ", ".join(unexpected_keys),
         )
+
+
+def _require_remote_snapshot_schema_version(payload: dict[str, Any]) -> None:
     schema_version = payload.get("schemaVersion")
     if (
         not isinstance(schema_version, int)
@@ -407,26 +408,40 @@ def _validate_remote_snapshot_payload(payload: Any) -> dict[str, Any]:
         or schema_version < 1
     ):
         raise _remote_snapshot_error("schemaVersion must be an integer >= 1")
+
+
+def _require_remote_snapshot_generated_at(payload: dict[str, Any]) -> None:
     generated_at = payload.get("generatedAt")
     if not isinstance(generated_at, str) or not generated_at.strip():
         raise _remote_snapshot_error("generatedAt must be a non-empty string")
-    active_rows = payload.get("active")
-    if not isinstance(active_rows, list):
-        raise _remote_snapshot_error("active must be an array")
-    pending_rows = payload.get("pending")
-    if not isinstance(pending_rows, list):
-        raise _remote_snapshot_error("pending must be an array")
+
+
+def _require_remote_snapshot_row_list(payload: dict[str, Any], key: str) -> list[Any]:
+    rows = payload.get(key)
+    if not isinstance(rows, list):
+        raise _remote_snapshot_error(f"{key} must be an array")
+    return rows
+
+
+def _validate_remote_snapshot_rows(bucket: str, rows: list[Any]) -> None:
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise _remote_snapshot_error(f"{bucket}[{index}] must be an object")
+
+
+def _validate_remote_snapshot_payload(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise _remote_snapshot_error("expected a JSON object")
+    _warn_unexpected_remote_snapshot_keys(payload)
+    _require_remote_snapshot_schema_version(payload)
+    _require_remote_snapshot_generated_at(payload)
+    _validate_remote_snapshot_rows("active", _require_remote_snapshot_row_list(payload, "active"))
+    _validate_remote_snapshot_rows("pending", _require_remote_snapshot_row_list(payload, "pending"))
     rejected_rows = payload.get("rejected")
-    if rejected_rows is not None and not isinstance(rejected_rows, list):
-        raise _remote_snapshot_error("rejected must be an array when present")
-    for bucket, rows in (("active", active_rows), ("pending", pending_rows)):
-        for index, row in enumerate(rows):
-            if not isinstance(row, dict):
-                raise _remote_snapshot_error(f"{bucket}[{index}] must be an object")
-    if isinstance(rejected_rows, list):
-        for index, row in enumerate(rejected_rows):
-            if not isinstance(row, dict):
-                raise _remote_snapshot_error(f"rejected[{index}] must be an object")
+    if rejected_rows is not None:
+        _validate_remote_snapshot_rows(
+            "rejected", _require_remote_snapshot_row_list(payload, "rejected")
+        )
     return payload
 
 
