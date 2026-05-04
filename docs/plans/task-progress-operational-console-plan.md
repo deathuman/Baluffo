@@ -180,11 +180,13 @@ Execution order is flexible:
 
 ### Progress
 
-- [x] First detailed Admin task-console slice: shared frontend task-run presenter plus read-only Current Runs cards.
+- [x] First detailed Admin task-console slice: shared frontend task-run presenter plus compact Current Runs table rows.
 - [x] Completed-run row expansion with read-only native details disclosures.
-- [x] Stalled/orphaned remediation guidance in read-only Current Runs cards.
+- [x] Stalled/orphaned remediation guidance in compact status-chip tooltips.
 - [ ] Run-scoped diagnostics copy/export remains deferred.
 - [ ] Selected-run analysis and timeline panels remain deferred.
+
+The larger Current Runs card direction was reversed by `e44e7405`; keep this surface compact and table-based.
 
 ### Step 1 — Create shared task run view model
 
@@ -199,16 +201,16 @@ Target files:
 
 The shared model should be small and task-focused. It should not import Admin health-dashboard modules or understand `/ops/fetcher-metrics` section layout.
 
-### Step 2 — Replace generic current table with live cards
+### Step 2 — Preserve compact Current Runs rows
 
-Keep completed history as a compact table.
+Keep current and completed history as compact tables.
 
 Target files:
 
 - `frontend/admin/render/ops-history.js`
 - `frontend/admin/domain/runs.js`
 
-This step is separate from the compact task-status lane in Operations Health. Health may show "Fetch running, 6/12 sources" while this step owns the larger card with progress bar, current target, timeline, and diagnostics entry points.
+This step is separate from the compact task-status lane in Operations Health. Health may show "Fetch running, 6/12 sources" while this plan owns the dense run table, completed-run details, and later run-scoped diagnostics.
 
 ### Step 3 — Add stalled/orphaned derived states
 
@@ -240,10 +242,10 @@ Do not reintroduce task-specific event shapes outside shared normalizers.
 
 Continue using normalized `taskProgress`, `workItems`, `recentEvents` and extend model outputs from this stream.
 
-## Milestone: Admin Operational Console v1
+## Milestone: Admin Ops Compact Observability v1
 
 1. Shared task run view model introduced
-2. Current Runs cards implemented
+2. Compact Current Runs table rows preserved
 3. Completed Runs table kept with row expansion
 4. Stalled/orphaned state rendered explicitly
 5. Current/selected fetch run analysis panel added

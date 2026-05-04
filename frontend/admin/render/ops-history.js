@@ -199,7 +199,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
         : runView.severity === "warning"
           ? "warning"
           : getRunStatusChipClass(rawStatus),
-      statusTitle: buildRunStatusTooltip(row),
+      statusTitle: runView.remediationHint || buildRunStatusTooltip(row),
       isRunning: statusToken === "running" || statusToken === "started",
       durationText: runView.durationLabel || runView.elapsedLabel || formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),
       outputOrQueuedText: (row?.isLive && liveRunDetail)

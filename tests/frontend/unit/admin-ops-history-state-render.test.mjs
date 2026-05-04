@@ -35,12 +35,19 @@ test("admin ops history: stalled and orphaned current runs render read-only comp
 
   assert.match(historyEl.innerHTML, /admin-ops-history-row/);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
-  assert.match(historyEl.innerHTML, /<span class="admin-status-chip warning">stalled<\/span>/);
-  assert.match(historyEl.innerHTML, /<span class="admin-status-chip critical">orphaned<\/span>/);
+  assert.match(
+    historyEl.innerHTML,
+    /<span class="admin-status-chip warning" title="Check bridge and task logs; verify whether the task heartbeat stopped\.">stalled<\/span>/
+  );
+  assert.match(
+    historyEl.innerHTML,
+    /<span class="admin-status-chip critical" title="Refresh task state and check whether the owning process exited\.">orphaned<\/span>/
+  );
+  assert.equal((historyEl.innerHTML.match(/Check bridge and task logs/g) || []).length, 1);
+  assert.equal((historyEl.innerHTML.match(/owning process exited/g) || []).length, 1);
+  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-detail/);
   assert.doesNotMatch(historyEl.innerHTML, /No recent heartbeat/);
   assert.doesNotMatch(historyEl.innerHTML, /Task state has no active owner/);
-  assert.doesNotMatch(historyEl.innerHTML, /Check bridge and task logs/);
-  assert.doesNotMatch(historyEl.innerHTML, /owning process exited/);
   assert.doesNotMatch(historyEl.innerHTML, /<button/i);
   assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear)/i);
 });
