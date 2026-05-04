@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -52,7 +52,7 @@ class _Recorder:
         return item
 
 
-def test_push_sources_snapshot_skips_noop_remote_write(source_sync_test_root, monkeypatch):
+def test_no_op_push_skips_write_when_content_unchanged(source_sync_test_root, monkeypatch):
     source_sync_test_root.write_packaged_config()
     local = {
         "active": [{"adapter": "static", "listing_url": "https://noop.example/jobs"}],
@@ -84,7 +84,7 @@ def test_push_sources_snapshot_skips_noop_remote_write(source_sync_test_root, mo
     assert len(opener.calls) == 2
 
 
-def test_push_sources_snapshot_rejects_duplicate_canonical_identity_collision(
+def test_identity_collision_across_buckets_rejected(
     source_sync_test_root,
 ):
     source_sync_test_root.write_packaged_config()
@@ -123,3 +123,271 @@ def test_push_sources_snapshot_rejects_duplicate_canonical_identity_collision(
     assert ctx.value.code == "duplicate_source_identity"
     assert "local active/pending snapshot" in str(ctx.value)
     assert len(opener.calls) == 2
+
+
+@pytest.mark.xfail(
+    reason="Snapshot hash stability for generatedAt/source drift is expected but not yet implemented.",
+    strict=False,
+)
+def test_content_hash_stable_excluding_volatile_fields(source_sync_test_root, monkeypatch):
+    source_sync_test_root.write_packaged_config()
+    local = {
+        "active": [
+            {
+                "adapter": "static",
+                "listing_url": "https://example.com/jobs",
+                "sourceId": "s1",
+            }
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+    remote_snapshot = {
+        "schemaVersion": 2,
+        "generatedAt": "2026-03-09T10:00:00+00:00",
+        "source": {"name": "discovery-run-a"},
+        "active": [
+            {"adapter": "static", "listing_url": "https://example.com/jobs", "sourceId": "s1"}
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+    remote_encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
+    monkeypatch.setattr(sync, "now_iso", lambda: "2026-03-10T10:00:00+00:00")
+    opener = _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            _FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
+            _FakeResponse(201, {"content": {"sha": "s2"}}),
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert not result["pushed"]
+    assert result["skipReason"] == "no_meaningful_change"
+
+
+@pytest.mark.xfail(
+    reason="Idempotent PUT retry depends on unimplemented transport retry/re-read path.",
+    strict=False,
+)
+def test_idempotent_put_retry_re_reads_sha_on_transient_failure(source_sync_test_root):
+    source_sync_test_root.write_packaged_config()
+    remote_snapshot = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-03-09T10:00:00+00:00",
+        "active": [],
+        "pending": [],
+        "rejected": [],
+    }
+    remote_encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
+    opener = _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            _FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
+            URLError("transient socket close"),
+            _FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
+            _FakeResponse(201, {"content": {"sha": "s2"}}),
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    local = {"active": [], "pending": [], "rejected": []}
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["pushed"] is True
+    assert result["remoteSha"] == "s2"
+    assert len(opener.calls) == 5
+
+
+@pytest.mark.xfail(
+    reason="Conflict-path re-read and retry on PUT conflict is expected but not implemented.",
+    strict=False,
+)
+def test_put_retry_detects_concurrent_write_as_conflict(source_sync_test_root):
+    source_sync_test_root.write_packaged_config()
+    remote_snapshot = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-03-09T10:00:00+00:00",
+        "active": [],
+        "pending": [],
+        "rejected": [],
+    }
+    remote_encoded = base64.b64encode(json.dumps(remote_snapshot).encode("utf-8")).decode("ascii")
+    conflict_payload = {"message": "Update is not a fast-forward"}
+    concurrent_payload = {
+        "schemaVersion": 2,
+        "generatedAt": "2026-03-09T11:00:00+00:00",
+        "active": [{"adapter": "teamtailor", "listing_url": "https://other.example/jobs"}],
+        "pending": [],
+        "rejected": [],
+    }
+    concurrent_encoded = base64.b64encode(json.dumps(concurrent_payload).encode("utf-8")).decode(
+        "ascii"
+    )
+    opener = _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            _FakeResponse(200, {"sha": "s1", "content": remote_encoded}),
+            _FakeResponse(409, conflict_payload),
+            _FakeResponse(200, {"sha": "s3", "content": concurrent_encoded}),
+            _FakeResponse(201, {"content": {"sha": "s4"}}),
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    local = {
+        "active": [{"adapter": "static", "listing_url": "https://mine.example/jobs"}],
+        "pending": [],
+        "rejected": [],
+    }
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["pushed"] is True
+    assert result["remoteSha"] == "s4"
+
+
+@pytest.mark.xfail(
+    reason="Transient GET retry/backoff behavior is expected to be added in a later runtime slice",
+    strict=False,
+)
+def test_transient_get_error_retries_with_backoff(source_sync_test_root):
+    source_sync_test_root.write_packaged_config()
+    opener = _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            URLError("connection reset"),
+            _FakeResponse(200, {"sha": "s1", "content": ""}),
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.read_remote_snapshot(cfg, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["exists"] is False
+    assert result["sha"] == "s1"
+
+
+@pytest.mark.xfail(
+    reason="Dry-run mode is intentionally deferred; test documents intended snapshot-no-write contract",
+    strict=False,
+)
+def test_dry_run_returns_diff_without_side_effects(source_sync_test_root):
+    source_sync_test_root.write_packaged_config()
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    opener = _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
+        ]
+    )
+    local = {
+        "active": [{"adapter": "static", "listing_url": "https://dryrun.example/jobs"}],
+        "pending": [],
+        "rejected": [],
+    }
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, dry_run=True, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["pushed"] is False
+    assert result["remoteSha"] == ""
+    assert result["skipReason"] == "dryRun"
+
+
+@pytest.mark.xfail(
+    reason="Sync runtime counters are tracked in later slices; this test pins daily boundary-reset semantics.",
+    strict=False,
+)
+def test_daily_counters_reset_on_date_boundary(source_sync_test_root):
+    source_sync_test_root.write_packaged_config()
+    local = {
+        "active": [{"adapter": "static", "listing_url": "https://counter.example/jobs"}],
+        "pending": [],
+        "rejected": [],
+    }
+    opener = _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["pushed"]
+    assert isinstance(result.get("counters"), dict)
+
+
+@pytest.mark.xfail(
+    reason="Snapshot size warning/rejection thresholds are planned for a later hardening slice.",
+    strict=False,
+)
+def test_snapshot_size_warning_and_rejection(source_sync_test_root):
+    source_sync_test_root.write_packaged_config()
+    huge_url = "https://example.com/jobs/" + ("a" * 256)
+    local = {
+        "active": [
+            {
+                "adapter": "static",
+                "listing_url": huge_url,
+                "name": "x" * 512,
+            }
+            for _ in range(5_000)
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+    opener = _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert result["pushed"] is False
+    assert result["rejected"] is False
