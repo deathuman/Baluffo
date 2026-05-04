@@ -75,6 +75,37 @@ function compactEvent(item) {
   return Object.keys(row).length ? row : null;
 }
 
+function compactAnalysisItem(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+  const row = compactPrimitiveMap(item, [
+    "id",
+    "name",
+    "label",
+    "title",
+    "source",
+    "sourceId",
+    "adapter",
+    "stage",
+    "phase",
+    "status",
+    "target",
+    "durationMs",
+    "elapsedMs",
+    "count",
+    "failed",
+    "error",
+    "message",
+    "detail"
+  ]);
+  return Object.keys(row).length ? row : null;
+}
+
+function compactAnalysisList(value) {
+  return Array.isArray(value)
+    ? value.map(compactAnalysisItem).filter(Boolean).slice(0, DIAGNOSTIC_LIST_LIMIT)
+    : [];
+}
+
 function formatDuration(ms) {
   const value = Math.max(0, Number(ms) || 0);
   if (!value) return "0s";
@@ -330,6 +361,79 @@ export function buildTaskRunDiagnostics(row, {
     remediationHint: trimDiagnosticText(view.remediationHint || ""),
     diagnosticHints,
     summaryCounts,
+    workItemExamples,
+    eventExamples
+  };
+}
+
+export function buildTaskRunAnalysis(row, {
+  rowArea = "unknown",
+  nowMs = Date.now(),
+  runView = null
+} = {}) {
+  const safeRow = row && typeof row === "object" && !Array.isArray(row) ? row : {};
+  const view = runView && typeof runView === "object" && !Array.isArray(runView)
+    ? runView
+    : buildTaskRunView(safeRow, { nowMs });
+  const summary = getSummary(safeRow);
+  const summaryCounts = compactPrimitiveMap(summary, [
+    "outputCount",
+    "sourceCount",
+    "successfulSources",
+    "failedSources",
+    "okWithWarningSources",
+    "queuedCandidateCount",
+    "failedProbeCount",
+    "activeCount",
+    "pendingCount",
+    "rejectedCount",
+    "action",
+    "error"
+  ]);
+  const diagnosticHints = Array.isArray(view.diagnosticHints)
+    ? view.diagnosticHints.map(hint => trimDiagnosticText(hint, 160)).filter(Boolean).slice(0, DIAGNOSTIC_LIST_LIMIT)
+    : [];
+  const workItemExamples = Array.isArray(safeRow.workItems)
+    ? safeRow.workItems.map(compactWorkItem).filter(Boolean).slice(0, DIAGNOSTIC_LIST_LIMIT)
+    : [];
+  const eventExamples = Array.isArray(safeRow.recentEvents)
+    ? safeRow.recentEvents.map(compactEvent).filter(Boolean).slice(0, DIAGNOSTIC_LIST_LIMIT)
+    : [];
+  const slowExamples = [
+    ...compactAnalysisList(summary.slowestSources),
+    ...compactAnalysisList(summary.slowStages),
+    ...compactAnalysisList(summary.slowestStages)
+  ].slice(0, DIAGNOSTIC_LIST_LIMIT);
+
+  return {
+    kind: "admin_selected_run_analysis",
+    version: 1,
+    rowArea: String(rowArea || "unknown"),
+    taskType: view.taskType || getTaskType(safeRow),
+    title: view.title || TASK_TITLES[getTaskType(safeRow)] || "Task",
+    runId: String(safeRow.runId || safeRow.id || "").trim(),
+    status: view.status || "unknown",
+    statusLabel: view.statusLabel || String(safeRow.displayStatus || safeRow.status || "unknown"),
+    severity: view.severity || "muted",
+    timing: {
+      startedAt: String(safeRow.startedAt || "").trim(),
+      finishedAt: String(safeRow.finishedAt || "").trim(),
+      heartbeatAt: String(safeRow.heartbeatAt || safeRow.runtime?.heartbeatAt || "").trim(),
+      elapsedLabel: view.elapsedLabel || "",
+      durationLabel: view.durationLabel || ""
+    },
+    primaryLabel: view.primaryLabel || "",
+    secondaryLabel: view.secondaryLabel || "",
+    progressLabel: view.progressLabel || "",
+    progressRatio: Number.isFinite(Number(view.progressRatio)) ? Number(view.progressRatio) : 0,
+    progressMode: view.progressMode || "indeterminate",
+    currentTarget: trimDiagnosticText(view.currentTarget || ""),
+    warningSummary: trimDiagnosticText(view.warningSummary || ""),
+    failureSummary: trimDiagnosticText(view.failureSummary || ""),
+    remediationHint: trimDiagnosticText(view.remediationHint || ""),
+    diagnosticHints,
+    summaryCounts,
+    slowExamples,
     workItemExamples,
     eventExamples
   };

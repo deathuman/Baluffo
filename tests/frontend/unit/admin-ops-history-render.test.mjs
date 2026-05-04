@@ -139,3 +139,90 @@ test("admin ops history: run diagnostics copy uses bounded payload without chang
   assert.doesNotMatch(serialized, /recommendedApiPayload|rawLargeThing/i);
   assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
 });
+
+test("admin ops history: selected run analysis renders bounded read-only evidence", () => {
+  const historyEl = makeEl();
+  const runKey = "current||fetch_selected_1|fetch|2026-03-08T10:00:00.000Z||0";
+
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [
+      {
+        type: "fetch",
+        runId: "fetch_selected_1",
+        active: true,
+        isLive: true,
+        startedAt: "2026-03-08T10:00:00.000Z",
+        heartbeatAt: new Date().toISOString(),
+        summary: {
+          outputCount: 42,
+          failedSources: 1,
+          slowestSources: Array.from({ length: 8 }, (_row, index) => ({
+            sourceId: `slow_${index}`,
+            durationMs: 1000 + index
+          }))
+        },
+        workItems: Array.from({ length: 8 }, (_row, index) => ({
+          id: `source_${index}`,
+          name: `Source ${index}`,
+          status: index === 0 ? "running" : "pending"
+        })),
+        recentEvents: Array.from({ length: 8 }, (_row, index) => ({
+          level: "info",
+          message: `Event ${index}`
+        }))
+      }
+    ],
+    visibleCompletedRows: [
+      {
+        type: "sync",
+        status: "ok",
+        runId: "sync_done_1",
+        finishedAt: "2026-03-08T09:30:00.000Z",
+        durationMs: 1500,
+        summary: { action: "push", activeCount: 7, pendingCount: 2, rejectedCount: 1 }
+      }
+    ],
+    olderCompletedRows: []
+  }, {
+    selectedRunKey: runKey
+  });
+
+  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
+  assert.match(historyEl.innerHTML, /admin-ops-history-row-selected/);
+  assert.match(historyEl.innerHTML, /fetch_selected_1/);
+  assert.match(historyEl.innerHTML, /slow_4/);
+  assert.doesNotMatch(historyEl.innerHTML, /slow_5/);
+  assert.match(historyEl.innerHTML, /source_4/);
+  assert.doesNotMatch(historyEl.innerHTML, /source_5/);
+  assert.match(historyEl.innerHTML, /Event 4/);
+  assert.doesNotMatch(historyEl.innerHTML, /Event 5/);
+  assert.match(historyEl.innerHTML, /admin-ops-run-detail/);
+  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
+  assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
+  assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
+});
+
+test("admin ops history: selected run analysis has safe empty state without selection", () => {
+  const historyEl = makeEl();
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [
+      {
+        type: "fetch",
+        runId: "fetch_live_1",
+        active: true,
+        isLive: true,
+        startedAt: "2026-03-08T10:00:00.000Z",
+        heartbeatAt: new Date().toISOString(),
+        summary: { outputCount: 12, failedSources: 0 }
+      }
+    ],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  });
+
+  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
+  assert.match(historyEl.innerHTML, /Select a run row to inspect bounded run evidence/);
+  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-history-row-selected/);
+  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
+  assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
+});

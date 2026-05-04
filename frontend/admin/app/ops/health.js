@@ -6,7 +6,7 @@ import {
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "../../render.js?v=7";
+} from "../../render.js?v=8";
 import { renderAdminSourcePolicyReview } from "../../render/source-policy-review.js";
 
 function maybeUnrefTimer(timer) {

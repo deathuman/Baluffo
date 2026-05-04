@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildTaskRunDiagnostics, buildTaskRunView } from "../../../frontend/shared/task-run-view-model.js";
+import {
+  buildTaskRunAnalysis,
+  buildTaskRunDiagnostics,
+  buildTaskRunView
+} from "../../../frontend/shared/task-run-view-model.js";
 
 const NOW = Date.parse("2026-03-08T10:10:00.000Z");
 
@@ -202,4 +206,48 @@ test("task run diagnostics covers completed failures and missing rows safely", (
   assert.equal(missing.taskType, "unknown");
   assert.equal(missing.status, "waiting");
   assert.deepEqual(missing.workItemExamples, []);
+});
+
+test("task run analysis normalizes selected run evidence with capped examples", () => {
+  const analysis = buildTaskRunAnalysis({
+    type: "fetch",
+    runId: "fetch_selected_1",
+    active: true,
+    startedAt: "2026-03-08T10:00:00.000Z",
+    heartbeatAt: "2026-03-08T10:09:30.000Z",
+    summary: {
+      outputCount: 42,
+      failedSources: 1,
+      slowestSources: Array.from({ length: 8 }, (_row, index) => ({
+        sourceId: `slow_${index}`,
+        durationMs: 1000 + index,
+        rawPayload: { hidden: true }
+      }))
+    },
+    workItems: Array.from({ length: 8 }, (_row, index) => ({
+      id: `source_${index}`,
+      name: `Source ${index}`,
+      status: index === 0 ? "running" : "pending",
+      rawLargeThing: { hidden: true }
+    })),
+    recentEvents: Array.from({ length: 8 }, (_row, index) => ({
+      level: "info",
+      message: `Event ${index}`,
+      rawLargeThing: { hidden: true }
+    }))
+  }, {
+    rowArea: "current",
+    nowMs: NOW
+  });
+
+  assert.equal(analysis.kind, "admin_selected_run_analysis");
+  assert.equal(analysis.rowArea, "current");
+  assert.equal(analysis.runId, "fetch_selected_1");
+  assert.equal(analysis.status, "running");
+  assert.equal(analysis.summaryCounts.outputCount, 42);
+  assert.equal(analysis.slowExamples.length, 5);
+  assert.equal(analysis.workItemExamples.length, 5);
+  assert.equal(analysis.eventExamples.length, 5);
+  const serialized = JSON.stringify(analysis);
+  assert.doesNotMatch(serialized, /rawPayload|rawLargeThing/i);
 });

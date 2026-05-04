@@ -756,6 +756,12 @@
   animation: adminBridgePulseBg 1.4s ease-in-out infinite;
 }
 
+.admin-ops-history-row-selected {
+  outline: 1px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 .admin-ops-run-copy-btn {
   margin-left: 0.35rem;
   padding: 0.14rem 0.42rem;
@@ -859,6 +865,38 @@
 .admin-ops-run-detail-hints ul {
   margin: 0.25rem 0 0;
   padding-left: 1rem;
+}
+
+.admin-ops-selected-run-analysis {
+  margin-top: 0.9rem;
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--surface-11) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-3) 72%, transparent);
+}
+
+.admin-ops-run-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.2rem;
+}
+
+.admin-ops-run-analysis-grid > div,
+.admin-ops-run-analysis-hint {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.admin-ops-run-analysis-grid ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1rem;
+}
+
+.admin-ops-run-analysis-hint {
+  color: color-mix(in srgb, #c9a86c 82%, white 18%);
 }
 
 .admin-ops-history-older {

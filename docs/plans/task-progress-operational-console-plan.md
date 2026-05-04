@@ -20,7 +20,7 @@ The current foundation is correct for an internal telemetry system:
 
 The remaining risk is usability, operational clarity, and duplication across frontend modules.
 
-This plan is compatible with [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md) by separating depth from overview. The health-dashboard plan owns the Operations Health layout and compact Discovery / Fetch / Sync lane. This task/progress plan owns the shared task-run presenter, compact Current Runs rows, stale/orphaned display states, run timelines, and run-scoped diagnostics.
+This plan is compatible with [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md) by separating depth from overview. The health-dashboard plan owns the Operations Health layout and compact Discovery / Fetch / Sync lane. This task/progress plan owns the shared task-run presenter, compact Current Runs rows, stale/orphaned display states, selected-run analysis, run timelines, and run-scoped diagnostics.
 
 ## Current implementation strength
 
@@ -69,7 +69,7 @@ Current columns in `renderAdminOpsHistory` are generic and biased.
 
 Recommended structure:
 
-- Current Runs: compact table rows with task-aware status chips, bounded copy diagnostics, and no progressbar/card layout.
+- Current Runs: compact table rows with task-aware status chips, selected-run analysis, bounded copy diagnostics, and no progressbar/card layout.
 - Completed Runs: existing table shape preserved, with row expansion for task details.
 - Operations Health: compact task-status lane only, owned by [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md), and fed by the same task-run interpretation where useful.
 
@@ -176,7 +176,8 @@ Execution order is flexible:
 - [x] Completed-run row expansion with read-only native details disclosures.
 - [x] Stalled/orphaned remediation guidance in compact status-chip tooltips.
 - [x] Run-scoped diagnostics copy added as bounded clipboard JSON.
-- [ ] Selected-run analysis and timeline panels remain deferred.
+- [x] Selected-run analysis panel added below compact run tables.
+- [ ] Timeline panels remain deferred.
 - [ ] Downloadable run diagnostics export remains deferred.
 
 The larger Current Runs card direction was reversed by `e44e7405`; keep this surface compact and table-based.
@@ -227,7 +228,7 @@ Promote key report diagnostics into viewable sections:
 - failure buckets
 - quality and confidence signals
 
-Attach these panels to the current or selected run. The dashboard-level latest fetch-health grouping remains in [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md).
+Attach these panels to the selected run. The first selected-run analysis panel is implemented as bounded read-only evidence below the compact run tables; richer timeline visualization remains deferred. The dashboard-level latest fetch-health grouping remains in [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md).
 
 ### Step 5 — Keep a single event stream via `recentEvents`
 
@@ -242,8 +243,9 @@ Continue using normalized `taskProgress`, `workItems`, `recentEvents` and extend
 3. Completed Runs table kept with row expansion
 4. Stalled/orphaned state rendered explicitly
 5. Bounded run diagnostics copy added for current and completed rows
-6. Current/selected fetch run analysis panel deferred
-7. Downloadable diagnostics export deferred
+6. Selected-run analysis panel added below compact run tables
+7. Timeline panels deferred
+8. Downloadable diagnostics export deferred
 
 Health-dashboard dependency boundary:
 

@@ -1,5 +1,9 @@
 import { escapeHtml } from "../../shared/ui/index.js";
-import { buildTaskRunDiagnostics, buildTaskRunView } from "../../shared/task-run-view-model.js?v=7";
+import {
+  buildTaskRunAnalysis,
+  buildTaskRunDiagnostics,
+  buildTaskRunView
+} from "../../shared/task-run-view-model.js?v=8";
 import {
   formatScrapyStaticSourcesTailBadge,
   formatTaskProgressDetail
@@ -126,6 +130,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   const onCopyRunDiagnostics = typeof options?.onCopyRunDiagnostics === "function"
     ? options.onCopyRunDiagnostics
     : null;
+  const onSelectRun = typeof options?.onSelectRun === "function"
+    ? options.onSelectRun
+    : null;
   const model = Array.isArray(runsOrModel)
     ? {
       currentRows: [],
@@ -225,19 +232,28 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       diagnosticHints: Array.isArray(runView.diagnosticHints)
         ? runView.diagnosticHints.map(hint => truncateText(hint, 160)).filter(Boolean).slice(0, 5)
         : [],
-      diagnosticsPayload: buildTaskRunDiagnostics(row, { rowArea, runView })
+      diagnosticsPayload: buildTaskRunDiagnostics(row, { rowArea, runView }),
+      analysisPayload: buildTaskRunAnalysis(row, { rowArea, runView })
     };
   };
 
   const currentViews = currentRows.map((row, index) => toRowView(row, "current", index));
   const visibleCompletedViews = visibleCompletedRows.map((row, index) => toRowView(row, "completed", index));
   const olderCompletedViews = olderCompletedRows.map((row, index) => toRowView(row, "completed_older", index));
+  const allViews = [...currentViews, ...visibleCompletedViews, ...olderCompletedViews];
   const copyPayloads = new Map(
-    [...currentViews, ...visibleCompletedViews, ...olderCompletedViews]
-      .map(view => [view.key, view.diagnosticsPayload])
+    allViews.map(view => [view.key, view.diagnosticsPayload])
   );
+  const viewByKey = new Map(allViews.map(view => [view.key, view]));
+  const selectedRunKey = String(
+    options?.selectedRunKey
+    || (canPatchInPlace ? historyEl.dataset.opsSelectedRunKey || "" : "")
+    || ""
+  );
+  const selectedView = viewByKey.get(selectedRunKey) || null;
 
   const structureSignature = JSON.stringify({
+    selectedRunKey: selectedView?.key || "",
     currentRows: currentViews.map(row => [
       row.key,
       row.statusText,
@@ -279,6 +295,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       const rowEl = rowMap.get(view.key);
       if (!rowEl) return;
       rowEl.classList.toggle("admin-ops-history-row-running", view.isRunning);
+      rowEl.classList.toggle("admin-ops-history-row-selected", view.key === selectedRunKey);
       const cells = rowEl.querySelectorAll(".admin-cell");
       if (cells.length < 6) return;
       cells[0].textContent = view.typeText;
@@ -301,10 +318,100 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   const attachCopyHandlers = () => {
     if (!onCopyRunDiagnostics || !historyEl || typeof historyEl.querySelectorAll !== "function") return;
     historyEl.querySelectorAll("[data-ops-run-diagnostics-copy]").forEach(button => {
-      button.onclick = () => {
+      button.onclick = event => {
+        event?.stopPropagation?.();
         const key = String(button.getAttribute("data-ops-run-diagnostics-copy") || "");
         const payload = copyPayloads.get(key);
         if (payload) onCopyRunDiagnostics(payload);
+      };
+    });
+  };
+  const formatSummaryCounts = value => {
+    const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const entries = Object.entries(source)
+      .filter(([_key, item]) => item !== "" && item !== null && item !== undefined)
+      .slice(0, 6);
+    return entries.length
+      ? entries.map(([key, item]) => `${key}: ${item}`).join(" | ")
+      : "No compact counts for this run.";
+  };
+  const formatAnalysisExamples = items => {
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) return '<div class="muted">No examples recorded.</div>';
+    return `<ul>${rows.slice(0, 5).map(item => `<li>${escapeHtml(formatSummaryCounts(item))}</li>`).join("")}</ul>`;
+  };
+  const renderSelectedRunAnalysis = view => {
+    if (!view) {
+      return `
+        <div class="admin-ops-selected-run-analysis" data-ops-selected-run-analysis>
+          <div class="admin-ops-history-title">Selected Run Analysis</div>
+          <div class="muted">Select a run row to inspect bounded run evidence.</div>
+        </div>
+      `;
+    }
+    const analysis = view.analysisPayload || {};
+    const timingItems = [
+      analysis.timing?.startedAt ? `<span><strong>Started</strong> ${escapeHtml(formatDateTime(analysis.timing.startedAt))}</span>` : "",
+      analysis.timing?.finishedAt ? `<span><strong>Finished</strong> ${escapeHtml(formatDateTime(analysis.timing.finishedAt))}</span>` : "",
+      analysis.timing?.durationLabel ? `<span><strong>Duration</strong> ${escapeHtml(analysis.timing.durationLabel)}</span>` : "",
+      analysis.timing?.elapsedLabel ? `<span><strong>Elapsed</strong> ${escapeHtml(analysis.timing.elapsedLabel)}</span>` : ""
+    ].filter(Boolean).join("");
+    const messageItems = [
+      analysis.warningSummary ? `<div class="admin-ops-run-detail-warning">${escapeHtml(analysis.warningSummary)}</div>` : "",
+      analysis.failureSummary ? `<div class="admin-ops-run-detail-failure">${escapeHtml(analysis.failureSummary)}</div>` : "",
+      analysis.remediationHint ? `<div class="admin-ops-run-analysis-hint">${escapeHtml(analysis.remediationHint)}</div>` : ""
+    ].filter(Boolean).join("");
+    const diagnosticHints = Array.isArray(analysis.diagnosticHints) ? analysis.diagnosticHints : [];
+    const hintHtml = diagnosticHints.length
+      ? `<ul>${diagnosticHints.slice(0, 5).map(hint => `<li>${escapeHtml(hint)}</li>`).join("")}</ul>`
+      : '<div class="muted">No diagnostic hints for this run.</div>';
+    return `
+      <div class="admin-ops-selected-run-analysis" data-ops-selected-run-analysis>
+        <div class="admin-ops-run-detail-head">
+          <div>
+            <div class="admin-ops-history-title">Selected Run Analysis</div>
+            <strong>${escapeHtml(analysis.title || view.title)}</strong>
+            ${analysis.primaryLabel ? `<span>${escapeHtml(analysis.primaryLabel)}</span>` : ""}
+            ${analysis.secondaryLabel ? `<span>${escapeHtml(analysis.secondaryLabel)}</span>` : ""}
+          </div>
+          <span class="admin-status-chip ${view.statusClass}">${escapeHtml(analysis.statusLabel || view.statusText)}</span>
+        </div>
+        <div class="admin-ops-run-detail-meta">${timingItems || '<span>No timing data.</span>'}</div>
+        <div class="admin-ops-run-detail-summary"><strong>Progress</strong> ${escapeHtml(analysis.progressLabel || view.outputOrQueuedText)}</div>
+        ${messageItems || '<div class="muted">No warnings or failures recorded for this run.</div>'}
+        <div class="admin-ops-run-analysis-grid">
+          <div><strong>Counts</strong><div>${escapeHtml(formatSummaryCounts(analysis.summaryCounts))}</div></div>
+          <div><strong>Slow examples</strong>${formatAnalysisExamples(analysis.slowExamples)}</div>
+          <div><strong>Work examples</strong>${formatAnalysisExamples(analysis.workItemExamples)}</div>
+          <div><strong>Event examples</strong>${formatAnalysisExamples(analysis.eventExamples)}</div>
+        </div>
+        <div class="admin-ops-run-detail-hints">
+          <strong>Diagnostic hints</strong>
+          ${hintHtml}
+        </div>
+      </div>
+    `;
+  };
+  const attachSelectionHandlers = () => {
+    if (!historyEl || typeof historyEl.querySelectorAll !== "function") return;
+    const rows = Array.from(historyEl.querySelectorAll(".admin-ops-history-row[data-run-key]"));
+    rows.forEach(rowEl => {
+      const key = String(rowEl.dataset?.runKey || rowEl.getAttribute?.("data-run-key") || "");
+      rowEl.onclick = event => {
+        if (event?.target?.closest?.("[data-ops-run-diagnostics-copy]")) return;
+        if (historyEl.dataset) historyEl.dataset.opsSelectedRunKey = key;
+        rows.forEach(item => item.classList?.toggle?.("admin-ops-history-row-selected", item === rowEl));
+        const panel = typeof historyEl.querySelector === "function"
+          ? historyEl.querySelector("[data-ops-selected-run-analysis]")
+          : null;
+        const view = viewByKey.get(key) || null;
+        if (panel) panel.outerHTML = renderSelectedRunAnalysis(view);
+        if (view && onSelectRun) onSelectRun(view.analysisPayload);
+      };
+      rowEl.onkeydown = event => {
+        if (event?.key !== "Enter" && event?.key !== " ") return;
+        event.preventDefault?.();
+        rowEl.onclick?.(event);
       };
     });
   };
@@ -314,6 +421,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     updateExistingRows(visibleCompletedViews, "completed");
     updateExistingRows(olderCompletedViews, "completed_older");
     attachCopyHandlers();
+    attachSelectionHandlers();
     return;
   }
 
@@ -323,7 +431,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   }
 
   const renderCompactRows = (views, { includeCopy = true } = {}) => views.map(view => `
-      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
+      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}${view.key === selectedView?.key ? " admin-ops-history-row-selected" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}" tabindex="0" title="Select this run for bounded analysis">
         <div class="admin-cell">${escapeHtml(view.typeText)}</div>
         <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${view.statusTitle ? ` title="${escapeHtml(view.statusTitle)}"` : ""}>${escapeHtml(view.statusText)}</span>${includeCopy && onCopyRunDiagnostics ? ` <button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" title="Copy bounded diagnostics for this run">Copy</button>` : ""}</div>
         <div class="admin-cell">${escapeHtml(view.durationText)}</div>
@@ -416,10 +524,12 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         </div>
       </details>
     ` : ""}
+    ${renderSelectedRunAnalysis(selectedView)}
   `;
   if (canPatchInPlace) {
     const detailsEl = historyEl.querySelector(".admin-ops-history-older");
     if (detailsEl) detailsEl.open = olderOpen;
   }
   attachCopyHandlers();
+  attachSelectionHandlers();
 }
