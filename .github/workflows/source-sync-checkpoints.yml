@@ -1,0 +1,34 @@
+name: source-sync-checkpoints
+
+on:
+  workflow_run:
+    workflows:
+      - validate-source-sync
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  publish-checkpoints:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Publish checkpoint tags
+        run: >
+          python scripts/publish_source_sync_checkpoint_tags.py
+          --branch-name "${{ github.event.workflow_run.head_branch }}"
+          --validation-conclusion "${{ github.event.workflow_run.conclusion }}"
+          --commit-sha "${{ github.event.workflow_run.head_sha }}"

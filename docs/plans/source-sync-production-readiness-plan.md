@@ -535,14 +535,10 @@ Admin should expose at least:
   - staging: no reviewer, deployment branch = `staging`
 - migrate jobs pipeline files (`jobs-unified*`, `jobs-lifecycle-state`, `jobs-source-state`) to `.json.gz`
 
-### P2 — Remaining follow-up: storage governance + checkpoint tags
+### P2 — Complete
 
-- snapshot size governance (configurable 5MB limit, warn at 3MB)
-- admin daily-reset counters (calendar-day UTC)
-- lifecycle state retention policy: archive jobs removed > 90 days to cold storage
-- exclude archived lifecycle entries from daily merge/read paths
-- tag every validated write with `last-known-good` + date-stamped tag
-- log warning when `x-ratelimit-remaining` < 10% of quota
+- Snapshot size governance, admin daily-reset counters, lifecycle retention, archived-entry exclusion, rate-limit warning, and checkpoint tagging are implemented.
+- Remaining roadmap work begins at P3.
 
 ### P3 — Make conflicts actionable + notification routing + API version
 
