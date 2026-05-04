@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from collections.abc import Callable
 from typing import Any
@@ -145,6 +146,45 @@ def _choose_more_recent_row(
     if remote_key > local_key:
         return remote_row
     return local_row
+
+
+def _snapshot_content_view(module: Any, snapshot: dict[str, Any]) -> dict[str, Any]:
+    normalized = normalize_snapshot(module, snapshot)
+    return {
+        "schemaVersion": int(normalized.get("schemaVersion") or module.SYNC_SCHEMA_VERSION),
+        "source": dict(normalized.get("source") or {}),
+        "active": list(normalized.get("active") or []),
+        "pending": list(normalized.get("pending") or []),
+    }
+
+
+def _snapshot_content_fingerprint(module: Any, snapshot: dict[str, Any]) -> str:
+    view = _snapshot_content_view(module, snapshot)
+    encoded = json.dumps(view, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _assert_unique_snapshot_identity(
+    module: Any, rows: list[dict[str, Any]], *, scope: str
+) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_id = source_identity(row)
+        if not row_id:
+            continue
+        if row_id in seen:
+            duplicates.add(row_id)
+        else:
+            seen.add(row_id)
+    if duplicates:
+        joined = ", ".join(sorted(duplicates))
+        raise module.SyncOperationError(
+            "duplicate_source_identity",
+            f"Duplicate canonical source identity in {scope}: {joined}",
+        )
 
 
 def normalize_snapshot(module: Any, payload: dict[str, Any]) -> dict[str, Any]:
@@ -396,8 +436,31 @@ def push_sources_snapshot(
 ) -> dict[str, Any]:
     remote = read_remote_snapshot(module, config, opener=opener)
     remote_snapshot = _as_dict(remote.get("snapshot"))
+    _assert_unique_snapshot_identity(
+        module,
+        list(_as_dict(local_state).get("active") or [])
+        + list(_as_dict(local_state).get("pending") or []),
+        scope="local active/pending snapshot",
+    )
+    _assert_unique_snapshot_identity(
+        module,
+        list(remote_snapshot.get("active") or []) + list(remote_snapshot.get("pending") or []),
+        scope="remote active/pending snapshot",
+    )
     merged_state = merge_registry_state(module, local_state, remote_snapshot)
     snapshot = build_snapshot(module, merged_state)
+    if bool(remote.get("exists")) and (
+        _snapshot_content_fingerprint(module, snapshot)
+        == _snapshot_content_fingerprint(module, remote_snapshot)
+    ):
+        return {
+            "pushed": False,
+            "remotePreviouslyExisted": True,
+            "remoteSha": str(remote.get("sha") or ""),
+            "snapshot": snapshot,
+            "skipped": True,
+            "skipReason": "no_meaningful_change",
+        }
     write_result = write_remote_snapshot(
         module,
         config,
@@ -410,4 +473,5 @@ def push_sources_snapshot(
         "remotePreviouslyExisted": bool(remote.get("exists")),
         "remoteSha": str(write_result.get("sha") or ""),
         "snapshot": snapshot,
+        "skipped": False,
     }

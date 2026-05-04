@@ -425,11 +425,12 @@ class SyncService:
         )
         result = self._source_sync.push_sources_snapshot(self._sync_config, state)
         snapshot = as_json_object(result.get("snapshot"))
+        pushed = bool(result.get("pushed", True))
 
         self.set_sync_status(
             action="push",
             result="ok",
-            pushed=True,
+            pushed=pushed,
             error="",
         )
         emit_progress(
@@ -442,13 +443,16 @@ class SyncService:
                 "rejectedCount": len(state.get("rejected") or []),
             },
             event_level="success",
-            message="Sync push summary updated.",
+            message="Sync push summary updated."
+            if pushed
+            else "Sync push skipped; snapshot unchanged.",
         )
 
         return {
             "ok": True,
             "remoteSha": str(result.get("remoteSha") or ""),
             "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
+            "pushed": pushed,
             "counts": {
                 "active": len(snapshot.get("active") or []),
                 "pending": len(snapshot.get("pending") or []),
