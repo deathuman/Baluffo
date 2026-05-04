@@ -372,35 +372,95 @@ class TaskLaunchApi:
             spawn_args = list(fetcher_args)
             if "--output-dir" not in spawn_args:
                 spawn_args.extend(["--output-dir", str(self._runtime.data_dir)])
-            pid = run_background_script(
-                "jobs_fetcher.py",
-                spawn_args,
-                extra_env={
-                    "BALUFFO_FETCH_RUN_ID": run_id,
-                    "BALUFFO_FETCH_STARTED_AT": started_at,
-                    **extra_env,
+            report_shell = {
+                "runId": run_id,
+                "schemaVersion": schema_version,
+                "startedAt": started_at,
+                "finishedAt": "",
+                "runtime": {
+                    "lifecycle": {
+                        "owner": "fetch_report",
+                        "heartbeatAt": started_at,
+                    }
                 },
-            )
+                "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+                "sources": [],
+                "outputs": {"report": str(self._paths.jobs_fetch_report)},
+            }
             save_json_atomic(
                 self._paths.jobs_fetch_report,
-                normalize_fetch_report_contract(
-                    {
-                        "runId": run_id,
-                        "schemaVersion": schema_version,
-                        "startedAt": started_at,
-                        "finishedAt": "",
-                        "runtime": {
-                            "lifecycle": {
-                                "owner": "fetch_report",
-                                "heartbeatAt": started_at,
-                            }
-                        },
-                        "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
-                        "sources": [],
-                        "outputs": {"report": str(self._paths.jobs_fetch_report)},
-                    }
-                ),
+                normalize_fetch_report_contract(report_shell),
             )
+            try:
+                pid = run_background_script(
+                    "jobs_fetcher.py",
+                    spawn_args,
+                    extra_env={
+                        "BALUFFO_FETCH_RUN_ID": run_id,
+                        "BALUFFO_FETCH_STARTED_AT": started_at,
+                        **extra_env,
+                    },
+                )
+            except Exception as exc:  # noqa: BLE001
+                finished_at = self._deps.now_iso()
+                save_json_atomic(
+                    self._paths.jobs_fetch_report,
+                    normalize_fetch_report_contract(
+                        {
+                            **report_shell,
+                            "finishedAt": finished_at,
+                            "runtime": {
+                                "lifecycle": {
+                                    "owner": "fetch_report",
+                                    "heartbeatAt": finished_at,
+                                }
+                            },
+                            "summary": {
+                                "outputCount": 0,
+                                "failedSources": 1,
+                                "sourceCount": 0,
+                                "error": str(exc),
+                            },
+                            "sources": [
+                                {
+                                    "name": "jobs_fetcher.py",
+                                    "status": "error",
+                                    "error": str(exc),
+                                }
+                            ],
+                        }
+                    ),
+                )
+                prune_started_rows_for_type("fetch", finished_at=finished_at)
+                append_run_history(
+                    {
+                        "id": run_id,
+                        "runId": run_id,
+                        "type": "fetch",
+                        "status": "error",
+                        "startedAt": started_at,
+                        "finishedAt": finished_at,
+                        "durationMs": 0,
+                        "summary": {"error": str(exc), "failedSources": 1, "outputCount": 0},
+                    }
+                )
+                self._deps.bridge_log(
+                    "error",
+                    "task_start_failed",
+                    runId=run_id,
+                    task="jobs_fetcher",
+                    preset=preset,
+                    error=str(exc),
+                )
+                return {
+                    "started": False,
+                    "runId": run_id,
+                    "task": "jobs_fetcher",
+                    "preset": preset,
+                    "args": spawn_args,
+                    "startedAt": started_at,
+                    "error": str(exc),
+                }
             approval = load_json_object(self._paths.approval_state, {"approvedSinceLastRun": 0})
             if not isinstance(approval, dict):
                 approval = {"approvedSinceLastRun": 0}

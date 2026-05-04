@@ -190,6 +190,7 @@ export const UI_TOKENS = Object.freeze({
     opsKpis: "admin-ops-kpis",
     opsSchedule: "admin-ops-schedule",
     opsTabBtn: "admin-ops-tab-btn",
+    opsTabBadge: "admin-ops-tab-badge",
     opsTabOverview: "admin-ops-tab-overview",
     opsTabDiscovery: "admin-ops-tab-discovery",
     opsTabSourcePolicy: "admin-ops-tab-source-policy",

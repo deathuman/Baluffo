@@ -22,6 +22,8 @@ The remaining risk is usability, operational clarity, and duplication across fro
 
 This plan is compatible with the archived [`admin-health-dashboard-console-closeout.md`](../archive/admin-health-dashboard-console-closeout.md) by separating depth from overview. The archived health-dashboard work owns the Operations Health layout, compact Discovery / Fetch / Sync lane, and tabbed review surfaces for Discovery Review, Source Policy Review, and Dedup Lists. This task/progress plan owns the shared task-run presenter, compact Current Runs rows, stale/orphaned display states, selected-run analysis, run timelines, and run-scoped diagnostics.
 
+The current direction is healthier than the earlier card-shaped experiments: keep the compact task rows as the baseline, keep deeper evidence on demand, and keep review-heavy surfaces separated so the high-frequency console stays dense instead of sprawling.
+
 ## Current implementation strength
 
 ### Backend contract shape
@@ -152,6 +154,16 @@ This turns task state into an operational picture instead of isolated status tok
 
 Compatibility note: the health-dashboard plan implements a compact version of this lane in Operations Health. This task/progress plan implements the richer version only after `frontend/shared/task-run-view-model.js` exists, so both surfaces can share labels, progress ratios, and severity decisions.
 
+## Remaining risks and follow-ups
+
+The current shape is good, but a few guardrails still matter:
+
+- Tabbed review surfaces now expose actionable counts/status badges; keep the count semantics aligned as review workflows evolve.
+- Selected-run analysis should stay bounded by default; Summary and Timeline can open first, while counts, work examples, event examples, and diagnostics stay collapsed.
+- Discovery heartbeat refresh is still coupled to the auto-sync watcher path; split lifecycle monitoring from post-completion sync later if that coupling starts causing bugs.
+- Manual `?v=` cache-buster bumps are noisy and should eventually be replaced with a generated asset version or build-time hash.
+- Tabbed review surfaces should use consistent empty/error copy so the Admin shell feels coherent when data is missing, stale, or unavailable.
+
 ## Compatibility with Admin Health Dashboard Plan
 
 | Area | Task/progress plan owns | Health-dashboard plan owns | Integration rule |
@@ -160,7 +172,7 @@ Compatibility note: the health-dashboard plan implements a compact version of th
 | Current tasks | Compact rows, stale/orphaned states, timelines, diagnostics | Compact Discovery / Fetch / Sync lane | Do not build full task cards inside `#admin-ops-fetcher-metrics`. |
 | Fetch analysis | Run-scoped analysis for current/selected completed run | Latest health-oriented fetch metrics grouped in the dashboard | Share formatters where useful; keep render surfaces separate and avoid repeating row-level task details in Health. |
 | Diagnostics | Current/last run event diagnostics, copy/export | Normalized section-summary copy for health sections | Avoid two raw-payload copy controls for the same event data. |
-| Discovery/source-policy/dedup review | Only task progress/status context | Dedicated Discovery Review, Source Policy Review, and Dedup Lists tabs plus compact health summaries | Do not move review mutations into task rows, selected-run analysis, or task timelines. |
+| Discovery/source-policy/dedup review | Only task progress/status context | Dedicated Discovery Review, Source Policy Review, and Dedup Lists tabs plus compact health summaries | Do not move review mutations into task rows, selected-run analysis, or task timelines. Keep actionable counts or badges on the review tabs instead of hiding pressure in the overview. |
 
 Execution order is flexible:
 
@@ -229,6 +241,8 @@ Promote key report diagnostics into viewable sections:
 - quality and confidence signals
 
 Attach these panels to the selected run. Selected-run analysis and its bounded timeline panel are implemented as read-only evidence below the compact run tables. The dashboard-level latest fetch-health grouping remains documented in the archived [`admin-health-dashboard-console-closeout.md`](../archive/admin-health-dashboard-console-closeout.md).
+
+Keep the selected-run panel compact by default: Summary and Timeline should be the primary visible sections, while counts, work examples, event examples, and diagnostics should stay collapsed behind `<details>` unless the operator expands them.
 
 ### Step 5 — Keep a single event stream via `recentEvents`
 

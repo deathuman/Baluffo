@@ -335,6 +335,10 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await expect(sourcePolicyTab).toBeVisible();
   await expect(dedupTab).toBeVisible();
   await expect(overviewTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#admin-ops-tab-overview-btn .admin-ops-tab-badge")).toBeVisible();
+  await expect(page.locator("#admin-ops-tab-discovery-btn .admin-ops-tab-badge")).toBeVisible();
+  await expect(page.locator("#admin-ops-tab-source-policy-btn .admin-ops-tab-badge")).toBeVisible();
+  await expect(page.locator("#admin-ops-tab-dedup-btn .admin-ops-tab-badge")).toBeVisible();
   await expect(metrics).not.toContainText(/Loading/i, { timeout: 15000 });
   await expect(metrics.getByText("Task Status", { exact: true })).toBeVisible();
   await expect(metrics.getByRole("heading", { name: "Runtime" })).toBeVisible();

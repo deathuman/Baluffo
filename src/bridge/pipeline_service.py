@@ -170,6 +170,39 @@ class PipelineService:
     def _is_duplicate_task_response(result: dict[str, Any] | None) -> bool:
         return bool(isinstance(result, dict) and result.get("alreadyRunning"))
 
+    def _wait_for_child_report(self, *, phase: str, **kwargs: Any) -> dict[str, Any]:
+        try:
+            return self.wait_for_report_completion(**kwargs)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"{phase}: {exc}") from exc
+
+    def _wait_for_sync_push_row(self, run_id: str) -> dict[str, Any]:
+        try:
+            return self._wait_for_sync_completion(run_id, 900.0)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"sync_push: {exc}") from exc
+
+    def _trigger_discovery_child(self) -> Any:
+        try:
+            return self._trigger_discovery_task(
+                route_name="/tasks/run-jobs-pipeline",
+                enable_auto_sync_watch=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"discovery_launch: {exc}") from exc
+
+    def _start_fetch_child(self) -> dict[str, Any]:
+        try:
+            return self._start_fetcher_task({"preset": "default"})
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"fetch_launch: {exc}") from exc
+
+    def _start_sync_push_child(self) -> dict[str, Any]:
+        try:
+            return self._start_sync_task("push", reason="jobs_pipeline", automatic=False)
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"sync_push: {exc}") from exc
+
     def get_status_payload(self) -> dict[str, Any]:
         with self._lock:
             payload = dict(self._status)
@@ -205,11 +238,16 @@ class PipelineService:
         while True:
             report = load_json_object(report_path, {})
             normalized_report = report if isinstance(report, dict) else {}
+            report_run_id = str(normalized_report.get("runId") or "").strip()
+            run_id_matches = bool(
+                not str(task_run_id or "").strip() or report_run_id == str(task_run_id).strip()
+            )
             report_started = self._parse_iso(normalized_report.get("startedAt"))
             report_finished = self._parse_iso(normalized_report.get("finishedAt"))
             child_live = self._child_task_has_live_evidence(task_type, task_run_id)
             if (
-                started_dt
+                run_id_matches
+                and started_dt
                 and report_started
                 and report_started >= (started_dt - timedelta(seconds=1))
             ):
@@ -230,10 +268,7 @@ class PipelineService:
             self._mark_stage(
                 stage="discovery", current_step=1, total_steps=3, label="Running discovery..."
             )
-            discovery_status, discovery_result = self._trigger_discovery_task(
-                route_name="/tasks/run-jobs-pipeline",
-                enable_auto_sync_watch=False,
-            )
+            discovery_status, discovery_result = self._trigger_discovery_child()
             discovery_attached = int(discovery_status) == 409 and self._is_duplicate_task_response(
                 discovery_result
             )
@@ -246,7 +281,9 @@ class PipelineService:
                     and not discovery_attached
                 )
             ):
-                raise RuntimeError(str(discovery_result.get("error") or "discovery start failed"))
+                raise RuntimeError(
+                    f"discovery_launch: {discovery_result.get('error') or 'discovery start failed'}"
+                )
             discovery_started_at = str(discovery_result.get("startedAt") or self._now_iso())
             discovery_run_id = str(discovery_result.get("runId") or "").strip()
             if discovery_attached:
@@ -257,7 +294,8 @@ class PipelineService:
                     childTask="discovery",
                     childRunId=discovery_run_id,
                 )
-            self.wait_for_report_completion(
+            self._wait_for_child_report(
+                phase="discovery_wait",
                 report_path=self._discovery_report_path,
                 started_at=discovery_started_at,
                 timeout_s=900.0,
@@ -269,10 +307,12 @@ class PipelineService:
             )
 
             self._mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
-            fetch_result = self._start_fetcher_task({"preset": "default"})
+            fetch_result = self._start_fetch_child()
             fetch_attached = self._is_duplicate_task_response(fetch_result)
             if not bool(fetch_result.get("started")) and not fetch_attached:
-                raise RuntimeError(str(fetch_result.get("error") or "fetch start failed"))
+                raise RuntimeError(
+                    f"fetch_launch: {fetch_result.get('error') or 'fetch start failed'}"
+                )
             fetch_started_at = str(fetch_result.get("startedAt") or self._now_iso())
             fetch_run_id = str(fetch_result.get("runId") or "").strip()
             if fetch_attached:
@@ -283,7 +323,8 @@ class PipelineService:
                     childTask="fetch",
                     childRunId=fetch_run_id,
                 )
-            self.wait_for_report_completion(
+            self._wait_for_child_report(
+                phase="fetch_wait",
                 report_path=self._fetch_report_path,
                 started_at=fetch_started_at,
                 timeout_s=1200.0,
@@ -297,14 +338,16 @@ class PipelineService:
             self._mark_stage(
                 stage="sync_push", current_step=3, total_steps=3, label="Running sync push..."
             )
-            sync_result = self._start_sync_task("push", reason="jobs_pipeline", automatic=False)
+            sync_result = self._start_sync_push_child()
             if not bool(sync_result.get("started")):
-                raise RuntimeError(str(sync_result.get("error") or "sync push failed to start"))
-            sync_row = self._wait_for_sync_completion(str(sync_result.get("runId") or ""), 900.0)
+                raise RuntimeError(
+                    f"sync_push: {sync_result.get('error') or 'sync push failed to start'}"
+                )
+            sync_row = self._wait_for_sync_push_row(str(sync_result.get("runId") or ""))
             sync_status = str(sync_row.get("status") or "").strip().lower()
             if sync_status == "error":
                 sync_error = str((sync_row.get("summary") or {}).get("error") or "sync push failed")
-                raise RuntimeError(sync_error)
+                raise RuntimeError(f"sync_push: {sync_error}")
 
             final_output_count = self._current_fetch_output_count()
             self._set_completed(status="ok", final_output_count=final_output_count)

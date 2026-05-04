@@ -8,7 +8,12 @@ import {
   renderAdminOpsSchedule,
   renderAdminOpsTrends
 } from "../../render.js?v=12";
-import { renderAdminSourcePolicyReview } from "../../render/source-policy-review.js";
+import {
+  filterSourcePolicyReviewPairs,
+  getMigrationLinkLinkedActions,
+  getMigrationLinkReviewActions,
+  renderAdminSourcePolicyReview
+} from "../../render/source-policy-review.js";
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
@@ -16,6 +21,109 @@ function maybeUnrefTimer(timer) {
 }
 
 const OPS_TAB_KEYS = new Set(["overview", "discovery", "source-policy", "dedup"]);
+
+function getObjectValue(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function formatBadgeTitle(count, singular, plural = `${singular}s`) {
+  const total = Math.max(0, Number(count) || 0);
+  return total ? `${total.toLocaleString()} ${total === 1 ? singular : plural}` : `No ${plural}`;
+}
+
+function toAlertBadgeState(alerts = []) {
+  const rows = Array.isArray(alerts) ? alerts : [];
+  const criticalCount = rows.filter(alert => String(alert?.severity || "").toLowerCase() === "critical").length;
+  const count = rows.length;
+  return {
+    count,
+    tone: count > 0 ? (criticalCount > 0 ? "critical" : "warning") : "neutral",
+    title: count > 0 ? formatBadgeTitle(count, "active alert", "active alerts") : "No active alerts"
+  };
+}
+
+function toDiscoveryBadgeState(report = {}) {
+  const review = getObjectValue(report?.candidateReview);
+  const count = Number(review?.totalCandidates || 0);
+  return {
+    count,
+    tone: count > 0 ? "warning" : "neutral",
+    title: count > 0 ? formatBadgeTitle(count, "discovery review item", "discovery review items") : "No discovery review items"
+  };
+}
+
+function toSourcePolicyBadgeState(payload = {}) {
+  const rows = Array.isArray(payload?.recommendations?.pairs) ? payload.recommendations.pairs : [];
+  const needsActionCount = filterSourcePolicyReviewPairs(rows, "needs_action").length;
+  const linkBackfill = getObjectValue(payload?.providerCoverageLinkBackfill);
+  const reviewCandidates = Array.isArray(linkBackfill.reviewCandidates) ? linkBackfill.reviewCandidates : [];
+  const linkedCandidates = Array.isArray(linkBackfill.linkedCandidates) ? linkBackfill.linkedCandidates : [];
+  const blockedCandidates = Array.isArray(linkBackfill.blockedCandidates) ? linkBackfill.blockedCandidates : [];
+  const actionableMigrationCount = reviewCandidates.filter(candidate => getMigrationLinkReviewActions(candidate).length > 0).length
+    + linkedCandidates.filter(candidate => getMigrationLinkLinkedActions(candidate).length > 0).length;
+  const count = needsActionCount + actionableMigrationCount + blockedCandidates.length;
+  return {
+    count,
+    tone: blockedCandidates.length > 0 ? "critical" : count > 0 ? "warning" : "neutral",
+    title: count > 0
+      ? formatBadgeTitle(count, "source policy review item", "source policy review items")
+      : "No source policy review items"
+  };
+}
+
+function toDedupBadgeState(dedupEvidence = {}) {
+  const gate = getObjectValue(dedupEvidence?.dedupAuditGate);
+  const providerStaticRows = Array.isArray(dedupEvidence?.providerStaticDisagreementExamples) ? dedupEvidence.providerStaticDisagreementExamples : [];
+  const titleCompanyRows = Array.isArray(dedupEvidence?.providerStaticTitleCompanyCollisionExamples) ? dedupEvidence.providerStaticTitleCompanyCollisionExamples : [];
+  const reviewQueueRows = Array.isArray(dedupEvidence?.reviewQueue) ? dedupEvidence.reviewQueue : [];
+  const reviewCount = providerStaticRows.length + titleCompanyRows.length + reviewQueueRows.length;
+  const pressureCount = Math.max(
+    Number(gate?.currentRunHighRiskReviewQueueCount || 0),
+    Number(gate?.carriedHighRiskReviewQueueCount || 0)
+  );
+  const gateCount = Number(gate?.blockers?.length || 0) + Number(gate?.warnings?.length || 0);
+  const count = Math.max(reviewCount, pressureCount + gateCount);
+  return {
+    count,
+    tone: String(gate?.status || "").toLowerCase() === "blocked" || Number(gate?.blockers?.length || 0) > 0
+      ? "critical"
+      : count > 0
+        ? "warning"
+        : "neutral",
+    title: count > 0
+      ? formatBadgeTitle(count, "dedup review item", "dedup review items")
+      : "No dedup review items"
+  };
+}
+
+function renderOpsTabBadges(refs, {
+  health = {},
+  discoveryReport = null,
+  sourcePolicyRecommendations = {},
+  fetcherMetricsPayload = {}
+} = {}) {
+  const badges = Array.isArray(refs?.adminOpsTabBadgeEls) ? refs.adminOpsTabBadgeEls : [];
+  if (!badges.length) return;
+  const discovery = discoveryReport && typeof discoveryReport === "object"
+    ? discoveryReport
+    : {};
+  const dedupEvidence = getObjectValue(fetcherMetricsPayload?.latestRun?.dedupEvidence);
+  const badgeStates = {
+    overview: toAlertBadgeState(health?.alerts || []),
+    discovery: toDiscoveryBadgeState(discovery),
+    "source-policy": toSourcePolicyBadgeState(sourcePolicyRecommendations || {}),
+    dedup: toDedupBadgeState(dedupEvidence)
+  };
+  badges.forEach(badge => {
+    const key = String(badge?.dataset?.opsTab || badge?.getAttribute?.("data-ops-tab") || "");
+    const state = badgeStates[key] || { count: 0, tone: "neutral", title: "No items" };
+    if (badge) {
+      badge.textContent = Number(state.count || 0).toLocaleString();
+      badge.setAttribute?.("data-badge-tone", state.tone);
+      badge.title = state.title;
+    }
+  });
+}
 
 export function createOpsHealthController({
   state,
@@ -119,6 +227,12 @@ export function createOpsHealthController({
     if (refs.adminOpsHistoryEl) {
       refs.adminOpsHistoryEl.innerHTML = `<div class="no-results">${escapeHtml(message)}</div>`;
     }
+    renderOpsTabBadges(refs, {
+      health: { alerts: [] },
+      discoveryReport: {},
+      sourcePolicyRecommendations: {},
+      fetcherMetricsPayload: {}
+    });
   }
 
   function stopOpsHealthPolling() {
@@ -365,7 +479,16 @@ export function createOpsHealthController({
         lastDiscoveryRegistryRefreshAtMs = 0;
       } else if (typeof loadDiscoveryData === "function" && nowMs - lastDiscoveryRegistryRefreshAtMs >= 5000) {
         lastDiscoveryRegistryRefreshAtMs = nowMs;
-        loadDiscoveryData().catch(() => {});
+        Promise.resolve(loadDiscoveryData())
+          .then(() => {
+            renderOpsTabBadges(refs, {
+              health,
+              discoveryReport: state.latestDiscoveryReportCache || {},
+              sourcePolicyRecommendations,
+              fetcherMetricsPayload
+            });
+          })
+          .catch(() => {});
       }
 
       renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {
@@ -419,6 +542,12 @@ export function createOpsHealthController({
         onCopyRunDiagnostics: handleCopyRunDiagnostics
       });
       renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
+      renderOpsTabBadges(refs, {
+        health,
+        discoveryReport: state.latestDiscoveryReportCache || {},
+        sourcePolicyRecommendations,
+        fetcherMetricsPayload
+      });
       loadSyncStatus({ silent: true }).catch(() => {});
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
       scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0));

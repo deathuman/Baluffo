@@ -321,6 +321,51 @@ def test_start_fetcher_task_writes_report_shell_with_run_id():
     )
 
 
+def test_start_fetcher_task_does_not_overwrite_fast_terminal_report():
+    def fast_child_write(_script, _args, *, extra_env):
+        run_id = str(extra_env.get("BALUFFO_FETCH_RUN_ID") or "")
+        started_at = str(extra_env.get("BALUFFO_FETCH_STARTED_AT") or "")
+        admin_bridge.save_json_atomic(
+            admin_bridge.JOBS_FETCH_REPORT_PATH,
+            {
+                "runId": run_id,
+                "startedAt": started_at,
+                "finishedAt": "2026-03-27T14:00:02+00:00",
+                "summary": {"outputCount": 7, "failedSources": 0, "sourceCount": 3},
+            },
+        )
+        return 24680
+
+    with mock.patch.object(admin_bridge, "run_background_script", side_effect=fast_child_write):
+        result = admin_bridge.start_fetcher_task({})
+
+    assert result["started"] is True
+    report = admin_bridge.load_json_object(admin_bridge.JOBS_FETCH_REPORT_PATH, {})
+    assert str(report.get("runId") or "") == str(result.get("runId") or "")
+    assert str(report.get("finishedAt") or "") == "2026-03-27T14:00:02+00:00"
+    assert int((report.get("summary") or {}).get("outputCount") or 0) == 7
+
+
+def test_start_fetcher_task_spawn_failure_writes_terminal_error_report():
+    with mock.patch.object(
+        admin_bridge,
+        "run_background_script",
+        side_effect=RuntimeError("spawn denied"),
+    ):
+        result = admin_bridge.start_fetcher_task({})
+
+    assert result["started"] is False
+    assert str(result.get("error") or "") == "spawn denied"
+    run_id = str(result.get("runId") or "")
+    report = admin_bridge.load_json_object(admin_bridge.JOBS_FETCH_REPORT_PATH, {})
+    assert str(report.get("runId") or "") == run_id
+    assert str(report.get("finishedAt") or "")
+    assert str((report.get("summary") or {}).get("error") or "") == "spawn denied"
+    rows = admin_bridge.load_run_history()
+    matching = [row for row in rows if str(row.get("runId") or "") == run_id]
+    assert [str(row.get("status") or "") for row in matching] == ["error"]
+
+
 def test_start_fetcher_task_sets_uncapped_static_budget_env():
     with mock.patch.object(admin_bridge, "run_background_script", return_value=24680) as spawn:
         result = admin_bridge.start_fetcher_task({"preset": "uncapped"})
