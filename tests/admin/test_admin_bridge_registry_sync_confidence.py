@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from src import admin_bridge
+from src.bridge.registry_conflicts import load_registry_conflicts_payload
 from src.bridge.registry_sync_summary import derive_registry_sync_summary
 
 
@@ -118,3 +121,87 @@ def test_ops_health_exposes_registry_sync_confidence(admin_bridge_entrypoint_roo
     assert registry_sync["ignoredRejectedCount"] == 1
     assert registry_sync["ignoredTombstonedCount"] == 1
     assert registry_sync["pushedCount"] == 1
+
+
+def test_registry_conflicts_payload_joins_source_health_aliases(admin_bridge_entrypoint_root):
+    source_state_path = Path(admin_bridge.JOBS_FETCH_REPORT_PATH).with_name(
+        "jobs-source-state.json"
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.ACTIVE_PATH,
+        [
+            {
+                "id": "winner-1",
+                "name": "Winner Source",
+                "studio": "Studio",
+                "adapter": "greenhouse",
+                "registryState": "active",
+                "candidateState": "live",
+                "rankScore": 25,
+                "score": 25,
+                "status": "ok",
+            }
+        ],
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.PENDING_PATH,
+        [
+            {
+                "id": "loser-1",
+                "name": "Loser Source",
+                "studio": "Studio",
+                "adapter": "static",
+                "registryState": "pending",
+                "candidateState": "validated",
+                "rankScore": 1,
+                "score": 1,
+                "status": "ok",
+            }
+        ],
+    )
+    admin_bridge.save_json_atomic(admin_bridge.REJECTED_PATH, [])
+    admin_bridge.save_json_atomic(
+        source_state_path,
+        {
+            "schemaVersion": 1,
+            "sources": {
+                "Winner Source": {
+                    "health": "healthy",
+                    "healthReason": "steady",
+                    "lastSuccessfulFetchAt": "2026-05-01T10:00:00Z",
+                    "lastSeenInFetchAt": "2026-05-01T10:00:00Z",
+                    "lastJobsKept": 9,
+                    "lastKeptCount": 9,
+                    "failureCount": 0,
+                    "zeroJobStreak": 0,
+                },
+                "Loser Source": {
+                    "health": "warning",
+                    "healthReason": "stale",
+                    "lastSuccessfulFetchAt": "2026-04-30T10:00:00Z",
+                    "lastSeenInFetchAt": "2026-05-01T09:00:00Z",
+                    "lastJobsKept": 1,
+                    "lastKeptCount": 1,
+                    "failureCount": 2,
+                    "zeroJobStreak": 3,
+                },
+            },
+        },
+    )
+
+    payload = load_registry_conflicts_payload(
+        load_state=admin_bridge.load_state,
+        load_json_object=admin_bridge.load_json_object,
+        source_state_path=source_state_path,
+    )
+
+    assert payload["summary"]["conflictCount"] == 1
+    card = payload["conflicts"][0]
+    assert card["winner"]["name"] == "Winner Source"
+    assert card["winner"]["health"] == "healthy"
+    assert card["winner"]["healthReason"] == "steady"
+    assert card["winner"]["lastSuccessfulFetchAt"] == "2026-05-01T10:00:00Z"
+    assert card["winner"]["actions"][0]["route"] == "/registry/demote-active"
+    assert card["losers"][0]["actions"][0]["route"] == "/registry/approve"
+    assert card["losers"][0]["actions"][1]["route"] == "/registry/reject"
+    assert card["diffs"]

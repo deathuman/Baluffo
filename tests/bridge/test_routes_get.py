@@ -303,7 +303,6 @@ def test_fetcher_log_replaces_malformed_utf8_bytes_in_middle(tmp_path: Path) -> 
 
 
 def test_ops_health(tmp_path: Path) -> None:
-    """Test /ops/health endpoint."""
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
 

@@ -97,6 +97,147 @@ def _duplicate_winner_score(
     )
 
 
+def _duplicate_winner_score_payload(
+    score: tuple[int, int, int, int, int, int, str],
+) -> dict[str, Any]:
+    return {
+        "quarantinePenalty": int(score[0]),
+        "lastKeptCount": int(score[1]),
+        "statusScore": int(score[2]),
+        "adapterPriority": int(score[3]),
+        "rankScore": int(score[4]),
+        "metadataScore": int(score[5]),
+        "identity": str(score[6]),
+    }
+
+
+def _duplicate_winner_rationale(
+    row: dict[str, Any],
+    source_state_by_key: dict[str, dict[str, Any]],
+    *,
+    score: tuple[int, int, int, int, int, int, str] | None = None,
+) -> list[dict[str, str]]:
+    state = _source_state_for_row(row, source_state_by_key)
+    score = score or _duplicate_winner_score(row, source_state_by_key)
+    source_health = str(state.get("health") or "").strip().lower() or "unknown"
+    source_health_reason = str(state.get("healthReason") or "").strip()
+    if source_health_reason:
+        source_health = f"{source_health}: {source_health_reason}"
+    quarantined = bool(
+        str(row.get("candidateState") or state.get("candidateState") or "").strip().lower()
+        in {"quarantined", "rejected"}
+        or str(row.get("quarantineReason") or state.get("quarantineReason") or "").strip()
+    )
+    source_jobs_kept = str(
+        state.get("lastJobsKept")
+        or state.get("lastKeptCount")
+        or row.get("lastJobsKept")
+        or row.get("lastKeptCount")
+        or 0
+    )
+    failure_count = str(
+        state.get("failureCount")
+        or state.get("consecutiveFailures")
+        or row.get("failureCount")
+        or 0
+    )
+    zero_job_streak = str(
+        state.get("zeroJobStreak")
+        or state.get("consecutiveZeroKept")
+        or row.get("zeroJobStreak")
+        or row.get("consecutiveZeroKept")
+        or 0
+    )
+    adapter = str(row.get("adapter") or "").strip().lower() or "unknown"
+    return [
+        {
+            "label": "Quarantine penalty",
+            "value": "applied" if quarantined else "clear",
+        },
+        {
+            "label": "Source health",
+            "value": source_health,
+        },
+        {
+            "label": "Last jobs kept",
+            "value": source_jobs_kept,
+        },
+        {
+            "label": "Failure count",
+            "value": failure_count,
+        },
+        {
+            "label": "Zero-job streak",
+            "value": zero_job_streak,
+        },
+        {
+            "label": "Adapter priority",
+            "value": f"{adapter} ({score[3]})",
+        },
+        {
+            "label": "Rank score",
+            "value": str(score[4]),
+        },
+        {
+            "label": "Metadata score",
+            "value": str(score[5]),
+        },
+        {
+            "label": "Identity",
+            "value": score[6],
+        },
+    ]
+
+
+def duplicate_family_conflict_cards(
+    rows: Iterable[dict[str, Any]],
+    *,
+    target_families: Iterable[str] | None = None,
+    source_state: Any = None,
+) -> list[dict[str, Any]]:
+    target_keys = {
+        token for token in (_clean_family_token(item) for item in (target_families or [])) if token
+    }
+    source_state_by_key = _state_rows_by_key(source_state)
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in [ensure_source_id(dict(row)) for row in rows if isinstance(row, dict)]:
+        family_key = source_family_key(row)
+        if not family_key:
+            continue
+        if target_keys and family_key not in target_keys:
+            continue
+        grouped.setdefault(family_key, []).append(row)
+
+    cards: list[dict[str, Any]] = []
+    for family_key, family_rows in sorted(grouped.items()):
+        if len(family_rows) < 2:
+            continue
+        ordered_rows = sorted(
+            family_rows,
+            key=lambda row: _duplicate_winner_score(row, source_state_by_key),
+            reverse=True,
+        )
+        winner = ordered_rows[0]
+        winner_score = _duplicate_winner_score(winner, source_state_by_key)
+        losers = ordered_rows[1:]
+        cards.append(
+            {
+                "familyKey": family_key,
+                "rowCount": len(ordered_rows),
+                "winner": winner,
+                "winnerScore": _duplicate_winner_score_payload(winner_score),
+                "winnerRationale": _duplicate_winner_rationale(
+                    winner,
+                    source_state_by_key,
+                    score=winner_score,
+                ),
+                "losers": losers,
+                "rows": ordered_rows,
+            }
+        )
+    return cards
+
+
 def _demote_duplicate_variant(
     row: dict[str, Any],
     *,
@@ -130,28 +271,18 @@ def demote_duplicate_active_variants(
     at: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     timestamp = str(at or now_iso())
-    target_keys = {
-        _clean_family_token(item) for item in (target_families or []) if _clean_family_token(item)
-    }
-    rows = [ensure_source_id(dict(row)) for row in active_rows if isinstance(row, dict)]
-    source_state_by_key = _state_rows_by_key(source_state)
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        family_key = source_family_key(row)
-        if not family_key:
-            continue
-        if target_keys and family_key not in target_keys:
-            continue
-        grouped.setdefault(family_key, []).append(row)
-
+    cards = duplicate_family_conflict_cards(
+        active_rows,
+        target_families=target_families,
+        source_state=source_state,
+    )
     demoted_ids: set[str] = set()
     demoted_rows: list[dict[str, Any]] = []
-    for family_key, family_rows in grouped.items():
-        if len(family_rows) < 2:
-            continue
-        winner = max(family_rows, key=lambda row: _duplicate_winner_score(row, source_state_by_key))
+    for card in cards:
+        family_key = str(card.get("familyKey") or "")
+        winner = dict(card.get("winner") or {})
         winner_id = source_identity(winner)
-        for row in family_rows:
+        for row in [dict(row) for row in card.get("losers") or [] if isinstance(row, dict)]:
             row_id = source_identity(row)
             if row_id == winner_id:
                 continue
@@ -166,5 +297,5 @@ def demote_duplicate_active_variants(
                 )
             )
 
-    remaining_active = [row for row in rows if source_identity(row) not in demoted_ids]
+    remaining_active = [row for row in active_rows if source_identity(row) not in demoted_ids]
     return unique_sources(remaining_active), unique_sources(demoted_rows)

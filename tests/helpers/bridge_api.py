@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -217,7 +218,17 @@ def make_stub_bridge_api(tmp_path: Path, store: FakeDesktopLocalDataStore) -> Br
     api.sync_history_from_reports = lambda: []
     api.normalize_fetch_report_contract = lambda r: r
     api.normalize_discovery_report_contract = lambda r: r
-    api.load_json_object = lambda p, default=None: default
+
+    def load_json_object(path: Any, default: Any = None) -> Any:
+        try:
+            path_obj = Path(path)
+        except TypeError:
+            return default
+        if not path_obj.exists():
+            return default
+        return json.loads(path_obj.read_text(encoding="utf-8"))
+
+    api.load_json_object = load_json_object
     api.get_sync_status_payload = lambda: {"ready": True, "enabled": True}
     api.get_jobs_pipeline_status_payload = lambda: {"running": False}
     api.trigger_discovery_task = lambda payload, route_name: (200, {"started": True})

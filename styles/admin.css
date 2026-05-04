@@ -797,6 +797,209 @@
   flex-wrap: wrap;
 }
 
+.admin-registry-conflicts {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-registry-conflicts-copy {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.admin-registry-conflicts-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.admin-registry-conflict-card {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.8rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at right top, color-mix(in srgb, var(--accent-soft-bg) 52%, transparent), transparent 42%),
+    linear-gradient(180deg, var(--surface-4), var(--surface-2));
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.14);
+}
+
+.admin-registry-conflict-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem 0.8rem;
+  flex-wrap: wrap;
+}
+
+.admin-registry-conflict-family {
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.admin-registry-conflict-summary {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.admin-registry-conflict-rationale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.admin-registry-conflict-rationale-chip {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  padding: 0.22rem 0.48rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--surface-11) 70%, transparent);
+  background: color-mix(in srgb, var(--surface-3) 84%, transparent);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.admin-registry-conflict-rationale-chip strong {
+  color: var(--text-subtle);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.32px;
+}
+
+.admin-registry-conflict-rows {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-registry-conflict-row {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.68rem;
+  border: 1px solid var(--surface-11);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-3) 78%, transparent);
+}
+
+.admin-registry-conflict-row-winner {
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--surface-11));
+  background: color-mix(in srgb, var(--accent-soft-bg) 18%, var(--surface-3));
+}
+
+.admin-registry-conflict-row-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.45rem 0.75rem;
+  flex-wrap: wrap;
+}
+
+.admin-registry-conflict-name {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.admin-registry-conflict-id {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+.admin-registry-conflict-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.34rem 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.admin-registry-conflict-meta strong {
+  color: var(--text-subtle);
+  display: block;
+  font-size: 0.66rem;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.admin-registry-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.admin-registry-conflict-diffs {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-registry-conflict-diff {
+  overflow: hidden;
+  border: 1px solid var(--surface-11);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+}
+
+.admin-registry-conflict-diff > summary {
+  cursor: pointer;
+  padding: 0.5rem 0.65rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  user-select: none;
+}
+
+.admin-registry-conflict-diff > summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-registry-conflict-diff > summary::after {
+  content: " +";
+}
+
+.admin-registry-conflict-diff[open] > summary::after {
+  content: " -";
+}
+
+.admin-registry-conflict-diff-body {
+  padding: 0 0.6rem 0.6rem;
+}
+
+.admin-registry-conflict-diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.admin-registry-conflict-diff-table th,
+.admin-registry-conflict-diff-table td {
+  padding: 0.4rem 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--surface-11) 80%, transparent);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.admin-registry-conflict-diff-table th {
+  color: var(--text-subtle);
+  font-size: 0.66rem;
+  letter-spacing: 0.28px;
+  text-transform: uppercase;
+}
+
+.admin-registry-conflict-diff-field {
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.admin-registry-conflict-diff-value {
+  color: var(--text-secondary);
+}
+
 @keyframes jobs-pipeline-pulse {
   0% { opacity: 0.5; transform: scale(0.9); }
   50% { opacity: 1; transform: scale(1.02); }

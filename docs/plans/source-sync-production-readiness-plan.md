@@ -210,8 +210,8 @@ Implemented here: `rate_limit_note_response` now logs a warning when `x-ratelimi
 
 **P3 — Notification routing**
 
-- Configure GitHub notification settings for workflow failures on `validate-source-sync.yml`
-- API version management already landed in-repo via the `GITHUB_API_VERSION` constant and the note in `docs/sync-contract.md`
+- Completed: API version management already landed in-repo via the `GITHUB_API_VERSION` constant and the note in `docs/sync-contract.md`
+- Completed: GitHub notifications for failed `validate-source-sync.yml` runs are enabled; `docs/environments.md` captures the operator baseline
 
 ---
 
@@ -397,19 +397,19 @@ PUT fails (transient network error, not HTTP 409/422/401)
 - restore/reject/promote/demote workflow
 - preserve transition reason in review output
 
-### P4 — Add contract/integration tests
+### P4 — Complete
 
-This is a test-only checkpoint. The cases below stay as executable specifications for later runtime hardening slices, but this pass does not change source-sync runtime behavior, bridge routes, or payload contracts.
+This test-only checkpoint is now covered in the focused source-sync and storage suites. It does not change source-sync runtime behavior, bridge routes, or payload contracts.
 
-**Existing from original (keep):**
+**Coverage retained in the suite:**
 - real artifact contract check in CI
 - no-op push
 - concurrent push simulation
 - malformed payload handling
 - duplicate identity tests
-- large snapshot performance test
+- large snapshot smoke test
 
-**New test cases from hardening work:**
+**Coverage added in this slice:**
 - `test_no_op_push_skips_write_when_content_unchanged` — same active/pending content must not create a new commit
 - `test_content_hash_stable_excluding_volatile_fields` — `generatedAt`/`source` changes alone must not alter digest
 - `test_idempotent_put_retry_re_reads_sha` — transient PUT failure triggers re-read, then retry
@@ -540,35 +540,15 @@ Admin should expose at least:
 - Snapshot size governance, admin daily-reset counters, lifecycle retention, archived-entry exclusion, rate-limit warning, and checkpoint tagging are implemented.
 - Remaining roadmap work begins at P3.
 
-### P3 — Make conflicts actionable + notification routing + API version
+### P3 — Conflicts actionable
 
-- admin conflict queue
-- local vs remote diff visibility
-- winner rationale
-- restore/reject/promote/demote workflow
-- preserve transition reason in review output
-- implemented in this slice:
-  - extract `GITHUB_API_VERSION` from hardcoded header into module constant
-  - add API version deprecation monitoring note to `docs/sync-contract.md`
-  - document the `validate-source-sync.yml` failure notification policy in `docs/environments.md`
-  - subscribe the workflow repo to GitHub Actions notifications for workflow failures
+- Implemented here: admin conflict queue, local vs remote diff visibility, winner rationale, restore/reject/promote/demote workflow, and preserve transition reason in review output
 
-### P4 — Add contract/integration tests
+### P4 — Complete
 
-- real artifact contract check in CI
-- no-op push
-- content hash stability
-- idempotent PUT retry
-- concurrent push simulation (409 path)
-- transient GET retry
-- dry-run mode
-- identity collision
-- daily counter reset
-- size governance
-- malformed payload handling (existing coverage is good; add structural validation tests)
-- large snapshot performance test
-- `.json.gz` transparent read/write round-trip
-- lifecycle cold archive load and retention toggle
+- Contract/integration coverage is now in place across governance, push churn, push churn limits, pipeline storage gzip, and source-registry seed/runtime suites.
+- Large snapshot smoke coverage now exercises the gzip-backed pipeline/storage path end to end.
+- `.json.gz` transparent read/write round-trip and lifecycle cold archive load / retention toggle coverage remain in the suite.
 
 ## Validation criteria while executing this plan
 

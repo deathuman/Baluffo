@@ -228,3 +228,44 @@ def test_runtime_launcher_serves_gzip_backed_pipeline_data() -> None:
             thread.join(timeout=2)
 
         assert "Compressed Runtime" in payload
+
+
+def test_runtime_launcher_serves_large_gzip_backed_pipeline_snapshot() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    fixture_path = repo_root / "data" / "jobs-unified.json"
+    fixture_rows = read_json(fixture_path, [])
+
+    assert isinstance(fixture_rows, list)
+    assert len(fixture_rows) > 1000
+
+    with workspace_tmpdir("pipeline-runtime-gzip-large") as tmp:
+        root = Path(tmp) / "site"
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "jobs.html").write_text("<html>jobs</html>\n", encoding="utf-8")
+        data_dir = Path(tmp) / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        with gzip.open(data_dir / "jobs-unified.json.gz", mode="wt", encoding="utf-8") as handle:
+            json.dump(fixture_rows, handle)
+
+        handler = rl.build_site_request_handler(
+            root,
+            runtime_data_dir=data_dir,
+            static_data_dir=data_dir,
+            startup_probe=False,
+        )
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with urlopen(
+                f"http://127.0.0.1:{server.server_address[1]}/data/jobs-unified.json",
+                timeout=5.0,
+            ) as response:
+                assert response.headers.get("Content-Encoding") == "gzip"
+                served_rows = json.loads(gzip.decompress(response.read()).decode("utf-8"))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
+        assert served_rows == fixture_rows

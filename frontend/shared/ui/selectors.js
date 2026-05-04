@@ -194,9 +194,11 @@ export const UI_TOKENS = Object.freeze({
     opsTabOverview: "admin-ops-tab-overview",
     opsTabDiscovery: "admin-ops-tab-discovery",
     opsTabSourcePolicy: "admin-ops-tab-source-policy",
+    opsTabRegistryConflicts: "admin-ops-tab-registry-conflicts",
     opsTabDedup: "admin-ops-tab-dedup",
     discoveryReview: "admin-discovery-review",
     sourcePolicyReview: "admin-source-policy-review",
+    registryConflictsReview: "admin-registry-conflicts-review",
     opsFetcherMetrics: "admin-ops-fetcher-metrics",
     opsDedupLists: "admin-ops-dedup-lists",
     opsTrends: "admin-ops-trends",
@@ -211,6 +213,7 @@ export const UI_TOKENS = Object.freeze({
     alertAckBtn: "admin-alert-ack-btn",
     sourcePolicyFilterBtn: "admin-source-policy-filter-btn",
     sourcePolicyActionBtn: "admin-source-policy-action-btn",
-    sourcePolicyMigrationLinkActionBtn: "admin-source-policy-migration-link-action-btn"
+    sourcePolicyMigrationLinkActionBtn: "admin-source-policy-migration-link-action-btn",
+    registryConflictActionBtn: "admin-registry-conflict-action-btn"
   }
 });

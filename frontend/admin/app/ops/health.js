@@ -14,13 +14,14 @@ import {
   getMigrationLinkReviewActions,
   renderAdminSourcePolicyReview
 } from "../../render/source-policy-review.js";
+import { renderAdminRegistryConflicts } from "../../render/registry-conflicts.js";
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
   return timer;
 }
 
-const OPS_TAB_KEYS = new Set(["overview", "discovery", "source-policy", "dedup"]);
+const OPS_TAB_KEYS = new Set(["overview", "discovery", "source-policy", "registry-conflicts", "dedup"]);
 
 function getObjectValue(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -100,6 +101,7 @@ function renderOpsTabBadges(refs, {
   health = {},
   discoveryReport = null,
   sourcePolicyRecommendations = {},
+  registryConflictsPayload = {},
   fetcherMetricsPayload = {}
 } = {}) {
   const badges = Array.isArray(refs?.adminOpsTabBadgeEls) ? refs.adminOpsTabBadgeEls : [];
@@ -108,10 +110,19 @@ function renderOpsTabBadges(refs, {
     ? discoveryReport
     : {};
   const dedupEvidence = getObjectValue(fetcherMetricsPayload?.latestRun?.dedupEvidence);
+  const registryConflictsSummary = getObjectValue(registryConflictsPayload?.summary);
+  const registryConflictCount = Number(registryConflictsSummary?.conflictCount || 0);
   const badgeStates = {
     overview: toAlertBadgeState(health?.alerts || []),
     discovery: toDiscoveryBadgeState(discovery),
     "source-policy": toSourcePolicyBadgeState(sourcePolicyRecommendations || {}),
+    "registry-conflicts": {
+      count: registryConflictCount,
+      tone: registryConflictCount > 0 ? "warning" : "neutral",
+      title: registryConflictCount > 0
+        ? formatBadgeTitle(registryConflictCount, "registry conflict", "registry conflicts")
+        : "No registry conflicts"
+    },
     dedup: toDedupBadgeState(dedupEvidence)
   };
   badges.forEach(badge => {
@@ -138,6 +149,7 @@ export function createOpsHealthController({
   renderAdminOpsDedupLists: renderAdminOpsDedupListsImpl = renderAdminOpsDedupLists,
   renderAdminOpsFetcherMetrics: renderAdminOpsFetcherMetricsImpl = renderAdminOpsFetcherMetrics,
   renderAdminSourcePolicyReview: renderAdminSourcePolicyReviewImpl = renderAdminSourcePolicyReview,
+  renderAdminRegistryConflicts: renderAdminRegistryConflictsImpl = renderAdminRegistryConflicts,
   renderAdminOpsTrends: renderAdminOpsTrendsImpl = renderAdminOpsTrends,
   renderAdminOpsHistory: renderAdminOpsHistoryImpl = renderAdminOpsHistory,
   loadSyncStatus,
@@ -161,6 +173,7 @@ export function createOpsHealthController({
       overview: refs.adminOpsTabOverviewEl,
       discovery: refs.adminOpsTabDiscoveryEl,
       "source-policy": refs.adminOpsTabSourcePolicyEl,
+      "registry-conflicts": refs.adminOpsTabRegistryConflictsEl,
       dedup: refs.adminOpsTabDedupEl
     };
   }
@@ -373,6 +386,48 @@ export function createOpsHealthController({
     }
   }
 
+  function renderRegistryConflictsQueue(payload = state.latestRegistryConflictsPayload || {}) {
+    renderAdminRegistryConflictsImpl(refs.adminRegistryConflictsReviewEl, payload || {}, {
+      onRegistryConflictAction: handleRegistryConflictAction
+    });
+  }
+
+  async function handleRegistryConflictAction(row, action) {
+    if (!row || !action) return;
+    const route = String(action?.route || "").trim();
+    const ids = Array.isArray(action?.ids) && action.ids.length > 0
+      ? action.ids.map(id => String(id).trim()).filter(Boolean)
+      : [row?.id, row?.sourceId]
+          .map(id => String(id || "").trim())
+          .filter(Boolean);
+    if (!route || !ids.length) return;
+    try {
+      const result = await postBridge(route, { ids });
+      const count = Number(
+        result?.approved
+        ?? result?.rejected
+        ?? result?.demoted
+        ?? result?.restored
+        ?? ids.length
+      );
+      const actionKey = String(action?.action || "").trim().toLowerCase();
+      const noun = count === 1 ? "source" : "sources";
+      const message = actionKey === "approve"
+        ? `Promoted ${count} ${noun}.`
+        : actionKey === "reject"
+          ? `Rejected ${count} ${noun}.`
+          : actionKey === "demote-active"
+            ? `Demoted ${count} ${noun}.`
+            : actionKey === "restore-rejected"
+              ? `Restored ${count} ${noun}.`
+              : `${String(action?.label || "Action")} applied to ${count} ${noun}.`;
+      showToast(message, "success");
+      await loadOpsHealthData();
+    } catch (err) {
+      showToast(`Could not update registry conflict review: ${getErrorMessage(err)}`, "error");
+    }
+  }
+
   function renderSourcePolicyReviewQueue(payload = state.latestSourcePolicyRecommendationsPayload || {}) {
     renderAdminSourcePolicyReviewImpl(refs.adminSourcePolicyReviewEl, payload || {}, {
       selectedFilter: state.sourcePolicyReviewFilter || "all",
@@ -401,12 +456,20 @@ export function createOpsHealthController({
     const showLoadingState = !options?.fromPoll && !state.latestOpsHealthCache;
     if (showLoadingState && refs.adminOpsTrendsEl) refs.adminOpsTrendsEl.textContent = "Loading operations health...";
     try {
-      const [healthResult, historyResult, taskStateResult, fetcherMetricsResult, sourcePolicyResult] = await Promise.allSettled([
+      const [
+        healthResult,
+        historyResult,
+        taskStateResult,
+        fetcherMetricsResult,
+        sourcePolicyResult,
+        registryConflictsResult
+      ] = await Promise.allSettled([
         getBridge("/ops/health"),
         getBridge("/ops/history?limit=80"),
         getBridge("/ops/task-state"),
         getBridge("/ops/fetcher-metrics?windowRuns=80"),
-        getBridge("/source-policy/recommendations")
+        getBridge("/source-policy/recommendations"),
+        getBridge("/registry/conflicts")
       ]);
       const health = (
         healthResult.status === "fulfilled"
@@ -458,6 +521,23 @@ export function createOpsHealthController({
       if (sourcePolicyResult.status === "fulfilled" && sourcePolicyRecommendations && typeof sourcePolicyRecommendations === "object") {
         state.latestSourcePolicyRecommendationsPayload = sourcePolicyRecommendations;
       }
+      const registryConflictsPayload = (
+        registryConflictsResult.status === "fulfilled"
+        && registryConflictsResult.value
+        && typeof registryConflictsResult.value === "object"
+        && !Array.isArray(registryConflictsResult.value)
+      )
+        ? registryConflictsResult.value
+        : (
+          state.latestRegistryConflictsPayload
+          && typeof state.latestRegistryConflictsPayload === "object"
+          && !Array.isArray(state.latestRegistryConflictsPayload)
+            ? state.latestRegistryConflictsPayload
+            : { summary: { conflictCount: 0 }, conflicts: [] }
+        );
+      if (registryConflictsResult.status === "fulfilled" && registryConflictsPayload && typeof registryConflictsPayload === "object") {
+        state.latestRegistryConflictsPayload = registryConflictsPayload;
+      }
       const runModel = deriveAdminRunsModel(
         {
           taskState: taskStatePayload || {},
@@ -485,6 +565,7 @@ export function createOpsHealthController({
               health,
               discoveryReport: state.latestDiscoveryReportCache || {},
               sourcePolicyRecommendations,
+              registryConflictsPayload,
               fetcherMetricsPayload
             });
           })
@@ -505,6 +586,7 @@ export function createOpsHealthController({
       renderAdminOpsKpisImpl(refs.adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
       renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
       renderSourcePolicyReviewQueue(sourcePolicyRecommendations);
+      renderRegistryConflictsQueue(registryConflictsPayload);
       const fetcherMetricsPayload = {
         ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
         latestRun: {
@@ -546,6 +628,7 @@ export function createOpsHealthController({
         health,
         discoveryReport: state.latestDiscoveryReportCache || {},
         sourcePolicyRecommendations,
+        registryConflictsPayload,
         fetcherMetricsPayload
       });
       loadSyncStatus({ silent: true }).catch(() => {});

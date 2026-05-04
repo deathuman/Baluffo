@@ -38,17 +38,20 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
   const overviewBtn = createTabButton("overview");
   const discoveryBtn = createTabButton("discovery");
   const sourcePolicyBtn = createTabButton("source-policy");
+  const registryConflictsBtn = createTabButton("registry-conflicts");
   const dedupBtn = createTabButton("dedup");
   const overviewBadge = createElement({ dataset: { opsTab: "overview" } });
   const discoveryBadge = createElement({ dataset: { opsTab: "discovery" } });
   const sourcePolicyBadge = createElement({ dataset: { opsTab: "source-policy" } });
+  const registryConflictsBadge = createElement({ dataset: { opsTab: "registry-conflicts" } });
   const dedupBadge = createElement({ dataset: { opsTab: "dedup" } });
   const refs = {
-    adminOpsTabBtnEls: [overviewBtn, discoveryBtn, sourcePolicyBtn, dedupBtn],
-    adminOpsTabBadgeEls: [overviewBadge, discoveryBadge, sourcePolicyBadge, dedupBadge],
+    adminOpsTabBtnEls: [overviewBtn, discoveryBtn, sourcePolicyBtn, registryConflictsBtn, dedupBtn],
+    adminOpsTabBadgeEls: [overviewBadge, discoveryBadge, sourcePolicyBadge, registryConflictsBadge, dedupBadge],
     adminOpsTabOverviewEl: createElement(),
     adminOpsTabDiscoveryEl: createElement(),
     adminOpsTabSourcePolicyEl: createElement(),
+    adminOpsTabRegistryConflictsEl: createElement(),
     adminOpsTabDedupEl: createElement(),
     adminSyncStatusEl: createElement(),
     adminSyncConfigHintEl: createElement(),
@@ -59,6 +62,7 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
     adminOpsHistoryEl: createElement(),
     adminOpsTrendsEl: createElement(),
     adminSourcePolicyReviewEl: createElement(),
+    adminRegistryConflictsReviewEl: createElement(),
     adminDiscoveryReviewEl: createElement(),
     adminOpsDedupListsEl: createElement()
   };
@@ -134,6 +138,12 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
           }
         };
       }
+      if (path === "/registry/conflicts") {
+        return {
+          summary: { conflictCount: 1 },
+          conflicts: [{ familyKey: "Studio", winner: { name: "Winner" }, rows: [] }]
+        };
+      }
       throw new Error(`unexpected path ${path}`);
     },
     postBridge: async () => ({}),
@@ -177,6 +187,8 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
   assert.equal(discoveryBadge.attributes["data-badge-tone"], "warning");
   assert.equal(sourcePolicyBadge.textContent, "4");
   assert.equal(sourcePolicyBadge.attributes["data-badge-tone"], "critical");
+  assert.equal(registryConflictsBadge.textContent, "1");
+  assert.equal(registryConflictsBadge.attributes["data-badge-tone"], "warning");
   assert.equal(dedupBadge.textContent, "3");
   assert.equal(dedupBadge.attributes["data-badge-tone"], "critical");
 });

@@ -24,6 +24,8 @@ export function createAdminRuntimeState() {
     latestFetcherReportCache: null,
     latestOpsHealthCache: null,
     latestOpsHistoryPayload: null,
+    latestSourcePolicyRecommendationsPayload: null,
+    latestRegistryConflictsPayload: null,
     latestTaskStatePayload: null,
     latestSyncStatusCache: null,
     latestDiscoveryConfigCache: null,

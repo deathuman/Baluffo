@@ -13,6 +13,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
+from src.bridge.registry_conflicts import load_registry_conflicts_payload
 from src.bridge.routes.error_boundary import (
     run_route_boundary,
     safe_bridge_log,
@@ -1005,6 +1006,19 @@ def handle_get(
                 ],
             }
         )
+        return True
+
+    if path == "/registry/conflicts":
+        state = api.load_state()
+        source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
+        payload = load_registry_conflicts_payload(
+            load_state=lambda: state,
+            load_json_object=api.load_json_object,
+            source_state_path=source_state_path,
+        )
+        payload["registrySummary"] = api.summarize_state(state)
+        payload["ok"] = True
+        handler.send_json(payload)
         return True
 
     if path == "/sync/status":

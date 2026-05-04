@@ -329,15 +329,18 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   const overviewTab = page.getByRole("tab", { name: "Overview" });
   const discoveryTab = page.getByRole("tab", { name: "Discovery Review" });
   const sourcePolicyTab = page.getByRole("tab", { name: "Source Policy Review" });
+  const registryConflictsTab = page.getByRole("tab", { name: "Registry Conflicts" });
   const dedupTab = page.getByRole("tab", { name: "Dedup Lists" });
   await expect(overviewTab).toBeVisible();
   await expect(discoveryTab).toBeVisible();
   await expect(sourcePolicyTab).toBeVisible();
+  await expect(registryConflictsTab).toBeVisible();
   await expect(dedupTab).toBeVisible();
   await expect(overviewTab).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#admin-ops-tab-overview-btn .admin-ops-tab-badge")).toBeVisible();
   await expect(page.locator("#admin-ops-tab-discovery-btn .admin-ops-tab-badge")).toBeVisible();
   await expect(page.locator("#admin-ops-tab-source-policy-btn .admin-ops-tab-badge")).toBeVisible();
+  await expect(page.locator("#admin-ops-tab-registry-conflicts-btn .admin-ops-tab-badge")).toBeVisible();
   await expect(page.locator("#admin-ops-tab-dedup-btn .admin-ops-tab-badge")).toBeVisible();
   await expect(metrics).not.toContainText(/Loading/i, { timeout: 15000 });
   await expect(metrics.getByText("Task Status", { exact: true })).toBeVisible();
@@ -355,6 +358,10 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   await sourcePolicyTab.click();
   await expect(sourcePolicyTab).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#admin-source-policy-review")).toBeVisible();
+
+  await registryConflictsTab.click();
+  await expect(registryConflictsTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#admin-registry-conflicts-review")).toBeVisible();
 
   await dedupTab.click();
   await expect(dedupTab).toHaveAttribute("aria-selected", "true");

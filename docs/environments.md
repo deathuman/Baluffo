@@ -27,11 +27,11 @@ Production writes should also run through:
 
 ## Failure notifications
 
-The repository owner or release maintainer is responsible for enabling GitHub notifications for failed `validate-source-sync.yml` runs.
+Operator checklist:
 
-That GitHub notification path is the baseline. If the team also wants Slack or webhook mirrors, those can be configured separately, but they do not replace the GitHub notification setting.
-
-Use the same policy for any failed validation run, regardless of whether it was triggered by `push` or `pull_request`.
+- Enable GitHub notifications for failed `validate-source-sync.yml` runs.
+- Treat GitHub notifications as the baseline; Slack or webhook mirrors are optional and do not replace them.
+- Apply the same policy to runs triggered by `push` or `pull_request`.
 
 ## Staging path
 

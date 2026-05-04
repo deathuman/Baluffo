@@ -170,7 +170,6 @@ test("renders suppression eligibility diagnostics without actions", () => {
           providerCoverageConsecutiveSuccesses: 2,
           providerCoverageLatestKeptCount: 4,
           providerReplacementReadiness: "ready_later",
-          linkedStaticRegistryState: "active",
           reason: "linked_static_not_in_default_loader_set",
           selectionReason: "linked_static_not_in_default_loader_set",
           registryBucket: "active",
