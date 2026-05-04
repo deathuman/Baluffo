@@ -1,9 +1,9 @@
-# ruff: noqa: F401
 import json
 from pathlib import Path
 from unittest import mock
 
 from src import jobs_fetcher as jf
+from src.shared.json_io import read_json
 from tests.helpers.job_fixtures import _fixture
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -333,7 +333,7 @@ def test_run_pipeline_tracks_google_sheets_redirect_stats_in_report_and_state() 
         assert int(detail_stats.get("redirect_resolved") or 0) == 1
         assert "redirect_resolve_ms" in detail_stats
 
-        state_payload = json.loads((out / "jobs-source-state.json").read_text(encoding="utf-8"))
+        state_payload = read_json(out / "jobs-source-state.json", {})
         source_state = (state_payload.get("sources") or {}).get("google_sheets") or {}
         assert str(source_state.get("lastAdapter") or "") == "csv"
 
@@ -422,7 +422,7 @@ def test_run_pipeline_reuses_and_persists_google_sheets_redirect_cache() -> None
             jf.DEFAULT_GOOGLE_SHEETS_REDIRECT_CONCURRENCY
         )
 
-        state_payload = json.loads((out / "jobs-source-state.json").read_text(encoding="utf-8"))
+        state_payload = read_json(out / "jobs-source-state.json", {})
         source_state = (state_payload.get("sources") or {}).get("google_sheets") or {}
         cache = source_state.get("googleSheetsRedirectCache") or {}
         assert cache.get(redirect_url) == resolved_url

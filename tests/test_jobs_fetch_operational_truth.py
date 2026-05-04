@@ -1,8 +1,8 @@
-import json
 from pathlib import Path
 
 import src.admin_bridge as admin_bridge
 from src import jobs_fetcher as jf
+from src.shared.json_io import read_json
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -26,7 +26,7 @@ def _assert_completed_fetch_report_truth(report: dict[str, object], output_dir: 
     progress = report.get("taskProgress") or {}
     counts = progress.get("counts") or {}
     sources = report.get("sources") or []
-    output_rows = json.loads((output_dir / "jobs-unified.json").read_text(encoding="utf-8"))
+    output_rows = read_json(output_dir / "jobs-unified.json", [])
     source_count = int(summary.get("sourceCount") or 0)
     failed_sources = int(summary.get("failedSources") or 0)
     output_count = int(summary.get("outputCount") or 0)
@@ -102,7 +102,7 @@ def test_completed_fetch_report_zero_output_overwrites_stale_output() -> None:
 
         assert int((first.get("summary") or {}).get("outputCount") or 0) == 1
         _assert_completed_fetch_report_truth(second, out)
-        assert json.loads((out / "jobs-unified.json").read_text(encoding="utf-8")) == []
+        assert read_json(out / "jobs-unified.json", []) == []
         assert int((second.get("summary") or {}).get("outputCount") or 0) == 0
 
 

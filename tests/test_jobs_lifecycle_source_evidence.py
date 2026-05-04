@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from src import jobs_fetcher as jf
@@ -7,6 +6,7 @@ from src.jobs.state_lifecycle import (
     apply_job_lifecycle_state,
     build_lifecycle_source_evidence,
 )
+from src.shared.json_io import read_json
 from tests.helpers.temp_paths import workspace_tmpdir
 
 FINISHED_AT = "2026-04-30T12:00:00+00:00"
@@ -59,7 +59,7 @@ def _apply_with_reports(
         selected_source_names={str(row.get("name") or "") for row in reports},
         allow_missing=True,
     )
-    rows, lifecycle_rows, summary = apply_job_lifecycle_state(
+    rows, lifecycle_rows, _archive_rows_by_year, summary = apply_job_lifecycle_state(
         deduped_rows=current_rows or [],
         lifecycle_rows={"job-1": _previous_job(previous_source, status=previous_status)},
         finished_at=FINISHED_AT,
@@ -253,9 +253,7 @@ def test_pipeline_preserves_missing_job_when_owning_source_fails() -> None:
             lifecycle_summary = second.get("lifecycleSummary") or {}
             assert int(lifecycle_summary.get("preservedBecauseSourceFailedCount") or 0) == 1
 
-            lifecycle_payload = json.loads(
-                (out / "jobs-lifecycle-state.json").read_text(encoding="utf-8")
-            )
+            lifecycle_payload = read_json(out / "jobs-lifecycle-state.json", {})
             entry = next(iter((lifecycle_payload.get("jobs") or {}).values()))
             assert str(entry.get("status") or "") == "active"
             assert not str(entry.get("removedAt") or "")

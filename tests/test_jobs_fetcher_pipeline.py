@@ -11,6 +11,7 @@ from src import jobs_fetcher as jf
 from src.jobs.adapters import static as static_adapter
 from src.jobs.pipeline_runtime_summary import PipelineTaskRuntime
 from src.jobs.pipeline_runtime_writers import make_task_state_writer
+from src.shared.json_io import read_json
 from tests.helpers.job_fixtures import _fixture, _fixture_json
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -109,7 +110,7 @@ def test_run_pipeline_social_sources_report_and_output() -> None:
         review_payload = json.loads(review_path.read_text(encoding="utf-8"))
         assert int(review_payload.get("candidateCount") or 0) == expected_kept
         assert int(review_payload.get("sampleSize") or 0) == 0
-        rows = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
+        rows = read_json(Path(tmp) / "jobs-unified.json", [])
         assert any(str(row.get("source") or "").startswith("social_") for row in rows)
 
 
@@ -260,7 +261,7 @@ def test_pipeline_partial_success_when_one_source_fails() -> None:
         assert report["summary"]["failedSources"] == 1
         assert report["summary"]["outputCount"] == 1
 
-        output = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
+        output = read_json(Path(tmp) / "jobs-unified.json", [])
         assert len(output) == 1
         assert output[0]["source"] == "ok"
 
@@ -297,7 +298,7 @@ def test_pipeline_preserves_previous_output_when_current_is_empty() -> None:
         (out / "jobs-unified.json").write_text(json.dumps(existing), encoding="utf-8")
         report = jf.run_pipeline(output_dir=out, source_loaders=[("empty", empty_loader)])
 
-        output = json.loads((out / "jobs-unified.json").read_text(encoding="utf-8"))
+        output = read_json(out / "jobs-unified.json", [])
         assert len(output) == 1
         assert int(report["summary"].get("outputCount") or 0) == 1
 
@@ -375,7 +376,7 @@ def test_pipeline_reads_previous_output_in_packaged_layout_with_shared_contract_
             jobs_text_utils.load_city_noise_contract.cache_clear()
             jobs_text_utils.load_country_acceptance_contract.cache_clear()
 
-        output = json.loads((output_dir / "jobs-unified.json").read_text(encoding="utf-8"))
+        output = read_json(output_dir / "jobs-unified.json", [])
         assert len(output) == 1
         assert output[0]["city"] == ""
         assert output[0]["country"] == ""
@@ -421,9 +422,7 @@ def test_pipeline_tracks_likely_removed_jobs_in_lifecycle_state() -> None:
             assert int(second["summary"].get("outputCount") or 0) == 0
             assert int(second["summary"].get("lifecycleLikelyRemovedCount") or 0) == 1
 
-            lifecycle_payload = json.loads(
-                (out / "jobs-lifecycle-state.json").read_text(encoding="utf-8")
-            )
+            lifecycle_payload = read_json(out / "jobs-lifecycle-state.json", {})
             jobs_map = lifecycle_payload.get("jobs") or {}
             assert len(jobs_map) == 1
             entry = list(jobs_map.values())[0]
@@ -480,9 +479,7 @@ def test_pipeline_marks_missing_for_successful_sources_even_when_other_sources_f
             assert int(second["summary"].get("failedSources") or 0) == 1
             assert int(second["summary"].get("lifecycleLikelyRemovedCount") or 0) == 1
 
-            lifecycle_payload = json.loads(
-                (out / "jobs-lifecycle-state.json").read_text(encoding="utf-8")
-            )
+            lifecycle_payload = read_json(out / "jobs-lifecycle-state.json", {})
             jobs_map = lifecycle_payload.get("jobs") or {}
             assert len(jobs_map) == 1
             entry = list(jobs_map.values())[0]
@@ -511,7 +508,7 @@ def test_pipeline_output_contract_matches_frontend() -> None:
 
     with workspace_tmpdir("jobs-fetcher") as tmp:
         jf.run_pipeline(output_dir=Path(tmp), source_loaders=[("ok", ok_loader)])
-        rows = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
+        rows = read_json(Path(tmp) / "jobs-unified.json", [])
         assert len(rows) == 1
         row = rows[0]
         for field in jf.REQUIRED_FIELDS:
@@ -828,7 +825,7 @@ def test_pipeline_default_source_mix_smoke_excludes_wellfound_and_includes_guerr
         assert "uniqueOutputCount" in report["summary"]
         assert "sourceBundleCollisions" in report["summary"]
 
-        rows = json.loads((Path(tmp) / "jobs-unified.json").read_text(encoding="utf-8"))
+        rows = read_json(Path(tmp) / "jobs-unified.json", [])
         assert any("guerrilla" in row.get("company", "").lower() for row in rows)
         assert any("playstation" in row.get("company", "").lower() for row in rows)
         assert any("paradox" in row.get("company", "").lower() for row in rows)
@@ -925,7 +922,7 @@ def test_run_pipeline_writes_normalized_report_task_and_source_state_contracts()
             == "fetch_report"
         )
 
-        state_payload = json.loads((out / "jobs-source-state.json").read_text(encoding="utf-8"))
+        state_payload = read_json(out / "jobs-source-state.json", {})
         assert str(state_payload.get("schemaVersion") or "") == str(jf.SCHEMA_VERSION)
         sources_state = state_payload.get("sources") or {}
         assert "ok_source" in sources_state

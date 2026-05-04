@@ -19,7 +19,8 @@ from src.jobs.common.registry import _migration_adapter_for_host
 from src.jobs.interfaces import SourceLoader
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.jobs_fetcher_registry import EXCLUDED_DEFAULT_SOURCES, SOURCE_REPORT_META
-from src.pipeline_io import write_text_if_changed
+from src.pipeline_io import write_atomic_if_changed, write_text_if_changed
+from src.shared.json_io import read_json_object
 from src.shared.utils import now_iso
 
 from . import state_incremental as _state_incremental
@@ -429,10 +430,7 @@ def normalize_source_state_payload(
 
 
 def read_source_state(state_path: Path) -> dict[str, dict[str, Any]]:
-    try:
-        payload = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+    payload = read_json_object(state_path, {})
     normalized = normalize_source_state_payload(payload)
     rows = normalized.get("sources")
     return rows if isinstance(rows, dict) else {}
@@ -440,7 +438,7 @@ def read_source_state(state_path: Path) -> dict[str, dict[str, Any]]:
 
 def write_source_state(state_path: Path, rows: dict[str, dict[str, Any]]) -> None:
     payload = normalize_source_state_payload({"sources": rows}, updated_at=now_iso())
-    write_text_if_changed(state_path, json.dumps(payload, indent=2, ensure_ascii=False))
+    write_atomic_if_changed(state_path, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
 def circuit_breaker_until(

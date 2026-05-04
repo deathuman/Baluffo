@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import time
@@ -31,13 +32,42 @@ _REGISTRY_SEED_NAMES = {
     "source-registry-pending.json": "source-registry-pending.seed.json",
 }
 
+_GZIP_REGISTRY_NAMES = {
+    "source-registry-active.json",
+    "source-registry-pending.json",
+    "source-registry-rejected.json",
+    "source-registry-tombstones.json",
+}
+
 
 def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _storage_base_name(path: Path) -> str:
+    return Path(path).name.removesuffix(".gz")
+
+
+def _uses_gzip_storage(path: Path) -> bool:
+    return _storage_base_name(path) in _GZIP_REGISTRY_NAMES
+
+
+def _gzip_path_for(path: Path) -> Path:
+    return path if path.suffix == ".gz" else path.with_name(path.name + ".gz")
+
+
+def _json_storage_candidates(path: Path) -> list[Path]:
+    path = Path(path)
+    if not _uses_gzip_storage(path):
+        return [path]
+    compressed = _gzip_path_for(path)
+    if compressed == path:
+        return [path, path.with_suffix("")]
+    return [compressed, path]
+
+
 def registry_seed_path_for(path: Path) -> Path | None:
-    seed_name = _REGISTRY_SEED_NAMES.get(Path(path).name)
+    seed_name = _REGISTRY_SEED_NAMES.get(_storage_base_name(Path(path)))
     if seed_name is None:
         return None
     return Path(path).parent / "defaults" / seed_name
@@ -45,7 +75,11 @@ def registry_seed_path_for(path: Path) -> Path | None:
 
 def _load_json_array_from_file(path: Path, fallback: list[dict[str, Any]]) -> list[dict[str, Any]]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        if path.suffix == ".gz":
+            with gzip.open(path, mode="rt", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        else:
+            payload = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(payload, list):
             return [dict(row) for row in fallback]
         return [row for row in payload if isinstance(row, dict)]
@@ -58,8 +92,9 @@ def load_json_array(
 ) -> list[dict[str, Any]]:
     fallback = default or []
     path = Path(path)
-    if path.exists():
-        return _load_json_array_from_file(path, fallback)
+    for candidate in _json_storage_candidates(path):
+        if candidate.exists():
+            return _load_json_array_from_file(candidate, fallback)
     seed_path = registry_seed_path_for(path)
     if seed_path is not None and seed_path.exists():
         return _load_json_array_from_file(seed_path, fallback)
@@ -69,9 +104,15 @@ def load_json_array(
 def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
     fallback = dict(default or {})
     try:
-        if not path.exists():
+        candidates = _json_storage_candidates(Path(path))
+        existing = next((candidate for candidate in candidates if candidate.exists()), None)
+        if existing is None:
             return fallback
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        if existing.suffix == ".gz":
+            with gzip.open(existing, mode="rt", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        else:
+            payload = json.loads(existing.read_text(encoding="utf-8"))
         return payload if isinstance(payload, dict) else fallback
     except (OSError, json.JSONDecodeError):
         return fallback
@@ -79,19 +120,22 @@ def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[
 
 def save_json_atomic(path: Path, payload: Any) -> None:
     path = Path(path)
+    target = _gzip_path_for(path) if _uses_gzip_storage(path) else path
     path.parent.mkdir(parents=True, exist_ok=True)
     ensure_data_dir()
     # Use a unique temp file per write to avoid collisions across threads/processes.
-    tmp = path.with_suffix(path.suffix + f".{os.getpid()}.{time.time_ns()}.tmp")
+    tmp = target.with_suffix(target.suffix + f".{os.getpid()}.{time.time_ns()}.tmp")
     try:
-        tmp.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+        if target.suffix == ".gz":
+            with gzip.open(tmp, mode="wt", encoding="utf-8") as handle:
+                handle.write(serialized)
+        else:
+            tmp.write_text(serialized, encoding="utf-8")
         last_error: Exception | None = None
         for attempt in range(18):
             try:
-                os.replace(tmp, path)
+                os.replace(tmp, target)
                 last_error = None
                 break
             except PermissionError as exc:

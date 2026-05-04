@@ -75,7 +75,8 @@ Optional overrides:
   - `summary.needsReviewBreakdown` includes both shaped static diagnostic counts and raw comparison counters: `rawMarkerCount` and `includedCount`.
   - `summary.sizeGuardrails` reports per-artifact byte counts and limits for `json`, `lightJson`, and `csv`; `summary.sizeGuardrailExceeded` remains the aggregate compatibility flag.
 - Output size policy:
-  - `jobs-unified.json` and `jobs-unified-light.json` are compact serialized to reduce byte size without changing row fields.
+  - `jobs-unified.json`, `jobs-unified-light.json`, `jobs-source-state.json`, and `jobs-lifecycle-state.json` are stored through transparent gzip-backed paths while preserving their logical `.json` URLs and row fields.
+  - archived lifecycle rows are moved into yearly transparent gzip-backed cold files (`jobs-lifecycle-archive-{year}.json.gz`) and loaded on demand only.
   - report/debug JSON remains pretty-printed for operator readability.
   - warning limits are `80_000_000` bytes for full JSON, `60_000_000` bytes for light JSON, and `50_000_000` bytes for CSV.
   - packaging still ships full JSON, light JSON, CSV, and the generated startup preview; changing package-time output selection is a separate decision.

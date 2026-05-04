@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import json
 import os
 import time
@@ -13,7 +14,25 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
+from src.shared.json_io import is_gzip_backed_json_name, read_json
+
 RawJob = dict[str, Any]
+
+
+def _storage_target_path(path: Path) -> Path:
+    path = Path(path)
+    if not is_gzip_backed_json_name(path.name):
+        return path
+    if path.suffix == ".gz":
+        return path
+    return path.with_name(path.name + ".gz")
+
+
+def _read_text_path(path: Path) -> str:
+    if path.suffix == ".gz":
+        with gzip.open(path, mode="rt", encoding="utf-8") as handle:
+            return handle.read()
+    return path.read_text(encoding="utf-8")
 
 
 def read_existing_output(
@@ -23,11 +42,8 @@ def read_existing_output(
     canonicalize_job: Callable[..., dict[str, Any] | None],
     clean_text: Callable[[Any], str],
 ) -> list[RawJob]:
-    if not json_path.exists():
-        return []
-    try:
-        payload = json.loads(json_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    payload = read_json(Path(json_path), None)
+    if payload is None:
         return []
 
     if isinstance(payload, list):
@@ -72,13 +88,14 @@ def serialize_rows_for_csv(rows: Sequence[RawJob], fields: Sequence[str]) -> str
 
 
 def write_text_if_changed(path: Path, text: str) -> bool:
+    target = _storage_target_path(path)
     try:
-        existing = path.read_text(encoding="utf-8")
+        existing = _read_text_path(target)
         if existing == text:
             return False
     except OSError:
         pass
-    path.write_text(text, encoding="utf-8")
+    _write_atomic_text(target, text)
     return True
 
 
@@ -109,7 +126,11 @@ def _write_atomic_text(
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     try:
-        tmp_path.write_text(text, encoding="utf-8")
+        if path.suffix == ".gz":
+            with gzip.open(tmp_path, mode="wt", encoding="utf-8") as handle:
+                handle.write(text)
+        else:
+            tmp_path.write_text(text, encoding="utf-8")
         last_error: OSError | None = None
         for attempt in range(max(1, int(attempts or 1))):
             try:
@@ -141,14 +162,7 @@ def _write_atomic_text(
 
 def write_atomic_if_changed(path: Path, text: str) -> bool:
     """Write text to path atomically (via temp file + rename) so readers never see partial content."""
-    try:
-        existing = path.read_text(encoding="utf-8")
-        if existing == text:
-            return False
-    except OSError:
-        pass
-    _write_atomic_text(path, text)
-    return True
+    return write_text_if_changed(path, text)
 
 
 def write_hot_text_if_changed(path: Path, text: str) -> bool:

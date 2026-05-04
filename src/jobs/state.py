@@ -31,6 +31,9 @@ write_success_cache = state_source_state_mod.write_success_cache
 normalize_job_lifecycle_payload = state_lifecycle_mod.normalize_job_lifecycle_payload
 read_job_lifecycle_state = state_lifecycle_mod.read_job_lifecycle_state
 write_job_lifecycle_state = state_lifecycle_mod.write_job_lifecycle_state
+lifecycle_archive_state_path = state_lifecycle_mod.lifecycle_archive_state_path
+read_job_lifecycle_archive_state = state_lifecycle_mod.read_job_lifecycle_archive_state
+write_job_lifecycle_archive_state = state_lifecycle_mod.write_job_lifecycle_archive_state
 lifecycle_counts = state_lifecycle_mod.lifecycle_counts
 apply_job_lifecycle_state = state_lifecycle_mod.apply_job_lifecycle_state
 
@@ -58,6 +61,9 @@ __all__ = [
     "normalize_job_lifecycle_payload",
     "read_job_lifecycle_state",
     "write_job_lifecycle_state",
+    "lifecycle_archive_state_path",
+    "read_job_lifecycle_archive_state",
+    "write_job_lifecycle_archive_state",
     "lifecycle_counts",
     "apply_job_lifecycle_state",
     "should_skip_source_by_ttl",

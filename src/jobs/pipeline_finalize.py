@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 from src.contracts import SCHEMA_VERSION
@@ -54,6 +55,8 @@ from src.jobs.reporting_summary import build_pipeline_summary
 from src.jobs.state_lifecycle import (
     apply_job_lifecycle_state,
     build_lifecycle_source_evidence,
+    lifecycle_archive_state_path,
+    write_job_lifecycle_archive_state,
     write_job_lifecycle_state,
 )
 from src.jobs.state_source_state import (
@@ -181,7 +184,12 @@ def _apply_lifecycle_state(
     using_default_loaders: bool,
     effective_seed_from_existing_output: bool,
     lifecycle_finished_at: str,
-) -> tuple[list[CanonicalJob], dict[str, dict[str, Any]], dict[str, int]]:
+) -> tuple[
+    list[CanonicalJob],
+    dict[str, dict[str, Any]],
+    dict[int, dict[str, dict[str, Any]]],
+    dict[str, int],
+]:
     source_evidence = _lifecycle_missing_context(
         source_reports=source_reports,
         selected_loaders=selected_loaders,
@@ -196,6 +204,18 @@ def _apply_lifecycle_state(
         eligible_missing_sources=source_evidence.get("eligibleMissingSources", set()),
         source_evidence=source_evidence,
     )
+
+
+def _write_lifecycle_archive_rows(
+    *,
+    lifecycle_state_path: Path,
+    archive_rows_by_year: dict[int, dict[str, dict[str, Any]]],
+) -> None:
+    for archive_year, rows in archive_rows_by_year.items():
+        if not rows:
+            continue
+        archive_path = lifecycle_archive_state_path(lifecycle_state_path, archive_year)
+        write_job_lifecycle_archive_state(archive_path, rows)
 
 
 def _lifecycle_summary_payload(lifecycle_counts_map: dict[str, int]) -> dict[str, int]:
@@ -514,14 +534,16 @@ def finalize_pipeline_run(
         started_at=started_at,
     )
     lifecycle_finished_at = now_iso()
-    deduped_rows, lifecycle_rows, lifecycle_counts_map = _apply_lifecycle_state(
-        deduped_rows=deduped_rows,
-        lifecycle_rows=lifecycle_rows,
-        source_reports=source_reports,
-        selected_loaders=selected_loaders,
-        using_default_loaders=using_default_loaders,
-        effective_seed_from_existing_output=effective_seed_from_existing_output,
-        lifecycle_finished_at=lifecycle_finished_at,
+    deduped_rows, lifecycle_rows, lifecycle_archive_rows_by_year, lifecycle_counts_map = (
+        _apply_lifecycle_state(
+            deduped_rows=deduped_rows,
+            lifecycle_rows=lifecycle_rows,
+            source_reports=source_reports,
+            selected_loaders=selected_loaders,
+            using_default_loaders=using_default_loaders,
+            effective_seed_from_existing_output=effective_seed_from_existing_output,
+            lifecycle_finished_at=lifecycle_finished_at,
+        )
     )
 
     dedup_stats["outputCount"] = len(deduped_rows)
@@ -767,4 +789,8 @@ def finalize_pipeline_run(
     write_success_cache(paths.success_cache_path, source_reports)
     write_source_state(paths.source_state_path, source_state_rows)
     write_job_lifecycle_state(paths.lifecycle_state_path, lifecycle_rows)
+    _write_lifecycle_archive_rows(
+        lifecycle_state_path=paths.lifecycle_state_path,
+        archive_rows_by_year=lifecycle_archive_rows_by_year,
+    )
     return report_payload

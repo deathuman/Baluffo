@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 
@@ -22,6 +23,10 @@ def _api():
 
 
 def _read_json(path: Path):
+    compressed = path.with_name(path.name + ".gz")
+    if compressed.exists():
+        with gzip.open(compressed, mode="rt", encoding="utf-8") as handle:
+            return json.loads(handle.read())
     return json.loads(path.read_text(encoding="utf-8"))
 
 

@@ -251,25 +251,25 @@ All these files share three properties that make gzip extremely effective (10-14
 
 ### Storage roadmap
 
-#### P0 — Compact file format (low risk, immediate savings)
+#### P0 — Compact file format
 
-- Switch `save_json_atomic` to `separators=(",", ":")` instead of `indent=2` for storage files
+- Implemented in-repo for registry storage via `save_json_atomic(..., separators=(",", ":"))`
 - Keep pretty-print for display-only paths (admin summary, debug output)
-- Effect: `source-registry-active.json` 19.6 MB → ~7 MB, `source-registry-pending.json` 5.2 MB → ~2 MB, `jobs-lifecycle-state.json` 42.8 MB → ~20 MB
+- Effect: registry snapshots shrink immediately without changing read behavior; the jobs-pipeline gzip migration now uses the same transparent storage pattern
 
 #### P1 — Transparent gzip compression
 
-- Write and read large files as `.json.gz` using `gzip.open()` in `save_json_atomic` and `load_json_array`/`load_json_object`
-- Apply to: `jobs-unified.json`, `jobs-unified-light.json`, `jobs-lifecycle-state.json`, `jobs-source-state.json`, and the registry files
-- Migration strategy: read old `.json` if `.json.gz` does not exist; write new as `.json.gz`; old files can be deleted after one cycle
-- Effect: total pipeline job data drops from ~136 MB raw to **~14 MB on disk**
+- Implemented in-repo for the core registry state files and the high-volume jobs pipeline artifacts via `save_json_atomic`/`load_json_array`/`load_json_object` and `.json.gz` fallbacks
+- Apply to: `source-registry-active.json`, `source-registry-pending.json`, `source-registry-rejected.json`, `source-registry-tombstones.json`, `jobs-unified.json`, `jobs-unified-light.json`, `jobs-lifecycle-state.json`, and `jobs-source-state.json`
+- Migration strategy: read old `.json` if `.json.gz` does not exist; write new as `.json.gz`; old files can be deleted after one cycle once consumers are switched
+- Effect: registry state and the jobs pipeline snapshot/state files shrink first; lifecycle retention keeps the daily hot path lean while the cold archive stays on-demand
 
 #### P2 — Lifecycle state retention policy
 
-- Add configurable archive threshold (default: jobs removed > 90 days move to cold storage)
-- Cold archive: `jobs-lifecycle-archive-{year}.json.gz`, read on demand only
-- Exclude archived entries from daily merge/read paths (load only active + recently-removed)
-- Effect: stops unbounded lifecycle growth; daily read payload stays at current-job scale (~40 MB raw → ~4 MB gzip)
+- Implemented in-repo for hot lifecycle state plus yearly gzip-backed cold archives for aged archived rows
+- Apply to: `jobs-lifecycle-state.json` plus `jobs-lifecycle-archive-{year}.json.gz`
+- Retention strategy: keep active and recently removed rows in the hot file; move archived rows past the threshold into the yearly cold archive and load them on demand only
+- Effect: stops unbounded lifecycle growth; daily lifecycle reads stay at current-job scale while archive reads remain opt-in
 
 #### P3 — Lean registry storage
 
@@ -435,6 +435,7 @@ Keep the runtime work split out after this test-only checkpoint:
 
 - implemented here: snapshot content fingerprinting, no-op write gating, idempotent PUT retry, conflict re-read handling, transient GET retry/backoff, dry-run support, daily counters, rate-limit telemetry, and snapshot-size governance
 - next: GitHub-side branch protection, required checks, commit signing, environments, and release-policy hardening
+- validated in dry-run smoke against the live `deathuman/BaluffoSync` remote: the compare path resolves, reports `wouldChange=false`, and does not write
 
 ### Snapshot-size scalability path
 
@@ -519,7 +520,7 @@ Admin should expose at least:
 - configure GitHub App to sign commits
 - enable branch protection rule: **Require signed commits**
 - switch `save_json_atomic` to compact `separators=(',',':')` for storage files
-- migrate registry files to `.json.gz` with transparent read fallback
+- migrate core registry state files to `.json.gz` with transparent read fallback
 
 ### P1 — Harden write behavior + repository rulesets + environments
 
@@ -596,9 +597,9 @@ Implementation is complete when:
 8. snapshot size governance prevents accidental oversized payloads
 9. dry-run mode allows safe preview of what a push would change
 10. `save_json_atomic` uses compact separators for storage; pretty-print is display-only
-11. `.json.gz` files are transparently read and written with fallback to legacy `.json`
+11. core registry state files are transparently read and written with fallback to legacy `.json`
 12. lifecycle archive moves entries older than the threshold out of the daily read path
-13. per-run storage I/O is measurably reduced by the combined compact+gzip changes
+13. per-run registry storage I/O is measurably reduced by the compact+gzip changes already landed
 14. all bot commits to `main` are signed (verified via `git verify-commit`)
 15. `validate-source-sync.yml` workflow must pass before commits land on `main`
 16. repository rulesets enforce linear history, signed commits, and block force pushes

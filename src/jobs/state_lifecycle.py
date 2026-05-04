@@ -13,7 +13,8 @@ from src.jobs.common.datetime_utils import parse_datetime, to_iso
 from src.jobs.dedup import dedup_secondary_key
 from src.jobs.models import CanonicalJob
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
-from src.pipeline_io import write_text_if_changed
+from src.pipeline_io import write_atomic_if_changed
+from src.shared.json_io import read_json_object
 from src.shared.utils import now_iso
 
 from .common import config as common_config
@@ -85,10 +86,7 @@ def normalize_job_lifecycle_payload(
 
 
 def read_job_lifecycle_state(state_path: Path) -> dict[str, dict[str, Any]]:
-    try:
-        payload = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+    payload = read_json_object(state_path, {})
     normalized = normalize_job_lifecycle_payload(payload)
     rows = normalized.get("jobs")
     return rows if isinstance(rows, dict) else {}
@@ -96,7 +94,25 @@ def read_job_lifecycle_state(state_path: Path) -> dict[str, dict[str, Any]]:
 
 def write_job_lifecycle_state(state_path: Path, rows: dict[str, dict[str, Any]]) -> None:
     payload = normalize_job_lifecycle_payload({"jobs": rows}, updated_at=now_iso())
-    write_text_if_changed(state_path, json.dumps(payload, indent=2, ensure_ascii=False))
+    write_atomic_if_changed(state_path, json.dumps(payload, indent=2, ensure_ascii=False))
+
+
+def lifecycle_archive_state_path(state_path: Path, archive_year: int) -> Path:
+    return Path(state_path).with_name(f"jobs-lifecycle-archive-{int(archive_year):04d}.json")
+
+
+def read_job_lifecycle_archive_state(archive_path: Path) -> dict[str, dict[str, Any]]:
+    payload = read_json_object(archive_path, {})
+    normalized = normalize_job_lifecycle_payload(payload)
+    rows = normalized.get("jobs")
+    return rows if isinstance(rows, dict) else {}
+
+
+def write_job_lifecycle_archive_state(archive_path: Path, rows: dict[str, dict[str, Any]]) -> None:
+    current_rows = read_job_lifecycle_archive_state(archive_path)
+    merged_rows = {**current_rows, **rows}
+    payload = normalize_job_lifecycle_payload({"jobs": merged_rows}, updated_at=now_iso())
+    write_atomic_if_changed(archive_path, json.dumps(payload, indent=2, ensure_ascii=False))
 
 
 def lifecycle_counts(rows: dict[str, dict[str, Any]]) -> dict[str, int]:
@@ -334,6 +350,7 @@ def _prune_archived_lifecycle_rows(
     *,
     now_dt: datetime,
     archive_retention_days: int,
+    archive_rows_by_year: dict[int, dict[str, dict[str, Any]]],
 ) -> None:
     retention_days = max(1, int(archive_retention_days or 1))
     for key, entry in list(next_rows.items()):
@@ -344,6 +361,7 @@ def _prune_archived_lifecycle_rows(
             continue
         age_days = int((now_dt - archived_dt).total_seconds() // (24 * 60 * 60))
         if age_days > retention_days:
+            archive_rows_by_year.setdefault(archived_dt.year, {})[key] = dict(entry)
             next_rows.pop(key, None)
 
 
@@ -357,13 +375,19 @@ def apply_job_lifecycle_state(
     source_evidence: dict[str, Any] | None = None,
     remove_to_archive_days: int = LIFECYCLE_REMOVE_TO_ARCHIVE_DAYS,
     archive_retention_days: int = LIFECYCLE_ARCHIVE_RETENTION_DAYS,
-) -> tuple[list[CanonicalJob], dict[str, dict[str, Any]], dict[str, int]]:
+) -> tuple[
+    list[CanonicalJob],
+    dict[str, dict[str, Any]],
+    dict[int, dict[str, dict[str, Any]]],
+    dict[str, int],
+]:
     payload_rows = [row.to_dict() for row in deduped_rows]
     next_rows: dict[str, dict[str, Any]] = {
         clean_text(key): dict(value)
         for key, value in (lifecycle_rows or {}).items()
         if clean_text(key)
     }
+    archive_rows_by_year: dict[int, dict[str, dict[str, Any]]] = {}
     summary = _empty_lifecycle_summary()
     seen_keys = _apply_active_lifecycle_rows(payload_rows, next_rows, finished_at, summary)
     eligible_sources = {
@@ -387,6 +411,7 @@ def apply_job_lifecycle_state(
     }
     summary["eligibleMissingSourceCount"] = len(eligible_sources)
     summary["ineligibleMissingSourceCount"] = len(failed_sources | skipped_sources)
+    prune_now_dt = parse_datetime(finished_at) or datetime.now(UTC)
     now_dt = _apply_missing_lifecycle_rows(
         next_rows,
         seen_keys=seen_keys,
@@ -398,11 +423,17 @@ def apply_job_lifecycle_state(
         summary=summary,
         remove_to_archive_days=remove_to_archive_days,
     )
-    if now_dt:
+    if now_dt or prune_now_dt:
         _prune_archived_lifecycle_rows(
             next_rows,
-            now_dt=now_dt,
+            now_dt=now_dt or prune_now_dt,
             archive_retention_days=archive_retention_days,
+            archive_rows_by_year=archive_rows_by_year,
         )
     counts = {**lifecycle_counts(next_rows), **summary}
-    return [CanonicalJob.from_mapping(row) for row in payload_rows], next_rows, counts
+    return (
+        [CanonicalJob.from_mapping(row) for row in payload_rows],
+        next_rows,
+        archive_rows_by_year,
+        counts,
+    )

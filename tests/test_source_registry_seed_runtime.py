@@ -1,3 +1,4 @@
+import gzip
 import json
 from pathlib import Path
 
@@ -28,10 +29,7 @@ def test_runtime_registry_file_overrides_seed_file() -> None:
         root = Path(tmp)
         runtime_path = root / "source-registry-active.json"
         _write_seed(root, "active", [{"id": "seed-active", "adapter": "static"}])
-        runtime_path.write_text(
-            json.dumps([{"id": "runtime-active", "adapter": "greenhouse"}]),
-            encoding="utf-8",
-        )
+        sr.save_json_atomic(runtime_path, [{"id": "runtime-active", "adapter": "greenhouse"}])
 
         assert sr.load_json_array(runtime_path, [])[0]["id"] == "runtime-active"
 
@@ -46,7 +44,20 @@ def test_registry_writes_target_runtime_file_without_mutating_seed() -> None:
         sr.save_json_atomic(runtime_path, [{"id": "runtime-pending", "adapter": "lever"}])
 
         assert json.loads(seed_path.read_text(encoding="utf-8")) == seed_payload
+        assert (root / "source-registry-pending.json.gz").exists()
         assert sr.load_json_array(runtime_path, [])[0]["id"] == "runtime-pending"
+
+
+def test_save_json_atomic_uses_compact_storage_format() -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        path = Path(tmp) / "source-registry-active.json"
+        payload = [{"adapter": "smartrecruiters", "company_id": "Gameloft"}]
+
+        sr.save_json_atomic(path, payload)
+
+        compressed_path = Path(tmp) / "source-registry-active.json.gz"
+        with gzip.open(compressed_path, mode="rt", encoding="utf-8") as handle:
+            assert handle.read() == '[{"adapter":"smartrecruiters","company_id":"Gameloft"}]\n'
 
 
 def test_jobs_registry_loader_uses_seed_when_runtime_file_is_missing() -> None:

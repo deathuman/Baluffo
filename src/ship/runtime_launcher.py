@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 
 from src.app_version import get_app_version
 from src.baluffo_config import get_bridge_defaults, get_desktop_defaults, get_security_defaults
+from src.shared.json_io import PIPELINE_GZIP_JSON_NAMES
 from src.ship import update_manager
 from src.ship.startup_telemetry import (
     append_runtime_startup_trace as _append_runtime_startup_trace,
@@ -44,6 +45,8 @@ DESKTOP_BRIDGE_PORT_ENV = "BALUFFO_DESKTOP_BRIDGE_PORT"
 ROOT_DATA_FILE_ALIASES = frozenset(
     {
         "jobs-fetch-report.json",
+        "jobs-lifecycle-state.json",
+        "jobs-source-state.json",
         "jobs-unified-startup.json",
         "jobs-unified-light.json",
         "jobs-unified.json",
@@ -124,7 +127,108 @@ def _render_frontend_runtime_config_js(bridge_host: str, bridge_port: int) -> st
     )
 
 
-def build_site_request_handler(
+class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
+    _directory: Path | None = None
+    _runtime_data_dir: Path | None = None
+    _static_data_dir: Path | None = None
+    _bridge_runtime_config: tuple[str, int] | None = None
+    _startup_probe = False
+    _serve_gzip_json = False
+
+    def __init__(self, *args, **kwargs):
+        directory = self.__class__._directory
+        if directory is None:
+            raise ValueError("Request handler directory was not configured.")
+        super().__init__(*args, directory=str(directory), **kwargs)
+
+    def _resolve_static_data_path(self, normalized: str) -> str:
+        self._serve_gzip_json = False
+        static_data_dir = self.__class__._static_data_dir
+        if static_data_dir is None:
+            return super().translate_path(normalized)
+        if normalized in ROOT_DATA_FILE_ALIASES:
+            candidate = (static_data_dir / normalized).resolve()
+            if candidate.name.removesuffix(".gz") in PIPELINE_GZIP_JSON_NAMES:
+                gzip_candidate = (
+                    candidate
+                    if candidate.suffix == ".gz"
+                    else candidate.with_name(candidate.name + ".gz")
+                )
+                if gzip_candidate.exists():
+                    self._serve_gzip_json = True
+                    return str(gzip_candidate.resolve())
+            return str(candidate)
+        if normalized.startswith("data/"):
+            rel = normalized[5:]
+            safe_parts = [
+                token for token in PurePosixPath(rel).parts if token not in {"", ".", ".."}
+            ]
+            candidate = static_data_dir.joinpath(*safe_parts).resolve()
+            if candidate.name.removesuffix(".gz") in PIPELINE_GZIP_JSON_NAMES:
+                gzip_candidate = (
+                    candidate
+                    if candidate.suffix == ".gz"
+                    else candidate.with_name(candidate.name + ".gz")
+                )
+                if gzip_candidate.exists():
+                    self._serve_gzip_json = True
+                    return str(gzip_candidate.resolve())
+            return str(candidate)
+        return super().translate_path(normalized)
+
+    def translate_path(self, path: str) -> str:
+        raw_path = str(path or "").split("?", 1)[0].split("#", 1)[0]
+        normalized = raw_path.lstrip("/")
+        return self._resolve_static_data_path(normalized)
+
+    def guess_type(self, path: str) -> str:
+        if self._serve_gzip_json:
+            return "application/json; charset=utf-8"
+        return super().guess_type(path)
+
+    def end_headers(self):
+        # Desktop runtime should always load the latest local bundle assets.
+        if self._serve_gzip_json:
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        return super().end_headers()
+
+    def do_GET(self):
+        trace_enabled = bool(self.__class__._startup_probe and self.__class__._runtime_data_dir)
+        path_only = str(getattr(self, "path", "") or "").split("?", 1)[0]
+        trace_path = path_only.lstrip("/")
+        request_started = time.perf_counter()
+        bridge_runtime_config = self.__class__._bridge_runtime_config
+        if trace_path == "frontend-runtime-config.js" and bridge_runtime_config:
+            bridge_host, bridge_port = bridge_runtime_config
+            body = _render_frontend_runtime_config_js(bridge_host, bridge_port).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if trace_enabled and trace_path in {"jobs.html", "saved.html", "admin.html"}:
+            _append_startup_trace(
+                Path(self.__class__._runtime_data_dir),
+                "desktop_site_request_start",
+                path=trace_path,
+            )
+        try:
+            return super().do_GET()
+        finally:
+            if trace_enabled and trace_path in {"jobs.html", "saved.html", "admin.html"}:
+                _append_startup_trace(
+                    Path(self.__class__._runtime_data_dir),
+                    "desktop_site_request_complete",
+                    path=trace_path,
+                    durationMs=int((time.perf_counter() - request_started) * 1000),
+                )
+
+
+def _make_probe_aware_simple_http_request_handler(
     directory: Path,
     *,
     runtime_data_dir: Path | None = None,
@@ -137,69 +241,40 @@ def build_site_request_handler(
         desktop_bridge_host,
         desktop_bridge_port,
     )
+    return type(
+        "ConfiguredProbeAwareSimpleHTTPRequestHandler",
+        (ProbeAwareSimpleHTTPRequestHandler,),
+        {
+            "_directory": Path(directory),
+            "_runtime_data_dir": Path(runtime_data_dir).expanduser().resolve()
+            if runtime_data_dir
+            else None,
+            "_static_data_dir": Path(static_data_dir).expanduser().resolve()
+            if static_data_dir
+            else None,
+            "_bridge_runtime_config": bridge_runtime_config,
+            "_startup_probe": bool(startup_probe),
+        },
+    )
 
-    class ProbeAwareSimpleHTTPRequestHandler(QuietSimpleHTTPRequestHandler):
-        _runtime_data_dir = (
-            Path(runtime_data_dir).expanduser().resolve() if runtime_data_dir else None
-        )
-        _static_data_dir = Path(static_data_dir).expanduser().resolve() if static_data_dir else None
-        _bridge_runtime_config = bridge_runtime_config
 
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=str(directory), **kwargs)
-
-        def translate_path(self, path: str) -> str:
-            raw_path = str(path or "").split("?", 1)[0].split("#", 1)[0]
-            normalized = raw_path.lstrip("/")
-            if self._static_data_dir is not None and normalized in ROOT_DATA_FILE_ALIASES:
-                return str((self._static_data_dir / normalized).resolve())
-            if self._static_data_dir is not None and normalized.startswith("data/"):
-                rel = normalized[5:]
-                safe_parts = [
-                    token for token in PurePosixPath(rel).parts if token not in {"", ".", ".."}
-                ]
-                return str((self._static_data_dir.joinpath(*safe_parts)).resolve())
-            return super().translate_path(path)
-
-        def end_headers(self):
-            # Desktop runtime should always load the latest local bundle assets.
-            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-            self.send_header("Pragma", "no-cache")
-            self.send_header("Expires", "0")
-            return super().end_headers()
-
-        def do_GET(self):
-            trace_enabled = bool(startup_probe and self._runtime_data_dir)
-            path_only = str(getattr(self, "path", "") or "").split("?", 1)[0]
-            trace_path = path_only.lstrip("/")
-            request_started = time.perf_counter()
-            if trace_path == "frontend-runtime-config.js" and self._bridge_runtime_config:
-                bridge_host, bridge_port = self._bridge_runtime_config
-                body = _render_frontend_runtime_config_js(bridge_host, bridge_port).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/javascript; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-                return
-            if trace_enabled and trace_path in {"jobs.html", "saved.html", "admin.html"}:
-                _append_startup_trace(
-                    Path(self._runtime_data_dir),
-                    "desktop_site_request_start",
-                    path=trace_path,
-                )
-            try:
-                return super().do_GET()
-            finally:
-                if trace_enabled and trace_path in {"jobs.html", "saved.html", "admin.html"}:
-                    _append_startup_trace(
-                        Path(self._runtime_data_dir),
-                        "desktop_site_request_complete",
-                        path=trace_path,
-                        durationMs=int((time.perf_counter() - request_started) * 1000),
-                    )
-
-    return ProbeAwareSimpleHTTPRequestHandler
+def build_site_request_handler(
+    directory: Path,
+    *,
+    runtime_data_dir: Path | None = None,
+    static_data_dir: Path | None = None,
+    startup_probe: bool = False,
+    desktop_bridge_host: str | None = None,
+    desktop_bridge_port: str | int | None = None,
+):
+    return _make_probe_aware_simple_http_request_handler(
+        directory,
+        runtime_data_dir=runtime_data_dir,
+        static_data_dir=static_data_dir,
+        startup_probe=startup_probe,
+        desktop_bridge_host=desktop_bridge_host,
+        desktop_bridge_port=desktop_bridge_port,
+    )
 
 
 def resolve_root(root: str | Path | None = None) -> Path:

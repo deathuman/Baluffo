@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,6 +75,7 @@ from src.jobs.transport import (
 )
 from src.jobs_fetcher_registry import SOURCE_REPORT_META
 from src.pipeline_io import read_existing_output, write_hot_text_if_changed
+from src.shared.json_io import read_json
 from src.shared.utils import env_flag, now_iso
 
 
@@ -139,11 +139,8 @@ def _seed_redirect_cache_from_state(
 
 
 def _existing_output_has_rows(json_path: Path) -> bool:
-    if not json_path.exists():
-        return False
-    try:
-        payload = json.loads(json_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    payload = read_json(json_path, None)
+    if payload is None:
         return False
     if isinstance(payload, list):
         return any(isinstance(row, dict) for row in payload)
