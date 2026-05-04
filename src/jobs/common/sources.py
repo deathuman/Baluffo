@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from src import source_registry_io as _registry_io
 from src.jobs.common.config import SOURCE_REGISTRY_ACTIVE_PATH
 
 _REGISTRY_SEED_NAMES = {
@@ -34,31 +35,11 @@ def _looks_like_placeholder_registry_row(row: dict[str, Any]) -> bool:
 
 
 def registry_seed_path_for(path: Path) -> Path | None:
-    seed_name = _REGISTRY_SEED_NAMES.get(Path(path).name)
-    if seed_name is None:
-        return None
-    return Path(path).parent / "defaults" / seed_name
-
-
-def _load_registry_payload(path: Path, fallback: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(payload, list):
-            return [dict(row) for row in fallback]
-        rows = [row for row in payload if isinstance(row, dict)]
-        return rows if rows else [dict(row) for row in fallback]
-    except (OSError, json.JSONDecodeError):
-        return [dict(row) for row in fallback]
+    return _registry_io.registry_seed_path_for(path)
 
 
 def load_registry_from_file(path: Path, fallback: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    path = Path(path)
-    if path.exists():
-        return _load_registry_payload(path, fallback)
-    seed_path = registry_seed_path_for(path)
-    if seed_path is not None and seed_path.exists():
-        return _load_registry_payload(seed_path, fallback)
-    return [dict(row) for row in fallback]
+    return _registry_io.load_json_array(Path(path), [dict(row) for row in fallback])
 
 
 def read_approved_since_last_run(path: Path) -> int:

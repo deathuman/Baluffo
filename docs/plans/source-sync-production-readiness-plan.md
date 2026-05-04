@@ -273,16 +273,16 @@ All these files share three properties that make gzip extremely effective (10-14
 
 #### P3 — Lean registry storage
 
-- Separate core fields (always present: `name`, `id`, `adapter`, `studio`, `registryState`) from sparse metadata
-- Store sparse metadata in a sidecar dict keyed by sourceId — eliminates ~90% of empty-string bloat
-- Recompute transition metadata from lean core on read via existing `canonicalize_registry_row()`
-- Effect: registry storage drops from ~25 MB to ~5-8 MB
+- Implemented in-repo for `source-registry-active.json` and `source-registry-pending.json` with lean core rows plus a gzip-backed `source-registry-metadata.json.gz` sidecar keyed by sourceId
+- Core rows keep the always-present identity and transition fields inline; sparse compatibility and adapter-specific fields live in the sidecar and are merged back on read
+- Legacy monolithic registry files still load through the same logical entrypoints, so existing admin / bridge / source-policy consumers keep the same row shape
+- Effect: current registry storage drops the remaining sparse-field bloat while preserving the full reconstructed registry rows for callers
 
 #### P4 — Incremental writes (optional, highest complexity)
 
-- Replace atomic-rewrite with delta journal for large files: store append-only deltas, compact periodically
-- Reduces per-run I/O from ~136 MB to actual delta size
-- Tradeoff: adds read-time merge of base + deltas, complicates atomicity guarantees of `save_json_atomic`
+- Implemented here as content-aware no-op write gating for lean registry and other JSON payloads: unchanged payloads skip the rewrite path entirely
+- This trims rewrite churn without changing reader contracts or the logical file layout
+- The full append-only delta-journal design remains an optional future follow-up if write volume grows beyond what no-op gating can absorb
 
 ## Snapshot Hardening & Operational Completeness
 

@@ -14,6 +14,11 @@ from tests.helpers.bridge_api import FakeHandler
 STATIC_ID = "static:listing_url:https://studio.example/jobs"
 OTHER_STATIC_ID = "static:listing_url:https://other.example/jobs"
 PROVIDER_ID = "greenhouse:slug:studio"
+REGISTRY_ARRAY_PATH_NAMES = {
+    "source-registry-active.json",
+    "source-registry-pending.json",
+    "source-registry-rejected.json",
+}
 
 
 def _api():
@@ -23,6 +28,8 @@ def _api():
 
 
 def _read_json(path: Path):
+    if path.name in REGISTRY_ARRAY_PATH_NAMES:
+        return admin_bridge.load_json_array(path, [])
     compressed = path.with_name(path.name + ".gz")
     if compressed.exists():
         with gzip.open(compressed, mode="rt", encoding="utf-8") as handle:
