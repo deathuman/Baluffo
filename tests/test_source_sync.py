@@ -451,13 +451,21 @@ def test_github_app_auth_concurrent_access_refreshes_once(source_sync_test_root)
     assert all(item == "shared_token" for item in results)
 
 
-def test_read_remote_snapshot_parses_contents_payload(source_sync_test_root):
+def test_read_remote_snapshot_normalizes_legacy_rows_and_warns_on_extra_keys(
+    source_sync_test_root, caplog
+):
     source_sync_test_root.write_packaged_config()
+    legacy_row = {
+        "adapter": "static",
+        "listing_url": "https://legacy.example/jobs",
+        "name": "Legacy Jobs",
+    }
     snapshot = {
         "schemaVersion": 1,
         "generatedAt": "2026-03-09T10:00:00+00:00",
         "source": {"name": "admin_bridge"},
-        "active": [{"adapter": "teamtailor", "company": "A", "id": "teamtailor:name:a"}],
+        "legacyTag": "compatibility-check",
+        "active": [legacy_row],
         "pending": [],
         "rejected": [],
     }
@@ -472,12 +480,51 @@ def test_read_remote_snapshot_parses_contents_payload(source_sync_test_root):
     original_build_jwt = sync.build_app_jwt
     try:
         sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
-        result = sync.read_remote_snapshot(cfg, opener=opener)
+        with caplog.at_level("WARNING"):
+            result = sync.read_remote_snapshot(cfg, opener=opener)
     finally:
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
     assert result["exists"]
     assert result["sha"] == "abc123"
-    assert len(result["snapshot"]["active"]) == 1
+    active = result["snapshot"]["active"][0]
+    assert active["id"] == sync.source_identity(legacy_row)
+    assert active["stateChangedAt"] == snapshot["generatedAt"]
+    assert any("unexpected top-level keys" in message for message in caplog.messages)
+
+
+def test_read_remote_snapshot_rejects_non_object_rows(source_sync_test_root, caplog):
+    source_sync_test_root.write_packaged_config()
+    snapshot = {
+        "schemaVersion": 1,
+        "generatedAt": "2026-03-09T10:00:00+00:00",
+        "source": {"name": "admin_bridge"},
+        "active": [
+            {
+                "adapter": "teamtailor",
+                "company": "A",
+                "id": "teamtailor:name:a",
+            }
+        ],
+        "pending": ["broken-row"],
+        "rejected": [],
+    }
+    encoded = base64.b64encode(json.dumps(snapshot).encode("utf-8")).decode("ascii")
+    opener = _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            _FakeResponse(200, {"sha": "abc123", "content": encoded}),
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        with caplog.at_level("ERROR"):
+            with pytest.raises(RuntimeError, match=r"pending\[0\] must be an object"):
+                sync.read_remote_snapshot(cfg, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+    assert any("Invalid remote sync snapshot payload" in message for message in caplog.messages)
 
 
 def test_read_remote_snapshot_uses_github_api_base_override(source_sync_test_root, monkeypatch):

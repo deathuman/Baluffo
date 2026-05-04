@@ -278,11 +278,11 @@ All these files share three properties that make gzip extremely effective (10-14
 - Legacy monolithic registry files still load through the same logical entrypoints, so existing admin / bridge / source-policy consumers keep the same row shape
 - Effect: current registry storage drops the remaining sparse-field bloat while preserving the full reconstructed registry rows for callers
 
-#### P4 — Incremental writes (optional, highest complexity)
+#### P4 — Incremental writes and journal replay
 
-- Implemented here as content-aware no-op write gating for lean registry and other JSON payloads: unchanged payloads skip the rewrite path entirely
-- This trims rewrite churn without changing reader contracts or the logical file layout
-- The full append-only delta-journal design remains an optional future follow-up if write volume grows beyond what no-op gating can absorb
+- Implemented here as a shared full-image JSONL journal for lean registry and other JSON payloads: each meaningful write appends a schema-versioned image record beside the snapshot
+- Snapshot loads remain backward compatible, but readers now replay the latest valid journal image first so truncated tails do not lose the most recent state
+- Bounded compaction keeps the journal short while no-op gating still skips journal and snapshot rewrites for unchanged payloads
 
 ## Snapshot Hardening & Operational Completeness
 
@@ -337,7 +337,7 @@ PUT fails (transient network error, not HTTP 409/422/401)
 - Retry `URLError`/`ssl.SSLError` on GET up to 2 attempts with exponential backoff (base 1s, max 5s)
 - Do NOT retry `HTTPError` of any kind (401/409/429 already have dedicated handling)
 
-**New: structural snapshot validation on read**
+**Implemented: structural snapshot validation on read**
 - In `normalize_snapshot`, warn on unexpected top-level keys via log
 - Reject snapshots with structural violations: missing required keys (`schemaVersion` int ≥ 1, `generatedAt` string, `active`/`pending` arrays), non-conformant rows
 - Validate every active/pending row has a `sourceId` after normalization
@@ -433,7 +433,7 @@ This is a test-only checkpoint. The cases below stay as executable specification
 
 Keep the runtime work split out after this test-only checkpoint:
 
-- implemented here: snapshot content fingerprinting, no-op write gating, idempotent PUT retry, conflict re-read handling, transient GET retry/backoff, dry-run support, daily counters, rate-limit telemetry, and snapshot-size governance
+- implemented here: snapshot content fingerprinting, no-op write gating, idempotent PUT retry, conflict re-read handling, transient GET retry/backoff, dry-run support, structural snapshot validation on read, daily counters, rate-limit telemetry, and snapshot-size governance
 - next: GitHub-side branch protection, required checks, commit signing, environments, and release-policy hardening
 - validated in dry-run smoke against the live `deathuman/BaluffoSync` remote: the compare path resolves, reports `wouldChange=false`, and does not write
 
@@ -527,7 +527,7 @@ Admin should expose at least:
 - 409 conflict handling with re-pull/re-merge/retry
 - idempotent PUT retry with SHA-based verification
 - GET transient network retry
-- structural snapshot validation on read
+- implemented here: structural snapshot validation on read
 - concurrent push guard (extend existing `sync_task_running()`)
 - dry-run mode
 - replace classic branch protection with **repository rulesets**:

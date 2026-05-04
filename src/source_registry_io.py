@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import os
 import time
@@ -44,6 +45,9 @@ _GZIP_REGISTRY_NAMES = {
     "source-registry-tombstones.json",
     "source-registry-metadata.json",
 }
+
+_JSON_JOURNAL_SCHEMA_VERSION = 1
+_JSON_JOURNAL_COMPACT_MAX_BYTES = 1_048_576
 
 
 def ensure_data_dir() -> None:
@@ -115,18 +119,7 @@ def _registry_counterpart_path(path: Path) -> Path | None:
 def _load_runtime_json_array(
     path: Path, default: list[dict[str, Any]] | None = None
 ) -> list[dict[str, Any]]:
-    fallback = default or []
-    path = Path(path)
-    for candidate in _json_storage_candidates(path):
-        if candidate.exists():
-            rows = _load_json_array_from_file(candidate, fallback)
-            metadata_path = _registry_metadata_path_for(path)
-            if metadata_path is not None:
-                metadata_payload = load_json_object(metadata_path, {})
-                if isinstance(metadata_payload, dict) and metadata_payload:
-                    rows = _merge_lean_registry_rows(rows, metadata_payload)
-            return rows
-    return [dict(row) for row in fallback]
+    return load_json_array(path, default)
 
 
 def _lean_registry_core_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -225,6 +218,7 @@ def load_json_array(
 ) -> list[dict[str, Any]]:
     fallback = default or []
     path = Path(path)
+    rows: list[dict[str, Any]] | None = None
     for candidate in _json_storage_candidates(path):
         if candidate.exists():
             rows = _load_json_array_from_file(candidate, fallback)
@@ -233,17 +227,22 @@ def load_json_array(
                 metadata_payload = load_json_object(metadata_path, {})
                 if isinstance(metadata_payload, dict) and metadata_payload:
                     rows = _merge_lean_registry_rows(rows, metadata_payload)
-            return rows
-    seed_path = registry_seed_path_for(path)
-    if seed_path is not None and seed_path.exists():
-        rows = _load_json_array_from_file(seed_path, fallback)
-        metadata_path = _registry_metadata_path_for(path)
-        if metadata_path is not None:
-            metadata_payload = load_json_object(metadata_path, {})
-            if isinstance(metadata_payload, dict) and metadata_payload:
-                rows = _merge_lean_registry_rows(rows, metadata_payload)
-        return rows
-    return [dict(row) for row in fallback]
+            break
+    if rows is None:
+        seed_path = registry_seed_path_for(path)
+        if seed_path is not None and seed_path.exists():
+            rows = _load_json_array_from_file(seed_path, fallback)
+            metadata_path = _registry_metadata_path_for(path)
+            if metadata_path is not None:
+                metadata_payload = load_json_object(metadata_path, {})
+                if isinstance(metadata_payload, dict) and metadata_payload:
+                    rows = _merge_lean_registry_rows(rows, metadata_payload)
+    if rows is None:
+        rows = [dict(row) for row in fallback]
+    journal_rows = _load_json_journal_latest_payload(path)
+    if isinstance(journal_rows, list):
+        return [dict(row) for row in journal_rows if isinstance(row, dict)]
+    return rows
 
 
 def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -252,14 +251,22 @@ def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[
         candidates = _json_storage_candidates(Path(path))
         existing = next((candidate for candidate in candidates if candidate.exists()), None)
         if existing is None:
-            return fallback
-        if existing.suffix == ".gz":
+            base_payload = fallback
+        elif existing.suffix == ".gz":
             with gzip.open(existing, mode="rt", encoding="utf-8") as handle:
                 payload = json.load(handle)
+            base_payload = payload if isinstance(payload, dict) else fallback
         else:
             payload = json.loads(existing.read_text(encoding="utf-8"))
-        return payload if isinstance(payload, dict) else fallback
+            base_payload = payload if isinstance(payload, dict) else fallback
+        journal_payload = _load_json_journal_latest_payload(Path(path))
+        if isinstance(journal_payload, dict):
+            return dict(journal_payload)
+        return dict(base_payload)
     except (OSError, json.JSONDecodeError):
+        journal_payload = _load_json_journal_latest_payload(Path(path))
+        if isinstance(journal_payload, dict):
+            return dict(journal_payload)
         return fallback
 
 
@@ -297,16 +304,141 @@ def _write_json_payload_atomic(path: Path, payload: Any) -> None:
             pass
 
 
+def _json_journal_path_for(path: Path) -> Path:
+    base_name = _storage_base_name(Path(path))
+    if base_name.endswith(".json"):
+        return Path(path).with_name(f"{base_name[:-5]}.jsonl")
+    return Path(path).with_name(f"{base_name}.jsonl")
+
+
+def _json_journal_image_payload(payload: Any) -> Any:
+    if isinstance(payload, list):
+        return [dict(row) if isinstance(row, dict) else row for row in payload]
+    if isinstance(payload, dict):
+        return dict(payload)
+    return payload
+
+
+def _json_journal_payload_hash(payload: Any) -> str:
+    serialized = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _json_journal_record(payload: Any) -> dict[str, Any]:
+    image_payload = _json_journal_image_payload(payload)
+    return {
+        "schemaVersion": _JSON_JOURNAL_SCHEMA_VERSION,
+        "contentHash": _json_journal_payload_hash(image_payload),
+        "payload": image_payload,
+    }
+
+
+def _json_journal_record_text(payload: Any) -> str:
+    return (
+        json.dumps(
+            _json_journal_record(payload),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        + "\n"
+    )
+
+
+def _write_text_atomic(path: Path, text: str) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_data_dir()
+    tmp = path.with_suffix(path.suffix + f".{os.getpid()}.{time.time_ns()}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        last_error: Exception | None = None
+        for attempt in range(18):
+            try:
+                os.replace(tmp, path)
+                last_error = None
+                break
+            except PermissionError as exc:
+                last_error = exc
+                time.sleep(0.012 * (attempt + 1))
+        if last_error is not None:
+            raise last_error
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+
+
+def _append_json_journal_record(path: Path, payload: Any) -> None:
+    journal_path = _json_journal_path_for(path)
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_data_dir()
+    with journal_path.open("a", encoding="utf-8") as handle:
+        handle.write(_json_journal_record_text(payload))
+
+
+def _compact_json_journal_if_needed(path: Path, payload: Any) -> None:
+    journal_path = _json_journal_path_for(path)
+    try:
+        if (
+            not journal_path.exists()
+            or journal_path.stat().st_size <= _JSON_JOURNAL_COMPACT_MAX_BYTES
+        ):
+            return
+    except OSError:
+        return
+    _write_text_atomic(journal_path, _json_journal_record_text(payload))
+
+
+def _load_json_journal_latest_payload(path: Path) -> Any | None:
+    journal_path = _json_journal_path_for(path)
+    if not journal_path.exists():
+        return None
+    latest_payload: Any | None = None
+    try:
+        with journal_path.open("r", encoding="utf-8") as handle:
+            for raw_line in handle:
+                if not raw_line.strip():
+                    continue
+                try:
+                    record = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    break
+                if not isinstance(record, dict):
+                    continue
+                try:
+                    schema_version = int(record.get("schemaVersion") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if schema_version != _JSON_JOURNAL_SCHEMA_VERSION:
+                    continue
+                payload = record.get("payload")
+                try:
+                    content_hash = _json_journal_payload_hash(payload)
+                except (TypeError, ValueError):
+                    continue
+                if str(record.get("contentHash") or "") != content_hash:
+                    continue
+                latest_payload = payload
+    except OSError:
+        return None
+    return latest_payload
+
+
 def _json_payload_matches_existing(path: Path, payload: Any) -> bool:
+    if isinstance(payload, list):
+        return load_json_array(path, []) == _json_journal_image_payload(payload)
+    if isinstance(payload, dict):
+        return load_json_object(path, {}) == dict(payload)
     target = _gzip_path_for(path) if _uses_gzip_storage(path) else path
     if not target.exists():
         return False
-    if (
-        _is_lean_registry_entrypoint(path)
-        and isinstance(payload, list)
-        and all(isinstance(row, dict) for row in payload)
-    ):
-        return load_json_array(path, []) == [dict(row) for row in payload]
     return _load_json_payload_from_file(target) == payload
 
 
@@ -314,15 +446,20 @@ def save_json_atomic(path: Path, payload: Any) -> None:
     path = Path(path)
     if _json_payload_matches_existing(path, payload):
         return
+    journal_payload = _json_journal_image_payload(payload)
     if (
         _is_lean_registry_entrypoint(path)
-        and isinstance(payload, list)
-        and all(isinstance(row, dict) for row in payload)
+        and isinstance(journal_payload, list)
+        and all(isinstance(row, dict) for row in journal_payload)
     ):
-        core_rows, metadata_map = _prepare_lean_registry_rows_for_write(path, payload)
+        core_rows, metadata_map = _prepare_lean_registry_rows_for_write(path, journal_payload)
+        _append_json_journal_record(path, journal_payload)
         _write_json_payload_atomic(path, core_rows)
         metadata_path = _registry_metadata_path_for(path)
         if metadata_path is not None:
             _write_json_payload_atomic(metadata_path, metadata_map)
+        _compact_json_journal_if_needed(path, journal_payload)
         return
-    _write_json_payload_atomic(path, payload)
+    _append_json_journal_record(path, journal_payload)
+    _write_json_payload_atomic(path, journal_payload)
+    _compact_json_journal_if_needed(path, journal_payload)

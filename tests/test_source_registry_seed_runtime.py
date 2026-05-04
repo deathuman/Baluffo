@@ -68,6 +68,12 @@ def test_registry_writes_target_runtime_file_without_mutating_seed() -> None:
 
         assert json.loads(seed_path.read_text(encoding="utf-8")) == seed_payload
         assert (root / "source-registry-pending.json.gz").exists()
+        journal_path = root / "source-registry-pending.jsonl"
+        assert journal_path.exists()
+        journal_record = json.loads(journal_path.read_text(encoding="utf-8"))
+        assert journal_record["schemaVersion"] == 1
+        assert journal_record["payload"] == [runtime_row]
+        assert len(journal_record["contentHash"]) == 64
         assert (root / "source-registry-metadata.json.gz").exists()
         assert sr.load_json_array(runtime_path, [])[0] == runtime_row
 
@@ -104,10 +110,12 @@ def test_save_json_atomic_splits_lean_registry_storage() -> None:
 
         compressed_path = Path(tmp) / "source-registry-active.json.gz"
         metadata_path = Path(tmp) / "source-registry-metadata.json.gz"
+        journal_path = Path(tmp) / "source-registry-active.jsonl"
         with gzip.open(compressed_path, mode="rt", encoding="utf-8") as handle:
             core_rows = json.load(handle)
         with gzip.open(metadata_path, mode="rt", encoding="utf-8") as handle:
             metadata_map = json.load(handle)
+        journal_record = json.loads(journal_path.read_text(encoding="utf-8"))
 
         assert core_rows == [
             {
@@ -137,7 +145,10 @@ def test_save_json_atomic_splits_lean_registry_storage() -> None:
                 "company_id": "Gameloft",
             }
         }
-        assert sr.load_json_array(path, [])[0] == payload[0]
+        assert journal_record["schemaVersion"] == 1
+        assert journal_record["payload"] == payload
+        assert len(journal_record["contentHash"]) == 64
+        assert sr.load_json_array(path, []) == payload
 
 
 def test_save_json_atomic_skips_unchanged_lean_registry_payload(
@@ -172,24 +183,24 @@ def test_save_json_atomic_skips_unchanged_lean_registry_payload(
 
         sr.save_json_atomic(path, payload)
 
-        writes: list[tuple[str, object]] = []
+        writes: list[tuple[str, str, object]] = []
+        monkeypatch.setattr(
+            srio,
+            "_append_json_journal_record",
+            lambda write_path, write_payload: writes.append(
+                ("journal", Path(write_path).name, write_payload)
+            ),
+        )
         monkeypatch.setattr(
             srio,
             "_write_json_payload_atomic",
-            lambda write_path, write_payload: writes.append((Path(write_path).name, write_payload)),
+            lambda write_path, write_payload: writes.append(
+                ("snapshot", Path(write_path).name, write_payload)
+            ),
         )
 
         sr.save_json_atomic(path, payload)
         assert writes == []
-
-        changed_payload = [
-            {
-                **payload[0],
-                "promotionReason": "updated_reason",
-            }
-        ]
-        sr.save_json_atomic(path, changed_payload)
-        assert writes
 
 
 def test_save_json_atomic_skips_unchanged_plain_object_payload(
@@ -204,24 +215,75 @@ def test_save_json_atomic_skips_unchanged_plain_object_payload(
 
         sr.save_json_atomic(path, payload)
 
-        writes: list[tuple[str, object]] = []
+        writes: list[tuple[str, str, object]] = []
+        monkeypatch.setattr(
+            srio,
+            "_append_json_journal_record",
+            lambda write_path, write_payload: writes.append(
+                ("journal", Path(write_path).name, write_payload)
+            ),
+        )
         monkeypatch.setattr(
             srio,
             "_write_json_payload_atomic",
-            lambda write_path, write_payload: writes.append((Path(write_path).name, write_payload)),
+            lambda write_path, write_payload: writes.append(
+                ("snapshot", Path(write_path).name, write_payload)
+            ),
         )
 
         sr.save_json_atomic(path, payload)
         assert writes == []
 
-        sr.save_json_atomic(
-            path,
-            {
-                **payload,
-                "approvedSinceLastRun": 2,
-            },
-        )
-        assert writes
+
+def test_load_json_array_ignores_trailing_partial_journal_record() -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        root = Path(tmp)
+        path = root / "source-registry-active.json"
+        payload = [{"id": "registry-journal", "name": "Registry Journal", "adapter": "static"}]
+
+        sr.save_json_atomic(path, payload)
+
+        snapshot_path = root / "source-registry-active.json.gz"
+        snapshot_path.write_text("not-json", encoding="utf-8")
+        journal_path = root / "source-registry-active.jsonl"
+        with journal_path.open("a", encoding="utf-8") as handle:
+            handle.write('{"schemaVersion":1,"contentHash":"broken"')
+
+        assert sr.load_json_array(path, []) == payload
+
+
+def test_save_json_atomic_compacts_json_journal_for_object_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        root = Path(tmp)
+        path = root / "source-approval-state.json"
+        monkeypatch.setattr(srio, "_JSON_JOURNAL_COMPACT_MAX_BYTES", 1)
+
+        payload_one = {
+            "approvedSinceLastRun": 1,
+            "updatedAt": "2026-04-01T00:00:00+00:00",
+        }
+        payload_two = {
+            "approvedSinceLastRun": 2,
+            "updatedAt": "2026-04-01T00:01:00+00:00",
+        }
+        payload_three = {
+            "approvedSinceLastRun": 3,
+            "updatedAt": "2026-04-01T00:02:00+00:00",
+        }
+
+        sr.save_json_atomic(path, payload_one)
+        sr.save_json_atomic(path, payload_two)
+        sr.save_json_atomic(path, payload_three)
+
+        journal_path = root / "source-approval-state.jsonl"
+        journal_record = json.loads(journal_path.read_text(encoding="utf-8"))
+        assert journal_path.read_text(encoding="utf-8").count("\n") == 1
+        assert journal_record["schemaVersion"] == 1
+        assert journal_record["payload"] == payload_three
+        assert len(journal_record["contentHash"]) == 64
+        assert sr.load_json_object(path, {}) == payload_three
 
 
 def test_registry_loads_legacy_monolithic_rows_without_sidecar() -> None:

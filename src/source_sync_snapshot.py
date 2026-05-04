@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import ssl
 import time
 from collections.abc import Callable, Mapping
@@ -18,6 +19,17 @@ from src.source_registry import (
     source_identity,
 )
 from src.source_sync_runtime import parse_iso
+
+logger = logging.getLogger(__name__)
+
+_REMOTE_SNAPSHOT_TOP_LEVEL_KEYS = {
+    "schemaVersion",
+    "generatedAt",
+    "source",
+    "active",
+    "pending",
+    "rejected",
+}
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -373,6 +385,67 @@ def _assert_unique_snapshot_identity(
         )
 
 
+def _remote_snapshot_error(detail: str) -> RuntimeError:
+    message = f"Invalid remote sync snapshot payload: {detail}"
+    logger.error(message)
+    return RuntimeError(message)
+
+
+def _validate_remote_snapshot_payload(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise _remote_snapshot_error("expected a JSON object")
+    unexpected_keys = sorted(key for key in payload if key not in _REMOTE_SNAPSHOT_TOP_LEVEL_KEYS)
+    if unexpected_keys:
+        logger.warning(
+            "Remote sync snapshot contains unexpected top-level keys: %s",
+            ", ".join(unexpected_keys),
+        )
+    schema_version = payload.get("schemaVersion")
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version < 1
+    ):
+        raise _remote_snapshot_error("schemaVersion must be an integer >= 1")
+    generated_at = payload.get("generatedAt")
+    if not isinstance(generated_at, str) or not generated_at.strip():
+        raise _remote_snapshot_error("generatedAt must be a non-empty string")
+    active_rows = payload.get("active")
+    if not isinstance(active_rows, list):
+        raise _remote_snapshot_error("active must be an array")
+    pending_rows = payload.get("pending")
+    if not isinstance(pending_rows, list):
+        raise _remote_snapshot_error("pending must be an array")
+    rejected_rows = payload.get("rejected")
+    if rejected_rows is not None and not isinstance(rejected_rows, list):
+        raise _remote_snapshot_error("rejected must be an array when present")
+    for bucket, rows in (("active", active_rows), ("pending", pending_rows)):
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                raise _remote_snapshot_error(f"{bucket}[{index}] must be an object")
+    if isinstance(rejected_rows, list):
+        for index, row in enumerate(rejected_rows):
+            if not isinstance(row, dict):
+                raise _remote_snapshot_error(f"rejected[{index}] must be an object")
+    return payload
+
+
+def _validate_normalized_remote_snapshot(snapshot: dict[str, Any]) -> None:
+    for bucket in ("active", "pending"):
+        rows = snapshot.get(bucket)
+        if not isinstance(rows, list):
+            raise _remote_snapshot_error(f"{bucket} must remain an array after normalization")
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                raise _remote_snapshot_error(
+                    f"{bucket}[{index}] must remain an object after normalization"
+                )
+            if not str(row.get("id") or "").strip():
+                raise _remote_snapshot_error(
+                    f"{bucket}[{index}] missing source identity after normalization"
+                )
+
+
 def normalize_snapshot(module: Any, payload: dict[str, Any]) -> dict[str, Any]:
     data = payload if isinstance(payload, dict) else {}
     generated_at = str(data.get("generatedAt") or "")
@@ -486,7 +559,10 @@ def read_remote_snapshot(
                     opener=opener,
                 )
                 if raw_status == 200 and isinstance(raw_body, dict):
-                    snapshot = normalize_snapshot(module, raw_body)
+                    snapshot = normalize_snapshot(
+                        module, _validate_remote_snapshot_payload(raw_body)
+                    )
+                    _validate_normalized_remote_snapshot(snapshot)
                     module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
                     return {
                         "exists": True,
@@ -501,8 +577,9 @@ def read_remote_snapshot(
             raw_bytes = base64.b64decode(normalized_b64)
             parsed = json.loads(raw_bytes.decode("utf-8"))
         except (ValueError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"Invalid remote sync snapshot payload: {exc}") from exc
-        snapshot = normalize_snapshot(module, parsed if isinstance(parsed, dict) else {})
+            raise _remote_snapshot_error(f"invalid JSON payload: {exc}") from exc
+        snapshot = normalize_snapshot(module, _validate_remote_snapshot_payload(parsed))
+        _validate_normalized_remote_snapshot(snapshot)
         module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
         return {"exists": True, "sha": str(payload.get("sha") or ""), "snapshot": snapshot}
 

@@ -33,9 +33,29 @@ def test_save_json_atomic_and_load_array() -> None:
         payload = [{"adapter": "smartrecruiters", "company_id": "Gameloft"}]
         sr.save_json_atomic(path, payload)
         assert path.read_text(encoding="utf-8").endswith("\n")
+        journal_path = Path(tmp) / "registry.jsonl"
+        journal_record = json.loads(journal_path.read_text(encoding="utf-8"))
+        assert journal_record["schemaVersion"] == 1
+        assert journal_record["payload"] == payload
+        assert len(journal_record["contentHash"]) == 64
         loaded = sr.load_json_array(path, [])
-        assert len(loaded) == 1
-        assert loaded[0]["company_id"] == "Gameloft"
+        assert loaded == payload
+
+
+def test_save_json_atomic_and_load_object() -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        path = Path(tmp) / "source-approval-state.json"
+        payload = {
+            "approvedSinceLastRun": 1,
+            "updatedAt": "2026-04-01T00:00:00+00:00",
+        }
+        sr.save_json_atomic(path, payload)
+        journal_path = Path(tmp) / "source-approval-state.jsonl"
+        journal_record = json.loads(journal_path.read_text(encoding="utf-8"))
+        assert journal_record["schemaVersion"] == 1
+        assert journal_record["payload"] == payload
+        assert len(journal_record["contentHash"]) == 64
+        assert sr.load_json_object(path, {}) == payload
 
 
 def test_normalize_source_url_trims_query_trailing_slash_and_case() -> None:
