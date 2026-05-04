@@ -154,7 +154,7 @@ The Baluffo sync depends on GitHub as its remote backend, but several GitHub-sid
 | No rollback checkpoints | Reverting requires hunting through git history for the last-good SHA | Tag every validated write (`last-known-good`, date-stamped) for one-command revert |
 | Rate-limit headers discarded | `x-ratelimit-remaining` is received but never logged or alerted on | Log remaining < 10% threshold; surface in admin runtime state |
 | No repository visibility decision | Private vs public is implicit, not intentional | Document that BaluffoSync is intentionally private as a sync transport repo |
-| No CI failure notification | Failed validation can sit undiscovered | Configure GitHub notifications for `validate-source-sync.yml` failures; optional Slack/webhook mirrors can be added separately |
+| No CI failure notification | Failed validation can sit undiscovered | GitHub Actions notifications are the baseline alert path for `validate-source-sync.yml`; optional Slack/webhook mirrors can be added separately |
 | No API version deprecation plan | `X-GitHub-Api-Version: 2022-11-28` is hardcoded | Make version a config constant; add calendar reminder to check GitHub changelog annually |
 
 **Side note on auth model:** The plan exclusively uses GitHub App auth, which is correct for production. For simpler single-writer deployments, deploy keys with write access are a viable alternative (no GitHub App registration, no JWT, no installation token exchange). That fits the private transport-repo model documented in `docs/environments.md`, even though GitHub App remains the recommended production path.
@@ -563,8 +563,7 @@ Admin should expose at least:
   - extract `GITHUB_API_VERSION` from hardcoded header into module constant
   - add API version deprecation monitoring note to `docs/sync-contract.md`
   - document the `validate-source-sync.yml` failure notification policy in `docs/environments.md`
-- still pending:
-  - configure the GitHub-side notification setting for `validate-source-sync.yml` failures
+  - subscribe the workflow repo to GitHub Actions notifications for workflow failures
 
 ### P4 — Add contract/integration tests
 
