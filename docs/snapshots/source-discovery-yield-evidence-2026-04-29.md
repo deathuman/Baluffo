@@ -4,7 +4,7 @@
 > - **Use this when:** choosing the next behavior-changing source-discovery improvement after the deletion-first adapter cleanup
 > - **Canonical for:** current local artifact availability, registry/backlog pressure, and evidence gaps before P2 tuning
 > - **Not canonical for:** saved-job/local-user data contracts, bridge contracts, adapter API contracts, or historical refactor provenance
-> - **Then inspect:** [`source-discovery-adapter-follow-ups.md`](../plans/source-discovery-adapter-follow-ups.md), [`scraping-pipeline.md`](../scraping-pipeline.md), and [`DATA_CONTRACT.md`](../DATA_CONTRACT.md)
+> - **Then inspect:** [`source-discovery-adapter-follow-ups-closeout.md`](../archive/source-discovery-adapter-follow-ups-closeout.md), [`scraping-pipeline.md`](../scraping-pipeline.md), and [`DATA_CONTRACT.md`](../DATA_CONTRACT.md)
 > - **Last updated:** 2026-04-29
 
 This snapshot is intentionally evidence-only. It does not change discovery behavior, queue policy, saved jobs, local user data, bridge routes, frontend storage, artifact schemas, or source registry contracts.

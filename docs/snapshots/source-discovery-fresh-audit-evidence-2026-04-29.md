@@ -4,7 +4,7 @@
 > - **Use this when:** planning the next representative source-discovery evidence run or bounded P2 behavior test
 > - **Canonical for:** the 2026-04-29 isolated fresh-audit attempt, partial GameDevMap evidence, and the blocker to a clean two-pass run
 > - **Not canonical for:** saved-job/local-user data contracts, bridge contracts, queue contracts, or adapter runtime behavior
-> - **Then inspect:** [`source-discovery-zero-job-evidence-2026-04-29.md`](source-discovery-zero-job-evidence-2026-04-29.md), [`source-discovery-yield-evidence-2026-04-29.md`](source-discovery-yield-evidence-2026-04-29.md), and [`source-discovery-adapter-follow-ups.md`](../plans/source-discovery-adapter-follow-ups.md)
+> - **Then inspect:** [`source-discovery-zero-job-evidence-2026-04-29.md`](source-discovery-zero-job-evidence-2026-04-29.md), [`source-discovery-yield-evidence-2026-04-29.md`](source-discovery-yield-evidence-2026-04-29.md), and [`source-discovery-adapter-follow-ups-closeout.md`](../archive/source-discovery-adapter-follow-ups-closeout.md)
 > - **Last updated:** 2026-04-29
 
 This snapshot records an evidence attempt only. It does not change source-discovery behavior, adapters, saved jobs, local user data, bridge routes, frontend storage, queue policy, registry contracts, or artifact schemas.

@@ -4,7 +4,7 @@
 > - **Use this when:** deciding whether to change source-discovery static fallback, Sheet-directory scoring, static caps, or probe policy
 > - **Canonical for:** current zero-job candidate pressure from local discovery artifacts
 > - **Not canonical for:** saved-job/local-user data contracts, bridge contracts, queue contracts, or adapter runtime behavior
-> - **Then inspect:** [`source-discovery-yield-evidence-2026-04-29.md`](source-discovery-yield-evidence-2026-04-29.md), [`source-discovery-adapter-follow-ups.md`](../plans/source-discovery-adapter-follow-ups.md), and [`DATA_CONTRACT.md`](../DATA_CONTRACT.md)
+> - **Then inspect:** [`source-discovery-yield-evidence-2026-04-29.md`](source-discovery-yield-evidence-2026-04-29.md), [`source-discovery-adapter-follow-ups-closeout.md`](../archive/source-discovery-adapter-follow-ups-closeout.md), and [`DATA_CONTRACT.md`](../DATA_CONTRACT.md)
 > - **Last updated:** 2026-04-29
 
 This snapshot is evidence-only. It does not change source-discovery behavior, source adapters, saved jobs, local user data, bridge routes, frontend storage, queue policy, registry contracts, or artifact schemas.

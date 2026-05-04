@@ -4,7 +4,7 @@
 > - **Use this when:** choosing Sheet-directory, Gameprog, Gamesmap, or Web-derived discovery behavior changes
 > - **Canonical for:** the latest isolated directory/web source-discovery run without GameDevMap
 > - **Not canonical for:** GameDevMap active-audit tuning, saved-job/local-user data contracts, bridge contracts, queue contracts, or adapter runtime behavior
-> - **Then inspect:** [`source-discovery-fresh-audit-evidence-2026-04-29.md`](source-discovery-fresh-audit-evidence-2026-04-29.md), [`source-discovery-zero-job-evidence-2026-04-29.md`](source-discovery-zero-job-evidence-2026-04-29.md), and [`source-discovery-adapter-follow-ups.md`](../plans/source-discovery-adapter-follow-ups.md)
+> - **Then inspect:** [`source-discovery-fresh-audit-evidence-2026-04-29.md`](source-discovery-fresh-audit-evidence-2026-04-29.md), [`source-discovery-zero-job-evidence-2026-04-29.md`](source-discovery-zero-job-evidence-2026-04-29.md), and [`source-discovery-adapter-follow-ups-closeout.md`](../archive/source-discovery-adapter-follow-ups-closeout.md)
 > - **Last updated:** 2026-04-29
 
 This snapshot records an isolated evidence run only. It does not change source-discovery behavior, adapters, saved jobs, local user data, bridge routes, frontend storage, queue policy, registry contracts, or artifact schemas.
