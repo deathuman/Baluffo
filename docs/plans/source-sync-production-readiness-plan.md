@@ -153,11 +153,13 @@ The Baluffo sync depends on GitHub as its remote backend, but several GitHub-sid
 | No deployment environments | Staging/prod path separation has no approval gate or audit trail | Define GitHub Environments with required reviewers for production path writes |
 | No rollback checkpoints | Reverting requires hunting through git history for the last-good SHA | Tag every validated write (`last-known-good`, date-stamped) for one-command revert |
 | Rate-limit headers discarded | `x-ratelimit-remaining` is received but never logged or alerted on | Log remaining < 10% threshold; surface in admin runtime state |
-| No repository visibility decision | Private vs public is implicit, not intentional | Document in README: private if source URLs are sensitive, public if open registry |
-| No CI failure notification | Failed validation can sit undiscovered | Configure GitHub notification routing (email/slack/webhook) for workflow failures |
+| No repository visibility decision | Private vs public is implicit, not intentional | Document that BaluffoSync is intentionally private as a sync transport repo |
+| No CI failure notification | Failed validation can sit undiscovered | Configure GitHub notifications for `validate-source-sync.yml` failures; optional Slack/webhook mirrors can be added separately |
 | No API version deprecation plan | `X-GitHub-Api-Version: 2022-11-28` is hardcoded | Make version a config constant; add calendar reminder to check GitHub changelog annually |
 
-**Side note on auth model:** The plan exclusively uses GitHub App auth, which is correct for production. For simpler single-repo deployments, deploy keys with write access are a viable alternative (no GitHub App registration, no JWT, no installation token exchange). Worth documenting in `docs/environments.md` as a development/lightweight option, even though GitHub App remains the recommended production path.
+**Side note on auth model:** The plan exclusively uses GitHub App auth, which is correct for production. For simpler single-writer deployments, deploy keys with write access are a viable alternative (no GitHub App registration, no JWT, no installation token exchange). That fits the private transport-repo model documented in `docs/environments.md`, even though GitHub App remains the recommended production path.
+
+**Slice 1 landed in-repo:** the first governance slice should land the schema contract, the `validate-source-sync` workflow, and the `docs/environments.md` release-path note in this repository. GitHub-side branch protection, repository rulesets, signed-commit enforcement, and required-check activation remain optional hardening for the private transport-repo model because those settings live outside the repo and may not be available on the current plan.
 
 ### Implementation outline
 
@@ -204,13 +206,12 @@ git push origin --tags
 
 Rollback is then a one-command operation: force-push the tag to `main` (requires force-push bypass on the ruleset, restricted to admin).
 
-In `rate_limit_note_response`, log a warning when `x-ratelimit-remaining` < 10% of the initial quota. Extend the admin runtime state to expose `lastRateLimitRemaining` and `lastRateLimitResetAt` for operator visibility.
+Implemented here: `rate_limit_note_response` now logs a warning when `x-ratelimit-remaining` drops below 10% of the initial quota, and the admin runtime state now exposes `lastRateLimitRemaining` and `lastRateLimitResetAt` for operator visibility.
 
-**P3 — Notification routing + API version management**
+**P3 — Notification routing**
 
-- Configure GitHub notification settings for workflow failures (email/Slack/GitHub notifications for failed `validate-source-sync.yml` runs)
-- Extract `GITHUB_API_VERSION` from hardcoded header into `src/source_sync.py` module constant
-- Add a note to `docs/sync-contract.md` about monitoring the [GitHub API changelog](https://github.blog/changelog/label/api/) for version deprecation notices
+- Configure GitHub notification settings for workflow failures on `validate-source-sync.yml`
+- API version management already landed in-repo via the `GITHUB_API_VERSION` constant and the note in `docs/sync-contract.md`
 
 ---
 
@@ -432,7 +433,7 @@ This is a test-only checkpoint. The cases below stay as executable specification
 
 Keep the runtime work split out after this test-only checkpoint:
 
-- implemented here: snapshot content fingerprinting, no-op write gating, idempotent PUT retry, conflict re-read handling, transient GET retry/backoff, dry-run support, daily counters, and snapshot-size governance
+- implemented here: snapshot content fingerprinting, no-op write gating, idempotent PUT retry, conflict re-read handling, transient GET retry/backoff, dry-run support, daily counters, rate-limit telemetry, and snapshot-size governance
 - next: GitHub-side branch protection, required checks, commit signing, environments, and release-policy hardening
 
 ### Snapshot-size scalability path
@@ -461,7 +462,7 @@ Concrete ownership:
 
 - `src/source_sync_snapshot.py`: fingerprinting, no-op gating, and write-time size enforcement
 - `src/source_sync_config.py`: per-environment `maxSnapshotSizeBytes`
-- `src/source_sync_runtime.py` and `src/bridge/sync_service.py`: counters and status payloads that can be extended with growth telemetry later
+- `src/source_sync_runtime.py` and `src/bridge/sync_service.py`: counters and status payloads that can surface rate-limit telemetry and be extended with growth telemetry later
 - Admin/report surfaces: show the snapshot-size trend when it becomes useful, but keep the snapshot itself canonical and small
 
 ## Operational metrics to emit
@@ -558,9 +559,12 @@ Admin should expose at least:
 - winner rationale
 - restore/reject/promote/demote workflow
 - preserve transition reason in review output
-- configure GitHub notification routing for `validate-source-sync.yml` failures
-- extract `GITHUB_API_VERSION` from hardcoded header into module constant
-- add API version deprecation monitoring note to `docs/sync-contract.md`
+- implemented in this slice:
+  - extract `GITHUB_API_VERSION` from hardcoded header into module constant
+  - add API version deprecation monitoring note to `docs/sync-contract.md`
+  - document the `validate-source-sync.yml` failure notification policy in `docs/environments.md`
+- still pending:
+  - configure the GitHub-side notification setting for `validate-source-sync.yml` failures
 
 ### P4 — Add contract/integration tests
 

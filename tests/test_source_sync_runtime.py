@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from urllib.parse import quote
@@ -42,7 +43,9 @@ def _root(now: datetime | None = None) -> SimpleNamespace:
 @pytest.fixture(autouse=True)
 def _reset_runtime_globals() -> None:
     runtime._RUNTIME_STATE.update({"code": "", "message": "", "until": "", "updatedAt": ""})
-    runtime._RATE_LIMIT_STATE.update({"calls": [], "strike": 0, "until": None})
+    runtime._RATE_LIMIT_STATE.update(
+        {"calls": [], "strike": 0, "until": None, "remaining": None, "resetAt": None}
+    )
     runtime._AUTH_MANAGER.clear()
 
 
@@ -61,7 +64,32 @@ def test_runtime_state_payload_clears_expired_rate_limit() -> None:
         "message": "",
         "until": "",
         "updatedAt": "",
+        "lastRateLimitRemaining": "",
+        "lastRateLimitResetAt": "",
     }
+
+
+def test_rate_limit_note_response_tracks_quota_telemetry_and_warns(caplog) -> None:
+    now = datetime(2026, 4, 25, 12, 0, tzinfo=UTC)
+    root = _root(now)
+    reset_at = now + timedelta(seconds=120)
+
+    with caplog.at_level(logging.WARNING):
+        runtime.rate_limit_note_response(
+            root,
+            200,
+            {
+                "x-ratelimit-limit": "50",
+                "x-ratelimit-remaining": "4",
+                "x-ratelimit-reset": str(int(reset_at.timestamp())),
+            },
+            {},
+        )
+
+    payload = runtime.runtime_state_payload(root)
+    assert payload["lastRateLimitRemaining"] == "4"
+    assert payload["lastRateLimitResetAt"] == reset_at.isoformat()
+    assert "rate limit low" in caplog.text.lower()
 
 
 def test_local_wrapped_key_cache_handles_invalid_mismatch_and_dpapi_round_trip(

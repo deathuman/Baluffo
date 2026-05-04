@@ -7,6 +7,7 @@ from urllib.error import HTTPError
 import pytest
 
 from src import source_sync as sync
+from tests.source_sync_helpers import source_sync_test_root  # noqa: F401
 from tests.test_source_sync_push_churn import _FakeResponse, _Recorder
 
 

@@ -60,6 +60,7 @@ PACKAGED_SYNC_BUILD_CONFIG_ENV = "BALUFFO_SYNC_BUILD_CONFIG_PATH"
 PACKAGED_SYNC_PASSPHRASE_ENV = "BALUFFO_SYNC_KEY_PASSPHRASE"
 SYNC_CA_BUNDLE_ENV = "BALUFFO_SYNC_CA_BUNDLE"
 GITHUB_API_BASE_ENV = "BALUFFO_SYNC_GITHUB_API_BASE"
+GITHUB_API_VERSION = "2022-11-28"
 SYNC_DISABLE_ENV = "BALUFFO_SYNC_DISABLE"
 SYNC_ALLOWED_REPO_ENV = "BALUFFO_SYNC_ALLOWED_REPO"
 SYNC_ALLOWED_BRANCH_ENV = "BALUFFO_SYNC_ALLOWED_BRANCH"
@@ -366,7 +367,7 @@ def _github_json_headers(authorization: str) -> dict[str, str]:
         "Accept": "application/vnd.github+json",
         "Authorization": authorization,
         "User-Agent": "baluffo-source-sync/2.0",
-        "X-GitHub-Api-Version": "2022-11-28",
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
         "Content-Type": "application/json; charset=utf-8",
     }
 

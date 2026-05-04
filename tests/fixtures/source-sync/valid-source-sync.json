@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-04T10:00:00+00:00",
+  "source": {
+    "name": "governance-fixture"
+  },
+  "active": [
+    {
+      "adapter": "static",
+      "listing_url": "https://example.com/jobs",
+      "sourceId": "static:example"
+    }
+  ],
+  "pending": [
+    {
+      "adapter": "teamtailor",
+      "name": "Pending Example",
+      "sourceId": "teamtailor:pending-example"
+    }
+  ]
+}

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import ctypes
 import json
+import logging
 import os
 import platform
 import threading
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -27,9 +28,16 @@ _SYNC_COUNTERS: dict[str, Any] = {
     "sourcesRemoved": 0,
 }
 _RATE_LIMIT_LOCK = threading.RLock()
-_RATE_LIMIT_STATE: dict[str, Any] = {"calls": [], "strike": 0, "until": None}
+_RATE_LIMIT_STATE: dict[str, Any] = {
+    "calls": [],
+    "strike": 0,
+    "until": None,
+    "remaining": None,
+    "resetAt": None,
+}
 _AUTH_MANAGER_LOCK = threading.RLock()
 _AUTH_MANAGER: dict[str, Any] = {}
+_LOGGER = logging.getLogger(__name__)
 _crypt_protect_data: Callable[..., bool] | None
 _crypt_unprotect_data: Callable[..., bool] | None
 _local_free: Callable[[Any], Any]
@@ -108,8 +116,23 @@ def runtime_state_payload(root_mod: Any) -> dict[str, str]:
         until_dt = parse_iso(until)
         if until_dt and until_dt <= root_mod.now_utc():
             clear_runtime_state(root_mod, root_mod.RUNTIME_STATE_RATE_LIMITED)
-            return {"code": "", "message": "", "until": "", "updatedAt": ""}
-    return {"code": code, "message": message, "until": until, "updatedAt": updated}
+            code = ""
+            message = ""
+            until = ""
+            updated = ""
+    with _RATE_LIMIT_LOCK:
+        remaining = _RATE_LIMIT_STATE.get("remaining")
+        reset_at = _RATE_LIMIT_STATE.get("resetAt")
+    return {
+        "code": code,
+        "message": message,
+        "until": until,
+        "updatedAt": updated,
+        "lastRateLimitRemaining": str(remaining if remaining is not None else ""),
+        "lastRateLimitResetAt": (
+            reset_at.isoformat() if isinstance(reset_at, datetime) else str(reset_at or "")
+        ),
+    }
 
 
 def _default_sync_counters(root_mod: Any) -> dict[str, Any]:
@@ -468,6 +491,24 @@ def rate_limit_note_response(
     headers: dict[str, str],
     payload: dict[str, Any],
 ) -> None:
+    remaining_raw = str((headers or {}).get("x-ratelimit-remaining") or "").strip()
+    limit_raw = str((headers or {}).get("x-ratelimit-limit") or "").strip()
+    reset_raw = str((headers or {}).get("x-ratelimit-reset") or "").strip()
+    remaining = int(remaining_raw) if remaining_raw.isdigit() else None
+    limit = int(limit_raw) if limit_raw.isdigit() else None
+    reset_at = datetime.fromtimestamp(int(reset_raw), tz=UTC) if reset_raw.isdigit() else None
+    if limit and remaining is not None and remaining * 10 < limit:
+        _LOGGER.warning(
+            "GitHub API rate limit low for sync: remaining=%s limit=%s resetAt=%s",
+            remaining,
+            limit,
+            reset_at.isoformat() if isinstance(reset_at, datetime) else "",
+        )
+    with _RATE_LIMIT_LOCK:
+        if remaining is not None:
+            _RATE_LIMIT_STATE["remaining"] = remaining
+        if reset_at is not None:
+            _RATE_LIMIT_STATE["resetAt"] = reset_at
     if int(status or 0) in {429, 403}:
         message = str((payload or {}).get("message") or "").lower()
         if int(status or 0) == 429 or "rate limit" in message:
@@ -477,6 +518,10 @@ def rate_limit_note_response(
                 strike = int(_RATE_LIMIT_STATE.get("strike") or 0) + 1
                 _RATE_LIMIT_STATE["strike"] = strike
                 _RATE_LIMIT_STATE["until"] = until
+                if _RATE_LIMIT_STATE.get("remaining") is None:
+                    _RATE_LIMIT_STATE["remaining"] = 0
+                if _RATE_LIMIT_STATE.get("resetAt") is None:
+                    _RATE_LIMIT_STATE["resetAt"] = until
             set_runtime_state(
                 root_mod,
                 root_mod.RUNTIME_STATE_RATE_LIMITED,
