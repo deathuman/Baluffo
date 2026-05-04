@@ -56,10 +56,14 @@ test("task run view model derives discovery and sync summaries", () => {
       ratio: 0.25,
       counts: {
         foundEndpoints: 12,
+        generatedCandidates: 30,
+        survivedDedupeCandidates: 18,
         probedCandidates: 3,
         probeTotal: 12,
         queuedCandidates: 7,
-        failedProbes: 2
+        failedProbes: 2,
+        stageIndex: 10,
+        stageTotal: 11
       }
     }
   }, { nowMs: NOW });
@@ -71,6 +75,9 @@ test("task run view model derives discovery and sync summaries", () => {
   }, { nowMs: NOW });
 
   assert.equal(discovery.title, "Discovery");
+  assert.match(discovery.progressLabel, /stage 10\/11/i);
+  assert.match(discovery.progressLabel, /generated 30/i);
+  assert.match(discovery.progressLabel, /survived 18/i);
   assert.match(discovery.primaryLabel, /7 queued/i);
   assert.match(discovery.failureSummary, /2 failed probes/i);
   assert.equal(sync.title, "Sync");

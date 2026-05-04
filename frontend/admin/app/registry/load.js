@@ -149,10 +149,13 @@ export function createRegistryLoadController({
         if (refs.adminDiscoverySummaryEl) {
           const summaryText = `Found ${foundCount} | Probed ${probedCount} | Review queue ${queuedCount} | Deferred review ${deferredCount} | Deferred by caps ${capDeferredCount} | Job-positive deferred ${jobPositiveDeferredCount} | Validated ${lifecycleCounts.validated} | Auto-approved this run ${autoApprovedCount} | Active registry ${activeRegistryCount} | Failed ${failedCount} | Skipped dupes ${skippedCount} | Pending ${Number(pending?.summary?.pendingCount || 0)} | Rejected ${Number(rejected?.summary?.rejectedCount || 0)} | Hidden zero-jobs ${hiddenZeroJobsCount}`;
           refs.adminDiscoverySummaryEl.textContent = summaryText;
-          refs.adminDiscoverySummaryEl.innerHTML = `
-            <div>${summaryText}</div>
-            ${renderDiscoveryCandidateReviewHtml(report?.candidateReview)}
-          `;
+          refs.adminDiscoverySummaryEl.innerHTML = `<div>${summaryText}</div>`;
+        }
+        if (refs.adminDiscoveryReviewEl) {
+          refs.adminDiscoveryReviewEl.innerHTML = renderDiscoveryCandidateReviewHtml(
+            report?.candidateReview,
+            { showEmpty: true }
+          );
         }
         renderSourcesTable(refs.adminPendingSourcesEl, visiblePendingRows, "pending");
         if (
@@ -194,6 +197,9 @@ export function createRegistryLoadController({
         appendDiscoveryLog(`Could not load source discovery data: ${getErrorMessage(err)}`, "error");
         if (refs.adminDiscoverySummaryEl) {
           refs.adminDiscoverySummaryEl.textContent = "Source discovery bridge unavailable. Start `Run admin bridge` task.";
+        }
+        if (refs.adminDiscoveryReviewEl) {
+          refs.adminDiscoveryReviewEl.innerHTML = '<div class="no-results">Discovery review unavailable.</div>';
         }
         return null;
       } finally {

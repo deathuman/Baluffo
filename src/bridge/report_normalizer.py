@@ -122,6 +122,9 @@ def _normalize_task_progress(
         "phaseLabel": str(src.get("phaseLabel") or "").strip(),
         "mode": mode,
         "ratio": max(0.0, min(1.0, ratio)),
+        "targetLabel": str(src.get("targetLabel") or "").strip(),
+        "targetUrl": str(src.get("targetUrl") or "").strip(),
+        "updatedAt": str(src.get("updatedAt") or "").strip(),
         "counts": counts,
     }
 
@@ -179,12 +182,19 @@ def _derive_discovery_task_progress(src: dict[str, Any], summary: dict[str, Any]
         "Discovery completed" if finished_at else "Initializing scan"
     )
     found = safe_int(summary.get("foundEndpointCount"), 0, 0, 1_000_000)
+    generated = safe_int(summary.get("generatedCandidateCount"), 0, 0, 1_000_000)
+    survived = safe_int(summary.get("survivedDedupeCandidateCount"), 0, 0, 1_000_000)
     probed = safe_int(
         summary.get("probedCandidateCount") or summary.get("probedCount"), 0, 0, 1_000_000
     )
     queued = safe_int(summary.get("queuedCandidateCount"), 0, 0, 1_000_000)
     deferred = safe_int(summary.get("discoverableButDeferredCount"), 0, 0, 1_000_000)
     failed = safe_int(summary.get("failedProbeCount"), 0, 0, 1_000_000)
+    current_stage_key = str(summary.get("currentStageKey") or "").strip()
+    current_stage_label = str(summary.get("currentStageLabel") or phase_label).strip()
+    stage_index = safe_int(summary.get("stageIndex"), 0, 0, 100)
+    stage_total = safe_int(summary.get("stageTotal"), 0, 0, 100)
+    completed_stages = safe_int(summary.get("completedStageCount"), 0, 0, 100)
     loss = _as_dict(summary.get("lossAccounting"))
     probe_total = max(
         0,
@@ -210,13 +220,29 @@ def _derive_discovery_task_progress(src: dict[str, Any], summary: dict[str, Any]
         "phaseLabel": phase_label,
         "mode": mode,
         "ratio": ratio,
+        "targetLabel": current_stage_label,
+        "updatedAt": str(
+            (
+                (src.get("runtime") or {}).get("lifecycle") or {}
+                if isinstance(src.get("runtime"), dict)
+                else {}
+            ).get("heartbeatAt")
+            or ""
+        ).strip(),
         "counts": {
             "foundEndpoints": found,
+            "generatedCandidates": generated,
+            "survivedDedupeCandidates": survived,
             "probedCandidates": probed,
             "probeTotal": probe_total,
             "queuedCandidates": queued,
             "deferredCandidates": deferred,
             "failedProbes": failed,
+            "currentStageKey": current_stage_key,
+            "currentStageLabel": current_stage_label,
+            "stageIndex": stage_index,
+            "stageTotal": stage_total,
+            "completedStages": completed_stages,
         },
     }
 

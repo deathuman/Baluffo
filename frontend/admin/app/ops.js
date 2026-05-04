@@ -1,5 +1,5 @@
 import { createOpsBridgeStatusController } from "./ops/bridge-status.js";
-import { createOpsHealthController } from "./ops/health.js?v=10";
+import { createOpsHealthController } from "./ops/health.js?v=12";
 import { createOpsTaskStateController } from "./ops/task-state.js";
 
 export { formatBytes } from "./ops/format.js";
@@ -84,6 +84,7 @@ export function createAdminOpsController({
 
   return {
     setOpsPlaceholders: healthController.setOpsPlaceholders,
+    selectOpsTab: healthController.selectOpsTab,
     stopOpsHealthPolling: healthController.stopOpsHealthPolling,
     scheduleOpsHealthPolling: healthController.scheduleOpsHealthPolling,
     loadOpsHealthData: healthController.loadOpsHealthData,

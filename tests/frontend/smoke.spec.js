@@ -326,15 +326,36 @@ test("admin smoke: direct admin load shows bucketed fetch failure summary", asyn
   // Load the fetch report - requires bridge to be running
   await page.click("#admin-refresh-report-btn");
   const metrics = page.locator("#admin-ops-fetcher-metrics");
+  const overviewTab = page.getByRole("tab", { name: "Overview" });
+  const discoveryTab = page.getByRole("tab", { name: "Discovery Review" });
+  const sourcePolicyTab = page.getByRole("tab", { name: "Source Policy Review" });
+  const dedupTab = page.getByRole("tab", { name: "Dedup Lists" });
+  await expect(overviewTab).toBeVisible();
+  await expect(discoveryTab).toBeVisible();
+  await expect(sourcePolicyTab).toBeVisible();
+  await expect(dedupTab).toBeVisible();
+  await expect(overviewTab).toHaveAttribute("aria-selected", "true");
   await expect(metrics).not.toContainText(/Loading/i, { timeout: 15000 });
   await expect(metrics.getByText("Task Status", { exact: true })).toBeVisible();
   await expect(metrics.getByRole("heading", { name: "Runtime" })).toBeVisible();
   await expect(metrics.getByRole("heading", { name: "Failures" })).toBeVisible();
-  await expect(metrics.getByRole("heading", { name: "Dedup Review" })).toBeVisible();
   await expect(metrics.getByRole("heading", { name: "Source Health" })).toBeVisible();
   await expect(metrics.getByRole("heading", { name: "Source Policy Signals" })).toBeVisible();
   await expect(metrics.getByRole("button", { name: "Copy diagnostics" }).first()).toBeVisible();
   await expect(metrics.locator("details").first()).toBeVisible();
+
+  await discoveryTab.click();
+  await expect(discoveryTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#admin-discovery-review")).toBeVisible();
+
+  await sourcePolicyTab.click();
+  await expect(sourcePolicyTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#admin-source-policy-review")).toBeVisible();
+
+  await dedupTab.click();
+  await expect(dedupTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#admin-ops-dedup-lists")).toBeVisible();
+  await expect(page.locator("#admin-ops-dedup-lists").getByRole("heading", { name: "Dedup Lists" })).toBeVisible();
 });
 
 test("admin smoke: run history trims fetch live detail and discovery omits the live table", async ({ page }) => {

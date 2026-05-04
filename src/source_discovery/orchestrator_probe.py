@@ -79,7 +79,7 @@ def _queue_prevalidated_candidates(*, state: DiscoveryRunState) -> None:
         stage = str(raw.get("discoveryStage") or "provider_pattern")
         jobs_found = max(0, int(raw.get("jobsFound") or raw.get("sampleCount") or 0))
         state.probed += 1
-        state.probed_count_by_stage[stage] += 1
+        state.probed_count_by_stage[stage] = state.probed_count_by_stage.get(stage, 0) + 1
         _increment_adapter_runtime(state.adapter_runtime, raw.get("adapter"), probed=1)
         _queue_healthy_candidate(raw, jobs_found, state=state)
 
@@ -155,7 +155,7 @@ def _record_probe_accounting(
 ) -> str:
     stage = str(raw.get("discoveryStage") or "provider_pattern")
     state.probed += 1
-    state.probed_count_by_stage[stage] += 1
+    state.probed_count_by_stage[stage] = state.probed_count_by_stage.get(stage, 0) + 1
     _increment_adapter_runtime(
         state.adapter_runtime,
         raw.get("adapter"),

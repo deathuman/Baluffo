@@ -47,13 +47,30 @@ function renderProviderMigrationRows(rows) {
   }).join("");
 }
 
-export function renderDiscoveryCandidateReviewHtml(candidateReview) {
+function renderReviewLaneDetails(title, rows, renderRows, { open = false } = {}) {
+  const count = Array.isArray(rows) ? rows.length : 0;
+  return `
+    <details class="admin-source-review-lane-details"${open ? " open" : ""}>
+      <summary>
+        <span>${escapeHtml(title)}</span>
+        <span class="muted">${formatCompactNumber(count)} shown</span>
+      </summary>
+      <div class="admin-source-review-lane-body">
+        ${renderRows(rows)}
+      </div>
+    </details>
+  `;
+}
+
+export function renderDiscoveryCandidateReviewHtml(candidateReview, options = {}) {
   const review = candidateReview && typeof candidateReview === "object" && !Array.isArray(candidateReview)
     ? candidateReview
     : {};
   const total = Number(review.totalCandidates || 0);
   if (!total) {
-    return "";
+    return options?.showEmpty
+      ? '<div class="no-results">No discovery review evidence loaded yet.</div>'
+      : "";
   }
   const lanes = [
     ["Top candidates", review.topCandidates],
@@ -86,25 +103,29 @@ export function renderDiscoveryCandidateReviewHtml(candidateReview) {
     <section class="admin-source-review-panel" aria-label="Discovery candidate review quality">
       <h4>Discovery Review Quality</h4>
       <p class="muted">Candidates ${formatCompactNumber(total)}${counts ? ` · ${counts}` : ""}</p>
-      <div class="admin-source-review-grid">
-        ${lanes.map(([title, rows]) => `
-          <div class="admin-source-review-lane">
-            <h5>${escapeHtml(title)}</h5>
-            ${renderCandidateReviewRows(rows)}
-          </div>
-        `).join("")}
+      <div class="admin-source-review-disclosures">
+        ${lanes.map(([title, rows], index) => renderReviewLaneDetails(
+          title,
+          rows,
+          renderCandidateReviewRows,
+          { open: index === 0 }
+        )).join("")}
       </div>
       ${migrationTotal ? `
-        <h4>Provider Migration Advisory</h4>
-        <p class="muted">Read-only migration evidence for ${formatCompactNumber(migrationTotal)} candidates.</p>
-        <div class="admin-source-review-grid">
-          ${migrationLanes.map(([title, rows]) => `
-            <div class="admin-source-review-lane">
-              <h5>${escapeHtml(title)}</h5>
-              ${renderProviderMigrationRows(rows)}
-            </div>
-          `).join("")}
-        </div>
+        <details class="admin-source-review-section-details">
+          <summary>
+            <span>Provider Migration Advisory</span>
+            <span class="muted">${formatCompactNumber(migrationTotal)} candidates</span>
+          </summary>
+          <p class="muted">Read-only migration evidence for ${formatCompactNumber(migrationTotal)} candidates.</p>
+          <div class="admin-source-review-disclosures">
+            ${migrationLanes.map(([title, rows]) => renderReviewLaneDetails(
+              title,
+              rows,
+              renderProviderMigrationRows
+            )).join("")}
+          </div>
+        </details>
       ` : ""}
     </section>
   `;

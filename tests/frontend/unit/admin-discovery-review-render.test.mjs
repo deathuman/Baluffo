@@ -76,6 +76,8 @@ test("admin render: discovery candidate review panel shows review lanes", () => 
 
   assert.match(html, /Discovery Review Quality/);
   assert.match(html, /Provider Migration Advisory/);
+  assert.match(html, /<details class="admin-source-review-lane-details" open>/);
+  assert.match(html, /<details class="admin-source-review-section-details">/);
   assert.match(html, /Staged provider candidates/);
   assert.match(html, /Already covered by provider/);
   assert.match(html, /Unsupported provider candidates/);
@@ -86,4 +88,12 @@ test("admin render: discovery candidate review panel shows review lanes", () => 
   assert.match(html, /Static Provider/);
   assert.match(html, /Staged Provider/);
   assert.match(html, /HTTP 403/);
+});
+
+test("admin render: discovery candidate review panel has bounded empty state", () => {
+  assert.equal(renderDiscoveryCandidateReviewHtml({}), "");
+  assert.match(
+    renderDiscoveryCandidateReviewHtml({}, { showEmpty: true }),
+    /No discovery review evidence loaded yet/
+  );
 });

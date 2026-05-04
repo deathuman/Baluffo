@@ -379,7 +379,9 @@ export function buildTaskRunView(row, { nowMs = Date.now() } = {}) {
   const progress = normalizeTaskProgressPayload(safeRow.taskProgress);
   const status = deriveStatus(safeRow, progress, nowMs);
   const progressDetail = progress
-    ? formatTaskProgressDetail(taskType, progress, summary, { includeCounts: status === "running" ? false : true })
+    ? formatTaskProgressDetail(taskType, progress, summary, {
+        includeCounts: status === "running" && taskType !== "discovery" ? false : true
+      })
     : "";
   const tailBadge = taskType === "fetch" && (safeRow.active || safeRow.isLive)
     ? formatScrapyStaticSourcesTailBadge(safeRow.workItems)
@@ -432,6 +434,15 @@ export function buildTaskRunDiagnostics(row, {
     "okWithWarningSources",
     "queuedCandidateCount",
     "failedProbeCount",
+    "foundEndpointCount",
+    "generatedCandidateCount",
+    "survivedDedupeCandidateCount",
+    "probedCandidateCount",
+    "discoverableButDeferredCount",
+    "currentStageKey",
+    "stageIndex",
+    "stageTotal",
+    "completedStageCount",
     "activeCount",
     "pendingCount",
     "rejectedCount",
@@ -501,6 +512,15 @@ export function buildTaskRunAnalysis(row, {
     "okWithWarningSources",
     "queuedCandidateCount",
     "failedProbeCount",
+    "foundEndpointCount",
+    "generatedCandidateCount",
+    "survivedDedupeCandidateCount",
+    "probedCandidateCount",
+    "discoverableButDeferredCount",
+    "currentStageKey",
+    "stageIndex",
+    "stageTotal",
+    "completedStageCount",
     "activeCount",
     "pendingCount",
     "rejectedCount",

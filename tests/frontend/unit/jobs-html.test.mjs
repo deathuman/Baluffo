@@ -48,3 +48,18 @@ test("admin html no longer renders fetcher or discovery live-items markup", () =
   assert.doesNotMatch(adminHtml, /admin-discovery-live-card/);
   assert.doesNotMatch(adminHtml, /data-ui="admin-fetcher-live-items"/);
 });
+
+test("admin html groups operations health into overview discovery source-policy and dedup tabs", () => {
+  const adminHtml = fs.readFileSync(path.join(repoRoot, "admin.html"), "utf8");
+  assert.match(adminHtml, /role="tablist" aria-label="Operations health sections"/);
+  assert.match(adminHtml, /data-ops-tab="overview"/);
+  assert.match(adminHtml, /data-ops-tab="discovery"/);
+  assert.match(adminHtml, /data-ops-tab="source-policy"/);
+  assert.match(adminHtml, /data-ops-tab="dedup"/);
+  assert.match(adminHtml, /id="admin-ops-tab-overview"/);
+  assert.match(adminHtml, /id="admin-ops-tab-discovery"[^>]+hidden/);
+  assert.match(adminHtml, /id="admin-discovery-review"/);
+  assert.match(adminHtml, /id="admin-ops-tab-source-policy"[^>]+hidden/);
+  assert.match(adminHtml, /id="admin-ops-tab-dedup"[^>]+hidden/);
+  assert.match(adminHtml, /<h4 class="admin-section-title">Run History<\/h4>\s*<div id="admin-ops-history"/);
+});

@@ -60,15 +60,31 @@ function formatFetcherCounts(counts, progress) {
 
 function formatDiscoveryCounts(counts, progress) {
   const found = Math.max(0, Number(counts?.foundEndpoints || 0));
+  const generated = Math.max(0, Number(counts?.generatedCandidates || 0));
+  const survived = Math.max(0, Number(counts?.survivedDedupeCandidates || 0));
   const probed = Math.max(0, Number(counts?.probedCandidates || 0));
   const probeTotal = Math.max(0, Number(counts?.probeTotal || 0));
   const queued = Math.max(0, Number(counts?.queuedCandidates || 0));
   const deferred = Math.max(0, Number(counts?.deferredCandidates || 0));
   const failed = Math.max(0, Number(counts?.failedProbes || 0));
+  const stageIndex = Math.max(0, Number(counts?.stageIndex || 0));
+  const stageTotal = Math.max(0, Number(counts?.stageTotal || 0));
+  const stageLabel = stageIndex > 0 && stageTotal > 0
+    ? `stage ${compactCount(stageIndex)}/${compactCount(stageTotal)}`
+    : "";
   const probedLabel = String(progress?.mode || "").toLowerCase() === "determinate" && probeTotal > 0
     ? `${compactCount(probed)}/${compactCount(probeTotal)}`
     : compactCount(probed);
-  return `endpoints ${compactCount(found)} | probed ${probedLabel} | queued ${compactCount(queued)} | deferred ${compactCount(deferred)} | failed ${compactCount(failed)}`;
+  return [
+    stageLabel,
+    `generated ${compactCount(generated)}`,
+    `endpoints ${compactCount(found)}`,
+    `survived ${compactCount(survived)}`,
+    `probed ${probedLabel}`,
+    `queued ${compactCount(queued)}`,
+    `deferred ${compactCount(deferred)}`,
+    `failed ${compactCount(failed)}`
+  ].filter(Boolean).join(" | ");
 }
 
 function formatSyncCounts(counts, summary) {

@@ -7,13 +7,15 @@ import {
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "../../render.js?v=10";
+} from "../../render.js?v=12";
 import { renderAdminSourcePolicyReview } from "../../render/source-policy-review.js";
 
 function maybeUnrefTimer(timer) {
   timer?.unref?.();
   return timer;
 }
+
+const OPS_TAB_KEYS = new Set(["overview", "discovery", "source-policy", "dedup"]);
 
 export function createOpsHealthController({
   state,
@@ -45,6 +47,56 @@ export function createOpsHealthController({
 }) {
   let lastDiscoveryRegistryRefreshAtMs = 0;
   let initialBridgeReadyResolved = false;
+
+  function getOpsTabPanels() {
+    return {
+      overview: refs.adminOpsTabOverviewEl,
+      discovery: refs.adminOpsTabDiscoveryEl,
+      "source-policy": refs.adminOpsTabSourcePolicyEl,
+      dedup: refs.adminOpsTabDedupEl
+    };
+  }
+
+  function selectOpsTab(tabKey = "overview") {
+    const activeKey = OPS_TAB_KEYS.has(tabKey) ? tabKey : "overview";
+    state.adminOpsActiveTab = activeKey;
+    const buttons = Array.isArray(refs.adminOpsTabBtnEls) ? refs.adminOpsTabBtnEls : [];
+    buttons.forEach(button => {
+      const buttonKey = String(button?.dataset?.opsTab || button?.getAttribute?.("data-ops-tab") || "");
+      const active = buttonKey === activeKey;
+      button?.setAttribute?.("aria-selected", active ? "true" : "false");
+      button?.classList?.toggle?.("active", active);
+      if (button) button.tabIndex = active ? 0 : -1;
+    });
+    Object.entries(getOpsTabPanels()).forEach(([key, panel]) => {
+      if (!panel) return;
+      const active = key === activeKey;
+      panel.hidden = !active;
+      panel.classList?.toggle?.("hidden", !active);
+      if (active) {
+        panel.removeAttribute?.("hidden");
+      } else {
+        panel.setAttribute?.("hidden", "");
+      }
+    });
+  }
+
+  function setupOpsTabs() {
+    const buttons = Array.isArray(refs.adminOpsTabBtnEls) ? refs.adminOpsTabBtnEls : [];
+    if (!buttons.length || state.adminOpsTabsInitialized) {
+      selectOpsTab(state.adminOpsActiveTab || "overview");
+      return;
+    }
+    state.adminOpsTabsInitialized = true;
+    buttons.forEach(button => {
+      button?.addEventListener?.("click", () => {
+        selectOpsTab(String(button?.dataset?.opsTab || button?.getAttribute?.("data-ops-tab") || "overview"));
+      });
+    });
+    selectOpsTab(state.adminOpsActiveTab || "overview");
+  }
+
+  setupOpsTabs();
 
   function setOpsPlaceholders(message = "Operations health unavailable.") {
     if (refs.adminSyncStatusEl) {
@@ -394,6 +446,7 @@ export function createOpsHealthController({
     setOpsPlaceholders,
     stopOpsHealthPolling,
     scheduleOpsHealthPolling,
-    loadOpsHealthData
+    loadOpsHealthData,
+    selectOpsTab
   };
 }

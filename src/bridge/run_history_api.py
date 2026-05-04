@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.task_history import TaskHistoryManager
+from src.shared.json_shapes import as_json_object
 
 _ORPHANED_RUN_ERROR = "owner_inactive_without_terminal_report"
 
@@ -318,7 +319,17 @@ def _build_child_task_snapshot(
     state_entry = _load_task_state_entry(task_type, load_json_object, task_state_path)
     state_run_id = str(state_entry.get("runId") or "").strip()
     state_matches = bool(run_id and state_run_id and state_run_id == run_id)
-    state_active = bool(state_matches and task_running_from_state(task_type))
+    state_heartbeat_at = str(state_entry.get("heartbeatAt") or "").strip()
+    state_recent = bool(
+        state_matches
+        and _signal_is_recent(
+            state_heartbeat_at,
+            parse_iso=parse_iso,
+            now_utc=now_utc,
+            max_idle_minutes=max_idle_minutes,
+        )
+    )
+    state_active = bool(state_matches and (task_running_from_state(task_type) or state_recent))
 
     artifact = task_artifact if isinstance(task_artifact, dict) else {}
     artifact_run_id = str(artifact.get("runId") or "").strip()
@@ -353,6 +364,16 @@ def _build_child_task_snapshot(
             or _path_is_recent(report_path, now_utc, max_idle_minutes=max_idle_minutes)
         )
     )
+    progress_active = bool(
+        run_id
+        and _task_progress_active(report)
+        and _signal_is_recent(
+            str(as_json_object(report.get("taskProgress")).get("updatedAt") or "").strip(),
+            parse_iso=parse_iso,
+            now_utc=now_utc,
+            max_idle_minutes=max_idle_minutes,
+        )
+    )
 
     if state_run_id and run_id and state_run_id != run_id:
         diagnostics.append(
@@ -373,7 +394,9 @@ def _build_child_task_snapshot(
             }
         )
 
-    owner_active = bool(run_id and (state_active or artifact_active or report_active))
+    owner_active = bool(
+        run_id and (state_active or artifact_active or report_active or progress_active)
+    )
     if finished_at and owner_active:
         diagnostics.append(
             {

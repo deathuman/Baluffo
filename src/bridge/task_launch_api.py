@@ -155,6 +155,7 @@ class TaskLaunchApi:
                 "script": str(script_name),
                 "status": "running",
                 "startedAt": task_started_at,
+                "heartbeatAt": task_started_at,
             }
             self._deps.save_json_atomic(self._paths.task_state, state)
         self._deps.bridge_log(

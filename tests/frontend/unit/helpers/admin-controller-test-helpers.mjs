@@ -143,6 +143,7 @@ export function createRegistryControllerFixture({
     adminManualSourceUrlEl: createElement(),
     adminManualSourceFeedbackEl: createElement(),
     adminDiscoverySummaryEl: createElement(),
+    adminDiscoveryReviewEl: createElement(),
     adminPendingSourcesEl: createElement(),
     adminActiveSourcesEl: createElement(),
     adminRejectedSourcesEl: createElement(),

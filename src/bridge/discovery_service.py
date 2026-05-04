@@ -142,6 +142,32 @@ class DiscoveryService:
             "savedConfig": self.get_saved_discovery_config_payload(),
         }
 
+    def _refresh_discovery_task_heartbeat(self, *, run_id: str, pid: int, started_at: str) -> None:
+        if self._paths.task_state is None:
+            return
+        now = self._deps.now_iso()
+        lock_context = (
+            self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
+        )
+        with lock_context:
+            state = self._deps.load_json_object(self._paths.task_state, {})
+            if not isinstance(state, dict):
+                state = {}
+            current = as_json_object(state.get("discovery"))
+            current_run_id = str(current.get("runId") or "").strip()
+            if current_run_id and current_run_id != run_id:
+                return
+            state["discovery"] = {
+                **current,
+                "runId": run_id,
+                "taskType": "discovery",
+                "pid": int(pid),
+                "status": "running",
+                "startedAt": str(current.get("startedAt") or started_at),
+                "heartbeatAt": now,
+            }
+            self._deps.save_json_atomic(self._paths.task_state, state)
+
     def update_saved_discovery_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized = self._normalize_discovery_settings(payload)
         self._deps.save_json_atomic(self._paths.settings, normalized)
@@ -167,6 +193,11 @@ class DiscoveryService:
                 # so ops/UI do not show discovery as running forever.
                 self._deps.clear_task_state("discovery")
                 return
+            self._refresh_discovery_task_heartbeat(
+                run_id=run_id,
+                pid=pid,
+                started_at=started_at,
+            )
             threading.Event().wait(0.8)
         try:
             finished_at = str(report.get("finishedAt") or "")
@@ -295,13 +326,20 @@ class DiscoveryService:
                         "phaseLabel": "Spawning discovery worker",
                         "mode": "indeterminate",
                         "ratio": 0.0,
+                        "targetLabel": "Spawning discovery worker",
+                        "updatedAt": started_at,
                         "counts": {
                             "foundEndpoints": 0,
+                            "generatedCandidates": 0,
+                            "survivedDedupeCandidates": 0,
                             "probedCandidates": 0,
                             "probeTotal": 0,
                             "queuedCandidates": 0,
                             "deferredCandidates": 0,
                             "failedProbes": 0,
+                            "stageIndex": 0,
+                            "stageTotal": 0,
+                            "completedStages": 0,
                         },
                     },
                     "candidates": [],

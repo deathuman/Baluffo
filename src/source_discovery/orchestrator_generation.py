@@ -714,7 +714,9 @@ def _dedupe_discovered_candidates(
         local_seen_ids.add(row_id)
         if row_domain:
             local_seen_domains.add(row_domain)
-        state.survived_dedupe_count_by_stage[stage] += 1
+        state.survived_dedupe_count_by_stage[stage] = (
+            state.survived_dedupe_count_by_stage.get(stage, 0) + 1
+        )
         state.filtered.append(row)
 
 

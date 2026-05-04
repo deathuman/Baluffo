@@ -7,7 +7,7 @@
   <link rel="icon" href="favicon.ico" sizes="any">
   <link rel="stylesheet" href="styles/base.css">
   <link rel="stylesheet" href="styles/components.css">
-  <link rel="stylesheet" href="styles/admin.css?v=10">
+  <link rel="stylesheet" href="styles/admin.css?v=12">
 </head>
 <body>
   <button class="btn back-btn theme-toggle-btn global-theme-toggle" data-ui="theme-toggle-btn" type="button" aria-label="Switch theme">Theme</button>
@@ -41,15 +41,33 @@
             <button id="admin-refresh-ops-btn" data-ui="admin-refresh-ops-btn" class="btn clear-filters-btn">Refresh Ops Health</button>
           </div>
         </div>
-        <div id="admin-ops-alerts" data-ui="admin-ops-alerts" class="admin-ops-alerts"></div>
-        <div id="admin-ops-kpis" data-ui="admin-ops-kpis" class="admin-ops-kpis"></div>
-        <div id="admin-ops-schedule" data-ui="admin-ops-schedule" class="admin-ops-schedule"></div>
-        <h4 class="admin-section-title">Source Policy Review</h4>
-        <div id="admin-source-policy-review" data-ui="admin-source-policy-review" class="admin-source-policy-review"></div>
-        <h4 class="admin-section-title">Fetcher Metrics</h4>
-        <div id="admin-ops-fetcher-metrics" data-ui="admin-ops-fetcher-metrics" class="admin-ops-kpis"></div>
-        <h4 class="admin-section-title">Dedup Lists</h4>
-        <div id="admin-ops-dedup-lists" data-ui="admin-ops-dedup-lists" class="admin-ops-kpis admin-ops-dedup-lists"></div>
+        <div class="admin-ops-tabs" role="tablist" aria-label="Operations health sections">
+          <button id="admin-ops-tab-overview-btn" data-ui="admin-ops-tab-btn" data-ops-tab="overview" class="btn clear-filters-btn admin-ops-tab-btn active" type="button" role="tab" aria-selected="true" aria-controls="admin-ops-tab-overview">Overview</button>
+          <button id="admin-ops-tab-discovery-btn" data-ui="admin-ops-tab-btn" data-ops-tab="discovery" class="btn clear-filters-btn admin-ops-tab-btn" type="button" role="tab" aria-selected="false" aria-controls="admin-ops-tab-discovery">Discovery Review</button>
+          <button id="admin-ops-tab-source-policy-btn" data-ui="admin-ops-tab-btn" data-ops-tab="source-policy" class="btn clear-filters-btn admin-ops-tab-btn" type="button" role="tab" aria-selected="false" aria-controls="admin-ops-tab-source-policy">Source Policy Review</button>
+          <button id="admin-ops-tab-dedup-btn" data-ui="admin-ops-tab-btn" data-ops-tab="dedup" class="btn clear-filters-btn admin-ops-tab-btn" type="button" role="tab" aria-selected="false" aria-controls="admin-ops-tab-dedup">Dedup Lists</button>
+        </div>
+        <div id="admin-ops-tab-overview" data-ui="admin-ops-tab-overview" class="admin-ops-tab-panel" role="tabpanel" aria-labelledby="admin-ops-tab-overview-btn">
+          <div id="admin-ops-alerts" data-ui="admin-ops-alerts" class="admin-ops-alerts"></div>
+          <div id="admin-ops-kpis" data-ui="admin-ops-kpis" class="admin-ops-kpis"></div>
+          <div id="admin-ops-schedule" data-ui="admin-ops-schedule" class="admin-ops-schedule"></div>
+          <h4 class="admin-section-title">Fetcher Metrics</h4>
+          <div id="admin-ops-fetcher-metrics" data-ui="admin-ops-fetcher-metrics" class="admin-ops-kpis"></div>
+        </div>
+        <div id="admin-ops-tab-discovery" data-ui="admin-ops-tab-discovery" class="admin-ops-tab-panel hidden" role="tabpanel" aria-labelledby="admin-ops-tab-discovery-btn" hidden>
+          <h4 class="admin-section-title">Discovery Review</h4>
+          <div id="admin-discovery-review" data-ui="admin-discovery-review" class="admin-discovery-review">
+            <div class="no-results">No discovery report loaded yet.</div>
+          </div>
+        </div>
+        <div id="admin-ops-tab-source-policy" data-ui="admin-ops-tab-source-policy" class="admin-ops-tab-panel hidden" role="tabpanel" aria-labelledby="admin-ops-tab-source-policy-btn" hidden>
+          <h4 class="admin-section-title">Source Policy Review</h4>
+          <div id="admin-source-policy-review" data-ui="admin-source-policy-review" class="admin-source-policy-review"></div>
+        </div>
+        <div id="admin-ops-tab-dedup" data-ui="admin-ops-tab-dedup" class="admin-ops-tab-panel hidden" role="tabpanel" aria-labelledby="admin-ops-tab-dedup-btn" hidden>
+          <h4 class="admin-section-title">Dedup Lists</h4>
+          <div id="admin-ops-dedup-lists" data-ui="admin-ops-dedup-lists" class="admin-ops-kpis admin-ops-dedup-lists"></div>
+        </div>
         <div id="admin-ops-trends" data-ui="admin-ops-trends" class="results-summary">No run trend data yet.</div>
         <h4 class="admin-section-title">Run History</h4>
         <div id="admin-ops-history" data-ui="admin-ops-history" class="jobs-list"></div>
@@ -244,6 +262,6 @@
 
   <script src="frontend-runtime-config.js?v=1"></script>
   <script src="theme.js" defer></script>
-  <script type="module" src="frontend/admin/index.js?v=10"></script>
+  <script type="module" src="frontend/admin/index.js?v=12"></script>
 </body>
 </html>

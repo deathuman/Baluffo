@@ -1,4 +1,4 @@
-import { UI_TOKENS, ui } from "../../shared/ui/selectors.js?v=10";
+import { UI_TOKENS, ui } from "../../shared/ui/selectors.js?v=12";
 
 export function cacheAdminDom(doc = document) {
   const t = UI_TOKENS.admin;
@@ -60,6 +60,12 @@ export function cacheAdminDom(doc = document) {
     adminOpsAlertsEl: doc.querySelector(ui(t.opsAlerts)),
     adminOpsKpisEl: doc.querySelector(ui(t.opsKpis)),
     adminOpsScheduleEl: doc.querySelector(ui(t.opsSchedule)),
+    adminOpsTabBtnEls: Array.from(doc.querySelectorAll(ui(t.opsTabBtn))),
+    adminOpsTabOverviewEl: doc.querySelector(ui(t.opsTabOverview)),
+    adminOpsTabDiscoveryEl: doc.querySelector(ui(t.opsTabDiscovery)),
+    adminOpsTabSourcePolicyEl: doc.querySelector(ui(t.opsTabSourcePolicy)),
+    adminOpsTabDedupEl: doc.querySelector(ui(t.opsTabDedup)),
+    adminDiscoveryReviewEl: doc.querySelector(ui(t.discoveryReview)),
     adminSourcePolicyReviewEl: doc.querySelector(ui(t.sourcePolicyReview)),
     adminOpsFetcherMetricsEl: doc.querySelector(ui(t.opsFetcherMetrics)),
     adminOpsDedupListsEl: doc.querySelector(ui(t.opsDedupLists)),

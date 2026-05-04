@@ -14,6 +14,84 @@ from src.shared.live_task import (
 
 from . import ops_task_projection as ops_task_projection_mod
 
+DISCOVERY_STAGE_LABELS = {
+    "curatedSeed": "Curated seeds",
+    "sheetDirectory": "Sheet directory",
+    "providerPatterns": "Provider patterns",
+    "seedCareersScan": "Known careers pages",
+    "gamesmap": "Gamesmap directory",
+    "gameprog": "Gameprog directory",
+    "gamedevmap": "GameDevMap directory",
+    "webSearch": "Web search",
+    "dedupeFilter": "Dedupe filter",
+    "probe": "Candidate probes",
+    "finalizing": "Finalizing report",
+}
+
+
+def _stage_work_items(
+    *,
+    counts: dict[str, Any],
+    phase_key: str,
+    phase_label: str,
+    heartbeat_at: str,
+    active: bool,
+    run_id: str,
+    started_at: str,
+    finished_at: str,
+) -> list[dict[str, Any]]:
+    stage_total = _ops_live_payload.coerce_non_negative_int(counts.get("stageTotal"))
+    if stage_total <= 0:
+        return []
+    current_stage = str(counts.get("currentStageKey") or "").strip()
+    current_index = _ops_live_payload.coerce_non_negative_int(counts.get("stageIndex"))
+    completed = _ops_live_payload.coerce_non_negative_int(counts.get("completedStages"))
+    rows: list[dict[str, Any]] = []
+    stage_keys = list(DISCOVERY_STAGE_LABELS.keys())[:stage_total]
+    for index, key in enumerate(stage_keys, start=1):
+        if key == current_stage and active:
+            status = "running"
+        elif index <= completed or (current_index and index < current_index):
+            status = "ok"
+        else:
+            status = "queued"
+        rows.append(
+            {
+                "id": key,
+                "name": DISCOVERY_STAGE_LABELS.get(key, key),
+                "status": status,
+                "startedAt": started_at,
+                "finishedAt": finished_at if status == "ok" else "",
+                "durationMs": 0,
+                "heartbeatAt": heartbeat_at,
+                "progress": {
+                    "phaseKey": phase_key,
+                    "phaseLabel": phase_label,
+                    "counts": {
+                        "stageIndex": index,
+                        "stageTotal": stage_total,
+                        "completedStages": completed,
+                    },
+                    "targetLabel": DISCOVERY_STAGE_LABELS.get(key, key),
+                    "updatedAt": heartbeat_at,
+                },
+                "error": "",
+                "taskType": "discovery",
+                "runId": run_id,
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            0 if str(row.get("status") or "") == "running" else 1,
+            _ops_live_payload.coerce_non_negative_int(
+                as_json_object(row.get("progress")).get("counts", {}).get("stageIndex")
+                if isinstance(as_json_object(row.get("progress")).get("counts"), dict)
+                else 0
+            ),
+        )
+    )
+    return rows
+
 
 def build_discovery_work_items(
     report: dict[str, Any],
@@ -28,6 +106,7 @@ def build_discovery_work_items(
     heartbeat_at = str(lifecycle.get("heartbeatAt") or "").strip()
     summary = as_json_object(report.get("summary"))
     task_progress = as_json_object(report.get("taskProgress"))
+    counts = as_json_object(task_progress.get("counts"))
     phase_key = str(task_progress.get("phaseKey") or summary.get("phase") or "discovery").strip()
     phase_label = str(
         task_progress.get("phaseLabel")
@@ -35,6 +114,16 @@ def build_discovery_work_items(
         or summary.get("phase")
         or "Discovery running"
     ).strip()
+    stage_items = _stage_work_items(
+        counts=counts,
+        phase_key=phase_key,
+        phase_label=phase_label,
+        heartbeat_at=heartbeat_at,
+        active=active,
+        run_id=run_id,
+        started_at=started_at,
+        finished_at=finished_at,
+    )
     adapter_rows = json_object_rows(runtime.get("adapterTimings"))
     work_items: list[dict[str, Any]] = []
     for row in adapter_rows:
@@ -46,8 +135,16 @@ def build_discovery_work_items(
         queued_count = _ops_live_payload.coerce_non_negative_int(row.get("queuedCount"))
         duration_ms = _ops_live_payload.coerce_non_negative_int(row.get("durationMs"))
         item_status = "queued"
-        if active and (duration_ms > 0 or generated_count > 0 or probed_count > 0):
+        if active and str(task_progress.get("targetLabel") or "").strip() == adapter:
             item_status = "running"
+        elif (
+            active
+            and not stage_items
+            and (duration_ms > 0 or generated_count > 0 or probed_count > 0)
+        ):
+            item_status = "running"
+        elif active and (duration_ms > 0 or generated_count > 0 or probed_count > 0):
+            item_status = "ok"
         elif finished_at:
             item_status = (
                 "error"
@@ -81,7 +178,7 @@ def build_discovery_work_items(
                 "runId": run_id,
             }
         )
-    return work_items
+    return [*stage_items, *work_items]
 
 
 def build_discovery_recent_events(
@@ -118,6 +215,17 @@ def build_discovery_recent_events(
         failed = _ops_live_payload.coerce_non_negative_int(
             counts.get("failedProbes") or summary.get("failedProbeCount")
         )
+        generated = _ops_live_payload.coerce_non_negative_int(
+            counts.get("generatedCandidates") or summary.get("generatedCandidateCount")
+        )
+        survived = _ops_live_payload.coerce_non_negative_int(
+            counts.get("survivedDedupeCandidates") or summary.get("survivedDedupeCandidateCount")
+        )
+        stage_index = _ops_live_payload.coerce_non_negative_int(counts.get("stageIndex"))
+        stage_total = _ops_live_payload.coerce_non_negative_int(counts.get("stageTotal"))
+        stage_tail = (
+            f" ({stage_index}/{stage_total} stages)" if stage_index > 0 and stage_total > 0 else ""
+        )
         events = append_live_task_event(
             events,
             {
@@ -127,8 +235,10 @@ def build_discovery_recent_events(
                 "runId": run_id,
                 "phaseKey": str(task_progress.get("phaseKey") or ""),
                 "message": (
-                    f"{str(task_progress.get('phaseLabel') or 'Discovery running').strip()}: "
-                    f"endpoints {found}, probed {probed}, queued {queued}, deferred {deferred}, failed {failed}."
+                    f"{str(task_progress.get('phaseLabel') or 'Discovery running').strip()}"
+                    f"{stage_tail}: generated {generated}, endpoints {found}, "
+                    f"survived {survived}, probed {probed}, queued {queued}, "
+                    f"deferred {deferred}, failed {failed}."
                 ),
             },
         )

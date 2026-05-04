@@ -20,13 +20,13 @@ The current foundation is correct for an internal telemetry system:
 
 The remaining risk is usability, operational clarity, and duplication across frontend modules.
 
-This plan is compatible with the archived [`admin-health-dashboard-console-closeout.md`](../archive/admin-health-dashboard-console-closeout.md) by separating depth from overview. The archived health-dashboard work owns the Operations Health layout and compact Discovery / Fetch / Sync lane. This task/progress plan owns the shared task-run presenter, compact Current Runs rows, stale/orphaned display states, selected-run analysis, run timelines, and run-scoped diagnostics.
+This plan is compatible with the archived [`admin-health-dashboard-console-closeout.md`](../archive/admin-health-dashboard-console-closeout.md) by separating depth from overview. The archived health-dashboard work owns the Operations Health layout, compact Discovery / Fetch / Sync lane, and tabbed review surfaces for Discovery Review, Source Policy Review, and Dedup Lists. This task/progress plan owns the shared task-run presenter, compact Current Runs rows, stale/orphaned display states, selected-run analysis, run timelines, and run-scoped diagnostics.
 
 ## Current implementation strength
 
 ### Backend contract shape
 
-- `/ops/task-live/<taskType>` is the detailed live surface and includes `workItems`, `recentEvents`, `taskProgress`, lifecycle fields, and output summaries.
+- `/ops/task-live/<taskType>` is the detailed live surface and includes `workItems`, `recentEvents`, `taskProgress`, lifecycle fields, and output summaries. Discovery live progress is wave-aware: stage index/total, current target, generated/survived counts, probe counts, and updated heartbeats are additive support fields.
 - `/ops/task-state` is the compact summary contract with a top-level `tasks` array.
 - `admin-run-history.json` is explicit summary data, not source-of-truth liveness data.
 - Task ownership is now `runId`-driven.
@@ -160,7 +160,7 @@ Compatibility note: the health-dashboard plan implements a compact version of th
 | Current tasks | Compact rows, stale/orphaned states, timelines, diagnostics | Compact Discovery / Fetch / Sync lane | Do not build full task cards inside `#admin-ops-fetcher-metrics`. |
 | Fetch analysis | Run-scoped analysis for current/selected completed run | Latest health-oriented fetch metrics grouped in the dashboard | Share formatters where useful; keep render surfaces separate and avoid repeating row-level task details in Health. |
 | Diagnostics | Current/last run event diagnostics, copy/export | Normalized section-summary copy for health sections | Avoid two raw-payload copy controls for the same event data. |
-| Source-policy/dedup review | Only task progress/status context | Source Policy queue, health summaries, and separate Dedup Lists panel | Do not move review mutations into task rows, selected-run analysis, or task timelines. |
+| Discovery/source-policy/dedup review | Only task progress/status context | Dedicated Discovery Review, Source Policy Review, and Dedup Lists tabs plus compact health summaries | Do not move review mutations into task rows, selected-run analysis, or task timelines. |
 
 Execution order is flexible:
 

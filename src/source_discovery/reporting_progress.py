@@ -7,7 +7,84 @@ from src.contracts import SCHEMA_VERSION
 from src.shared.json_shapes import as_json_object
 from src.shared.utils import now_iso
 
-from .runtime_metrics import build_discovery_runtime_payload
+from .runtime_metrics import DISCOVERY_TIMING_STAGE_KEYS, build_discovery_runtime_payload
+
+DISCOVERY_PROGRESS_STAGE_ORDER = [
+    "curatedSeed",
+    "sheetDirectory",
+    "providerPatterns",
+    "seedCareersScan",
+    "gamesmap",
+    "gameprog",
+    "gamedevmap",
+    "webSearch",
+    "dedupeFilter",
+    "probe",
+    "finalizing",
+]
+
+DISCOVERY_PROGRESS_LABEL_PATTERNS = [
+    ("sheetDirectory", ("sheet",)),
+    ("providerPatterns", ("provider-pattern", "provider pattern")),
+    ("seedCareersScan", ("known careers", "seed careers")),
+    ("gamesmap", ("gamesmap",)),
+    ("gameprog", ("gameprog",)),
+    ("gamedevmap", ("gamedevmap", "game dev map")),
+    ("webSearch", ("web-search", "web search")),
+    ("probe", ("probe",)),
+    ("finalizing", ("finalizing",)),
+    ("dedupeFilter", ("dedupe",)),
+]
+
+
+def _progress_stage_key(phase: str, phase_label: str) -> str:
+    phase_text = str(phase or "").strip().lower()
+    label = str(phase_label or "").strip().lower()
+    for stage_key, patterns in DISCOVERY_PROGRESS_LABEL_PATTERNS:
+        if any(pattern in label for pattern in patterns):
+            return stage_key
+    if phase_text == "probing_candidates":
+        return "probe"
+    if phase_text == "finalizing":
+        return "finalizing"
+    if phase_text == "dedupe_filter":
+        return "dedupeFilter"
+    return ""
+
+
+def _stage_progress_fields(
+    *,
+    phase: str,
+    phase_label: str,
+    stage_timings_ms: dict[str, int],
+    generated_count_by_stage: dict[str, int],
+    survived_dedupe_count_by_stage: dict[str, int],
+) -> dict[str, Any]:
+    stage_key = _progress_stage_key(phase, phase_label)
+    stage_total = len(DISCOVERY_PROGRESS_STAGE_ORDER)
+    stage_index = (
+        DISCOVERY_PROGRESS_STAGE_ORDER.index(stage_key) + 1
+        if stage_key in DISCOVERY_PROGRESS_STAGE_ORDER
+        else 0
+    )
+    completed_stages = len(
+        [key for key in DISCOVERY_TIMING_STAGE_KEYS if int(stage_timings_ms.get(key) or 0) > 0]
+    )
+    if stage_key == "finalizing":
+        completed_stages = max(completed_stages, stage_total - 1)
+    return {
+        "currentStageKey": stage_key,
+        "currentStageLabel": str(phase_label or "").strip(),
+        "stageIndex": stage_index,
+        "stageTotal": stage_total,
+        "completedStageCount": min(stage_total, completed_stages),
+        "generatedCandidateCount": int(
+            sum(max(0, int(value or 0)) for value in generated_count_by_stage.values())
+        ),
+        "survivedDedupeCandidateCount": int(
+            sum(max(0, int(value or 0)) for value in survived_dedupe_count_by_stage.values())
+        ),
+    }
 
 
 def _candidate_summary_counts(current_candidates: list[dict[str, Any]]) -> dict[str, int]:
@@ -87,10 +164,18 @@ def build_stage_summary(
     deferred_by_cap = int(sum(int(value or 0) for value in deferred_reason_rows.values()))
     failed_probe_count_final, probe_miss_count_final = _probe_failure_counts(failures)
     counts = _candidate_summary_counts(current_candidates)
+    stage_progress = _stage_progress_fields(
+        phase=phase,
+        phase_label=phase_label,
+        stage_timings_ms={},
+        generated_count_by_stage=generated_count_by_stage,
+        survived_dedupe_count_by_stage=survived_dedupe_count_by_stage,
+    )
     return {
         "phase": str(phase or ""),
         "phaseKey": str(phase or ""),
         "phaseLabel": str(phase_label or ""),
+        **stage_progress,
         "probedCount": probed,
         "healthyCount": healthy,
         "newCandidateCount": len(current_candidates),
@@ -150,6 +235,7 @@ def build_discovery_task_progress(
     *,
     summary: dict[str, Any],
     finished: bool,
+    updated_at: str = "",
 ) -> dict[str, Any]:
     phase_key = str(summary.get("phaseKey") or summary.get("phase") or "").strip() or (
         "completed" if finished else "starting"
@@ -162,6 +248,13 @@ def build_discovery_task_progress(
     queued_count = int(summary.get("queuedCandidateCount") or 0)
     deferred_count = int(summary.get("discoverableButDeferredCount") or 0)
     failed_count = int(summary.get("failedProbeCount") or 0)
+    generated_count = int(summary.get("generatedCandidateCount") or 0)
+    survived_count = int(summary.get("survivedDedupeCandidateCount") or 0)
+    stage_index = int(summary.get("stageIndex") or 0)
+    stage_total = int(summary.get("stageTotal") or 0)
+    completed_stage_count = int(summary.get("completedStageCount") or 0)
+    current_stage_key = str(summary.get("currentStageKey") or "").strip()
+    current_stage_label = str(summary.get("currentStageLabel") or phase_label).strip()
     loss = as_json_object(summary.get("lossAccounting"))
     probe_total = max(
         0,
@@ -187,13 +280,22 @@ def build_discovery_task_progress(
         "phaseLabel": phase_label,
         "mode": mode,
         "ratio": ratio,
+        "targetLabel": current_stage_label,
+        "updatedAt": str(updated_at or "").strip(),
         "counts": {
             "foundEndpoints": found_count,
+            "generatedCandidates": generated_count,
+            "survivedDedupeCandidates": survived_count,
             "probedCandidates": probed_count,
             "probeTotal": probe_total,
             "queuedCandidates": queued_count,
             "deferredCandidates": deferred_count,
             "failedProbes": failed_count,
+            "currentStageKey": current_stage_key,
+            "currentStageLabel": current_stage_label,
+            "stageIndex": stage_index,
+            "stageTotal": stage_total,
+            "completedStages": completed_stage_count,
         },
     }
 
@@ -244,6 +346,7 @@ def write_discovery_progress_report(
     save_json_atomic_fn,
     now_iso_fn=now_iso,
 ) -> None:
+    heartbeat_at = now_iso_fn()
     runtime_payload = build_discovery_runtime_payload(
         total_duration_ms=total_duration_ms,
         stage_timings_ms=stage_timings_ms,
@@ -283,7 +386,17 @@ def write_discovery_progress_report(
         phase=phase,
         phase_label=phase_label,
     )
-    task_progress = build_discovery_task_progress(summary=summary, finished=False)
+    stage_progress = _stage_progress_fields(
+        phase=phase,
+        phase_label=phase_label,
+        stage_timings_ms=stage_timings_ms,
+        generated_count_by_stage=generated_count_by_stage,
+        survived_dedupe_count_by_stage=survived_dedupe_count_by_stage,
+    )
+    summary.update(stage_progress)
+    task_progress = build_discovery_task_progress(
+        summary=summary, finished=False, updated_at=heartbeat_at
+    )
     save_json_atomic_fn(
         report_write_path,
         {
@@ -297,7 +410,7 @@ def write_discovery_progress_report(
                 **dict(runtime_payload),
                 "lifecycle": {
                     "owner": "discovery_report",
-                    "heartbeatAt": now_iso_fn(),
+                    "heartbeatAt": heartbeat_at,
                 },
             },
             "taskProgress": task_progress,
