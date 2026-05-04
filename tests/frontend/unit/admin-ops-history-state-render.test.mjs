@@ -11,7 +11,7 @@ function makeEl() {
   };
 }
 
-test("admin ops history: stalled and orphaned current runs render read-only state cards", () => {
+test("admin ops history: stalled and orphaned current runs render read-only compact rows", () => {
   const historyEl = makeEl();
   renderAdminOpsHistory(historyEl, {
     currentRows: [
@@ -33,19 +33,19 @@ test("admin ops history: stalled and orphaned current runs render read-only stat
     olderCompletedRows: []
   });
 
-  assert.match(historyEl.innerHTML, /admin-ops-run-card-stalled/);
-  assert.match(historyEl.innerHTML, /admin-ops-run-card-orphaned/);
+  assert.match(historyEl.innerHTML, /admin-ops-history-row/);
+  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
   assert.match(historyEl.innerHTML, /<span class="admin-status-chip warning">stalled<\/span>/);
   assert.match(historyEl.innerHTML, /<span class="admin-status-chip critical">orphaned<\/span>/);
-  assert.match(historyEl.innerHTML, /No recent heartbeat/);
-  assert.match(historyEl.innerHTML, /Task state has no active owner/);
-  assert.match(historyEl.innerHTML, /Check bridge and task logs; verify whether the task heartbeat stopped\./);
-  assert.match(historyEl.innerHTML, /Refresh task state and check whether the owning process exited\./);
+  assert.doesNotMatch(historyEl.innerHTML, /No recent heartbeat/);
+  assert.doesNotMatch(historyEl.innerHTML, /Task state has no active owner/);
+  assert.doesNotMatch(historyEl.innerHTML, /Check bridge and task logs/);
+  assert.doesNotMatch(historyEl.innerHTML, /owning process exited/);
   assert.doesNotMatch(historyEl.innerHTML, /<button/i);
   assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear)/i);
 });
 
-test("admin ops history: running current run omits remediation guidance", () => {
+test("admin ops history: running current run renders compact row without remediation guidance", () => {
   const historyEl = makeEl();
   renderAdminOpsHistory(historyEl, {
     currentRows: [
@@ -61,8 +61,9 @@ test("admin ops history: running current run omits remediation guidance", () => 
     olderCompletedRows: []
   });
 
-  assert.match(historyEl.innerHTML, /admin-ops-run-card/);
+  assert.match(historyEl.innerHTML, /admin-ops-history-row/);
   assert.match(historyEl.innerHTML, /running/);
+  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card-remediation/);
   assert.doesNotMatch(historyEl.innerHTML, /Check bridge and task logs/);
   assert.doesNotMatch(historyEl.innerHTML, /owning process exited/);

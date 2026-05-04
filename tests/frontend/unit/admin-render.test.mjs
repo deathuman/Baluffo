@@ -119,8 +119,9 @@ test("admin render: schedule/trends/history render deterministic core text", () 
   assert.match(historyEl.innerHTML, /Older runs \(2\)/);
   assert.match(historyEl.innerHTML, /running/);
   assert.match(historyEl.innerHTML, /critical/);
-  assert.match(historyEl.innerHTML, /admin-ops-run-card/);
-  assert.match(historyEl.innerHTML, /42 jobs/);
+  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
+  assert.match(historyEl.innerHTML, />fetch</);
+  assert.match(historyEl.innerHTML, />42</);
   assert.match(historyEl.innerHTML, /Review queue: 5/);
   assert.match(historyEl.innerHTML, /Sync pull/i);
   assert.doesNotMatch(historyEl.innerHTML, /<button/i);
@@ -157,7 +158,8 @@ test("admin render: live discovery ops history keeps only the primary phase text
   });
 
   assert.match(historyEl.innerHTML, /gamemap \(50%\)/i);
-  assert.match(historyEl.innerHTML, /role="progressbar"/i);
+  assert.match(historyEl.innerHTML, /admin-ops-history-row/);
+  assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
   assert.doesNotMatch(historyEl.innerHTML, /found/i);
   assert.doesNotMatch(historyEl.innerHTML, /endpoints/i);
   assert.doesNotMatch(historyEl.innerHTML, /probed/i);
@@ -207,7 +209,8 @@ test("admin render: live fetch ops history appends scrapy fallback badge", () =>
   });
 
   assert.match(historyEl.innerHTML, /Executing sources \(50%\) \| Browser fallback 19\/26/i);
-  assert.match(historyEl.innerHTML, /aria-valuenow="50"/i);
+  assert.match(historyEl.innerHTML, /admin-ops-history-row/);
+  assert.doesNotMatch(historyEl.innerHTML, /aria-valuenow="50"/i);
 });
 
 test("admin render: fetcher metrics render failure buckets and examples", () => {

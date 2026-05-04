@@ -153,31 +153,6 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     return text.length > limit ? `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}...` : text;
   };
 
-  const toCardView = (row, rowArea, index) => {
-    const runView = buildTaskRunView(row);
-    const key = [
-      rowArea,
-      String(row?.id || ""),
-      String(row?.runId || ""),
-      runView.taskType,
-      String(row?.startedAt || ""),
-      String(row?.finishedAt || ""),
-      String(index)
-    ].join("|");
-    return {
-      ...runView,
-      key,
-      rowArea,
-      startedText: formatDateTime(row?.startedAt || ""),
-      statusClass: runView.severity === "critical"
-        ? "critical"
-        : runView.severity === "warning"
-          ? "warning"
-          : "healthy",
-      progressPercent: Math.round(Math.max(0, Math.min(1, Number(runView.progressRatio || 0))) * 100)
-    };
-  };
-
   const toRowView = (row, rowArea, index) => {
     const runView = buildTaskRunView(row);
     const rawStatus = String(row?.displayStatus || row?.status || "unknown");
@@ -250,22 +225,20 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     };
   };
 
-  const currentCardViews = currentRows.map((row, index) => toCardView(row, "current", index));
-  const visibleCompletedViews = visibleCompletedRows.map((row, index) => toRowView(row, "current", index));
+  const currentViews = currentRows.map((row, index) => toRowView(row, "current", index));
+  const visibleCompletedViews = visibleCompletedRows.map((row, index) => toRowView(row, "completed", index));
   const olderCompletedViews = olderCompletedRows.map((row, index) => toRowView(row, "completed_older", index));
 
   const structureSignature = JSON.stringify({
-    currentCards: currentCardViews.map(row => [
+    currentRows: currentViews.map(row => [
       row.key,
-      row.status,
-      row.progressLabel,
-      row.progressPercent,
-      row.elapsedLabel,
-      row.warningSummary,
-      row.failureSummary,
-      row.remediationHint
+      row.statusText,
+      row.durationText,
+      row.outputOrQueuedText,
+      row.failedText,
+      row.finishedText
     ]),
-    currentRows: visibleCompletedViews.map(row => [
+    completedRows: visibleCompletedViews.map(row => [
       row.key,
       row.statusText,
       row.durationText,
@@ -319,7 +292,8 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
   };
 
   if (canPatchInPlace && historyEl.dataset.opsStructureSig === structureSignature) {
-    updateExistingRows(visibleCompletedViews, "current");
+    updateExistingRows(currentViews, "current");
+    updateExistingRows(visibleCompletedViews, "completed");
     updateExistingRows(olderCompletedViews, "completed_older");
     return;
   }
@@ -329,7 +303,18 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     historyEl.dataset.opsStructureSig = structureSignature;
   }
 
-  const renderRows = views => views.map(view => {
+  const renderCompactRows = views => views.map(view => `
+      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
+        <div class="admin-cell">${escapeHtml(view.typeText)}</div>
+        <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${view.statusTitle ? ` title="${escapeHtml(view.statusTitle)}"` : ""}>${escapeHtml(view.statusText)}</span></div>
+        <div class="admin-cell">${escapeHtml(view.durationText)}</div>
+        <div class="admin-cell">${escapeHtml(view.outputOrQueuedText)}</div>
+        <div class="admin-cell">${escapeHtml(view.failedText)}</div>
+        <div class="admin-cell">${escapeHtml(view.finishedText)}</div>
+      </div>
+    `).join("");
+
+  const renderCompletedRows = views => views.map(view => {
     const metaItems = [
       view.startedText ? `<span><strong>Started</strong> ${escapeHtml(view.startedText)}</span>` : "",
       view.finishedText ? `<span><strong>Finished</strong> ${escapeHtml(view.finishedText)}</span>` : "",
@@ -344,14 +329,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       : '<div class="muted">No diagnostic hints for this run.</div>';
     return `
       <div class="admin-ops-history-run" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
-      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
-        <div class="admin-cell">${escapeHtml(view.typeText)}</div>
-        <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${view.statusTitle ? ` title="${escapeHtml(view.statusTitle)}"` : ""}>${escapeHtml(view.statusText)}</span></div>
-        <div class="admin-cell">${escapeHtml(view.durationText)}</div>
-        <div class="admin-cell">${escapeHtml(view.outputOrQueuedText)}</div>
-        <div class="admin-cell">${escapeHtml(view.failedText)}</div>
-        <div class="admin-cell">${escapeHtml(view.finishedText)}</div>
-      </div>
+        ${renderCompactRows([view])}
         <details class="admin-ops-run-detail">
           <summary>${escapeHtml(view.title)} details</summary>
           <div class="admin-ops-run-detail-body">
@@ -375,50 +353,22 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     `;
   }).join("");
 
-  const renderCurrentCards = views => views.map(view => {
-    const modeClass = view.progressMode === "determinate" ? "determinate" : "indeterminate";
-    const progressStyle = view.progressMode === "determinate" ? ` style="width: ${view.progressPercent}%"` : "";
-    const targetHtml = view.currentTarget
-      ? `<div class="admin-ops-run-card-target"><strong>Current</strong> ${escapeHtml(view.currentTarget)}</div>`
-      : "";
-    const warningHtml = view.warningSummary
-      ? `<div class="admin-ops-run-card-warning">${escapeHtml(view.warningSummary)}</div>`
-      : "";
-    const failureHtml = view.failureSummary
-      ? `<div class="admin-ops-run-card-failure">${escapeHtml(view.failureSummary)}</div>`
-      : "";
-    const remediationHtml = view.remediationHint
-      ? `<div class="admin-ops-run-card-remediation">${escapeHtml(view.remediationHint)}</div>`
-      : "";
-    return `
-      <article class="admin-ops-run-card admin-ops-run-card-${escapeHtml(view.status)}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
-        <div class="admin-ops-run-card-head">
-          <div>
-            <h4>${escapeHtml(view.title)}</h4>
-            <p>${escapeHtml(view.primaryLabel)}${view.secondaryLabel ? ` | ${escapeHtml(view.secondaryLabel)}` : ""}</p>
-          </div>
-          <span class="admin-status-chip ${view.statusClass}">${escapeHtml(view.statusLabel)}</span>
-        </div>
-        <div class="admin-task-progress ${modeClass}" role="progressbar" aria-label="${escapeHtml(`${view.title} ${view.progressLabel || view.statusLabel}`)}" aria-valuemin="0" aria-valuemax="100"${view.progressMode === "determinate" ? ` aria-valuenow="${view.progressPercent}"` : ""}>
-          <div class="admin-task-progress-track"><div class="admin-task-progress-bar"${progressStyle}></div></div>
-          <div class="admin-task-progress-label">${escapeHtml(view.progressLabel || view.statusLabel)}</div>
-        </div>
-        <div class="admin-ops-run-card-meta">
-          <span>Elapsed ${escapeHtml(view.elapsedLabel)}</span>
-          ${view.startedText ? `<span>Started ${escapeHtml(view.startedText)}</span>` : ""}
-        </div>
-        ${targetHtml}
-        ${warningHtml}
-        ${failureHtml}
-        ${remediationHtml}
-      </article>
-    `;
-  }).join("");
-
   historyEl.innerHTML = `
     <div class="admin-ops-current-runs">
       <div class="admin-ops-history-title">Current Runs</div>
-      ${currentCardViews.length ? `<div class="admin-ops-run-card-grid">${renderCurrentCards(currentCardViews)}</div>` : '<div class="no-results">No current runs.</div>'}
+      <div class="jobs-table-header">
+        <div class="admin-row-header admin-ops-history-header">
+          <div>Type</div>
+          <div>Status</div>
+          <div>Duration</div>
+          <div>Output / Review queue</div>
+          <div>Failed</div>
+          <div>Finished</div>
+        </div>
+      </div>
+      <div class="jobs-table-body">
+        ${currentViews.length ? renderCompactRows(currentViews) : '<div class="no-results">No current runs.</div>'}
+      </div>
     </div>
     <div class="admin-ops-completed-runs">
       <div class="admin-ops-history-title">Recent Runs</div>
@@ -433,14 +383,14 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
         </div>
       </div>
       <div class="jobs-table-body">
-        ${visibleCompletedViews.length ? renderRows(visibleCompletedViews) : '<div class="no-results">No completed runs yet.</div>'}
+        ${visibleCompletedViews.length ? renderCompletedRows(visibleCompletedViews) : '<div class="no-results">No completed runs yet.</div>'}
       </div>
     </div>
     ${olderCompletedViews.length ? `
       <details class="admin-ops-history-older admin-ops-completed-runs">
         <summary>Older runs (${olderCompletedViews.length})</summary>
         <div class="jobs-table-body">
-          ${renderRows(olderCompletedViews)}
+          ${renderCompletedRows(olderCompletedViews)}
         </div>
       </details>
     ` : ""}
