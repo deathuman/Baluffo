@@ -53,6 +53,8 @@ SYNC_SCHEMA_VERSION = 2
 DEFAULT_BRANCH = str(_SYNC_DEFAULTS["default_branch"])
 DEFAULT_PATH = str(_SYNC_DEFAULTS["default_path"])
 DEFAULT_TIMEOUT_S = 20
+DEFAULT_MAX_SNAPSHOT_SIZE_BYTES = 5 * 1024 * 1024
+SNAPSHOT_SIZE_WARN_BYTES = 3 * 1024 * 1024
 PACKAGED_SYNC_CONFIG_ENV = "BALUFFO_SYNC_APP_CONFIG_PATH"
 PACKAGED_SYNC_BUILD_CONFIG_ENV = "BALUFFO_SYNC_BUILD_CONFIG_PATH"
 PACKAGED_SYNC_PASSPHRASE_ENV = "BALUFFO_SYNC_KEY_PASSPHRASE"
@@ -139,6 +141,7 @@ class SyncConfig:
     auth_mode: str
     packaged_config: PackagedGitHubAppConfig | None
     timeout_s: int = DEFAULT_TIMEOUT_S
+    max_snapshot_size_bytes: int = DEFAULT_MAX_SNAPSHOT_SIZE_BYTES
     disabled_reason: str = ""
 
 
@@ -153,10 +156,15 @@ def _set_runtime_state(code: str = "", message: str = "", *, until: datetime | N
 
 def _clear_runtime_state(*codes: str) -> None:
     _source_sync_runtime.clear_runtime_state(_self_module(), *codes)
+    _source_sync_runtime.clear_sync_counters(_self_module())
 
 
-def _runtime_state_payload() -> dict[str, str]:
-    return _source_sync_runtime.runtime_state_payload(_self_module())
+def sync_counters_payload() -> dict[str, Any]:
+    return _source_sync_runtime.sync_counters_payload(_self_module())
+
+
+def record_sync_counters(**deltas: Any) -> dict[str, Any]:
+    return _source_sync_runtime.update_sync_counters(_self_module(), **deltas)
 
 
 def _machine_fingerprint() -> str:
@@ -537,11 +545,13 @@ def push_sources_snapshot(
     config: SyncConfig,
     local_state: dict[str, Any],
     *,
+    dry_run: bool = False,
     opener: Callable[..., Any] = urlopen,
 ) -> dict[str, Any]:
     return _source_sync_snapshot.push_sources_snapshot(
         _self_module(),
         config,
         local_state,
+        dry_run=dry_run,
         opener=opener,
     )

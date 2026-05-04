@@ -3,8 +3,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from collections.abc import Callable
+import ssl
+import time
+from collections.abc import Callable, Mapping
 from typing import Any
+from urllib.error import URLError
 
 from src.source_registry import (
     REGISTRY_MIGRATION_V2,
@@ -150,9 +153,9 @@ def _choose_more_recent_row(
 
 def _snapshot_content_view(module: Any, snapshot: dict[str, Any]) -> dict[str, Any]:
     normalized = normalize_snapshot(module, snapshot)
+    # Fingerprint only the semantic rows that should trigger a remote write.
     return {
         "schemaVersion": int(normalized.get("schemaVersion") or module.SYNC_SCHEMA_VERSION),
-        "source": dict(normalized.get("source") or {}),
         "active": list(normalized.get("active") or []),
         "pending": list(normalized.get("pending") or []),
     }
@@ -162,6 +165,189 @@ def _snapshot_content_fingerprint(module: Any, snapshot: dict[str, Any]) -> str:
     view = _snapshot_content_view(module, snapshot)
     encoded = json.dumps(view, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _snapshot_size_bytes(snapshot: dict[str, Any]) -> int:
+    encoded = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return len(encoded.encode("utf-8"))
+
+
+def _push_sources_snapshot_after_conflict(
+    module: Any,
+    config: Any,
+    local_state: Mapping[str, Any],
+    snapshot: dict[str, Any],
+    snapshot_fingerprint: str,
+    snapshot_size_bytes: int,
+    size_warning: bool,
+    max_snapshot_size_bytes: int,
+    remote: Mapping[str, Any],
+    opener: Callable[..., Any],
+    exc: Exception,
+) -> dict[str, Any]:
+    module.record_sync_counters(conflictsDetected=1)
+    module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
+    refreshed_remote = read_remote_snapshot(module, config, opener=opener)
+    refreshed_snapshot = _as_dict(refreshed_remote.get("snapshot"))
+    refreshed_sha = str(refreshed_remote.get("sha") or "")
+    refreshed_fingerprint = _snapshot_content_fingerprint(module, refreshed_snapshot)
+    if refreshed_fingerprint == snapshot_fingerprint:
+        counters = module.record_sync_counters(conflictsResolved=1)
+        return {
+            "pushed": True,
+            "remotePreviouslyExisted": bool(remote.get("exists")),
+            "remoteSha": refreshed_sha,
+            "snapshot": snapshot,
+            "skipped": False,
+            "sizeBytes": snapshot_size_bytes,
+            "sizeWarning": size_warning,
+            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+            "counters": counters,
+        }
+    retry_state = merge_registry_state(module, local_state, refreshed_snapshot)
+    retry_snapshot = build_snapshot(module, retry_state)
+    retry_snapshot_size_bytes = _snapshot_size_bytes(retry_snapshot)
+    retry_max_snapshot_size_bytes = int(
+        getattr(config, "max_snapshot_size_bytes", module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES)
+        or module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES
+    )
+    retry_size_warning = retry_snapshot_size_bytes > module.SNAPSHOT_SIZE_WARN_BYTES
+    if retry_snapshot_size_bytes > retry_max_snapshot_size_bytes:
+        raise module.SyncOperationError(
+            "snapshot_too_large",
+            (
+                f"Snapshot size {retry_snapshot_size_bytes} bytes exceeds configured limit "
+                f"{retry_max_snapshot_size_bytes} bytes"
+            ),
+        ) from exc
+    write_result = write_remote_snapshot(
+        module,
+        config,
+        retry_snapshot,
+        sha=refreshed_sha,
+        opener=opener,
+    )
+    counters = module.record_sync_counters(conflictsResolved=1)
+    return {
+        "pushed": True,
+        "remotePreviouslyExisted": bool(remote.get("exists")),
+        "remoteSha": str(write_result.get("sha") or refreshed_sha),
+        "snapshot": retry_snapshot,
+        "skipped": False,
+        "sizeBytes": retry_snapshot_size_bytes,
+        "sizeWarning": retry_size_warning,
+        "maxSnapshotSizeBytes": retry_max_snapshot_size_bytes,
+        "counters": counters,
+    }
+
+
+def _push_sources_snapshot_after_transient(
+    module: Any,
+    config: Any,
+    local_state: Mapping[str, Any],
+    snapshot: dict[str, Any],
+    snapshot_fingerprint: str,
+    snapshot_size_bytes: int,
+    size_warning: bool,
+    max_snapshot_size_bytes: int,
+    remote: Mapping[str, Any],
+    remote_sha: str,
+    opener: Callable[..., Any],
+    exc: Exception,
+) -> dict[str, Any]:
+    refreshed_remote = read_remote_snapshot(module, config, opener=opener)
+    refreshed_snapshot = _as_dict(refreshed_remote.get("snapshot"))
+    refreshed_sha = str(refreshed_remote.get("sha") or "")
+    refreshed_fingerprint = _snapshot_content_fingerprint(module, refreshed_snapshot)
+    if refreshed_sha == remote_sha:
+        write_result = write_remote_snapshot(
+            module,
+            config,
+            snapshot,
+            sha=refreshed_sha,
+            opener=opener,
+        )
+        return {
+            "pushed": True,
+            "remotePreviouslyExisted": bool(remote.get("exists")),
+            "remoteSha": str(write_result.get("sha") or refreshed_sha),
+            "snapshot": snapshot,
+            "skipped": False,
+            "sizeBytes": snapshot_size_bytes,
+            "sizeWarning": size_warning,
+            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+            "counters": module.sync_counters_payload(),
+        }
+    if refreshed_fingerprint == snapshot_fingerprint:
+        return {
+            "pushed": True,
+            "remotePreviouslyExisted": bool(remote.get("exists")),
+            "remoteSha": refreshed_sha,
+            "snapshot": snapshot,
+            "skipped": False,
+            "sizeBytes": snapshot_size_bytes,
+            "sizeWarning": size_warning,
+            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+            "counters": module.sync_counters_payload(),
+        }
+    retry_state = merge_registry_state(module, local_state, refreshed_snapshot)
+    retry_snapshot = build_snapshot(module, retry_state)
+    retry_snapshot_size_bytes = _snapshot_size_bytes(retry_snapshot)
+    retry_max_snapshot_size_bytes = int(
+        getattr(config, "max_snapshot_size_bytes", module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES)
+        or module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES
+    )
+    retry_size_warning = retry_snapshot_size_bytes > module.SNAPSHOT_SIZE_WARN_BYTES
+    if retry_snapshot_size_bytes > retry_max_snapshot_size_bytes:
+        raise module.SyncOperationError(
+            "snapshot_too_large",
+            (
+                f"Snapshot size {retry_snapshot_size_bytes} bytes exceeds configured limit "
+                f"{retry_max_snapshot_size_bytes} bytes"
+            ),
+        ) from exc
+    write_result = write_remote_snapshot(
+        module,
+        config,
+        retry_snapshot,
+        sha=refreshed_sha,
+        opener=opener,
+    )
+    return {
+        "pushed": True,
+        "remotePreviouslyExisted": bool(remote.get("exists")),
+        "remoteSha": str(write_result.get("sha") or refreshed_sha),
+        "snapshot": retry_snapshot,
+        "skipped": False,
+        "sizeBytes": retry_snapshot_size_bytes,
+        "sizeWarning": retry_size_warning,
+        "maxSnapshotSizeBytes": retry_max_snapshot_size_bytes,
+        "counters": module.sync_counters_payload(),
+    }
+
+
+def _is_transient_request_error(exc: BaseException) -> bool:
+    return isinstance(getattr(exc, "__cause__", None), (URLError, ssl.SSLError))
+
+
+def _retry_transient_get(
+    request: Callable[[], dict[str, Any]], *, attempts: int = 3, base_backoff_s: float = 1.0
+) -> dict[str, Any]:
+    last_exc: RuntimeError | None = None
+    for attempt in range(max(1, int(attempts))):
+        try:
+            return request()
+        except RuntimeError as exc:
+            if not _is_transient_request_error(exc):
+                raise
+            last_exc = exc
+            if attempt >= max(0, int(attempts) - 1):
+                raise
+            delay_s = min(base_backoff_s * (2**attempt), 5.0)
+            time.sleep(delay_s)
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("GET retry failed unexpectedly")
 
 
 def _assert_unique_snapshot_identity(
@@ -270,49 +456,57 @@ def read_remote_snapshot(
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     module.validate_sync_config(config)
-    url = module._content_api_url(config, with_ref=True)
-    status, payload, _headers = module._request_json(
-        method="GET",
-        url=url,
-        config=config,
-        timeout_s=config.timeout_s,
-        opener=opener,
-    )
-    if status == 404:
-        module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
-        return {"exists": False, "sha": "", "snapshot": None}
-    if status >= 400:
-        message = str(payload.get("message") or f"GitHub GET failed with HTTP {status}")
-        raise RuntimeError(message)
-    encoded_content = str(payload.get("content") or "").strip()
-    if not encoded_content:
-        download_url = str(payload.get("download_url") or "").strip()
-        if download_url:
-            raw_status, raw_body, _raw_headers = module._request_raw_json(
-                method="GET",
-                url=download_url,
-                headers=module._github_json_headers(
-                    f"Bearer {module._get_auth_manager(config).get_installation_token(opener=opener)}"
-                ),
-                timeout_s=config.timeout_s,
-                opener=opener,
-            )
-            if raw_status == 200 and isinstance(raw_body, dict):
-                snapshot = normalize_snapshot(module, raw_body)
-                module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
-                return {"exists": True, "sha": str(payload.get("sha") or ""), "snapshot": snapshot}
 
-    if not encoded_content:
-        return {"exists": False, "sha": str(payload.get("sha") or ""), "snapshot": None}
-    normalized_b64 = encoded_content.replace("\n", "")
-    try:
-        raw_bytes = base64.b64decode(normalized_b64)
-        parsed = json.loads(raw_bytes.decode("utf-8"))
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"Invalid remote sync snapshot payload: {exc}") from exc
-    snapshot = normalize_snapshot(module, parsed if isinstance(parsed, dict) else {})
-    module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
-    return {"exists": True, "sha": str(payload.get("sha") or ""), "snapshot": snapshot}
+    def _read_once() -> dict[str, Any]:
+        url = module._content_api_url(config, with_ref=True)
+        status, payload, _headers = module._request_json(
+            method="GET",
+            url=url,
+            config=config,
+            timeout_s=config.timeout_s,
+            opener=opener,
+        )
+        if status == 404:
+            module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
+            return {"exists": False, "sha": "", "snapshot": None}
+        if status >= 400:
+            message = str(payload.get("message") or f"GitHub GET failed with HTTP {status}")
+            raise RuntimeError(message)
+        encoded_content = str(payload.get("content") or "").strip()
+        if not encoded_content:
+            download_url = str(payload.get("download_url") or "").strip()
+            if download_url:
+                raw_status, raw_body, _raw_headers = module._request_raw_json(
+                    method="GET",
+                    url=download_url,
+                    headers=module._github_json_headers(
+                        f"Bearer {module._get_auth_manager(config).get_installation_token(opener=opener)}"
+                    ),
+                    timeout_s=config.timeout_s,
+                    opener=opener,
+                )
+                if raw_status == 200 and isinstance(raw_body, dict):
+                    snapshot = normalize_snapshot(module, raw_body)
+                    module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
+                    return {
+                        "exists": True,
+                        "sha": str(payload.get("sha") or ""),
+                        "snapshot": snapshot,
+                    }
+
+        if not encoded_content:
+            return {"exists": False, "sha": str(payload.get("sha") or ""), "snapshot": None}
+        normalized_b64 = encoded_content.replace("\n", "")
+        try:
+            raw_bytes = base64.b64decode(normalized_b64)
+            parsed = json.loads(raw_bytes.decode("utf-8"))
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Invalid remote sync snapshot payload: {exc}") from exc
+        snapshot = normalize_snapshot(module, parsed if isinstance(parsed, dict) else {})
+        module._clear_runtime_state(module.RUNTIME_STATE_REMOTE_CONFLICT)
+        return {"exists": True, "sha": str(payload.get("sha") or ""), "snapshot": snapshot}
+
+    return _retry_transient_get(_read_once)
 
 
 def build_snapshot(
@@ -394,6 +588,7 @@ def pull_and_merge_sources(
     *,
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
+    module.record_sync_counters(totalPulls=1)
     remote = read_remote_snapshot(module, config, opener=opener)
     empty_remote = {
         "schemaVersion": module.SYNC_SCHEMA_VERSION,
@@ -410,6 +605,7 @@ def pull_and_merge_sources(
             "remoteFound": False,
             "mergedState": canonical_local,
             "remoteSha": "",
+            "counters": module.sync_counters_payload(),
         }
     snapshot = _as_dict(remote.get("snapshot"))
     merged_state = merge_registry_state(module, local_state, snapshot)
@@ -418,12 +614,23 @@ def pull_and_merge_sources(
         sort_keys=True,
         ensure_ascii=False,
     )
+    local_count = len(list(_as_dict(local_state).get("active") or [])) + len(
+        list(_as_dict(local_state).get("pending") or [])
+    )
+    merged_count = len(list(merged_state.get("active") or [])) + len(
+        list(merged_state.get("pending") or [])
+    )
+    if merged_count > local_count:
+        module.record_sync_counters(sourcesAdded=merged_count - local_count)
+    elif merged_count < local_count:
+        module.record_sync_counters(sourcesRemoved=local_count - merged_count)
     return {
         "changed": changed,
         "remoteFound": True,
         "remoteSha": str(remote.get("sha") or ""),
         "mergedState": merged_state,
         "remoteGeneratedAt": str(snapshot.get("generatedAt") or ""),
+        "counters": module.sync_counters_payload(),
     }
 
 
@@ -432,10 +639,12 @@ def push_sources_snapshot(
     config: Any,
     local_state: dict[str, Any],
     *,
+    dry_run: bool = False,
     opener: Callable[..., Any],
 ) -> dict[str, Any]:
     remote = read_remote_snapshot(module, config, opener=opener)
     remote_snapshot = _as_dict(remote.get("snapshot"))
+    remote_sha = str(remote.get("sha") or "")
     _assert_unique_snapshot_identity(
         module,
         list(_as_dict(local_state).get("active") or [])
@@ -449,29 +658,103 @@ def push_sources_snapshot(
     )
     merged_state = merge_registry_state(module, local_state, remote_snapshot)
     snapshot = build_snapshot(module, merged_state)
-    if bool(remote.get("exists")) and (
-        _snapshot_content_fingerprint(module, snapshot)
-        == _snapshot_content_fingerprint(module, remote_snapshot)
-    ):
+    snapshot_fingerprint = _snapshot_content_fingerprint(module, snapshot)
+    remote_fingerprint = _snapshot_content_fingerprint(module, remote_snapshot)
+    remote_exists = bool(remote.get("exists"))
+    snapshot_size_bytes = _snapshot_size_bytes(snapshot)
+    max_snapshot_size_bytes = int(
+        getattr(config, "max_snapshot_size_bytes", module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES)
+        or module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES
+    )
+    size_warning = snapshot_size_bytes > module.SNAPSHOT_SIZE_WARN_BYTES
+    would_change = not remote_exists or snapshot_fingerprint != remote_fingerprint
+    if dry_run:
+        return {
+            "pushed": False,
+            "remotePreviouslyExisted": remote_exists,
+            "remoteSha": remote_sha,
+            "snapshot": snapshot,
+            "skipped": True,
+            "skipReason": "dryRun",
+            "dryRun": True,
+            "wouldChange": would_change,
+            "sizeBytes": snapshot_size_bytes,
+            "sizeWarning": size_warning,
+            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+            "counters": module.sync_counters_payload(),
+        }
+    module.record_sync_counters(totalPushes=1)
+    if remote_exists and snapshot_fingerprint == remote_fingerprint:
+        counters = module.record_sync_counters(noOpSkips=1)
         return {
             "pushed": False,
             "remotePreviouslyExisted": True,
-            "remoteSha": str(remote.get("sha") or ""),
+            "remoteSha": remote_sha,
             "snapshot": snapshot,
             "skipped": True,
             "skipReason": "no_meaningful_change",
+            "sizeBytes": snapshot_size_bytes,
+            "sizeWarning": size_warning,
+            "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+            "counters": counters,
         }
-    write_result = write_remote_snapshot(
-        module,
-        config,
-        snapshot,
-        sha=str(remote.get("sha") or ""),
-        opener=opener,
-    )
+    if snapshot_size_bytes > max_snapshot_size_bytes:
+        raise module.SyncOperationError(
+            "snapshot_too_large",
+            (
+                f"Snapshot size {snapshot_size_bytes} bytes exceeds configured limit "
+                f"{max_snapshot_size_bytes} bytes"
+            ),
+        )
+    try:
+        write_result = write_remote_snapshot(
+            module,
+            config,
+            snapshot,
+            sha=remote_sha,
+            opener=opener,
+        )
+    except module.SyncOperationError as exc:
+        if exc.code != module.RUNTIME_STATE_REMOTE_CONFLICT:
+            raise
+        return _push_sources_snapshot_after_conflict(
+            module,
+            config,
+            local_state,
+            snapshot,
+            snapshot_fingerprint,
+            snapshot_size_bytes,
+            size_warning,
+            max_snapshot_size_bytes,
+            remote,
+            opener,
+            exc,
+        )
+    except RuntimeError as exc:
+        if not _is_transient_request_error(exc):
+            raise
+        return _push_sources_snapshot_after_transient(
+            module,
+            config,
+            local_state,
+            snapshot,
+            snapshot_fingerprint,
+            snapshot_size_bytes,
+            size_warning,
+            max_snapshot_size_bytes,
+            remote,
+            remote_sha,
+            opener,
+            exc,
+        )
     return {
         "pushed": True,
         "remotePreviouslyExisted": bool(remote.get("exists")),
         "remoteSha": str(write_result.get("sha") or ""),
         "snapshot": snapshot,
         "skipped": False,
+        "sizeBytes": snapshot_size_bytes,
+        "sizeWarning": size_warning,
+        "maxSnapshotSizeBytes": max_snapshot_size_bytes,
+        "counters": module.sync_counters_payload(),
     }

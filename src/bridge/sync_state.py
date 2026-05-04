@@ -43,8 +43,50 @@ SYNC_STATUS: dict[str, Any] = {
     "lastResult": "",
 }
 
+SYNC_COUNTER_KEYS = (
+    "date",
+    "totalPushes",
+    "totalPulls",
+    "noOpSkips",
+    "conflictsDetected",
+    "conflictsResolved",
+    "tombstonesSuppressed",
+    "sourcesAdded",
+    "sourcesRemoved",
+)
+
 # Current sync configuration (will be set by SyncService)
 SYNC_CONFIG: Any = None
+
+
+def _default_sync_counters() -> dict[str, Any]:
+    return {
+        "date": now_utc().date().isoformat(),
+        "totalPushes": 0,
+        "totalPulls": 0,
+        "noOpSkips": 0,
+        "conflictsDetected": 0,
+        "conflictsResolved": 0,
+        "tombstonesSuppressed": 0,
+        "sourcesAdded": 0,
+        "sourcesRemoved": 0,
+    }
+
+
+def _normalize_sync_counters(raw: Any) -> dict[str, Any]:
+    data = raw if isinstance(raw, dict) else {}
+    today = now_utc().date().isoformat()
+    date = str(data.get("date") or today).strip() or today
+    if date < today:
+        return _default_sync_counters()
+    normalized = _default_sync_counters()
+    normalized["date"] = date
+    for key in SYNC_COUNTER_KEYS[1:]:
+        try:
+            normalized[key] = int(data.get(key) or 0)
+        except (TypeError, ValueError):
+            normalized[key] = 0
+    return normalized
 
 
 class SyncState:
@@ -91,6 +133,7 @@ class SyncState:
             "lastAction": str(raw.get("lastAction") or ""),
             "lastResult": str(raw.get("lastResult") or ""),
             "lastDiscoverySyncFinishedAt": str(raw.get("lastDiscoverySyncFinishedAt") or ""),
+            "counters": _normalize_sync_counters(raw.get("counters")),
         }
 
     def save_sync_runtime_state(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -111,10 +154,27 @@ class SyncState:
             "lastAction",
             "lastResult",
             "lastDiscoverySyncFinishedAt",
+            "counters",
         }
         normalized.update({key: value for key, value in payload.items() if key in valid_keys})
+        normalized["counters"] = _normalize_sync_counters(normalized.get("counters"))
         save_json_atomic(self.sync_runtime_path, normalized)
         return normalized
+
+    def update_sync_counters(self, **deltas: Any) -> dict[str, Any]:
+        """Increment sync counters and persist them."""
+        runtime_state = self.load_sync_runtime_state()
+        counters = dict(runtime_state.get("counters") or _default_sync_counters())
+        for key, value in deltas.items():
+            if key not in counters:
+                continue
+            try:
+                counters[key] = int(counters.get(key) or 0) + int(value or 0)
+            except (TypeError, ValueError):
+                continue
+        runtime_state["counters"] = _normalize_sync_counters(counters)
+        self.save_sync_runtime_state(runtime_state)
+        return dict(runtime_state["counters"])
 
     def set_sync_status(
         self,

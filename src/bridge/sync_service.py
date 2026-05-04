@@ -360,6 +360,10 @@ class SyncService:
                 error="",
             )
 
+        counters = as_json_object(result.get("counters"))
+        if counters:
+            self._sync_state.save_sync_runtime_state({"counters": counters})
+
         summary = self._summarize_state(self._load_state())
         emit_progress(
             phase_key="finalize",
@@ -380,6 +384,7 @@ class SyncService:
             "remoteFound": bool(result.get("remoteFound")),
             "remoteSha": str(result.get("remoteSha") or ""),
             "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
+            "counters": counters,
             "summary": summary,
         }
 
@@ -426,6 +431,14 @@ class SyncService:
         result = self._source_sync.push_sources_snapshot(self._sync_config, state)
         snapshot = as_json_object(result.get("snapshot"))
         pushed = bool(result.get("pushed", True))
+        size_warning = bool(result.get("sizeWarning"))
+        if size_warning:
+            self._bridge_log(
+                "warn",
+                "sync_push_snapshot_size_warning",
+                sizeBytes=int(result.get("sizeBytes") or 0),
+                maxSnapshotSizeBytes=int(result.get("maxSnapshotSizeBytes") or 0),
+            )
 
         self.set_sync_status(
             action="push",
@@ -433,6 +446,9 @@ class SyncService:
             pushed=pushed,
             error="",
         )
+        counters = as_json_object(result.get("counters"))
+        if counters:
+            self._sync_state.save_sync_runtime_state({"counters": counters})
         emit_progress(
             phase_key="finalize",
             phase_label="Finalizing push",
@@ -453,6 +469,8 @@ class SyncService:
             "remoteSha": str(result.get("remoteSha") or ""),
             "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
             "pushed": pushed,
+            "sizeWarning": size_warning,
+            "counters": counters,
             "counts": {
                 "active": len(snapshot.get("active") or []),
                 "pending": len(snapshot.get("pending") or []),

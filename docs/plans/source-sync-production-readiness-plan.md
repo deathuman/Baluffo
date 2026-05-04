@@ -432,11 +432,37 @@ This is a test-only checkpoint. The cases below stay as executable specification
 
 Keep the runtime work split out after this test-only checkpoint:
 
-- snapshot content fingerprinting and no-op write gating
-- idempotent PUT retry and conflict re-read handling
-- transient GET retry/backoff
-- dry-run support
-- daily counters and snapshot-size governance plumbing
+- implemented here: snapshot content fingerprinting, no-op write gating, idempotent PUT retry, conflict re-read handling, transient GET retry/backoff, dry-run support, daily counters, and snapshot-size governance
+- next: GitHub-side branch protection, required checks, commit signing, environments, and release-policy hardening
+
+### Snapshot-size scalability path
+
+The current cap is intentionally conservative. Treat it as a guardrail, not the long-term architecture. The scalability decision is:
+
+1. Keep the canonical snapshot minimal.
+   - `source-sync.json` should stay the apply/input contract only: canonical active/pending registry state.
+   - Move noncanonical evidence, counters, timelines, and review context into runtime/report/Admin surfaces.
+   - This is the default architecture for this repo because it keeps retry, conflict, and idempotence logic simple.
+2. Shard only if a separate concern grows independently.
+   - Split only when two payload groups have different update cadences or ownership.
+   - Avoid sharding just to make the cap disappear; that usually creates more merge and partial-update risk than it removes.
+3. Add adaptive warning bands and growth tracking as an operational guardrail.
+   - Keep the hard limit, but warn earlier when size trends up.
+   - Track `snapshotSizeBytes` and the per-run delta so operators can see whether the payload is stable, growing, or close to the cap.
+   - Use the trend data to tune `maxSnapshotSizeBytes` by environment, not to silently normalize larger and larger blobs.
+
+Recommended path for this codebase:
+
+- architecture: option 1
+- guardrail: option 3
+- later escape hatch: option 2 only if a single concern starts growing faster than the rest
+
+Concrete ownership:
+
+- `src/source_sync_snapshot.py`: fingerprinting, no-op gating, and write-time size enforcement
+- `src/source_sync_config.py`: per-environment `maxSnapshotSizeBytes`
+- `src/source_sync_runtime.py` and `src/bridge/sync_service.py`: counters and status payloads that can be extended with growth telemetry later
+- Admin/report surfaces: show the snapshot-size trend when it becomes useful, but keep the snapshot itself canonical and small
 
 ## Operational metrics to emit
 

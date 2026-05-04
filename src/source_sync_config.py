@@ -13,6 +13,7 @@ from src.shared.github_https import (
     build_github_ssl_context,
     wrap_github_request_error,
 )
+from src.shared.utils import coerce_int as _coerce_int
 
 PACKAGED_SYNC_BUILD_CONFIG_ENV = "BALUFFO_SYNC_BUILD_CONFIG_PATH"
 
@@ -221,6 +222,15 @@ def resolve_sync_config(
     repo = packaged_config.repo if packaged_config else str(module._SYNC_DEFAULTS["default_repo"])
     branch = packaged_config.branch if packaged_config else module.DEFAULT_BRANCH
     path = packaged_config.path if packaged_config else module.DEFAULT_PATH
+    max_snapshot_size_bytes = _coerce_int(
+        settings_map.get("maxSnapshotSizeBytes"),
+        _coerce_int(
+            settings_map.get("max_snapshot_size_bytes"),
+            module.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES,
+            maximum=10**9,
+        ),
+        maximum=10**9,
+    )
     return module.SyncConfig(
         enabled=enabled,
         repo=repo,
@@ -229,6 +239,7 @@ def resolve_sync_config(
         auth_mode="github_app",
         packaged_config=packaged_config,
         timeout_s=module.DEFAULT_TIMEOUT_S,
+        max_snapshot_size_bytes=max_snapshot_size_bytes,
         disabled_reason=disabled_reason,
     )
 
@@ -266,7 +277,7 @@ def config_status(module: Any, config: Any) -> dict[str, Any]:
             )
         else:
             message = "Packaged GitHub App config is incomplete."
-    runtime_state = module._runtime_state_payload()
+    runtime_state = module._source_sync_runtime.runtime_state_payload(module)
     runtime_code = str(runtime_state.get("code") or "").strip().lower()
     if ready and runtime_code in {
         module.RUNTIME_STATE_RATE_LIMITED,
@@ -292,6 +303,7 @@ def config_status(module: Any, config: Any) -> dict[str, Any]:
         "configPath": str(config.packaged_config.config_path if config.packaged_config else ""),
         "configSearchPaths": config_search_paths,
         "runtimeState": runtime_state,
+        "maxSnapshotSizeBytes": int(getattr(config, "max_snapshot_size_bytes", 0) or 0),
         "keyDerivation": str(
             config.packaged_config.key_derivation if config.packaged_config else ""
         ),

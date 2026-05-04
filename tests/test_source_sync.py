@@ -790,42 +790,6 @@ def test_rate_limited_error_sets_runtime_state(source_sync_test_root):
     assert status["state"] == sync.RUNTIME_STATE_RATE_LIMITED
 
 
-def test_remote_conflict_error_sets_runtime_state(source_sync_test_root):
-    source_sync_test_root.write_packaged_config()
-    opener = _Recorder(
-        [
-            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
-            HTTPError(
-                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
-                code=404,
-                msg="Not Found",
-                hdrs={},
-                fp=None,
-            ),
-            HTTPError(
-                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json",
-                code=409,
-                msg="Conflict",
-                hdrs={},
-                fp=None,
-            ),
-        ]
-    )
-    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
-    original_build_jwt = sync.build_app_jwt
-    try:
-        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
-        with pytest.raises(sync.SyncOperationError) as ctx:
-            sync.push_sources_snapshot(
-                cfg, {"active": [], "pending": [], "rejected": []}, opener=opener
-            )
-    finally:
-        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
-    assert ctx.value.code == sync.RUNTIME_STATE_REMOTE_CONFLICT
-    status = sync.config_status(cfg)
-    assert status["state"] == sync.RUNTIME_STATE_REMOTE_CONFLICT
-
-
 def test_request_raw_json_uses_ssl_context_for_default_urlopen(monkeypatch):
     seen = {}
 

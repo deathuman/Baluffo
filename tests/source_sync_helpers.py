@@ -28,6 +28,9 @@ def source_sync_test_root(make_test_root, monkeypatch):
         root / "missing-default-github-app-sync-config.json",
     )
     sync._clear_runtime_state()  # noqa: SLF001
+    sync._source_sync_runtime.clear_sync_counters(sync)  # noqa: SLF001
+    with sync._AUTH_MANAGER_LOCK:  # noqa: SLF001
+        sync._AUTH_MANAGER.clear()  # noqa: SLF001
     with sync._RATE_LIMIT_LOCK:  # noqa: SLF001
         sync._RATE_LIMIT_STATE["calls"] = []  # noqa: SLF001
         sync._RATE_LIMIT_STATE["strike"] = 0  # noqa: SLF001
@@ -58,3 +61,6 @@ def source_sync_test_root(make_test_root, monkeypatch):
     yield out
 
     sync._clear_runtime_state()  # noqa: SLF001
+    sync._source_sync_runtime.clear_sync_counters(sync)  # noqa: SLF001
+    with sync._AUTH_MANAGER_LOCK:  # noqa: SLF001
+        sync._AUTH_MANAGER.clear()  # noqa: SLF001

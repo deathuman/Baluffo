@@ -14,6 +14,18 @@ from src.shared.utils import parse_iso as parse_iso_from_utils
 
 _RUNTIME_STATE_LOCK = threading.RLock()
 _RUNTIME_STATE: dict[str, Any] = {"code": "", "message": "", "until": "", "updatedAt": ""}
+_SYNC_COUNTERS_LOCK = threading.RLock()
+_SYNC_COUNTERS: dict[str, Any] = {
+    "date": "",
+    "totalPushes": 0,
+    "totalPulls": 0,
+    "noOpSkips": 0,
+    "conflictsDetected": 0,
+    "conflictsResolved": 0,
+    "tombstonesSuppressed": 0,
+    "sourcesAdded": 0,
+    "sourcesRemoved": 0,
+}
 _RATE_LIMIT_LOCK = threading.RLock()
 _RATE_LIMIT_STATE: dict[str, Any] = {"calls": [], "strike": 0, "until": None}
 _AUTH_MANAGER_LOCK = threading.RLock()
@@ -98,6 +110,75 @@ def runtime_state_payload(root_mod: Any) -> dict[str, str]:
             clear_runtime_state(root_mod, root_mod.RUNTIME_STATE_RATE_LIMITED)
             return {"code": "", "message": "", "until": "", "updatedAt": ""}
     return {"code": code, "message": message, "until": until, "updatedAt": updated}
+
+
+def _default_sync_counters(root_mod: Any) -> dict[str, Any]:
+    return {
+        "date": root_mod.now_utc().date().isoformat(),
+        "totalPushes": 0,
+        "totalPulls": 0,
+        "noOpSkips": 0,
+        "conflictsDetected": 0,
+        "conflictsResolved": 0,
+        "tombstonesSuppressed": 0,
+        "sourcesAdded": 0,
+        "sourcesRemoved": 0,
+    }
+
+
+def _normalize_sync_counters(root_mod: Any, payload: Any) -> dict[str, Any]:
+    raw = payload if isinstance(payload, dict) else {}
+    today = root_mod.now_utc().date().isoformat()
+    date = str(raw.get("date") or today).strip() or today
+    if date < today:
+        return _default_sync_counters(root_mod)
+    normalized = _default_sync_counters(root_mod)
+    normalized["date"] = date
+    for key in (
+        "totalPushes",
+        "totalPulls",
+        "noOpSkips",
+        "conflictsDetected",
+        "conflictsResolved",
+        "tombstonesSuppressed",
+        "sourcesAdded",
+        "sourcesRemoved",
+    ):
+        try:
+            normalized[key] = int(raw.get(key) or 0)
+        except (TypeError, ValueError):
+            normalized[key] = 0
+    return normalized
+
+
+def clear_sync_counters(root_mod: Any) -> None:
+    with _SYNC_COUNTERS_LOCK:
+        _SYNC_COUNTERS.clear()
+        _SYNC_COUNTERS.update(_default_sync_counters(root_mod))
+
+
+def sync_counters_payload(root_mod: Any) -> dict[str, Any]:
+    with _SYNC_COUNTERS_LOCK:
+        normalized = _normalize_sync_counters(root_mod, _SYNC_COUNTERS)
+        _SYNC_COUNTERS.clear()
+        _SYNC_COUNTERS.update(normalized)
+        return dict(_SYNC_COUNTERS)
+
+
+def update_sync_counters(root_mod: Any, **deltas: Any) -> dict[str, Any]:
+    with _SYNC_COUNTERS_LOCK:
+        current = _normalize_sync_counters(root_mod, _SYNC_COUNTERS)
+        current["date"] = root_mod.now_utc().date().isoformat()
+        for key, value in deltas.items():
+            if key not in current:
+                continue
+            try:
+                current[key] = int(current.get(key) or 0) + int(value or 0)
+            except (TypeError, ValueError):
+                continue
+        _SYNC_COUNTERS.clear()
+        _SYNC_COUNTERS.update(current)
+        return dict(_SYNC_COUNTERS)
 
 
 def machine_fingerprint(root_mod: Any) -> str:
