@@ -3,13 +3,13 @@
 > - **Status:** Active compatible plan
 > - **Use this when:** improving Admin task/progress UX, reducing frontend interpretation drift, and making long-running task behavior explicit for operations
 > - **Canonical for:** shared task-run presenter design, live-vs-history rendering split, stale task handling UI, and operational triage UX for fetch/discovery/sync/pipeline tasks
-> - **Not canonical for:** task/task-state runtime contracts, bridge route definitions, or task execution engine behavior (use `admin-bridge-api.md`, `admin-task-state` domain code, and pipeline docs)
+> - **Not canonical for:** task/task-state runtime contracts, bridge route definitions, task execution engine behavior, or sync-governance policy (use `admin-bridge-api.md`, `admin-task-state` domain code, pipeline docs, and [`source-sync-production-readiness-plan.md`](source-sync-production-readiness-plan.md))
 > - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../archive/admin-health-dashboard-console-closeout.md`](../archive/admin-health-dashboard-console-closeout.md), [`../testing.md`](../testing.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-04
 
 ## Verdict
 
-The task/progress system is structurally strong, but Admin still behaves like a report table rather than an operational console.
+The task/progress system is structurally strong, but Admin still behaves like a report table rather than an operational console. Sync-side governance, counters, and repo policy hardening stay tracked separately in [`source-sync-production-readiness-plan.md`](source-sync-production-readiness-plan.md).
 
 The current foundation is correct for an internal telemetry system:
 

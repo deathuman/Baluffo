@@ -57,6 +57,8 @@ Note: `push_sources_snapshot` always reads remote first, merges, builds a new sn
 | Observability | admin summary exists | no operational metrics of drift/churn/failures | emit structured sync summary + admin counters |
 | Contract validation | tests cover behavior extensively | no live artifact schema check in CI | add JSON Schema validation for real snapshot payload |
 
+> Current status: the snapshot mechanics listed as implemented below are already landed in Baluffo. The remaining open work here is repository governance, GitHub-side policy hardening, and surfacing sync outcomes in the operational console.
+
 ## Highest-risk issue: snapshot churn
 
 Repeated bot commits with timestamp-only replacements cause: noisy history, poor rollback visibility, reduced auditability, and higher conflict risk.
@@ -141,7 +143,7 @@ The Baluffo sync depends on GitHub as its remote backend, but several GitHub-sid
 - GitHub App auth works (app ID `3047247`, installed on `deathuman/BaluffoSync`)
 - Contents API read/write is functional
 - Allowlist validation exists in code but there is no enforcement at the GitHub level
-- The validate-source-sync CI workflow is planned but not yet written, let alone required
+- The validate-source-sync CI workflow exists, but it is not yet enforced as a required status check at the GitHub level
 
 ### Remaining GitHub-side gaps
 
@@ -152,10 +154,11 @@ The Baluffo sync depends on GitHub as its remote backend, but several GitHub-sid
 | Classic branch protection only | No linear history enforcement, force-push protection, or bypass restrictions | Use GitHub repository rulesets instead of (or on top of) branch protection |
 | No deployment environments | Staging/prod path separation has no approval gate or audit trail | Define GitHub Environments with required reviewers for production path writes |
 | No rollback checkpoints | Reverting requires hunting through git history for the last-good SHA | Tag every validated write (`last-known-good`, date-stamped) for one-command revert |
-| Rate-limit headers discarded | `x-ratelimit-remaining` is received but never logged or alerted on | Log remaining < 10% threshold; surface in admin runtime state |
 | No repository visibility decision | Private vs public is implicit, not intentional | Document that BaluffoSync is intentionally private as a sync transport repo |
 | No CI failure notification | Failed validation can sit undiscovered | GitHub Actions notifications are the baseline alert path for `validate-source-sync.yml`; optional Slack/webhook mirrors can be added separately |
 | No API version deprecation plan | `X-GitHub-Api-Version: 2022-11-28` is hardcoded | Make version a config constant; add calendar reminder to check GitHub changelog annually |
+
+**Rate-limit telemetry completed in-repo:** source-sync runtime now records GitHub quota headers and `/sync/status` exposes `runtime.rateLimit.remainingPercent` for admin presentation. UI placement remains tracked in [`task-progress-operational-console-plan.md`](task-progress-operational-console-plan.md).
 
 **Side note on auth model:** The plan exclusively uses GitHub App auth, which is correct for production. For simpler single-writer deployments, deploy keys with write access are a viable alternative (no GitHub App registration, no JWT, no installation token exchange). That fits the private transport-repo model documented in `docs/environments.md`, even though GitHub App remains the recommended production path.
 
@@ -396,6 +399,7 @@ PUT fails (transient network error, not HTTP 409/422/401)
 - winner rationale
 - restore/reject/promote/demote workflow
 - preserve transition reason in review output
+- admin presentation of these outcomes is tracked in [`task-progress-operational-console-plan.md`](task-progress-operational-console-plan.md)
 
 ### P4 — Complete
 
@@ -408,6 +412,7 @@ This test-only checkpoint is now covered in the focused source-sync and storage 
 - malformed payload handling
 - duplicate identity tests
 - large snapshot smoke test
+- admin-facing presentation of these outcomes is tracked in [`task-progress-operational-console-plan.md`](task-progress-operational-console-plan.md); this plan only owns the source-sync data and counter payloads.
 
 **Coverage added in this slice:**
 - `test_no_op_push_skips_write_when_content_unchanged` — same active/pending content must not create a new commit
@@ -430,8 +435,8 @@ This test-only checkpoint is now covered in the focused source-sync and storage 
 
 Keep the runtime work split out after this test-only checkpoint:
 
-- implemented here: snapshot content fingerprinting, no-op write gating, idempotent PUT retry, conflict re-read handling, transient GET retry/backoff, dry-run support, structural snapshot validation on read, daily counters, rate-limit telemetry, and snapshot-size governance
-- next: GitHub-side branch protection, required checks, commit signing, environments, and release-policy hardening
+- remaining runtime/governance work: GitHub-side branch protection, required checks, commit signing, environments, and release-policy hardening
+- admin presentation of sync counters and outcomes belongs in [`task-progress-operational-console-plan.md`](task-progress-operational-console-plan.md)
 - validated in dry-run smoke against the live `deathuman/BaluffoSync` remote: the compare path resolves, reports `wouldChange=false`, and does not write
 
 ### Snapshot-size scalability path
@@ -504,41 +509,28 @@ Admin should expose at least:
 
 ## Roadmap
 
-### P0 — Make snapshot safe and reviewable + compact storage + commit signing
+### P0 — Commit signing + required status checks
 
-- pretty-print
-- stable sorting by identity
-- content hash excluding volatile fields
-- skip no-op pushes
-- identity collision validation at push
-- add README/schema
-- add CI schema validation (`validate-source-sync.yml` workflow)
+- Repo-local slice already landed: `schemas/source-sync.schema.json`, `scripts/validate_source_sync.py`, `.github/workflows/validate-source-sync.yml`, `docs/sync-contract.md`, and `docs/environments.md`.
+
 - register `validate-source-sync` as a **required status check** on `main` branch
 - configure GitHub App to sign commits
 - enable branch protection rule: **Require signed commits**
-- switch `save_json_atomic` to compact `separators=(',',':')` for storage files
-- migrate core registry state files to `.json.gz` with transparent read fallback
 
 ### P1 — Harden write behavior + repository rulesets + environments
 
-- 409 conflict handling with re-pull/re-merge/retry
-- idempotent PUT retry with SHA-based verification
-- GET transient network retry
-- implemented here: structural snapshot validation on read
 - concurrent push guard (extend existing `sync_task_running()`)
-- dry-run mode
 - replace classic branch protection with **repository rulesets**:
   - require signed commits, require status checks, require linear history
   - block force pushes, restrict deletions, restrict bypass to repo admin
 - define GitHub Environments for staging/prod path separation:
   - production: requires 1 reviewer, deployment branch = `main`
   - staging: no reviewer, deployment branch = `staging`
-- migrate jobs pipeline files (`jobs-unified*`, `jobs-lifecycle-state`, `jobs-source-state`) to `.json.gz`
 
 ### P2 — Complete
 
-- Snapshot size governance, admin daily-reset counters, lifecycle retention, archived-entry exclusion, rate-limit warning, and checkpoint tagging are implemented.
-- Remaining roadmap work begins at P3.
+- Snapshot size governance, admin daily-reset counters, lifecycle retention, archived-entry exclusion, rate-limit warning, runtime rate-limit telemetry, and checkpoint tagging are implemented.
+- Remaining roadmap work begins with the GitHub-side governance and environment hardening items below.
 
 ### P3 — Conflicts actionable
 
@@ -549,17 +541,20 @@ Admin should expose at least:
 - Contract/integration coverage is now in place across governance, push churn, push churn limits, pipeline storage gzip, and source-registry seed/runtime suites.
 - Large snapshot smoke coverage now exercises the gzip-backed pipeline/storage path end to end.
 - `.json.gz` transparent read/write round-trip and lifecycle cold archive load / retention toggle coverage remain in the suite.
+- admin-facing presentation of these outcomes is tracked in [`task-progress-operational-console-plan.md`](task-progress-operational-console-plan.md); this plan only owns the source-sync data and counter payloads.
 
 ## Validation criteria while executing this plan
 
 Implementation is complete when:
+
+> Criteria 1-13 and 18 are already satisfied in-repo. The remaining open criteria are 14-17, plus the governance hardening items above.
 
 1. active/pending snapshot changes only produce commits when meaningful content changes
 2. one source can be mapped to one canonical row with clear deterministic winner rules
 3. source-health metadata is present and reviewed before promotion
 4. push/retry path is deterministic under concurrent remote updates
 5. CI rejects malformed/duplicate/non-conformant snapshot artifacts
-6. admin exposes source-sync outcomes with enough signal for on-call triage
+6. admin exposes source-sync outcomes with enough signal for on-call triage, with presentation tracked in [`task-progress-operational-console-plan.md`](task-progress-operational-console-plan.md)
 7. daily counters reset cleanly and give operators push/pull/conflict volume per day
 8. snapshot size governance prevents accidental oversized payloads
 9. dry-run mode allows safe preview of what a push would change
@@ -571,7 +566,7 @@ Implementation is complete when:
 15. `validate-source-sync.yml` workflow must pass before commits land on `main`
 16. repository rulesets enforce linear history, signed commits, and block force pushes
 17. `last-known-good` tag exists on `main` and points to the last validated write
-18. admin runtime state exposes rate-limit remaining percentage
+18. admin runtime state exposes rate-limit remaining percentage, with presentation tracked in [`task-progress-operational-console-plan.md`](task-progress-operational-console-plan.md)
 
 Suggested verification commands:
 

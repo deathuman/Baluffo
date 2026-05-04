@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from src import source_sync_runtime
 from src.bridge import sync_task_flow as _sync_task_flow
 from src.bridge.sync_state import (
     SYNC_CONFIG_LOCK,
@@ -44,6 +45,7 @@ class SourceSyncModule(Protocol):
         self, config: Any, local_state: dict[str, Any]
     ) -> dict[str, Any]: ...
     def push_sources_snapshot(self, config: Any, state: dict[str, Any]) -> dict[str, Any]: ...
+    def rate_limit_payload(self) -> dict[str, Any]: ...
 
 
 class BridgeLogFunc(Protocol):
@@ -269,6 +271,12 @@ class SyncService:
         config_status = self._source_sync.config_status(self.refresh_sync_config())
         with SYNC_STATE_LOCK:
             runtime_state = {**self._sync_state.get_sync_status()}
+        rate_limit_payload = getattr(self._source_sync, "rate_limit_payload", None)
+        runtime_state["rateLimit"] = as_json_object(
+            rate_limit_payload()
+            if callable(rate_limit_payload)
+            else source_sync_runtime.rate_limit_payload(self._source_sync)
+        )
         return {
             "ok": True,
             "appVersion": get_app_version(),

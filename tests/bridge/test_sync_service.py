@@ -15,6 +15,15 @@ class _FakeSourceSync:
         self.remote_reads: int = 0
         self._enabled = True
         self._ready = True
+        self.rate_limit = {
+            "remaining": 42,
+            "limit": 100,
+            "remainingPercent": 42.0,
+            "resetAt": "2026-04-25T12:30:00+00:00",
+            "until": "",
+            "strike": 0,
+            "low": False,
+        }
 
     def config_status(self, config: Any) -> dict[str, Any]:
         return {"enabled": bool(self._enabled), "ready": bool(self._ready)}
@@ -42,6 +51,9 @@ class _FakeSourceSync:
         self.push_calls += 1
         return {"remoteSha": "abc", "remotePreviouslyExisted": True, "snapshot": state}
 
+    def rate_limit_payload(self) -> dict[str, Any]:
+        return dict(self.rate_limit)
+
 
 class _RunHistory:
     def __init__(self) -> None:
@@ -60,6 +72,31 @@ class _RunHistory:
 
     def prune_started_rows_for_type(self, entry_type: str, finished_at: str) -> None:
         return
+
+
+def test_sync_service_status_exposes_rate_limit_payload() -> None:
+    with workspace_tmpdir("sync-service") as data_dir:
+        source_sync = _FakeSourceSync()
+
+        svc = SyncService(
+            data_dir=data_dir,
+            source_sync=source_sync,
+            bridge_log=lambda _level, _message, **_fields: None,
+            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            persist_state=lambda state: state,
+            summarize_state=lambda _state: {
+                "activeCount": 0,
+                "pendingCount": 0,
+                "rejectedCount": 0,
+            },
+            run_history=_RunHistory(),
+            ops_state_lock=threading.RLock(),
+            get_security_defaults=lambda: {"github_app_enabled_default": True},
+        )
+
+        payload = svc.get_sync_status_payload()
+        runtime = payload["runtime"]
+        assert runtime["rateLimit"] == source_sync.rate_limit
 
 
 def test_sync_service_pull_delegates_and_persists() -> None:

@@ -68,15 +68,15 @@ def test_sync_push_serializes_expected_snapshot_counts(admin_bridge_entrypoint_r
     api.update_saved_sync_settings({"enabled": True})
     api.save_json_atomic(
         admin_bridge_entrypoint_root / "source-registry-active.json",
-        [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
+        [{"id": "static:a", "adapter": "static", "listing_url": "https://a.com/jobs"}],
     )
     api.save_json_atomic(
         admin_bridge_entrypoint_root / "source-registry-pending.json",
-        [{"adapter": "teamtailor", "name": "Foo"}],
+        [{"id": "teamtailor:foo", "adapter": "teamtailor", "name": "Foo"}],
     )
     api.save_json_atomic(
         admin_bridge_entrypoint_root / "source-registry-rejected.json",
-        [{"adapter": "lever", "company": "Bar"}],
+        [{"id": "lever:bar", "adapter": "lever", "company": "Bar"}],
     )
 
     monkeypatch.setattr(

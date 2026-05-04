@@ -33,6 +33,7 @@ _RATE_LIMIT_STATE: dict[str, Any] = {
     "strike": 0,
     "until": None,
     "remaining": None,
+    "limit": None,
     "resetAt": None,
 }
 _AUTH_MANAGER_LOCK = threading.RLock()
@@ -202,6 +203,31 @@ def update_sync_counters(root_mod: Any, **deltas: Any) -> dict[str, Any]:
         _SYNC_COUNTERS.clear()
         _SYNC_COUNTERS.update(current)
         return dict(_SYNC_COUNTERS)
+
+
+def rate_limit_payload(root_mod: Any) -> dict[str, Any]:
+    with _RATE_LIMIT_LOCK:
+        remaining = _RATE_LIMIT_STATE.get("remaining")
+        limit = _RATE_LIMIT_STATE.get("limit")
+        reset_at = _RATE_LIMIT_STATE.get("resetAt")
+        until = _RATE_LIMIT_STATE.get("until")
+        strike = int(_RATE_LIMIT_STATE.get("strike") or 0)
+
+    remaining_int = remaining if isinstance(remaining, int) else None
+    limit_int = limit if isinstance(limit, int) else None
+    remaining_percent = None
+    if remaining_int is not None and limit_int is not None and limit_int > 0:
+        remaining_percent = round((remaining_int / limit_int) * 100, 2)
+
+    return {
+        "remaining": remaining_int,
+        "limit": limit_int,
+        "remainingPercent": remaining_percent,
+        "resetAt": reset_at.isoformat() if isinstance(reset_at, datetime) else "",
+        "until": until.isoformat() if isinstance(until, datetime) else "",
+        "strike": strike,
+        "low": bool(remaining_percent is not None and remaining_percent < 10),
+    }
 
 
 def machine_fingerprint(root_mod: Any) -> str:
@@ -507,6 +533,8 @@ def rate_limit_note_response(
     with _RATE_LIMIT_LOCK:
         if remaining is not None:
             _RATE_LIMIT_STATE["remaining"] = remaining
+        if limit is not None:
+            _RATE_LIMIT_STATE["limit"] = limit
         if reset_at is not None:
             _RATE_LIMIT_STATE["resetAt"] = reset_at
     if int(status or 0) in {429, 403}:

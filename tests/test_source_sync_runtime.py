@@ -44,7 +44,14 @@ def _root(now: datetime | None = None) -> SimpleNamespace:
 def _reset_runtime_globals() -> None:
     runtime._RUNTIME_STATE.update({"code": "", "message": "", "until": "", "updatedAt": ""})
     runtime._RATE_LIMIT_STATE.update(
-        {"calls": [], "strike": 0, "until": None, "remaining": None, "resetAt": None}
+        {
+            "calls": [],
+            "strike": 0,
+            "until": None,
+            "remaining": None,
+            "limit": None,
+            "resetAt": None,
+        }
     )
     runtime._AUTH_MANAGER.clear()
 
@@ -89,6 +96,16 @@ def test_rate_limit_note_response_tracks_quota_telemetry_and_warns(caplog) -> No
     payload = runtime.runtime_state_payload(root)
     assert payload["lastRateLimitRemaining"] == "4"
     assert payload["lastRateLimitResetAt"] == reset_at.isoformat()
+    rate_limit = runtime.rate_limit_payload(root)
+    assert rate_limit == {
+        "remaining": 4,
+        "limit": 50,
+        "remainingPercent": 8.0,
+        "resetAt": reset_at.isoformat(),
+        "until": "",
+        "strike": 0,
+        "low": True,
+    }
     assert "rate limit low" in caplog.text.lower()
 
 
