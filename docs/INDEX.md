@@ -62,7 +62,6 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Plans / Follow-Ups | You are improving saved-job phase/outcome modeling, activity semantics, sorting, or Saved page operations |
 | [`plans/source-sync-production-readiness-plan.md`](plans/source-sync-production-readiness-plan.md) | Plans / Follow-Ups | You are planning source-sync production hardening for BaluffoSync, conflict handling, or registry observability |
 | [`plans/source-discovery-adapter-follow-ups.md`](plans/source-discovery-adapter-follow-ups.md) | Plans / Follow-Ups | You are choosing evidence-backed source-discovery behavior changes after the deletion-first adapter cleanup |
-| [`plans/admin-health-dashboard-console-plan.md`](plans/admin-health-dashboard-console-plan.md) | Plans / Follow-Ups | You are converting Admin Operations Health from wall-of-text into an operational console and improving triage-readability |
 | [`snapshots/jobs-dead-source-evidence-2026-04-29.md`](snapshots/jobs-dead-source-evidence-2026-04-29.md) | Snapshots / Evidence | You are auditing the first evidence-backed physical deletion batch for dead jobs sources |
 | [`snapshots/jobs-source-family-evidence-2026-04-30.md`](snapshots/jobs-source-family-evidence-2026-04-30.md) | Snapshots / Evidence | You are choosing the next deletion-first jobs fetcher source-family slice |
 | [`snapshots/dedup-lifecycle-readiness-closure-2026-05-03.md`](snapshots/dedup-lifecycle-readiness-closure-2026-05-03.md) | Snapshots / Evidence | You are checking why the broad dedup lifecycle readiness plan closed without starting lifecycle UX |
@@ -110,7 +109,6 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Validate provider/static source-policy workflow | [`source-policy-runbook.md`](source-policy-runbook.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Review read-only lifecycle UX | [`archive/read-only-lifecycle-ux-closeout.md`](archive/read-only-lifecycle-ux-closeout.md) | [`snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md`](snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md), [`source-policy-runbook.md`](source-policy-runbook.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Improve task/progress operations UX | [`plans/task-progress-operational-console-plan.md`](plans/task-progress-operational-console-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`frontend/admin/domain/progress.js`](../frontend/admin/domain/progress.js), [`frontend/admin/render/ops-history.js`](../frontend/admin/render/ops-history.js) |
-| Improve Admin health dashboard readability | [`plans/admin-health-dashboard-console-plan.md`](plans/admin-health-dashboard-console-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`frontend/admin/render/ops-summary.js`](../frontend/admin/render/ops-summary.js), [`frontend/admin/domain/runs.js`](../frontend/admin/domain/runs.js), [`styles/admin.css`](../styles/admin.css) |
 
 ## Recommended AI read sequence
 

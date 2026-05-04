@@ -4,8 +4,8 @@
 > - **Use this when:** improving Admin task/progress UX, reducing frontend interpretation drift, and making long-running task behavior explicit for operations
 > - **Canonical for:** shared task-run presenter design, live-vs-history rendering split, stale task handling UI, and operational triage UX for fetch/discovery/sync tasks
 > - **Not canonical for:** task/task-state runtime contracts, bridge route definitions, or task execution engine behavior (use `admin-bridge-api.md`, `admin-task-state` domain code, and pipeline docs)
-> - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md), [`../testing.md`](../testing.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
-> - **Last updated:** 2026-05-03
+> - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../admin-bridge-api.md`](../admin-bridge-api.md), [`../archive/admin-health-dashboard-console-closeout.md`](../archive/admin-health-dashboard-console-closeout.md), [`../testing.md`](../testing.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Last updated:** 2026-05-04
 
 ## Verdict
 
@@ -20,7 +20,7 @@ The current foundation is correct for an internal telemetry system:
 
 The remaining risk is usability, operational clarity, and duplication across frontend modules.
 
-This plan is compatible with [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md) by separating depth from overview. The health-dashboard plan owns the Operations Health layout and compact Discovery / Fetch / Sync lane. This task/progress plan owns the shared task-run presenter, compact Current Runs rows, stale/orphaned display states, selected-run analysis, run timelines, and run-scoped diagnostics.
+This plan is compatible with the archived [`admin-health-dashboard-console-closeout.md`](../archive/admin-health-dashboard-console-closeout.md) by separating depth from overview. The archived health-dashboard work owns the Operations Health layout and compact Discovery / Fetch / Sync lane. This task/progress plan owns the shared task-run presenter, compact Current Runs rows, stale/orphaned display states, selected-run analysis, run timelines, and run-scoped diagnostics.
 
 ## Current implementation strength
 
@@ -71,7 +71,7 @@ Recommended structure:
 
 - Current Runs: compact table rows with task-aware status chips, selected-run analysis, bounded copy diagnostics, and no progressbar/card layout.
 - Completed Runs: existing table shape preserved, with row expansion for task details.
-- Operations Health: compact task-status lane only, owned by [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md), and fed by the same task-run interpretation where useful. Detailed task evidence stays in Run History and Selected Run Analysis.
+- Operations Health: compact task-status lane only, documented in the archived [`admin-health-dashboard-console-closeout.md`](../archive/admin-health-dashboard-console-closeout.md), and fed by the same task-run interpretation where useful. Detailed task evidence stays in Run History and Selected Run Analysis.
 
 Example compact row content:
 
@@ -228,7 +228,7 @@ Promote key report diagnostics into viewable sections:
 - failure buckets
 - quality and confidence signals
 
-Attach these panels to the selected run. Selected-run analysis and its bounded timeline panel are implemented as read-only evidence below the compact run tables. The dashboard-level latest fetch-health grouping remains in [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md).
+Attach these panels to the selected run. Selected-run analysis and its bounded timeline panel are implemented as read-only evidence below the compact run tables. The dashboard-level latest fetch-health grouping remains documented in the archived [`admin-health-dashboard-console-closeout.md`](../archive/admin-health-dashboard-console-closeout.md).
 
 ### Step 5 — Keep a single event stream via `recentEvents`
 
@@ -250,7 +250,7 @@ Continue using normalized `taskProgress`, `workItems`, `recentEvents` and extend
 Health-dashboard dependency boundary:
 
 ```text
-Operations Health overview: admin-health-dashboard-console-plan.md
+Operations Health overview: ../archive/admin-health-dashboard-console-closeout.md
 Detailed task console: this plan
 Shared task labels/progress/severity: frontend/shared/task-run-view-model.js
 ```
