@@ -401,6 +401,8 @@ PUT fails (transient network error, not HTTP 409/422/401)
 
 ### P4 — Add contract/integration tests
 
+This is a test-only checkpoint. The cases below stay as executable specifications for later runtime hardening slices, but this pass does not change source-sync runtime behavior, bridge routes, or payload contracts.
+
 **Existing from original (keep):**
 - real artifact contract check in CI
 - no-op push
@@ -425,6 +427,16 @@ PUT fails (transient network error, not HTTP 409/422/401)
 - duplicate canonical URL dedupe/validation conflict path
 - branch/path allowlist enforcement proofs
 - concurrent writer (409 → re-pull → merge → retry)
+
+### P4 runtime follow-up slices
+
+Keep the runtime work split out after this test-only checkpoint:
+
+- snapshot content fingerprinting and no-op write gating
+- idempotent PUT retry and conflict re-read handling
+- transient GET retry/backoff
+- dry-run support
+- daily counters and snapshot-size governance plumbing
 
 ## Operational metrics to emit
 
