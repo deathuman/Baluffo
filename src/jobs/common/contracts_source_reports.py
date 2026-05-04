@@ -429,6 +429,30 @@ def normalize_source_report_row(row: dict[str, Any]) -> dict[str, Any]:
         "duplicateRate": _float_or_zero(src.get("duplicateRate")),
         "error": clean_text(src.get("error")),
         "durationMs": _clamped_int(src.get("durationMs"), 0, 0),
+        "lastStatus": clean_text(src.get("lastStatus")),
+        "lastRunAt": clean_text(src.get("lastRunAt")),
+        "lastCheckedAt": clean_text(src.get("lastCheckedAt")),
+        "lastSuccessAt": clean_text(src.get("lastSuccessAt")),
+        "lastSuccessfulFetchAt": clean_text(src.get("lastSuccessfulFetchAt"))
+        or clean_text(src.get("lastSuccessAt")),
+        "lastSeenInFetchAt": clean_text(src.get("lastSeenInFetchAt"))
+        or clean_text(src.get("lastCheckedAt"))
+        or clean_text(src.get("lastRunAt")),
+        "lastKeptCount": _clamped_int(src.get("lastKeptCount"), 0, 0),
+        "lastJobsKept": _clamped_int(
+            src.get("lastJobsKept"), _clamped_int(src.get("lastKeptCount"), 0, 0), 0
+        ),
+        "consecutiveFailures": _clamped_int(src.get("consecutiveFailures"), 0, 0),
+        "failureCount": _clamped_int(
+            src.get("failureCount"), _clamped_int(src.get("consecutiveFailures"), 0, 0), 0
+        ),
+        "consecutiveZeroKept": _clamped_int(src.get("consecutiveZeroKept"), 0, 0),
+        "zeroJobStreak": _clamped_int(
+            src.get("zeroJobStreak"), _clamped_int(src.get("consecutiveZeroKept"), 0, 0), 0
+        ),
+        "healthScore": _clamped_int(src.get("healthScore"), 100, 0),
+        "health": norm_text(src.get("health")) or "",
+        "healthReason": clean_text(src.get("healthReason")),
     }
 
     failure_bucket, _, _ = _apply_zero_kept_classification(normalized, src)

@@ -21,13 +21,68 @@ _TRIAGE_ROW_LIMIT = 10
 
 
 def _source_health_row(row: dict[str, Any]) -> dict[str, Any]:
+    status = norm_text(row.get("status")) or "error"
+    kept_count = _clamped_int(row.get("keptCount"), 0, 0)
+    failure_count = _clamped_int(
+        row.get("failureCount"), _clamped_int(row.get("consecutiveFailures"), 0, 0), 0
+    )
+    zero_job_streak = _clamped_int(
+        row.get("zeroJobStreak"), _clamped_int(row.get("consecutiveZeroKept"), 0, 0), 0
+    )
+    last_success = clean_text(row.get("lastSuccessfulFetchAt")) or clean_text(
+        row.get("lastSuccessAt")
+    )
+    last_seen = (
+        clean_text(row.get("lastSeenInFetchAt"))
+        or clean_text(row.get("lastCheckedAt"))
+        or clean_text(row.get("lastRunAt"))
+    )
+    last_jobs_kept = _clamped_int(
+        row.get("lastJobsKept"), _clamped_int(row.get("lastKeptCount"), 0, 0), 0
+    )
+    health_score = _clamped_int(row.get("healthScore"), 100, 0)
+    if status == "excluded":
+        health = "unknown"
+        reason = "excluded"
+    elif status == "error" or failure_count > 0:
+        health = "broken"
+        reason = "latest fetch failed"
+    elif zero_job_streak >= 3:
+        health = "broken"
+        reason = "repeated zero-job fetches"
+    elif kept_count > 0 or last_jobs_kept > 0:
+        health = "healthy"
+        reason = "last fetch kept jobs"
+    elif status == "ok" or zero_job_streak > 0 or last_success or last_seen:
+        health = "warning"
+        reason = "latest fetch kept no jobs"
+    else:
+        health = "unknown"
+        reason = "no fetch history"
     return {
         "name": clean_text(row.get("name")),
         "adapter": clean_text(row.get("adapter")),
-        "status": norm_text(row.get("status")) or "error",
-        "keptCount": _clamped_int(row.get("keptCount"), 0, 0),
+        "status": status,
+        "keptCount": kept_count,
         "fetchedCount": _clamped_int(row.get("fetchedCount"), 0, 0),
         "durationMs": _clamped_int(row.get("durationMs"), 0, 0),
+        "lastStatus": clean_text(row.get("lastStatus")),
+        "lastRunAt": clean_text(row.get("lastRunAt")),
+        "lastCheckedAt": clean_text(row.get("lastCheckedAt")),
+        "lastSuccessAt": last_success,
+        "lastSuccessfulFetchAt": last_success,
+        "lastSeenInFetchAt": last_seen,
+        "lastKeptCount": _clamped_int(
+            row.get("lastKeptCount"), _clamped_int(row.get("keptCount"), 0, 0), 0
+        ),
+        "lastJobsKept": last_jobs_kept,
+        "failureCount": failure_count,
+        "consecutiveFailures": _clamped_int(row.get("consecutiveFailures"), 0, 0),
+        "zeroJobStreak": zero_job_streak,
+        "consecutiveZeroKept": _clamped_int(row.get("consecutiveZeroKept"), 0, 0),
+        "healthScore": health_score,
+        "health": norm_text(row.get("health")) or health,
+        "healthReason": clean_text(row.get("healthReason")) or reason,
         "failureBucket": clean_text(row.get("failureBucket")),
         "classification": clean_text(row.get("classification")),
         "zeroKeptClassification": clean_text(row.get("zeroKeptClassification")),

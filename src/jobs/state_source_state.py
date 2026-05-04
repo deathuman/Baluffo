@@ -20,6 +20,7 @@ from .state_source_records import (
     browser_fallback_state_row,
     build_browser_fallback_circuit_breaker,
     circuit_breaker_until,
+    derive_source_health_fields,
     normalize_source_state_payload,
     read_previously_successful_sources,
     read_source_state,
@@ -82,6 +83,7 @@ def _apply_report_to_entry(
         canonical_rows=canonical_rows,
         finished_at=finished_at,
     )
+    entry.update(derive_source_health_fields(entry))
     source_state_rows[source_name] = entry
     _apply_detail_reports(
         source_state_rows,

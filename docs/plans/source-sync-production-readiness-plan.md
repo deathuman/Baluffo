@@ -51,7 +51,7 @@ Note: `push_sources_snapshot` always reads remote first, merges, builds a new sn
 | Reviewability | compact JSON snapshot | one-line diffs block human review and rollback | pretty-print with stable key order and stable sort by source identity |
 | Idempotency | push may rewrite with timestamp-only changes | bot churn and noisy history | hash active/pending content excluding `generatedAt` and skip no-op pushes |
 | Conflict handling | state exists | no deterministic retry path on concurrent writes | handle 409 by re-pull + re-merge + recompute + one retry |
-| Source health | registry tracks active/pending only | active does not guarantee fetch usefulness | add health fields (`lastSuccessfulFetchAt`, `failureCount`, etc.) |
+| Source health | registry tracks active/pending only | active does not guarantee fetch usefulness | implemented: active source rows now carry health aliases |
 | Repo governance | snapshot-only repo conventions | no explicit contract or rollback rules | add README, schema, contract, rollback, environments docs |
 | Environment separation | shared default path | staging and prod may collide | introduce path/branch per environment |
 | Observability | admin summary exists | no operational metrics of drift/churn/failures | emit structured sync summary + admin counters |
@@ -354,15 +354,12 @@ PUT fails (transient network error, not HTTP 409/422/401)
 - Skips the PUT; returns `{"pushed": false, "dryRun": true, "wouldChange": <bool>, "activeBefore": N, "activeAfter": N, ...}`
 - Exposed via `POST /sync/push?dry_run=1` in the admin bridge
 
-### P2 — Add active source health
+### P2 — Add active source health (implemented)
 
-**Existing from original:**
-- `lastSuccessfulFetchAt`
-- `lastJobsKept`
-- `failureCount`
-- `zeroJobStreak`
-- `health` / `healthReason`
-- avoid republishing broken sources as healthy active
+**Implemented:**
+- Active source rows now carry `lastSuccessfulFetchAt`, `lastSeenInFetchAt`, `lastJobsKept`, `failureCount`, `zeroJobStreak`, `health`, and `healthReason`.
+- Existing `healthScore`, `lastSuccessAt`, and `consecutiveFailures` aliases remain preserved.
+- Broken and repeated zero-job sources are no longer republished as healthy active.
 
 **New: snapshot size governance**
 - Configurable `max_snapshot_size_bytes` on `SyncConfig` (default 5MB; safe for 5000+ sources at ~200 bytes/row)
@@ -538,14 +535,8 @@ Admin should expose at least:
   - staging: no reviewer, deployment branch = `staging`
 - migrate jobs pipeline files (`jobs-unified*`, `jobs-lifecycle-state`, `jobs-source-state`) to `.json.gz`
 
-### P2 — Add active source health + storage governance + checkpoint tags
+### P2 — Remaining follow-up: storage governance + checkpoint tags
 
-- `lastSuccessfulFetchAt`
-- `lastJobsKept`
-- `failureCount`
-- `zeroJobStreak`
-- `health` / `healthReason`
-- avoid republishing broken sources as healthy active
 - snapshot size governance (configurable 5MB limit, warn at 3MB)
 - admin daily-reset counters (calendar-day UTC)
 - lifecycle state retention policy: archive jobs removed > 90 days to cold storage

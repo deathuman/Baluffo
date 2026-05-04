@@ -239,6 +239,77 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _source_health_text(*values: Any) -> str:
+    for value in values:
+        text = clean_text(value)
+        if text:
+            return text
+    return ""
+
+
+def _source_health_int(*values: Any) -> int:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return _clamped_int(value, 0, 0)
+    return 0
+
+
+def derive_source_health_fields(row: dict[str, Any]) -> dict[str, Any]:
+    src = _as_dict(row)
+    last_status = norm_text(src.get("lastStatus")) or norm_text(src.get("status")) or ""
+    if last_status == "active":
+        last_status = "ok"
+    last_success = _source_health_text(src.get("lastSuccessfulFetchAt"), src.get("lastSuccessAt"))
+    last_seen = _source_health_text(
+        src.get("lastSeenInFetchAt"), src.get("lastCheckedAt"), src.get("lastRunAt")
+    )
+    last_run_at = _source_health_text(
+        src.get("lastRunAt"), src.get("lastCheckedAt"), src.get("lastSeenInFetchAt")
+    )
+    last_jobs_kept = _source_health_int(src.get("lastJobsKept"), src.get("lastKeptCount"))
+    failure_count = _source_health_int(src.get("failureCount"), src.get("consecutiveFailures"))
+    zero_job_streak = _source_health_int(src.get("zeroJobStreak"), src.get("consecutiveZeroKept"))
+    health_score = _clamped_int(src.get("healthScore"), 0, 100)
+    if last_status == "excluded":
+        health = "unknown"
+        reason = "excluded"
+    elif last_status == "error" or failure_count > 0:
+        health = "broken"
+        reason = "latest fetch failed"
+    elif zero_job_streak >= 3:
+        health = "broken"
+        reason = "repeated zero-job fetches"
+    elif last_jobs_kept > 0:
+        health = "healthy"
+        reason = "last fetch kept jobs"
+    elif last_success or last_seen or last_status == "ok" or zero_job_streak > 0:
+        health = "warning"
+        reason = "latest fetch kept no jobs"
+    else:
+        health = "unknown"
+        reason = "no fetch history"
+    return {
+        "healthScore": health_score,
+        "lastStatus": last_status,
+        "lastRunAt": last_run_at,
+        "lastCheckedAt": last_seen,
+        "lastSuccessAt": last_success,
+        "lastSuccessfulFetchAt": last_success,
+        "lastSeenInFetchAt": last_seen,
+        "lastKeptCount": _source_health_int(src.get("lastKeptCount"), src.get("lastJobsKept")),
+        "lastJobsKept": last_jobs_kept,
+        "consecutiveFailures": failure_count,
+        "failureCount": failure_count,
+        "consecutiveZeroKept": zero_job_streak,
+        "zeroJobStreak": zero_job_streak,
+        "health": health,
+        "healthReason": reason,
+    }
+
+
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
 
@@ -402,6 +473,7 @@ def normalize_source_state_payload(
             "detectedProviderUrl": clean_text(entry_src.get("detectedProviderUrl")),
             "detectedProviderId": clean_text(entry_src.get("detectedProviderId")),
         }
+        entry.update(derive_source_health_fields(entry))
         raw_latencies = _as_list(entry_src.get("recentLatencies"))
         clean_latencies = [
             _clamped_int(x, 0, 2**31 - 1) for x in raw_latencies if isinstance(x, (int, float))

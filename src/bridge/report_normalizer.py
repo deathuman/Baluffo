@@ -346,6 +346,35 @@ def normalize_fetch_report_contract(payload: dict[str, Any]) -> dict[str, Any]:
                     ),
                     "error": str(row.get("error") or "").strip(),
                     "durationMs": safe_int(row.get("durationMs"), 0, 0, 86_400_000),
+                    "lastStatus": str(row.get("lastStatus") or row.get("status") or "")
+                    .strip()
+                    .lower(),
+                    "lastRunAt": str(row.get("lastRunAt") or "").strip(),
+                    "lastCheckedAt": str(
+                        row.get("lastCheckedAt") or row.get("lastSeenInFetchAt") or ""
+                    ).strip(),
+                    "lastSuccessAt": str(
+                        row.get("lastSuccessAt") or row.get("lastSuccessfulFetchAt") or ""
+                    ).strip(),
+                    "lastSuccessfulFetchAt": str(
+                        row.get("lastSuccessfulFetchAt") or row.get("lastSuccessAt") or ""
+                    ).strip(),
+                    "lastSeenInFetchAt": str(
+                        row.get("lastSeenInFetchAt") or row.get("lastCheckedAt") or ""
+                    ).strip(),
+                    "lastKeptCount": safe_int(row.get("lastKeptCount"), 0, 0, 1_000_000),
+                    "lastJobsKept": safe_int(row.get("lastJobsKept"), 0, 0, 1_000_000),
+                    "consecutiveFailures": safe_int(
+                        row.get("consecutiveFailures"), 0, 0, 1_000_000
+                    ),
+                    "failureCount": safe_int(row.get("failureCount"), 0, 0, 1_000_000),
+                    "consecutiveZeroKept": safe_int(
+                        row.get("consecutiveZeroKept"), 0, 0, 1_000_000
+                    ),
+                    "zeroJobStreak": safe_int(row.get("zeroJobStreak"), 0, 0, 1_000_000),
+                    "healthScore": safe_int(row.get("healthScore"), 0, 0, 100),
+                    "health": str(row.get("health") or "").strip().lower(),
+                    "healthReason": str(row.get("healthReason") or "").strip(),
                     "classification": str(row.get("classification") or "").strip(),
                     "failureBucket": str(row.get("failureBucket") or "").strip(),
                     "zeroKeptClassification": str(row.get("zeroKeptClassification") or "").strip(),

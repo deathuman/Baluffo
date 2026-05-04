@@ -18,6 +18,7 @@ from src.jobs.common.contracts_provider_static_overlap import (
 from src.jobs.common.contracts_redundant_static_proposals import (
     build_redundant_static_proposals_summary,
 )
+from src.jobs.common.contracts_source_health import normalize_source_health_payload
 from src.jobs.common.contracts_source_policy_recommendations import (
     build_source_policy_recommendations_artifact,
     read_source_policy_recommendations_artifact,
@@ -59,6 +60,7 @@ from src.jobs.state_lifecycle import (
     write_job_lifecycle_archive_state,
     write_job_lifecycle_state,
 )
+from src.jobs.state_source_records import derive_source_health_fields
 from src.jobs.state_source_state import (
     update_source_state_rows,
     write_source_state,
@@ -667,6 +669,24 @@ def finalize_pipeline_run(
         circuit_breaker_failures=circuit_breaker_failures,
         circuit_breaker_cooldown_minutes=circuit_breaker_cooldown_minutes,
         circuit_breaker_zero_kept=circuit_breaker_zero_kept,
+    )
+    source_health_rows_by_name = {
+        clean_text(name): dict(row)
+        for name, row in source_state_rows.items()
+        if clean_text(name) and isinstance(row, dict)
+    }
+    merged_source_rows: list[dict[str, Any]] = []
+    for source_row in report_payload.get("sources") or []:
+        if not isinstance(source_row, dict):
+            continue
+        merged_row = dict(source_row)
+        source_name = clean_text(source_row.get("name"))
+        if source_name and source_name in source_health_rows_by_name:
+            merged_row.update(derive_source_health_fields(source_health_rows_by_name[source_name]))
+        merged_source_rows.append(merged_row)
+    report_payload["sources"] = merged_source_rows
+    report_payload["sourceHealth"] = normalize_source_health_payload(
+        report_payload.get("sourceHealth"), merged_source_rows
     )
     snapshot_redirect_cache = getattr(redirect_resolver, "snapshot_cache", None)
     if callable(snapshot_redirect_cache):

@@ -57,10 +57,32 @@ def test_source_state_helpers_round_trip_gzip_storage() -> None:
     with workspace_tmpdir("pipeline-source-state-gzip") as tmp:
         path = Path(tmp) / "jobs-source-state.json"
         rows = {
-            "source-a": {
-                "status": "active",
-                "lastSuccessfulFetchAt": "2026-05-04T10:00:00Z",
-            }
+            "legacy_source": {
+                "lastStatus": "ok",
+                "lastRunAt": "2026-05-04T09:59:00Z",
+                "lastCheckedAt": "2026-05-04T10:00:00Z",
+                "lastSuccessAt": "2026-05-04T10:00:00Z",
+                "lastKeptCount": 4,
+                "consecutiveFailures": 0,
+                "consecutiveZeroKept": 0,
+            },
+            "alias_source": {
+                "lastStatus": "ok",
+                "lastRunAt": "2026-05-04T11:59:00Z",
+                "lastCheckedAt": "2026-05-04T12:00:00Z",
+                "lastSuccessAt": "2026-05-04T12:00:00Z",
+                "lastSuccessfulFetchAt": "2026-05-04T12:00:00Z",
+                "lastSeenInFetchAt": "2026-05-04T12:00:00Z",
+                "lastKeptCount": 2,
+                "lastJobsKept": 2,
+                "consecutiveFailures": 0,
+                "failureCount": 0,
+                "consecutiveZeroKept": 0,
+                "zeroJobStreak": 0,
+                "healthScore": 100,
+                "health": "healthy",
+                "healthReason": "last fetch kept jobs",
+            },
         }
 
         write_source_state(path, rows)
@@ -69,10 +91,29 @@ def test_source_state_helpers_round_trip_gzip_storage() -> None:
         assert path.exists() is False
         with gzip.open(_gzip_path(path), mode="rt", encoding="utf-8") as handle:
             payload = handle.read()
-        assert '"source-a"' in payload
+        assert '"lastSuccessfulFetchAt"' in payload
+        assert '"healthReason"' in payload
+
         source_state = read_source_state(path)
-        assert "source-a" in source_state
-        assert source_state["source-a"]["healthScore"] == 100
+        legacy = source_state["legacy_source"]
+        assert legacy["lastSuccessfulFetchAt"] == "2026-05-04T10:00:00Z"
+        assert legacy["lastSeenInFetchAt"] == "2026-05-04T10:00:00Z"
+        assert legacy["lastJobsKept"] == 4
+        assert legacy["failureCount"] == 0
+        assert legacy["zeroJobStreak"] == 0
+        assert legacy["healthScore"] == 100
+        assert legacy["health"] == "healthy"
+        assert legacy["healthReason"] == "last fetch kept jobs"
+
+        alias = source_state["alias_source"]
+        assert alias["lastSuccessfulFetchAt"] == "2026-05-04T12:00:00Z"
+        assert alias["lastSeenInFetchAt"] == "2026-05-04T12:00:00Z"
+        assert alias["lastJobsKept"] == 2
+        assert alias["failureCount"] == 0
+        assert alias["zeroJobStreak"] == 0
+        assert alias["healthScore"] == 100
+        assert alias["health"] == "healthy"
+        assert alias["healthReason"] == "last fetch kept jobs"
 
 
 def test_lifecycle_state_helpers_round_trip_gzip_storage() -> None:
