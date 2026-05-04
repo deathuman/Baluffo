@@ -58,6 +58,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 |----------|-------|-------------|
 | [`DOCS_WORKFLOW.md`](DOCS_WORKFLOW.md) | Documentation maintenance | You are deciding where docs belong, updating docs after code changes, or adding a new documentation page |
 | [`source-policy-runbook.md`](source-policy-runbook.md) | Operator runbook | You are running discovery/fetch/soak/Admin migration-link validation or checking provider/static source-policy release readiness |
+| [`plans/end-to-end-benchmarking-plan.md`](plans/end-to-end-benchmarking-plan.md) | Plans / Follow-Ups | You are adding frontend/backend instrumentation, profiling pipeline operations, fixing UI stalling (especially Admin page), or setting up CI performance regression detection |
 | [`plans/task-progress-operational-console-plan.md`](plans/task-progress-operational-console-plan.md) | Plans / Follow-Ups | You are hardening Admin task/progress UX, stale-task states, run analysis, or task visibility workflows |
 | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Plans / Follow-Ups | You are improving saved-job phase/outcome modeling, activity semantics, sorting, or Saved page operations |
 | [`plans/source-sync-production-readiness-plan.md`](plans/source-sync-production-readiness-plan.md) | Plans / Follow-Ups | You are planning source-sync production hardening for BaluffoSync, conflict handling, or registry observability |
