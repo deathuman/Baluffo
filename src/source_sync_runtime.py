@@ -530,35 +530,10 @@ def rate_limit_note_response(
             limit,
             reset_at.isoformat() if isinstance(reset_at, datetime) else "",
         )
-    with _RATE_LIMIT_LOCK:
-        if remaining is not None:
-            _RATE_LIMIT_STATE["remaining"] = remaining
-        if limit is not None:
-            _RATE_LIMIT_STATE["limit"] = limit
-        if reset_at is not None:
-            _RATE_LIMIT_STATE["resetAt"] = reset_at
-    if int(status or 0) in {429, 403}:
-        message = str((payload or {}).get("message") or "").lower()
-        if int(status or 0) == 429 or "rate limit" in message:
-            retry_s = rate_limit_retry_after_seconds(root_mod, headers, payload)
-            until = root_mod.now_utc() + timedelta(seconds=retry_s)
-            with _RATE_LIMIT_LOCK:
-                strike = int(_RATE_LIMIT_STATE.get("strike") or 0) + 1
-                _RATE_LIMIT_STATE["strike"] = strike
-                _RATE_LIMIT_STATE["until"] = until
-                if _RATE_LIMIT_STATE.get("remaining") is None:
-                    _RATE_LIMIT_STATE["remaining"] = 0
-                if _RATE_LIMIT_STATE.get("resetAt") is None:
-                    _RATE_LIMIT_STATE["resetAt"] = until
-            set_runtime_state(
-                root_mod,
-                root_mod.RUNTIME_STATE_RATE_LIMITED,
-                f"GitHub API rate limited sync for {retry_s}s",
-                until=until,
-            )
-            raise root_mod.SyncOperationError(
-                root_mod.RUNTIME_STATE_RATE_LIMITED, "GitHub rate limit reached for sync."
-            )
+    rate = {"remaining": remaining, "limit": limit, "resetAt": reset_at}
+    _record_rate_limit_headers(rate)
+    if _is_rate_limited_status_response(status, payload):
+        _handle_rate_limit_retry(root_mod, headers, payload)
     with _RATE_LIMIT_LOCK:
         strike = int(_RATE_LIMIT_STATE.get("strike") or 0)
         if strike > 0:
@@ -567,6 +542,60 @@ def rate_limit_note_response(
         if isinstance(until, datetime) and root_mod.now_utc() >= until:
             _RATE_LIMIT_STATE["until"] = None
     clear_runtime_state(root_mod, root_mod.RUNTIME_STATE_RATE_LIMITED)
+
+
+def _record_rate_limit_headers(
+    metrics: dict[str, Any],
+) -> None:
+    remaining = metrics.get("remaining")
+    limit = metrics.get("limit")
+    reset_at = metrics.get("resetAt")
+    with _RATE_LIMIT_LOCK:
+        if isinstance(remaining, int):
+            _RATE_LIMIT_STATE["remaining"] = remaining
+        if isinstance(limit, int):
+            _RATE_LIMIT_STATE["limit"] = limit
+        if isinstance(reset_at, datetime):
+            _RATE_LIMIT_STATE["resetAt"] = reset_at
+
+
+def _is_rate_limited_status_response(
+    status: int,
+    payload: dict[str, Any],
+) -> bool:
+    status_code = int(status or 0)
+    if status_code not in {429, 403}:
+        return False
+    if status_code == 429:
+        return True
+    message = str((payload or {}).get("message") or "").lower()
+    return "rate limit" in message
+
+
+def _handle_rate_limit_retry(
+    root_mod: Any,
+    headers: dict[str, str],
+    payload: dict[str, Any],
+) -> None:
+    retry_s = rate_limit_retry_after_seconds(root_mod, headers, payload)
+    until = root_mod.now_utc() + timedelta(seconds=retry_s)
+    with _RATE_LIMIT_LOCK:
+        strike = int(_RATE_LIMIT_STATE.get("strike") or 0) + 1
+        _RATE_LIMIT_STATE["strike"] = strike
+        _RATE_LIMIT_STATE["until"] = until
+        if _RATE_LIMIT_STATE.get("remaining") is None:
+            _RATE_LIMIT_STATE["remaining"] = 0
+        if _RATE_LIMIT_STATE.get("resetAt") is None:
+            _RATE_LIMIT_STATE["resetAt"] = until
+    set_runtime_state(
+        root_mod,
+        root_mod.RUNTIME_STATE_RATE_LIMITED,
+        f"GitHub API rate limited sync for {retry_s}s",
+        until=until,
+    )
+    raise root_mod.SyncOperationError(
+        root_mod.RUNTIME_STATE_RATE_LIMITED, "GitHub rate limit reached for sync."
+    )
 
 
 def request_json(
