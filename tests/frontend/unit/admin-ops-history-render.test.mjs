@@ -11,6 +11,18 @@ function makeEl() {
   };
 }
 
+function makeButton(attributeValue) {
+  return {
+    onclick: null,
+    getAttribute(name) {
+      return name === "data-ops-run-diagnostics-copy" ? attributeValue : "";
+    },
+    click() {
+      if (typeof this.onclick === "function") this.onclick();
+    }
+  };
+}
+
 test("admin ops history: completed run details show warning, failure, and capped hints read-only", () => {
   const historyEl = makeEl();
   renderAdminOpsHistory(historyEl, {
@@ -69,4 +81,61 @@ test("admin ops history: completed run details show warning, failure, and capped
   assert.match(historyEl.innerHTML, /remote rejected test payload/i);
   assert.doesNotMatch(historyEl.innerHTML, /<button/i);
   assert.doesNotMatch(historyEl.innerHTML, /raw payload/i);
+});
+
+test("admin ops history: run diagnostics copy uses bounded payload without changing compact rows", () => {
+  const runKey = "current||fetch_live_1|fetch|2026-03-08T10:00:00.000Z||0";
+  const copyButton = makeButton(runKey);
+  const historyEl = {
+    innerHTML: "",
+    textContent: "",
+    querySelectorAll(selector) {
+      return selector === "[data-ops-run-diagnostics-copy]" ? [copyButton] : [];
+    }
+  };
+  const copied = [];
+
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [
+      {
+        type: "fetch",
+        runId: "fetch_live_1",
+        active: true,
+        isLive: true,
+        startedAt: "2026-03-08T10:00:00.000Z",
+        heartbeatAt: new Date().toISOString(),
+        summary: {
+          outputCount: 12,
+          failedSources: 0,
+          recommendedApiPayload: { hidden: true }
+        },
+        workItems: Array.from({ length: 8 }, (_row, index) => ({
+          id: `source_${index}`,
+          name: `Source ${index}`,
+          status: index === 0 ? "running" : "pending",
+          rawLargeThing: { hidden: true }
+        }))
+      }
+    ],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  }, {
+    onCopyRunDiagnostics: payload => copied.push(payload)
+  });
+
+  assert.match(historyEl.innerHTML, /admin-ops-history-row/);
+  assert.match(historyEl.innerHTML, /data-ops-run-diagnostics-copy=/);
+  assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-card/);
+  assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
+
+  copyButton.click();
+
+  assert.equal(copied.length, 1);
+  assert.equal(copied[0].kind, "admin_run_diagnostics");
+  assert.equal(copied[0].rowArea, "current");
+  assert.equal(copied[0].runId, "fetch_live_1");
+  assert.equal(copied[0].workItemExamples.length, 5);
+  const serialized = JSON.stringify(copied[0]);
+  assert.doesNotMatch(serialized, /recommendedApiPayload|rawLargeThing/i);
+  assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
 });

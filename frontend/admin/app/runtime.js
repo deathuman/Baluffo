@@ -8,7 +8,7 @@ import {
 import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
 import {
   appendAdminLogRow
-} from "../render.js?v=6";
+} from "../render.js?v=7";
 import {
   getErrorMessage as getErrorMessageFromDomain,
   normalizeLogLevel as normalizeLogLevelFromDomain,
@@ -51,7 +51,7 @@ import {
   FETCHER_PRESET_META
 } from "./fetcher.js";
 import { createAdminRuntimeState } from "./runtime/state.js";
-import { composeAdminControllers } from "./runtime/composition.js?v=6";
+import { composeAdminControllers } from "./runtime/composition.js?v=7";
 import { createAdminStartupMetrics } from "./runtime/effects.js";
 import { createBridgeCaller } from "./runtime/actions.js";
 import { setStatusText, toLocalTime } from "./runtime/view.js";

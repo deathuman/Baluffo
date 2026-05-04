@@ -1,6 +1,6 @@
 import "../shared/local-data/app-client.js";
 import "../shared/config/admin-config.js";
-import { boot as bootAdminPage } from "./app.js?v=6";
+import { boot as bootAdminPage } from "./app.js?v=7";
 import { emitStartupProbeMetric } from "../../probes/startup-probe.js";
 
 emitStartupProbeMetric("admin_page_boot_start");

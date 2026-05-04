@@ -20,7 +20,7 @@ The current foundation is correct for an internal telemetry system:
 
 The remaining risk is usability, operational clarity, and duplication across frontend modules.
 
-This plan is compatible with [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md) by separating depth from overview. The health-dashboard plan owns the Operations Health layout and compact Discovery / Fetch / Sync lane. This task/progress plan owns the shared task-run presenter, detailed Current Runs cards, stale/orphaned display states, run timelines, and run-scoped diagnostics.
+This plan is compatible with [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md) by separating depth from overview. The health-dashboard plan owns the Operations Health layout and compact Discovery / Fetch / Sync lane. This task/progress plan owns the shared task-run presenter, compact Current Runs rows, stale/orphaned display states, run timelines, and run-scoped diagnostics.
 
 ## Current implementation strength
 
@@ -69,30 +69,22 @@ Current columns in `renderAdminOpsHistory` are generic and biased.
 
 Recommended structure:
 
-- Current Runs: card-based cards with high-signal status, target, stage, progress, and quick diagnostics.
-- Completed Runs: existing table shape preserved, but with row expansion for task details.
-- Operations Health: compact task-status lane only, owned by [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md), and fed by the same task-run interpretation once the shared presenter exists.
+- Current Runs: compact table rows with task-aware status chips, bounded copy diagnostics, and no progressbar/card layout.
+- Completed Runs: existing table shape preserved, with row expansion for task details.
+- Operations Health: compact task-status lane only, owned by [`admin-health-dashboard-console-plan.md`](admin-health-dashboard-console-plan.md), and fed by the same task-run interpretation where useful.
 
-Example card states:
+Example compact row content:
 
 ```text
-Fetcher
-Running · 7m 12s
-Executing sources · 6/12 resolved · 42 jobs · 1 failed
-Current: Studio X / Greenhouse
-[progress bar]
+fetch | running | 7m 12s | Executing sources (50%) | 1 | started timestamp
 ```
 
 ```text
-Discovery
-Running · 3m 40s
-Probing candidates · 18/50 probed · 7 queued · 2 failed
-Current: Provider pattern scan
+discovery | running | 3m 40s | Probing candidates (50%) | 2 | started timestamp
 ```
 
 ```text
-Sync Push
-Running · 22s
+sync | running | 22s | Sync push (active/pending/rejected) | 0 | started timestamp
 Pushing source registry · active 120 / pending 14 / rejected 8
 Remote: deathuman/Baluffo · main
 ```
@@ -165,7 +157,7 @@ Compatibility note: the health-dashboard plan implements a compact version of th
 | Area | Task/progress plan owns | Health-dashboard plan owns | Integration rule |
 |------|--------------------------|----------------------------|------------------|
 | Task interpretation | Shared `task-run-view-model` for live/history/report payloads | Health-specific view model for `/ops/health` and `/ops/fetcher-metrics` sections | Health can consume the shared task model for its compact lane, but task model should not depend on health dashboard code. |
-| Current tasks | Full cards, stale/orphaned states, timelines, diagnostics | Compact Discovery / Fetch / Sync lane | Do not build full task cards inside `#admin-ops-fetcher-metrics`. |
+| Current tasks | Compact rows, stale/orphaned states, timelines, diagnostics | Compact Discovery / Fetch / Sync lane | Do not build full task cards inside `#admin-ops-fetcher-metrics`. |
 | Fetch analysis | Run-scoped analysis for current/selected completed run | Latest health-oriented fetch metrics grouped in the dashboard | Share formatters where useful; keep render surfaces separate. |
 | Diagnostics | Current/last run event diagnostics, copy/export | Normalized section-summary copy for health sections | Avoid two raw-payload copy controls for the same event data. |
 | Source-policy/dedup review | Only task progress/status context | Existing review queues and health summaries | Do not move review mutations into task cards. |
@@ -183,8 +175,9 @@ Execution order is flexible:
 - [x] First detailed Admin task-console slice: shared frontend task-run presenter plus compact Current Runs table rows.
 - [x] Completed-run row expansion with read-only native details disclosures.
 - [x] Stalled/orphaned remediation guidance in compact status-chip tooltips.
-- [ ] Run-scoped diagnostics copy/export remains deferred.
+- [x] Run-scoped diagnostics copy added as bounded clipboard JSON.
 - [ ] Selected-run analysis and timeline panels remain deferred.
+- [ ] Downloadable run diagnostics export remains deferred.
 
 The larger Current Runs card direction was reversed by `e44e7405`; keep this surface compact and table-based.
 
@@ -248,8 +241,9 @@ Continue using normalized `taskProgress`, `workItems`, `recentEvents` and extend
 2. Compact Current Runs table rows preserved
 3. Completed Runs table kept with row expansion
 4. Stalled/orphaned state rendered explicitly
-5. Current/selected fetch run analysis panel added
-6. Diagnostics copy/export added for current and last run
+5. Bounded run diagnostics copy added for current and completed rows
+6. Current/selected fetch run analysis panel deferred
+7. Downloadable diagnostics export deferred
 
 Health-dashboard dependency boundary:
 

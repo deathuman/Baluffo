@@ -756,6 +756,14 @@
   animation: adminBridgePulseBg 1.4s ease-in-out infinite;
 }
 
+.admin-ops-run-copy-btn {
+  margin-left: 0.35rem;
+  padding: 0.14rem 0.42rem;
+  font-size: 0.68rem;
+  line-height: 1.15;
+  vertical-align: middle;
+}
+
 .admin-ops-history-run {
   border-bottom: 1px solid var(--surface-11);
 }

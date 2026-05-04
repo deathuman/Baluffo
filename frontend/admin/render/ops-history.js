@@ -1,5 +1,5 @@
 import { escapeHtml } from "../../shared/ui/index.js";
-import { buildTaskRunView } from "../../shared/task-run-view-model.js";
+import { buildTaskRunDiagnostics, buildTaskRunView } from "../../shared/task-run-view-model.js?v=7";
 import {
   formatScrapyStaticSourcesTailBadge,
   formatTaskProgressDetail
@@ -121,8 +121,11 @@ export function renderAdminOpsTrends(trendsEl, runs) {
   `;
 }
 
-export function renderAdminOpsHistory(historyEl, runsOrModel) {
+export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   if (!historyEl) return;
+  const onCopyRunDiagnostics = typeof options?.onCopyRunDiagnostics === "function"
+    ? options.onCopyRunDiagnostics
+    : null;
   const model = Array.isArray(runsOrModel)
     ? {
       currentRows: [],
@@ -221,13 +224,18 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       failureSummary: runView.failureSummary || "",
       diagnosticHints: Array.isArray(runView.diagnosticHints)
         ? runView.diagnosticHints.map(hint => truncateText(hint, 160)).filter(Boolean).slice(0, 5)
-        : []
+        : [],
+      diagnosticsPayload: buildTaskRunDiagnostics(row, { rowArea, runView })
     };
   };
 
   const currentViews = currentRows.map((row, index) => toRowView(row, "current", index));
   const visibleCompletedViews = visibleCompletedRows.map((row, index) => toRowView(row, "completed", index));
   const olderCompletedViews = olderCompletedRows.map((row, index) => toRowView(row, "completed_older", index));
+  const copyPayloads = new Map(
+    [...currentViews, ...visibleCompletedViews, ...olderCompletedViews]
+      .map(view => [view.key, view.diagnosticsPayload])
+  );
 
   const structureSignature = JSON.stringify({
     currentRows: currentViews.map(row => [
@@ -290,11 +298,22 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       cells[5].textContent = view.finishedText;
     });
   };
+  const attachCopyHandlers = () => {
+    if (!onCopyRunDiagnostics || !historyEl || typeof historyEl.querySelectorAll !== "function") return;
+    historyEl.querySelectorAll("[data-ops-run-diagnostics-copy]").forEach(button => {
+      button.onclick = () => {
+        const key = String(button.getAttribute("data-ops-run-diagnostics-copy") || "");
+        const payload = copyPayloads.get(key);
+        if (payload) onCopyRunDiagnostics(payload);
+      };
+    });
+  };
 
   if (canPatchInPlace && historyEl.dataset.opsStructureSig === structureSignature) {
     updateExistingRows(currentViews, "current");
     updateExistingRows(visibleCompletedViews, "completed");
     updateExistingRows(olderCompletedViews, "completed_older");
+    attachCopyHandlers();
     return;
   }
 
@@ -303,10 +322,10 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     historyEl.dataset.opsStructureSig = structureSignature;
   }
 
-  const renderCompactRows = views => views.map(view => `
+  const renderCompactRows = (views, { includeCopy = true } = {}) => views.map(view => `
       <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
         <div class="admin-cell">${escapeHtml(view.typeText)}</div>
-        <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${view.statusTitle ? ` title="${escapeHtml(view.statusTitle)}"` : ""}>${escapeHtml(view.statusText)}</span></div>
+        <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${view.statusTitle ? ` title="${escapeHtml(view.statusTitle)}"` : ""}>${escapeHtml(view.statusText)}</span>${includeCopy && onCopyRunDiagnostics ? ` <button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" title="Copy bounded diagnostics for this run">Copy</button>` : ""}</div>
         <div class="admin-cell">${escapeHtml(view.durationText)}</div>
         <div class="admin-cell">${escapeHtml(view.outputOrQueuedText)}</div>
         <div class="admin-cell">${escapeHtml(view.failedText)}</div>
@@ -329,7 +348,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
       : '<div class="muted">No diagnostic hints for this run.</div>';
     return `
       <div class="admin-ops-history-run" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}">
-        ${renderCompactRows([view])}
+        ${renderCompactRows([view], { includeCopy: false })}
         <details class="admin-ops-run-detail">
           <summary>${escapeHtml(view.title)} details</summary>
           <div class="admin-ops-run-detail-body">
@@ -338,7 +357,10 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
                 <strong>${escapeHtml(view.primaryLabel)}</strong>
                 ${view.secondaryLabel ? `<span>${escapeHtml(view.secondaryLabel)}</span>` : ""}
               </div>
-              <span class="admin-status-chip ${view.statusClass}">${escapeHtml(view.statusText)}</span>
+              <div>
+                <span class="admin-status-chip ${view.statusClass}">${escapeHtml(view.statusText)}</span>
+                ${onCopyRunDiagnostics ? `<button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" title="Copy bounded diagnostics for this run">Copy</button>` : ""}
+              </div>
             </div>
             <div class="admin-ops-run-detail-meta">${metaItems}</div>
             <div class="admin-ops-run-detail-summary"><strong>Summary</strong> ${escapeHtml(view.progressLabel || view.outputOrQueuedText)}</div>
@@ -399,4 +421,5 @@ export function renderAdminOpsHistory(historyEl, runsOrModel) {
     const detailsEl = historyEl.querySelector(".admin-ops-history-older");
     if (detailsEl) detailsEl.open = olderOpen;
   }
+  attachCopyHandlers();
 }

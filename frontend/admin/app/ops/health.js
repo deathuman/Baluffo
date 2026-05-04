@@ -6,7 +6,7 @@ import {
   renderAdminOpsKpis,
   renderAdminOpsSchedule,
   renderAdminOpsTrends
-} from "../../render.js?v=6";
+} from "../../render.js?v=7";
 import { renderAdminSourcePolicyReview } from "../../render/source-policy-review.js";
 
 function maybeUnrefTimer(timer) {
@@ -170,6 +170,22 @@ export function createOpsHealthController({
       }
     }
     showToast(`Could not copy ${title} diagnostics.`, "warn");
+  }
+
+  async function handleCopyRunDiagnostics(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+    const title = String(payload?.title || payload?.taskType || "Run");
+    const serialized = JSON.stringify(payload, null, 2);
+    if (globalThis.navigator?.clipboard?.writeText) {
+      try {
+        await globalThis.navigator.clipboard.writeText(serialized);
+        showToast(`${title} run diagnostics copied.`, "success");
+        return;
+      } catch {
+        // Fall through to toast-only failure below.
+      }
+    }
+    showToast(`Could not copy ${title} run diagnostics.`, "warn");
   }
 
   async function handleMigrationLinkAction(candidate, action) {
@@ -340,7 +356,9 @@ export function createOpsHealthController({
           runModel
         }
       );
-      renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel);
+      renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
+        onCopyRunDiagnostics: handleCopyRunDiagnostics
+      });
       renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
       loadSyncStatus({ silent: true }).catch(() => {});
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });

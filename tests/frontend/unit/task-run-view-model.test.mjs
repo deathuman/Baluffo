@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildTaskRunView } from "../../../frontend/shared/task-run-view-model.js";
+import { buildTaskRunDiagnostics, buildTaskRunView } from "../../../frontend/shared/task-run-view-model.js";
 
 const NOW = Date.parse("2026-03-08T10:10:00.000Z");
 
@@ -109,4 +109,97 @@ test("task run view model tolerates missing payloads", () => {
   assert.equal(view.status, "waiting");
   assert.equal(view.title, "Task");
   assert.equal(view.progressLabel, "");
+});
+
+test("task run diagnostics normalizes live rows into bounded support payloads", () => {
+  const payload = buildTaskRunDiagnostics({
+    taskType: "fetch",
+    runId: "fetch_live_1",
+    active: true,
+    startedAt: "2026-03-08T10:00:00.000Z",
+    heartbeatAt: "2026-03-08T10:09:30.000Z",
+    summary: {
+      outputCount: 42,
+      failedSources: 1,
+      sourceCount: 12,
+      recommendedApiPayload: { shouldNotCopy: true }
+    },
+    taskProgress: {
+      active: true,
+      phaseKey: "executing_sources",
+      phaseLabel: "Executing sources",
+      mode: "determinate",
+      ratio: 0.5,
+      counts: {
+        resolvedSources: 6,
+        sourceCount: 12,
+        outputCount: 42,
+        failedSources: 1
+      }
+    },
+    workItems: Array.from({ length: 8 }, (_row, index) => ({
+      id: `source_${index}`,
+      name: `Source ${index}`,
+      status: index === 0 ? "running" : "pending",
+      largeRawPayload: { hidden: true }
+    })),
+    recentEvents: Array.from({ length: 8 }, (_row, index) => ({
+      level: "info",
+      message: `Event ${index}`,
+      rawLargeThing: { hidden: true }
+    })),
+    latestRun: { hidden: true },
+    dedupEvidence: { hidden: true }
+  }, {
+    rowArea: "current",
+    nowMs: NOW,
+    generatedAt: "2026-03-08T10:10:00.000Z"
+  });
+
+  assert.equal(payload.kind, "admin_run_diagnostics");
+  assert.equal(payload.version, 1);
+  assert.equal(payload.rowArea, "current");
+  assert.equal(payload.taskType, "fetch");
+  assert.equal(payload.runId, "fetch_live_1");
+  assert.equal(payload.status, "running");
+  assert.equal(payload.progressMode, "determinate");
+  assert.equal(payload.progressRatio, 0.5);
+  assert.equal(payload.summaryCounts.outputCount, 42);
+  assert.equal(payload.workItemExamples.length, 5);
+  assert.equal(payload.eventExamples.length, 5);
+  const serialized = JSON.stringify(payload);
+  assert.doesNotMatch(serialized, /latestRun|dedupEvidence|recommendedApiPayload|largeRawPayload|rawLargeThing/i);
+});
+
+test("task run diagnostics covers completed failures and missing rows safely", () => {
+  const failed = buildTaskRunDiagnostics({
+    type: "sync",
+    status: "error",
+    finishedAt: "2026-03-08T10:01:00.000Z",
+    durationMs: 1500,
+    summary: {
+      action: "push",
+      activeCount: 7,
+      pendingCount: 2,
+      rejectedCount: 1,
+      error: "remote rejected payload"
+    }
+  }, {
+    rowArea: "completed",
+    nowMs: NOW,
+    generatedAt: "2026-03-08T10:10:00.000Z"
+  });
+  const missing = buildTaskRunDiagnostics(null, {
+    nowMs: NOW,
+    generatedAt: "2026-03-08T10:10:00.000Z"
+  });
+
+  assert.equal(failed.status, "failed");
+  assert.equal(failed.severity, "critical");
+  assert.equal(failed.timing.durationLabel, "1.5s");
+  assert.match(failed.failureSummary, /remote rejected payload/i);
+  assert.equal(failed.summaryCounts.action, "push");
+  assert.equal(missing.taskType, "unknown");
+  assert.equal(missing.status, "waiting");
+  assert.deepEqual(missing.workItemExamples, []);
 });
