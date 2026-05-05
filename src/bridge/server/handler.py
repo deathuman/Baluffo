@@ -180,7 +180,9 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
                 except Exception as exc:  # noqa: BLE001
                     # Logging must never prevent the error response from being sent.
                     with suppress(Exception):
-                        api.bridge_log("error", "http_get_handler_failed", path=path, error=str(exc))
+                        api.bridge_log(
+                            "error", "http_get_handler_failed", path=path, error=str(exc)
+                        )
                     self.send_json(
                         {
                             "error": "Internal server error",

@@ -100,7 +100,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     paths = [Path(str(path)) for path in args.paths]
-    print(format_adapter_summary(summarize_adapter_durations(load_payloads(paths)), limit=args.limit))
+    print(
+        format_adapter_summary(summarize_adapter_durations(load_payloads(paths)), limit=args.limit)
+    )
     return 0
 
 

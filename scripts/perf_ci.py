@@ -3,9 +3,9 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
-import json
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +13,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.perf_compare import benchmark_duration_ms, compare_duration, load_benchmark_payload
 from scripts.perf_baseline import append_trend_record, build_baseline_record, write_baseline_record
+from scripts.perf_compare import benchmark_duration_ms, compare_duration, load_benchmark_payload
 
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "_out" / "perf-ci"
 DEFAULT_BASELINE_DIR = REPO_ROOT / "_out" / "perf-baseline"
@@ -85,7 +85,9 @@ def perf_ci_steps(
     ]
 
 
-def perf_ci_benchmark_steps(*, output_dir: Path = DEFAULT_OUTPUT_DIR) -> list[tuple[str, list[str], Path]]:
+def perf_ci_benchmark_steps(
+    *, output_dir: Path = DEFAULT_OUTPUT_DIR
+) -> list[tuple[str, list[str], Path]]:
     discovery_output = output_dir / "discovery.json"
     fetch_output = output_dir / "fetch.json"
     return [

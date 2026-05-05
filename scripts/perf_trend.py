@@ -34,7 +34,9 @@ def _normalize_row(row: dict[str, Any], *, index: int) -> dict[str, Any] | None:
         "commitSha": str(row.get("commitSha") or row.get("sha") or "").strip(),
         "sourceCount": row.get("sourceCount"),
         "adapterCount": row.get("adapterCount"),
-        "stageDurationsMs": row.get("stageDurationsMs") if isinstance(row.get("stageDurationsMs"), dict) else {},
+        "stageDurationsMs": row.get("stageDurationsMs")
+        if isinstance(row.get("stageDurationsMs"), dict)
+        else {},
     }
 
 
