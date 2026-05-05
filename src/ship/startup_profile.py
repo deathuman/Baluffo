@@ -38,6 +38,9 @@ WINDOW_SHOWN_EVENT_REFS = (
     "desktop_shell_window_shown",
     "desktop_shell_window_shown_inferred",
 )
+NON_BLOCKING_AFTER_FIRST_USABLE_STAGES = {
+    "page_loaded_to_local_data_ready",
+}
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -154,6 +157,7 @@ def _classify_stages(
         stage
         for stage in stages
         if stage["key"] != "total_launch_to_first_usable_ui" and stage["durationMs"] is not None
+        and str(stage.get("status") or "") != "deferred"
     ]
     if not ranked:
         return "insufficient data"
@@ -411,6 +415,14 @@ def summarize_startup_metrics(
         status = "missing"
         if duration_ms is not None:
             status = "slow" if threshold_ms > 0 and duration_ms > threshold_ms else "passed"
+            if (
+                status == "slow"
+                and key in NON_BLOCKING_AFTER_FIRST_USABLE_STAGES
+                and first_usable_ms is not None
+                and end_ms is not None
+                and int(first_usable_ms) <= int(end_ms)
+            ):
+                status = "deferred"
         stages.append(
             {
                 "key": key,
@@ -441,9 +453,10 @@ def summarize_startup_metrics(
     )
 
     stage_statuses = [stage["status"] for stage in stages]
+    passing_statuses = {"passed", "deferred"}
     summary_status = (
         "passed"
-        if stage_statuses and all(status == "passed" for status in stage_statuses)
+        if stage_statuses and all(status in passing_statuses for status in stage_statuses)
         else "failed"
     )
     perf_regressions = _stage_perf_regressions(stages)

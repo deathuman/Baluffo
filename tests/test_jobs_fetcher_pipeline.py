@@ -1367,8 +1367,13 @@ def test_provider_family_json_sources_refresh_only_stale_boards() -> None:
     stale_detail = next(row for row in details if row["name"] == "Stale Board")
     assert fresh_detail["status"] == "excluded"
     assert fresh_detail["cacheDecision"] == "skip_fresh"
+    assert int(fresh_detail["durationMs"]) >= 0
     assert stale_detail["status"] == "ok"
     assert stale_detail["cacheDecision"] == "run_now"
+    assert stale_detail["providerUrl"] == "https://example.com/stale.json"
+    assert int(stale_detail["durationMs"]) >= 0
+    assert int(stale_detail["fetchMs"]) >= 0
+    assert int(stale_detail["parseMs"]) >= 0
 
 
 def test_provider_family_revalidate_only_board_skips_fetch_on_not_modified() -> None:

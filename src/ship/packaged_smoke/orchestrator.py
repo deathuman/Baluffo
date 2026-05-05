@@ -478,7 +478,6 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
             _append_startup_profile_scenario(report, startup_profile=startup_profile)
             if bool(getattr(args, "fail_on_threshold", False)):
                 _apply_startup_threshold_gate(report, startup_profile=startup_profile)
-        report["artifacts"].update(deps.capture_runtime_snapshot(bridge_base_url, artifacts_dir))
 
         if bool(args.profile_only):
             report["ok"] = all(str(row.get("status")) == "passed" for row in report["scenarios"])
@@ -497,6 +496,8 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                     )[1],
                 )
             return report
+
+        report["artifacts"].update(deps.capture_runtime_snapshot(bridge_base_url, artifacts_dir))
 
         smoke_runner_result = deps.run_packaged_node_smoke(
             requested_exe_path=requested_exe_path,

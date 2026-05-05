@@ -282,6 +282,65 @@ def test_launch_desktop_app_starts_children_saves_session_and_watches_browser() 
     clear_mock.assert_called_once()
 
 
+def test_launch_desktop_app_does_not_attach_startup_probe_browser_to_job() -> None:
+    data_dir = Path("C:/tmp/baluffo-ship/data")
+    config = desktop_runtime_config(
+        data_dir=data_dir,
+        startup_probe=True,
+    )
+
+    with (
+        mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
+        mock.patch.dict(
+            desktop_app.os.environ,
+            {desktop_app.STARTUP_PROFILE_MODE_ENV: "warm"},
+        ),
+        mock.patch.object(
+            desktop_app,
+            "acquire_instance_lock",
+            return_value=desktop_app.InstanceLock(Path("C:/tmp/desktop.lock"), 1),
+        ),
+        mock.patch.object(desktop_app, "release_instance_lock"),
+        mock.patch.object(desktop_app, "resolve_runtime_ports", return_value=config),
+        mock.patch.object(desktop_app, "ensure_runtime_ports"),
+        mock.patch.object(desktop_app, "load_session_state", return_value={}),
+        mock.patch.object(
+            desktop_app,
+            "start_child_process",
+            side_effect=[SimpleNamespace(pid=101), SimpleNamespace(pid=202)],
+        ),
+        mock.patch.object(desktop_app, "wait_for_url"),
+        mock.patch.object(desktop_app, "_windows_create_kill_on_close_job", return_value=11),
+        mock.patch.object(desktop_app, "_windows_close_desktop_job"),
+        mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=True),
+        mock.patch.object(
+            desktop_app,
+            "launch_browser_for_url",
+            return_value={
+                "mode": "chromium-app",
+                "browserName": "chrome",
+                "browserPath": "C:/Chrome/chrome.exe",
+                "process": None,
+            },
+        ) as launch_browser_mock,
+        mock.patch.object(desktop_app, "save_session_state"),
+        mock.patch.object(desktop_app, "watch_browser_session", return_value="heartbeat_timeout"),
+        mock.patch.object(desktop_app, "read_startup_metrics", return_value=[]),
+        mock.patch.object(desktop_app, "summarize_startup_metrics", return_value={}),
+        mock.patch.object(desktop_app, "write_startup_summary"),
+        mock.patch.object(desktop_app, "clear_session_state"),
+        mock.patch.object(desktop_app, "terminate_process"),
+        mock.patch.object(desktop_app, "_append_startup_trace"),
+    ):
+        desktop_app.launch_desktop_app(config)
+
+    assert launch_browser_mock.call_args.kwargs["job_handle"] is None
+    launch_env = launch_browser_mock.call_args.kwargs["env"]
+    assert launch_env["BALUFFO_STARTUP_PROBE"] == "1"
+    assert launch_env["BALUFFO_DESKTOP_MODE"] == "1"
+    assert launch_env[desktop_app.STARTUP_PROFILE_MODE_ENV] == "warm"
+
+
 def test_publish_success_marker_when_ready_async_writes_marker_after_startup_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

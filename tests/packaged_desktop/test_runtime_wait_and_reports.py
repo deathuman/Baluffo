@@ -302,7 +302,7 @@ def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None
                 "wait_for_runtime_events",
                 return_value=startup_metrics,
             ) as runtime_events_mock,
-            mock.patch.object(smoke, "capture_runtime_snapshot", return_value={}),
+            mock.patch.object(smoke, "capture_runtime_snapshot", return_value={}) as snapshot_mock,
             mock.patch.object(
                 smoke,
                 "collect_packaged_smoke_env_diagnostics",
@@ -333,6 +333,7 @@ def test_run_packaged_smoke_profile_only_waits_for_jobs_startup_events() -> None
         )
         assert payload["probeBrowser"]["preferredBrowserName"] == "chrome"
         assert payload["probeBrowser"]["preferredBrowserPath"] == "C:/Chrome/chrome.exe"
+        snapshot_mock.assert_not_called()
         runtime_mock.assert_called_once()
         assert runtime_mock.call_args.kwargs["require_managed_window"] is True
         assert runtime_mock.call_args.kwargs["require_page_ready"] is False

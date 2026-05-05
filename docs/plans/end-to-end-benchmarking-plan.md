@@ -58,6 +58,37 @@ Completed slices:
 - **Phase 2b fetch profiling smoke:** ran `BALUFFO_PROFILE=1` against the Greenhouse/Lever smoke benchmark and fixed the profiling hook so concurrent diagnostic profiling no longer fails source execution. Result: no adapter CPU hotspot emerged; smoke wall time is dominated by fetch/wait time with canonicalization as the secondary measured stage.
 - **Benchmarking signal improvements:** added repeated-run median support to `scripts/perf_ci.py`, capped and split discovery presets, fetch benchmark groups and npm scripts, stage-aware baseline/trend rows, fetch network/wait proxy counters, adapter summary reporting, and broader static-detail source selection. Default CI smoke remains quick/single-run; deeper signal is opt-in through `--runs`, capped discovery, and fetch group commands.
 - **Greenhouse fetch smoke optimisation:** added provider-board timing signals for Greenhouse and used them to identify stale Greenhouse 404 boards as the dominant cold smoke cost; terminal 404/410 fetches now skip retry/backoff, cutting the focused fetch smoke from about `19.8s` to `12.0s` in the local run.
+- **Lever fetch smoke follow-up:** extended provider-board timing to shared JSON-feed providers, including Lever. The focused smoke now surfaces slow successful Lever boards; the local sample was led by Xsolla (`~2.4s`), Age of Learning (`~1.2s`), and Larian (`~1.0s`), with time concentrated in fetch latency rather than parsing or stale-board retry waste.
+- **Full backend/source lifecycle benchmark snapshot:** ran the backend/source lifecycle suite on 2026-05-05 and saved command outputs under `_out/lifecycle-benchmark/`. All commands exited `0`: `perf:ci`, capped provider discovery, capped GameDevMap discovery, fetch smoke/provider-api/static-detail/mixed, adapter summary, and stage trend reporting.
+
+Lifecycle metrics from the 2026-05-05 run:
+
+| Area | Duration | Main signal |
+|---|---:|---|
+| CI discovery quick | `2.6s` | Probe-bound: `probe=2.1s`, `providerPatterns=0.0s`, `dedupeFilter=0.0s`. |
+| CI fetch smoke | `14.2s` | Fetch/parse-bound: `fetchAndParse=13.2s`, `canonicalization=0.9s`; Lever `7.7s`, Greenhouse `6.5s`. |
+| Capped provider discovery | `14.0s` | Queued `10`, deferred `8`, failed probes `2`; probe stage `3.6s`, Gameprog stage `0.0s` in this capped sample. |
+| Capped GameDevMap discovery | `9.2s` | GameDevMap stage dominates at `8.6s`; yielded `0` queued and `2` static deferred rows. |
+| Fetch provider-api | `37.0s` | Teamtailor dominates at `22.1s`, then Greenhouse `7.6s`, Lever `5.9s`, SmartRecruiters `1.3s`, Ashby `0.1s`. |
+| Fetch static-detail | `43.8s` | Static work dominates: `detailFetch=21.2s`, `candidateExtraction=17.7s`, `listingFetch=2.6s`; slow sources were PlayStation `14.5s`, EA `12.7s`, WBD `8.3s`, Little Chicken `5.8s`. |
+| Fetch mixed | `40.8s` | Lever `15.1s` and static `17.9s` dominate; one Lever Voodoo fetch spike was `9.5s`, so repeat sampling is needed before optimising that path. |
+
+Desktop startup pair add-on from the same lifecycle pass, updated after the desktop startup reliability fix:
+
+| Profile | Result | Partial timing |
+|---|---|---|
+| Cold startup pair | passed | Launch -> Site Ready `642ms`; Site Ready -> Window Created `514ms`; Window Created -> Window Shown `9ms`; Window Shown -> Page Loaded `441ms`; Launch -> First Usable UI `1688ms`; Local Data Ready `9110ms` deferred. |
+| Warm startup pair | passed | Launch -> Site Ready `608ms`; Site Ready -> Window Created `494ms`; Window Created -> Window Shown `5ms`; Window Shown -> Page Loaded `389ms`; Launch -> First Usable UI `1554ms`; Local Data Ready `7285ms` deferred. |
+
+Startup pair follow-up completed: the browser runtime startup failure was fixed by keeping startup-probe Chromium launches out of the desktop kill-on-close job, preserving startup profile env propagation, treating full local-data hydration as deferred after first usable UI, and letting `--profile-only` return after startup metrics are captured instead of waiting on heavier runtime snapshots. The current signal is now usable: first usable UI is comfortably under threshold, while full local-data hydration remains a visible deferred/background cost.
+
+Follow-up implications:
+
+- Teamtailor is the next provider-api investigation target because it dominates the broader provider benchmark, not just smoke.
+- Static-detail now has enough signal for targeted work: PlayStation, EA, and WBD should be inspected before broad static runtime changes.
+- Lever slow boards are successful network fetches, not parse CPU or retry waste; avoid optimizing parsing there until repeated samples show a stable board-level hotspot.
+- Capped GameDevMap is measurable and bounded, but the current sample produced no queued rows; treat it as a stage-cost benchmark rather than a candidate-yield benchmark until the preset is tuned.
+- Desktop startup cold/warm lifecycle timing is now usable for optimisation decisions. The next startup-specific signal to watch is deferred local-data hydration (`~7.3s` warm, `~9.1s` cold in the latest pair run), but it should not be treated as user-blocking while startup preview reaches first usable UI in `~1.5-1.7s`.
 
 Targeted validation completed for these slices:
 
@@ -82,6 +113,11 @@ Targeted validation completed for these slices:
 - `python -m pytest tests/test_perf_trend.py -q`
 - `python -m pytest tests/test_startup_profile.py -q`
 - `python -m pytest tests/packaged_desktop/test_runtime_wait_and_reports.py -q -k "profile or threshold"`
+- `python -m pytest tests/desktop_app/test_launcher_orchestration.py -q -k "startup_probe_browser or starts_children_saves_session"`
+- `python -m pytest tests/desktop_app/test_browser_launch_and_reclaim.py -q -k "cold_probe_cache_policy or warm_probe_cache_policy or attaches_browser_job"`
+- `python -m pytest tests/packaged_desktop/test_startup_profile_parsing.py -q -k "late_local_data or local_auth_delay or browser_created_timestamps"`
+- `python -m pytest tests/packaged_desktop/test_runtime_wait_and_reports.py -q -k "profile_only_waits_for_jobs_startup_events"`
+- `npm run perf:startup:pair`
 
 Perf trace command added:
 

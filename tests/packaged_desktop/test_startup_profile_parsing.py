@@ -350,6 +350,64 @@ def test_startup_profile_summary_classifies_local_auth_delay() -> None:
     assert summary["status"] == "failed"
 
 
+def test_startup_profile_summary_treats_late_local_data_after_first_render_as_deferred() -> None:
+    rows = [
+        {
+            "ts": "2026-03-10T12:00:00+00:00",
+            "event": "desktop_launch_start",
+            "fields": {"elapsedMs": 0},
+        },
+        {
+            "ts": "2026-03-10T12:00:01+00:00",
+            "event": "desktop_site_ready",
+            "fields": {"elapsedMs": 1000},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.200000+00:00",
+            "event": "desktop_window_created",
+            "fields": {"elapsedMs": 1200},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.210000+00:00",
+            "event": "desktop_shell_window_shown",
+            "fields": {"elapsedMs": 1210},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.800000+00:00",
+            "event": "jobs_module_boot_start",
+            "payload": {"elapsedMs": 1800},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.820000+00:00",
+            "event": "jobs_auth_ready",
+            "payload": {"elapsedMs": 1820},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.850000+00:00",
+            "event": "jobs_first_render",
+            "payload": {"elapsedMs": 1850},
+        },
+        {
+            "ts": "2026-03-10T12:00:01.860000+00:00",
+            "event": "jobs_first_interactive",
+            "payload": {"elapsedMs": 1860},
+        },
+        {
+            "ts": "2026-03-10T12:00:12.100000+00:00",
+            "event": "jobs_local_data_init_ready",
+            "payload": {"elapsedMs": 12100},
+        },
+    ]
+
+    summary = summarize_startup_metrics(rows, page="jobs", profile_mode="cold")
+    stages = {stage["key"]: stage for stage in summary["stages"]}
+
+    assert summary["status"] == "passed"
+    assert stages["page_loaded_to_local_data_ready"]["status"] == "deferred"
+    assert stages["page_loaded_to_local_data_ready"]["durationMs"] == 10300
+    assert summary["perfRegressions"] == []
+
+
 def test_startup_profile_summary_prefers_timestamps_over_mixed_elapsed_ms_clocks() -> None:
     rows = [
         {

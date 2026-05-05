@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -114,6 +115,10 @@ def _json_feed_source_identity(source: dict[str, object], registry_adapter: str)
     return source_name, studio
 
 
+def _elapsed_ms(started: float) -> int:
+    return max(0, int((time.perf_counter() - started) * 1000))
+
+
 def _run_json_feed_sources(
     *,
     adapter_name: str,
@@ -134,12 +139,14 @@ def _run_json_feed_sources(
     details: list[dict[str, object]] = []
     provider_url = ""
     for source in registry_entries(registry_adapter):
+        source_started = time.perf_counter()
         source_name, studio = _json_feed_source_identity(source, registry_adapter)
         endpoint = build_url(source)
         entry_report = build_provider_entry_report(
             adapter_name=adapter_name,
             studio=studio,
             source_name=source_name,
+            extra={"providerUrl": endpoint},
         )
         apply_provider_cache_decision(
             entry_report=entry_report,
@@ -151,9 +158,11 @@ def _run_json_feed_sources(
         if not endpoint:
             entry_report["status"] = "error"
             entry_report["error"] = default_error
+            entry_report["durationMs"] = _elapsed_ms(source_started)
             details.append(entry_report)
             continue
         if skip_provider_for_cache(entry_report):
+            entry_report["durationMs"] = _elapsed_ms(source_started)
             details.append(entry_report)
             continue
         if provider_revalidate_not_modified(
@@ -164,12 +173,17 @@ def _run_json_feed_sources(
             timeout_s=timeout_s,
             revalidate_url=conditional_revalidate_url,
         ):
+            entry_report["durationMs"] = _elapsed_ms(source_started)
             details.append(entry_report)
             continue
         try:
+            fetch_started = time.perf_counter()
             text = fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
+            entry_report["fetchMs"] = _elapsed_ms(fetch_started)
+            parse_started = time.perf_counter()
             payload = json.loads(text)
             parsed = parse_payload(source, payload, studio)
+            entry_report["parseMs"] = _elapsed_ms(parse_started)
             entry_report["fetchedCount"] = payload_count(payload, parsed)
             entry_report["keptCount"] = len(parsed)
             for row in parsed:
@@ -182,6 +196,7 @@ def _run_json_feed_sources(
             if not provider_url:
                 provider_url = endpoint
             errors.append(f"{registry_adapter}:{source_name}: {exc}")
+        entry_report["durationMs"] = _elapsed_ms(source_started)
         details.append(entry_report)
 
     set_source_diagnostics(

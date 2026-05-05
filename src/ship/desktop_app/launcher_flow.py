@@ -12,6 +12,7 @@ from .config import (
     PACKAGED_BRIDGE_OWNER_IDLE_TIMEOUT_S,
     READY_TIMEOUT_S,
     STARTUP_PROBE_BRIDGE_OWNER_IDLE_TIMEOUT_S,
+    STARTUP_PROFILE_MODE_ENV,
     STARTUP_PROBE_URL_READY_INTERVAL_S,
     DesktopRuntimeConfig,
 )
@@ -82,6 +83,9 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
             }
             if bool(current_config.startup_probe):
                 env["BALUFFO_STARTUP_PROBE"] = "1"
+                profile_mode = str(api.os.environ.get(STARTUP_PROFILE_MODE_ENV) or "").strip()
+                if profile_mode:
+                    env[STARTUP_PROFILE_MODE_ENV] = profile_mode
             return env
 
         launch_result: dict[str, object] = {}
@@ -209,12 +213,14 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                     )
                 else:
                     try:
+                        browser_job_handle = None if config.startup_probe else desktop_job
                         launch_result = api.launch_browser_for_url(
                             open_url,
                             preferred_browser_path=str(
                                 api.os.environ.get(api.PREFERRED_BROWSER_PATH_ENV) or ""
                             ).strip(),
-                            job_handle=desktop_job,
+                            job_handle=browser_job_handle,
+                            env=child_env,
                             data_dir=config.data_dir,
                             started_mono=started_mono,
                             trace_hook=_record_browser_launch_trace,
