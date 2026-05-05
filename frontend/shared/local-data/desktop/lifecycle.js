@@ -63,6 +63,12 @@ function waitForDelay(delayMs) {
   });
 }
 
+let desktopBootstrapStats = null;
+
+export function getDesktopBootstrapStats() {
+  return desktopBootstrapStats ? { ...desktopBootstrapStats } : null;
+}
+
 async function refreshDesktopActiveWorkSnapshot() {
   const [taskState, updateState] = await Promise.allSettled([
     fetchJsonWithOk(TASKS_URL),
@@ -232,12 +238,27 @@ export async function bootstrapDesktopApi({
     return false;
   }
   const bootstrapRevision = desktopState.authStateRevision;
-  const deadlineMs = Number(nowFn()) + Math.max(0, Number(retryWindowMs) || 0);
+  const startedAtMs = Number(nowFn());
+  const deadlineMs = startedAtMs + Math.max(0, Number(retryWindowMs) || 0);
+  desktopBootstrapStats = {
+    startedAtMs,
+    firstSuccessfulAttemptMs: null,
+    completedAtMs: null,
+    attemptCount: 0,
+    failureCount: 0
+  };
   desktopState.desktopBootstrapStatus = "pending";
   desktopState.desktopBootstrapPromise = (async () => {
     while (true) {
       try {
+        desktopBootstrapStats.attemptCount += 1;
         await refreshCurrentUser({ revision: bootstrapRevision });
+        const completedAtMs = Number(nowFn());
+        desktopBootstrapStats.firstSuccessfulAttemptMs = Math.max(
+          0,
+          Math.round(completedAtMs - startedAtMs)
+        );
+        desktopBootstrapStats.completedAtMs = completedAtMs;
         desktopState.desktopClosingSignaled = false;
         desktopState.desktopCloseAttemptPending = false;
         desktopState.desktopBootstrapStatus = "ready";
@@ -245,6 +266,7 @@ export async function bootstrapDesktopApi({
         startDesktopLifecycle(clearDesktopNavigationBypass);
         return true;
       } catch (error) {
+        desktopBootstrapStats.failureCount += 1;
         if (Number(nowFn()) >= deadlineMs) {
           desktopState.desktopBootstrapStatus = "failed";
           console.error(

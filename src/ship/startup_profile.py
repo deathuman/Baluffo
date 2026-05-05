@@ -15,6 +15,7 @@ PROFILE_THRESHOLDS_MS = {
         "site_ready_to_window_created": 800,
         "window_created_to_window_shown": 10000,
         "window_shown_to_page_loaded": 5000,
+        "page_loaded_to_local_data_api_ready": 1000,
         "page_loaded_to_local_data_ready": 4000,
         "local_data_ready_to_auth_ready": 3000,
         "auth_ready_to_first_render": 4000,
@@ -26,6 +27,7 @@ PROFILE_THRESHOLDS_MS = {
         "site_ready_to_window_created": 600,
         "window_created_to_window_shown": 7000,
         "window_shown_to_page_loaded": 2500,
+        "page_loaded_to_local_data_api_ready": 750,
         "page_loaded_to_local_data_ready": 2500,
         "local_data_ready_to_auth_ready": 1500,
         "auth_ready_to_first_render": 2500,
@@ -39,6 +41,7 @@ WINDOW_SHOWN_EVENT_REFS = (
     "desktop_shell_window_shown_inferred",
 )
 NON_BLOCKING_AFTER_FIRST_USABLE_STAGES = {
+    "page_loaded_to_local_data_api_ready",
     "page_loaded_to_local_data_ready",
 }
 
@@ -362,6 +365,12 @@ def summarize_startup_metrics(
             page_loaded_ref,
         ),
         (
+            "page_loaded_to_local_data_api_ready",
+            "Page Loaded -> Local Data API Ready",
+            page_loaded_ref,
+            (f"{safe_page}_local_data_api_ready", f"{safe_page}_local_data_init_ready"),
+        ),
+        (
             "page_loaded_to_local_data_ready",
             "Page Loaded -> Local Data Ready",
             page_loaded_ref,
@@ -445,6 +454,7 @@ def summarize_startup_metrics(
             "site_ready_to_window_created": "browser launch / app-window creation delayed",
             "window_created_to_window_shown": "native reveal delayed",
             "window_shown_to_page_loaded": "page boot delayed",
+            "page_loaded_to_local_data_api_ready": "local data API binding delayed",
             "page_loaded_to_local_data_ready": "local data init delayed",
             "local_data_ready_to_auth_ready": "local auth bootstrap delayed",
             "auth_ready_to_first_render": f"{safe_page} render delayed",

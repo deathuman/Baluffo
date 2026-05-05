@@ -378,6 +378,11 @@ def test_startup_profile_summary_treats_late_local_data_after_first_render_as_de
             "payload": {"elapsedMs": 1800},
         },
         {
+            "ts": "2026-03-10T12:00:01.810000+00:00",
+            "event": "jobs_local_data_api_ready",
+            "payload": {"elapsedMs": 1810},
+        },
+        {
             "ts": "2026-03-10T12:00:01.820000+00:00",
             "event": "jobs_auth_ready",
             "payload": {"elapsedMs": 1820},
@@ -395,14 +400,23 @@ def test_startup_profile_summary_treats_late_local_data_after_first_render_as_de
         {
             "ts": "2026-03-10T12:00:12.100000+00:00",
             "event": "jobs_local_data_init_ready",
-            "payload": {"elapsedMs": 12100},
+            "payload": {
+                "elapsedMs": 12100,
+                "bootstrapWaitMs": 10290,
+                "bootstrapAttemptCount": 3,
+                "bootstrapRetryCount": 2,
+                "firstSuccessfulBootstrapAttemptMs": 10290,
+            },
         },
     ]
 
     summary = summarize_startup_metrics(rows, page="jobs", profile_mode="cold")
     stages = {stage["key"]: stage for stage in summary["stages"]}
 
+    assert summary["events"]["jobs_local_data_init_ready"] == 12100
     assert summary["status"] == "passed"
+    assert stages["page_loaded_to_local_data_api_ready"]["status"] == "passed"
+    assert stages["page_loaded_to_local_data_api_ready"]["durationMs"] == 10
     assert stages["page_loaded_to_local_data_ready"]["status"] == "deferred"
     assert stages["page_loaded_to_local_data_ready"]["durationMs"] == 10300
     assert summary["perfRegressions"] == []

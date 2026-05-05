@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import re
+import time
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -710,12 +711,24 @@ def handle_get(
     if path == "/desktop-local-data/session":
 
         def _payload() -> dict[str, Any]:
+            route_started_at = time.perf_counter()
+            session_started_at = time.perf_counter()
             desktop_session = api.get_desktop_session_payload()
+            session_payload_ms = int((time.perf_counter() - session_started_at) * 1000)
+            user_started_at = time.perf_counter()
+            current_user = api.desktop_local_data_store().get_current_user()
+            current_user_read_ms = int((time.perf_counter() - user_started_at) * 1000)
+            payload_build_ms = int((time.perf_counter() - route_started_at) * 1000)
             return {
                 "ok": True,
-                "user": api.desktop_local_data_store().get_current_user(),
+                "user": current_user,
                 "lastActivityAt": str(api.DESKTOP_SESSION_ACTIVITY_AT or ""),
                 "desktopSession": desktop_session,
+                "timing": {
+                    "sessionPayloadMs": session_payload_ms,
+                    "currentUserReadMs": current_user_read_ms,
+                    "payloadBuildMs": payload_build_ms,
+                },
             }
 
         send_json_boundary(handler, _payload, error_status=400, error_payload=_json_error)

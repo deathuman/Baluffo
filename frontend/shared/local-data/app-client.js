@@ -2,7 +2,11 @@ window.__baluffoModuleLoading = true;
 console.log("[baluffo] frontend/shared/local-data/app-client.js: module script loading...");
 
 import { initBrowserLocalDataClient } from "./browser-client.js";
-import { awaitDesktopBootstrap, initDesktopLocalDataClient } from "./desktop-client.js";
+import {
+  awaitDesktopBootstrap,
+  getDesktopBootstrapStats,
+  initDesktopLocalDataClient
+} from "./desktop-client.js";
 import { hydrateDesktopVersionLabels } from "../app-version.js";
 import { resolveDesktopRuntimeMode } from "./runtime-context.js";
 import {
@@ -24,6 +28,11 @@ if (window.__baluffoDesktopMode) {
   emitStartupProbeMetric(`${page}_local_data_init_start`);
   try {
     initDesktopLocalDataClient();
+    emitStartupProbeMetric(`${page}_local_data_api_ready`);
+    const desktopBootstrapWaitStartedAt =
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
     window.__baluffoLocalDataLoaded = false;
     awaitDesktopBootstrap().then(ready => {
       if (!ready) {
@@ -31,7 +40,27 @@ if (window.__baluffoDesktopMode) {
       }
       window.__baluffoLocalDataLoaded = true;
       console.log("[baluffo] Desktop local data initialized successfully");
-      emitStartupProbeMetric(`${page}_local_data_init_ready`);
+      const desktopBootstrapReadyAt =
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
+      const desktopBootstrapStats = getDesktopBootstrapStats();
+      emitStartupProbeMetric(`${page}_local_data_init_ready`, {
+        bootstrapWaitMs: Math.max(
+          0,
+          Math.round(desktopBootstrapReadyAt - desktopBootstrapWaitStartedAt)
+        ),
+        bootstrapAttemptCount: Math.max(
+          0,
+          Number(desktopBootstrapStats?.attemptCount || 0)
+        ),
+        bootstrapRetryCount: Math.max(
+          0,
+          Number(desktopBootstrapStats?.failureCount || 0)
+        ),
+        firstSuccessfulBootstrapAttemptMs:
+          desktopBootstrapStats?.firstSuccessfulAttemptMs ?? null
+      });
       hydrateDesktopVersionLabels().catch(() => {});
     }).catch(err => {
       console.error("[baluffo] Desktop local data init failed:", err);
