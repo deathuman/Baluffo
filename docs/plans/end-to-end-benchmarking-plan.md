@@ -50,6 +50,7 @@ Completed slices:
 - **Phase 1d profiling hooks:** added opt-in `BALUFFO_PROFILE=1` cProfile hooks that write `.prof` and cumulative `.prof.txt` artifacts under `_out/perf-profiles/` for discovery, discovery probe batches, sync pull/push, and fetcher source execution.
 - **Phase 1e bridge request counters:** added process-local bridge request timing counters and exposed read-only `/ops/perf-counters`.
 - **Phase 1f sync operation timing:** added service-level sync pull/push stage timing and persisted recent timing history exposed through `/sync/status`.
+- **Phase 2a baseline recording helper:** added `scripts/perf_baseline.py` and `npm run perf:baseline:record` to write named baseline JSON files and append normalized `_out/perf-trend.ndjson` rows without running expensive benchmarks.
 - **Phase 4b NDJSON trend tracking:** added `scripts/perf_trend.py` and `npm run perf:trend` to print recent `_out/perf-trend.ndjson` duration deltas by benchmark mode.
 - **Phase 4c startup profile regression gate:** added structured startup `perfRegressions` rows and `--fail-on-threshold` packaged-smoke gating for startup probes.
 
@@ -71,6 +72,7 @@ Targeted validation completed for these slices:
 - `python -m pytest tests/bridge/test_sync_timing.py -q`
 - `python -m pytest tests/bridge/test_sync_service.py -q`
 - `python -m pytest tests/bridge/test_routes_get.py -q -k sync_status`
+- `python -m pytest tests/test_perf_baseline.py -q`
 - `python -m pytest tests/test_perf_trend.py -q`
 - `python -m pytest tests/test_startup_profile.py -q`
 - `python -m pytest tests/packaged_desktop/test_runtime_wait_and_reports.py -q -k "profile or threshold"`
@@ -82,7 +84,7 @@ Perf trace command added:
 Remaining near-term work:
 
 - **Phase 1e follow-ups:** frontend fetch/render counters and broader backend instrumentation beyond bridge request timing.
-- **Phase 2+:** baseline collection, optimisation based on evidence, and CI smoke benchmark workflow.
+- **Phase 2+:** baseline benchmark execution, optimisation based on evidence, and CI smoke benchmark workflow.
 
 ---
 
