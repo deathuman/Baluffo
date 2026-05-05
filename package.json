@@ -50,6 +50,7 @@
     "test:py:cov": "npm run check:python-version && python -m pytest tests -q -m \"not slow\" --cov=src --cov-report=term-missing --color=no",
     "perf:py:timing": "npm run test:py:timing",
     "perf:discovery:benchmark": "npm run check:python-version && python src/discovery_sanity_benchmark.py",
+    "perf:discovery:quick": "npm run check:python-version && python src/discovery_sanity_benchmark.py --preset quick --timeout 10 --top 5 --output-dir _out/perf-sanity-discovery-quick",
     "perf:baseline:record": "npm run check:python-version && python scripts/perf_baseline.py",
     "perf:compare": "npm run check:python-version && python scripts/perf_compare.py",
     "perf:startup:cold": "npm run probe:desktop:startup:cold",

@@ -30,6 +30,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--top", type=int, default=20)
     parser.add_argument("--mode", choices=("dynamic", "static"), default="dynamic")
     parser.add_argument(
+        "--preset",
+        choices=("default", "quick"),
+        default="default",
+        help=(
+            "Benchmark preset to apply. 'quick' keeps discovery bounded for "
+            "CI/local smoke timing while preserving the default full run."
+        ),
+    )
+    parser.add_argument(
         "--include-web-search",
         action="store_true",
         help="Enable web search for this benchmark run.",
@@ -39,6 +48,33 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def _as_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def build_quick_discovery_config(discovery_config: dict[str, Any]) -> dict[str, Any]:
+    """Return a bounded discovery config for quick performance sanity runs."""
+
+    config: dict[str, Any] = {}
+    for key, value in discovery_config.items():
+        config[key] = dict(value) if isinstance(value, dict) else value
+
+    config["autoApproveHealthyPendingOnComplete"] = False
+    config["stageToggles"] = {
+        "curatedSeed": True,
+        "sheetDirectory": False,
+        "providerPatterns": True,
+        "seedCareersScan": False,
+        "gamesmap": False,
+        "gameprog": False,
+        "gamedevmap": False,
+        "webSearch": False,
+    }
+
+    for stage_key in ("gamesmap", "gameprog", "gamedevmap", "webSearch"):
+        stage_config = dict(config.get(stage_key) or {})
+        stage_config["enabled"] = False
+        config[stage_key] = stage_config
+
+    return config
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -59,17 +95,25 @@ def main(argv: list[str] | None = None) -> int:
     os.environ["BALUFFO_DATA_DIR"] = str(data_dir)
 
     from src.source_discovery.orchestrator import run_discovery
+    from src.source_discovery.config import load_discovery_config
+
+    discovery_config = dict(load_discovery_config())
+    discovery_config["autoApproveHealthyPendingOnComplete"] = False
+    if str(args.preset) == "quick":
+        discovery_config = build_quick_discovery_config(discovery_config)
 
     report = run_discovery(
         timeout_s=int(args.timeout),
         top_n=int(args.top),
         mode=str(args.mode),
         include_web_search=bool(args.include_web_search),
+        discovery_config=discovery_config,
     )
     summary = _as_dict(report.get("summary"))
     runtime = _as_dict(report.get("runtime"))
     outputs = _as_dict(report.get("outputs"))
     payload = {
+        "benchmarkPreset": str(args.preset),
         "outputDir": str(data_dir),
         "reportPath": str(outputs.get("report")),
         "queuedCandidateCount": int(summary.get("queuedCandidateCount") or 0),

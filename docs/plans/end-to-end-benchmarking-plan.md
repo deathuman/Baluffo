@@ -473,7 +473,7 @@ on:
 Steps:
 
 1. Checkout + setup Python
-2. Run discovery smoke benchmark: `python src/discovery_sanity_benchmark.py --timeout 30 --top 5` (quick mode: 5 sources, not 20)
+2. Run discovery smoke benchmark: `python src/discovery_sanity_benchmark.py --preset quick --timeout 10 --top 5` (bounded quick preset: curated seeds and provider patterns only; benchmark auto-approval disabled)
 3. Run fetch smoke benchmark: `python src/fetch_incremental_sanity_benchmark.py --timeout 30 --sources greenhouse_boards lever_sources` (2 adapters only)
 4. Load baseline from `_out/perf-baseline/latest.json` if it exists
 5. Compare `totalDurationMs`:
@@ -568,7 +568,7 @@ node --test "tests/frontend/unit/perf-marks.test.mjs"
 node --test "tests/frontend/unit/long-task-observer.test.mjs"
 
 # Phase 1d – Profiling produces output
-$env:BALUFFO_PROFILE="1"; python src/discovery_sanity_benchmark.py --timeout 5 --top 3
+$env:BALUFFO_PROFILE="1"; python src/discovery_sanity_benchmark.py --preset quick --timeout 5 --top 3
 Test-Path "_out/perf-profiles/discovery_full_run.prof"
 
 # Phase 1e – Counter instrumentation zero‑cost when disabled
@@ -582,7 +582,7 @@ npm run perf:discovery:benchmark -- --timeout 10 --top 5
 npm run perf:startup:cold
 
 # Phase 4a – CI smoke benchmark (dry run)
-python src/discovery_sanity_benchmark.py --timeout 30 --top 5
+python src/discovery_sanity_benchmark.py --preset quick --timeout 10 --top 5
 python src/fetch_incremental_sanity_benchmark.py --timeout 30 --sources greenhouse_boards lever_sources
 
 # Phase 4b – Trend script parses existing data

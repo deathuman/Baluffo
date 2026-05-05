@@ -42,7 +42,7 @@ jobs:
       - name: Run discovery smoke benchmark
         run: |
           mkdir -p _out/perf-ci
-          python src/discovery_sanity_benchmark.py --timeout 30 --top 5 --output-dir _out/perf-ci/discovery-data > _out/perf-ci/discovery.json
+          python src/discovery_sanity_benchmark.py --preset quick --timeout 10 --top 5 --output-dir _out/perf-ci/discovery-data > _out/perf-ci/discovery.json
 
       - name: Compare discovery benchmark
         run: |
