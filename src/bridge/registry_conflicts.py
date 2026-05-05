@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from src.source_registry import source_identity
 from src.source_registry_policy import duplicate_family_conflict_cards
+from src.source_registry_state import transition_registry_to_pending
 
 SOURCE_HEALTH_FIELD_NAMES = (
     "healthScore",
@@ -181,6 +182,15 @@ _REVIEW_BY_QUEUE = {str(row["queue"]): row for row in REVIEW_QUEUES}
 
 SAFE_AUTO_DEMOTE_ACTION = "auto_demote_same_adapter_provider_alias"
 SAFE_AUTO_DEMOTE_LABEL = "Auto-demote safe duplicate"
+SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION = "auto_demote_static_normalized_url_alias"
+SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_LABEL = "Auto-demote static URL alias"
+SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION = "auto_demote_static_same_host_listing_variant"
+SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_LABEL = "Auto-demote static listing variant"
+SAFE_AUTO_DEMOTE_ACTIONS = {
+    SAFE_AUTO_DEMOTE_ACTION,
+    SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION,
+    SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION,
+}
 SAFE_AUTO_DEMOTE_ROUTE = "/registry/conflicts/auto-demote-safe"
 SAFE_AUTO_DEMOTE_REASON = "registry_conflict_safe_auto_demote"
 
@@ -264,6 +274,21 @@ def _int_value(value: Any) -> int:
         return 0
 
 
+def _row_jobs_evidence(row: dict[str, Any]) -> int:
+    for key in (
+        "jobsFound",
+        "jobs_found",
+        "lastKeptCount",
+        "lastJobsKept",
+        "keptCount",
+        "kept_count",
+    ):
+        value = _int_value(row.get(key))
+        if value > 0:
+            return value
+    return 0
+
+
 def _positive_evidence_score(row: dict[str, Any]) -> int:
     return sum(
         max(0, _int_value(row.get(key)))
@@ -304,6 +329,82 @@ def _provider_endpoint_shape(row: dict[str, Any]) -> str:
         if path:
             return path
     return ""
+
+
+def _normalized_static_url_aliases(row: dict[str, Any]) -> set[str]:
+    aliases: set[str] = set()
+    for url in _row_urls(row):
+        parsed = urlparse(url)
+        host = parsed.netloc.lower().removeprefix("www.")
+        if not host:
+            continue
+        path = parsed.path.strip().lower().rstrip("/") or "/"
+        query = parsed.query.strip().lower()
+        aliases.add(f"https://{host}{path}{'?' + query if query else ''}")
+    return aliases
+
+
+def _static_url_host_paths(row: dict[str, Any]) -> set[tuple[str, str]]:
+    host_paths: set[tuple[str, str]] = set()
+    for url in _row_urls(row):
+        parsed = urlparse(url)
+        host = parsed.netloc.lower().removeprefix("www.")
+        if not host:
+            continue
+        path = parsed.path.strip().lower().rstrip("/") or "/"
+        host_paths.add((host, path))
+    return host_paths
+
+
+def _family_tokens(family_key: str) -> set[str]:
+    stop_words = {
+        "digital",
+        "entertainment",
+        "game",
+        "games",
+        "group",
+        "interactive",
+        "online",
+        "software",
+        "studio",
+        "studios",
+        "world",
+    }
+    return {
+        token
+        for token in re.split(r"[^a-z0-9]+", family_key.lower())
+        if len(token) > 2 and token not in stop_words
+    }
+
+
+def _host_matches_family(host: str, family_key: str) -> bool:
+    compact_host = host.replace("-", "").replace(".", "")
+    return any(token in compact_host for token in _family_tokens(family_key))
+
+
+def _is_parent_child_path(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    return left.startswith(f"{right}/") or right.startswith(f"{left}/")
+
+
+def _is_careerish_path(path: str) -> bool:
+    return bool(
+        set(re.split(r"[^a-z0-9]+", path.lower()))
+        & {
+            "career",
+            "careers",
+            "hiring",
+            "job",
+            "jobs",
+            "join",
+            "opening",
+            "openings",
+            "position",
+            "positions",
+            "vacancies",
+        }
+    )
 
 
 def _json_value(value: Any) -> str:
@@ -352,6 +453,219 @@ def _source_identity_counts(rows: list[dict[str, Any]]) -> Counter[str]:
         if row_id:
             identities[row_id] += 1
     return identities
+
+
+def _is_safe_auto_demoted_pending(row: dict[str, Any]) -> bool:
+    if _row_state(row) != "pending":
+        return False
+    return SAFE_AUTO_DEMOTE_REASON in {
+        _clean_text(row.get("pendingReason")),
+        _clean_text(row.get("stateChangedBy")),
+        _clean_text(row.get("transitionReason")),
+    }
+
+
+def _safe_auto_demoted_pending_audit_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": _row_identity(row),
+        "name": _clean_text(row.get("name")),
+        "registryState": _row_state(row),
+        "pendingReason": _clean_text(row.get("pendingReason")),
+        "stateChangedAt": _clean_text(row.get("stateChangedAt")),
+        "stateChangedBy": _clean_text(row.get("stateChangedBy")),
+    }
+
+
+def _is_safe_pending_static_weaker_alias(
+    winner: dict[str, Any], loser: dict[str, Any], family_key: str
+) -> bool:
+    if _row_state(winner) != "active" or _row_state(loser) != "pending":
+        return False
+    if not _is_static_row(winner) or not _is_static_row(loser):
+        return False
+    winner_host_paths = _static_url_host_paths(winner)
+    loser_host_paths = _static_url_host_paths(loser)
+    shared_hosts = {
+        winner_host
+        for winner_host, _winner_path in winner_host_paths
+        for loser_host, _loser_path in loser_host_paths
+        if winner_host == loser_host and _host_matches_family(winner_host, family_key)
+    }
+    if not shared_hosts:
+        return False
+    if not any(_is_careerish_path(path) for _host, path in winner_host_paths):
+        return False
+    if not any(_is_careerish_path(path) for _host, path in loser_host_paths):
+        return False
+    return (
+        _row_jobs_evidence(winner) >= _row_jobs_evidence(loser)
+        and _positive_evidence_score(winner) >= _positive_evidence_score(loser) + 20
+    )
+
+
+def _build_pending_audit_section(cards: list[dict[str, Any]]) -> dict[str, Any]:
+    row_count = sum(len(_as_list(card.get("rows"))) for card in cards)
+    return {
+        "summary": {
+            "familyCount": len(cards),
+            "rowCount": row_count,
+        },
+        "families": cards,
+    }
+
+
+def _build_pending_conflict_audit(
+    *,
+    safe_auto_demoted_cards: list[dict[str, Any]],
+    safe_static_alias_cards: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "safeAutoDemotedPending": _build_pending_audit_section(safe_auto_demoted_cards),
+        "safePendingStaticAlias": _build_pending_audit_section(safe_static_alias_cards),
+    }
+
+
+def _unique_registry_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for row in rows:
+        row_id = source_identity(row)
+        if row_id and row_id in seen:
+            continue
+        if row_id:
+            seen.add(row_id)
+        unique.append(row)
+    return unique
+
+
+def _empty_safe_demotion_result(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "demoted": 0,
+        "skipped": 0,
+        "applied": [],
+        "skippedRows": [],
+        "state": state,
+    }
+
+
+def _safe_demotion_state(registry_state: Any) -> dict[str, list[dict[str, Any]]]:
+    registry = _as_dict(registry_state)
+    return {
+        bucket: [dict(row) for row in _as_list(registry.get(bucket)) if isinstance(row, dict)]
+        for bucket in ("active", "pending", "rejected")
+    }
+
+
+def _eligible_safe_demotion_cards(
+    conflict_payload: dict[str, Any], action_filter: str
+) -> dict[str, dict[str, Any]]:
+    eligible_by_id: dict[str, dict[str, Any]] = {}
+    for card in _as_list(conflict_payload.get("conflicts")):
+        if not isinstance(card, dict):
+            continue
+        safe_automation = _as_dict(card.get("safeAutomation"))
+        safe_action = _clean_text(safe_automation.get("action"))
+        if not safe_automation.get("eligible"):
+            continue
+        if action_filter and safe_action != action_filter:
+            continue
+        if not action_filter and safe_action not in SAFE_AUTO_DEMOTE_ACTIONS:
+            continue
+        for target_id in _as_list(safe_automation.get("targetIds")):
+            target = _clean_text(target_id)
+            if target:
+                eligible_by_id[target] = card
+    return eligible_by_id
+
+
+def _safe_demotion_applied_entry(row_id: str, card: dict[str, Any]) -> dict[str, str]:
+    return {
+        "id": row_id,
+        "familyKey": _clean_text(card.get("familyKey")),
+        "action": _clean_text(_as_dict(card.get("safeAutomation")).get("action")),
+    }
+
+
+def _apply_safe_demotion_targets(
+    state: dict[str, list[dict[str, Any]]],
+    *,
+    target_ids: set[str],
+    eligible_by_id: dict[str, dict[str, Any]],
+    now: str,
+    actor: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]], list[dict[str, Any]]]:
+    moved: list[dict[str, Any]] = []
+    active_remaining: list[dict[str, Any]] = []
+    applied: list[dict[str, str]] = []
+    for row in state["active"]:
+        row_id = source_identity(row)
+        if row_id not in target_ids:
+            active_remaining.append(row)
+            continue
+        moved.append(
+            transition_registry_to_pending(
+                row,
+                reason=SAFE_AUTO_DEMOTE_REASON,
+                actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
+                at=now or None,
+            )
+        )
+        applied.append(_safe_demotion_applied_entry(row_id, eligible_by_id.get(row_id) or {}))
+    return active_remaining, applied, moved
+
+
+def apply_registry_conflict_safe_demotions(
+    registry_state: Any,
+    source_state_payload: Any = None,
+    *,
+    action: str = "",
+    ids: list[str] | None = None,
+    now: str = "",
+    actor: str = SAFE_AUTO_DEMOTE_REASON,
+) -> dict[str, Any]:
+    state = _safe_demotion_state(registry_state)
+    action_filter = _clean_text(action)
+    if action_filter and action_filter not in SAFE_AUTO_DEMOTE_ACTIONS:
+        return {
+            **_empty_safe_demotion_result(state),
+            "ok": False,
+            "error": "Unsupported safe automation action.",
+        }
+
+    requested_ids = {_clean_text(item) for item in (ids or []) if _clean_text(item)}
+    conflict_payload = derive_registry_conflict_queue(state, source_state_payload)
+    eligible_by_id = _eligible_safe_demotion_cards(conflict_payload, action_filter)
+    selected_ids = requested_ids or set(eligible_by_id)
+    target_ids = selected_ids & set(eligible_by_id)
+    skipped_rows = [
+        {
+            "id": row_id,
+            "reason": "not_currently_safe_auto_demote_eligible",
+        }
+        for row_id in sorted(selected_ids - target_ids)
+    ]
+    active_remaining, applied, moved = _apply_safe_demotion_targets(
+        state,
+        target_ids=target_ids,
+        eligible_by_id=eligible_by_id,
+        now=now,
+        actor=actor,
+    )
+    moved_ids = {source_identity(row) for row in moved}
+    for row_id in sorted(target_ids - moved_ids):
+        skipped_rows.append({"id": row_id, "reason": "eligible_target_not_active"})
+
+    state["active"] = active_remaining
+    state["pending"] = _unique_registry_rows([*state["pending"], *moved])
+    return {
+        "ok": True,
+        "demoted": len(moved),
+        "skipped": len(skipped_rows),
+        "applied": applied,
+        "skippedRows": skipped_rows,
+        "state": state,
+    }
 
 
 def _classify_conflict_triage(rows: list[dict[str, Any]]) -> dict[str, str]:
@@ -528,11 +842,17 @@ def _blocked_automation(reason: str, blocked_reasons: list[str]) -> dict[str, An
     }
 
 
-def _eligible_automation(target_id: str, reason: str) -> dict[str, Any]:
+def _eligible_automation(
+    target_id: str,
+    reason: str,
+    *,
+    action: str = SAFE_AUTO_DEMOTE_ACTION,
+    label: str = SAFE_AUTO_DEMOTE_LABEL,
+) -> dict[str, Any]:
     return {
         "eligible": True,
-        "action": SAFE_AUTO_DEMOTE_ACTION,
-        "label": SAFE_AUTO_DEMOTE_LABEL,
+        "action": action,
+        "label": label,
         "reason": reason,
         "route": SAFE_AUTO_DEMOTE_ROUTE,
         "targetIds": [target_id],
@@ -540,47 +860,126 @@ def _eligible_automation(target_id: str, reason: str) -> dict[str, Any]:
     }
 
 
-def _analyze_safe_automation(
-    *,
-    family_key: str,
-    winner: dict[str, Any],
-    losers: list[dict[str, Any]],
-    rows: list[dict[str, Any]],
-) -> dict[str, Any]:
-    blocked: list[str] = []
-    if len(rows) != 2:
-        blocked.append("requires_exactly_two_rows")
-    if any(_row_state(row) != "active" for row in rows):
-        blocked.append("requires_active_rows_only")
-    if len(losers) != 1:
-        blocked.append("requires_one_loser")
+def _safe_pair_blockers(
+    rows: list[dict[str, Any]], losers: list[dict[str, Any]], *, static_only: bool = False
+) -> list[str]:
+    checks = [
+        (len(rows) != 2, "requires_exactly_two_rows"),
+        (any(_row_state(row) != "active" for row in rows), "requires_active_rows_only"),
+        (len(losers) != 1, "requires_one_loser"),
+        (static_only and any(not _is_static_row(row) for row in rows), "requires_static_rows_only"),
+    ]
+    return [reason for blocked, reason in checks if blocked]
 
+
+def _provider_alias_blockers(rows: list[dict[str, Any]]) -> tuple[list[str], str]:
+    blocked: list[str] = []
     adapters = {_row_adapter(row) for row in rows}
     adapter = next(iter(adapters), "")
     if len(adapters) != 1:
         blocked.append("requires_same_adapter")
     elif adapter not in PROVIDER_ADAPTERS:
         blocked.append("requires_known_provider_adapter")
-
     endpoint_shapes = {_provider_endpoint_shape(row) for row in rows}
     if "" in endpoint_shapes or len(endpoint_shapes) != 1:
         blocked.append("requires_same_provider_endpoint_shape")
+    return blocked, adapter
 
-    loser = losers[0] if len(losers) == 1 else {}
+
+def _evidence_blockers(
+    winner: dict[str, Any], loser: dict[str, Any], *, loser_must_have_none: bool
+) -> list[str]:
+    blocked: list[str] = []
     winner_score = _positive_evidence_score(winner)
     loser_score = _positive_evidence_score(loser)
     if winner_score <= 0:
         blocked.append("winner_has_no_positive_evidence")
-    if loser_score > 0:
+    if loser_must_have_none and loser_score > 0:
         blocked.append("loser_has_positive_evidence")
     if loser_score >= winner_score:
         blocked.append("loser_has_equal_or_stronger_evidence")
+    return blocked
+
+
+def _target_identity_blocker(target_id: str) -> list[str]:
+    return [] if target_id else ["missing_loser_identity"]
+
+
+def _static_url_alias_blockers(winner_aliases: set[str], loser_aliases: set[str]) -> list[str]:
+    if not winner_aliases or not loser_aliases:
+        return ["requires_normalized_static_urls"]
+    if not (winner_aliases & loser_aliases):
+        return ["requires_same_normalized_static_url"]
+    if loser_aliases - winner_aliases:
+        return ["loser_has_unique_normalized_url"]
+    return []
+
+
+def _shared_static_hosts(
+    winner_host_paths: set[tuple[str, str]], loser_host_paths: set[tuple[str, str]]
+) -> set[str]:
+    return {
+        winner_host
+        for winner_host, _winner_path in winner_host_paths
+        for loser_host, _loser_path in loser_host_paths
+        if winner_host == loser_host
+    }
+
+
+def _has_parent_child_listing_path(
+    winner_host_paths: set[tuple[str, str]], loser_host_paths: set[tuple[str, str]]
+) -> bool:
+    return any(
+        _is_parent_child_path(winner_path, loser_path)
+        for winner_host, winner_path in winner_host_paths
+        for loser_host, loser_path in loser_host_paths
+        if winner_host == loser_host
+    )
+
+
+def _static_listing_variant_blockers(
+    *,
+    family_key: str,
+    winner_host_paths: set[tuple[str, str]],
+    loser_host_paths: set[tuple[str, str]],
+    shared_hosts: set[str],
+) -> list[str]:
+    if not winner_host_paths or not loser_host_paths:
+        return ["requires_static_urls"]
+    if not shared_hosts:
+        return ["requires_same_static_host"]
+    if not any(_host_matches_family(host, family_key) for host in shared_hosts):
+        return ["requires_studio_specific_host"]
+    if not _has_parent_child_listing_path(winner_host_paths, loser_host_paths):
+        return ["requires_parent_child_listing_path"]
+    return []
+
+
+def _static_listing_evidence_blockers(winner: dict[str, Any], loser: dict[str, Any]) -> list[str]:
+    blocked: list[str] = []
+    if _row_jobs_evidence(winner) <= _row_jobs_evidence(loser):
+        blocked.append("winner_jobs_not_stronger")
+    if _positive_evidence_score(winner) < _positive_evidence_score(loser) + 30:
+        blocked.append("winner_evidence_delta_too_small")
+    return blocked
+
+
+def _analyze_provider_alias_automation(
+    *,
+    family_key: str,
+    winner: dict[str, Any],
+    losers: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    blocked = _safe_pair_blockers(rows, losers)
+    provider_blockers, adapter = _provider_alias_blockers(rows)
+    blocked.extend(provider_blockers)
+    loser = losers[0] if len(losers) == 1 else {}
+    blocked.extend(_evidence_blockers(winner, loser, loser_must_have_none=True))
     if _has_fresh_or_healthy_signal(loser):
         blocked.append("loser_has_fresh_or_healthy_signal")
-
     target_id = _row_identity(loser)
-    if not target_id:
-        blocked.append("missing_loser_identity")
+    blocked.extend(_target_identity_blocker(target_id))
 
     if blocked:
         return _blocked_automation(
@@ -596,15 +995,142 @@ def _analyze_safe_automation(
     )
 
 
+def _analyze_static_url_alias_automation(
+    *,
+    family_key: str,
+    winner: dict[str, Any],
+    losers: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    blocked = _safe_pair_blockers(rows, losers, static_only=True)
+    loser = losers[0] if len(losers) == 1 else {}
+    winner_aliases = _normalized_static_url_aliases(winner)
+    loser_aliases = _normalized_static_url_aliases(loser)
+    blocked.extend(_static_url_alias_blockers(winner_aliases, loser_aliases))
+    blocked.extend(_evidence_blockers(winner, loser, loser_must_have_none=False))
+    target_id = _row_identity(loser)
+    blocked.extend(_target_identity_blocker(target_id))
+
+    if blocked:
+        return _blocked_automation(
+            "Not eligible for safe static URL alias auto-demotion.",
+            sorted(set(blocked)),
+        )
+    shared_alias = sorted(winner_aliases & loser_aliases)[0]
+    return _eligible_automation(
+        target_id,
+        (
+            f"{family_key} has two active static rows for the same normalized URL "
+            f"({shared_alias}); the advisory winner has stronger evidence."
+        ),
+        action=SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION,
+        label=SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_LABEL,
+    )
+
+
+def _analyze_static_listing_variant_automation(
+    *,
+    family_key: str,
+    winner: dict[str, Any],
+    losers: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    blocked = _safe_pair_blockers(rows, losers, static_only=True)
+    loser = losers[0] if len(losers) == 1 else {}
+    winner_host_paths = _static_url_host_paths(winner)
+    loser_host_paths = _static_url_host_paths(loser)
+    shared_hosts = _shared_static_hosts(winner_host_paths, loser_host_paths)
+    blocked.extend(
+        _static_listing_variant_blockers(
+            family_key=family_key,
+            winner_host_paths=winner_host_paths,
+            loser_host_paths=loser_host_paths,
+            shared_hosts=shared_hosts,
+        )
+    )
+    blocked.extend(_static_listing_evidence_blockers(winner, loser))
+    target_id = _row_identity(loser)
+    blocked.extend(_target_identity_blocker(target_id))
+
+    if blocked:
+        return _blocked_automation(
+            "Not eligible for safe static listing-variant auto-demotion.",
+            sorted(set(blocked)),
+        )
+    shared_host = sorted(shared_hosts)[0]
+    return _eligible_automation(
+        target_id,
+        (
+            f"{family_key} has two active static rows on {shared_host} with parent/child "
+            "listing paths; the advisory winner has materially stronger job evidence."
+        ),
+        action=SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION,
+        label=SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_LABEL,
+    )
+
+
+def _analyze_safe_automation(
+    *,
+    family_key: str,
+    winner: dict[str, Any],
+    losers: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    provider_result = _analyze_provider_alias_automation(
+        family_key=family_key,
+        winner=winner,
+        losers=losers,
+        rows=rows,
+    )
+    if provider_result.get("eligible"):
+        return provider_result
+    static_result = _analyze_static_url_alias_automation(
+        family_key=family_key,
+        winner=winner,
+        losers=losers,
+        rows=rows,
+    )
+    if static_result.get("eligible") or all(_is_static_row(row) for row in rows):
+        if static_result.get("eligible"):
+            return static_result
+        listing_variant_result = _analyze_static_listing_variant_automation(
+            family_key=family_key,
+            winner=winner,
+            losers=losers,
+            rows=rows,
+        )
+        if listing_variant_result.get("eligible"):
+            return listing_variant_result
+        return static_result
+    return provider_result
+
+
 def _build_automation_summary(conflicts: list[dict[str, Any]]) -> dict[str, Any]:
     eligible_cards = [
         card for card in conflicts if bool(_as_dict(card.get("safeAutomation")).get("eligible"))
     ]
+    target_ids_by_action: dict[str, list[str]] = {}
+    labels_by_action = {
+        SAFE_AUTO_DEMOTE_ACTION: SAFE_AUTO_DEMOTE_LABEL,
+        SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION: SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_LABEL,
+        SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION: (
+            SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_LABEL
+        ),
+    }
+    for card in eligible_cards:
+        safe_automation = _as_dict(card.get("safeAutomation"))
+        action = _clean_text(safe_automation.get("action"))
+        if action not in SAFE_AUTO_DEMOTE_ACTIONS:
+            continue
+        target_ids_by_action.setdefault(action, [])
+        for target_id in _as_list(safe_automation.get("targetIds")):
+            clean_target_id = _clean_text(target_id)
+            if clean_target_id:
+                target_ids_by_action[action].append(clean_target_id)
     target_ids = [
         target_id
-        for card in eligible_cards
-        for target_id in _as_list(_as_dict(card.get("safeAutomation")).get("targetIds"))
-        if _clean_text(target_id)
+        for action_target_ids in target_ids_by_action.values()
+        for target_id in action_target_ids
     ]
     return {
         "summary": {
@@ -613,14 +1139,16 @@ def _build_automation_summary(conflicts: list[dict[str, Any]]) -> dict[str, Any]
         },
         "actions": [
             {
-                "action": SAFE_AUTO_DEMOTE_ACTION,
-                "label": SAFE_AUTO_DEMOTE_LABEL,
+                "action": action,
+                "label": labels_by_action.get(action, "Apply safe demotions"),
                 "route": SAFE_AUTO_DEMOTE_ROUTE,
-                "count": len(target_ids),
-                "targetIds": target_ids,
+                "count": len(action_target_ids),
+                "targetIds": action_target_ids,
             }
+            for action, action_target_ids in target_ids_by_action.items()
+            if action_target_ids
         ]
-        if target_ids
+        if target_ids_by_action
         else [],
     }
 
@@ -681,17 +1209,52 @@ def derive_registry_conflict_queue(
         source_state=source_state_payload,
     )
     conflicts: list[dict[str, Any]] = []
+    safe_auto_demoted_pending_audit: list[dict[str, Any]] = []
+    safe_pending_static_alias_audit: list[dict[str, Any]] = []
     for card in family_cards:
+        family_key = _clean_text(card.get("familyKey"))
         winner = _join_source_health_aliases(_as_dict(card.get("winner")), source_state_rows)
         losers = [
             _join_source_health_aliases(_as_dict(row), source_state_rows)
             for row in _as_list(card.get("losers"))
             if isinstance(row, dict)
         ]
+        suppressed_losers = [row for row in losers if _is_safe_auto_demoted_pending(row)]
+        if suppressed_losers:
+            safe_auto_demoted_pending_audit.append(
+                {
+                    "familyKey": _clean_text(card.get("familyKey")),
+                    "rowCount": len(suppressed_losers),
+                    "rows": [
+                        _safe_auto_demoted_pending_audit_row(row) for row in suppressed_losers
+                    ],
+                }
+            )
+            losers = [row for row in losers if not _is_safe_auto_demoted_pending(row)]
+        suppressed_static_alias_losers = [
+            row for row in losers if _is_safe_pending_static_weaker_alias(winner, row, family_key)
+        ]
+        if suppressed_static_alias_losers:
+            safe_pending_static_alias_audit.append(
+                {
+                    "familyKey": family_key,
+                    "rowCount": len(suppressed_static_alias_losers),
+                    "rows": [
+                        _safe_auto_demoted_pending_audit_row(row)
+                        for row in suppressed_static_alias_losers
+                    ],
+                }
+            )
+            losers = [
+                row
+                for row in losers
+                if not _is_safe_pending_static_weaker_alias(winner, row, family_key)
+            ]
         rows = [winner, *losers]
+        if len(rows) < 2:
+            continue
         triage = _classify_conflict_triage(rows)
         review = _classify_conflict_review(rows, triage["bucket"])
-        family_key = _clean_text(card.get("familyKey"))
         safe_automation = _analyze_safe_automation(
             family_key=family_key,
             winner=winner,
@@ -701,7 +1264,7 @@ def derive_registry_conflict_queue(
         conflicts.append(
             {
                 "familyKey": family_key,
-                "rowCount": max(0, int(card.get("rowCount") or len(rows))),
+                "rowCount": len(rows),
                 "triageBucket": triage["bucket"],
                 "triageLabel": triage["label"],
                 "triageReason": triage["reason"],
@@ -738,6 +1301,11 @@ def derive_registry_conflict_queue(
             _clean_text(card.get("familyKey")),
         )
     )
+    automation = _build_automation_summary(conflicts)
+    automation["audit"] = _build_pending_conflict_audit(
+        safe_auto_demoted_cards=safe_auto_demoted_pending_audit,
+        safe_static_alias_cards=safe_pending_static_alias_audit,
+    )
     return {
         "summary": {
             "conflictCount": len(conflicts),
@@ -748,7 +1316,7 @@ def derive_registry_conflict_queue(
         },
         "triage": _build_triage_summary(conflicts),
         "review": _build_review_summary(conflicts),
-        "automation": _build_automation_summary(conflicts),
+        "automation": automation,
         "conflicts": conflicts,
     }
 

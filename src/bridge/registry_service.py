@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from src.bridge.registry_conflicts import apply_registry_conflict_safe_demotions
 from src.bridge.registry_tombstones import filter_tombstoned_rows
 from src.source_registry import (
     canonicalize_registry_row,
@@ -17,6 +19,7 @@ from src.source_registry import (
     ensure_source_id,
     hide_repeated_zero_job_pending,
     load_json_array,
+    load_json_object,
     normalize_source_url,
     save_json_atomic,
     save_registry_state_atomic,
@@ -72,6 +75,7 @@ class RegistryService:
             "autoHealed": False,
             "duplicateSourceIdCount": 0,
             "duplicates": [],
+            "safeAutomation": self._empty_safe_automation_report(),
         }
 
     @staticmethod
@@ -80,7 +84,22 @@ class RegistryService:
 
     @staticmethod
     def _empty_auto_heal_report() -> dict[str, Any]:
-        return {"autoHealed": False, "duplicateSourceIdCount": 0, "duplicates": []}
+        return {
+            "autoHealed": False,
+            "duplicateSourceIdCount": 0,
+            "duplicates": [],
+            "safeAutomation": RegistryService._empty_safe_automation_report(),
+        }
+
+    @staticmethod
+    def _empty_safe_automation_report() -> dict[str, Any]:
+        return {
+            "autoDemoted": False,
+            "demoted": 0,
+            "skipped": 0,
+            "applied": [],
+            "skippedRows": [],
+        }
 
     def _record_duplicate_auto_heal(
         self,
@@ -116,6 +135,9 @@ class RegistryService:
         )
 
     def get_auto_heal_report(self) -> dict[str, Any]:
+        safe_automation = self._last_auto_heal_report.get("safeAutomation")
+        if not isinstance(safe_automation, dict):
+            safe_automation = self._empty_safe_automation_report()
         return {
             "autoHealed": bool(self._last_auto_heal_report.get("autoHealed")),
             "duplicateSourceIdCount": int(
@@ -126,6 +148,21 @@ class RegistryService:
                 for row in list(self._last_auto_heal_report.get("duplicates") or [])
                 if isinstance(row, dict)
             ],
+            "safeAutomation": {
+                "autoDemoted": bool(safe_automation.get("autoDemoted")),
+                "demoted": int(safe_automation.get("demoted") or 0),
+                "skipped": int(safe_automation.get("skipped") or 0),
+                "applied": [
+                    dict(row)
+                    for row in list(safe_automation.get("applied") or [])
+                    if isinstance(row, dict)
+                ],
+                "skippedRows": [
+                    dict(row)
+                    for row in list(safe_automation.get("skippedRows") or [])
+                    if isinstance(row, dict)
+                ],
+            },
         }
 
     def ensure_active_registry(self) -> list[dict[str, Any]]:
@@ -178,6 +215,33 @@ class RegistryService:
         self._last_auto_heal_report = auto_heal_report
         return normalized
 
+    def _load_source_state_payload(self) -> dict[str, Any]:
+        source_state_path = Path(self._paths.active).with_name("jobs-source-state.json")
+        return load_json_object(source_state_path, {})
+
+    def _apply_safe_conflict_demotions(
+        self, state: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, list[dict[str, Any]]]:
+        result = apply_registry_conflict_safe_demotions(
+            state,
+            self._load_source_state_payload(),
+        )
+        safe_automation_report = {
+            "autoDemoted": bool(result.get("demoted")),
+            "demoted": int(result.get("demoted") or 0),
+            "skipped": int(result.get("skipped") or 0),
+            "applied": [
+                dict(row) for row in list(result.get("applied") or []) if isinstance(row, dict)
+            ],
+            "skippedRows": [
+                dict(row) for row in list(result.get("skippedRows") or []) if isinstance(row, dict)
+            ],
+        }
+        self._last_auto_heal_report["safeAutomation"] = safe_automation_report
+        if safe_automation_report["autoDemoted"]:
+            self._last_auto_heal_report["autoHealed"] = True
+        return result["state"]
+
     def load_state(self) -> dict[str, list[dict[str, Any]]]:
         state = {
             "active": self.ensure_active_registry(),
@@ -185,6 +249,7 @@ class RegistryService:
             "rejected": load_json_array(self._paths.rejected, []),
         }
         normalized = self.normalize_state(state)
+        normalized = self._apply_safe_conflict_demotions(normalized)
         if normalized != state:
             self._save_state(normalized)
         return normalized

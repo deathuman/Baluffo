@@ -402,7 +402,13 @@ def build_fetcher_args_from_payload(payload: dict[str, Any]) -> tuple[list[str],
 
 
 def mark_desktop_session_activity(path: str) -> None:
-    return None
+    _ = path
+    if (
+        not bool(getattr(RUNTIME_CONFIG, "desktop_mode", False))
+        and str(getattr(RUNTIME_CONFIG, "owner_mode", "") or "").strip() != "desktop-window"
+    ):
+        return
+    bridge_runtime_state.mark_desktop_session_activity(now_iso=now_iso)
 
 
 get_desktop_session_payload = admin_entrypoint_runtime_mod.get_desktop_session_payload

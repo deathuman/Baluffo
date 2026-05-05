@@ -327,7 +327,10 @@ def refresh_active_ashby_registry(
             }
         )
 
-    next_rows = filter_tombstoned_rows([*non_ashby_rows, *kept_rows], tombstones)
+    next_rows = [
+        ensure_source_id(row)
+        for row in filter_tombstoned_rows([*non_ashby_rows, *kept_rows], tombstones)
+    ]
     save_json_atomic(active_path, next_rows)
 
     report = {

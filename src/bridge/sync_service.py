@@ -138,7 +138,18 @@ class SyncService:
         self._ops_state_lock = ops_state_lock
         self._get_security_defaults = get_security_defaults
         self._get_registry_auto_heal_report = get_registry_auto_heal_report or (
-            lambda: {"autoHealed": False, "duplicateSourceIdCount": 0, "duplicates": []}
+            lambda: {
+                "autoHealed": False,
+                "duplicateSourceIdCount": 0,
+                "duplicates": [],
+                "safeAutomation": {
+                    "autoDemoted": False,
+                    "demoted": 0,
+                    "skipped": 0,
+                    "applied": [],
+                    "skippedRows": [],
+                },
+            }
         )
 
         # Initialize sync state

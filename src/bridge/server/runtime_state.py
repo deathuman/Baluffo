@@ -157,6 +157,16 @@ def get_desktop_session_payload() -> dict[str, Any]:
         }
 
 
+def mark_desktop_session_activity(*, now_iso: Any) -> None:
+    global DESKTOP_SESSION_ACTIVITY_AT
+
+    activity_at = str(now_iso() or "")
+    if not activity_at:
+        return
+    DESKTOP_SESSION_ACTIVITY_AT = activity_at
+    OWNER_STATE["lastActivityAt"] = activity_at
+
+
 def update_desktop_session_lifecycle(
     *,
     owner_token: str,
@@ -282,9 +292,14 @@ def owner_session_should_exit(*, parse_iso: ParseIso, now_utc: NowUtc) -> bool:
     )
     if has_active_pages:
         return False
-    if had_pages:
-        return True
     last_activity = parse_iso(OWNER_STATE.get("lastActivityAt"))
+    if had_pages:
+        if owner_mode == "desktop-window":
+            if last_activity is None:
+                return False
+            idle_seconds = (now_utc() - last_activity).total_seconds()
+            return bool(idle_seconds > timeout_seconds)
+        return True
     if last_activity is None:
         return False
     idle_seconds = (now_utc() - last_activity).total_seconds()
@@ -314,6 +329,7 @@ __all__ = [
     "get_desktop_local_data_store",
     "get_desktop_session_payload",
     "get_owner_state",
+    "mark_desktop_session_activity",
     "owner_session_should_exit",
     "read_startup_metrics",
     "update_desktop_session_lifecycle",

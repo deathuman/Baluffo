@@ -487,21 +487,38 @@ function renderConflictCard(card, cardIndex) {
 function renderSafeAutomationToolbar(visibleConflicts) {
   const eligible = eligibleSafeAutomations(visibleConflicts);
   if (!eligible.length) return "";
-  const targetIds = eligible.flatMap(row => row.safeAutomation.targetIds);
+  const actions = new Map();
+  eligible.forEach(row => {
+    const action = stringValue(row.safeAutomation.action, "auto_demote_same_adapter_provider_alias");
+    if (!actions.has(action)) {
+      actions.set(action, {
+        action,
+        label: row.safeAutomation.label || "Apply safe demotions",
+        route: row.safeAutomation.route || "/registry/conflicts/auto-demote-safe",
+        targetIds: []
+      });
+    }
+    actions.get(action).targetIds.push(...row.safeAutomation.targetIds);
+  });
+  const totalTargetCount = eligible.flatMap(row => row.safeAutomation.targetIds).length;
+  const buttons = [...actions.values()].map(entry => `
+    <button
+      type="button"
+      class="btn back-btn admin-registry-conflict-safe-automation-btn"
+      data-registry-conflict-safe-automation-card-index="-1"
+      data-registry-conflict-safe-automation-action="${escapeHtml(entry.action)}"
+      data-registry-conflict-safe-automation-route="${escapeHtml(entry.route)}"
+      data-registry-conflict-safe-automation-ids="${escapeHtml(entry.targetIds.join(","))}"
+    >${escapeHtml(entry.label)} · ${entry.targetIds.length.toLocaleString()}</button>
+  `).join("");
   return `
     <div class="admin-registry-conflict-triage">
       <div class="admin-registry-conflict-triage-head">
         <div>
           <div class="admin-registry-conflict-family">Safe automation</div>
-          <div class="admin-registry-conflict-summary">${eligible.length.toLocaleString()} visible conflict family can be auto-demoted safely.</div>
+          <div class="admin-registry-conflict-summary">${eligible.length.toLocaleString()} visible conflict family can be auto-demoted safely; ${totalTargetCount.toLocaleString()} row target.</div>
         </div>
-        <button
-          type="button"
-          class="btn back-btn admin-registry-conflict-safe-automation-btn"
-          data-registry-conflict-safe-automation-card-index="-1"
-          data-registry-conflict-safe-automation-action="auto_demote_same_adapter_provider_alias"
-          data-registry-conflict-safe-automation-ids="${escapeHtml(targetIds.join(","))}"
-        >Apply safe demotions · ${targetIds.length.toLocaleString()}</button>
+        <div class="admin-registry-conflict-actions">${buttons}</div>
       </div>
     </div>
   `;
@@ -619,7 +636,7 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
             eligible: true,
             action: stringValue(button.dataset.registryConflictSafeAutomationAction, "auto_demote_same_adapter_provider_alias"),
             label: "Apply safe demotions",
-            route: "/registry/conflicts/auto-demote-safe",
+            route: stringValue(button.dataset.registryConflictSafeAutomationRoute, "/registry/conflicts/auto-demote-safe"),
             targetIds: ids,
             blockedReasons: []
           };

@@ -472,8 +472,16 @@ def _load_json_journal_latest_payload(path: Path) -> Any | None:
 
 def _json_payload_matches_existing(path: Path, payload: Any) -> bool:
     if isinstance(payload, list):
+        if not any(candidate.exists() for candidate in _json_storage_candidates(path)) and not (
+            _json_journal_path_for(path).exists()
+        ):
+            return False
         return load_json_array(path, []) == _json_journal_image_payload(payload)
     if isinstance(payload, dict):
+        if not any(candidate.exists() for candidate in _json_storage_candidates(path)) and not (
+            _json_journal_path_for(path).exists()
+        ):
+            return False
         return load_json_object(path, {}) == dict(payload)
     target = _gzip_path_for(path) if _uses_gzip_storage(path) else path
     if not target.exists():

@@ -507,16 +507,19 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     `;
   };
 
-  const renderCompactRows = (views, { includeCopy = true } = {}) => views.map(view => `
+  const renderCompactRows = (views, { includeCopy = true } = {}) => views.map(view => {
+    const outputOrQueuedTitle = view.isRunning ? "" : view.outputOrQueuedTitle;
+    return `
       <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}${view.key === selectedView?.key ? " admin-ops-history-row-selected" : ""}${view.progressStale ? " admin-ops-progress-stale" : ""}${String(view.statusText || "").toLowerCase() === "approaching" ? " admin-ops-history-row-approaching" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}" tabindex="0" title="Select this run for bounded analysis">
         <div class="admin-cell">${escapeHtml(view.typeText)}</div>
         <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${view.statusTitle ? ` title="${escapeHtml(view.statusTitle)}"` : ""}>${escapeHtml(view.statusText)}</span>${includeCopy && onCopyRunDiagnostics ? ` <button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" title="Copy bounded diagnostics for this run">Copy</button>` : ""}</div>
         <div class="admin-cell">${escapeHtml(view.durationText)}</div>
-        <div class="admin-cell"${view.outputOrQueuedTitle ? ` title="${escapeHtml(view.outputOrQueuedTitle)}"` : ""}>${escapeHtml(view.outputOrQueuedText)}</div>
+        <div class="admin-cell"${outputOrQueuedTitle ? ` title="${escapeHtml(outputOrQueuedTitle)}"` : ""}>${escapeHtml(view.outputOrQueuedText)}</div>
         <div class="admin-cell"${view.failedTitle ? ` title="${escapeHtml(view.failedTitle)}"` : ""}>${escapeHtml(view.failedText)}</div>
         <div class="admin-cell">${escapeHtml(view.finishedText)}</div>
       </div>
-    `).join("");
+    `;
+  }).join("");
 
   const renderCompletedRows = views => views.map(view => {
     const metaItems = [

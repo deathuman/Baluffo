@@ -70,7 +70,7 @@ test("registry conflicts renderer shows safe automation controls for eligible ca
 
   assert.match(reviewEl.innerHTML, /Safe automation available/);
   assert.match(reviewEl.innerHTML, /Auto-demote safe duplicate/);
-  assert.match(reviewEl.innerHTML, /Apply safe demotions · 1/);
+  assert.match(reviewEl.innerHTML, /Auto-demote safe duplicate · 1/);
   assert.match(reviewEl.innerHTML, /Provider Studio has a safe duplicate provider alias/);
 });
 
@@ -98,6 +98,35 @@ test("registry conflicts renderer calls safe automation callback", () => {
   assert.equal(calls[0].safeAutomation.route, "/registry/conflicts/auto-demote-safe");
   assert.deepEqual(calls[0].safeAutomation.targetIds, ["provider-loser"]);
   assert.equal(calls[0].card.familyKey, "Provider Studio");
+});
+
+test("registry conflicts renderer keeps toolbar safe automation action specific", () => {
+  const safeButton = createButton({
+    registryConflictSafeAutomationCardIndex: "-1",
+    registryConflictSafeAutomationAction: "auto_demote_static_normalized_url_alias",
+    registryConflictSafeAutomationRoute: "/registry/conflicts/auto-demote-safe",
+    registryConflictSafeAutomationIds: "static-loser"
+  });
+  const reviewEl = createReviewElement([safeButton]);
+  const calls = [];
+
+  renderAdminRegistryConflicts(reviewEl, payloadWithSafeCard({
+    eligible: true,
+    action: "auto_demote_static_normalized_url_alias",
+    label: "Auto-demote static URL alias",
+    route: "/registry/conflicts/auto-demote-safe",
+    targetIds: ["static-loser"]
+  }), {
+    onRegistryConflictSafeAutomation(safeAutomation, card) {
+      calls.push({ safeAutomation, card });
+    }
+  });
+  safeButton.click();
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].safeAutomation.action, "auto_demote_static_normalized_url_alias");
+  assert.deepEqual(calls[0].safeAutomation.targetIds, ["static-loser"]);
+  assert.equal(calls[0].card, null);
 });
 
 test("registry conflicts renderer omits safe automation button for ineligible cards", () => {

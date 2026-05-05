@@ -136,7 +136,18 @@ def _empty_state_summary(_state: RegistryState) -> StateSummary:
 
 
 def _empty_registry_auto_heal_report() -> JsonObject:
-    return {"autoHealed": False, "duplicateSourceIdCount": 0, "duplicates": []}
+    return {
+        "autoHealed": False,
+        "duplicateSourceIdCount": 0,
+        "duplicates": [],
+        "safeAutomation": {
+            "autoDemoted": False,
+            "demoted": 0,
+            "skipped": 0,
+            "applied": [],
+            "skippedRows": [],
+        },
+    }
 
 
 def _identity_registry_state(state: RegistryState, **_kw: Any) -> RegistryState:

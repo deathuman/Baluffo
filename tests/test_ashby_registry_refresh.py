@@ -67,7 +67,7 @@ def test_refresh_active_ashby_registry_removes_empty_rows_and_adds_validated_cur
         timeout_s=5,
     )
 
-    next_rows = json.loads(active_path.read_text(encoding="utf-8"))
+    next_rows = refresh.load_json_array(active_path, [])
     ashby_rows = [row for row in next_rows if row.get("adapter") == "ashby"]
     assert len(ashby_rows) == 1
     assert ashby_rows[0]["name"] == "Live Co (Ashby)"
@@ -116,7 +116,7 @@ def test_refresh_active_ashby_registry_keeps_live_existing_rows_and_normalizes_u
         timeout_s=5,
     )
 
-    next_rows = json.loads(active_path.read_text(encoding="utf-8"))
+    next_rows = refresh.load_json_array(active_path, [])
     assert next_rows[0]["board_url"] == "https://jobs.ashbyhq.com/thatgamecompany"
     assert next_rows[0]["jobsFound"] == 2
     assert report["configuredAfter"] == 1
@@ -162,7 +162,7 @@ def test_refresh_active_ashby_registry_rejects_irrelevant_discovery_rows(tmp_pat
         timeout_s=5,
     )
 
-    next_rows = json.loads(active_path.read_text(encoding="utf-8"))
+    next_rows = refresh.load_json_array(active_path, [])
     ashby_rows = [row for row in next_rows if row.get("adapter") == "ashby"]
     assert [row["name"] for row in ashby_rows] == ["GameChanger (Ashby)"]
     assert report["configuredAfter"] == 1

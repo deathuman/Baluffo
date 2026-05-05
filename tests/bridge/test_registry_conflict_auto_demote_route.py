@@ -8,6 +8,7 @@ from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, mak
 
 SAFE_ID = "recruitee:api_url:https://jobs.crazygames.com/api/offers/"
 UNSAFE_ID = "recruitee:api_url:https://focusentertainment.recruitee.com/api/offers/"
+STATIC_SAFE_ID = "static:listing_url:https://www.4a-games.com.mt/careers"
 
 
 def _safe_auto_demote_state() -> dict[str, list[dict[str, Any]]]:
@@ -51,6 +52,26 @@ def _safe_auto_demote_state() -> dict[str, list[dict[str, Any]]]:
                 "rankScore": 33,
                 "score": 25,
             },
+            {
+                "id": "static:listing_url:https://4a-games.com.mt/careers",
+                "name": "4A Games",
+                "studio": "4A Games",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 3,
+                "rankScore": 39,
+                "score": 23,
+            },
+            {
+                "id": STATIC_SAFE_ID,
+                "name": "4A Games",
+                "studio": "4A Games",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 3,
+                "rankScore": 30,
+                "score": 20,
+            },
         ],
         "pending": [],
         "rejected": [],
@@ -82,6 +103,7 @@ def test_safe_auto_demote_route_demotes_all_eligible_targets(tmp_path: Path) -> 
     assert [row["id"] for row in state["pending"]] == [SAFE_ID]
     assert state["pending"][0]["stateChangedBy"] == "registry_conflict_safe_auto_demote"
     assert UNSAFE_ID in {row["id"] for row in state["active"]}
+    assert STATIC_SAFE_ID in {row["id"] for row in state["active"]}
 
 
 def test_safe_auto_demote_route_skips_requested_unsafe_ids(tmp_path: Path) -> None:
@@ -104,3 +126,29 @@ def test_safe_auto_demote_route_skips_requested_unsafe_ids(tmp_path: Path) -> No
     state = api.load_state()
     assert {row["id"] for row in state["pending"]} == {SAFE_ID}
     assert UNSAFE_ID in {row["id"] for row in state["active"]}
+
+
+def test_safe_auto_demote_route_demotes_static_normalized_url_aliases(tmp_path: Path) -> None:
+    api, handler = _seed_api(tmp_path)
+
+    result = handle_post(
+        handler,
+        api=api,
+        path="/registry/conflicts/auto-demote-safe",
+        payload={"action": "auto_demote_static_normalized_url_alias", "ids": []},
+    )
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert payload["demoted"] == 1
+    assert payload["skipped"] == 0
+    assert payload["applied"] == [
+        {
+            "id": STATIC_SAFE_ID,
+            "familyKey": "4a games",
+            "action": "auto_demote_static_normalized_url_alias",
+        }
+    ]
+    state = api.load_state()
+    assert {row["id"] for row in state["pending"]} == {STATIC_SAFE_ID}
+    assert SAFE_ID in {row["id"] for row in state["active"]}

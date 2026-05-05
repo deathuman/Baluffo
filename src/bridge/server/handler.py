@@ -163,6 +163,8 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
             with time_block(self._request_timing_category("get")):
                 try:
                     path = self._route_path()
+                    with suppress(Exception):
+                        api.mark_desktop_session_activity(path)
                     query = self._route_query()
                     with suppress(Exception):
                         api.bridge_log(
@@ -196,6 +198,8 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
             path = ""
             with time_block(self._request_timing_category("post")):
                 path = self._route_path()
+                with suppress(Exception):
+                    api.mark_desktop_session_activity(path)
                 payload = read_json_from_request(self)
                 from src.bridge.routes.post_routes import handle_post
 

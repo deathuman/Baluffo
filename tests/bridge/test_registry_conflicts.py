@@ -477,7 +477,7 @@ def test_registry_conflicts_safe_automation_skips_positive_loser_evidence() -> N
     assert "loser_has_positive_evidence" in automation["blockedReasons"]
 
 
-def test_registry_conflicts_safe_automation_skips_provider_static_and_static_variants() -> None:
+def test_registry_conflicts_safe_automation_skips_provider_static() -> None:
     provider_static_state = {
         "active": [
             {
@@ -499,6 +499,16 @@ def test_registry_conflicts_safe_automation_skips_provider_static_and_static_var
         "pending": [],
         "rejected": [],
     }
+
+    assert (
+        derive_registry_conflict_queue(provider_static_state)["conflicts"][0]["safeAutomation"][
+            "eligible"
+        ]
+        is False
+    )
+
+
+def test_registry_conflicts_safe_automation_marks_static_normalized_url_alias_eligible() -> None:
     static_state = {
         "active": [
             {
@@ -508,6 +518,8 @@ def test_registry_conflicts_safe_automation_skips_provider_static_and_static_var
                 "adapter": "static",
                 "registryState": "active",
                 "jobsFound": 1,
+                "rankScore": 40,
+                "score": 20,
             },
             {
                 "id": "static:listing_url:https://www.studio.example/careers",
@@ -515,22 +527,54 @@ def test_registry_conflicts_safe_automation_skips_provider_static_and_static_var
                 "studio": "Static Studio",
                 "adapter": "static",
                 "registryState": "active",
+                "jobsFound": 1,
+                "rankScore": 20,
+                "score": 10,
             },
         ],
         "pending": [],
         "rejected": [],
     }
 
-    assert (
-        derive_registry_conflict_queue(provider_static_state)["conflicts"][0]["safeAutomation"][
-            "eligible"
-        ]
-        is False
-    )
-    assert (
-        derive_registry_conflict_queue(static_state)["conflicts"][0]["safeAutomation"]["eligible"]
-        is False
-    )
+    automation = derive_registry_conflict_queue(static_state)["conflicts"][0]["safeAutomation"]
+
+    assert automation["eligible"] is True
+    assert automation["action"] == "auto_demote_static_normalized_url_alias"
+    assert automation["targetIds"] == ["static:listing_url:https://www.studio.example/careers"]
+
+
+def test_registry_conflicts_safe_automation_skips_static_normalized_url_alias_ties() -> None:
+    static_state = {
+        "active": [
+            {
+                "id": "static:listing_url:https://studio.example/careers",
+                "name": "Studio Static A",
+                "studio": "Static Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 1,
+                "rankScore": 20,
+                "score": 10,
+            },
+            {
+                "id": "static:listing_url:https://www.studio.example/careers",
+                "name": "Studio Static B",
+                "studio": "Static Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 1,
+                "rankScore": 20,
+                "score": 10,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    automation = derive_registry_conflict_queue(static_state)["conflicts"][0]["safeAutomation"]
+
+    assert automation["eligible"] is False
+    assert "loser_has_equal_or_stronger_evidence" in automation["blockedReasons"]
 
 
 def test_registry_conflicts_safe_automation_skips_multi_row_cards() -> None:

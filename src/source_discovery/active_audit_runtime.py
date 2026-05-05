@@ -340,6 +340,7 @@ def load_or_initialize_active_audit_artifact(
     if reset:
         with suppress(FileNotFoundError, PermissionError, OSError):
             output_path.unlink()
+        return dict(initial_artifact)
     existing = load_json_object(output_path, {})
     if isinstance(existing, dict) and int(existing.get("schemaVersion") or 0) == int(
         schema_version
