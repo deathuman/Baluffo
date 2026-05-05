@@ -72,6 +72,44 @@ def _append_startup_profile_scenario(
     )
 
 
+def _startup_profile_regression_message(startup_profile: dict[str, Any]) -> str:
+    regressions = [
+        row
+        for row in startup_profile.get("perfRegressions") or []
+        if isinstance(row, dict)
+    ]
+    if not regressions:
+        return str(startup_profile.get("classification") or "startup profile threshold exceeded")
+    worst = next(
+        (
+            row
+            for row in regressions
+            if str(row.get("severity") or "").strip() == "critical"
+        ),
+        regressions[0],
+    )
+    return (
+        f"Startup profile threshold exceeded: {worst.get('stage')} "
+        f"{int(worst.get('durationMs') or 0)}ms > {int(worst.get('thresholdMs') or 0)}ms."
+    )
+
+
+def _apply_startup_threshold_gate(
+    report: dict[str, Any],
+    *,
+    startup_profile: dict[str, Any],
+) -> None:
+    if not startup_profile.get("perfRegressions"):
+        return
+    deps = _root()
+    report["ok"] = False
+    report["failure"] = deps.build_failure_payload(
+        "startup-profile-threshold",
+        _startup_profile_regression_message(startup_profile),
+        category="startup_profile_threshold_exceeded",
+    )
+
+
 def _build_initial_report(
     *,
     started_at: str,
@@ -438,6 +476,8 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 startup_profile,
             )
             _append_startup_profile_scenario(report, startup_profile=startup_profile)
+            if bool(getattr(args, "fail_on_threshold", False)):
+                _apply_startup_threshold_gate(report, startup_profile=startup_profile)
         report["artifacts"].update(deps.capture_runtime_snapshot(bridge_base_url, artifacts_dir))
 
         if bool(args.profile_only):

@@ -164,6 +164,33 @@ def _classify_stages(
     return classification_map.get(top, "ok" if not slow_ranked else "startup bottleneck unclear")
 
 
+def _stage_perf_regressions(stages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    regressions: list[dict[str, Any]] = []
+    for stage in stages:
+        if str(stage.get("status") or "") != "slow":
+            continue
+        duration_ms = stage.get("durationMs")
+        threshold_ms = stage.get("thresholdMs")
+        if not isinstance(duration_ms, int) or not isinstance(threshold_ms, int):
+            continue
+        if threshold_ms <= 0:
+            continue
+        key = str(stage.get("key") or "").strip()
+        regressions.append(
+            {
+                "type": "perf_regression",
+                "stage": key,
+                "label": str(stage.get("label") or key),
+                "durationMs": int(duration_ms),
+                "thresholdMs": int(threshold_ms),
+                "severity": "critical"
+                if key == "total_launch_to_first_usable_ui"
+                else "warning",
+            }
+        )
+    return regressions
+
+
 def summarize_startup_metrics(
     rows: list[dict[str, Any]], *, page: str = "jobs", profile_mode: str = "cold"
 ) -> dict[str, Any]:
@@ -268,6 +295,7 @@ def summarize_startup_metrics(
             },
         )
         stage_statuses = [stage["status"] for stage in probe_stages]
+        perf_regressions = _stage_perf_regressions(probe_stages)
         return {
             "page": safe_page,
             "profileMode": mode,
@@ -280,6 +308,7 @@ def summarize_startup_metrics(
             if stage_statuses and all(status == "passed" for status in stage_statuses)
             else "failed",
             "missingEvents": sorted({event for event in probe_missing_events if event}),
+            "perfRegressions": perf_regressions,
         }
 
     render_event, render_ms = _pick_first(events, [f"{safe_page}_first_render"])
@@ -417,6 +446,7 @@ def summarize_startup_metrics(
         if stage_statuses and all(status == "passed" for status in stage_statuses)
         else "failed"
     )
+    perf_regressions = _stage_perf_regressions(stages)
     return {
         "page": safe_page,
         "profileMode": mode,
@@ -427,6 +457,7 @@ def summarize_startup_metrics(
         "classification": classification,
         "status": summary_status,
         "missingEvents": sorted({event for event in missing_events if event}),
+        "perfRegressions": perf_regressions,
     }
 
 
@@ -447,6 +478,13 @@ def render_startup_summary(summary: dict[str, Any]) -> str:
         lines.append(
             f"- {stage.get('label')}: {duration_label} [{stage.get('status')}] threshold={threshold_label}"
         )
+    regressions = [row for row in _as_list(summary.get("perfRegressions")) if isinstance(row, dict)]
+    if regressions:
+        lines.append("Perf regressions:")
+        for row in regressions:
+            lines.append(
+                f"- {row.get('stage')}: {int(row.get('durationMs') or 0)}ms > {int(row.get('thresholdMs') or 0)}ms [{row.get('severity')}]"
+            )
     return "\n".join(lines)
 
 

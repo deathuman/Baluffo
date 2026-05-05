@@ -51,6 +51,7 @@ Completed slices:
 - **Phase 1e bridge request counters:** added process-local bridge request timing counters and exposed read-only `/ops/perf-counters`.
 - **Phase 1f sync operation timing:** added service-level sync pull/push stage timing and persisted recent timing history exposed through `/sync/status`.
 - **Phase 4b NDJSON trend tracking:** added `scripts/perf_trend.py` and `npm run perf:trend` to print recent `_out/perf-trend.ndjson` duration deltas by benchmark mode.
+- **Phase 4c startup profile regression gate:** added structured startup `perfRegressions` rows and `--fail-on-threshold` packaged-smoke gating for startup probes.
 
 Targeted validation completed for these slices:
 
@@ -71,6 +72,8 @@ Targeted validation completed for these slices:
 - `python -m pytest tests/bridge/test_sync_service.py -q`
 - `python -m pytest tests/bridge/test_routes_get.py -q -k sync_status`
 - `python -m pytest tests/test_perf_trend.py -q`
+- `python -m pytest tests/test_startup_profile.py -q`
+- `python -m pytest tests/packaged_desktop/test_runtime_wait_and_reports.py -q -k "profile or threshold"`
 
 Perf trace command added:
 
@@ -79,7 +82,7 @@ Perf trace command added:
 Remaining near-term work:
 
 - **Phase 1e follow-ups:** frontend fetch/render counters and broader backend instrumentation beyond bridge request timing.
-- **Phase 2+:** baseline collection, optimisation based on evidence, and CI regression gates.
+- **Phase 2+:** baseline collection, optimisation based on evidence, and CI smoke benchmark workflow.
 
 ---
 
@@ -582,7 +585,7 @@ python src/fetch_incremental_sanity_benchmark.py --timeout 30 --sources greenhou
 python scripts/perf_trend.py
 
 # Phase 4c – Startup threshold gate
-python src/packaged_desktop_smoke.py --startup-probe --profile-only --profile-mode cold
+python src/packaged_desktop_smoke.py --startup-probe --profile-only --profile-mode cold --fail-on-threshold
 
 # General – no lint regressions from any instrumentation
 npm run lint:precommit
