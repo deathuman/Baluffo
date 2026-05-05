@@ -138,7 +138,8 @@ function timelineStatusLabel(status, fallback) {
 }
 
 function buildTimelineEntries(row, view) {
-  const safeRow = row && typeof row === "object" && !Array.isArray(row) ? row : {};
+  const hasPayload = Boolean(row && typeof row === "object" && !Array.isArray(row));
+  const safeRow = hasPayload ? row : {};
   const progress = normalizeTaskProgressPayload(safeRow.taskProgress);
   const entries = [];
   let order = 0;
@@ -470,6 +471,37 @@ export function buildTaskRunView(row, { nowMs = Date.now() } = {}) {
     failureSummary: deriveFailureSummary(taskType, summary),
     remediationHint: deriveRemediationHint(status),
     diagnosticHints: [countsLabel].filter(Boolean)
+  };
+}
+
+export function buildTaskRunLogLabel(row, {
+  taskType = "",
+  running = false,
+  nowMs = Date.now(),
+  prefix = ""
+} = {}) {
+  const hasPayload = Boolean(row && typeof row === "object" && !Array.isArray(row));
+  const safeRow = hasPayload ? row : {};
+  const normalizedTaskType = String(taskType || safeRow.taskType || safeRow.type || "").trim().toLowerCase();
+  const finished = Boolean(String(safeRow.finishedAt || "").trim());
+  const view = buildTaskRunView({
+    ...safeRow,
+    ...(normalizedTaskType ? { taskType: normalizedTaskType } : {}),
+    active: Boolean(running || safeRow.active || safeRow.isLive) && !finished
+  }, { nowMs });
+  const title = String(prefix || view.title || TASK_TITLES[view.taskType] || "Task").trim() || "Task";
+  const detail = hasPayload
+    ? String(view.progressLabel || view.primaryLabel || view.secondaryLabel || "").trim()
+    : "";
+  const terminal = Boolean(finished || ["completed", "completed_with_warnings", "failed"].includes(view.status));
+  const hasFailureSummary = Boolean(String(view.failureSummary || "").trim());
+  const levelHint = ["failed", "completed_with_warnings"].includes(view.status) || hasFailureSummary
+    ? "warn"
+    : (terminal ? "success" : "info");
+  return {
+    message: detail ? `${title}: ${detail}.` : `${title}: no progress detail available.`,
+    levelHint,
+    view
   };
 }
 

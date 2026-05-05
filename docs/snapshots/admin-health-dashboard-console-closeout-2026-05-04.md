@@ -4,7 +4,7 @@
 > - **Use this when:** checking why the Admin health dashboard tracker was retired
 > - **Canonical for:** the closure decision and the split between overview signals and detailed task evidence
 > - **Not canonical for:** task-state runtime contracts, bridge routes, dedup behavior, or source-policy behavior
-> - **Then inspect:** [`../archive/admin-health-dashboard-console-closeout.md`](../archive/admin-health-dashboard-console-closeout.md), [`../plans/task-progress-operational-console-plan.md`](../plans/task-progress-operational-console-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`../archive/admin-health-dashboard-console-closeout.md`](../archive/admin-health-dashboard-console-closeout.md), [`../archive/task-progress-operational-console-closeout.md`](../archive/task-progress-operational-console-closeout.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-04
 
 ## Closeout Evidence

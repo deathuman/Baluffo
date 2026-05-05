@@ -3,7 +3,7 @@
 > - **Status:** Active plan
 > - **Use this when:** adding frontend/backend instrumentation, profiling pipeline operations, fixing UI stalling (especially Admin page), or setting up CI performance regression detection
 > - **Canonical for:** frontend User Timing instrumentation, Long Task detection, Playwright performance traces, profiling hooks (BALUFFO_PROFILE=1), sync operation timing, NDJSON perf trend tracking, CI smoke benchmark, startup profile regression gate, and Admin-page boot‑sequence optimizations
-> - **Not canonical for:** pipeline/discovery timing payload shapes (use `pipeline_timing.py`, `runtime_metrics.py`), fetcher metrics contracts (use `fetcher_metrics.py`), startup probe event schema (use `startup_profile.py`, `startup_telemetry.py`), Admin task/progress UX (use `plans/task-progress-operational-console-plan.md`), or source‑sync production hardening (use `plans/source-sync-production-readiness-plan.md`)
+> - **Not canonical for:** pipeline/discovery timing payload shapes (use `pipeline_timing.py`, `runtime_metrics.py`), fetcher metrics contracts (use `fetcher_metrics.py`), startup probe event schema (use `startup_profile.py`, `startup_telemetry.py`), Admin task/progress UX closeout history (use `archive/task-progress-operational-console-closeout.md`), or source‑sync production-readiness closeout history (use `archive/source-sync-production-readiness-closeout.md`)
 > - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../startup-probe-architecture.md`](../startup-probe-architecture.md), [`../testing.md`](../testing.md), and the source files listed per phase below
 > - **Last updated:** 2026-05-04
 
@@ -42,8 +42,8 @@ This plan addresses the observational gap first (Phase 1), then exploits the new
 
 | Existing plan | Compatibility |
 |---|---|
-| **`plans/task-progress-operational-console-plan.md`** | No conflict. That plan owns the shared task‑run presenter, compact Current Runs rows, stalled/orphaned display states, and Admin task/progress UX. This plan does not change task‑run rendering or progress bar logic. The lightweight counter‑based instrumentation (1e) and Long Task observer (1b) will *feed data into* the task‑run view model without altering its interface. |
-| **`plans/source-sync-production-readiness-plan.md`** | No conflict. This plan adds sync stage‑timing instrumentation (1f) that slots into the existing sync‑service structure. The sync plan owns snapshot hardening, conflict handling, and BaluffoSync governance. Timing instrumentation is additive and orthogonal. |
+| **`archive/task-progress-operational-console-closeout.md`** | No conflict. The closed task/progress console work owns the shared task‑run presenter, compact Current Runs rows, stalled/orphaned display states, and Admin task/progress UX history. This plan does not change task‑run rendering or progress bar logic. The lightweight counter‑based instrumentation (1e) and Long Task observer (1b) will feed data into the task‑run view model without altering its interface. |
+| **`archive/source-sync-production-readiness-closeout.md`** | No conflict. The closed source-sync readiness work owns snapshot hardening, conflict handling, and private BaluffoSync governance history. Timing instrumentation is additive and orthogonal. |
 | **`plans/saved-job-tracker-improvements-plan.md`** | No conflict. Saved page is out of scope for this plan. |
 | **`../startup-probe-architecture.md`** | No conflict. This plan extends the existing startup‑probe JSONL pipeline with additional frontend User Timing marks and Long Task events. The event schema and storage path stay unchanged. |
 | **`../archive/admin-health-dashboard-console-closeout.md`** | No conflict. The health‑dashboard owns compact Discovery/Fetch/Sync lanes and tabbed review surfaces. This plan's Admin quick wins (1e‑bonus) optimise boot timing without changing layout or UX. |

@@ -408,6 +408,8 @@ def test_index_routes_current_process_docs_only(repo_root: Path) -> None:
         "docs/archive/jobs-fetcher-aggressive-simplification-closeout.md",
         "docs/archive/read-only-lifecycle-ux-closeout.md",
         "docs/archive/source-discovery-adapter-follow-ups-closeout.md",
+        "docs/archive/source-sync-production-readiness-closeout.md",
+        "docs/archive/task-progress-operational-console-closeout.md",
     ]
 
 

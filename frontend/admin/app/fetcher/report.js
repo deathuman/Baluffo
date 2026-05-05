@@ -3,6 +3,7 @@ import {
   buildTaskWorkItemActivitySignature
 } from "../live-task.js";
 import { formatScrapyStaticSourcesTailBadge } from "../../../shared/task-progress.js";
+import { buildTaskRunLogLabel } from "../../../shared/task-run-view-model.js";
 import {
   deriveFetcherFailureSummary,
   deriveFetcherProgressModel,
@@ -88,22 +89,10 @@ export function createAdminFetcherReportController({
         return report;
       }
 
-      const summary = report?.summary || {};
-      const progress = getFetcherTaskProgress(report, { running: false });
-      const progressView = deriveFetcherProgressModel(report, { running: false });
-      const progressLabel = String(progressView?.label || "").trim();
-      const counts = progress.counts && typeof progress.counts === "object" ? progress.counts : {};
-      const resolvedSources = Math.max(0, Number(counts.resolvedSources ?? (Number(summary.successfulSources || 0) + Number(summary.failedSources || 0) + Number(summary.excludedSources || 0))));
-      const totalSources = progress.mode === "determinate" ? Math.max(0, Number(counts.sourceCount || 0)) : 0;
-      const outputCount = Math.max(0, Number(counts.outputCount ?? summary.outputCount ?? 0));
-      const failedSourceCount = Math.max(0, Number(counts.failedSources ?? summary.failedSources ?? 0));
-      const excludedSourceCount = Math.max(0, Number(counts.excludedSources ?? summary.excludedSources ?? 0));
-      const okWithWarningCount = Math.max(0, Number(counts.okWithWarningSources ?? summary.okWithWarningSources ?? 0));
-      const warningSuffix = okWithWarningCount > 0 ? `, ok with warnings ${okWithWarningCount}` : "";
-      const summaryLabel = `Fetcher summary: ${totalSources > 0 ? `${resolvedSources}/${totalSources} sources resolved` : `${resolvedSources} sources resolved`}, output ${outputCount.toLocaleString()}, failed ${failedSourceCount}, excluded ${excludedSourceCount}${warningSuffix}.`;
+      const runLog = buildTaskRunLogLabel(report, { taskType: "fetch", running: false });
       appendFetcherLog(
-        progressLabel ? `${summaryLabel} | ${progressLabel}` : summaryLabel,
-        failedSourceCount > 0 || okWithWarningCount > 0 ? "warn" : "success"
+        runLog.message,
+        runLog.levelHint
       );
 
       const sources = Array.isArray(report?.sources) ? report.sources : [];
@@ -210,7 +199,13 @@ export function createAdminFetcherReportController({
     const liveState = state.fetcherLiveProgressState;
     if (!liveState) return;
     updateFetcherProgressFromReport(report, { running: true });
-    const progressLabel = String(deriveFetcherProgressModel(report, { running: true })?.label || "").trim();
+    const runLog = buildTaskRunLogLabel(report, { taskType: "fetch", running: true, nowMs });
+    const activeRunLog = buildTaskRunLogLabel(report, {
+      taskType: "fetch",
+      running: true,
+      nowMs,
+      prefix: "Fetcher active"
+    });
     const summary = report?.summary || {};
     const progress = getFetcherTaskProgress(report, { running: true });
     const counts = progress.counts && typeof progress.counts === "object" ? progress.counts : {};
@@ -221,7 +216,6 @@ export function createAdminFetcherReportController({
     const failedSources = Math.max(0, Number(counts.failedSources ?? summary.failedSources ?? 0));
     const excludedSources = Math.max(0, Number(counts.excludedSources ?? summary.excludedSources ?? 0));
     const okWithWarningSources = Math.max(0, Number(counts.okWithWarningSources ?? summary.okWithWarningSources ?? 0));
-    const okWarningSuffix = okWithWarningSources > 0 ? `, ok with warnings ${okWithWarningSources}` : "";
     const resolvedSources = Math.max(
       0,
       Number(
@@ -230,7 +224,6 @@ export function createAdminFetcherReportController({
       )
     );
     const fallbackTailBadge = formatScrapyStaticSourcesTailBadge(report?.workItems);
-    const fallbackTailSuffix = fallbackTailBadge ? ` | ${fallbackTailBadge}` : "";
     const summarySignature = [
       outputCount,
       selectedSourceCount,
@@ -251,16 +244,14 @@ export function createAdminFetcherReportController({
       summarySignature,
       workItemSignature: buildTaskWorkItemActivitySignature(report),
       onSummaryChange: () => {
-        const summaryLabel = `Fetcher: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}, failed ${failedSources}, excluded ${excludedSources}${okWarningSuffix}${fallbackTailSuffix}.`;
         appendFetcherLog(
-          progressLabel ? `${summaryLabel} | ${progressLabel}` : summaryLabel,
+          runLog.message,
           failedSources > 0 || okWithWarningSources > 0 ? "warn" : "info"
         );
       },
       onHeartbeat: () => {
-        const activeLabel = `Fetcher active: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}${fallbackTailSuffix}.`;
         appendFetcherLog(
-          progressLabel ? `${activeLabel} | ${progressLabel}` : activeLabel,
+          activeRunLog.message,
           "muted"
         );
       }

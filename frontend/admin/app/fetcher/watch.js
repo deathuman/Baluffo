@@ -18,6 +18,7 @@ import {
   formatStageTopSummary,
   selectSlowSources
 } from "../fetcher-summary.js";
+import { buildTaskRunLogLabel } from "../../../shared/task-run-view-model.js";
 
 export function createAdminFetcherWatchController({
   state,
@@ -155,11 +156,16 @@ export function createAdminFetcherWatchController({
       const finalReport = await fetchJobsFetchReportJson().catch(() => null);
       const completedPayload = finalReport || terminalPayload;
       state.latestFetcherReportCache = completedPayload || state.latestFetcherReportCache;
-      const summary = completedPayload?.summary || {};
       updateFetcherProgressFromReport(completedPayload, { running: false });
+      const completionLog = buildTaskRunLogLabel(completedPayload, {
+        taskType: "fetch",
+        running: false,
+        nowMs: now,
+        prefix: "Fetcher completed"
+      });
       appendFetcherLog(
-        `Fetcher completed: output ${Number(summary.outputCount || 0).toLocaleString()}, failed ${Number(summary.failedSources || 0)}, excluded ${Number(summary.excludedSources || 0)}.`,
-        Number(summary.failedSources || 0) > 0 ? "warn" : "success"
+        completionLog.message,
+        completionLog.levelHint
       );
       const slowSources = selectSlowSources(completedPayload)
         .slice(0, 3)

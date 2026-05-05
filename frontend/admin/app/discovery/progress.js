@@ -9,6 +9,7 @@ import {
   deriveDiscoveryTaskProgress
 } from "../../domain/progress.js";
 import { applyAdminTaskProgress } from "../progress-ui.js";
+import { buildTaskRunLogLabel } from "../../../shared/task-run-view-model.js";
 
 export function createAdminDiscoveryProgressController({
   state,
@@ -124,6 +125,17 @@ export function createAdminDiscoveryProgressController({
     const failedCount = Number(counts.failedProbes ?? summary.failedProbeCount ?? 0);
     const skippedCount = Number(summary.skippedDuplicateCount || 0);
     const invalidCount = Number(summary.skippedInvalidCount || 0);
+    const runLog = buildTaskRunLogLabel(report, {
+      taskType: "discovery",
+      running: true,
+      nowMs
+    });
+    const activeRunLog = buildTaskRunLogLabel(report, {
+      taskType: "discovery",
+      running: true,
+      nowMs,
+      prefix: "Discovery active"
+    });
     let sawLocalActivity = false;
 
     const summarySignature = [foundCount, probedCount, queuedCount, deferredCount, failedCount, skippedCount, invalidCount].join("|");
@@ -190,13 +202,13 @@ export function createAdminDiscoveryProgressController({
       workItemSignature: buildTaskWorkItemActivitySignature(report),
       onSummaryChange: () => {
         appendDiscoveryLog(
-          `Discovery: endpoints ${foundCount}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}, failed ${failedCount}, skipped dupes ${skippedCount}, invalid ${invalidCount}.`,
+          runLog.message,
           failedCount > 0 ? "warn" : "info"
         );
       },
       onHeartbeat: () => {
         appendDiscoveryLog(
-          `Discovery active${phaseLabel ? ` (${phaseLabel})` : ""}: endpoints ${foundCount}, probed ${probedCount}, queued ${queuedCount}, deferred ${deferredCount}.`,
+          activeRunLog.message,
           "muted"
         );
       }

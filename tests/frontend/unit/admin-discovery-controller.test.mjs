@@ -429,7 +429,7 @@ test("admin discovery controller applies live progress when runId matches despit
 
     assert.ok(logs.some(line => /discovery started\. watching live progress/i.test(line)));
     assert.ok(logs.some(line => /scanning known careers pages/i.test(line)));
-    assert.ok(logs.some(line => /endpoints 12, probed 5, queued 3/i.test(line)));
+    assert.ok(logs.some(line => /Discovery: .*Scanning known careers pages/i.test(line) && /endpoints 12/i.test(line) && /probed 5/i.test(line) && /queued 3/i.test(line)));
   } finally {
     global.setTimeout = previousSetTimeout;
     global.clearTimeout = previousClearTimeout;

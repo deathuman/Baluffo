@@ -806,7 +806,7 @@ test("admin fetcher controller only emits generic active heartbeat after sustain
     nowMs += 31_000;
     await runLatestScheduled();
     assert.equal(logs.filter(line => /Fetcher active:/i.test(line)).length, 1);
-    assert.ok(logs.some(line => /Fetcher: 6\/12 sources resolved/i.test(line)));
+    assert.ok(logs.some(line => /Fetcher: .*6\/12 sources resolved/i.test(line)));
     assert.ok(logs.some(line => /Fetcher active: .*Browser fallback 19\/26/i.test(line)));
   } finally {
     controller?.stopFetcherCompletionWatch?.();

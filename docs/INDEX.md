@@ -61,9 +61,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`source-policy-runbook.md`](source-policy-runbook.md) | Operator runbook | You are running discovery/fetch/soak/Admin migration-link validation or checking provider/static source-policy release readiness |
 | [`environments.md`](environments.md) | Release / Environments | You are choosing source-sync writer auth, staging/prod separation, or the repository-side write policy |
 | [`plans/end-to-end-benchmarking-plan.md`](plans/end-to-end-benchmarking-plan.md) | Plans / Follow-Ups | You are adding frontend/backend instrumentation, profiling pipeline operations, fixing UI stalling (especially Admin page), or setting up CI performance regression detection |
-| [`plans/task-progress-operational-console-plan.md`](plans/task-progress-operational-console-plan.md) | Plans / Follow-Ups | You are hardening Admin task/progress UX, stale-task states, run analysis, task visibility workflows, or sync-outcome presentation handoff from source-sync hardening |
 | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Plans / Follow-Ups | You are improving saved-job phase/outcome modeling, activity semantics, sorting, or Saved page operations |
-| [`plans/source-sync-production-readiness-plan.md`](plans/source-sync-production-readiness-plan.md) | Plans / Follow-Ups | You are planning source-sync production hardening for BaluffoSync, conflict handling, registry observability, or the admin handoff tracked in the task-progress console plan |
 
 | [`snapshots/jobs-dead-source-evidence-2026-04-29.md`](snapshots/jobs-dead-source-evidence-2026-04-29.md) | Snapshots / Evidence | You are auditing the first evidence-backed physical deletion batch for dead jobs sources |
 | [`snapshots/jobs-source-family-evidence-2026-04-30.md`](snapshots/jobs-source-family-evidence-2026-04-30.md) | Snapshots / Evidence | You are choosing the next deletion-first jobs fetcher source-family slice |
@@ -96,6 +94,8 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`archive/dedup-google-sheets-role-bucket-audit-closeout.md`](archive/dedup-google-sheets-role-bucket-audit-closeout.md) | Archived closeout | Closed Google Sheets role-bucket audit tracker; active work moved to provider/static disagreement reconciliation |
 | [`archive/dedup-provider-static-disagreement-reconciliation-closeout.md`](archive/dedup-provider-static-disagreement-reconciliation-closeout.md) | Archived closeout | Closed provider/static disagreement reconciliation tracker; active work moved to read-only lifecycle UX |
 | [`archive/read-only-lifecycle-ux-closeout.md`](archive/read-only-lifecycle-ux-closeout.md) | Archived closeout | Closed first read-only lifecycle UX tracker after implementing conservative labels and filters |
+| [`archive/source-sync-production-readiness-closeout.md`](archive/source-sync-production-readiness-closeout.md) | Archived closeout | Closed private BaluffoSync source-sync production-readiness tracker after documenting private-repo operating controls |
+| [`archive/task-progress-operational-console-closeout.md`](archive/task-progress-operational-console-closeout.md) | Archived closeout | Closed Admin task/progress console tracker after moving fetcher report logging onto the shared task-run presenter |
 
 ## Quick Routing by Goal
 
@@ -111,7 +111,8 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Improve saved-job tracking UX | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`frontend/local-data`](../frontend/local-data/), [`testing.md`](testing.md) |
 | Validate provider/static source-policy workflow | [`source-policy-runbook.md`](source-policy-runbook.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Review read-only lifecycle UX | [`archive/read-only-lifecycle-ux-closeout.md`](archive/read-only-lifecycle-ux-closeout.md) | [`snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md`](snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md), [`source-policy-runbook.md`](source-policy-runbook.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
-| Improve task/progress operations UX | [`plans/task-progress-operational-console-plan.md`](plans/task-progress-operational-console-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`frontend/admin/domain/progress.js`](../frontend/admin/domain/progress.js), [`frontend/admin/render/ops-history.js`](../frontend/admin/render/ops-history.js) |
+| Review source-sync production readiness | [`archive/source-sync-production-readiness-closeout.md`](archive/source-sync-production-readiness-closeout.md) | [`environments.md`](environments.md), [`sync-contract.md`](sync-contract.md), [`testing.md`](testing.md) |
+| Review completed task/progress operations UX | [`archive/task-progress-operational-console-closeout.md`](archive/task-progress-operational-console-closeout.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`frontend/admin/domain/progress.js`](../frontend/admin/domain/progress.js), [`frontend/admin/render/ops-history.js`](../frontend/admin/render/ops-history.js) |
 
 ## Recommended AI read sequence
 

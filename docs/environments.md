@@ -11,6 +11,9 @@ For that model, the baseline controls are:
 - GitHub App auth for production writes, or a deploy key for a lightweight single-writer setup
 - the `validate-source-sync` CI check on each write path
 - GitHub notifications for failed `validate-source-sync.yml` runs
+- no force-push to BaluffoSync `main` by operator policy while branch protection/rulesets are unavailable
+- append-only/linear sync writes in normal operation
+- `last-known-good` plus date-stamped rollback tags for recovery checkpoints
 
 Branch protection, repository rulesets, and required reviewers are useful hardening, but they are optional for this transport-first model and may remain unavailable on the current GitHub plan.
 

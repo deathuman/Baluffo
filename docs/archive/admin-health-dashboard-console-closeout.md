@@ -4,7 +4,7 @@
 > - **Use this when:** checking why the Admin health dashboard tracker is no longer active
 > - **Canonical for:** the closeout decision and the overview-vs-detailed-evidence split
 > - **Not canonical for:** task-state runtime contracts, bridge routes, dedup behavior, or source-policy behavior
-> - **Then inspect:** [`../snapshots/admin-health-dashboard-console-closeout-2026-05-04.md`](../snapshots/admin-health-dashboard-console-closeout-2026-05-04.md), [`../plans/task-progress-operational-console-plan.md`](../plans/task-progress-operational-console-plan.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
+> - **Then inspect:** [`../snapshots/admin-health-dashboard-console-closeout-2026-05-04.md`](../snapshots/admin-health-dashboard-console-closeout-2026-05-04.md), [`task-progress-operational-console-closeout.md`](task-progress-operational-console-closeout.md), and [`../source-policy-runbook.md`](../source-policy-runbook.md)
 > - **Last updated:** 2026-05-04
 
 The Admin health dashboard tracker is closed because the checklist is complete and the UI has been narrowed to a first-glance overview.
