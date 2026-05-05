@@ -16,6 +16,20 @@ function countJobPositiveDeferredCandidates(rows) {
   return rows.filter(row => row?.deferred && Number(row?.jobsFound ?? row?.sampleCount ?? 0) > 0).length;
 }
 
+function fnv1a32(value, seed = 0x811c9dc5) {
+  let hash = seed >>> 0;
+  const text = String(value ?? "");
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash >>> 0;
+}
+
+function toDigestHex(value) {
+  return (value >>> 0).toString(16).padStart(8, "0");
+}
+
 export function createRegistryLoadController({
   state,
   refs,
@@ -62,27 +76,31 @@ export function createRegistryLoadController({
 
   function buildDiscoveryRegistrySignature(rowsByBucket) {
     const buckets = ["pending", "active", "rejected"];
-    return JSON.stringify(
-      buckets.map(bucket => {
-        const rows = Array.isArray(rowsByBucket?.[bucket]) ? rowsByBucket[bucket] : [];
-        return rows
-          .map(row => ({
-            id: String(row?.id || row?.sourceId || row?.name || ""),
-            name: String(row?.name || ""),
-            adapter: String(row?.adapter || ""),
-            studio: String(row?.studio || ""),
-            status: String(row?.status || ""),
-            jobsFound: Number(getSourceJobsFoundCount(row) || 0),
-            sourceId: String(row?.sourceId || ""),
-            sourceUrl: String(row?.url || row?.sourceUrl || "")
-          }))
-          .sort((left, right) => {
-            const leftKey = `${left.id}|${left.name}|${left.sourceUrl}`;
-            const rightKey = `${right.id}|${right.name}|${right.sourceUrl}`;
-            return leftKey.localeCompare(rightKey);
-          });
-      })
-    );
+    return buckets.map(bucket => {
+      const rows = Array.isArray(rowsByBucket?.[bucket]) ? rowsByBucket[bucket] : [];
+      let count = 0;
+      let xorHash = 0;
+      let sumHash = 0;
+      let lengthHash = 0;
+      rows.forEach(row => {
+        const rowText = [
+          String(row?.id || row?.sourceId || row?.name || ""),
+          String(row?.name || ""),
+          String(row?.adapter || ""),
+          String(row?.studio || ""),
+          String(row?.status || ""),
+          String(Number(getSourceJobsFoundCount(row) || 0)),
+          String(row?.sourceId || ""),
+          String(row?.url || row?.sourceUrl || "")
+        ].join("\u001f");
+        const rowHash = fnv1a32(rowText);
+        count += 1;
+        xorHash = (xorHash ^ rowHash) >>> 0;
+        sumHash = (sumHash + rowHash) >>> 0;
+        lengthHash = (lengthHash + fnv1a32(rowText.length, rowHash)) >>> 0;
+      });
+      return `${bucket}:${count}:${toDigestHex(xorHash)}:${toDigestHex(sumHash)}:${toDigestHex(lengthHash)}`;
+    }).join("|");
   }
 
   async function loadDiscoveryData(options = {}) {

@@ -18,7 +18,6 @@ export function createAdminAuthController({
   _renderUsersEmpty,
   startBridgeStatusWatch,
   _stopBridgeStatusWatch,
-  scheduleOpsHealthPolling,
   _stopOpsHealthPolling,
   refreshOverview,
   loadDiscoveryData,
@@ -49,7 +48,6 @@ export function createAdminAuthController({
     setOpsPlaceholders("Loading operations health...");
     if (refs.adminSyncStatusEl) refs.adminSyncStatusEl.textContent = "Loading sync status...";
     startBridgeStatusWatch();
-    scheduleOpsHealthPolling(900);
     refreshOverview().catch(err => {
       logAdminError("Failed to refresh admin overview", err);
     });

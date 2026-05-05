@@ -228,6 +228,102 @@ test("admin registry controller only logs discovery refreshes when the registry 
   assert.ok(logs.some(line => /discovery summary:/i.test(line)));
 });
 
+test("admin registry controller keeps registry signature stable across source row order changes", async () => {
+  const pendingRowsByCall = [
+    [
+      { id: "p1", name: "Pending One", adapter: "static", studio: "One", status: "pending", jobsFound: 1, sourceId: "src_1", url: "https://one.example/jobs" },
+      { id: "p2", name: "Pending Two", adapter: "greenhouse", studio: "Two", status: "pending", jobsFound: 2, sourceId: "src_2", sourceUrl: "https://two.example/jobs" }
+    ],
+    [
+      { id: "p2", name: "Pending Two", adapter: "greenhouse", studio: "Two", status: "pending", jobsFound: 2, sourceId: "src_2", sourceUrl: "https://two.example/jobs" },
+      { id: "p1", name: "Pending One", adapter: "static", studio: "One", status: "pending", jobsFound: 1, sourceId: "src_1", url: "https://one.example/jobs" }
+    ]
+  ];
+  let pendingCallIndex = 0;
+  const fixture = createRegistryControllerFixture({
+    options: {
+      getBridge: async path => {
+        if (path === "/discovery/report") return { summary: {} };
+        if (path === "/discovery/candidates") return { candidates: [] };
+        if (String(path).startsWith("/registry/pending")) {
+          const rows = pendingRowsByCall[Math.min(pendingCallIndex, pendingRowsByCall.length - 1)];
+          pendingCallIndex += 1;
+          return { sources: rows, summary: { pendingCount: rows.length } };
+        }
+        if (path === "/registry/active") return { sources: [], summary: { activeCount: 0 } };
+        if (path === "/registry/rejected") return { sources: [], summary: { rejectedCount: 0 } };
+        throw new Error(`unexpected path ${path}`);
+      },
+      getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
+      renderSourcesTableHtml: rows => rows.map(row => row.name).join("|")
+    }
+  });
+  const controller = createAdminRegistryController(fixture.options);
+
+  await controller.loadDiscoveryData();
+  await controller.loadDiscoveryData();
+
+  assert.equal(fixture.logs.filter(line => /source discovery data loaded/i.test(line)).length, 1);
+  assert.equal(fixture.logs.filter(line => /loading source discovery report and registries/i.test(line)).length, 1);
+  assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "Pending Two|Pending One");
+});
+
+test("admin registry controller changes registry signature when a tracked source field changes", async () => {
+  const pendingRowsByCall = [
+    [{ id: "p1", name: "Pending", adapter: "static", studio: "One", status: "pending", jobsFound: 1, sourceId: "src_1", url: "https://one.example/jobs" }],
+    [{ id: "p1", name: "Pending", adapter: "static", studio: "One", status: "healthy", jobsFound: 1, sourceId: "src_1", url: "https://one.example/jobs" }]
+  ];
+  let pendingCallIndex = 0;
+  const fixture = createRegistryControllerFixture({
+    options: {
+      getBridge: async path => {
+        if (path === "/discovery/report") return { summary: {} };
+        if (path === "/discovery/candidates") return { candidates: [] };
+        if (String(path).startsWith("/registry/pending")) {
+          const rows = pendingRowsByCall[Math.min(pendingCallIndex, pendingRowsByCall.length - 1)];
+          pendingCallIndex += 1;
+          return { sources: rows, summary: { pendingCount: rows.length } };
+        }
+        if (path === "/registry/active") return { sources: [], summary: { activeCount: 0 } };
+        if (path === "/registry/rejected") return { sources: [], summary: { rejectedCount: 0 } };
+        throw new Error(`unexpected path ${path}`);
+      },
+      getSourceJobsFoundCount: row => Number(row?.jobsFound || 0)
+    }
+  });
+  const controller = createAdminRegistryController(fixture.options);
+
+  await controller.loadDiscoveryData();
+  await controller.loadDiscoveryData();
+
+  assert.equal(fixture.logs.filter(line => /source discovery data loaded/i.test(line)).length, 2);
+  assert.equal(fixture.logs.filter(line => /loading source discovery report and registries/i.test(line)).length, 2);
+});
+
+test("admin registry controller keeps registry signature stable for empty and malformed buckets", async () => {
+  const fixture = createRegistryControllerFixture({
+    options: {
+      getBridge: async path => {
+        if (path === "/discovery/report") return { summary: {} };
+        if (path === "/discovery/candidates") return { candidates: [] };
+        if (String(path).startsWith("/registry/pending")) return { sources: null, summary: { pendingCount: 0 } };
+        if (path === "/registry/active") return { sources: { bad: true }, summary: { activeCount: 0 } };
+        if (path === "/registry/rejected") return { summary: { rejectedCount: 0 } };
+        throw new Error(`unexpected path ${path}`);
+      }
+    }
+  });
+  const controller = createAdminRegistryController(fixture.options);
+
+  await controller.loadDiscoveryData();
+  await controller.loadDiscoveryData();
+
+  assert.equal(fixture.logs.filter(line => /source discovery data loaded/i.test(line)).length, 1);
+  assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "");
+  assert.equal(fixture.refs.adminActiveSourcesEl.innerHTML, "");
+  assert.equal(fixture.refs.adminRejectedSourcesEl.innerHTML, "");
+});
+
 test("admin registry controller syncs source tables once per completed task signature", async () => {
   const fetchReportCalls = [];
   const fixture = createRegistryControllerFixture();

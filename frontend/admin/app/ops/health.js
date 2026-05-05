@@ -152,7 +152,6 @@ export function createOpsHealthController({
   renderAdminRegistryConflicts: renderAdminRegistryConflictsImpl = renderAdminRegistryConflicts,
   renderAdminOpsTrends: renderAdminOpsTrendsImpl = renderAdminOpsTrends,
   renderAdminOpsHistory: renderAdminOpsHistoryImpl = renderAdminOpsHistory,
-  loadSyncStatus,
   setBusyFlag,
   showToast,
   getErrorMessage,
@@ -632,7 +631,6 @@ export function createOpsHealthController({
         registryConflictsPayload,
         fetcherMetricsPayload
       });
-      loadSyncStatus({ silent: true }).catch(() => {});
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
       scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0));
     } catch (err) {

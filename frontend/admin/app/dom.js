@@ -1,93 +1,118 @@
 import { UI_TOKENS, ui } from "../../shared/ui/selectors.js?v=12";
 
+const ADMIN_REF_DEFINITIONS = Object.freeze({
+  adminSourceStatusEl: { token: "sourceStatus" },
+  adminContentEl: { token: "content" },
+  adminRefreshBtnEl: { token: "refreshBtn" },
+  adminRunFetcherBtnEl: { token: "runFetcherBtn" },
+  adminRunFetcherIncrementalBtnEl: { token: "runFetcherIncrementalBtn" },
+  adminRunFetcherUncappedBtnEl: { token: "runFetcherUncappedBtn" },
+  adminRunFetcherForceBtnEl: { token: "runFetcherForceBtn" },
+  adminRefreshReportBtnEl: { token: "refreshReportBtn" },
+  adminClearLogBtnEl: { token: "clearLogBtn" },
+  adminClearDiscoveryLogBtnEl: { token: "clearDiscoveryLogBtn" },
+  adminRetryFailedBtnEl: { token: "retryFailedBtn" },
+  adminCopyFailuresBtnEl: { token: "copyFailuresBtn" },
+  adminTotalsEl: { token: "totals" },
+  adminUsersListEl: { token: "usersList" },
+  adminJobsBtnEl: { token: "jobsPageBtn" },
+  adminSavedBtnEl: { token: "savedPageBtn" },
+  adminFetcherLogEl: { token: "fetcherLog" },
+  adminFetcherProgressEl: { token: "fetcherProgress" },
+  adminFetcherProgressBarEl: { token: "fetcherProgressBar" },
+  adminFetcherProgressLabelEl: { token: "fetcherProgressLabel" },
+  adminRunDiscoveryBtnEl: { token: "runDiscoveryBtn" },
+  adminRunDiscoveryUncappedBtnEl: { token: "runDiscoveryUncappedBtn" },
+  adminLoadDiscoveryBtnEl: { token: "loadDiscoveryBtn" },
+  adminDiscoveryAutoApproveToggleEl: { token: "discoveryAutoApproveToggle" },
+  adminApproveSourcesBtnEl: { token: "approveSourcesBtn" },
+  adminRejectSourcesBtnEl: { token: "rejectSourcesBtn" },
+  adminDeleteSourcesBtnEl: { token: "deleteSourcesBtn" },
+  adminDiscoverySummaryEl: { token: "discoverySummary" },
+  adminManualSourceUrlEl: { token: "manualSourceUrl" },
+  adminAddManualSourceBtnEl: { token: "addManualSourceBtn" },
+  adminManualSourceFeedbackEl: { token: "manualSourceFeedback" },
+  adminPendingSourcesEl: { token: "pendingSources" },
+  adminPendingSourcesSelectAllEl: { token: "pendingSourcesSelectAll" },
+  adminActiveSourcesEl: { token: "activeSources" },
+  adminActiveSourcesSelectAllEl: { token: "activeSourcesSelectAll" },
+  adminRejectedSourcesEl: { token: "rejectedSources" },
+  adminRejectedSourcesSelectAllEl: { token: "rejectedSourcesSelectAll" },
+  adminRestoreRejectedBtnEl: { token: "restoreRejectedBtn" },
+  adminDemoteActiveBtnEl: { token: "demoteActiveBtn" },
+  adminDiscoveryLogEl: { token: "discoveryLog" },
+  adminDiscoveryProgressEl: { token: "discoveryProgress" },
+  adminDiscoveryProgressBarEl: { token: "discoveryProgressBar" },
+  adminDiscoveryProgressLabelEl: { token: "discoveryProgressLabel" },
+  adminDiscoveryLogDetailsEl: { token: "discoveryLogDetails" },
+  adminBridgeStatusBadgeEl: { token: "bridgeStatusBadge" },
+  adminShowZeroJobsToggleEl: { token: "showZeroJobsToggle" },
+  adminRefreshOpsBtnEl: { token: "refreshOpsBtn" },
+  adminSyncPullBtnEl: { token: "syncPullBtn" },
+  adminSyncPushBtnEl: { token: "syncPushBtn" },
+  adminSyncTestBtnEl: { token: "syncTestBtn" },
+  adminSyncStatusEl: { token: "syncStatus" },
+  adminSyncEnabledEl: { token: "syncEnabled" },
+  adminSyncConfigHintEl: { token: "syncConfigHint" },
+  adminOpsAlertsEl: { token: "opsAlerts" },
+  adminOpsKpisEl: { token: "opsKpis" },
+  adminOpsScheduleEl: { token: "opsSchedule" },
+  adminOpsTabBtnEls: { token: "opsTabBtn", all: true },
+  adminOpsTabBadgeEls: { token: "opsTabBadge", all: true },
+  adminOpsTabOverviewEl: { token: "opsTabOverview" },
+  adminOpsTabDiscoveryEl: { token: "opsTabDiscovery" },
+  adminOpsTabSourcePolicyEl: { token: "opsTabSourcePolicy" },
+  adminOpsTabRegistryConflictsEl: { token: "opsTabRegistryConflicts" },
+  adminOpsTabDedupEl: { token: "opsTabDedup" },
+  adminDiscoveryReviewEl: { token: "discoveryReview" },
+  adminSourcePolicyReviewEl: { token: "sourcePolicyReview" },
+  adminRegistryConflictsReviewEl: { token: "registryConflictsReview" },
+  adminOpsFetcherMetricsEl: { token: "opsFetcherMetrics" },
+  adminOpsDedupListsEl: { token: "opsDedupLists" },
+  adminOpsTrendsEl: { token: "opsTrends" },
+  adminOpsHistoryEl: { token: "opsHistory" },
+  adminFetcherProgressBadgeEl: { token: "fetcherProgressBadge" },
+  adminDiscoveryProgressBadgeEl: { token: "discoveryProgressBadge" },
+  adminOpsProgressBadgeEl: { token: "opsProgressBadge" },
+  adminSourceFilterBtnEls: { token: "sourceFilterBtn", all: true }
+});
+
+function resolveAdminRef(doc, tokens, definition) {
+  const selector = ui(tokens[definition.token]);
+  return definition.all
+    ? Array.from(doc.querySelectorAll(selector))
+    : doc.querySelector(selector);
+}
+
 export function cacheAdminDom(doc = document) {
   const t = UI_TOKENS.admin;
+  const refs = {};
+  const cache = new Map();
 
-  const refs = {
-    adminSourceStatusEl: doc.querySelector(ui(t.sourceStatus)),
-    adminContentEl: doc.querySelector(ui(t.content)),
-    adminRefreshBtnEl: doc.querySelector(ui(t.refreshBtn)),
-    adminRunFetcherBtnEl: doc.querySelector(ui(t.runFetcherBtn)),
-    adminRunFetcherIncrementalBtnEl: doc.querySelector(ui(t.runFetcherIncrementalBtn)),
-    adminRunFetcherUncappedBtnEl: doc.querySelector(ui(t.runFetcherUncappedBtn)),
-    adminRunFetcherForceBtnEl: doc.querySelector(ui(t.runFetcherForceBtn)),
-    adminRefreshReportBtnEl: doc.querySelector(ui(t.refreshReportBtn)),
-    adminClearLogBtnEl: doc.querySelector(ui(t.clearLogBtn)),
-    adminClearDiscoveryLogBtnEl: doc.querySelector(ui(t.clearDiscoveryLogBtn)),
-    adminRetryFailedBtnEl: doc.querySelector(ui(t.retryFailedBtn)),
-    adminCopyFailuresBtnEl: doc.querySelector(ui(t.copyFailuresBtn)),
-    adminTotalsEl: doc.querySelector(ui(t.totals)),
-    adminUsersListEl: doc.querySelector(ui(t.usersList)),
-    adminJobsBtnEl: doc.querySelector(ui(t.jobsPageBtn)),
-    adminSavedBtnEl: doc.querySelector(ui(t.savedPageBtn)),
-    adminFetcherLogEl: doc.querySelector(ui(t.fetcherLog)),
-    adminFetcherProgressEl: doc.querySelector(ui(t.fetcherProgress)),
-    adminFetcherProgressBarEl: doc.querySelector(ui(t.fetcherProgressBar)),
-    adminFetcherProgressLabelEl: doc.querySelector(ui(t.fetcherProgressLabel)),
-    adminRunDiscoveryBtnEl: doc.querySelector(ui(t.runDiscoveryBtn)),
-    adminRunDiscoveryUncappedBtnEl: doc.querySelector(ui(t.runDiscoveryUncappedBtn)),
-    adminLoadDiscoveryBtnEl: doc.querySelector(ui(t.loadDiscoveryBtn)),
-    adminDiscoveryAutoApproveToggleEl: doc.querySelector(ui(t.discoveryAutoApproveToggle)),
-    adminApproveSourcesBtnEl: doc.querySelector(ui(t.approveSourcesBtn)),
-    adminRejectSourcesBtnEl: doc.querySelector(ui(t.rejectSourcesBtn)),
-    adminDeleteSourcesBtnEl: doc.querySelector(ui(t.deleteSourcesBtn)),
-    adminDiscoverySummaryEl: doc.querySelector(ui(t.discoverySummary)),
-    adminManualSourceUrlEl: doc.querySelector(ui(t.manualSourceUrl)),
-    adminAddManualSourceBtnEl: doc.querySelector(ui(t.addManualSourceBtn)),
-    adminManualSourceFeedbackEl: doc.querySelector(ui(t.manualSourceFeedback)),
-    adminPendingSourcesEl: doc.querySelector(ui(t.pendingSources)),
-    adminPendingSourcesSelectAllEl: doc.querySelector(ui(t.pendingSourcesSelectAll)),
-    adminActiveSourcesEl: doc.querySelector(ui(t.activeSources)),
-    adminActiveSourcesSelectAllEl: doc.querySelector(ui(t.activeSourcesSelectAll)),
-    adminRejectedSourcesEl: doc.querySelector(ui(t.rejectedSources)),
-    adminRejectedSourcesSelectAllEl: doc.querySelector(ui(t.rejectedSourcesSelectAll)),
-    adminRestoreRejectedBtnEl: doc.querySelector(ui(t.restoreRejectedBtn)),
-    adminDemoteActiveBtnEl: doc.querySelector(ui(t.demoteActiveBtn)),
-    adminDiscoveryLogEl: doc.querySelector(ui(t.discoveryLog)),
-    adminDiscoveryProgressEl: doc.querySelector(ui(t.discoveryProgress)),
-    adminDiscoveryProgressBarEl: doc.querySelector(ui(t.discoveryProgressBar)),
-    adminDiscoveryProgressLabelEl: doc.querySelector(ui(t.discoveryProgressLabel)),
-    adminDiscoveryLogDetailsEl: doc.querySelector(ui(t.discoveryLogDetails)),
-    adminBridgeStatusBadgeEl: doc.querySelector(ui(t.bridgeStatusBadge)),
-    adminShowZeroJobsToggleEl: doc.querySelector(ui(t.showZeroJobsToggle)),
-    adminRefreshOpsBtnEl: doc.querySelector(ui(t.refreshOpsBtn)),
-    adminSyncPullBtnEl: doc.querySelector(ui(t.syncPullBtn)),
-    adminSyncPushBtnEl: doc.querySelector(ui(t.syncPushBtn)),
-    adminSyncTestBtnEl: doc.querySelector(ui(t.syncTestBtn)),
-    adminSyncStatusEl: doc.querySelector(ui(t.syncStatus)),
-    adminSyncEnabledEl: doc.querySelector(ui(t.syncEnabled)),
-    adminSyncConfigHintEl: doc.querySelector(ui(t.syncConfigHint)),
-    adminOpsAlertsEl: doc.querySelector(ui(t.opsAlerts)),
-    adminOpsKpisEl: doc.querySelector(ui(t.opsKpis)),
-    adminOpsScheduleEl: doc.querySelector(ui(t.opsSchedule)),
-    adminOpsTabBtnEls: Array.from(doc.querySelectorAll(ui(t.opsTabBtn))),
-    adminOpsTabBadgeEls: Array.from(doc.querySelectorAll(ui(t.opsTabBadge))),
-    adminOpsTabOverviewEl: doc.querySelector(ui(t.opsTabOverview)),
-    adminOpsTabDiscoveryEl: doc.querySelector(ui(t.opsTabDiscovery)),
-    adminOpsTabSourcePolicyEl: doc.querySelector(ui(t.opsTabSourcePolicy)),
-    adminOpsTabRegistryConflictsEl: doc.querySelector(ui(t.opsTabRegistryConflicts)),
-    adminOpsTabDedupEl: doc.querySelector(ui(t.opsTabDedup)),
-    adminDiscoveryReviewEl: doc.querySelector(ui(t.discoveryReview)),
-    adminSourcePolicyReviewEl: doc.querySelector(ui(t.sourcePolicyReview)),
-    adminRegistryConflictsReviewEl: doc.querySelector(ui(t.registryConflictsReview)),
-    adminOpsFetcherMetricsEl: doc.querySelector(ui(t.opsFetcherMetrics)),
-    adminOpsDedupListsEl: doc.querySelector(ui(t.opsDedupLists)),
-    adminOpsTrendsEl: doc.querySelector(ui(t.opsTrends)),
-    adminOpsHistoryEl: doc.querySelector(ui(t.opsHistory)),
-    adminFetcherProgressBadgeEl: doc.querySelector(ui(t.fetcherProgressBadge)),
-    adminDiscoveryProgressBadgeEl: doc.querySelector(ui(t.discoveryProgressBadge)),
-    adminOpsProgressBadgeEl: doc.querySelector(ui(t.opsProgressBadge)),
-    adminSourceFilterBtnEls: Array.from(doc.querySelectorAll(ui(t.sourceFilterBtn)))
-  };
+  Object.entries(ADMIN_REF_DEFINITIONS).forEach(([name, definition]) => {
+    Object.defineProperty(refs, name, {
+      enumerable: true,
+      configurable: true,
+      get() {
+        if (!cache.has(name)) {
+          cache.set(name, resolveAdminRef(doc, t, definition));
+        }
+        return cache.get(name);
+      },
+      set(value) {
+        cache.set(name, value);
+      }
+    });
+  });
 
   // Validate critical progress elements are available
   const progressElements = [
-    { name: 'adminFetcherProgressEl', el: refs.adminFetcherProgressEl },
-    { name: 'adminFetcherProgressBarEl', el: refs.adminFetcherProgressBarEl },
-    { name: 'adminFetcherProgressLabelEl', el: refs.adminFetcherProgressLabelEl },
-    { name: 'adminDiscoveryProgressEl', el: refs.adminDiscoveryProgressEl },
-    { name: 'adminDiscoveryProgressBarEl', el: refs.adminDiscoveryProgressBarEl },
-    { name: 'adminDiscoveryProgressLabelEl', el: refs.adminDiscoveryProgressLabelEl }
+    { name: "adminFetcherProgressEl", el: refs.adminFetcherProgressEl },
+    { name: "adminFetcherProgressBarEl", el: refs.adminFetcherProgressBarEl },
+    { name: "adminFetcherProgressLabelEl", el: refs.adminFetcherProgressLabelEl },
+    { name: "adminDiscoveryProgressEl", el: refs.adminDiscoveryProgressEl },
+    { name: "adminDiscoveryProgressBarEl", el: refs.adminDiscoveryProgressBarEl },
+    { name: "adminDiscoveryProgressLabelEl", el: refs.adminDiscoveryProgressLabelEl }
   ];
 
   const missingProgressElements = progressElements.filter(({ name, el }) => {

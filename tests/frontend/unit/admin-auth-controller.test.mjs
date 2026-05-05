@@ -121,7 +121,8 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.ok(calls.includes("loadDiscoveryData"));
   assert.ok(calls.includes("loadOpsHealthData"));
   assert.ok(calls.includes("loadDiscoveryConfig:true:true"));
-  assert.ok(calls.includes("scheduleOpsHealthPolling:900"));
+  assert.ok(calls.includes("loadSyncStatus:true:true"));
+  assert.equal(calls.includes("scheduleOpsHealthPolling:900"), false);
   assert.equal(refs.adminSyncStatusEl.textContent, "Loading sync status...");
   assert.equal(toasts.length, 0);
 });
