@@ -30,6 +30,7 @@ from src.jobs.common.contracts_source_policy_review_state import (
     read_source_policy_review_state_artifact,
 )
 from src.source_registry import is_hidden_from_default
+from src.shared.timing_counters import snapshot_counters
 
 logger = logging.getLogger(__name__)
 
@@ -954,6 +955,10 @@ def handle_get(
         except ValueError:
             window_runs = 20
         handler.send_json(api.compute_fetcher_metrics(window_runs=window_runs))
+        return True
+
+    if path == "/ops/perf-counters":
+        handler.send_json({"ok": True, "counters": snapshot_counters()})
         return True
 
     if path == "/ops/fetch-report":

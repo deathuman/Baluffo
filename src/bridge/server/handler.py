@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 from src.bridge.api import BridgeApi
 from src.bridge.request_utils import read_json_from_request
+from src.shared.timing_counters import normalize_counter_category, time_block
 
 
 def _is_expected_client_disconnect(exc: BaseException) -> bool:
@@ -30,6 +31,14 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
     """Create a request handler bound to the active BridgeApi instance."""
 
     class Handler(BaseHTTPRequestHandler):
+        def _request_timing_category(self, method: str, path: str = "") -> str:
+            route_path = path or ""
+            if not route_path:
+                with suppress(Exception):
+                    route_path = self._route_path()
+            route_token = normalize_counter_category(route_path)
+            return f"bridge_request_{str(method or '').strip().lower() or 'unknown'}_{route_token}"
+
         def _handle_response_write_exception(self, exc: BaseException, *, status: int) -> bool:
             if _is_expected_client_disconnect(exc):
                 self.close_connection = True
@@ -151,58 +160,64 @@ def make_handler(*, api: BridgeApi) -> type[BaseHTTPRequestHandler]:
 
         def do_GET(self) -> None:
             path = ""
-            try:
-                path = self._route_path()
-                query = self._route_query()
-                with suppress(Exception):
-                    api.bridge_log(
-                        "info", "http_get_route", rawPath=getattr(self, "path", ""), routePath=path
+            with time_block(self._request_timing_category("get")):
+                try:
+                    path = self._route_path()
+                    query = self._route_query()
+                    with suppress(Exception):
+                        api.bridge_log(
+                            "info",
+                            "http_get_route",
+                            rawPath=getattr(self, "path", ""),
+                            routePath=path,
+                        )
+
+                    from src.bridge.routes.get_routes import handle_get
+
+                    if handle_get(self, api=api, path=path, query=query):
+                        return
+                    self.send_json({"error": "Not found"}, status=404)
+                except Exception as exc:  # noqa: BLE001
+                    # Logging must never prevent the error response from being sent.
+                    with suppress(Exception):
+                        api.bridge_log("error", "http_get_handler_failed", path=path, error=str(exc))
+                    self.send_json(
+                        {
+                            "error": "Internal server error",
+                            "detail": str(exc),
+                            "traceback": traceback.format_exc(),
+                        },
+                        status=500,
                     )
-
-                from src.bridge.routes.get_routes import handle_get
-
-                if handle_get(self, api=api, path=path, query=query):
-                    return
-                self.send_json({"error": "Not found"}, status=404)
-            except Exception as exc:  # noqa: BLE001
-                # Logging must never prevent the error response from being sent.
-                with suppress(Exception):
-                    api.bridge_log("error", "http_get_handler_failed", path=path, error=str(exc))
-                self.send_json(
-                    {
-                        "error": "Internal server error",
-                        "detail": str(exc),
-                        "traceback": traceback.format_exc(),
-                    },
-                    status=500,
-                )
 
         def do_POST(self) -> None:
-            path = self._route_path()
-            payload = read_json_from_request(self)
-            from src.bridge.routes.post_routes import handle_post
+            path = ""
+            with time_block(self._request_timing_category("post")):
+                path = self._route_path()
+                payload = read_json_from_request(self)
+                from src.bridge.routes.post_routes import handle_post
 
-            try:
-                if handle_post(self, api=api, path=path, payload=payload):
-                    return
-                self.send_json({"error": "Not found"}, status=404)
-            except BaseException as exc:  # noqa: BLE001
-                # Logging must never prevent the error response from being sent.
-                with suppress(Exception):
-                    api.bridge_log(
-                        "error",
-                        "http_post_handler_failed",
-                        path=path,
-                        error=str(exc),
-                        detail=traceback.format_exc(),
+                try:
+                    if handle_post(self, api=api, path=path, payload=payload):
+                        return
+                    self.send_json({"error": "Not found"}, status=404)
+                except BaseException as exc:  # noqa: BLE001
+                    # Logging must never prevent the error response from being sent.
+                    with suppress(Exception):
+                        api.bridge_log(
+                            "error",
+                            "http_post_handler_failed",
+                            path=path,
+                            error=str(exc),
+                            detail=traceback.format_exc(),
+                        )
+                    self.send_json(
+                        {
+                            "error": "Internal server error",
+                            "detail": str(exc),
+                            "traceback": traceback.format_exc(),
+                        },
+                        status=500,
                     )
-                self.send_json(
-                    {
-                        "error": "Internal server error",
-                        "detail": str(exc),
-                        "traceback": traceback.format_exc(),
-                    },
-                    status=500,
-                )
 
     return Handler

@@ -393,6 +393,29 @@ def test_ops_fetcher_metrics_custom_window(tmp_path: Path) -> None:
     assert result is True
 
 
+def test_ops_perf_counters_route_returns_snapshot(tmp_path: Path) -> None:
+    """Test /ops/perf-counters endpoint."""
+    from src.shared.timing_counters import clear_counters, record_duration
+
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    clear_counters()
+    record_duration("bridge_request_get_ops_health", 12)
+
+    try:
+        handler = FakeHandler()
+        result = handle_get(handler, api=api, path="/ops/perf-counters", query={})
+
+        assert result is True
+        assert handler.sent[-1]["status"] == 200
+        assert handler.sent[-1]["payload"]["ok"] is True
+        assert handler.sent[-1]["payload"]["counters"]["bridge_request_get_ops_health"][
+            "count"
+        ] == 1
+    finally:
+        clear_counters()
+
+
 def test_ops_fetch_report(tmp_path: Path) -> None:
     """Test /ops/fetch-report endpoint."""
     store = FakeDesktopLocalDataStore()
