@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import {
+  createDeferredRenderScheduler,
   createElement,
 } from "./helpers/admin-controller-test-helpers.mjs";
 
@@ -41,6 +42,7 @@ test("admin ops tabs switch overview discovery source-policy and dedup panels lo
     adminOpsTabSourcePolicyEl: createElement(),
     adminOpsTabDedupEl: createElement()
   };
+  const renderScheduler = createDeferredRenderScheduler();
 
   const controller = createAdminOpsController({
     state,
@@ -72,7 +74,8 @@ test("admin ops tabs switch overview discovery source-policy and dedup panels lo
     escapeHtml: value => String(value || ""),
     onBridgeStatusChange() {},
     bridgeStatusPollIntervalMs: 1000,
-    idlePollIntervalMs: 1000
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
   });
 
   assert.equal(overviewBtn.attributes["aria-selected"], "true");

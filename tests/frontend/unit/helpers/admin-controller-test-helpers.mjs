@@ -117,6 +117,28 @@ export function stubDateNow(nowValue) {
   };
 }
 
+export function createDeferredRenderScheduler() {
+  const queue = [];
+  return {
+    schedule(callback) {
+      const entry = { callback, cancelled: false };
+      queue.push(entry);
+      return () => {
+        entry.cancelled = true;
+      };
+    },
+    flush() {
+      while (queue.length) {
+        const entry = queue.shift();
+        if (!entry.cancelled) entry.callback();
+      }
+    },
+    get pendingCount() {
+      return queue.filter(entry => !entry.cancelled).length;
+    }
+  };
+}
+
 export function createRegistryControllerFixture({
   state: stateOverrides = {},
   refs: refOverrides = {},
@@ -155,6 +177,7 @@ export function createRegistryControllerFixture({
   const bridgePosts = [];
   const busyTransitions = [];
   const dispatched = [];
+  const renderScheduler = createDeferredRenderScheduler();
   const options = {
     state,
     refs,
@@ -197,6 +220,7 @@ export function createRegistryControllerFixture({
       toasts.push({ message, level });
     },
     getErrorMessage: err => String(err?.message || err || "unknown"),
+    renderScheduler: renderScheduler.schedule,
     ...optionOverrides
   };
   return {
@@ -208,6 +232,7 @@ export function createRegistryControllerFixture({
     bridgePosts,
     busyTransitions,
     dispatched,
+    renderScheduler,
     options
   };
 }

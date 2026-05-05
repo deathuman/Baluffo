@@ -3,10 +3,27 @@ import assert from "node:assert/strict";
 import { createAdminRegistryController } from "../../../frontend/admin/app/registry.js";
 import {
   FakeInputElement,
+  createDeferredRenderScheduler,
   createElement,
   createRegistryControllerFixture,
   withDom
 } from "./helpers/admin-controller-test-helpers.mjs";
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(count = 5) {
+  for (let index = 0; index < count; index += 1) {
+    await Promise.resolve();
+  }
+}
 
 test("admin registry controller loads filtered discovery state and dispatches refresh", async () => {
   const state = {
@@ -26,6 +43,7 @@ test("admin registry controller loads filtered discovery state and dispatches re
   const dispatched = [];
   const logs = [];
   const busyTransitions = [];
+  const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminRegistryController({
     state,
     refs,
@@ -108,10 +126,12 @@ test("admin registry controller loads filtered discovery state and dispatches re
       state.adminBusyState[key] = value;
     },
     showToast() {},
-    getErrorMessage: err => String(err?.message || err || "unknown")
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    renderScheduler: renderScheduler.schedule
   });
 
   await controller.loadDiscoveryData();
+  renderScheduler.flush();
 
   assert.match(refs.adminDiscoverySummaryEl.textContent, /Found 4 \| Probed 3 \| Review queue 2/);
   assert.match(refs.adminDiscoverySummaryEl.textContent, /Deferred review 1/);
@@ -156,11 +176,59 @@ test("admin registry controller explains hidden zero-job pending rows", async ()
   const controller = createAdminRegistryController(fixture.options);
 
   await controller.loadDiscoveryData();
+  fixture.renderScheduler.flush();
 
   assert.match(
     fixture.refs.adminPendingSourcesEl.innerHTML,
     /2 pending sources have 0 discovery jobs and are hidden/
   );
+});
+
+test("admin registry controller progressively renders registry buckets as they resolve", async () => {
+  const report = createDeferred();
+  const candidates = createDeferred();
+  const pending = createDeferred();
+  const active = createDeferred();
+  const rejected = createDeferred();
+  const fixture = createRegistryControllerFixture({
+    options: {
+      getBridge: path => {
+        if (path === "/discovery/report") return report.promise;
+        if (path === "/discovery/candidates") return candidates.promise;
+        if (String(path).startsWith("/registry/pending")) return pending.promise;
+        if (path === "/registry/active") return active.promise;
+        if (path === "/registry/rejected") return rejected.promise;
+        throw new Error(`unexpected path ${path}`);
+      },
+      getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
+      renderSourcesTableHtml: rows => rows.map(row => row.name).join("|")
+    }
+  });
+  const controller = createAdminRegistryController(fixture.options);
+
+  const loadPromise = controller.loadDiscoveryData();
+
+  assert.match(fixture.refs.adminPendingSourcesEl.innerHTML, /Loading pending sources/);
+  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Loading active sources/);
+  assert.match(fixture.refs.adminRejectedSourcesEl.innerHTML, /Loading rejected sources/);
+
+  report.resolve({ summary: {} });
+  candidates.resolve({ candidates: [] });
+  pending.resolve({ summary: { pendingCount: 1 }, sources: [{ id: "pending_ready", name: "Pending Ready", jobsFound: 1 }] });
+  await flushMicrotasks();
+  fixture.renderScheduler.flush();
+
+  assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "Pending Ready");
+  assert.match(fixture.refs.adminActiveSourcesEl.innerHTML, /Loading active sources/);
+  assert.match(fixture.refs.adminRejectedSourcesEl.innerHTML, /Loading rejected sources/);
+
+  active.resolve({ summary: { activeCount: 1 }, sources: [{ id: "active_ready", name: "Active Ready", jobsFound: 1 }] });
+  rejected.resolve({ summary: { rejectedCount: 1 }, sources: [{ id: "rejected_ready", name: "Rejected Ready", jobsFound: 1 }] });
+  await loadPromise;
+  fixture.renderScheduler.flush();
+
+  assert.equal(fixture.refs.adminActiveSourcesEl.innerHTML, "Active Ready");
+  assert.equal(fixture.refs.adminRejectedSourcesEl.innerHTML, "Rejected Ready");
 });
 
 test("admin registry controller only logs discovery refreshes when the registry snapshot changes", async () => {
@@ -262,6 +330,7 @@ test("admin registry controller keeps registry signature stable across source ro
 
   await controller.loadDiscoveryData();
   await controller.loadDiscoveryData();
+  fixture.renderScheduler.flush();
 
   assert.equal(fixture.logs.filter(line => /source discovery data loaded/i.test(line)).length, 1);
   assert.equal(fixture.logs.filter(line => /loading source discovery report and registries/i.test(line)).length, 1);
@@ -295,6 +364,7 @@ test("admin registry controller changes registry signature when a tracked source
 
   await controller.loadDiscoveryData();
   await controller.loadDiscoveryData();
+  fixture.renderScheduler.flush();
 
   assert.equal(fixture.logs.filter(line => /source discovery data loaded/i.test(line)).length, 2);
   assert.equal(fixture.logs.filter(line => /loading source discovery report and registries/i.test(line)).length, 2);
@@ -317,11 +387,45 @@ test("admin registry controller keeps registry signature stable for empty and ma
 
   await controller.loadDiscoveryData();
   await controller.loadDiscoveryData();
+  fixture.renderScheduler.flush();
 
   assert.equal(fixture.logs.filter(line => /source discovery data loaded/i.test(line)).length, 1);
   assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "");
   assert.equal(fixture.refs.adminActiveSourcesEl.innerHTML, "");
   assert.equal(fixture.refs.adminRejectedSourcesEl.innerHTML, "");
+});
+
+test("admin registry controller skips stale deferred source table renders after a newer refresh", async () => {
+  const pendingRowsByCall = [
+    [{ id: "old", name: "Old Pending", jobsFound: 1 }],
+    [{ id: "new", name: "New Pending", jobsFound: 1 }]
+  ];
+  let pendingCallIndex = 0;
+  const fixture = createRegistryControllerFixture({
+    options: {
+      getBridge: async path => {
+        if (path === "/discovery/report") return { summary: {} };
+        if (path === "/discovery/candidates") return { candidates: [] };
+        if (String(path).startsWith("/registry/pending")) {
+          const rows = pendingRowsByCall[Math.min(pendingCallIndex, pendingRowsByCall.length - 1)];
+          pendingCallIndex += 1;
+          return { sources: rows, summary: { pendingCount: rows.length } };
+        }
+        if (path === "/registry/active") return { sources: [], summary: { activeCount: 0 } };
+        if (path === "/registry/rejected") return { sources: [], summary: { rejectedCount: 0 } };
+        throw new Error(`unexpected path ${path}`);
+      },
+      getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
+      renderSourcesTableHtml: rows => rows.map(row => row.name).join("|")
+    }
+  });
+  const controller = createAdminRegistryController(fixture.options);
+
+  await controller.loadDiscoveryData();
+  await controller.loadDiscoveryData();
+  fixture.renderScheduler.flush();
+
+  assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "New Pending");
 });
 
 test("admin registry controller syncs source tables once per completed task signature", async () => {
@@ -362,6 +466,7 @@ test("admin registry controller syncs source tables once per completed task sign
     completionSignature: "fetch_run_1|2026-03-08T10:10:00.000Z",
     fetchReport: { sources: [{ name: "Active", status: "ok" }] }
   });
+  fixture.renderScheduler.flush();
 
   assert.equal(fetchReportCalls.length, 0);
   assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "Pending");

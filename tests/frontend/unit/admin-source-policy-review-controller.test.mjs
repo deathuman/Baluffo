@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import {
+  createDeferredRenderScheduler,
   createElement,
   stubDateNow
 } from "./helpers/admin-controller-test-helpers.mjs";
@@ -78,6 +79,7 @@ function createOpsReviewQueueFixture({
     }
   ];
   const dateStub = stubDateNow(nowMs);
+  const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({
     state,
     refs,
@@ -134,7 +136,8 @@ function createOpsReviewQueueFixture({
     escapeHtml: value => String(value || ""),
     onBridgeStatusChange() {},
     bridgeStatusPollIntervalMs: 1000,
-    idlePollIntervalMs: 1000
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
   });
   return {
     controller,
@@ -145,6 +148,7 @@ function createOpsReviewQueueFixture({
     reviewCandidates,
     linkedCandidates,
     toasts,
+    flushRenders: () => renderScheduler.flush(),
     restore() {
       controller.stopOpsHealthPolling();
       dateStub.restore();
@@ -156,6 +160,7 @@ test("admin ops controller loads source policy recommendations for the review qu
   const fixture = createOpsReviewQueueFixture();
   try {
     await fixture.controller.loadOpsHealthData();
+    fixture.flushRenders();
 
     assert.ok(fixture.calls.includes("/source-policy/recommendations"));
     assert.equal(fixture.rendered.length, 1);
@@ -169,6 +174,7 @@ test("admin ops controller posts source policy review action payloads", async ()
   const fixture = createOpsReviewQueueFixture();
   try {
     await fixture.controller.loadOpsHealthData();
+    fixture.flushRenders();
     await fixture.rendered[0].handlers.onSourcePolicyAction(fixture.rows[0], "clear_override");
 
     assert.equal(fixture.posts.length, 1);
@@ -192,6 +198,7 @@ test("admin ops controller posts snooze with a future snoozedUntil", async () =>
   const fixture = createOpsReviewQueueFixture({ nowMs });
   try {
     await fixture.controller.loadOpsHealthData();
+    fixture.flushRenders();
     await fixture.rendered[0].handlers.onSourcePolicyAction(fixture.rows[0], "snooze");
 
     assert.equal(fixture.posts.length, 1);
@@ -208,6 +215,7 @@ test("admin ops controller posts migration link apply payload and reloads", asyn
   const fixture = createOpsReviewQueueFixture();
   try {
     await fixture.controller.loadOpsHealthData();
+    fixture.flushRenders();
     await fixture.rendered[0].handlers.onMigrationLinkAction(
       fixture.reviewCandidates[0],
       "apply_migration_identity_link"
@@ -232,6 +240,7 @@ test("admin ops controller posts migration link clear payload", async () => {
   const fixture = createOpsReviewQueueFixture();
   try {
     await fixture.controller.loadOpsHealthData();
+    fixture.flushRenders();
     await fixture.rendered[0].handlers.onMigrationLinkAction(
       fixture.reviewCandidates[0],
       "clear_migration_identity_link"
@@ -255,6 +264,7 @@ test("admin ops controller posts linked migration identity clear payload", async
   const fixture = createOpsReviewQueueFixture();
   try {
     await fixture.controller.loadOpsHealthData();
+    fixture.flushRenders();
     await fixture.rendered[0].handlers.onMigrationLinkAction(
       fixture.linkedCandidates[0],
       "clear_migration_identity_link"
@@ -278,6 +288,7 @@ test("admin ops controller surfaces migration link backend errors", async () => 
   const fixture = createOpsReviewQueueFixture({ failMigrationPost: true });
   try {
     await fixture.controller.loadOpsHealthData();
+    fixture.flushRenders();
     await fixture.rendered[0].handlers.onMigrationLinkAction(
       fixture.reviewCandidates[0],
       "apply_migration_identity_link"

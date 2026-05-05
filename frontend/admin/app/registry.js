@@ -1,6 +1,7 @@
 import { createRegistryLoadController } from "./registry/load.js";
 import { createRegistryMutationController } from "./registry/mutations.js";
 import { createRegistryUi } from "./registry/ui.js";
+import { scheduleAdminRender } from "./render-scheduler.js";
 
 export function createAdminRegistryController({
   state,
@@ -25,7 +26,8 @@ export function createAdminRegistryController({
   loadOpsHealthData,
   setBusyFlag,
   showToast,
-  getErrorMessage
+  getErrorMessage,
+  renderScheduler = scheduleAdminRender
 }) {
   const ui = createRegistryUi({
     refs,
@@ -53,7 +55,8 @@ export function createAdminRegistryController({
     appendDiscoveryLog,
     getErrorMessage,
     setBusyFlag,
-    renderSourcesTable: ui.renderSourcesTable
+    renderSourcesTable: ui.renderSourcesTable,
+    renderScheduler
   });
 
   const mutationController = createRegistryMutationController({

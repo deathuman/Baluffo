@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import {
+  createDeferredRenderScheduler,
   createElement,
 } from "./helpers/admin-controller-test-helpers.mjs";
 
@@ -28,6 +29,7 @@ test("admin ops controller renders health metrics and dedup lists separately", a
     adminOpsTrendsEl: createElement()
   };
   const calls = [];
+  const renderScheduler = createDeferredRenderScheduler();
   const fetcherMetricsPayload = {
     latestRun: {
       dedupEvidence: {
@@ -80,10 +82,12 @@ test("admin ops controller renders health metrics and dedup lists separately", a
     escapeHtml: value => String(value || ""),
     onBridgeStatusChange() {},
     bridgeStatusPollIntervalMs: 1000,
-    idlePollIntervalMs: 1000
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
   });
 
   await controller.loadOpsHealthData();
+  renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
   assert.equal(calls.filter(call => call.kind === "health").length, 1);

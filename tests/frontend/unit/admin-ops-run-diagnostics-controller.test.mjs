@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
-import { createElement } from "./helpers/admin-controller-test-helpers.mjs";
+import {
+  createDeferredRenderScheduler,
+  createElement
+} from "./helpers/admin-controller-test-helpers.mjs";
 
 test("admin ops controller copies run diagnostics through renderer callback", async () => {
   const state = {
@@ -35,6 +38,7 @@ test("admin ops controller copies run diagnostics through renderer callback", as
     value: { clipboard: { writeText: async text => copied.push(text) } }
   });
   let copyPromise = Promise.resolve();
+  const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({
     state,
     refs,
@@ -83,11 +87,13 @@ test("admin ops controller copies run diagnostics through renderer callback", as
     onBridgeStatusChange() {},
     loadDiscoveryData: async () => {},
     bridgeStatusPollIntervalMs: 1000,
-    idlePollIntervalMs: 1000
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
   });
 
   try {
     await controller.loadOpsHealthData();
+    renderScheduler.flush();
     await copyPromise;
     controller.stopOpsHealthPolling();
   } finally {

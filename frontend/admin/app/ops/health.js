@@ -162,10 +162,12 @@ export function createOpsHealthController({
   idlePollIntervalMs,
   taskStateController,
   getBridgeStatus,
-  awaitBridgeReady = async () => true
+  awaitBridgeReady = async () => true,
+  renderScheduler
 }) {
   let lastDiscoveryRegistryRefreshAtMs = 0;
   let initialBridgeReadyResolved = false;
+  let opsRenderToken = 0;
 
   function getOpsTabPanels() {
     return {
@@ -444,6 +446,7 @@ export function createOpsHealthController({
       if (options?.fromPoll) scheduleOpsHealthPolling(idlePollIntervalMs);
       return;
     }
+    const renderToken = ++opsRenderToken;
     if (!initialBridgeReadyResolved) {
       initialBridgeReadyResolved = true;
       if (!(await awaitBridgeReady())) {
@@ -571,21 +574,6 @@ export function createOpsHealthController({
           .catch(() => {});
       }
 
-      renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {
-        onAck: async alertId => {
-          if (!alertId) return;
-          try {
-            await postBridge("/ops/alerts/ack", { id: alertId });
-            await loadOpsHealthData();
-          } catch (err) {
-            showToast(`Could not dismiss alert: ${getErrorMessage(err)}`, "error");
-          }
-        }
-      });
-      renderAdminOpsKpisImpl(refs.adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
-      renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
-      renderSourcePolicyReviewQueue(sourcePolicyRecommendations);
-      renderRegistryConflictsQueue(registryConflictsPayload);
       const fetcherMetricsPayload = {
         ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
         latestRun: {
@@ -606,30 +594,55 @@ export function createOpsHealthController({
               )
         }
       };
-      renderAdminOpsFetcherMetricsImpl(
-        refs.adminOpsFetcherMetricsEl,
-        fetcherMetricsPayload,
-        deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
-        {
-          onDedupReviewAction: handleDedupReviewAction,
-          onCopySectionDiagnostics: handleCopySectionDiagnostics,
-          runModel
+
+      renderAdminOpsAlertsImpl(refs.adminOpsAlertsEl, health?.alerts || [], {
+        onAck: async alertId => {
+          if (!alertId) return;
+          try {
+            await postBridge("/ops/alerts/ack", { id: alertId });
+            await loadOpsHealthData();
+          } catch (err) {
+            showToast(`Could not dismiss alert: ${getErrorMessage(err)}`, "error");
+          }
         }
-      );
-      renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, fetcherMetricsPayload, {
-        onDedupReviewAction: handleDedupReviewAction
       });
-      renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
-        onCopyRunDiagnostics: handleCopyRunDiagnostics,
-        waitingForTaskState: Boolean(state.waitingForTaskState)
-      });
-      renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
+      renderAdminOpsKpisImpl(refs.adminOpsKpisEl, health?.kpis || {}, String(health?.status || "healthy"));
+      renderAdminOpsScheduleImpl(refs.adminOpsScheduleEl, health?.schedule || {}, state.latestOpsHealthCache);
       renderOpsTabBadges(refs, {
         health,
         discoveryReport: state.latestDiscoveryReportCache || {},
         sourcePolicyRecommendations,
         registryConflictsPayload,
         fetcherMetricsPayload
+      });
+      const scheduleRender = typeof renderScheduler === "function"
+        ? renderScheduler
+        : callback => {
+          callback();
+          return () => {};
+        };
+      scheduleRender(() => {
+        if (renderToken !== opsRenderToken) return;
+        renderSourcePolicyReviewQueue(sourcePolicyRecommendations);
+        renderRegistryConflictsQueue(registryConflictsPayload);
+        renderAdminOpsFetcherMetricsImpl(
+          refs.adminOpsFetcherMetricsEl,
+          fetcherMetricsPayload,
+          deriveFetcherFailureSummary(state.latestFetcherReportCache || {}),
+          {
+            onDedupReviewAction: handleDedupReviewAction,
+            onCopySectionDiagnostics: handleCopySectionDiagnostics,
+            runModel
+          }
+        );
+        renderAdminOpsDedupListsImpl(refs.adminOpsDedupListsEl, fetcherMetricsPayload, {
+          onDedupReviewAction: handleDedupReviewAction
+        });
+        renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
+          onCopyRunDiagnostics: handleCopyRunDiagnostics,
+          waitingForTaskState: Boolean(state.waitingForTaskState)
+        });
+        renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
       });
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
       scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0));

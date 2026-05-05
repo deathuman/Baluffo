@@ -2,7 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
-import { createElement } from "./helpers/admin-controller-test-helpers.mjs";
+import {
+  createDeferredRenderScheduler,
+  createElement
+} from "./helpers/admin-controller-test-helpers.mjs";
 
 function createTabButton(key) {
   const listeners = {};
@@ -66,6 +69,7 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
     adminDiscoveryReviewEl: createElement(),
     adminOpsDedupListsEl: createElement()
   };
+  const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({
     state,
     refs,
@@ -175,10 +179,12 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
     onBridgeStatusChange() {},
     loadDiscoveryData: async () => {},
     bridgeStatusPollIntervalMs: 1000,
-    idlePollIntervalMs: 1000
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
   });
 
   await controller.loadOpsHealthData();
+  renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
   assert.equal(overviewBadge.textContent, "1");

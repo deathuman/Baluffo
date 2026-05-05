@@ -1,6 +1,7 @@
 import { createOpsBridgeStatusController } from "./ops/bridge-status.js";
 import { createOpsHealthController } from "./ops/health.js?v=12";
 import { createOpsTaskStateController } from "./ops/task-state.js";
+import { scheduleAdminRender } from "./render-scheduler.js";
 
 export { formatBytes } from "./ops/format.js";
 
@@ -34,7 +35,8 @@ export function createAdminOpsController({
   loadLatestDiscoveryReport,
   bridgeStatusPollIntervalMs,
   idlePollIntervalMs,
-  awaitBridgeReady
+  awaitBridgeReady,
+  renderScheduler = scheduleAdminRender
 }) {
   const bridgeStatusController = createOpsBridgeStatusController({
     state,
@@ -79,7 +81,8 @@ export function createAdminOpsController({
     idlePollIntervalMs,
     taskStateController,
     getBridgeStatus: bridgeStatusController.getBridgeStatus,
-    awaitBridgeReady
+    awaitBridgeReady,
+    renderScheduler
   });
 
   return {

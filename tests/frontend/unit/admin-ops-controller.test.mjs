@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import {
+  createDeferredRenderScheduler,
   createElement,
 } from "./helpers/admin-controller-test-helpers.mjs";
 
@@ -50,6 +51,7 @@ test("admin ops controller preserves optimistic rows while history lags", async 
     };
     const runModels = [];
     let optimisticApplied = 0;
+    const renderScheduler = createDeferredRenderScheduler();
     const controller = createAdminOpsController({
       state,
       refs,
@@ -91,10 +93,12 @@ test("admin ops controller preserves optimistic rows while history lags", async 
       escapeHtml: value => String(value || ""),
       onBridgeStatusChange() {},
       bridgeStatusPollIntervalMs: 1000,
-      idlePollIntervalMs: 1000
+      idlePollIntervalMs: 1000,
+      renderScheduler: renderScheduler.schedule
     });
 
     await controller.loadOpsHealthData();
+    renderScheduler.flush();
     controller.stopOpsHealthPolling();
 
     assert.equal(optimisticApplied, 1, label);
@@ -151,6 +155,7 @@ test("admin ops controller renders bridge task-state without reattaching from hi
     };
     const runModels = [];
     const calls = [];
+    const renderScheduler = createDeferredRenderScheduler();
     let controller;
     try {
       controller = createAdminOpsController({
@@ -205,10 +210,12 @@ test("admin ops controller renders bridge task-state without reattaching from hi
           calls.push("loadDiscoveryData");
         },
         bridgeStatusPollIntervalMs: 1000,
-        idlePollIntervalMs: 1000
+        idlePollIntervalMs: 1000,
+        renderScheduler: renderScheduler.schedule
       });
 
       await controller.loadOpsHealthData();
+      renderScheduler.flush();
 
       assert.equal(state.adminBusyState[busyKey], true, label);
       assert.equal(state.adminBusyState[watcherKey], false, label);
@@ -248,6 +255,7 @@ test("admin ops controller quietly auto-attaches active fetch and discovery task
     adminOpsTrendsEl: createElement()
   };
   const calls = [];
+  const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({
     state,
     refs,
@@ -320,10 +328,12 @@ test("admin ops controller quietly auto-attaches active fetch and discovery task
       return {};
     },
     bridgeStatusPollIntervalMs: 1000,
-    idlePollIntervalMs: 1000
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
   });
 
   await controller.loadOpsHealthData();
+  renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
   assert.ok(calls.includes("fetch:fetch_live_attach_1:false"));
@@ -373,6 +383,7 @@ test("admin ops controller retains current live rows across one empty task-state
     { tasks: [] }
   ];
   const renderedCurrentCounts = [];
+  const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({
     state,
     refs,
@@ -412,12 +423,16 @@ test("admin ops controller retains current live rows across one empty task-state
     onBridgeStatusChange() {},
     loadDiscoveryData: async () => {},
     bridgeStatusPollIntervalMs: 1000,
-    idlePollIntervalMs: 1000
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
   });
 
   await controller.loadOpsHealthData();
+  renderScheduler.flush();
   await controller.loadOpsHealthData();
+  renderScheduler.flush();
   await controller.loadOpsHealthData();
+  renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
   assert.deepEqual(renderedCurrentCounts, [1, 1, 0]);
@@ -450,6 +465,7 @@ test("admin ops controller keeps the last live rows rendered on transient ops po
   };
   let callCount = 0;
   const renderedCurrentCounts = [];
+  const renderScheduler = createDeferredRenderScheduler();
   const controller = createAdminOpsController({
     state,
     refs,
@@ -506,13 +522,95 @@ test("admin ops controller keeps the last live rows rendered on transient ops po
     onBridgeStatusChange() {},
     loadDiscoveryData: async () => {},
     bridgeStatusPollIntervalMs: 1000,
-    idlePollIntervalMs: 1000
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
   });
 
   await controller.loadOpsHealthData();
+  renderScheduler.flush();
   await controller.loadOpsHealthData();
+  renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
   assert.deepEqual(renderedCurrentCounts, [1, 1]);
   assert.equal(state.adminBusyState.liveFetchRunning, true);
+});
+
+test("admin ops controller skips stale deferred detail renders after a newer refresh", async () => {
+  const state = {
+    latestOpsHealthCache: null,
+    latestOpsHistoryPayload: null,
+    latestTaskStatePayload: null,
+    adminBusyState: {
+      opsLoad: false,
+      liveFetchRunning: false,
+      liveDiscoveryRunning: false,
+      liveSyncRunning: false,
+      livePipelineRunning: false
+    }
+  };
+  const refs = {
+    adminSyncStatusEl: createElement(),
+    adminSyncConfigHintEl: createElement(),
+    adminOpsAlertsEl: createElement(),
+    adminOpsKpisEl: createElement(),
+    adminOpsScheduleEl: createElement(),
+    adminOpsFetcherMetricsEl: createElement(),
+    adminOpsHistoryEl: createElement(),
+    adminOpsTrendsEl: createElement()
+  };
+  const histories = [
+    { runs: [{ id: "old_run", taskType: "fetch" }] },
+    { runs: [{ id: "new_run", taskType: "fetch" }] }
+  ];
+  const renderedRunIds = [];
+  const renderScheduler = createDeferredRenderScheduler();
+  const controller = createAdminOpsController({
+    state,
+    refs,
+    getBridge: async path => {
+      if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/history?limit=80") return histories.shift() || { runs: [] };
+      if (path === "/ops/task-state") return { tasks: [] };
+      if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: ({ historyRuns }) => ({
+      currentRows: [],
+      visibleCompletedRows: historyRuns.map(row => ({ runId: row.id })),
+      olderCompletedRows: [],
+      hasLiveRuns: false,
+      liveTypes: []
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory(_el, runModel) {
+      renderedRunIds.push(runModel.visibleCompletedRows[0]?.runId || "");
+    },
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange() {},
+    loadDiscoveryData: async () => {},
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000,
+    renderScheduler: renderScheduler.schedule
+  });
+
+  await controller.loadOpsHealthData();
+  await controller.loadOpsHealthData();
+  renderScheduler.flush();
+  controller.stopOpsHealthPolling();
+
+  assert.deepEqual(renderedRunIds, ["new_run"]);
 });
