@@ -295,7 +295,7 @@ function severityForStatus(status) {
   return "muted";
 }
 
-function fallbackProgressLabel(taskType, summary) {
+function fallbackProgressLabel(taskType, summary, progress) {
   if (taskType === "fetch") {
     return `output ${compactNumber(summary?.outputCount)} | failed ${compactNumber(summary?.failedSources)}`;
   }
@@ -307,20 +307,33 @@ function fallbackProgressLabel(taskType, summary) {
     const actionLabel = action ? `${action} | ` : "";
     return `${actionLabel}active ${compactNumber(summary?.activeCount)} | pending ${compactNumber(summary?.pendingCount)} | rejected ${compactNumber(summary?.rejectedCount)}`;
   }
+  if (taskType === "pipeline") {
+    const currentStep = Math.max(0, Number(progress?.counts?.currentStep ?? summary?.currentStep ?? 0));
+    const totalSteps = Math.max(0, Number(progress?.counts?.totalSteps ?? summary?.totalSteps ?? 0));
+    const baseline = Math.max(0, Number(progress?.counts?.baselineOutputCount ?? summary?.baselineOutputCount ?? 0));
+    const final = Math.max(0, Number(progress?.counts?.finalOutputCount ?? summary?.finalOutputCount ?? 0));
+    if (currentStep > 0 || totalSteps > 0 || baseline > 0 || final > 0) {
+      const stepLabel = totalSteps > 0
+        ? `step ${compactNumber(currentStep)}/${compactNumber(totalSteps)}`
+        : `step ${compactNumber(currentStep)}`;
+      return `${stepLabel} | output ${compactNumber(final)} (baseline ${compactNumber(baseline)})`;
+    }
+  }
   return "";
 }
 
-function derivePrimaryLabel(taskType, summary) {
+function derivePrimaryLabel(taskType, summary, progress) {
   if (taskType === "fetch") return `${compactNumber(summary?.outputCount)} jobs`;
   if (taskType === "discovery") return `${compactNumber(summary?.queuedCandidateCount)} queued`;
   if (taskType === "sync") {
     const action = String(summary?.action || "").trim();
     return action ? `Sync ${action}` : "Sync";
   }
+  if (taskType === "pipeline") return "Pipeline";
   return TASK_TITLES[taskType] || "Task";
 }
 
-function deriveSecondaryLabel(taskType, summary) {
+function deriveSecondaryLabel(taskType, summary, progress) {
   if (taskType === "fetch") {
     const failed = Math.max(0, Number(summary?.failedSources || 0));
     return `${failed.toLocaleString()} failed source${failed === 1 ? "" : "s"}`;
@@ -331,6 +344,15 @@ function deriveSecondaryLabel(taskType, summary) {
   }
   if (taskType === "sync") {
     return `active ${compactNumber(summary?.activeCount)} / pending ${compactNumber(summary?.pendingCount)} / rejected ${compactNumber(summary?.rejectedCount)}`;
+  }
+  if (taskType === "pipeline") {
+    const currentStep = Math.max(0, Number(progress?.counts?.currentStep ?? summary?.currentStep ?? 0));
+    const totalSteps = Math.max(0, Number(progress?.counts?.totalSteps ?? summary?.totalSteps ?? 0));
+    if (currentStep > 0 || totalSteps > 0) {
+      return totalSteps > 0
+        ? `step ${compactNumber(currentStep)}/${compactNumber(totalSteps)}`
+        : `step ${compactNumber(currentStep)}`;
+    }
   }
   return "";
 }
@@ -378,6 +400,26 @@ export function buildTaskRunView(row, { nowMs = Date.now() } = {}) {
   const summary = getSummary(safeRow);
   const progress = normalizeTaskProgressPayload(safeRow.taskProgress);
   const status = deriveStatus(safeRow, progress, nowMs);
+  const nowValue = Number(nowMs || Date.now());
+  const heartbeatMs = Math.max(
+    parseTimeMs(safeRow?.heartbeatAt),
+    parseTimeMs(safeRow?.runtime?.heartbeatAt),
+    parseTimeMs(progress?.updatedAt)
+  );
+  const heartbeatStaleness = Boolean(safeRow?.active || safeRow?.isLive || progress?.active) && heartbeatMs > 0
+    ? Math.min(1, Math.max(0, (nowValue - heartbeatMs) / STALLED_AFTER_MS))
+    : 0;
+  const stallProximity = Boolean(heartbeatStaleness >= 0.75 && ["running", "finishing"].includes(status))
+    ? "approaching"
+    : null;
+  const progressUpdatedAt = String(progress?.updatedAt || "").trim();
+  const progressUpdatedMs = parseTimeMs(progressUpdatedAt);
+  const progressStale = Boolean(
+    progressUpdatedAt
+    && ["running", "finishing"].includes(status)
+    && progressUpdatedMs > 0
+    && (nowValue - progressUpdatedMs) > (STALLED_AFTER_MS / 2)
+  );
   const progressDetail = progress
     ? formatTaskProgressDetail(taskType, progress, summary, {
         includeCounts: status === "running" && taskType !== "discovery" ? false : true
@@ -389,19 +431,34 @@ export function buildTaskRunView(row, { nowMs = Date.now() } = {}) {
   const countsLabel = progress
     ? formatTaskProgressCounts(taskType, progress.counts, progress, summary)
     : "";
-  const progressLabel = [progressDetail, tailBadge].filter(Boolean).join(" | ") || fallbackProgressLabel(taskType, summary);
+  const progressLabel = [
+    progressDetail,
+    taskType !== "discovery" && countsLabel && !String(progressDetail || "").includes(countsLabel) ? countsLabel : "",
+    tailBadge
+  ].filter(Boolean).join(" | ") || fallbackProgressLabel(taskType, summary, progress);
   const elapsedMs = deriveElapsedMs(safeRow, nowMs);
   const durationMs = Math.max(0, Number(safeRow.durationMs || 0));
   const finishedAt = String(safeRow.finishedAt || "").trim();
   const statusLabel = status.replaceAll("_", " ");
+  const severity = stallProximity === "approaching" ? "warning" : severityForStatus(status);
   return {
     taskType,
     title: TASK_TITLES[taskType] || "Task",
     status,
     statusLabel,
-    severity: severityForStatus(status),
-    primaryLabel: derivePrimaryLabel(taskType, summary),
-    secondaryLabel: deriveSecondaryLabel(taskType, summary),
+    severity,
+    heartbeatStaleness,
+    stallProximity,
+    heartbeatStalenessLabel: stallProximity === "approaching"
+      ? `Heartbeat aging (${Math.round(heartbeatStaleness * 100)}%)`
+      : "",
+    progressUpdatedAt,
+    progressStale,
+    progressStaleLabel: progressStale
+      ? `Progress stale (last update ${formatDuration(Math.max(0, nowValue - progressUpdatedMs))} ago)`
+      : "",
+    primaryLabel: derivePrimaryLabel(taskType, summary, progress),
+    secondaryLabel: deriveSecondaryLabel(taskType, summary, progress),
     progressLabel,
     progressRatio: progress?.mode === "determinate" ? Math.max(0, Math.min(1, Number(progress?.ratio || 0))) : 0,
     progressMode: progress?.mode || "indeterminate",

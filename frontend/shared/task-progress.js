@@ -97,11 +97,24 @@ function formatSyncCounts(counts, summary) {
   return `active ${compactCount(active)} | pending ${compactCount(pending)} | rejected ${compactCount(rejected)}${changed}`;
 }
 
+function formatPipelineCounts(counts, progress) {
+  const currentStep = Math.max(0, Number(counts?.currentStep || 0));
+  const totalSteps = Math.max(0, Number(counts?.totalSteps || 0));
+  const baseline = Math.max(0, Number(counts?.baselineOutputCount || 0));
+  const final = Math.max(0, Number(counts?.finalOutputCount || 0));
+  void progress;
+  const stepLabel = totalSteps > 0
+    ? `step ${compactCount(currentStep)}/${compactCount(totalSteps)}`
+    : `step ${compactCount(currentStep)}`;
+  return `${stepLabel} | output ${compactCount(final)} (baseline ${compactCount(baseline)})`;
+}
+
 export function formatTaskProgressCounts(taskType, counts, progress, summary = {}) {
   const normalizedType = String(taskType || "").trim().toLowerCase();
   if (normalizedType === "fetch") return formatFetcherCounts(counts, progress);
   if (normalizedType === "discovery") return formatDiscoveryCounts(counts, progress);
   if (normalizedType === "sync") return formatSyncCounts(counts, summary);
+  if (normalizedType === "pipeline") return formatPipelineCounts(counts, progress);
   return "";
 }
 

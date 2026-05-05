@@ -90,6 +90,8 @@ export function createAdminFetcherReportController({
 
       const summary = report?.summary || {};
       const progress = getFetcherTaskProgress(report, { running: false });
+      const progressView = deriveFetcherProgressModel(report, { running: false });
+      const progressLabel = String(progressView?.label || "").trim();
       const counts = progress.counts && typeof progress.counts === "object" ? progress.counts : {};
       const resolvedSources = Math.max(0, Number(counts.resolvedSources ?? (Number(summary.successfulSources || 0) + Number(summary.failedSources || 0) + Number(summary.excludedSources || 0))));
       const totalSources = progress.mode === "determinate" ? Math.max(0, Number(counts.sourceCount || 0)) : 0;
@@ -98,8 +100,9 @@ export function createAdminFetcherReportController({
       const excludedSourceCount = Math.max(0, Number(counts.excludedSources ?? summary.excludedSources ?? 0));
       const okWithWarningCount = Math.max(0, Number(counts.okWithWarningSources ?? summary.okWithWarningSources ?? 0));
       const warningSuffix = okWithWarningCount > 0 ? `, ok with warnings ${okWithWarningCount}` : "";
+      const summaryLabel = `Fetcher summary: ${totalSources > 0 ? `${resolvedSources}/${totalSources} sources resolved` : `${resolvedSources} sources resolved`}, output ${outputCount.toLocaleString()}, failed ${failedSourceCount}, excluded ${excludedSourceCount}${warningSuffix}.`;
       appendFetcherLog(
-        `Fetcher summary: ${totalSources > 0 ? `${resolvedSources}/${totalSources} sources resolved` : `${resolvedSources} sources resolved`}, output ${outputCount.toLocaleString()}, failed ${failedSourceCount}, excluded ${excludedSourceCount}${warningSuffix}.`,
+        progressLabel ? `${summaryLabel} | ${progressLabel}` : summaryLabel,
         failedSourceCount > 0 || okWithWarningCount > 0 ? "warn" : "success"
       );
 
@@ -207,6 +210,7 @@ export function createAdminFetcherReportController({
     const liveState = state.fetcherLiveProgressState;
     if (!liveState) return;
     updateFetcherProgressFromReport(report, { running: true });
+    const progressLabel = String(deriveFetcherProgressModel(report, { running: true })?.label || "").trim();
     const summary = report?.summary || {};
     const progress = getFetcherTaskProgress(report, { running: true });
     const counts = progress.counts && typeof progress.counts === "object" ? progress.counts : {};
@@ -247,14 +251,16 @@ export function createAdminFetcherReportController({
       summarySignature,
       workItemSignature: buildTaskWorkItemActivitySignature(report),
       onSummaryChange: () => {
+        const summaryLabel = `Fetcher: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}, failed ${failedSources}, excluded ${excludedSources}${okWarningSuffix}${fallbackTailSuffix}.`;
         appendFetcherLog(
-          `Fetcher: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}, failed ${failedSources}, excluded ${excludedSources}${okWarningSuffix}${fallbackTailSuffix}.`,
+          progressLabel ? `${summaryLabel} | ${progressLabel}` : summaryLabel,
           failedSources > 0 || okWithWarningSources > 0 ? "warn" : "info"
         );
       },
       onHeartbeat: () => {
+        const activeLabel = `Fetcher active: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}${fallbackTailSuffix}.`;
         appendFetcherLog(
-          `Fetcher active: ${selectedSourceCount > 0 ? `${resolvedSources}/${selectedSourceCount} sources resolved` : `${resolvedSources} sources resolved`}, running ${runningSources}, queued ${queuedSources}, output ${outputCount.toLocaleString()}${fallbackTailSuffix}.`,
+          progressLabel ? `${activeLabel} | ${progressLabel}` : activeLabel,
           "muted"
         );
       }

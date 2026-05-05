@@ -46,7 +46,7 @@ test("admin ops history: stalled and orphaned current runs render read-only comp
   assert.equal((historyEl.innerHTML.match(/Check bridge and task logs/g) || []).length, 1);
   assert.equal((historyEl.innerHTML.match(/owning process exited/g) || []).length, 1);
   assert.doesNotMatch(historyEl.innerHTML, /admin-ops-run-detail/);
-  assert.doesNotMatch(historyEl.innerHTML, /No recent heartbeat/);
+  assert.match(historyEl.innerHTML, /No recent heartbeat/);
   assert.doesNotMatch(historyEl.innerHTML, /Task state has no active owner/);
   assert.doesNotMatch(historyEl.innerHTML, /<button/i);
   assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear)/i);
@@ -75,4 +75,38 @@ test("admin ops history: running current run renders compact row without remedia
   assert.doesNotMatch(historyEl.innerHTML, /Check bridge and task logs/);
   assert.doesNotMatch(historyEl.innerHTML, /owning process exited/);
   assert.doesNotMatch(historyEl.innerHTML, /<button/i);
+});
+
+test("admin ops history: waiting state renders a loading indicator and approaching rows stay distinct", () => {
+  const waitingHistory = makeEl();
+  renderAdminOpsHistory(waitingHistory, {
+    currentRows: [],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  }, {
+    waitingForTaskState: true
+  });
+
+  assert.match(waitingHistory.innerHTML, /Waiting for task state/i);
+  assert.doesNotMatch(waitingHistory.innerHTML, /No run history yet/i);
+
+  const approachingHistory = makeEl();
+  const heartbeatAt = new Date(Date.now() - (8 * 60 * 1000)).toISOString();
+  renderAdminOpsHistory(approachingHistory, {
+    currentRows: [
+      {
+        type: "fetch",
+        active: true,
+        startedAt: "2026-03-08T10:00:00.000Z",
+        heartbeatAt,
+        summary: { outputCount: 12, failedSources: 0 }
+      }
+    ],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  });
+
+  assert.match(approachingHistory.innerHTML, /admin-ops-history-row-approaching/);
+  assert.match(approachingHistory.innerHTML, /Heartbeat aging/i);
+  assert.match(approachingHistory.innerHTML, /admin-status-chip warning/);
 });

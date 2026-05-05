@@ -85,6 +85,48 @@ test("task run view model derives discovery and sync summaries", () => {
   assert.match(sync.secondaryLabel, /active 10 \/ pending 3 \/ rejected 1/i);
 });
 
+test("task run view model derives pipeline progress and approaching heartbeat warnings", () => {
+  const view = buildTaskRunView({
+    taskType: "pipeline",
+    active: true,
+    startedAt: "2026-03-08T10:00:00.000Z",
+    heartbeatAt: "2026-03-08T10:01:45.000Z",
+    summary: {
+      currentStep: 3,
+      totalSteps: 7,
+      baselineOutputCount: 120,
+      finalOutputCount: 240
+    },
+    taskProgress: {
+      active: true,
+      phaseKey: "transforming_snapshot",
+      phaseLabel: "Transforming snapshot",
+      mode: "determinate",
+      ratio: 0.5,
+      updatedAt: "2026-03-08T10:01:00.000Z",
+      counts: {
+        currentStep: 3,
+        totalSteps: 7,
+        baselineOutputCount: 120,
+        finalOutputCount: 240
+      }
+    }
+  }, { nowMs: NOW });
+
+  assert.equal(view.title, "Pipeline");
+  assert.equal(view.status, "running");
+  assert.equal(view.severity, "warning");
+  assert.equal(view.stallProximity, "approaching");
+  assert.match(view.heartbeatStalenessLabel, /Heartbeat aging/i);
+  assert.equal(view.progressStale, true);
+  assert.match(view.progressStaleLabel, /Progress stale/i);
+  assert.match(view.progressLabel, /Transforming snapshot/i);
+  assert.match(view.progressLabel, /step 3\/7/i);
+  assert.match(view.progressLabel, /output 240 \(baseline 120\)/i);
+  assert.match(view.primaryLabel, /Pipeline/i);
+  assert.match(view.secondaryLabel, /step 3\/7/i);
+});
+
 test("task run view model derives terminal, stalled, and orphaned states", () => {
   assert.equal(buildTaskRunView({ type: "fetch", status: "ok", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).status, "completed");
   assert.equal(buildTaskRunView({ type: "fetch", status: "warning", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).status, "completed_with_warnings");

@@ -27,6 +27,7 @@ export function createAdminRuntimeState() {
     latestSourcePolicyRecommendationsPayload: null,
     latestRegistryConflictsPayload: null,
     latestTaskStatePayload: null,
+    waitingForTaskState: false,
     latestSyncStatusCache: null,
     latestDiscoveryConfigCache: null,
     taskStateMissingStreakByType: {},

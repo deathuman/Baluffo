@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { formatScrapyStaticSourcesTailBadge } from "../../../frontend/shared/task-progress.js";
+import {
+  formatScrapyStaticSourcesTailBadge,
+  formatTaskProgressCounts
+} from "../../../frontend/shared/task-progress.js";
 
 test("formatScrapyStaticSourcesTailBadge returns empty when queue item is absent", () => {
   assert.equal(formatScrapyStaticSourcesTailBadge([]), "");
@@ -62,5 +65,17 @@ test("formatScrapyStaticSourcesTailBadge ignores malformed or inactive queue cou
       }
     ]),
     ""
+  );
+});
+
+test("formatTaskProgressCounts renders pipeline step and output counts", () => {
+  assert.equal(
+    formatTaskProgressCounts("pipeline", {
+      currentStep: 3,
+      totalSteps: 7,
+      baselineOutputCount: 128,
+      finalOutputCount: 256
+    }),
+    "step 3/7 | output 256 (baseline 128)"
   );
 });

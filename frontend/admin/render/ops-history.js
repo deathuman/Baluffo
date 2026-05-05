@@ -143,6 +143,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   const currentRows = Array.isArray(model.currentRows) ? model.currentRows : [];
   const visibleCompletedRows = Array.isArray(model.visibleCompletedRows) ? model.visibleCompletedRows : [];
   const olderCompletedRows = Array.isArray(model.olderCompletedRows) ? model.olderCompletedRows : [];
+  const waitingForTaskState = Boolean(options?.waitingForTaskState);
   const canPatchInPlace = Boolean(
     historyEl
     && typeof historyEl.querySelector === "function"
@@ -150,7 +151,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     && historyEl.dataset
   );
   if (!currentRows.length && !visibleCompletedRows.length && !olderCompletedRows.length) {
-    historyEl.innerHTML = '<div class="no-results">No run history yet.</div>';
+    historyEl.innerHTML = waitingForTaskState
+      ? '<div class="admin-ops-loading">Waiting for task state...</div>'
+      : '<div class="no-results">No run history yet.</div>';
     if (canPatchInPlace) {
       delete historyEl.dataset.opsStructureSig;
     }
@@ -186,6 +189,27 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       ? formatScrapyStaticSourcesTailBadge(row?.workItems)
       : "";
     const liveRunDetail = [currentRunDetail, currentRunTailBadge].filter(Boolean).join(" | ");
+    const progressText = row?.type === "pipeline"
+      ? (runView.progressLabel || runView.secondaryLabel || Number(summary?.finalOutputCount || summary?.outputCount || 0).toLocaleString())
+      : (row?.isLive && liveRunDetail)
+        ? liveRunDetail
+        : row?.type === "discovery"
+          ? `Review queue: ${Number(summary?.queuedCandidateCount || 0).toLocaleString()}`
+          : Number(summary?.outputCount || 0).toLocaleString();
+    const progressTitle = runView.progressStale
+      ? runView.progressStaleLabel || runView.progressLabel || ""
+      : (runView.progressLabel || runView.secondaryLabel || progressText);
+    const statusText = runView.stallProximity === "approaching"
+      ? "approaching"
+      : (runView.statusLabel || rawStatus);
+    const statusClass = `${runView.severity === "critical"
+      ? "critical"
+      : runView.severity === "warning"
+        ? "warning"
+        : getRunStatusChipClass(rawStatus)}${runView.stallProximity === "approaching" ? " admin-status-chip-approaching" : ""}`;
+    const statusTitle = runView.stallProximity === "approaching"
+      ? runView.heartbeatStalenessLabel || buildRunStatusTooltip(row)
+      : (runView.remediationHint || buildRunStatusTooltip(row));
     const key = [
       rowArea,
       String(row?.id || ""),
@@ -202,33 +226,28 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       primaryLabel: runView.primaryLabel,
       secondaryLabel: runView.secondaryLabel,
       typeText: runView.taskType || type,
-      statusText: runView.statusLabel || rawStatus,
+      statusText,
       severity: runView.severity,
-      statusClass: runView.severity === "critical"
-        ? "critical"
-        : runView.severity === "warning"
-          ? "warning"
-          : getRunStatusChipClass(rawStatus),
-      statusTitle: runView.remediationHint || buildRunStatusTooltip(row),
+      statusClass,
+      statusTitle,
       isRunning: statusToken === "running" || statusToken === "started",
       durationText: runView.durationLabel || runView.elapsedLabel || formatDuration(Number(row?.elapsedMs ?? row?.durationMs ?? 0)),
-      outputOrQueuedText: (row?.isLive && liveRunDetail)
-        ? liveRunDetail
-        : row?.type === "discovery"
-          ? `Review queue: ${Number(summary?.queuedCandidateCount || 0).toLocaleString()}`
-          : row?.type === "sync"
-            ? `${syncLabel} (${syncCounts})`
-            : Number(summary?.outputCount || 0).toLocaleString(),
+      outputOrQueuedText: row?.type === "sync"
+        ? `${syncLabel} (${syncCounts})`
+        : progressText,
+      outputOrQueuedTitle: progressTitle,
       failedText: (row?.type === "discovery"
         ? Number(summary?.failedProbeCount || 0)
         : row?.type === "sync"
           ? Number(String(summary?.error || "").trim().length > 0 ? 1 : 0)
           : Number(summary?.failedSources || 0)).toLocaleString(),
+      failedTitle: runView.failureSummary || runView.warningSummary || "",
       startedText: formatDateTime(row?.startedAt || ""),
       finishedText: formatDateTime(row?.finishedAt || row?.startedAt || ""),
       progressLabel: runView.progressLabel || "",
       warningSummary: runView.warningSummary || "",
       failureSummary: runView.failureSummary || "",
+      progressStale: Boolean(runView.progressStale),
       diagnosticHints: Array.isArray(runView.diagnosticHints)
         ? runView.diagnosticHints.map(hint => truncateText(hint, 160)).filter(Boolean).slice(0, 5)
         : [],
@@ -254,6 +273,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
 
   const structureSignature = JSON.stringify({
     selectedRunKey: selectedView?.key || "",
+    waitingForTaskState,
     currentRows: currentViews.map(row => [
       row.key,
       row.statusText,
@@ -296,6 +316,8 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       if (!rowEl) return;
       rowEl.classList.toggle("admin-ops-history-row-running", view.isRunning);
       rowEl.classList.toggle("admin-ops-history-row-selected", view.key === selectedRunKey);
+      rowEl.classList.toggle("admin-ops-progress-stale", Boolean(view.progressStale));
+      rowEl.classList.toggle("admin-ops-history-row-approaching", String(view.statusText || "").toLowerCase() === "approaching");
       const cells = rowEl.querySelectorAll(".admin-cell");
       if (cells.length < 6) return;
       cells[0].textContent = view.typeText;
@@ -311,7 +333,17 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       }
       cells[2].textContent = view.durationText;
       cells[3].textContent = view.outputOrQueuedText;
+      if (view.outputOrQueuedTitle) {
+        cells[3].setAttribute("title", view.outputOrQueuedTitle);
+      } else {
+        cells[3].removeAttribute("title");
+      }
       cells[4].textContent = view.failedText;
+      if (view.failedTitle) {
+        cells[4].setAttribute("title", view.failedTitle);
+      } else {
+        cells[4].removeAttribute("title");
+      }
       cells[5].textContent = view.finishedText;
     });
   };
@@ -456,13 +488,32 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     historyEl.dataset.opsStructureSig = structureSignature;
   }
 
+  const renderCappedRows = (views, cap, {
+    includeCopy = true,
+    renderRows = renderCompactRows
+  } = {}) => {
+    const visible = views.slice(0, cap);
+    const overflow = views.slice(cap);
+    return `
+      ${renderRows(visible, { includeCopy })}
+      ${overflow.length ? `
+        <details class="admin-ops-expand-capped">
+          <summary>Show all ${views.length} runs</summary>
+          <div class="jobs-table-body">
+            ${renderRows(overflow, { includeCopy })}
+          </div>
+        </details>
+      ` : ""}
+    `;
+  };
+
   const renderCompactRows = (views, { includeCopy = true } = {}) => views.map(view => `
-      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}${view.key === selectedView?.key ? " admin-ops-history-row-selected" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}" tabindex="0" title="Select this run for bounded analysis">
+      <div class="admin-user-row admin-source-row admin-ops-history-row${view.isRunning ? " admin-ops-history-row-running" : ""}${view.key === selectedView?.key ? " admin-ops-history-row-selected" : ""}${view.progressStale ? " admin-ops-progress-stale" : ""}${String(view.statusText || "").toLowerCase() === "approaching" ? " admin-ops-history-row-approaching" : ""}" data-row-area="${view.rowArea}" data-run-key="${escapeHtml(view.key)}" tabindex="0" title="Select this run for bounded analysis">
         <div class="admin-cell">${escapeHtml(view.typeText)}</div>
         <div class="admin-cell"><span class="admin-status-chip ${view.statusClass}"${view.statusTitle ? ` title="${escapeHtml(view.statusTitle)}"` : ""}>${escapeHtml(view.statusText)}</span>${includeCopy && onCopyRunDiagnostics ? ` <button type="button" class="btn clear-filters-btn admin-ops-run-copy-btn" data-ops-run-diagnostics-copy="${escapeHtml(view.key)}" title="Copy bounded diagnostics for this run">Copy</button>` : ""}</div>
         <div class="admin-cell">${escapeHtml(view.durationText)}</div>
-        <div class="admin-cell">${escapeHtml(view.outputOrQueuedText)}</div>
-        <div class="admin-cell">${escapeHtml(view.failedText)}</div>
+        <div class="admin-cell"${view.outputOrQueuedTitle ? ` title="${escapeHtml(view.outputOrQueuedTitle)}"` : ""}>${escapeHtml(view.outputOrQueuedText)}</div>
+        <div class="admin-cell"${view.failedTitle ? ` title="${escapeHtml(view.failedTitle)}"` : ""}>${escapeHtml(view.failedText)}</div>
         <div class="admin-cell">${escapeHtml(view.finishedText)}</div>
       </div>
     `).join("");
@@ -523,7 +574,11 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         </div>
       </div>
       <div class="jobs-table-body">
-        ${currentViews.length ? renderCompactRows(currentViews) : '<div class="no-results">No current runs.</div>'}
+        ${currentViews.length
+          ? renderCappedRows(currentViews, 10)
+          : (waitingForTaskState
+            ? '<div class="admin-ops-loading">Waiting for task state...</div>'
+            : '<div class="no-results">No current runs.</div>')}
       </div>
     </div>
     <div class="admin-ops-completed-runs">
@@ -539,7 +594,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
         </div>
       </div>
       <div class="jobs-table-body">
-        ${visibleCompletedViews.length ? renderCompletedRows(visibleCompletedViews) : '<div class="no-results">No completed runs yet.</div>'}
+        ${visibleCompletedViews.length
+          ? renderCappedRows(visibleCompletedViews, 5, { renderRows: renderCompletedRows })
+          : '<div class="no-results">No completed runs yet.</div>'}
       </div>
     </div>
     ${olderCompletedViews.length ? `

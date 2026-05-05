@@ -73,12 +73,14 @@ export function createOpsTaskStateController({
 
   function rememberTaskStatePayload(payload) {
     state.latestTaskStatePayload = normalizeTaskStatePayload(payload);
+    state.waitingForTaskState = false;
     return state.latestTaskStatePayload;
   }
 
   function clearRetainedTaskState() {
     state.taskStateMissingStreakByType = {};
     state.latestTaskStatePayload = { tasks: [], count: 0 };
+    state.waitingForTaskState = false;
   }
 
   function mergeRetainedTaskStatePayload(candidatePayload, historyRuns) {
@@ -127,6 +129,10 @@ export function createOpsTaskStateController({
   function resolveTaskStatePayload(taskStateResult, historyRuns) {
     const previous = normalizeTaskStatePayload(state.latestTaskStatePayload);
     const previousLiveRows = getActiveTaskRows(previous);
+    state.waitingForTaskState = Boolean(
+      taskStateResult?.status === "fulfilled"
+      && (taskStateResult.value === null || taskStateResult.value === undefined)
+    );
     if (
       taskStateResult?.status !== "fulfilled"
       || !taskStateResult?.value

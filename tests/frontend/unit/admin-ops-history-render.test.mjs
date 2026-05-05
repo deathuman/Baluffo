@@ -262,3 +262,54 @@ test("admin ops history: selected run analysis renders timeline empty state", ()
   assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
   assert.doesNotMatch(historyEl.innerHTML, /<button[^>]*>(?:Start|Stop|Retry|Clear|Cleanup|Lifecycle)/i);
 });
+
+test("admin ops history: pipeline rows keep progress text visible and cap overflow rows", () => {
+  const historyEl = makeEl();
+  const nowMs = Date.now();
+  const startedAt = new Date(nowMs - (3 * 60 * 1000)).toISOString();
+  const heartbeatAt = new Date(nowMs - (30 * 1000)).toISOString();
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [
+      {
+        type: "pipeline",
+        active: true,
+        startedAt,
+        heartbeatAt,
+        summary: {
+          currentStep: 3,
+          totalSteps: 7,
+          baselineOutputCount: 120,
+          finalOutputCount: 240
+        },
+        taskProgress: {
+          active: true,
+          phaseKey: "transforming_snapshot",
+          phaseLabel: "Transforming snapshot",
+          mode: "determinate",
+          ratio: 0.5,
+          counts: {
+            currentStep: 3,
+            totalSteps: 7,
+            baselineOutputCount: 120,
+            finalOutputCount: 240
+          }
+        }
+      },
+      ...Array.from({ length: 10 }, (_row, index) => ({
+        type: "fetch",
+        active: true,
+        startedAt: new Date(nowMs - ((index + 4) * 60 * 1000)).toISOString(),
+        heartbeatAt: new Date(nowMs - ((index + 4) * 60 * 1000) + 30_000).toISOString(),
+        summary: { outputCount: index + 1, failedSources: 0 }
+      }))
+    ],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  });
+
+  assert.match(historyEl.innerHTML, /pipeline/i);
+  assert.match(historyEl.innerHTML, /step 3\/7/i);
+  assert.match(historyEl.innerHTML, /output 240 \(baseline 120\)/i);
+  assert.match(historyEl.innerHTML, /Show all 11 runs/i);
+  assert.match(historyEl.innerHTML, /admin-ops-expand-capped/);
+});

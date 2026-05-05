@@ -621,7 +621,8 @@ export function createOpsHealthController({
         onDedupReviewAction: handleDedupReviewAction
       });
       renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
-        onCopyRunDiagnostics: handleCopyRunDiagnostics
+        onCopyRunDiagnostics: handleCopyRunDiagnostics,
+        waitingForTaskState: Boolean(state.waitingForTaskState)
       });
       renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
       renderOpsTabBadges(refs, {

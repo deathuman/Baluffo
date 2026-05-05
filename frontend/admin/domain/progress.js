@@ -2,6 +2,7 @@ import {
   formatTaskProgressCounts,
   normalizeTaskProgressPayload
 } from "../../shared/task-progress.js";
+import { buildTaskRunView } from "../../shared/task-run-view-model.js";
 import {
   coerceReportDetailRow,
   normalizeSourceStatusToken
@@ -9,6 +10,31 @@ import {
 
 function normalizeTaskProgressContract(progress) {
   return normalizeTaskProgressPayload(progress);
+}
+
+function deriveSharedTaskRunProgressModel(report, {
+  taskLabel,
+  taskType,
+  running = false
+} = {}) {
+  const safeReport = report && typeof report === "object" && !Array.isArray(report) ? report : null;
+  if (!safeReport || !safeReport.taskProgress) return null;
+  const finished = Boolean(String(safeReport.finishedAt || "").trim());
+  if (finished && !running) return null;
+  const normalizedType = String(safeReport.taskType || taskType || "").trim().toLowerCase();
+  if (!normalizedType) return null;
+  const view = buildTaskRunView({
+    ...safeReport,
+    taskType: normalizedType,
+    active: Boolean(running || safeReport.active)
+  });
+  const progressLabel = String(view.progressLabel || view.primaryLabel || view.secondaryLabel || "In progress").trim();
+  return {
+    active: view.status !== "waiting",
+    determinate: view.progressMode === "determinate",
+    ratio: view.progressMode === "determinate" ? view.progressRatio : 0,
+    label: `${taskLabel}: ${progressLabel}`
+  };
 }
 
 function inferDiscoveryPhaseKeyFromLabel(label, fallback = "") {
@@ -246,6 +272,12 @@ export function applyOptimisticDiscoveryRun(model, optimisticRun, nowMs = Date.n
 }
 
 export function deriveFetcherProgressModel(report, { running = false } = {}) {
+  const shared = deriveSharedTaskRunProgressModel(report, {
+    taskLabel: "Fetcher",
+    taskType: "fetch",
+    running
+  });
+  if (shared) return shared;
   return deriveTaskProgressView(
     deriveFetcherTaskProgress(report, { running }),
     {
