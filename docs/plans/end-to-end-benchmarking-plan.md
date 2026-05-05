@@ -47,6 +47,7 @@ Completed slices:
 - **Phase 1a Jobs/Saved User Timing marks:** extended the shared helper to Jobs boot, startup preview fetch/parse/render, first-load feed fetch/render, Saved boot, Saved DOM cache, Saved auth init, and one-shot `saved_first_render`.
 - **Phase 1b Long Task observer:** added startup-probe-gated Long Task detection for Admin, Jobs, and Saved through existing startup metric transport.
 - **Phase 1c Playwright performance traces:** added an opt-in Playwright perf suite that captures Admin, Jobs, and Saved boot traces plus compact performance summaries under `_out/perf-traces/`.
+- **Phase 1d profiling hooks:** added opt-in `BALUFFO_PROFILE=1` cProfile hooks that write `.prof` and cumulative `.prof.txt` artifacts under `_out/perf-profiles/` for discovery, discovery probe batches, sync pull/push, and fetcher source execution.
 - **Phase 1e bridge request counters:** added process-local bridge request timing counters and exposed read-only `/ops/perf-counters`.
 - **Phase 1f sync operation timing:** added service-level sync pull/push stage timing and persisted recent timing history exposed through `/sync/status`.
 
@@ -64,6 +65,7 @@ Targeted validation completed for these slices:
 - `python -m pytest tests/bridge/test_routes_get.py -q -k perf_counters`
 - `python -m pytest tests/bridge/test_server_handler_timing.py -q`
 - `python -m pytest tests/bridge/test_routes_smoke.py -q`
+- `python -m pytest tests/test_profile_utils.py -q`
 - `python -m pytest tests/bridge/test_sync_timing.py -q`
 - `python -m pytest tests/bridge/test_sync_service.py -q`
 - `python -m pytest tests/bridge/test_routes_get.py -q -k sync_status`
@@ -74,7 +76,6 @@ Perf trace command added:
 
 Remaining near-term work:
 
-- **Phase 1d:** profiling hooks.
 - **Phase 1e follow-ups:** frontend fetch/render counters and broader backend instrumentation beyond bridge request timing.
 - **Phase 2+:** baseline collection, trend tracking, optimisation based on evidence, and CI regression gates.
 

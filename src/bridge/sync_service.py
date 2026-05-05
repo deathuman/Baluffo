@@ -35,6 +35,7 @@ from src.bridge.sync_timing import (
     load_sync_timing_history,
 )
 from src.shared.json_shapes import as_json_object
+from src.shared.profile_utils import run_profiled
 from src.source_registry import load_json_object, save_json_atomic
 
 
@@ -347,7 +348,12 @@ class SyncService:
             message="Reading remote snapshot.",
         )
         with timing.record_stage("pullMergeRemote"):
-            result = self._source_sync.pull_and_merge_sources(self._sync_config, local_state)
+            result = run_profiled(
+                self._source_sync.pull_and_merge_sources,
+                self._sync_config,
+                local_state,
+                profile_name="sync_pull_merge",
+            )
         merged_state = local_state
         if isinstance(result.get("mergedState"), dict):
             merged_state = cast(dict[str, list[dict[str, Any]]], result.get("mergedState"))
@@ -465,7 +471,12 @@ class SyncService:
             message="Writing remote snapshot.",
         )
         with timing.record_stage("pushRemote"):
-            result = self._source_sync.push_sources_snapshot(self._sync_config, state)
+            result = run_profiled(
+                self._source_sync.push_sources_snapshot,
+                self._sync_config,
+                state,
+                profile_name="sync_push_remote",
+            )
         snapshot = as_json_object(result.get("snapshot"))
         pushed = bool(result.get("pushed", True))
         size_warning = bool(result.get("sizeWarning"))

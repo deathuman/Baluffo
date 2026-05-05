@@ -7,6 +7,7 @@ from typing import Any, Protocol, cast
 
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
 from src.jobs.models import CanonicalJob
+from src.shared.profile_utils import run_profiled
 
 from .pipeline_runtime_summary import PipelineTaskRuntime
 from .pipeline_source_progress import (
@@ -181,7 +182,8 @@ def _execute_loader_started(
         show_progress=show_progress,
     )
     try:
-        report, canonical_batch = execute_loader(
+        report, canonical_batch = run_profiled(
+            execute_loader,
             name=source_name,
             loader=loader,
             config=config,
@@ -196,6 +198,7 @@ def _execute_loader_started(
             thread_local=thread_local,
             write_task_state=write_task_state,
             guarded_try_playwright=guarded_try_playwright,
+            profile_name=f"adapter_{source_name}",
         )
     except Exception as exc:  # noqa: BLE001
         report = fallback_error_report(source_name, exc)

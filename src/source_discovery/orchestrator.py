@@ -20,6 +20,7 @@ from typing import Any
 from src import source_registry as source_registry_module
 from src.jobs.state import read_source_state as _read_source_state
 from src.shared.utils import now_iso
+from src.shared.profile_utils import run_profiled
 from src.source_registry import (
     APPROVAL_STATE_PATH as _DEFAULT_APPROVAL_STATE_PATH,
 )
@@ -247,6 +248,35 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def run_discovery(
+    *,
+    timeout_s: int,
+    top_n: int,
+    preset: str = "default",
+    mode: str = "dynamic",
+    include_web_search: bool = True,
+    discovery_config: dict[str, Any] | None = None,
+    run_id: str = "",
+    started_at_override: str = "",
+    fetcher=fetch_text,
+    cli_args: argparse.Namespace | None = None,
+) -> dict[str, Any]:
+    return run_profiled(
+        _run_discovery_impl,
+        timeout_s=timeout_s,
+        top_n=top_n,
+        preset=preset,
+        mode=mode,
+        include_web_search=include_web_search,
+        discovery_config=discovery_config,
+        run_id=run_id,
+        started_at_override=started_at_override,
+        fetcher=fetcher,
+        cli_args=cli_args,
+        profile_name="discovery_full_run",
+    )
+
+
+def _run_discovery_impl(
     *,
     timeout_s: int,
     top_n: int,

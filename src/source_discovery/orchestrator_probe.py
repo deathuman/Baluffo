@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
+from src.shared.profile_utils import run_profiled
 from src.shared.utils import now_iso
 from src.source_registry import source_identity
 
@@ -226,13 +227,16 @@ def _run_initial_probe_pass(
     playwright_semaphore: asyncio.Semaphore | None,
 ) -> None:
     for completed, (raw, ok, jobs_found, error, probe_duration_ms) in enumerate(
-        asyncio.run(
-            _run_probe_batch(
-                state.probe_inputs,
-                deps=deps,
-                try_playwright=try_playwright,
-                playwright_semaphore=playwright_semaphore,
-            )
+        run_profiled(
+            lambda: asyncio.run(
+                _run_probe_batch(
+                    state.probe_inputs,
+                    deps=deps,
+                    try_playwright=try_playwright,
+                    playwright_semaphore=playwright_semaphore,
+                )
+            ),
+            profile_name="discovery_probe_batch_initial",
         ),
         start=1,
     ):
@@ -346,13 +350,16 @@ def _reprobe_patch_candidates(
     playwright_semaphore: asyncio.Semaphore | None,
     reprobe_candidates: list[PatchRecoveryCandidate],
 ) -> list[tuple[dict[str, Any], bool, int, str, int]]:
-    return asyncio.run(
-        _run_probe_batch(
-            [patched for _original, patched, _failure in reprobe_candidates],
-            deps=deps,
-            try_playwright=try_playwright,
-            playwright_semaphore=playwright_semaphore,
-        )
+    return run_profiled(
+        lambda: asyncio.run(
+            _run_probe_batch(
+                [patched for _original, patched, _failure in reprobe_candidates],
+                deps=deps,
+                try_playwright=try_playwright,
+                playwright_semaphore=playwright_semaphore,
+            )
+        ),
+        profile_name="discovery_probe_batch_patch_recovery",
     )
 
 
