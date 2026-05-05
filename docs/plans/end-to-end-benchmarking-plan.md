@@ -46,6 +46,7 @@ Completed slices:
 - **Phase 1a Admin User Timing marks:** added shared `frontend/shared/perf-marks.js` and wired Admin DOM cache, auth init, overview, discovery, discovery config, ops health, and sync boot milestones through existing startup metric transport.
 - **Phase 1a Jobs/Saved User Timing marks:** extended the shared helper to Jobs boot, startup preview fetch/parse/render, first-load feed fetch/render, Saved boot, Saved DOM cache, Saved auth init, and one-shot `saved_first_render`.
 - **Phase 1b Long Task observer:** added startup-probe-gated Long Task detection for Admin, Jobs, and Saved through existing startup metric transport.
+- **Phase 1c Playwright performance traces:** added an opt-in Playwright perf suite that captures Admin, Jobs, and Saved boot traces plus compact performance summaries under `_out/perf-traces/`.
 
 Targeted validation completed for these slices:
 
@@ -55,10 +56,15 @@ Targeted validation completed for these slices:
 - `node --test tests/frontend/unit/jobs-feed-startup.test.mjs tests/frontend/unit/jobs-runtime-feed-controller.test.mjs`
 - `node --test tests/frontend/unit/startup-metrics-effects.test.mjs tests/frontend/unit/saved-runtime-controllers.test.mjs`
 - `node --test tests/frontend/unit/long-task-observer.test.mjs`
+- `node --check playwright.perf.config.js`
+- `node --check tests/frontend/perf-trace.spec.js`
+
+Perf trace command added:
+
+- `npm run test:frontend:perf` writes traces and summaries to `_out/perf-traces/` when Playwright dependencies are installed.
 
 Remaining near-term work:
 
-- **Phase 1c:** Playwright performance traces.
 - **Phase 1d/1e/1f:** profiling hooks, lightweight timing counters, and sync operation timing.
 - **Phase 2+:** baseline collection, trend tracking, optimisation based on evidence, and CI regression gates.
 

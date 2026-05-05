@@ -40,6 +40,7 @@
     "probe:desktop:startup:pair": "npm run check:python-version && python scripts/run_startup_probe_pair.py --runtime-timeout 60",
     "probe:desktop:startup:warm": "npm run check:python-version && python src/packaged_desktop_smoke.py --rebuild --startup-probe --profile-only --profile-mode warm --runtime-timeout 60",
     "test:frontend": "playwright test --workers=1 --reporter=line",
+    "test:frontend:perf": "playwright test --config=playwright.perf.config.js",
     "test:frontend:unit": "node --test --test-reporter=dot \"tests/frontend/unit/*.test.mjs\"",
     "test:frontend:headed": "playwright test --headed",
     "test:frontend:ci": "playwright test --reporter=line",
