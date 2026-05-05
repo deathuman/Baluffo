@@ -53,6 +53,7 @@
     "perf:startup:cold": "npm run probe:desktop:startup:cold",
     "perf:startup:pair": "npm run probe:desktop:startup:pair",
     "perf:startup:warm": "npm run probe:desktop:startup:warm",
+    "perf:trend": "npm run check:python-version && python scripts/perf_trend.py",
     "lint:py": "ruff check .",
     "format:py": "ruff format .",
     "lint:js": "eslint .",
