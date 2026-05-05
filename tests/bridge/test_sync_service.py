@@ -159,6 +159,76 @@ def test_sync_service_pull_delegates_and_persists() -> None:
         result = svc.sync_pull_sources()
         assert bool(result.get("ok")) is True
         assert source_sync.pull_calls == 1
+        timing = result.get("timing")
+        assert isinstance(timing, dict)
+        assert timing["action"] == "pull"
+        assert timing["pulled"] is True
+        assert timing["stageTotalsMs"]["loadLocalRegistry"] >= 0
+        assert timing["stageTotalsMs"]["pullMergeRemote"] >= 0
+        assert timing["stageTotalsMs"]["applyLocal"] >= 0
+        assert timing["stageTotalsMs"]["summarizeLocal"] >= 0
+
+        status = svc.get_sync_status_payload()
+        assert status["timing"]["action"] == "pull"
+        assert status["timingHistory"][-1]["action"] == "pull"
+
+
+def test_sync_service_push_returns_and_persists_timing() -> None:
+    with workspace_tmpdir("sync-service") as data_dir:
+        with SYNC_STATE_LOCK:
+            ACTIVE_SYNC_RUNS.clear()
+            ACTIVE_SYNC_THREADS.clear()
+        source_sync = _FakeSourceSync()
+        history = _RunHistory()
+        ops_lock = threading.RLock()
+
+        def load_state() -> dict[str, list[dict[str, Any]]]:
+            return {
+                "active": [{"adapter": "static", "listing_url": "https://a.com/jobs"}],
+                "pending": [],
+                "rejected": [],
+            }
+
+        def persist_state(
+            state: dict[str, list[dict[str, Any]]],
+        ) -> dict[str, list[dict[str, Any]]]:
+            return state
+
+        def summarize_state(state: dict[str, list[dict[str, Any]]]) -> dict[str, int]:
+            return {
+                "activeCount": len(state["active"]),
+                "pendingCount": len(state["pending"]),
+                "rejectedCount": len(state["rejected"]),
+            }
+
+        svc = SyncService(
+            data_dir=data_dir,
+            source_sync=source_sync,
+            bridge_log=lambda _level, _message, **_fields: None,
+            load_state=load_state,
+            persist_state=persist_state,
+            summarize_state=summarize_state,
+            run_history=history,
+            ops_state_lock=ops_lock,
+            get_security_defaults=lambda: {"github_app_enabled_default": True},
+        )
+
+        svc.update_saved_sync_settings({"enabled": True})
+        result = svc.sync_push_sources()
+
+        assert bool(result.get("ok")) is True
+        assert source_sync.push_calls == 1
+        timing = result.get("timing")
+        assert isinstance(timing, dict)
+        assert timing["action"] == "push"
+        assert timing["pushed"] is True
+        assert timing["stageTotalsMs"]["loadLocalRegistry"] >= 0
+        assert timing["stageTotalsMs"]["pushRemote"] >= 0
+        assert timing["stageTotalsMs"]["summarizeSnapshot"] >= 0
+
+        status = svc.get_sync_status_payload()
+        assert status["timing"]["action"] == "push"
+        assert status["timingHistory"][-1]["action"] == "push"
 
 
 def test_sync_service_start_task_runs_and_finishes() -> None:

@@ -29,6 +29,11 @@ from src.bridge.sync_state import (
     now_iso,
     now_utc,
 )
+from src.bridge.sync_timing import (
+    SyncTimingRecorder,
+    append_sync_timing_record,
+    load_sync_timing_history,
+)
 from src.shared.json_shapes import as_json_object
 from src.source_registry import load_json_object, save_json_atomic
 
@@ -137,6 +142,7 @@ class SyncService:
         # Path for sync config
         self._sync_config_path = data_dir / "source-sync-config.json"
         self._sync_live_task_path = data_dir / "sync-live-task.json"
+        self._sync_timing_history_path = data_dir / "sync-timing-history.json"
 
         # Initialize sync config
         self._sync_config = self._resolve_effective_sync_config()
@@ -277,12 +283,15 @@ class SyncService:
             if callable(rate_limit_payload)
             else source_sync_runtime.rate_limit_payload(self._source_sync)
         )
+        timing_history = load_sync_timing_history(self._sync_timing_history_path)
         return {
             "ok": True,
             "appVersion": get_app_version(),
             "config": config_status,
             "savedConfig": self.get_saved_sync_config_payload(),
             "runtime": runtime_state,
+            "timing": timing_history[-1] if timing_history else {},
+            "timingHistory": timing_history,
         }
 
     def sync_config_status(self) -> dict[str, Any]:
@@ -319,6 +328,7 @@ class SyncService:
         if guard:
             return guard
 
+        timing = SyncTimingRecorder()
         emit_progress = progress_callback or (lambda **_kwargs: None)
         emit_progress(
             phase_key="prepare",
@@ -327,7 +337,8 @@ class SyncService:
             event_level="info",
             message="Preparing sync pull.",
         )
-        local_state = self._load_state()
+        with timing.record_stage("loadLocalRegistry"):
+            local_state = self._load_state()
         emit_progress(
             phase_key="remote_read",
             phase_label="Reading remote snapshot",
@@ -335,7 +346,8 @@ class SyncService:
             event_level="muted",
             message="Reading remote snapshot.",
         )
-        result = self._source_sync.pull_and_merge_sources(self._sync_config, local_state)
+        with timing.record_stage("pullMergeRemote"):
+            result = self._source_sync.pull_and_merge_sources(self._sync_config, local_state)
         merged_state = local_state
         if isinstance(result.get("mergedState"), dict):
             merged_state = cast(dict[str, list[dict[str, Any]]], result.get("mergedState"))
@@ -359,7 +371,8 @@ class SyncService:
                 event_level="muted",
                 message="Persisting merged registry state.",
             )
-            self._persist_state(merged_state)
+            with timing.record_stage("applyLocal"):
+                self._persist_state(merged_state)
 
             self.set_sync_status(
                 action="pull",
@@ -372,7 +385,19 @@ class SyncService:
         if counters:
             self._sync_state.save_sync_runtime_state({"counters": counters})
 
-        summary = self._summarize_state(self._load_state())
+        with timing.record_stage("summarizeLocal"):
+            summary = self._summarize_state(self._load_state())
+        timing_record = timing.finish(
+            {
+                "action": "pull",
+                "ok": True,
+                "changed": bool(result.get("changed")),
+                "remoteFound": bool(result.get("remoteFound")),
+                "pushed": False,
+                "pulled": True,
+            }
+        )
+        append_sync_timing_record(self._sync_timing_history_path, timing_record)
         emit_progress(
             phase_key="finalize",
             phase_label="Finalizing pull",
@@ -394,6 +419,7 @@ class SyncService:
             "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
             "counters": counters,
             "summary": summary,
+            "timing": timing_record,
         }
 
     def sync_push_sources(
@@ -408,6 +434,7 @@ class SyncService:
         if guard:
             return guard
 
+        timing = SyncTimingRecorder()
         emit_progress = progress_callback or (lambda **_kwargs: None)
         emit_progress(
             phase_key="prepare",
@@ -416,7 +443,8 @@ class SyncService:
             event_level="info",
             message="Preparing sync push.",
         )
-        state = self._load_state()
+        with timing.record_stage("loadLocalRegistry"):
+            state = self._load_state()
         emit_progress(
             phase_key="snapshot_build",
             phase_label="Building local snapshot",
@@ -436,7 +464,8 @@ class SyncService:
             event_level="muted",
             message="Writing remote snapshot.",
         )
-        result = self._source_sync.push_sources_snapshot(self._sync_config, state)
+        with timing.record_stage("pushRemote"):
+            result = self._source_sync.push_sources_snapshot(self._sync_config, state)
         snapshot = as_json_object(result.get("snapshot"))
         pushed = bool(result.get("pushed", True))
         size_warning = bool(result.get("sizeWarning"))
@@ -457,14 +486,33 @@ class SyncService:
         counters = as_json_object(result.get("counters"))
         if counters:
             self._sync_state.save_sync_runtime_state({"counters": counters})
+        with timing.record_stage("summarizeSnapshot"):
+            counts = {
+                "active": len(snapshot.get("active") or []),
+                "pending": len(snapshot.get("pending") or []),
+                "rejected": len(state.get("rejected") or []),
+            }
+        timing_record = timing.finish(
+            {
+                "action": "push",
+                "ok": True,
+                "changed": pushed,
+                "remoteFound": bool(result.get("remotePreviouslyExisted")),
+                "pushed": pushed,
+                "pulled": False,
+                "noOp": not pushed,
+                "sizeWarning": size_warning,
+            }
+        )
+        append_sync_timing_record(self._sync_timing_history_path, timing_record)
         emit_progress(
             phase_key="finalize",
             phase_label="Finalizing push",
             counts={
                 "action": "push",
-                "activeCount": len(snapshot.get("active") or []),
-                "pendingCount": len(snapshot.get("pending") or []),
-                "rejectedCount": len(state.get("rejected") or []),
+                "activeCount": counts["active"],
+                "pendingCount": counts["pending"],
+                "rejectedCount": counts["rejected"],
             },
             event_level="success",
             message="Sync push summary updated."
@@ -479,11 +527,8 @@ class SyncService:
             "pushed": pushed,
             "sizeWarning": size_warning,
             "counters": counters,
-            "counts": {
-                "active": len(snapshot.get("active") or []),
-                "pending": len(snapshot.get("pending") or []),
-                "rejected": len(state.get("rejected") or []),
-            },
+            "counts": counts,
+            "timing": timing_record,
         }
 
     def startup_sync_pull(self) -> None:

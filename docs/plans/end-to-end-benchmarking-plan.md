@@ -48,6 +48,7 @@ Completed slices:
 - **Phase 1b Long Task observer:** added startup-probe-gated Long Task detection for Admin, Jobs, and Saved through existing startup metric transport.
 - **Phase 1c Playwright performance traces:** added an opt-in Playwright perf suite that captures Admin, Jobs, and Saved boot traces plus compact performance summaries under `_out/perf-traces/`.
 - **Phase 1e bridge request counters:** added process-local bridge request timing counters and exposed read-only `/ops/perf-counters`.
+- **Phase 1f sync operation timing:** added service-level sync pull/push stage timing and persisted recent timing history exposed through `/sync/status`.
 
 Targeted validation completed for these slices:
 
@@ -63,6 +64,9 @@ Targeted validation completed for these slices:
 - `python -m pytest tests/bridge/test_routes_get.py -q -k perf_counters`
 - `python -m pytest tests/bridge/test_server_handler_timing.py -q`
 - `python -m pytest tests/bridge/test_routes_smoke.py -q`
+- `python -m pytest tests/bridge/test_sync_timing.py -q`
+- `python -m pytest tests/bridge/test_sync_service.py -q`
+- `python -m pytest tests/bridge/test_routes_get.py -q -k sync_status`
 
 Perf trace command added:
 
@@ -70,7 +74,7 @@ Perf trace command added:
 
 Remaining near-term work:
 
-- **Phase 1d/1f:** profiling hooks and sync operation timing.
+- **Phase 1d:** profiling hooks.
 - **Phase 1e follow-ups:** frontend fetch/render counters and broader backend instrumentation beyond bridge request timing.
 - **Phase 2+:** baseline collection, trend tracking, optimisation based on evidence, and CI regression gates.
 
