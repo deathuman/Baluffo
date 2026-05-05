@@ -50,7 +50,7 @@ jobs:
 
       - name: Run fetch smoke benchmark
         run: |
-          python src/fetch_incremental_sanity_benchmark.py --timeout 30 --sources greenhouse_boards lever_sources --output-dir _out/perf-ci/fetch-data > _out/perf-ci/fetch.json
+          python src/fetch_incremental_sanity_benchmark.py --timeout 30 --group smoke --output-dir _out/perf-ci/fetch-data > _out/perf-ci/fetch.json
 
       - name: Compare fetch benchmark
         run: |

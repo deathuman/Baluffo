@@ -20,7 +20,14 @@ def test_load_trend_rows_ignores_malformed_and_incomplete_rows() -> None:
                     "{not-json",
                     json.dumps({"mode": "discovery"}),
                     json.dumps({"mode": "", "totalDurationMs": 100}),
-                    json.dumps({"mode": "fetch", "totalDurationMs": 2500, "ts": "2026-05-05T10:00:00Z"}),
+                    json.dumps(
+                        {
+                            "mode": "fetch",
+                            "totalDurationMs": 2500,
+                            "ts": "2026-05-05T10:00:00Z",
+                            "stageDurationsMs": {"fetchAndParse": 2000},
+                        }
+                    ),
                 ]
             ),
             encoding="utf-8",
@@ -28,9 +35,10 @@ def test_load_trend_rows_ignores_malformed_and_incomplete_rows() -> None:
 
         rows = perf_trend.load_trend_rows(path)
 
-        assert len(rows) == 1
-        assert rows[0]["mode"] == "fetch"
-        assert rows[0]["totalDurationMs"] == 2500
+    assert len(rows) == 1
+    assert rows[0]["mode"] == "fetch"
+    assert rows[0]["totalDurationMs"] == 2500
+    assert rows[0]["stageDurationsMs"] == {"fetchAndParse": 2000}
 
 
 def test_trend_entries_compute_previous_and_baseline_deltas_by_mode() -> None:
@@ -87,3 +95,21 @@ def test_format_trend_table_limits_to_recent_rows() -> None:
     assert "2026-05-02" not in table
     assert "2026-05-03" in table
     assert "2026-05-04" in table
+
+
+def test_format_trend_table_can_include_stage_durations() -> None:
+    table = perf_trend.format_trend_table(
+        [
+            {
+                "ts": "2026-05-01T10:00:00Z",
+                "mode": "fetch",
+                "totalDurationMs": 3000,
+                "stageDurationsMs": {"fetchAndParse": 2000, "canonicalization": 500},
+            }
+        ],
+        include_stages=True,
+    )
+
+    assert "stages" in table
+    assert "fetchAndParse=2.0s" in table
+    assert "canonicalization=0.5s" in table

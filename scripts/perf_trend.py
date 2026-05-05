@@ -34,6 +34,7 @@ def _normalize_row(row: dict[str, Any], *, index: int) -> dict[str, Any] | None:
         "commitSha": str(row.get("commitSha") or row.get("sha") or "").strip(),
         "sourceCount": row.get("sourceCount"),
         "adapterCount": row.get("adapterCount"),
+        "stageDurationsMs": row.get("stageDurationsMs") if isinstance(row.get("stageDurationsMs"), dict) else {},
     }
 
 
@@ -76,7 +77,24 @@ def _date_label(row: dict[str, Any]) -> str:
     return timestamp[:10]
 
 
-def trend_entries(rows: Iterable[dict[str, Any]], *, limit: int = DEFAULT_LIMIT) -> list[dict[str, str]]:
+def _format_stage_durations(stages: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for stage in sorted(stages):
+        try:
+            duration = int(float(stages[stage]))
+        except (TypeError, ValueError):
+            continue
+        if duration > 0:
+            parts.append(f"{stage}={_format_duration(duration)}")
+    return ", ".join(parts) or "--"
+
+
+def trend_entries(
+    rows: Iterable[dict[str, Any]],
+    *,
+    limit: int = DEFAULT_LIMIT,
+    include_stages: bool = False,
+) -> list[dict[str, str]]:
     ordered = list(rows)
     baseline_by_mode: dict[str, int] = {}
     previous_by_mode: dict[str, int] = {}
@@ -99,18 +117,28 @@ def trend_entries(rows: Iterable[dict[str, Any]], *, limit: int = DEFAULT_LIMIT)
                 "vsBaseline": "--" if previous is None else _format_delta(duration_ms, baseline),
                 "status": str(row.get("status") or "--").strip() or "--",
                 "commit": str(row.get("commitSha") or "--").strip()[:7] or "--",
+                "stages": _format_stage_durations(dict(row.get("stageDurationsMs") or {}))
+                if include_stages
+                else "",
             }
         )
 
     return entries[-max(0, int(limit)) :] if limit else entries
 
 
-def format_trend_table(rows: Iterable[dict[str, Any]], *, limit: int = DEFAULT_LIMIT) -> str:
-    entries = trend_entries(rows, limit=limit)
+def format_trend_table(
+    rows: Iterable[dict[str, Any]],
+    *,
+    limit: int = DEFAULT_LIMIT,
+    include_stages: bool = False,
+) -> str:
+    entries = trend_entries(rows, limit=limit, include_stages=include_stages)
     if not entries:
         return "No perf trend rows found."
 
     headers = ("mode", "date", "duration", "vs prev", "vs baseline", "status", "commit")
+    if include_stages:
+        headers = (*headers, "stages")
     table_rows = [
         (
             entry["mode"],
@@ -120,6 +148,7 @@ def format_trend_table(rows: Iterable[dict[str, Any]], *, limit: int = DEFAULT_L
             entry["vsBaseline"],
             entry["status"],
             entry["commit"],
+            *([entry["stages"]] if include_stages else []),
         )
         for entry in entries
     ]
@@ -147,6 +176,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Path to perf trend NDJSON file.",
     )
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="Rows to print.")
+    parser.add_argument("--stages", action="store_true", help="Include stage duration details.")
     return parser.parse_args(argv)
 
 
@@ -157,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     if not rows:
         print(f"No perf trend data found at {path}.")
         return 0
-    print(format_trend_table(rows, limit=int(args.limit)))
+    print(format_trend_table(rows, limit=int(args.limit), include_stages=bool(args.stages)))
     return 0
 
 

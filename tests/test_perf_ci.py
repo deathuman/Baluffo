@@ -43,9 +43,8 @@ def test_perf_ci_steps_match_smoke_workflow(tmp_path: Path) -> None:
             "src/fetch_incremental_sanity_benchmark.py",
             "--timeout",
             "30",
-            "--sources",
-            "greenhouse_boards",
-            "lever_sources",
+            "--group",
+            "smoke",
             "--output-dir",
             str(output_dir / "fetch-data"),
         ],
@@ -61,3 +60,61 @@ def test_perf_ci_steps_match_smoke_workflow(tmp_path: Path) -> None:
         "--baseline",
         str(baseline_dir / "fetch-baseline.json"),
     ]
+
+
+def test_repeated_benchmark_steps_use_group_smoke(tmp_path: Path) -> None:
+    output_dir = tmp_path / "perf-ci"
+
+    steps = perf_ci.perf_ci_benchmark_steps(output_dir=output_dir)
+
+    assert steps[1] == (
+        "fetch",
+        [
+            sys.executable,
+            "src/fetch_incremental_sanity_benchmark.py",
+            "--group",
+            "smoke",
+            "--timeout",
+            "30",
+            "--output-dir",
+            str(output_dir / "fetch-data"),
+        ],
+        output_dir / "fetch.json",
+    )
+
+
+def test_summarize_runs_uses_median_and_stage_medians() -> None:
+    summary = perf_ci._summarize_runs(
+        "fetch",
+        [
+            {"totalDurationMs": 300, "stageDurationsMs": {"fetchAndParse": 200}},
+            {"totalDurationMs": 100, "stageDurationsMs": {"fetchAndParse": 50}},
+            {"totalDurationMs": 200, "stageDurationsMs": {"fetchAndParse": 100}},
+        ],
+    )
+
+    assert summary["medianDurationMs"] == 200
+    assert summary["minDurationMs"] == 100
+    assert summary["maxDurationMs"] == 300
+    assert summary["stageMedianDurationsMs"] == {"fetchAndParse": 100}
+
+
+def test_parse_args_accepts_median_recording_options(tmp_path: Path) -> None:
+    args = perf_ci.parse_args(
+        [
+            "--runs",
+            "3",
+            "--record-trend",
+            "--record-baseline",
+            "--baseline-dir",
+            str(tmp_path / "baseline"),
+            "--trend-path",
+            str(tmp_path / "trend.ndjson"),
+        ]
+    )
+
+    assert args.runs == 3
+    assert args.record_trend is True
+    assert args.record_baseline is True
+    assert args.baseline_dir == str(tmp_path / "baseline")
+    assert args.trend_path == str(tmp_path / "trend.ndjson")

@@ -46,6 +46,7 @@ def build_baseline_record(
     source_count: int | None = None,
     adapter_count: int | None = None,
     wall_clock_ms: int | None = None,
+    stage_durations_ms: dict[str, Any] | None = None,
     artifact: str = "",
     commit_sha: str = "",
     timestamp: str = "",
@@ -66,6 +67,11 @@ def build_baseline_record(
         record["adapterCount"] = _parse_non_negative_int(adapter_count, field="adapterCount")
     if wall_clock_ms is not None:
         record["wallClockMs"] = _parse_non_negative_int(wall_clock_ms, field="wallClockMs")
+    if stage_durations_ms is not None:
+        record["stageDurationsMs"] = {
+            str(key): _parse_non_negative_int(value, field=f"stageDurationsMs.{key}")
+            for key, value in stage_durations_ms.items()
+        }
     artifact_text = str(artifact or "").strip()
     if artifact_text:
         record["artifact"] = artifact_text
@@ -76,6 +82,16 @@ def baseline_path_for_mode(mode: str, *, baseline_dir: Path = DEFAULT_BASELINE_D
     safe_mode = str(mode or "").strip().replace("\\", "-").replace("/", "-")
     safe_mode = safe_mode or "baseline"
     return baseline_dir / f"{safe_mode}-baseline.json"
+
+
+def parse_stage_durations_json(value: str) -> dict[str, Any] | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    payload = json.loads(text)
+    if not isinstance(payload, dict):
+        raise ValueError("--stage-durations-json must be a JSON object")
+    return payload
 
 
 def write_baseline_record(
@@ -93,6 +109,17 @@ def write_baseline_record(
     return path
 
 
+def append_trend_record(
+    record: dict[str, Any],
+    *,
+    trend_path: Path = DEFAULT_TREND_PATH,
+) -> Path:
+    trend_path.parent.mkdir(parents=True, exist_ok=True)
+    with trend_path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return trend_path
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Record a Baluffo benchmark baseline row.")
     parser.add_argument("--mode", required=True, help="Benchmark mode, e.g. discovery or fetch.")
@@ -101,6 +128,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source-count", type=int, default=None)
     parser.add_argument("--adapter-count", type=int, default=None)
     parser.add_argument("--wall-clock-ms", type=int, default=None)
+    parser.add_argument("--stage-durations-json", default="")
     parser.add_argument("--artifact", default="")
     parser.add_argument("--baseline-dir", default=str(DEFAULT_BASELINE_DIR))
     parser.add_argument("--trend-path", default=str(DEFAULT_TREND_PATH))
@@ -116,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
         source_count=args.source_count,
         adapter_count=args.adapter_count,
         wall_clock_ms=args.wall_clock_ms,
+        stage_durations_ms=parse_stage_durations_json(str(args.stage_durations_json)),
         artifact=str(args.artifact),
     )
     path = write_baseline_record(

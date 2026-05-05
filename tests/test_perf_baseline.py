@@ -28,6 +28,7 @@ def test_write_baseline_record_writes_json_and_appends_trend_row() -> None:
             source_count=5,
             adapter_count=2,
             wall_clock_ms=13000,
+            stage_durations_ms={"probe": 9000},
             artifact="_out/perf-baseline/discovery-baseline.json",
             commit_sha="abc123",
             timestamp="2026-05-05T10:00:00Z",
@@ -47,7 +48,16 @@ def test_write_baseline_record_writes_json_and_appends_trend_row() -> None:
         ]
         assert path == baseline_dir / "discovery-baseline.json"
         assert saved == record
+        assert saved["stageDurationsMs"] == {"probe": 9000}
         assert trend_rows == [record]
+
+
+def test_parse_stage_durations_json_requires_object() -> None:
+    assert perf_baseline.parse_stage_durations_json('{"fetchAndParse": 12}') == {
+        "fetchAndParse": 12
+    }
+    with pytest.raises(ValueError, match="JSON object"):
+        perf_baseline.parse_stage_durations_json("[1, 2]")
 
 
 def test_write_baseline_record_appends_multiple_modes() -> None:
@@ -80,3 +90,25 @@ def test_write_baseline_record_appends_multiple_modes() -> None:
         assert trend_rows == [first, second]
         assert (baseline_dir / "discovery-baseline.json").exists()
         assert (baseline_dir / "fetch-baseline.json").exists()
+
+
+def test_append_trend_record_does_not_write_baseline() -> None:
+    with workspace_tmpdir("perf-trend-only") as data_dir:
+        trend_path = data_dir / "trend.ndjson"
+        record = perf_baseline.build_baseline_record(
+            mode="fetch",
+            total_duration_ms=2000,
+            commit_sha="abc",
+            timestamp="2026-05-05T10:00:00Z",
+        )
+
+        path = perf_baseline.append_trend_record(record, trend_path=trend_path)
+
+        trend_rows = [
+            json.loads(line)
+            for line in trend_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert path == trend_path
+        assert trend_rows == [record]
+        assert not (data_dir / "fetch-baseline.json").exists()

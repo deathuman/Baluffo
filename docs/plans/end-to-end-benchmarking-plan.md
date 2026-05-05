@@ -54,6 +54,9 @@ Completed slices:
 - **Phase 4a CI smoke benchmark workflow:** added `.github/workflows/benchmark.yml` plus `scripts/perf_compare.py`, `scripts/perf_ci.py`, `npm run perf:compare`, and `npm run perf:ci` to run targeted discovery/fetch smoke benchmarks and compare them against optional local baselines.
 - **Phase 4b NDJSON trend tracking:** added `scripts/perf_trend.py` and `npm run perf:trend` to print recent `_out/perf-trend.ndjson` duration deltas by benchmark mode.
 - **Phase 4c startup profile regression gate:** added structured startup `perfRegressions` rows and `--fail-on-threshold` packaged-smoke gating for startup probes.
+- **Phase 2a baseline execution:** recorded local discovery and fetch smoke baselines in `_out/perf-baseline/discovery-baseline.json` and `_out/perf-baseline/fetch-baseline.json`, then confirmed `npm run perf:ci` compares against both baselines successfully.
+- **Phase 2b fetch profiling smoke:** ran `BALUFFO_PROFILE=1` against the Greenhouse/Lever smoke benchmark and fixed the profiling hook so concurrent diagnostic profiling no longer fails source execution. Result: no adapter CPU hotspot emerged; smoke wall time is dominated by fetch/wait time with canonicalization as the secondary measured stage.
+- **Benchmarking signal improvements:** added repeated-run median support to `scripts/perf_ci.py`, capped and split discovery presets, fetch benchmark groups and npm scripts, stage-aware baseline/trend rows, fetch network/wait proxy counters, adapter summary reporting, and broader static-detail source selection. Default CI smoke remains quick/single-run; deeper signal is opt-in through `--runs`, capped discovery, and fetch group commands.
 
 Targeted validation completed for these slices:
 
@@ -86,7 +89,61 @@ Perf trace command added:
 Remaining near-term work:
 
 - **Phase 1e follow-ups:** frontend fetch/render counters and broader backend instrumentation beyond bridge request timing.
-- **Phase 2+:** baseline benchmark execution and optimisation based on evidence.
+- **Phase 3 evidence-based optimisation:** choose optimisations from measured bottlenecks. Current fetch smoke evidence points away from adapter CPU micro-optimisations and toward fetch/wait behavior, cache/cadence behavior, or canonicalization if it becomes significant in larger runs.
+
+### Benchmarking signal improvement follow-up
+
+The current benchmarking suite is useful for smoke-level regression detection and broad trend tracking, but it should be strengthened before leaning too hard into Phase 3 optimisation decisions. The following five improvements are implemented as benchmark/report-only slices, preserving bridge routes, persisted job payloads, and user-facing job data contracts.
+
+1. **Repeated-run median baselines** - implemented
+   - Add `--runs N` to `scripts/perf_ci.py`, defaulting to `1` for current behavior.
+   - Use `--runs 3` for local baseline capture and optional deeper validation.
+   - Compare median `totalDurationMs` instead of a single noisy run when multiple runs are requested.
+   - Emit per-run durations plus median/min/max into `_out/perf-ci/summary.json`.
+   - Goal: reduce false warnings like small discovery quick-run variance while keeping CI smoke fast by default.
+   - Follow-up added: `--record-trend` appends repeated-run median rows and `--record-baseline` writes median baseline files with stage medians.
+
+2. **Full-but-capped discovery benchmark** - implemented
+   - Add a second discovery preset, tentatively `--preset capped`, while keeping `--preset quick` as the CI smoke default.
+   - Enable heavier discovery paths with strict caps: small `gameprog` studio count, small `gamedevmap` row/homepage limits, `webSearch` off by default, and `gamesmap` only if it can be safely bounded.
+   - Add `npm run perf:discovery:capped` for manual/deeper signal.
+   - Goal: expose generation, probe fanout, dedupe, and finalization costs without recreating the prior 15-minute full-run timeout.
+   - Follow-up added: split scripts `perf:discovery:capped-provider` and `perf:discovery:capped-gamedevmap` isolate provider/Gameprog and GameDevMap costs.
+
+3. **Fetch benchmark groups** - implemented
+   - Extend `src/fetch_incremental_sanity_benchmark.py` with `--group`.
+   - Suggested groups:
+     - `smoke`: current Greenhouse + Lever pair.
+     - `provider-api`: Greenhouse, Lever, Ashby, SmartRecruiters, Teamtailor.
+     - `static-detail`: a small set of static/detail-heavy sources.
+     - `mixed`: compact representative blend across provider and static adapters.
+   - Add npm scripts for common groups.
+   - Goal: avoid overfitting fetch performance decisions to only Greenhouse and Lever.
+   - Follow-up added: static/detail-heavy groups now resolve loaders before switching to the isolated benchmark data dir so live static loaders are represented more broadly.
+   - Follow-up added: fetch benchmark payloads now expose `sourceTimingSignals` with first-pass and second-pass slowest source rows from the pipeline runtime report.
+
+4. **Stage-level baseline and trend rows** - implemented
+   - Extend `scripts/perf_baseline.py` and `scripts/perf_trend.py` to preserve optional `stageDurationsMs`.
+   - Fetch stages should include available timing summary fields such as `fetchAndParse`, `canonicalization`, `detailFetch`, and `redirectResolve`.
+   - Discovery stages should include generation/probe/finalization timings where already available, or add benchmark-local extraction if the report shape supports it.
+   - Keep the trend table compact, but show stage deltas when present or provide an opt-in detailed mode.
+   - Goal: identify which stage moved when total duration changes.
+   - Follow-up added: discovery benchmarks now extract the report's `runtime.stageTimingsMs` directly, so discovery stage rows are no longer empty when the report provides them.
+
+5. **Network/wait-oriented counters** - implemented
+   - Add benchmark payload fields for available fetch wait proxies: request count, retry count, timeout/error counts, cache skipped/revalidated/refreshed counts, per-adapter duration, and any available wait-like timing.
+   - If true network wait time is not directly measurable yet, start with existing runtime report counters and document them as proxies.
+   - Keep this benchmark/report-only; do not change persisted job data contracts.
+   - Goal: distinguish CPU bottlenecks from network/wait/cache behavior before choosing adapter-level optimisations.
+   - Follow-up added: `npm run perf:adapter-summary` prints the slowest adapters from fetch/discovery benchmark JSON artifacts.
+
+Implementation order used:
+
+1. Stage-level extraction and trend rows, because every later benchmark becomes more informative.
+2. Repeated-run median support in `perf_ci.py`, because it lowers noise and false warnings.
+3. Fetch benchmark groups, because it broadens coverage cheaply.
+4. Capped discovery preset, because it needs careful limits to avoid long-running discovery.
+5. Network/wait counters, because it may require the most runtime-report inspection.
 
 ---
 
