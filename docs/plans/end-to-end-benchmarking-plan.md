@@ -127,4 +127,3 @@ This effort is ready to close when:
 - Opt-in traces and startup metrics can explain Admin, Jobs, and Saved boot regressions.
 - Static/full lifecycle benchmarks can produce comparable artifact summaries across runs.
 - Remaining optimization work is a short prioritized queue, not a broad investigation.
-
