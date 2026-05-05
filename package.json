@@ -51,6 +51,7 @@
     "perf:py:timing": "npm run test:py:timing",
     "perf:discovery:benchmark": "npm run check:python-version && python src/discovery_sanity_benchmark.py",
     "perf:baseline:record": "npm run check:python-version && python scripts/perf_baseline.py",
+    "perf:compare": "npm run check:python-version && python scripts/perf_compare.py",
     "perf:startup:cold": "npm run probe:desktop:startup:cold",
     "perf:startup:pair": "npm run probe:desktop:startup:pair",
     "perf:startup:warm": "npm run probe:desktop:startup:warm",

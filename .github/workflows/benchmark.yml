@@ -1,0 +1,65 @@
+name: Benchmark
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/benchmark.yml"
+      - "scripts/perf_compare.py"
+      - "scripts/perf_baseline.py"
+      - "src/bridge/**"
+      - "src/jobs/**"
+      - "src/source_discovery/**"
+      - "src/discovery_sanity_benchmark.py"
+      - "src/fetch_incremental_sanity_benchmark.py"
+      - "src/fetcher_metrics.py"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  smoke-benchmark:
+    name: Performance smoke benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt
+
+      - name: Run discovery smoke benchmark
+        run: |
+          mkdir -p _out/perf-ci
+          python src/discovery_sanity_benchmark.py --timeout 30 --top 5 --output-dir _out/perf-ci/discovery-data > _out/perf-ci/discovery.json
+
+      - name: Compare discovery benchmark
+        run: |
+          python scripts/perf_compare.py --mode discovery --current _out/perf-ci/discovery.json --baseline _out/perf-baseline/discovery-baseline.json
+
+      - name: Run fetch smoke benchmark
+        run: |
+          python src/fetch_incremental_sanity_benchmark.py --timeout 30 --sources greenhouse_boards lever_sources --output-dir _out/perf-ci/fetch-data > _out/perf-ci/fetch.json
+
+      - name: Compare fetch benchmark
+        run: |
+          python scripts/perf_compare.py --mode fetch --current _out/perf-ci/fetch.json --baseline _out/perf-baseline/fetch-baseline.json
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-smoke-benchmark
+          path: |
+            _out/perf-ci/**
