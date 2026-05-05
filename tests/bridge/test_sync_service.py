@@ -167,6 +167,7 @@ def test_sync_service_pull_delegates_and_persists() -> None:
         assert timing["stageTotalsMs"]["pullMergeRemote"] >= 0
         assert timing["stageTotalsMs"]["applyLocal"] >= 0
         assert timing["stageTotalsMs"]["summarizeLocal"] >= 0
+        assert any(row["stage"] == "pullMergeRemote" for row in timing["stageTop"])
 
         status = svc.get_sync_status_payload()
         assert status["timing"]["action"] == "pull"
@@ -225,6 +226,7 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
         assert timing["stageTotalsMs"]["loadLocalRegistry"] >= 0
         assert timing["stageTotalsMs"]["pushRemote"] >= 0
         assert timing["stageTotalsMs"]["summarizeSnapshot"] >= 0
+        assert any(row["stage"] == "pushRemote" for row in timing["stageTop"])
 
         status = svc.get_sync_status_payload()
         assert status["timing"]["action"] == "push"
@@ -274,3 +276,9 @@ def test_sync_service_start_task_runs_and_finishes() -> None:
         assert bool(started.get("started")) is True
         svc.wait_for_sync_tasks(timeout_s=2.0)
         assert source_sync.pull_calls >= 1
+        completed_rows = [row for row in history.rows if row.get("status") == "ok"]
+        assert completed_rows
+        timing = completed_rows[-1]["summary"]["timing"]
+        assert timing["action"] == "pull"
+        assert "stageTotalsMs" in timing
+        assert "stageTop" in timing

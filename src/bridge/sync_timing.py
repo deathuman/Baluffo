@@ -37,12 +37,21 @@ class SyncTimingRecorder:
 
     def finish(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         data = payload if isinstance(payload, dict) else {}
+        stage_totals_ms = dict(self._stage_totals_ms)
         return {
             **data,
             "startedAt": self._started_at_iso,
             "finishedAt": self._wall_now(),
             "totalDurationMs": _duration_ms(self._started_at, self._now()),
-            "stageTotalsMs": dict(self._stage_totals_ms),
+            "stageTotalsMs": stage_totals_ms,
+            "stageTop": [
+                {"stage": stage, "durationMs": duration_ms}
+                for stage, duration_ms in sorted(
+                    stage_totals_ms.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
+            ],
         }
 
 

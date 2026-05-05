@@ -27,6 +27,10 @@ def test_sync_timing_recorder_produces_total_and_stage_durations() -> None:
         "loadLocalRegistry": 300,
         "pushRemote": 500,
     }
+    assert record["stageTop"] == [
+        {"stage": "pushRemote", "durationMs": 500},
+        {"stage": "loadLocalRegistry", "durationMs": 300},
+    ]
     assert record["startedAt"] == "2026-05-05T10:00:00Z"
     assert record["finishedAt"] == "2026-05-05T10:00:00Z"
 

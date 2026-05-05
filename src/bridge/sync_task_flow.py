@@ -201,6 +201,9 @@ def run_sync_task_worker(
                     "remoteGeneratedAt": str(result.get("remoteGeneratedAt") or ""),
                 }
             )
+            timing = as_json_object(result.get("timing"))
+            if timing:
+                summary["timing"] = timing
             state_summary = as_json_object(result.get("summary"))
             summary.update(
                 {
@@ -222,6 +225,9 @@ def run_sync_task_worker(
                     "remotePreviouslyExisted": bool(result.get("remotePreviouslyExisted")),
                 }
             )
+            timing = as_json_object(result.get("timing"))
+            if timing:
+                summary["timing"] = timing
             counts = as_json_object(result.get("counts"))
             summary.update(
                 {

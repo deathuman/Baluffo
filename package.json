@@ -57,6 +57,7 @@
     "perf:fetch:smoke": "npm run check:python-version && python src/fetch_incremental_sanity_benchmark.py --group smoke --timeout 30 --output-dir _out/perf-sanity-fetch-smoke",
     "perf:fetch:provider-api": "npm run check:python-version && python src/fetch_incremental_sanity_benchmark.py --group provider-api --timeout 30 --output-dir _out/perf-sanity-fetch-provider-api",
     "perf:fetch:static-detail": "npm run check:python-version && python src/fetch_incremental_sanity_benchmark.py --group static-detail --timeout 30 --output-dir _out/perf-sanity-fetch-static-detail",
+    "perf:fetch:static-outliers": "npm run check:python-version && python src/fetch_incremental_sanity_benchmark.py --group static-outliers --timeout 30 --output-dir _out/perf-sanity-fetch-static-outliers",
     "perf:fetch:mixed": "npm run check:python-version && python src/fetch_incremental_sanity_benchmark.py --group mixed --timeout 30 --output-dir _out/perf-sanity-fetch-mixed",
     "perf:ci": "npm run check:python-version && python scripts/perf_ci.py",
     "perf:ci:median": "npm run check:python-version && python scripts/perf_ci.py --runs 3",

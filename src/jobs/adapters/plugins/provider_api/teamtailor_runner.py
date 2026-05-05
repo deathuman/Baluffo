@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+import time
 from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
@@ -25,6 +26,7 @@ from .lifecycle import (
 )
 
 TEAMTAILOR_DETAIL_FETCH_CONCURRENCY = 6
+TEAMTAILOR_SOURCE_FETCH_CONCURRENCY = 4
 
 
 def _teamtailor_fallback_job(
@@ -131,7 +133,22 @@ def _run_teamtailor_sources(
     errors: list[str] = []
     seen_links = set()
     details: list[dict[str, object]] = []
-    for source in registry_entries("teamtailor"):
+
+    def _dedupe_rows(rows: list[RawJob]) -> list[RawJob]:
+        deduped: list[RawJob] = []
+        for row in rows:
+            job_link = clean_text(row.get("jobLink"))
+            if job_link and job_link in seen_links:
+                continue
+            if job_link:
+                seen_links.add(job_link)
+            deduped.append(row)
+        return deduped
+
+    def _process_source(source: dict[str, object]) -> tuple[list[RawJob], dict[str, object], list[str]]:
+        source_started = time.perf_counter()
+        source_jobs: list[RawJob] = []
+        source_errors: list[str] = []
         source_name = clean_text(source.get("name")) or "teamtailor_source"
         listing_url = clean_text(source.get("listing_url"))
         base_url = clean_text(source.get("base_url")) or listing_url
@@ -152,11 +169,11 @@ def _run_teamtailor_sources(
         if not listing_url:
             entry_report["status"] = "error"
             entry_report["error"] = "missing listing_url"
-            details.append(entry_report)
-            continue
+            entry_report["durationMs"] = _elapsed_ms(source_started)
+            return source_jobs, entry_report, source_errors
         if skip_provider_for_cache(entry_report):
-            details.append(entry_report)
-            continue
+            entry_report["durationMs"] = _elapsed_ms(source_started)
+            return source_jobs, entry_report, source_errors
         if provider_revalidate_not_modified(
             entry_report=entry_report,
             url=listing_url,
@@ -164,20 +181,25 @@ def _run_teamtailor_sources(
             source_name=source_name,
             source_state_rows=source_state_rows,
         ):
-            details.append(entry_report)
-            continue
+            entry_report["durationMs"] = _elapsed_ms(source_started)
+            return source_jobs, entry_report, source_errors
 
         try:
+            fetch_started = time.perf_counter()
             listing_html = fetch_with_retries(
                 listing_url, fetch_text, timeout_s, retries, backoff_s
             )
+            entry_report["fetchMs"] = _elapsed_ms(fetch_started)
+            parse_started = time.perf_counter()
             job_links = parse_teamtailor_listing_links(listing_html, base_url=base_url)
+            entry_report["listingParseMs"] = _elapsed_ms(parse_started)
             entry_report["fetchedCount"] = len(job_links)
             entry_report["detailFetchConcurrency"] = TEAMTAILOR_DETAIL_FETCH_CONCURRENCY
+            detail_started = time.perf_counter()
             entry_report["keptCount"] = _append_teamtailor_jobs(
-                jobs=jobs,
+                jobs=source_jobs,
                 job_links=job_links,
-                seen_links=seen_links,
+                seen_links=set(),
                 fetch_text=fetch_text,
                 timeout_s=timeout_s,
                 retries=retries,
@@ -185,13 +207,32 @@ def _run_teamtailor_sources(
                 source_name=source_name,
                 fallback_company=fallback_company,
                 studio=studio,
-                errors=errors,
+                errors=source_errors,
             )
+            entry_report["detailFetchMs"] = _elapsed_ms(detail_started)
         except Exception as exc:  # noqa: BLE001
             entry_report["status"] = "error"
             entry_report["error"] = str(exc)
-            errors.append(f"teamtailor:{source_name}:{listing_url}: {exc}")
+            source_errors.append(f"teamtailor:{source_name}:{listing_url}: {exc}")
+        entry_report["durationMs"] = _elapsed_ms(source_started)
+        return source_jobs, entry_report, source_errors
+
+    sources = list(registry_entries("teamtailor"))
+    concurrency = max(1, min(TEAMTAILOR_SOURCE_FETCH_CONCURRENCY, len(sources) or 1))
+    if concurrency <= 1 or len(sources) <= 1:
+        results = [_process_source(source) for source in sources]
+    else:
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            results = list(executor.map(_process_source, sources))
+    for source_jobs, entry_report, source_errors in results:
+        entry_report["sourceFetchConcurrency"] = concurrency
+        deduped_jobs = _dedupe_rows(source_jobs)
+        if len(deduped_jobs) != len(source_jobs):
+            entry_report["keptCount"] = len(deduped_jobs)
+        if deduped_jobs:
+            jobs.extend(deduped_jobs)
         details.append(entry_report)
+        errors.extend(source_errors)
 
     set_source_diagnostics(
         "teamtailor_sources",
@@ -205,3 +246,7 @@ def _run_teamtailor_sources(
     if errors:
         raise AdapterValidationError.from_errors(errors)
     return []
+
+
+def _elapsed_ms(started: float) -> int:
+    return max(0, int((time.perf_counter() - started) * 1000))

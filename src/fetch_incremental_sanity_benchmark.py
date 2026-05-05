@@ -10,6 +10,7 @@ import shutil
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
+from urllib.parse import urlparse
 
 if TYPE_CHECKING:
     from src.jobs.interfaces import SourceLoader
@@ -30,6 +31,23 @@ DEFAULT_BENCHMARK_SOURCES = [
     "personio_sources",
     "static_source::static:name:little chicken",
 ]
+STATIC_DETAIL_TARGET_MARKER = "__static_detail_targets__"
+STATIC_DETAIL_TARGET_SOURCE_NAMES = (
+    "PlayStation (Sheet)",
+    "Electronic Arts (Manual Website)",
+    "Warner Bros. Games (Sheet)",
+)
+STATIC_OUTLIER_TARGET_MARKER = "__static_outlier_targets__"
+STATIC_OUTLIER_TARGET_SOURCE_NAMES = (
+    "Maliyo Games (Sheet)",
+    "Million Victories (GameDevMap)",
+    "Atari (GameDevMap)",
+    "Netflix Games Studios (Sheet)",
+    "Super Lucky Casino (GameDevMap)",
+    "Koei Tecmo Vietnam (GameDevMap)",
+    "Lightbulb Crew (GameDevMap)",
+    "Atvis (GameDevMap)",
+)
 FETCH_BENCHMARK_GROUPS = {
     "smoke": ["greenhouse_boards", "lever_sources"],
     "provider-api": [
@@ -40,7 +58,10 @@ FETCH_BENCHMARK_GROUPS = {
         "teamtailor_sources",
     ],
     "static-detail": [
-        "__static_first_5__",
+        STATIC_DETAIL_TARGET_MARKER,
+    ],
+    "static-outliers": [
+        STATIC_OUTLIER_TARGET_MARKER,
     ],
     "mixed": [
         "greenhouse_boards",
@@ -220,6 +241,7 @@ def source_names_for_args(args: argparse.Namespace) -> list[str]:
 def _select_loaders(source_names: list[str]) -> tuple[list[tuple[str, SourceLoader]], list[str]]:
     from src.jobs import adapters as adapters_pkg
     from src.jobs.adapters import static as static_adapter
+    from src.jobs.registry import registry_entries
     from src.jobs.text_utils import clean_text
 
     available: dict[str, SourceLoader] = {
@@ -232,6 +254,24 @@ def _select_loaders(source_names: list[str]) -> tuple[list[tuple[str, SourceLoad
     expanded_source_names: list[str] = []
     static_names = [name for name in available if str(name).startswith("static_source::")]
     for name in source_names:
+        if name in {STATIC_DETAIL_TARGET_MARKER, STATIC_OUTLIER_TARGET_MARKER}:
+            expected_names = (
+                STATIC_DETAIL_TARGET_SOURCE_NAMES
+                if name == STATIC_DETAIL_TARGET_MARKER
+                else STATIC_OUTLIER_TARGET_SOURCE_NAMES
+            )
+            target_names: list[str] = []
+            seen_target_names: set[str] = set()
+            for row in registry_entries("static"):
+                source_name = clean_text(row.get("name"))
+                if source_name not in expected_names:
+                    continue
+                if source_name in seen_target_names:
+                    continue
+                seen_target_names.add(source_name)
+                target_names.append(static_adapter.static_source_name_for_registry_row(row))
+            expanded_source_names.extend(target_names)
+            continue
         if str(name).startswith("__static_first_") and str(name).endswith("__"):
             raw_limit = str(name).removeprefix("__static_first_").removesuffix("__")
             try:
@@ -260,6 +300,74 @@ def _select_loaders(source_names: list[str]) -> tuple[list[tuple[str, SourceLoad
             continue
         selected.append((normalized_name or name, loader))
     return selected, missing
+
+
+def _normalized_host(value: object) -> str:
+    host = urlparse(str(value or "")).hostname or ""
+    return host.lower().removeprefix("www.")
+
+
+def _registry_page_signal_for_row(source_name: str, row: dict[str, object]) -> dict[str, object]:
+    pages = [str(page) for page in _as_list(row.get("pages")) if str(page or "").strip()]
+    listing_url = str(row.get("listing_url") or row.get("careersUrl") or (pages[0] if pages else ""))
+    listing_host = _normalized_host(listing_url)
+    off_listing_pages: list[str] = []
+    off_listing_hosts: list[str] = []
+    seen_hosts: set[str] = set()
+    for page in pages:
+        host = _normalized_host(page)
+        if not host or host == listing_host:
+            continue
+        off_listing_pages.append(page)
+        if host not in seen_hosts:
+            seen_hosts.add(host)
+            off_listing_hosts.append(host)
+    return {
+        "name": source_name,
+        "listingHost": listing_host,
+        "pageCount": len(pages),
+        "offListingHostPageCount": len(off_listing_pages),
+        "offListingHosts": off_listing_hosts,
+        "offListingHostPages": off_listing_pages[:5],
+    }
+
+
+def _registry_page_signals(source_names: list[str]) -> dict[str, dict[str, object]]:
+    from src.jobs.adapters import static as static_adapter
+    from src.jobs.registry import registry_entries
+
+    source_set = set(source_names)
+    signals: dict[str, dict[str, object]] = {}
+    for row in registry_entries("static"):
+        if not isinstance(row, dict):
+            continue
+        source_name = static_adapter.static_source_name_for_registry_row(row)
+        if source_name not in source_set:
+            continue
+        signal = _registry_page_signal_for_row(source_name, row)
+        if int(signal.get("offListingHostPageCount") or 0) > 0:
+            signals[source_name] = signal
+    return signals
+
+
+def _registry_scope_summary(
+    registry_page_signals: dict[str, dict[str, object]]
+) -> dict[str, object]:
+    rows = list(registry_page_signals.values())
+    rows.sort(
+        key=lambda row: (
+            int(row.get("offListingHostPageCount") or 0),
+            int(row.get("pageCount") or 0),
+        ),
+        reverse=True,
+    )
+    return {
+        "sourceCount": len(rows),
+        "offListingHostPageCount": sum(
+            int(row.get("offListingHostPageCount") or 0) for row in rows
+        ),
+        "sources": rows,
+    }
 
 
 def _family_summary(report: dict[str, object], source_names: list[str]) -> dict[str, object]:
@@ -292,8 +400,145 @@ def _family_summary(report: dict[str, object], source_names: list[str]) -> dict[
             if row.get("boardRefreshedCount") is not None
             else None,
             "error": str(row.get("error") or ""),
+            "failureBucket": str(row.get("failureBucket") or ""),
+            "zeroKeptClassification": str(row.get("zeroKeptClassification") or ""),
+            "stats": dict(row.get("stats") or {}),
+            "loss": dict(row.get("loss") or {}),
         }
     return family
+
+
+def _source_policy_signals(
+    report: dict[str, object],
+    source_names: list[str],
+    *,
+    limit: int = 10,
+) -> list[dict[str, object]]:
+    source_set = set(source_names)
+    rows: list[dict[str, object]] = []
+    for row in _as_list(report.get("sources")):
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "")
+        if name not in source_set:
+            continue
+        loss = dict(row.get("loss") or {})
+        raw_fetched = int(loss.get("rawFetched") or row.get("fetchedCount") or 0)
+        dedup_merged = int(loss.get("dedupMerged") or 0)
+        final_output = int(loss.get("finalOutput") or row.get("keptCount") or 0)
+        merge_ratio = float(dedup_merged) / float(raw_fetched) if raw_fetched > 0 else 0.0
+        failure_bucket = str(row.get("failureBucket") or "")
+        zero_kept = str(row.get("zeroKeptClassification") or "")
+        error = str(row.get("error") or "")
+        flags: list[str] = []
+        if failure_bucket:
+            flags.append(f"failure:{failure_bucket}")
+        if zero_kept:
+            flags.append(f"zero_kept:{zero_kept}")
+        if raw_fetched >= 10 and merge_ratio >= 0.5:
+            flags.append("high_merge_ratio")
+        if "time budget exceeded" in error or "time_budget_exceeded" in error:
+            flags.append("time_budget")
+        if "Network error" in error or "Server disconnected" in error:
+            flags.append("network_wait")
+        if not flags:
+            continue
+        rows.append(
+            {
+                "name": name,
+                "adapter": str(row.get("adapter") or ""),
+                "durationMs": int(row.get("durationMs") or 0),
+                "keptCount": int(row.get("keptCount") or 0),
+                "rawFetched": raw_fetched,
+                "dedupMerged": dedup_merged,
+                "finalOutput": final_output,
+                "mergeRatioPct": int(round(merge_ratio * 100)),
+                "failureBucket": failure_bucket,
+                "zeroKeptClassification": zero_kept,
+                "flags": flags,
+            }
+        )
+    rows.sort(
+        key=lambda item: (
+            int("failure:site_changed" in item.get("flags", [])),
+            int("high_merge_ratio" in item.get("flags", [])),
+            int(item.get("durationMs") or 0),
+        ),
+        reverse=True,
+    )
+    return rows[: max(0, int(limit))]
+
+
+def _next_optimization_targets(
+    source_policy_signals: list[dict[str, object]],
+    *,
+    registry_page_signals: dict[str, dict[str, object]] | None = None,
+    limit: int = 5,
+) -> list[dict[str, object]]:
+    registry_page_signals = registry_page_signals or {}
+    targets: list[dict[str, object]] = []
+    for signal in source_policy_signals:
+        name = str(signal.get("name") or "")
+        flags = [str(flag) for flag in _as_list(signal.get("flags"))]
+        if not flags:
+            continue
+        action = "timeout_or_network_budget"
+        priority = 30
+        reasons: list[str] = []
+        if "failure:site_changed" in flags:
+            action = "source_policy_review"
+            priority = 100
+            reasons.append("site_changed")
+        if "failure:needs_review" in flags or "zero_kept:needs_review" in flags:
+            action = "source_policy_review"
+            priority = max(priority, 90)
+            reasons.append("needs_review")
+        if "high_merge_ratio" in flags:
+            if action != "source_policy_review":
+                action = "source_scope_review"
+                priority = max(priority, 70)
+            reasons.append("high_merge_ratio")
+        if "time_budget" in flags:
+            reasons.append("time_budget")
+        if "network_wait" in flags:
+            reasons.append("network_wait")
+        if not reasons:
+            reasons = flags
+        kept_count = int(signal.get("keptCount") or 0)
+        registry_page_evidence = registry_page_signals.get(name, {})
+        has_registry_scope_evidence = (
+            int(registry_page_evidence.get("offListingHostPageCount") or 0) > 0
+        )
+        if action == "timeout_or_network_budget" and has_registry_scope_evidence:
+            action = "source_scope_and_timeout_review"
+            priority = max(priority, 65)
+            reasons.append("cross_host_registry_pages")
+        output_contract_risk = action in {
+            "source_policy_review",
+            "source_scope_review",
+            "source_scope_and_timeout_review",
+        } and kept_count > 0
+        targets.append(
+            {
+                "name": name,
+                "action": action,
+                "priority": priority,
+                "durationMs": int(signal.get("durationMs") or 0),
+                "keptCount": kept_count,
+                "outputContractRisk": output_contract_risk,
+                "requiresExplicitDecision": output_contract_risk,
+                "registryPageEvidence": registry_page_evidence,
+                "reasons": reasons,
+            }
+        )
+    targets.sort(
+        key=lambda item: (
+            int(item.get("priority") or 0),
+            int(item.get("durationMs") or 0),
+        ),
+        reverse=True,
+    )
+    return targets[: max(0, int(limit))]
 
 
 def _run_pass(
@@ -349,10 +594,13 @@ def main(argv: list[str] | None = None) -> int:
     second = _run_pass(output_dir, selected_loaders, args)
     first_duration_ms = _runtime_duration_ms(first)
     second_duration_ms = _runtime_duration_ms(second)
+    selected_names = [name for name, _loader in selected_loaders]
+    source_policy_signals = _source_policy_signals(first, selected_names)
+    registry_page_signals = _registry_page_signals(selected_names)
 
     payload = {
         "outputDir": str(output_dir),
-        "sources": [name for name, _loader in selected_loaders],
+        "sources": selected_names,
         "benchmarkGroup": str(args.group or "custom"),
         "totalDurationMs": first_duration_ms + second_duration_ms,
         "firstRunDurationMs": first_duration_ms,
@@ -365,18 +613,29 @@ def main(argv: list[str] | None = None) -> int:
             "firstRunSlowestProviderBoards": _slowest_provider_boards(first),
             "secondRunSlowestProviderBoards": _slowest_provider_boards(second),
         },
+        "sourcePolicySignals": source_policy_signals,
+        "sourceRegistrySignals": registry_page_signals,
+        "registryScopeSummary": _registry_scope_summary(registry_page_signals),
+        "nextOptimizationTargets": _next_optimization_targets(
+            source_policy_signals,
+            registry_page_signals=registry_page_signals,
+        ),
         "firstRun": {
             "summary": dict(first.get("summary") or {}),
             "runtime": dict(first.get("runtime") or {}),
-            "familySummary": _family_summary(first, [name for name, _loader in selected_loaders]),
+            "familySummary": _family_summary(first, selected_names),
         },
         "secondRun": {
             "summary": dict(second.get("summary") or {}),
             "runtime": dict(second.get("runtime") or {}),
-            "familySummary": _family_summary(second, [name for name, _loader in selected_loaders]),
+            "familySummary": _family_summary(second, selected_names),
         },
     }
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    (output_dir / "benchmark-summary.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(json.dumps(payload, indent=2, ensure_ascii=True))
     return 0
 
 

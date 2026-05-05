@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -344,3 +346,135 @@ def test_provider_api_dispatch_extracts_registry_backed_jobs(
     assert all(row["adapter"] == case.expected_adapter for row in rows)
     assert all(row["studio"] == case.expected_studio for row in rows)
     case.extra_check(rows)
+
+
+def test_greenhouse_boards_fetch_in_parallel_preserving_output_order(
+    fake_deps: _FakeDeps,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_deps.set_registry_entries(
+        "greenhouse",
+        [
+            {"slug": "studio-a", "studio": "Studio A", "name": "Studio A"},
+            {"slug": "studio-b", "studio": "Studio B", "name": "Studio B"},
+            {"slug": "studio-c", "studio": "Studio C", "name": "Studio C"},
+        ],
+    )
+    for slug in ("studio-a", "studio-b", "studio-c"):
+        fake_deps.set_response(
+            GREENHOUSE_JOBS_URL_TEMPLATE.format(slug=slug),
+            {
+                "jobs": [
+                    {
+                        "id": slug,
+                        "title": f"{slug} Engineer",
+                        "location": {"name": "Remote"},
+                        "absolute_url": f"https://example/{slug}/jobs/1",
+                    }
+                ]
+            },
+        )
+
+    active_fetches = 0
+    max_active_fetches = 0
+    lock = threading.Lock()
+
+    def delayed_fetch_with_retries(
+        url: str,
+        fetch_text: Callable[[str, int], str],
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+    ) -> str:
+        nonlocal active_fetches, max_active_fetches
+        with lock:
+            active_fetches += 1
+            max_active_fetches = max(max_active_fetches, active_fetches)
+        try:
+            time.sleep(0.02)
+            return fake_deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+        finally:
+            with lock:
+                active_fetches -= 1
+
+    monkeypatch.setattr(greenhouse_runner, "fetch_with_retries", delayed_fetch_with_retries)
+
+    rows = provider_api.run_greenhouse_boards_source(
+        fetch_text=lambda _url, _timeout: "",
+        timeout_s=5,
+        retries=1,
+        backoff_s=0.0,
+    )
+
+    assert max_active_fetches > 1
+    assert [row["studio"] for row in rows] == ["Studio A", "Studio B", "Studio C"]
+    details = fake_deps.SOURCE_DIAGNOSTICS["greenhouse_boards"]["details"]
+    assert [detail["slug"] for detail in details] == ["studio-a", "studio-b", "studio-c"]
+    assert {detail["boardFetchConcurrency"] for detail in details} == {3}
+
+
+def test_lever_json_feed_sources_fetch_in_parallel_preserving_output_order(
+    fake_deps: _FakeDeps,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_deps.set_registry_entries(
+        "lever",
+        [
+            {"account": "studio-a", "studio": "Studio A", "name": "Studio A"},
+            {"account": "studio-b", "studio": "Studio B", "name": "Studio B"},
+            {"account": "studio-c", "studio": "Studio C", "name": "Studio C"},
+        ],
+    )
+    for account in ("studio-a", "studio-b", "studio-c"):
+        fake_deps.set_response(
+            f"https://api.lever.co/v0/postings/{account}?mode=json",
+            [
+                {
+                    "id": account,
+                    "text": f"{account} Gameplay Engineer",
+                    "hostedUrl": f"https://jobs.lever.co/{account}/jobs/1",
+                    "categories": {
+                        "location": "Remote",
+                        "team": "Game Engineering",
+                    },
+                    "descriptionPlain": "Build gameplay systems for our game team.",
+                }
+            ],
+        )
+
+    active_fetches = 0
+    max_active_fetches = 0
+    lock = threading.Lock()
+
+    def delayed_fetch_with_retries(
+        url: str,
+        fetch_text: Callable[[str, int], str],
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+    ) -> str:
+        nonlocal active_fetches, max_active_fetches
+        with lock:
+            active_fetches += 1
+            max_active_fetches = max(max_active_fetches, active_fetches)
+        try:
+            time.sleep(0.02)
+            return fake_deps.fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+        finally:
+            with lock:
+                active_fetches -= 1
+
+    monkeypatch.setattr(json_feed_runner, "fetch_with_retries", delayed_fetch_with_retries)
+
+    rows = provider_api.run_lever_sources_source(
+        fetch_text=lambda _url, _timeout: "",
+        timeout_s=5,
+        retries=1,
+        backoff_s=0.0,
+    )
+
+    assert max_active_fetches > 1
+    assert [row["studio"] for row in rows] == ["Studio A", "Studio B", "Studio C"]
+    details = fake_deps.SOURCE_DIAGNOSTICS["lever_sources"]["details"]
+    assert [detail["name"] for detail in details] == ["Studio A", "Studio B", "Studio C"]
+    assert {detail["sourceFetchConcurrency"] for detail in details} == {3}

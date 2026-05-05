@@ -1,665 +1,130 @@
-﻿# End-to-End Benchmarking &amp; Responsiveness Plan
+﻿# End-to-End Benchmarking and Responsiveness Plan
 
-> - **Status:** Active plan
-> - **Use this when:** adding frontend/backend instrumentation, profiling pipeline operations, fixing UI stalling (especially Admin page), or setting up CI performance regression detection
-> - **Canonical for:** frontend User Timing instrumentation, Long Task detection, Playwright performance traces, profiling hooks (BALUFFO_PROFILE=1), sync operation timing, NDJSON perf trend tracking, CI smoke benchmark, startup profile regression gate, and Admin-page bootâ€‘sequence optimizations
-> - **Not canonical for:** pipeline/discovery timing payload shapes (use `pipeline_timing.py`, `runtime_metrics.py`), fetcher metrics contracts (use `fetcher_metrics.py`), startup probe event schema (use `startup_profile.py`, `startup_telemetry.py`), Admin task/progress UX closeout history (use `archive/task-progress-operational-console-closeout.md`), or sourceâ€‘sync production-readiness closeout history (use `archive/source-sync-production-readiness-closeout.md`)
-> - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../startup-probe-architecture.md`](../startup-probe-architecture.md), [`../testing.md`](../testing.md), and the source files listed per phase below
-> - **Last updated:** 2026-05-05
+> Canonical for frontend responsiveness instrumentation, startup/perf traces, benchmark artifacts, trend tracking, and current optimization targets.
+>
+> Not canonical for pipeline timing payload schemas, fetch report schemas, source-sync closeout history, or task-progress UX history. Use the relevant source modules and archived closeout docs for those contracts.
 
-## Verdict
+## Intent
 
-Baluffo already has **strong backend aggregate timing** â€” pipeline stage totals, discovery stage/adapter breakdowns, fetcher runâ€‘history statistics, and a 9â€‘stage cold/warm startup profile with explicit ms thresholds. Three standalone benchmark scripts exist for discovery, fetch incremental, and startup probe pairs. However:
+Baluffo should have enough performance signal to answer three questions quickly:
 
-1. **Frontend rendering is a blind spot** â€” only 3 `performance.now()` calls across the entire frontend. No User Timing marks/measures, no Long Task observer, no Web Vitals.
-2. **No profiling** â€” no `cProfile`/`py-spy`/`pyinstrument` integration. Adapterâ€‘level timing exists but cannot reveal *which function inside* a slow adapter burns time.
-3. **No CI performance regression detection** â€” benchmark steps are absent from all workflows.
-4. **No performance history trends** â€” every benchmark run is a standalone snapshot with no crossâ€‘run comparison.
-5. **Sync operations have no timing instrumentation** â€” unlike discovery and fetch which have full stageâ€‘timing systems.
-6. **No reusable lightweight instrumentation pattern exists** â€” the codebase exclusively uses adâ€‘hoc `time.perf_counter()` scattered across individual functions; no decorators, context managers, or middleware.
+1. What is slow in page boot, rendering, bridge calls, and pipeline fetches?
+2. Which regressions are real enough to gate or investigate?
+3. Which optimization target is safest and highest-impact next?
 
-### Adminâ€‘page boot is the primary stalling surface
+The plan favors opt-in diagnostics and additive instrumentation. It must not change bridge route signatures, persisted job contracts, startup metric schemas, task-run UX, or source output behavior unless a separate compatibility decision is made.
 
-A deepâ€‘dive of the Admin page boot sequence (`frontend/admin/app/runtime.js:249-317`) revealed:
+## Current status
 
-| Issue | Location | Impact |
-|-------|----------|--------|
-| ~18 HTTP requests launched at boot | `auth.js:31-67` | Browser connection queuing (HTTP/1.1 6â€‘perâ€‘origin limit) |
-| `cacheAdminDom()` â€” ~50 synchronous DOM queries | `dom.js:3-103` | Blocks main thread before any async work |
-| Redundant `loadSyncStatus` doubleâ€‘call | `health.js:551` + `auth.js:65` | Duplicate bridge roundâ€‘trip |
-| `loadOpsHealthData` doubleâ€‘fire within 900ms | `auth.js:52` (setTimeout 900ms) + `auth.js:62` (immediate) | Duplicate ops health fetch |
-| `buildDiscoveryRegistrySignature` â€” `JSON.stringify` on entire registry | `registry/load.js:63-86` | CPU block proportional to registry size on every load |
-| 12+ sequential `innerHTML` assignments (ops section) | `health.js:494-550` | Each triggers DOM layout recalculation |
-| 5+ sequential `innerHTML` assignments (discovery section) | `registry/load.js:150-170` | Same layout thrashing pattern |
-| No `requestIdleCallback` or deferred rendering | All boot render paths | All heavy DOM work runs synchronously on dataâ€‘fetch resolution |
-| Tight 500ms polling during active tasks | `fetcher/watch.js:116-126`, `discovery/watch.js:184-194` | Mainâ€‘thread churn on each tick |
+Implemented:
 
-This plan addresses the observational gap first (Phase 1), then exploits the new data to apply optimisations (Phase 3), and finally prevents regression (Phase 4).
+- Admin, Jobs, and Saved User Timing marks via `frontend/shared/perf-marks.js`.
+- Startup-probe-gated Long Task observer in `probes/long-task-observer.js`.
+- Opt-in Playwright perf traces via `playwright.perf.config.js` and `npm run test:frontend:perf`.
+- Admin responsiveness quick wins: redundant boot refresh removal, registry signature digest, idle render deferral, and stale-render guards.
+- Frontend/bridge counter instrumentation and benchmark summaries for startup, lifecycle, fetch, and render signals.
+- Static outlier benchmark group: `npm run perf:fetch:static-outliers`.
+- Benchmark artifact improvements: `sourcePolicySignals`, `sourceRegistrySignals`, `registryScopeSummary`, and `nextOptimizationTargets`.
+- Full uncapped pipeline benchmark evidence collected and used to steer optimization work.
 
----
+Recent validation:
 
-## Progress through 2026-05-05
+- `python -m pytest tests/test_fetch_incremental_sanity_benchmark.py -q --color=no` -> `16 passed`.
+- `cmd /c npm run perf:fetch:static-outliers` -> passed and wrote `_out/perf-sanity-fetch-static-outliers/benchmark-summary.json`.
 
-Current capability snapshot:
+## Latest benchmark evidence
 
-- Frontend startup instrumentation is in place for Admin, Jobs, and Saved: User Timing marks, startup-probe transport, Long Task observer, and opt-in Playwright perf traces.
-- Backend/source instrumentation is in place for cProfile hooks, bridge request counters, sync timing, startup profile regression gates, stage-aware benchmark trends, and CI smoke benchmark comparison.
-- Admin responsiveness quick wins Q1-Q6 are complete: redundant boot fetches removed, registry digesting compacted, DOM refs made lazy, heavy renders deferred, and discovery sections progressively revealed.
-- Benchmarking now supports repeated-run medians, capped discovery presets, fetch groups, stage-aware baselines/trends, adapter summaries, source timing signals, and network/wait proxy counters.
-- Desktop startup reliability is fixed for startup-probe Chromium launches, profile-only exits, and cold/warm startup-pair reporting.
+Full uncapped pipeline run:
 
-Latest measured signals:
+- Output jobs: `33642`.
+- Source rows: `1916` total, `1531` successful, `385` failed.
+- Wall clock: `1277528ms` (~21.3 min).
+- Stage totals: `fetchAndParse=11233801ms`, `detailFetch=3108031ms`, `candidateExtraction=3061114ms`, `listingFetch=2947828ms`.
+- Static dominates: `12961535ms` across `1892` static sources, with `384` static errors and `874` zero-kept static sources.
 
-| Area | Latest signal |
-|---|---|
-| Jobs startup critical path | First usable UI remains healthy: cold `1658ms`, warm `1554ms`. |
-| Jobs local-data API binding | Immediate: `1ms` cold/warm via `jobs_local_data_api_ready`. |
-| Jobs full desktop bootstrap | Background/deferred: cold `9323ms`, warm `7798ms`; now emits `bootstrapWaitMs`, attempt count, retry count, and first-success timing. |
-| Fetch provider-api | Latest run after Teamtailor bounded detail concurrency: total `32.2s`; Teamtailor `11.5s`, Greenhouse `11.2s`, Lever `7.9s`, SmartRecruiters `1.5s`, Ashby `0.1s`. |
-| Static-detail fetch | Static/detail work dominates; PlayStation, EA, and WBD are the strongest inspection targets. |
-| Capped GameDevMap discovery | Useful as a bounded stage-cost benchmark, but not yet as a candidate-yield benchmark. |
+Latest focused static-outliers run:
 
-Latest follow-ups:
+- Total: `165848ms`.
+- First run: `164786ms`.
+- Second run: `1062ms`.
+- `listingFetch=80077ms`, `candidateExtraction=54651ms`, `detailFetch=119957ms`.
+- `registryScopeSummary`: `3` cross-host static sources, `7` off-listing-host pages.
 
-- Frontend fetch/render counters are now available via `window.__baluffoSnapshotFrontendPerfCounters()` and the Admin Ops diagnostics panel under **Frontend Performance**, with bridge fetch, Jobs feed fetch, Admin fetch-report fetch, Jobs list render, and Jobs pagination render categories recorded in-memory.
-- Teamtailor provider fetch now performs bounded parallel detail-page fetching (`detailFetchConcurrency=6`) after listing-link discovery, preserving result order while reducing serial network wait in the provider-api benchmark path.
-- Validation completed: `node --test tests/frontend/unit/perf-counters.test.mjs tests/frontend/unit/admin-ops-diagnostics-render.test.mjs`, `python -m pytest tests/test_jobs_fetcher_pipeline.py -q -k "teamtailor_sources_fetch_detail_pages_with_bounded_concurrency or teamtailor_sources_skip_fresh" --color=no`, and `npm run perf:fetch:provider-api`.
+Current ranked targets from the artifact:
 
-Current optimisation decisions:
+1. Super Lucky Casino: `source_policy_review`, priority `100`, `requiresExplicitDecision=true`.
+2. Atvis: `source_policy_review`, priority `100`, `requiresExplicitDecision=true`.
+3. Netflix Games: `source_policy_review`, priority `90`, `requiresExplicitDecision=false`.
+4. Koei Tecmo Vietnam: `source_scope_and_timeout_review`, priority `65`, `requiresExplicitDecision=true`.
+5. Maliyo: `timeout_or_network_budget`, priority `30`, `requiresExplicitDecision=false`.
 
-- Do not optimise frontend Jobs local-data hydration; API binding is already off the critical path.
-- If deferred full desktop bootstrap matters, inspect the desktop bootstrap/session handshake and retry loop rather than Jobs rendering.
-- Re-run the provider-api benchmark to confirm the Teamtailor detail-fetch parallelism impact before broader provider CPU work.
-- Inspect PlayStation, EA, and WBD before broad static-detail runtime changes.
-- Treat Lever slow boards as network/wait behaviour unless repeated samples show a stable parse or CPU hotspot.
+Important interpretation:
 
-Recent validation for the current startup/local-data signal:
+- Super Lucky keeps output but the active registry row starts at `superluckycasino.com` and includes `stillfront.com` parent-career pages. Treat this as a source-policy/output-contract decision, not a mechanical speed fix.
+- Atvis keeps output but has site-changed evidence and a LinkedIn off-listing page. Treat as source-policy review.
+- Koei keeps output and has timeout pressure plus cross-host `careerviet.vn` registry pages. Treat as combined source-scope and timeout review.
+- Netflix is zero-kept `needs_review`; safer to review than kept-output sources, but existing persisted Netflix jobs mean avoid broad assumptions.
+- Maliyo is the cleanest remaining mechanical timeout/network-budget target.
 
-- `python -m pytest tests/packaged_desktop/test_startup_profile_parsing.py -q -k "late_local_data or local_auth_delay or browser_created_timestamps" --color=no`
-- `python -m pytest tests/test_startup_profile.py -q --color=no`
-- `npm run perf:startup:pair`
-Remaining near-term work:
+## Remaining work
 
-- **Phase 1e follow-ups:** frontend fetch/render counters and broader backend instrumentation beyond bridge request timing.
-- **Phase 3 evidence-based optimisation:** choose optimisations from measured bottlenecks. Current fetch smoke evidence points away from adapter CPU micro-optimisations and toward fetch/wait behavior, cache/cadence behavior, or canonicalization if it becomes significant in larger runs.
+Highest-value next work:
 
-### Benchmarking signal improvement follow-up
+1. Decide source-policy handling for Super Lucky, Atvis, and Koei.
+2. Improve Maliyo timeout/network diagnostics before lowering any budget.
+3. Add a concise trend report that compares latest full lifecycle and static-outlier runs against previous artifacts.
+4. Keep perf traces opt-in but document how to attach `_out/perf-traces/` artifacts to investigations.
+5. Consider a CI smoke benchmark only after signals are stable enough to avoid noisy failures.
 
-The current benchmarking suite is useful for smoke-level regression detection and broad trend tracking, but it should be strengthened before leaning too hard into Phase 3 optimisation decisions. The following five improvements are implemented as benchmark/report-only slices, preserving bridge routes, persisted job payloads, and user-facing job data contracts.
+Deferred work:
 
-1. **Repeated-run median baselines** - implemented
-   - Add `--runs N` to `scripts/perf_ci.py`, defaulting to `1` for current behavior.
-   - Use `--runs 3` for local baseline capture and optional deeper validation.
-   - Compare median `totalDurationMs` instead of a single noisy run when multiple runs are requested.
-   - Emit per-run durations plus median/min/max into `_out/perf-ci/summary.json`.
-   - Goal: reduce false warnings like small discovery quick-run variance while keeping CI smoke fast by default.
-   - Follow-up added: `--record-trend` appends repeated-run median rows and `--record-baseline` writes median baseline files with stage medians.
+- `BALUFFO_PROFILE=1` profiling hooks and pstats summaries.
+- Sync operation timing parity with discovery/fetch timing: implemented for pull/push stage totals, sorted `stageTop`, `/sync/status` latest/history payloads, and completed sync task summaries.
+- Full NDJSON trend gate and PR annotations.
+- Virtualized jobs-feed rendering or workerized CSV parsing, only if frontend long-task/render counters justify it.
+- Any source suppression, migration, or registry mutation for kept-output sources.
 
-2. **Full-but-capped discovery benchmark** - implemented
-   - Add a second discovery preset, tentatively `--preset capped`, while keeping `--preset quick` as the CI smoke default.
-   - Enable heavier discovery paths with strict caps: small `gameprog` studio count, small `gamedevmap` row/homepage limits, `webSearch` off by default, and `gamesmap` only if it can be safely bounded.
-   - Add `npm run perf:discovery:capped` for manual/deeper signal.
-   - Goal: expose generation, probe fanout, dedupe, and finalization costs without recreating the prior 15-minute full-run timeout.
-   - Follow-up added: split scripts `perf:discovery:capped-provider` and `perf:discovery:capped-gamedevmap` isolate provider/Gameprog and GameDevMap costs.
+## Validation commands
 
-3. **Fetch benchmark groups** - implemented
-   - Extend `src/fetch_incremental_sanity_benchmark.py` with `--group`.
-   - Suggested groups:
-     - `smoke`: current Greenhouse + Lever pair.
-     - `provider-api`: Greenhouse, Lever, Ashby, SmartRecruiters, Teamtailor.
-     - `static-detail`: a small set of static/detail-heavy sources.
-     - `mixed`: compact representative blend across provider and static adapters.
-   - Add npm scripts for common groups.
-   - Goal: avoid overfitting fetch performance decisions to only Greenhouse and Lever.
-   - Follow-up added: static/detail-heavy groups now resolve loaders before switching to the isolated benchmark data dir so live static loaders are represented more broadly.
-   - Follow-up added: fetch benchmark payloads now expose `sourceTimingSignals` with first-pass and second-pass slowest source rows from the pipeline runtime report, plus provider-board timing rows when adapters expose board diagnostics.
-
-4. **Stage-level baseline and trend rows** - implemented
-   - Extend `scripts/perf_baseline.py` and `scripts/perf_trend.py` to preserve optional `stageDurationsMs`.
-   - Fetch stages should include available timing summary fields such as `fetchAndParse`, `canonicalization`, `detailFetch`, and `redirectResolve`.
-   - Discovery stages should include generation/probe/finalization timings where already available, or add benchmark-local extraction if the report shape supports it.
-   - Keep the trend table compact, but show stage deltas when present or provide an opt-in detailed mode.
-   - Goal: identify which stage moved when total duration changes.
-   - Follow-up added: discovery benchmarks now extract the report's `runtime.stageTimingsMs` directly, so discovery stage rows are no longer empty when the report provides them.
-
-5. **Network/wait-oriented counters** - implemented
-   - Add benchmark payload fields for available fetch wait proxies: request count, retry count, timeout/error counts, cache skipped/revalidated/refreshed counts, per-adapter duration, and any available wait-like timing.
-   - If true network wait time is not directly measurable yet, start with existing runtime report counters and document them as proxies.
-   - Keep this benchmark/report-only; do not change persisted job data contracts.
-   - Goal: distinguish CPU bottlenecks from network/wait/cache behavior before choosing adapter-level optimisations.
-   - Follow-up added: `npm run perf:adapter-summary` prints the slowest adapters from fetch/discovery benchmark JSON artifacts.
-
-Implementation order used:
-
-1. Stage-level extraction and trend rows, because every later benchmark becomes more informative.
-2. Repeated-run median support in `perf_ci.py`, because it lowers noise and false warnings.
-3. Fetch benchmark groups, because it broadens coverage cheaply.
-4. Capped discovery preset, because it needs careful limits to avoid long-running discovery.
-5. Network/wait counters, because it may require the most runtime-report inspection.
-
----
-
-## Conflict &amp; Compatibility Notes
-
-| Existing plan | Compatibility |
-|---|---|
-| **`archive/task-progress-operational-console-closeout.md`** | No conflict. The closed task/progress console work owns the shared taskâ€‘run presenter, compact Current Runs rows, stalled/orphaned display states, and Admin task/progress UX history. This plan does not change taskâ€‘run rendering or progress bar logic. The lightweight counterâ€‘based instrumentation (1e) and Long Task observer (1b) will feed data into the taskâ€‘run view model without altering its interface. |
-| **`archive/source-sync-production-readiness-closeout.md`** | No conflict. The closed source-sync readiness work owns snapshot hardening, conflict handling, and private BaluffoSync governance history. Timing instrumentation is additive and orthogonal. |
-| **`plans/saved-job-tracker-improvements-plan.md`** | No conflict. Saved page is out of scope for this plan. |
-| **`../startup-probe-architecture.md`** | No conflict. This plan extends the existing startupâ€‘probe JSONL pipeline with additional frontend User Timing marks and Long Task events. The event schema and storage path stay unchanged. |
-| **`../archive/admin-health-dashboard-console-closeout.md`** | No conflict. The healthâ€‘dashboard owns compact Discovery/Fetch/Sync lanes and tabbed review surfaces. This plan's Admin quick wins (1eâ€‘bonus) optimise boot timing without changing layout or UX. |
-
----
-
-## Main gaps
-
-### 1) No frontend User Timing marks
-
-The startupâ€‘probe system already captures desktopâ€‘boot events (launch â†’ site ready â†’ window created â†’ window shown â†’ page loaded â†’ local data ready â†’ auth ready â†’ first render â†’ first interactive). But within each page, no `performance.mark()` / `performance.measure()` calls exist. We cannot answer "how long did the Admin discovery section take to render?" or "which of the 12+ innerHTML writes is the slowest?"
-
-### 2) No mainâ€‘thread stall detection
-
-Without a `PerformanceObserver` for `"longtask"` entries, every UI stutter is invisible. The Admin page's synchronous CPU work (`cacheAdminDom`, `JSON.stringify`, 12+ sequential innerHTML writes) is the most likely stalling source, but we lack hard evidence.
-
-### 3) No perâ€‘operation profiling
-
-Aggregate `time.perf_counter()` calls track how long each source takes but not *why*. Without `cProfile`/`py-spy`, hotspots inside adapters (e.g., slow `BeautifulSoup` parsing, excessive HTTP redirects, inefficient list comprehensions) are invisible until a human reads the code.
-
-### 4) No Clientâ€‘side fetch timing
-
-The bridge has no requestâ€‘timing middleware. The frontend has no fetchâ€‘timing wrapper. We cannot measure "how long did `GET /ops/fetcher-metrics` take on the wire?" vs "how long did the frontend spend parsing its response?"
-
-### 5) No CI benchmark gate
-
-Benchmarks run manually. PRs can silently regress discovery duration, fetch duration, or startup time without any signal.
-
-### 6) No crossâ€‘run trend data
-
-Every benchmark overwrites its `_out/` output. No persistent history file allows comparing "was this week's fetch faster or slower than last week's?"
-
-### 7) No sync timing
-
-Discovery and fetch have `runtime_metrics.py` and `pipeline_timing.py`. Sync has no equivalent â€” no stage durations, no perâ€‘phase timing, no structured runtime payload.
-
----
-
-## Phase 1 â€“ Instrument the blind spots
-
-### 1a â€“ Frontend User Timing marks
-
-Add `performance.mark()` / `performance.measure()` at every identifiable lifecycle step in each page's boot sequence, wiring into the existing startupâ€‘probe JSONL pipeline (`POST /desktop-local-data/startup-metric`).
-
-**Target Admin page boot steps** (`frontend/admin/app/runtime.js:249-317`, `frontend/admin/app/auth.js:31-67`):
-
-| Step | Mark name | Location |
-|------|-----------|----------|
-| cacheAdminDom start/end | `admin_dom_cache_start` / `admin_dom_cache_end` | `runtime.js:251` â†’ `dom.js:3-103` |
-| Auth init start/end | `admin_auth_init_start` / `admin_auth_init_end` | `auth.js:31-67` wrapper |
-| Bridge status fetch start/end | `admin_bridge_status_start` / `admin_bridge_status_end` | `bridge-status.js:55` |
-| Overview data fetch start/resolve | `admin_overview_fetch_start` / `admin_overview_fetch_done` | `overview.js:61-80` |
-| Discovery data fetch start/resolve | `admin_discovery_fetch_start` / `admin_discovery_fetch_done` | `registry/load.js:88-211` |
-| Discovery render start/end | `admin_discovery_render_start` / `admin_discovery_render_end` | `registry/load.js:150-170` |
-| Ops health fetch start/resolve | `admin_ops_health_fetch_start` / `admin_ops_health_fetch_done` | `health.js:388-572` |
-| Ops alerts render start/end | `admin_ops_alerts_render_start` / `admin_ops_alerts_render_end` | `health.js:494-550` each section |
-| Sync fetch start/resolve | `admin_sync_fetch_start` / `admin_sync_fetch_done` | `sync.js:120-138` |
-| First render timestamp | `admin_first_render` | Existing `markAdminFirstInteractive` |
-
-**Target Jobs page** (`frontend/jobs/app/feed.js`):
-
-| Step | Mark name |
-|------|-----------|
-| Page boot start | `jobs_boot_start` (already `jobs_init_start` on line 49) |
-| Start-up preview resolve | `jobs_preview_ready` |
-| Full feed fetch start/resolve | `jobs_feed_fetch_start` / `jobs_feed_fetch_done` |
-| Render start/end | `jobs_render_start` / `jobs_render_end` |
-| First interactive | `jobs_first_interactive` (already exists) |
-
-**Target Saved page** (`frontend/saved/app/runtime/boot.js`):
-
-| Step | Mark name |
-|------|-----------|
-| Boot start | `saved_boot_start` |
-| Local data init ready | `saved_local_data_init_ready` (already exists) |
-| Auth ready | `saved_auth_ready` (already exists) |
-| First render | `saved_first_render` (already exists) |
-| First interactive | `saved_first_interactive` (already exists) |
-
-**Implementation approach:**
-- Add a `markStep(name)` helper in a new shared module `frontend/shared/perf-marks.js` that calls `performance.mark(name)` and, when `BALUFFO_STARTUP_PROBE` is set, emits the metric to the bridge via the existing `emitMetric` pattern
-- In each page's boot composition, wrap existing function calls with `markStep('section_start')` / `markStep('section_end')` and create `performance.measure('section', 'section_start', 'section_end')`
-- Keep the helper zero-cost when not in probe mode (no-op function)
-
-### 1b â€“ Long Task observer
-
-Add a `PerformanceObserver` for `"longtask"` entries on all three pages to detect and report mainâ€‘thread blocking.
-
-**Implementation** (`probes/long-task-observer.js` â€” new shared module):
-
-```js
-export function observeLongTasks(emitMetric) {
-  if (typeof PerformanceObserver === "undefined") return;
-  const observer = new PerformanceObserver((list) => {
-    for (const entry of list.getEntries()) {
-      emitMetric("long_task", {
-        duration: entry.duration,
-        startTime: entry.startTime,
-        name: entry.name,
-        entryType: entry.entryType,
-        attribution: entry.attribution?.map(a => ({
-          name: a.name,
-          duration: a.duration,
-          containerType: a.containerType,
-          containerName: a.containerName,
-          containerId: a.containerId,
-        })),
-      });
-    }
-  });
-  observer.observe({ type: "longtask", buffered: true });
-}
-```
-
-- Wire into each page's boot composition (`runtime.js` level for admin, jobs, saved)
-- Emit through existing `POST /desktop-local-data/startup-metric` path when `BALUFFO_STARTUP_PROBE` is set
-- The `attribution` array identifies which script/container caused the long task, directly answering "what is stalling?"
-
-### 1c â€“ Playwright performance traces
-
-Extend existing Playwright E2E tests (`tests/frontend/*.spec.mjs`) to capture Chrome DevTools Protocol traces.
-
-**Implementation:**
-
-```js
-import { chromium } from "@playwright/test";
-
-const browser = await chromium.launch();
-const context = await browser.newContext();
-const page = await context.newPage();
-
-await context.tracing.start({ screenshots: true, snapshots: true });
-await page.goto("http://localhost:PORT/admin/index.html");
-await context.tracing.stop({ path: "_out/perf-traces/admin-boot-trace.zip" });
-```
-
-Add perâ€‘test assertions:
-- `page.evaluate(() => performance.getEntriesByType("paint"))` â†’ report First Paint, First Contentful Paint
-- `page.evaluate(() => { const l = new PerformanceObserver(() => {}); ... })` â†’ capture LCP if available
-- Capture total navigation timing via `performance.getEntriesByType("navigation")[0].domContentLoadedEventEnd`
-
-Create a new smoke test variant `test:frontend:perf` in `package.json` that runs these tracer tests against each page (admin, jobs, saved). Perf tests are excluded from the main smoke suite â€” run manually or in the CI perf workflow (Phase 4a).
-
-### 1d â€“ Profiling hooks (`BALUFFO_PROFILE=1`)
-
-Add an opt-in profiling path using `cProfile` and `py-spy` around adapter execution and discovery probe stages.
-
-**Implementation:**
-
-New module `src/shared/profile_utils.py`:
-
-```python
-import os
-import cProfile
-import io
-import pstats
-
-PROFILE_ENABLED = os.environ.get("BALUFFO_PROFILE", "").strip().lower() in ("1", "true", "yes")
-
-
-def run_profiled(fn, *args, profile_name="default", **kwargs):
-    if not PROFILE_ENABLED:
-        return fn(*args, **kwargs)
-    profiler = cProfile.Profile()
-    try:
-        return profiler.runcall(fn, *args, **kwargs)
-    finally:
-        s = io.StringIO()
-        pstats.Stats(profiler, stream=s).sort_stats("cumulative").print_stats(30)
-        out_dir = Path(os.environ.get("BALUFFO_DATA_DIR", "_out")) / "perf-profiles"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / f"{profile_name}.prof.txt").write_text(s.getvalue())
-        profiler.dump_stats(str(out_dir / f"{profile_name}.prof"))
-```
-
-Wrap these call sites:
-
-| Call site | Profile name | File |
-|-----------|-------------|------|
-| Each adapter `fetch()` in pipeline loop | `adapter_{name}_{source_id}` | `src/jobs/pipeline_stage_source_execution.py` |
-| `run_discovery()` main entry | `discovery_full_run` | `src/source_discovery/orchestrator.py` |
-| Each probe batch in discovery | `discovery_probe_batch_{adapter}` | `src/source_discovery/orchestrator_probe.py` |
-| `sync_service.pull_and_merge_sources()` | `sync_pull_merge` | `src/bridge/sync_service.py` |
-
-`py-spy` is an alternative for productionâ€‘like runs (no instrumentation overhead). Document in the plan but implement `cProfile` first since it works without extra dependencies.
-
-### 1e â€“ Lightweight alwaysâ€‘on counterâ€‘based instrumentation
-
-Add minimal reusable instrumentation that runs always (zeroâ€‘config) to accumulate structured timing counters.
-
-**Implementation:**
-
-New shared module `src/shared/timing_counters.py`:
-
-```python
-from __future__ import annotations
-import time
-from collections import defaultdict
-from typing import Any
-
-_timers: dict[str, list[float]] = defaultdict(list)
-
-
-def record_duration(category: str, duration_ms: int) -> None:
-    _timers[category].append(duration_ms)
-
-
-class Timer:
-    def __init__(self, category: str):
-        self.category = category
-        self._start: float | None = None
-
-    def __enter__(self):
-        self._start = time.perf_counter()
-        return self
-
-    def __exit__(self, *args):
-        if self._start is not None:
-            record_duration(self.category, int((time.perf_counter() - self._start) * 1000))
-```
-
-Where to integrate:
-
-| Location | Category | File |
-|----------|----------|------|
-| Bridge `do_GET`/`do_POST` handler | `bridge_request_{method}_{path}` | `src/bridge/server/handler.py:131-147` |
-| Frontend fetch wrapper | `frontend_fetch_{endpoint}` | `frontend/admin/app/data-source.js` (new wrapper) |
-| Frontend render helper | `frontend_render_{section}` | `frontend/shared/dom-utils.js` (new wrapper around innerHTML) |
-| Pipeline adapter call | `adapter_run_{name}` | `src/jobs/pipeline_stage_source_execution.py` |
-| Discovery stage | `discovery_stage_{stage}` | `src/source_discovery/runtime_metrics.py` |
-
-Expose accumulated counters via a new bridge endpoint `GET /ops/perf-counters` (adminâ€‘only, returns JSON of `{category: [p50, p95, count, sum]}`). This gives realâ€‘time insight into perâ€‘request latencies without external monitoring.
-
-### 1eâ€‘bonus â€“ Admin page quick wins (lowâ€‘risk fixes from boot analysis)
-
-These are direct fixes for waste identified in the boot sequence analysis. Implement before or alongside Phase 1 â€” they remove known overhead without changing architecture.
-
-| # | Fix | File | Detail |
-|---|-----|------|--------|
-| Q1 | Remove redundant `loadSyncStatus` call | `health.js:551` | `loadSyncStatus` is already called at `auth.js:65`. The call inside `loadOpsHealthData`'s success handler is a duplicate. Remove it â€” sync data is already loaded by then. |
-| Q2 | Cancel the 900ms setTimeout if immediate load fires first | `auth.js:52` | The `setTimeout(loadOpsHealthData, 900)` at boot creates a guaranteed second fetch. Save the timer id; clear it in `loadOpsHealthData`'s busyâ€‘guard (`health.js:389-391`). |
-| Q3 | Replace `JSON.stringify` registry hash with incremental digest | `registry/load.js:63-86` | Current `buildDiscoveryRegistrySignature` serialises the full pending/active/rejected set to compute a changeâ€‘detection string. Replace with a rolling hash (`adler32` or `fnv1a`) that iterates rows once. |
-| Q4 | Defer `cacheAdminDom()` to lazy onâ€‘access | `dom.js:3-103` | Replace the upfront ~50 `querySelector`/`querySelectorAll` calls with a `getDomRef(name)` function that caches the result on first access. The initial boot path only touches ~10 of the 50+ references â€” the rest pay cost only when first used. |
-| Q5 | Wrap heavy renders in `requestIdleCallback` | `health.js:494-550`, `registry/load.js:150-170` | Nonâ€‘critical renders (trends, history, dedup lists, source tables) can be deferred with `requestIdleCallback` or a simple 50ms `setTimeout` chain. Critical renders (KPIs, alerts, bridge status) stay inline. |
-| Q6 | Progressive section reveal | All boot renders | Render each section's placeholder immediately, then fill as its promise resolves. Currently all 6 discovery fetches must resolve before *any* discovery content appears. |
-
-### 1f â€“ Sync operation timing
-
-Add the same stageâ€‘timing pattern used by discovery (`runtime_metrics.py`) and fetch (`pipeline_timing.py`) to sync operations.
-
-**Target:** `src/bridge/sync_service.py` and `src/source_sync_runtime.py`.
-
-Add these stage keys:
-
-| Stage | Measured from | Measured to |
-|-------|---------------|-------------|
-| `pullRemote` | Start of `pull_and_merge_sources` | Remote JSON fetched |
-| `mergeLocalRegistry` | Remote JSON parsed | Local registry loaded and merged |
-| `resolveConflicts` | Merge complete | Conflict resolution done |
-| `applyLocal` | Local registry written | File write confirmed |
-| `pushRemote` | Start of `push_sources_snapshot` | GitHub Contents API PUT complete |
-| `totalSync` | Sync operation start | All stages complete |
-
-**Runtime payload shape** (new module `src/bridge/sync_timing.py`):
-
-```python
-{
-    "totalDurationMs": int,
-    "stageTotalsMs": {"pullRemote": int, "mergeLocalRegistry": int, ...},
-    "conflictCount": int,
-    "tombstonesSuppressed": int,
-    "rejectedSuppressed": int,
-    "pushed": bool,
-    "noOp": bool,
-}
-```
-
-Wire into the existing `GET /sync/status` response under a new `"timing"` key. Store the last 20 sync timing records in `data/sync-timing-history.json` (NDJSON compatible).
-
----
-
-## Phase 2 â€“ Focused benchmarks
-
-### 2a â€“ Baseline data collection
-
-Run each benchmark against the current state *before* any Phase 3 optimisations to establish a baseline.
-
-| Benchmark | Command | Output |
-|-----------|---------|--------|
-| Discovery sanity | `npm run perf:discovery:benchmark` | `_out/perf-baseline/discovery-baseline.json` |
-| Discovery + web search | `npm run perf:discovery:benchmark -- --include-web-search` | `_out/perf-baseline/discovery-web-baseline.json` |
-| Fetch incremental | `python src/fetch_incremental_sanity_benchmark.py` | `_out/perf-baseline/fetch-baseline.json` |
-| Startup cold | `npm run perf:startup:cold` | `_out/perf-baseline/startup-cold-baseline.json` |
-| Startup warm | `npm run perf:startup:warm` | `_out/perf-baseline/startup-warm-baseline.json` |
-| Startup pair | `npm run perf:startup:pair` | `_out/perf-baseline/startup-pair-baseline.json` |
-| pytest timing | `npm run perf:py:timing` | Terminal output (not persisted) |
-
-Each baseline run appends an NDJSON row to `_out/perf-trend.ndjson` (see Phase 4b).
-
-### 2b â€“ Adapter deep profiling
-
-- Run `BALUFFO_PROFILE=1 python src/fetch_incremental_sanity_benchmark.py` to produce `.prof` files for each adapter
-- Identify the topâ€‘3 `cumulative` time sinks per adapter using `pstats`
-- Crossâ€‘reference with `pipeline_timing.py`'s `highCostLowYieldSources` and `detailHeavySources` metrics to prioritise which adapters to optimise in Phase 3
-
----
-
-## Phase 3 â€“ Optimisation (evidenceâ€‘dependent)
-
-Ordered by expected impact based on Phase 1 &amp; 2 data. All items are conditional â€” measure first, optimise second.
-
-### P0 â€“ Admin boot parallelisation + lazy rendering
-
-Based on the boot analysis (Phase 1eâ€‘bonus Q5â€“Q6), apply:
-
-- `requestIdleCallback` wrappers for: ops trends render (`health.js` ~line 540), dedup lists render (`health.js` ~line 533), source tables render (`registry/load.js:150-170`), ops history render (`health.js` ~line 522)
-- Parallelise discovery registry fetches: currently `GET /discovery/report`, `GET /discovery/candidates`, `GET /registry/pending`, `GET /registry/active`, `GET /registry/rejected` fire simultaneously â€” move the static `data/jobs-fetch-report.json` fetch into the same `Promise.all` instead of the separate `resolveLatestFetchReport` call that follows
-- Show each discovery section (pending, active, rejected) as its promise resolves rather than waiting for all 6 fetches
-
-### P1 â€“ Web Worker for CSV parsing
-
-`frontend/jobs/parsing-utils.js:178` parses CSV on the main thread using `performance.now()` timing that already shows this is a tracked concern.
-
-- Move `parseCSVRecords()`, `findCompanyColumnIndex()`, `findColumnIndex()` into a Web Worker (`frontend/jobs/parsing-worker.js`)
-- Post CSV text to worker, receive parsed rows via `postMessage`
-- Show a "Parsing N sources..." progress indicator during worker execution
-
-### P1 â€“ Virtual scrolling / pagination for jobs feed
-
-With 40k entries growing, the jobs feed DOM becomes expensive.
-
-- Evaluate current DOM node count under realistic filter conditions (pagination already exists at `currentPage` in feed state)
-- If DOM exceeds ~5000 nodes, implement a virtual scroller that only renders visible + overscan rows (~30 DOM nodes regardless of dataset size)
-- Prioritise only if Phase 1b Long Task data shows renderâ€‘time stalls
-
-### P2 â€“ Adapterâ€‘level fixes
-
-Based on Phase 2b profiling results:
-
-- Reduce HTTP redirect chains in slow adapters (use `allow_redirects=False` + manual follow for redirect chains > 2 hops)
-- Add `lru_cache` to adapter functions that parse the same URL pattern repeatedly
-- Increase `max_per_domain` or `adapter_http_concurrency` for adapters with long idle times
-- Address specific hotspots revealed by `cProfile` output
-
-### P3 â€“ Startup sequence dependency flattening
-
-Based on startup probe data (Phase 2a):
-
-- If `auth_ready_to_first_render` exceeds thresholds, evaluate lazy auth initialisation â€” defer auth check until first user interaction with authâ€‘gated features
-- If `page_loaded_to_local_data_ready` is a bottleneck, add streaming JSON parsing for large local data files instead of loading the entire file into memory
-- If `window_created_to_window_shown` is slow, investigate native window creation delay (likely Chromium launch flags or preload optimisation)
-
----
-
-## Phase 4 â€“ CI + Trends
-
-### 4a â€“ CI smoke benchmark
-
-New GitHub Actions workflow `.github/workflows/benchmark.yml`:
-
-```yaml
-name: benchmark
-on:
-  pull_request:
-    paths:
-      - "src/jobs/**"
-      - "src/source_discovery/**"
-      - "src/bridge/**"
-      - "src/fetcher_metrics.py"
-      - "src/discovery_sanity_benchmark.py"
-on:
-  workflow_dispatch: {}
-```
-
-Steps:
-
-1. Checkout + setup Python
-2. Run discovery smoke benchmark: `python src/discovery_sanity_benchmark.py --preset quick --timeout 10 --top 5` (bounded quick preset: curated seeds and provider patterns only; benchmark auto-approval disabled)
-3. Run fetch smoke benchmark: `python src/fetch_incremental_sanity_benchmark.py --timeout 30 --sources greenhouse_boards lever_sources` (2 adapters only)
-4. Load baseline from `_out/perf-baseline/latest.json` if it exists
-5. Compare `totalDurationMs`:
-   - `>15%` regression â†’ âŒ fail
-   - `>5%` regression â†’ âš ï¸ warning annotation on PR
-   - `<=5%` â†’ âœ… pass
-6. If baseline does not exist, create it (informational run, no pass/fail)
-
-The smoke benchmark must stay under 60s total wallâ€‘clock to avoid delaying PR merges.
-
-Local parity command: `npm run perf:ci`.
-
-### 4b â€“ NDJSON trend tracking
-
-Each benchmark run (manual or CI) appends a single NDJSON row to `_out/perf-trend.ndjson`:
-
-```jsonl
-{"ts":"2026-05-04T12:00:00Z","mode":"discovery","totalDurationMs":45200,"sourceCount":18,"adapterCount":9,"wallClockMs":48200,"commitSha":"abc123","status":"pass"}
-{"ts":"2026-05-04T12:05:00Z","mode":"fetch","totalDurationMs":128000,"sourceCount":12,"adapterCount":8,"wallClockMs":135000,"commitSha":"abc123","status":"pass"}
-```
-
-New npm script `perf:trend` that reads the last 20 entries and prints a delta table:
-
-```
-mode        date           duration  vs prev  vs baseline
-discovery   2026-05-04     45.2s     --       --
-discovery   2026-05-11     42.1s     -6.9%    -6.9%
-fetch       2026-05-04     128.0s    --       --
-fetch       2026-05-11     131.2s    +2.5%    +2.5%
-```
-
-Implementation: simple Python script `scripts/perf_trend.py` that reads `_out/perf-trend.ndjson` and outputs formatted text.
-
-### 4c â€“ Startup profile regression gate
-
-Add threshold enforcement to the existing startup probe flow.
-
-**Target:** `src/ship/startup_profile.py:summarize_startup_metrics` and `src/packaged_desktop_smoke.py`.
-
-- After `summarize_startup_metrics()` computes stage durations, compare each against `PROFILE_THRESHOLDS_MS`
-- If `total_launch_to_first_usable_ui > 18s` (cold) or `>12s` (warm), emit a `"perf_regression"` entry in the startup metric with `{stage: "total_launch_to_first_usable_ui", durationMs: N, thresholdMs: 18000, severity: "critical"}`
-- In `packaged_desktop_smoke.py` (the `--startup-probe` path), check the summarised status. If status is `"failed"` and the `--profile-only` flag is set, exit with code 1 and print the bottleneck classification
-- The CI perf workflow (4a) can optionally call `npm run perf:startup:cold -- --fail-on-threshold` to gate on startup time
-
----
-
-## Implementation order (recommended)
-
-```
-Quick wins (highest confidence, lowest effort)
-â”œâ”€â”€ 1e-bonus Q1 (rm loadSyncStatus double-call)       ~15 min
-â”œâ”€â”€ 1e-bonus Q2 (cancel redundant opsHealth timeout)   ~15 min
-â”œâ”€â”€ 1e-bonus Q4 (lazy cacheAdminDom)                  ~30 min
-â”œâ”€â”€ 1a (User Timing marks â€“ Admin first)               ~1.5 hr
-â”œâ”€â”€ 1b (Long Task observer)                            ~1 hr
-â”œâ”€â”€ 1e (lightweight counters â€“ bridge handler only)    ~1 hr
-â”œâ”€â”€ 1c (Playwright traces â€“ single page)               ~1.5 hr
-
-Deep instrumentation
-â”œâ”€â”€ 1a (User Timing marks â€“ jobs, saved)               ~1 hr
-â”œâ”€â”€ 1e (counters â€“ frontend fetch, render wrappers)    ~1 hr
-â”œâ”€â”€ 1d (BALUFFO_PROFILE=1 hooks)                       ~2 hr
-â”œâ”€â”€ 1f (sync timing)                                   ~2 hr
-
-Baseline measurement
-â”œâ”€â”€ 2a (run all benchmarks, create baseline)           ~1 hr
-â”œâ”€â”€ 2b (profile top adapters)                          ~2 hr
-â”œâ”€â”€ 4b (NDJSON trend script)                           ~1 hr
-
-Optimisation (evidenceâ€‘dependent)
-â”œâ”€â”€ P0 (Admin boot parallelisation)                    ~2 hr
-â”œâ”€â”€ P1 (Web Worker / virtual scroll)                   ~4 hr
-â”œâ”€â”€ P2 (adapter fixes)                                 ~4 hr
-â”œâ”€â”€ P3 (startup flattening)                            ~2 hr
-
-CI + regression gates
-â”œâ”€â”€ 4a (CI smoke benchmark workflow)                   ~2 hr
-â”œâ”€â”€ 4c (startup profile regression gate)               ~1 hr
-â”œâ”€â”€ 1e-bonus Q3 (incremental digest)                   ~1 hr
-â”œâ”€â”€ 1e-bonus Q5/Q6 (idleCallback + progressive)        ~1.5 hr
-
-Total estimate: ~30 hr (spread across the above items)
-```
-
----
-
-## Verification commands
+Focused benchmark harness:
 
 ```powershell
-# Phase 1a â€“ User Timing marks present in each page
-node --test "tests/frontend/unit/perf-marks.test.mjs"
-
-# Phase 1b â€“ Long Task observer works
-node --test "tests/frontend/unit/long-task-observer.test.mjs"
-
-# Phase 1d â€“ Profiling produces output
-$env:BALUFFO_PROFILE="1"; python src/discovery_sanity_benchmark.py --preset quick --timeout 5 --top 3
-Test-Path "_out/perf-profiles/discovery_full_run.prof"
-
-# Phase 1e â€“ Counter instrumentation zeroâ€‘cost when disabled
-python -m pytest tests/test_pipeline_execution.py -q --durations=5
-
-# Phase 1f â€“ Sync timing payload shape
-python -m pytest tests/test_bridge_sync_service.py -q -k "timing"
-
-# Phase 2 â€“ Baseline benchmarks complete without error
-npm run perf:discovery:benchmark -- --timeout 10 --top 5
-npm run perf:startup:cold
-
-# Phase 4a â€“ CI smoke benchmark (dry run)
-python src/discovery_sanity_benchmark.py --preset quick --timeout 10 --top 5
-python src/fetch_incremental_sanity_benchmark.py --timeout 30 --sources greenhouse_boards lever_sources
-
-# Phase 4b â€“ Trend script parses existing data
-python scripts/perf_trend.py
-
-# Phase 4c â€“ Startup threshold gate
-python src/packaged_desktop_smoke.py --startup-probe --profile-only --profile-mode cold --fail-on-threshold
-
-# General â€“ no lint regressions from any instrumentation
-npm run lint:precommit
+python -m pytest tests/test_fetch_incremental_sanity_benchmark.py -q --color=no
 ```
 
----
+Focused static outliers:
+
+```powershell
+cmd /c npm run perf:fetch:static-outliers
+```
+
+Frontend instrumentation checks:
+
+```powershell
+node --test tests/frontend/unit/perf-marks.test.mjs
+node --test tests/frontend/unit/long-task-observer.test.mjs
+node --test tests/frontend/unit/startup-metrics-effects.test.mjs
+```
+
+Opt-in Playwright perf traces:
+
+```powershell
+cmd /c npm run test:frontend:perf
+```
+
+Full lifecycle benchmark, when needed:
+
+```powershell
+python -m src.jobs.pipeline --output-dir _out/perf-full-uncapped-pipeline --timeout 30 --force-refresh-all --quiet
+```
 
 ## Success criteria
 
-1. Every page (jobs, saved, admin) emits structured `performance.mark()` entries at each boot lifecycle step, visible via `performance.getEntriesByType("mark")` and persisted in startupâ€‘probe JSONL when `BALUFFO_STARTUP_PROBE` is set.
-2. Long Task entries are captured and persisted for all three pages, identifying which scripts/containers cause mainâ€‘thread blocking.
-3. Playwright traces capture FCP and LCP for each page during E2E perf tests.
-4. `BALUFFO_PROFILE=1` produces `.prof` files in `_out/perf-profiles/` for adapter, discovery, and sync operations without breaking normal execution.
-5. Lightweight timing counters accumulate perâ€‘operation durations with negligible overhead (no measurable wallâ€‘clock impact on baseline benchmarks).
-6. Sync operations report stageâ€‘level timing through `GET /sync/status`.
-7. CI smoke benchmark runs under 60s and rejects >15% regressions in discovery/fetch duration.
-8. `_out/perf-trend.ndjson` accumulates crossâ€‘run data; `npm run perf:trend` prints meaningful deltas.
-9. Startup probe exits nonâ€‘zero when thresholds are exceeded and `--fail-on-threshold` is set.
-10. Admin boot analysis quick wins (Q1â€“Q6) are implemented, measurably reducing the number of redundant HTTP requests and synchronous DOM work at boot.
-11. All instrumentation is zeroâ€‘cost when disabled (no measurable overhead in normal operation).
-12. No lint or test regressions from any instrumentation or optimisation change.
+This effort is ready to close when:
+
+- Benchmark artifacts identify source-policy, source-scope, timeout, frontend render, and bridge latency targets without manual report spelunking.
+- Kept-output source changes are clearly flagged with `requiresExplicitDecision=true` before implementation.
+- Opt-in traces and startup metrics can explain Admin, Jobs, and Saved boot regressions.
+- Static/full lifecycle benchmarks can produce comparable artifact summaries across runs.
+- Remaining optimization work is a short prioritized queue, not a broad investigation.
 

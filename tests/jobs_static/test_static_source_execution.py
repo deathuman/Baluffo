@@ -9,6 +9,7 @@ import pytest
 
 from src.exceptions import AdapterValidationError
 from src.jobs.browser_fallback import BrowserFallbackCircuitBreaker
+from src.jobs.common.http import HttpStatusError
 
 from ._helpers import (
     FIXTURES_DIR,
@@ -579,6 +580,44 @@ def test_run_static_studio_pages_source_uses_async_listing_fetch_when_provided()
     assert async_calls == [("https://example.net/jobs", 5)]
 
 
+def test_run_static_studio_pages_source_follows_safe_listing_redirect() -> None:
+    source_row = {
+        "name": "Redirect Listing Studio",
+        "studio": "Redirect Listing Studio",
+        "adapter": "static",
+        "company": "Redirect Listing Studio",
+        "pages": ["https://example.net/careers"],
+        "enabledByDefault": True,
+    }
+    fetched_urls: list[str] = []
+
+    def fake_fetch(url: str, _timeout: int) -> str:
+        fetched_urls.append(url)
+        if url == "https://example.net/careers":
+            raise HttpStatusError(301, url, location="/jobs")
+        if url == "https://example.net/jobs":
+            return """
+                <html><head><script type="application/ld+json">
+                {"@context":"https://schema.org","@type":"JobPosting","title":"Redirect Role",
+                "hiringOrganization":{"name":"Redirect Listing Studio"},
+                "jobLocation":{"address":{"addressLocality":"Remote","addressCountry":"US"}},
+                "url":"https://example.net/jobs/redirect-role"}
+                </script></head><body></body></html>
+            """
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=fake_fetch,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[source_row],
+    )
+
+    assert len(rows) == 1
+    assert fetched_urls == ["https://example.net/careers", "https://example.net/jobs"]
+
+
 def test_run_static_studio_pages_source_rejects_obvious_off_target_detail_links() -> None:
     source_row = {
         "name": "Off Target Studio",
@@ -627,6 +666,51 @@ def test_run_static_studio_pages_source_rejects_obvious_off_target_detail_links(
     details = jf.SOURCE_DIAGNOSTICS.get("static_studio_pages", {}).get("details") or []
     assert details
     assert int((details[0].get("loss") or {}).get("staticNonJobUrlRejected") or 0) >= 3
+
+
+def test_run_static_studio_pages_source_caps_multi_host_external_detail_fanout() -> None:
+    source_row = {
+        "name": "External Fanout Studio",
+        "studio": "External Fanout Studio",
+        "adapter": "static",
+        "company": "External Fanout Studio",
+        "pages": ["https://example.net/careers"],
+        "enabledByDefault": True,
+    }
+    anchors = "\n".join(
+        f'<a href="https://jobs{index}.example.com/jobs/role-{index}">Role {index}</a>'
+        for index in range(12)
+    )
+    listing_html = f"<html><body>{anchors}</body></html>"
+    fetched_urls: list[str] = []
+
+    def fake_fetch(url: str, _timeout: int) -> str:
+        fetched_urls.append(url)
+        if url == "https://example.net/careers":
+            return listing_html
+        role = url.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").title()
+        return f"""
+            <html><head><script type="application/ld+json">
+            {{"@context":"https://schema.org","@type":"JobPosting","title":"{role}",
+            "hiringOrganization":{{"name":"External Fanout Studio"}},
+            "jobLocation":{{"address":{{"addressLocality":"Remote","addressCountry":"US"}}}},
+            "url":"{url}"}}
+            </script></head><body></body></html>
+        """
+
+    jf.SOURCE_DIAGNOSTICS.clear()
+    rows = jf.run_static_studio_pages_source(
+        fetch_text=fake_fetch,
+        timeout_s=5,
+        retries=0,
+        backoff_s=0,
+        sources=[source_row],
+    )
+
+    assert len(rows) == 8
+    assert len(fetched_urls) == 9
+    details = jf.SOURCE_DIAGNOSTICS.get("static_studio_pages", {}).get("details") or []
+    assert int(((details[0].get("stats") or {}).get("external_detail_links_capped")) or 0) == 4
 
 
 def test_run_static_studio_pages_source_zero_yield_listing_falls_through_to_needs_review() -> None:

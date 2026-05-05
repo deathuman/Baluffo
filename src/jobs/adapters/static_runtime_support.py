@@ -313,6 +313,7 @@ def build_static_entry_report(
             "detail_fetch_ms": 0,
             "detail_batch_count": 0,
             "detail_pages_skipped_by_adaptive_stop": 0,
+            "external_detail_links_capped": 0,
             "detail_skipped_by_listing_fingerprint": 0,
             "dead_listing_pages_rejected": 0,
         },

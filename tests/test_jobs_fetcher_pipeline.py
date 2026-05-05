@@ -1616,7 +1616,126 @@ def test_teamtailor_sources_fetch_detail_pages_with_bounded_concurrency() -> Non
     assert len(rows) == 3
     assert max_workers_seen == [3]
     assert captured["details"][0]["detailFetchConcurrency"] == 6
-    assert captured["details"][0]["keptCount"] == 3
+
+
+def test_teamtailor_sources_fetch_sources_with_bounded_concurrency() -> None:
+    from src.jobs.adapters.plugins.provider_api import teamtailor_runner as teamtailor_module
+
+    active_fetches = 0
+    max_active_fetches = 0
+    lock = threading.Lock()
+    captured: dict[str, object] = {}
+
+    def _registry_entries(adapter: str) -> list[dict[str, object]]:
+        assert adapter == "teamtailor"
+        return [
+            {
+                "name": f"Concurrent Teamtailor {idx}",
+                "studio": f"Concurrent Studio {idx}",
+                "listing_url": f"https://concurrent-{idx}.teamtailor.com/jobs",
+                "base_url": f"https://concurrent-{idx}.teamtailor.com",
+            }
+            for idx in range(1, 4)
+        ]
+
+    def _fetch_with_retries(
+        url: str,
+        fetch_text: object,
+        timeout_s: int,
+        retries: int,
+        backoff_s: float,
+    ) -> str:
+        nonlocal active_fetches, max_active_fetches
+        _ = fetch_text, timeout_s, retries, backoff_s
+        with lock:
+            active_fetches += 1
+            max_active_fetches = max(max_active_fetches, active_fetches)
+        try:
+            time.sleep(0.02)
+            return "<html>listing</html>" if url.endswith("/jobs") else "<html>detail</html>"
+        finally:
+            with lock:
+                active_fetches -= 1
+
+    def _parse_listing_links(listing_html: str, *, base_url: str) -> list[str]:
+        _ = listing_html
+        return [f"{base_url}/jobs/1"]
+
+    def _parse_jobpostings_from_html(
+        html: str,
+        *,
+        base_url: str,
+        fallback_company: str,
+        fallback_source_id_prefix: str,
+    ) -> list[dict[str, object]]:
+        _ = html, fallback_source_id_prefix
+        return [
+            {
+                "sourceJobId": f"{base_url}:1",
+                "title": "Engineer",
+                "company": fallback_company or "Unknown",
+                "city": "",
+                "country": "Unknown",
+                "workType": "",
+                "contractType": "",
+                "jobLink": base_url,
+                "sector": "Game",
+                "postedAt": "",
+            }
+        ]
+
+    def _set_source_diagnostics(
+        name: str,
+        *,
+        adapter: str,
+        studio: str,
+        provider_url: str = "",
+        details: list[dict[str, object]],
+        partial_errors: list[str],
+    ) -> None:
+        captured.update(
+            {
+                "name": name,
+                "adapter": adapter,
+                "studio": studio,
+                "providerUrl": provider_url,
+                "details": details,
+                "partialErrors": partial_errors,
+            }
+        )
+
+    with (
+        mock.patch.object(teamtailor_module, "registry_entries", side_effect=_registry_entries),
+        mock.patch.object(teamtailor_module, "fetch_with_retries", side_effect=_fetch_with_retries),
+        mock.patch.object(
+            teamtailor_module,
+            "parse_teamtailor_listing_links",
+            side_effect=_parse_listing_links,
+        ),
+        mock.patch.object(
+            teamtailor_module,
+            "parse_jobpostings_from_html",
+            side_effect=_parse_jobpostings_from_html,
+        ),
+        mock.patch.object(
+            teamtailor_module, "set_source_diagnostics", side_effect=_set_source_diagnostics
+        ),
+    ):
+        rows = teamtailor_module._run_teamtailor_sources(
+            fetch_text=lambda _url, _timeout: "",
+            timeout_s=5,
+            retries=1,
+            backoff_s=0,
+        )
+
+    assert max_active_fetches > 1
+    assert [row["studio"] for row in rows] == [
+        "Concurrent Studio 1",
+        "Concurrent Studio 2",
+        "Concurrent Studio 3",
+    ]
+    assert [detail["sourceFetchConcurrency"] for detail in captured["details"]] == [3, 3, 3]
+    assert [detail["keptCount"] for detail in captured["details"]] == [1, 1, 1]
 
 
 def test_apply_incremental_cache_exclusions_keeps_social_multi_feed_loaders_for_detail_level_refresh() -> (

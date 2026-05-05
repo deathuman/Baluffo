@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +30,8 @@ ParsePayload = Callable[[dict[str, object], Any, str], list[RawJob]]
 BuildUrl = Callable[[dict[str, object]], str]
 PayloadCount = Callable[[Any, list[RawJob]], int]
 ProviderParser = Callable[[Any, str, str], list[RawJob]]
+
+JSON_FEED_SOURCE_FETCH_CONCURRENCY = 6
 
 
 @dataclass(frozen=True)
@@ -138,10 +141,14 @@ def _run_json_feed_sources(
     errors: list[str] = []
     details: list[dict[str, object]] = []
     provider_url = ""
-    for source in registry_entries(registry_adapter):
+
+    def _process_source(source: dict[str, object]) -> tuple[list[RawJob], dict[str, object], str, str]:
         source_started = time.perf_counter()
         source_name, studio = _json_feed_source_identity(source, registry_adapter)
         endpoint = build_url(source)
+        source_jobs: list[RawJob] = []
+        error = ""
+        error_provider_url = ""
         entry_report = build_provider_entry_report(
             adapter_name=adapter_name,
             studio=studio,
@@ -159,12 +166,10 @@ def _run_json_feed_sources(
             entry_report["status"] = "error"
             entry_report["error"] = default_error
             entry_report["durationMs"] = _elapsed_ms(source_started)
-            details.append(entry_report)
-            continue
+            return source_jobs, entry_report, error, error_provider_url
         if skip_provider_for_cache(entry_report):
             entry_report["durationMs"] = _elapsed_ms(source_started)
-            details.append(entry_report)
-            continue
+            return source_jobs, entry_report, error, error_provider_url
         if provider_revalidate_not_modified(
             url=endpoint,
             entry_report=entry_report,
@@ -174,8 +179,7 @@ def _run_json_feed_sources(
             revalidate_url=conditional_revalidate_url,
         ):
             entry_report["durationMs"] = _elapsed_ms(source_started)
-            details.append(entry_report)
-            continue
+            return source_jobs, entry_report, error, error_provider_url
         try:
             fetch_started = time.perf_counter()
             text = fetch_with_retries(endpoint, fetch_text, timeout_s, retries, backoff_s)
@@ -189,15 +193,31 @@ def _run_json_feed_sources(
             for row in parsed:
                 row["adapter"] = adapter_name
                 row["studio"] = studio
-            jobs.extend(parsed)
+            source_jobs.extend(parsed)
         except Exception as exc:  # noqa: BLE001
             entry_report["status"] = "error"
             entry_report["error"] = str(exc)
-            if not provider_url:
-                provider_url = endpoint
-            errors.append(f"{registry_adapter}:{source_name}: {exc}")
+            error_provider_url = endpoint
+            error = f"{registry_adapter}:{source_name}: {exc}"
         entry_report["durationMs"] = _elapsed_ms(source_started)
+        return source_jobs, entry_report, error, error_provider_url
+
+    sources = list(registry_entries(registry_adapter))
+    concurrency = max(1, min(JSON_FEED_SOURCE_FETCH_CONCURRENCY, len(sources) or 1))
+    if concurrency <= 1 or len(sources) <= 1:
+        results = [_process_source(source) for source in sources]
+    else:
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            results = list(executor.map(_process_source, sources))
+    for source_jobs, entry_report, error, error_provider_url in results:
+        entry_report["sourceFetchConcurrency"] = concurrency
+        if source_jobs:
+            jobs.extend(source_jobs)
         details.append(entry_report)
+        if error:
+            errors.append(error)
+            if error_provider_url and not provider_url:
+                provider_url = error_provider_url
 
     set_source_diagnostics(
         f"{registry_adapter}_sources",

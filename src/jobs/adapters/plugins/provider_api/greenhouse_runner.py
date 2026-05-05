@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 
 from src.exceptions import AdapterValidationError
 from src.jobs.adapters import provider_parsers as _provider_parsers
@@ -22,6 +23,8 @@ from .lifecycle import (
     skip_provider_for_cache,
 )
 
+GREENHOUSE_BOARD_FETCH_CONCURRENCY = 6
+
 
 def _run_greenhouse_boards(
     *,
@@ -36,14 +39,17 @@ def _run_greenhouse_boards(
     errors: list[str] = []
     details: list[dict[str, object]] = []
     provider_url = ""
-    for board in registry_entries("greenhouse"):
+    boards = [board for board in registry_entries("greenhouse") if clean_text(board.get("slug"))]
+
+    def _process_board(board: dict[str, object]) -> tuple[list[RawJob], dict[str, object], str, str]:
         board_started = time.perf_counter()
         slug = clean_text(board.get("slug"))
-        if not slug:
-            continue
         label = clean_text(board.get("name")) or clean_text(board.get("studio")) or slug
         entry_name = clean_text(board.get("name")) or slug
         url = GREENHOUSE_JOBS_URL_TEMPLATE.format(slug=slug)
+        board_jobs: list[RawJob] = []
+        error = ""
+        error_provider_url = ""
         entry_report = build_provider_entry_report(
             adapter_name="greenhouse",
             studio=clean_text(board.get("studio")) or label,
@@ -59,8 +65,7 @@ def _run_greenhouse_boards(
         )
         if skip_provider_for_cache(entry_report):
             entry_report["durationMs"] = _elapsed_ms(board_started)
-            details.append(entry_report)
-            continue
+            return board_jobs, entry_report, error, error_provider_url
         if provider_revalidate_not_modified(
             entry_report=entry_report,
             url=url,
@@ -69,8 +74,7 @@ def _run_greenhouse_boards(
             source_state_rows=source_state_rows,
         ):
             entry_report["durationMs"] = _elapsed_ms(board_started)
-            details.append(entry_report)
-            continue
+            return board_jobs, entry_report, error, error_provider_url
         try:
             fetch_started = time.perf_counter()
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
@@ -86,15 +90,30 @@ def _run_greenhouse_boards(
                 row["studio"] = clean_text(board.get("studio")) or label
             entry_report["fetchedCount"] = len(parsed)
             entry_report["keptCount"] = len(parsed)
-            jobs.extend(parsed)
+            board_jobs.extend(parsed)
         except Exception as exc:  # noqa: BLE001
             entry_report["status"] = "error"
             entry_report["error"] = str(exc)
-            if not provider_url:
-                provider_url = url
-            errors.append(f"greenhouse:{slug}: {exc}")
+            error_provider_url = url
+            error = f"greenhouse:{slug}: {exc}"
         entry_report["durationMs"] = _elapsed_ms(board_started)
+        return board_jobs, entry_report, error, error_provider_url
+
+    concurrency = max(1, min(GREENHOUSE_BOARD_FETCH_CONCURRENCY, len(boards) or 1))
+    if concurrency <= 1 or len(boards) <= 1:
+        results = [_process_board(board) for board in boards]
+    else:
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            results = list(executor.map(_process_board, boards))
+    for board_jobs, entry_report, error, error_provider_url in results:
+        entry_report["boardFetchConcurrency"] = concurrency
         details.append(entry_report)
+        if board_jobs:
+            jobs.extend(board_jobs)
+        if error:
+            errors.append(error)
+            if error_provider_url and not provider_url:
+                provider_url = error_provider_url
     set_source_diagnostics(
         "greenhouse_boards",
         adapter="greenhouse",

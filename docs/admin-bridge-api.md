@@ -1,4 +1,4 @@
-# Admin Bridge API Reference
+﻿# Admin Bridge API Reference
 
 > - **Status:** Active
 > - **Use this when:** editing frontend bridge consumers, route handlers, or task launch/status flows
@@ -97,6 +97,8 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | POST | `/sync/test` | Test sync configuration |
 | POST | `/sync/pull` | Pull sources (sync) |
 | POST | `/sync/push` | Push sources (sync) |
+
+`/sync/status` includes additive sync timing diagnostics: latest `timing`, bounded `timingHistory`, `stageTotalsMs`, and sorted `stageTop` rows for pull/push operations. Completed sync task summaries also carry the operation `timing` payload for Ops/run-history diagnostics.
 | POST | `/tasks/run-sync-pull` | Async pull with task tracking |
 | POST | `/tasks/run-sync-push` | Async push with task tracking |
 
@@ -176,3 +178,5 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - `weakSignal` remains an advisory hint for ranking and re-probe heuristics, and weak pending/deferred rows stay in review instead of being auto-approved.
 - Report-side queue throttles like `domain_cap` do not veto a clean pending registry row.
 - Source registry deletes are tombstone-backed and local-only; the restore path is explicit, and manual add will not silently clear a tombstone.
+
+

@@ -40,6 +40,7 @@ from src.jobs.adapters.static_runtime_support import (
     update_source_detail_taxonomy,
 )
 from src.jobs.common.fetch import fetch_with_retries
+from src.jobs.common.http import HttpStatusError
 from src.jobs.page_gating import classify_job_page, looks_like_job_title_candidate
 from src.jobs.state import should_skip_static_source_for_structured_migration
 from src.jobs.text_utils import clean_text, normalize_url, sanitize_location_text
@@ -51,6 +52,9 @@ from src.shared.utils import now_iso
 
 from ..common import config as common_config
 from .static_runtime import StaticSourceContext
+
+_EXTERNAL_DETAIL_FANOUT_HOST_THRESHOLD = 2
+_EXTERNAL_DETAIL_FANOUT_LINK_CAP = 8
 
 
 def _effective_timeout_or_raise(
@@ -66,6 +70,50 @@ def _effective_timeout_or_raise(
     if effective_timeout_s <= 0:
         raise TimeoutError(f"time budget exceeded ({source_budget_s}s)")
     return effective_timeout_s
+
+
+def _normalized_host(url: str) -> str:
+    host = (urlparse(clean_text(url) or "").hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _cap_external_detail_fanout(
+    ctx: StaticSourceContext,
+    *,
+    page_url: str,
+    detail_links: list[tuple[str, str]],
+    cap: int = _EXTERNAL_DETAIL_FANOUT_LINK_CAP,
+) -> list[tuple[str, str]]:
+    if len(detail_links) <= cap:
+        return detail_links
+    page_host = _normalized_host(page_url)
+    if not page_host:
+        return detail_links
+    external_hosts = {
+        host
+        for detail_url, _title in detail_links
+        if (host := _normalized_host(detail_url)) and host != page_host
+    }
+    if len(external_hosts) <= _EXTERNAL_DETAIL_FANOUT_HOST_THRESHOLD:
+        return detail_links
+    capped: list[tuple[str, str]] = []
+    external_kept = 0
+    for detail_url, title in detail_links:
+        host = _normalized_host(detail_url)
+        if not host or host == page_host:
+            capped.append((detail_url, title))
+            continue
+        if external_kept >= cap:
+            continue
+        capped.append((detail_url, title))
+        external_kept += 1
+    pruned = max(0, len(detail_links) - len(capped))
+    if pruned:
+        ctx.stats["external_detail_links_capped"] = int(
+            ctx.stats.get("external_detail_links_capped") or 0
+        ) + pruned
+        ctx.link_rejections["non_job_url"] += pruned
+    return capped
 
 
 @dataclass
@@ -1100,13 +1148,25 @@ class StaticFetchRunner:
         return True
 
     def _fetch_listing_html_sync(self, url: str, *, effective_timeout_s: int) -> str:
-        return fetch_with_retries(
-            url,
-            self.deps.fetch_text,
-            timeout_s=effective_timeout_s,
-            retries=self.deps.retries,
-            backoff_s=self.deps.backoff_s,
-        )
+        try:
+            return fetch_with_retries(
+                url,
+                self.deps.fetch_text,
+                timeout_s=effective_timeout_s,
+                retries=self.deps.retries,
+                backoff_s=self.deps.backoff_s,
+            )
+        except HttpStatusError as exc:
+            if int(exc.code) not in {301, 302, 303, 307, 308}:
+                raise
+            redirect_url = self.ctx.html_fetcher._safe_redirect_url(url, exc.location)
+            return fetch_with_retries(
+                redirect_url,
+                self.deps.fetch_text,
+                timeout_s=effective_timeout_s,
+                retries=0,
+                backoff_s=self.deps.backoff_s,
+            )
 
     def _listing_fetch_timeout(self, batch_job: dict[str, Any]) -> int:
         payload = _as_dict(batch_job.get("payload") if isinstance(batch_job, dict) else {})
@@ -1213,12 +1273,23 @@ class StaticFetchRunner:
                     effective_timeout_s=effective_timeout_s,
                 )
             else:
-                html = await self.deps.listing_async_fetch(
-                    client,
-                    batch_job,
-                    url,
-                    effective_timeout_s,
-                )
+                try:
+                    html = await self.deps.listing_async_fetch(
+                        client,
+                        batch_job,
+                        url,
+                        effective_timeout_s,
+                    )
+                except HttpStatusError as exc:
+                    if int(exc.code) not in {301, 302, 303, 307, 308}:
+                        raise
+                    redirect_url = self.ctx.html_fetcher._safe_redirect_url(url, exc.location)
+                    html = await self.deps.listing_async_fetch(
+                        client,
+                        batch_job,
+                        redirect_url,
+                        effective_timeout_s,
+                    )
         except Exception as exc:  # noqa: BLE001
             html, browser_fallback_attempted, browser_fallback_error = await asyncio.to_thread(
                 self._sync_browser_fallback, url, str(exc)
@@ -1506,6 +1577,13 @@ class StaticFetchRunner:
             detail_links = probable_detail_links
         if not detail_links:
             return None
+        profile_external_cap = max(0, int(domain_profile.get("max_external_detail_links") or 0))
+        detail_links = _cap_external_detail_fanout(
+            self.ctx,
+            page_url=page_url,
+            detail_links=detail_links,
+            cap=profile_external_cap or _EXTERNAL_DETAIL_FANOUT_LINK_CAP,
+        )
         detail_limit = source_detail_limit_for(
             source_key,
             source_state_rows=self.deps.source_state_rows,
@@ -1536,6 +1614,7 @@ class StaticFetchRunner:
                 source_key,
                 source_state_rows=self.deps.source_state_rows,
                 base_retries=self.deps.retries,
+                listing_jobs_found=listing_jobs_found,
                 uncapped_deep_static=self.config.uncapped_deep_static,
             ),
             source_budget_s=source_budget_s,

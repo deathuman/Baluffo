@@ -296,6 +296,16 @@ def test_source_detail_retries_for_reduces_tail_retry_pressure() -> None:
     assert retries == 0
 
 
+def test_source_detail_retries_for_first_run_listing_rows_skips_detail_retries() -> None:
+    retries = source_detail_retries_for(
+        "Fresh Static Source (Sheet)",
+        source_state_rows={},
+        base_retries=2,
+        listing_jobs_found=3,
+    )
+    assert retries == 0
+
+
 def test_source_detail_retries_for_uncapped_deep_static_keeps_base_retries() -> None:
     retries = source_detail_retries_for(
         "Stillfront (Sheet)",

@@ -213,6 +213,7 @@ def source_detail_retries_for(
     *,
     source_state_rows: dict[str, dict[str, Any]] | None,
     base_retries: int,
+    listing_jobs_found: int = 0,
     uncapped_deep_static: bool = False,
 ) -> int:
     metrics = _source_tail_metrics(source_key, source_state_rows=source_state_rows)
@@ -220,6 +221,8 @@ def source_detail_retries_for(
     if uncapped_deep_static:
         return retries
     if not metrics:
+        if listing_jobs_found > 0:
+            return 0
         return retries
     last_duration_ms = metrics["last_duration_ms"]
     last_detail_fetch_ms = metrics["last_detail_fetch_ms"]
