@@ -55,15 +55,21 @@ Latest measured signals:
 | Jobs startup critical path | First usable UI remains healthy: cold `1658ms`, warm `1554ms`. |
 | Jobs local-data API binding | Immediate: `1ms` cold/warm via `jobs_local_data_api_ready`. |
 | Jobs full desktop bootstrap | Background/deferred: cold `9323ms`, warm `7798ms`; now emits `bootstrapWaitMs`, attempt count, retry count, and first-success timing. |
-| Fetch provider-api | Teamtailor remains the broad provider benchmark hotspot (`~22.1s` in the lifecycle snapshot). |
+| Fetch provider-api | Latest run after Teamtailor bounded detail concurrency: total `32.2s`; Teamtailor `11.5s`, Greenhouse `11.2s`, Lever `7.9s`, SmartRecruiters `1.5s`, Ashby `0.1s`. |
 | Static-detail fetch | Static/detail work dominates; PlayStation, EA, and WBD are the strongest inspection targets. |
 | Capped GameDevMap discovery | Useful as a bounded stage-cost benchmark, but not yet as a candidate-yield benchmark. |
+
+Latest follow-ups:
+
+- Frontend fetch/render counters are now available via `window.__baluffoSnapshotFrontendPerfCounters()` and the Admin Ops diagnostics panel under **Frontend Performance**, with bridge fetch, Jobs feed fetch, Admin fetch-report fetch, Jobs list render, and Jobs pagination render categories recorded in-memory.
+- Teamtailor provider fetch now performs bounded parallel detail-page fetching (`detailFetchConcurrency=6`) after listing-link discovery, preserving result order while reducing serial network wait in the provider-api benchmark path.
+- Validation completed: `node --test tests/frontend/unit/perf-counters.test.mjs tests/frontend/unit/admin-ops-diagnostics-render.test.mjs`, `python -m pytest tests/test_jobs_fetcher_pipeline.py -q -k "teamtailor_sources_fetch_detail_pages_with_bounded_concurrency or teamtailor_sources_skip_fresh" --color=no`, and `npm run perf:fetch:provider-api`.
 
 Current optimisation decisions:
 
 - Do not optimise frontend Jobs local-data hydration; API binding is already off the critical path.
 - If deferred full desktop bootstrap matters, inspect the desktop bootstrap/session handshake and retry loop rather than Jobs rendering.
-- Prioritise Teamtailor provider-api investigation before broad provider CPU work.
+- Re-run the provider-api benchmark to confirm the Teamtailor detail-fetch parallelism impact before broader provider CPU work.
 - Inspect PlayStation, EA, and WBD before broad static-detail runtime changes.
 - Treat Lever slow boards as network/wait behaviour unless repeated samples show a stable parse or CPU hotspot.
 

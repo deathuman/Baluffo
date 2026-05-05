@@ -54,8 +54,30 @@ test("admin render: health diagnostics stay compact and dedup lists render separ
   assert.match(dedupEl.innerHTML, /Dedup Audit Gate/i);
   assert.match(metricsEl.innerHTML, /<details class="admin-ops-metrics-details admin-ops-source-health-details">/i);
   assert.match(metricsEl.innerHTML, /<details class="admin-ops-metrics-details admin-ops-source-policy-details">/i);
+  assert.match(metricsEl.innerHTML, /Frontend fetch\/render counters/i);
+  assert.match(metricsEl.innerHTML, /No frontend fetch\/render counter samples yet/i);
   assert.doesNotMatch(metricsEl.innerHTML, /merge-btn|unmerge-btn|cleanup-btn|lifecycle-btn/i);
   assert.doesNotMatch(dedupEl.innerHTML, /merge-btn|unmerge-btn|cleanup-btn|lifecycle-btn/i);
+});
+
+test("admin render: frontend perf counters appear in ops diagnostics", () => {
+  const metricsEl = makeEl();
+  renderAdminOpsFetcherMetrics(metricsEl, {
+    latestRun: {},
+    history: {},
+    frontendPerfCounters: {
+      frontend_fetch_bridge_get_ops_health: {
+        count: 3,
+        p50Ms: 12,
+        p95Ms: 48
+      }
+    }
+  });
+
+  assert.match(metricsEl.innerHTML, /Frontend fetch\/render counters/i);
+  assert.match(metricsEl.innerHTML, /frontend_fetch_bridge_get_ops_health/i);
+  assert.match(metricsEl.innerHTML, /p95 48ms/i);
+  assert.match(metricsEl.innerHTML, /count 3/i);
 });
 
 test("admin render: dedup review action wiring survives disclosure", () => {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
@@ -22,6 +23,8 @@ from .lifecycle import (
     provider_revalidate_not_modified,
     skip_provider_for_cache,
 )
+
+TEAMTAILOR_DETAIL_FETCH_CONCURRENCY = 6
 
 
 def _teamtailor_fallback_job(
@@ -64,12 +67,18 @@ def _append_teamtailor_jobs(
     fallback_company: str,
     studio: str,
     errors: list[str],
+    detail_concurrency: int = TEAMTAILOR_DETAIL_FETCH_CONCURRENCY,
 ) -> int:
     kept_before = len(jobs)
+    unique_links: list[tuple[int, str]] = []
     for idx, job_link in enumerate(job_links, start=1):
         if job_link in seen_links:
             continue
         seen_links.add(job_link)
+        unique_links.append((idx, job_link))
+
+    def _fetch_parse_job(item: tuple[int, str]) -> tuple[list[RawJob], str]:
+        idx, job_link = item
         try:
             detail_html = fetch_with_retries(job_link, fetch_text, timeout_s, retries, backoff_s)
             parsed = parse_jobpostings_from_html(
@@ -82,8 +91,7 @@ def _append_teamtailor_jobs(
                 for row in parsed:
                     row["adapter"] = "teamtailor"
                     row["studio"] = studio
-                jobs.extend(parsed)
-                continue
+                return list(parsed), ""
             fallback_row = _teamtailor_fallback_job(
                 job_link=job_link,
                 source_name=source_name,
@@ -91,9 +99,22 @@ def _append_teamtailor_jobs(
                 studio=studio,
             )
             if fallback_row:
-                jobs.append(fallback_row)
+                return [fallback_row], ""
         except Exception as exc:  # noqa: BLE001
-            errors.append(f"teamtailor:{source_name}:{job_link}: {exc}")
+            return [], f"teamtailor:{source_name}:{job_link}: {exc}"
+        return [], ""
+
+    concurrency = max(1, min(int(detail_concurrency or 1), len(unique_links) or 1))
+    if concurrency <= 1 or len(unique_links) <= 1:
+        results = [_fetch_parse_job(item) for item in unique_links]
+    else:
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            results = list(executor.map(_fetch_parse_job, unique_links))
+    for parsed_rows, error in results:
+        if error:
+            errors.append(error)
+        elif parsed_rows:
+            jobs.extend(parsed_rows)
     return max(0, len(jobs) - kept_before)
 
 
@@ -152,6 +173,7 @@ def _run_teamtailor_sources(
             )
             job_links = parse_teamtailor_listing_links(listing_html, base_url=base_url)
             entry_report["fetchedCount"] = len(job_links)
+            entry_report["detailFetchConcurrency"] = TEAMTAILOR_DETAIL_FETCH_CONCURRENCY
             entry_report["keptCount"] = _append_teamtailor_jobs(
                 jobs=jobs,
                 job_links=job_links,

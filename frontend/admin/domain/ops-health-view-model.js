@@ -10,6 +10,11 @@ const OPS_FETCHER_METRIC_SECTION_DEFINITIONS = [
     description: "Fetcher failure counts, buckets, and source examples."
   },
   {
+    key: "frontendPerf",
+    title: "Frontend Performance",
+    description: "Browser-side fetch and render counters from this Admin session."
+  },
+  {
     key: "dedup",
     title: "Dedup Review",
     description: "Read-only gate, review-state, and blocker evidence before lifecycle UX."

@@ -1,16 +1,20 @@
+import { timeFrontendAsync } from "../shared/perf-counters.js";
+
 async function fetchWithTimeout(url, timeoutMs, init = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      mode: "cors",
-      credentials: "omit"
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return timeFrontendAsync("frontend_fetch_jobs_feed", async () => {
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        mode: "cors",
+        credentials: "omit"
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }, { url: String(url || "").slice(0, 180) });
 }
 
 export function parseUnifiedJobsPayload(payload, jobsParsing) {

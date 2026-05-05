@@ -163,6 +163,13 @@ export function createOpsHealthController({
   taskStateController,
   getBridgeStatus,
   awaitBridgeReady = async () => true,
+  getFrontendPerfCounters = () => {
+    try {
+      return globalThis.__baluffoSnapshotFrontendPerfCounters?.() || {};
+    } catch {
+      return {};
+    }
+  },
   renderScheduler
 }) {
   let lastDiscoveryRegistryRefreshAtMs = 0;
@@ -574,8 +581,16 @@ export function createOpsHealthController({
           .catch(() => {});
       }
 
+      const frontendPerfCounters = getFrontendPerfCounters();
       const fetcherMetricsPayload = {
         ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
+        frontendPerfCounters: (
+          frontendPerfCounters
+          && typeof frontendPerfCounters === "object"
+          && !Array.isArray(frontendPerfCounters)
+        )
+          ? frontendPerfCounters
+          : {},
         latestRun: {
           ...(
             fetcherMetrics?.latestRun && typeof fetcherMetrics.latestRun === "object"

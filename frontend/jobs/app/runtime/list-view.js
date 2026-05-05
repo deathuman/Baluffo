@@ -1,4 +1,5 @@
 import { getVisiblePages } from "../pagination.js";
+import { setTimedInnerHTML } from "../../../shared/perf-counters.js";
 import { sanitizeUrl, toContractClass, capitalizeFirst } from "../runtime-utils.js";
 
 export function updateResultsSummary(resultsSummary, total, from, to, loadedTotal = total) {
@@ -68,7 +69,10 @@ function renderPagination(totalPages, {
     }
   }
 
-  pagination.innerHTML = html;
+  setTimedInnerHTML(pagination, html, "frontend_render_jobs_pagination", {
+    totalPages,
+    currentPage: state.currentPage
+  });
 
   pagination.querySelectorAll(".page-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -123,8 +127,12 @@ export function displayJobs(jobs, {
   });
 
   if (totalCount === 0) {
-    jobsList.innerHTML = '<div class="no-results">No jobs found matching your filters.</div>';
-    pagination.innerHTML = "";
+    setTimedInnerHTML(
+      jobsList,
+      '<div class="no-results">No jobs found matching your filters.</div>',
+      "frontend_render_jobs_list_empty"
+    );
+    setTimedInnerHTML(pagination, "", "frontend_render_jobs_pagination_empty");
     updateResultsSummary(resultsSummary, 0, 0, 0, allJobs.length);
     emitDesktopStartupMetric("jobs_display_empty");
     return;
@@ -142,7 +150,7 @@ export function displayJobs(jobs, {
     totalPages
   });
 
-  jobsList.innerHTML = `
+  setTimedInnerHTML(jobsList, `
     <div class="jobs-table-header">
       <div class="job-row-header">
         <div class="col-freshness" title="Freshness (posted/fetched recency)" aria-hidden="true"></div>
@@ -166,7 +174,10 @@ export function displayJobs(jobs, {
         renderJobRowHtml
       })).join("")}
     </div>
-  `;
+  `, "frontend_render_jobs_list", {
+    pageJobs: pageJobs.length,
+    totalCount
+  });
   emitDesktopStartupMetric("jobs_display_dom_committed", {
     pageJobs: pageJobs.length
   });

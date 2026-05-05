@@ -1523,6 +1523,102 @@ def test_teamtailor_sources_skip_fresh_listing_without_fetching() -> None:
     assert details[0]["cacheDecisionReason"] == "within_freshness_window"
 
 
+def test_teamtailor_sources_fetch_detail_pages_with_bounded_concurrency() -> None:
+    from src.jobs.adapters.plugins.provider_api import teamtailor_runner as teamtailor_module
+
+    captured = {}
+    max_workers_seen = []
+
+    class FakeExecutor:
+        def __init__(self, max_workers: int) -> None:
+            max_workers_seen.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def map(self, fn, items):
+            return [fn(item) for item in items]
+
+    def _registry_entries(adapter: str):
+        assert adapter == "teamtailor"
+        return [
+            {
+                "name": "Concurrent Teamtailor",
+                "studio": "Concurrent Studio",
+                "listing_url": "https://concurrent.example/jobs",
+                "base_url": "https://concurrent.example",
+                "company": "Concurrent Studio",
+            }
+        ]
+
+    def _fetch_with_retries(
+        url: str, _fetch_text, _timeout_s: int, _retries: int, _backoff_s: float
+    ) -> str:
+        return f"<html>{url}</html>"
+
+    def _parse_listing_links(_html: str, *, base_url: str) -> list[str]:
+        assert base_url == "https://concurrent.example"
+        return [
+            "https://concurrent.example/jobs/one",
+            "https://concurrent.example/jobs/two",
+            "https://concurrent.example/jobs/three",
+        ]
+
+    def _parse_jobpostings_from_html(_html: str, **kwargs):
+        return [
+            {
+                "sourceJobId": kwargs["fallback_source_id_prefix"],
+                "title": "Gameplay Engineer",
+                "company": kwargs["fallback_company"],
+                "city": "",
+                "country": "Unknown",
+                "workType": "",
+                "contractType": "",
+                "jobLink": kwargs["base_url"],
+                "sector": "Game",
+                "postedAt": "",
+            }
+        ]
+
+    def _set_source_diagnostics(_source_name: str, **kwargs) -> None:
+        captured["details"] = kwargs["details"]
+
+    with (
+        mock.patch.object(teamtailor_module, "registry_entries", side_effect=_registry_entries),
+        mock.patch.object(teamtailor_module, "fetch_with_retries", side_effect=_fetch_with_retries),
+        mock.patch.object(
+            teamtailor_module,
+            "parse_teamtailor_listing_links",
+            side_effect=_parse_listing_links,
+        ),
+        mock.patch.object(
+            teamtailor_module,
+            "parse_jobpostings_from_html",
+            side_effect=_parse_jobpostings_from_html,
+        ),
+        mock.patch.object(teamtailor_module, "ThreadPoolExecutor", FakeExecutor),
+        mock.patch.object(
+            teamtailor_module,
+            "set_source_diagnostics",
+            side_effect=_set_source_diagnostics,
+        ),
+    ):
+        rows = teamtailor_module._run_teamtailor_sources(
+            fetch_text=lambda _url, _timeout: "",
+            timeout_s=5,
+            retries=0,
+            backoff_s=0,
+        )
+
+    assert len(rows) == 3
+    assert max_workers_seen == [3]
+    assert captured["details"][0]["detailFetchConcurrency"] == 6
+    assert captured["details"][0]["keptCount"] == 3
+
+
 def test_apply_incremental_cache_exclusions_keeps_social_multi_feed_loaders_for_detail_level_refresh() -> (
     None
 ):

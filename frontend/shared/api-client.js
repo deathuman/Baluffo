@@ -6,6 +6,8 @@
  * fetch, pipeline, saved-jobs, ops, sync, discovery endpoints via this module.
  */
 
+import { timeFrontendAsync } from "./perf-counters.js";
+
 const DEFAULT_TIMEOUT_MS = 18000;
 
 /**
@@ -47,33 +49,36 @@ export async function fetchBridge(baseUrl, path, options = {}) {
   );
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      method: options.method || "GET",
-      cache: options.cache ?? "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {})
-      },
-      body: options.body != null ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    if (!response.ok && !allowedStatuses.has(response.status)) {
-      const msg = getBridgeErrorMessage(response.status);
-      throw new Error(`Bridge ${options.method || "GET"} ${path} failed: ${msg} (HTTP ${response.status})`);
+  const method = options.method || "GET";
+  return timeFrontendAsync(`frontend_fetch_bridge_${method}_${path}`, async () => {
+    try {
+      const response = await fetch(url, {
+        method,
+        cache: options.cache ?? "no-store",
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.headers || {})
+        },
+        body: options.body != null ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok && !allowedStatuses.has(response.status)) {
+        const msg = getBridgeErrorMessage(response.status);
+        throw new Error(`Bridge ${method} ${path} failed: ${msg} (HTTP ${response.status})`);
+      }
+      return response;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError") {
+        throw new Error("Bridge request timed out");
+      }
+      if (err instanceof TypeError && err.message && err.message.includes("fetch")) {
+        throw new Error("Network error: bridge unreachable");
+      }
+      throw err;
     }
-    return response;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (err.name === "AbortError") {
-      throw new Error("Bridge request timed out");
-    }
-    if (err instanceof TypeError && err.message && err.message.includes("fetch")) {
-      throw new Error("Network error: bridge unreachable");
-    }
-    throw err;
-  }
+  }, { method, path });
 }
 
 /**

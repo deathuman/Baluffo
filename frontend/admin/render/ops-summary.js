@@ -1382,6 +1382,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     redundantStaticProposals: latest?.redundantStaticProposals || {},
     conservativeStaticCleanupProposals: latest?.conservativeStaticCleanupProposals || {},
     sourcePolicyRecommendationExport: latest?.sourcePolicyRecommendationExport || {},
+    frontendPerfCounters: metrics?.frontendPerfCounters || {},
     runModel: options?.runModel || {},
     failureSummary: summary
   });
@@ -1408,6 +1409,18 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const redundantStaticProposals = latest?.redundantStaticProposals && typeof latest.redundantStaticProposals === "object" ? latest.redundantStaticProposals : {};
   const conservativeStaticCleanupProposals = latest?.conservativeStaticCleanupProposals && typeof latest.conservativeStaticCleanupProposals === "object" ? latest.conservativeStaticCleanupProposals : {};
   const sourcePolicyRecommendationExport = latest?.sourcePolicyRecommendationExport && typeof latest.sourcePolicyRecommendationExport === "object" ? latest.sourcePolicyRecommendationExport : {};
+  const frontendPerfCounters = metrics?.frontendPerfCounters && typeof metrics.frontendPerfCounters === "object"
+    ? metrics.frontendPerfCounters
+    : {};
+  const frontendPerfCounterRows = Object.entries(frontendPerfCounters)
+    .filter(([, value]) => value && typeof value === "object")
+    .sort((left, right) => Number(right[1]?.p95Ms || 0) - Number(left[1]?.p95Ms || 0))
+    .slice(0, 8);
+  const frontendPerfSummary = frontendPerfCounterRows.length
+    ? frontendPerfCounterRows.map(([key, row]) => (
+      `${escapeHtml(key)}: p95 ${formatDuration(Number(row?.p95Ms || 0))}, p50 ${formatDuration(Number(row?.p50Ms || 0))}, count ${Number(row?.count || 0).toLocaleString()}`
+    )).join("; ")
+    : "No frontend fetch/render counter samples yet.";
   const slowestSummary = slowest.length
     ? slowest
       .slice(0, 3)
@@ -1734,6 +1747,9 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Source-policy review</strong>: local review pairs ${Number(sourcePolicyRecommendationExport?.reviewStatePairCount || 0).toLocaleString()}, force-paused ${Number(sourcePolicyRecommendationExport?.manualForcePausedCount || 0).toLocaleString()}. Use the Source Policy Review queue for local, reversible actions.</div>
     ${formatOpsMetricsDetails("Source policy supporting diagnostics", sourcePolicySecondaryHtml, "admin-ops-source-policy-details")}
   `;
+  const frontendPerfSectionHtml = `
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Frontend fetch/render counters</strong>: ${frontendPerfSummary}</div>
+  `;
 
   const taskLaneRows = buildOpsTaskLaneRows(options?.runModel || {});
   const diagnosticsByKey = buildOpsFetcherDiagnosticsSections({
@@ -1746,6 +1762,7 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
   const sectionHtmlByKey = {
     runtime: runtimeSectionHtml,
     failures: failuresSectionHtml,
+    frontendPerf: frontendPerfSectionHtml,
     sourceHealth: sourceHealthSectionHtml,
     sourcePolicy: sourcePolicySectionHtml
   };
