@@ -2,6 +2,7 @@ import { emitStartupMetric, markFirstInteractive } from "../../../shared/app-boo
 import { fetchJson } from "../../../shared/api-client.js";
 import { createAdminBridgeButtonWatcher } from "../../../shared/admin-bridge-button.js";
 import { awaitDesktopBootstrap, navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
+import { createPerfMarks } from "../../../shared/perf-marks.js";
 import { set as stateHubSet } from "../../../shared/state-hub.js";
 import { bindAsyncClick, bindUi, showToast } from "../../../shared/ui/index.js";
 import { runExportBackup as runExportBackupFromModule, runImportBackup as runImportBackupFromModule } from "../backup.js";
@@ -11,8 +12,24 @@ import { cacheSavedDomState } from "./state.js";
 import { bindSavedJobsListDelegation, bindSavedPageEvents } from "./events.js";
 
 export function createSavedBoot(deps) {
+  const savedPerfMarks = createPerfMarks(deps.startupMetrics);
+
   function emitSavedStartupMetric(event, payload = {}) {
     emitStartupMetric(deps.startupMetrics, event, payload);
+  }
+
+  function markSavedStep(name, payload = {}) {
+    savedPerfMarks.markStep(name, payload);
+  }
+
+  function measureSavedStep(name, startMark, endMark, payload = {}) {
+    savedPerfMarks.measureStep(name, startMark, endMark, payload);
+  }
+
+  function markSavedFirstRender(stage, rowCount = 0) {
+    if (typeof deps.startupMetrics?.markRendered === "function") {
+      deps.startupMetrics.markRendered(stage, rowCount);
+    }
   }
 
   function markSavedFirstInteractive(reason) {
@@ -52,6 +69,7 @@ export function createSavedBoot(deps) {
           return;
         }
         deps.renderSavedJobs(jobs);
+        markSavedFirstRender("saved_jobs", count);
         deps.refreshActivityLog().catch(() => {});
         deps.loadSavedLifecycleOverlay()
           .then(overlayByJobKey => {
@@ -77,8 +95,9 @@ export function createSavedBoot(deps) {
       err => {
         console.error("Saved jobs subscription failed:", err);
         deps.setSourceStatus("Could not load saved jobs.");
-        showToast("Could not load saved jobs.", "error");
+          showToast("Could not load saved jobs.", "error");
         deps.renderAuthRequired("Unable to load your saved jobs right now.");
+        markSavedFirstRender("auth_error", 0);
       }
     );
   }
@@ -102,7 +121,11 @@ export function createSavedBoot(deps) {
   }
 
   function bootSavedPage() {
+    markSavedStep("saved_boot_start");
+    markSavedStep("saved_dom_cache_start");
     cacheSavedDomState(deps.dom, cacheSavedDom(deps.documentObject));
+    markSavedStep("saved_dom_cache_end");
+    measureSavedStep("saved_dom_cache", "saved_dom_cache_start", "saved_dom_cache_end");
     deps.viewState.adminBridgeWatcher = createAdminBridgeButtonWatcher({
       buttonEl: deps.dom.adminPageBtnEl,
       baseUrl: deps.adminBridgeBase,
@@ -156,11 +179,16 @@ export function createSavedBoot(deps) {
       renderTimeline: deps.renderTimeline
     });
     deps.savedAuthController.initSavedJobsPage();
+    markSavedStep("saved_boot_end");
+    measureSavedStep("saved_boot", "saved_boot_start", "saved_boot_end");
   }
 
   return {
     bootSavedPage,
     emitSavedStartupMetric,
+    markSavedStep,
+    measureSavedStep,
+    markSavedFirstRender,
     markSavedFirstInteractive,
     subscribeToSavedJobs,
     exportBackup,

@@ -22,6 +22,7 @@ export async function initJobsFeed(deps) {
   const {
     hasJobsList,
     emitMetric,
+    markJobsStep = () => {},
     initAuth,
     isDesktopRuntimeMode,
     readCachedJobs,
@@ -46,6 +47,7 @@ export async function initJobsFeed(deps) {
   } = deps;
 
   if (!hasJobsList) return;
+  markJobsStep("jobs_boot_start");
   emitMetric("jobs_init_start");
 
   try {
@@ -136,6 +138,8 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     applyFiltersAndRender,
     markStartupRendered,
     markJobsFirstInteractive,
+    markJobsStep = () => {},
+    measureJobsStep = () => {},
     emitMetric,
     dispatchRefreshCompleted,
     renderDataSources
@@ -158,12 +162,21 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
   try {
     const refreshStartedAt = Date.now();
     if (firstLoad) {
+      markJobsStep("jobs_feed_fetch_start");
       emitMetric("jobs_first_load_refresh_start");
     }
     const result = await fetchUnifiedJobs({
       timeoutMs: firstLoad ? firstLoadRequestTimeoutMs : 20000,
       allowSheetsFallback: !firstLoad
     });
+    if (firstLoad) {
+      markJobsStep("jobs_feed_fetch_done", {
+        ok: Boolean(result.jobs && result.jobs.length > 0)
+      });
+      measureJobsStep("jobs_feed_fetch", "jobs_feed_fetch_start", "jobs_feed_fetch_done", {
+        ok: Boolean(result.jobs && result.jobs.length > 0)
+      });
+    }
     if (!result.jobs || result.jobs.length === 0) {
       if (firstLoad) {
         setSourceStatus(result.error || "Could not fetch listings from local unified feeds.");
@@ -186,8 +199,15 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
     recalculateItemsPerPage();
     updateFilterOptions();
     applyStateToFilters();
+    if (firstLoad) {
+      markJobsStep("jobs_render_start", { rowCount: getAllJobs().length });
+    }
     applyFiltersAndRender({ resetPage: false });
     if (firstLoad) {
+      markJobsStep("jobs_render_end", { rowCount: getAllJobs().length });
+      measureJobsStep("jobs_render", "jobs_render_start", "jobs_render_end", {
+        rowCount: getAllJobs().length
+      });
       markStartupRendered("first_load_refresh", getAllJobs().length);
       markJobsFirstInteractive("first_load_refresh");
       emitMetric("jobs_first_load_refresh_done", {
@@ -211,6 +231,13 @@ export async function refreshJobsFeed({ manual, firstLoad = false }, deps) {
   } catch (err) {
     logError("Refresh failed", err);
     if (firstLoad) {
+      markJobsStep("jobs_feed_fetch_done", {
+        ok: false,
+        error: String(err?.message || "unknown error")
+      });
+      measureJobsStep("jobs_feed_fetch", "jobs_feed_fetch_start", "jobs_feed_fetch_done", {
+        ok: false
+      });
       emitMetric("jobs_first_load_refresh_done", {
         ok: false,
         error: String(err?.message || "unknown error")
@@ -248,20 +275,42 @@ export async function loadStartupPreviewJobsFeed(deps) {
     applyFiltersAndRender,
     markStartupRendered,
     markJobsFirstInteractive,
+    markJobsStep = () => {},
+    measureJobsStep = () => {},
     setSkipInitialGuestAuthRerender,
     getAllJobs
   } = deps;
 
   try {
     const startedAt = Date.now();
+    markJobsStep("jobs_startup_preview_fetch_start");
     emitMetric("jobs_startup_preview_fetch_start");
     const payload = await fetchJsonFromCandidates(startupPreviewJsonUrls, { timeoutMs: 3000 });
+    markJobsStep("jobs_startup_preview_fetch_done", {
+      hasPayload: Boolean(payload)
+    });
+    measureJobsStep(
+      "jobs_startup_preview_fetch",
+      "jobs_startup_preview_fetch_start",
+      "jobs_startup_preview_fetch_done",
+      { hasPayload: Boolean(payload) }
+    );
     emitMetric("jobs_startup_preview_fetch_complete", {
       durationMs: Math.max(0, Date.now() - startedAt),
       hasPayload: Boolean(payload)
     });
+    markJobsStep("jobs_startup_preview_parse_start");
     emitMetric("jobs_startup_preview_parse_start");
     const rows = parseUnifiedJobsPayload(payload);
+    markJobsStep("jobs_startup_preview_parse_done", {
+      rowCount: Array.isArray(rows) ? rows.length : 0
+    });
+    measureJobsStep(
+      "jobs_startup_preview_parse",
+      "jobs_startup_preview_parse_start",
+      "jobs_startup_preview_parse_done",
+      { rowCount: Array.isArray(rows) ? rows.length : 0 }
+    );
     emitMetric("jobs_startup_preview_parse_complete", {
       rowCount: Array.isArray(rows) ? rows.length : 0
     });
@@ -273,6 +322,9 @@ export async function loadStartupPreviewJobsFeed(deps) {
     });
     updateLastUpdatedText(Date.now());
     recalculateItemsPerPage();
+    markJobsStep("jobs_startup_preview_render_start", {
+      rowCount: getAllJobs().length
+    });
     emitMetric("jobs_startup_preview_render_start", {
       rowCount: getAllJobs().length
     });
@@ -299,8 +351,18 @@ export async function loadStartupPreviewJobsFeed(deps) {
     emitMetric("jobs_startup_preview_render_returned", {
       rowCount: getAllJobs().length
     });
+    markJobsStep("jobs_startup_preview_render_done", {
+      rowCount: getAllJobs().length
+    });
+    measureJobsStep(
+      "jobs_startup_preview_render",
+      "jobs_startup_preview_render_start",
+      "jobs_startup_preview_render_done",
+      { rowCount: getAllJobs().length }
+    );
     markStartupRendered("startup_preview", getAllJobs().length);
     markJobsFirstInteractive("startup_preview");
+    markJobsStep("jobs_preview_ready", { rowCount: getAllJobs().length });
     emitMetric("jobs_startup_preview_render_complete", {
       rowCount: getAllJobs().length
     });

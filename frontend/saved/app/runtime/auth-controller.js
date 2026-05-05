@@ -20,6 +20,9 @@ export function createSavedAuthController({
   updateTimelineScopeButtons,
   renderWorkspaceStats,
   emitSavedStartupMetric,
+  markSavedStep = () => {},
+  measureSavedStep = () => {},
+  markSavedFirstRender = () => {},
   setSourceStatus,
   setActivityStatus,
   renderAuthRequired,
@@ -104,6 +107,7 @@ export function createSavedAuthController({
     setSavedFilterBarVisible(false);
     setSavedSortBarVisible(false);
     renderAuthRequired("Sign in to access your custom saved jobs table.");
+    markSavedFirstRender("auth_required", 0);
     renderTimeline();
   }
 
@@ -145,6 +149,7 @@ export function createSavedAuthController({
   }
 
   function initSavedJobsPage() {
+    markSavedStep("saved_auth_init_start");
     initializePageChrome();
 
     if (shouldWaitForAuth()) {
@@ -158,7 +163,12 @@ export function createSavedAuthController({
       setCustomJobAvailability(false);
       setSavedSortBarVisible(false);
       renderAuthRequired("Local auth provider is starting. Please wait...");
+      markSavedFirstRender("auth_waiting", 0);
       renderTimeline();
+      markSavedStep("saved_auth_init_end", { waiting: true });
+      measureSavedStep("saved_auth_init", "saved_auth_init_start", "saved_auth_init_end", {
+        waiting: true
+      });
       return;
     }
 
@@ -166,6 +176,10 @@ export function createSavedAuthController({
     emitSavedStartupMetric("saved_auth_ready");
     setAuthControlsReady(true);
     markSavedFirstInteractive("auth_ready");
+    markSavedStep("saved_auth_init_end", { waiting: false });
+    measureSavedStep("saved_auth_init", "saved_auth_init_start", "saved_auth_init_end", {
+      waiting: false
+    });
     if (viewState.savedAuthListenerBound) return;
     viewState.savedAuthListenerBound = true;
 
@@ -192,6 +206,7 @@ export function createSavedAuthController({
           setSavedFilterBarVisible(false);
           setSavedSortBarVisible(false);
           renderAuthRequired("Restoring your local profile. Please wait...");
+          markSavedFirstRender("auth_restoring", 0);
           renderTimeline();
           pendingInitialGuestTimer = window.setTimeout(() => {
             pendingInitialGuestTimer = 0;

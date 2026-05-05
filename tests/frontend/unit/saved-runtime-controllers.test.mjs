@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { createSavedActivityController } from "../../../frontend/saved/app/runtime/activity-controller.js";
 import { createSavedAuthController } from "../../../frontend/saved/app/runtime/auth-controller.js";
+import { createSavedBoot } from "../../../frontend/saved/app/runtime/boot.js";
 import { createSavedCustomJobController } from "../../../frontend/saved/app/runtime/custom-job-controller.js";
 import {
   createButton,
@@ -137,6 +138,8 @@ test("saved auth controller delays the initial guest render while desktop auth r
   let activityStatus = "";
   let authRequired = "";
   let subscribedUid = "";
+  const perfCalls = [];
+  const firstRenderCalls = [];
 
   const refs = {
     savedAuthStatusEl: createElement(),
@@ -189,6 +192,15 @@ test("saved auth controller delays the initial guest render while desktop auth r
       updateTimelineScopeButtons() {},
       renderWorkspaceStats() {},
       emitSavedStartupMetric() {},
+      markSavedStep(name, payload = {}) {
+        perfCalls.push({ type: "mark", name, payload });
+      },
+      measureSavedStep(name, startMark, endMark, payload = {}) {
+        perfCalls.push({ type: "measure", name, startMark, endMark, payload });
+      },
+      markSavedFirstRender(stage, rowCount = 0) {
+        firstRenderCalls.push({ stage, rowCount });
+      },
       setSourceStatus(value) {
         sourceStatus = String(value || "");
       },
@@ -226,6 +238,12 @@ test("saved auth controller delays the initial guest render while desktop auth r
     assert.equal(typeof authListener, "function");
     assert.equal(typeof pendingTimer, "function");
     assert.equal(subscribedUid, "");
+    assert.deepEqual(perfCalls.map(item => `${item.type}:${item.name}`), [
+      "mark:saved_auth_init_start",
+      "mark:saved_auth_init_end",
+      "measure:saved_auth_init"
+    ]);
+    assert.deepEqual(firstRenderCalls, [{ stage: "auth_restoring", rowCount: 0 }]);
 
     authListener({
       uid: "local_packaged_smoke_user",
@@ -240,4 +258,187 @@ test("saved auth controller delays the initial guest render while desktop auth r
   } finally {
     globalThis.window = originalWindow;
   }
+});
+
+test("saved auth controller marks waiting init path", () => {
+  const perfCalls = [];
+  const firstRenderCalls = [];
+  const refs = {
+    signInBtnEl: createButton(),
+    signOutBtnEl: createButton()
+  };
+
+  const controller = createSavedAuthController({
+    refs,
+    viewState: {
+      currentUser: null,
+      unsubscribeSavedJobs() {},
+      jobDetailTabByKey: new Map(),
+      cachedActivityEntries: [],
+      lastSavedJobsByKey: new Map(),
+      selectedJobKey: "",
+      timelineScope: "all"
+    },
+    savedPageService: {
+      isAvailable: () => false
+    },
+    savedAuthService: {
+      onAuthStateChanged() {}
+    },
+    savedAuthReadyPoller: {
+      schedulePoll() {},
+      stopPoll() {}
+    },
+    isSavedApiReady: () => false,
+    savedDispatch: { dispatch() {} },
+    SAVED_ACTIONS: { AUTH_CHANGED: "auth_changed" },
+    clearNoteSaveQueues() {},
+    setActivityPanelOpen() {},
+    setCustomJobPanelOpen() {},
+    setCustomJobAvailability() {},
+    updateTimelineScopeButtons() {},
+    renderWorkspaceStats() {},
+    emitSavedStartupMetric() {},
+    markSavedStep(name, payload = {}) {
+      perfCalls.push({ type: "mark", name, payload });
+    },
+    measureSavedStep(name, startMark, endMark, payload = {}) {
+      perfCalls.push({ type: "measure", name, startMark, endMark, payload });
+    },
+    markSavedFirstRender(stage, rowCount = 0) {
+      firstRenderCalls.push({ stage, rowCount });
+    },
+    setSourceStatus() {},
+    setActivityStatus() {},
+    renderAuthRequired() {},
+    renderTimeline() {},
+    markSavedFirstInteractive() {},
+    setSavedFilter() {},
+    defaultSavedFilter: "all",
+    setSavedSort() {},
+    defaultSavedSort: "updated",
+    renderSelectedJobHint() {},
+    setBackupButtonsEnabled() {},
+    setSavedFilterBarVisible() {},
+    setSavedSortBarVisible() {},
+    loadTimelinePreferences: () => ({ scope: "all" }),
+    subscribeToSavedJobs() {},
+    refreshActivityLog: async () => {},
+    timelineScopeAll: "all",
+    showToast() {}
+  });
+
+  controller.initSavedJobsPage();
+
+  assert.deepEqual(perfCalls.map(item => `${item.type}:${item.name}`), [
+    "mark:saved_auth_init_start",
+    "mark:saved_auth_init_end",
+    "measure:saved_auth_init"
+  ]);
+  assert.deepEqual(perfCalls.at(-2).payload, { waiting: true });
+  assert.deepEqual(firstRenderCalls, [{ stage: "auth_waiting", rowCount: 0 }]);
+});
+
+test("saved boot marks boot and DOM cache milestones", () => {
+  const originalWindow = globalThis.window;
+  const perfCalls = [];
+  globalThis.window = {
+    setInterval() {
+      return 1;
+    },
+    clearInterval() {}
+  };
+  const dom = {};
+  const viewState = {};
+  const element = createButton({
+    addEventListener() {},
+    removeEventListener() {}
+  });
+
+  try {
+    const boot = createSavedBoot({
+      adminBridgeBase: "http://127.0.0.1:8877",
+      startupMetrics: {
+        emit(event, payload = {}) {
+          perfCalls.push({ type: "metric", name: event, payload });
+        }
+      },
+      dom,
+      viewState,
+      noteSaveState: {
+        inFlight: new Map(),
+        pendingValues: new Map(),
+        lastInteractionAt: 0
+      },
+      savedPageService: {
+        subscribeSavedJobs() {
+          return () => {};
+        }
+      },
+      savedAuthController: {
+        initSavedJobsPage() {}
+      },
+      applySavedAdminBridgeState() {},
+      cssEscape: value => value,
+      setSelectedJobKey() {},
+      removeSavedJob() {},
+      updatePhase() {},
+      toggleDetailsForJob() {},
+      openCustomJobEditor() {},
+      setJobDetailsTab() {},
+      applyJobDetailsTab() {},
+      refreshActivityLog: async () => {},
+      renderSavedJobs() {},
+      loadSavedLifecycleOverlay: async () => new Map(),
+      queueNotesSave() {},
+      flushNotesSave() {},
+      uploadAttachments() {},
+      getLastJobsUrl() {},
+      navigateDesktopPage() {},
+      defaultSavedFilter: "all",
+      defaultSavedSort: "updated",
+      timelineScopeAll: "all",
+      setCustomJobPanelOpen() {},
+      createCustomJob() {},
+      updateCustomJobWarning() {},
+      setSavedFilter() {},
+      setSavedSort() {},
+      setActivityPanelOpen() {},
+      updateGlobalOverrideButton() {},
+      setTimelineScope() {},
+      renderTimeline() {},
+      renderWorkspaceStats() {},
+      renderSelectedJobHint() {},
+      renderAuthRequired() {},
+      setSourceStatus() {},
+      isDesktopRuntimeMode: () => false,
+      documentObject: {
+        querySelector() {
+          return element;
+        },
+        querySelectorAll() {
+          return [];
+        }
+      }
+    });
+
+    boot.bootSavedPage();
+    viewState.adminBridgeWatcher?.stopAdminBridgeButtonWatch();
+  } finally {
+    globalThis.window = originalWindow;
+  }
+
+  assert.deepEqual(
+    perfCalls
+      .filter(item => item.type === "metric")
+      .map(item => item.name),
+    [
+      "saved_boot_start",
+      "saved_dom_cache_start",
+      "saved_dom_cache_end",
+      "saved_dom_cache",
+      "saved_boot_end",
+      "saved_boot"
+    ]
+  );
 });

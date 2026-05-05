@@ -6,6 +6,7 @@ import { createElement } from "./helpers/jobs-runtime-helpers.mjs";
 
 function createFeedController(overrides = {}) {
   const dispatches = [];
+  const perfCalls = [];
   const runtimeState = overrides.runtimeState || {
     refreshInFlight: false,
     allJobs: [],
@@ -22,6 +23,7 @@ function createFeedController(overrides = {}) {
   };
   return {
     dispatches,
+    perfCalls,
     runtimeState,
     dom,
     controller: createJobsFeedController({
@@ -49,6 +51,9 @@ function createFeedController(overrides = {}) {
       },
       showToast: () => {},
       emitDesktopStartupMetric: () => {},
+      markJobsStep: (name, payload = {}) => perfCalls.push({ type: "mark", name, payload }),
+      measureJobsStep: (name, startMark, endMark, payload = {}) =>
+        perfCalls.push({ type: "measure", name, startMark, endMark, payload }),
       markStartupRendered: () => {},
       markJobsFirstInteractive: () => {},
       applyFiltersAndRender: () => {},
@@ -71,6 +76,12 @@ function createFeedController(overrides = {}) {
         return true;
       },
       loadStartupPreviewJobsFeed: async deps => {
+        deps.markJobsStep("jobs_forwarded_preview_start");
+        deps.measureJobsStep(
+          "jobs_forwarded_preview",
+          "jobs_forwarded_preview_start",
+          "jobs_forwarded_preview_done"
+        );
         const normalized = deps.normalizeRows([{ id: "job-1" }]);
         deps.renderStartupPreviewFastPath({ pageJobs: normalized, filteredCount: 1 });
         return true;
@@ -137,7 +148,7 @@ test("jobs feed controller refresh wiring updates bridge state and dispatches co
 });
 
 test("jobs feed controller preview wiring normalizes rows and forwards startup preview hooks", async () => {
-  const { controller, runtimeState, dom } = createFeedController();
+  const { controller, runtimeState, dom, perfCalls } = createFeedController();
 
   const loaded = await controller.loadStartupPreviewJobs();
   controller.updateLastUpdatedText(1234);
@@ -149,4 +160,8 @@ test("jobs feed controller preview wiring normalizes rows and forwards startup p
     filteredCount: 1
   });
   assert.equal(dom.jobsLastUpdatedEl.textContent, "updated:1234");
+  assert.deepEqual(perfCalls.map(item => `${item.type}:${item.name}`), [
+    "mark:jobs_forwarded_preview_start",
+    "measure:jobs_forwarded_preview"
+  ]);
 });

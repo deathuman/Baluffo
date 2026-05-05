@@ -12,6 +12,8 @@ export function createJobsFeedController({
   filtersController,
   showToast,
   emitDesktopStartupMetric,
+  markJobsStep = () => {},
+  measureJobsStep = () => {},
   markStartupRendered,
   markJobsFirstInteractive,
   applyFiltersAndRender,
@@ -173,6 +175,8 @@ export function createJobsFeedController({
       applyFiltersAndRender,
       markStartupRendered,
       markJobsFirstInteractive,
+      markJobsStep,
+      measureJobsStep,
       emitMetric: emitDesktopStartupMetric,
       dispatchRefreshCompleted: () => {
         jobsDispatch.dispatch({
@@ -205,6 +209,8 @@ export function createJobsFeedController({
       renderStartupPreviewFastPath: startupPreviewController.renderStartupPreviewFastPath,
       scheduleStartupPreviewMaterialization: startupPreviewController.scheduleStartupPreviewMaterialization,
       applyFiltersAndRender,
+      markJobsStep,
+      measureJobsStep,
       markStartupRendered,
       markJobsFirstInteractive,
       setSkipInitialGuestAuthRerender: value => {

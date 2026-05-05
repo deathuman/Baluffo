@@ -5,7 +5,7 @@
 > - **Canonical for:** frontend User Timing instrumentation, Long Task detection, Playwright performance traces, profiling hooks (BALUFFO_PROFILE=1), sync operation timing, NDJSON perf trend tracking, CI smoke benchmark, startup profile regression gate, and Admin-page boot‑sequence optimizations
 > - **Not canonical for:** pipeline/discovery timing payload shapes (use `pipeline_timing.py`, `runtime_metrics.py`), fetcher metrics contracts (use `fetcher_metrics.py`), startup probe event schema (use `startup_profile.py`, `startup_telemetry.py`), Admin task/progress UX closeout history (use `archive/task-progress-operational-console-closeout.md`), or source‑sync production-readiness closeout history (use `archive/source-sync-production-readiness-closeout.md`)
 > - **Then inspect:** [`../AI_ASSISTANT_GUIDE.md`](../AI_ASSISTANT_GUIDE.md), [`../architecture-ai-map.md`](../architecture-ai-map.md), [`../startup-probe-architecture.md`](../startup-probe-architecture.md), [`../testing.md`](../testing.md), and the source files listed per phase below
-> - **Last updated:** 2026-05-04
+> - **Last updated:** 2026-05-05
 
 ## Verdict
 
@@ -35,6 +35,31 @@ A deep‑dive of the Admin page boot sequence (`frontend/admin/app/runtime.js:24
 | Tight 500ms polling during active tasks | `fetcher/watch.js:116-126`, `discovery/watch.js:184-194` | Main‑thread churn on each tick |
 
 This plan addresses the observational gap first (Phase 1), then exploits the new data to apply optimisations (Phase 3), and finally prevents regression (Phase 4).
+
+---
+
+## Progress through 2026-05-05
+
+Completed slices:
+
+- **Admin quick wins Q1-Q6:** redundant boot sync/ops fetches removed, registry signature changed to a compact digest, Admin DOM refs made lazy, heavy Admin renders deferred with stale-response guards, and discovery source sections reveal progressively.
+- **Phase 1a Admin User Timing marks:** added shared `frontend/shared/perf-marks.js` and wired Admin DOM cache, auth init, overview, discovery, discovery config, ops health, and sync boot milestones through existing startup metric transport.
+- **Phase 1a Jobs/Saved User Timing marks:** extended the shared helper to Jobs boot, startup preview fetch/parse/render, first-load feed fetch/render, Saved boot, Saved DOM cache, Saved auth init, and one-shot `saved_first_render`.
+
+Targeted validation completed for these slices:
+
+- `node --test tests/frontend/unit/perf-marks.test.mjs`
+- `node --test tests/frontend/unit/admin-auth-controller.test.mjs`
+- `node --test tests/frontend/unit/admin-dom.test.mjs tests/frontend/unit/admin-busy-state.test.mjs`
+- `node --test tests/frontend/unit/jobs-feed-startup.test.mjs tests/frontend/unit/jobs-runtime-feed-controller.test.mjs`
+- `node --test tests/frontend/unit/startup-metrics-effects.test.mjs tests/frontend/unit/saved-runtime-controllers.test.mjs`
+
+Remaining near-term work:
+
+- **Phase 1b:** Long Task observer across Admin, Jobs, and Saved.
+- **Phase 1c:** Playwright performance traces.
+- **Phase 1d/1e/1f:** profiling hooks, lightweight timing counters, and sync operation timing.
+- **Phase 2+:** baseline collection, trend tracking, optimisation based on evidence, and CI regression gates.
 
 ---
 

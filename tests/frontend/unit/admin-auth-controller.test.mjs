@@ -10,6 +10,7 @@ test("admin auth controller initializes the composed admin view immediately", as
   const dispatched = [];
   const toasts = [];
   const calls = [];
+  const perfCalls = [];
   const refs = {
     adminContentEl: createElement({ classList: createClassList(["hidden"]) }),
     adminBridgeStatusBadgeEl: createElement({ classList: createClassList(["hidden"]) }),
@@ -29,6 +30,12 @@ test("admin auth controller initializes the composed admin view immediately", as
     },
     emitAdminStartupMetric() {},
     markAdminFirstInteractive() {},
+    markAdminStep(name, payload = {}) {
+      perfCalls.push({ type: "mark", name, payload });
+    },
+    measureAdminStep(name, startMark, endMark, payload = {}) {
+      perfCalls.push({ type: "measure", name, startMark, endMark, payload });
+    },
     syncAdminBusyUi() {
       calls.push("syncAdminBusyUi");
     },
@@ -125,6 +132,33 @@ test("admin auth controller initializes the composed admin view immediately", as
   assert.equal(calls.includes("scheduleOpsHealthPolling:900"), false);
   assert.equal(refs.adminSyncStatusEl.textContent, "Loading sync status...");
   assert.equal(toasts.length, 0);
+  assert.deepEqual(
+    perfCalls.map(item => `${item.type}:${item.name}`),
+    [
+      "mark:admin_auth_init_start",
+      "mark:admin_overview_fetch_start",
+      "mark:admin_discovery_fetch_start",
+      "mark:admin_discovery_config_fetch_start",
+      "mark:admin_ops_health_fetch_start",
+      "mark:admin_sync_fetch_start",
+      "mark:admin_auth_init_end",
+      "measure:admin_auth_init",
+      "mark:admin_overview_fetch_done",
+      "measure:admin_overview_fetch",
+      "mark:admin_discovery_fetch_done",
+      "measure:admin_discovery_fetch",
+      "mark:admin_discovery_config_fetch_done",
+      "measure:admin_discovery_config_fetch",
+      "mark:admin_ops_health_fetch_done",
+      "measure:admin_ops_health_fetch",
+      "mark:admin_sync_fetch_done",
+      "measure:admin_sync_fetch"
+    ]
+  );
+  assert.deepEqual(
+    perfCalls.find(item => item.name === "admin_overview_fetch")?.payload,
+    { ok: true }
+  );
 });
 
 

@@ -6,6 +6,7 @@ import {
   setText
 } from "../../shared/ui/index.js";
 import { emitStartupMetric, logError, markFirstInteractive } from "../../shared/app-boot.js";
+import { createPerfMarks } from "../../shared/perf-marks.js";
 import {
   appendAdminLogRow
 } from "../render.js?v=12";
@@ -85,6 +86,7 @@ let restoreActiveRunWatches;
 const startupMetrics = createAdminStartupMetrics({
   emitStartupMetric: (event, payload) => emitAdminStartupMetricFromData(ADMIN_BRIDGE_BASE, event, payload)
 });
+const adminPerfMarks = createPerfMarks(startupMetrics);
 const callBridge = createBridgeCaller({
   setBridgeOnline: () => opsController?.setBridgeStatusBadge("online", "Bridge Online"),
   setBridgeOffline: () => opsController?.setBridgeStatusBadge("offline", "Bridge Offline")
@@ -243,7 +245,10 @@ function setSourceFilter(value) {
 }
 
 function cacheDom() {
+  adminPerfMarks.markStep("admin_dom_cache_start");
   refs = cacheAdminDom(document);
+  adminPerfMarks.markStep("admin_dom_cache_end");
+  adminPerfMarks.measureStep("admin_dom_cache", "admin_dom_cache_start", "admin_dom_cache_end");
 }
 
 function bootAdminPage() {
@@ -273,6 +278,8 @@ function bootAdminPage() {
     setSourceStatus,
     emitAdminStartupMetric,
     markAdminFirstInteractive,
+    markAdminStep: adminPerfMarks.markStep,
+    measureAdminStep: adminPerfMarks.measureStep,
     syncAdminBusyUi,
     syncDiscoveryLogDisclosure,
     resetBusyFlags,

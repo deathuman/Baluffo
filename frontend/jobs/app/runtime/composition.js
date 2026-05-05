@@ -1,5 +1,6 @@
 import { emitStartupMetric, logError, logInfo, markFirstInteractive } from "../../../shared/app-boot.js";
 import { createAuthReadyPoller } from "../../../shared/auth-ready-poll.js";
+import { createPerfMarks } from "../../../shared/perf-marks.js";
 import { navigateDesktopPage } from "../../../shared/local-data/desktop-client.js";
 import { bindAsyncClick, bindHandlersMap, bindUi, escapeHtml, setText, showToast } from "../../../shared/ui/index.js";
 import { UI_TOKENS, ui } from "../../../shared/ui/selectors.js";
@@ -42,6 +43,7 @@ export function composeJobsRuntime(deps) {
       deps.postStartupMetricToBridge(String(event || "").trim() || "unknown", payload);
     }
   });
+  const jobsPerfMarks = createPerfMarks(startupMetrics);
 
   function emitDesktopStartupMetric(event, payload = {}) {
     emitStartupMetric(startupMetrics, event, payload);
@@ -222,6 +224,8 @@ export function composeJobsRuntime(deps) {
     filtersController,
     showToast,
     emitDesktopStartupMetric,
+    markJobsStep: jobsPerfMarks.markStep,
+    measureJobsStep: jobsPerfMarks.measureStep,
     markStartupRendered,
     markJobsFirstInteractive,
     applyFiltersAndRender: (...args) => deps.applyFiltersAndRender(...args),

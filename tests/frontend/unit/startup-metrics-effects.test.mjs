@@ -72,6 +72,26 @@ test("saved startup metrics preserve provided elapsedMs", () => {
   assert.equal(calls[0].payload.phase, "boot");
 });
 
+test("saved startup metrics emit first render once", () => {
+  const calls = [];
+  let nowMs = 700;
+  const metrics = createSavedStartupMetrics({
+    emitMetric: (event, payload) => calls.push({ event, payload }),
+    now: () => nowMs
+  });
+
+  nowMs = 718;
+  metrics.markRendered("auth_required", 0);
+  nowMs = 725;
+  metrics.markRendered("saved_jobs", 3);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].event, "saved_first_render");
+  assert.equal(calls[0].payload.stage, "auth_required");
+  assert.equal(calls[0].payload.rowCount, 0);
+  assert.equal(calls[0].payload.elapsedMs, 18);
+});
+
 test("admin startup metrics add elapsedMs to first interactive", () => {
   const calls = [];
   let nowMs = 200;

@@ -24,10 +24,46 @@ export function createAdminAuthController({
   loadDiscoveryConfig,
   loadOpsHealthData,
   loadSyncStatus,
+  markAdminStep,
+  measureAdminStep,
   logAdminError,
   _showToast
 }) {
+  function markStep(name, payload) {
+    if (typeof markAdminStep === "function") {
+      markAdminStep(name, payload);
+    }
+  }
+
+  function measureStep(name, startMark, endMark, payload) {
+    if (typeof measureAdminStep === "function") {
+      measureAdminStep(name, startMark, endMark, payload);
+    }
+  }
+
+  function runInitialTask({
+    start,
+    end,
+    measure,
+    errorContext,
+    task
+  }) {
+    markStep(start);
+    Promise.resolve()
+      .then(task)
+      .then(() => {
+        markStep(end, { ok: true });
+        measureStep(measure, start, end, { ok: true });
+      })
+      .catch(err => {
+        markStep(end, { ok: false, error: String(err?.message || err || "unknown error") });
+        measureStep(measure, start, end, { ok: false });
+        logAdminError(errorContext, err);
+      });
+  }
+
   function initAdminPage() {
+    markStep("admin_auth_init_start");
     syncAdminBusyUi();
     syncDiscoveryLogDisclosure();
     setSourceFilter("all");
@@ -48,21 +84,43 @@ export function createAdminAuthController({
     setOpsPlaceholders("Loading operations health...");
     if (refs.adminSyncStatusEl) refs.adminSyncStatusEl.textContent = "Loading sync status...";
     startBridgeStatusWatch();
-    refreshOverview().catch(err => {
-      logAdminError("Failed to refresh admin overview", err);
+    runInitialTask({
+      start: "admin_overview_fetch_start",
+      end: "admin_overview_fetch_done",
+      measure: "admin_overview_fetch",
+      errorContext: "Failed to refresh admin overview",
+      task: () => refreshOverview()
     });
-    loadDiscoveryData().catch(err => {
-      logAdminError("Failed to load discovery data", err);
+    runInitialTask({
+      start: "admin_discovery_fetch_start",
+      end: "admin_discovery_fetch_done",
+      measure: "admin_discovery_fetch",
+      errorContext: "Failed to load discovery data",
+      task: () => loadDiscoveryData()
     });
-    loadDiscoveryConfig({ silent: true, forceForm: true }).catch(err => {
-      logAdminError("Failed to load discovery config", err);
+    runInitialTask({
+      start: "admin_discovery_config_fetch_start",
+      end: "admin_discovery_config_fetch_done",
+      measure: "admin_discovery_config_fetch",
+      errorContext: "Failed to load discovery config",
+      task: () => loadDiscoveryConfig({ silent: true, forceForm: true })
     });
-    loadOpsHealthData().catch(err => {
-      logAdminError("Failed to load ops health data", err);
+    runInitialTask({
+      start: "admin_ops_health_fetch_start",
+      end: "admin_ops_health_fetch_done",
+      measure: "admin_ops_health_fetch",
+      errorContext: "Failed to load ops health data",
+      task: () => loadOpsHealthData()
     });
-    loadSyncStatus({ silent: true, forceForm: true }).catch(err => {
-      logAdminError("Failed to load sync status", err);
+    runInitialTask({
+      start: "admin_sync_fetch_start",
+      end: "admin_sync_fetch_done",
+      measure: "admin_sync_fetch",
+      errorContext: "Failed to load sync status",
+      task: () => loadSyncStatus({ silent: true, forceForm: true })
     });
+    markStep("admin_auth_init_end");
+    measureStep("admin_auth_init", "admin_auth_init_start", "admin_auth_init_end");
     return true;
   }
 

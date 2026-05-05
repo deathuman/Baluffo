@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   canUseStartupPreviewFastPath,
   initJobsFeed,
+  refreshJobsFeed,
   loadStartupPreviewJobsFeed
 } from "../../../frontend/jobs/app/feed.js";
 import { STARTUP_PREVIEW_JSON_URLS } from "../../../frontend/jobs/app/sources.js";
@@ -13,6 +14,7 @@ import { createElement } from "./helpers/jobs-runtime-helpers.mjs";
 function createBaseDeps(overrides = {}) {
   const calls = {
     metrics: [],
+    perf: [],
     sourceStatus: [],
     showError: [],
     initialized: [],
@@ -24,6 +26,9 @@ function createBaseDeps(overrides = {}) {
     deps: {
       hasJobsList: true,
       emitMetric: (event, payload = {}) => calls.metrics.push({ event, payload }),
+      markJobsStep: (name, payload = {}) => calls.perf.push({ type: "mark", name, payload }),
+      measureJobsStep: (name, startMark, endMark, payload = {}) =>
+        calls.perf.push({ type: "measure", name, startMark, endMark, payload }),
       initAuth: () => {},
       isDesktopRuntimeMode: () => false,
       readCachedJobs: async () => null,
@@ -60,6 +65,7 @@ test("initJobsFeed marks startup initialized and interactive on successful first
 
   assert.deepEqual(calls.showError, []);
   assert.equal(calls.initialized.at(-1), true);
+  assert.equal(calls.perf[0].name, "jobs_boot_start");
 });
 
 test("initJobsFeed renders explicit error path when startup throws before first load completes", async () => {
@@ -73,6 +79,65 @@ test("initJobsFeed renders explicit error path when startup throws before first 
 
   assert.equal(calls.initialized.at(-1), true);
   assert.deepEqual(calls.showError, ["Unable to load job listings right now."]);
+  assert.equal(calls.perf[0].name, "jobs_boot_start");
+});
+
+test("refreshJobsFeed marks first-load fetch and render milestones", async () => {
+  let refreshInFlight = false;
+  let allJobs = [];
+  const perf = [];
+  const ok = await refreshJobsFeed({ manual: false, firstLoad: true }, {
+    getRefreshInFlight: () => refreshInFlight,
+    setRefreshInFlight: value => {
+      refreshInFlight = Boolean(value);
+    },
+    dispatchRefreshRequested: () => {},
+    setRefreshButtonDisabled: () => {},
+    setProgress: () => {},
+    setSourceStatus: () => {},
+    firstLoadRequestTimeoutMs: 4500,
+    fetchUnifiedJobs: async () => ({ jobs: [{ id: "job-1" }], sourceName: "test" }),
+    dispatchRefreshFailed: () => {},
+    showToast: () => {},
+    logError: () => {},
+    getAllJobs: () => allJobs,
+    setAllJobs: jobs => {
+      allJobs = jobs;
+    },
+    normalizeRows: rows => rows.map(row => ({ ...row, normalized: true })),
+    setRefreshJobsNeedsAttention: () => {},
+    isDesktopRuntimeMode: () => true,
+    writeCachedJobs: async () => {},
+    updateLastUpdatedText: () => {},
+    recalculateItemsPerPage: () => {},
+    updateFilterOptions: () => {},
+    applyStateToFilters: () => {},
+    applyFiltersAndRender: () => {},
+    markStartupRendered: () => {},
+    markJobsFirstInteractive: () => {},
+    markJobsStep: (name, payload = {}) => perf.push({ type: "mark", name, payload }),
+    measureJobsStep: (name, startMark, endMark, payload = {}) =>
+      perf.push({ type: "measure", name, startMark, endMark, payload }),
+    emitMetric: () => {},
+    dispatchRefreshCompleted: () => {},
+    renderDataSources: async () => {}
+  });
+
+  assert.equal(ok, true);
+  assert.deepEqual(
+    perf.map(item => `${item.type}:${item.name}`),
+    [
+      "mark:jobs_feed_fetch_start",
+      "mark:jobs_feed_fetch_done",
+      "measure:jobs_feed_fetch",
+      "mark:jobs_render_start",
+      "mark:jobs_render_end",
+      "measure:jobs_render"
+    ]
+  );
+  assert.deepEqual(perf.find(item => item.name === "jobs_render")?.payload, {
+    rowCount: 1
+  });
 });
 
 test("canUseStartupPreviewFastPath only accepts the default first-page startup state", () => {
@@ -129,7 +194,8 @@ test("loadStartupPreviewJobsFeed uses the startup fast path for the default laun
     applyFilterOptionsSnapshot: [],
     renderStartupPreviewFastPath: [],
     applyFiltersAndRender: 0,
-    scheduleStartupPreviewMaterialization: 0
+    scheduleStartupPreviewMaterialization: 0,
+    perf: []
   };
   const defaultFilters = {
     workType: "",
@@ -152,6 +218,9 @@ test("loadStartupPreviewJobsFeed uses the startup fast path for the default laun
 
   const loaded = await loadStartupPreviewJobsFeed({
     emitMetric: () => {},
+    markJobsStep: (name, payload = {}) => calls.perf.push({ type: "mark", name, payload }),
+    measureJobsStep: (name, startMark, endMark, payload = {}) =>
+      calls.perf.push({ type: "measure", name, startMark, endMark, payload }),
     fetchJsonFromCandidates: async () => ({ rows: [{ id: "job-1" }, { id: "job-2" }] }),
     startupPreviewJsonUrls: ["http://example.test/preview.json"],
     parseUnifiedJobsPayload: payload => payload.rows,
@@ -198,6 +267,21 @@ test("loadStartupPreviewJobsFeed uses the startup fast path for the default laun
   assert.equal(calls.scheduleStartupPreviewMaterialization, 1);
   assert.deepEqual(calls.applyFilterOptionsSnapshot, [plan.filterOptions]);
   assert.deepEqual(calls.renderStartupPreviewFastPath, [plan]);
+  assert.deepEqual(
+    calls.perf.map(item => `${item.type}:${item.name}`),
+    [
+      "mark:jobs_startup_preview_fetch_start",
+      "mark:jobs_startup_preview_fetch_done",
+      "measure:jobs_startup_preview_fetch",
+      "mark:jobs_startup_preview_parse_start",
+      "mark:jobs_startup_preview_parse_done",
+      "measure:jobs_startup_preview_parse",
+      "mark:jobs_startup_preview_render_start",
+      "mark:jobs_startup_preview_render_done",
+      "measure:jobs_startup_preview_render",
+      "mark:jobs_preview_ready"
+    ]
+  );
 });
 
 test("loadStartupPreviewJobsFeed still accepts the legacy array startup snapshot", async () => {
