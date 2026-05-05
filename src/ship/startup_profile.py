@@ -159,7 +159,8 @@ def _classify_stages(
     ranked = [
         stage
         for stage in stages
-        if stage["key"] != "total_launch_to_first_usable_ui" and stage["durationMs"] is not None
+        if stage["key"] != "total_launch_to_first_usable_ui"
+        and stage["durationMs"] is not None
         and str(stage.get("status") or "") != "deferred"
     ]
     if not ranked:
@@ -190,9 +191,7 @@ def _stage_perf_regressions(stages: list[dict[str, Any]]) -> list[dict[str, Any]
                 "label": str(stage.get("label") or key),
                 "durationMs": int(duration_ms),
                 "thresholdMs": int(threshold_ms),
-                "severity": "critical"
-                if key == "total_launch_to_first_usable_ui"
-                else "warning",
+                "severity": "critical" if key == "total_launch_to_first_usable_ui" else "warning",
             }
         )
     return regressions

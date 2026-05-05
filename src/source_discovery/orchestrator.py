@@ -19,8 +19,8 @@ from typing import Any
 
 from src import source_registry as source_registry_module
 from src.jobs.state import read_source_state as _read_source_state
-from src.shared.utils import now_iso
 from src.shared.profile_utils import run_profiled
+from src.shared.utils import now_iso
 from src.source_registry import (
     APPROVAL_STATE_PATH as _DEFAULT_APPROVAL_STATE_PATH,
 )

@@ -4,9 +4,12 @@ from src import fetch_incremental_sanity_benchmark as benchmark
 
 
 def test_runtime_duration_uses_total_duration_first() -> None:
-    assert benchmark._runtime_duration_ms(
-        {"runtime": {"totalDurationMs": 123, "wallClockDurationMs": 456}}
-    ) == 123
+    assert (
+        benchmark._runtime_duration_ms(
+            {"runtime": {"totalDurationMs": 123, "wallClockDurationMs": 456}}
+        )
+        == 123
+    )
 
 
 def test_runtime_duration_falls_back_to_wall_clock_duration() -> None:
@@ -14,9 +17,10 @@ def test_runtime_duration_falls_back_to_wall_clock_duration() -> None:
 
 
 def test_runtime_duration_uses_nested_timing_summary() -> None:
-    assert benchmark._runtime_duration_ms(
-        {"runtime": {"timingSummary": {"totalDurationMs": 789}}}
-    ) == 789
+    assert (
+        benchmark._runtime_duration_ms({"runtime": {"timingSummary": {"totalDurationMs": 789}}})
+        == 789
+    )
 
 
 def test_source_names_for_group_uses_group_sources() -> None:
@@ -48,9 +52,7 @@ def test_stage_durations_sum_timing_summary_stages() -> None:
         {"runtime": {"timingSummary": {"stageTotalsMs": {"fetchAndParse": 10}}}},
         {
             "runtime": {
-                "timingSummary": {
-                    "stageTotalsMs": {"fetchAndParse": 5, "canonicalization": 7}
-                }
+                "timingSummary": {"stageTotalsMs": {"fetchAndParse": 5, "canonicalization": 7}}
             }
         },
     )
@@ -64,9 +66,7 @@ def test_network_wait_counters_collect_cache_and_adapter_proxy_counts() -> None:
             "summary": {"cacheSkippedCount": 2, "revalidatedCount": 1, "failedSources": 1},
             "runtime": {
                 "timingSummary": {
-                    "adapterTimings": [
-                        {"adapter": "greenhouse", "durationMs": 10, "errorCount": 1}
-                    ]
+                    "adapterTimings": [{"adapter": "greenhouse", "durationMs": 10, "errorCount": 1}]
                 }
             },
             "sources": [{"boardCacheDecisionCounts": {"run_now": 2, "skip_fresh": 3}}],
@@ -348,7 +348,7 @@ def test_next_optimization_targets_prioritizes_source_policy_before_timeouts() -
                 "listingHost": "koeitecmo.vn",
                 "offListingHosts": ["careerviet.vn"],
                 "offListingHostPageCount": 2,
-            }
+            },
         },
     )
 

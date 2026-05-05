@@ -74,18 +74,12 @@ def _append_startup_profile_scenario(
 
 def _startup_profile_regression_message(startup_profile: dict[str, Any]) -> str:
     regressions = [
-        row
-        for row in startup_profile.get("perfRegressions") or []
-        if isinstance(row, dict)
+        row for row in startup_profile.get("perfRegressions") or [] if isinstance(row, dict)
     ]
     if not regressions:
         return str(startup_profile.get("classification") or "startup profile threshold exceeded")
     worst = next(
-        (
-            row
-            for row in regressions
-            if str(row.get("severity") or "").strip() == "critical"
-        ),
+        (row for row in regressions if str(row.get("severity") or "").strip() == "critical"),
         regressions[0],
     )
     return (

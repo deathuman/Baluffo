@@ -32,21 +32,15 @@ def test_benchmark_duration_sums_fetch_passes() -> None:
 
 def test_compare_duration_warns_and_fails_at_thresholds() -> None:
     assert (
-        perf_compare.compare_duration(current_duration_ms=104, baseline_duration_ms=100)[
-            "status"
-        ]
+        perf_compare.compare_duration(current_duration_ms=104, baseline_duration_ms=100)["status"]
         == "passed"
     )
     assert (
-        perf_compare.compare_duration(current_duration_ms=106, baseline_duration_ms=100)[
-            "status"
-        ]
+        perf_compare.compare_duration(current_duration_ms=106, baseline_duration_ms=100)["status"]
         == "warn"
     )
     assert (
-        perf_compare.compare_duration(current_duration_ms=116, baseline_duration_ms=100)[
-            "status"
-        ]
+        perf_compare.compare_duration(current_duration_ms=116, baseline_duration_ms=100)["status"]
         == "failed"
     )
 

@@ -6,11 +6,7 @@ from scripts import perf_adapter_summary
 def test_summarize_adapter_durations_uses_network_wait_counters() -> None:
     rows = perf_adapter_summary.summarize_adapter_durations(
         [
-            {
-                "networkWaitCounters": {
-                    "adapterDurationsMs": {"lever": 1000, "greenhouse": 500}
-                }
-            },
+            {"networkWaitCounters": {"adapterDurationsMs": {"lever": 1000, "greenhouse": 500}}},
             {"networkWaitCounters": {"adapterDurationsMs": {"lever": 250}}},
         ]
     )
@@ -35,9 +31,7 @@ def test_summarize_adapter_durations_reads_nested_timing_summaries() -> None:
                         }
                     }
                 },
-                "runtime": {
-                    "adapterTimings": [{"adapter": "static", "durationMs": 300}]
-                },
+                "runtime": {"adapterTimings": [{"adapter": "static", "durationMs": 300}]},
             }
         ]
     )

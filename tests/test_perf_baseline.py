@@ -80,7 +80,9 @@ def test_write_baseline_record_appends_multiple_modes() -> None:
         )
 
         perf_baseline.write_baseline_record(first, baseline_dir=baseline_dir, trend_path=trend_path)
-        perf_baseline.write_baseline_record(second, baseline_dir=baseline_dir, trend_path=trend_path)
+        perf_baseline.write_baseline_record(
+            second, baseline_dir=baseline_dir, trend_path=trend_path
+        )
 
         trend_rows = [
             json.loads(line)

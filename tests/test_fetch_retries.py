@@ -31,5 +31,8 @@ def test_fetch_with_retries_still_retries_transient_errors() -> None:
             raise RuntimeError("temporary network wobble")
         return "ok"
 
-    assert fetch_with_retries("https://example.com/jobs", fetch_text, 5, retries=2, backoff_s=0) == "ok"
+    assert (
+        fetch_with_retries("https://example.com/jobs", fetch_text, 5, retries=2, backoff_s=0)
+        == "ok"
+    )
     assert attempts == 2
