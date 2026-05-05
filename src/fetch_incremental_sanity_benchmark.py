@@ -9,9 +9,12 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from src.jobs.interfaces import SourceLoader
+if TYPE_CHECKING:
+    from src.jobs.interfaces import SourceLoader
+else:
+    SourceLoader = Any
 
 DEFAULT_BENCHMARK_SOURCES = [
     "greenhouse_boards",
@@ -63,6 +66,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def _as_list(value: object) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _runtime_duration_ms(report: dict[str, object]) -> int:
+    runtime = dict(report.get("runtime") or {})
+    timing_summary = dict(runtime.get("timingSummary") or {})
+    return int(
+        runtime.get("totalDurationMs")
+        or timing_summary.get("totalDurationMs")
+        or runtime.get("wallClockDurationMs")
+        or timing_summary.get("wallClockDurationMs")
+        or 0
+    )
 
 
 def _select_loaders(source_names: list[str]) -> tuple[list[tuple[str, SourceLoader]], list[str]]:
@@ -170,10 +185,15 @@ def main(argv: list[str] | None = None) -> int:
 
     first = _run_pass(output_dir, selected_loaders, args)
     second = _run_pass(output_dir, selected_loaders, args)
+    first_duration_ms = _runtime_duration_ms(first)
+    second_duration_ms = _runtime_duration_ms(second)
 
     payload = {
         "outputDir": str(output_dir),
         "sources": [name for name, _loader in selected_loaders],
+        "totalDurationMs": first_duration_ms + second_duration_ms,
+        "firstRunDurationMs": first_duration_ms,
+        "secondRunDurationMs": second_duration_ms,
         "firstRun": {
             "summary": dict(first.get("summary") or {}),
             "runtime": dict(first.get("runtime") or {}),

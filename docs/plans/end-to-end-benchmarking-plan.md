@@ -51,7 +51,7 @@ Completed slices:
 - **Phase 1e bridge request counters:** added process-local bridge request timing counters and exposed read-only `/ops/perf-counters`.
 - **Phase 1f sync operation timing:** added service-level sync pull/push stage timing and persisted recent timing history exposed through `/sync/status`.
 - **Phase 2a baseline recording helper:** added `scripts/perf_baseline.py` and `npm run perf:baseline:record` to write named baseline JSON files and append normalized `_out/perf-trend.ndjson` rows without running expensive benchmarks.
-- **Phase 4a CI smoke benchmark workflow:** added `.github/workflows/benchmark.yml` plus `scripts/perf_compare.py` / `npm run perf:compare` to run targeted discovery/fetch smoke benchmarks and compare them against optional local baselines.
+- **Phase 4a CI smoke benchmark workflow:** added `.github/workflows/benchmark.yml` plus `scripts/perf_compare.py`, `scripts/perf_ci.py`, `npm run perf:compare`, and `npm run perf:ci` to run targeted discovery/fetch smoke benchmarks and compare them against optional local baselines.
 - **Phase 4b NDJSON trend tracking:** added `scripts/perf_trend.py` and `npm run perf:trend` to print recent `_out/perf-trend.ndjson` duration deltas by benchmark mode.
 - **Phase 4c startup profile regression gate:** added structured startup `perfRegressions` rows and `--fail-on-threshold` packaged-smoke gating for startup probes.
 
@@ -483,6 +483,8 @@ Steps:
 6. If baseline does not exist, create it (informational run, no pass/fail)
 
 The smoke benchmark must stay under 60s total wall‑clock to avoid delaying PR merges.
+
+Local parity command: `npm run perf:ci`.
 
 ### 4b – NDJSON trend tracking
 
