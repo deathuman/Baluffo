@@ -134,6 +134,7 @@ def get_sync_service() -> _SyncServiceLike:
             ops_state_lock=root_mod.OPS_STATE_LOCK,
             get_security_defaults=root_mod.get_security_defaults,
             sync_state=root_mod.SyncState(data_dir=data_dir),
+            get_registry_auto_heal_report=root_mod.get_registry_auto_heal_report,
         )
         return cast(_SyncServiceLike, root_mod._SYNC_SERVICE)
 

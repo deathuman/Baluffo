@@ -3,6 +3,91 @@ import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { formatDateTime, stableOpsSignature } from "./ops-shared.js";
 
 const ACTION_TOKEN = UI_TOKENS.admin.registryConflictActionBtn;
+const TRIAGE_FILTER_SELECTOR = ".admin-registry-conflict-filter-btn";
+const REVIEW_FILTER_SELECTOR = ".admin-registry-conflict-review-filter-btn";
+const SAFE_AUTOMATION_SELECTOR = ".admin-registry-conflict-safe-automation-btn";
+const TRIAGE_BUCKET_FALLBACKS = [
+  {
+    bucket: "exact_duplicate_auto_healable",
+    label: "Exact duplicate",
+    risk: "low",
+    description: "Rows share the same canonical source identity."
+  },
+  {
+    bucket: "active_active_likely_duplicate",
+    label: "Active-active",
+    risk: "high",
+    description: "More than one active row exists for this source family."
+  },
+  {
+    bucket: "pending_duplicate_of_active",
+    label: "Pending duplicate",
+    risk: "medium",
+    description: "A pending row matches a family with one active source."
+  },
+  {
+    bucket: "rejected_historical_noise",
+    label: "Rejected noise",
+    risk: "low",
+    description: "Rejected rows are retained as historical registry noise."
+  },
+  {
+    bucket: "ambiguous_manual_review",
+    label: "Manual review",
+    risk: "medium",
+    description: "The conflict needs operator review."
+  }
+];
+const REVIEW_QUEUE_FALLBACKS = [
+  {
+    queue: "p0_multi_active_provider",
+    priority: 0,
+    label: "Multiple active providers",
+    description: "Multiple active API/provider rows exist for one source family."
+  },
+  {
+    queue: "p1_active_provider_static",
+    priority: 1,
+    label: "Active provider + static",
+    description: "Active provider rows coexist with active static rows."
+  },
+  {
+    queue: "p1_pending_provider_against_active",
+    priority: 1,
+    label: "Pending provider vs active",
+    description: "A pending API/provider candidate is competing with one active source."
+  },
+  {
+    queue: "p2_same_adapter_active_variant",
+    priority: 2,
+    label: "Same-adapter active variant",
+    description: "Multiple active rows use the same non-static source type."
+  },
+  {
+    queue: "p2_static_url_variant_active",
+    priority: 2,
+    label: "Active static URL variants",
+    description: "Multiple active static rows look like URL variants."
+  },
+  {
+    queue: "p2_pending_static_variant",
+    priority: 2,
+    label: "Pending static variant",
+    description: "Pending static rows compete with one active source."
+  },
+  {
+    queue: "p3_pending_only_intake",
+    priority: 3,
+    label: "Pending-only intake",
+    description: "Duplicate candidates are pending only."
+  },
+  {
+    queue: "p3_low_signal_manual",
+    priority: 3,
+    label: "Low-signal manual review",
+    description: "The conflict needs manual review."
+  }
+];
 
 function objectValue(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -41,6 +126,179 @@ function getConflictCards(payload) {
   return [];
 }
 
+function getTriagePayload(payload, conflicts) {
+  const triage = objectValue(payload?.triage);
+  const summary = objectValue(triage?.summary);
+  const bucketCounts = objectValue(summary?.bucketCounts);
+  const fallbackCounts = conflicts.reduce((counts, card) => {
+    const bucket = stringValue(card?.triageBucket, "ambiguous_manual_review");
+    counts[bucket] = Number(counts[bucket] || 0) + 1;
+    return counts;
+  }, {});
+  const buckets = listValue(triage?.buckets).length
+    ? listValue(triage.buckets)
+    : TRIAGE_BUCKET_FALLBACKS.map(bucket => ({
+        ...bucket,
+        count: Number(bucketCounts[bucket.bucket] ?? fallbackCounts[bucket.bucket] ?? 0)
+      }));
+  return {
+    summary: {
+      totalConflictCount: Number(summary?.totalConflictCount || conflicts.length || 0),
+      bucketCounts: Object.keys(bucketCounts).length ? bucketCounts : fallbackCounts
+    },
+    buckets: buckets.map(bucket => ({
+      bucket: stringValue(bucket?.bucket, "ambiguous_manual_review"),
+      label: stringValue(bucket?.label, "Manual review"),
+      risk: stringValue(bucket?.risk, "medium"),
+      description: stringValue(bucket?.description, ""),
+      count: Number(bucket?.count || bucketCounts?.[bucket?.bucket] || fallbackCounts?.[bucket?.bucket] || 0)
+    }))
+  };
+}
+
+function getReviewPayload(payload, conflicts) {
+  const review = objectValue(payload?.review);
+  const summary = objectValue(review?.summary);
+  const queueCounts = objectValue(summary?.queueCounts);
+  const fallbackCounts = conflicts.reduce((counts, card) => {
+    const queue = stringValue(card?.reviewQueue, "p3_low_signal_manual");
+    counts[queue] = Number(counts[queue] || 0) + 1;
+    return counts;
+  }, {});
+  const queues = listValue(review?.queues).length
+    ? listValue(review.queues)
+    : REVIEW_QUEUE_FALLBACKS.map(queue => ({
+        ...queue,
+        count: Number(queueCounts[queue.queue] ?? fallbackCounts[queue.queue] ?? 0)
+      }));
+  return {
+    summary: {
+      totalConflictCount: Number(summary?.totalConflictCount || conflicts.length || 0),
+      priorityCounts: objectValue(summary?.priorityCounts),
+      queueCounts: Object.keys(queueCounts).length ? queueCounts : fallbackCounts
+    },
+    queues: queues.map(queue => ({
+      queue: stringValue(queue?.queue, "p3_low_signal_manual"),
+      priority: Number(queue?.priority ?? 3),
+      label: stringValue(queue?.label, "Manual review"),
+      description: stringValue(queue?.description, ""),
+      count: Number(queue?.count || queueCounts?.[queue?.queue] || fallbackCounts?.[queue?.queue] || 0)
+    }))
+  };
+}
+
+function sortedConflictCards(conflicts) {
+  return [...conflicts].sort((left, right) => {
+    const priorityDelta = Number(left?.reviewPriority ?? 3) - Number(right?.reviewPriority ?? 3);
+    if (priorityDelta) return priorityDelta;
+    const queueDelta = stringValue(left?.reviewQueue, "p3_low_signal_manual")
+      .localeCompare(stringValue(right?.reviewQueue, "p3_low_signal_manual"));
+    if (queueDelta) return queueDelta;
+    return stringValue(left?.familyKey, "unknown family").localeCompare(stringValue(right?.familyKey, "unknown family"));
+  });
+}
+
+function safeAutomationValue(card) {
+  const safeAutomation = objectValue(card?.safeAutomation);
+  return {
+    eligible: Boolean(safeAutomation?.eligible),
+    action: stringValue(safeAutomation?.action, "auto_demote_same_adapter_provider_alias"),
+    label: stringValue(safeAutomation?.label, "Auto-demote safe duplicate"),
+    reason: stringValue(safeAutomation?.reason, ""),
+    route: stringValue(safeAutomation?.route, "/registry/conflicts/auto-demote-safe"),
+    targetIds: listValue(safeAutomation?.targetIds).map(id => stringValue(id)).filter(Boolean),
+    blockedReasons: listValue(safeAutomation?.blockedReasons).map(reason => stringValue(reason)).filter(Boolean)
+  };
+}
+
+function eligibleSafeAutomations(conflicts) {
+  return conflicts
+    .map((card, index) => ({ card, index, safeAutomation: safeAutomationValue(card) }))
+    .filter(row => row.safeAutomation.eligible && row.safeAutomation.targetIds.length);
+}
+
+function renderTriageFilterButton(bucket, activeFilter) {
+  const token = stringValue(bucket?.bucket, "ambiguous_manual_review");
+  const label = stringValue(bucket?.label, token);
+  const count = Number(bucket?.count || 0);
+  const selected = activeFilter === token;
+  return `
+    <button
+      type="button"
+      class="btn back-btn admin-registry-conflict-filter-btn"
+      data-registry-conflict-filter-bucket="${escapeHtml(token)}"
+      aria-pressed="${selected ? "true" : "false"}"
+      title="${escapeHtml(stringValue(bucket?.description, label))}"
+    >${escapeHtml(label)} · ${count.toLocaleString()}</button>
+  `;
+}
+
+function renderReviewFilterButton(queue, activeFilter) {
+  const token = stringValue(queue?.queue, "p3_low_signal_manual");
+  const label = stringValue(queue?.label, token);
+  const count = Number(queue?.count || 0);
+  const selected = activeFilter === token;
+  return `
+    <button
+      type="button"
+      class="btn back-btn admin-registry-conflict-review-filter-btn"
+      data-registry-conflict-review-filter-queue="${escapeHtml(token)}"
+      aria-pressed="${selected ? "true" : "false"}"
+      title="${escapeHtml(stringValue(queue?.description, label))}"
+    >${escapeHtml(label)} · ${count.toLocaleString()}</button>
+  `;
+}
+
+function renderTriageSummary(triage, activeFilter) {
+  const total = Number(triage?.summary?.totalConflictCount || 0);
+  const buckets = listValue(triage?.buckets);
+  const allSelected = activeFilter === "all";
+  return `
+    <div class="admin-registry-conflict-triage">
+      <div class="admin-registry-conflict-triage-head">
+        <div>
+          <div class="admin-registry-conflict-family">Triage report</div>
+          <div class="admin-registry-conflict-summary">${total.toLocaleString()} conflict families classified.</div>
+        </div>
+        <button
+          type="button"
+          class="btn back-btn admin-registry-conflict-filter-btn"
+          data-registry-conflict-filter-bucket="all"
+          aria-pressed="${allSelected ? "true" : "false"}"
+        >All · ${total.toLocaleString()}</button>
+      </div>
+      <div class="admin-registry-conflict-filters">
+        ${buckets.map(bucket => renderTriageFilterButton(bucket, activeFilter)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderReviewSummary(review, activeFilter) {
+  const total = Number(review?.summary?.totalConflictCount || 0);
+  const queues = listValue(review?.queues);
+  const allSelected = activeFilter === "all";
+  return `
+    <div class="admin-registry-conflict-triage">
+      <div class="admin-registry-conflict-triage-head">
+        <div>
+          <div class="admin-registry-conflict-family">Review queue</div>
+          <div class="admin-registry-conflict-summary">${total.toLocaleString()} conflict families ranked by operator priority.</div>
+        </div>
+        <button
+          type="button"
+          class="btn back-btn admin-registry-conflict-review-filter-btn"
+          data-registry-conflict-review-filter-queue="all"
+          aria-pressed="${allSelected ? "true" : "false"}"
+        >All queues · ${total.toLocaleString()}</button>
+      </div>
+      <div class="admin-registry-conflict-filters">
+        ${queues.map(queue => renderReviewFilterButton(queue, activeFilter)).join("")}
+      </div>
+    </div>
+  `;
+}
+
 function renderRationaleChip(item) {
   const label = stringValue(item?.label, "Signal");
   const value = stringValue(item?.value, "—");
@@ -64,6 +322,7 @@ function renderRowActions(cardIndex, rowIndex, row) {
         <button
           type="button"
           class="btn back-btn admin-registry-conflict-action-btn"
+          data-ui="${ACTION_TOKEN}"
           data-registry-conflict-card-index="${cardIndex}"
           data-registry-conflict-row-index="${rowIndex}"
           data-registry-conflict-action-index="${actionIndex}"
@@ -152,6 +411,24 @@ function renderConflictDiff(cardIndex, diff, winner) {
   `;
 }
 
+function renderSafeAutomationCard(card, cardIndex) {
+  const safeAutomation = safeAutomationValue(card);
+  if (!safeAutomation.eligible) return "";
+  return `
+    <div class="admin-registry-conflict-triage-card">
+      <span class="admin-registry-conflict-triage-badge">Safe automation available</span>
+      <span>${escapeHtml(safeAutomation.reason)}</span>
+      <button
+        type="button"
+        class="btn back-btn admin-registry-conflict-safe-automation-btn"
+        data-registry-conflict-safe-automation-card-index="${cardIndex}"
+        data-registry-conflict-safe-automation-action="${escapeHtml(safeAutomation.action)}"
+        data-registry-conflict-safe-automation-ids="${escapeHtml(safeAutomation.targetIds.join(","))}"
+      >${escapeHtml(safeAutomation.label)}</button>
+    </div>
+  `;
+}
+
 function renderConflictCard(card, cardIndex) {
   const winner = objectValue(card?.winner);
   const rows = listValue(card?.rows);
@@ -160,6 +437,13 @@ function renderConflictCard(card, cardIndex) {
   const familyKey = stringValue(card?.familyKey, "unknown family");
   const winnerName = stringValue(winner?.name, stringValue(winner?.id || winner?.sourceId, "winner"));
   const rowCount = Number(card?.rowCount || rows.length || 0);
+  const triageLabel = stringValue(card?.triageLabel, "Manual review");
+  const triageRisk = stringValue(card?.triageRisk, "medium");
+  const triageReason = stringValue(card?.triageReason, "No triage reason available.");
+  const reviewLabel = stringValue(card?.reviewLabel, "Manual review");
+  const reviewReason = stringValue(card?.reviewReason, "No review reason available.");
+  const suggestedDisposition = stringValue(card?.suggestedDisposition, "Manual review");
+  const suggestedConfidence = stringValue(card?.suggestedConfidence, "low");
   return `
     <section class="admin-registry-conflict-card" data-registry-conflict-card="${cardIndex}">
       <div class="admin-registry-conflict-card-head">
@@ -174,6 +458,15 @@ function renderConflictCard(card, cardIndex) {
           ${winner?.healthReason ? ` · ${escapeHtml(stringValue(winner.healthReason))}` : ""}
         </div>
       </div>
+      <div class="admin-registry-conflict-triage-card">
+        <span class="admin-registry-conflict-triage-badge">${escapeHtml(triageLabel)} · ${escapeHtml(triageRisk)}</span>
+        <span>${escapeHtml(triageReason)}</span>
+      </div>
+      <div class="admin-registry-conflict-triage-card">
+        <span class="admin-registry-conflict-triage-badge">${escapeHtml(reviewLabel)} · ${escapeHtml(suggestedConfidence)}</span>
+        <span>${escapeHtml(suggestedDisposition)} · ${escapeHtml(reviewReason)}</span>
+      </div>
+      ${renderSafeAutomationCard(card, cardIndex)}
       <div class="admin-registry-conflict-rationale">
         ${rationale.length ? rationale.map(renderRationaleChip).join("") : `<span class="muted">No rationale available.</span>`}
       </div>
@@ -191,13 +484,82 @@ function renderConflictCard(card, cardIndex) {
   `;
 }
 
+function renderSafeAutomationToolbar(visibleConflicts) {
+  const eligible = eligibleSafeAutomations(visibleConflicts);
+  if (!eligible.length) return "";
+  const targetIds = eligible.flatMap(row => row.safeAutomation.targetIds);
+  return `
+    <div class="admin-registry-conflict-triage">
+      <div class="admin-registry-conflict-triage-head">
+        <div>
+          <div class="admin-registry-conflict-family">Safe automation</div>
+          <div class="admin-registry-conflict-summary">${eligible.length.toLocaleString()} visible conflict family can be auto-demoted safely.</div>
+        </div>
+        <button
+          type="button"
+          class="btn back-btn admin-registry-conflict-safe-automation-btn"
+          data-registry-conflict-safe-automation-card-index="-1"
+          data-registry-conflict-safe-automation-action="auto_demote_same_adapter_provider_alias"
+          data-registry-conflict-safe-automation-ids="${escapeHtml(targetIds.join(","))}"
+        >Apply safe demotions · ${targetIds.length.toLocaleString()}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderConflictGroups(conflicts, review) {
+  const queues = listValue(review?.queues);
+  const queueMeta = new Map(queues.map(queue => [stringValue(queue?.queue), queue]));
+  const groups = new Map();
+  conflicts.forEach((card, index) => {
+    const queue = stringValue(card?.reviewQueue, "p3_low_signal_manual");
+    if (!groups.has(queue)) groups.set(queue, []);
+    groups.get(queue).push({ card, index });
+  });
+  return [...groups.entries()]
+    .map(([queue, rows]) => {
+      const meta = queueMeta.get(queue) || { queue, priority: 3, label: queue, description: "" };
+      const priority = Number(meta?.priority ?? rows[0]?.card?.reviewPriority ?? 3);
+      const open = priority < 3 ? " open" : "";
+      return `
+        <details
+          class="admin-registry-conflict-review-group"
+          data-registry-conflict-review-queue="${escapeHtml(queue)}"${open}
+        >
+          <summary>
+            <span>${escapeHtml(stringValue(meta?.label, queue))}</span>
+            <span>${rows.length.toLocaleString()} shown · P${priority}</span>
+          </summary>
+          <div class="admin-registry-conflict-review-group-body">
+            ${rows.map(row => renderConflictCard(row.card, row.index)).join("")}
+          </div>
+        </details>
+      `;
+    })
+    .join("");
+}
+
 export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
   if (!reviewEl) return;
-  const conflicts = getConflictCards(payload);
+  const conflicts = sortedConflictCards(getConflictCards(payload));
   const summary = objectValue(payload?.summary);
+  const triage = getTriagePayload(payload, conflicts);
+  const review = getReviewPayload(payload, conflicts);
   const canPatchInPlace = Boolean(reviewEl && reviewEl.dataset);
+  const activeTriageFilter = stringValue(reviewEl?.dataset?.registryConflictTriageFilter, "all");
+  const activeReviewFilter = stringValue(reviewEl?.dataset?.registryConflictReviewFilter, "all");
+  const triageFilteredConflicts = activeTriageFilter === "all"
+    ? conflicts
+    : conflicts.filter(card => stringValue(card?.triageBucket, "ambiguous_manual_review") === activeTriageFilter);
+  const visibleConflicts = activeReviewFilter === "all"
+    ? triageFilteredConflicts
+    : triageFilteredConflicts.filter(card => stringValue(card?.reviewQueue, "p3_low_signal_manual") === activeReviewFilter);
   const signature = stableOpsSignature({
     summary,
+    triage,
+    review,
+    activeTriageFilter,
+    activeReviewFilter,
     conflicts
   });
   if (canPatchInPlace && reviewEl.dataset.registryConflictsSig === signature) return;
@@ -208,24 +570,76 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
     <div class="admin-registry-conflicts-copy">
       Registry conflicts are read from the current registry snapshot and the latest jobs source-state history. Winner selection follows the duplicate-family score order and the row actions reuse the existing registry lifecycle routes.
     </div>
+    ${renderTriageSummary(triage, activeTriageFilter)}
+    ${renderReviewSummary(review, activeReviewFilter)}
+    ${renderSafeAutomationToolbar(visibleConflicts)}
     <div class="admin-registry-conflicts-list">
-      ${conflicts.length
-        ? conflicts.map((card, index) => renderConflictCard(card, index)).join("")
+      ${visibleConflicts.length
+        ? renderConflictGroups(visibleConflicts, review)
         : `<div class="muted">${escapeHtml(
             conflictCount
-              ? "Registry conflict summary available, but no cards were rendered."
+              ? "No registry conflict cards match the selected triage or review queue."
               : "No duplicate-family registry conflicts are currently queued."
           )}</div>`}
     </div>
   `;
 
   if (typeof reviewEl.querySelectorAll !== "function") return;
+  reviewEl.querySelectorAll(TRIAGE_FILTER_SELECTOR).forEach(button => {
+    button.addEventListener("click", () => {
+      const bucket = stringValue(button.dataset?.registryConflictFilterBucket, "all");
+      if (canPatchInPlace) {
+        reviewEl.dataset.registryConflictTriageFilter = bucket;
+        reviewEl.dataset.registryConflictsSig = "";
+      }
+      renderAdminRegistryConflicts(reviewEl, payload, options);
+    });
+  });
+  reviewEl.querySelectorAll(REVIEW_FILTER_SELECTOR).forEach(button => {
+    button.addEventListener("click", () => {
+      const queue = stringValue(button.dataset?.registryConflictReviewFilterQueue, "all");
+      if (canPatchInPlace) {
+        reviewEl.dataset.registryConflictReviewFilter = queue;
+        reviewEl.dataset.registryConflictsSig = "";
+      }
+      renderAdminRegistryConflicts(reviewEl, payload, options);
+    });
+  });
+  reviewEl.querySelectorAll(SAFE_AUTOMATION_SELECTOR).forEach(button => {
+    button.addEventListener("click", () => {
+      const cardIndex = Number(button.dataset.registryConflictSafeAutomationCardIndex || -1);
+      const ids = stringValue(button.dataset.registryConflictSafeAutomationIds)
+        .split(",")
+        .map(id => id.trim())
+        .filter(Boolean);
+      const card = cardIndex >= 0 ? visibleConflicts[cardIndex] : null;
+      const safeAutomation = card
+        ? safeAutomationValue(card)
+        : {
+            eligible: true,
+            action: stringValue(button.dataset.registryConflictSafeAutomationAction, "auto_demote_same_adapter_provider_alias"),
+            label: "Apply safe demotions",
+            route: "/registry/conflicts/auto-demote-safe",
+            targetIds: ids,
+            blockedReasons: []
+          };
+      if (typeof options.onRegistryConflictSafeAutomation === "function") {
+        options.onRegistryConflictSafeAutomation(
+          {
+            ...safeAutomation,
+            targetIds: ids.length ? ids : safeAutomation.targetIds
+          },
+          card
+        );
+      }
+    });
+  });
   reviewEl.querySelectorAll(ui(ACTION_TOKEN)).forEach(button => {
     button.addEventListener("click", () => {
       const cardIndex = Number(button.dataset.registryConflictCardIndex || -1);
       const rowIndex = Number(button.dataset.registryConflictRowIndex || -1);
       const actionIndex = Number(button.dataset.registryConflictActionIndex || -1);
-      const card = conflicts[cardIndex];
+      const card = visibleConflicts[cardIndex];
       const row = card?.rows?.[rowIndex];
       const action = row?.actions?.[actionIndex];
       if (row && action && typeof options.onRegistryConflictAction === "function") {

@@ -321,6 +321,7 @@ def refresh_sync_config() -> source_sync_module.SyncConfig:
 normalize_state = admin_registry_api_mod.normalize_state
 load_state = admin_registry_api_mod.load_state
 summarize_state = admin_registry_api_mod.summarize_state
+get_registry_auto_heal_report = admin_registry_api_mod.get_registry_auto_heal_report
 persist_state = admin_registry_api_mod.persist_state
 persist_state_and_auto_sync = admin_registry_api_mod.persist_state_and_auto_sync
 move_entries = admin_registry_api_mod.move_entries

@@ -19,12 +19,33 @@ from src.source_registry import (
     load_json_array,
     normalize_source_url,
     save_json_atomic,
+    save_registry_state_atomic,
     source_identity,
     source_url_fingerprint,
     unique_sources,
 )
 
 NormalizeManualStaticFunc = Callable[[dict[str, Any]], dict[str, Any]]
+
+_DUPLICATE_STATE_FIELDS = {
+    "id",
+    "sourceId",
+    "registryState",
+    "candidateState",
+    "transitionReason",
+    "pendingReason",
+    "quarantineReason",
+    "quarantinedAt",
+    "quarantinedBy",
+    "reason",
+    "stateChangedAt",
+    "stateChangedBy",
+    "lastPromotedAt",
+    "lastDemotedAt",
+    "approvedAt",
+    "approvedBy",
+    "liveAt",
+}
 
 
 @dataclass(frozen=True)
@@ -47,6 +68,65 @@ class RegistryService:
             dict(row) for row in (default_active or []) if isinstance(row, dict)
         ]
         self._normalize_manual_static = normalize_manual_static
+        self._last_auto_heal_report: dict[str, Any] = {
+            "autoHealed": False,
+            "duplicateSourceIdCount": 0,
+            "duplicates": [],
+        }
+
+    @staticmethod
+    def _value_is_missing(value: Any) -> bool:
+        return value in ("", None) or value == [] or value == {}
+
+    @staticmethod
+    def _empty_auto_heal_report() -> dict[str, Any]:
+        return {"autoHealed": False, "duplicateSourceIdCount": 0, "duplicates": []}
+
+    def _record_duplicate_auto_heal(
+        self,
+        report: dict[str, Any],
+        *,
+        source_id: str,
+        kept_bucket: str,
+        skipped_bucket: str,
+        kept_row: dict[str, Any],
+        skipped_row: dict[str, Any],
+    ) -> None:
+        merged_fields: list[str] = []
+        for key, value in skipped_row.items():
+            if key in _DUPLICATE_STATE_FIELDS:
+                continue
+            if self._value_is_missing(kept_row.get(key)) and not self._value_is_missing(value):
+                kept_row[key] = value
+                merged_fields.append(key)
+        report["autoHealed"] = True
+        duplicates = report.setdefault("duplicates", [])
+        duplicates.append(
+            {
+                "sourceId": source_id,
+                "keptBucket": kept_bucket,
+                "removedBucket": skipped_bucket,
+                "keptName": str(kept_row.get("name") or "").strip(),
+                "removedName": str(skipped_row.get("name") or "").strip(),
+                "mergedFields": sorted(merged_fields),
+            }
+        )
+        report["duplicateSourceIdCount"] = len(
+            {str(row.get("sourceId") or "") for row in duplicates if isinstance(row, dict)}
+        )
+
+    def get_auto_heal_report(self) -> dict[str, Any]:
+        return {
+            "autoHealed": bool(self._last_auto_heal_report.get("autoHealed")),
+            "duplicateSourceIdCount": int(
+                self._last_auto_heal_report.get("duplicateSourceIdCount") or 0
+            ),
+            "duplicates": [
+                dict(row)
+                for row in list(self._last_auto_heal_report.get("duplicates") or [])
+                if isinstance(row, dict)
+            ],
+        }
 
     def ensure_active_registry(self) -> list[dict[str, Any]]:
         active = load_json_array(self._paths.active, [])
@@ -62,7 +142,10 @@ class RegistryService:
         self, state: dict[str, list[dict[str, Any]]]
     ) -> dict[str, list[dict[str, Any]]]:
         # Precedence is explicit: active > pending > rejected.
-        seen = set()
+        seen: set[str] = set()
+        seen_buckets: dict[str, str] = {}
+        seen_rows: dict[str, dict[str, Any]] = {}
+        auto_heal_report = self._empty_auto_heal_report()
         normalized: dict[str, list[dict[str, Any]]] = {"active": [], "pending": [], "rejected": []}
         for bucket in ("active", "pending", "rejected"):
             bucket_rows = filter_tombstoned_rows(
@@ -78,9 +161,21 @@ class RegistryService:
                     row = hide_repeated_zero_job_pending(row)
                 key = source_identity(row)
                 if key in seen:
+                    self._record_duplicate_auto_heal(
+                        auto_heal_report,
+                        source_id=key,
+                        kept_bucket=seen_buckets.get(key, ""),
+                        skipped_bucket=bucket,
+                        kept_row=seen_rows[key],
+                        skipped_row=row,
+                    )
                     continue
                 seen.add(key)
-                normalized[bucket].append(ensure_source_id(row))
+                seen_buckets[key] = bucket
+                kept_row = ensure_source_id(row)
+                seen_rows[key] = kept_row
+                normalized[bucket].append(kept_row)
+        self._last_auto_heal_report = auto_heal_report
         return normalized
 
     def load_state(self) -> dict[str, list[dict[str, Any]]]:
@@ -91,9 +186,7 @@ class RegistryService:
         }
         normalized = self.normalize_state(state)
         if normalized != state:
-            save_json_atomic(self._paths.active, normalized["active"])
-            save_json_atomic(self._paths.pending, normalized["pending"])
-            save_json_atomic(self._paths.rejected, normalized["rejected"])
+            self._save_state(normalized)
         return normalized
 
     @staticmethod
@@ -108,10 +201,16 @@ class RegistryService:
         self, state: dict[str, list[dict[str, Any]]]
     ) -> dict[str, list[dict[str, Any]]]:
         normalized = self.normalize_state(state)
-        save_json_atomic(self._paths.active, normalized["active"])
-        save_json_atomic(self._paths.pending, normalized["pending"])
-        save_json_atomic(self._paths.rejected, normalized["rejected"])
+        self._save_state(normalized)
         return normalized
+
+    def _save_state(self, state: dict[str, list[dict[str, Any]]]) -> None:
+        save_registry_state_atomic(
+            self._paths.active,
+            self._paths.pending,
+            self._paths.rejected,
+            state,
+        )
 
     @staticmethod
     def move_entries(

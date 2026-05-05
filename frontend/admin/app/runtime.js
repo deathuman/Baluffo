@@ -92,16 +92,6 @@ const callBridge = createBridgeCaller({
   setBridgeOffline: () => opsController?.setBridgeStatusBadge("offline", "Bridge Offline")
 });
 
-/**
- * Entry map (Admin runtime):
- * - boot initializes refs/controllers and binds events.
- * - state: ./runtime/state.js
- * - effects: ./runtime/effects.js
- * - actions: ./runtime/actions.js
- * - view: ./runtime/view.js
- * - events: ./runtime/events.js
- */
-
 function emitAdminStartupMetric(event, payload = {}) {
   emitStartupMetric(startupMetrics, event, payload);
 }

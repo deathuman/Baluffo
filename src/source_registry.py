@@ -124,6 +124,16 @@ def save_json_atomic(path: Path, payload: Any) -> None:
     _io.save_json_atomic(path, payload)
 
 
+def save_registry_state_atomic(
+    active_path: Path,
+    pending_path: Path,
+    rejected_path: Path,
+    state: dict[str, list[dict[str, Any]]],
+) -> None:
+    _sync_io_paths()
+    _io.save_registry_state_atomic(active_path, pending_path, rejected_path, state)
+
+
 def apply_discovery_auto_approval(
     state: dict[str, list[dict[str, Any]]],
     report: dict[str, Any],

@@ -30,8 +30,8 @@ from src.jobs.common.contracts_source_policy_recommendations import (
 from src.jobs.common.contracts_source_policy_review_state import (
     read_source_policy_review_state_artifact,
 )
-from src.source_registry import is_hidden_from_default
 from src.shared.timing_counters import snapshot_counters
+from src.source_registry import is_hidden_from_default
 
 logger = logging.getLogger(__name__)
 
@@ -920,7 +920,12 @@ def handle_get(
 
     if path == "/registry/summary":
         state = api.load_state()
-        handler.send_json({"summary": api.summarize_state(state)})
+        handler.send_json(
+            {
+                "summary": api.summarize_state(state),
+                "autoHeal": api.get_registry_auto_heal_report(),
+            }
+        )
         return True
 
     if path == "/ops/health":
@@ -1035,6 +1040,7 @@ def handle_get(
             source_state_path=source_state_path,
         )
         payload["registrySummary"] = api.summarize_state(state)
+        payload["registryAutoHeal"] = api.get_registry_auto_heal_report()
         payload["ok"] = True
         handler.send_json(payload)
         return True

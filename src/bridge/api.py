@@ -135,6 +135,10 @@ def _empty_state_summary(_state: RegistryState) -> StateSummary:
     }
 
 
+def _empty_registry_auto_heal_report() -> JsonObject:
+    return {"autoHealed": False, "duplicateSourceIdCount": 0, "duplicates": []}
+
+
 def _identity_registry_state(state: RegistryState, **_kw: Any) -> RegistryState:
     return state
 
@@ -276,6 +280,7 @@ class BridgeApi:
 
     load_state: LoadStateFunc = _empty_registry_state
     summarize_state: SummarizeStateFunc = _empty_state_summary
+    get_registry_auto_heal_report: Callable[[], JsonObject] = _empty_registry_auto_heal_report
     persist_state_and_auto_sync: Callable[..., RegistryState] = _identity_registry_state
     add_manual_source: Callable[[str], dict[str, Any]] = _invalid_manual_source
     trigger_source_check: Callable[..., dict[str, Any]] = _not_started_result
@@ -342,6 +347,8 @@ class BridgeApi:
                 self.load_state = self.registry.load_state
             if self._field_is_default("summarize_state"):
                 self.summarize_state = self.registry.summarize_state
+            if self._field_is_default("get_registry_auto_heal_report"):
+                self.get_registry_auto_heal_report = self.registry.get_auto_heal_report
             if self._field_is_default("move_entries"):
                 self.move_entries = self.registry.move_entries
             if self._field_is_default("unique_sources"):

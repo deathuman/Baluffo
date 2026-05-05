@@ -1,7 +1,7 @@
 import { createRegistryLoadController } from "./registry/load.js";
 import { createRegistryMutationController } from "./registry/mutations.js";
+import { scheduleAdminRender } from "./registry/render-scheduler.js";
 import { createRegistryUi } from "./registry/ui.js";
-import { scheduleAdminRender } from "./render-scheduler.js";
 
 export function createAdminRegistryController({
   state,

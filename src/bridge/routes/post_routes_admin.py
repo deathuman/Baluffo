@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from src.bridge.api import BridgeApi
+from src.bridge.registry_conflicts import (
+    SAFE_AUTO_DEMOTE_ACTION,
+    SAFE_AUTO_DEMOTE_REASON,
+    derive_registry_conflict_queue,
+)
 from src.bridge.registry_tombstones import (
     add_tombstone,
     load_tombstones,
@@ -287,6 +293,89 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         state["pending"] = api.unique_sources([*state["pending"], *moved])
         state = api.persist_state_and_auto_sync(state, reason=demote_reason)
         handler.send_json({"demoted": len(moved), "summary": api.summarize_state(state)})
+        return True
+
+    if path == "/registry/conflicts/auto-demote-safe":
+        action = str(data.get("action") or SAFE_AUTO_DEMOTE_ACTION).strip()
+        if action != SAFE_AUTO_DEMOTE_ACTION:
+            handler.send_json(
+                {"ok": False, "error": "Unsupported safe automation action."}, status=400
+            )
+            return True
+
+        requested_ids = {
+            str(item).strip() for item in as_json_list(data.get("ids")) if str(item).strip()
+        }
+        source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
+        source_state_payload = api.load_json_object(source_state_path, {})
+        conflict_payload = derive_registry_conflict_queue(state, source_state_payload)
+        eligible_by_id: dict[str, dict[str, Any]] = {}
+        for card in conflict_payload.get("conflicts") or []:
+            if not isinstance(card, dict):
+                continue
+            safe_automation = card.get("safeAutomation")
+            if not isinstance(safe_automation, dict) or not safe_automation.get("eligible"):
+                continue
+            if str(safe_automation.get("action") or "") != SAFE_AUTO_DEMOTE_ACTION:
+                continue
+            for target_id in as_json_list(safe_automation.get("targetIds")):
+                target = str(target_id).strip()
+                if target:
+                    eligible_by_id[target] = card
+
+        selected_ids = requested_ids or set(eligible_by_id)
+        target_ids = selected_ids & set(eligible_by_id)
+        skipped_rows = [
+            {
+                "id": row_id,
+                "reason": "not_currently_safe_auto_demote_eligible",
+            }
+            for row_id in sorted(selected_ids - target_ids)
+        ]
+        moved = []
+        active_remaining = []
+        applied = []
+        for row in state["active"]:
+            row_id = api.source_identity(row)
+            if row_id in target_ids:
+                moved_row = _transition_registry_row(
+                    api,
+                    row,
+                    candidate_state="validated",
+                    reason=SAFE_AUTO_DEMOTE_REASON,
+                    approved_by=SAFE_AUTO_DEMOTE_REASON,
+                )
+                moved.append(moved_row)
+                card = eligible_by_id.get(row_id) or {}
+                applied.append(
+                    {
+                        "id": row_id,
+                        "familyKey": str(card.get("familyKey") or ""),
+                        "action": SAFE_AUTO_DEMOTE_ACTION,
+                    }
+                )
+            else:
+                active_remaining.append(row)
+        missing_targets = target_ids - {
+            str(item.get("id") or item.get("sourceId") or "") for item in moved
+        }
+        for row_id in sorted(missing_targets):
+            skipped_rows.append({"id": row_id, "reason": "eligible_target_not_active"})
+
+        state["active"] = active_remaining
+        state["pending"] = api.unique_sources([*state["pending"], *moved])
+        if moved:
+            state = api.persist_state_and_auto_sync(state, reason=SAFE_AUTO_DEMOTE_REASON)
+        handler.send_json(
+            {
+                "ok": True,
+                "demoted": len(moved),
+                "skipped": len(skipped_rows),
+                "applied": applied,
+                "skippedRows": skipped_rows,
+                "summary": api.summarize_state(state),
+            }
+        )
         return True
 
     if path == "/registry/restore-rejected":

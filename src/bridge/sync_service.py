@@ -112,6 +112,7 @@ class SyncService:
         ops_state_lock: threading.RLock,
         get_security_defaults: Callable[[], dict[str, Any]],
         sync_state: SyncState | None = None,
+        get_registry_auto_heal_report: Callable[[], dict[str, Any]] | None = None,
     ):
         """Initialize SyncService with dependencies.
 
@@ -136,6 +137,9 @@ class SyncService:
         self._run_history = run_history
         self._ops_state_lock = ops_state_lock
         self._get_security_defaults = get_security_defaults
+        self._get_registry_auto_heal_report = get_registry_auto_heal_report or (
+            lambda: {"autoHealed": False, "duplicateSourceIdCount": 0, "duplicates": []}
+        )
 
         # Initialize sync state
         self._sync_state = sync_state or SyncState(data_dir=data_dir)
@@ -291,6 +295,7 @@ class SyncService:
             "config": config_status,
             "savedConfig": self.get_saved_sync_config_payload(),
             "runtime": runtime_state,
+            "registryAutoHeal": self._get_registry_auto_heal_report(),
             "timing": timing_history[-1] if timing_history else {},
             "timingHistory": timing_history,
         }

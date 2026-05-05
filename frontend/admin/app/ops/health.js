@@ -396,8 +396,30 @@ export function createOpsHealthController({
 
   function renderRegistryConflictsQueue(payload = state.latestRegistryConflictsPayload || {}) {
     renderAdminRegistryConflictsImpl(refs.adminRegistryConflictsReviewEl, payload || {}, {
-      onRegistryConflictAction: handleRegistryConflictAction
+      onRegistryConflictAction: handleRegistryConflictAction,
+      onRegistryConflictSafeAutomation: handleRegistryConflictSafeAutomation
     });
+  }
+
+  async function handleRegistryConflictSafeAutomation(safeAutomation) {
+    if (!safeAutomation || !safeAutomation.action) return;
+    const route = String(safeAutomation?.route || "/registry/conflicts/auto-demote-safe").trim();
+    const ids = Array.isArray(safeAutomation?.targetIds)
+      ? safeAutomation.targetIds.map(id => String(id).trim()).filter(Boolean)
+      : [];
+    if (!route) return;
+    try {
+      const result = await postBridge(route, {
+        action: String(safeAutomation.action || "auto_demote_same_adapter_provider_alias"),
+        ids
+      });
+      const demoted = Number(result?.demoted || 0);
+      const skipped = Number(result?.skipped || 0);
+      showToast(`Safe auto-demotion applied: ${demoted} demoted, ${skipped} skipped.`, "success");
+      await loadOpsHealthData();
+    } catch (err) {
+      showToast(`Could not apply safe registry automation: ${getErrorMessage(err)}`, "error");
+    }
   }
 
   async function handleRegistryConflictAction(row, action) {

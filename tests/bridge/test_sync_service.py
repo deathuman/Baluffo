@@ -92,11 +92,17 @@ def test_sync_service_status_exposes_rate_limit_payload() -> None:
             run_history=_RunHistory(),
             ops_state_lock=threading.RLock(),
             get_security_defaults=lambda: {"github_app_enabled_default": True},
+            get_registry_auto_heal_report=lambda: {
+                "autoHealed": True,
+                "duplicateSourceIdCount": 1,
+                "duplicates": [{"sourceId": "greenhouse:slug:guerrilla-games"}],
+            },
         )
 
         payload = svc.get_sync_status_payload()
         runtime = payload["runtime"]
         assert runtime["rateLimit"] == source_sync.rate_limit
+        assert payload["registryAutoHeal"]["duplicateSourceIdCount"] == 1
 
 
 def test_sync_service_pull_delegates_and_persists() -> None:

@@ -189,6 +189,32 @@ def _prepare_lean_registry_rows_for_write(
     )
 
 
+def _prepare_lean_registry_rows_for_batch_write(
+    active_payload: list[dict[str, Any]], pending_payload: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    combined_by_id: dict[str, dict[str, Any]] = {}
+    for scope, payload in (("active", active_payload), ("pending", pending_payload)):
+        seen_ids: set[str] = set()
+        for row in payload:
+            row_copy = dict(row)
+            source_id = str(row_copy.get("id") or "").strip()
+            if not source_id:
+                raise ValueError("registry rows must include a source id")
+            if source_id in seen_ids:
+                raise ValueError(f"duplicate registry source id in {scope} payload: {source_id}")
+            if source_id in combined_by_id:
+                raise ValueError(
+                    f"duplicate registry source id across active and pending: {source_id}"
+                )
+            seen_ids.add(source_id)
+            combined_by_id[source_id] = row_copy
+    return (
+        [_lean_registry_core_row(row) for row in active_payload],
+        [_lean_registry_core_row(row) for row in pending_payload],
+        _lean_registry_metadata_map(list(combined_by_id.values())),
+    )
+
+
 def _load_json_array_from_file(path: Path, fallback: list[dict[str, Any]]) -> list[dict[str, Any]]:
     try:
         if path.suffix == ".gz":
@@ -476,3 +502,39 @@ def save_json_atomic(path: Path, payload: Any) -> None:
     _append_json_journal_record(path, journal_payload)
     _write_json_payload_atomic(path, journal_payload)
     _compact_json_journal_if_needed(path, journal_payload)
+
+
+def save_registry_state_atomic(
+    active_path: Path,
+    pending_path: Path,
+    rejected_path: Path,
+    state: dict[str, list[dict[str, Any]]],
+) -> None:
+    active_payload = [dict(row) for row in list(state.get("active") or []) if isinstance(row, dict)]
+    pending_payload = [
+        dict(row) for row in list(state.get("pending") or []) if isinstance(row, dict)
+    ]
+    rejected_payload = [
+        dict(row) for row in list(state.get("rejected") or []) if isinstance(row, dict)
+    ]
+    if not (
+        _is_lean_registry_entrypoint(active_path) and _is_lean_registry_entrypoint(pending_path)
+    ):
+        save_json_atomic(active_path, active_payload)
+        save_json_atomic(pending_path, pending_payload)
+        save_json_atomic(rejected_path, rejected_payload)
+        return
+    active_core, pending_core, metadata_map = _prepare_lean_registry_rows_for_batch_write(
+        active_payload,
+        pending_payload,
+    )
+    _append_json_journal_record(active_path, active_payload)
+    _append_json_journal_record(pending_path, pending_payload)
+    _write_json_payload_atomic(active_path, active_core)
+    _write_json_payload_atomic(pending_path, pending_core)
+    metadata_path = _registry_metadata_path_for(active_path)
+    if metadata_path is not None:
+        _write_json_payload_atomic(metadata_path, metadata_map)
+    _compact_json_journal_if_needed(active_path, active_payload)
+    _compact_json_journal_if_needed(pending_path, pending_payload)
+    save_json_atomic(rejected_path, rejected_payload)

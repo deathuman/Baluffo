@@ -14,6 +14,7 @@ class _RegistryServiceLike(Protocol):
     def normalize_state(self, state: RegistryState) -> RegistryState: ...
     def load_state(self) -> RegistryState: ...
     def persist_state(self, state: RegistryState) -> RegistryState: ...
+    def get_auto_heal_report(self) -> JsonObject: ...
 
 
 class _RegistryServiceClassLike(Protocol):
@@ -133,6 +134,10 @@ def load_state() -> RegistryState:
 
 def summarize_state(state: RegistryState) -> dict[str, int]:
     return _require_root().RegistryService.summarize_state(state)
+
+
+def get_registry_auto_heal_report() -> JsonObject:
+    return _require_root()._get_registry_service().get_auto_heal_report()
 
 
 def persist_state(state: RegistryState) -> RegistryState:

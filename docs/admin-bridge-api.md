@@ -57,9 +57,11 @@ Compact reference for AI coders. Endpoints are local-only (localhost).
 | GET | `/registry/pending` | List pending sources |
 | GET | `/registry/rejected` | List rejected sources |
 | GET | `/registry/summary` | Registry summary counts |
+| GET | `/registry/conflicts` | Duplicate-family conflict report with triage buckets, ranked review queues, advisory winners, row diffs, and lifecycle actions |
 | POST | `/registry/approve` | Approve pending sources (`{ids: []}`) |
 | POST | `/registry/reject` | Reject pending sources (`{ids: []}`) |
 | POST | `/registry/rollback` | Rollback active to pending (`{ids: []}`) |
+| POST | `/registry/conflicts/auto-demote-safe` | Re-check and apply guarded duplicate-family safe demotions (`{action: "", ids: []}`) |
 | POST | `/registry/restore-rejected` | Restore rejected to pending (`{ids: []}`) |
 | POST | `/registry/restore-deleted` | Restore locally deleted sources from tombstones (`{ids: [], urls: []}`) |
 | POST | `/registry/delete` | Local-only delete; writes tombstones and removes sources from the registry (`{ids: [], urls: []}`) |
@@ -178,5 +180,4 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - `weakSignal` remains an advisory hint for ranking and re-probe heuristics, and weak pending/deferred rows stay in review instead of being auto-approved.
 - Report-side queue throttles like `domain_cap` do not veto a clean pending registry row.
 - Source registry deletes are tombstone-backed and local-only; the restore path is explicit, and manual add will not silently clear a tombstone.
-
-
+- `/registry/conflicts` is report-only. Its additive `triage`, `review`, and `automation` objects classify duplicate-family cards for operator review, while existing row lifecycle actions still use the normal registry routes. The separate `/registry/conflicts/auto-demote-safe` route re-checks strict eligibility before moving safe active duplicates back to pending.
