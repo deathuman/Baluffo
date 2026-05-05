@@ -142,7 +142,9 @@ def _run_json_feed_sources(
     details: list[dict[str, object]] = []
     provider_url = ""
 
-    def _process_source(source: dict[str, object]) -> tuple[list[RawJob], dict[str, object], str, str]:
+    def _process_source(
+        source: dict[str, object],
+    ) -> tuple[list[RawJob], dict[str, object], str, str]:
         source_started = time.perf_counter()
         source_name, studio = _json_feed_source_identity(source, registry_adapter)
         endpoint = build_url(source)

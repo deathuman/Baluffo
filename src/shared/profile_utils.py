@@ -8,9 +8,7 @@ import re
 import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, TypeVar
-
-T = TypeVar("T")
+from typing import Any
 
 _PROFILE_ENABLED_VALUES = {"1", "true", "yes", "on"}
 _SAFE_FILENAME_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
@@ -50,7 +48,7 @@ def _write_profile_outputs(profiler: cProfile.Profile, *, profile_name: str) -> 
     (out_dir / f"{safe_name}.prof.txt").write_text(text_stream.getvalue(), encoding="utf-8")
 
 
-def run_profiled(
+def run_profiled[T](
     fn: Callable[..., T],
     *args: Any,
     profile_name: str = "default",

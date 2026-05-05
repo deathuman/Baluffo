@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-import time
 from urllib.parse import urlparse
 
 from src.exceptions import AdapterValidationError
@@ -145,7 +145,9 @@ def _run_teamtailor_sources(
             deduped.append(row)
         return deduped
 
-    def _process_source(source: dict[str, object]) -> tuple[list[RawJob], dict[str, object], list[str]]:
+    def _process_source(
+        source: dict[str, object],
+    ) -> tuple[list[RawJob], dict[str, object], list[str]]:
         source_started = time.perf_counter()
         source_jobs: list[RawJob] = []
         source_errors: list[str] = []

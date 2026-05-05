@@ -18,7 +18,9 @@ def _duration_ms(started_at: float, finished_at: float) -> int:
 
 
 class SyncTimingRecorder:
-    def __init__(self, *, now: Callable[[], float] | None = None, wall_now: Callable[[], str] = now_iso):
+    def __init__(
+        self, *, now: Callable[[], float] | None = None, wall_now: Callable[[], str] = now_iso
+    ):
         self._now = now or time.perf_counter
         self._wall_now = wall_now
         self._started_at = self._now()

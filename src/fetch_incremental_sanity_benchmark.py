@@ -194,7 +194,9 @@ def _slowest_sources(report: dict[str, object], *, limit: int = 5) -> list[dict[
     return rows[: max(0, int(limit))]
 
 
-def _slowest_provider_boards(report: dict[str, object], *, limit: int = 10) -> list[dict[str, object]]:
+def _slowest_provider_boards(
+    report: dict[str, object], *, limit: int = 10
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for source in _as_list(report.get("sources")):
         if not isinstance(source, dict):
@@ -309,7 +311,9 @@ def _normalized_host(value: object) -> str:
 
 def _registry_page_signal_for_row(source_name: str, row: dict[str, object]) -> dict[str, object]:
     pages = [str(page) for page in _as_list(row.get("pages")) if str(page or "").strip()]
-    listing_url = str(row.get("listing_url") or row.get("careersUrl") or (pages[0] if pages else ""))
+    listing_url = str(
+        row.get("listing_url") or row.get("careersUrl") or (pages[0] if pages else "")
+    )
     listing_host = _normalized_host(listing_url)
     off_listing_pages: list[str] = []
     off_listing_hosts: list[str] = []
@@ -351,7 +355,7 @@ def _registry_page_signals(source_names: list[str]) -> dict[str, dict[str, objec
 
 
 def _registry_scope_summary(
-    registry_page_signals: dict[str, dict[str, object]]
+    registry_page_signals: dict[str, dict[str, object]],
 ) -> dict[str, object]:
     rows = list(registry_page_signals.values())
     rows.sort(
@@ -513,11 +517,15 @@ def _next_optimization_targets(
             action = "source_scope_and_timeout_review"
             priority = max(priority, 65)
             reasons.append("cross_host_registry_pages")
-        output_contract_risk = action in {
-            "source_policy_review",
-            "source_scope_review",
-            "source_scope_and_timeout_review",
-        } and kept_count > 0
+        output_contract_risk = (
+            action
+            in {
+                "source_policy_review",
+                "source_scope_review",
+                "source_scope_and_timeout_review",
+            }
+            and kept_count > 0
+        )
         targets.append(
             {
                 "name": name,

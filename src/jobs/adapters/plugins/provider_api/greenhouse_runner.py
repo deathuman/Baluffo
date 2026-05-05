@@ -41,7 +41,9 @@ def _run_greenhouse_boards(
     provider_url = ""
     boards = [board for board in registry_entries("greenhouse") if clean_text(board.get("slug"))]
 
-    def _process_board(board: dict[str, object]) -> tuple[list[RawJob], dict[str, object], str, str]:
+    def _process_board(
+        board: dict[str, object],
+    ) -> tuple[list[RawJob], dict[str, object], str, str]:
         board_started = time.perf_counter()
         slug = clean_text(board.get("slug"))
         label = clean_text(board.get("name")) or clean_text(board.get("studio")) or slug

@@ -210,8 +210,8 @@ def main(argv: list[str] | None = None) -> int:
             shutil.copy2(source_path, target_path)
     os.environ["BALUFFO_DATA_DIR"] = str(data_dir)
 
-    from src.source_discovery.orchestrator import run_discovery
     from src.source_discovery.config import load_discovery_config
+    from src.source_discovery.orchestrator import run_discovery
 
     discovery_config = dict(load_discovery_config())
     discovery_config["autoApproveHealthyPendingOnComplete"] = False

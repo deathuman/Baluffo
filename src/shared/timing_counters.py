@@ -64,10 +64,7 @@ def summarize_durations(values: list[int]) -> dict[str, int]:
 def snapshot_counters() -> dict[str, dict[str, int]]:
     with _lock:
         snapshot = {category: list(values) for category, values in _timers.items()}
-    return {
-        category: summarize_durations(values)
-        for category, values in sorted(snapshot.items())
-    }
+    return {category: summarize_durations(values) for category, values in sorted(snapshot.items())}
 
 
 def clear_counters() -> None:

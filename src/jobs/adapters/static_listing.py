@@ -109,9 +109,9 @@ def _cap_external_detail_fanout(
         external_kept += 1
     pruned = max(0, len(detail_links) - len(capped))
     if pruned:
-        ctx.stats["external_detail_links_capped"] = int(
-            ctx.stats.get("external_detail_links_capped") or 0
-        ) + pruned
+        ctx.stats["external_detail_links_capped"] = (
+            int(ctx.stats.get("external_detail_links_capped") or 0) + pruned
+        )
         ctx.link_rejections["non_job_url"] += pruned
     return capped
 
