@@ -173,6 +173,43 @@ def _slowest_sources(report: dict[str, object], *, limit: int = 5) -> list[dict[
     return rows[: max(0, int(limit))]
 
 
+def _slowest_provider_boards(report: dict[str, object], *, limit: int = 10) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for source in _as_list(report.get("sources")):
+        if not isinstance(source, dict):
+            continue
+        source_name = str(source.get("name") or "")
+        adapter = str(source.get("adapter") or "")
+        for detail in _as_list(source.get("details")):
+            if not isinstance(detail, dict):
+                continue
+            try:
+                duration_ms = int(detail.get("durationMs") or 0)
+            except (TypeError, ValueError):
+                duration_ms = 0
+            if duration_ms <= 0:
+                continue
+            rows.append(
+                {
+                    "source": source_name,
+                    "adapter": str(detail.get("adapter") or adapter),
+                    "name": str(detail.get("name") or ""),
+                    "studio": str(detail.get("studio") or ""),
+                    "slug": str(detail.get("slug") or ""),
+                    "status": str(detail.get("status") or ""),
+                    "cacheDecision": str(detail.get("cacheDecision") or ""),
+                    "durationMs": duration_ms,
+                    "fetchMs": int(detail.get("fetchMs") or 0),
+                    "parseMs": int(detail.get("parseMs") or 0),
+                    "keptCount": int(detail.get("keptCount") or 0),
+                    "providerUrl": str(detail.get("providerUrl") or ""),
+                    "error": str(detail.get("error") or ""),
+                }
+            )
+    rows.sort(key=lambda row: int(row.get("durationMs") or 0), reverse=True)
+    return rows[: max(0, int(limit))]
+
+
 def source_names_for_args(args: argparse.Namespace) -> list[str]:
     group = str(args.group or "").strip()
     if group:
@@ -325,6 +362,8 @@ def main(argv: list[str] | None = None) -> int:
         "sourceTimingSignals": {
             "firstRunSlowestSources": _slowest_sources(first),
             "secondRunSlowestSources": _slowest_sources(second),
+            "firstRunSlowestProviderBoards": _slowest_provider_boards(first),
+            "secondRunSlowestProviderBoards": _slowest_provider_boards(second),
         },
         "firstRun": {
             "summary": dict(first.get("summary") or {}),

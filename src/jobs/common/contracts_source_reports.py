@@ -180,6 +180,9 @@ def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
         "status": norm_text(item.get("status")) or "error",
         "fetchedCount": _clamped_int(item.get("fetchedCount"), 0, 0),
         "keptCount": _clamped_int(item.get("keptCount"), 0, 0),
+        "durationMs": _clamped_int(item.get("durationMs"), 0, 0),
+        "fetchMs": _clamped_int(item.get("fetchMs"), 0, 0),
+        "parseMs": _clamped_int(item.get("parseMs"), 0, 0),
         "error": clean_text(item.get("error")),
         "classification": clean_text(item.get("classification")) or "",
         "browserFallbackRecommended": bool(item.get("browserFallbackRecommended")),
@@ -215,6 +218,12 @@ def _normalize_detail_item(item: dict[str, Any]) -> dict[str, Any]:
     source_id = clean_text(item.get("sourceId"))
     if source_id:
         clean_item["sourceId"] = source_id
+    slug = clean_text(item.get("slug"))
+    if slug:
+        clean_item["slug"] = slug
+    provider_url = clean_text(item.get("providerUrl"))
+    if provider_url:
+        clean_item["providerUrl"] = provider_url
     clean_pages = _clean_pages(item.get("pages"))
     if clean_pages:
         clean_item["pages"] = clean_pages

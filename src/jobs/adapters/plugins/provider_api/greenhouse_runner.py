@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 
 from src.exceptions import AdapterValidationError
@@ -36,6 +37,7 @@ def _run_greenhouse_boards(
     details: list[dict[str, object]] = []
     provider_url = ""
     for board in registry_entries("greenhouse"):
+        board_started = time.perf_counter()
         slug = clean_text(board.get("slug"))
         if not slug:
             continue
@@ -46,6 +48,7 @@ def _run_greenhouse_boards(
             adapter_name="greenhouse",
             studio=clean_text(board.get("studio")) or label,
             source_name=entry_name,
+            extra={"slug": slug, "providerUrl": url},
         )
         apply_provider_cache_decision(
             entry_report=entry_report,
@@ -55,6 +58,7 @@ def _run_greenhouse_boards(
             force_refresh_all=force_refresh_all,
         )
         if skip_provider_for_cache(entry_report):
+            entry_report["durationMs"] = _elapsed_ms(board_started)
             details.append(entry_report)
             continue
         if provider_revalidate_not_modified(
@@ -64,14 +68,19 @@ def _run_greenhouse_boards(
             source_name=entry_name,
             source_state_rows=source_state_rows,
         ):
+            entry_report["durationMs"] = _elapsed_ms(board_started)
             details.append(entry_report)
             continue
         try:
+            fetch_started = time.perf_counter()
             text = fetch_with_retries(url, fetch_text, timeout_s, retries, backoff_s)
+            entry_report["fetchMs"] = _elapsed_ms(fetch_started)
+            parse_started = time.perf_counter()
             payload = json.loads(text)
             parsed = _provider_parsers.parse_greenhouse_jobs_payload(
                 payload, slug, fallback_company=label
             )
+            entry_report["parseMs"] = _elapsed_ms(parse_started)
             for row in parsed:
                 row["adapter"] = "greenhouse"
                 row["studio"] = clean_text(board.get("studio")) or label
@@ -84,6 +93,7 @@ def _run_greenhouse_boards(
             if not provider_url:
                 provider_url = url
             errors.append(f"greenhouse:{slug}: {exc}")
+        entry_report["durationMs"] = _elapsed_ms(board_started)
         details.append(entry_report)
     set_source_diagnostics(
         "greenhouse_boards",
@@ -98,3 +108,7 @@ def _run_greenhouse_boards(
     if errors:
         raise AdapterValidationError.from_errors(errors)
     return []
+
+
+def _elapsed_ms(started: float) -> int:
+    return max(0, int((time.perf_counter() - started) * 1000))

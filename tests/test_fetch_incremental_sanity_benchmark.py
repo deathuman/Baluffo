@@ -111,3 +111,63 @@ def test_slowest_sources_normalizes_runtime_rows() -> None:
             "detailYieldPct": 50,
         }
     ]
+
+
+def test_slowest_provider_boards_extracts_detail_timings() -> None:
+    rows = benchmark._slowest_provider_boards(
+        {
+            "sources": [
+                {
+                    "name": "greenhouse_boards",
+                    "adapter": "greenhouse",
+                    "details": [
+                        {
+                            "adapter": "greenhouse",
+                            "name": "Fast Board",
+                            "studio": "Fast",
+                            "slug": "fast",
+                            "status": "ok",
+                            "cacheDecision": "run_now",
+                            "durationMs": 100,
+                            "fetchMs": 90,
+                            "parseMs": 10,
+                            "keptCount": 2,
+                            "providerUrl": "https://example.com/fast",
+                        },
+                        {
+                            "adapter": "greenhouse",
+                            "name": "Slow Board",
+                            "studio": "Slow",
+                            "slug": "slow",
+                            "status": "ok",
+                            "cacheDecision": "run_now",
+                            "durationMs": 300,
+                            "fetchMs": 280,
+                            "parseMs": 20,
+                            "keptCount": 5,
+                            "providerUrl": "https://example.com/slow",
+                        },
+                    ],
+                }
+            ]
+        },
+        limit=1,
+    )
+
+    assert rows == [
+        {
+            "source": "greenhouse_boards",
+            "adapter": "greenhouse",
+            "name": "Slow Board",
+            "studio": "Slow",
+            "slug": "slow",
+            "status": "ok",
+            "cacheDecision": "run_now",
+            "durationMs": 300,
+            "fetchMs": 280,
+            "parseMs": 20,
+            "keptCount": 5,
+            "providerUrl": "https://example.com/slow",
+            "error": "",
+        }
+    ]

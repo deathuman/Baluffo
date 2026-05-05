@@ -57,6 +57,7 @@ Completed slices:
 - **Phase 2a baseline execution:** recorded local discovery and fetch smoke baselines in `_out/perf-baseline/discovery-baseline.json` and `_out/perf-baseline/fetch-baseline.json`, then confirmed `npm run perf:ci` compares against both baselines successfully.
 - **Phase 2b fetch profiling smoke:** ran `BALUFFO_PROFILE=1` against the Greenhouse/Lever smoke benchmark and fixed the profiling hook so concurrent diagnostic profiling no longer fails source execution. Result: no adapter CPU hotspot emerged; smoke wall time is dominated by fetch/wait time with canonicalization as the secondary measured stage.
 - **Benchmarking signal improvements:** added repeated-run median support to `scripts/perf_ci.py`, capped and split discovery presets, fetch benchmark groups and npm scripts, stage-aware baseline/trend rows, fetch network/wait proxy counters, adapter summary reporting, and broader static-detail source selection. Default CI smoke remains quick/single-run; deeper signal is opt-in through `--runs`, capped discovery, and fetch group commands.
+- **Greenhouse fetch smoke optimisation:** added provider-board timing signals for Greenhouse and used them to identify stale Greenhouse 404 boards as the dominant cold smoke cost; terminal 404/410 fetches now skip retry/backoff, cutting the focused fetch smoke from about `19.8s` to `12.0s` in the local run.
 
 Targeted validation completed for these slices:
 
@@ -120,7 +121,7 @@ The current benchmarking suite is useful for smoke-level regression detection an
    - Add npm scripts for common groups.
    - Goal: avoid overfitting fetch performance decisions to only Greenhouse and Lever.
    - Follow-up added: static/detail-heavy groups now resolve loaders before switching to the isolated benchmark data dir so live static loaders are represented more broadly.
-   - Follow-up added: fetch benchmark payloads now expose `sourceTimingSignals` with first-pass and second-pass slowest source rows from the pipeline runtime report.
+   - Follow-up added: fetch benchmark payloads now expose `sourceTimingSignals` with first-pass and second-pass slowest source rows from the pipeline runtime report, plus provider-board timing rows when adapters expose board diagnostics.
 
 4. **Stage-level baseline and trend rows** - implemented
    - Extend `scripts/perf_baseline.py` and `scripts/perf_trend.py` to preserve optional `stageDurationsMs`.

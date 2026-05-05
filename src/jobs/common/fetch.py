@@ -5,6 +5,15 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
+from src.jobs.common.http import HttpStatusError
+
+
+def _is_non_retriable_http_error(exc: Exception) -> bool:
+    if isinstance(exc, HttpStatusError):
+        return int(exc.code or 0) in {404, 410}
+    message = str(exc) if exc is not None else ""
+    return any(token in message for token in ("HTTP 404", "HTTP Error 404", "HTTP 410"))
+
 
 def fetch_with_retries(
     url: str,
@@ -23,6 +32,8 @@ def fetch_with_retries(
             return fetch_text(url, int(timeout_s or 1))
         except Exception as exc:  # noqa: BLE001
             last_error = exc
+            if _is_non_retriable_http_error(exc):
+                break
             if attempt < attempts - 1:
                 if heartbeat_callback:
                     heartbeat_callback()

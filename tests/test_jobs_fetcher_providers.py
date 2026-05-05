@@ -1098,7 +1098,12 @@ def test_normalize_source_report_row_preserves_structured_details() -> None:
                     "status": "ok",
                     "fetchedCount": 3,
                     "keptCount": 2,
+                    "durationMs": 123,
+                    "fetchMs": 100,
+                    "parseMs": 23,
                     "error": "",
+                    "slug": "jagex",
+                    "providerUrl": "https://jobs.lever.co/jagex",
                     "browserEscalationEligible": False,
                     "browserEscalationEnabled": True,
                 }
@@ -1113,6 +1118,11 @@ def test_normalize_source_report_row_preserves_structured_details() -> None:
     assert isinstance(details[0], dict)
     assert details[0]["name"] == "Jagex (Lever)"
     assert int(details[0]["keptCount"]) == 2
+    assert int(details[0]["durationMs"]) == 123
+    assert int(details[0]["fetchMs"]) == 100
+    assert int(details[0]["parseMs"]) == 23
+    assert details[0]["slug"] == "jagex"
+    assert details[0]["providerUrl"] == "https://jobs.lever.co/jagex"
     assert details[0]["browserEscalationEligible"] is False
     assert details[0]["browserEscalationEnabled"] is True
 
