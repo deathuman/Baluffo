@@ -170,14 +170,11 @@ def _capture_startup_failure_metrics(
     error_message: str,
 ) -> None:
     deps = _root()
-    partial_metrics = list(report.get("startupMetrics") or [])
-    if not partial_metrics:
-        try:
-            partial_metrics = deps.fetch_startup_metrics(bridge_base_url, limit=1000)
-        except Exception:  # noqa: BLE001
-            partial_metrics = []
-    if not partial_metrics:
-        partial_metrics = deps.read_startup_metrics_file(runtime_data_dir, limit=1000)
+    partial_metrics = _load_failure_startup_metrics(
+        report,
+        runtime_data_dir=runtime_data_dir,
+        bridge_base_url=bridge_base_url,
+    )
     if not partial_metrics:
         return
     report["startupMetrics"] = partial_metrics
@@ -209,6 +206,26 @@ def _capture_startup_failure_metrics(
         if isinstance(row, dict)
     ):
         _append_startup_profile_scenario(report, startup_profile=startup_profile)
+
+
+def _load_failure_startup_metrics(
+    report: dict[str, Any],
+    *,
+    runtime_data_dir: Path,
+    bridge_base_url: str,
+) -> list[dict[str, Any]]:
+    deps = _root()
+    partial_metrics = [
+        row for row in list(report.get("startupMetrics") or []) if isinstance(row, dict)
+    ]
+    if not partial_metrics:
+        try:
+            partial_metrics = deps.fetch_startup_metrics(bridge_base_url, limit=1000)
+        except Exception:  # noqa: BLE001
+            partial_metrics = []
+    if not partial_metrics:
+        partial_metrics = deps.read_startup_metrics_file(runtime_data_dir, limit=1000)
+    return [row for row in partial_metrics if isinstance(row, dict)]
 
 
 def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
@@ -548,6 +565,12 @@ def run_packaged_smoke(args: argparse.Namespace) -> dict[str, Any]:
                 preferred_probe_browser_path=preferred_probe_browser_path,
                 artifacts_dir=artifacts_dir,
                 error_message=str(exc),
+            )
+        else:
+            report["startupMetrics"] = _load_failure_startup_metrics(
+                report,
+                runtime_data_dir=runtime_data_dir,
+                bridge_base_url=bridge_base_url,
             )
         if not report["failure"]:
             report["failure"] = deps.build_failure_payload(

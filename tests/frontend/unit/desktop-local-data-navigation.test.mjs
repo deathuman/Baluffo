@@ -586,7 +586,7 @@ test("desktop bootstrap retries bridge startup and only fetches version status a
     for (let index = 0; index < 20 && !window.__baluffoLocalDataLoaded; index += 1) {
       await flushMicrotasks(5);
     }
-    for (let index = 0; index < 20 && !labels[0].textContent; index += 1) {
+    for (let index = 0; index < 20 && !String(labels[0].textContent || "").includes("0.1.33"); index += 1) {
       await flushMicrotasks(5);
     }
 

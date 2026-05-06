@@ -137,7 +137,6 @@ test("admin auth controller initializes the composed admin view immediately", as
     [
       "mark:admin_auth_init_start",
       "mark:admin_overview_fetch_start",
-      "mark:admin_discovery_fetch_start",
       "mark:admin_discovery_config_fetch_start",
       "mark:admin_ops_health_fetch_start",
       "mark:admin_sync_fetch_start",
@@ -145,14 +144,15 @@ test("admin auth controller initializes the composed admin view immediately", as
       "measure:admin_auth_init",
       "mark:admin_overview_fetch_done",
       "measure:admin_overview_fetch",
-      "mark:admin_discovery_fetch_done",
-      "measure:admin_discovery_fetch",
       "mark:admin_discovery_config_fetch_done",
       "measure:admin_discovery_config_fetch",
       "mark:admin_ops_health_fetch_done",
       "measure:admin_ops_health_fetch",
       "mark:admin_sync_fetch_done",
-      "measure:admin_sync_fetch"
+      "measure:admin_sync_fetch",
+      "mark:admin_discovery_fetch_start",
+      "mark:admin_discovery_fetch_done",
+      "measure:admin_discovery_fetch"
     ]
   );
   assert.deepEqual(

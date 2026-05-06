@@ -31,6 +31,26 @@ def packaged_runtime_page_ready(deps: Any, site_base_url: str, open_path: str) -
     return True
 
 
+def packaged_runtime_page_ready_from_metrics(
+    metrics_rows: list[dict[str, Any]], open_path: str
+) -> bool:
+    page_key = str(Path(str(open_path or "jobs.html")).stem or "jobs").strip().lower()
+    page_key = page_key.replace("-", "_")
+    page_events = {
+        "jobs": ("jobs_first_render", "jobs_first_interactive"),
+        "saved": ("saved_first_render", "saved_first_interactive"),
+        "admin": ("admin_first_interactive",),
+        "desktop_probe": ("desktop_probe_ready",),
+        "desktop_probe_head": ("desktop_probe_head_ready",),
+        "desktop_probe_css": ("desktop_probe_css_ready",),
+        "desktop_probe_inline": ("desktop_probe_inline_ready",),
+    }.get(page_key, ())
+    if not page_events:
+        return False
+    events = {str(row.get("event") or "") for row in metrics_rows if isinstance(row, dict)}
+    return any(event in events for event in page_events)
+
+
 def wait_for_packaged_runtime(
     deps: Any,
     process: subprocess.Popen[Any],
@@ -54,8 +74,6 @@ def wait_for_packaged_runtime(
                 f"Packaged desktop executable exited before smoke runtime became ready (exit {exit_code})."
             )
         try:
-            health = deps.fetch_json(f"{bridge_base_url}/ops/health")
-            session = deps.fetch_json(f"{bridge_base_url}/desktop-local-data/session")
             metrics_rows = [
                 dict(row)
                 for row in as_list(deps.fetch_startup_metrics(bridge_base_url, limit=1000))
@@ -71,11 +89,25 @@ def wait_for_packaged_runtime(
             events = {str(row.get("event") or "") for row in metrics_rows if isinstance(row, dict)}
             page_ready = True
             if require_page_ready:
-                page_ready = deps._packaged_runtime_page_ready(site_base_url, open_path)
+                page_ready = packaged_runtime_page_ready_from_metrics(metrics_rows, open_path)
+                if not page_ready:
+                    page_ready = deps._packaged_runtime_page_ready(site_base_url, open_path)
             if (
                 all(deps._required_startup_event_present(events, event) for event in normalized)
                 and page_ready
             ):
+                health: dict[str, Any] = {}
+                session: dict[str, Any] = {}
+                try:
+                    health = deps.fetch_json(f"{bridge_base_url}/ops/health", timeout_s=1.0)
+                except Exception:  # noqa: BLE001
+                    health = {}
+                try:
+                    session = deps.fetch_json(
+                        f"{bridge_base_url}/desktop-local-data/session", timeout_s=1.0
+                    )
+                except Exception:  # noqa: BLE001
+                    session = {}
                 return {
                     "health": health,
                     "session": session,
@@ -87,6 +119,7 @@ def wait_for_packaged_runtime(
             urllib.error.HTTPError,
             json.JSONDecodeError,
             ValueError,
+            OSError,
         ) as exc:
             last_error = str(exc)
         deps.time.sleep(0.35)
@@ -140,8 +173,6 @@ def wait_for_packaged_runtime_with_port_pivot(
                     retry_observed = True
             site_base_url = f"http://127.0.0.1:{actual_site_port}"
             bridge_base_url = f"http://127.0.0.1:{actual_bridge_port}"
-            health = deps.fetch_json(f"{bridge_base_url}/ops/health")
-            session = deps.fetch_json(f"{bridge_base_url}/desktop-local-data/session")
             metrics_rows = [
                 dict(row)
                 for row in as_list(deps.fetch_startup_metrics(bridge_base_url, limit=1000))
@@ -150,9 +181,25 @@ def wait_for_packaged_runtime_with_port_pivot(
             if deps.startup_metric_event_present(metrics_rows, "desktop_runtime_port_retry"):
                 retry_observed = True
             events = {str(row.get("event") or "") for row in metrics_rows if isinstance(row, dict)}
-            if all(
-                deps._required_startup_event_present(events, event) for event in normalized
-            ) and deps._packaged_runtime_page_ready(site_base_url, open_path):
+            page_ready = packaged_runtime_page_ready_from_metrics(metrics_rows, open_path)
+            if not page_ready:
+                page_ready = deps._packaged_runtime_page_ready(site_base_url, open_path)
+            if (
+                all(deps._required_startup_event_present(events, event) for event in normalized)
+                and page_ready
+            ):
+                health: dict[str, Any] = {}
+                session: dict[str, Any] = {}
+                try:
+                    health = deps.fetch_json(f"{bridge_base_url}/ops/health", timeout_s=1.0)
+                except Exception:  # noqa: BLE001
+                    health = {}
+                try:
+                    session = deps.fetch_json(
+                        f"{bridge_base_url}/desktop-local-data/session", timeout_s=1.0
+                    )
+                except Exception:  # noqa: BLE001
+                    session = {}
                 return {
                     "health": health,
                     "session": session,
@@ -171,6 +218,7 @@ def wait_for_packaged_runtime_with_port_pivot(
             urllib.error.HTTPError,
             json.JSONDecodeError,
             ValueError,
+            OSError,
         ) as exc:
             last_error = str(exc)
         deps.time.sleep(0.35)

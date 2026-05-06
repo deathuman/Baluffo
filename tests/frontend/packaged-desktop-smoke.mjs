@@ -82,6 +82,7 @@ async function assertJobsPageReady(page) {
   assert.notEqual(startupState, "loading", "jobs page should not stay in loading state");
   await page.locator("#refresh-jobs-btn").waitFor({ state: "visible", timeout: 20_000 });
   await page.locator("#auth-sign-in-btn").waitFor({ state: "visible", timeout: 20_000 });
+  await page.waitForFunction(() => !document.querySelector("#auth-sign-in-btn")?.disabled, null, { timeout: 20_000 });
   assert.equal(await page.locator("#refresh-jobs-btn").isEnabled(), true, "jobs refresh button should be enabled");
   assert.equal(await page.locator("#auth-sign-in-btn").isEnabled(), true, "jobs sign-in button should be enabled");
   const jobsListText = await page.locator("#jobs-list").textContent();
@@ -263,6 +264,7 @@ async function main() {
       await page.click("#saved-jobs-btn");
       await page.waitForURL(/saved\.html/, { timeout: 15_000 });
       await waitForDesktopAdapter(page);
+      await page.waitForFunction(() => /Packaged Smoke User/.test(document.querySelector("#saved-auth-status")?.textContent || ""), null, { timeout: 15_000 });
       const savedAuth = await page.locator("#saved-auth-status").textContent();
       assert.match(String(savedAuth || ""), /Packaged Smoke User/);
       assert.doesNotMatch(String(savedAuth || ""), /Guest/i);

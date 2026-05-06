@@ -7,6 +7,14 @@ from pathlib import Path
 from typing import Any
 
 
+def _snapshot_json(deps: Any, url: str) -> dict[str, Any]:
+    try:
+        payload = deps.fetch_json(url)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+    return payload if isinstance(payload, dict) else {"ok": False, "payload": payload}
+
+
 def capture_runtime_snapshot(
     deps: Any, bridge_base_url: str, artifacts_dir: Path
 ) -> dict[str, str]:
@@ -16,14 +24,14 @@ def capture_runtime_snapshot(
         "startupMetricsSnapshot": artifacts_dir / "startup-metrics.json",
     }
     deps.write_json(
-        snapshots["opsHealthSnapshot"], deps.fetch_json(f"{bridge_base_url}/ops/health")
+        snapshots["opsHealthSnapshot"], _snapshot_json(deps, f"{bridge_base_url}/ops/health")
     )
     deps.write_json(
         snapshots["sessionSnapshot"],
-        deps.fetch_json(f"{bridge_base_url}/desktop-local-data/session"),
+        _snapshot_json(deps, f"{bridge_base_url}/desktop-local-data/session"),
     )
-    metrics_payload = deps.fetch_json(
-        f"{bridge_base_url}/desktop-local-data/startup-metrics?limit=1000"
+    metrics_payload = _snapshot_json(
+        deps, f"{bridge_base_url}/desktop-local-data/startup-metrics?limit=1000"
     )
     deps.write_json(snapshots["startupMetricsSnapshot"], metrics_payload)
     return {key: str(path) for key, path in snapshots.items()}

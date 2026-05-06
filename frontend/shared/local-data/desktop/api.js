@@ -191,7 +191,7 @@ export function createDesktopLocalDataApi() {
   desktopState.desktopApi = createLocalDataRuntime({
     APPLICATION_STATUSES,
     isReady() {
-      return true;
+      return desktopState.desktopBootstrapStatus === "ready";
     },
     getCurrentUser() {
       return desktopState.currentUser;

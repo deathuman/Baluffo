@@ -55,12 +55,12 @@
     "tests/source_discovery/test_active_audit_runtime.py": 964,
     "tests/source_discovery/test_directory_sources.py": 926,
     "tests/source_discovery/test_run_discovery_flow.py": 1467,
-    "tests/test_build_ship_bundle.py": 558,
+    "tests/test_build_ship_bundle.py": 572,
     "tests/test_desktop_update.py": 1555,
     "tests/test_desktop_updater.py": 621,
     "tests/test_jobs_fetcher_google_sheets.py": 489,
     "tests/test_jobs_fetcher_parsing.py": 784,
-    "tests/test_fetch_incremental_sanity_benchmark.py": 408,
+    "tests/test_fetch_incremental_sanity_benchmark.py": 1142,
     "tests/test_jobs_fetcher_pipeline.py": 2336,
     "tests/test_jobs_fetcher_providers.py": 1496,
     "tests/test_jobs_fetcher_quality.py": 1330,
@@ -71,7 +71,9 @@
     "tests/test_provider_api_plugins.py": 480,
     "tests/test_runtime_launcher.py": 756,
     "tests/test_ship_update_manager.py": 435,
+    "tests/test_source_policy_soak_report.py": 765,
     "tests/test_source_registry.py": 617,
+    "tests/test_source_registry_seed_runtime.py": 528,
     "tests/test_source_sync.py": 991
   }
 }

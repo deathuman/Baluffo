@@ -71,6 +71,59 @@ def test_run_packaged_smoke_writes_failure_report_on_runtime_timeout() -> None:
         assert stderr_handle.close.call_count >= 1
 
 
+def test_run_packaged_smoke_preserves_failure_metrics_on_runtime_timeout() -> None:
+    with workspace_tmpdir("packaged-smoke") as tmp:
+        root = Path(tmp)
+        report_path = root / "data" / "latest.json"
+        artifacts_dir = root / "artifacts"
+        exe_path = root / "Baluffo.exe"
+        exe_path.write_text("exe", encoding="utf-8")
+        process = mock.Mock()
+        process.pid = 4242
+        process.poll.return_value = None
+        stdout_handle = mock.Mock()
+        stderr_handle = mock.Mock()
+        rows = [
+            {"event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
+            {"event": "desktop_site_ready", "fields": {"elapsedMs": 400}},
+        ]
+        args = smoke.parse_args(
+            [
+                "--exe-path",
+                str(exe_path),
+                "--report-path",
+                str(report_path),
+                "--artifacts-dir",
+                str(artifacts_dir),
+            ]
+        )
+        with (
+            mock.patch.object(smoke, "ensure_portable_exe", return_value=exe_path),
+            mock.patch.object(
+                smoke, "launch_packaged_exe", return_value=(process, stdout_handle, stderr_handle)
+            ),
+            mock.patch.object(
+                smoke,
+                "wait_for_packaged_runtime",
+                side_effect=TimeoutError("timed out waiting for bridge"),
+            ),
+            mock.patch.object(smoke, "terminate_process_tree"),
+            mock.patch.object(smoke, "cleanup_orphaned_desktop_ports_nt"),
+            mock.patch.object(smoke, "fetch_startup_metrics", return_value=rows),
+            mock.patch.object(
+                smoke,
+                "collect_packaged_smoke_env_diagnostics",
+                return_value={"tmp": "C:/tmp", "temp": "C:/tmp", "isElevated": False},
+            ),
+        ):
+            payload = smoke.run_packaged_smoke(args)
+        saved = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert payload["ok"] is False
+    assert payload["startupMetrics"] == rows
+    assert saved["startupMetrics"] == rows
+
+
 def test_wait_for_packaged_runtime_rejects_default_browser_launch_for_startup_probe() -> None:
     process = mock.Mock()
     process.poll.return_value = None
@@ -97,6 +150,38 @@ def test_wait_for_packaged_runtime_rejects_default_browser_launch_for_startup_pr
                 require_managed_window=True,
                 require_page_ready=False,
             )
+
+
+def test_wait_for_packaged_runtime_accepts_jobs_metric_as_page_ready() -> None:
+    process = mock.Mock()
+    process.poll.return_value = None
+    rows = [
+        {"event": "desktop_launch_start", "fields": {"elapsedMs": 0}},
+        {"event": "desktop_site_ready", "fields": {"elapsedMs": 400}},
+        {"event": "desktop_window_created", "fields": {"elapsedMs": 700}},
+        {"event": "desktop_shell_window_shown", "fields": {"elapsedMs": 900}},
+        {"event": "jobs_first_render", "payload": {"elapsedMs": 1200}},
+    ]
+    with (
+        mock.patch.object(smoke, "fetch_json", side_effect=[{"ok": True}, {"ok": True}]),
+        mock.patch.object(smoke, "fetch_startup_metrics", return_value=rows),
+        mock.patch.object(
+            smoke, "_packaged_runtime_page_ready", side_effect=TimeoutError("timed out")
+        ) as page_ready_mock,
+        mock.patch.object(smoke.time, "monotonic", side_effect=[0.0, 0.0]),
+    ):
+        result = smoke.wait_for_packaged_runtime(
+            process,
+            site_base_url="http://127.0.0.1:8080",
+            bridge_base_url="http://127.0.0.1:8877",
+            timeout_s=5.0,
+            open_path="jobs.html",
+            required_events=smoke.STARTUP_REQUIRED_EVENTS,
+            require_page_ready=True,
+        )
+
+    assert result["startupMetrics"] == rows
+    page_ready_mock.assert_not_called()
 
 
 def test_wait_for_runtime_events_retries_transient_bridge_reset() -> None:
