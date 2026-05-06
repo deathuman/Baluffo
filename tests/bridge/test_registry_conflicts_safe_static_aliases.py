@@ -204,3 +204,108 @@ def test_registry_conflicts_suppresses_safe_pending_static_weaker_aliases() -> N
     assert audit["families"][0]["rows"][0]["id"] == (
         "static:listing_url:https://gameestudio.com/hiring/"
     )
+def test_registry_conflicts_safe_automation_marks_generated_static_listing_variants_eligible() -> None:
+    state = {
+        "active": [
+            {
+                "id": "static:listing_url:https://dragondropper.com/work-with-us/",
+                "name": "Dragon Dropper (GameDevMap)",
+                "studio": "Dragon Dropper",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 4,
+                "rankScore": 60,
+                "score": 30,
+            },
+            {
+                "id": "static:listing_url:https://dragondropper.com/join-us/",
+                "name": "Dragon Dropper (GameDevMap)",
+                "studio": "Dragon Dropper",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 4,
+                "rankScore": 50,
+                "score": 20,
+            },
+            {
+                "id": "static:listing_url:https://dragondropper.com/jobs/",
+                "name": "Dragon Dropper (GameDevMap)",
+                "studio": "Dragon Dropper",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 3,
+                "rankScore": 50,
+                "score": 20,
+            },
+            {
+                "id": "static:listing_url:https://dragondropper.com/careers/",
+                "name": "Dragon Dropper (GameDevMap)",
+                "studio": "Dragon Dropper",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 2,
+                "rankScore": 50,
+                "score": 20,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    payload = derive_registry_conflict_queue(state)
+
+    automation = payload["conflicts"][0]["safeAutomation"]
+    assert automation["eligible"] is True
+    assert automation["action"] == "auto_demote_static_generated_listing_variants"
+    assert automation["targetIds"] == [
+        "static:listing_url:https://dragondropper.com/join-us/",
+        "static:listing_url:https://dragondropper.com/jobs/",
+        "static:listing_url:https://dragondropper.com/careers/",
+    ]
+    assert payload["automation"]["summary"]["eligibleCount"] == 1
+    assert payload["automation"]["summary"]["demotableCount"] == 3
+
+
+def test_registry_conflicts_safe_automation_skips_generated_static_listing_cross_domain_boards() -> None:
+    state = {
+        "active": [
+            {
+                "id": "static:listing_url:https://www.capcom.co.jp/recruit/",
+                "name": "Capcom",
+                "studio": "Capcom",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 5,
+                "rankScore": 60,
+                "score": 30,
+            },
+            {
+                "id": "static:listing_url:https://jobs.jobvite.com/capcomusa",
+                "name": "Capcom",
+                "studio": "Capcom",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 4,
+                "rankScore": 50,
+                "score": 20,
+            },
+            {
+                "id": "static:listing_url:https://www.capcom-games.com/careers/",
+                "name": "Capcom",
+                "studio": "Capcom",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 3,
+                "rankScore": 50,
+                "score": 20,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    payload = derive_registry_conflict_queue(state)
+
+    assert payload["conflicts"][0]["safeAutomation"]["eligible"] is False
+    assert payload["automation"]["summary"]["eligibleCount"] == 0
+    assert payload["automation"]["summary"]["demotableCount"] == 0

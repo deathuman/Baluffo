@@ -186,10 +186,17 @@ SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION = "auto_demote_static_normalized_url_al
 SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_LABEL = "Auto-demote static URL alias"
 SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION = "auto_demote_static_same_host_listing_variant"
 SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_LABEL = "Auto-demote static listing variant"
+SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_ACTION = (
+    "auto_demote_static_generated_listing_variants"
+)
+SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_LABEL = (
+    "Auto-demote generated static listing variants"
+)
 SAFE_AUTO_DEMOTE_ACTIONS = {
     SAFE_AUTO_DEMOTE_ACTION,
     SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION,
     SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION,
+    SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_ACTION,
 }
 SAFE_AUTO_DEMOTE_ROUTE = "/registry/conflicts/auto-demote-safe"
 SAFE_AUTO_DEMOTE_REASON = "registry_conflict_safe_auto_demote"
@@ -403,6 +410,7 @@ def _is_careerish_path(path: str) -> bool:
             "position",
             "positions",
             "vacancies",
+            "work",
         }
     )
 
@@ -860,6 +868,24 @@ def _eligible_automation(
     }
 
 
+def _eligible_multi_automation(
+    target_ids: list[str],
+    reason: str,
+    *,
+    action: str,
+    label: str,
+) -> dict[str, Any]:
+    return {
+        "eligible": True,
+        "action": action,
+        "label": label,
+        "reason": reason,
+        "route": SAFE_AUTO_DEMOTE_ROUTE,
+        "targetIds": target_ids,
+        "blockedReasons": [],
+    }
+
+
 def _safe_pair_blockers(
     rows: list[dict[str, Any]], losers: list[dict[str, Any]], *, static_only: bool = False
 ) -> list[str]:
@@ -962,6 +988,70 @@ def _static_listing_evidence_blockers(winner: dict[str, Any], loser: dict[str, A
     if _positive_evidence_score(winner) < _positive_evidence_score(loser) + 30:
         blocked.append("winner_evidence_delta_too_small")
     return blocked
+
+
+def _single_static_host_path(row: dict[str, Any]) -> tuple[str, str]:
+    host_paths = _static_url_host_paths(row)
+    if len(host_paths) != 1:
+        return "", ""
+    return next(iter(host_paths))
+
+
+def _analyze_static_generated_listing_variants_automation(
+    *,
+    family_key: str,
+    winner: dict[str, Any],
+    losers: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    blocked: list[str] = []
+    if len(rows) < 3:
+        blocked.append("requires_three_or_more_rows")
+    if any(_row_state(row) != "active" for row in rows):
+        blocked.append("requires_active_rows_only")
+    if any(not _is_static_row(row) for row in rows):
+        blocked.append("requires_static_rows_only")
+    if not losers:
+        blocked.append("requires_losers")
+
+    host_paths_by_id = {source_identity(row): _single_static_host_path(row) for row in rows}
+    if any(not host or not path for host, path in host_paths_by_id.values()):
+        blocked.append("requires_single_static_url_per_row")
+    hosts = {host for host, _path in host_paths_by_id.values() if host}
+    if len(hosts) != 1:
+        blocked.append("requires_same_static_host")
+    shared_host = next(iter(hosts), "")
+    if shared_host and not _host_matches_family(shared_host, family_key):
+        blocked.append("requires_studio_specific_host")
+    paths = [path for _host, path in host_paths_by_id.values() if path]
+    if not paths or any(not _is_careerish_path(path) for path in paths):
+        blocked.append("requires_careerish_listing_paths")
+
+    winner_jobs = _row_jobs_evidence(winner)
+    winner_score = _positive_evidence_score(winner)
+    if any(_row_jobs_evidence(loser) > winner_jobs for loser in losers):
+        blocked.append("loser_jobs_stronger")
+    if any(_positive_evidence_score(loser) > winner_score for loser in losers):
+        blocked.append("loser_has_stronger_evidence")
+    target_ids = [_row_identity(loser) for loser in losers]
+    if any(not target_id for target_id in target_ids):
+        blocked.append("missing_loser_identity")
+
+    if blocked:
+        return _blocked_automation(
+            "Not eligible for generated static listing-variant auto-demotion.",
+            sorted(set(blocked)),
+        )
+    return _eligible_multi_automation(
+        target_ids,
+        (
+            f"{family_key} has {len(rows)} active static rows on {shared_host} "
+            "with generated career-ish listing paths; none of the losers has "
+            "stronger job evidence than the advisory winner."
+        ),
+        action=SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_ACTION,
+        label=SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_LABEL,
+    )
 
 
 def _analyze_provider_alias_automation(
@@ -1101,6 +1191,14 @@ def _analyze_safe_automation(
         )
         if listing_variant_result.get("eligible"):
             return listing_variant_result
+        generated_variant_result = _analyze_static_generated_listing_variants_automation(
+            family_key=family_key,
+            winner=winner,
+            losers=losers,
+            rows=rows,
+        )
+        if generated_variant_result.get("eligible"):
+            return generated_variant_result
         return static_result
     return provider_result
 
@@ -1115,6 +1213,9 @@ def _build_automation_summary(conflicts: list[dict[str, Any]]) -> dict[str, Any]
         SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION: SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_LABEL,
         SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION: (
             SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_LABEL
+        ),
+        SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_ACTION: (
+            SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_LABEL
         ),
     }
     for card in eligible_cards:
