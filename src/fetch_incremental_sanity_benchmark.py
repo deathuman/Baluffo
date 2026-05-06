@@ -1026,6 +1026,11 @@ def main(argv: list[str] | None = None) -> int:
     root = _ensure_repo_on_path()
     args = parse_args(argv)
     from src.baluffo_config import get_storage_defaults
+    from src.shared.json_io import (
+        copy_json_file_to_storage,
+        existing_json_candidate,
+        gzip_backed_json_storage_path,
+    )
 
     output_dir = Path(args.output_dir)
     if not output_dir.is_absolute():
@@ -1047,10 +1052,10 @@ def main(argv: list[str] | None = None) -> int:
         "source-registry-pending.json",
         "source-registry-rejected.json",
     ):
-        source_path = live_data_dir / name
+        source_path = existing_json_candidate(live_data_dir / name) or live_data_dir / name
         target_path = output_dir / name
-        if source_path.exists() and not target_path.exists():
-            shutil.copy2(source_path, target_path)
+        if source_path.exists() and not gzip_backed_json_storage_path(target_path).exists():
+            copy_json_file_to_storage(source_path, target_path)
 
     selected_loaders, missing = _select_loaders(source_names_for_args(args))
     if missing:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import json
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -32,11 +33,54 @@ def _json_candidates(path: Path) -> list[Path]:
     return [path.with_name(path.name + ".gz"), path]
 
 
+def gzip_backed_json_storage_path(path: Path) -> Path:
+    path = Path(path)
+    if path.suffix == ".gz" or not is_gzip_backed_json_name(path.name):
+        return path
+    return path.with_name(path.name + ".gz")
+
+
+def existing_json_candidate(path: Path) -> Path | None:
+    for candidate in _json_candidates(Path(path)):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _read_json_path(path: Path) -> Any:
     if path.suffix == ".gz":
         with gzip.open(path, mode="rt", encoding="utf-8") as handle:
             return json.load(handle)
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def read_json_text(path: Path) -> str:
+    if path.suffix == ".gz":
+        with gzip.open(path, mode="rt", encoding="utf-8") as handle:
+            return handle.read()
+    return Path(path).read_text(encoding="utf-8")
+
+
+def write_json_text(path: Path, text: str) -> Path:
+    target = gzip_backed_json_storage_path(Path(path))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.suffix == ".gz":
+        with gzip.open(target, mode="wt", encoding="utf-8") as handle:
+            handle.write(text)
+    else:
+        target.write_text(text, encoding="utf-8")
+    return target
+
+
+def copy_json_file_to_storage(source: Path, target: Path) -> Path:
+    source = Path(source)
+    resolved_target = gzip_backed_json_storage_path(Path(target))
+    resolved_target.parent.mkdir(parents=True, exist_ok=True)
+    if source.suffix == resolved_target.suffix:
+        shutil.copy2(source, resolved_target)
+        return resolved_target
+    write_json_text(resolved_target, read_json_text(source))
+    return resolved_target
 
 
 def read_json(path: Path, fallback: Any) -> Any:

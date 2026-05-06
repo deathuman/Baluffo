@@ -8,6 +8,7 @@ from scripts import build_ship_bundle
 from scripts.build_ship_bundle import STARTUP_PREVIEW_LIMIT, build_bundle
 from src import source_sync
 from src.app_version import APP_VERSION
+from src.shared.json_io import read_json
 from tests.helpers.ship_bundle import copy_minimal_app_version
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -141,6 +142,17 @@ def test_bundle_contains_runtime_assets_and_seeded_runtime_data_only() -> None:
             "outputs": {"report": str(output / "data" / "jobs-fetch-report.json")},
         }
         assert isinstance(seeded_report["sources"], list)
+        assert (output / "data" / "jobs-unified.json.gz").exists()
+        assert not (output / "data" / "jobs-unified.json").exists()
+        assert (output / "data" / "jobs-unified-light.json.gz").exists()
+        assert not (output / "data" / "jobs-unified-light.json").exists()
+        assert (output / "data" / "jobs-source-state.json.gz").exists()
+        assert not (output / "data" / "jobs-source-state.json").exists()
+        assert read_json(output / "data" / "jobs-source-state.json", {}) == {
+            "schemaVersion": 1,
+            "updatedAt": "",
+            "sources": {},
+        }
         startup_rows = json.loads(
             (output / "data" / "jobs-unified-startup.json").read_text(encoding="utf-8")
         )

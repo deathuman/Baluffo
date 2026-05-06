@@ -14,18 +14,13 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-from src.shared.json_io import is_gzip_backed_json_name, read_json
+from src.shared.json_io import gzip_backed_json_storage_path, read_json
 
 RawJob = dict[str, Any]
 
 
 def _storage_target_path(path: Path) -> Path:
-    path = Path(path)
-    if not is_gzip_backed_json_name(path.name):
-        return path
-    if path.suffix == ".gz":
-        return path
-    return path.with_name(path.name + ".gz")
+    return gzip_backed_json_storage_path(Path(path))
 
 
 def _read_text_path(path: Path) -> str:

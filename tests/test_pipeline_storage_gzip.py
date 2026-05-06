@@ -16,7 +16,13 @@ from src.jobs.state_lifecycle import (
 )
 from src.jobs.state_source_records import read_source_state, write_source_state
 from src.pipeline_io import write_atomic_if_changed
-from src.shared.json_io import read_json
+from src.shared.json_io import (
+    copy_json_file_to_storage,
+    existing_json_candidate,
+    gzip_backed_json_storage_path,
+    read_json,
+    write_json_text,
+)
 from src.ship import runtime_launcher as rl
 from tests.helpers.temp_paths import workspace_tmpdir
 
@@ -51,6 +57,32 @@ def test_pipeline_json_writer_round_trips_gzip_backed_output() -> None:
             assert handle.read() == payload
 
         assert write_atomic_if_changed(path, payload) is False
+
+
+def test_shared_json_copy_helper_compresses_policy_backed_plain_source() -> None:
+    with workspace_tmpdir("shared-json-copy-gzip") as tmp:
+        source = Path(tmp) / "source.json"
+        target = Path(tmp) / "jobs-source-state.json"
+        source.write_text('{"sources":{"demo":{"status":"ok"}}}', encoding="utf-8")
+
+        copied = copy_json_file_to_storage(source, target)
+
+        assert copied == _gzip_path(target)
+        assert copied.exists()
+        assert target.exists() is False
+        assert existing_json_candidate(target) == copied
+        assert read_json(target, {}) == {"sources": {"demo": {"status": "ok"}}}
+
+
+def test_shared_json_write_helper_leaves_non_policy_json_plain() -> None:
+    with workspace_tmpdir("shared-json-write-plain") as tmp:
+        path = Path(tmp) / "jobs-fetch-report.json"
+
+        written = write_json_text(path, '{"ok":true}')
+
+        assert written == path
+        assert gzip_backed_json_storage_path(path) == path
+        assert path.read_text(encoding="utf-8") == '{"ok":true}'
 
 
 def test_source_state_helpers_round_trip_gzip_storage() -> None:

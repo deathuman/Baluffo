@@ -26,6 +26,13 @@ from scripts.build_frontend_runtime_config import (
 from src.app_version import APP_VERSION
 from src.baluffo_config import get_sync_defaults
 from src.python_version_guard import ensure_required_python
+from src.shared.json_io import (
+    copy_json_file_to_storage,
+    existing_json_candidate,
+    gzip_backed_json_storage_path,
+    read_json,
+    write_json_text,
+)
 from src.ship.update_manager import ShipPaths, refresh_runtime_bootstrap
 
 DEFAULT_BUNDLE_VERSION = APP_VERSION
@@ -166,6 +173,10 @@ def _copy_file(src: Path, dst: Path) -> None:
     shutil.copy2(src, dst)
 
 
+def _copy_json_file(src: Path, dst: Path) -> Path:
+    return copy_json_file_to_storage(src, dst)
+
+
 def _copy_tree(src: Path, dst: Path) -> None:
     if dst.exists():
         shutil.rmtree(dst)
@@ -173,6 +184,10 @@ def _copy_tree(src: Path, dst: Path) -> None:
 
 
 def _write_text(path: Path, text: str) -> None:
+    target = gzip_backed_json_storage_path(path)
+    if target != path:
+        write_json_text(path, text)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
@@ -303,9 +318,9 @@ def _manifest_payload(version: str, sha256: str) -> dict:
 def _seed_runtime_data(data_dir: Path) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     for name in APP_RUNTIME_DATA_FILES:
-        src = ROOT / "data" / name
+        src = existing_json_candidate(ROOT / "data" / name) or ROOT / "data" / name
         if src.exists():
-            _copy_file(src, data_dir / name)
+            _copy_json_file(src, data_dir / name)
     fetch_report_path = data_dir / "jobs-fetch-report.json"
     payloads = {
         "source-registry-rejected.json": [],
@@ -323,7 +338,7 @@ def _seed_runtime_data(data_dir: Path) -> None:
     }
     for name, payload in payloads.items():
         target = data_dir / name
-        if target.exists():
+        if gzip_backed_json_storage_path(target).exists() or target.exists():
             continue
         _write_text(target, json.dumps(payload, indent=2, ensure_ascii=False))
     _write_text(
@@ -688,14 +703,10 @@ def validate_app_version_python_imports(version_dir: Path) -> None:
 def _generate_startup_preview(data_dir: Path) -> None:
     light_path = data_dir / "jobs-unified-light.json"
     startup_path = data_dir / "jobs-unified-startup.json"
-    if not light_path.exists():
+    payload = read_json(light_path, [])
+    if not isinstance(payload, list):
         return
-    try:
-        payload = json.loads(light_path.read_text(encoding="utf-8"))
-    except Exception:
-        return
-    rows = payload if isinstance(payload, list) else []
-    startup_rows = rows[:STARTUP_PREVIEW_LIMIT]
+    startup_rows = payload[:STARTUP_PREVIEW_LIMIT]
     _write_text(startup_path, json.dumps(startup_rows, ensure_ascii=False))
 
 
