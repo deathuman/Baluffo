@@ -373,6 +373,15 @@ def _write_text_atomic(path: Path, text: str) -> None:
             except PermissionError as exc:
                 last_error = exc
                 time.sleep(0.012 * (attempt + 1))
+        if last_error is not None and path.exists():
+            # On Windows, a short lock can persist after retries, so attempt a final
+            # best-effort recovery path that removes and replaces the destination.
+            try:
+                path.unlink()
+                os.replace(tmp, path)
+                last_error = None
+            except OSError:
+                pass
         if last_error is not None:
             raise last_error
     finally:
@@ -401,7 +410,12 @@ def _compact_json_journal_if_needed(path: Path, payload: Any) -> None:
             return
     except OSError:
         return
-    _write_text_atomic(journal_path, _json_journal_record_text(payload))
+    try:
+        _write_text_atomic(journal_path, _json_journal_record_text(payload))
+    except OSError:
+        # Journal compaction is best-effort; if the destination is locked by another process,
+        # keep the existing journal file so we avoid hard-failing discovery.
+        return
 
 
 def _load_json_journal_record_payload(record: Any) -> Any | None:
