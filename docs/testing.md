@@ -190,7 +190,7 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 
 ## Packaged artifact ownership
 
-- Direct packaging commands own `dist/` outputs:
+- Direct packaging commands own `dist/` outputs and refresh the convenience mirror at `_out/latest/build/portable`:
   - `npm run build:portable-exe`
   - `python scripts/build_portable_exe.py`
 - `npm run test:frontend:packaged*`
@@ -198,12 +198,12 @@ Use `npm run release:preflight` when you are about to push a release commit, mov
 - `npm run test:frontend:packaged:orphan-reclaim-rehearsal`
 - `npm run test:frontend:packaged:browser-job-rehearsal`
 - `npm run test:frontend:packaged:update-rehearsal`
-- Orchestrated build and verify commands own `_out/runs/...` and `_out/latest/...`:
+- Orchestrated build and verify commands own `_out/runs/...` and the rest of `_out/latest/...`:
   - `npm run build`
   - `npm run verify`
   - `python scripts/orchestrator.py build`
   - `python scripts/orchestrator.py verify`
-- Do not expect `build:portable-exe` to refresh `_out/latest`; that mirror only belongs to the orchestrator flow.
+- `build:portable-exe -- --skip-latest-mirror` can be used for an isolated `dist/` build when the latest mirror should not move.
 
 ## Test ownership rules
 

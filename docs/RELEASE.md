@@ -252,6 +252,7 @@ Before any release:
 2. Confirm:
    - `dist\baluffo-portable\Baluffo.exe` exists
    - `dist\baluffo-portable-<version>.zip` exists
+   - `_out\latest\build\portable\Baluffo.exe` was refreshed from the same portable output
    - the embedded `ship\` bundle exists
 3. Run packaged desktop smoke validation:
 
@@ -264,7 +265,7 @@ npm run test:frontend:packaged:jobs-pipeline
 npm run test:frontend:packaged:update-rehearsal
 ```
 
-These packaged smoke commands validate the direct `dist\baluffo-portable\Baluffo.exe` artifact. `_out\latest\build\portable\Baluffo.exe` is reserved for orchestrator-driven `build` / `verify` runs.
+These packaged smoke commands validate the direct `dist\baluffo-portable\Baluffo.exe` artifact. Local portable builds also mirror the successful output to `_out\latest\build\portable\Baluffo.exe` so the familiar latest path does not remain stale after `npm run build:portable-exe`.
 The Jobs-page packaged smoke is now a terminal-success gate: it must launch the Jobs pipeline, observe visible running progress, and then reach a non-error terminal state. It uses a smoke-only stub-success pipeline mode so the lane stays deterministic and does not run the full real discovery/fetch/sync workload.
 The packaged sync rehearsal gate validates the shipped `github-app-sync-config.json` inside the artifact, fails if it is machine-derived, and then drives `/sync/test` against a local fake GitHub App endpoint so the release gate exercises packaged auth/read portability without hitting real GitHub.
 The updater rehearsal gate exercises the real packaged `N -> N+1` helper-driven install path, including portable ZIP download staging, relaunch verification, and preservation of `ship\data\local-user-data`.

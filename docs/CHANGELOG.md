@@ -125,7 +125,7 @@ and Baluffo desktop releases use the project-specific `0.1.x` ordering documente
 - City parsing now normalizes multi-location strings, dedupes bilingual variants, and rebuilds location summaries from the surviving normalized locations.
 - Country-like city values such as `EU & NA` and `UK` are now promoted into the country field instead of being dropped, while valid cities remain untouched.
 - Location normalization was consolidated into the canonical parsers path and mirrored in the frontend jobs domain so backend and UI stay aligned.
-- Packaged smoke and release flows now distinguish direct `dist\baluffo-portable\Baluffo.exe` artifacts from orchestrator-owned `_out\latest\build\portable\Baluffo.exe` outputs.
+- Local portable builds now mirror successful `dist\baluffo-portable\Baluffo.exe` outputs to `_out\latest\build\portable\Baluffo.exe` so the latest path does not stay stale.
 - Desktop updater install handoff, helper progress tracking, and packaged recovery behavior were hardened so portable releases update more reliably.
 - Release tooling and packaged verification docs now reflect the current desktop build, smoke, and update pipeline.
 

@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = ROOT / "dist" / "baluffo-portable"
+LATEST_PORTABLE_DIR = ROOT / "_out" / "latest" / "build" / "portable"
 DEFAULT_EXE_NAME = "Baluffo"
 DEFAULT_ICON_PATH = ROOT / "favicon.ico"
 OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES = tuple(
@@ -270,6 +271,21 @@ def create_zip(output_dir: Path, *, version: str) -> Path:
     return Path(built)
 
 
+def mirror_latest_portable(output_dir: Path, latest_dir: Path = LATEST_PORTABLE_DIR) -> Path:
+    """Mirror the successful portable output to the familiar latest artifact path."""
+    source = Path(output_dir).expanduser().resolve()
+    target = Path(latest_dir).expanduser().resolve()
+    if not (source / "Baluffo.exe").is_file():
+        raise RuntimeError(f"Portable executable missing; refusing latest mirror: {source}")
+    if source == target:
+        return target
+    if target.exists():
+        shutil.rmtree(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, target)
+    return target
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build dist/baluffo-portable executable wrapper.")
     parser.add_argument("--output-dir", default=str(DIST_DIR))
@@ -277,6 +293,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exe-name", default=DEFAULT_EXE_NAME)
     parser.add_argument("--icon", default="")
     parser.add_argument("--skip-zip", action="store_true")
+    parser.add_argument("--skip-latest-mirror", action="store_true")
     return parser.parse_args()
 
 
@@ -299,6 +316,9 @@ def main() -> int:
     if not args.skip_zip:
         archive = create_zip(portable_root, version=version)
         print(f"Portable archive: {archive}")
+    if not args.skip_latest_mirror:
+        latest_path = mirror_latest_portable(portable_root)
+        print(f"Latest portable mirror: {latest_path}")
     return 0
 
 

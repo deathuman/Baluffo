@@ -19,6 +19,7 @@ from scripts.build_portable_exe import (
     UPDATER_HELPER_HIDDEN_IMPORTS,
     build_portable_layout,
     create_zip,
+    mirror_latest_portable,
     parse_args,
     resolve_icon_path,
 )
@@ -90,6 +91,37 @@ def test_create_zip_packages_portable_folder() -> None:
         assert "Baluffo.exe" in names
         assert "BaluffoUpdater.exe" in names
         assert "ship/" in names
+
+
+def test_mirror_latest_portable_replaces_stale_latest_artifact() -> None:
+    with workspace_tmpdir("build-portable-exe") as tmp:
+        root = Path(tmp)
+        output = root / "dist" / "baluffo-portable"
+        latest = root / "_out" / "latest" / "build" / "portable"
+        output.mkdir(parents=True, exist_ok=True)
+        latest.mkdir(parents=True, exist_ok=True)
+        (output / "Baluffo.exe").write_text("new exe", encoding="utf-8")
+        (output / "BaluffoUpdater.exe").write_text("new helper", encoding="utf-8")
+        (output / "ship").mkdir()
+        (output / "ship" / "run-site.ps1").write_text("new ship", encoding="utf-8")
+        (latest / "Baluffo.exe").write_text("old exe", encoding="utf-8")
+        (latest / "old.txt").write_text("stale", encoding="utf-8")
+
+        mirrored = mirror_latest_portable(output, latest)
+
+        assert mirrored == latest.resolve()
+        assert (latest / "Baluffo.exe").read_text(encoding="utf-8") == "new exe"
+        assert (latest / "BaluffoUpdater.exe").read_text(encoding="utf-8") == "new helper"
+        assert (latest / "ship" / "run-site.ps1").read_text(encoding="utf-8") == "new ship"
+        assert not (latest / "old.txt").exists()
+
+
+def test_mirror_latest_portable_refuses_missing_executable() -> None:
+    with workspace_tmpdir("build-portable-exe") as tmp:
+        output = Path(tmp) / "dist" / "baluffo-portable"
+        output.mkdir(parents=True, exist_ok=True)
+        with pytest.raises(RuntimeError, match="Portable executable missing"):
+            mirror_latest_portable(output, Path(tmp) / "_out" / "latest" / "build" / "portable")
 
 
 def test_parse_args_defaults_to_shared_app_version() -> None:
