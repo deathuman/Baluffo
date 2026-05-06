@@ -29,6 +29,7 @@ if (window.__baluffoDesktopMode) {
   try {
     initDesktopLocalDataClient();
     emitStartupProbeMetric(`${page}_local_data_api_ready`);
+    hydrateDesktopVersionLabels().catch(() => {});
     const desktopBootstrapWaitStartedAt =
       typeof performance !== "undefined" && typeof performance.now === "function"
         ? performance.now()
@@ -61,7 +62,6 @@ if (window.__baluffoDesktopMode) {
         firstSuccessfulBootstrapAttemptMs:
           desktopBootstrapStats?.firstSuccessfulAttemptMs ?? null
       });
-      hydrateDesktopVersionLabels().catch(() => {});
     }).catch(err => {
       console.error("[baluffo] Desktop local data init failed:", err);
       window.__baluffoInitErrors.push(err);

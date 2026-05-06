@@ -123,15 +123,26 @@ export function createRegistryLoadController({
 
   async function loadDiscoveryData(options = {}) {
     if (state.adminBusyState.discoveryLoad) return state.discoveryLoadPromise || null;
+    const nowMs = Date.now();
+    const skipIfFreshMs = Math.max(0, Number(options?.skipIfFreshMs || 0));
+    const lastLoadAtMs = Number(state.discoveryLastLoadSucceededAtMs || 0);
+    if (skipIfFreshMs > 0 && lastLoadAtMs > 0 && nowMs - lastLoadAtMs < skipIfFreshMs) {
+      return state.discoveryLoadPromise || null;
+    }
+    state.discoveryLastLoadStartedAtMs = nowMs;
     const renderToken = ++registryRenderToken;
+    const background = Boolean(options?.background);
+    const showPlaceholders = !background && options?.suppressPlaceholders !== true;
     setBusyFlag("discoveryLoad", true);
     state.discoveryLoadPromise = (async () => {
       try {
         const filterState = toAdminFilterState();
         const pendingPath = filterState.showZeroJobs ? "/registry/pending?includeHidden=1" : "/registry/pending";
-        setSourceTablePlaceholder(refs.adminPendingSourcesEl, "pending");
-        setSourceTablePlaceholder(refs.adminActiveSourcesEl, "active");
-        setSourceTablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
+        if (showPlaceholders) {
+          setSourceTablePlaceholder(refs.adminPendingSourcesEl, "pending");
+          setSourceTablePlaceholder(refs.adminActiveSourcesEl, "active");
+          setSourceTablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
+        }
         const reportPromise = getBridge("/discovery/report");
         const discoveryCandidatesPromise = getBridge("/discovery/candidates").catch(() => ({ candidates: [] }));
         const latestFetchReportPromise = resolveLatestFetchReport(options);
@@ -154,7 +165,7 @@ export function createRegistryLoadController({
               filterState.showZeroJobs ? rows : rows.filter(row => getSourceDiscoveryJobsCount(row) !== 0)
             );
             scheduleDeferredRender(() => {
-              if (renderToken !== registryRenderToken) return;
+              if (background || renderToken !== registryRenderToken) return;
               renderSourcesTable(refs.adminPendingSourcesEl, visibleRows, "pending");
               if (
                 refs.adminPendingSourcesEl
@@ -165,7 +176,7 @@ export function createRegistryLoadController({
                 refs.adminPendingSourcesEl.innerHTML = `<div class="no-results">${hiddenZeroJobsCount.toLocaleString()} pending sources have 0 discovery jobs and are hidden. Enable "Show zero-jobs pending sources" to view them.</div>`;
               }
             });
-            return { payload: pending, rows, hiddenZeroJobsCount };
+            return { payload: pending, rows, hiddenZeroJobsCount, visibleRows };
           });
         const activeRowsPromise = Promise.all([activePromise, discoveryCandidatesPromise, latestFetchReportPromise])
           .then(([active, discoveryCandidates, latestFetchReport]) => {
@@ -176,10 +187,10 @@ export function createRegistryLoadController({
             );
             const visibleRows = applySourceFilter(rows);
             scheduleDeferredRender(() => {
-              if (renderToken !== registryRenderToken) return;
+              if (background || renderToken !== registryRenderToken) return;
               renderSourcesTable(refs.adminActiveSourcesEl, visibleRows, "active");
             });
-            return { payload: active, rows };
+            return { payload: active, rows, visibleRows };
           });
         const rejectedRowsPromise = Promise.all([rejectedPromise, discoveryCandidatesPromise, latestFetchReportPromise])
           .then(([rejected, discoveryCandidates, latestFetchReport]) => {
@@ -190,10 +201,10 @@ export function createRegistryLoadController({
             );
             const visibleRows = applySourceFilter(rows);
             scheduleDeferredRender(() => {
-              if (renderToken !== registryRenderToken) return;
+              if (background || renderToken !== registryRenderToken) return;
               renderSourcesTable(refs.adminRejectedSourcesEl, visibleRows, "rejected");
             });
-            return { payload: rejected, rows };
+            return { payload: rejected, rows, visibleRows };
           });
         const [report, discoveryCandidates, pendingResult, activeResult, rejectedResult] = await Promise.all([
           reportPromise,
@@ -205,6 +216,9 @@ export function createRegistryLoadController({
         const pending = pendingResult.payload;
         const active = activeResult.payload;
         const rejected = rejectedResult.payload;
+        if (report && typeof report === "object" && !Array.isArray(report)) {
+          state.latestDiscoveryReportCache = report;
+        }
         const summary = report?.summary || {};
         const foundCount = Number(summary.foundEndpointCount ?? summary.probedCount ?? 0);
         const probedCount = Number(summary.probedCandidateCount ?? summary.probedCount ?? 0);
@@ -244,6 +258,30 @@ export function createRegistryLoadController({
         }
         const registryChanged = registrySignature !== String(state.discoveryRegistrySignature || "");
         state.discoveryRegistrySignature = registrySignature;
+        const shouldRenderTables = Boolean(
+          options?.forceRender
+          || registryChanged
+          || !state.discoveryTablesRendered
+        );
+        if (background && shouldRenderTables) {
+          scheduleDeferredRender(() => {
+            if (renderToken !== registryRenderToken) return;
+            renderSourcesTable(refs.adminPendingSourcesEl, pendingResult.visibleRows || [], "pending");
+            if (
+              refs.adminPendingSourcesEl
+              && !filterState.showZeroJobs
+              && (pendingResult.visibleRows || []).length === 0
+              && hiddenZeroJobsCount > 0
+            ) {
+              refs.adminPendingSourcesEl.innerHTML = `<div class="no-results">${hiddenZeroJobsCount.toLocaleString()} pending sources have 0 discovery jobs and are hidden. Enable "Show zero-jobs pending sources" to view them.</div>`;
+            }
+            renderSourcesTable(refs.adminActiveSourcesEl, activeResult.visibleRows || [], "active");
+            renderSourcesTable(refs.adminRejectedSourcesEl, rejectedResult.visibleRows || [], "rejected");
+            state.discoveryTablesRendered = true;
+          });
+        } else if (!background) {
+          state.discoveryTablesRendered = true;
+        }
         if (registryChanged && options?.logChanges !== false) {
           appendDiscoveryLog("Loading source discovery report and registries...");
           appendDiscoveryLog(
@@ -261,6 +299,7 @@ export function createRegistryLoadController({
           appendDiscoveryLog("Source discovery data loaded.", "success");
         }
         adminDispatch.dispatch({ type: adminActions.DISCOVERY_REFRESHED, payload: { at: new Date().toISOString() } });
+        state.discoveryLastLoadSucceededAtMs = Date.now();
         return {
           report,
           pendingRows,
@@ -278,6 +317,7 @@ export function createRegistryLoadController({
         return null;
       } finally {
         state.discoveryLoadPromise = null;
+        state.discoveryLastLoadCompletedAtMs = Date.now();
         setBusyFlag("discoveryLoad", false);
       }
     })();
@@ -299,9 +339,11 @@ export function createRegistryLoadController({
       return null;
     }
     const result = await loadDiscoveryData({
+      background: true,
       fetchReport,
       forceFetchReport: Boolean(fetchReport),
-      logChanges: false
+      logChanges: false,
+      suppressPlaceholders: true
     });
     if (result) {
       state[signatureKey] = signature;

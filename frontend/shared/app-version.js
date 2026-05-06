@@ -13,6 +13,12 @@ export async function hydrateDesktopVersionLabels(doc = document) {
   if (!versionEls.length) {
     return "";
   }
+  versionEls.forEach(el => {
+    if (!String(el.textContent || "").trim()) {
+      el.textContent = "Version";
+    }
+    el.hidden = false;
+  });
   if (!(await awaitDesktopBootstrap())) {
     return "";
   }

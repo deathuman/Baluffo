@@ -216,9 +216,13 @@ export function createAdminDiscoveryProgressController({
   }
 
   function refreshDiscoveryDataIfNeeded(report) {
+    if (report && typeof report === "object" && !Array.isArray(report)) {
+      state.latestDiscoveryReportCache = report;
+    }
     if (typeof loadDiscoveryData !== "function") return;
     const liveState = state.discoveryLiveProgressState;
     if (!liveState) return;
+    if (!String(report?.finishedAt || "").trim()) return;
     const summary = report?.summary || {};
     const signature = [
       String(report?.runId || ""),
@@ -232,7 +236,11 @@ export function createAdminDiscoveryProgressController({
     ].join("|");
     if (signature === liveState.registryRefreshSignature) return;
     liveState.registryRefreshSignature = signature;
-    loadDiscoveryData().catch(() => {});
+    loadDiscoveryData({
+      background: true,
+      logChanges: false,
+      suppressPlaceholders: true
+    }).catch(() => {});
   }
 
   return {

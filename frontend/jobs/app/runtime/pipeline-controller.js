@@ -66,6 +66,19 @@ function getBlockingTask(taskStatePayload, trackedRunId = "") {
   return activeTasks[0] || null;
 }
 
+function resetPipelineStatusPollFailures(jobsPipelineUiState) {
+  if (jobsPipelineUiState) {
+    jobsPipelineUiState.statusPollFailureCount = 0;
+  }
+}
+
+function markPipelineStatusPollFailure(jobsPipelineUiState) {
+  if (!jobsPipelineUiState) return 1;
+  const nextCount = Math.max(0, Number(jobsPipelineUiState.statusPollFailureCount || 0)) + 1;
+  jobsPipelineUiState.statusPollFailureCount = nextCount;
+  return nextCount;
+}
+
 export function createJobsPipelineController({
   refs,
   jobsPipelineUiState,
@@ -144,6 +157,7 @@ export function createJobsPipelineController({
         ? taskStateResult.value
         : { tasks: [] };
       jobsPipelineUiState.bridgeOnline = true;
+      resetPipelineStatusPollFailures(jobsPipelineUiState);
 
       const active = Boolean(payload?.active);
       const runId = String(payload?.runId || "");
@@ -205,6 +219,7 @@ export function createJobsPipelineController({
       }
       scheduleJobsPipelineStatusPoll(idlePollDelayMs);
     } catch {
+      const failureCount = markPipelineStatusPollFailure(jobsPipelineUiState);
       jobsPipelineUiState.bridgeOnline = false;
       jobsPipelineUiState.active = false;
       jobsPipelineUiState.pendingStart = false;
@@ -213,9 +228,9 @@ export function createJobsPipelineController({
       updateJobsPipelineUi({
         running: false,
         disabled: true,
-        buttonLabel: "Error",
+        buttonLabel: failureCount <= 1 ? "Checking..." : "Bridge Starting...",
         pipelinePayload: null,
-        isError: true
+        isError: false
       });
       scheduleJobsPipelineStatusPoll(idlePollDelayMs);
     }
@@ -256,6 +271,7 @@ export function createJobsPipelineController({
         throw new Error(String(payload?.error || "pipeline did not start"));
       }
       jobsPipelineUiState.bridgeOnline = true;
+      resetPipelineStatusPollFailures(jobsPipelineUiState);
       jobsPipelineUiState.active = true;
       jobsPipelineUiState.pendingStart = false;
       jobsPipelineUiState.runId = String(payload?.runId || "");

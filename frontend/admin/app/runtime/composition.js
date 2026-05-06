@@ -102,7 +102,12 @@ export function composeAdminControllers({
     escapeHtml,
     onBridgeStatusChange: status => {
       if (status === "online") {
-        registryController?.loadDiscoveryData().catch(() => {});
+        registryController?.loadDiscoveryData({
+          background: true,
+          logChanges: false,
+          skipIfFreshMs: 10000,
+          suppressPlaceholders: true
+        }).catch(() => {});
       }
     },
     loadDiscoveryData: (...args) => registryController.loadDiscoveryData(...args),

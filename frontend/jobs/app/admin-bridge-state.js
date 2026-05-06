@@ -14,8 +14,8 @@ export function applyJobsAdminBridgeState({
   buttonEl.classList.remove("online", "offline", "checking", "hidden");
 
   if (normalized === "checking") {
-    buttonEl.classList.add("checking", "hidden");
-    buttonEl.textContent = "Admin";
+    buttonEl.classList.add("checking");
+    buttonEl.textContent = label || "Admin Checking...";
     buttonEl.title = title || "Checking admin bridge status";
     buttonEl.disabled = true;
     buttonEl.setAttribute("aria-disabled", "true");

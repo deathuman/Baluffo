@@ -22,6 +22,7 @@ function maybeUnrefTimer(timer) {
 }
 
 const OPS_TAB_KEYS = new Set(["overview", "discovery", "source-policy", "registry-conflicts", "dedup"]);
+const LIVE_DISCOVERY_REGISTRY_REFRESH_MS = 30000;
 
 function getObjectValue(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -588,9 +589,14 @@ export function createOpsHealthController({
       const discoveryLive = liveTypes.has("discovery");
       if (!discoveryLive) {
         lastDiscoveryRegistryRefreshAtMs = 0;
-      } else if (typeof loadDiscoveryData === "function" && nowMs - lastDiscoveryRegistryRefreshAtMs >= 5000) {
+      } else if (typeof loadDiscoveryData === "function" && nowMs - lastDiscoveryRegistryRefreshAtMs >= LIVE_DISCOVERY_REGISTRY_REFRESH_MS) {
         lastDiscoveryRegistryRefreshAtMs = nowMs;
-        Promise.resolve(loadDiscoveryData())
+        Promise.resolve(loadDiscoveryData({
+          background: true,
+          logChanges: false,
+          skipIfFreshMs: 10000,
+          suppressPlaceholders: true
+        }))
           .then(() => {
             renderOpsTabBadges(refs, {
               health,

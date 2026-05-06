@@ -20,7 +20,8 @@ export function createJobsPipelineUiState() {
     active: false,
     pendingStart: false,
     bridgeOnline: false,
-    startedAt: ""
+    startedAt: "",
+    statusPollFailureCount: 0
   };
 }
 

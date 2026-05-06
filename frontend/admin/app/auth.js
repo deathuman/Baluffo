@@ -29,6 +29,8 @@ export function createAdminAuthController({
   logAdminError,
   _showToast
 }) {
+  let initialDiscoveryLoadStarted = false;
+
   function markStep(name, payload) {
     if (typeof markAdminStep === "function") {
       markAdminStep(name, payload);
@@ -46,7 +48,8 @@ export function createAdminAuthController({
     end,
     measure,
     errorContext,
-    task
+    task,
+    afterSettled = null
   }) {
     markStep(start);
     Promise.resolve()
@@ -59,7 +62,27 @@ export function createAdminAuthController({
         markStep(end, { ok: false, error: String(err?.message || err || "unknown error") });
         measureStep(measure, start, end, { ok: false });
         logAdminError(errorContext, err);
+      })
+      .finally(() => {
+        if (typeof afterSettled === "function") {
+          afterSettled();
+        }
       });
+  }
+
+  function startInitialDiscoveryLoad() {
+    if (initialDiscoveryLoadStarted) return;
+    initialDiscoveryLoadStarted = true;
+    runInitialTask({
+      start: "admin_discovery_fetch_start",
+      end: "admin_discovery_fetch_done",
+      measure: "admin_discovery_fetch",
+      errorContext: "Failed to load discovery data",
+      task: () => loadDiscoveryData({
+        forceRender: true,
+        skipIfFreshMs: 5000
+      })
+    });
   }
 
   function initAdminPage() {
@@ -92,13 +115,6 @@ export function createAdminAuthController({
       task: () => refreshOverview()
     });
     runInitialTask({
-      start: "admin_discovery_fetch_start",
-      end: "admin_discovery_fetch_done",
-      measure: "admin_discovery_fetch",
-      errorContext: "Failed to load discovery data",
-      task: () => loadDiscoveryData()
-    });
-    runInitialTask({
       start: "admin_discovery_config_fetch_start",
       end: "admin_discovery_config_fetch_done",
       measure: "admin_discovery_config_fetch",
@@ -110,7 +126,8 @@ export function createAdminAuthController({
       end: "admin_ops_health_fetch_done",
       measure: "admin_ops_health_fetch",
       errorContext: "Failed to load ops health data",
-      task: () => loadOpsHealthData()
+      task: () => loadOpsHealthData(),
+      afterSettled: startInitialDiscoveryLoad
     });
     runInitialTask({
       start: "admin_sync_fetch_start",
