@@ -421,6 +421,63 @@ def _demote_ids(
     return next_state, applied
 
 
+def _decision_status(status: str, apply_autopilot: bool) -> str:
+    if apply_autopilot or status != "auto_demote_applied":
+        return status
+    return "recommended_demotion"
+
+
+def _family_status(decisions: list[dict[str, Any]]) -> str:
+    ordered_statuses = (
+        "auto_demote_applied",
+        "recommended_demotion",
+        "keep_both",
+        "probe_failed",
+    )
+    statuses = {str(decision.get("status") or "") for decision in decisions}
+    return next((status for status in ordered_statuses if status in statuses), "needs_review")
+
+
+def _build_family_adjudication(
+    card: dict[str, Any],
+    *,
+    timeout_s: int,
+    apply_autopilot: bool,
+) -> tuple[dict[str, Any] | None, set[str]]:
+    probes = [_probe_row(row, timeout_s) for row in _as_list(card.get("rows"))]
+    if not probes:
+        return None, set()
+    best = _best_probe(probes)
+    target_ids: set[str] = set()
+    decisions = []
+    for probe in probes:
+        if probe.get("sourceId") == best.get("sourceId"):
+            continue
+        status, confidence, reason, overlap = _classify_loser(best, probe)
+        if status == "auto_demote_applied":
+            target_ids.add(_clean(probe.get("sourceId")))
+        decisions.append(
+            {
+                "sourceId": _clean(probe.get("sourceId")),
+                "status": _decision_status(status, apply_autopilot),
+                "confidence": confidence,
+                "reason": reason,
+                "overlap": overlap,
+            }
+        )
+    return (
+        {
+            "familyKey": _clean(card.get("familyKey")),
+            "status": _family_status(decisions),
+            "winnerSourceId": _clean(best.get("sourceId")),
+            "checkedSourceIds": [_clean(probe.get("sourceId")) for probe in probes],
+            "probes": [_public_probe(probe) for probe in probes],
+            "decisions": decisions,
+        },
+        target_ids,
+    )
+
+
 def run_registry_conflict_adjudication(
     api: Any, payload: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -438,49 +495,15 @@ def run_registry_conflict_adjudication(
         families: list[dict[str, Any]] = []
         target_ids: set[str] = set()
         for card in selected:
-            probes = [_probe_row(row, timeout_s) for row in _as_list(card.get("rows"))]
-            if not probes:
-                continue
-            best = _best_probe(probes)
-            decisions = []
-            for probe in probes:
-                if probe.get("sourceId") == best.get("sourceId"):
-                    continue
-                status, confidence, reason, overlap = _classify_loser(best, probe)
-                if status == "auto_demote_applied":
-                    target_ids.add(_clean(probe.get("sourceId")))
-                decisions.append(
-                    {
-                        "sourceId": _clean(probe.get("sourceId")),
-                        "status": status
-                        if apply_autopilot
-                        else (
-                            "recommended_demotion" if status == "auto_demote_applied" else status
-                        ),
-                        "confidence": confidence,
-                        "reason": reason,
-                        "overlap": overlap,
-                    }
-                )
-            family_status = "needs_review"
-            if any(decision["status"] == "auto_demote_applied" for decision in decisions):
-                family_status = "auto_demote_applied"
-            elif any(decision["status"] == "recommended_demotion" for decision in decisions):
-                family_status = "recommended_demotion"
-            elif any(decision["status"] == "keep_both" for decision in decisions):
-                family_status = "keep_both"
-            elif any(decision["status"] == "probe_failed" for decision in decisions):
-                family_status = "probe_failed"
-            families.append(
-                {
-                    "familyKey": _clean(card.get("familyKey")),
-                    "status": family_status,
-                    "winnerSourceId": _clean(best.get("sourceId")),
-                    "checkedSourceIds": [_clean(probe.get("sourceId")) for probe in probes],
-                    "probes": [_public_probe(probe) for probe in probes],
-                    "decisions": decisions,
-                }
+            family, family_target_ids = _build_family_adjudication(
+                card,
+                timeout_s=timeout_s,
+                apply_autopilot=apply_autopilot,
             )
+            if not family:
+                continue
+            families.append(family)
+            target_ids.update(family_target_ids)
         applied_ids: list[str] = []
         if apply_autopilot and target_ids:
             state, applied_ids = _demote_ids(state, target_ids, _now_iso())

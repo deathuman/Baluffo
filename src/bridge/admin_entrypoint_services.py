@@ -111,6 +111,100 @@ def _as_json_object(payload: Any) -> JsonObject:
     return payload if isinstance(payload, dict) else {}
 
 
+def _pipeline_smoke_report(
+    root_mod: Any,
+    smoke_runtime: dict[str, Any],
+    started_key: str,
+    ready_key: str,
+    run_id: str,
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    started_at = str(smoke_runtime.get(started_key) or "")
+    if not started_at:
+        return {}
+    finished_at = (
+        started_at
+        if root_mod.time.monotonic() >= float(smoke_runtime.get(ready_key) or 0.0)
+        else ""
+    )
+    return {
+        "runId": run_id,
+        "startedAt": started_at,
+        "finishedAt": finished_at,
+        "status": "ok" if finished_at else "running",
+        "summary": summary,
+    }
+
+
+def _build_pipeline_smoke_overrides(root_mod: Any) -> dict[str, Callable[..., Any]]:
+    smoke_runtime: dict[str, Any] = {
+        "discoveryStartedAt": "",
+        "discoveryReadyAt": 0.0,
+        "fetchStartedAt": "",
+        "fetchReadyAt": 0.0,
+    }
+
+    def pipeline_load_json_object(path: Any, default: Any) -> Any:
+        resolved = Path(path).resolve()
+        if resolved == Path(root_mod.DISCOVERY_REPORT_PATH).resolve():
+            return _pipeline_smoke_report(
+                root_mod,
+                smoke_runtime,
+                "discoveryStartedAt",
+                "discoveryReadyAt",
+                "discovery_smoke",
+                {},
+            ) or root_mod.load_json_object(path, default)
+        if resolved == Path(root_mod.JOBS_FETCH_REPORT_PATH).resolve():
+            return _pipeline_smoke_report(
+                root_mod,
+                smoke_runtime,
+                "fetchStartedAt",
+                "fetchReadyAt",
+                "fetch_smoke",
+                {"outputCount": 0},
+            ) or root_mod.load_json_object(path, default)
+        return root_mod.load_json_object(path, default)
+
+    def pipeline_trigger_discovery_task(**kwargs: Any) -> tuple[int, dict[str, Any]]:
+        started_at = root_mod.now_iso()
+        smoke_runtime["discoveryStartedAt"] = started_at
+        smoke_runtime["discoveryReadyAt"] = root_mod.time.monotonic() + 1.2
+        return 200, {"started": True, "startedAt": started_at, "runId": "discovery_smoke"}
+
+    def pipeline_start_fetcher_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        started_at = root_mod.now_iso()
+        smoke_runtime["fetchStartedAt"] = started_at
+        smoke_runtime["fetchReadyAt"] = root_mod.time.monotonic() + 1.2
+        return {"started": True, "startedAt": started_at, "runId": "fetch_smoke"}
+
+    def pipeline_start_sync_task(action: str, *, reason: str, automatic: bool) -> dict[str, Any]:
+        return {"started": True, "runId": "sync_smoke"}
+
+    def pipeline_wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> dict[str, Any]:
+        return {
+            "id": str(run_id or "sync_smoke"),
+            "type": "sync",
+            "status": "ok",
+            "finishedAt": root_mod.now_iso(),
+            "summary": {},
+        }
+
+    def pipeline_current_fetch_output_count() -> int:
+        report = pipeline_load_json_object(root_mod.JOBS_FETCH_REPORT_PATH, {})
+        summary = root_mod.summarize_fetch_report(root_mod.normalize_fetch_report_contract(report))
+        return int(summary.get("outputCount") or 0)
+
+    return {
+        "load_json_object": pipeline_load_json_object,
+        "trigger_discovery_task": pipeline_trigger_discovery_task,
+        "start_fetcher_task": pipeline_start_fetcher_task,
+        "start_sync_task": pipeline_start_sync_task,
+        "wait_for_sync_completion": pipeline_wait_for_sync_completion,
+        "current_fetch_output_count": pipeline_current_fetch_output_count,
+    }
+
+
 def _require_root() -> Any:
     if root is None:
         raise RuntimeError("admin bridge root is not bound")
@@ -320,90 +414,13 @@ def get_pipeline_service() -> _PipelineServiceLike:
             pipeline_current_fetch_output_count = root_mod._current_fetch_output_count
 
             if stub_success_mode:
-                smoke_runtime: dict[str, Any] = {
-                    "discoveryStartedAt": "",
-                    "discoveryReadyAt": 0.0,
-                    "fetchStartedAt": "",
-                    "fetchReadyAt": 0.0,
-                }
-
-                def pipeline_load_json_object(path: Any, default: Any) -> Any:
-                    resolved = Path(path).resolve()
-                    if resolved == Path(root_mod.DISCOVERY_REPORT_PATH).resolve():
-                        started_at = str(smoke_runtime.get("discoveryStartedAt") or "")
-                        if started_at:
-                            finished_at = (
-                                started_at
-                                if root_mod.time.monotonic()
-                                >= float(smoke_runtime.get("discoveryReadyAt") or 0.0)
-                                else ""
-                            )
-                            return {
-                                "runId": "discovery_smoke",
-                                "startedAt": started_at,
-                                "finishedAt": finished_at,
-                                "status": "ok" if finished_at else "running",
-                                "summary": {},
-                            }
-                    if resolved == Path(root_mod.JOBS_FETCH_REPORT_PATH).resolve():
-                        started_at = str(smoke_runtime.get("fetchStartedAt") or "")
-                        if started_at:
-                            finished_at = (
-                                started_at
-                                if root_mod.time.monotonic()
-                                >= float(smoke_runtime.get("fetchReadyAt") or 0.0)
-                                else ""
-                            )
-                            return {
-                                "runId": "fetch_smoke",
-                                "startedAt": started_at,
-                                "finishedAt": finished_at,
-                                "status": "ok" if finished_at else "running",
-                                "summary": {"outputCount": 0},
-                            }
-                    return root_mod.load_json_object(path, default)
-
-                def pipeline_trigger_discovery_task(**kwargs: Any) -> tuple[int, dict[str, Any]]:
-                    started_at = root_mod.now_iso()
-                    smoke_runtime["discoveryStartedAt"] = started_at
-                    smoke_runtime["discoveryReadyAt"] = root_mod.time.monotonic() + 1.2
-                    return 200, {
-                        "started": True,
-                        "startedAt": started_at,
-                        "runId": "discovery_smoke",
-                    }
-
-                def pipeline_start_fetcher_task(
-                    payload: dict[str, Any] | None = None,
-                ) -> dict[str, Any]:
-                    started_at = root_mod.now_iso()
-                    smoke_runtime["fetchStartedAt"] = started_at
-                    smoke_runtime["fetchReadyAt"] = root_mod.time.monotonic() + 1.2
-                    return {"started": True, "startedAt": started_at, "runId": "fetch_smoke"}
-
-                def pipeline_start_sync_task(
-                    action: str, *, reason: str, automatic: bool
-                ) -> dict[str, Any]:
-                    return {"started": True, "runId": "sync_smoke"}
-
-                def pipeline_wait_for_sync_completion(
-                    run_id: str, timeout_s: float = 900.0
-                ) -> dict[str, Any]:
-                    finished_at = root_mod.now_iso()
-                    return {
-                        "id": str(run_id or "sync_smoke"),
-                        "type": "sync",
-                        "status": "ok",
-                        "finishedAt": finished_at,
-                        "summary": {},
-                    }
-
-                def pipeline_current_fetch_output_count() -> int:
-                    report = pipeline_load_json_object(root_mod.JOBS_FETCH_REPORT_PATH, {})
-                    summary = root_mod.summarize_fetch_report(
-                        root_mod.normalize_fetch_report_contract(report)
-                    )
-                    return int(summary.get("outputCount") or 0)
+                smoke_overrides = _build_pipeline_smoke_overrides(root_mod)
+                pipeline_load_json_object = smoke_overrides["load_json_object"]
+                pipeline_trigger_discovery_task = smoke_overrides["trigger_discovery_task"]
+                pipeline_start_fetcher_task = smoke_overrides["start_fetcher_task"]
+                pipeline_start_sync_task = smoke_overrides["start_sync_task"]
+                pipeline_wait_for_sync_completion = smoke_overrides["wait_for_sync_completion"]
+                pipeline_current_fetch_output_count = smoke_overrides["current_fetch_output_count"]
 
             def pipeline_child_run_is_live(task_type: str, run_id: str) -> bool:
                 normalized_type = str(task_type or "").strip().lower()
