@@ -291,6 +291,152 @@ def test_save_json_atomic_compacts_json_journal_for_object_payload(
         assert sr.load_json_object(path, {}) == payload_three
 
 
+def test_required_json_snapshot_replace_retries_and_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        path = Path(tmp) / "source-approval-state.json"
+        payload = {
+            "approvedSinceLastRun": 1,
+            "updatedAt": "2026-04-01T00:00:00+00:00",
+        }
+        real_replace = srio.os.replace
+        calls = 0
+
+        monkeypatch.setattr(srio, "_WRITE_RETRY_ATTEMPTS", 3)
+        monkeypatch.setattr(srio, "_WRITE_RETRY_BACKOFF_BASE_S", 0)
+
+        def flaky_replace(src: object, dst: object) -> None:
+            nonlocal calls
+            calls += 1
+            if calls < 3:
+                raise PermissionError("locked")
+            real_replace(src, dst)
+
+        monkeypatch.setattr(srio.os, "replace", flaky_replace)
+
+        sr.save_json_atomic(path, payload)
+
+        assert calls == 3
+        assert path.exists()
+        assert sr.load_json_object(path, {}) == payload
+
+
+def test_required_json_snapshot_replace_persistent_failure_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        path = Path(tmp) / "source-approval-state.json"
+        payload = {
+            "approvedSinceLastRun": 1,
+            "updatedAt": "2026-04-01T00:00:00+00:00",
+        }
+
+        monkeypatch.setattr(srio, "_WRITE_RETRY_ATTEMPTS", 1)
+        monkeypatch.setattr(srio, "_WRITE_RETRY_BACKOFF_BASE_S", 0)
+        monkeypatch.setattr(
+            srio.os,
+            "replace",
+            lambda _src, _dst: (_ for _ in ()).throw(PermissionError("locked")),
+        )
+
+        with pytest.raises(PermissionError, match="locked"):
+            sr.save_json_atomic(path, payload)
+
+
+def test_best_effort_journal_compaction_failure_preserves_latest_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        root = Path(tmp)
+        path = root / "source-approval-state.json"
+        payload_one = {
+            "approvedSinceLastRun": 1,
+            "updatedAt": "2026-04-01T00:00:00+00:00",
+        }
+        payload_two = {
+            "approvedSinceLastRun": 2,
+            "updatedAt": "2026-04-01T00:01:00+00:00",
+        }
+        real_replace = srio.os.replace
+
+        monkeypatch.setattr(srio, "_JSON_JOURNAL_COMPACT_MAX_BYTES", 1)
+        monkeypatch.setattr(srio, "_WRITE_RETRY_ATTEMPTS", 1)
+        monkeypatch.setattr(srio, "_WRITE_RETRY_BACKOFF_BASE_S", 0)
+
+        def fail_journal_compaction_replace(src: object, dst: object) -> None:
+            if Path(dst).suffix == ".jsonl":
+                raise PermissionError("journal locked")
+            real_replace(src, dst)
+
+        monkeypatch.setattr(srio.os, "replace", fail_journal_compaction_replace)
+
+        sr.save_json_atomic(path, payload_one)
+        sr.save_json_atomic(path, payload_two)
+
+        journal_path = root / "source-approval-state.jsonl"
+        assert journal_path.read_text(encoding="utf-8").count("\n") == 2
+        assert sr.load_json_object(path, {}) == payload_two
+
+
+def test_required_journal_append_retries_and_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        path = Path(tmp) / "source-approval-state.json"
+        journal_path = Path(tmp) / "source-approval-state.jsonl"
+        payload = {
+            "approvedSinceLastRun": 1,
+            "updatedAt": "2026-04-01T00:00:00+00:00",
+        }
+        real_open = Path.open
+        calls = 0
+
+        monkeypatch.setattr(srio, "_WRITE_RETRY_ATTEMPTS", 2)
+        monkeypatch.setattr(srio, "_WRITE_RETRY_BACKOFF_BASE_S", 0)
+
+        def flaky_open(self: Path, *args: object, **kwargs: object):
+            nonlocal calls
+            if self == journal_path:
+                calls += 1
+                if calls == 1:
+                    raise PermissionError("journal locked")
+            return real_open(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "open", flaky_open)
+
+        sr.save_json_atomic(path, payload)
+
+        assert calls == 2
+        assert sr.load_json_object(path, {}) == payload
+
+
+def test_required_journal_append_persistent_failure_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with workspace_tmpdir("source-registry") as tmp:
+        path = Path(tmp) / "source-approval-state.json"
+        journal_path = Path(tmp) / "source-approval-state.jsonl"
+        payload = {
+            "approvedSinceLastRun": 1,
+            "updatedAt": "2026-04-01T00:00:00+00:00",
+        }
+        real_open = Path.open
+
+        monkeypatch.setattr(srio, "_WRITE_RETRY_ATTEMPTS", 1)
+        monkeypatch.setattr(srio, "_WRITE_RETRY_BACKOFF_BASE_S", 0)
+
+        def locked_journal_open(self: Path, *args: object, **kwargs: object):
+            if self == journal_path:
+                raise PermissionError("journal locked")
+            return real_open(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "open", locked_journal_open)
+
+        with pytest.raises(PermissionError, match="journal locked"):
+            sr.save_json_atomic(path, payload)
+
+
 def test_registry_loads_legacy_monolithic_rows_without_sidecar() -> None:
     with workspace_tmpdir("source-registry") as tmp:
         root = Path(tmp)

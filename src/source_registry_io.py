@@ -48,6 +48,10 @@ _GZIP_REGISTRY_NAMES = {
 
 _JSON_JOURNAL_SCHEMA_VERSION = 1
 _JSON_JOURNAL_COMPACT_MAX_BYTES = 1_048_576
+_WRITE_POLICY_REQUIRED = "required"
+_WRITE_POLICY_BEST_EFFORT = "best_effort"
+_WRITE_RETRY_ATTEMPTS = 18
+_WRITE_RETRY_BACKOFF_BASE_S = 0.012
 
 
 def ensure_data_dir() -> None:
@@ -278,6 +282,60 @@ def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[
         return fallback
 
 
+def _sleep_after_write_failure(attempt: int) -> None:
+    time.sleep(_WRITE_RETRY_BACKOFF_BASE_S * (attempt + 1))
+
+
+def _finish_write_failure(error: OSError, policy: str) -> bool:
+    if policy == _WRITE_POLICY_BEST_EFFORT:
+        return False
+    raise error
+
+
+def _run_write_with_retries(operation, *, policy: str = _WRITE_POLICY_REQUIRED) -> bool:
+    last_error: OSError | None = None
+    for attempt in range(_WRITE_RETRY_ATTEMPTS):
+        try:
+            operation()
+            return True
+        except OSError as exc:
+            last_error = exc
+            _sleep_after_write_failure(attempt)
+    if last_error is None:
+        return True
+    return _finish_write_failure(last_error, policy)
+
+
+def _replace_path_with_retry(
+    tmp: Path,
+    target: Path,
+    *,
+    policy: str = _WRITE_POLICY_REQUIRED,
+) -> bool:
+    last_error: OSError | None = None
+    for attempt in range(_WRITE_RETRY_ATTEMPTS):
+        try:
+            os.replace(tmp, target)
+            return True
+        except OSError as exc:
+            last_error = exc
+            _sleep_after_write_failure(attempt)
+    if (
+        last_error is not None
+        and policy == _WRITE_POLICY_REQUIRED
+        and target.exists()
+    ):
+        try:
+            target.unlink()
+            os.replace(tmp, target)
+            return True
+        except OSError as exc:
+            last_error = exc
+    if last_error is None:
+        return True
+    return _finish_write_failure(last_error, policy)
+
+
 def _write_json_payload_atomic(path: Path, payload: Any) -> None:
     path = Path(path)
     target = _gzip_path_for(path) if _uses_gzip_storage(path) else path
@@ -292,18 +350,7 @@ def _write_json_payload_atomic(path: Path, payload: Any) -> None:
                 handle.write(serialized)
         else:
             tmp.write_text(serialized, encoding="utf-8")
-        last_error: Exception | None = None
-        for attempt in range(18):
-            try:
-                os.replace(tmp, target)
-                last_error = None
-                break
-            except PermissionError as exc:
-                last_error = exc
-                # Windows can transiently lock the destination while another thread replaces it.
-                time.sleep(0.012 * (attempt + 1))
-        if last_error is not None:
-            raise last_error
+        _replace_path_with_retry(tmp, target, policy=_WRITE_POLICY_REQUIRED)
     finally:
         try:
             if tmp.exists():
@@ -357,33 +404,19 @@ def _json_journal_record_text(payload: Any) -> str:
     )
 
 
-def _write_text_atomic(path: Path, text: str) -> None:
+def _write_text_atomic(
+    path: Path,
+    text: str,
+    *,
+    policy: str = _WRITE_POLICY_REQUIRED,
+) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     ensure_data_dir()
     tmp = path.with_suffix(path.suffix + f".{os.getpid()}.{time.time_ns()}.tmp")
     try:
         tmp.write_text(text, encoding="utf-8")
-        last_error: Exception | None = None
-        for attempt in range(18):
-            try:
-                os.replace(tmp, path)
-                last_error = None
-                break
-            except PermissionError as exc:
-                last_error = exc
-                time.sleep(0.012 * (attempt + 1))
-        if last_error is not None and path.exists():
-            # On Windows, a short lock can persist after retries, so attempt a final
-            # best-effort recovery path that removes and replaces the destination.
-            try:
-                path.unlink()
-                os.replace(tmp, path)
-                last_error = None
-            except OSError:
-                pass
-        if last_error is not None:
-            raise last_error
+        _replace_path_with_retry(tmp, path, policy=policy)
     finally:
         try:
             if tmp.exists():
@@ -396,8 +429,13 @@ def _append_json_journal_record(path: Path, payload: Any) -> None:
     journal_path = _json_journal_path_for(path)
     journal_path.parent.mkdir(parents=True, exist_ok=True)
     ensure_data_dir()
-    with journal_path.open("a", encoding="utf-8") as handle:
-        handle.write(_json_journal_record_text(payload))
+    record_text = _json_journal_record_text(payload)
+
+    def _append_record() -> None:
+        with journal_path.open("a", encoding="utf-8") as handle:
+            handle.write(record_text)
+
+    _run_write_with_retries(_append_record, policy=_WRITE_POLICY_REQUIRED)
 
 
 def _compact_json_journal_if_needed(path: Path, payload: Any) -> None:
@@ -410,12 +448,11 @@ def _compact_json_journal_if_needed(path: Path, payload: Any) -> None:
             return
     except OSError:
         return
-    try:
-        _write_text_atomic(journal_path, _json_journal_record_text(payload))
-    except OSError:
-        # Journal compaction is best-effort; if the destination is locked by another process,
-        # keep the existing journal file so we avoid hard-failing discovery.
-        return
+    _write_text_atomic(
+        journal_path,
+        _json_journal_record_text(payload),
+        policy=_WRITE_POLICY_BEST_EFFORT,
+    )
 
 
 def _load_json_journal_record_payload(record: Any) -> Any | None:
