@@ -186,12 +186,8 @@ SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION = "auto_demote_static_normalized_url_al
 SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_LABEL = "Auto-demote static URL alias"
 SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION = "auto_demote_static_same_host_listing_variant"
 SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_LABEL = "Auto-demote static listing variant"
-SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_ACTION = (
-    "auto_demote_static_generated_listing_variants"
-)
-SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_LABEL = (
-    "Auto-demote generated static listing variants"
-)
+SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_ACTION = "auto_demote_static_generated_listing_variants"
+SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_LABEL = "Auto-demote generated static listing variants"
 SAFE_AUTO_DEMOTE_ACTIONS = {
     SAFE_AUTO_DEMOTE_ACTION,
     SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION,

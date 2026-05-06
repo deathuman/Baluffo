@@ -1163,8 +1163,7 @@ def _kept_output_host_breakdown(
     for row in jobs:
         if clean_text(row.get("source")) != source_name:
             bundle_match = any(
-                isinstance(bundle_row, dict)
-                and clean_text(bundle_row.get("source")) == source_name
+                isinstance(bundle_row, dict) and clean_text(bundle_row.get("source")) == source_name
                 for bundle_row in as_json_list(row.get("sourceBundle"))
             )
             if not bundle_match:
@@ -1278,7 +1277,9 @@ def _static_registry_scope_conflicts_section(
         ]
         expected_kept_hosts = {listing_host, *off_hosts}
         unexpected_kept_hosts = [
-            host for host in kept_hosts if host and host != "unknown" and host not in expected_kept_hosts
+            host
+            for host in kept_hosts
+            if host and host != "unknown" and host not in expected_kept_hosts
         ]
         classification, recommended_action, reasons = _static_scope_conflict_classification(
             covered_hosts=covered_hosts,
@@ -1318,9 +1319,7 @@ def _static_registry_scope_conflicts_section(
             and covered_hosts
             and not uncovered_hosts
         ):
-            remove_pages = [
-                page for page in source_pages if _url_host(page) in set(covered_hosts)
-            ]
+            remove_pages = [page for page in source_pages if _url_host(page) in set(covered_hosts)]
             keep_pages = [page for page in source_pages if page not in set(remove_pages)]
             patch_proposals.append(
                 {
@@ -3098,8 +3097,7 @@ def _build_sections(
         **overlap_counts,
         "redundantProposalCount": int(proposals.get("totalProposalCount") or 0),
         "staticRegistryScopeConflictCount": int(
-            as_json_object(static_registry_scope_conflicts.get("summary")).get("conflictCount")
-            or 0
+            as_json_object(static_registry_scope_conflicts.get("summary")).get("conflictCount") or 0
         ),
         "staticRegistryScopeShadowedCrossHostCount": int(
             as_json_object(static_registry_scope_conflicts.get("summary")).get(
