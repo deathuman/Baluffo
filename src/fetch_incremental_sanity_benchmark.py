@@ -638,7 +638,10 @@ def _kept_output_host_breakdown(report: dict[str, object], source_name: str) -> 
         if str(row.get("source") or "") != source_name:
             bundle_matches = False
             for bundle_row in _as_list(row.get("sourceBundle")):
-                if isinstance(bundle_row, dict) and str(bundle_row.get("source") or "") == source_name:
+                if (
+                    isinstance(bundle_row, dict)
+                    and str(bundle_row.get("source") or "") == source_name
+                ):
                     bundle_matches = True
                     break
             if not bundle_matches:
@@ -932,7 +935,9 @@ def _source_decision_trend(
     previous_payload: dict[str, object] | None,
 ) -> dict[str, object]:
     previous_rows = (
-        _as_list(previous_payload.get("sourceDecisionMatrix")) if isinstance(previous_payload, dict) else []
+        _as_list(previous_payload.get("sourceDecisionMatrix"))
+        if isinstance(previous_payload, dict)
+        else []
     )
     previous_by_name = {
         str(row.get("name") or ""): row for row in previous_rows if isinstance(row, dict)
@@ -950,7 +955,10 @@ def _source_decision_trend(
         current_decision_type = str(row.get("decisionType") or "")
         previous_decision_type = str(previous.get("decisionType") or "") if previous else ""
         decision_type_changed = bool(previous) and current_decision_type != previous_decision_type
-        if current_decision_type == "slow_productive_static" and previous_decision_type == "slow_productive_static":
+        if (
+            current_decision_type == "slow_productive_static"
+            and previous_decision_type == "slow_productive_static"
+        ):
             stable_slow_productive += 1
         if decision_type_changed:
             changed_decision_type += 1
@@ -1152,9 +1160,7 @@ def main(argv: list[str] | None = None) -> int:
         encoding="utf-8",
     )
     (output_dir / "source-decision-trend.md").write_text(
-        _render_source_decision_trend_markdown(
-            dict(payload.get("sourceDecisionTrend") or {})
-        ),
+        _render_source_decision_trend_markdown(dict(payload.get("sourceDecisionTrend") or {})),
         encoding="utf-8",
     )
     print(json.dumps(payload, indent=2, ensure_ascii=True))
