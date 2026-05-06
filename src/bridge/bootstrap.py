@@ -117,6 +117,18 @@ def build_bridge_api(
     )
 
 
-def run_bridge_server(*, api: BridgeApi, host: str, port: int) -> int:
+def run_bridge_server(
+    *,
+    api: BridgeApi,
+    host: str,
+    port: int,
+    on_started: Callable[[], Any] | None = None,
+) -> int:
     handler_cls = make_handler(api=api)
-    return run_http_server(api=api, host=host, port=port, handler_cls=handler_cls)
+    return run_http_server(
+        api=api,
+        host=host,
+        port=port,
+        handler_cls=handler_cls,
+        on_started=on_started,
+    )

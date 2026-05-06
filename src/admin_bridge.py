@@ -478,6 +478,7 @@ _sync_guard = admin_task_runtime_mod.sync_guard
 sync_pull_sources = admin_task_runtime_mod.sync_pull_sources
 sync_push_sources = admin_task_runtime_mod.sync_push_sources
 startup_sync_pull = admin_task_runtime_mod.startup_sync_pull
+schedule_startup_sync_pull = admin_task_runtime_mod.schedule_startup_sync_pull
 sync_task_running = admin_task_runtime_mod.sync_task_running
 wait_for_sync_tasks = admin_task_runtime_mod.wait_for_sync_tasks
 _mark_discovery_sync_finished = admin_task_runtime_mod.mark_discovery_sync_finished
@@ -549,11 +550,11 @@ def main() -> int:
     configure_runtime_paths(config)
     refresh_sync_config()
     ensure_active_registry()
-    startup_sync_pull()
     return bridge_bootstrap.run_bridge_server(
         api=build_bridge_api(config),
         host=config.host,
         port=config.port,
+        on_started=schedule_startup_sync_pull,
     )
 
 

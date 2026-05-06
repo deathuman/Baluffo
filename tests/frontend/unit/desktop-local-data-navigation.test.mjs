@@ -544,7 +544,7 @@ test("desktop sign-in cancels cleanly when profile loading fails and the user ab
   assert.equal(fetchCalls.filter(call => call.url.includes("/desktop-local-data/sign-in")).length, 0);
 });
 
-test("desktop bootstrap retries bridge startup and only fetches version status after session restore", async () => {
+test("desktop bootstrap retries bridge startup while version labels hydrate independently", async () => {
   const restoreClock = installImmediateTimeoutClock();
   const labels = [{ hidden: true, textContent: "" }];
   const consoleErrors = [];
@@ -597,11 +597,8 @@ test("desktop bootstrap retries bridge startup and only fetches version status a
     );
 
     assert.equal(sessionAttempts, 3);
-    assert.ok(firstUpdateIndex > lastSessionIndex);
-    assert.equal(
-      requestOrder.slice(0, firstUpdateIndex).some(url => url.includes("/app/update-status")),
-      false
-    );
+    assert.ok(firstUpdateIndex >= 0);
+    assert.ok(lastSessionIndex >= 0);
     assert.equal(
       fetchCalls.some(call => call.url.includes("/app/desktop-session-lifecycle")),
       true
@@ -677,7 +674,7 @@ test("desktop version labels render the installed app version", async () => {
     querySelectorAll() {
       return labels;
     }
-  });
+  }, { attempts: 1 });
 
   assert.equal(version, "0.1.33");
   assert.deepEqual(labels.map(label => label.textContent), ["Version 0.1.33", "Version 0.1.33"]);

@@ -588,6 +588,54 @@ class SyncService:
             self.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
             self._bridge_log("warn", "sync_startup_pull_failed", error=str(exc))
 
+    def schedule_startup_sync_pull(self) -> dict[str, Any]:
+        """Schedule startup sync pull without blocking bridge startup."""
+        config_status = self._source_sync.config_status(self.refresh_sync_config())
+        if not config_status.get("enabled"):
+            return {
+                "started": False,
+                "task": "source_sync",
+                "action": "pull",
+                "reason": "disabled",
+            }
+        if not config_status.get("ready"):
+            missing = ",".join(config_status.get("missing") or [])
+            self._bridge_log(
+                "warn", "sync_startup_skipped", reason="misconfigured", missing=missing
+            )
+            return {
+                "started": False,
+                "task": "source_sync",
+                "action": "pull",
+                "reason": "misconfigured",
+                "missing": config_status.get("missing") or [],
+            }
+        try:
+            result = self.start_sync_task("pull", reason="startup", automatic=True)
+        except Exception as exc:  # noqa: BLE001
+            self.set_sync_status(action="pull", result="error", error=str(exc), pulled=False)
+            self._bridge_log("warn", "sync_startup_schedule_failed", error=str(exc))
+            return {
+                "started": False,
+                "task": "source_sync",
+                "action": "pull",
+                "reason": "startup",
+                "error": str(exc),
+            }
+        if bool(result.get("started")):
+            self._bridge_log(
+                "info",
+                "sync_startup_pull_scheduled",
+                runId=str(result.get("runId") or ""),
+            )
+        else:
+            self._bridge_log(
+                "info",
+                "sync_startup_pull_not_started",
+                reason=str(result.get("error") or result.get("reason") or ""),
+            )
+        return result
+
     # === Task Management ===
 
     def _reconcile_sync_history(self) -> None:
