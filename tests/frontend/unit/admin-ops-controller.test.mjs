@@ -342,7 +342,7 @@ test("admin ops controller quietly auto-attaches active fetch and discovery task
   assert.ok(calls.includes("discoveryReport:true"));
 });
 
-test("admin ops controller retains current live rows across one empty task-state sample and clears on the second", async () => {
+test("admin ops controller trusts empty lifecycle task-state samples immediately", async () => {
   const state = {
     latestOpsHealthCache: null,
     latestOpsHistoryPayload: null,
@@ -435,7 +435,7 @@ test("admin ops controller retains current live rows across one empty task-state
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
-  assert.deepEqual(renderedCurrentCounts, [1, 1, 0]);
+  assert.deepEqual(renderedCurrentCounts, [1, 0, 0]);
   assert.equal(state.adminBusyState.liveFetchRunning, false);
 });
 

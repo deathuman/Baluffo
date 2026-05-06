@@ -71,6 +71,7 @@ test("admin ops history: completed run details show warning, failure, and capped
   });
 
   assert.match(historyEl.innerHTML, /admin-ops-history-row/);
+  assert.match(historyEl.innerHTML, /Progress \/ Summary/);
   assert.match(historyEl.innerHTML, /admin-ops-run-detail/);
   assert.match(historyEl.innerHTML, /Fetcher details/i);
   assert.match(historyEl.innerHTML, /completed with warnings/i);

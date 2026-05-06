@@ -83,47 +83,18 @@ export function createOpsTaskStateController({
     state.waitingForTaskState = false;
   }
 
-  function mergeRetainedTaskStatePayload(candidatePayload, historyRuns) {
+  function mergeRetainedTaskStatePayload(candidatePayload, _historyRuns) {
     const candidate = normalizeTaskStatePayload(candidatePayload);
-    const previous = normalizeTaskStatePayload(state.latestTaskStatePayload);
-    const mergedRows = [...getTaskStateRows(candidate)];
     const candidateActiveRows = getActiveTaskRows(candidate);
     const candidateActiveTypes = new Set(candidateActiveRows.map(getTaskType).filter(Boolean));
-    const previousActiveRows = getActiveTaskRows(previous);
-    const previousMissingStreaks = (
-      state.taskStateMissingStreakByType && typeof state.taskStateMissingStreakByType === "object"
-    )
-      ? state.taskStateMissingStreakByType
-      : {};
     const nextMissingStreaks = {};
 
     candidateActiveTypes.forEach(type => {
       nextMissingStreaks[type] = 0;
     });
 
-    previousActiveRows.forEach(row => {
-      const taskType = getTaskType(row);
-      if (!taskType || candidateActiveTypes.has(taskType)) return;
-      if (hasTerminalHistoryEvidence(row, historyRuns)) {
-        nextMissingStreaks[taskType] = 0;
-        return;
-      }
-      const nextMissingCount = Math.max(
-        0,
-        Number(previousMissingStreaks[taskType]) || 0
-      ) + 1;
-      nextMissingStreaks[taskType] = nextMissingCount;
-      if (nextMissingCount < 2) {
-        mergedRows.push(row);
-      }
-    });
-
     state.taskStateMissingStreakByType = nextMissingStreaks;
-    return rememberTaskStatePayload({
-      ...candidate,
-      tasks: mergedRows,
-      count: mergedRows.length
-    });
+    return rememberTaskStatePayload(candidate);
   }
 
   function resolveTaskStatePayload(taskStateResult, historyRuns) {

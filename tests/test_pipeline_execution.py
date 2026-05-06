@@ -1466,7 +1466,7 @@ def test_run_worker_errors_when_fetch_owner_goes_inactive_without_terminal_repor
 
     assert status["active"] is False
     assert status["stage"] == "error"
-    assert "did not finish within timeout" in status["error"]
+    assert "had no live evidence before completion" in status["error"]
     assert len(waits) == 1200
     assert upserts[-1]["status"] == "error"
 

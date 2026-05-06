@@ -1,6 +1,6 @@
 # Task Lifecycle Ledger Plan
 
-> - **Status:** Active plan
+> - **Status:** Implemented transition slice
 > - **Use this when:** fixing Admin Current Runs / Recent Runs contradictions, pipeline child-task ownership, task heartbeat/orphan behavior, or long-running discovery/fetch lifecycle bugs
 > - **Canonical for:** the planned single-source-of-truth task lifecycle refactor
 > - **Not canonical for:** current route payload contracts, report schemas, fetch/discovery output contracts, or release procedures
@@ -58,6 +58,23 @@ Required invariants:
 - Reports may enrich `progress` and `summary`, but reports must not independently decide lifecycle state.
 - A running parent pipeline can own child `discovery`, `fetch`, and `sync` rows.
 - A child task can become `orphaned` only after its direct owner and parent owner are both inactive.
+
+## Implementation progress
+
+Implemented transition slice:
+
+- Added `TaskLifecycleService` backed by `data/admin-task-lifecycle.json`.
+- Added bridge facade/path wiring and cleanup reset support.
+- Wired fetch, discovery, sync, and pipeline launch/terminal paths into the lifecycle ledger.
+- Added explicit pipeline child attachment through `parentRunId`.
+- Switched `/ops/task-state` and `/ops/history` to prefer lifecycle rows while preserving legacy fallback.
+- Simplified Admin Current Runs so the frontend trusts backend lifecycle rows and no longer retains missing active rows for one extra sample.
+
+Remaining hardening:
+
+- Expand real-process lifecycle finalization coverage for unusual child-process exits.
+- Run long real discovery/fetch smoke beyond the old nominal timeout window.
+- Remove legacy fallback after one transition release.
 
 ## Implementation plan
 

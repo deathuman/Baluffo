@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 import uuid
 from collections.abc import Callable
 from contextlib import nullcontext
@@ -312,6 +314,233 @@ class TaskLaunchApi:
             "BALUFFO_UNCAPPED_DEEP_STATIC": "1",
         }
 
+    def _active_fetch_start_response(self) -> dict[str, Any] | None:
+        active_metadata = get_active_task_metadata(
+            "fetch",
+            load_json_object=self._deps.load_json_object,
+            task_state_path=self._paths.task_state,
+            pid_is_running=self._deps.pid_is_running,
+        )
+        if not active_metadata:
+            return None
+        response = build_duplicate_start_payload("jobs_fetcher", "fetch", active_metadata)
+        self._deps.bridge_log(
+            "info",
+            "task_start_attached_existing",
+            task="jobs_fetcher",
+            taskType="fetch",
+            runId=str(response.get("runId") or ""),
+            pid=int(response.get("pid") or 0),
+        )
+        return response
+
+    def _fetch_report_shell(
+        self, *, run_id: str, started_at: str, schema_version: int
+    ) -> dict[str, Any]:
+        return {
+            "runId": run_id,
+            "schemaVersion": schema_version,
+            "startedAt": started_at,
+            "finishedAt": "",
+            "runtime": {
+                "lifecycle": {
+                    "owner": "fetch_report",
+                    "heartbeatAt": started_at,
+                }
+            },
+            "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
+            "sources": [],
+            "outputs": {"report": str(self._paths.jobs_fetch_report)},
+        }
+
+    def _write_fetch_launch_failure(
+        self,
+        *,
+        run_id: str,
+        started_at: str,
+        preset: str,
+        spawn_args: list[str],
+        error: str,
+        report_shell: dict[str, Any],
+        append_run_history: Callable[[dict[str, Any]], dict[str, Any]],
+        normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
+        prune_started_rows_for_type: Callable[..., None],
+        save_json_atomic: Callable[[Path, Any], None],
+        fail_lifecycle_run: Callable[..., dict[str, Any]],
+    ) -> dict[str, Any]:
+        finished_at = self._deps.now_iso()
+        failure_summary = {"error": error, "failedSources": 1, "outputCount": 0}
+        fail_lifecycle_run(
+            run_id,
+            "fetch",
+            finished_at=finished_at,
+            terminal_reason="launch_failed",
+            summary=failure_summary,
+        )
+        save_json_atomic(
+            self._paths.jobs_fetch_report,
+            normalize_fetch_report_contract(
+                {
+                    **report_shell,
+                    "finishedAt": finished_at,
+                    "runtime": {
+                        "lifecycle": {
+                            "owner": "fetch_report",
+                            "heartbeatAt": finished_at,
+                        }
+                    },
+                    "summary": {**failure_summary, "sourceCount": 0},
+                    "sources": [
+                        {
+                            "name": "jobs_fetcher.py",
+                            "status": "error",
+                            "error": error,
+                        }
+                    ],
+                }
+            ),
+        )
+        prune_started_rows_for_type("fetch", finished_at=finished_at)
+        append_run_history(
+            {
+                "id": run_id,
+                "runId": run_id,
+                "type": "fetch",
+                "status": "error",
+                "startedAt": started_at,
+                "finishedAt": finished_at,
+                "durationMs": 0,
+                "summary": failure_summary,
+            }
+        )
+        self._deps.bridge_log(
+            "error",
+            "task_start_failed",
+            runId=run_id,
+            task="jobs_fetcher",
+            preset=preset,
+            error=error,
+        )
+        return {
+            "started": False,
+            "runId": run_id,
+            "task": "jobs_fetcher",
+            "preset": preset,
+            "args": spawn_args,
+            "startedAt": started_at,
+            "error": error,
+        }
+
+    def _reset_fetch_approval_state(
+        self,
+        *,
+        load_json_object: Callable[[Path, Any], Any],
+        save_json_atomic: Callable[[Path, Any], None],
+    ) -> None:
+        approval = load_json_object(self._paths.approval_state, {"approvedSinceLastRun": 0})
+        if not isinstance(approval, dict):
+            approval = {"approvedSinceLastRun": 0}
+        approval["approvedSinceLastRun"] = 0
+        save_json_atomic(self._paths.approval_state, approval)
+
+    def _fetch_summary_is_failed(self, summary: dict[str, Any]) -> bool:
+        failed = int(summary.get("failedSources") or 0)
+        return bool(failed > 0 or str(summary.get("error") or "").strip())
+
+    def _close_fetch_lifecycle_from_report(
+        self,
+        *,
+        run_id: str,
+        normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
+        load_json_object: Callable[[Path, Any], Any],
+        finish_lifecycle_run: Callable[..., dict[str, Any]],
+        fail_lifecycle_run: Callable[..., dict[str, Any]],
+    ) -> bool:
+        report = normalize_fetch_report_contract(
+            load_json_object(self._paths.jobs_fetch_report, {})
+        )
+        finished = str(report.get("finishedAt") or "").strip()
+        if str(report.get("runId") or "").strip() != run_id or not finished:
+            return False
+        summary = dict(report.get("summary") or {})
+        if self._fetch_summary_is_failed(summary):
+            fail_lifecycle_run(
+                run_id,
+                "fetch",
+                finished_at=finished,
+                terminal_reason="failed",
+                summary=summary,
+            )
+            return True
+        finish_lifecycle_run(
+            run_id,
+            "fetch",
+            finished_at=finished,
+            terminal_reason="completed",
+            summary=summary,
+        )
+        return True
+
+    def _watch_fetch_lifecycle(
+        self,
+        *,
+        run_id: str,
+        pid: int,
+        normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
+        load_json_object: Callable[[Path, Any], Any],
+        finish_lifecycle_run: Callable[..., dict[str, Any]],
+        fail_lifecycle_run: Callable[..., dict[str, Any]],
+    ) -> None:
+        while self._deps.pid_is_running(int(pid)):
+            if self._close_fetch_lifecycle_from_report(
+                run_id=run_id,
+                normalize_fetch_report_contract=normalize_fetch_report_contract,
+                load_json_object=load_json_object,
+                finish_lifecycle_run=finish_lifecycle_run,
+                fail_lifecycle_run=fail_lifecycle_run,
+            ):
+                return
+            time.sleep(2.0)
+        if self._close_fetch_lifecycle_from_report(
+            run_id=run_id,
+            normalize_fetch_report_contract=normalize_fetch_report_contract,
+            load_json_object=load_json_object,
+            finish_lifecycle_run=finish_lifecycle_run,
+            fail_lifecycle_run=fail_lifecycle_run,
+        ):
+            return
+        fail_lifecycle_run(
+            run_id,
+            "fetch",
+            finished_at=self._deps.now_iso(),
+            terminal_reason="owner_inactive_without_terminal_report",
+            summary={"error": "owner_inactive_without_terminal_report"},
+        )
+
+    def _start_fetch_lifecycle_watch(
+        self,
+        *,
+        run_id: str,
+        pid: int,
+        normalize_fetch_report_contract: Callable[[dict[str, Any]], dict[str, Any]],
+        load_json_object: Callable[[Path, Any], Any],
+        finish_lifecycle_run: Callable[..., dict[str, Any]],
+        fail_lifecycle_run: Callable[..., dict[str, Any]],
+    ) -> None:
+        threading.Thread(
+            target=self._watch_fetch_lifecycle,
+            kwargs={
+                "run_id": run_id,
+                "pid": int(pid),
+                "normalize_fetch_report_contract": normalize_fetch_report_contract,
+                "load_json_object": load_json_object,
+                "finish_lifecycle_run": finish_lifecycle_run,
+                "fail_lifecycle_run": fail_lifecycle_run,
+            },
+            name=f"fetch-lifecycle-watch-{run_id}",
+            daemon=True,
+        ).start()
+
     def start_fetcher_task(
         self,
         payload: dict[str, Any] | None = None,
@@ -323,28 +552,17 @@ class TaskLaunchApi:
         save_json_atomic: Callable[[Path, Any], None],
         schema_version: int,
         load_json_object: Callable[[Path, Any], Any],
+        start_lifecycle_run: Callable[..., dict[str, Any]] = lambda **_kwargs: {},
+        finish_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {},
+        fail_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {},
     ) -> dict[str, Any]:
         lock_context = (
             self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
         )
         with lock_context:
-            active_metadata = get_active_task_metadata(
-                "fetch",
-                load_json_object=self._deps.load_json_object,
-                task_state_path=self._paths.task_state,
-                pid_is_running=self._deps.pid_is_running,
-            )
-            if active_metadata:
-                response = build_duplicate_start_payload("jobs_fetcher", "fetch", active_metadata)
-                self._deps.bridge_log(
-                    "info",
-                    "task_start_attached_existing",
-                    task="jobs_fetcher",
-                    taskType="fetch",
-                    runId=str(response.get("runId") or ""),
-                    pid=int(response.get("pid") or 0),
-                )
-                return response
+            active_response = self._active_fetch_start_response()
+            if active_response:
+                return active_response
 
             run_id = f"fetch_{uuid.uuid4().hex[:10]}"
             started_at = self._deps.now_iso()
@@ -372,21 +590,9 @@ class TaskLaunchApi:
             spawn_args = list(fetcher_args)
             if "--output-dir" not in spawn_args:
                 spawn_args.extend(["--output-dir", str(self._runtime.data_dir)])
-            report_shell = {
-                "runId": run_id,
-                "schemaVersion": schema_version,
-                "startedAt": started_at,
-                "finishedAt": "",
-                "runtime": {
-                    "lifecycle": {
-                        "owner": "fetch_report",
-                        "heartbeatAt": started_at,
-                    }
-                },
-                "summary": {"outputCount": 0, "failedSources": 0, "sourceCount": 0},
-                "sources": [],
-                "outputs": {"report": str(self._paths.jobs_fetch_report)},
-            }
+            report_shell = self._fetch_report_shell(
+                run_id=run_id, started_at=started_at, schema_version=schema_version
+            )
             save_json_atomic(
                 self._paths.jobs_fetch_report,
                 normalize_fetch_report_contract(report_shell),
@@ -402,70 +608,49 @@ class TaskLaunchApi:
                     },
                 )
             except Exception as exc:  # noqa: BLE001
-                finished_at = self._deps.now_iso()
-                save_json_atomic(
-                    self._paths.jobs_fetch_report,
-                    normalize_fetch_report_contract(
-                        {
-                            **report_shell,
-                            "finishedAt": finished_at,
-                            "runtime": {
-                                "lifecycle": {
-                                    "owner": "fetch_report",
-                                    "heartbeatAt": finished_at,
-                                }
-                            },
-                            "summary": {
-                                "outputCount": 0,
-                                "failedSources": 1,
-                                "sourceCount": 0,
-                                "error": str(exc),
-                            },
-                            "sources": [
-                                {
-                                    "name": "jobs_fetcher.py",
-                                    "status": "error",
-                                    "error": str(exc),
-                                }
-                            ],
-                        }
-                    ),
-                )
-                prune_started_rows_for_type("fetch", finished_at=finished_at)
-                append_run_history(
-                    {
-                        "id": run_id,
-                        "runId": run_id,
-                        "type": "fetch",
-                        "status": "error",
-                        "startedAt": started_at,
-                        "finishedAt": finished_at,
-                        "durationMs": 0,
-                        "summary": {"error": str(exc), "failedSources": 1, "outputCount": 0},
-                    }
-                )
-                self._deps.bridge_log(
-                    "error",
-                    "task_start_failed",
-                    runId=run_id,
-                    task="jobs_fetcher",
+                return self._write_fetch_launch_failure(
+                    run_id=run_id,
+                    started_at=started_at,
                     preset=preset,
+                    spawn_args=spawn_args,
                     error=str(exc),
+                    report_shell=report_shell,
+                    append_run_history=append_run_history,
+                    normalize_fetch_report_contract=normalize_fetch_report_contract,
+                    prune_started_rows_for_type=prune_started_rows_for_type,
+                    save_json_atomic=save_json_atomic,
+                    fail_lifecycle_run=fail_lifecycle_run,
                 )
-                return {
-                    "started": False,
-                    "runId": run_id,
-                    "task": "jobs_fetcher",
-                    "preset": preset,
-                    "args": spawn_args,
-                    "startedAt": started_at,
-                    "error": str(exc),
-                }
-            approval = load_json_object(self._paths.approval_state, {"approvedSinceLastRun": 0})
-            if not isinstance(approval, dict):
-                approval = {"approvedSinceLastRun": 0}
-            approval["approvedSinceLastRun"] = 0
-            save_json_atomic(self._paths.approval_state, approval)
+            self._reset_fetch_approval_state(
+                load_json_object=load_json_object,
+                save_json_atomic=save_json_atomic,
+            )
+            start_lifecycle_run(
+                run_id=run_id,
+                task_type="fetch",
+                started_at=started_at,
+                stage="starting",
+                owner_kind="process",
+                owner_pid=int(pid),
+                progress={
+                    "active": True,
+                    "phaseKey": "starting",
+                    "phaseLabel": "Launching jobs fetcher",
+                    "mode": "indeterminate",
+                    "ratio": 0.0,
+                    "counts": {},
+                    "updatedAt": started_at,
+                },
+                summary={},
+            )
+            self._start_fetch_lifecycle_watch(
+                run_id=run_id,
+                pid=int(pid),
+                normalize_fetch_report_contract=normalize_fetch_report_contract,
+                load_json_object=load_json_object,
+                finish_lifecycle_run=finish_lifecycle_run,
+                fail_lifecycle_run=fail_lifecycle_run,
+            )
             self._deps.bridge_log(
                 "info",
                 "task_started",

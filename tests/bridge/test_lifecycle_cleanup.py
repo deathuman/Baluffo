@@ -51,6 +51,8 @@ def test_reset_admin_task_lifecycle_resets_runtime_artifacts_and_keeps_runid_his
     assert len(history) == 1
     assert str(history[0].get("runId") or "") == "fetch_1"
     assert int(history[0].get("durationMs") or 0) == 300000
+    lifecycle = json.loads((tmp_path / "admin-task-lifecycle.json").read_text(encoding="utf-8"))
+    assert lifecycle == {"schemaVersion": 1, "updatedAt": "", "rows": []}
     assert not (tmp_path / "admin-run-history.legacy-pre-runid.json").exists()
     task_state = json.loads((tmp_path / "admin-task-state.json").read_text(encoding="utf-8"))
     assert task_state == {}

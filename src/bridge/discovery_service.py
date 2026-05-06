@@ -58,6 +58,10 @@ class DiscoveryDeps:
     maybe_trigger_auto_sync_push: Callable[[str], bool]
     mark_discovery_sync_finished: Callable[[str], None]
     task_state_lock: Any | None = None
+    start_lifecycle_run: Callable[..., dict[str, Any]] = lambda **_kwargs: {}
+    heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] = lambda *_args, **_kwargs: None
+    finish_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {}
+    fail_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {}
 
 
 class DiscoveryService:
@@ -95,6 +99,13 @@ class DiscoveryService:
         probe_miss_count = int(summary.get("probeMissCount") or 0)
         status = "warning" if (failed_probe_count > 0 or probe_miss_count > 0) else "ok"
         self._deps.clear_task_state("discovery")
+        self._deps.finish_lifecycle_run(
+            run_id,
+            "discovery",
+            finished_at=finished_at,
+            summary=dict(summary or {}),
+            terminal_reason="completed",
+        )
         self._deps.prune_started_rows_for_type("discovery", finished_at=finished_at)
         self._deps.upsert_run_history(
             {
@@ -167,6 +178,12 @@ class DiscoveryService:
                 "heartbeatAt": now,
             }
             self._deps.save_json_atomic(self._paths.task_state, state)
+            self._deps.heartbeat_lifecycle_run(
+                run_id,
+                "discovery",
+                heartbeat_at=now,
+                stage="running",
+            )
 
     def update_saved_discovery_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized = self._normalize_discovery_settings(payload)
@@ -402,6 +419,14 @@ class DiscoveryService:
                     },
                 )
             except Exception as exc:  # noqa: BLE001
+                failed_at = self._deps.now_iso()
+                self._deps.fail_lifecycle_run(
+                    run_id,
+                    "discovery",
+                    finished_at=failed_at,
+                    terminal_reason="launch_failed",
+                    summary={"error": str(exc), "failedProbeCount": 1},
+                )
                 self._deps.save_json_atomic(
                     self._paths.report,
                     {
@@ -409,7 +434,7 @@ class DiscoveryService:
                         "runId": run_id,
                         "mode": "dynamic",
                         "startedAt": started_at,
-                        "finishedAt": self._deps.now_iso(),
+                        "finishedAt": failed_at,
                         "summary": {
                             "foundEndpointCount": 0,
                             "probedCandidateCount": 0,
@@ -434,7 +459,7 @@ class DiscoveryService:
                         "runtime": {
                             "lifecycle": {
                                 "owner": "discovery_report",
-                                "heartbeatAt": self._deps.now_iso(),
+                                "heartbeatAt": failed_at,
                             },
                             "autoApproval": {
                                 "enabled": bool(
@@ -486,6 +511,24 @@ class DiscoveryService:
                 preset=preset,
                 route=route_name,
                 pid=int(pid),
+            )
+            self._deps.start_lifecycle_run(
+                run_id=run_id,
+                task_type="discovery",
+                started_at=started_at,
+                stage="starting",
+                owner_kind="process",
+                owner_pid=int(pid),
+                progress={
+                    "active": True,
+                    "phaseKey": "starting",
+                    "phaseLabel": "Spawning discovery worker",
+                    "mode": "indeterminate",
+                    "ratio": 0.0,
+                    "counts": {},
+                    "updatedAt": started_at,
+                },
+                summary={},
             )
             return 200, {
                 "started": True,

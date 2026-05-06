@@ -612,6 +612,31 @@ Do not change signatures or remove without a dedicated plan:
 
 ## 9. Admin task progress contract
 
+### Admin task lifecycle ledger
+
+`data/admin-task-lifecycle.json` is the canonical Admin task lifecycle ledger for fetch, discovery, sync, and jobs pipeline runs.
+
+Ledger payload shape:
+
+- `schemaVersion`: integer ledger schema version.
+- `updatedAt`: ISO timestamp for the last ledger write.
+- `rows`: array of task lifecycle rows.
+
+Each lifecycle row keeps:
+
+- `schemaVersion`, `runId`, `taskType`, `parentRunId`, `parentTaskType`
+- `status`: one of `queued`, `running`, `succeeded`, `failed`, `canceled`, `orphaned`
+- `stage`, `startedAt`, `heartbeatAt`, `finishedAt`, `terminalReason`
+- `ownerKind`, `ownerPid`
+- `progress`, `summary`
+
+Lifecycle invariants:
+
+- `queued` and `running` rows must have empty `finishedAt`.
+- `succeeded`, `failed`, `canceled`, and `orphaned` rows must have non-empty `finishedAt`.
+- Reports may enrich `progress` and `summary`, but `admin-task-lifecycle.json` owns active-vs-terminal state.
+- `admin-task-state.json` and `admin-run-history.json` remain transition compatibility artifacts and must not be treated as lifecycle authority.
+
 Fetcher and discovery reports may include a shared `taskProgress` object for the admin loading bars. This is the preferred progress contract for the frontend.
 
 ### Stable fields

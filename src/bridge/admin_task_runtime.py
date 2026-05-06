@@ -333,6 +333,9 @@ def start_fetcher_task(payload: JsonObject | None = None) -> JsonObject:
         save_json_atomic=root_mod.save_json_atomic,
         schema_version=root_mod.SCHEMA_VERSION,
         load_json_object=root_mod.load_json_object,
+        start_lifecycle_run=root_mod.start_lifecycle_run,
+        finish_lifecycle_run=root_mod.finish_lifecycle_run,
+        fail_lifecycle_run=root_mod.fail_lifecycle_run,
     )
 
 

@@ -56,6 +56,7 @@ def _normalize_history_duration(row: dict[str, Any]) -> dict[str, Any]:
 def reset_admin_task_lifecycle(data_dir: Path) -> dict[str, Any]:
     root = Path(data_dir).resolve()
     history_path = root / "admin-run-history.json"
+    lifecycle_path = root / "admin-task-lifecycle.json"
     task_state_path = root / "admin-task-state.json"
     fetch_report_path = root / "jobs-fetch-report.json"
     fetch_tasks_path = root / "jobs-fetch-tasks.json"
@@ -67,6 +68,14 @@ def reset_admin_task_lifecycle(data_dir: Path) -> dict[str, Any]:
     next_history = [row for row in history_rows if str(row.get("runId") or "").strip()]
 
     _write_json(history_path, next_history)
+    _write_json(
+        lifecycle_path,
+        {
+            "schemaVersion": _schema_version_int(),
+            "updatedAt": "",
+            "rows": [],
+        },
+    )
     _write_json(task_state_path, {})
     _write_json(
         fetch_report_path,

@@ -327,7 +327,7 @@ def test_wait_for_packaged_runtime_with_port_pivot_prefers_env_scoped_session_ro
         assert runtime_state["actualSitePort"] == 9001
         assert runtime_state["actualBridgePort"] == 9002
         assert runtime_state["portRetryObserved"] is True
-        fetch_mock.assert_any_call("http://127.0.0.1:9002/ops/health")
+        fetch_mock.assert_any_call("http://127.0.0.1:9002/ops/health", timeout_s=1.0)
 
 
 def test_run_packaged_browser_job_rehearsal_passes_with_attached_pid_proof() -> None:

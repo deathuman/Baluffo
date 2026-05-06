@@ -193,14 +193,19 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
       type,
       taskProgress,
       summary,
-      type === "fetch" || type === "discovery" ? { includeCounts: false } : {}
+      type === "fetch" || type === "discovery" || (type === "pipeline" && summary?.activeChildTaskType)
+        ? { includeCounts: false }
+        : {}
     );
     const currentRunTailBadge = row?.isLive && type === "fetch"
       ? formatScrapyStaticSourcesTailBadge(row?.workItems)
       : "";
     const liveRunDetail = [currentRunDetail, currentRunTailBadge].filter(Boolean).join(" | ");
+    const pipelineChildDetail = row?.type === "pipeline" && row?.isLive && summary?.activeChildTaskType
+      ? currentRunDetail
+      : "";
     const progressText = row?.type === "pipeline"
-      ? (runView.progressLabel || runView.secondaryLabel || Number(summary?.finalOutputCount || summary?.outputCount || 0).toLocaleString())
+      ? (pipelineChildDetail || runView.progressLabel || runView.secondaryLabel || Number(summary?.finalOutputCount || summary?.outputCount || 0).toLocaleString())
       : (row?.isLive && liveRunDetail)
         ? liveRunDetail
         : row?.type === "discovery"
@@ -583,7 +588,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
           <div>Type</div>
           <div>Status</div>
           <div>Duration</div>
-          <div>Output / Review queue</div>
+          <div>Progress / Summary</div>
           <div>Failed</div>
           <div>Finished</div>
         </div>
@@ -603,7 +608,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
           <div>Type</div>
           <div>Status</div>
           <div>Duration</div>
-          <div>Output / Review queue</div>
+          <div>Progress / Summary</div>
           <div>Failed</div>
           <div>Finished</div>
         </div>

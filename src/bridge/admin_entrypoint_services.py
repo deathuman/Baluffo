@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -136,47 +137,155 @@ def _pipeline_smoke_report(
     }
 
 
-def _build_pipeline_smoke_overrides(root_mod: Any) -> dict[str, Callable[..., Any]]:
-    smoke_runtime: dict[str, Any] = {
+def _pipeline_smoke_runtime() -> dict[str, Any]:
+    return {
         "discoveryStartedAt": "",
         "discoveryReadyAt": 0.0,
         "fetchStartedAt": "",
         "fetchReadyAt": 0.0,
     }
 
+
+def _pipeline_smoke_load_json_object(
+    root_mod: Any,
+    smoke_runtime: dict[str, Any],
+    path: Any,
+    default: Any,
+) -> Any:
+    resolved = Path(path).resolve()
+    specs = (
+        (
+            root_mod.DISCOVERY_REPORT_PATH,
+            "discoveryStartedAt",
+            "discoveryReadyAt",
+            "discovery_smoke",
+            {},
+        ),
+        (
+            root_mod.JOBS_FETCH_REPORT_PATH,
+            "fetchStartedAt",
+            "fetchReadyAt",
+            "fetch_smoke",
+            {"outputCount": 0},
+        ),
+    )
+    for report_path, started_key, ready_key, run_id, summary in specs:
+        if resolved == Path(report_path).resolve():
+            return _pipeline_smoke_report(
+                root_mod,
+                smoke_runtime,
+                started_key,
+                ready_key,
+                run_id,
+                summary,
+            ) or root_mod.load_json_object(path, default)
+    return root_mod.load_json_object(path, default)
+
+
+def _finish_pipeline_smoke_report_after_delay(
+    root_mod: Any,
+    smoke_runtime: dict[str, Any],
+    path: Any,
+    started_key: str,
+    ready_key: str,
+    run_id: str,
+    summary: dict[str, Any],
+) -> None:
+    ready_at = float(smoke_runtime.get(ready_key) or 0.0)
+    delay_s = max(0.0, ready_at - float(root_mod.time.monotonic()))
+    if delay_s:
+        root_mod.time.sleep(delay_s)
+    final_report = _pipeline_smoke_report(
+        root_mod, smoke_runtime, started_key, ready_key, run_id, summary
+    )
+    if final_report:
+        root_mod.save_json_atomic(path, final_report)
+
+
+def _publish_pipeline_smoke_report(
+    root_mod: Any,
+    smoke_runtime: dict[str, Any],
+    path: Any,
+    started_key: str,
+    ready_key: str,
+    run_id: str,
+    summary: dict[str, Any],
+) -> None:
+    report = _pipeline_smoke_report(
+        root_mod, smoke_runtime, started_key, ready_key, run_id, summary
+    )
+    if report:
+        root_mod.save_json_atomic(path, report)
+    threading.Thread(
+        target=_finish_pipeline_smoke_report_after_delay,
+        args=(root_mod, smoke_runtime, path, started_key, ready_key, run_id, summary),
+        daemon=True,
+    ).start()
+
+
+def _start_pipeline_smoke_child(
+    root_mod: Any,
+    smoke_runtime: dict[str, Any],
+    path: Any,
+    started_key: str,
+    ready_key: str,
+    run_id: str,
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    started_at = root_mod.now_iso()
+    smoke_runtime[started_key] = started_at
+    smoke_runtime[ready_key] = root_mod.time.monotonic() + 1.2
+    _publish_pipeline_smoke_report(
+        root_mod,
+        smoke_runtime,
+        path,
+        started_key,
+        ready_key,
+        run_id,
+        summary,
+    )
+    return {"started": True, "startedAt": started_at, "runId": run_id}
+
+
+def _pipeline_smoke_fetch_output_count(
+    root_mod: Any,
+    smoke_runtime: dict[str, Any],
+) -> int:
+    report = _pipeline_smoke_load_json_object(
+        root_mod, smoke_runtime, root_mod.JOBS_FETCH_REPORT_PATH, {}
+    )
+    summary = root_mod.summarize_fetch_report(root_mod.normalize_fetch_report_contract(report))
+    return int(summary.get("outputCount") or 0)
+
+
+def _build_pipeline_smoke_overrides(root_mod: Any) -> dict[str, Callable[..., Any]]:
+    smoke_runtime = _pipeline_smoke_runtime()
+
     def pipeline_load_json_object(path: Any, default: Any) -> Any:
-        resolved = Path(path).resolve()
-        if resolved == Path(root_mod.DISCOVERY_REPORT_PATH).resolve():
-            return _pipeline_smoke_report(
-                root_mod,
-                smoke_runtime,
-                "discoveryStartedAt",
-                "discoveryReadyAt",
-                "discovery_smoke",
-                {},
-            ) or root_mod.load_json_object(path, default)
-        if resolved == Path(root_mod.JOBS_FETCH_REPORT_PATH).resolve():
-            return _pipeline_smoke_report(
-                root_mod,
-                smoke_runtime,
-                "fetchStartedAt",
-                "fetchReadyAt",
-                "fetch_smoke",
-                {"outputCount": 0},
-            ) or root_mod.load_json_object(path, default)
-        return root_mod.load_json_object(path, default)
+        return _pipeline_smoke_load_json_object(root_mod, smoke_runtime, path, default)
 
     def pipeline_trigger_discovery_task(**kwargs: Any) -> tuple[int, dict[str, Any]]:
-        started_at = root_mod.now_iso()
-        smoke_runtime["discoveryStartedAt"] = started_at
-        smoke_runtime["discoveryReadyAt"] = root_mod.time.monotonic() + 1.2
-        return 200, {"started": True, "startedAt": started_at, "runId": "discovery_smoke"}
+        result = _start_pipeline_smoke_child(
+            root_mod,
+            smoke_runtime,
+            root_mod.DISCOVERY_REPORT_PATH,
+            "discoveryStartedAt",
+            "discoveryReadyAt",
+            "discovery_smoke",
+            {},
+        )
+        return 200, result
 
     def pipeline_start_fetcher_task(payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        started_at = root_mod.now_iso()
-        smoke_runtime["fetchStartedAt"] = started_at
-        smoke_runtime["fetchReadyAt"] = root_mod.time.monotonic() + 1.2
-        return {"started": True, "startedAt": started_at, "runId": "fetch_smoke"}
+        return _start_pipeline_smoke_child(
+            root_mod,
+            smoke_runtime,
+            root_mod.JOBS_FETCH_REPORT_PATH,
+            "fetchStartedAt",
+            "fetchReadyAt",
+            "fetch_smoke",
+            {"outputCount": 0},
+        )
 
     def pipeline_start_sync_task(action: str, *, reason: str, automatic: bool) -> dict[str, Any]:
         return {"started": True, "runId": "sync_smoke"}
@@ -191,9 +300,7 @@ def _build_pipeline_smoke_overrides(root_mod: Any) -> dict[str, Callable[..., An
         }
 
     def pipeline_current_fetch_output_count() -> int:
-        report = pipeline_load_json_object(root_mod.JOBS_FETCH_REPORT_PATH, {})
-        summary = root_mod.summarize_fetch_report(root_mod.normalize_fetch_report_contract(report))
-        return int(summary.get("outputCount") or 0)
+        return _pipeline_smoke_fetch_output_count(root_mod, smoke_runtime)
 
     return {
         "load_json_object": pipeline_load_json_object,
@@ -230,6 +337,7 @@ def get_sync_service() -> _SyncServiceLike:
             get_security_defaults=root_mod.get_security_defaults,
             sync_state=root_mod.SyncState(data_dir=data_dir),
             get_registry_auto_heal_report=root_mod.get_registry_auto_heal_report,
+            task_lifecycle=root_mod._TASK_LIFECYCLE,
         )
         return cast(_SyncServiceLike, root_mod._SYNC_SERVICE)
 
@@ -305,6 +413,10 @@ def get_discovery_service() -> _DiscoveryServiceLike:
                     maybe_trigger_auto_sync_push=root_mod._maybe_trigger_auto_sync_push,
                     mark_discovery_sync_finished=root_mod._mark_discovery_sync_finished,
                     task_state_lock=root_mod.OPS_STATE_LOCK,
+                    start_lifecycle_run=root_mod.start_lifecycle_run,
+                    heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
+                    finish_lifecycle_run=root_mod.finish_lifecycle_run,
+                    fail_lifecycle_run=root_mod.fail_lifecycle_run,
                 ),
             )
         return cast(_DiscoveryServiceLike, root_mod._DISCOVERY_SERVICE)
@@ -391,6 +503,8 @@ def get_ops_api() -> _OpsApiLike:
                     get_desktop_update_service().get_status_payload()
                 ),
                 app_version=root_mod.get_app_version(),
+                get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
+                get_lifecycle_recent_runs=root_mod.get_lifecycle_recent_runs,
             ),
         ),
     )
@@ -412,6 +526,7 @@ def get_pipeline_service() -> _PipelineServiceLike:
             pipeline_start_sync_task = root_mod.start_sync_task
             pipeline_wait_for_sync_completion = root_mod._wait_for_sync_completion
             pipeline_current_fetch_output_count = root_mod._current_fetch_output_count
+            pipeline_run_registry_conflict_adjudication = root_mod.check_registry_conflicts
 
             if stub_success_mode:
                 smoke_overrides = _build_pipeline_smoke_overrides(root_mod)
@@ -421,6 +536,10 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 pipeline_start_sync_task = smoke_overrides["start_sync_task"]
                 pipeline_wait_for_sync_completion = smoke_overrides["wait_for_sync_completion"]
                 pipeline_current_fetch_output_count = smoke_overrides["current_fetch_output_count"]
+                pipeline_run_registry_conflict_adjudication = lambda _payload: {
+                    "demoted": 0,
+                    "checkedFamilyCount": 0,
+                }
 
             def pipeline_child_run_is_live(task_type: str, run_id: str) -> bool:
                 normalized_type = str(task_type or "").strip().lower()
@@ -501,6 +620,12 @@ def get_pipeline_service() -> _PipelineServiceLike:
                         "heartbeatAt": root_mod.now_iso(),
                     }
                     root_mod.save_json_atomic(root_mod.TASK_STATE_PATH, task_state)
+                    root_mod.heartbeat_lifecycle_run(
+                        normalized_run_id,
+                        normalized_type,
+                        heartbeat_at=str(task_state[normalized_type].get("heartbeatAt") or ""),
+                        stage="pipeline_owned",
+                    )
                     return True
 
             root_mod._PIPELINE_SERVICE = root_mod.PipelineService(
@@ -525,8 +650,13 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 get_app_version=root_mod.get_app_version,
                 child_run_is_live=pipeline_child_run_is_live,
                 get_projected_run_history=root_mod._get_ops_api().get_projected_run_history,
-                run_registry_conflict_adjudication=root_mod.check_registry_conflicts,
+                run_registry_conflict_adjudication=pipeline_run_registry_conflict_adjudication,
                 refresh_child_task_heartbeat=pipeline_refresh_child_task_heartbeat,
+                start_lifecycle_run=root_mod.start_lifecycle_run,
+                heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
+                finish_lifecycle_run=root_mod.finish_lifecycle_run,
+                fail_lifecycle_run=root_mod.fail_lifecycle_run,
+                attach_lifecycle_child=root_mod.attach_lifecycle_child,
             )
         return cast(_PipelineServiceLike, root_mod._PIPELINE_SERVICE)
 

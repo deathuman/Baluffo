@@ -3,12 +3,16 @@ __pycache__/
 node_modules/
 playwright-report/
 dist/
+build/
+out/
 .codex-test-tmp/
 .tmp/
 .pytest_cache/
 .coverage
 .coverage.*
 htmlcov/
+coverage/
+.pytest_cache/
 .codex-pre-commit-home/
 .pre-commit-home/
 pytest-cache-files-*/
@@ -18,6 +22,11 @@ _out/
 .state/
 .cursor/
 .vscode/debug-brave-profile/
+coverage-report/
+
+# Build/runtime artifact cleanup
+tmp-manual-check/
+tmp-pytest-bridge/
 
 # Local runtime/generated data (keep local, do not track)
 data/*.json

@@ -113,6 +113,7 @@ class SyncService:
         get_security_defaults: Callable[[], dict[str, Any]],
         sync_state: SyncState | None = None,
         get_registry_auto_heal_report: Callable[[], dict[str, Any]] | None = None,
+        task_lifecycle: Any | None = None,
     ):
         """Initialize SyncService with dependencies.
 
@@ -151,6 +152,7 @@ class SyncService:
                 },
             }
         )
+        self._task_lifecycle = task_lifecycle
 
         # Initialize sync state
         self._sync_state = sync_state or SyncState(data_dir=data_dir)
@@ -706,6 +708,27 @@ class SyncService:
 
         def upsert_run_history(entry: dict[str, Any]) -> None:
             self._run_history.upsert(entry, dedupe_fields=("type", "finishedAt"))
+            if self._task_lifecycle is None:
+                return
+            run_id_text = str(entry.get("runId") or run_id or "").strip()
+            finished_at = str(entry.get("finishedAt") or "").strip()
+            summary = as_json_object(entry.get("summary"))
+            if str(entry.get("status") or "").strip().lower() == "error":
+                self._task_lifecycle.fail_run(
+                    run_id_text,
+                    "sync",
+                    finished_at=finished_at,
+                    terminal_reason="failed",
+                    summary=summary,
+                )
+            else:
+                self._task_lifecycle.finish_run(
+                    run_id_text,
+                    "sync",
+                    finished_at=finished_at,
+                    terminal_reason="completed",
+                    summary=summary,
+                )
 
         _sync_task_flow.run_sync_task_worker(
             run_id=run_id,
@@ -754,6 +777,19 @@ class SyncService:
 
         run_id = f"sync_{uuid.uuid4().hex[:10]}"
         started_at = now_iso()
+        if self._task_lifecycle is not None:
+            self._task_lifecycle.start_run(
+                run_id=run_id,
+                task_type="sync",
+                started_at=started_at,
+                stage=normalized_action,
+                owner_kind="bridge_thread",
+                summary={
+                    "action": normalized_action,
+                    "reason": str(reason or ""),
+                    "automatic": bool(automatic),
+                },
+            )
 
         self._run_history.append(
             {

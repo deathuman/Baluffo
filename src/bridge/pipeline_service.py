@@ -43,6 +43,11 @@ class PipelineService:
         run_registry_conflict_adjudication: Callable[[dict[str, Any]], dict[str, Any]]
         | None = None,
         refresh_child_task_heartbeat: Callable[[str, str, str], bool] | None = None,
+        start_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
+        heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] | None = None,
+        finish_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
+        fail_lifecycle_run: Callable[..., dict[str, Any]] | None = None,
+        attach_lifecycle_child: Callable[..., dict[str, Any] | None] | None = None,
     ) -> None:
         self._lock = pipeline_state_lock
         self._status = pipeline_status
@@ -66,6 +71,11 @@ class PipelineService:
         self._get_projected_run_history = get_projected_run_history
         self._run_registry_conflict_adjudication = run_registry_conflict_adjudication
         self._refresh_child_task_heartbeat = refresh_child_task_heartbeat
+        self._start_lifecycle_run = start_lifecycle_run
+        self._heartbeat_lifecycle_run = heartbeat_lifecycle_run
+        self._finish_lifecycle_run = finish_lifecycle_run
+        self._fail_lifecycle_run = fail_lifecycle_run
+        self._attach_lifecycle_child = attach_lifecycle_child
 
     @staticmethod
     def _pipeline_progress(current_step: int, total_steps: int, label: str) -> dict[str, Any]:
@@ -84,8 +94,18 @@ class PipelineService:
         with self._lock:
             self._status["stage"] = str(stage or "unknown")
             self._status["progress"] = self._pipeline_progress(current_step, total_steps, label)
+            progress = dict(self._status.get("progress") or {})
+            run_id = str(self._status.get("runId") or "")
             if error:
                 self._status["error"] = str(error)
+        if run_id and callable(self._heartbeat_lifecycle_run):
+            self._heartbeat_lifecycle_run(
+                run_id,
+                "pipeline",
+                stage=str(stage or "unknown"),
+                progress=progress,
+                summary={"stage": str(stage or "unknown")},
+            )
 
     def _set_completed(self, *, status: str, final_output_count: int = 0, error: str = "") -> None:
         with self._lock:
@@ -137,6 +157,35 @@ class PipelineService:
                     },
                     dedupe_fields=("id",),
                 )
+                if callable(self._fail_lifecycle_run) and status == "error":
+                    self._fail_lifecycle_run(
+                        run_id,
+                        "pipeline",
+                        finished_at=finished_at,
+                        terminal_reason="failed",
+                        summary={
+                            "error": str(error or ""),
+                            "baselineOutputCount": baseline,
+                            "jobsPageLoadedCount": loaded,
+                            "finalOutputCount": int(final_output_count or 0),
+                            "updatesFound": bool(updates_found),
+                        },
+                        progress=dict(self._status.get("progress") or {}),
+                    )
+                elif callable(self._finish_lifecycle_run):
+                    self._finish_lifecycle_run(
+                        run_id,
+                        "pipeline",
+                        finished_at=finished_at,
+                        terminal_reason="completed",
+                        summary={
+                            "baselineOutputCount": baseline,
+                            "jobsPageLoadedCount": loaded,
+                            "finalOutputCount": int(final_output_count or 0),
+                            "updatesFound": bool(updates_found),
+                        },
+                        progress=dict(self._status.get("progress") or {}),
+                    )
             self._runtime.active_run_id = ""
 
     def _get_child_task_snapshot(self, task_type: str, run_id: str = "") -> Any:
@@ -221,6 +270,247 @@ class PipelineService:
             payload["appVersion"] = self._get_app_version()
             return payload
 
+    def _refresh_child_lifecycle_evidence(
+        self,
+        task_type: str,
+        task_run_id: str,
+        started_at: str,
+    ) -> bool:
+        clean_task_type = str(task_type or "").strip()
+        clean_run_id = str(task_run_id or "").strip()
+        if (
+            not callable(self._refresh_child_task_heartbeat)
+            or not clean_task_type
+            or not clean_run_id
+        ):
+            return False
+        try:
+            return bool(
+                self._refresh_child_task_heartbeat(
+                    clean_task_type,
+                    clean_run_id,
+                    str(started_at or "").strip(),
+                )
+            )
+        except (RuntimeError, OSError, TypeError, ValueError) as exc:
+            self._bridge_log(
+                "warn",
+                "jobs_pipeline_child_heartbeat_refresh_failed",
+                taskType=clean_task_type,
+                childRunId=clean_run_id,
+                error=str(exc),
+            )
+            return False
+
+    def _report_matches_started_run(
+        self,
+        report: dict[str, Any],
+        *,
+        started_dt: Any,
+        task_run_id: str,
+    ) -> bool:
+        from datetime import timedelta
+
+        report_run_id = str(report.get("runId") or "").strip()
+        clean_run_id = str(task_run_id or "").strip()
+        run_id_matches = bool(not clean_run_id or report_run_id == clean_run_id)
+        report_started = self._parse_iso(report.get("startedAt"))
+        return bool(
+            run_id_matches
+            and started_dt
+            and report_started
+            and report_started >= (started_dt - timedelta(seconds=1))
+        )
+
+    def _finish_child_lifecycle_from_report(
+        self,
+        task_type: str,
+        task_run_id: str,
+        report: dict[str, Any],
+    ) -> None:
+        if not callable(self._finish_lifecycle_run) or not task_type or not task_run_id:
+            return
+        report_status = str(report.get("status") or "").strip().lower()
+        terminal_summary = report.get("summary")
+        if not isinstance(terminal_summary, dict):
+            terminal_summary = {}
+        clean_run_id = str(task_run_id).strip()
+        clean_task_type = str(task_type).strip()
+        if report_status in {"error", "failed", "failure"}:
+            self._fail_lifecycle_run(
+                clean_run_id,
+                clean_task_type,
+                finished_at=report.get("finishedAt"),
+                terminal_reason="failed",
+                summary=terminal_summary,
+            )
+            return
+        self._finish_lifecycle_run(
+            clean_run_id,
+            clean_task_type,
+            finished_at=report.get("finishedAt"),
+            terminal_reason="completed",
+            summary=terminal_summary,
+        )
+
+    def _fail_child_lifecycle(
+        self,
+        task_type: str,
+        task_run_id: str,
+        *,
+        terminal_reason: str,
+        error: str,
+    ) -> None:
+        if callable(self._fail_lifecycle_run) and task_type and task_run_id:
+            self._fail_lifecycle_run(
+                str(task_run_id).strip(),
+                str(task_type).strip(),
+                terminal_reason=terminal_reason,
+                summary={"error": error},
+            )
+
+    def _attach_lifecycle_child_row(
+        self,
+        *,
+        run_id: str,
+        task_type: str,
+        child_run_id: str,
+    ) -> None:
+        if child_run_id and callable(self._attach_lifecycle_child):
+            self._attach_lifecycle_child(
+                run_id=child_run_id,
+                task_type=task_type,
+                parent_run_id=run_id,
+                parent_task_type="pipeline",
+                owner_kind="pipeline",
+            )
+
+    def _log_attached_child(self, *, run_id: str, task_type: str, child_run_id: str) -> None:
+        self._bridge_log(
+            "info",
+            "jobs_pipeline_attached_existing_child_task",
+            runId=run_id,
+            childTask=task_type,
+            childRunId=child_run_id,
+        )
+
+    def _discovery_launch_failed(
+        self,
+        discovery_status: int,
+        discovery_result: dict[str, Any],
+        discovery_attached: bool,
+    ) -> bool:
+        return bool(
+            int(discovery_status) >= 300
+            and not discovery_attached
+            or (
+                int(discovery_status) < 300
+                and not bool((discovery_result or {}).get("started"))
+                and not discovery_attached
+            )
+        )
+
+    def _run_discovery_stage(self, run_id: str) -> None:
+        self._mark_stage(
+            stage="discovery", current_step=1, total_steps=3, label="Running discovery..."
+        )
+        discovery_status, discovery_result = self._trigger_discovery_child()
+        discovery_attached = int(discovery_status) == 409 and self._is_duplicate_task_response(
+            discovery_result
+        )
+        if self._discovery_launch_failed(discovery_status, discovery_result, discovery_attached):
+            raise RuntimeError(
+                f"discovery_launch: {discovery_result.get('error') or 'discovery start failed'}"
+            )
+        discovery_started_at = str(discovery_result.get("startedAt") or self._now_iso())
+        discovery_run_id = str(discovery_result.get("runId") or "").strip()
+        self._attach_lifecycle_child_row(
+            run_id=run_id, task_type="discovery", child_run_id=discovery_run_id
+        )
+        if discovery_attached:
+            self._log_attached_child(
+                run_id=run_id, task_type="discovery", child_run_id=discovery_run_id
+            )
+        self._wait_for_child_report(
+            phase="discovery_wait",
+            report_path=self._discovery_report_path,
+            started_at=discovery_started_at,
+            timeout_s=900.0,
+            report_name="discovery report",
+            load_json_object=self._load_json_object,
+            report_is_stale_in_progress=lambda *_args, **_kwargs: False,
+            task_type="discovery",
+            task_run_id=discovery_run_id,
+        )
+
+    def _run_fetch_stage(self, run_id: str) -> None:
+        self._mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
+        fetch_result = self._start_fetch_child()
+        fetch_attached = self._is_duplicate_task_response(fetch_result)
+        if not bool(fetch_result.get("started")) and not fetch_attached:
+            raise RuntimeError(f"fetch_launch: {fetch_result.get('error') or 'fetch start failed'}")
+        fetch_started_at = str(fetch_result.get("startedAt") or self._now_iso())
+        fetch_run_id = str(fetch_result.get("runId") or "").strip()
+        self._attach_lifecycle_child_row(
+            run_id=run_id, task_type="fetch", child_run_id=fetch_run_id
+        )
+        if fetch_attached:
+            self._log_attached_child(run_id=run_id, task_type="fetch", child_run_id=fetch_run_id)
+        self._wait_for_child_report(
+            phase="fetch_wait",
+            report_path=self._fetch_report_path,
+            started_at=fetch_started_at,
+            timeout_s=1200.0,
+            report_name="fetch report",
+            load_json_object=self._load_json_object,
+            report_is_stale_in_progress=lambda *_args, **_kwargs: False,
+            task_type="fetch",
+            task_run_id=fetch_run_id,
+        )
+
+    def _run_registry_conflict_adjudication_stage(self, run_id: str) -> None:
+        if not callable(self._run_registry_conflict_adjudication):
+            return
+        try:
+            result = self._run_registry_conflict_adjudication(
+                {
+                    "applyAutopilot": True,
+                    "trigger": "jobs_pipeline",
+                    "pipelineRunId": run_id,
+                }
+            )
+            self._bridge_log(
+                "info",
+                "registry_conflict_adjudication_finished",
+                runId=run_id,
+                demoted=int(result.get("demoted") or 0),
+                checkedFamilyCount=int(result.get("checkedFamilyCount") or 0),
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._bridge_log(
+                "warn",
+                "registry_conflict_adjudication_failed",
+                runId=run_id,
+                error=str(exc),
+            )
+
+    def _run_sync_push_stage(self, run_id: str) -> None:
+        self._mark_stage(
+            stage="sync_push", current_step=3, total_steps=3, label="Running sync push..."
+        )
+        sync_result = self._start_sync_push_child()
+        if not bool(sync_result.get("started")):
+            raise RuntimeError(
+                f"sync_push: {sync_result.get('error') or 'sync push failed to start'}"
+            )
+        sync_run_id = str(sync_result.get("runId") or "")
+        self._attach_lifecycle_child_row(run_id=run_id, task_type="sync", child_run_id=sync_run_id)
+        sync_row = self._wait_for_sync_push_row(sync_run_id)
+        sync_status = str(sync_row.get("status") or "").strip().lower()
+        if sync_status == "error":
+            sync_error = str((sync_row.get("summary") or {}).get("error") or "sync push failed")
+            raise RuntimeError(f"sync_push: {sync_error}")
+
     def wait_for_report_completion(
         self,
         *,
@@ -238,50 +528,38 @@ class PipelineService:
         from threading import Event
 
         stale_guard = report_is_stale_in_progress or (lambda *_args, **_kwargs: False)
-        deadline = datetime.now(UTC) + timedelta(seconds=max(10.0, float(timeout_s)))
+        quiet_window_s = max(10.0, float(timeout_s))
+        quiet_deadline = datetime.now(UTC) + timedelta(seconds=quiet_window_s)
+        absolute_deadline = datetime.now(UTC) + timedelta(
+            seconds=max(quiet_window_s * 4.0, quiet_window_s + 3600.0)
+        )
         started_dt = self._parse_iso(started_at)
         while True:
+            now = datetime.now(UTC)
             report = load_json_object(report_path, {})
             normalized_report = report if isinstance(report, dict) else {}
-            report_run_id = str(normalized_report.get("runId") or "").strip()
-            refreshed_child_heartbeat = False
-            if (
-                callable(self._refresh_child_task_heartbeat)
-                and str(task_type or "").strip()
-                and str(task_run_id or "").strip()
-            ):
-                try:
-                    refreshed_child_heartbeat = bool(
-                        self._refresh_child_task_heartbeat(
-                            str(task_type or "").strip(),
-                            str(task_run_id or "").strip(),
-                            str(started_at or "").strip(),
-                        )
-                    )
-                except (RuntimeError, OSError, TypeError, ValueError) as exc:
-                    self._bridge_log(
-                        "warn",
-                        "jobs_pipeline_child_heartbeat_refresh_failed",
-                        taskType=str(task_type or "").strip(),
-                        childRunId=str(task_run_id or "").strip(),
-                        error=str(exc),
-                    )
-            run_id_matches = bool(
-                not str(task_run_id or "").strip() or report_run_id == str(task_run_id).strip()
+            refreshed_child_heartbeat = self._refresh_child_lifecycle_evidence(
+                task_type, task_run_id, started_at
             )
-            report_started = self._parse_iso(normalized_report.get("startedAt"))
-            report_finished = self._parse_iso(normalized_report.get("finishedAt"))
             child_live = bool(
                 refreshed_child_heartbeat
-                or self._child_task_has_live_evidence(task_type, task_run_id)
+                or (
+                    str(task_type or "").strip()
+                    and str(task_run_id or "").strip()
+                    and self._child_task_has_live_evidence(task_type, task_run_id)
+                )
             )
-            if (
-                run_id_matches
-                and started_dt
-                and report_started
-                and report_started >= (started_dt - timedelta(seconds=1))
+            if child_live:
+                quiet_deadline = now + timedelta(seconds=quiet_window_s)
+            if self._report_matches_started_run(
+                normalized_report, started_dt=started_dt, task_run_id=task_run_id
             ):
-                if report_finished and report_finished >= report_started:
+                report_started = self._parse_iso(normalized_report.get("startedAt"))
+                report_finished = self._parse_iso(normalized_report.get("finishedAt"))
+                if report_finished and report_started and report_finished >= report_started:
+                    self._finish_child_lifecycle_from_report(
+                        task_type, task_run_id, normalized_report
+                    )
                     return normalized_report
             if fail_on_stale and stale_guard(
                 "fetch" if "fetch" in report_name else "discovery",
@@ -289,120 +567,32 @@ class PipelineService:
                 normalized_report,
             ):
                 raise RuntimeError(f"{report_name} became stale before completion")
-            if datetime.now(UTC) >= deadline and not child_live:
-                raise TimeoutError(f"{report_name} did not finish within timeout")
+            if now >= absolute_deadline:
+                error = f"{report_name} exceeded absolute safety cap"
+                self._fail_child_lifecycle(
+                    task_type,
+                    task_run_id,
+                    terminal_reason="absolute_safety_cap_exceeded",
+                    error=error,
+                )
+                raise TimeoutError(error)
+            if now >= quiet_deadline and not child_live:
+                error = f"{report_name} had no live evidence before completion"
+                self._fail_child_lifecycle(
+                    task_type,
+                    task_run_id,
+                    terminal_reason="quiet_timeout_no_live_evidence",
+                    error=error,
+                )
+                raise TimeoutError(error)
             Event().wait(1.0)
 
     def _run_worker(self, run_id: str) -> None:
         try:
-            self._mark_stage(
-                stage="discovery", current_step=1, total_steps=3, label="Running discovery..."
-            )
-            discovery_status, discovery_result = self._trigger_discovery_child()
-            discovery_attached = int(discovery_status) == 409 and self._is_duplicate_task_response(
-                discovery_result
-            )
-            if (
-                int(discovery_status) >= 300
-                and not discovery_attached
-                or (
-                    int(discovery_status) < 300
-                    and not bool((discovery_result or {}).get("started"))
-                    and not discovery_attached
-                )
-            ):
-                raise RuntimeError(
-                    f"discovery_launch: {discovery_result.get('error') or 'discovery start failed'}"
-                )
-            discovery_started_at = str(discovery_result.get("startedAt") or self._now_iso())
-            discovery_run_id = str(discovery_result.get("runId") or "").strip()
-            if discovery_attached:
-                self._bridge_log(
-                    "info",
-                    "jobs_pipeline_attached_existing_child_task",
-                    runId=run_id,
-                    childTask="discovery",
-                    childRunId=discovery_run_id,
-                )
-            self._wait_for_child_report(
-                phase="discovery_wait",
-                report_path=self._discovery_report_path,
-                started_at=discovery_started_at,
-                timeout_s=900.0,
-                report_name="discovery report",
-                load_json_object=self._load_json_object,
-                report_is_stale_in_progress=lambda *_args, **_kwargs: False,
-                task_type="discovery",
-                task_run_id=discovery_run_id,
-            )
-
-            self._mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
-            fetch_result = self._start_fetch_child()
-            fetch_attached = self._is_duplicate_task_response(fetch_result)
-            if not bool(fetch_result.get("started")) and not fetch_attached:
-                raise RuntimeError(
-                    f"fetch_launch: {fetch_result.get('error') or 'fetch start failed'}"
-                )
-            fetch_started_at = str(fetch_result.get("startedAt") or self._now_iso())
-            fetch_run_id = str(fetch_result.get("runId") or "").strip()
-            if fetch_attached:
-                self._bridge_log(
-                    "info",
-                    "jobs_pipeline_attached_existing_child_task",
-                    runId=run_id,
-                    childTask="fetch",
-                    childRunId=fetch_run_id,
-                )
-            self._wait_for_child_report(
-                phase="fetch_wait",
-                report_path=self._fetch_report_path,
-                started_at=fetch_started_at,
-                timeout_s=1200.0,
-                report_name="fetch report",
-                load_json_object=self._load_json_object,
-                report_is_stale_in_progress=lambda *_args, **_kwargs: False,
-                task_type="fetch",
-                task_run_id=fetch_run_id,
-            )
-
-            if callable(self._run_registry_conflict_adjudication):
-                try:
-                    result = self._run_registry_conflict_adjudication(
-                        {
-                            "applyAutopilot": True,
-                            "trigger": "jobs_pipeline",
-                            "pipelineRunId": run_id,
-                        }
-                    )
-                    self._bridge_log(
-                        "info",
-                        "registry_conflict_adjudication_finished",
-                        runId=run_id,
-                        demoted=int(result.get("demoted") or 0),
-                        checkedFamilyCount=int(result.get("checkedFamilyCount") or 0),
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    self._bridge_log(
-                        "warn",
-                        "registry_conflict_adjudication_failed",
-                        runId=run_id,
-                        error=str(exc),
-                    )
-
-            self._mark_stage(
-                stage="sync_push", current_step=3, total_steps=3, label="Running sync push..."
-            )
-            sync_result = self._start_sync_push_child()
-            if not bool(sync_result.get("started")):
-                raise RuntimeError(
-                    f"sync_push: {sync_result.get('error') or 'sync push failed to start'}"
-                )
-            sync_row = self._wait_for_sync_push_row(str(sync_result.get("runId") or ""))
-            sync_status = str(sync_row.get("status") or "").strip().lower()
-            if sync_status == "error":
-                sync_error = str((sync_row.get("summary") or {}).get("error") or "sync push failed")
-                raise RuntimeError(f"sync_push: {sync_error}")
-
+            self._run_discovery_stage(run_id)
+            self._run_fetch_stage(run_id)
+            self._run_registry_conflict_adjudication_stage(run_id)
+            self._run_sync_push_stage(run_id)
             final_output_count = self._current_fetch_output_count()
             self._set_completed(status="ok", final_output_count=final_output_count)
         except Exception as exc:  # noqa: BLE001
@@ -466,6 +656,20 @@ class PipelineService:
                     },
                 }
             )
+            if callable(self._start_lifecycle_run):
+                self._start_lifecycle_run(
+                    run_id=run_id,
+                    task_type="pipeline",
+                    started_at=started_at,
+                    stage="starting",
+                    owner_kind="pipeline",
+                    progress=dict(self._status.get("progress") or {}),
+                    summary={
+                        "baselineOutputCount": int(baseline_output_count),
+                        "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),
+                        "stage": "starting",
+                    },
+                )
             worker = threading.Thread(
                 target=self._run_worker,
                 args=(run_id,),

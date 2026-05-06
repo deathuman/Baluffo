@@ -52,6 +52,7 @@ from src.bridge import source_checker as _source_checker_mod
 from src.bridge import sync_task_flow as _sync_task_flow_mod
 from src.bridge import task_launch_api as _task_launch_api_mod
 from src.bridge.admin_task_history import AdminTaskHistory
+from src.bridge.admin_task_lifecycle import AdminTaskLifecycle
 from src.bridge.api import BridgeApi
 from src.bridge.discovery_service import (
     DiscoveryDeps as _DiscoveryDeps,
@@ -172,6 +173,7 @@ REGISTRY_REASON_MANUAL_SOURCE_VARIANT = _REGISTRY_REASON_MANUAL_SOURCE_VARIANT
 now_iso = _now_iso
 
 OPS_HISTORY_PATH = ROOT / "data" / "admin-run-history.json"
+TASK_LIFECYCLE_PATH = ROOT / "data" / "admin-task-lifecycle.json"
 OPS_ALERT_STATE_PATH = ROOT / "data" / "admin-alert-state.json"
 JOBS_FETCH_REPORT_PATH = ROOT / "data" / "jobs-fetch-report.json"
 SOURCE_POLICY_RECOMMENDATIONS_PATH = ROOT / "data" / "source-policy-recommendations.json"
@@ -215,6 +217,15 @@ _TASK_HISTORY = AdminTaskHistory(
     parse_iso=lambda value: parse_iso(value),
     now_utc=lambda: now_utc(),
     pid_is_running=lambda pid: pid_is_running(pid),
+)
+_TASK_LIFECYCLE = AdminTaskLifecycle(
+    lifecycle_path=lambda: TASK_LIFECYCLE_PATH,
+    max_rows=lambda: MAX_HISTORY_ROWS,
+    lock=OPS_STATE_LOCK,
+    load_json_object=load_json_object,
+    save_json_atomic=save_json_atomic,
+    now_iso=lambda: now_iso(),
+    parse_iso=lambda value: parse_iso(value),
 )
 
 
@@ -435,13 +446,34 @@ pid_is_running = admin_entrypoint_runtime_mod.pid_is_running
 
 load_run_history = _TASK_HISTORY.load
 save_run_history = _TASK_HISTORY.save_run_history
-append_run_history = _TASK_HISTORY.append
-upsert_run_history = _TASK_HISTORY.upsert
 prune_started_rows_for_type = _TASK_HISTORY.prune_started_rows_for_type
 _clear_task_state_locked = _TASK_HISTORY.clear_task_state_locked
 clear_task_state = _TASK_HISTORY.clear_task_state
 task_running_from_state = _TASK_HISTORY.task_running_from_state
 report_is_stale_in_progress = _TASK_HISTORY.report_is_stale_in_progress
+start_lifecycle_run = _TASK_LIFECYCLE.start_run
+heartbeat_lifecycle_run = _TASK_LIFECYCLE.heartbeat_run
+finish_lifecycle_run = _TASK_LIFECYCLE.finish_run
+fail_lifecycle_run = _TASK_LIFECYCLE.fail_run
+cancel_lifecycle_run = _TASK_LIFECYCLE.cancel_run
+orphan_lifecycle_run = _TASK_LIFECYCLE.orphan_run
+attach_lifecycle_child = _TASK_LIFECYCLE.attach_child
+get_lifecycle_rows = _TASK_LIFECYCLE.rows
+get_lifecycle_current_runs = _TASK_LIFECYCLE.get_current_runs
+get_lifecycle_recent_runs = _TASK_LIFECYCLE.get_recent_runs
+reconcile_lifecycle_from_legacy = _TASK_LIFECYCLE.reconcile_from_legacy
+
+
+def append_run_history(row: dict[str, Any]) -> dict[str, Any]:
+    entry = _TASK_HISTORY.append(row)
+    _TASK_LIFECYCLE.mirror_history_row(entry)
+    return entry
+
+
+def upsert_run_history(entry: dict[str, Any], *, dedupe_fields: tuple[str, ...]) -> dict[str, Any]:
+    row = _TASK_HISTORY.upsert(entry, dedupe_fields=dedupe_fields)
+    _TASK_LIFECYCLE.mirror_history_row(row)
+    return row
 
 
 _read_tasks_config = admin_task_runtime_mod.read_tasks_config
