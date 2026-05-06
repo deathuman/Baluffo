@@ -185,6 +185,12 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         handler.send_json(result, status=status)
         return True
 
+    if path == "/registry/conflicts/check-sources":
+        result = api.check_registry_conflicts(data)
+        status = 200 if bool(result.get("ok")) else 409
+        handler.send_json(result, status=status)
+        return True
+
     if path == "/registry/approve":
         ids = as_json_list(data.get("ids"))
         moved, remaining = api.move_entries(state["pending"], [str(item) for item in ids])

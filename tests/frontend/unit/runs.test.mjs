@@ -14,6 +14,7 @@ test("normalizeOpsRuns and deriveAdminRunsModel keep shared run fields aligned",
     runId: "fetch_live_1",
     active: true,
     startedAt: "2026-03-08T10:00:00.000Z",
+    finishedAt: "2026-03-08T10:02:00.000Z",
     status: "running",
     summary: {
       outputCount: 42,
@@ -66,6 +67,7 @@ test("normalizeOpsRuns and deriveAdminRunsModel keep shared run fields aligned",
   assert.deepEqual(model.currentRows.map(pick), normalized.currentRows.map(pick));
   assert.deepEqual(model.visibleCompletedRows.map(pick), normalized.visibleCompletedRows.map(pick));
   assert.equal(model.currentRows[0].displayStatus, "running");
+  assert.equal(model.currentRows[0].finishedAt, "");
   assert.equal(model.currentRows[0].elapsedMs, 600000);
   assert.equal(model.currentRows[0].runId, "fetch_live_1");
   assert.equal(model.visibleCompletedRows[0].type, "sync");

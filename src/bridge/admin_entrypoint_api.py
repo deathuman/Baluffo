@@ -53,6 +53,8 @@ def build_bridge_api(config: Any) -> BridgeApi:
         persist_state_and_auto_sync=root_mod.persist_state_and_auto_sync,
         add_manual_source=root_mod.add_manual_source,
         trigger_source_check=root_mod.trigger_source_check,
+        check_registry_conflicts=root_mod.check_registry_conflicts,
+        load_registry_conflict_adjudication=root_mod.load_registry_conflict_adjudication,
         load_json_object=root_mod.load_json_object,
         save_json_atomic=root_mod.save_json_atomic,
         start_fetcher_task=root_mod.start_fetcher_task,

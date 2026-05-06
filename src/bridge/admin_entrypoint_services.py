@@ -459,6 +459,33 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 )
                 return bool(has_live_evidence and (recent_heartbeat or recent_artifact))
 
+            def pipeline_refresh_child_task_heartbeat(
+                task_type: str, run_id: str, started_at: str
+            ) -> bool:
+                normalized_type = str(task_type or "").strip().lower()
+                normalized_run_id = str(run_id or "").strip()
+                if normalized_type not in {"discovery", "fetch"} or not normalized_run_id:
+                    return False
+                with root_mod.OPS_STATE_LOCK:
+                    task_state = pipeline_load_json_object(root_mod.TASK_STATE_PATH, {})
+                    if not isinstance(task_state, dict):
+                        return False
+                    current = _as_json_object(task_state.get(normalized_type))
+                    if str(current.get("runId") or "").strip() != normalized_run_id:
+                        return False
+                    if not root_mod.task_running_from_state(normalized_type):
+                        return False
+                    task_state[normalized_type] = {
+                        **current,
+                        "runId": normalized_run_id,
+                        "taskType": normalized_type,
+                        "status": "running",
+                        "startedAt": str(current.get("startedAt") or started_at or "").strip(),
+                        "heartbeatAt": root_mod.now_iso(),
+                    }
+                    root_mod.save_json_atomic(root_mod.TASK_STATE_PATH, task_state)
+                    return True
+
             root_mod._PIPELINE_SERVICE = root_mod.PipelineService(
                 pipeline_state_lock=bridge_runtime_state.PIPELINE_STATE_LOCK,
                 pipeline_status=bridge_runtime_state.PIPELINE_STATUS,
@@ -481,6 +508,8 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 get_app_version=root_mod.get_app_version,
                 child_run_is_live=pipeline_child_run_is_live,
                 get_projected_run_history=root_mod._get_ops_api().get_projected_run_history,
+                run_registry_conflict_adjudication=root_mod.check_registry_conflicts,
+                refresh_child_task_heartbeat=pipeline_refresh_child_task_heartbeat,
             )
         return cast(_PipelineServiceLike, root_mod._PIPELINE_SERVICE)
 

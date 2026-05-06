@@ -295,6 +295,8 @@ class BridgeApi:
     persist_state_and_auto_sync: Callable[..., RegistryState] = _identity_registry_state
     add_manual_source: Callable[[str], dict[str, Any]] = _invalid_manual_source
     trigger_source_check: Callable[..., dict[str, Any]] = _not_started_result
+    check_registry_conflicts: Callable[[JsonObject | None], JsonObject] = _not_started_result
+    load_registry_conflict_adjudication: Callable[[], JsonObject] = _ok_payload
 
     # Registry helpers used by POST routes.
     move_entries: Callable[

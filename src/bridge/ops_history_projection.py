@@ -36,6 +36,11 @@ def build_sync_history_deps(
         parse_iso=deps.parse_iso,
         now_iso=deps.now_iso,
         now_utc=deps.now_utc,
+        get_jobs_pipeline_status_payload=getattr(
+            deps,
+            "get_jobs_pipeline_status_payload",
+            lambda: {},
+        ),
     )
 
 

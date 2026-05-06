@@ -332,7 +332,12 @@ def _replace_path_with_retry(
     return _finish_write_failure(last_error, policy)
 
 
-def _write_json_payload_atomic(path: Path, payload: Any) -> None:
+def _write_json_payload_atomic(
+    path: Path,
+    payload: Any,
+    *,
+    policy: str = _WRITE_POLICY_REQUIRED,
+) -> bool:
     path = Path(path)
     target = _gzip_path_for(path) if _uses_gzip_storage(path) else path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -346,7 +351,7 @@ def _write_json_payload_atomic(path: Path, payload: Any) -> None:
                 handle.write(serialized)
         else:
             tmp.write_text(serialized, encoding="utf-8")
-        _replace_path_with_retry(tmp, target, policy=_WRITE_POLICY_REQUIRED)
+        return _replace_path_with_retry(tmp, target, policy=policy)
     finally:
         try:
             if tmp.exists():
@@ -551,7 +556,11 @@ def save_json_atomic(path: Path, payload: Any) -> None:
         _write_json_payload_atomic(path, core_rows)
         metadata_path = _registry_metadata_path_for(path)
         if metadata_path is not None:
-            _write_json_payload_atomic(metadata_path, metadata_map)
+            _write_json_payload_atomic(
+                metadata_path,
+                metadata_map,
+                policy=_WRITE_POLICY_BEST_EFFORT,
+            )
         _compact_json_journal_if_needed(path, journal_payload)
         return
     _append_json_journal_record(path, journal_payload)
@@ -589,7 +598,11 @@ def save_registry_state_atomic(
     _write_json_payload_atomic(pending_path, pending_core)
     metadata_path = _registry_metadata_path_for(active_path)
     if metadata_path is not None:
-        _write_json_payload_atomic(metadata_path, metadata_map)
+        _write_json_payload_atomic(
+            metadata_path,
+            metadata_map,
+            policy=_WRITE_POLICY_BEST_EFFORT,
+        )
     _compact_json_journal_if_needed(active_path, active_payload)
     _compact_json_journal_if_needed(pending_path, pending_payload)
     save_json_atomic(rejected_path, rejected_payload)

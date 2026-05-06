@@ -350,17 +350,15 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
         now_iso_fn=now_iso,
     )
     if auto_approved > 0:
-        orchestrator.save_json_atomic(
+        source_registry_module.save_registry_state_atomic(
             source_registry_module.ACTIVE_PATH,
-            filter_tombstoned_rows(registry_state["active"], state.tombstones),
-        )
-        orchestrator.save_json_atomic(
             source_registry_module.PENDING_PATH,
-            filter_tombstoned_rows(registry_state["pending"], state.tombstones),
-        )
-        orchestrator.save_json_atomic(
             source_registry_module.REJECTED_PATH,
-            filter_tombstoned_rows(registry_state["rejected"], state.tombstones),
+            {
+                "active": filter_tombstoned_rows(registry_state["active"], state.tombstones),
+                "pending": filter_tombstoned_rows(registry_state["pending"], state.tombstones),
+                "rejected": filter_tombstoned_rows(registry_state["rejected"], state.tombstones),
+            },
         )
         orchestrator.emit_log(f"Auto-approval applied during discovery: approved={auto_approved}.")
 

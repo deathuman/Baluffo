@@ -233,6 +233,41 @@ test("admin ops history: selected run analysis has safe empty state without sele
   assert.doesNotMatch(historyEl.innerHTML, /role="progressbar"/i);
 });
 
+test("admin ops history: active rows do not render stale finished timestamps", () => {
+  const historyEl = makeEl();
+  const runKey = "current||discovery_live_1|discovery|2026-03-08T10:00:00.000Z||0";
+
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [
+      {
+        type: "discovery",
+        runId: "discovery_live_1",
+        active: true,
+        isLive: true,
+        displayStatus: "running",
+        startedAt: "2026-03-08T10:00:00.000Z",
+        finishedAt: "2026-04-09T12:00:00.000Z",
+        summary: { queuedCandidateCount: 4, failedProbeCount: 0 },
+        taskProgress: {
+          active: true,
+          phaseKey: "probing",
+          phaseLabel: "Probing candidates",
+          counts: { queuedCandidates: 4 }
+        }
+      }
+    ],
+    visibleCompletedRows: [],
+    olderCompletedRows: []
+  }, {
+    selectedRunKey: runKey
+  });
+
+  assert.match(historyEl.innerHTML, /running/i);
+  assert.match(historyEl.innerHTML, /Selected Run Analysis/);
+  assert.doesNotMatch(historyEl.innerHTML, /<strong>Finished<\/strong>/);
+  assert.doesNotMatch(historyEl.innerHTML, /4\/9\/2026|Apr/i);
+});
+
 test("admin ops history: selected run analysis renders timeline empty state", () => {
   const historyEl = makeEl();
   const runKey = "completed||sync_no_timeline|sync||2026-03-08T09:30:00.000Z|0";

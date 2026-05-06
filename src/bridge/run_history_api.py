@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -208,6 +208,7 @@ class SyncHistoryDeps:
     parse_iso: Callable[[Any], datetime | None]
     now_iso: Callable[[], str]
     now_utc: Callable[[], datetime]
+    get_jobs_pipeline_status_payload: Callable[[], dict[str, Any]] = lambda: {}
 
 
 def _row_score(row: dict[str, Any]) -> tuple[int, int, int]:
@@ -274,6 +275,26 @@ def _task_progress_active(payload: dict[str, Any]) -> bool:
     return bool(progress.get("active")) if isinstance(progress, dict) else False
 
 
+def _pipeline_owns_child_task(
+    *,
+    task_type: str,
+    report: dict[str, Any],
+    pipeline_status: dict[str, Any],
+    parse_iso: Callable[[Any], datetime | None],
+) -> bool:
+    if not isinstance(pipeline_status, dict) or not bool(pipeline_status.get("active")):
+        return False
+    normalized_type = str(task_type or "").strip().lower()
+    pipeline_stage = str(pipeline_status.get("stage") or "").strip().lower()
+    if normalized_type not in {"discovery", "fetch"} or pipeline_stage != normalized_type:
+        return False
+    child_started = _safe_parse_iso(parse_iso, report.get("startedAt"))
+    pipeline_started = _safe_parse_iso(parse_iso, pipeline_status.get("startedAt"))
+    if not child_started or not pipeline_started:
+        return False
+    return child_started >= pipeline_started - timedelta(minutes=2)
+
+
 def _payload_has_live_run_identity(payload: dict[str, Any], run_id: str = "") -> bool:
     if not isinstance(payload, dict):
         return False
@@ -307,6 +328,7 @@ def _build_child_task_snapshot(
     task_artifact: dict[str, Any] | None = None,
     task_artifact_path: Path | None = None,
     terminal_status_builder: Callable[[dict[str, Any]], str] | None = None,
+    parent_owner_active: bool = False,
     max_idle_minutes: float = 2.0,
     dead_age_minutes: float = 5.0,
 ) -> ChildTaskSnapshot:
@@ -395,7 +417,14 @@ def _build_child_task_snapshot(
         )
 
     owner_active = bool(
-        run_id and (state_active or artifact_active or report_active or progress_active)
+        run_id
+        and (
+            state_active
+            or artifact_active
+            or report_active
+            or progress_active
+            or parent_owner_active
+        )
     )
     if finished_at and owner_active:
         diagnostics.append(
@@ -554,6 +583,12 @@ def reconcile_sync_history_locked(deps: SyncHistoryDeps) -> None:
 def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
     history = _collapse_duplicate_history_rows(deps.load_run_history())
     diagnostics: list[dict[str, Any]] = []
+    try:
+        pipeline_status = deps.get_jobs_pipeline_status_payload()
+    except Exception:  # noqa: BLE001
+        pipeline_status = {}
+    if not isinstance(pipeline_status, dict):
+        pipeline_status = {}
 
     fetch_report = deps.normalize_fetch_report_contract(
         deps.load_json_object(deps.jobs_fetch_report_path, {})
@@ -572,6 +607,12 @@ def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
         terminal_status_builder=_fetch_terminal_status,
         task_artifact=fetch_task_artifact if isinstance(fetch_task_artifact, dict) else None,
         task_artifact_path=deps.jobs_fetch_tasks_path,
+        parent_owner_active=_pipeline_owns_child_task(
+            task_type="fetch",
+            report=fetch_report,
+            pipeline_status=pipeline_status,
+            parse_iso=deps.parse_iso,
+        ),
     )
     diagnostics.extend(fetch_snapshot.diagnostics)
     if fetch_snapshot.run_id and (
@@ -599,6 +640,12 @@ def project_run_history(deps: SyncHistoryDeps) -> LifecycleProjection:
         parse_iso=deps.parse_iso,
         now_utc=deps.now_utc,
         summary_builder=deps.summarize_discovery_report,
+        parent_owner_active=_pipeline_owns_child_task(
+            task_type="discovery",
+            report=discovery_report,
+            pipeline_status=pipeline_status,
+            parse_iso=deps.parse_iso,
+        ),
     )
     diagnostics.extend(discovery_snapshot.diagnostics)
     if discovery_snapshot.run_id and (

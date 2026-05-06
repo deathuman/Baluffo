@@ -398,8 +398,35 @@ export function createOpsHealthController({
   function renderRegistryConflictsQueue(payload = state.latestRegistryConflictsPayload || {}) {
     renderAdminRegistryConflictsImpl(refs.adminRegistryConflictsReviewEl, payload || {}, {
       onRegistryConflictAction: handleRegistryConflictAction,
-      onRegistryConflictSafeAutomation: handleRegistryConflictSafeAutomation
+      onRegistryConflictSafeAutomation: handleRegistryConflictSafeAutomation,
+      onRegistryConflictCheck: handleRegistryConflictCheck,
+      checkingConflicts: Boolean(state.registryConflictCheckRunning)
     });
+  }
+
+  async function handleRegistryConflictCheck(options = {}) {
+    if (state.registryConflictCheckRunning) return;
+    state.registryConflictCheckRunning = true;
+    renderRegistryConflictsQueue(state.latestRegistryConflictsPayload || {});
+    try {
+      const result = await postBridge("/registry/conflicts/check-sources", {
+        applyAutopilot: Boolean(options?.applyAutopilot)
+      });
+      const demoted = Number(result?.demoted || 0);
+      const checked = Number(result?.checkedSourceCount || 0);
+      showToast(
+        options?.applyAutopilot
+          ? `Conflict source check finished: ${demoted} demoted, ${checked} checked.`
+          : `Conflict source check finished: ${checked} checked.`,
+        "success"
+      );
+      await loadOpsHealthData();
+    } catch (err) {
+      showToast(`Could not check conflicting sources: ${getErrorMessage(err)}`, "error");
+    } finally {
+      state.registryConflictCheckRunning = false;
+      renderRegistryConflictsQueue(state.latestRegistryConflictsPayload || {});
+    }
   }
 
   async function handleRegistryConflictSafeAutomation(safeAutomation) {

@@ -42,6 +42,7 @@ from src.bridge import config as bridge_config
 from src.bridge import diagnostic_events as _diagnostic_events
 from src.bridge import html_extractor as _html_extractor_mod
 from src.bridge import ops_api as _ops_api_mod
+from src.bridge import registry_conflict_adjudication as _registry_conflict_adjudication_mod
 from src.bridge import registry_sync_flow as _registry_sync_flow_mod
 from src.bridge import run_history_api as _run_history_api
 from src.bridge import source_check_api as _source_check_api_mod
@@ -143,6 +144,7 @@ APPROVAL_STATE_PATH = _APPROVAL_STATE_PATH
 _html_extractor = _html_extractor_mod
 _ops_api = _ops_api_mod
 _registry_sync_flow = _registry_sync_flow_mod
+_registry_conflict_adjudication = _registry_conflict_adjudication_mod
 _source_check_api = _source_check_api_mod
 _source_check_fetch = _source_check_fetch_mod
 _source_check_http = _source_check_http_mod
@@ -372,6 +374,19 @@ def normalize_manual_static_studio_fields(row: dict[str, Any]) -> dict[str, Any]
 
 def trigger_source_check(source_id: str, timeout_s: int = 12) -> dict[str, Any]:
     return admin_registry_api_mod.trigger_source_check(source_id, timeout_s=timeout_s)
+
+
+def check_registry_conflicts(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    return _registry_conflict_adjudication.run_registry_conflict_adjudication(
+        build_bridge_api(RUNTIME_CONFIG),
+        payload if isinstance(payload, dict) else {},
+    )
+
+
+def load_registry_conflict_adjudication() -> dict[str, Any]:
+    return _registry_conflict_adjudication.load_registry_conflict_adjudication(
+        build_bridge_api(RUNTIME_CONFIG)
+    )
 
 
 def run_background_script(

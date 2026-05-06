@@ -40,6 +40,9 @@ class PipelineService:
         get_app_version: Callable[[], str],
         child_run_is_live: Callable[[str, str], bool] | None = None,
         get_projected_run_history: Callable[[], Any] | None = None,
+        run_registry_conflict_adjudication: Callable[[dict[str, Any]], dict[str, Any]]
+        | None = None,
+        refresh_child_task_heartbeat: Callable[[str, str, str], bool] | None = None,
     ) -> None:
         self._lock = pipeline_state_lock
         self._status = pipeline_status
@@ -61,6 +64,8 @@ class PipelineService:
         self._get_app_version = get_app_version
         self._child_run_is_live = child_run_is_live
         self._get_projected_run_history = get_projected_run_history
+        self._run_registry_conflict_adjudication = run_registry_conflict_adjudication
+        self._refresh_child_task_heartbeat = refresh_child_task_heartbeat
 
     @staticmethod
     def _pipeline_progress(current_step: int, total_steps: int, label: str) -> dict[str, Any]:
@@ -139,7 +144,7 @@ class PipelineService:
             return None
         try:
             projection = self._get_projected_run_history()
-        except Exception:  # noqa: BLE001
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             return None
         child_tasks = getattr(projection, "child_tasks", {})
         if not isinstance(child_tasks, dict):
@@ -163,7 +168,7 @@ class PipelineService:
             return False
         try:
             return bool(self._child_run_is_live(task_type, run_id))
-        except Exception:  # noqa: BLE001
+        except (RuntimeError, TypeError, ValueError):
             return False
 
     @staticmethod
@@ -239,12 +244,37 @@ class PipelineService:
             report = load_json_object(report_path, {})
             normalized_report = report if isinstance(report, dict) else {}
             report_run_id = str(normalized_report.get("runId") or "").strip()
+            refreshed_child_heartbeat = False
+            if (
+                callable(self._refresh_child_task_heartbeat)
+                and str(task_type or "").strip()
+                and str(task_run_id or "").strip()
+            ):
+                try:
+                    refreshed_child_heartbeat = bool(
+                        self._refresh_child_task_heartbeat(
+                            str(task_type or "").strip(),
+                            str(task_run_id or "").strip(),
+                            str(started_at or "").strip(),
+                        )
+                    )
+                except (RuntimeError, OSError, TypeError, ValueError) as exc:
+                    self._bridge_log(
+                        "warn",
+                        "jobs_pipeline_child_heartbeat_refresh_failed",
+                        taskType=str(task_type or "").strip(),
+                        childRunId=str(task_run_id or "").strip(),
+                        error=str(exc),
+                    )
             run_id_matches = bool(
                 not str(task_run_id or "").strip() or report_run_id == str(task_run_id).strip()
             )
             report_started = self._parse_iso(normalized_report.get("startedAt"))
             report_finished = self._parse_iso(normalized_report.get("finishedAt"))
-            child_live = self._child_task_has_live_evidence(task_type, task_run_id)
+            child_live = bool(
+                refreshed_child_heartbeat
+                or self._child_task_has_live_evidence(task_type, task_run_id)
+            )
             if (
                 run_id_matches
                 and started_dt
@@ -334,6 +364,30 @@ class PipelineService:
                 task_type="fetch",
                 task_run_id=fetch_run_id,
             )
+
+            if callable(self._run_registry_conflict_adjudication):
+                try:
+                    result = self._run_registry_conflict_adjudication(
+                        {
+                            "applyAutopilot": True,
+                            "trigger": "jobs_pipeline",
+                            "pipelineRunId": run_id,
+                        }
+                    )
+                    self._bridge_log(
+                        "info",
+                        "registry_conflict_adjudication_finished",
+                        runId=run_id,
+                        demoted=int(result.get("demoted") or 0),
+                        checkedFamilyCount=int(result.get("checkedFamilyCount") or 0),
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    self._bridge_log(
+                        "warn",
+                        "registry_conflict_adjudication_failed",
+                        runId=run_id,
+                        error=str(exc),
+                    )
 
             self._mark_stage(
                 stage="sync_push", current_step=3, total_steps=3, label="Running sync push..."

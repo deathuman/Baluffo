@@ -3,6 +3,7 @@ import { UI_TOKENS, ui } from "../../shared/ui/selectors.js";
 import { formatDateTime, stableOpsSignature } from "./ops-shared.js";
 
 const ACTION_TOKEN = UI_TOKENS.admin.registryConflictActionBtn;
+const CHECK_TOKEN = UI_TOKENS.admin.registryConflictCheckBtn;
 const TRIAGE_FILTER_SELECTOR = ".admin-registry-conflict-filter-btn";
 const REVIEW_FILTER_SELECTOR = ".admin-registry-conflict-review-filter-btn";
 const SAFE_AUTOMATION_SELECTOR = ".admin-registry-conflict-safe-automation-btn";
@@ -211,6 +212,14 @@ function safeAutomationValue(card) {
   };
 }
 
+function adjudicationValue(payload) {
+  return objectValue(payload?.adjudication);
+}
+
+function familyAdjudicationValue(card) {
+  return objectValue(card?.adjudication);
+}
+
 function eligibleSafeAutomations(conflicts) {
   return conflicts
     .map((card, index) => ({ card, index, safeAutomation: safeAutomationValue(card) }))
@@ -349,6 +358,46 @@ function renderRowMeta(row) {
     .join("");
 }
 
+function renderAdjudicationProbe(probe) {
+  const status = Boolean(probe?.ok) ? "ok" : stringValue(probe?.error, "failed");
+  return `
+    <div class="admin-registry-conflict-triage-card">
+      <span class="admin-registry-conflict-triage-badge">${escapeHtml(stringValue(probe?.name, stringValue(probe?.sourceId, "source")))}</span>
+      <span>${escapeHtml(status)} · HTTP ${Number(probe?.httpStatus || 0).toLocaleString()} · jobs ${Number(probe?.jobsFound || 0).toLocaleString()}</span>
+      <span>final ${escapeHtml(stringValue(probe?.finalUrl, "-"))}</span>
+      ${probe?.newestJobDate ? `<span>newest ${escapeHtml(formatFieldValue("newestJobDate", probe.newestJobDate))}</span>` : ""}
+    </div>
+  `;
+}
+
+function renderAdjudicationDecision(decision) {
+  const overlap = objectValue(decision?.overlap);
+  return `
+    <div class="admin-registry-conflict-triage-card">
+      <span class="admin-registry-conflict-triage-badge">${escapeHtml(stringValue(decision?.status, "needs_review"))} · ${escapeHtml(stringValue(decision?.confidence, "low"))}</span>
+      <span>${escapeHtml(stringValue(decision?.sourceId, "source"))}: ${escapeHtml(stringValue(decision?.reason, "No reason available."))}</span>
+      <span>overlap ${Number(overlap?.ratio || 0).toLocaleString(undefined, { maximumFractionDigits: 3 })}</span>
+    </div>
+  `;
+}
+
+function renderAdjudicationCard(card) {
+  const adjudication = familyAdjudicationValue(card);
+  if (!Object.keys(adjudication).length) return "";
+  const probes = listValue(adjudication?.probes);
+  const decisions = listValue(adjudication?.decisions);
+  return `
+    <div class="admin-registry-conflict-adjudication">
+      <div class="admin-registry-conflict-triage-card">
+        <span class="admin-registry-conflict-triage-badge">Adjudication · ${escapeHtml(stringValue(adjudication?.status, "checked"))}</span>
+        <span>winner ${escapeHtml(stringValue(adjudication?.winnerSourceId, "unknown"))}</span>
+      </div>
+      ${probes.map(renderAdjudicationProbe).join("")}
+      ${decisions.map(renderAdjudicationDecision).join("")}
+    </div>
+  `;
+}
+
 function renderConflictRow(row, cardIndex, rowIndex, role) {
   const title = stringValue(row?.name, "Unnamed source");
   const identifier = stringValue(row?.id || row?.sourceId || row?.sourceStateName, "unknown");
@@ -466,6 +515,7 @@ function renderConflictCard(card, cardIndex) {
         <span class="admin-registry-conflict-triage-badge">${escapeHtml(reviewLabel)} · ${escapeHtml(suggestedConfidence)}</span>
         <span>${escapeHtml(suggestedDisposition)} · ${escapeHtml(reviewReason)}</span>
       </div>
+      ${renderAdjudicationCard(card)}
       ${renderSafeAutomationCard(card, cardIndex)}
       <div class="admin-registry-conflict-rationale">
         ${rationale.length ? rationale.map(renderRationaleChip).join("") : `<span class="muted">No rationale available.</span>`}
@@ -524,6 +574,44 @@ function renderSafeAutomationToolbar(visibleConflicts) {
   `;
 }
 
+function renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts) {
+  const adjudication = adjudicationValue(payload);
+  const checkedAt = stringValue(adjudication?.finishedAt, "");
+  const demoted = Number(adjudication?.demoted || 0);
+  const recommended = Number(objectValue(adjudication?.summary)?.recommendedDemotion || 0);
+  const disabled = checkingConflicts || !visibleConflicts.length;
+  const checkLabel = checkingConflicts ? "Checking conflicts..." : "Check conflicting sources";
+  return `
+    <div class="admin-registry-conflict-triage">
+      <div class="admin-registry-conflict-triage-head">
+        <div>
+          <div class="admin-registry-conflict-family">Conflict source checks</div>
+          <div class="admin-registry-conflict-summary">
+            ${checkedAt ? `Last checked ${escapeHtml(formatFieldValue("finishedAt", checkedAt))}; ` : "No conflict source check has run yet. "}
+            ${demoted.toLocaleString()} demoted, ${recommended.toLocaleString()} recommended.
+          </div>
+        </div>
+        <div class="admin-registry-conflict-actions">
+          <button
+            type="button"
+            class="btn back-btn"
+            data-ui="${CHECK_TOKEN}"
+            data-registry-conflict-apply-autopilot="false"
+            ${disabled ? "disabled" : ""}
+          >${escapeHtml(checkLabel)}</button>
+          <button
+            type="button"
+            class="btn back-btn"
+            data-ui="${CHECK_TOKEN}"
+            data-registry-conflict-apply-autopilot="true"
+            ${disabled ? "disabled" : ""}
+          >Apply high-confidence recommendations</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderConflictGroups(conflicts, review) {
   const queues = listValue(review?.queues);
   const queueMeta = new Map(queues.map(queue => [stringValue(queue?.queue), queue]));
@@ -571,12 +659,15 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
   const visibleConflicts = activeReviewFilter === "all"
     ? triageFilteredConflicts
     : triageFilteredConflicts.filter(card => stringValue(card?.reviewQueue, "p3_low_signal_manual") === activeReviewFilter);
+  const checkingConflicts = Boolean(options?.checkingConflicts);
   const signature = stableOpsSignature({
     summary,
     triage,
     review,
+    adjudication: adjudicationValue(payload),
     activeTriageFilter,
     activeReviewFilter,
+    checkingConflicts,
     conflicts
   });
   if (canPatchInPlace && reviewEl.dataset.registryConflictsSig === signature) return;
@@ -589,6 +680,7 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
     </div>
     ${renderTriageSummary(triage, activeTriageFilter)}
     ${renderReviewSummary(review, activeReviewFilter)}
+    ${renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)}
     ${renderSafeAutomationToolbar(visibleConflicts)}
     <div class="admin-registry-conflicts-list">
       ${visibleConflicts.length
@@ -648,6 +740,14 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
           },
           card
         );
+      }
+    });
+  });
+  reviewEl.querySelectorAll(ui(CHECK_TOKEN)).forEach(button => {
+    button.addEventListener("click", () => {
+      const applyAutopilot = String(button.dataset.registryConflictApplyAutopilot || "false") === "true";
+      if (typeof options.onRegistryConflictCheck === "function") {
+        options.onRegistryConflictCheck({ applyAutopilot });
       }
     });
   });

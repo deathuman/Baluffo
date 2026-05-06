@@ -13,7 +13,7 @@ function normalizeRunStatus(value) {
 }
 
 function isRunLive(row) {
-  return Boolean(row?.active) && !String(row?.finishedAt || "").trim();
+  return Boolean(row?.active);
 }
 
 function isTerminalHistoryRow(row) {
@@ -28,6 +28,7 @@ function toOpsRunRow(row, nowMs) {
   return {
     ...row,
     isLive: live,
+    finishedAt: live ? "" : String(row?.finishedAt || "").trim(),
     elapsedMs,
     displayStatus: status
   };
@@ -38,9 +39,9 @@ function normalizeCurrentTaskStateRow(row, nowMs = Date.now()) {
   const taskType = String(row.taskType || row.type || "").trim().toLowerCase();
   if (!taskType) return null;
   const startedAt = String(row.startedAt || "").trim();
-  const finishedAt = String(row.finishedAt || "").trim();
   const startedMs = Date.parse(startedAt);
   const active = Boolean(row.active);
+  const finishedAt = active ? "" : String(row.finishedAt || "").trim();
   const taskProgress = normalizeTaskProgressPayload(row.taskProgress);
   return {
     ...row,

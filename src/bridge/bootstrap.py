@@ -63,6 +63,8 @@ def build_bridge_api(
     load_alert_state: Callable[[], dict[str, Any]],
     save_alert_state: Callable[[dict[str, Any]], None],
     get_task_live_payload: Callable[[str], dict[str, Any]] = _empty_task_live_payload,
+    check_registry_conflicts: Callable[[dict[str, Any] | None], dict[str, Any]] | None = None,
+    load_registry_conflict_adjudication: Callable[[], dict[str, Any]] | None = None,
 ) -> BridgeApi:
     return BridgeApi(
         runtime_config=config,
@@ -99,6 +101,10 @@ def build_bridge_api(
         persist_state_and_auto_sync=persist_state_and_auto_sync,
         add_manual_source=add_manual_source,
         trigger_source_check=trigger_source_check,
+        check_registry_conflicts=check_registry_conflicts or _empty_task_live_payload,
+        load_registry_conflict_adjudication=(
+            load_registry_conflict_adjudication or _empty_task_live_payload
+        ),
         load_json_object=load_json_object,
         save_json_atomic=save_json_atomic,
         start_fetcher_task=start_fetcher_task,

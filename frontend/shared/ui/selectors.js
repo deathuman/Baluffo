@@ -214,6 +214,7 @@ export const UI_TOKENS = Object.freeze({
     sourcePolicyFilterBtn: "admin-source-policy-filter-btn",
     sourcePolicyActionBtn: "admin-source-policy-action-btn",
     sourcePolicyMigrationLinkActionBtn: "admin-source-policy-migration-link-action-btn",
-    registryConflictActionBtn: "admin-registry-conflict-action-btn"
+    registryConflictActionBtn: "admin-registry-conflict-action-btn",
+    registryConflictCheckBtn: "admin-registry-conflict-check-btn"
   }
 });

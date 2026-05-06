@@ -167,6 +167,16 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   };
 
   const toRowView = (row, rowArea, index) => {
+    const inputIsLive = Boolean(row?.isLive || row?.active);
+    if (inputIsLive) {
+      row = {
+        ...row,
+        active: true,
+        isLive: true,
+        finishedAt: "",
+        displayStatus: String(row?.displayStatus || row?.status || "running").trim() || "running"
+      };
+    }
     const runView = buildTaskRunView(row);
     const rawStatus = String(row?.displayStatus || row?.status || "unknown");
     const statusToken = rawStatus.toLowerCase();
@@ -243,7 +253,9 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
           : Number(summary?.failedSources || 0)).toLocaleString(),
       failedTitle: runView.failureSummary || runView.warningSummary || "",
       startedText: formatDateTime(row?.startedAt || ""),
-      finishedText: formatDateTime(row?.finishedAt || row?.startedAt || ""),
+      finishedText: statusToken === "running" || statusToken === "started"
+        ? ""
+        : formatDateTime(row?.finishedAt || ""),
       progressLabel: runView.progressLabel || "",
       warningSummary: runView.warningSummary || "",
       failureSummary: runView.failureSummary || "",
@@ -406,7 +418,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     const analysis = view.analysisPayload || {};
     const timingItems = [
       analysis.timing?.startedAt ? `<span><strong>Started</strong> ${escapeHtml(formatDateTime(analysis.timing.startedAt))}</span>` : "",
-      analysis.timing?.finishedAt ? `<span><strong>Finished</strong> ${escapeHtml(formatDateTime(analysis.timing.finishedAt))}</span>` : "",
+      view.isRunning || !analysis.timing?.finishedAt ? "" : `<span><strong>Finished</strong> ${escapeHtml(formatDateTime(analysis.timing.finishedAt))}</span>`,
       analysis.timing?.durationLabel ? `<span><strong>Duration</strong> ${escapeHtml(analysis.timing.durationLabel)}</span>` : "",
       analysis.timing?.elapsedLabel ? `<span><strong>Elapsed</strong> ${escapeHtml(analysis.timing.elapsedLabel)}</span>` : ""
     ].filter(Boolean).join("");

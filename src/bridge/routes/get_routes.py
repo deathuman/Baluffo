@@ -14,6 +14,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from src.bridge.api import BridgeApi
 from src.bridge.fetch_report_review_state import load_fetch_report_with_dedup_review_state
+from src.bridge.registry_conflict_adjudication import overlay_adjudication
 from src.bridge.registry_conflicts import load_registry_conflicts_payload
 from src.bridge.routes.error_boundary import (
     run_route_boundary,
@@ -1039,6 +1040,7 @@ def handle_get(
             load_json_object=api.load_json_object,
             source_state_path=source_state_path,
         )
+        payload = overlay_adjudication(payload, api.load_registry_conflict_adjudication())
         payload["registrySummary"] = api.summarize_state(state)
         payload["registryAutoHeal"] = api.get_registry_auto_heal_report()
         payload["ok"] = True
