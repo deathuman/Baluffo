@@ -11,6 +11,7 @@ from scripts.build_portable_exe import (
     DEFAULT_ICON_PATH,
     MAIN_RUNTIME_COLLECT_ALL_PACKAGES,
     MAIN_RUNTIME_COLLECT_DATA_PACKAGES,
+    MAIN_RUNTIME_EXCLUDED_MODULES,
     MAIN_RUNTIME_HIDDEN_IMPORTS,
     OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
     OPTIONAL_SCRAPY_RUNTIME_PACKAGES,
@@ -131,7 +132,11 @@ def test_main_runtime_hidden_imports_preserve_packaged_browser_fallback_support(
 
 
 def test_main_runtime_collect_all_packages_include_scrapy_runtime_when_available() -> None:
-    assert MAIN_RUNTIME_COLLECT_ALL_PACKAGES == OPTIONAL_SCRAPY_RUNTIME_PACKAGES
+    assert MAIN_RUNTIME_COLLECT_ALL_PACKAGES == tuple(
+        package_name
+        for package_name in OPTIONAL_SCRAPY_RUNTIME_PACKAGES
+        if package_name not in {"twisted", "queuelib"}
+    )
     if OPTIONAL_SCRAPY_RUNTIME_PACKAGES:
         assert "scrapy" in OPTIONAL_SCRAPY_RUNTIME_PACKAGES
         assert "twisted" in OPTIONAL_SCRAPY_RUNTIME_PACKAGES
@@ -143,6 +148,51 @@ def test_portable_build_collects_optional_github_tls_runtime_data() -> None:
     assert UPDATER_HELPER_COLLECT_DATA_PACKAGES == OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
     if OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES:
         assert "certifi" in OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
+
+
+def test_portable_build_excludes_test_only_pyinstaller_dependency_trees() -> None:
+    expected_exclusions = {
+        "twisted.trial.test",
+        "twisted.trial._dist.test",
+        "twisted.test",
+        "twisted.internet.test",
+        "twisted.python.test",
+        "twisted.protocols.test",
+        "twisted.conch.test",
+        "twisted.application.test",
+        "twisted.web.test",
+        "twisted.words.test",
+        "twisted._threads.test",
+        "queuelib.tests",
+        "pytest",
+        "_pytest",
+        "hypothesis",
+        "hypothesis.strategies",
+        "pydantic.v1._hypothesis_plugin",
+        "hamcrest",
+    }
+
+    assert expected_exclusions.issubset(set(MAIN_RUNTIME_EXCLUDED_MODULES))
+
+
+def test_portable_build_keeps_scrapy_runtime_collection() -> None:
+    assert {"scrapy", "scrapy_playwright", "twisted"}.issubset(
+        set(OPTIONAL_SCRAPY_RUNTIME_PACKAGES)
+    )
+    assert {"scrapy", "scrapy_playwright"}.issubset(set(MAIN_RUNTIME_COLLECT_ALL_PACKAGES))
+    assert "twisted" not in MAIN_RUNTIME_COLLECT_ALL_PACKAGES
+    assert "queuelib" not in MAIN_RUNTIME_COLLECT_ALL_PACKAGES
+    assert {"scrapy", "scrapy_playwright", "twisted"}.issubset(
+        set(MAIN_RUNTIME_HIDDEN_IMPORTS)
+    )
+
+
+def test_updater_helper_does_not_inherit_main_scrapy_test_exclusions() -> None:
+    assert "scrapy" not in UPDATER_HELPER_HIDDEN_IMPORTS
+    assert "twisted" not in UPDATER_HELPER_HIDDEN_IMPORTS
+    assert not set(MAIN_RUNTIME_EXCLUDED_MODULES).intersection(
+        set(UPDATER_HELPER_HIDDEN_IMPORTS)
+    )
 
 
 def test_helper_hidden_imports_omit_playwright_heavy_runtime_graph() -> None:

@@ -78,7 +78,33 @@ MAIN_RUNTIME_HIDDEN_IMPORTS = (
     "tkinter.ttk",
 )
 MAIN_RUNTIME_COLLECT_DATA_PACKAGES = OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES
-MAIN_RUNTIME_COLLECT_ALL_PACKAGES = OPTIONAL_SCRAPY_RUNTIME_PACKAGES
+MAIN_RUNTIME_COLLECT_ALL_PACKAGES = tuple(
+    package_name
+    for package_name in OPTIONAL_SCRAPY_RUNTIME_PACKAGES
+    if package_name not in {"twisted", "queuelib"}
+)
+# PyInstaller's broad Scrapy/Twisted collection otherwise walks test-only dependency
+# trees and reports missing optional test plugins; keep runtime packages, exclude tests.
+MAIN_RUNTIME_EXCLUDED_MODULES = (
+    "twisted.trial.test",
+    "twisted.trial._dist.test",
+    "twisted.test",
+    "twisted.internet.test",
+    "twisted.python.test",
+    "twisted.protocols.test",
+    "twisted.conch.test",
+    "twisted.application.test",
+    "twisted.web.test",
+    "twisted.words.test",
+    "twisted._threads.test",
+    "queuelib.tests",
+    "pytest",
+    "_pytest",
+    "hypothesis",
+    "hypothesis.strategies",
+    "pydantic.v1._hypothesis_plugin",
+    "hamcrest",
+)
 UPDATER_HELPER_HIDDEN_IMPORTS = (
     "src.shared.github_https",
     *OPTIONAL_GITHUB_TLS_RUNTIME_PACKAGES,
@@ -172,6 +198,8 @@ def run_pyinstaller(
         command.extend(["--collect-data", package_name])
     for package_name in MAIN_RUNTIME_COLLECT_ALL_PACKAGES:
         command.extend(["--collect-all", package_name])
+    for module_name in MAIN_RUNTIME_EXCLUDED_MODULES:
+        command.extend(["--exclude-module", module_name])
     ship_version_dir = output_dir / "ship" / "app" / "versions" / bundle_version
     for rel in REQUIRED_VERSION_FILES:
         src_file = (ship_version_dir / rel).resolve()
