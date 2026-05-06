@@ -24,7 +24,7 @@ Implemented:
 - Admin responsiveness quick wins: redundant boot refresh removal, registry signature digest, idle render deferral, and stale-render guards.
 - Frontend/bridge counter instrumentation and benchmark summaries for startup, lifecycle, fetch, and render signals.
 - Static outlier benchmark group: `npm run perf:fetch:static-outliers`.
-- Benchmark artifact improvements: `sourcePolicySignals`, `sourceRegistrySignals`, `registryScopeSummary`, `nextOptimizationTargets`, `sourceDecisionMatrix`, `source-decision-matrix.md`, `source-decision-log-template.md`, `sourceDecisionTrend`, `source-decision-trend.md`, per-source `timeoutDiagnostics`, `sourcePolicyDecision` kept-output host breakdowns, and `slow_productive_static` classification.
+- Benchmark artifact improvements: `sourcePolicySignals`, `sourceRegistrySignals`, `registryScopeSummary`, `nextOptimizationTargets`, `sourceDecisionMatrix`, `source-decision-matrix.md`, `source-decision-log-template.md`, `sourceDecisionTrend`, `source-decision-trend.md`, per-source `timeoutDiagnostics` with embedded static-error URL extraction, `sourcePolicyDecision` kept-output host breakdowns, and `slow_productive_static` classification.
 - Decision-first source conflict record for Super Lucky and Koei: `docs/plans/static-outlier-source-conflict-decisions.md`.
 - Generic static registry scope conflict audit in the source-policy soak report: `sections.staticRegistryScopeConflicts`, including dry-run-only `patchProposals` and explicit CLI apply-safe support for selected `shadowed_cross_host` rows.
 - Dry-run decision checkpoint for the current generic patch proposal result: `docs/plans/static-scope-conflict-dry-run-decisions.md`.
@@ -33,7 +33,7 @@ Implemented:
 
 Recent validation:
 
-- `python -m pytest tests/test_fetch_incremental_sanity_benchmark.py -q --color=no` -> `26 passed`.
+- `python -m pytest tests/test_fetch_incremental_sanity_benchmark.py -q --color=no` -> `27 passed`.
 - `cmd /c npm run perf:fetch:static-outliers` -> passed and wrote `_out/perf-sanity-fetch-static-outliers/benchmark-summary.json`.
 
 ## Latest benchmark evidence

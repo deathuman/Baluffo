@@ -63,6 +63,12 @@ def test_stage_durations_sum_timing_summary_stages() -> None:
     assert stages == {"canonicalization": 7, "fetchAndParse": 15}
 
 
+def test_urls_in_text_extracts_embedded_static_error_urls() -> None:
+    assert benchmark._urls_in_text(
+        "static:Studio:https://www.maliyo.com/career/: time budget exceeded (25s)"
+    ) == ["https://www.maliyo.com/career/"]
+
+
 def test_network_wait_counters_collect_cache_and_adapter_proxy_counts() -> None:
     counters = benchmark._network_wait_counters(
         {
@@ -518,7 +524,7 @@ def test_source_decision_matrix_preserves_behavior_for_policy_scope_and_timeout_
                     "name": "static_source::maliyo",
                     "status": "ok",
                     "keptCount": 5,
-                    "error": "time budget exceeded",
+                    "error": "static_source::maliyo: static:Maliyo Games (Sheet):https://www.maliyo.com/career/: time budget exceeded (25s)",
                     "failureBucket": "unknown",
                 },
                 {
@@ -604,11 +610,11 @@ def test_source_decision_matrix_preserves_behavior_for_policy_scope_and_timeout_
     assert maliyo["evidence"]["timeoutDiagnostics"] == {
         "timeoutErrorCount": 1,
         "networkErrorCount": 0,
-        "timeoutUrlCount": 0,
-        "timeoutUrls": [],
-        "firstTimeoutUrl": "",
-        "lastTimeoutUrl": "",
-        "timeoutUrlRoleCounts": {},
+        "timeoutUrlCount": 1,
+        "timeoutUrls": ["https://www.maliyo.com/career/"],
+        "firstTimeoutUrl": "https://www.maliyo.com/career/",
+        "lastTimeoutUrl": "https://www.maliyo.com/career/",
+        "timeoutUrlRoleCounts": {"detail_or_registry_page": 1},
         "detailPagesVisited": 3,
         "detailYieldPct": 100,
     }

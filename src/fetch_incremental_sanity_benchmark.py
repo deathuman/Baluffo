@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -559,9 +560,9 @@ def _error_samples(value: object, *, limit: int = 3) -> list[str]:
 
 def _urls_in_text(value: object) -> list[str]:
     urls: list[str] = []
-    for token in str(value or "").replace(";", " ").split():
-        cleaned = token.strip(" ,()[]{}<>\"'")
-        if cleaned.startswith(("http://", "https://")):
+    for match in re.finditer(r"https?://[^\s;,\]\[(){}<>\"']+", str(value or "")):
+        cleaned = match.group(0).rstrip(":.")
+        if cleaned and cleaned not in urls:
             urls.append(cleaned)
     return urls
 
