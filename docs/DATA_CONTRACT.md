@@ -944,6 +944,53 @@ blocker counts are the evidence to inspect before any later reversible cleanup a
 considered. Proposal freshness only explains whether a row is still actionable. It does not
 authorize the later reversible cleanup action on its own.
 
+### Static registry scope conflicts
+
+The source-policy soak report may include `sections.staticRegistryScopeConflicts`. This section is
+report-only and scans effective active static registry rows for pages whose host differs from the
+row's listing host. It cross-checks those off-listing hosts against other active source/provider
+coverage and may include kept-output host evidence from `jobs-unified.json` when present.
+
+Rows are diagnostics and proposals only. They must not mutate seed defaults, runtime registries,
+tombstones, rejected rows, source sync, suppression rules, timeout settings, fetch behavior, or
+`REDUNDANT_STATIC_IF_PROVIDER`.
+
+Section payload:
+
+| Field | Type | Description |
+|---|---|---|
+| `summary` | `object` | Aggregate counts for scanned static rows and conflict classifications. |
+| `conflicts` | `Array<Object>` | Static scope conflict proposal rows. |
+| `patchProposals` | `Array<Object>` | Dry-run patch proposal rows for review-only safe-looking conflicts. |
+| `examples` | `Array<Object>` | Capped stable sample for Markdown/operator review. |
+
+Conflict rows include `sourceId`, `sourceName`, `adapter`, `listingHost`,
+`offListingHosts`, `offListingHostPages`, `coveredOffListingHosts`,
+`uncoveredOffListingHosts`, `coverageRows`, `keptOutputHostBreakdown`, `classification`,
+`recommendedAction`, `reasons`, `destructiveActionAllowed`, `requiresExplicitAdminAction`, and
+`behaviorChangeAllowed`.
+
+`classification` values are `shadowed_cross_host`, `needs_split_source`,
+`manual_scope_review`, and `zero_kept_review`. Recommended actions are
+`narrow_static_scope_after_review`, `create_or_link_source_after_review`, and
+`review_scope_manually`. `destructiveActionAllowed` and `behaviorChangeAllowed` are always
+`false`; `requiresExplicitAdminAction` is always `true`.
+
+`patchProposals` may include rows only for `shadowed_cross_host` conflicts whose off-listing hosts
+are all covered by other active registry rows. Patch proposals include `sourceId`, `sourceName`,
+`proposedAction="narrow_static_scope"`, `removePages`, `keepPages`, `preserveFields`,
+`applyAllowed`, `requiresExplicitAdminAction`, `destructiveActionAllowed`, and
+`behaviorChangeAllowed`. `applyAllowed`, `destructiveActionAllowed`, and `behaviorChangeAllowed`
+are always `false`; proposal rows are dry-run review evidence only.
+
+The soak report CLI may expose an explicit `--apply-static-scope-proposal SOURCE_ID` maintenance
+mode. That mode is not part of normal report generation: it requires an exact source id, only
+accepts a matching dry-run `shadowed_cross_host` proposal, updates only the local runtime active
+registry row's `pages`, preserves source identity fields, and writes
+`static-scope-apply-audit.json` under the requested output directory. It must not apply
+`zero_kept_review`, `needs_split_source`, or `manual_scope_review` rows and must not edit seed
+defaults, source sync, tombstones, rejected rows, timeout settings, or fetch behavior.
+
 ### Source-policy recommendation artifact
 
 Completed fetch runs may update `data/source-policy-recommendations.json`, or the same filename

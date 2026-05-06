@@ -40,6 +40,7 @@ from src.jobs.common.contracts_static_suppression_policy import (
 from src.jobs.common.registry import registry_entries as common_registry_entries
 from src.jobs.common.registry_defaults import REDUNDANT_STATIC_IF_PROVIDER
 from src.jobs.text_utils import clean_text, norm_text
+from src.shared.json_io import read_json
 from src.shared.json_shapes import as_json_list, as_json_object, json_object_rows
 from src.shared.utils import now_iso
 from src.source_discovery.config import SUPPORTED_PROVIDERS
@@ -49,6 +50,7 @@ from src.source_registry_identity import source_identity
 SCHEMA_VERSION = "1.0"
 JSON_REPORT_NAME = "source-policy-soak-report.json"
 MARKDOWN_REPORT_NAME = "source-policy-soak-report.md"
+STATIC_SCOPE_APPLY_AUDIT_NAME = "static-scope-apply-audit.json"
 
 ARTIFACT_PATHS = {
     "sourceDiscoveryReport": "source-discovery-report.json",
@@ -62,6 +64,7 @@ ARTIFACT_PATHS = {
     "sourceRegistryRejected": "source-registry-rejected.json",
     "sourceRegistryTombstones": "source-registry-tombstones.json",
     "sourceSync": "source-sync.json",
+    "jobsUnified": "jobs-unified.json",
 }
 REGISTRY_SEED_PATHS = {
     "source-registry-active.json": "defaults/source-registry-active.seed.json",
@@ -111,15 +114,20 @@ def _read_json_artifact(path: Path) -> tuple[Any, str, str]:
     source_path = path
     status = "ok"
     if not source_path.exists():
+        gzip_path = path.with_name(path.name + ".gz")
         seed_rel_path = REGISTRY_SEED_PATHS.get(path.name)
         seed_path = path.parent / seed_rel_path if seed_rel_path else None
-        if seed_path is not None and seed_path.exists():
+        if gzip_path.exists():
+            source_path = gzip_path
+        elif seed_path is not None and seed_path.exists():
             source_path = seed_path
             status = "seed"
         else:
             return {}, "missing", ""
     try:
-        payload = json.loads(source_path.read_text(encoding="utf-8"))
+        payload = read_json(source_path, None)
+        if payload is None:
+            return {}, "malformed", f"{source_path.name} is malformed"
     except (OSError, json.JSONDecodeError) as exc:
         return {}, "malformed", f"{source_path.name} is malformed: {exc}"
     return payload, status, ""
@@ -1092,6 +1100,265 @@ def _url_host(url: str) -> str:
     except ValueError:
         return ""
     return host[4:] if host.startswith("www.") else host
+
+
+def _row_urls_for_scope(row: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
+    for key in ("listing_url", "base_url", "careersUrl", "url", "api_url", "feed_url", "board_url"):
+        value = clean_text(row.get(key))
+        if value:
+            urls.append(value)
+    for value in as_json_list(row.get("pages")):
+        text = clean_text(value)
+        if text:
+            urls.append(text)
+    return _unique_text(urls)
+
+
+def _scope_listing_url(row: dict[str, Any]) -> str:
+    for key in ("listing_url", "careersUrl", "url"):
+        value = clean_text(row.get(key))
+        if value:
+            return value
+    pages = as_json_list(row.get("pages"))
+    for value in pages:
+        text = clean_text(value)
+        if text:
+            return text
+    return ""
+
+
+def _host_coverage_index(active_rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    coverage: dict[str, list[dict[str, Any]]] = {}
+    for row in active_rows:
+        if not isinstance(row, dict):
+            continue
+        for url in _row_urls_for_scope(row):
+            host = _url_host(url)
+            if not host:
+                continue
+            coverage.setdefault(host, []).append(
+                {
+                    "sourceId": clean_text(row.get("id")) or source_identity(row),
+                    "sourceName": clean_text(row.get("name")) or clean_text(row.get("studio")),
+                    "adapter": clean_text(row.get("adapter")),
+                    "host": host,
+                    "url": url,
+                }
+            )
+    return coverage
+
+
+def _jobs_unified_rows(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        payload = payload.get("jobs")
+    return json_object_rows(payload)
+
+
+def _kept_output_host_breakdown(
+    jobs: list[dict[str, Any]],
+    source_name: str,
+) -> dict[str, Any]:
+    host_counts: Counter[str] = Counter()
+    for row in jobs:
+        if clean_text(row.get("source")) != source_name:
+            bundle_match = any(
+                isinstance(bundle_row, dict)
+                and clean_text(bundle_row.get("source")) == source_name
+                for bundle_row in as_json_list(row.get("sourceBundle"))
+            )
+            if not bundle_match:
+                continue
+        host = _url_host(clean_text(row.get("jobLink"))) or "unknown"
+        host_counts[host] += 1
+    hosts = [
+        {"host": host, "keptCount": count}
+        for host, count in sorted(host_counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    return {
+        "totalKeptCount": sum(host_counts.values()),
+        "hostCount": len(host_counts),
+        "hosts": hosts,
+    }
+
+
+def _static_scope_conflict_classification(
+    *,
+    covered_hosts: list[str],
+    uncovered_hosts: list[str],
+    unexpected_kept_hosts: list[str],
+    kept_output_total: int,
+    kept_output_evidence_available: bool,
+) -> tuple[str, str, list[str]]:
+    if unexpected_kept_hosts:
+        return (
+            "manual_scope_review",
+            "review_scope_manually",
+            ["kept_output_host_not_explained_by_registry_scope"],
+        )
+    if kept_output_evidence_available and kept_output_total <= 0:
+        return (
+            "zero_kept_review",
+            "review_scope_manually",
+            ["zero_kept_conflict_review"],
+        )
+    if covered_hosts and uncovered_hosts:
+        return (
+            "manual_scope_review",
+            "review_scope_manually",
+            ["mixed_covered_and_uncovered_off_listing_hosts"],
+        )
+    if uncovered_hosts:
+        return (
+            "needs_split_source",
+            "create_or_link_source_after_review",
+            ["uncovered_off_listing_hosts"],
+        )
+    return (
+        "shadowed_cross_host",
+        "narrow_static_scope_after_review",
+        ["off_listing_hosts_covered_by_other_active_sources"],
+    )
+
+
+def _static_registry_scope_conflicts_section(
+    *,
+    active_rows: list[dict[str, Any]],
+    jobs_unified: Any,
+) -> dict[str, Any]:
+    coverage_index = _host_coverage_index(active_rows)
+    jobs = _jobs_unified_rows(jobs_unified)
+    kept_output_evidence_available = isinstance(jobs_unified, list) or (
+        isinstance(jobs_unified, dict) and isinstance(jobs_unified.get("jobs"), list)
+    )
+    conflicts: list[dict[str, Any]] = []
+    patch_proposals: list[dict[str, Any]] = []
+    scanned_static_count = 0
+    for row in active_rows:
+        if clean_text(row.get("adapter")) != "static":
+            continue
+        scanned_static_count += 1
+        source_id = clean_text(row.get("id")) or source_identity(row)
+        listing_url = _scope_listing_url(row)
+        listing_host = _url_host(listing_url)
+        if not listing_host:
+            continue
+        source_pages = [
+            clean_text(page) for page in as_json_list(row.get("pages")) if clean_text(page)
+        ]
+        off_pages: list[str] = []
+        off_hosts: list[str] = []
+        for page_text in source_pages:
+            page_host = _url_host(page_text)
+            if page_text and page_host and page_host != listing_host:
+                off_pages.append(page_text)
+                off_hosts.append(page_host)
+        off_hosts = _unique_text(off_hosts)
+        if not off_hosts:
+            continue
+        coverage_rows: list[dict[str, Any]] = []
+        covered_hosts: list[str] = []
+        uncovered_hosts: list[str] = []
+        for host in off_hosts:
+            host_rows = [
+                coverage
+                for coverage in coverage_index.get(host, [])
+                if clean_text(coverage.get("sourceId")) != source_id
+            ]
+            if host_rows:
+                covered_hosts.append(host)
+                coverage_rows.extend(host_rows[:3])
+            else:
+                uncovered_hosts.append(host)
+        source_name = _static_loader_name_for_registry_row(row)
+        kept_breakdown = _kept_output_host_breakdown(jobs, source_name)
+        kept_hosts = [
+            clean_text(host_row.get("host"))
+            for host_row in json_object_rows(kept_breakdown.get("hosts"))
+        ]
+        expected_kept_hosts = {listing_host, *off_hosts}
+        unexpected_kept_hosts = [
+            host for host in kept_hosts if host and host != "unknown" and host not in expected_kept_hosts
+        ]
+        classification, recommended_action, reasons = _static_scope_conflict_classification(
+            covered_hosts=covered_hosts,
+            uncovered_hosts=uncovered_hosts,
+            unexpected_kept_hosts=unexpected_kept_hosts,
+            kept_output_total=int(kept_breakdown.get("totalKeptCount") or 0),
+            kept_output_evidence_available=kept_output_evidence_available,
+        )
+        if covered_hosts:
+            reasons.append("covered_off_listing_hosts")
+        if uncovered_hosts:
+            reasons.append("uncovered_off_listing_hosts")
+        if kept_output_evidence_available:
+            reasons.append("kept_output_evidence_available")
+        conflict = {
+            "sourceId": source_id,
+            "sourceName": clean_text(row.get("name")) or source_name,
+            "adapter": "static",
+            "listingHost": listing_host,
+            "offListingHosts": off_hosts,
+            "offListingHostPages": off_pages[:5],
+            "coveredOffListingHosts": covered_hosts,
+            "uncoveredOffListingHosts": uncovered_hosts,
+            "coverageRows": coverage_rows[:8],
+            "keptOutputHostBreakdown": kept_breakdown,
+            "classification": classification,
+            "recommendedAction": recommended_action,
+            "reasons": _unique_text(reasons),
+            "destructiveActionAllowed": False,
+            "requiresExplicitAdminAction": True,
+            "behaviorChangeAllowed": False,
+        }
+        conflicts.append(conflict)
+        if (
+            classification == "shadowed_cross_host"
+            and recommended_action == "narrow_static_scope_after_review"
+            and covered_hosts
+            and not uncovered_hosts
+        ):
+            remove_pages = [
+                page for page in source_pages if _url_host(page) in set(covered_hosts)
+            ]
+            keep_pages = [page for page in source_pages if page not in set(remove_pages)]
+            patch_proposals.append(
+                {
+                    "sourceId": source_id,
+                    "sourceName": clean_text(row.get("name")) or source_name,
+                    "proposedAction": "narrow_static_scope",
+                    "classification": classification,
+                    "removePages": remove_pages,
+                    "keepPages": keep_pages,
+                    "preserveFields": ["id", "listing_url", "careersUrl"],
+                    "applyAllowed": False,
+                    "requiresExplicitAdminAction": True,
+                    "destructiveActionAllowed": False,
+                    "behaviorChangeAllowed": False,
+                    "reasons": ["shadowed_cross_host", "all_off_listing_hosts_covered"],
+                }
+            )
+    conflicts.sort(
+        key=lambda item: (
+            clean_text(item.get("classification")),
+            clean_text(item.get("sourceName")) or clean_text(item.get("sourceId")),
+        )
+    )
+    classification_counts = Counter(clean_text(row.get("classification")) for row in conflicts)
+    summary = {
+        "scannedStaticCount": scanned_static_count,
+        "conflictCount": len(conflicts),
+        "shadowedCrossHostCount": int(classification_counts.get("shadowed_cross_host", 0)),
+        "needsSplitSourceCount": int(classification_counts.get("needs_split_source", 0)),
+        "manualScopeReviewCount": int(classification_counts.get("manual_scope_review", 0)),
+        "zeroKeptReviewCount": int(classification_counts.get("zero_kept_review", 0)),
+    }
+    return {
+        "summary": summary,
+        "conflicts": conflicts,
+        "patchProposals": patch_proposals,
+        "examples": conflicts[:CONSERVATIVE_CLEANUP_EXAMPLE_LIMIT],
+    }
 
 
 def _host_matches_pattern(host: str, pattern: str) -> bool:
@@ -2632,6 +2899,10 @@ def _build_sections(
         proposal_report_run_id=clean_text(fetch_report.get("runId")),
         report_generated_at=report_generated_at,
     )
+    static_registry_scope_conflicts = _static_registry_scope_conflicts_section(
+        active_rows=active_rows,
+        jobs_unified=payloads.get("jobsUnified"),
+    )
 
     static_registry_tokens: set[str] = set()
     for row in active_rows + pending_rows + rejected_rows:
@@ -2732,6 +3003,7 @@ def _build_sections(
             "providerUnstableCount": int(proposals.get("providerUnstableCount") or 0),
             "staticOnlyDetectedCount": int(proposals.get("staticOnlyDetectedCount") or 0),
         },
+        "staticRegistryScopeConflicts": static_registry_scope_conflicts,
         "conservativeStaticCleanupProposals": conservative_cleanup_proposals,
         "sourcePolicyRecommendations": {
             "stableSafeRedundantCount": int(
@@ -2825,6 +3097,16 @@ def _build_sections(
         "suppressionWarningCount": int(policy.get("warningCount") or 0),
         **overlap_counts,
         "redundantProposalCount": int(proposals.get("totalProposalCount") or 0),
+        "staticRegistryScopeConflictCount": int(
+            as_json_object(static_registry_scope_conflicts.get("summary")).get("conflictCount")
+            or 0
+        ),
+        "staticRegistryScopeShadowedCrossHostCount": int(
+            as_json_object(static_registry_scope_conflicts.get("summary")).get(
+                "shadowedCrossHostCount"
+            )
+            or 0
+        ),
         "stableSafeRedundantRecommendationCount": int(
             sections["sourcePolicyRecommendations"]["stableSafeRedundantCount"]
         ),
@@ -3072,9 +3354,63 @@ def _conservative_cleanup_blocked_markdown_rows(rows: list[dict[str, Any]]) -> l
     return lines
 
 
+def _static_scope_conflict_markdown_rows(rows: list[dict[str, Any]]) -> list[str]:
+    lines = [
+        "| Source | Classification | Action | Listing host | Off-listing hosts | Covered | Uncovered | Explicit action | Behavior change |",
+        "|--------|----------------|--------|--------------|-------------------|---------|-----------|-----------------|-----------------|",
+    ]
+    if not rows:
+        lines.append("| none | none | none | none | none | none | none | `false` | `false` |")
+        return lines
+    for row in rows[:10]:
+        lines.append(
+            "| "
+            f"{clean_text(row.get('sourceName')) or clean_text(row.get('sourceId'))} | "
+            f"`{clean_text(row.get('classification'))}` | "
+            f"`{clean_text(row.get('recommendedAction'))}` | "
+            f"`{clean_text(row.get('listingHost'))}` | "
+            f"{', '.join(clean_text(host) for host in as_json_list(row.get('offListingHosts')) if clean_text(host)) or 'none'} | "
+            f"{', '.join(clean_text(host) for host in as_json_list(row.get('coveredOffListingHosts')) if clean_text(host)) or 'none'} | "
+            f"{', '.join(clean_text(host) for host in as_json_list(row.get('uncoveredOffListingHosts')) if clean_text(host)) or 'none'} | "
+            f"`{bool(row.get('requiresExplicitAdminAction'))}` | "
+            f"`{bool(row.get('behaviorChangeAllowed'))}` |"
+        )
+    return lines
+
+
+def _static_scope_patch_proposal_markdown_rows(rows: list[dict[str, Any]]) -> list[str]:
+    lines = [
+        "| Source | Proposed action | Remove pages | Keep pages | Apply allowed | Explicit action |",
+        "|--------|-----------------|--------------|------------|---------------|-----------------|",
+    ]
+    if not rows:
+        lines.append("| none | none | none | none | `false` | `false` |")
+        return lines
+    for row in rows[:10]:
+        remove_pages = ", ".join(
+            clean_text(page) for page in as_json_list(row.get("removePages")) if clean_text(page)
+        )
+        keep_pages = ", ".join(
+            clean_text(page) for page in as_json_list(row.get("keepPages")) if clean_text(page)
+        )
+        lines.append(
+            "| "
+            f"{clean_text(row.get('sourceName')) or clean_text(row.get('sourceId'))} | "
+            f"`{clean_text(row.get('proposedAction'))}` | "
+            f"{remove_pages or 'none'} | "
+            f"{keep_pages or 'none'} | "
+            f"`{bool(row.get('applyAllowed'))}` | "
+            f"`{bool(row.get('requiresExplicitAdminAction'))}` |"
+        )
+    return lines
+
+
 def render_markdown_report(report: dict[str, Any]) -> str:
     conservative_cleanup = as_json_object(
         as_json_object(report.get("sections")).get("conservativeStaticCleanupProposals")
+    )
+    static_scope_conflicts = as_json_object(
+        as_json_object(report.get("sections")).get("staticRegistryScopeConflicts")
     )
     conservative_cleanup_summary_items = [
         (key, value)
@@ -3157,6 +3493,27 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         "",
         *_suppression_eligibility_markdown_rows(report),
         "",
+        "## Static Registry Scope Conflicts",
+        "",
+        "Report-only: scope conflict proposals require explicit future Admin action and never edit seed or runtime registry rows.",
+        "",
+        *_markdown_table(list(as_json_object(static_scope_conflicts.get("summary")).items())),
+        "",
+        "### Conflict examples",
+        "",
+        *_static_scope_conflict_markdown_rows(
+            json_object_rows(static_scope_conflicts.get("examples"))
+            or json_object_rows(static_scope_conflicts.get("conflicts"))
+        ),
+        "",
+        "### Dry-run patch proposals",
+        "",
+        "Dry-run only: these proposals are review evidence and cannot apply changes.",
+        "",
+        *_static_scope_patch_proposal_markdown_rows(
+            json_object_rows(static_scope_conflicts.get("patchProposals"))
+        ),
+        "",
         "## Conservative Static Cleanup Proposals",
         "",
         "Report-only: proposals require explicit future Admin action and never delete, reject, tombstone, or edit seed registry defaults.",
@@ -3216,6 +3573,93 @@ def write_soak_report(
     return outputs
 
 
+def apply_static_scope_proposal(
+    report: dict[str, Any],
+    *,
+    data_dir: Path,
+    out_dir: Path,
+    source_id: str,
+) -> dict[str, Any]:
+    from src import source_registry
+
+    target_source_id = clean_text(source_id)
+    proposals = json_object_rows(
+        as_json_object(
+            as_json_object(report.get("sections")).get("staticRegistryScopeConflicts")
+        ).get("patchProposals")
+    )
+    matches = [
+        proposal
+        for proposal in proposals
+        if clean_text(proposal.get("sourceId")) == target_source_id
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"Expected exactly one static scope patch proposal for {target_source_id!r}; found {len(matches)}."
+        )
+    proposal = matches[0]
+    remove_pages = [
+        clean_text(page) for page in as_json_list(proposal.get("removePages")) if clean_text(page)
+    ]
+    keep_pages = [
+        clean_text(page) for page in as_json_list(proposal.get("keepPages")) if clean_text(page)
+    ]
+    guardrails_checked = {
+        "proposedAction": clean_text(proposal.get("proposedAction")) == "narrow_static_scope",
+        "classification": clean_text(proposal.get("classification")) == "shadowed_cross_host",
+        "removePagesNonEmpty": bool(remove_pages),
+        "keepPagesNonEmpty": bool(keep_pages),
+        "requiresExplicitAdminAction": bool(proposal.get("requiresExplicitAdminAction")) is True,
+        "applyAllowedFalse": bool(proposal.get("applyAllowed")) is False,
+        "destructiveActionAllowedFalse": bool(proposal.get("destructiveActionAllowed")) is False,
+        "behaviorChangeAllowedFalse": bool(proposal.get("behaviorChangeAllowed")) is False,
+    }
+    failed_guardrails = [key for key, value in guardrails_checked.items() if not value]
+    if failed_guardrails:
+        raise ValueError(
+            f"Static scope patch proposal for {target_source_id!r} failed guardrails: {', '.join(failed_guardrails)}."
+        )
+
+    active_path = Path(data_dir) / "source-registry-active.json"
+    active_rows = source_registry.load_json_array(active_path, [])
+    matching_indexes = [
+        index
+        for index, row in enumerate(active_rows)
+        if clean_text(row.get("id")) == target_source_id
+    ]
+    if len(matching_indexes) != 1:
+        raise ValueError(
+            f"Expected exactly one active registry row for {target_source_id!r}; found {len(matching_indexes)}."
+        )
+    row_index = matching_indexes[0]
+    next_rows = [dict(row) for row in active_rows]
+    previous_row = dict(next_rows[row_index])
+    next_rows[row_index]["pages"] = keep_pages
+    source_registry.save_json_atomic(active_path, next_rows)
+
+    audit = {
+        "sourceId": target_source_id,
+        "sourceName": clean_text(proposal.get("sourceName")),
+        "proposedAction": clean_text(proposal.get("proposedAction")),
+        "removedPages": remove_pages,
+        "keptPages": keep_pages,
+        "activeRegistryPath": str(active_path),
+        "applied": True,
+        "guardrailsChecked": guardrails_checked,
+        "generatedAt": now_iso(),
+        "preservedFields": {
+            "id": previous_row.get("id"),
+            "listing_url": previous_row.get("listing_url"),
+            "careersUrl": previous_row.get("careersUrl"),
+        },
+    }
+    output_dir = Path(out_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    audit_path = output_dir / STATIC_SCOPE_APPLY_AUDIT_NAME
+    audit_path.write_text(json.dumps(audit, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return audit
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a read-only source-policy soak report.")
     parser.add_argument(
@@ -3231,6 +3675,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default="both",
         help="Report format to write.",
     )
+    parser.add_argument(
+        "--apply-static-scope-proposal",
+        default="",
+        help="Explicitly apply one dry-run static scope patch proposal by exact source id.",
+    )
     return parser.parse_args(argv)
 
 
@@ -3239,6 +3688,22 @@ def main(argv: list[str] | None = None) -> int:
     backup_path = Path(args.backup_payload) if clean_text(args.backup_payload) else None
     report = build_soak_report(Path(args.data_dir), backup_payload_path=backup_path)
     outputs = write_soak_report(report, Path(args.out_dir), args.format)
+    if clean_text(args.apply_static_scope_proposal):
+        try:
+            audit = apply_static_scope_proposal(
+                report,
+                data_dir=Path(args.data_dir),
+                out_dir=Path(args.out_dir),
+                source_id=clean_text(args.apply_static_scope_proposal),
+            )
+        except ValueError as exc:
+            print(f"Refused static scope proposal apply: {exc}", file=sys.stderr)
+            return 2
+        print(
+            "Applied static scope proposal: "
+            f"{audit['sourceId']} removed {len(audit['removedPages'])} page(s); "
+            f"audit: {Path(args.out_dir) / STATIC_SCOPE_APPLY_AUDIT_NAME}"
+        )
     for label, path in outputs.items():
         print(f"Wrote {label} report: {path}")
     return 1 if report.get("status") == "failed" else 0

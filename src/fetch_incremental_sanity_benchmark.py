@@ -549,6 +549,457 @@ def _next_optimization_targets(
     return targets[: max(0, int(limit))]
 
 
+def _error_samples(value: object, *, limit: int = 3) -> list[str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+    samples = [part.strip() for part in raw.split(";") if part.strip()]
+    return samples[: max(0, int(limit))]
+
+
+def _urls_in_text(value: object) -> list[str]:
+    urls: list[str] = []
+    for token in str(value or "").replace(";", " ").split():
+        cleaned = token.strip(" ,()[]{}<>\"'")
+        if cleaned.startswith(("http://", "https://")):
+            urls.append(cleaned)
+    return urls
+
+
+def _timeout_url_role(source_name: str, url: str) -> str:
+    normalized_source = source_name.lower().rstrip("/")
+    normalized_url = url.lower().rstrip("/")
+    if normalized_url and normalized_url in normalized_source:
+        return "listing"
+    return "detail_or_registry_page"
+
+
+def _timeout_diagnostics(
+    source_name: str,
+    error: object,
+    detail_timing: dict[str, object],
+) -> dict[str, object]:
+    parts = [part.strip() for part in str(error or "").split(";") if part.strip()]
+    timeout_parts = [
+        part
+        for part in parts
+        if "time budget exceeded" in part.lower() or "time_budget_exceeded" in part.lower()
+    ]
+    network_parts = [
+        part
+        for part in parts
+        if "network error" in part.lower() or "server disconnected" in part.lower()
+    ]
+    timeout_urls: list[str] = []
+    for part in timeout_parts:
+        for url in _urls_in_text(part):
+            if url not in timeout_urls:
+                timeout_urls.append(url)
+    role_counts: dict[str, int] = {}
+    for url in timeout_urls:
+        role = _timeout_url_role(source_name, url)
+        role_counts[role] = role_counts.get(role, 0) + 1
+    return {
+        "timeoutErrorCount": len(timeout_parts),
+        "networkErrorCount": len(network_parts),
+        "timeoutUrlCount": len(timeout_urls),
+        "timeoutUrls": timeout_urls[:5],
+        "firstTimeoutUrl": timeout_urls[0] if timeout_urls else "",
+        "lastTimeoutUrl": timeout_urls[-1] if timeout_urls else "",
+        "timeoutUrlRoleCounts": role_counts,
+        "detailPagesVisited": int(detail_timing.get("detailPagesVisited") or 0),
+        "detailYieldPct": int(detail_timing.get("detailYieldPct") or 0),
+    }
+
+
+def _kept_output_host_breakdown(report: dict[str, object], source_name: str) -> dict[str, object]:
+    host_counts: dict[str, int] = {}
+    for row in _as_list(report.get("jobs")):
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("source") or "") != source_name:
+            bundle_matches = False
+            for bundle_row in _as_list(row.get("sourceBundle")):
+                if isinstance(bundle_row, dict) and str(bundle_row.get("source") or "") == source_name:
+                    bundle_matches = True
+                    break
+            if not bundle_matches:
+                continue
+        host = _normalized_host(row.get("jobLink"))
+        if not host:
+            host = "unknown"
+        host_counts[host] = host_counts.get(host, 0) + 1
+    rows = [
+        {"host": host, "keptCount": count}
+        for host, count in sorted(host_counts.items(), key=lambda item: item[1], reverse=True)
+    ]
+    return {
+        "totalKeptCount": sum(host_counts.values()),
+        "hostCount": len(host_counts),
+        "hosts": rows,
+    }
+
+
+def _load_output_jobs(output_dir: Path) -> list[dict[str, object]]:
+    from src.shared.json_io import read_json
+
+    payload = read_json(output_dir / "jobs-unified.json", [])
+    if isinstance(payload, dict):
+        payload = payload.get("jobs")
+    return [row for row in _as_list(payload) if isinstance(row, dict)]
+
+
+def _source_policy_decision_evidence(
+    target: dict[str, object],
+    report: dict[str, object],
+) -> dict[str, object]:
+    name = str(target.get("name") or "")
+    registry_page_evidence = dict(target.get("registryPageEvidence") or {})
+    listing_host = str(registry_page_evidence.get("listingHost") or "")
+    off_listing_hosts = [
+        str(host) for host in _as_list(registry_page_evidence.get("offListingHosts")) if str(host)
+    ]
+    kept_output_host_breakdown = _kept_output_host_breakdown(report, name)
+    kept_hosts = [
+        str(row.get("host") or "")
+        for row in _as_list(kept_output_host_breakdown.get("hosts"))
+        if isinstance(row, dict)
+    ]
+    cross_host_kept_hosts = [
+        host for host in kept_hosts if host and host != listing_host and host != "unknown"
+    ]
+    suggested_decision = ""
+    if bool(target.get("requiresExplicitDecision")) and off_listing_hosts:
+        suggested_decision = "keep_parent_scope" if not cross_host_kept_hosts else "split_source"
+    elif bool(target.get("requiresExplicitDecision")):
+        suggested_decision = "hide_source_after_review"
+    return {
+        "policyDecisionNeeded": bool(target.get("requiresExplicitDecision")),
+        "sourceScopeIdentity": {
+            "listingHost": listing_host,
+            "offListingHosts": off_listing_hosts,
+        },
+        "keptOutputHostBreakdown": kept_output_host_breakdown,
+        "suggestedDecision": suggested_decision,
+    }
+
+
+def _source_detail_timing_signals(report: dict[str, object]) -> dict[str, dict[str, object]]:
+    runtime = dict(report.get("runtime") or {})
+    signals: dict[str, dict[str, object]] = {}
+    for row in _as_list(runtime.get("slowestSources")):
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "")
+        if not name:
+            continue
+        signals[name] = {
+            "detailPagesVisited": int(row.get("detailPagesVisited") or 0),
+            "detailYieldPct": int(row.get("detailYieldPct") or 0),
+        }
+    return signals
+
+
+def _decision_type_for_target(target: dict[str, object]) -> str:
+    action = str(target.get("action") or "")
+    kept_count = int(target.get("keptCount") or 0)
+    if action == "source_policy_review" and kept_count <= 0:
+        return "follow_up_review"
+    if action == "source_policy_review":
+        return "explicit_source_policy"
+    if action in {"source_scope_review", "source_scope_and_timeout_review"}:
+        return "explicit_source_scope"
+    return "timeout_diagnostics"
+
+
+def _next_decision_for_type(decision_type: str) -> str:
+    if decision_type == "slow_productive_static":
+        return "Treat as slow but productive; review diagnostics before any budget change."
+    if decision_type == "explicit_source_policy":
+        return "Decide whether this kept-output source should keep its current policy scope before any behavior change."
+    if decision_type == "explicit_source_scope":
+        return "Decide whether cross-host registry pages belong in this source before any timeout or scope change."
+    if decision_type == "follow_up_review":
+        return "Review zero-kept needs-review evidence after kept-output source decisions are resolved."
+    return "Inspect timeout and network evidence before changing budgets or retry behavior."
+
+
+def _is_slow_productive_static(
+    target: dict[str, object],
+    signal: dict[str, object],
+    registry_page_evidence: dict[str, object],
+    detail_timing: dict[str, object],
+) -> bool:
+    return (
+        str(target.get("action") or "") == "timeout_or_network_budget"
+        and int(target.get("keptCount") or 0) > 0
+        and not bool(target.get("requiresExplicitDecision"))
+        and int(registry_page_evidence.get("offListingHostPageCount") or 0) == 0
+        and int(detail_timing.get("detailYieldPct") or 0) >= 80
+        and "time_budget" in [str(flag) for flag in _as_list(signal.get("flags"))]
+    )
+
+
+def _source_decision_matrix(
+    targets: list[dict[str, object]],
+    source_policy_signals: list[dict[str, object]],
+    report: dict[str, object],
+) -> list[dict[str, object]]:
+    signal_by_name = {str(row.get("name") or ""): row for row in source_policy_signals}
+    family_summary = _family_summary(report, [str(row.get("name") or "") for row in targets])
+    detail_signals = _source_detail_timing_signals(report)
+    rows: list[dict[str, object]] = []
+    for target in targets:
+        name = str(target.get("name") or "")
+        if not name:
+            continue
+        signal = signal_by_name.get(name, {})
+        family = dict(family_summary.get(name) or {})
+        registry_page_evidence = dict(target.get("registryPageEvidence") or {})
+        decision_type = _decision_type_for_target(target)
+        detail_timing = detail_signals.get(name, {})
+        if _is_slow_productive_static(target, signal, registry_page_evidence, detail_timing):
+            decision_type = "slow_productive_static"
+        rows.append(
+            {
+                "name": name,
+                "action": str(target.get("action") or ""),
+                "priority": int(target.get("priority") or 0),
+                "keptCount": int(target.get("keptCount") or 0),
+                "durationMs": int(target.get("durationMs") or 0),
+                "decisionType": decision_type,
+                "recommendedFirstPass": "preserve_current_behavior",
+                "behaviorChangeAllowed": False,
+                "requiresExplicitDecision": bool(target.get("requiresExplicitDecision")),
+                "evidence": {
+                    "flags": [str(flag) for flag in _as_list(signal.get("flags"))],
+                    "reasons": [str(reason) for reason in _as_list(target.get("reasons"))],
+                    "mergeRatioPct": int(signal.get("mergeRatioPct") or 0),
+                    "failureBucket": str(signal.get("failureBucket") or ""),
+                    "zeroKeptClassification": str(signal.get("zeroKeptClassification") or ""),
+                    "registryPageEvidence": registry_page_evidence,
+                    "detailTiming": detail_timing,
+                    "timeoutDiagnostics": _timeout_diagnostics(
+                        name,
+                        family.get("error"),
+                        detail_timing,
+                    ),
+                    "sourcePolicyDecision": _source_policy_decision_evidence(target, report),
+                    "errorSamples": _error_samples(family.get("error")),
+                },
+                "nextDecision": _next_decision_for_type(decision_type),
+            }
+        )
+    return rows
+
+
+def _format_markdown_list(values: object) -> str:
+    items = [str(value).strip() for value in _as_list(values) if str(value).strip()]
+    return ", ".join(items) if items else "-"
+
+
+def _render_source_decision_matrix_markdown(rows: list[dict[str, object]]) -> str:
+    lines = [
+        "# Source Decision Matrix",
+        "",
+        "Generated from `sourceDecisionMatrix` in `benchmark-summary.json`. This report is diagnostics-only and does not authorize source, timeout, registry, or output behavior changes.",
+        "",
+    ]
+    if not rows:
+        lines.extend(["No source decision rows were generated.", ""])
+        return "\n".join(lines)
+    for row in rows:
+        evidence = dict(row.get("evidence") or {})
+        registry_evidence = dict(evidence.get("registryPageEvidence") or {})
+        detail_timing = dict(evidence.get("detailTiming") or {})
+        timeout_diagnostics = dict(evidence.get("timeoutDiagnostics") or {})
+        timeout_role_counts = dict(timeout_diagnostics.get("timeoutUrlRoleCounts") or {})
+        source_policy_decision = dict(evidence.get("sourcePolicyDecision") or {})
+        host_breakdown = dict(source_policy_decision.get("keptOutputHostBreakdown") or {})
+        kept_host_rows = [
+            f"{row.get('host')}={row.get('keptCount')}"
+            for row in _as_list(host_breakdown.get("hosts"))
+            if isinstance(row, dict)
+        ]
+        lines.extend(
+            [
+                f"## {row.get('name') or '-'}",
+                "",
+                f"- Decision type: `{row.get('decisionType') or '-'}`",
+                f"- Current action: `{row.get('action') or '-'}`",
+                f"- Priority: `{int(row.get('priority') or 0)}`",
+                f"- Kept count: `{int(row.get('keptCount') or 0)}`",
+                f"- Duration: `{int(row.get('durationMs') or 0)}ms`",
+                f"- Requires explicit decision: `{str(bool(row.get('requiresExplicitDecision'))).lower()}`",
+                f"- Recommended first pass: `{row.get('recommendedFirstPass') or '-'}`",
+                f"- Behavior change allowed: `{str(bool(row.get('behaviorChangeAllowed'))).lower()}`",
+                f"- Flags: {_format_markdown_list(evidence.get('flags'))}",
+                f"- Reasons: {_format_markdown_list(evidence.get('reasons'))}",
+                f"- Failure bucket: `{evidence.get('failureBucket') or '-'}`",
+                f"- Zero-kept classification: `{evidence.get('zeroKeptClassification') or '-'}`",
+                f"- Merge ratio: `{int(evidence.get('mergeRatioPct') or 0)}%`",
+                f"- Listing host: `{registry_evidence.get('listingHost') or '-'}`",
+                f"- Off-listing hosts: {_format_markdown_list(registry_evidence.get('offListingHosts'))}",
+                f"- Off-listing pages: {_format_markdown_list(registry_evidence.get('offListingHostPages'))}",
+                f"- Detail timing: `pages={int(detail_timing.get('detailPagesVisited') or 0)}, yield={int(detail_timing.get('detailYieldPct') or 0)}%`",
+                f"- Timeout diagnostics: `timeouts={int(timeout_diagnostics.get('timeoutErrorCount') or 0)}, network={int(timeout_diagnostics.get('networkErrorCount') or 0)}, timeoutUrls={int(timeout_diagnostics.get('timeoutUrlCount') or 0)}`",
+                f"- Timeout URL roles: {_format_markdown_list([f'{key}={value}' for key, value in timeout_role_counts.items()])}",
+                f"- Timeout URLs: {_format_markdown_list(timeout_diagnostics.get('timeoutUrls'))}",
+                f"- Policy decision needed: `{str(bool(source_policy_decision.get('policyDecisionNeeded'))).lower()}`",
+                f"- Suggested source-policy decision: `{source_policy_decision.get('suggestedDecision') or '-'}`",
+                f"- Kept output hosts: {_format_markdown_list(kept_host_rows)}",
+                f"- Error samples: {_format_markdown_list(evidence.get('errorSamples'))}",
+                f"- Next decision: {row.get('nextDecision') or '-'}",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _render_source_decision_log_template_markdown(rows: list[dict[str, object]]) -> str:
+    lines = [
+        "# Source Decision Log Template",
+        "",
+        "Generated from `sourceDecisionMatrix` in `benchmark-summary.json`. This file is local review evidence only and does not authorize registry, timeout, suppression, source-output, or persisted-job behavior changes.",
+        "",
+    ]
+    if not rows:
+        lines.extend(["No source decision rows were generated.", ""])
+        return "\n".join(lines)
+    for row in rows:
+        evidence = dict(row.get("evidence") or {})
+        registry_evidence = dict(evidence.get("registryPageEvidence") or {})
+        timeout_diagnostics = dict(evidence.get("timeoutDiagnostics") or {})
+        source_policy_decision = dict(evidence.get("sourcePolicyDecision") or {})
+        lines.extend(
+            [
+                f"## {row.get('name') or '-'}",
+                "",
+                f"- Decision type: `{row.get('decisionType') or '-'}`",
+                f"- Requires explicit decision: `{str(bool(row.get('requiresExplicitDecision'))).lower()}`",
+                f"- Current recommendation: `{row.get('recommendedFirstPass') or '-'}`",
+                f"- Behavior change allowed: `{str(bool(row.get('behaviorChangeAllowed'))).lower()}`",
+                f"- Current action: `{row.get('action') or '-'}`",
+                f"- Kept count: `{int(row.get('keptCount') or 0)}`",
+                f"- Duration: `{int(row.get('durationMs') or 0)}ms`",
+                f"- Evidence flags: {_format_markdown_list(evidence.get('flags'))}",
+                f"- Evidence reasons: {_format_markdown_list(evidence.get('reasons'))}",
+                f"- Cross-host evidence: {_format_markdown_list(registry_evidence.get('offListingHosts'))}",
+                f"- Timeout diagnostics: `timeouts={int(timeout_diagnostics.get('timeoutErrorCount') or 0)}, network={int(timeout_diagnostics.get('networkErrorCount') or 0)}, timeoutUrls={int(timeout_diagnostics.get('timeoutUrlCount') or 0)}`",
+                f"- First timeout URL: `{timeout_diagnostics.get('firstTimeoutUrl') or '-'}`",
+                f"- Last timeout URL: `{timeout_diagnostics.get('lastTimeoutUrl') or '-'}`",
+                f"- Policy decision needed: `{str(bool(source_policy_decision.get('policyDecisionNeeded'))).lower()}`",
+                f"- Suggested source-policy decision: `{source_policy_decision.get('suggestedDecision') or '-'}`",
+                f"- Failure bucket: `{evidence.get('failureBucket') or '-'}`",
+                f"- Zero-kept classification: `{evidence.get('zeroKeptClassification') or '-'}`",
+                f"- Error samples: {_format_markdown_list(evidence.get('errorSamples'))}",
+                "",
+                "Decision: preserve / investigate / change_later",
+                "Chosen action:",
+                "Reason:",
+                "Risk accepted: yes/no",
+                "Follow-up owner/date:",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _source_decision_trend(
+    current_rows: list[dict[str, object]],
+    previous_payload: dict[str, object] | None,
+) -> dict[str, object]:
+    previous_rows = (
+        _as_list(previous_payload.get("sourceDecisionMatrix")) if isinstance(previous_payload, dict) else []
+    )
+    previous_by_name = {
+        str(row.get("name") or ""): row for row in previous_rows if isinstance(row, dict)
+    }
+    rows: list[dict[str, object]] = []
+    stable_slow_productive = 0
+    changed_decision_type = 0
+    new_count = 0
+    missing_previous_count = 0
+    for row in current_rows:
+        name = str(row.get("name") or "")
+        if not name:
+            continue
+        previous = previous_by_name.get(name)
+        current_decision_type = str(row.get("decisionType") or "")
+        previous_decision_type = str(previous.get("decisionType") or "") if previous else ""
+        decision_type_changed = bool(previous) and current_decision_type != previous_decision_type
+        if current_decision_type == "slow_productive_static" and previous_decision_type == "slow_productive_static":
+            stable_slow_productive += 1
+        if decision_type_changed:
+            changed_decision_type += 1
+        if previous is None:
+            new_count += 1
+        rows.append(
+            {
+                "name": name,
+                "decisionType": current_decision_type,
+                "previousDecisionType": previous_decision_type,
+                "decisionTypeChanged": decision_type_changed,
+                "keptCount": int(row.get("keptCount") or 0),
+                "previousKeptCount": int(previous.get("keptCount") or 0) if previous else 0,
+                "durationMs": int(row.get("durationMs") or 0),
+                "previousDurationMs": int(previous.get("durationMs") or 0) if previous else 0,
+                "requiresExplicitDecision": bool(row.get("requiresExplicitDecision")),
+                "previousRequiresExplicitDecision": bool(previous.get("requiresExplicitDecision"))
+                if previous
+                else False,
+            }
+        )
+    current_names = {str(row.get("name") or "") for row in current_rows if isinstance(row, dict)}
+    missing_previous_count = len(
+        [name for name in previous_by_name if name and name not in current_names]
+    )
+    return {
+        "status": "compared" if previous_by_name else "no_previous",
+        "rowCount": len(rows),
+        "newCount": new_count,
+        "missingPreviousCount": missing_previous_count,
+        "changedDecisionTypeCount": changed_decision_type,
+        "stableSlowProductiveCount": stable_slow_productive,
+        "rows": rows,
+    }
+
+
+def _render_source_decision_trend_markdown(trend: dict[str, object]) -> str:
+    lines = [
+        "# Source Decision Trend",
+        "",
+        "Generated from the current and previous `sourceDecisionMatrix` payloads when a previous benchmark summary exists. This report is diagnostics-only.",
+        "",
+        f"- Status: `{trend.get('status') or 'no_previous'}`",
+        f"- Rows: `{int(trend.get('rowCount') or 0)}`",
+        f"- New rows: `{int(trend.get('newCount') or 0)}`",
+        f"- Missing previous rows: `{int(trend.get('missingPreviousCount') or 0)}`",
+        f"- Changed decision types: `{int(trend.get('changedDecisionTypeCount') or 0)}`",
+        f"- Stable slow productive rows: `{int(trend.get('stableSlowProductiveCount') or 0)}`",
+        "",
+    ]
+    rows = [row for row in _as_list(trend.get("rows")) if isinstance(row, dict)]
+    if not rows:
+        lines.extend(["No source decision trend rows were generated.", ""])
+        return "\n".join(lines)
+    for row in rows:
+        lines.extend(
+            [
+                f"## {row.get('name') or '-'}",
+                "",
+                f"- Decision type: `{row.get('decisionType') or '-'}`",
+                f"- Previous decision type: `{row.get('previousDecisionType') or '-'}`",
+                f"- Decision type changed: `{str(bool(row.get('decisionTypeChanged'))).lower()}`",
+                f"- Kept count: `{int(row.get('keptCount') or 0)}` (previous `{int(row.get('previousKeptCount') or 0)}`)",
+                f"- Duration: `{int(row.get('durationMs') or 0)}ms` (previous `{int(row.get('previousDurationMs') or 0)}ms`)",
+                f"- Requires explicit decision: `{str(bool(row.get('requiresExplicitDecision'))).lower()}`",
+                "",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def _run_pass(
     output_dir: Path,
     selected_loaders: list[tuple[str, SourceLoader]],
@@ -578,6 +1029,13 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = Path(args.output_dir)
     if not output_dir.is_absolute():
         output_dir = (root / output_dir).resolve()
+    previous_payload: dict[str, object] | None = None
+    previous_summary_path = output_dir / "benchmark-summary.json"
+    if previous_summary_path.exists():
+        try:
+            previous_payload = json.loads(previous_summary_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            previous_payload = None
     if output_dir.exists() and not bool(args.keep_existing_output):
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -604,7 +1062,19 @@ def main(argv: list[str] | None = None) -> int:
     second_duration_ms = _runtime_duration_ms(second)
     selected_names = [name for name, _loader in selected_loaders]
     source_policy_signals = _source_policy_signals(first, selected_names)
+    output_jobs = _load_output_jobs(output_dir)
+    decision_report = {**first, "jobs": output_jobs}
     registry_page_signals = _registry_page_signals(selected_names)
+    next_optimization_targets = _next_optimization_targets(
+        source_policy_signals,
+        registry_page_signals=registry_page_signals,
+    )
+    source_decision_matrix = _source_decision_matrix(
+        next_optimization_targets,
+        source_policy_signals,
+        decision_report,
+    )
+    source_decision_trend = _source_decision_trend(source_decision_matrix, previous_payload)
 
     payload = {
         "outputDir": str(output_dir),
@@ -624,10 +1094,9 @@ def main(argv: list[str] | None = None) -> int:
         "sourcePolicySignals": source_policy_signals,
         "sourceRegistrySignals": registry_page_signals,
         "registryScopeSummary": _registry_scope_summary(registry_page_signals),
-        "nextOptimizationTargets": _next_optimization_targets(
-            source_policy_signals,
-            registry_page_signals=registry_page_signals,
-        ),
+        "nextOptimizationTargets": next_optimization_targets,
+        "sourceDecisionMatrix": source_decision_matrix,
+        "sourceDecisionTrend": source_decision_trend,
         "firstRun": {
             "summary": dict(first.get("summary") or {}),
             "runtime": dict(first.get("runtime") or {}),
@@ -641,6 +1110,24 @@ def main(argv: list[str] | None = None) -> int:
     }
     (output_dir / "benchmark-summary.json").write_text(
         json.dumps(payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (output_dir / "source-decision-matrix.md").write_text(
+        _render_source_decision_matrix_markdown(
+            [dict(row) for row in _as_list(payload.get("sourceDecisionMatrix"))]
+        ),
+        encoding="utf-8",
+    )
+    (output_dir / "source-decision-log-template.md").write_text(
+        _render_source_decision_log_template_markdown(
+            [dict(row) for row in _as_list(payload.get("sourceDecisionMatrix"))]
+        ),
+        encoding="utf-8",
+    )
+    (output_dir / "source-decision-trend.md").write_text(
+        _render_source_decision_trend_markdown(
+            dict(payload.get("sourceDecisionTrend") or {})
+        ),
         encoding="utf-8",
     )
     print(json.dumps(payload, indent=2, ensure_ascii=True))

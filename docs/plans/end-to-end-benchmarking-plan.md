@@ -24,12 +24,16 @@ Implemented:
 - Admin responsiveness quick wins: redundant boot refresh removal, registry signature digest, idle render deferral, and stale-render guards.
 - Frontend/bridge counter instrumentation and benchmark summaries for startup, lifecycle, fetch, and render signals.
 - Static outlier benchmark group: `npm run perf:fetch:static-outliers`.
-- Benchmark artifact improvements: `sourcePolicySignals`, `sourceRegistrySignals`, `registryScopeSummary`, and `nextOptimizationTargets`.
+- Benchmark artifact improvements: `sourcePolicySignals`, `sourceRegistrySignals`, `registryScopeSummary`, `nextOptimizationTargets`, `sourceDecisionMatrix`, `source-decision-matrix.md`, `source-decision-log-template.md`, `sourceDecisionTrend`, `source-decision-trend.md`, per-source `timeoutDiagnostics`, `sourcePolicyDecision` kept-output host breakdowns, and `slow_productive_static` classification.
+- Decision-first source conflict record for Super Lucky and Koei: `docs/plans/static-outlier-source-conflict-decisions.md`.
+- Generic static registry scope conflict audit in the source-policy soak report: `sections.staticRegistryScopeConflicts`, including dry-run-only `patchProposals` and explicit CLI apply-safe support for selected `shadowed_cross_host` rows.
+- Dry-run decision checkpoint for the current generic patch proposal result: `docs/plans/static-scope-conflict-dry-run-decisions.md`.
+- Guarded apply-safe CLI exercised once for Capcom; the current generic scope conflict verification shows `conflictCount=0` and `patchProposalCount=0`.
 - Full uncapped pipeline benchmark evidence collected and used to steer optimization work.
 
 Recent validation:
 
-- `python -m pytest tests/test_fetch_incremental_sanity_benchmark.py -q --color=no` -> `16 passed`.
+- `python -m pytest tests/test_fetch_incremental_sanity_benchmark.py -q --color=no` -> `26 passed`.
 - `cmd /c npm run perf:fetch:static-outliers` -> passed and wrote `_out/perf-sanity-fetch-static-outliers/benchmark-summary.json`.
 
 ## Latest benchmark evidence
@@ -44,34 +48,35 @@ Full uncapped pipeline run:
 
 Latest focused static-outliers run:
 
-- Total: `165848ms`.
-- First run: `164786ms`.
-- Second run: `1062ms`.
-- `listingFetch=80077ms`, `candidateExtraction=54651ms`, `detailFetch=119957ms`.
+- Total: `161798ms`.
+- First run: `160735ms`.
+- Second run: `1063ms`.
+- `listingFetch=91314ms`, `candidateExtraction=34090ms`, `detailFetch=105678ms`.
 - `registryScopeSummary`: `3` cross-host static sources, `7` off-listing-host pages.
 
 Current ranked targets from the artifact:
 
 1. Super Lucky Casino: `source_policy_review`, priority `100`, `requiresExplicitDecision=true`.
-2. Atvis: `source_policy_review`, priority `100`, `requiresExplicitDecision=true`.
-3. Netflix Games: `source_policy_review`, priority `90`, `requiresExplicitDecision=false`.
-4. Koei Tecmo Vietnam: `source_scope_and_timeout_review`, priority `65`, `requiresExplicitDecision=true`.
-5. Maliyo: `timeout_or_network_budget`, priority `30`, `requiresExplicitDecision=false`.
+2. Netflix Games: `source_policy_review`, priority `90`, `requiresExplicitDecision=false`.
+3. Koei Tecmo Vietnam: `source_scope_and_timeout_review`, priority `65`, `requiresExplicitDecision=true`.
+4. Maliyo: `timeout_or_network_budget`, priority `30`, `requiresExplicitDecision=false`.
 
 Important interpretation:
 
-- Super Lucky keeps output but the active registry row starts at `superluckycasino.com` and includes `stillfront.com` parent-career pages. Treat this as a source-policy/output-contract decision, not a mechanical speed fix.
-- Atvis keeps output but has site-changed evidence and a LinkedIn off-listing page. Treat as source-policy review.
+- Super Lucky keeps output but the active registry row starts at `superluckycasino.com` and includes `stillfront.com` parent-career pages. Treat this as a source-policy/output-contract decision, not a mechanical speed fix; the benchmark now adds `sourcePolicyDecision` evidence with kept-output host breakdowns from `jobs-unified.json`.
 - Koei keeps output and has timeout pressure plus cross-host `careerviet.vn` registry pages. Treat as combined source-scope and timeout review.
+- The generic conflict workflow is now the source-policy soak report's `staticRegistryScopeConflicts` section. Use it before adding more per-source fixes; the decision record remains the current Super Lucky/Koei review note.
+- Atvis remains a source-policy follow-up if fresh evidence reintroduces it as a kept-output conflict.
 - Netflix is zero-kept `needs_review`; safer to review than kept-output sources, but existing persisted Netflix jobs mean avoid broad assumptions.
-- Maliyo is the cleanest remaining mechanical timeout/network-budget target.
+- Maliyo is the cleanest remaining mechanical timeout/network-budget target; the benchmark now captures timeout URL samples, timeout/network counts, URL role counts, and detail timing, and classifies slow productive static rows before any budget change.
+- Before any source-policy, source-scope, timeout, registry, or output behavior change, inspect the benchmark's `sourceDecisionMatrix` JSON, generated `source-decision-matrix.md` companion report, and `source-decision-log-template.md` operator template. They are diagnostics-only review surfaces and keep the recommended first pass as `preserve_current_behavior`.
 
 ## Remaining work
 
 Highest-value next work:
 
-1. Decide source-policy handling for Super Lucky, Atvis, and Koei.
-2. Improve Maliyo timeout/network diagnostics before lowering any budget.
+1. Use `sections.staticRegistryScopeConflicts` and `docs/plans/static-scope-conflict-dry-run-decisions.md` to review source-scope conflicts before any apply-safe registry edit.
+2. Review Maliyo timeout diagnostics before lowering any budget.
 3. Add a concise trend report that compares latest full lifecycle and static-outlier runs against previous artifacts.
 4. Keep perf traces opt-in but document how to attach `_out/perf-traces/` artifacts to investigations.
 5. Consider a CI smoke benchmark only after signals are stable enough to avoid noisy failures.

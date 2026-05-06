@@ -1,6 +1,7 @@
 import gzip
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 
@@ -15,6 +16,10 @@ def _write_seed(root: Path, bucket: str, rows: list[dict]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(rows), encoding="utf-8")
     return path
+
+
+def _normalized_host(url: object) -> str:
+    return (urlparse(str(url or "")).hostname or "").lower().removeprefix("www.")
 
 
 def test_registry_loads_seed_when_runtime_file_is_missing() -> None:
@@ -353,3 +358,25 @@ def test_jobs_registry_loader_uses_seed_when_runtime_file_is_missing() -> None:
         rows = load_registry_from_file(runtime_path, [{"id": "fallback", "adapter": "static"}])
 
         assert rows == [{"id": "jobs-seed", "adapter": "static"}]
+
+
+def test_default_super_lucky_seed_stays_on_listing_host() -> None:
+    seed_path = Path("data/defaults/source-registry-active.seed.json")
+    rows = json.loads(seed_path.read_text(encoding="utf-8"))
+    super_lucky = next(
+        row for row in rows if row.get("id") == "static:listing_url:https://www.superluckycasino.com"
+    )
+    listing_host = _normalized_host(super_lucky.get("listing_url"))
+    page_hosts = {_normalized_host(page) for page in super_lucky.get("pages", [])}
+    detail_page_hosts = {
+        _normalized_host(page) for page in super_lucky.get("detailPagesSample", [])
+    }
+
+    assert super_lucky["listing_url"] == "https://www.superluckycasino.com"
+    assert super_lucky["careersUrl"] == "https://www.superluckycasino.com"
+    assert super_lucky["pages"] == ["https://www.superluckycasino.com"]
+    assert super_lucky["id"] == "static:listing_url:https://www.superluckycasino.com"
+    assert page_hosts == {listing_host}
+    assert detail_page_hosts <= {listing_host}
+    assert super_lucky["detailPageCount"] == 0
+    assert super_lucky["detailPagesSample"] == []

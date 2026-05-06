@@ -44054,11 +44054,7 @@
     "company": "Super Lucky Casino",
     "adapter": "static",
     "pages": [
-      "https://www.superluckycasino.com",
-      "https://www.stillfront.com/en/career/",
-      "https://www.stillfront.com/en/career/join-the-team",
-      "https://www.stillfront.com/en/career/our-culture/",
-      "https://www.stillfront.com/en/career/join-the-team/"
+      "https://www.superluckycasino.com"
     ],
     "listing_url": "https://www.superluckycasino.com",
     "nlPriority": false,
@@ -44078,13 +44074,8 @@
     ],
     "evidenceScore": 52,
     "weakSignal": false,
-    "detailPageCount": 4,
-    "detailPagesSample": [
-      "https://www.stillfront.com/en/career/",
-      "https://www.stillfront.com/en/career/join-the-team",
-      "https://www.stillfront.com/en/career/our-culture/",
-      "https://www.stillfront.com/en/career/join-the-team/"
-    ],
+    "detailPageCount": 0,
+    "detailPagesSample": [],
     "sourceDirectory": "gamedevmap",
     "sourceDirectoryUrl": "https://www.gamedevmap.com/index.php",
     "sourceDirectoryEntryUrl": "https://www.gamedevmap.com/index.php?query=Super+Lucky+Casino&exact=1&type=Mobile&country=Singapore&state=Singapore&city=Singapore",
