@@ -204,7 +204,11 @@ def test_registry_conflicts_suppresses_safe_pending_static_weaker_aliases() -> N
     assert audit["families"][0]["rows"][0]["id"] == (
         "static:listing_url:https://gameestudio.com/hiring/"
     )
-def test_registry_conflicts_safe_automation_marks_generated_static_listing_variants_eligible() -> None:
+
+
+def test_registry_conflicts_safe_automation_marks_generated_static_listing_variants_eligible() -> (
+    None
+):
     state = {
         "active": [
             {
@@ -266,7 +270,9 @@ def test_registry_conflicts_safe_automation_marks_generated_static_listing_varia
     assert payload["automation"]["summary"]["demotableCount"] == 3
 
 
-def test_registry_conflicts_safe_automation_skips_generated_static_listing_cross_domain_boards() -> None:
+def test_registry_conflicts_safe_automation_skips_generated_static_listing_cross_domain_boards() -> (
+    None
+):
     state = {
         "active": [
             {

@@ -214,17 +214,13 @@ def test_portable_build_keeps_scrapy_runtime_collection() -> None:
     assert {"scrapy", "scrapy_playwright"}.issubset(set(MAIN_RUNTIME_COLLECT_ALL_PACKAGES))
     assert "twisted" not in MAIN_RUNTIME_COLLECT_ALL_PACKAGES
     assert "queuelib" not in MAIN_RUNTIME_COLLECT_ALL_PACKAGES
-    assert {"scrapy", "scrapy_playwright", "twisted"}.issubset(
-        set(MAIN_RUNTIME_HIDDEN_IMPORTS)
-    )
+    assert {"scrapy", "scrapy_playwright", "twisted"}.issubset(set(MAIN_RUNTIME_HIDDEN_IMPORTS))
 
 
 def test_updater_helper_does_not_inherit_main_scrapy_test_exclusions() -> None:
     assert "scrapy" not in UPDATER_HELPER_HIDDEN_IMPORTS
     assert "twisted" not in UPDATER_HELPER_HIDDEN_IMPORTS
-    assert not set(MAIN_RUNTIME_EXCLUDED_MODULES).intersection(
-        set(UPDATER_HELPER_HIDDEN_IMPORTS)
-    )
+    assert not set(MAIN_RUNTIME_EXCLUDED_MODULES).intersection(set(UPDATER_HELPER_HIDDEN_IMPORTS))
 
 
 def test_helper_hidden_imports_omit_playwright_heavy_runtime_graph() -> None:

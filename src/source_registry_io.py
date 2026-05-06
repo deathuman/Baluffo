@@ -320,11 +320,7 @@ def _replace_path_with_retry(
         except OSError as exc:
             last_error = exc
             _sleep_after_write_failure(attempt)
-    if (
-        last_error is not None
-        and policy == _WRITE_POLICY_REQUIRED
-        and target.exists()
-    ):
+    if last_error is not None and policy == _WRITE_POLICY_REQUIRED and target.exists():
         try:
             target.unlink()
             os.replace(tmp, target)

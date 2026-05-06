@@ -124,12 +124,8 @@ def test_source_decision_matrix_markdown_renders_timeout_url_buckets() -> None:
                             "listing": 1,
                             "detail_or_registry_page": 1,
                         },
-                        "listingTimeouts": {
-                            "timeoutUrls": ["https://www.maliyo.com/career/"]
-                        },
-                        "detailTimeouts": {
-                            "timeoutUrls": ["https://www.maliyo.com/jobs/designer"]
-                        },
+                        "listingTimeouts": {"timeoutUrls": ["https://www.maliyo.com/career/"]},
+                        "detailTimeouts": {"timeoutUrls": ["https://www.maliyo.com/jobs/designer"]},
                     }
                 },
             }
@@ -635,9 +631,7 @@ def test_source_decision_matrix_preserves_behavior_for_policy_scope_and_timeout_
     assert "failure:site_changed" in super_lucky["evidence"]["flags"]
     assert "high_merge_ratio" in super_lucky["evidence"]["flags"]
     assert "time_budget" in super_lucky["evidence"]["reasons"]
-    assert super_lucky["evidence"]["registryPageEvidence"]["offListingHosts"] == [
-        "stillfront.com"
-    ]
+    assert super_lucky["evidence"]["registryPageEvidence"]["offListingHosts"] == ["stillfront.com"]
     assert super_lucky["evidence"]["sourcePolicyDecision"] == {
         "policyDecisionNeeded": True,
         "sourceScopeIdentity": {

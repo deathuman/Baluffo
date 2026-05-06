@@ -510,7 +510,9 @@ def test_default_super_lucky_seed_stays_on_listing_host() -> None:
     seed_path = Path("data/defaults/source-registry-active.seed.json")
     rows = json.loads(seed_path.read_text(encoding="utf-8"))
     super_lucky = next(
-        row for row in rows if row.get("id") == "static:listing_url:https://www.superluckycasino.com"
+        row
+        for row in rows
+        if row.get("id") == "static:listing_url:https://www.superluckycasino.com"
     )
     listing_host = _normalized_host(super_lucky.get("listing_url"))
     page_hosts = {_normalized_host(page) for page in super_lucky.get("pages", [])}

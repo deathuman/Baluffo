@@ -410,7 +410,12 @@ def test_static_registry_scope_conflict_markdown_renders_guardrails(
                 "pages": ["https://example.com/jobs", "https://ats.example/jobs/1"],
             }
         ],
-        [{"source": "static_source::static:listing_url:https://example.com/jobs", "jobLink": "https://ats.example/jobs/1"}],
+        [
+            {
+                "source": "static_source::static:listing_url:https://example.com/jobs",
+                "jobLink": "https://ats.example/jobs/1",
+            }
+        ],
     )
 
     markdown = soak.render_markdown_report(soak.build_soak_report(data_dir))
@@ -518,7 +523,12 @@ def test_apply_static_scope_proposal_refuses_non_shadowed_conflict(
                 "pages": ["https://example.com/jobs", "https://ats.example/jobs/1"],
             }
         ],
-        [{"source": "static_source::static:listing_url:https://example.com/jobs", "jobLink": "https://ats.example/jobs/1"}],
+        [
+            {
+                "source": "static_source::static:listing_url:https://example.com/jobs",
+                "jobLink": "https://ats.example/jobs/1",
+            }
+        ],
     )
 
     report = soak.build_soak_report(data_dir)
@@ -564,7 +574,12 @@ def test_apply_static_scope_proposal_refuses_duplicate_active_rows(
                 "pages": ["https://www.stillfront.com/en/career/join-the-team/"],
             },
         ],
-        [{"source": "static_source::static:listing_url:https://www.superluckycasino.com", "jobLink": "https://www.stillfront.com/en/career/join-the-team"}],
+        [
+            {
+                "source": "static_source::static:listing_url:https://www.superluckycasino.com",
+                "jobLink": "https://www.stillfront.com/en/career/join-the-team",
+            }
+        ],
     )
 
     report = soak.build_soak_report(data_dir)
@@ -606,7 +621,12 @@ def test_apply_static_scope_proposal_refuses_empty_page_sets(tmp_path: Path) -> 
                 "pages": ["https://www.stillfront.com/en/career/join-the-team/"],
             },
         ],
-        [{"source": "static_source::static:listing_url:https://www.superluckycasino.com", "jobLink": "https://www.stillfront.com/en/career/join-the-team"}],
+        [
+            {
+                "source": "static_source::static:listing_url:https://www.superluckycasino.com",
+                "jobLink": "https://www.stillfront.com/en/career/join-the-team",
+            }
+        ],
     )
     report = soak.build_soak_report(data_dir)
     report["sections"]["staticRegistryScopeConflicts"]["patchProposals"][0]["keepPages"] = []
