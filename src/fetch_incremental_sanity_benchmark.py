@@ -575,6 +575,15 @@ def _timeout_url_role(source_name: str, url: str) -> str:
     return "detail_or_registry_page"
 
 
+def _timeout_url_bucket(urls: list[str]) -> dict[str, object]:
+    return {
+        "timeoutUrlCount": len(urls),
+        "timeoutUrls": urls[:5],
+        "firstTimeoutUrl": urls[0] if urls else "",
+        "lastTimeoutUrl": urls[-1] if urls else "",
+    }
+
+
 def _timeout_diagnostics(
     source_name: str,
     error: object,
@@ -597,9 +606,15 @@ def _timeout_diagnostics(
             if url not in timeout_urls:
                 timeout_urls.append(url)
     role_counts: dict[str, int] = {}
+    listing_timeout_urls: list[str] = []
+    detail_timeout_urls: list[str] = []
     for url in timeout_urls:
         role = _timeout_url_role(source_name, url)
         role_counts[role] = role_counts.get(role, 0) + 1
+        if role == "listing":
+            listing_timeout_urls.append(url)
+        else:
+            detail_timeout_urls.append(url)
     return {
         "timeoutErrorCount": len(timeout_parts),
         "networkErrorCount": len(network_parts),
@@ -608,6 +623,8 @@ def _timeout_diagnostics(
         "firstTimeoutUrl": timeout_urls[0] if timeout_urls else "",
         "lastTimeoutUrl": timeout_urls[-1] if timeout_urls else "",
         "timeoutUrlRoleCounts": role_counts,
+        "listingTimeouts": _timeout_url_bucket(listing_timeout_urls),
+        "detailTimeouts": _timeout_url_bucket(detail_timeout_urls),
         "detailPagesVisited": int(detail_timing.get("detailPagesVisited") or 0),
         "detailYieldPct": int(detail_timing.get("detailYieldPct") or 0),
     }
@@ -846,6 +863,8 @@ def _render_source_decision_matrix_markdown(rows: list[dict[str, object]]) -> st
                 f"- Timeout diagnostics: `timeouts={int(timeout_diagnostics.get('timeoutErrorCount') or 0)}, network={int(timeout_diagnostics.get('networkErrorCount') or 0)}, timeoutUrls={int(timeout_diagnostics.get('timeoutUrlCount') or 0)}`",
                 f"- Timeout URL roles: {_format_markdown_list([f'{key}={value}' for key, value in timeout_role_counts.items()])}",
                 f"- Timeout URLs: {_format_markdown_list(timeout_diagnostics.get('timeoutUrls'))}",
+                f"- Listing timeout URLs: {_format_markdown_list(dict(timeout_diagnostics.get('listingTimeouts') or {}).get('timeoutUrls'))}",
+                f"- Detail timeout URLs: {_format_markdown_list(dict(timeout_diagnostics.get('detailTimeouts') or {}).get('timeoutUrls'))}",
                 f"- Policy decision needed: `{str(bool(source_policy_decision.get('policyDecisionNeeded'))).lower()}`",
                 f"- Suggested source-policy decision: `{source_policy_decision.get('suggestedDecision') or '-'}`",
                 f"- Kept output hosts: {_format_markdown_list(kept_host_rows)}",
@@ -889,6 +908,8 @@ def _render_source_decision_log_template_markdown(rows: list[dict[str, object]])
                 f"- Timeout diagnostics: `timeouts={int(timeout_diagnostics.get('timeoutErrorCount') or 0)}, network={int(timeout_diagnostics.get('networkErrorCount') or 0)}, timeoutUrls={int(timeout_diagnostics.get('timeoutUrlCount') or 0)}`",
                 f"- First timeout URL: `{timeout_diagnostics.get('firstTimeoutUrl') or '-'}`",
                 f"- Last timeout URL: `{timeout_diagnostics.get('lastTimeoutUrl') or '-'}`",
+                f"- Listing timeout URLs: {_format_markdown_list(dict(timeout_diagnostics.get('listingTimeouts') or {}).get('timeoutUrls'))}",
+                f"- Detail timeout URLs: {_format_markdown_list(dict(timeout_diagnostics.get('detailTimeouts') or {}).get('timeoutUrls'))}",
                 f"- Policy decision needed: `{str(bool(source_policy_decision.get('policyDecisionNeeded'))).lower()}`",
                 f"- Suggested source-policy decision: `{source_policy_decision.get('suggestedDecision') or '-'}`",
                 f"- Failure bucket: `{evidence.get('failureBucket') or '-'}`",

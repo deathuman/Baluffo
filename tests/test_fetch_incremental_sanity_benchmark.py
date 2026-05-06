@@ -69,6 +69,77 @@ def test_urls_in_text_extracts_embedded_static_error_urls() -> None:
     ) == ["https://www.maliyo.com/career/"]
 
 
+def test_timeout_diagnostics_splits_listing_and_detail_timeout_urls() -> None:
+    diagnostics = benchmark._timeout_diagnostics(
+        "static_source::static:listing_url:https://www.maliyo.com/career/",
+        (
+            "static:Maliyo:https://www.maliyo.com/career/: time budget exceeded (25s); "
+            "static:Maliyo:https://www.maliyo.com/jobs/designer: time budget exceeded (25s)"
+        ),
+        {"detailPagesVisited": 9, "detailYieldPct": 100},
+    )
+
+    assert diagnostics["timeoutUrlRoleCounts"] == {
+        "listing": 1,
+        "detail_or_registry_page": 1,
+    }
+    assert diagnostics["listingTimeouts"] == {
+        "timeoutUrlCount": 1,
+        "timeoutUrls": ["https://www.maliyo.com/career/"],
+        "firstTimeoutUrl": "https://www.maliyo.com/career/",
+        "lastTimeoutUrl": "https://www.maliyo.com/career/",
+    }
+    assert diagnostics["detailTimeouts"] == {
+        "timeoutUrlCount": 1,
+        "timeoutUrls": ["https://www.maliyo.com/jobs/designer"],
+        "firstTimeoutUrl": "https://www.maliyo.com/jobs/designer",
+        "lastTimeoutUrl": "https://www.maliyo.com/jobs/designer",
+    }
+    assert diagnostics["detailPagesVisited"] == 9
+    assert diagnostics["detailYieldPct"] == 100
+
+
+def test_source_decision_matrix_markdown_renders_timeout_url_buckets() -> None:
+    markdown = benchmark._render_source_decision_matrix_markdown(
+        [
+            {
+                "name": "static_source::static:listing_url:https://www.maliyo.com/career/",
+                "action": "timeout_or_network_budget",
+                "keptCount": 11,
+                "durationMs": 25906,
+                "decisionType": "slow_productive_static",
+                "recommendedFirstPass": "preserve_current_behavior",
+                "behaviorChangeAllowed": False,
+                "requiresExplicitDecision": False,
+                "evidence": {
+                    "timeoutDiagnostics": {
+                        "timeoutErrorCount": 2,
+                        "networkErrorCount": 0,
+                        "timeoutUrlCount": 2,
+                        "timeoutUrls": [
+                            "https://www.maliyo.com/career/",
+                            "https://www.maliyo.com/jobs/designer",
+                        ],
+                        "timeoutUrlRoleCounts": {
+                            "listing": 1,
+                            "detail_or_registry_page": 1,
+                        },
+                        "listingTimeouts": {
+                            "timeoutUrls": ["https://www.maliyo.com/career/"]
+                        },
+                        "detailTimeouts": {
+                            "timeoutUrls": ["https://www.maliyo.com/jobs/designer"]
+                        },
+                    }
+                },
+            }
+        ]
+    )
+
+    assert "- Listing timeout URLs: https://www.maliyo.com/career/" in markdown
+    assert "- Detail timeout URLs: https://www.maliyo.com/jobs/designer" in markdown
+
+
 def test_network_wait_counters_collect_cache_and_adapter_proxy_counts() -> None:
     counters = benchmark._network_wait_counters(
         {
@@ -615,6 +686,18 @@ def test_source_decision_matrix_preserves_behavior_for_policy_scope_and_timeout_
         "firstTimeoutUrl": "https://www.maliyo.com/career/",
         "lastTimeoutUrl": "https://www.maliyo.com/career/",
         "timeoutUrlRoleCounts": {"detail_or_registry_page": 1},
+        "listingTimeouts": {
+            "timeoutUrlCount": 0,
+            "timeoutUrls": [],
+            "firstTimeoutUrl": "",
+            "lastTimeoutUrl": "",
+        },
+        "detailTimeouts": {
+            "timeoutUrlCount": 1,
+            "timeoutUrls": ["https://www.maliyo.com/career/"],
+            "firstTimeoutUrl": "https://www.maliyo.com/career/",
+            "lastTimeoutUrl": "https://www.maliyo.com/career/",
+        },
         "detailPagesVisited": 3,
         "detailYieldPct": 100,
     }
