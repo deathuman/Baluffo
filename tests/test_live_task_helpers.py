@@ -113,6 +113,8 @@ def test_normalize_live_task_event_emits_versioned_event_envelope() -> None:
         "workItemId": "source_1",
         "phaseKey": "execute_sources",
         "message": "Running source 1",
+        "target": "",
+        "targetUrl": "",
     }
 
 
@@ -153,6 +155,8 @@ def test_append_live_task_event_uses_shared_event_envelope() -> None:
             "workItemId": "",
             "phaseKey": "sync_pull",
             "message": "Pulling remote registry",
+            "target": "",
+            "targetUrl": "",
         }
     ]
 

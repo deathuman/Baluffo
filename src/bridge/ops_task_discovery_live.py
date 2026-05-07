@@ -181,6 +181,27 @@ def build_discovery_work_items(
     return [*stage_items, *work_items]
 
 
+def _directory_failure_target(failure: dict[str, Any]) -> str:
+    for key in ("targetUrl", "url", "name", "domain"):
+        value = str(failure.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _discovery_failure_event_message(failure: dict[str, Any]) -> str:
+    adapter = str(failure.get("adapter") or "").strip()
+    stage = str(failure.get("stage") or "").strip()
+    detail = str(failure.get("message") or failure.get("error") or "").strip()
+    if not detail:
+        return ""
+    target = _directory_failure_target(failure)
+    if stage == "website_fetch" and target:
+        adapter_label = (adapter.replace("_", " ").strip() or "Directory").title()
+        return f"{adapter_label} studio website fetch failed for {target}: {detail}"
+    return f"{adapter or 'discovery'} {stage or 'failure'}: {detail}"
+
+
 def build_discovery_recent_events(
     report: dict[str, Any],
     *,
@@ -246,9 +267,10 @@ def build_discovery_recent_events(
     for failure in failures[:5]:
         adapter = str(failure.get("adapter") or "").strip()
         stage = str(failure.get("stage") or "").strip()
-        message = str(failure.get("error") or failure.get("message") or "").strip()
+        message = _discovery_failure_event_message(failure)
         if not message:
             continue
+        target = _directory_failure_target(failure)
         events = append_live_task_event(
             events,
             {
@@ -258,7 +280,8 @@ def build_discovery_recent_events(
                 "runId": run_id,
                 "workItemId": adapter,
                 "phaseKey": stage,
-                "message": f"{adapter or 'discovery'} {stage or 'failure'}: {message}",
+                "message": message,
+                "target": target,
             },
         )
     return events

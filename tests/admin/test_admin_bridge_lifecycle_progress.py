@@ -16,6 +16,7 @@ pytestmark = pytest.mark.usefixtures("admin_bridge_entrypoint_root")
 
 def test_task_state_lifecycle_preserves_richer_discovery_progress() -> None:
     started_at = admin_bridge.now_iso()
+    report_heartbeat_at = "2026-05-06T19:05:00Z"
     admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
@@ -27,23 +28,24 @@ def test_task_state_lifecycle_preserves_richer_discovery_progress() -> None:
             ),
         },
     )
-    admin_bridge.save_json_atomic(
-        admin_bridge.DISCOVERY_REPORT_PATH,
-        discovery_report(
-            run_id="discovery_progress_1",
-            started_at=started_at,
-            task_progress={
-                **active_progress(
-                    "scanning_sources",
-                    "Scanning known careers pages",
-                    {"queuedCandidates": 3, "stageIndex": 7, "stageTotal": 11},
-                ),
-                "mode": "indeterminate",
-                "ratio": 0,
-            },
-            summary={"queuedCandidateCount": 3},
-        ),
+    report = discovery_report(
+        run_id="discovery_progress_1",
+        started_at=started_at,
+        task_progress={
+            **active_progress(
+                "scanning_sources",
+                "Scanning known careers pages",
+                {"queuedCandidates": 3, "stageIndex": 7, "stageTotal": 11},
+            ),
+            "mode": "indeterminate",
+            "ratio": 0,
+        },
+        summary={"queuedCandidateCount": 3},
     )
+    report["runtime"] = {
+        "lifecycle": {"owner": "discovery_report", "heartbeatAt": report_heartbeat_at}
+    }
+    admin_bridge.save_json_atomic(admin_bridge.DISCOVERY_REPORT_PATH, report)
     admin_bridge.start_lifecycle_run(
         run_id="discovery_progress_1",
         task_type="discovery",
@@ -62,6 +64,12 @@ def test_task_state_lifecycle_preserves_richer_discovery_progress() -> None:
         },
         summary={},
     )
+    admin_bridge.heartbeat_lifecycle_run(
+        "discovery_progress_1",
+        "discovery",
+        heartbeat_at="2026-05-06T19:00:00Z",
+        stage="running",
+    )
 
     with mock.patch.object(admin_bridge, "pid_is_running", return_value=True):
         payload = current_task_payload()
@@ -71,6 +79,7 @@ def test_task_state_lifecycle_preserves_richer_discovery_progress() -> None:
     assert progress.get("phaseLabel") == "Scanning known careers pages"
     assert (progress.get("counts") or {}).get("stageIndex") == 7
     assert discovery_row.get("lifecycleStatus") == "running"
+    assert discovery_row.get("heartbeatAt") == report_heartbeat_at
     assert discovery_row.get("finishedAt") == ""
 
 

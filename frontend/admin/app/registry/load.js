@@ -121,6 +121,18 @@ export function createRegistryLoadController({
     scheduleRender(callback);
   }
 
+  async function loadDiscoveryEndpoint(label, promise, fallback) {
+    try {
+      return await promise;
+    } catch (err) {
+      appendDiscoveryLog(`Could not load ${label}: ${getErrorMessage(err)}`, "error");
+      return {
+        ...(fallback && typeof fallback === "object" && !Array.isArray(fallback) ? fallback : {}),
+        __loadFailed: true
+      };
+    }
+  }
+
   async function loadDiscoveryData(options = {}) {
     if (state.adminBusyState.discoveryLoad) return state.discoveryLoadPromise || null;
     const nowMs = Date.now();
@@ -143,15 +155,40 @@ export function createRegistryLoadController({
           setSourceTablePlaceholder(refs.adminActiveSourcesEl, "active");
           setSourceTablePlaceholder(refs.adminRejectedSourcesEl, "rejected");
         }
-        const reportPromise = getBridge("/discovery/report");
-        const discoveryCandidatesPromise = getBridge("/discovery/candidates").catch(() => ({ candidates: [] }));
-        const latestFetchReportPromise = resolveLatestFetchReport(options);
-        const pendingPromise = getBridge(pendingPath);
-        const activePromise = getBridge("/registry/active");
-        const rejectedPromise = getBridge("/registry/rejected");
+        const reportPromise = loadDiscoveryEndpoint(
+          "source discovery report",
+          getBridge("/discovery/report"),
+          state.latestDiscoveryReportCache || { summary: {}, candidates: [], failures: [] }
+        );
+        const discoveryCandidatesPromise = loadDiscoveryEndpoint(
+          "source discovery candidates",
+          getBridge("/discovery/candidates"),
+          { candidates: [] }
+        );
+        const latestFetchReportPromise = loadDiscoveryEndpoint(
+          "latest fetch report",
+          resolveLatestFetchReport(options),
+          state.latestFetcherReportCache || {}
+        );
+        const pendingPromise = loadDiscoveryEndpoint(
+          "pending registry",
+          getBridge(pendingPath),
+          { sources: [], summary: {} }
+        );
+        const activePromise = loadDiscoveryEndpoint(
+          "active registry",
+          getBridge("/registry/active"),
+          { sources: [], summary: {} }
+        );
+        const rejectedPromise = loadDiscoveryEndpoint(
+          "rejected registry",
+          getBridge("/registry/rejected"),
+          { sources: [], summary: {} }
+        );
 
         const pendingRowsPromise = Promise.all([pendingPromise, discoveryCandidatesPromise, latestFetchReportPromise])
           .then(([pending, discoveryCandidates, latestFetchReport]) => {
+            const loadFailed = Boolean(pending?.__loadFailed);
             const rows = mergeSourceStatusFromReport(
               mergeSourceDiscoveryCandidates(Array.isArray(pending?.sources) ? pending.sources : [], discoveryCandidates),
               latestFetchReport,
@@ -165,7 +202,7 @@ export function createRegistryLoadController({
               filterState.showZeroJobs ? rows : rows.filter(row => getSourceDiscoveryJobsCount(row) !== 0)
             );
             scheduleDeferredRender(() => {
-              if (background || renderToken !== registryRenderToken) return;
+              if (background || loadFailed || renderToken !== registryRenderToken) return;
               renderSourcesTable(refs.adminPendingSourcesEl, visibleRows, "pending");
               if (
                 refs.adminPendingSourcesEl
@@ -176,10 +213,11 @@ export function createRegistryLoadController({
                 refs.adminPendingSourcesEl.innerHTML = `<div class="no-results">${hiddenZeroJobsCount.toLocaleString()} pending sources have 0 discovery jobs and are hidden. Enable "Show zero-jobs pending sources" to view them.</div>`;
               }
             });
-            return { payload: pending, rows, hiddenZeroJobsCount, visibleRows };
+            return { payload: pending, rows, hiddenZeroJobsCount, visibleRows, loadFailed };
           });
         const activeRowsPromise = Promise.all([activePromise, discoveryCandidatesPromise, latestFetchReportPromise])
           .then(([active, discoveryCandidates, latestFetchReport]) => {
+            const loadFailed = Boolean(active?.__loadFailed);
             const rows = mergeSourceStatusFromReport(
               mergeSourceDiscoveryCandidates(Array.isArray(active?.sources) ? active.sources : [], discoveryCandidates),
               latestFetchReport,
@@ -187,13 +225,14 @@ export function createRegistryLoadController({
             );
             const visibleRows = applySourceFilter(rows);
             scheduleDeferredRender(() => {
-              if (background || renderToken !== registryRenderToken) return;
+              if (background || loadFailed || renderToken !== registryRenderToken) return;
               renderSourcesTable(refs.adminActiveSourcesEl, visibleRows, "active");
             });
-            return { payload: active, rows, visibleRows };
+            return { payload: active, rows, visibleRows, loadFailed };
           });
         const rejectedRowsPromise = Promise.all([rejectedPromise, discoveryCandidatesPromise, latestFetchReportPromise])
           .then(([rejected, discoveryCandidates, latestFetchReport]) => {
+            const loadFailed = Boolean(rejected?.__loadFailed);
             const rows = mergeSourceStatusFromReport(
               mergeSourceDiscoveryCandidates(Array.isArray(rejected?.sources) ? rejected.sources : [], discoveryCandidates),
               latestFetchReport,
@@ -201,10 +240,10 @@ export function createRegistryLoadController({
             );
             const visibleRows = applySourceFilter(rows);
             scheduleDeferredRender(() => {
-              if (background || renderToken !== registryRenderToken) return;
+              if (background || loadFailed || renderToken !== registryRenderToken) return;
               renderSourcesTable(refs.adminRejectedSourcesEl, visibleRows, "rejected");
             });
-            return { payload: rejected, rows, visibleRows };
+            return { payload: rejected, rows, visibleRows, loadFailed };
           });
         const [report, discoveryCandidates, pendingResult, activeResult, rejectedResult] = await Promise.all([
           reportPromise,
@@ -238,6 +277,12 @@ export function createRegistryLoadController({
         const pendingRows = pendingResult.rows;
         const activeRows = activeResult.rows;
         const rejectedRows = rejectedResult.rows;
+        const partialLoadFailed = Boolean(
+          report?.__loadFailed
+          || pendingResult.loadFailed
+          || activeResult.loadFailed
+          || rejectedResult.loadFailed
+        );
         const registrySignature = buildDiscoveryRegistrySignature({
           pending: pendingRows,
           active: activeRows,
@@ -257,11 +302,16 @@ export function createRegistryLoadController({
           );
         }
         const registryChanged = registrySignature !== String(state.discoveryRegistrySignature || "");
-        state.discoveryRegistrySignature = registrySignature;
+        if (!partialLoadFailed) {
+          state.discoveryRegistrySignature = registrySignature;
+        }
         const shouldRenderTables = Boolean(
-          options?.forceRender
-          || registryChanged
-          || !state.discoveryTablesRendered
+          !partialLoadFailed
+          && (
+            options?.forceRender
+            || registryChanged
+            || !state.discoveryTablesRendered
+          )
         );
         if (background && shouldRenderTables) {
           scheduleDeferredRender(() => {
@@ -282,7 +332,7 @@ export function createRegistryLoadController({
         } else if (!background) {
           state.discoveryTablesRendered = true;
         }
-        if (registryChanged && options?.logChanges !== false) {
+        if (!partialLoadFailed && registryChanged && options?.logChanges !== false) {
           appendDiscoveryLog("Loading source discovery report and registries...");
           appendDiscoveryLog(
             `Discovery summary: found ${foundCount}, probed ${probedCount}, review queue ${queuedCount}, auto-approved ${autoApprovedCount}, failed ${failedCount}, skipped duplicates ${skippedCount}.`,
@@ -299,17 +349,23 @@ export function createRegistryLoadController({
           appendDiscoveryLog("Source discovery data loaded.", "success");
         }
         adminDispatch.dispatch({ type: adminActions.DISCOVERY_REFRESHED, payload: { at: new Date().toISOString() } });
-        state.discoveryLastLoadSucceededAtMs = Date.now();
+        if (!partialLoadFailed) {
+          state.discoveryLastLoadSucceededAtMs = Date.now();
+        }
         return {
           report,
           pendingRows,
           activeRows,
-          rejectedRows
+          rejectedRows,
+          partialLoadFailed
         };
       } catch (err) {
         appendDiscoveryLog(`Could not load source discovery data: ${getErrorMessage(err)}`, "error");
         if (refs.adminDiscoverySummaryEl) {
-          refs.adminDiscoverySummaryEl.textContent = "Source discovery bridge unavailable. Start `Run admin bridge` task.";
+          const message = getErrorMessage(err);
+          if (String(message || "").includes("bridge unreachable")) {
+            refs.adminDiscoverySummaryEl.textContent = "Source discovery bridge unavailable. Start `Run admin bridge` task.";
+          }
         }
         if (refs.adminDiscoveryReviewEl) {
           refs.adminDiscoveryReviewEl.innerHTML = '<div class="no-results">Discovery review unavailable.</div>';

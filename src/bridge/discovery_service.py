@@ -185,6 +185,36 @@ class DiscoveryService:
                 stage="running",
             )
 
+    def _reconcile_terminal_discovery_report_from_state(self) -> None:
+        if self._paths.task_state is None:
+            return
+        state = self._deps.load_json_object(self._paths.task_state, {})
+        if not isinstance(state, dict):
+            return
+        current = as_json_object(state.get("discovery"))
+        run_id = str(current.get("runId") or "").strip()
+        if not run_id:
+            return
+        report = self._deps.normalize_discovery_report_contract(
+            self._deps.load_json_object(self._paths.report, {})
+        )
+        if str(report.get("runId") or "").strip() != run_id:
+            return
+        finished_at = str(report.get("finishedAt") or "").strip()
+        if not finished_at:
+            return
+        started_at = str(current.get("startedAt") or report.get("startedAt") or "").strip()
+        started_dt = self._deps.parse_iso(started_at)
+        finished_dt = self._deps.parse_iso(finished_at)
+        if started_dt and finished_dt and finished_dt < started_dt:
+            return
+        self._finalize_discovery_run(
+            run_id=run_id,
+            started_at=started_at,
+            finished_at=finished_at,
+            summary=as_json_object(report.get("summary")),
+        )
+
     def update_saved_discovery_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized = self._normalize_discovery_settings(payload)
         self._deps.save_json_atomic(self._paths.settings, normalized)
@@ -288,6 +318,7 @@ class DiscoveryService:
             self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
         )
         with lock_context:
+            self._reconcile_terminal_discovery_report_from_state()
             active_metadata = get_active_task_metadata(
                 "discovery",
                 load_json_object=self._deps.load_json_object,

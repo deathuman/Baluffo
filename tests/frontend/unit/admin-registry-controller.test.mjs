@@ -150,6 +150,50 @@ test("admin registry controller loads filtered discovery state and dispatches re
   assert.deepEqual(busyTransitions, ["discoveryLoad:true", "discoveryLoad:false"]);
 });
 
+test("admin registry controller treats one registry timeout as partial load", async () => {
+  const fixture = createRegistryControllerFixture({
+    options: {
+      getBridge: async path => {
+        if (path === "/discovery/report") {
+          return {
+            summary: {
+              foundEndpointCount: 7,
+              probedCandidateCount: 6,
+              queuedCandidateCount: 5
+            }
+          };
+        }
+        if (path === "/discovery/candidates") return { candidates: [] };
+        if (String(path).startsWith("/registry/pending")) throw new Error("Bridge request timed out");
+        if (path === "/registry/active") return { summary: { activeCount: 1 }, sources: [] };
+        if (path === "/registry/rejected") return { summary: { rejectedCount: 0 }, sources: [] };
+        throw new Error(`unexpected path ${path}`);
+      },
+      fetchJobsFetchReportJson: async () => ({ sources: [] })
+    }
+  });
+  const logs = [];
+  fixture.options.appendDiscoveryLog = message => {
+    logs.push(String(message));
+  };
+  fixture.refs.adminPendingSourcesEl.innerHTML = "Existing pending rows";
+  const controller = createAdminRegistryController(fixture.options);
+
+  const result = await controller.loadDiscoveryData({ background: true });
+  fixture.renderScheduler.flush();
+
+  assert.equal(result.partialLoadFailed, true);
+  assert.match(
+    logs.join("\n"),
+    /Could not load pending registry: Bridge request timed out/
+  );
+  assert.doesNotMatch(
+    fixture.refs.adminDiscoverySummaryEl.textContent,
+    /Source discovery bridge unavailable/
+  );
+  assert.equal(fixture.refs.adminPendingSourcesEl.innerHTML, "Existing pending rows");
+});
+
 test("admin registry controller explains hidden zero-job pending rows", async () => {
   const fixture = createRegistryControllerFixture({
     options: {

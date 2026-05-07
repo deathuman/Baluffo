@@ -227,6 +227,110 @@ def test_trigger_discovery_task_returns_conflict_for_active_discovery(tmp_path: 
     assert any(message == "task_start_attached_existing" for message, _fields in bridge_events)
 
 
+def test_trigger_discovery_task_reconciles_terminal_report_before_duplicate_check(
+    tmp_path: Path,
+) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    task_state_path = tmp_path / "admin-task-state.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "runId": "discovery_done_1",
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "2026-03-20T12:05:00Z",
+                "summary": {"queuedCandidateCount": 4, "failedProbeCount": 1},
+                "runtime": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    task_state_path.write_text(
+        json.dumps(
+            {
+                "discovery": {
+                    "runId": "discovery_done_1",
+                    "taskType": "discovery",
+                    "pid": 321,
+                    "startedAt": "2026-03-20T12:00:00Z",
+                    "status": "running",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    cleared_tasks: list[str] = []
+    finished_lifecycle: list[tuple[str, str, str]] = []
+    upserted_runs: list[dict[str, object]] = []
+
+    def clear_task_state(task_type: str) -> None:
+        cleared_tasks.append(task_type)
+        state = json.loads(task_state_path.read_text(encoding="utf-8"))
+        state.pop(task_type, None)
+        task_state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    def load_json_object(path: Path, default: dict[str, object]) -> dict[str, object]:
+        if path == report_path:
+            return json.loads(report_path.read_text(encoding="utf-8"))
+        if path == task_state_path:
+            return json.loads(task_state_path.read_text(encoding="utf-8"))
+        return dict(default)
+
+    service = DiscoveryService(
+        paths=DiscoveryPaths(
+            report=report_path,
+            candidates=tmp_path / "source-registry-pending.json",
+            pending=tmp_path / "source-registry-pending.json",
+            log=tmp_path / "source-discovery.log",
+            settings=tmp_path / "source-discovery-config.json",
+            approval_state=tmp_path / "source-approval-state.json",
+            task_state=task_state_path,
+        ),
+        deps=DiscoveryDeps(
+            schema_version=1,
+            now_iso=lambda: "2026-03-20T12:10:00Z",
+            now_utc=lambda: None,
+            parse_iso=_parse_iso_utc,
+            pid_is_running=lambda pid: int(pid) == 321,
+            bridge_log=lambda *args, **kwargs: None,
+            load_json_object=load_json_object,
+            save_json_atomic=lambda path, payload: Path(path).write_text(
+                json.dumps(payload), encoding="utf-8"
+            ),
+            run_background_script=lambda script_name, args=None, **kwargs: 987,
+            append_run_history=lambda payload: payload,
+            upsert_run_history=lambda payload, **_kwargs: (
+                upserted_runs.append(dict(payload)) or payload
+            ),
+            prune_started_rows_for_type=lambda *_args, **_kwargs: None,
+            clear_task_state=clear_task_state,
+            normalize_discovery_report_contract=lambda payload: payload,
+            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            persist_state_and_auto_sync=lambda state, **_kwargs: state,
+            load_sync_runtime_state=lambda: {},
+            maybe_trigger_auto_sync_push=lambda reason: False,
+            mark_discovery_sync_finished=lambda finished_at: None,
+            finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
+                finished_lifecycle.append((run_id, task_type, str(kwargs.get("finished_at") or "")))
+                or {}
+            ),
+        ),
+    )
+
+    status_code, result = service.trigger_discovery_task(
+        route_name="/tasks/run-discovery",
+        payload={"preset": "default"},
+        enable_auto_sync_watch=False,
+    )
+
+    assert status_code == 200
+    assert result["started"] is True
+    assert str(result.get("runId") or "") != "discovery_done_1"
+    assert cleared_tasks == ["discovery"]
+    assert finished_lifecycle == [("discovery_done_1", "discovery", "2026-03-20T12:05:00Z")]
+    assert upserted_runs[0]["runId"] == "discovery_done_1"
+    assert upserted_runs[0]["finishedAt"] == "2026-03-20T12:05:00Z"
+
+
 def test_discovery_settings_default_to_auto_approve_enabled(tmp_path: Path) -> None:
     service = DiscoveryService(
         paths=DiscoveryPaths(

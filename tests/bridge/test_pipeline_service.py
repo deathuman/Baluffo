@@ -43,11 +43,20 @@ def _make_pipeline_service(**overrides: Any) -> PipelineService:
 def test_wait_for_report_completion_refreshes_pipeline_child_heartbeat(tmp_path: Path) -> None:
     report_path = tmp_path / "source-discovery-report.json"
     refreshed: list[tuple[str, str, str]] = []
+    parent_heartbeats: list[tuple[str, str, str]] = []
 
     service = _make_pipeline_service(
+        pipeline_status={
+            "runId": "pipeline_1",
+            "stage": "discovery",
+            "progress": {"currentStep": 1, "totalSteps": 3, "label": "Running discovery..."},
+        },
         refresh_child_task_heartbeat=lambda task_type, run_id, started_at: (
             refreshed.append((task_type, run_id, started_at)) or True
-        )
+        ),
+        heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            parent_heartbeats.append((run_id, task_type, str(kwargs.get("stage") or ""))) or {}
+        ),
     )
 
     report = service.wait_for_report_completion(
@@ -68,6 +77,60 @@ def test_wait_for_report_completion_refreshes_pipeline_child_heartbeat(tmp_path:
     assert refreshed == [
         ("discovery", "discovery_child_1", "2026-05-06T18:00:00Z"),
     ]
+    assert parent_heartbeats == [("pipeline_1", "pipeline", "discovery")]
+
+
+def test_pipeline_waits_for_discovery_auto_approval_after_child_terminal_report() -> None:
+    parent_heartbeats: list[tuple[str, str, str]] = []
+    service = _make_pipeline_service(
+        pipeline_status={"runId": "pipeline_1"},
+        load_json_object=lambda _path, _default: {
+            "runtime": {"autoApproval": {"enabled": True, "status": "completed"}}
+        },
+        heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            parent_heartbeats.append((run_id, task_type, str(kwargs.get("stage") or ""))) or {}
+        ),
+    )
+
+    service._wait_for_discovery_auto_approval(
+        {"runtime": {"autoApproval": {"enabled": True, "status": "running"}}}
+    )
+
+    assert parent_heartbeats
+    assert all(
+        row == ("pipeline_1", "pipeline", "discovery_auto_approval") for row in parent_heartbeats
+    )
+
+
+def test_pipeline_waits_for_discovery_registry_finalization_before_fetch() -> None:
+    parent_heartbeats: list[tuple[str, str, str]] = []
+    service = _make_pipeline_service(
+        pipeline_status={"runId": "pipeline_1"},
+        load_json_object=lambda _path, _default: {
+            "runtime": {
+                "autoApproval": {"enabled": True, "status": "completed"},
+                "registryFinalization": {"status": "completed"},
+            }
+        },
+        heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            parent_heartbeats.append((run_id, task_type, str(kwargs.get("stage") or ""))) or {}
+        ),
+    )
+
+    service._wait_for_discovery_auto_approval(
+        {
+            "runtime": {
+                "autoApproval": {"enabled": True, "status": "completed"},
+                "registryFinalization": {"status": "running"},
+            }
+        }
+    )
+
+    assert parent_heartbeats
+    assert all(
+        row == ("pipeline_1", "pipeline", "discovery_registry_finalization")
+        for row in parent_heartbeats
+    )
 
 
 def _project_discovery_history(

@@ -491,7 +491,7 @@ class TaskLaunchApi:
         finish_lifecycle_run: Callable[..., dict[str, Any]],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
     ) -> None:
-        while self._deps.pid_is_running(int(pid)):
+        while True:
             if self._close_fetch_lifecycle_from_report(
                 run_id=run_id,
                 normalize_fetch_report_contract=normalize_fetch_report_contract,
@@ -500,7 +500,21 @@ class TaskLaunchApi:
                 fail_lifecycle_run=fail_lifecycle_run,
             ):
                 return
-            time.sleep(2.0)
+            if self._deps.pid_is_running(int(pid)):
+                time.sleep(2.0)
+                continue
+            task_state = load_json_object(self._paths.task_state, {})
+            fetch_state = task_state.get("fetch") if isinstance(task_state, dict) else {}
+            if (
+                isinstance(fetch_state, dict)
+                and str(fetch_state.get("runId") or "").strip() == run_id
+                and bool(fetch_state.get("active", True))
+                and str(fetch_state.get("status") or "running").strip().lower()
+                in {"", "running", "started"}
+            ):
+                time.sleep(2.0)
+                continue
+            break
         if self._close_fetch_lifecycle_from_report(
             run_id=run_id,
             normalize_fetch_report_contract=normalize_fetch_report_contract,

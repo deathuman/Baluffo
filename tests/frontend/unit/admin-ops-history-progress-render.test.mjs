@@ -66,5 +66,6 @@ test("admin ops history: current rows show live discovery and pipeline child pro
 
   assert.match(historyEl.innerHTML, /Progress \/ Summary/);
   assert.match(historyEl.innerHTML, /Scanning GameDevMap directory/);
+  assert.match(historyEl.innerHTML, /stage 7\/11/);
   assert.match(historyEl.innerHTML, /Discovery: Scanning GameDevMap directory/);
 });

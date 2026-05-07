@@ -219,6 +219,10 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
             state.tombstones,
         )
     ]
+    orchestrator.emit_log(
+        "Writing discovery registry artifacts: "
+        f"pending={len(pending_rows)}, candidates={len(report_candidates)}."
+    )
     orchestrator.save_json_atomic(source_registry_module.PENDING_PATH, pending_rows)
     orchestrator.save_json_atomic(
         source_registry_module.DISCOVERY_CANDIDATES_PATH, report_candidates
@@ -231,6 +235,10 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
     )
     orchestrator.save_json_atomic(
         source_registry_module.M5_STRATEGIC_BACKLOG_PATH, m5_strategic_backlog
+    )
+    orchestrator.emit_log(
+        "Discovery registry artifacts written: "
+        f"pending={len(pending_rows)}, candidates={len(report_candidates)}."
     )
     candidate_review = build_candidate_review_payload(
         report_candidates,
@@ -332,38 +340,102 @@ def finalize_run(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> dict[st
     runtime_payload = _as_dict(report.get("runtime"))
     runtime_payload["urlPatchStats"] = dict(state.url_patch_stats)
     runtime_payload["urlPatchRecoveredCount"] = int(state.recovered_count)
+    auto_approve_enabled = bool(
+        deps.effective_config.get("autoApproveHealthyPendingOnComplete", True)
+    )
+    runtime_payload["autoApproval"] = {
+        **_as_dict(runtime_payload.get("autoApproval")),
+        "enabled": auto_approve_enabled,
+        "approvedCount": int(
+            _as_dict(runtime_payload.get("autoApproval")).get("approvedCount") or 0
+        ),
+        "status": "running" if auto_approve_enabled else "completed",
+    }
+    runtime_payload["registryFinalization"] = {
+        **_as_dict(runtime_payload.get("registryFinalization")),
+        "status": "running",
+        "pendingCount": len(pending_rows),
+        "candidateCount": len(report_candidates),
+        "activeCount": len(state.active),
+        "rejectedCount": len(state.rejected),
+    }
     report["runtime"] = runtime_payload
+
+    DiscoveryReportSchema.model_validate(report)
+    final_report_path = orchestrator._discovery_report_write_path()
+    orchestrator.save_json_atomic(final_report_path, report)
 
     registry_state = {
         "active": state.active,
         "pending": pending_rows,
         "rejected": state.rejected,
     }
-    auto_approve_enabled = bool(
-        deps.effective_config.get("autoApproveHealthyPendingOnComplete", True)
-    )
-    registry_state, auto_approved = orchestrator.apply_discovery_auto_approval(
-        registry_state,
-        report,
-        auto_approve_enabled=auto_approve_enabled,
-        approval_state_path=orchestrator.DEFAULT_APPROVAL_STATE_PATH,
-        now_iso_fn=now_iso,
-    )
-    if auto_approved > 0:
-        source_registry_module.save_registry_state_atomic(
-            source_registry_module.ACTIVE_PATH,
-            source_registry_module.PENDING_PATH,
-            source_registry_module.REJECTED_PATH,
-            {
-                "active": filter_tombstoned_rows(registry_state["active"], state.tombstones),
-                "pending": filter_tombstoned_rows(registry_state["pending"], state.tombstones),
-                "rejected": filter_tombstoned_rows(registry_state["rejected"], state.tombstones),
-            },
-        )
-        orchestrator.emit_log(f"Auto-approval applied during discovery: approved={auto_approved}.")
-
+    if auto_approve_enabled:
+        try:
+            orchestrator.emit_log("Applying discovery auto-approval.")
+            registry_state, auto_approved = orchestrator.apply_discovery_auto_approval(
+                registry_state,
+                report,
+                auto_approve_enabled=auto_approve_enabled,
+                approval_state_path=orchestrator.DEFAULT_APPROVAL_STATE_PATH,
+                now_iso_fn=now_iso,
+            )
+            if auto_approved > 0:
+                source_registry_module.save_registry_state_atomic(
+                    source_registry_module.ACTIVE_PATH,
+                    source_registry_module.PENDING_PATH,
+                    source_registry_module.REJECTED_PATH,
+                    {
+                        "active": filter_tombstoned_rows(
+                            registry_state["active"], state.tombstones
+                        ),
+                        "pending": filter_tombstoned_rows(
+                            registry_state["pending"], state.tombstones
+                        ),
+                        "rejected": filter_tombstoned_rows(
+                            registry_state["rejected"], state.tombstones
+                        ),
+                    },
+                )
+                orchestrator.emit_log(
+                    f"Auto-approval applied during discovery: approved={auto_approved}."
+                )
+            runtime_payload = _as_dict(report.get("runtime"))
+            runtime_payload["autoApproval"] = {
+                **_as_dict(runtime_payload.get("autoApproval")),
+                "enabled": True,
+                "approvedCount": int(auto_approved),
+                "status": "completed",
+            }
+            report["runtime"] = runtime_payload
+        except Exception as exc:  # noqa: BLE001
+            runtime_payload = _as_dict(report.get("runtime"))
+            runtime_payload["autoApproval"] = {
+                **_as_dict(runtime_payload.get("autoApproval")),
+                "enabled": True,
+                "status": "failed",
+                "error": str(exc),
+            }
+            report["runtime"] = runtime_payload
+            orchestrator.emit_log(f"Auto-approval failed during discovery: {exc}")
+        DiscoveryReportSchema.model_validate(report)
+    runtime_payload = _as_dict(report.get("runtime"))
+    runtime_payload["registryFinalization"] = {
+        **_as_dict(runtime_payload.get("registryFinalization")),
+        "status": "completed",
+        "pendingCount": len(registry_state.get("pending") or []),
+        "candidateCount": len(report_candidates),
+        "activeCount": len(registry_state.get("active") or []),
+        "rejectedCount": len(registry_state.get("rejected") or []),
+    }
+    report["runtime"] = runtime_payload
     DiscoveryReportSchema.model_validate(report)
-    final_report_path = orchestrator._discovery_report_write_path()
     orchestrator.save_json_atomic(final_report_path, report)
+    orchestrator.emit_log(
+        "Discovery registry finalization complete: "
+        f"active={len(registry_state.get('active') or [])}, "
+        f"pending={len(registry_state.get('pending') or [])}, "
+        f"rejected={len(registry_state.get('rejected') or [])}."
+    )
     orchestrator.emit_log(f"Discovery report written to {final_report_path}.")
     return report

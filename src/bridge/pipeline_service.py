@@ -369,6 +369,20 @@ class PipelineService:
                 summary={"error": error},
             )
 
+    def _heartbeat_pipeline_wait(self) -> None:
+        with self._lock:
+            run_id = str(self._status.get("runId") or "").strip()
+            stage = str(self._status.get("stage") or "running").strip() or "running"
+            progress = dict(self._status.get("progress") or {})
+        if run_id and callable(self._heartbeat_lifecycle_run):
+            self._heartbeat_lifecycle_run(
+                run_id,
+                "pipeline",
+                stage=stage,
+                progress=progress,
+                summary={"stage": stage},
+            )
+
     def _attach_lifecycle_child_row(
         self,
         *,
@@ -431,7 +445,7 @@ class PipelineService:
             self._log_attached_child(
                 run_id=run_id, task_type="discovery", child_run_id=discovery_run_id
             )
-        self._wait_for_child_report(
+        report = self._wait_for_child_report(
             phase="discovery_wait",
             report_path=self._discovery_report_path,
             started_at=discovery_started_at,
@@ -442,6 +456,77 @@ class PipelineService:
             task_type="discovery",
             task_run_id=discovery_run_id,
         )
+        self._wait_for_discovery_auto_approval(report)
+
+    def _wait_for_discovery_auto_approval(self, report: dict[str, Any]) -> None:
+        runtime = report.get("runtime") if isinstance(report.get("runtime"), dict) else {}
+        auto_approval = (
+            runtime.get("autoApproval") if isinstance(runtime.get("autoApproval"), dict) else {}
+        )
+        registry_finalization = (
+            runtime.get("registryFinalization")
+            if isinstance(runtime.get("registryFinalization"), dict)
+            else {}
+        )
+        status = str(auto_approval.get("status") or "completed").strip().lower()
+        registry_status = str(registry_finalization.get("status") or "completed").strip().lower()
+        auto_approval_running = bool(auto_approval.get("enabled")) and status == "running"
+        registry_finalization_running = registry_status == "running"
+        if not auto_approval_running and not registry_finalization_running:
+            return
+        from datetime import UTC, datetime, timedelta
+        from threading import Event
+
+        started_wait = datetime.now(UTC)
+        while True:
+            wait_label = (
+                "Finalizing discovery registry..."
+                if registry_finalization_running
+                else "Applying discovery auto-approval..."
+            )
+            self._mark_stage(
+                stage=(
+                    "discovery_registry_finalization"
+                    if registry_finalization_running
+                    else "discovery_auto_approval"
+                ),
+                current_step=1,
+                total_steps=3,
+                label=wait_label,
+            )
+            self._heartbeat_pipeline_wait()
+            latest = self._load_json_object(self._discovery_report_path, {})
+            latest_report = latest if isinstance(latest, dict) else {}
+            runtime = (
+                latest_report.get("runtime")
+                if isinstance(latest_report.get("runtime"), dict)
+                else {}
+            )
+            auto_approval = (
+                runtime.get("autoApproval") if isinstance(runtime.get("autoApproval"), dict) else {}
+            )
+            registry_finalization = (
+                runtime.get("registryFinalization")
+                if isinstance(runtime.get("registryFinalization"), dict)
+                else {}
+            )
+            status = str(auto_approval.get("status") or "completed").strip().lower()
+            registry_status = (
+                str(registry_finalization.get("status") or "completed").strip().lower()
+            )
+            auto_approval_running = bool(auto_approval.get("enabled")) and status == "running"
+            registry_finalization_running = registry_status == "running"
+            if not auto_approval_running and not registry_finalization_running:
+                return
+            if datetime.now(UTC) - started_wait >= timedelta(minutes=10):
+                self._bridge_log(
+                    "warn",
+                    "discovery_finalization_wait_timed_out",
+                    autoApprovalStatus=status or "running",
+                    registryFinalizationStatus=registry_status or "running",
+                )
+                return
+            Event().wait(1.0)
 
     def _run_fetch_stage(self, run_id: str) -> None:
         self._mark_stage(stage="fetch", current_step=2, total_steps=3, label="Running fetch...")
@@ -551,6 +636,7 @@ class PipelineService:
             )
             if child_live:
                 quiet_deadline = now + timedelta(seconds=quiet_window_s)
+                self._heartbeat_pipeline_wait()
             if self._report_matches_started_run(
                 normalized_report, started_dt=started_dt, task_run_id=task_run_id
             ):

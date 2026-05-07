@@ -102,6 +102,8 @@ def normalize_live_task_event(
         "workItemId": clean_text(src.get("workItemId")),
         "phaseKey": phase_key,
         "message": clean_text(src.get("message")),
+        "target": clean_text(src.get("target")),
+        "targetUrl": clean_text(src.get("targetUrl")),
     }
 
 

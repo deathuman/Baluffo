@@ -166,6 +166,15 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     return text.length > limit ? `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}...` : text;
   };
 
+  const formatDiscoveryStageBadge = progress => {
+    const counts = progress?.counts && typeof progress.counts === "object" && !Array.isArray(progress.counts)
+      ? progress.counts
+      : {};
+    const stageIndex = Math.max(0, Number(counts?.stageIndex || 0));
+    const stageTotal = Math.max(0, Number(counts?.stageTotal || 0));
+    return stageIndex > 0 && stageTotal > 0 ? `stage ${stageIndex.toLocaleString()}/${stageTotal.toLocaleString()}` : "";
+  };
+
   const toRowView = (row, rowArea, index) => {
     const inputIsLive = Boolean(row?.isLive || row?.active);
     if (inputIsLive) {
@@ -200,7 +209,10 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
     const currentRunTailBadge = row?.isLive && type === "fetch"
       ? formatScrapyStaticSourcesTailBadge(row?.workItems)
       : "";
-    const liveRunDetail = [currentRunDetail, currentRunTailBadge].filter(Boolean).join(" | ");
+    const currentRunStageBadge = row?.isLive && type === "discovery"
+      ? formatDiscoveryStageBadge(taskProgress)
+      : "";
+    const liveRunDetail = [currentRunDetail, currentRunStageBadge, currentRunTailBadge].filter(Boolean).join(" | ");
     const pipelineChildDetail = row?.type === "pipeline" && row?.isLive && summary?.activeChildTaskType
       ? currentRunDetail
       : "";

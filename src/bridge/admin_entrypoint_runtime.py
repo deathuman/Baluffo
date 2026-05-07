@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -226,6 +227,29 @@ def pid_is_running(pid: int) -> bool:
     root_mod = _require_root()
     if int(pid or 0) <= 0:
         return False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            process_query_limited_information = 0x1000
+            still_active = 259
+            handle = ctypes.windll.kernel32.OpenProcess(
+                process_query_limited_information,
+                False,
+                int(pid),
+            )
+            if not handle:
+                return False
+            exit_code = wintypes.DWORD()
+            try:
+                if not ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                    return False
+                return int(exit_code.value) == still_active
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+        except (OSError, TypeError, ValueError, AttributeError):
+            return False
     try:
         root_mod.os.kill(int(pid), 0)
     except OSError:

@@ -104,6 +104,14 @@ def test_discovery_live_payload_uses_stage_work_items_and_events() -> None:
                     },
                 ),
             ),
+            "failures": [
+                {
+                    "adapter": "gameprog",
+                    "stage": "website_fetch",
+                    "name": "https://codemount.studio",
+                    "error": "[Errno 11001] getaddrinfo failed",
+                }
+            ],
             "runtime": {
                 "lifecycle": {"heartbeatAt": heartbeat_at},
                 "adapterTimings": [
@@ -135,3 +143,12 @@ def test_discovery_live_payload_uses_stage_work_items_and_events() -> None:
     recent_events = payload.get("recentEvents") or []
     assert "generated 12" in str(recent_events[0].get("message") or "")
     assert "10/11 stages" in str(recent_events[0].get("message") or "")
+    failure_event = next(
+        row for row in recent_events if str(row.get("phaseKey") or "") == "website_fetch"
+    )
+    expected_message = (
+        "Gameprog studio website fetch failed for https://codemount.studio: "
+        "[Errno 11001] getaddrinfo failed"
+    )
+    assert str(failure_event.get("message") or "") == expected_message
+    assert str(failure_event.get("target") or "") == "https://codemount.studio"

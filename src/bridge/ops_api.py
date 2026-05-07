@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +112,36 @@ def _display_value_is_present(value: Any) -> bool:
     return bool(str(value or "").strip())
 
 
+def _parse_route_time(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _latest_time_text(*values: Any) -> str:
+    best_text = ""
+    best_dt: datetime | None = None
+    for value in values:
+        text = str(value or "").strip()
+        parsed = _parse_route_time(text)
+        if not text:
+            continue
+        if parsed is None:
+            best_text = best_text or text
+            continue
+        if best_dt is None or parsed > best_dt:
+            best_dt = parsed
+            best_text = text
+    return best_text
+
+
 def _merge_current_lifecycle_row(
     legacy_row: dict[str, Any],
     lifecycle_row: dict[str, Any],
@@ -126,6 +157,10 @@ def _merge_current_lifecycle_row(
         merged["summary"] = {**lifecycle_summary, **legacy_summary}
     merged["status"] = str(lifecycle_row.get("status") or "running").strip() or "running"
     merged["lifecycleStatus"] = str(lifecycle_row.get("lifecycleStatus") or "").strip()
+    merged["heartbeatAt"] = _latest_time_text(
+        legacy_row.get("heartbeatAt"),
+        lifecycle_row.get("heartbeatAt"),
+    )
     merged["finishedAt"] = ""
     return merged
 
