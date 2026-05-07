@@ -128,7 +128,7 @@ Expected working results in this repo:
 - The health check started both configured language servers:
   - Python via Pyright
   - TypeScript via `typescript-language-server`
-- Serena reported version `1.1.2` from the active MCP session.
+- Serena reported version `1.2.0` from the active MCP session (or a newer compatible minor release).
 - The repo-local Serena health-check log was written under `.serena/logs/health-checks/`.
 
 ### Verified Repo-Local Project State
@@ -179,6 +179,56 @@ Use the same command and args:
   }
 }
 ```
+
+## Fresh Session Bootstrap (No Guesswork)
+
+When a Codex/OpenCode session is restarted, Serena MCP tools can load without an active Baluffo project.
+Use this exact sequence once per new session:
+
+1. Confirm the MCP client still points to a valid Serena registration:
+
+```powershell
+codex mcp get serena
+```
+
+2. In the Serena toolset, confirm active project state:
+
+```python
+mcp__serena__.get_current_config
+```
+
+3. If the response is `Error: No active project...`, activate the repo project explicitly:
+
+```python
+mcp__serena__.activate_project project="Baluffo"
+```
+
+4. Re-run the config check and verify both required languages are loaded:
+
+```python
+mcp__serena__.get_current_config
+```
+
+Expected snippet:
+
+- Active project: `Baluffo`
+- Programming languages: `typescript, python`
+
+5. Run a one-shot JavaScript symbol check to verify TS tooling:
+
+```python
+mcp__serena__.get_symbols_overview relative_path="frontend/admin/actions.js" depth=1
+```
+
+Expected: symbol list should include `ADMIN_ACTIONS` and `createAdminDispatcher`.
+
+6. Optional declaration check on a known symbol:
+
+```python
+mcp__serena__.find_symbol name_path_pattern="createAdminDispatcher" relative_path="frontend/admin/actions.js" include_body=true
+```
+
+If any step fails, continue with the existing health and install checks; avoid repeating ad-hoc discovery in a loop.
 
 ## Repo Rules
 

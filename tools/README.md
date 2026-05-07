@@ -12,7 +12,6 @@ tools/
   mcp/               # Serena standard plus optional local MCP tooling
   repo_health/       # Repository readiness and refactorability analysis
   measurements/      # Pipeline and source performance measurement
-  adhoc/             # One-off scripts and experiments
   reports/           # Generated outputs (not tracked in git)
 ```
 
@@ -29,10 +28,6 @@ Run with: `python tools/repo_health/bin/analyze_repo.py` or `python tools/repo_h
 Tools that run Baluffo or its pipeline and measure behavior:
 - **pipeline/** - Pipeline-level measurements (e.g., job discovery gains)
 - **sources/** - Source performance monitoring and optimization
-
-### `adhoc/`
-Temporary or exploratory scripts not yet promoted to stable workflows.
-These may be one-off comparisons, experiments, or test utilities.
 
 ### `mcp/`
 Repo AI tooling guidance plus local MCP servers for editor-assisted workflows.

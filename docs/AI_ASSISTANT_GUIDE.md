@@ -63,6 +63,18 @@ If Serena memory and repo docs ever diverge, the repo docs stay canonical.
 | Pipeline/fetcher | `python -m pytest tests/test_jobs_fetcher_*.py -q` |
 | Full verification | `npm run verify` |
 
+## Serena Session Preflight (for new client sessions)
+
+When starting a new Codex/OpenCode assistant session against this repo:
+
+1. Confirm Serena MCP tools are available to the client.
+2. Run Serena `get_current_config`.
+3. If it reports no active project, run `activate_project` for `Baluffo`.
+4. Re-run `get_current_config` and verify `typescript` + `python` appear in language list.
+5. Run a fast JS symbol overview check in one file to ensure tooling is healthy.
+
+This keeps language indexing from being a blocker before touching code.
+
 See [`testing.md`](testing.md) for the full verification matrix.
 
 ## AI Editing Rules
