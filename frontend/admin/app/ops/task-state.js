@@ -31,39 +31,6 @@ export function createOpsTaskStateController({
     return Boolean(String(row?.runId || "").trim() || String(row?.startedAt || "").trim());
   }
 
-  function isTerminalHistoryRun(row) {
-    if (!row || typeof row !== "object") return false;
-    if (String(row?.finishedAt || "").trim()) return true;
-    const status = String(row?.status || "").trim().toLowerCase();
-    return Boolean(
-      status
-      && !["started", "running", "queued", "pending"].includes(status)
-    );
-  }
-
-  function matchesTaskHistoryRow(taskRow, historyRow) {
-    if (!taskRow || !historyRow || typeof taskRow !== "object" || typeof historyRow !== "object") {
-      return false;
-    }
-    const taskType = getTaskType(taskRow);
-    const historyType = String(historyRow?.type || historyRow?.taskType || "").trim().toLowerCase();
-    if (!taskType || taskType !== historyType) return false;
-    const taskRunId = String(taskRow?.runId || "").trim();
-    const historyRunId = String(historyRow?.runId || historyRow?.id || "").trim();
-    if (taskRunId && historyRunId) {
-      return taskRunId === historyRunId;
-    }
-    const taskStartedAt = String(taskRow?.startedAt || "").trim();
-    const historyStartedAt = String(historyRow?.startedAt || "").trim();
-    return Boolean(taskStartedAt && historyStartedAt && taskStartedAt === historyStartedAt);
-  }
-
-  function hasTerminalHistoryEvidence(taskRow, historyRuns) {
-    return Array.isArray(historyRuns) && historyRuns.some(historyRow => (
-      matchesTaskHistoryRow(taskRow, historyRow) && isTerminalHistoryRun(historyRow)
-    ));
-  }
-
   function syncLiveBusyFlags(liveTypes) {
     setBusyFlag("liveFetchRunning", liveTypes.has("fetch"));
     setBusyFlag("liveDiscoveryRunning", liveTypes.has("discovery"));
@@ -77,27 +44,16 @@ export function createOpsTaskStateController({
     return state.latestTaskStatePayload;
   }
 
-  function clearRetainedTaskState() {
-    state.taskStateMissingStreakByType = {};
+  function resetLifecycleTaskState() {
     state.latestTaskStatePayload = { tasks: [], count: 0 };
     state.waitingForTaskState = false;
   }
 
-  function mergeRetainedTaskStatePayload(candidatePayload, _historyRuns) {
-    const candidate = normalizeTaskStatePayload(candidatePayload);
-    const candidateActiveRows = getActiveTaskRows(candidate);
-    const candidateActiveTypes = new Set(candidateActiveRows.map(getTaskType).filter(Boolean));
-    const nextMissingStreaks = {};
-
-    candidateActiveTypes.forEach(type => {
-      nextMissingStreaks[type] = 0;
-    });
-
-    state.taskStateMissingStreakByType = nextMissingStreaks;
-    return rememberTaskStatePayload(candidate);
+  function acceptLifecycleTaskStatePayload(candidatePayload) {
+    return rememberTaskStatePayload(normalizeTaskStatePayload(candidatePayload));
   }
 
-  function resolveTaskStatePayload(taskStateResult, historyRuns) {
+  function resolveTaskStatePayload(taskStateResult) {
     state.waitingForTaskState = Boolean(
       taskStateResult?.status === "fulfilled"
       && (taskStateResult.value === null || taskStateResult.value === undefined)
@@ -118,7 +74,7 @@ export function createOpsTaskStateController({
         diagnostics: [{ code: "task_state_unavailable", message }]
       });
     }
-    return mergeRetainedTaskStatePayload(taskStateResult.value, historyRuns);
+    return acceptLifecycleTaskStatePayload(taskStateResult.value);
   }
 
   function maybeAttachLiveTaskRows(liveTaskRows) {
@@ -146,10 +102,10 @@ export function createOpsTaskStateController({
   }
 
   return {
-    clearRetainedTaskState,
     getActiveTaskRows,
     getTaskType,
     maybeAttachLiveTaskRows,
+    resetLifecycleTaskState,
     resolveTaskStatePayload,
     syncLiveBusyFlags
   };

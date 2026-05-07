@@ -72,3 +72,33 @@ test("normalizeOpsRuns and deriveAdminRunsModel keep shared run fields aligned",
   assert.equal(model.currentRows[0].runId, "fetch_live_1");
   assert.equal(model.visibleCompletedRows[0].type, "sync");
 });
+
+test("deriveAdminRunsModel keeps inactive task-state rows out of current runs", () => {
+  const fetchDone = {
+    taskType: "fetch",
+    type: "fetch",
+    runId: "fetch_done_1",
+    active: false,
+    lifecycleStatus: "succeeded",
+    status: "ok",
+    startedAt: "2026-03-08T10:00:00.000Z",
+    finishedAt: "2026-03-08T10:05:00.000Z",
+    durationMs: 300000
+  };
+  const discoveryLive = {
+    taskType: "discovery",
+    type: "discovery",
+    runId: "discovery_live_1",
+    active: true,
+    lifecycleStatus: "running",
+    status: "running",
+    startedAt: "2026-03-08T10:06:00.000Z"
+  };
+  const model = deriveAdminRunsModel({
+    taskState: { tasks: [fetchDone, discoveryLive] },
+    historyRuns: [fetchDone]
+  }, Date.parse("2026-03-08T10:07:00.000Z"));
+
+  assert.deepEqual(model.currentRows.map(row => row.type), ["discovery"]);
+  assert.deepEqual(model.visibleCompletedRows.map(row => row.type), ["fetch"]);
+});

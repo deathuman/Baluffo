@@ -262,11 +262,15 @@ function deriveElapsedMs(row, nowMs) {
 }
 
 function deriveStatus(row, progress, nowMs) {
+  const lifecycleStatus = String(row?.lifecycleStatus || "").trim().toLowerCase();
   const raw = String(row?.displayStatus || row?.status || row?.stage || "").trim().toLowerCase();
   const finished = Boolean(String(row?.finishedAt || "").trim());
   const active = Boolean(row?.active || row?.isLive || progress?.active) && !finished;
   if (!active && !finished && !raw) return "waiting";
   if (finished) {
+    if (["succeeded", "failed", "orphaned", "canceled"].includes(lifecycleStatus)) {
+      return lifecycleStatus;
+    }
     if (raw === "error" || raw === "failed" || raw === "failure") return "failed";
     if (raw === "warning" || raw === "completed_with_warnings") return "completed_with_warnings";
     return "completed";
@@ -291,8 +295,8 @@ function deriveStatus(row, progress, nowMs) {
 
 function severityForStatus(status) {
   if (status === "failed" || status === "orphaned") return "critical";
-  if (status === "stalled" || status === "completed_with_warnings" || status === "finishing") return "warning";
-  if (status === "running" || status === "completed" || status === "waiting") return "healthy";
+  if (status === "stalled" || status === "completed_with_warnings" || status === "finishing" || status === "canceled") return "warning";
+  if (status === "running" || status === "completed" || status === "succeeded" || status === "waiting") return "healthy";
   return "muted";
 }
 

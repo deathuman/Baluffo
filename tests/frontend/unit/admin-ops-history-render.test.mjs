@@ -269,6 +269,50 @@ test("admin ops history: active rows do not render stale finished timestamps", (
   assert.doesNotMatch(historyEl.innerHTML, /4\/9\/2026|Apr/i);
 });
 
+test("admin ops history: lifecycle statuses drive terminal chip labels", () => {
+  const historyEl = makeEl();
+
+  renderAdminOpsHistory(historyEl, {
+    currentRows: [],
+    visibleCompletedRows: [
+      {
+        type: "fetch",
+        status: "ok",
+        lifecycleStatus: "succeeded",
+        runId: "fetch_lifecycle_success_1",
+        startedAt: "2026-03-08T10:00:00.000Z",
+        finishedAt: "2026-03-08T10:02:00.000Z",
+        summary: { outputCount: 12, failedSources: 0 }
+      },
+      {
+        type: "pipeline",
+        status: "error",
+        lifecycleStatus: "orphaned",
+        runId: "pipeline_orphan_1",
+        startedAt: "2026-03-08T09:00:00.000Z",
+        finishedAt: "2026-03-08T09:10:00.000Z",
+        summary: { error: "owner_inactive_without_terminal_report" }
+      },
+      {
+        type: "sync",
+        status: "canceled",
+        lifecycleStatus: "canceled",
+        runId: "sync_cancel_1",
+        startedAt: "2026-03-08T08:00:00.000Z",
+        finishedAt: "2026-03-08T08:01:00.000Z",
+        summary: { action: "pull" }
+      }
+    ],
+    olderCompletedRows: []
+  });
+
+  assert.match(historyEl.innerHTML, />succeeded</i);
+  assert.match(historyEl.innerHTML, />orphaned</i);
+  assert.match(historyEl.innerHTML, />canceled</i);
+  assert.match(historyEl.innerHTML, /admin-status-chip critical/i);
+  assert.match(historyEl.innerHTML, /admin-status-chip warning/i);
+});
+
 test("admin ops history: selected run analysis renders timeline empty state", () => {
   const historyEl = makeEl();
   const runKey = "completed||sync_no_timeline|sync||2026-03-08T09:30:00.000Z|0";

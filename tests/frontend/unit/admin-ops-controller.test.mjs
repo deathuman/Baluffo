@@ -334,7 +334,6 @@ test("admin ops controller quietly auto-attaches active fetch and discovery task
     latestOpsHealthCache: null,
     latestOpsHistoryPayload: null,
     latestTaskStatePayload: null,
-    taskStateMissingStreakByType: {},
     adminBusyState: {
       opsLoad: false,
       fetcherWatch: false,
@@ -448,7 +447,6 @@ test("admin ops controller trusts empty lifecycle task-state samples immediately
     latestOpsHealthCache: null,
     latestOpsHistoryPayload: null,
     latestTaskStatePayload: null,
-    taskStateMissingStreakByType: {},
     adminBusyState: {
       opsLoad: false,
       liveFetchRunning: false,
@@ -545,7 +543,6 @@ test("admin ops controller clears live rows on task-state polling failure", asyn
     latestOpsHealthCache: null,
     latestOpsHistoryPayload: null,
     latestTaskStatePayload: null,
-    taskStateMissingStreakByType: {},
     adminBusyState: {
       opsLoad: false,
       liveFetchRunning: false,

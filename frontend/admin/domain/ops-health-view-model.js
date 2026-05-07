@@ -67,7 +67,7 @@ function normalizeRunType(row) {
 }
 
 function normalizeRunStatus(row) {
-  return String(row?.displayStatus || row?.status || "unknown").trim().toLowerCase() || "unknown";
+  return String(row?.lifecycleStatus || row?.displayStatus || row?.status || "unknown").trim().toLowerCase() || "unknown";
 }
 
 function findLatestRunForType(rows, type) {
@@ -134,6 +134,7 @@ export function buildOpsTaskLaneRows(runModel = {}) {
       type,
       label,
       status,
+      lifecycleStatus: String(row?.lifecycleStatus || "").trim().toLowerCase(),
       hasRun: Boolean(row),
       isLive: Boolean(liveRow),
       elapsedMs: toNumber(row?.elapsedMs ?? row?.durationMs),

@@ -36,6 +36,32 @@ def test_log_enabled_with_default_config(admin_bridge_entrypoint_root) -> None:
     assert isinstance(admin_bridge._log_enabled("info"), bool)
 
 
+def test_on_bridge_started_runs_lifecycle_cleanup_before_startup_sync(
+    admin_bridge_entrypoint_root,
+) -> None:
+    calls: list[str] = []
+
+    def cleanup() -> dict[str, object]:
+        calls.append("cleanup")
+        return {"ok": True, "orphaned": 2}
+
+    def startup_sync() -> dict[str, object]:
+        calls.append("startup_sync")
+        return {"ok": True, "scheduled": True}
+
+    with (
+        mock.patch.object(admin_bridge, "cleanup_stale_startup_tasks", side_effect=cleanup),
+        mock.patch.object(admin_bridge, "schedule_startup_sync_pull", side_effect=startup_sync),
+    ):
+        result = admin_bridge.on_bridge_started()
+
+    assert calls == ["cleanup", "startup_sync"]
+    assert result == {
+        "cleanup": {"ok": True, "orphaned": 2},
+        "startupSync": {"ok": True, "scheduled": True},
+    }
+
+
 def test_sync_worker_writes_completed_row_with_summary(admin_bridge_entrypoint_root):
     admin_bridge.update_saved_sync_settings({"enabled": True})
     started_at = admin_bridge.now_iso()

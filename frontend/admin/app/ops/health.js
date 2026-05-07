@@ -556,7 +556,7 @@ export function createOpsHealthController({
         state.latestOpsHistoryPayload = historyPayload;
       }
       const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
-      const taskStatePayload = taskStateController.resolveTaskStatePayload(taskStateResult, historyRuns);
+      const taskStatePayload = taskStateController.resolveTaskStatePayload(taskStateResult);
       state.taskStateUnavailable = Boolean(taskStatePayload?.taskStateUnavailable);
       const fetcherMetrics = fetcherMetricsResult.status === "fulfilled"
         ? fetcherMetricsResult.value
@@ -692,20 +692,10 @@ export function createOpsHealthController({
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
       scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0));
     } catch (err) {
-      const retainedLiveTypes = new Set(
-        taskStateController.getActiveTaskRows(state.latestTaskStatePayload)
-          .map(row => taskStateController.getTaskType(row))
-          .filter(Boolean)
-      );
-      if (getBridgeStatus?.() === "offline" || retainedLiveTypes.size === 0) {
-        taskStateController.clearRetainedTaskState();
-        setOpsPlaceholders(`Ops health unavailable: ${getErrorMessage(err)}`);
-        taskStateController.syncLiveBusyFlags(new Set());
-        scheduleOpsHealthPolling(idlePollIntervalMs);
-      } else {
-        taskStateController.syncLiveBusyFlags(retainedLiveTypes);
-        scheduleOpsHealthPolling(getOpsPollIntervalMs(true));
-      }
+      taskStateController.resetLifecycleTaskState();
+      setOpsPlaceholders(`Ops health unavailable: ${getErrorMessage(err)}`);
+      taskStateController.syncLiveBusyFlags(new Set());
+      scheduleOpsHealthPolling(idlePollIntervalMs);
     } finally {
       setBusyFlag("opsLoad", false);
     }

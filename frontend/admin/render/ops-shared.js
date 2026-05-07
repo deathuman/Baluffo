@@ -68,9 +68,9 @@ export function buildRunStatusTooltip(row) {
 
 export function getRunStatusChipClass(status) {
   const token = String(status || "").toLowerCase();
-  if (token === "error") return "critical";
-  if (token === "warning") return "warning";
-  if (token === "running" || token === "started") return "healthy";
+  if (token === "error" || token === "failed" || token === "orphaned") return "critical";
+  if (token === "warning" || token === "canceled" || token === "completed_with_warnings") return "warning";
+  if (token === "running" || token === "started" || token === "succeeded" || token === "completed") return "healthy";
   return "healthy";
 }
 

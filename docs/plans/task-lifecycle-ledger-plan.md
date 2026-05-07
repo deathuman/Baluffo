@@ -1,15 +1,15 @@
 # Task Lifecycle Ledger Plan
 
-> - **Status:** Implemented transition slice
+> - **Status:** Lifecycle core implemented; targeted hardening ongoing
 > - **Use this when:** fixing Admin Current Runs / Recent Runs contradictions, pipeline child-task ownership, task heartbeat/orphan behavior, or long-running discovery/fetch lifecycle bugs
 > - **Canonical for:** the planned single-source-of-truth task lifecycle refactor
 > - **Not canonical for:** current route payload contracts, report schemas, fetch/discovery output contracts, or release procedures
 > - **Then inspect:** [`admin-bridge-api.md`](../admin-bridge-api.md), [`DATA_CONTRACT.md`](../DATA_CONTRACT.md), and the bridge task lifecycle modules
-> - **Last updated:** 2026-05-06
+> - **Last updated:** 2026-05-07
 
 ## Summary
 
-Baluffo currently has task lifecycle pieces, but no single authoritative lifecycle owner. Admin decides whether work is running, done, failed, or orphaned by combining `admin-task-state.json`, `admin-run-history.json`, discovery/fetch reports, pipeline runtime state, file mtimes, heartbeats, and frontend merge logic.
+Baluffo now has a backend-owned lifecycle ledger for Admin/Ops task state. The original problem was that Admin decided whether work was running, done, failed, or orphaned by combining `admin-task-state.json`, `admin-run-history.json`, discovery/fetch reports, pipeline runtime state, file mtimes, heartbeats, and frontend merge logic.
 
 That split authority has produced repeated bugs:
 
@@ -18,7 +18,7 @@ That split authority has produced repeated bugs:
 - Active rows showing misleading `Finished` timestamps.
 - Report staleness and file-lock issues halting or misclassifying otherwise healthy work.
 
-The permanent fix is a backend-owned task lifecycle ledger. Reports should describe work and outputs. The lifecycle ledger should decide whether work is alive, terminal, failed, canceled, or orphaned.
+The permanent model is a backend-owned task lifecycle ledger. Reports describe work and outputs. The lifecycle ledger decides whether work is alive, terminal, failed, canceled, or orphaned.
 
 ## Target model
 
@@ -61,18 +61,19 @@ Required invariants:
 
 ## Implementation progress
 
-Implemented transition slice:
+Implemented:
 
 - Added `TaskLifecycleService` backed by `data/admin-task-lifecycle.json`.
 - Added bridge facade/path wiring and cleanup reset support.
 - Wired fetch, discovery, sync, and pipeline launch/terminal paths into the lifecycle ledger.
 - Added explicit pipeline child attachment through `parentRunId`.
-- Switched `/ops/task-state` and `/ops/history` to prefer lifecycle rows while preserving legacy fallback.
-- Simplified Admin Current Runs so the frontend trusts backend lifecycle rows and no longer retains missing active rows for one extra sample.
+- Replaced fixed pipeline child wait deadlines with quiet-evidence timeout logic and a distinct absolute safety cap terminal reason.
+- Switched `/ops/task-state` and `/ops/history` to lifecycle-first rows while preserving legacy terminal fallback for the transition release.
+- Added bridge-startup cleanup that orphans stale lifecycle rows whose owner cannot survive a desktop bridge restart.
+- Simplified Admin Current Runs so the frontend trusts backend lifecycle rows and does not retain missing active rows for one extra sample.
 
 Remaining hardening:
 
-- Expand real-process lifecycle finalization coverage for unusual child-process exits.
 - Run long real discovery/fetch smoke beyond the old nominal timeout window.
 - Remove legacy fallback after one transition release.
 

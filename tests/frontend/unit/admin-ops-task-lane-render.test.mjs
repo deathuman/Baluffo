@@ -49,6 +49,7 @@ test("admin render: fetcher metrics render compact task lane", () => {
         {
           type: "discovery",
           status: "ok",
+          lifecycleStatus: "succeeded",
           durationMs: 45000,
           summary: {
             queuedCandidateCount: 7,
@@ -80,6 +81,7 @@ test("admin render: fetcher metrics render compact task lane", () => {
   assert.match(metricsEl.innerHTML, /data-ops-diagnostics-copy="sourceHealth"/i);
   assert.match(metricsEl.innerHTML, /data-ops-diagnostics-copy="sourcePolicy"/i);
   assert.match(metricsEl.innerHTML, /Review queue 7; failed probes 2/i);
+  assert.match(metricsEl.innerHTML, />succeeded</i);
   assert.match(metricsEl.innerHTML, /Executing sources/i);
   assert.match(metricsEl.innerHTML, /push: active 120, pending 14, rejected 8/i);
   assert.ok(metricsEl.innerHTML.indexOf("admin-ops-task-lane") < metricsEl.innerHTML.indexOf("admin-ops-metrics-section-runtime"));

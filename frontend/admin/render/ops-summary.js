@@ -619,16 +619,19 @@ function formatOpsMetricsDetails(summary, html, className = "") {
 
 function formatOpsTaskLane(rows, diagnostics = null) {
   const laneRows = Array.isArray(rows) ? rows : [];
-  const body = laneRows.map(row => `
-    <div class="admin-ops-task-lane-card admin-ops-task-lane-card-${escapeHtml(row.type)}">
-      <div class="admin-ops-task-lane-card-head">
-        <strong>${escapeHtml(row.label)}</strong>
-        <span class="admin-status-chip ${getRunStatusChipClass(row.status)}">${escapeHtml(row.status.replaceAll("_", " "))}</span>
+  const body = laneRows.map(row => {
+    const status = String(row.lifecycleStatus || row.status || "unknown").trim();
+    return `
+      <div class="admin-ops-task-lane-card admin-ops-task-lane-card-${escapeHtml(row.type)}">
+        <div class="admin-ops-task-lane-card-head">
+          <strong>${escapeHtml(row.label)}</strong>
+          <span class="admin-status-chip ${getRunStatusChipClass(status)}">${escapeHtml(status.replaceAll("_", " "))}</span>
+        </div>
+        <div class="admin-ops-task-lane-meta">${escapeHtml(row.hasRun ? (row.isLive ? `Running ${formatDuration(Number(row.elapsedMs || 0))}` : `Last ${formatDuration(Number(row.elapsedMs || 0))}`) : "No run yet")}</div>
+        <div class="admin-ops-task-lane-summary">${escapeHtml(row.summary)}</div>
       </div>
-      <div class="admin-ops-task-lane-meta">${escapeHtml(row.hasRun ? (row.isLive ? `Running ${formatDuration(Number(row.elapsedMs || 0))}` : `Last ${formatDuration(Number(row.elapsedMs || 0))}`) : "No run yet")}</div>
-      <div class="admin-ops-task-lane-summary">${escapeHtml(row.summary)}</div>
-    </div>
-  `).join("");
+    `;
+  }).join("");
   return `
     <section class="admin-ops-task-lane" aria-label="Operations task status">
       <div class="admin-ops-task-lane-head">

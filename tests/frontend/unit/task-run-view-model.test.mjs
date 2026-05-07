@@ -131,6 +131,8 @@ test("task run view model derives terminal, stalled, and orphaned states", () =>
   assert.equal(buildTaskRunView({ type: "fetch", status: "ok", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).status, "completed");
   assert.equal(buildTaskRunView({ type: "fetch", status: "warning", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).status, "completed_with_warnings");
   assert.equal(buildTaskRunView({ type: "fetch", status: "error", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).status, "failed");
+  assert.equal(buildTaskRunView({ type: "fetch", status: "ok", lifecycleStatus: "succeeded", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).status, "succeeded");
+  assert.equal(buildTaskRunView({ type: "sync", status: "ok", lifecycleStatus: "canceled", finishedAt: "2026-03-08T10:01:00.000Z" }, { nowMs: NOW }).severity, "warning");
   const stalled = buildTaskRunView({
     type: "fetch",
     active: true,

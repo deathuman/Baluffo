@@ -30,7 +30,6 @@ export function createAdminRuntimeState() {
     waitingForTaskState: false,
     latestSyncStatusCache: null,
     latestDiscoveryConfigCache: null,
-    taskStateMissingStreakByType: {},
     syncConfigDirty: false,
     discoveryConfigDirty: false,
     bridgeStatusPollTimer: null,
