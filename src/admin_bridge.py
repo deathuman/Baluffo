@@ -27,8 +27,6 @@ from src import source_sync as source_sync_module
 from src.app_version import get_app_version as _get_app_version
 from src.baluffo_config import get_bridge_defaults, get_storage_defaults
 from src.baluffo_config import get_security_defaults as _get_security_defaults
-
-# Bridge service/runtime imports. Keep new bridge logic under `src.bridge.*`.
 from src.bridge import SYNC_STATE_LOCK as _SYNC_STATE_LOCK
 from src.bridge import SyncService, report_normalizer
 from src.bridge import SyncState as _SyncState
@@ -63,6 +61,7 @@ from src.bridge.discovery_service import (
 from src.bridge.discovery_service import (
     DiscoveryService,
 )
+from src.bridge.lifecycle_cleanup import cleanup_orphaned_startup_tasks
 from src.bridge.pipeline_service import PipelineService
 from src.bridge.registry_service import RegistryPaths as _RegistryPaths
 from src.bridge.registry_service import RegistryService
@@ -130,7 +129,6 @@ normalize_discovery_report_contract = report_normalizer.normalize_discovery_repo
 _safe_int = report_normalizer.safe_int
 source_url_fingerprint = source_registry_module.source_url_fingerprint
 
-# Compatibility exports consumed indirectly by split bridge modules.
 os = _os
 time = _time
 discovery = _discovery_mod
@@ -511,8 +509,16 @@ def get_projected_run_history() -> _run_history_api.LifecycleProjection:
     return _get_ops_api().get_projected_run_history()
 
 
+def get_lifecycle_run_history_rows() -> list[dict[str, Any]]:
+    return _get_ops_api().get_lifecycle_run_history_rows()
+
+
 def compute_ops_health() -> dict[str, Any]:
     return _get_ops_api().compute_ops_health()
+
+
+def compute_ops_dashboard_health() -> dict[str, Any]:
+    return _get_ops_api().compute_ops_dashboard_health()
 
 
 def compute_fetcher_metrics(window_runs: int = 20) -> dict[str, Any]:
@@ -530,6 +536,20 @@ sync_task_running = admin_task_runtime_mod.sync_task_running
 wait_for_sync_tasks = admin_task_runtime_mod.wait_for_sync_tasks
 _mark_discovery_sync_finished = admin_task_runtime_mod.mark_discovery_sync_finished
 _maybe_trigger_auto_sync_push = admin_task_runtime_mod.maybe_trigger_auto_sync_push
+
+
+def cleanup_stale_startup_tasks() -> dict[str, Any]:
+    return cleanup_orphaned_startup_tasks(
+        Path(RUNTIME_CONFIG.data_dir).resolve(),
+        pid_is_running=pid_is_running,
+        now_iso=now_iso,
+    )
+
+
+def on_bridge_started() -> dict[str, Any]:
+    cleanup_result = cleanup_stale_startup_tasks()
+    sync_result = schedule_startup_sync_pull()
+    return {"cleanup": cleanup_result, "startupSync": sync_result}
 
 
 def _run_sync_task_worker(
@@ -601,7 +621,7 @@ def main() -> int:
         api=build_bridge_api(config),
         host=config.host,
         port=config.port,
-        on_started=schedule_startup_sync_pull,
+        on_started=on_bridge_started,
     )
 
 

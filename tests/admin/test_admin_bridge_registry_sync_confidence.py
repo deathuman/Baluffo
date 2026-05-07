@@ -110,7 +110,7 @@ def test_ops_health_exposes_registry_sync_confidence(admin_bridge_entrypoint_roo
         }
     )
 
-    health = admin_bridge.compute_ops_health()
+    health = admin_bridge.compute_ops_dashboard_health()
     registry_sync = (health.get("kpis") or {}).get("registrySync") or {}
 
     assert registry_sync["activeCount"] == 1

@@ -239,6 +239,7 @@ export function createAdminDiscoveryProgressController({
     loadDiscoveryData({
       background: true,
       logChanges: false,
+      completionRefresh: true,
       suppressPlaceholders: true
     }).catch(() => {});
   }

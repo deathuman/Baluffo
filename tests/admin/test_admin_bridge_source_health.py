@@ -108,7 +108,7 @@ def test_bridge_fetch_report_normalizer_derives_source_health() -> None:
 def test_ops_health_exposes_source_health_triage() -> None:
     admin_bridge.save_json_atomic(admin_bridge.JOBS_FETCH_REPORT_PATH, _source_health_report())
 
-    health = admin_bridge.compute_ops_health()
+    health = admin_bridge.compute_ops_dashboard_health()
     source_health = (health.get("kpis") or {}).get("sourceHealth") or {}
     assert int(source_health.get("totalSources") or 0) == 3
     assert int(source_health.get("browserFallbackRecommendedSources") or 0) == 1

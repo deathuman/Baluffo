@@ -749,7 +749,9 @@ def test_ack_alert_ignores_non_dismissible_alert(tmp_path: Path) -> None:
     saved_payloads: list[dict[str, Any]] = []
     api.load_alert_state = lambda: {"acked": dict(alert_state["acked"])}
     api.save_alert_state = lambda payload: saved_payloads.append(dict(payload or {}))
-    api.compute_ops_health = lambda: {"alerts": [{"id": "fetch_never_run", "dismissible": False}]}
+    api.compute_ops_dashboard_health = lambda: {
+        "alerts": [{"id": "fetch_never_run", "dismissible": False}]
+    }
 
     handler = FakeHandler()
     result = handle_post(

@@ -933,16 +933,22 @@ def handle_get(
         handler.send_json(api.compute_ops_health())
         return True
 
+    if path == "/ops/dashboard-health":
+        dashboard_health_fn = getattr(api, "compute_ops_dashboard_health", None)
+        handler.send_json(
+            dashboard_health_fn() if callable(dashboard_health_fn) else api.compute_ops_health()
+        )
+        return True
+
     if path == "/ops/history":
         limit_raw = (query.get("limit") or ["30"])[0]
         try:
             limit = max(1, min(200, int(limit_raw)))
         except ValueError:
             limit = 30
-        projection_fn = getattr(api, "get_projected_run_history", None)
-        if callable(projection_fn):
-            projection = projection_fn()
-            rows = list(getattr(projection, "rows", []) or [])
+        history_fn = getattr(api, "get_lifecycle_run_history_rows", None)
+        if callable(history_fn):
+            rows = list(history_fn() or [])
         else:
             rows = api.sync_history_from_reports()
         handler.send_json({"runs": rows[-limit:], "count": len(rows)})

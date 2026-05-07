@@ -29,6 +29,7 @@ class TaskLaunchPaths:
     fetcher_log: Path
     task_state: Path
     jobs_fetch_report: Path
+    jobs_fetch_tasks: Path
     approval_state: Path
 
 
@@ -481,6 +482,36 @@ class TaskLaunchApi:
         )
         return True
 
+    def _heartbeat_fetch_lifecycle_from_tasks(
+        self,
+        *,
+        run_id: str,
+        load_json_object: Callable[[Path, Any], Any],
+        heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
+    ) -> None:
+        if not callable(heartbeat_lifecycle_run):
+            return
+        tasks = load_json_object(self._paths.jobs_fetch_tasks, {})
+        if not isinstance(tasks, dict):
+            return
+        if str(tasks.get("runId") or "").strip() != str(run_id or "").strip():
+            return
+        if str(tasks.get("finishedAt") or "").strip():
+            return
+        progress = tasks.get("taskProgress")
+        summary = tasks.get("summary")
+        progress_payload = dict(progress) if isinstance(progress, dict) else {}
+        summary_payload = dict(summary) if isinstance(summary, dict) else {}
+        phase = str(progress_payload.get("phaseKey") or progress_payload.get("phase") or "")
+        heartbeat_lifecycle_run(
+            run_id,
+            "fetch",
+            heartbeat_at=str(tasks.get("heartbeatAt") or self._deps.now_iso()),
+            stage=phase.strip() or "running",
+            progress=progress_payload or None,
+            summary=summary_payload or None,
+        )
+
     def _watch_fetch_lifecycle(
         self,
         *,
@@ -490,6 +521,7 @@ class TaskLaunchApi:
         load_json_object: Callable[[Path, Any], Any],
         finish_lifecycle_run: Callable[..., dict[str, Any]],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
+        heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
     ) -> None:
         while True:
             if self._close_fetch_lifecycle_from_report(
@@ -501,6 +533,11 @@ class TaskLaunchApi:
             ):
                 return
             if self._deps.pid_is_running(int(pid)):
+                self._heartbeat_fetch_lifecycle_from_tasks(
+                    run_id=run_id,
+                    load_json_object=load_json_object,
+                    heartbeat_lifecycle_run=heartbeat_lifecycle_run,
+                )
                 time.sleep(2.0)
                 continue
             task_state = load_json_object(self._paths.task_state, {})
@@ -540,6 +577,7 @@ class TaskLaunchApi:
         load_json_object: Callable[[Path, Any], Any],
         finish_lifecycle_run: Callable[..., dict[str, Any]],
         fail_lifecycle_run: Callable[..., dict[str, Any]],
+        heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None],
     ) -> None:
         threading.Thread(
             target=self._watch_fetch_lifecycle,
@@ -550,6 +588,7 @@ class TaskLaunchApi:
                 "load_json_object": load_json_object,
                 "finish_lifecycle_run": finish_lifecycle_run,
                 "fail_lifecycle_run": fail_lifecycle_run,
+                "heartbeat_lifecycle_run": heartbeat_lifecycle_run,
             },
             name=f"fetch-lifecycle-watch-{run_id}",
             daemon=True,
@@ -569,6 +608,9 @@ class TaskLaunchApi:
         start_lifecycle_run: Callable[..., dict[str, Any]] = lambda **_kwargs: {},
         finish_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {},
         fail_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {},
+        heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] = (
+            lambda *_args, **_kwargs: None
+        ),
     ) -> dict[str, Any]:
         lock_context = (
             self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
@@ -664,6 +706,7 @@ class TaskLaunchApi:
                 load_json_object=load_json_object,
                 finish_lifecycle_run=finish_lifecycle_run,
                 fail_lifecycle_run=fail_lifecycle_run,
+                heartbeat_lifecycle_run=heartbeat_lifecycle_run,
             )
             self._deps.bridge_log(
                 "info",

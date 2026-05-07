@@ -85,7 +85,7 @@ function createOpsReviewQueueFixture({
     refs,
     getBridge: async path => {
       calls.push(path);
-      if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
       if (path === "/ops/task-state") return { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return {};

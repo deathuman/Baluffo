@@ -317,9 +317,11 @@ class BridgeApi:
     start_sync_task: StartSyncTaskFunc = _not_started_result
 
     compute_ops_health: Callable[[], JsonObject] = _ok_payload
+    compute_ops_dashboard_health: Callable[[], JsonObject] = _ok_payload
     compute_fetcher_metrics: Callable[..., JsonObject] = _ok_payload_with_kwargs
     sync_history_from_reports: Callable[[], list[JsonObject]] = _empty_startup_metrics
     get_projected_run_history: Callable[[], JsonObject] = _empty_rows_payload
+    get_lifecycle_run_history_rows: Callable[[], list[JsonObject]] = _empty_startup_metrics
     get_task_live_payload: Callable[[str], JsonObject] = _default_task_live_payload
     get_current_task_state_payload: Callable[[], JsonObject] = _default_current_task_state_payload
     should_exit_for_owner_timeout: Callable[[], bool] = _always_false

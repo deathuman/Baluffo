@@ -144,6 +144,7 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   const visibleCompletedRows = Array.isArray(model.visibleCompletedRows) ? model.visibleCompletedRows : [];
   const olderCompletedRows = Array.isArray(model.olderCompletedRows) ? model.olderCompletedRows : [];
   const waitingForTaskState = Boolean(options?.waitingForTaskState);
+  const taskStateUnavailable = Boolean(options?.taskStateUnavailable);
   const canPatchInPlace = Boolean(
     historyEl
     && typeof historyEl.querySelector === "function"
@@ -153,6 +154,8 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
   if (!currentRows.length && !visibleCompletedRows.length && !olderCompletedRows.length) {
     historyEl.innerHTML = waitingForTaskState
       ? '<div class="admin-ops-loading">Waiting for task state...</div>'
+      : taskStateUnavailable
+        ? '<div class="admin-ops-loading">Task state unavailable. Current runs may be stale.</div>'
       : '<div class="no-results">No run history yet.</div>';
     if (canPatchInPlace) {
       delete historyEl.dataset.opsStructureSig;
@@ -610,6 +613,8 @@ export function renderAdminOpsHistory(historyEl, runsOrModel, options = {}) {
           ? renderCappedRows(currentViews, 10)
           : (waitingForTaskState
             ? '<div class="admin-ops-loading">Waiting for task state...</div>'
+            : taskStateUnavailable
+              ? '<div class="admin-ops-loading">Task state unavailable. Current runs may be stale.</div>'
             : '<div class="no-results">No current runs.</div>')}
       </div>
     </div>

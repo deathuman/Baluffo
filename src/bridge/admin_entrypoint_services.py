@@ -103,13 +103,38 @@ class _OpsApiLike(Protocol):
     def summarize_discovery_report(self, report: JsonObject) -> tuple[JsonObject, str]: ...
     def sync_history_from_reports(self) -> list[JsonObject]: ...
     def get_projected_run_history(self) -> _run_history_api.LifecycleProjection: ...
+    def get_lifecycle_run_history_rows(self) -> list[JsonObject]: ...
     def compute_ops_health(self) -> JsonObject: ...
+    def compute_ops_dashboard_health(self) -> JsonObject: ...
     def get_current_task_state_payload(self) -> JsonObject: ...
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> JsonObject: ...
 
 
 def _as_json_object(payload: Any) -> JsonObject:
     return payload if isinstance(payload, dict) else {}
+
+
+def _matching_live_report_progress(
+    root_mod: Any,
+    *,
+    report_path: Any,
+    run_id: str,
+    started_at: str,
+) -> tuple[JsonObject, JsonObject]:
+    report = root_mod.load_json_object(report_path, {})
+    if not isinstance(report, dict):
+        return {}, {}
+    report_run_id = str(report.get("runId") or "").strip()
+    if report_run_id != str(run_id or "").strip():
+        return {}, {}
+    report_started_at = str(report.get("startedAt") or "").strip()
+    report_started_dt = root_mod.parse_iso(report_started_at)
+    started_dt = root_mod.parse_iso(started_at)
+    if report_started_at and started_dt and report_started_dt and report_started_dt < started_dt:
+        return {}, {}
+    if str(report.get("finishedAt") or "").strip():
+        return {}, {}
+    return _as_json_object(report.get("taskProgress")), _as_json_object(report.get("summary"))
 
 
 def _pipeline_smoke_report(
@@ -437,6 +462,7 @@ def get_task_launch_api() -> _TaskLaunchApiLike:
                 fetcher_log=root_mod.FETCHER_LOG_PATH,
                 task_state=root_mod.TASK_STATE_PATH,
                 jobs_fetch_report=root_mod.JOBS_FETCH_REPORT_PATH,
+                jobs_fetch_tasks=root_mod.JOBS_FETCH_TASKS_PATH,
                 approval_state=root_mod.APPROVAL_STATE_PATH,
             ),
             deps=root_mod._task_launch_api.TaskLaunchDeps(
@@ -611,6 +637,22 @@ def get_pipeline_service() -> _PipelineServiceLike:
                         return False
                     if not root_mod.task_running_from_state(normalized_type):
                         return False
+                    progress: JsonObject = {}
+                    summary: JsonObject = {}
+                    if normalized_type == "discovery":
+                        progress, summary = _matching_live_report_progress(
+                            root_mod,
+                            report_path=root_mod.DISCOVERY_REPORT_PATH,
+                            run_id=normalized_run_id,
+                            started_at=started_at,
+                        )
+                    elif normalized_type == "fetch":
+                        progress, summary = _matching_live_report_progress(
+                            root_mod,
+                            report_path=root_mod.JOBS_FETCH_TASKS_PATH,
+                            run_id=normalized_run_id,
+                            started_at=started_at,
+                        )
                     task_state[normalized_type] = {
                         **current,
                         "runId": normalized_run_id,
@@ -625,6 +667,8 @@ def get_pipeline_service() -> _PipelineServiceLike:
                         normalized_type,
                         heartbeat_at=str(task_state[normalized_type].get("heartbeatAt") or ""),
                         stage="pipeline_owned",
+                        progress=progress or None,
+                        summary=summary or None,
                     )
                     return True
 

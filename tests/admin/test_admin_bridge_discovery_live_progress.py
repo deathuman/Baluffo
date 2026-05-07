@@ -19,6 +19,10 @@ def test_quiet_discovery_task_state_heartbeat_keeps_owner_active() -> None:
     started_at = admin_bridge.now_iso()
     run_id = "discovery_quiet_live_1"
     admin_bridge.save_json_atomic(
+        admin_bridge.TASK_LIFECYCLE_PATH,
+        {"schemaVersion": 1, "updatedAt": "", "rows": []},
+    )
+    admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
             "discovery": {
@@ -46,6 +50,23 @@ def test_quiet_discovery_task_state_heartbeat_keeps_owner_active() -> None:
             ),
             "runtime": {"lifecycle": {"owner": "discovery_report", "heartbeatAt": ""}},
         },
+    )
+    admin_bridge.start_lifecycle_run(
+        run_id=run_id,
+        task_type="discovery",
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=222,
+        progress={
+            **active_progress(
+                "scanning_sources",
+                "Scanning Gameprog directory",
+                {"generatedCandidates": 24, "stageIndex": 6, "stageTotal": 11},
+            ),
+            "updatedAt": started_at,
+            "targetLabel": "Scanning Gameprog directory",
+        },
+        summary={"generatedCandidateCount": 24, "stageIndex": 6, "stageTotal": 11},
     )
 
     with mock.patch.object(admin_bridge, "pid_is_running", return_value=False):

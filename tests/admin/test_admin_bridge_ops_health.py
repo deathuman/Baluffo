@@ -4,6 +4,34 @@ from unittest import mock
 from src import admin_bridge
 
 
+def test_compute_ops_health_is_lightweight_liveness(admin_bridge_entrypoint_root):
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_LIFECYCLE_PATH,
+        {"schemaVersion": 1, "updatedAt": "", "rows": []},
+    )
+    admin_bridge.start_lifecycle_run(
+        run_id="fetch_lightweight_health_1",
+        task_type="fetch",
+        started_at="2026-05-07T10:00:00+00:00",
+    )
+    admin_bridge.heartbeat_lifecycle_run(
+        "fetch_lightweight_health_1",
+        "fetch",
+        heartbeat_at="2026-05-07T10:02:00+00:00",
+    )
+
+    health = admin_bridge.compute_ops_health()
+
+    assert health["service"] == "baluffo-bridge"
+    assert health["status"] == "healthy"
+    assert health["ok"] is True
+    assert health["appVersion"] == admin_bridge.get_app_version()
+    assert health["lifecycle"]["currentCount"] == 1
+    assert health["lifecycle"]["latestHeartbeatAt"] == "2026-05-07T10:02:00+00:00"
+    assert "alerts" not in health
+    assert "kpis" not in health
+
+
 def test_compute_ops_health_reports_alerts(admin_bridge_entrypoint_root):
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_REPORT_PATH,
@@ -14,7 +42,7 @@ def test_compute_ops_health_reports_alerts(admin_bridge_entrypoint_root):
             "sources": [],
         },
     )
-    health = admin_bridge.compute_ops_health()
+    health = admin_bridge.compute_ops_dashboard_health()
     assert health["service"] == "baluffo-bridge"
     assert health["appVersion"] == admin_bridge.get_app_version()
     assert health["startupReady"] is True
@@ -35,7 +63,7 @@ def test_compute_ops_health_reports_alerts(admin_bridge_entrypoint_root):
 def test_compute_ops_health_guides_initial_fetch_when_none_has_succeeded(
     admin_bridge_entrypoint_root,
 ):
-    health = admin_bridge.compute_ops_health()
+    health = admin_bridge.compute_ops_dashboard_health()
 
     guidance = next(
         (alert for alert in health.get("alerts", []) if alert.get("id") == "fetch_never_run"),
@@ -67,7 +95,7 @@ def test_compute_ops_health_reframes_stale_fetch_as_guidance(admin_bridge_entryp
         "now_utc",
         return_value=admin_bridge.parse_iso("2026-03-02T13:00:00+00:00"),
     ):
-        health = admin_bridge.compute_ops_health()
+        health = admin_bridge.compute_ops_dashboard_health()
 
     stale_alert = next(
         (alert for alert in health.get("alerts", []) if alert.get("id") == "stale_fetch"),
@@ -87,7 +115,7 @@ def test_compute_ops_health_reshows_fetch_never_run_even_if_previously_acked(
     state["acked"]["fetch_never_run"] = admin_bridge.now_iso()
     admin_bridge.save_alert_state(state)
 
-    health = admin_bridge.compute_ops_health()
+    health = admin_bridge.compute_ops_dashboard_health()
 
     guidance = next(
         (alert for alert in health.get("alerts", []) if alert.get("id") == "fetch_never_run"),
@@ -165,7 +193,7 @@ def test_compute_ops_health_includes_social_alerts(admin_bridge_entrypoint_root)
             ],
         },
     )
-    health = admin_bridge.compute_ops_health()
+    health = admin_bridge.compute_ops_dashboard_health()
     social_kpis = health.get("kpis", {}).get("socialExperiment", {})
     assert int(social_kpis.get("keptCount") or 0) == 2
     assert int(social_kpis.get("uniqueKeptCount") or 0) == 2
@@ -204,7 +232,7 @@ def test_compute_ops_health_exposes_provider_coverage_summary(admin_bridge_entry
         },
     )
 
-    health = admin_bridge.compute_ops_health()
+    health = admin_bridge.compute_ops_dashboard_health()
 
     provider_coverage = health["kpis"]["providerCoverage"]
     assert provider_coverage["totalProviderCandidates"] == 1
@@ -282,7 +310,7 @@ def test_compute_ops_health_exposes_provider_static_overlap_audit(admin_bridge_e
         },
     )
 
-    health = admin_bridge.compute_ops_health()
+    health = admin_bridge.compute_ops_dashboard_health()
 
     overlap = health["kpis"]["providerStaticOverlap"]
     assert overlap["suppressedStaticCount"] == 1
@@ -364,7 +392,7 @@ def test_compute_ops_health_exposes_conservative_cleanup_proposals(
         encoding="utf-8",
     )
 
-    health = admin_bridge.compute_ops_health()
+    health = admin_bridge.compute_ops_dashboard_health()
 
     cleanup = health["kpis"]["conservativeStaticCleanupProposals"]
     assert cleanup["proposalCount"] == 1
@@ -459,7 +487,7 @@ def test_compute_ops_health_exposes_dedup_review_state_summary(admin_bridge_entr
         encoding="utf-8",
     )
 
-    health = admin_bridge.compute_ops_health()
+    health = admin_bridge.compute_ops_dashboard_health()
 
     review_state = health["kpis"]["dedupReviewState"]
     assert review_state["artifactPath"].endswith("dedup-review-state.json")
@@ -523,7 +551,7 @@ def test_compute_ops_health_reports_missing_dedup_review_state_artifact(
     )
     admin_bridge.DEDUP_REVIEW_STATE_PATH.unlink(missing_ok=True)
 
-    health = admin_bridge.compute_ops_health()
+    health = admin_bridge.compute_ops_dashboard_health()
 
     review_state = health["kpis"]["dedupReviewState"]
     assert review_state["status"] == "warning"
@@ -544,12 +572,12 @@ def test_alert_ack_suppresses_visible_alert(admin_bridge_entrypoint_root):
             "sources": [],
         },
     )
-    initial = admin_bridge.compute_ops_health()
+    initial = admin_bridge.compute_ops_dashboard_health()
     alert_ids = [row["id"] for row in initial.get("alerts", [])]
     assert "degraded_reliability" in alert_ids
     state = admin_bridge.load_alert_state()
     state["acked"]["degraded_reliability"] = admin_bridge.now_iso()
     admin_bridge.save_alert_state(state)
-    updated = admin_bridge.compute_ops_health()
+    updated = admin_bridge.compute_ops_dashboard_health()
     updated_ids = [row["id"] for row in updated.get("alerts", [])]
     assert "degraded_reliability" not in updated_ids

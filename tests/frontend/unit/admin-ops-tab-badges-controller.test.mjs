@@ -74,7 +74,7 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
     state,
     refs,
     getBridge: async path => {
-      if (path === "/ops/health") {
+      if (path === "/ops/dashboard-health") {
         return {
           alerts: [
             { id: "critical-health", severity: "critical", message: "Critical alert" }

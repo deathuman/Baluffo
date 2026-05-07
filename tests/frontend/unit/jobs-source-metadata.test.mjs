@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { getSourceRegistryActiveUrlsForRuntime } from "../../../frontend/jobs/app/sources.js";
 import { normalizeSourceRows, renderDataSourcesPanel } from "../../../frontend/jobs/render.js";
 
 test("jobs source metadata keeps Google Sheets as a core source", () => {
@@ -10,6 +11,22 @@ test("jobs source metadata keeps Google Sheets as a core source", () => {
     result.rows.find(row => row.name === "Google Sheets")?.url || "",
     /spreadsheets\/d\/sheet123\/edit\?gid=77/
   );
+});
+
+test("jobs source metadata skips static registry fetches in desktop runtime", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    location: { href: "http://127.0.0.1:8080/jobs.html?desktop=1&bridgePort=8877" }
+  };
+  try {
+    assert.deepEqual(getSourceRegistryActiveUrlsForRuntime(), []);
+  } finally {
+    if (originalWindow === undefined) {
+      delete globalThis.window;
+    } else {
+      globalThis.window = originalWindow;
+    }
+  }
 });
 
 test("jobs source metadata omits active registry rows that are disabled by default", () => {

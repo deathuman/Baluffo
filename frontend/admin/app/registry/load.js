@@ -136,6 +136,36 @@ export function createRegistryLoadController({
   async function loadDiscoveryData(options = {}) {
     if (state.adminBusyState.discoveryLoad) return state.discoveryLoadPromise || null;
     const nowMs = Date.now();
+    const liveDiscoveryRunning = Boolean(
+      state.adminBusyState?.liveDiscoveryRunning
+      || state.adminBusyState?.discoveryWatch
+      || state.discoveryLiveProgressState
+    );
+    const allowDuringLiveDiscovery = Boolean(
+      options?.allowDuringLiveDiscovery
+      || options?.completionRefresh
+      || options?.forceDuringLiveDiscovery
+    );
+    if (liveDiscoveryRunning && !allowDuringLiveDiscovery) {
+      const background = Boolean(options?.background);
+      const lastNoticeAtMs = Number(state.discoveryDeferredLoadNoticeAtMs || 0);
+      if (!background && nowMs - lastNoticeAtMs > 5000) {
+        state.discoveryDeferredLoadNoticeAtMs = nowMs;
+        appendDiscoveryLog(
+          "Discovery is running; source tables will refresh after this run completes.",
+          "info"
+        );
+      }
+      return {
+        skipped: true,
+        reason: "discovery_running",
+        report: state.latestDiscoveryReportCache || null,
+        pendingRows: [],
+        activeRows: [],
+        rejectedRows: [],
+        partialLoadFailed: false
+      };
+    }
     const skipIfFreshMs = Math.max(0, Number(options?.skipIfFreshMs || 0));
     const lastLoadAtMs = Number(state.discoveryLastLoadSucceededAtMs || 0);
     if (skipIfFreshMs > 0 && lastLoadAtMs > 0 && nowMs - lastLoadAtMs < skipIfFreshMs) {
@@ -399,6 +429,7 @@ export function createRegistryLoadController({
       fetchReport,
       forceFetchReport: Boolean(fetchReport),
       logChanges: false,
+      completionRefresh: true,
       suppressPlaceholders: true
     });
     if (result) {

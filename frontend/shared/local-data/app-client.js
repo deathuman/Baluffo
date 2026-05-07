@@ -29,7 +29,6 @@ if (window.__baluffoDesktopMode) {
   try {
     initDesktopLocalDataClient();
     emitStartupProbeMetric(`${page}_local_data_api_ready`);
-    hydrateDesktopVersionLabels().catch(() => {});
     const desktopBootstrapWaitStartedAt =
       typeof performance !== "undefined" && typeof performance.now === "function"
         ? performance.now()
@@ -41,6 +40,7 @@ if (window.__baluffoDesktopMode) {
       }
       window.__baluffoLocalDataLoaded = true;
       console.log("[baluffo] Desktop local data initialized successfully");
+      hydrateDesktopVersionLabels().catch(() => {});
       const desktopBootstrapReadyAt =
         typeof performance !== "undefined" && typeof performance.now === "function"
           ? performance.now()

@@ -1,3 +1,4 @@
+import importlib.util
 import json
 from pathlib import Path
 from unittest import mock
@@ -18,10 +19,12 @@ from scripts.build_portable_exe import (
     UPDATER_HELPER_COLLECT_DATA_PACKAGES,
     UPDATER_HELPER_HIDDEN_IMPORTS,
     build_portable_layout,
+    copy_playwright_browser_cache,
     create_zip,
     mirror_latest_portable,
     parse_args,
     resolve_icon_path,
+    resolve_playwright_browser_cache,
 )
 from src.app_version import APP_VERSION
 from tests.helpers.temp_paths import workspace_tmpdir
@@ -215,6 +218,45 @@ def test_portable_build_keeps_scrapy_runtime_collection() -> None:
     assert "twisted" not in MAIN_RUNTIME_COLLECT_ALL_PACKAGES
     assert "queuelib" not in MAIN_RUNTIME_COLLECT_ALL_PACKAGES
     assert {"scrapy", "scrapy_playwright", "twisted"}.issubset(set(MAIN_RUNTIME_HIDDEN_IMPORTS))
+
+
+def test_portable_build_can_find_playwright_chromium_headless_shell_cache() -> None:
+    if importlib.util.find_spec("playwright") is None:
+        pytest.skip("playwright not installed")
+    cache = resolve_playwright_browser_cache()
+    assert cache is not None
+    assert any(cache.glob("chromium_headless_shell-*"))
+
+
+def test_copy_playwright_browser_cache_embeds_local_browsers() -> None:
+    with workspace_tmpdir("build-portable-playwright-cache") as tmp:
+        root = Path(tmp)
+        source = root / "ms-playwright"
+        shell = (
+            source
+            / "chromium_headless_shell-1208"
+            / "chrome-headless-shell-win64"
+            / "chrome-headless-shell.exe"
+        )
+        shell.parent.mkdir(parents=True, exist_ok=True)
+        shell.write_text("shell", encoding="utf-8")
+        (source / ".links").mkdir()
+        (source / "mcp-chrome").mkdir()
+        output = root / "portable"
+        package_dir = output / "_internal" / "playwright" / "driver" / "package"
+        package_dir.mkdir(parents=True, exist_ok=True)
+
+        target = copy_playwright_browser_cache(output, source_cache=source)
+
+        assert target == package_dir / ".local-browsers"
+        assert (
+            target
+            / "chromium_headless_shell-1208"
+            / "chrome-headless-shell-win64"
+            / "chrome-headless-shell.exe"
+        ).read_text(encoding="utf-8") == "shell"
+        assert not (target / ".links").exists()
+        assert not (target / "mcp-chrome").exists()
 
 
 def test_updater_helper_does_not_inherit_main_scrapy_test_exclusions() -> None:

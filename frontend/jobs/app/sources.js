@@ -42,6 +42,21 @@ const JOBS_FETCH_REPORT_URLS = [
   "jobs-fetch-report.json"
 ];
 
+function isDesktopRuntimeMode() {
+  const win = globalThis.window;
+  if (!win) return false;
+  if (win.__baluffoDesktopMode) return true;
+  try {
+    return new URL(win.location?.href || "").searchParams.get("desktop") === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function getSourceRegistryActiveUrlsForRuntime() {
+  return isDesktopRuntimeMode() ? [] : SOURCE_REGISTRY_ACTIVE_URLS;
+}
+
 export async function fetchUnifiedJobs({
   setSourceStatus,
   jobsParsing,
@@ -73,7 +88,7 @@ export async function renderDataSources({
   return renderDataSourcesPanel({
     dataSourcesListEl,
     dataSourcesCaptionEl,
-    sourceRegistryActiveUrls: SOURCE_REGISTRY_ACTIVE_URLS,
+    sourceRegistryActiveUrls: getSourceRegistryActiveUrlsForRuntime(),
     jobsFetchReportUrls: JOBS_FETCH_REPORT_URLS,
     sheetsFallbackSources: SHEETS_FALLBACK_SOURCES,
     fetchJsonFromCandidates

@@ -2,9 +2,110 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createAdminOpsController } from "../../../frontend/admin/app/ops.js";
 import {
+  createClassList,
   createDeferredRenderScheduler,
   createElement,
 } from "./helpers/admin-controller-test-helpers.mjs";
+
+function createOpsControllerForBridgeStatus({
+  state = { adminBusyState: {} },
+  refs = {},
+  getBridge,
+  onBridgeStatusChange = () => {}
+} = {}) {
+  return createAdminOpsController({
+    state,
+    refs: {
+      adminBridgeStatusBadgeEl: createElement({ classList: createClassList() }),
+      ...refs
+    },
+    getBridge,
+    postBridge: async () => ({}),
+    deriveAdminRunsModel: () => ({
+      currentRows: [],
+      visibleCompletedRows: [],
+      olderCompletedRows: [],
+      hasLiveRuns: false,
+      liveTypes: []
+    }),
+    getOpsPollIntervalMs: () => 5000,
+    renderAdminOpsAlerts() {},
+    renderAdminOpsKpis() {},
+    renderAdminOpsSchedule() {},
+    renderAdminOpsFetcherMetrics() {},
+    renderAdminOpsTrends() {},
+    renderAdminOpsHistory() {},
+    setBusyFlag() {},
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    adminDispatch: { dispatch() {} },
+    adminActions: { OPS_REFRESHED: "ops/refreshed" },
+    escapeHtml: value => String(value || ""),
+    onBridgeStatusChange,
+    bridgeStatusPollIntervalMs: 1000,
+    idlePollIntervalMs: 1000
+  });
+}
+
+test("admin bridge status pill uses lightweight ops health instead of registry summary", async () => {
+  const refs = {
+    adminBridgeStatusBadgeEl: createElement({ classList: createClassList() })
+  };
+  const calls = [];
+  const statuses = [];
+  const controller = createOpsControllerForBridgeStatus({
+    refs,
+    getBridge: async (path, options = {}) => {
+      calls.push({ path, options });
+      if (path === "/ops/health") return { service: "baluffo-bridge", status: "healthy" };
+      throw new Error(`unexpected path ${path}`);
+    },
+    onBridgeStatusChange(status) {
+      statuses.push(status);
+    }
+  });
+
+  await controller.pollBridgeStatus();
+
+  assert.deepEqual(calls.map(call => call.path), ["/ops/health"]);
+  assert.equal(calls[0].options.timeoutMs, 5000);
+  assert.equal(refs.adminBridgeStatusBadgeEl.textContent, "Bridge Online");
+  assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("online"), true);
+  assert.deepEqual(statuses, ["online"]);
+});
+
+test("admin bridge status pill treats one failed health poll as checking, not offline", async () => {
+  const refs = {
+    adminBridgeStatusBadgeEl: createElement({ classList: createClassList() })
+  };
+  const statuses = [];
+  let fail = false;
+  const controller = createOpsControllerForBridgeStatus({
+    refs,
+    getBridge: async path => {
+      if (path !== "/ops/health") throw new Error(`unexpected path ${path}`);
+      if (fail) throw new Error("Bridge request timed out");
+      return { service: "baluffo-bridge", status: "healthy" };
+    },
+    onBridgeStatusChange(status) {
+      statuses.push(status);
+    }
+  });
+
+  await controller.pollBridgeStatus();
+  fail = true;
+  await controller.pollBridgeStatus();
+
+  assert.equal(refs.adminBridgeStatusBadgeEl.textContent, "Bridge Checking");
+  assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("checking"), true);
+  assert.deepEqual(statuses, ["online"]);
+
+  await controller.pollBridgeStatus();
+
+  assert.equal(refs.adminBridgeStatusBadgeEl.textContent, "Bridge Offline");
+  assert.equal(refs.adminBridgeStatusBadgeEl.classList.contains("offline"), true);
+  assert.deepEqual(statuses, ["online", "offline"]);
+});
 
 test("admin ops controller preserves optimistic rows while history lags", async () => {
   const cases = [
@@ -56,7 +157,7 @@ test("admin ops controller preserves optimistic rows while history lags", async 
       state,
       refs,
       getBridge: async path => {
-        if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+        if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
         if (path === "/ops/history?limit=80") return { runs: [] };
         if (path === "/ops/task-state") return { tasks: [] };
         if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
@@ -162,7 +263,7 @@ test("admin ops controller renders bridge task-state without reattaching from hi
         state,
         refs,
         getBridge: async path => {
-          if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+          if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
           if (path === "/ops/history?limit=80") return { runs: [] };
           if (path === "/ops/task-state") return {
             tasks: [
@@ -221,7 +322,7 @@ test("admin ops controller renders bridge task-state without reattaching from hi
       assert.equal(state.adminBusyState[watcherKey], false, label);
       assert.equal(runModels.length, 1, label);
       assert.equal(runModels[0].currentRows.length, 1, label);
-      assert.deepEqual(calls, label === "discovery" ? ["loadDiscoveryData"] : [], label);
+      assert.deepEqual(calls, [], label);
     } finally {
       controller?.stopOpsHealthPolling?.();
     }
@@ -260,7 +361,7 @@ test("admin ops controller quietly auto-attaches active fetch and discovery task
     state,
     refs,
     getBridge: async path => {
-      if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
       if (path === "/ops/task-state") {
         return {
@@ -388,7 +489,7 @@ test("admin ops controller trusts empty lifecycle task-state samples immediately
     state,
     refs,
     getBridge: async path => {
-      if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
       if (path === "/ops/task-state") return taskStatePayloads.shift() || { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return {};
@@ -439,7 +540,7 @@ test("admin ops controller trusts empty lifecycle task-state samples immediately
   assert.equal(state.adminBusyState.liveFetchRunning, false);
 });
 
-test("admin ops controller keeps the last live rows rendered on transient ops polling failure", async () => {
+test("admin ops controller clears live rows on task-state polling failure", async () => {
   const state = {
     latestOpsHealthCache: null,
     latestOpsHistoryPayload: null,
@@ -471,12 +572,12 @@ test("admin ops controller keeps the last live rows rendered on transient ops po
     refs,
     getBridge: async path => {
       callCount += 1;
-      if (callCount > 4 && path === "/ops/health") {
-        throw new Error("transient bridge error");
-      }
-      if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
       if (path === "/ops/task-state") {
+        if (callCount > 8) {
+          throw new Error("transient task-state error");
+        }
         return {
           tasks: [
             {
@@ -532,8 +633,8 @@ test("admin ops controller keeps the last live rows rendered on transient ops po
   renderScheduler.flush();
   controller.stopOpsHealthPolling();
 
-  assert.deepEqual(renderedCurrentCounts, [1, 1]);
-  assert.equal(state.adminBusyState.liveFetchRunning, true);
+  assert.deepEqual(renderedCurrentCounts, [1, 0]);
+  assert.equal(state.adminBusyState.liveFetchRunning, false);
 });
 
 test("admin ops controller skips stale deferred detail renders after a newer refresh", async () => {
@@ -569,7 +670,7 @@ test("admin ops controller skips stale deferred detail renders after a newer ref
     state,
     refs,
     getBridge: async path => {
-      if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return histories.shift() || { runs: [] };
       if (path === "/ops/task-state") return { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return {};

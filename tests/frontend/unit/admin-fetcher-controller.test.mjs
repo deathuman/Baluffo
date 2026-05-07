@@ -122,7 +122,7 @@ test("admin fetcher controller starts live progress watching for an explicit bri
       if (String(path).startsWith("/fetcher/log?offset=")) {
         return { text: "", nextOffset: 0 };
       }
-      if (path === "/ops/health") return {};
+      if (path === "/ops/dashboard-health") return {};
       return activeReport;
     },
       fetchJobsFetchReportJson: async () => activeReport

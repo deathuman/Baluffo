@@ -169,6 +169,37 @@ def launch_desktop_app(config: DesktopRuntimeConfig) -> None:
                     elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
                     pid=int(bridge_process.pid) if bridge_process else 0,
                 )
+                try:
+                    api.wait_for_desktop_startup_ready(
+                        config.bridge_port,
+                        app_version=api.get_app_version(),
+                        timeout_s=READY_TIMEOUT_S,
+                    )
+                except api.DesktopStartupReadyTimeout as exc:
+                    api._append_startup_trace(
+                        config.data_dir,
+                        "desktop_bridge_startup_timeout",
+                        elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
+                        reason=str(exc.reason or ""),
+                        bridgePort=int(config.bridge_port),
+                        url=str(open_url),
+                    )
+                    api._write_launch_diagnostics(
+                        config.data_dir,
+                        "desktop-bridge-startup-timeout.txt",
+                        (
+                            f"{str(exc)}\n\n"
+                            f"Reason: {str(exc.reason or 'unknown')}\n"
+                            f"Recovery URL: {str(open_url)}\n"
+                        ),
+                    )
+                    raise
+                api._append_startup_trace(
+                    config.data_dir,
+                    "desktop_bridge_ready_before_window",
+                    elapsedMs=int((api.time.perf_counter() - started_mono) * 1000),
+                    bridgePort=int(config.bridge_port),
+                )
                 api._append_startup_trace(
                     config.data_dir,
                     "desktop_window_create_started",

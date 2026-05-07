@@ -23,7 +23,7 @@ import {
   createAdminFetcherController
 } from "../fetcher.js";
 import { createRestoreActiveRunWatches } from "../live-task.js";
-import { createAdminOpsController, formatBytes } from "../ops.js?v=12";
+import { createAdminOpsController, formatBytes } from "../ops.js?v=13";
 import { createAdminRegistryController } from "../registry.js";
 import { createAdminSyncController } from "../sync.js";
 import { createAdminOverviewController } from "./overview.js";

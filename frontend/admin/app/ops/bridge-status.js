@@ -11,6 +11,7 @@ export function createOpsBridgeStatusController({
   bridgeStatusPollIntervalMs
 }) {
   let lastBridgeStatus = "checking";
+  let bridgeStatusFailureCount = 0;
 
   function getBridgeStatus() {
     return lastBridgeStatus;
@@ -52,16 +53,23 @@ export function createOpsBridgeStatusController({
       setBridgeStatusBadge("checking", "Bridge Checking");
     }
     try {
-      const summaryPayload = await getBridge("/registry/summary");
-      const summary = summaryPayload?.summary || {};
-      const activeCount = Number(summary?.activeCount || 0);
-      const pendingCount = Number(summary?.pendingCount || 0);
+      const healthPayload = await getBridge("/ops/health", { timeoutMs: 5000 });
+      const serviceName = String(healthPayload?.service || "").trim();
+      if (serviceName && serviceName !== "baluffo-bridge") {
+        throw new Error("Bridge health response mismatch");
+      }
+      bridgeStatusFailureCount = 0;
       if (lastBridgeStatus !== "online") {
         lastBridgeStatus = "online";
         onBridgeStatusChange?.("online");
       }
-      setBridgeStatusBadge("online", `Bridge Online (${activeCount} active, ${pendingCount} pending)`);
+      setBridgeStatusBadge("online", "Bridge Online");
     } catch {
+      bridgeStatusFailureCount += 1;
+      if (lastBridgeStatus === "online" && bridgeStatusFailureCount < 2) {
+        setBridgeStatusBadge("checking", "Bridge Checking");
+        return;
+      }
       if (lastBridgeStatus !== "offline") {
         lastBridgeStatus = "offline";
         onBridgeStatusChange?.("offline");

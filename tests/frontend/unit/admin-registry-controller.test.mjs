@@ -150,6 +150,133 @@ test("admin registry controller loads filtered discovery state and dispatches re
   assert.deepEqual(busyTransitions, ["discoveryLoad:true", "discoveryLoad:false"]);
 });
 
+test("admin registry controller defers heavy discovery loads while discovery is running", async () => {
+  const state = {
+    activeSourceFilter: "all",
+    latestDiscoveryReportCache: { runId: "discovery_live_1", summary: {} },
+    adminBusyState: {
+      discoveryLoad: false,
+      discoveryWatch: true,
+      liveDiscoveryRunning: true
+    }
+  };
+  const refs = {
+    adminDiscoverySummaryEl: createElement(),
+    adminPendingSourcesEl: createElement(),
+    adminActiveSourcesEl: createElement(),
+    adminRejectedSourcesEl: createElement(),
+    adminManualSourceFeedbackEl: createElement()
+  };
+  const calls = [];
+  const logs = [];
+  const busyTransitions = [];
+  const controller = createAdminRegistryController({
+    state,
+    refs,
+    getBridge: async path => {
+      calls.push(path);
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    fetchJobsFetchReportJson: async () => {
+      calls.push("fetchReport");
+      return {};
+    },
+    mergeSourceDiscoveryCandidates: rows => rows,
+    mergeSourceStatusFromReport: rows => rows,
+    applySourceFilter: rows => rows,
+    getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
+    deriveSourceStatus: row => String(row?.status || "unknown"),
+    renderSourcesTableHtml: rows => rows.map(row => row.name).join("|"),
+    readShowZeroJobs: () => false,
+    normalizeSourceFilter: value => value,
+    adminDispatch: { dispatch() {} },
+    adminActions: { DISCOVERY_REFRESHED: "discovery/refreshed" },
+    appendDiscoveryLog(message) {
+      logs.push(String(message));
+    },
+    formatManualCheckFailureMessage: () => "failed",
+    loadOpsHealthData: async () => {},
+    setBusyFlag(key, value) {
+      busyTransitions.push(`${key}:${String(value)}`);
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    renderScheduler: callback => callback()
+  });
+
+  const result = await controller.loadDiscoveryData();
+
+  assert.equal(result?.skipped, true);
+  assert.equal(result?.reason, "discovery_running");
+  assert.deepEqual(calls, []);
+  assert.deepEqual(busyTransitions, []);
+  assert.ok(logs.some(line => /tables will refresh after this run completes/i.test(line)));
+});
+
+test("admin registry controller allows completion refresh while discovery watch is still active", async () => {
+  const state = {
+    activeSourceFilter: "all",
+    latestFetcherReportCache: null,
+    adminBusyState: {
+      discoveryLoad: false,
+      discoveryWatch: true,
+      liveDiscoveryRunning: true
+    }
+  };
+  const refs = {
+    adminDiscoverySummaryEl: createElement(),
+    adminPendingSourcesEl: createElement(),
+    adminActiveSourcesEl: createElement(),
+    adminRejectedSourcesEl: createElement(),
+    adminManualSourceFeedbackEl: createElement()
+  };
+  const calls = [];
+  const controller = createAdminRegistryController({
+    state,
+    refs,
+    getBridge: async path => {
+      calls.push(path);
+      if (path === "/discovery/report") return { summary: {}, finishedAt: "2026-03-08T10:05:00Z" };
+      if (path === "/discovery/candidates") return { candidates: [] };
+      if (path === "/registry/pending") return { summary: {}, sources: [] };
+      if (path === "/registry/active") return { summary: {}, sources: [] };
+      if (path === "/registry/rejected") return { summary: {}, sources: [] };
+      throw new Error(`unexpected path ${path}`);
+    },
+    postBridge: async () => ({}),
+    fetchJobsFetchReportJson: async () => ({ sources: [] }),
+    mergeSourceDiscoveryCandidates: rows => rows,
+    mergeSourceStatusFromReport: rows => rows,
+    applySourceFilter: rows => rows,
+    getSourceJobsFoundCount: row => Number(row?.jobsFound || 0),
+    deriveSourceStatus: row => String(row?.status || "unknown"),
+    renderSourcesTableHtml: rows => rows.map(row => row.name).join("|"),
+    readShowZeroJobs: () => false,
+    normalizeSourceFilter: value => value,
+    adminDispatch: { dispatch() {} },
+    adminActions: { DISCOVERY_REFRESHED: "discovery/refreshed" },
+    appendDiscoveryLog() {},
+    formatManualCheckFailureMessage: () => "failed",
+    loadOpsHealthData: async () => {},
+    setBusyFlag(key, value) {
+      state.adminBusyState[key] = value;
+    },
+    showToast() {},
+    getErrorMessage: err => String(err?.message || err || "unknown"),
+    renderScheduler: callback => callback()
+  });
+
+  const result = await controller.loadDiscoveryData({ background: true, completionRefresh: true });
+
+  assert.equal(result?.skipped, undefined);
+  assert.ok(calls.includes("/discovery/report"));
+  assert.ok(calls.includes("/registry/pending"));
+  assert.ok(calls.includes("/registry/active"));
+  assert.ok(calls.includes("/registry/rejected"));
+});
+
 test("admin registry controller treats one registry timeout as partial load", async () => {
   const fixture = createRegistryControllerFixture({
     options: {

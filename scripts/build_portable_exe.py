@@ -121,6 +121,91 @@ from src.python_version_guard import ensure_required_python
 from src.ship.update_manager import REQUIRED_VERSION_FILES
 
 
+def _playwright_browser_cache_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    env_path = str(os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or "").strip()
+    if env_path and env_path != "0":
+        candidates.append(Path(env_path).expanduser())
+    local_app_data = str(os.environ.get("LOCALAPPDATA") or "").strip()
+    if local_app_data:
+        candidates.append(Path(local_app_data) / "ms-playwright")
+    candidates.append(Path.home() / "AppData" / "Local" / "ms-playwright")
+    try:
+        import playwright
+
+        package_cache = (
+            Path(playwright.__file__).resolve().parent / "driver" / "package" / ".local-browsers"
+        )
+        candidates.append(package_cache)
+    except Exception:
+        pass
+
+    out: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        resolved = candidate.expanduser().resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        out.append(resolved)
+    return out
+
+
+def _has_chromium_headless_shell(cache_dir: Path) -> bool:
+    if not cache_dir.is_dir():
+        return False
+    for child in cache_dir.iterdir():
+        if not child.is_dir() or not child.name.startswith("chromium_headless_shell-"):
+            continue
+        if any(child.rglob("chrome-headless-shell.exe")):
+            return True
+    return False
+
+
+def resolve_playwright_browser_cache() -> Path | None:
+    if importlib.util.find_spec("playwright") is None:
+        return None
+    for candidate in _playwright_browser_cache_candidates():
+        if _has_chromium_headless_shell(candidate):
+            return candidate
+    return None
+
+
+def copy_playwright_browser_cache(
+    output_dir: Path, *, source_cache: Path | None = None
+) -> Path | None:
+    if importlib.util.find_spec("playwright") is None:
+        return None
+    cache = (
+        Path(source_cache).expanduser().resolve()
+        if source_cache
+        else resolve_playwright_browser_cache()
+    )
+    if cache is None or not _has_chromium_headless_shell(cache):
+        searched = ", ".join(str(path) for path in _playwright_browser_cache_candidates())
+        raise RuntimeError(
+            "Portable build requires installed Playwright Chromium Headless Shell browsers. "
+            f"Could not find chromium_headless_shell in: {searched}. "
+            "Run `python -m playwright install chromium` and rebuild."
+        )
+    package_dir = output_dir / "_internal" / "playwright" / "driver" / "package"
+    if not package_dir.is_dir():
+        raise RuntimeError(f"Packaged Playwright driver directory missing: {package_dir}")
+    target = package_dir / ".local-browsers"
+    if target.exists():
+        shutil.rmtree(target)
+    target.mkdir(parents=True, exist_ok=True)
+    for item in cache.iterdir():
+        if item.name.startswith(".") or item.name == "mcp-chrome":
+            continue
+        destination = target / item.name
+        if item.is_dir():
+            shutil.copytree(item, destination)
+        else:
+            shutil.copy2(item, destination)
+    return target
+
+
 def _copy_tree_contents(src: Path, dst: Path) -> None:
     dst.mkdir(parents=True, exist_ok=True)
     for item in src.iterdir():
@@ -215,6 +300,7 @@ def run_pyinstaller(
     if not built_dir.exists():
         raise RuntimeError(f"PyInstaller output not found: {built_dir}")
     _copy_tree_contents(built_dir, output_dir)
+    copy_playwright_browser_cache(output_dir)
     exe_path = output_dir / f"{exe_name}.exe"
     if not exe_path.exists():
         raise RuntimeError(f"Portable executable not found: {exe_path}")

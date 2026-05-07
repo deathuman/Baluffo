@@ -571,7 +571,10 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         if not alert_id:
             handler.send_json({"error": "Missing alert id"}, status=400)
             return True
-        health = api.compute_ops_health()
+        dashboard_health_fn = getattr(api, "compute_ops_dashboard_health", None)
+        health = (
+            dashboard_health_fn() if callable(dashboard_health_fn) else api.compute_ops_health()
+        )
         active_alert = next(
             (
                 row

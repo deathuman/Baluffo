@@ -42,7 +42,7 @@ test("admin ops controller renders health metrics and dedup lists separately", a
     state,
     refs,
     getBridge: async path => {
-      if (path === "/ops/health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
+      if (path === "/ops/dashboard-health") return { alerts: [], kpis: {}, schedule: {}, status: "healthy" };
       if (path === "/ops/history?limit=80") return { runs: [] };
       if (path === "/ops/task-state") return { tasks: [] };
       if (path === "/ops/fetcher-metrics?windowRuns=80") return fetcherMetricsPayload;

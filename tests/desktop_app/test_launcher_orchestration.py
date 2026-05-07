@@ -34,6 +34,11 @@ def _isolate_desktop_startup_side_effects(request, monkeypatch: pytest.MonkeyPat
     )
     if request.node.name.startswith("test_publish_success_marker_when_ready_async"):
         return
+    monkeypatch.setattr(
+        desktop_app,
+        "wait_for_desktop_startup_ready",
+        mock.Mock(return_value={"appVersion": APP_VERSION, "startupReady": True}),
+    )
     monkeypatch.setattr(desktop_app, "publish_success_marker_when_ready_async", mock.Mock())
 
 
@@ -617,11 +622,12 @@ def test_launch_desktop_app_emits_inferred_shell_window_event_when_visibility_no
     assert "desktop_browser_launch_phase_diagnostics" in event_names
 
 
-def test_launch_desktop_app_launches_browser_before_bridge_ready_diagnostic() -> None:
+def test_launch_desktop_app_waits_for_bridge_ready_before_browser_launch() -> None:
     data_dir = Path("C:/tmp/baluffo-ship/data")
     config = desktop_runtime_config(
         data_dir=data_dir,
     )
+    call_log: list[str] = []
 
     with (
         mock.patch.object(desktop_app, "get_valid_session_state", return_value={}),
@@ -642,14 +648,24 @@ def test_launch_desktop_app_launches_browser_before_bridge_ready_diagnostic() ->
         mock.patch.object(desktop_app, "is_baluffo_bridge_healthy", return_value=False),
         mock.patch.object(
             desktop_app,
+            "wait_for_desktop_startup_ready",
+            side_effect=lambda *args, **kwargs: (
+                call_log.append("bridge_ready") or {"appVersion": APP_VERSION, "startupReady": True}
+            ),
+        ),
+        mock.patch.object(
+            desktop_app,
             "launch_browser_for_url",
-            return_value={
-                "mode": "chromium-app",
-                "browserName": "chrome",
-                "browserPath": "C:/Chrome/chrome.exe",
-                "process": None,
-                "windowShownAtMonotonic": 101.0,
-            },
+            side_effect=lambda *args, **kwargs: (
+                call_log.append("launch_browser")
+                or {
+                    "mode": "chromium-app",
+                    "browserName": "chrome",
+                    "browserPath": "C:/Chrome/chrome.exe",
+                    "process": None,
+                    "windowShownAtMonotonic": 101.0,
+                }
+            ),
         ) as launch_browser_mock,
         mock.patch.object(desktop_app, "save_session_state"),
         mock.patch.object(desktop_app, "watch_browser_session", return_value="heartbeat_timeout"),
@@ -661,8 +677,11 @@ def test_launch_desktop_app_launches_browser_before_bridge_ready_diagnostic() ->
         desktop_app.launch_desktop_app(config)
 
     launch_browser_mock.assert_called_once()
+    assert call_log == ["bridge_ready", "launch_browser"]
     event_names = [call.args[1] for call in trace_mock.call_args_list]
+    ready_index = event_names.index("desktop_bridge_ready_before_window")
     window_launch_index = event_names.index("desktop_window_create_started")
+    assert ready_index < window_launch_index
     bridge_ready_index = event_names.index("desktop_bridge_ready_deferred")
     assert window_launch_index < bridge_ready_index
 

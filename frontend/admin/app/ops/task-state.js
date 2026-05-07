@@ -98,8 +98,6 @@ export function createOpsTaskStateController({
   }
 
   function resolveTaskStatePayload(taskStateResult, historyRuns) {
-    const previous = normalizeTaskStatePayload(state.latestTaskStatePayload);
-    const previousLiveRows = getActiveTaskRows(previous);
     state.waitingForTaskState = Boolean(
       taskStateResult?.status === "fulfilled"
       && (taskStateResult.value === null || taskStateResult.value === undefined)
@@ -110,9 +108,15 @@ export function createOpsTaskStateController({
       || typeof taskStateResult.value !== "object"
       || Array.isArray(taskStateResult.value)
     ) {
-      return previousLiveRows.length > 0
-        ? previous
-        : rememberTaskStatePayload({ tasks: [], count: 0 });
+      const message = taskStateResult?.status === "rejected"
+        ? String(taskStateResult.reason?.message || taskStateResult.reason || "Task state unavailable.")
+        : "Task state unavailable.";
+      return rememberTaskStatePayload({
+        tasks: [],
+        count: 0,
+        taskStateUnavailable: true,
+        diagnostics: [{ code: "task_state_unavailable", message }]
+      });
     }
     return mergeRetainedTaskStatePayload(taskStateResult.value, historyRuns);
   }

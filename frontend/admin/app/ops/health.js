@@ -22,7 +22,6 @@ function maybeUnrefTimer(timer) {
 }
 
 const OPS_TAB_KEYS = new Set(["overview", "discovery", "source-policy", "registry-conflicts", "dedup"]);
-const LIVE_DISCOVERY_REGISTRY_REFRESH_MS = 30000;
 
 function getObjectValue(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -159,7 +158,6 @@ export function createOpsHealthController({
   adminDispatch,
   adminActions,
   escapeHtml,
-  loadDiscoveryData,
   idlePollIntervalMs,
   taskStateController,
   getBridgeStatus,
@@ -173,7 +171,6 @@ export function createOpsHealthController({
   },
   renderScheduler
 }) {
-  let lastDiscoveryRegistryRefreshAtMs = 0;
   let initialBridgeReadyResolved = false;
   let opsRenderToken = 0;
 
@@ -523,7 +520,7 @@ export function createOpsHealthController({
         sourcePolicyResult,
         registryConflictsResult
       ] = await Promise.allSettled([
-        getBridge("/ops/health"),
+        getBridge("/ops/dashboard-health"),
         getBridge("/ops/history?limit=80"),
         getBridge("/ops/task-state"),
         getBridge("/ops/fetcher-metrics?windowRuns=80"),
@@ -560,6 +557,7 @@ export function createOpsHealthController({
       }
       const historyRuns = Array.isArray(historyPayload?.runs) ? historyPayload.runs : [];
       const taskStatePayload = taskStateController.resolveTaskStatePayload(taskStateResult, historyRuns);
+      state.taskStateUnavailable = Boolean(taskStatePayload?.taskStateUnavailable);
       const fetcherMetrics = fetcherMetricsResult.status === "fulfilled"
         ? fetcherMetricsResult.value
         : null;
@@ -612,30 +610,6 @@ export function createOpsHealthController({
       );
       taskStateController.syncLiveBusyFlags(liveTypes);
       taskStateController.maybeAttachLiveTaskRows(liveTaskRows);
-      const nowMs = Date.now();
-      const discoveryLive = liveTypes.has("discovery");
-      if (!discoveryLive) {
-        lastDiscoveryRegistryRefreshAtMs = 0;
-      } else if (typeof loadDiscoveryData === "function" && nowMs - lastDiscoveryRegistryRefreshAtMs >= LIVE_DISCOVERY_REGISTRY_REFRESH_MS) {
-        lastDiscoveryRegistryRefreshAtMs = nowMs;
-        Promise.resolve(loadDiscoveryData({
-          background: true,
-          logChanges: false,
-          skipIfFreshMs: 10000,
-          suppressPlaceholders: true
-        }))
-          .then(() => {
-            renderOpsTabBadges(refs, {
-              health,
-              discoveryReport: state.latestDiscoveryReportCache || {},
-              sourcePolicyRecommendations,
-              registryConflictsPayload,
-              fetcherMetricsPayload
-            });
-          })
-          .catch(() => {});
-      }
-
       const frontendPerfCounters = getFrontendPerfCounters();
       const fetcherMetricsPayload = {
         ...(fetcherMetrics && typeof fetcherMetrics === "object" ? fetcherMetrics : {}),
@@ -710,7 +684,8 @@ export function createOpsHealthController({
         });
         renderAdminOpsHistoryImpl(refs.adminOpsHistoryEl, runModel, {
           onCopyRunDiagnostics: handleCopyRunDiagnostics,
-          waitingForTaskState: Boolean(state.waitingForTaskState)
+          waitingForTaskState: Boolean(state.waitingForTaskState),
+          taskStateUnavailable: Boolean(state.taskStateUnavailable)
         });
         renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
       });

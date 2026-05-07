@@ -1,4 +1,4 @@
-import { createOpsBridgeStatusController } from "./ops/bridge-status.js";
+import { createOpsBridgeStatusController } from "./ops/bridge-status.js?v=13";
 import { createOpsHealthController } from "./ops/health.js?v=12";
 import { scheduleAdminRender } from "./ops/render-scheduler.js";
 import { createOpsTaskStateController } from "./ops/task-state.js";
@@ -28,7 +28,6 @@ export function createAdminOpsController({
   adminActions,
   escapeHtml,
   onBridgeStatusChange,
-  loadDiscoveryData,
   attachToActiveFetchRun,
   loadLatestFetcherReport,
   attachToActiveDiscoveryRun,
@@ -77,7 +76,6 @@ export function createAdminOpsController({
     adminDispatch,
     adminActions,
     escapeHtml,
-    loadDiscoveryData,
     idlePollIntervalMs,
     taskStateController,
     getBridgeStatus: bridgeStatusController.getBridgeStatus,

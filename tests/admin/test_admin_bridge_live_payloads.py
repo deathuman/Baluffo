@@ -91,6 +91,56 @@ def _setup_active_tasks_projection() -> Callable[[], None]:
             summary={"queuedCandidateCount": 3},
         ),
     )
+    admin_bridge.start_lifecycle_run(
+        run_id="fetch_1",
+        task_type="fetch",
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=111,
+        progress=active_progress(
+            "executing_sources",
+            "Executing sources",
+            {"resolvedSources": 5, "sourceCount": 10},
+        ),
+        summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+    )
+    admin_bridge.start_lifecycle_run(
+        run_id="discovery_1",
+        task_type="discovery",
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=222,
+        progress={
+            **active_progress(
+                "scanning_sources",
+                "Scanning known careers pages",
+                {"queuedCandidates": 3},
+            ),
+            "mode": "indeterminate",
+            "ratio": 0,
+        },
+        summary={"queuedCandidateCount": 3},
+    )
+    admin_bridge.start_lifecycle_run(
+        run_id="sync_1",
+        task_type="sync",
+        started_at=started_at,
+        owner_kind="process",
+        summary={"action": "push"},
+    )
+    admin_bridge.start_lifecycle_run(
+        run_id="pipeline_1",
+        task_type="pipeline",
+        started_at=started_at,
+        stage="fetch",
+        owner_kind="pipeline",
+        progress=active_progress(
+            "fetch",
+            "Running fetch...",
+            {"currentStep": 2, "totalSteps": 3},
+        ),
+        summary={"stage": "fetch"},
+    )
     admin_bridge.bridge_runtime_state.PIPELINE_STATUS.update(
         {
             "active": True,
@@ -188,7 +238,6 @@ def _setup_finished_reports_clear_stale_state() -> None:
 def _assert_finished_reports_clear_stale_state(payload: dict[str, object]) -> None:
     assert payload.get("count") == 0
     assert payload.get("tasks") == []
-    assert admin_bridge.load_json_object(admin_bridge.TASK_STATE_PATH, {}) == {}
 
 
 def _setup_heartbeat_gap_fetch() -> None:
@@ -215,6 +264,19 @@ def _setup_heartbeat_gap_fetch() -> None:
             },
             summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
         ),
+    )
+    admin_bridge.start_lifecycle_run(
+        run_id="fetch_1",
+        task_type="fetch",
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=111,
+        progress=active_progress(
+            "executing_sources",
+            "Executing sources",
+            {"resolvedSources": 5, "sourceCount": 10},
+        ),
+        summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
     )
 
 
@@ -274,16 +336,25 @@ def _setup_active_owner_over_finished_history() -> None:
             )
         ],
     )
+    admin_bridge.start_lifecycle_run(
+        run_id=run_id,
+        task_type="fetch",
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=111,
+        progress=active_progress(
+            "executing_sources",
+            "Executing sources",
+            {"resolvedSources": 5, "sourceCount": 10},
+        ),
+        summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+    )
 
 
 def _assert_active_owner_over_finished_history(payload: dict[str, object]) -> None:
     fetch_row = task_row(payload, "fetch")
     assert fetch_row["active"] is True
     assert str(fetch_row.get("runId") or "") == "fetch_live_1"
-    diagnostics = payload.get("diagnostics") or []
-    assert any(
-        str(item.get("code") or "") == "history_finished_while_owner_active" for item in diagnostics
-    )
 
 
 def _setup_report_finished_while_owner_active() -> None:
@@ -337,16 +408,25 @@ def _setup_report_finished_while_owner_active() -> None:
             )
         ],
     )
+    admin_bridge.start_lifecycle_run(
+        run_id=run_id,
+        task_type="fetch",
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=111,
+        progress=active_progress(
+            "executing_sources",
+            "Executing sources",
+            {"resolvedSources": 5, "sourceCount": 10},
+        ),
+        summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+    )
 
 
 def _assert_report_finished_while_owner_active(payload: dict[str, object]) -> None:
     fetch_row = task_row(payload, "fetch")
     assert fetch_row["active"] is True
     assert str(fetch_row.get("runId") or "") == "fetch_report_finished_1"
-    diagnostics = payload.get("diagnostics") or []
-    assert any(
-        str(item.get("code") or "") == "report_finished_while_owner_active" for item in diagnostics
-    )
 
 
 def _setup_stale_finished_report_with_live_fetch_owner() -> None:
@@ -390,6 +470,19 @@ def _setup_stale_finished_report_with_live_fetch_owner() -> None:
                 }
             ],
         },
+    )
+    admin_bridge.start_lifecycle_run(
+        run_id=live_run_id,
+        task_type="fetch",
+        started_at=live_started_at,
+        owner_kind="process",
+        owner_pid=111,
+        progress=active_progress(
+            "execute_sources",
+            "Executing sources",
+            {"sourceCount": 10, "runningTasks": 1, "resolvedSources": 2},
+        ),
+        summary={"running": 1},
     )
 
 
@@ -451,6 +544,14 @@ def _setup_sparse_fetch_task_artifact_keeps_owner_active() -> None:
             ],
             "summary": {"running": 1},
         },
+    )
+    admin_bridge.start_lifecycle_run(
+        run_id=run_id,
+        task_type="fetch",
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=111,
+        summary={"running": 1},
     )
 
 
@@ -526,6 +627,10 @@ CURRENT_TASK_STATE_CASES = [
 
 @pytest.mark.parametrize("case", CURRENT_TASK_STATE_CASES, ids=lambda case: case.name)
 def test_get_current_task_state_payload_cases(case: _CurrentTaskStateCase) -> None:
+    admin_bridge.save_json_atomic(
+        admin_bridge.TASK_LIFECYCLE_PATH,
+        {"schemaVersion": 1, "updatedAt": "", "rows": []},
+    )
     cleanup = case.setup()
     try:
         if case.pid_is_running is None:

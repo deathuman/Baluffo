@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
+from src.bridge.admin_entrypoint_services import _matching_live_report_progress
 from src.bridge.discovery_service import DiscoveryDeps, DiscoveryPaths, DiscoveryService
 
 
@@ -329,6 +331,207 @@ def test_trigger_discovery_task_reconciles_terminal_report_before_duplicate_chec
     assert finished_lifecycle == [("discovery_done_1", "discovery", "2026-03-20T12:05:00Z")]
     assert upserted_runs[0]["runId"] == "discovery_done_1"
     assert upserted_runs[0]["finishedAt"] == "2026-03-20T12:05:00Z"
+
+
+def test_discovery_heartbeat_mirrors_live_report_progress_to_lifecycle(tmp_path: Path) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    task_state_path = tmp_path / "admin-task-state.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "runId": "discovery_live_1",
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "",
+                "summary": {
+                    "phase": "scanning_sources",
+                    "phaseKey": "scanning_sources",
+                    "phaseLabel": "Scanning GameDevMap directory",
+                    "currentStageKey": "gamedevmap",
+                    "generatedCandidateCount": 654,
+                    "foundEndpointCount": 654,
+                    "queuedCandidateCount": 0,
+                },
+                "taskProgress": {
+                    "active": True,
+                    "phaseKey": "scanning_sources",
+                    "phaseLabel": "Scanning GameDevMap directory",
+                    "counts": {"generatedCandidates": 654, "foundEndpoints": 654},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    task_state_path.write_text(
+        json.dumps(
+            {
+                "discovery": {
+                    "runId": "discovery_live_1",
+                    "taskType": "discovery",
+                    "pid": 321,
+                    "startedAt": "2026-03-20T12:00:00Z",
+                    "status": "running",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    lifecycle_heartbeats: list[dict[str, object]] = []
+
+    def load_json_object(path: Path, default: dict[str, object]) -> dict[str, object]:
+        if Path(path).exists():
+            return json.loads(Path(path).read_text(encoding="utf-8"))
+        return dict(default)
+
+    service = DiscoveryService(
+        paths=DiscoveryPaths(
+            report=report_path,
+            candidates=tmp_path / "source-registry-pending.json",
+            pending=tmp_path / "source-registry-pending.json",
+            log=tmp_path / "source-discovery.log",
+            settings=tmp_path / "source-discovery-config.json",
+            approval_state=tmp_path / "source-approval-state.json",
+            task_state=task_state_path,
+        ),
+        deps=DiscoveryDeps(
+            schema_version=1,
+            now_iso=lambda: "2026-03-20T12:01:00Z",
+            now_utc=lambda: None,
+            parse_iso=_parse_iso_utc,
+            pid_is_running=lambda pid: int(pid) == 321,
+            bridge_log=lambda *args, **kwargs: None,
+            load_json_object=load_json_object,
+            save_json_atomic=lambda path, payload: Path(path).write_text(
+                json.dumps(payload), encoding="utf-8"
+            ),
+            run_background_script=lambda script_name, args=None, **kwargs: 987,
+            append_run_history=lambda payload: payload,
+            upsert_run_history=lambda payload, **_kwargs: payload,
+            prune_started_rows_for_type=lambda *_args, **_kwargs: None,
+            clear_task_state=lambda _task_type: None,
+            normalize_discovery_report_contract=lambda payload: payload,
+            load_state=lambda: {"active": [], "pending": [], "rejected": []},
+            persist_state_and_auto_sync=lambda state, **_kwargs: state,
+            load_sync_runtime_state=lambda: {},
+            maybe_trigger_auto_sync_push=lambda reason: False,
+            mark_discovery_sync_finished=lambda finished_at: None,
+            heartbeat_lifecycle_run=lambda run_id, task_type, **kwargs: (
+                lifecycle_heartbeats.append(
+                    {"runId": run_id, "taskType": task_type, **dict(kwargs)}
+                )
+                or {}
+            ),
+        ),
+    )
+
+    service._refresh_discovery_task_heartbeat(
+        run_id="discovery_live_1",
+        pid=321,
+        started_at="2026-03-20T12:00:00Z",
+    )
+
+    assert lifecycle_heartbeats
+    heartbeat = lifecycle_heartbeats[0]
+    assert heartbeat["stage"] == "gamedevmap"
+    assert heartbeat["progress"] == {
+        "active": True,
+        "phaseKey": "scanning_sources",
+        "phaseLabel": "Scanning GameDevMap directory",
+        "counts": {"generatedCandidates": 654, "foundEndpoints": 654},
+    }
+    assert heartbeat["summary"] == {
+        "phase": "scanning_sources",
+        "phaseKey": "scanning_sources",
+        "phaseLabel": "Scanning GameDevMap directory",
+        "currentStageKey": "gamedevmap",
+        "generatedCandidateCount": 654,
+        "foundEndpointCount": 654,
+        "queuedCandidateCount": 0,
+    }
+
+
+def test_pipeline_child_heartbeat_can_read_discovery_report_progress(tmp_path: Path) -> None:
+    report_path = tmp_path / "source-discovery-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "runId": "discovery_pipeline_1",
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "",
+                "summary": {"phaseLabel": "Probing candidates", "probedCandidateCount": 42},
+                "taskProgress": {
+                    "phaseLabel": "Probing candidates",
+                    "counts": {"probedCandidates": 42},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    root_mod = SimpleNamespace(
+        load_json_object=lambda path, default: (
+            json.loads(Path(path).read_text(encoding="utf-8")) if Path(path).exists() else default
+        ),
+        parse_iso=_parse_iso_utc,
+    )
+
+    progress, summary = _matching_live_report_progress(
+        root_mod,
+        report_path=report_path,
+        run_id="discovery_pipeline_1",
+        started_at="2026-03-20T12:00:00Z",
+    )
+
+    assert progress == {
+        "phaseLabel": "Probing candidates",
+        "counts": {"probedCandidates": 42},
+    }
+    assert summary == {"phaseLabel": "Probing candidates", "probedCandidateCount": 42}
+
+
+def test_pipeline_child_heartbeat_can_read_fetch_task_progress(tmp_path: Path) -> None:
+    tasks_path = tmp_path / "jobs-fetch-tasks.json"
+    tasks_path.write_text(
+        json.dumps(
+            {
+                "runId": "fetch_pipeline_1",
+                "active": True,
+                "startedAt": "2026-03-20T12:00:00Z",
+                "finishedAt": "",
+                "summary": {"queued": 1778, "running": 12, "ok": 79, "error": 1},
+                "taskProgress": {
+                    "active": True,
+                    "phaseKey": "executing_sources",
+                    "phaseLabel": "Executing sources",
+                    "counts": {
+                        "sourceCount": 1869,
+                        "resolvedSources": 79,
+                        "runningTasks": 12,
+                        "queuedTasks": 1778,
+                        "outputCount": 36597,
+                        "failedSources": 1,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    root_mod = SimpleNamespace(
+        load_json_object=lambda path, default: (
+            json.loads(Path(path).read_text(encoding="utf-8")) if Path(path).exists() else default
+        ),
+        parse_iso=_parse_iso_utc,
+    )
+
+    progress, summary = _matching_live_report_progress(
+        root_mod,
+        report_path=tasks_path,
+        run_id="fetch_pipeline_1",
+        started_at="2026-03-20T12:00:00Z",
+    )
+
+    assert progress["phaseLabel"] == "Executing sources"
+    assert progress["counts"]["resolvedSources"] == 79
+    assert progress["counts"]["queuedTasks"] == 1778
+    assert summary == {"queued": 1778, "running": 12, "ok": 79, "error": 1}
 
 
 def test_discovery_settings_default_to_auto_approve_enabled(tmp_path: Path) -> None:

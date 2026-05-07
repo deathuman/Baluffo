@@ -15,6 +15,7 @@ from typing import Any
 from src import fetcher_metrics as fetcher_metrics_module
 from src.bridge import ops_health as _ops_health
 from src.bridge import ops_history_projection as _ops_history_projection
+from src.bridge import ops_live_payload as _ops_live_payload
 from src.bridge import ops_task_live as _ops_task_live
 from src.bridge import report_normalizer
 from src.bridge import run_history_api as _run_history_api
@@ -104,12 +105,12 @@ def _task_row_key(row: dict[str, Any]) -> tuple[str, str]:
     )
 
 
-def _display_value_is_present(value: Any) -> bool:
-    if isinstance(value, dict):
-        return any(_display_value_is_present(item) for item in value.values())
-    if isinstance(value, list):
-        return bool(value)
-    return bool(str(value or "").strip())
+def _task_type(row: dict[str, Any]) -> str:
+    return str(row.get("type") or row.get("taskType") or "").strip().lower()
+
+
+def _run_id(row: dict[str, Any]) -> str:
+    return str(row.get("runId") or row.get("id") or "").strip()
 
 
 def _parse_route_time(value: Any) -> datetime | None:
@@ -140,29 +141,6 @@ def _latest_time_text(*values: Any) -> str:
             best_dt = parsed
             best_text = text
     return best_text
-
-
-def _merge_current_lifecycle_row(
-    legacy_row: dict[str, Any],
-    lifecycle_row: dict[str, Any],
-) -> dict[str, Any]:
-    merged = {**dict(legacy_row), **dict(lifecycle_row), "active": True}
-    for key in ("taskProgress", "workItems", "recentEvents", "outputs"):
-        legacy_value = legacy_row.get(key)
-        if _display_value_is_present(legacy_value):
-            merged[key] = legacy_value
-    legacy_summary = as_json_object(legacy_row.get("summary"))
-    lifecycle_summary = as_json_object(lifecycle_row.get("summary"))
-    if legacy_summary or lifecycle_summary:
-        merged["summary"] = {**lifecycle_summary, **legacy_summary}
-    merged["status"] = str(lifecycle_row.get("status") or "running").strip() or "running"
-    merged["lifecycleStatus"] = str(lifecycle_row.get("lifecycleStatus") or "").strip()
-    merged["heartbeatAt"] = _latest_time_text(
-        legacy_row.get("heartbeatAt"),
-        lifecycle_row.get("heartbeatAt"),
-    )
-    merged["finishedAt"] = ""
-    return merged
 
 
 def _child_progress_label(child_row: dict[str, Any]) -> str:
@@ -246,6 +224,35 @@ def _enrich_pipeline_rows_with_children(
         )
         if child is not None:
             task_by_key[key] = _enrich_pipeline_row_with_child(row, child)
+
+
+def _pipeline_status_to_task_row(pipeline_status: dict[str, Any]) -> dict[str, Any]:
+    status = pipeline_status if isinstance(pipeline_status, dict) else {}
+    active = bool(status.get("active"))
+    return {
+        "taskType": "pipeline",
+        "type": "pipeline",
+        "runId": str(status.get("runId") or "").strip(),
+        "id": str(status.get("runId") or "").strip(),
+        "active": active,
+        "startedAt": str(status.get("startedAt") or "").strip(),
+        "heartbeatAt": str(
+            status.get("heartbeatAt")
+            or as_json_object(status.get("runtime")).get("heartbeatAt")
+            or ""
+        ).strip(),
+        "finishedAt": "" if active else str(status.get("finishedAt") or "").strip(),
+        "status": "running" if active else str(status.get("stage") or "").strip().lower(),
+        "lifecycleStatus": "running" if active else "",
+        "stage": str(status.get("stage") or "").strip().lower(),
+        "taskProgress": _ops_live_payload.build_pipeline_task_progress(status),
+        "summary": {
+            "stage": str(status.get("stage") or "").strip().lower(),
+            "updatesFound": bool(status.get("updatesFound")),
+            "refreshRecommended": bool(status.get("refreshRecommended")),
+        },
+        "outputs": {},
+    }
 
 
 class OpsApi:
@@ -356,6 +363,23 @@ class OpsApi:
             )
         return legacy_projection
 
+    def get_lifecycle_run_history_rows(self) -> list[dict[str, Any]]:
+        lifecycle_recent = [dict(row) for row in self._deps.get_lifecycle_recent_runs()]
+        seen = {_task_row_key(row) for row in lifecycle_recent}
+        rows = list(lifecycle_recent)
+        for row in self._deps.load_run_history():
+            if not isinstance(row, dict):
+                continue
+            key = _task_row_key(row)
+            if not key[0] or not key[1] or key in seen:
+                continue
+            if not str(row.get("finishedAt") or "").strip():
+                continue
+            rows.append(dict(row))
+            seen.add(key)
+        rows.sort(key=lambda row: str(row.get("startedAt") or row.get("finishedAt") or ""))
+        return rows
+
     def _task_live_context(self) -> _ops_task_live.OpsTaskLiveContext:
         return _ops_task_live.OpsTaskLiveContext(paths=self._paths, deps=self._deps)
 
@@ -413,8 +437,56 @@ class OpsApi:
             else bool(self._deps.get_owner_state().get("startedAt")),
         )
 
-    def compute_ops_health(self) -> dict[str, Any]:
+    def compute_ops_dashboard_health(self) -> dict[str, Any]:
         return _ops_health.compute_ops_health(self.build_ops_health_deps())
+
+    def compute_ops_health(self) -> dict[str, Any]:
+        current_rows = [dict(row) for row in self._deps.get_lifecycle_current_runs()]
+        recent_rows = [dict(row) for row in self._deps.get_lifecycle_recent_runs()]
+        pipeline_status = self._deps.get_jobs_pipeline_status_payload()
+        owner_state = dict(self._deps.get_owner_state() or {})
+        startup_ready = (
+            True if not bool(self._deps.desktop_mode) else bool(owner_state.get("startedAt"))
+        )
+        heartbeats = [
+            str(row.get("heartbeatAt") or "").strip()
+            for row in current_rows
+            if str(row.get("heartbeatAt") or "").strip()
+        ]
+        if isinstance(pipeline_status, dict) and bool(pipeline_status.get("active")):
+            heartbeat_at = str(
+                pipeline_status.get("heartbeatAt")
+                or as_json_object(pipeline_status.get("runtime")).get("heartbeatAt")
+                or ""
+            ).strip()
+            if heartbeat_at:
+                heartbeats.append(heartbeat_at)
+        return {
+            "service": "baluffo-bridge",
+            "status": "healthy",
+            "ok": True,
+            "timestamp": self._deps.now_iso(),
+            "desktopMode": bool(self._deps.desktop_mode),
+            "desktopLastActivityAt": str(self._deps.get_desktop_last_activity_at() or ""),
+            "startupReady": startup_ready,
+            "appVersion": str(self._deps.app_version or ""),
+            "lifecycle": {
+                "currentCount": len(current_rows),
+                "recentCount": len(recent_rows),
+                "latestHeartbeatAt": _latest_time_text(*heartbeats),
+            },
+            "pipeline": {
+                "active": bool(
+                    pipeline_status.get("active") if isinstance(pipeline_status, dict) else False
+                ),
+                "runId": str(
+                    pipeline_status.get("runId") if isinstance(pipeline_status, dict) else ""
+                ).strip(),
+                "stage": str(
+                    pipeline_status.get("stage") if isinstance(pipeline_status, dict) else ""
+                ).strip(),
+            },
+        }
 
     def get_task_live_payload(
         self,
@@ -428,38 +500,70 @@ class OpsApi:
         )
 
     def get_current_task_state_payload(self) -> dict[str, Any]:
-        lifecycle_current = self._deps.get_lifecycle_current_runs()
-        lifecycle_recent = self._deps.get_lifecycle_recent_runs()
-        projection = self.get_projected_run_history()
-        legacy_payload = _ops_task_live.build_current_task_state_payload(
-            self._task_live_context(),
-            projection=projection,
+        lifecycle_current = [dict(row) for row in self._deps.get_lifecycle_current_runs()]
+        pipeline_status = self._deps.get_jobs_pipeline_status_payload()
+        pipeline_row = (
+            _pipeline_status_to_task_row(pipeline_status)
+            if isinstance(pipeline_status, dict) and bool(pipeline_status.get("active"))
+            else {}
         )
-        if not lifecycle_current and not lifecycle_recent:
-            return legacy_payload
+        pipeline_run_id = _run_id(pipeline_row)
+        pipeline_stage = str(pipeline_row.get("stage") or "").strip().lower()
 
-        terminal_keys = {
-            (
-                str(row.get("type") or row.get("taskType") or "").strip().lower(),
-                str(row.get("runId") or row.get("id") or "").strip(),
+        parent_stage_by_run_id = {
+            _run_id(row): str(
+                row.get("stage") or as_json_object(row.get("summary")).get("stage") or ""
             )
-            for row in lifecycle_recent
+            .strip()
+            .lower()
+            for row in lifecycle_current
+            if _task_type(row) == "pipeline" and _run_id(row)
         }
+        if pipeline_run_id and pipeline_stage:
+            parent_stage_by_run_id[pipeline_run_id] = pipeline_stage
+
         task_by_key: dict[tuple[str, str], dict[str, Any]] = {}
-        for row in legacy_payload.get("tasks") or []:
-            if not isinstance(row, dict):
-                continue
-            key = _task_row_key(row)
-            if key in terminal_keys:
-                continue
-            task_by_key[key] = dict(row)
+        diagnostics: list[dict[str, Any]] = []
         for row in lifecycle_current:
-            key = _task_row_key(row)
-            if not key[0] or not key[1]:
+            task_type = _task_type(row)
+            run_id = _run_id(row)
+            if not task_type or not run_id:
                 continue
-            if key not in task_by_key:
-                continue
-            task_by_key[key] = _merge_current_lifecycle_row(task_by_key[key], row)
+            parent_task_type = str(row.get("parentTaskType") or "").strip().lower()
+            parent_run_id = str(row.get("parentRunId") or "").strip()
+            owner_kind = str(row.get("ownerKind") or "").strip().lower()
+            if parent_task_type == "pipeline" and owner_kind == "pipeline":
+                parent_stage = parent_stage_by_run_id.get(parent_run_id, "")
+                if not parent_stage or parent_stage != task_type:
+                    diagnostics.append(
+                        {
+                            "code": "pipeline_child_stage_mismatch",
+                            "taskType": task_type,
+                            "runId": run_id,
+                            "parentRunId": parent_run_id,
+                            "parentStage": parent_stage,
+                        }
+                    )
+                    continue
+            route_row = {**row, "active": True, "finishedAt": ""}
+            if task_type == "pipeline" and pipeline_run_id and run_id == pipeline_run_id:
+                route_row = {**route_row, **pipeline_row, "active": True, "finishedAt": ""}
+                route_row["stage"] = pipeline_stage or str(route_row.get("stage") or "")
+                route_row["summary"] = {
+                    **as_json_object(pipeline_row.get("summary")),
+                    **as_json_object(row.get("summary")),
+                    "stage": pipeline_stage
+                    or str(as_json_object(row.get("summary")).get("stage") or ""),
+                }
+            task_by_key[(task_type, run_id)] = route_row
+        if pipeline_row and pipeline_run_id:
+            key = ("pipeline", pipeline_run_id)
+            existing = task_by_key.get(key)
+            if existing is None:
+                task_by_key[key] = pipeline_row
+            else:
+                task_by_key[key] = {**existing, **pipeline_row, "active": True, "finishedAt": ""}
+                task_by_key[key]["stage"] = pipeline_stage or str(existing.get("stage") or "")
         _enrich_pipeline_rows_with_children(task_by_key)
         tasks = sorted(
             list(task_by_key.values()),
@@ -469,7 +573,7 @@ class OpsApi:
         return {
             "tasks": tasks,
             "count": len(tasks),
-            "diagnostics": list(legacy_payload.get("diagnostics") or []),
+            "diagnostics": diagnostics,
         }
 
     def compute_fetcher_metrics(self, *, window_runs: int = 20) -> dict[str, Any]:

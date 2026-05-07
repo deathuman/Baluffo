@@ -336,6 +336,7 @@ def start_fetcher_task(payload: JsonObject | None = None) -> JsonObject:
         start_lifecycle_run=root_mod.start_lifecycle_run,
         finish_lifecycle_run=root_mod.finish_lifecycle_run,
         fail_lifecycle_run=root_mod.fail_lifecycle_run,
+        heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
     )
 
 

@@ -369,6 +369,20 @@ def test_ops_task_state(tmp_path: Path) -> None:
     assert handler.sent[-1]["payload"]["count"] == 1
 
 
+def test_ops_dashboard_health_route_uses_dashboard_payload(tmp_path: Path) -> None:
+    store = FakeDesktopLocalDataStore()
+    api = make_stub_bridge_api(tmp_path, store)
+    api.compute_ops_health = lambda: {"service": "baluffo-bridge", "status": "healthy"}
+    api.compute_ops_dashboard_health = lambda: {"alerts": [{"id": "dashboard"}]}
+
+    handler = FakeHandler()
+    result = handle_get(handler, api=api, path="/ops/dashboard-health", query={})
+
+    assert result is True
+    assert handler.sent[-1]["status"] == 200
+    assert handler.sent[-1]["payload"] == {"alerts": [{"id": "dashboard"}]}
+
+
 def test_ops_fetcher_metrics_default(tmp_path: Path) -> None:
     """Test /ops/fetcher-metrics with default window."""
     store = FakeDesktopLocalDataStore()
