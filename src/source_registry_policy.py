@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from typing import Any
+from urllib.parse import urlparse
 
 from src.shared.utils import now_iso
 from src.source_registry_identity import (
@@ -98,6 +100,153 @@ def _row_jobs_evidence(row: dict[str, Any], state: dict[str, Any]) -> int:
     )
 
 
+def _row_urls(row: dict[str, Any]) -> list[str]:
+    values = [
+        str(row.get(key) or "")
+        for key in (
+            "id",
+            "sourceId",
+            "api_url",
+            "feed_url",
+            "board_url",
+            "listing_url",
+            "careersUrl",
+            "url",
+        )
+    ]
+    urls: list[str] = []
+    for value in values:
+        for match in re.findall(r"https?://[^\s]+", value):
+            urls.append(match.rstrip("),.;'\""))
+    return urls
+
+
+def _static_url_host_paths(row: dict[str, Any]) -> set[tuple[str, str]]:
+    if str(row.get("adapter") or "").strip().lower() != "static":
+        return set()
+    host_paths: set[tuple[str, str]] = set()
+    for url in _row_urls(row):
+        parsed = urlparse(url)
+        host = parsed.netloc.lower().removeprefix("www.")
+        if not host:
+            continue
+        path = parsed.path.strip().lower().rstrip("/") or "/"
+        host_paths.add((host, path))
+    return host_paths
+
+
+def _family_tokens(family_key: str) -> set[str]:
+    stop_words = {
+        "digital",
+        "entertainment",
+        "game",
+        "games",
+        "group",
+        "interactive",
+        "online",
+        "software",
+        "studio",
+        "studios",
+        "world",
+    }
+    return {
+        token
+        for token in re.split(r"[^a-z0-9]+", family_key.lower())
+        if len(token) > 2 and token not in stop_words
+    }
+
+
+def _host_matches_family(host: str, family_key: str) -> bool:
+    compact_host = host.replace("-", "").replace(".", "")
+    return any(token in compact_host for token in _family_tokens(family_key))
+
+
+def _hosts_same_or_subdomain(left: str, right: str) -> bool:
+    return left == right or left.endswith(f".{right}") or right.endswith(f".{left}")
+
+
+def _is_homepage_path(path: str) -> bool:
+    return path.strip().lower().rstrip("/") in {"", "/"}
+
+
+def _is_careerish_path(path: str) -> bool:
+    return bool(
+        set(re.split(r"[^a-z0-9]+", path.lower()))
+        & {
+            "career",
+            "careers",
+            "hiring",
+            "job",
+            "jobs",
+            "join",
+            "opening",
+            "openings",
+            "position",
+            "positions",
+            "vacancies",
+            "work",
+        }
+    )
+
+
+def _is_homepage_static_alias_of_career_source(
+    row: dict[str, Any], family_rows: list[dict[str, Any]], family_key: str
+) -> bool:
+    row_host_paths = _static_url_host_paths(row)
+    if not row_host_paths or not any(_is_homepage_path(path) for _host, path in row_host_paths):
+        return False
+    career_host_paths = [
+        host_path
+        for candidate in family_rows
+        if candidate is not row
+        for host_path in _static_url_host_paths(candidate)
+        if _is_careerish_path(host_path[1])
+    ]
+    return any(
+        _host_matches_family(row_host, family_key)
+        and _host_matches_family(career_host, family_key)
+        and _hosts_same_or_subdomain(row_host, career_host)
+        for row_host, _row_path in row_host_paths
+        for career_host, _career_path in career_host_paths
+    )
+
+
+def _is_career_static_alias_of_homepage_source(
+    row: dict[str, Any], family_rows: list[dict[str, Any]], family_key: str
+) -> bool:
+    row_host_paths = _static_url_host_paths(row)
+    if not row_host_paths or not any(_is_careerish_path(path) for _host, path in row_host_paths):
+        return False
+    homepage_host_paths = [
+        host_path
+        for candidate in family_rows
+        if candidate is not row
+        for host_path in _static_url_host_paths(candidate)
+        if _is_homepage_path(host_path[1])
+    ]
+    return any(
+        _host_matches_family(row_host, family_key)
+        and _host_matches_family(homepage_host, family_key)
+        and _hosts_same_or_subdomain(row_host, homepage_host)
+        for row_host, _row_path in row_host_paths
+        for homepage_host, _homepage_path in homepage_host_paths
+    )
+
+
+def _static_destination_preference(
+    row: dict[str, Any], family_rows: list[dict[str, Any]], family_key: str
+) -> int:
+    if any(
+        str(candidate.get("adapter") or "").strip().lower() != "static" for candidate in family_rows
+    ):
+        return 0
+    if _is_career_static_alias_of_homepage_source(row, family_rows, family_key):
+        return 1
+    if _is_homepage_static_alias_of_career_source(row, family_rows, family_key):
+        return -1
+    return 0
+
+
 def _duplicate_winner_score(
     row: dict[str, Any], source_state_by_key: dict[str, dict[str, Any]]
 ) -> tuple[int, int, int, int, int, int, str]:
@@ -115,6 +264,25 @@ def _duplicate_winner_score(
         _coerce_int(row.get("rankScore") or row.get("score"), 0),
         _metadata_score(row),
         source_identity(row),
+    )
+
+
+def _duplicate_winner_order_score(
+    row: dict[str, Any],
+    source_state_by_key: dict[str, dict[str, Any]],
+    family_rows: list[dict[str, Any]],
+    family_key: str,
+) -> tuple[int, int, int, int, int, int, int, str]:
+    base = _duplicate_winner_score(row, source_state_by_key)
+    return (
+        base[0],
+        _static_destination_preference(row, family_rows, family_key),
+        base[1],
+        base[2],
+        base[3],
+        base[4],
+        base[5],
+        base[6],
     )
 
 
@@ -240,7 +408,12 @@ def duplicate_family_conflict_cards(
             continue
         ordered_rows = sorted(
             family_rows,
-            key=lambda row: _duplicate_winner_score(row, source_state_by_key),
+            key=lambda row: _duplicate_winner_order_score(
+                row,
+                source_state_by_key,
+                family_rows,
+                family_key,
+            ),
             reverse=True,
         )
         winner = ordered_rows[0]

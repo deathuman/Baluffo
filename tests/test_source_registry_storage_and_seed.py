@@ -131,3 +131,69 @@ def test_default_azra_seed_uses_current_static_count_for_provider_replacement() 
     assert conflict["safeAutomation"]["targetIds"] == [
         "static:listing_url:https://azragames.com/careers/#opening"
     ]
+
+
+def test_default_bonfire_seed_lets_provider_replace_static_aliases() -> None:
+    active_rows = json.loads(
+        Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
+    )
+    rows_by_id = {str(row.get("id") or ""): row for row in active_rows}
+    provider = rows_by_id["greenhouse:slug:bonfirestudiosinc"]
+    default_static = rows_by_id[
+        "static:listing_url:https://bonfirestudios.com/work-with-us/index.html"
+    ]
+    runtime_static_alias = {
+        **default_static,
+        "id": "static:listing_url:https://bonfirestudios.com/work-with-us",
+        "listing_url": "https://bonfirestudios.com/work-with-us",
+        "careersUrl": "https://bonfirestudios.com/work-with-us",
+        "pages": ["https://bonfirestudios.com/work-with-us"],
+        "rankScore": 58,
+    }
+
+    assert provider["jobsFound"] == 6
+    assert default_static["jobsFound"] == 6
+    assert default_static["sampleCount"] == 6
+
+    payload = derive_registry_conflict_queue(
+        {"active": [runtime_static_alias, default_static, provider], "pending": [], "rejected": []}
+    )
+    conflict = payload["conflicts"][0]
+
+    assert conflict["winner"]["id"] == "greenhouse:slug:bonfirestudiosinc"
+    assert conflict["safeAutomation"]["eligible"] is True
+    assert conflict["safeAutomation"]["targetIds"] == [
+        "static:listing_url:https://bonfirestudios.com/work-with-us",
+        "static:listing_url:https://bonfirestudios.com/work-with-us/index.html",
+    ]
+
+
+def test_default_ten_chambers_seed_keeps_valid_empty_careers_source_over_homepage() -> None:
+    active_rows = json.loads(
+        Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
+    )
+    rows_by_id = {str(row.get("id") or ""): row for row in active_rows}
+    careers = rows_by_id["static:listing_url:https://careers.10chambers.com/jobs"]
+    stale_homepage = {
+        "id": "static:listing_url:https://10chambers.com",
+        "name": "10 Chambers (GameDevMap)",
+        "studio": "10 Chambers",
+        "adapter": "static",
+        "registryState": "active",
+        "jobsFound": 2,
+        "sampleCount": 2,
+        "rankScore": 35,
+        "score": 22,
+    }
+
+    assert careers["jobsFound"] == 0
+    assert careers["sampleCount"] == 0
+
+    payload = derive_registry_conflict_queue(
+        {"active": [careers, stale_homepage], "pending": [], "rejected": []}
+    )
+    conflict = payload["conflicts"][0]
+
+    assert conflict["winner"]["id"] == "static:listing_url:https://careers.10chambers.com/jobs"
+    assert conflict["safeAutomation"]["eligible"] is True
+    assert conflict["safeAutomation"]["targetIds"] == ["static:listing_url:https://10chambers.com"]

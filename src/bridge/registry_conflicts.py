@@ -462,6 +462,10 @@ def _is_parent_child_path(left: str, right: str) -> bool:
     return left.startswith(f"{right}/") or right.startswith(f"{left}/")
 
 
+def _hosts_same_or_subdomain(left: str, right: str) -> bool:
+    return left == right or left.endswith(f".{right}") or right.endswith(f".{left}")
+
+
 def _is_careerish_path(path: str) -> bool:
     return bool(
         set(re.split(r"[^a-z0-9]+", path.lower()))
@@ -1189,6 +1193,23 @@ def _has_parent_child_listing_path(
     )
 
 
+def _has_homepage_to_career_site_path(
+    *,
+    family_key: str,
+    winner_host_paths: set[tuple[str, str]],
+    loser_host_paths: set[tuple[str, str]],
+) -> bool:
+    return any(
+        _is_careerish_path(winner_path)
+        and _is_homepage_path(loser_path)
+        and _host_matches_family(winner_host, family_key)
+        and _host_matches_family(loser_host, family_key)
+        and _hosts_same_or_subdomain(winner_host, loser_host)
+        for winner_host, winner_path in winner_host_paths
+        for loser_host, loser_path in loser_host_paths
+    )
+
+
 def _static_listing_variant_blockers(
     *,
     family_key: str,
@@ -1198,17 +1219,31 @@ def _static_listing_variant_blockers(
 ) -> list[str]:
     if not winner_host_paths or not loser_host_paths:
         return ["requires_static_urls"]
-    if not shared_hosts:
+    homepage_to_career_site = _has_homepage_to_career_site_path(
+        family_key=family_key,
+        winner_host_paths=winner_host_paths,
+        loser_host_paths=loser_host_paths,
+    )
+    if not shared_hosts and not homepage_to_career_site:
         return ["requires_same_static_host"]
-    if not any(_host_matches_family(host, family_key) for host in shared_hosts):
+    if shared_hosts and not any(_host_matches_family(host, family_key) for host in shared_hosts):
         return ["requires_studio_specific_host"]
-    if not _has_parent_child_listing_path(winner_host_paths, loser_host_paths):
+    if not (
+        _has_parent_child_listing_path(winner_host_paths, loser_host_paths)
+        or homepage_to_career_site
+    ):
         return ["requires_parent_child_listing_path"]
     return []
 
 
-def _static_listing_evidence_blockers(winner: dict[str, Any], loser: dict[str, Any]) -> list[str]:
+def _static_listing_evidence_blockers(
+    winner: dict[str, Any], loser: dict[str, Any], *, homepage_to_career_site: bool = False
+) -> list[str]:
     blocked: list[str] = []
+    if homepage_to_career_site:
+        if _positive_evidence_score(winner) < _positive_evidence_score(loser):
+            blocked.append("winner_evidence_weaker_than_homepage")
+        return blocked
     if _row_jobs_evidence(winner) <= _row_jobs_evidence(loser):
         blocked.append("winner_jobs_not_stronger")
     if _positive_evidence_score(winner) < _positive_evidence_score(loser) + 30:
@@ -1523,6 +1558,11 @@ def _analyze_static_listing_variant_automation(
     winner_host_paths = _static_url_host_paths(winner)
     loser_host_paths = _static_url_host_paths(loser)
     shared_hosts = _shared_static_hosts(winner_host_paths, loser_host_paths)
+    homepage_to_career_site = _has_homepage_to_career_site_path(
+        family_key=family_key,
+        winner_host_paths=winner_host_paths,
+        loser_host_paths=loser_host_paths,
+    )
     blocked.extend(
         _static_listing_variant_blockers(
             family_key=family_key,
@@ -1531,7 +1571,13 @@ def _analyze_static_listing_variant_automation(
             shared_hosts=shared_hosts,
         )
     )
-    blocked.extend(_static_listing_evidence_blockers(winner, loser))
+    blocked.extend(
+        _static_listing_evidence_blockers(
+            winner,
+            loser,
+            homepage_to_career_site=homepage_to_career_site,
+        )
+    )
     target_id = _row_identity(loser)
     blocked.extend(_target_identity_blocker(target_id))
 
@@ -1540,12 +1586,20 @@ def _analyze_static_listing_variant_automation(
             "Not eligible for safe static listing-variant auto-demotion.",
             sorted(set(blocked)),
         )
-    shared_host = sorted(shared_hosts)[0]
+    shared_host = sorted(shared_hosts)[0] if shared_hosts else "related careers host"
+    path_text = (
+        "career/homepage URL variants" if homepage_to_career_site else "parent/child listing paths"
+    )
+    evidence_text = (
+        "the homepage row is a weaker job-source alias."
+        if homepage_to_career_site
+        else "the advisory winner has materially stronger job evidence."
+    )
     return _eligible_automation(
         target_id,
         (
-            f"{family_key} has two active static rows on {shared_host} with parent/child "
-            "listing paths; the advisory winner has materially stronger job evidence."
+            f"{family_key} has two active static rows on {shared_host} with {path_text}; "
+            f"{evidence_text}"
         ),
         action=SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION,
         label=SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_LABEL,

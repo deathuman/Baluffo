@@ -8099,8 +8099,8 @@
       "evidence_signal",
       "live_jobs_detected"
     ],
-    "sampleCount": 13,
-    "jobsFound": 13,
+    "sampleCount": 0,
+    "jobsFound": 0,
     "confidence": "high",
     "lastProbedAt": "2026-04-10T12:55:25.743586+00:00",
     "deferred": false,
@@ -11453,8 +11453,8 @@
       "evidence_signal",
       "live_jobs_detected"
     ],
-    "sampleCount": 8,
-    "jobsFound": 8,
+    "sampleCount": 6,
+    "jobsFound": 6,
     "confidence": "high",
     "lastProbedAt": "2026-04-10T12:55:25.900537+00:00",
     "deferred": false,
