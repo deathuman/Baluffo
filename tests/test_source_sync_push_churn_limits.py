@@ -150,3 +150,54 @@ def test_snapshot_size_warning_and_rejection(source_sync_test_root, monkeypatch)
         sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
     assert ctx.value.code == "snapshot_too_large"
     assert len(rejection_opener.calls) == 2
+
+
+def test_default_snapshot_limit_allows_large_runtime_snapshot(source_sync_test_root, monkeypatch):
+    source_sync_test_root.write_packaged_config()
+    old_limit = 5 * 1024 * 1024
+    huge_url = "https://example.com/jobs/" + ("a" * 256)
+    local = {
+        "active": [
+            {
+                "adapter": "static",
+                "listing_url": f"{huge_url}/{idx}",
+                "name": f"{'x' * 900}-{idx}",
+            }
+            for idx in range(6_000)
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+    fixed_now = "2026-05-08T10:55:07.978053+00:00"
+    monkeypatch.setattr(sync, "now_iso", lambda: fixed_now)
+    snapshot = sync.build_snapshot(local)
+    snapshot_size_bytes = len(
+        json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    )
+    assert old_limit < snapshot_size_bytes < sync.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES
+    opener = _Recorder(
+        [
+            _FakeResponse(201, {"token": "inst_token", "expires_at": "2099-03-10T10:00:00Z"}),
+            HTTPError(
+                url="https://api.github.com/repos/owner/repo/contents/baluffo/source-sync.json?ref=main",
+                code=404,
+                msg="Not Found",
+                hdrs={},
+                fp=None,
+            ),
+            _FakeResponse(201, {"content": {"sha": "newsha"}}),
+        ]
+    )
+    cfg = sync.resolve_sync_config(settings={"enabled": True}, env=source_sync_test_root.env)
+    original_build_jwt = sync.build_app_jwt
+    try:
+        sync.build_app_jwt = lambda *_a, **_k: "app.jwt.token"  # type: ignore[assignment]
+        result = sync.push_sources_snapshot(cfg, local, opener=opener)
+    finally:
+        sync.build_app_jwt = original_build_jwt  # type: ignore[assignment]
+
+    assert result["pushed"] is True
+    assert result["sizeBytes"] == snapshot_size_bytes
+    assert result["maxSnapshotSizeBytes"] == sync.DEFAULT_MAX_SNAPSHOT_SIZE_BYTES

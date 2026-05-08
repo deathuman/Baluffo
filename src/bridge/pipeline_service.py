@@ -369,6 +369,8 @@ class PipelineService:
             pipeline_active = bool(self._status.get("active"))
             pipeline_stage = str(self._status.get("stage") or "").strip().lower()
         if not pipeline_active or pipeline_stage != "fetch":
+            if pipeline_stage == "sync_push":
+                self._recover_inactive_worker_after_terminal_sync()
             return
         worker = self._runtime.active_thread
         if worker is not None and worker.is_alive():
@@ -399,6 +401,38 @@ class PipelineService:
             final_output_count=self._current_fetch_output_count(),
             error="pipeline_worker_inactive_after_fetch_completed",
         )
+
+    def _recover_inactive_worker_after_terminal_sync(self) -> None:
+        worker = self._runtime.active_thread
+        if worker is not None and worker.is_alive():
+            return
+        snapshot = self._get_child_task_snapshot("sync")
+        if snapshot is None or bool(getattr(snapshot, "active", False)):
+            return
+        child_run_id = str(getattr(snapshot, "run_id", "") or "").strip()
+        finished_at = str(getattr(snapshot, "finished_at", "") or "").strip()
+        if not child_run_id or not finished_at:
+            return
+        terminal_status = str(getattr(snapshot, "terminal_status", "") or "").strip().lower()
+        summary = getattr(snapshot, "summary", {})
+        if not isinstance(summary, dict):
+            summary = {}
+        error = str(summary.get("error") or "sync push failed").strip()
+        self._bridge_log(
+            "warn",
+            "jobs_pipeline_recovered_terminal_sync_after_worker_inactive",
+            childRunId=child_run_id,
+            finishedAt=finished_at,
+            terminalStatus=terminal_status,
+        )
+        if terminal_status in {"error", "failed", "failure"}:
+            self._set_completed(
+                status="error",
+                final_output_count=self._current_fetch_output_count(),
+                error=f"sync_push: {error}",
+            )
+            return
+        self._set_completed(status="ok", final_output_count=self._current_fetch_output_count())
 
     def _fail_child_lifecycle(
         self,
@@ -603,7 +637,23 @@ class PipelineService:
     def _run_registry_conflict_adjudication_stage(self, run_id: str) -> None:
         if not callable(self._run_registry_conflict_adjudication):
             return
+        with self._lock:
+            enabled = bool(self._status.get("runRegistryConflictAdjudication"))
+        if not enabled:
+            self._bridge_log(
+                "info",
+                "registry_conflict_adjudication_skipped",
+                runId=run_id,
+                reason="not_enabled_for_pipeline",
+            )
+            return
         try:
+            self._mark_stage(
+                stage="registry_conflicts",
+                current_step=2,
+                total_steps=3,
+                label="Checking registry conflicts...",
+            )
             result = self._run_registry_conflict_adjudication(
                 {
                     "applyAutopilot": True,
@@ -768,6 +818,9 @@ class PipelineService:
                     "error": "",
                     "updatesFound": False,
                     "refreshRecommended": False,
+                    "runRegistryConflictAdjudication": bool(
+                        (payload or {}).get("runRegistryConflictAdjudication")
+                    ),
                     "baselineOutputCount": int(baseline_output_count),
                     "finalOutputCount": 0,
                     "jobsPageLoadedCount": int(max(0, jobs_page_loaded_count)),

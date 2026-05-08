@@ -81,13 +81,10 @@ def build_fetch_task_progress_payload(
     ratio = 0.0
     if phase_key == "executing_sources" and total_tasks > 0:
         mode = "determinate"
-        ratio = 0.10 + (0.70 * (completed_tasks / max(1, total_tasks)))
-    elif phase_key == "merging_results":
+        ratio = completed_tasks / max(1, total_tasks)
+    elif phase_key in {"merging_results", "writing_outputs"} and total_tasks > 0:
         mode = "determinate"
-        ratio = 0.88
-    elif phase_key == "writing_outputs":
-        mode = "determinate"
-        ratio = 0.96
+        ratio = completed_tasks / max(1, total_tasks)
     elif phase_key == "completed":
         mode = "determinate"
         ratio = 1.0

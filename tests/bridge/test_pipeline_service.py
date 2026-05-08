@@ -229,6 +229,63 @@ def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_fetch_r
     assert cleared == []
 
 
+def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_sync_failure() -> None:
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "sync_push",
+        "progress": {
+            "currentStep": 3,
+            "totalSteps": 3,
+            "percent": 100,
+            "label": "Running sync push...",
+        },
+        "startedAt": "2026-05-06T18:00:00Z",
+        "finishedAt": "",
+        "error": "",
+        "baselineOutputCount": 0,
+        "finalOutputCount": 0,
+        "jobsPageLoadedCount": 0,
+    }
+    failed_runs: list[dict[str, Any]] = []
+
+    service = _make_pipeline_service(
+        pipeline_status=status,
+        current_fetch_output_count=lambda: 42,
+        get_projected_run_history=lambda: LifecycleProjection(
+            rows=[],
+            child_tasks={
+                "sync": ChildTaskSnapshot(
+                    task_type="sync",
+                    run_id="sync_1",
+                    started_at="2026-05-06T18:40:00Z",
+                    finished_at="2026-05-06T18:40:08Z",
+                    active=False,
+                    terminal_status="error",
+                    summary={"error": "Snapshot size exceeded"},
+                    outputs={},
+                    task_progress={},
+                    explicit_dead=True,
+                    diagnostics=(),
+                )
+            },
+            diagnostics=[],
+        ),
+        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            failed_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        ),
+    )
+
+    payload = service.get_status_payload()
+
+    assert payload["active"] is False
+    assert payload["stage"] == "error"
+    assert payload["error"] == "sync_push: Snapshot size exceeded"
+    assert payload["finalOutputCount"] == 42
+    assert failed_runs[-1]["runId"] == "pipeline_1"
+    assert failed_runs[-1]["summary"]["error"] == "sync_push: Snapshot size exceeded"
+
+
 def _project_discovery_history(
     *,
     task_state: dict[str, Any],

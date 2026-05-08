@@ -173,7 +173,7 @@ def _lifecycle_child_tasks(
     rows: list[dict[str, Any]],
 ) -> dict[str, _run_history_api.ChildTaskSnapshot]:
     child_tasks: dict[str, _run_history_api.ChildTaskSnapshot] = {}
-    for task_type in ("fetch", "discovery"):
+    for task_type in ("fetch", "discovery", "sync"):
         candidates = [row for row in rows if _task_type(row) == task_type and _run_id(row)]
         if not candidates:
             continue
@@ -491,6 +491,13 @@ class OpsApi:
 
     def get_current_task_state_payload(self) -> dict[str, Any]:
         lifecycle_current = [dict(row) for row in self._deps.get_lifecycle_current_runs()]
+        projection = self.get_projected_run_history()
+        fetch_live_payload = _ops_task_live.get_task_live_payload(
+            self._task_live_context(),
+            "fetch",
+            projection=projection,
+        )
+        fetch_live_run_id = _run_id(fetch_live_payload)
         pipeline_status = self._deps.get_jobs_pipeline_status_payload()
         pipeline_row = (
             _pipeline_status_to_task_row(pipeline_status)
@@ -544,6 +551,30 @@ class OpsApi:
                     **as_json_object(row.get("summary")),
                     "stage": pipeline_stage
                     or str(as_json_object(row.get("summary")).get("stage") or ""),
+                }
+            elif (
+                task_type == "fetch"
+                and fetch_live_run_id
+                and run_id == fetch_live_run_id
+                and bool(fetch_live_payload.get("active"))
+            ):
+                route_row = {
+                    **route_row,
+                    **fetch_live_payload,
+                    "id": run_id,
+                    "runId": run_id,
+                    "type": "fetch",
+                    "taskType": "fetch",
+                    "active": True,
+                    "finishedAt": "",
+                    "lifecycleStatus": str(
+                        row.get("lifecycleStatus") or row.get("status") or ""
+                    ).strip(),
+                    "parentRunId": parent_run_id,
+                    "parentTaskType": parent_task_type,
+                    "ownerKind": owner_kind,
+                    "ownerPid": row.get("ownerPid"),
+                    "stage": str(row.get("stage") or "").strip(),
                 }
             task_by_key[(task_type, run_id)] = route_row
         if pipeline_row and pipeline_run_id:
