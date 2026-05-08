@@ -105,6 +105,10 @@ def _copy_report_fields(
     entry["lastCheckedAt"] = finished_at
     entry["lastStatus"] = clean_text(report.get("status"))
     entry["lastAdapter"] = clean_text(report.get("adapter")) or clean_text(entry.get("lastAdapter"))
+    for key in ("sourceId", "sourceIdentity", "listingUrl", "sourceUrl"):
+        value = clean_text(report.get(key))
+        if value:
+            entry[key] = value
     entry["lastDurationMs"] = int(report.get("durationMs") or 0)
     entry["lastFetchedCount"] = int(report.get("fetchedCount") or 0)
     entry["lastKeptCount"] = int(report.get("keptCount") or 0)

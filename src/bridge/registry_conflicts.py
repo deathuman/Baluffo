@@ -422,20 +422,49 @@ def _json_value(value: Any) -> str:
 
 def _source_state_rows_by_name(source_state_payload: Any) -> dict[str, dict[str, Any]]:
     rows = _as_dict(_as_dict(source_state_payload).get("sources"))
-    return {str(key).strip().lower(): row for key, row in rows.items() if isinstance(row, dict)}
+    by_key: dict[str, dict[str, Any]] = {}
+    for raw_key, row in rows.items():
+        if not isinstance(row, dict):
+            continue
+        for key in (
+            str(raw_key).strip().lower(),
+            _clean_text(row.get("sourceId")).lower(),
+            _clean_text(row.get("sourceIdentity")).lower(),
+        ):
+            if key:
+                by_key[key] = row
+    return by_key
+
+
+def _source_state_lookup_keys(row: dict[str, Any]) -> list[str]:
+    keys: list[str] = []
+    for key in (
+        _clean_text(row.get("sourceId")),
+        _clean_text(row.get("id")),
+        source_identity(row),
+    ):
+        if key:
+            keys.append(key)
+            keys.append(f"static_source::{key}")
+    aliases = row.get("sourceStateAliases")
+    if isinstance(aliases, list):
+        keys.extend(_clean_text(alias) for alias in aliases)
+    keys.append(_clean_text(row.get("name")))
+    out: list[str] = []
+    seen: set[str] = set()
+    for key in keys:
+        lookup = key.strip().lower()
+        if lookup and lookup not in seen:
+            seen.add(lookup)
+            out.append(lookup)
+    return out
 
 
 def _source_state_row_for_registry_row(
     row: dict[str, Any], source_state_rows: dict[str, dict[str, Any]]
 ) -> tuple[dict[str, Any], str]:
-    for key in (
-        _clean_text(row.get("name")),
-        _clean_text(row.get("sourceId")),
-        _clean_text(row.get("id")),
-        source_identity(row),
-    ):
-        lookup = key.strip().lower()
-        if lookup and lookup in source_state_rows:
+    for lookup in _source_state_lookup_keys(row):
+        if lookup in source_state_rows:
             return source_state_rows[lookup], lookup
     return {}, ""
 
@@ -1261,6 +1290,22 @@ def _join_source_health_aliases(
         value = source_state_row.get(key)
         if value not in {"", None}:
             merged[key] = value
+    if not merged.get("lastSuccessfulFetchAt") and merged.get("lastSuccessAt"):
+        merged["lastSuccessfulFetchAt"] = merged.get("lastSuccessAt")
+    if not merged.get("lastSeenInFetchAt"):
+        merged["lastSeenInFetchAt"] = merged.get("lastCheckedAt") or merged.get("lastRunAt") or ""
+    if merged.get("lastJobsKept") in {"", None} and merged.get("lastKeptCount") not in {"", None}:
+        merged["lastJobsKept"] = merged.get("lastKeptCount")
+    if merged.get("failureCount") in {"", None} and merged.get("consecutiveFailures") not in {
+        "",
+        None,
+    }:
+        merged["failureCount"] = merged.get("consecutiveFailures")
+    if merged.get("zeroJobStreak") in {"", None} and merged.get("consecutiveZeroKept") not in {
+        "",
+        None,
+    }:
+        merged["zeroJobStreak"] = merged.get("consecutiveZeroKept")
     transition_reason = _clean_text(
         merged.get("pendingReason")
         or merged.get("quarantineReason")

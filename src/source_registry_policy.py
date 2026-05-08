@@ -23,7 +23,12 @@ from src.source_registry_state import (
 def _state_rows_by_key(source_state: Any) -> dict[str, dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if isinstance(source_state, dict):
-        for key, value in source_state.items():
+        raw_rows = (
+            source_state.get("sources")
+            if isinstance(source_state.get("sources"), dict)
+            else source_state
+        )
+        for key, value in raw_rows.items():
             if isinstance(value, dict):
                 row = dict(value)
                 row.setdefault("name", key)
@@ -35,6 +40,7 @@ def _state_rows_by_key(source_state: Any) -> dict[str, dict[str, Any]]:
         for key in (
             str(row.get("id") or "").strip().lower(),
             str(row.get("sourceId") or "").strip().lower(),
+            str(row.get("sourceIdentity") or "").strip().lower(),
             str(row.get("name") or "").strip().lower(),
         ):
             if key:
@@ -47,7 +53,11 @@ def _source_state_for_row(
 ) -> dict[str, Any]:
     for key in (
         source_identity(row),
+        f"static_source::{source_identity(row)}",
         str(row.get("sourceId") or "").strip().lower(),
+        f"static_source::{str(row.get('sourceId') or '').strip().lower()}",
+        str(row.get("id") or "").strip().lower(),
+        f"static_source::{str(row.get('id') or '').strip().lower()}",
         str(row.get("name") or "").strip().lower(),
     ):
         if key and key in source_state_by_key:

@@ -342,10 +342,19 @@ def _probe_score(probe: dict[str, Any]) -> tuple[int, int]:
 
 
 def _canonical_host_score(probe: dict[str, Any]) -> int:
-    host = urlparse(_clean(probe.get("finalUrl") or probe.get("endpointUrl"))).netloc.lower()
+    final = urlparse(_clean(probe.get("finalUrl") or probe.get("endpointUrl")))
+    endpoint = urlparse(_clean(probe.get("endpointUrl")))
+    host = final.netloc.lower()
     score = 0
     if host and not any(token in host for token in ("homeinteractive", "old", "legacy")):
         score += 1
+    if (
+        final.scheme
+        and endpoint.scheme
+        and final.netloc.lower() == endpoint.netloc.lower()
+        and final.path.rstrip("/") == endpoint.path.rstrip("/")
+    ):
+        score += 2
     if "focusentertainment" in host:
         score += 2
     return score

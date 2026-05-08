@@ -160,6 +160,11 @@ def _run_teamtailor_sources(
             adapter_name="teamtailor",
             studio=studio,
             source_name=source_name,
+            extra={
+                "sourceId": clean_text(source.get("id")),
+                "listingUrl": listing_url,
+                "sourceUrl": listing_url,
+            },
         )
         apply_provider_cache_decision(
             entry_report=entry_report,

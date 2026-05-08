@@ -130,3 +130,38 @@ def test_browser_escalation_state_update_remembers_attempts_and_successes() -> N
     assert success_entry["browserEscalationLastSuccessAt"] == success_finished_at
     assert success_entry["browserEscalationFailureCount"] == 0
     assert "browserEscalationEligible" not in success_entry
+
+
+def test_source_state_update_preserves_stable_source_identity_fields() -> None:
+    finished_at = "2026-05-08T10:00:00Z"
+    source_id = "teamtailor:listing_url:https://career.paradoxplaza.com/jobs"
+    state_rows = jobs_state.update_source_state_rows(
+        source_state_rows={},
+        source_reports=[
+            {
+                "name": "Paradox Careers",
+                "status": "ok",
+                "adapter": "teamtailor",
+                "sourceId": source_id,
+                "listingUrl": "https://career.paradoxplaza.com/jobs",
+                "sourceUrl": "https://career.paradoxplaza.com/jobs",
+                "fetchedCount": 25,
+                "keptCount": 25,
+                "error": "",
+                "details": [],
+            }
+        ],
+        canonical_rows=[{"source": "Paradox Careers"}],
+        finished_at=finished_at,
+        circuit_breaker_failures=0,
+        circuit_breaker_cooldown_minutes=30,
+    )
+
+    normalized = jobs_state.normalize_source_state_payload(
+        {"sources": state_rows},
+        updated_at=finished_at,
+    )
+    entry = normalized["sources"]["Paradox Careers"]
+    assert entry["sourceId"] == source_id
+    assert entry["listingUrl"] == "https://career.paradoxplaza.com/jobs"
+    assert entry["lastKeptCount"] == 25

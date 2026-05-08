@@ -358,6 +358,10 @@ def normalize_source_state_payload(
                 entry_src.get("googleSheetsRedirectCache")
             ),
             "lastAdapter": clean_text(entry_src.get("lastAdapter")),
+            "sourceId": clean_text(entry_src.get("sourceId")),
+            "sourceIdentity": clean_text(entry_src.get("sourceIdentity")),
+            "listingUrl": clean_text(entry_src.get("listingUrl")),
+            "sourceUrl": clean_text(entry_src.get("sourceUrl")),
             "lastSuccessAt": clean_text(entry_src.get("lastSuccessAt")),
             "lastNonEmptyAt": clean_text(entry_src.get("lastNonEmptyAt")),
             "lastFingerprint": clean_text(entry_src.get("lastFingerprint")),

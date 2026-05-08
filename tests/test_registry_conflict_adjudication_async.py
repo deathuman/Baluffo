@@ -76,3 +76,28 @@ def test_start_registry_conflict_adjudication_returns_running_without_waiting(
     assert calls[0]["runId"] == result["runId"]
     assert api.payload["status"] == "succeeded"
     assert api.payload["demoted"] == 1
+
+
+def test_best_probe_prefers_canonical_non_redirecting_source_on_equal_jobs() -> None:
+    probes = [
+        {
+            "sourceId": "teamtailor:listing_url:https://paradox-interactive.teamtailor.com/jobs",
+            "ok": True,
+            "jobsFound": 25,
+            "endpointUrl": "https://paradox-interactive.teamtailor.com/jobs",
+            "finalUrl": "https://career.paradoxplaza.com/jobs",
+            "newestJobDate": "2026-05-08",
+        },
+        {
+            "sourceId": "teamtailor:listing_url:https://career.paradoxplaza.com/jobs",
+            "ok": True,
+            "jobsFound": 25,
+            "endpointUrl": "https://career.paradoxplaza.com/jobs",
+            "finalUrl": "https://career.paradoxplaza.com/jobs",
+            "newestJobDate": "2026-05-08",
+        },
+    ]
+
+    best = adjudication._best_probe(probes)
+
+    assert best["sourceId"] == "teamtailor:listing_url:https://career.paradoxplaza.com/jobs"

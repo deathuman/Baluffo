@@ -84,6 +84,56 @@ def test_registry_conflicts_route_joins_source_health_aliases(tmp_path: Path) ->
     assert "priorityCounts" in payload["review"]["summary"]
 
 
+def test_registry_conflicts_prefers_stable_source_state_identity_over_duplicate_name() -> None:
+    canonical_id = "teamtailor:listing_url:https://career.paradoxplaza.com/jobs"
+    redirected_id = "teamtailor:listing_url:https://paradox-interactive.teamtailor.com/jobs"
+    state = {
+        "active": [
+            {
+                "id": redirected_id,
+                "name": "Paradox Interactive (Teamtailor)",
+                "studio": "Paradox Interactive",
+                "adapter": "teamtailor",
+                "registryState": "active",
+                "jobsFound": 16,
+            },
+            {
+                "id": canonical_id,
+                "name": "Paradox Interactive (Teamtailor)",
+                "studio": "Paradox Interactive",
+                "adapter": "teamtailor",
+                "registryState": "active",
+                "jobsFound": 20,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+    source_state = {
+        "schemaVersion": 1,
+        "sources": {
+            "Paradox Interactive (Teamtailor)": {
+                "lastStatus": "ok",
+                "lastKeptCount": 0,
+                "lastSuccessAt": "2026-04-10T15:18:56Z",
+            },
+            canonical_id: {
+                "lastStatus": "ok",
+                "lastKeptCount": 25,
+                "lastSuccessAt": "2026-05-08T10:00:00Z",
+            },
+        },
+    }
+
+    payload = derive_registry_conflict_queue(state, source_state)
+
+    card = payload["conflicts"][0]
+    assert card["winner"]["id"] == canonical_id
+    assert card["winner"]["sourceStateName"] == canonical_id
+    assert card["winner"]["lastJobsKept"] == 25
+    assert card["winner"]["lastSuccessfulFetchAt"] == "2026-05-08T10:00:00Z"
+
+
 def _conflict_bucket(state: dict[str, list[dict]]) -> str:
     payload = derive_registry_conflict_queue(state)
     assert payload["summary"]["conflictCount"] == 1
