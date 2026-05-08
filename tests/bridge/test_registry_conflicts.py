@@ -105,6 +105,43 @@ def _conflict_review(state: dict[str, list[dict]]) -> dict:
     }
 
 
+def test_registry_conflicts_prefers_static_row_with_more_live_job_evidence() -> None:
+    state = {
+        "active": [
+            {
+                "id": "greenhouse:slug:studio",
+                "name": "Studio (Greenhouse)",
+                "studio": "Studio",
+                "adapter": "greenhouse",
+                "registryState": "active",
+                "candidateState": "live",
+                "jobsFound": 1,
+                "rankScore": 80,
+            },
+            {
+                "id": "static:listing_url:https://studio.example/careers/jobs/",
+                "name": "Studio (Website)",
+                "studio": "Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "candidateState": "live",
+                "listing_url": "https://studio.example/careers/jobs/",
+                "jobsFound": 30,
+                "rankScore": 65,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    payload = derive_registry_conflict_queue(state)
+
+    assert payload["summary"]["conflictCount"] == 1
+    card = payload["conflicts"][0]
+    assert card["winner"]["id"] == "static:listing_url:https://studio.example/careers/jobs/"
+    assert card["winnerScore"]["lastKeptCount"] == 30
+
+
 def test_registry_conflicts_triage_exact_duplicate_source_identity() -> None:
     state = {
         "active": [

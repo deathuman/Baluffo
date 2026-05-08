@@ -145198,13 +145198,13 @@
     "company": "Krafton",
     "adapter": "static",
     "pages": [
-      "https://www.krafton.com/careers/"
+      "https://www.krafton.com/careers/jobs/"
     ],
-    "listing_url": "https://www.krafton.com/careers/",
+    "listing_url": "https://www.krafton.com/careers/jobs/",
     "nlPriority": false,
     "discoveryMethod": "gamedevmap",
     "discoveryStage": "generic_static",
-    "careersUrl": "https://www.krafton.com/careers/",
+    "careersUrl": "https://www.krafton.com/careers/jobs/",
     "evidenceSource": "gamedevmap",
     "evidenceTypes": [
       "gamedevmap_careers_url",
@@ -145229,7 +145229,7 @@
     "sourceDirectoryCountry": "South Korea",
     "sourceDirectoryAiResponse": "Correct (Gaming)",
     "sourceDirectoryComments": "Verified as gaming site by Gemini.",
-    "id": "static:listing_url:https://www.krafton.com/careers/",
+    "id": "static:listing_url:https://www.krafton.com/careers/jobs/",
     "score": 35,
     "reasons": [
       "evidence_signal",

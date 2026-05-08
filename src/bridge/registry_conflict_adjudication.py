@@ -27,6 +27,8 @@ from src.source_registry_state import transition_registry_to_pending
 ADJUDICATION_REASON = "registry_conflict_adjudication_auto_demote"
 ADJUDICATION_PATH_NAME = "registry-conflict-adjudication.json"
 _ADJUDICATION_LOCK = threading.RLock()
+_ADJUDICATION_JOB_LOCK = threading.Lock()
+_ADJUDICATION_JOB_THREAD: threading.Thread | None = None
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -53,6 +55,42 @@ def _artifact_path(api: Any) -> Any:
 
 def load_registry_conflict_adjudication(api: Any) -> dict[str, Any]:
     return _as_dict(api.load_json_object(_artifact_path(api), {}))
+
+
+def _running_adjudication_payload(
+    payload: dict[str, Any], *, run_id: str, started_at: str
+) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "status": "running",
+        "runId": run_id,
+        "startedAt": started_at,
+        "applyAutopilot": bool(payload.get("applyAutopilot")),
+        "trigger": _clean(payload.get("trigger")),
+        "checkedFamilyCount": 0,
+        "checkedSourceCount": 0,
+        "demoted": 0,
+        "appliedIds": [],
+        "families": [],
+        "summary": {
+            "autoDemoteApplied": 0,
+            "recommendedDemotion": 0,
+            "keepBoth": 0,
+            "needsReview": 0,
+            "probeFailed": 0,
+        },
+    }
+
+
+def _failed_adjudication_payload(
+    payload: dict[str, Any], *, run_id: str, started_at: str, error: str
+) -> dict[str, Any]:
+    return {
+        **_running_adjudication_payload(payload, run_id=run_id, started_at=started_at),
+        "status": "failed",
+        "finishedAt": _now_iso(),
+        "error": error,
+    }
 
 
 def _row_id(row: dict[str, Any]) -> str:
@@ -484,8 +522,8 @@ def run_registry_conflict_adjudication(
     data = _as_dict(payload)
     apply_autopilot = bool(data.get("applyAutopilot"))
     timeout_s = max(3, min(20, int(data.get("timeoutSeconds") or 8)))
-    run_id = f"conflict_check_{uuid.uuid4().hex[:10]}"
-    started_at = _now_iso()
+    run_id = _clean(data.get("runId")) or f"conflict_check_{uuid.uuid4().hex[:10]}"
+    started_at = _clean(data.get("startedAt")) or _now_iso()
     with _ADJUDICATION_LOCK:
         state = api.load_state()
         source_state_path = api.JOBS_FETCH_REPORT_PATH.with_name("jobs-source-state.json")
@@ -511,6 +549,7 @@ def run_registry_conflict_adjudication(
                 state = api.persist_state_and_auto_sync(state, reason=ADJUDICATION_REASON)
         result = {
             "ok": True,
+            "status": "succeeded",
             "runId": run_id,
             "startedAt": started_at,
             "finishedAt": _now_iso(),
@@ -536,6 +575,59 @@ def run_registry_conflict_adjudication(
         }
         api.save_json_atomic(_artifact_path(api), result)
         return result
+
+
+def start_registry_conflict_adjudication(
+    api: Any, payload: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    global _ADJUDICATION_JOB_THREAD
+
+    data = _as_dict(payload)
+    with _ADJUDICATION_JOB_LOCK:
+        if _ADJUDICATION_JOB_THREAD is not None and _ADJUDICATION_JOB_THREAD.is_alive():
+            current = load_registry_conflict_adjudication(api)
+            if current.get("status") == "running":
+                return {**current, "started": False, "alreadyRunning": True}
+            return {
+                "ok": True,
+                "status": "running",
+                "started": False,
+                "alreadyRunning": True,
+            }
+
+        run_id = f"conflict_check_{uuid.uuid4().hex[:10]}"
+        started_at = _now_iso()
+        running = _running_adjudication_payload(data, run_id=run_id, started_at=started_at)
+        api.save_json_atomic(_artifact_path(api), running)
+
+        def _worker() -> None:
+            try:
+                run_registry_conflict_adjudication(
+                    api,
+                    {
+                        **data,
+                        "runId": run_id,
+                        "startedAt": started_at,
+                    },
+                )
+            except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                api.save_json_atomic(
+                    _artifact_path(api),
+                    _failed_adjudication_payload(
+                        data,
+                        run_id=run_id,
+                        started_at=started_at,
+                        error=str(exc),
+                    ),
+                )
+
+        _ADJUDICATION_JOB_THREAD = threading.Thread(
+            target=_worker,
+            name=f"registry-conflict-adjudication-{run_id}",
+            daemon=True,
+        )
+        _ADJUDICATION_JOB_THREAD.start()
+        return {**running, "started": True, "alreadyRunning": False}
 
 
 def overlay_adjudication(
@@ -570,4 +662,5 @@ __all__ = [
     "load_registry_conflict_adjudication",
     "overlay_adjudication",
     "run_registry_conflict_adjudication",
+    "start_registry_conflict_adjudication",
 ]

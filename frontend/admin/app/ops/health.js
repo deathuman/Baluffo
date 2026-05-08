@@ -393,11 +393,14 @@ export function createOpsHealthController({
   }
 
   function renderRegistryConflictsQueue(payload = state.latestRegistryConflictsPayload || {}) {
+    const adjudication = getObjectValue(payload?.adjudication);
+    const conflictCheckRunning = Boolean(state.registryConflictCheckRunning)
+      || String(adjudication?.status || "") === "running";
     renderAdminRegistryConflictsImpl(refs.adminRegistryConflictsReviewEl, payload || {}, {
       onRegistryConflictAction: handleRegistryConflictAction,
       onRegistryConflictSafeAutomation: handleRegistryConflictSafeAutomation,
       onRegistryConflictCheck: handleRegistryConflictCheck,
-      checkingConflicts: Boolean(state.registryConflictCheckRunning)
+      checkingConflicts: conflictCheckRunning
     });
   }
 
@@ -409,14 +412,29 @@ export function createOpsHealthController({
       const result = await postBridge("/registry/conflicts/check-sources", {
         applyAutopilot: Boolean(options?.applyAutopilot)
       });
+      const started = Boolean(result?.started);
+      const alreadyRunning = Boolean(result?.alreadyRunning);
       const demoted = Number(result?.demoted || 0);
       const checked = Number(result?.checkedSourceCount || 0);
-      showToast(
-        options?.applyAutopilot
-          ? `Conflict source check finished: ${demoted} demoted, ${checked} checked.`
-          : `Conflict source check finished: ${checked} checked.`,
-        "success"
-      );
+      if (started || alreadyRunning || String(result?.status || "") === "running") {
+        showToast(
+          alreadyRunning
+            ? "Conflict source check is already running."
+            : (
+              options?.applyAutopilot
+                ? "Conflict source check started; high-confidence recommendations will apply when probes finish."
+                : "Conflict source check started."
+            ),
+          "success"
+        );
+      } else {
+        showToast(
+          options?.applyAutopilot
+            ? `Conflict source check finished: ${demoted} demoted, ${checked} checked.`
+            : `Conflict source check finished: ${checked} checked.`,
+          "success"
+        );
+      }
       await loadOpsHealthData();
     } catch (err) {
       showToast(`Could not check conflicting sources: ${getErrorMessage(err)}`, "error");
@@ -594,6 +612,7 @@ export function createOpsHealthController({
         );
       if (registryConflictsResult.status === "fulfilled" && registryConflictsPayload && typeof registryConflictsPayload === "object") {
         state.latestRegistryConflictsPayload = registryConflictsPayload;
+        state.registryConflictCheckRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
       }
       const runModel = deriveAdminRunsModel(
         {
@@ -608,6 +627,7 @@ export function createOpsHealthController({
           .map(row => taskStateController.getTaskType(row))
           .filter(Boolean)
       );
+      const registryConflictRunning = String(registryConflictsPayload?.adjudication?.status || "") === "running";
       taskStateController.syncLiveBusyFlags(liveTypes);
       taskStateController.maybeAttachLiveTaskRows(liveTaskRows);
       const frontendPerfCounters = getFrontendPerfCounters();
@@ -690,7 +710,7 @@ export function createOpsHealthController({
         renderAdminOpsTrendsImpl(refs.adminOpsTrendsEl, historyRuns);
       });
       adminDispatch.dispatch({ type: adminActions.OPS_REFRESHED, payload: { at: new Date().toISOString() } });
-      scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0));
+      scheduleOpsHealthPolling(getOpsPollIntervalMs(liveTypes.size > 0 || registryConflictRunning));
     } catch (err) {
       taskStateController.resetLifecycleTaskState();
       setOpsPlaceholders(`Ops health unavailable: ${getErrorMessage(err)}`);

@@ -77,6 +77,17 @@ def _metadata_score(row: dict[str, Any]) -> int:
     return score
 
 
+def _row_jobs_evidence(row: dict[str, Any], state: dict[str, Any]) -> int:
+    return max(
+        _coerce_int(state.get("lastKeptCount"), 0),
+        _coerce_int(state.get("lastJobsKept"), 0),
+        _coerce_int(row.get("lastKeptCount"), 0),
+        _coerce_int(row.get("lastJobsKept"), 0),
+        _coerce_int(row.get("jobsFound"), 0),
+        _coerce_int(row.get("sampleCount"), 0),
+    )
+
+
 def _duplicate_winner_score(
     row: dict[str, Any], source_state_by_key: dict[str, dict[str, Any]]
 ) -> tuple[int, int, int, int, int, int, str]:
@@ -88,7 +99,7 @@ def _duplicate_winner_score(
     )
     return (
         0 if quarantined else 1,
-        _coerce_int(state.get("lastKeptCount"), 0),
+        _row_jobs_evidence(row, state),
         1 if row_status in {"ok", "success", "healthy"} else 0,
         _adapter_priority(row),
         _coerce_int(row.get("rankScore") or row.get("score"), 0),

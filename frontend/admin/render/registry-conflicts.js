@@ -460,7 +460,7 @@ function renderConflictDiff(cardIndex, diff, winner) {
   `;
 }
 
-function renderSafeAutomationCard(card, cardIndex) {
+function renderSafeAutomationCard(card, cardIndex, disabled = false) {
   const safeAutomation = safeAutomationValue(card);
   if (!safeAutomation.eligible) return "";
   return `
@@ -473,12 +473,13 @@ function renderSafeAutomationCard(card, cardIndex) {
         data-registry-conflict-safe-automation-card-index="${cardIndex}"
         data-registry-conflict-safe-automation-action="${escapeHtml(safeAutomation.action)}"
         data-registry-conflict-safe-automation-ids="${escapeHtml(safeAutomation.targetIds.join(","))}"
+        ${disabled ? "disabled" : ""}
       >${escapeHtml(safeAutomation.label)}</button>
     </div>
   `;
 }
 
-function renderConflictCard(card, cardIndex) {
+function renderConflictCard(card, cardIndex, options = {}) {
   const winner = objectValue(card?.winner);
   const rows = listValue(card?.rows);
   const rationale = listValue(card?.winnerRationale);
@@ -516,7 +517,7 @@ function renderConflictCard(card, cardIndex) {
         <span>${escapeHtml(suggestedDisposition)} · ${escapeHtml(reviewReason)}</span>
       </div>
       ${renderAdjudicationCard(card)}
-      ${renderSafeAutomationCard(card, cardIndex)}
+      ${renderSafeAutomationCard(card, cardIndex, Boolean(options?.disableSafeAutomation))}
       <div class="admin-registry-conflict-rationale">
         ${rationale.length ? rationale.map(renderRationaleChip).join("") : `<span class="muted">No rationale available.</span>`}
       </div>
@@ -534,7 +535,7 @@ function renderConflictCard(card, cardIndex) {
   `;
 }
 
-function renderSafeAutomationToolbar(visibleConflicts) {
+function renderSafeAutomationToolbar(visibleConflicts, disabled = false) {
   const eligible = eligibleSafeAutomations(visibleConflicts);
   if (!eligible.length) return "";
   const actions = new Map();
@@ -559,6 +560,7 @@ function renderSafeAutomationToolbar(visibleConflicts) {
       data-registry-conflict-safe-automation-action="${escapeHtml(entry.action)}"
       data-registry-conflict-safe-automation-route="${escapeHtml(entry.route)}"
       data-registry-conflict-safe-automation-ids="${escapeHtml(entry.targetIds.join(","))}"
+      ${disabled ? "disabled" : ""}
     >${escapeHtml(entry.label)} · ${entry.targetIds.length.toLocaleString()}</button>
   `).join("");
   return `
@@ -576,19 +578,27 @@ function renderSafeAutomationToolbar(visibleConflicts) {
 
 function renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts) {
   const adjudication = adjudicationValue(payload);
+  const running = checkingConflicts || stringValue(adjudication?.status) === "running";
+  const applyAutopilot = Boolean(adjudication?.applyAutopilot);
   const checkedAt = stringValue(adjudication?.finishedAt, "");
+  const startedAt = stringValue(adjudication?.startedAt, "");
   const demoted = Number(adjudication?.demoted || 0);
   const recommended = Number(objectValue(adjudication?.summary)?.recommendedDemotion || 0);
-  const disabled = checkingConflicts || !visibleConflicts.length;
-  const checkLabel = checkingConflicts ? "Checking conflicts..." : "Check conflicting sources";
+  const disabled = running || !visibleConflicts.length;
+  const checkLabel = running && !applyAutopilot ? "Checking conflicts..." : "Check conflicting sources";
+  const applyLabel = running && applyAutopilot
+    ? "Applying recommendations..."
+    : "Apply high-confidence recommendations";
+  const statusCopy = running
+    ? `Check running${startedAt ? ` since ${escapeHtml(formatFieldValue("startedAt", startedAt))}` : ""}. Buttons are locked until the bridge reports completion.`
+    : `${checkedAt ? `Last checked ${escapeHtml(formatFieldValue("finishedAt", checkedAt))}; ` : "No conflict source check has run yet. "}${demoted.toLocaleString()} demoted, ${recommended.toLocaleString()} recommended.`;
   return `
     <div class="admin-registry-conflict-triage">
       <div class="admin-registry-conflict-triage-head">
         <div>
           <div class="admin-registry-conflict-family">Conflict source checks</div>
           <div class="admin-registry-conflict-summary">
-            ${checkedAt ? `Last checked ${escapeHtml(formatFieldValue("finishedAt", checkedAt))}; ` : "No conflict source check has run yet. "}
-            ${demoted.toLocaleString()} demoted, ${recommended.toLocaleString()} recommended.
+            ${statusCopy}
           </div>
         </div>
         <div class="admin-registry-conflict-actions">
@@ -605,14 +615,14 @@ function renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)
             data-ui="${CHECK_TOKEN}"
             data-registry-conflict-apply-autopilot="true"
             ${disabled ? "disabled" : ""}
-          >Apply high-confidence recommendations</button>
+          >${escapeHtml(applyLabel)}</button>
         </div>
       </div>
     </div>
   `;
 }
 
-function renderConflictGroups(conflicts, review) {
+function renderConflictGroups(conflicts, review, options = {}) {
   const queues = listValue(review?.queues);
   const queueMeta = new Map(queues.map(queue => [stringValue(queue?.queue), queue]));
   const groups = new Map();
@@ -636,7 +646,7 @@ function renderConflictGroups(conflicts, review) {
             <span>${rows.length.toLocaleString()} shown · P${priority}</span>
           </summary>
           <div class="admin-registry-conflict-review-group-body">
-            ${rows.map(row => renderConflictCard(row.card, row.index)).join("")}
+            ${rows.map(row => renderConflictCard(row.card, row.index, options)).join("")}
           </div>
         </details>
       `;
@@ -659,12 +669,14 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
   const visibleConflicts = activeReviewFilter === "all"
     ? triageFilteredConflicts
     : triageFilteredConflicts.filter(card => stringValue(card?.reviewQueue, "p3_low_signal_manual") === activeReviewFilter);
-  const checkingConflicts = Boolean(options?.checkingConflicts);
+  const adjudication = adjudicationValue(payload);
+  const checkingConflicts = Boolean(options?.checkingConflicts)
+    || stringValue(adjudication?.status) === "running";
   const signature = stableOpsSignature({
     summary,
     triage,
     review,
-    adjudication: adjudicationValue(payload),
+    adjudication,
     activeTriageFilter,
     activeReviewFilter,
     checkingConflicts,
@@ -681,10 +693,10 @@ export function renderAdminRegistryConflicts(reviewEl, payload, options = {}) {
     ${renderTriageSummary(triage, activeTriageFilter)}
     ${renderReviewSummary(review, activeReviewFilter)}
     ${renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)}
-    ${renderSafeAutomationToolbar(visibleConflicts)}
+    ${renderSafeAutomationToolbar(visibleConflicts, checkingConflicts)}
     <div class="admin-registry-conflicts-list">
       ${visibleConflicts.length
-        ? renderConflictGroups(visibleConflicts, review)
+        ? renderConflictGroups(visibleConflicts, review, { disableSafeAutomation: checkingConflicts })
         : `<div class="muted">${escapeHtml(
             conflictCount
               ? "No registry conflict cards match the selected triage or review queue."

@@ -70,6 +70,17 @@ def _is_likely_careers_landing_url(url: str) -> bool:
     return len(parts) == 1 and any(hint in last for hint in CAREERS_URL_HINTS)
 
 
+def _careers_landing_rank(url: str, index: int) -> tuple[int, int, int, int]:
+    parts = _normalized_path_segments(url)
+    last = parts[-1] if parts else ""
+    listing_leaf_score = (
+        0
+        if last in {"jobs", "openings", "open-positions", "positions", "vacancies", "vacancy"}
+        else 1
+    )
+    return (listing_leaf_score, len(parts), len(url), index)
+
+
 def extract_explicit_careers_url_from_page(
     page_url: str,
     html: str,
@@ -102,11 +113,7 @@ def extract_explicit_careers_url_from_page(
     ranked_candidates = list(enumerate(landing_candidates))
     return min(
         ranked_candidates,
-        key=lambda item: (
-            len(_normalized_path_segments(item[1])),
-            len(item[1]),
-            item[0],
-        ),
+        key=lambda item: _careers_landing_rank(item[1], item[0]),
     )[1]
 
 

@@ -199,6 +199,29 @@ test("registry conflicts renderer shows review queue counts and suggestions", ()
   assert.match(reviewEl.innerHTML, /Review provider\/static replacement/);
 });
 
+test("registry conflicts renderer locks check controls while adjudication is running", () => {
+  const reviewEl = createReviewElement();
+  const payload = {
+    ...triagePayload(),
+    adjudication: {
+      status: "running",
+      startedAt: "2026-05-08T12:00:00+00:00",
+      applyAutopilot: true,
+      summary: { recommendedDemotion: 36 },
+      demoted: 0
+    }
+  };
+
+  renderAdminRegistryConflicts(reviewEl, payload);
+
+  assert.match(reviewEl.innerHTML, /Check running/);
+  assert.match(reviewEl.innerHTML, /Applying recommendations/);
+  assert.match(reviewEl.innerHTML, /Buttons are locked until the bridge reports completion/);
+  assert.match(reviewEl.innerHTML, /data-registry-conflict-apply-autopilot="false"[\s\S]*disabled/);
+  assert.match(reviewEl.innerHTML, /data-registry-conflict-apply-autopilot="true"[\s\S]*disabled/);
+  assert.match(reviewEl.innerHTML, /admin-registry-conflict-safe-automation-btn[\s\S]*disabled/);
+});
+
 test("registry conflicts renderer filters cards by triage bucket", () => {
   const filterButton = createButton({
     registryConflictFilterBucket: "active_active_likely_duplicate"

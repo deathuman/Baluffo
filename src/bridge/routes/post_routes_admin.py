@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.api import BridgeApi
+from src.bridge.registry_conflict_adjudication import start_registry_conflict_adjudication
 from src.bridge.registry_conflicts import (
     SAFE_AUTO_DEMOTE_ACTION,
     SAFE_AUTO_DEMOTE_ACTIONS,
@@ -186,7 +187,7 @@ def handle_post(handler: BridgeResponseWriter, *, api: BridgeApi, path: str, pay
         return True
 
     if path == "/registry/conflicts/check-sources":
-        result = api.check_registry_conflicts(data)
+        result = start_registry_conflict_adjudication(api, data)
         status = 200 if bool(result.get("ok")) else 409
         handler.send_json(result, status=status)
         return True
