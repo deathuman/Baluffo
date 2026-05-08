@@ -494,6 +494,46 @@ test("admin smoke: run history trims fetch live detail and discovery omits the l
       startedAt: nowIso
     }
   });
+  writePlaywrightBridgeJson("admin-task-lifecycle.json", {
+    schemaVersion: 1,
+    updatedAt: nowIso,
+    rows: [
+      {
+        schemaVersion: 1,
+        runId: fetchRunId,
+        taskType: "fetch",
+        parentRunId: "",
+        parentTaskType: "",
+        status: "running",
+        stage: "",
+        startedAt: nowIso,
+        heartbeatAt: nowIso,
+        finishedAt: "",
+        terminalReason: "",
+        ownerKind: "process",
+        ownerPid: process.pid,
+        progress: fetchReport.taskProgress,
+        summary: fetchReport.summary
+      },
+      {
+        schemaVersion: 1,
+        runId: discoveryRunId,
+        taskType: "discovery",
+        parentRunId: "",
+        parentTaskType: "",
+        status: "running",
+        stage: "",
+        startedAt: nowIso,
+        heartbeatAt: nowIso,
+        finishedAt: "",
+        terminalReason: "",
+        ownerKind: "process",
+        ownerPid: process.pid,
+        progress: discoveryReport.taskProgress,
+        summary: discoveryReport.summary
+      }
+    ]
+  });
   writePlaywrightBridgeJson("jobs-fetch-report.json", fetchReport);
   writePlaywrightBridgeJson("jobs-fetch-tasks.json", staleFetchTasks);
   writePlaywrightBridgeJson("source-discovery-report.json", discoveryReport);
