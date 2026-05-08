@@ -343,6 +343,41 @@ def test_start_fetcher_task_does_not_overwrite_fast_terminal_report():
     assert int((report.get("summary") or {}).get("outputCount") or 0) == 7
 
 
+def test_fetch_lifecycle_terminal_report_with_failed_sources_still_succeeds():
+    api = admin_bridge._get_task_launch_api()  # noqa: SLF001
+    finished: list[dict[str, object]] = []
+    failed: list[dict[str, object]] = []
+
+    closed = api._close_fetch_lifecycle_from_report(  # noqa: SLF001
+        run_id="fetch_done_1",
+        normalize_fetch_report_contract=lambda payload: payload,
+        load_json_object=lambda _path, _default: {
+            "runId": "fetch_done_1",
+            "startedAt": "2026-03-27T14:00:00+00:00",
+            "finishedAt": "2026-03-27T14:20:00+00:00",
+            "summary": {"outputCount": 34822, "failedSources": 313, "sourceCount": 2102},
+        },
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            finished.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        ),
+        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            failed.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        ),
+    )
+
+    assert closed is True
+    assert failed == []
+    assert finished == [
+        {
+            "runId": "fetch_done_1",
+            "taskType": "fetch",
+            "finished_at": "2026-03-27T14:20:00+00:00",
+            "terminal_reason": "completed",
+            "summary": {"outputCount": 34822, "failedSources": 313, "sourceCount": 2102},
+        }
+    ]
+
+
 def test_start_fetcher_task_spawn_failure_writes_terminal_error_report():
     with mock.patch.object(
         admin_bridge,

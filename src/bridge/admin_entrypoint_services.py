@@ -580,6 +580,12 @@ def get_pipeline_service() -> _PipelineServiceLike:
                         continue
                     if str(row.get("finishedAt") or "").strip():
                         return False
+                    try:
+                        owner_pid = int(row.get("ownerPid") or 0)
+                    except (TypeError, ValueError):
+                        owner_pid = 0
+                    if owner_pid > 0 and not root_mod.pid_is_running(owner_pid):
+                        return False
                     lifecycle_status = (
                         str(row.get("lifecycleStatus") or row.get("status") or "").strip().lower()
                     )

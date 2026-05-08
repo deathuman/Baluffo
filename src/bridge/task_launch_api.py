@@ -413,8 +413,10 @@ class TaskLaunchApi:
         save_json_atomic(self._paths.approval_state, approval)
 
     def _fetch_summary_is_failed(self, summary: dict[str, Any]) -> bool:
-        failed = int(summary.get("failedSources") or 0)
-        return bool(failed > 0 or str(summary.get("error") or "").strip())
+        status = str(summary.get("status") or "").strip().lower()
+        return bool(
+            status in {"error", "failed", "failure"} or str(summary.get("error") or "").strip()
+        )
 
     def _close_fetch_lifecycle_from_report(
         self,

@@ -260,7 +260,8 @@ def load_json_array(
 def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[str, Any]:
     fallback = dict(default or {})
     try:
-        candidates = _json_storage_candidates(Path(path))
+        source_path = Path(path)
+        candidates = _json_storage_candidates(source_path)
         existing = next((candidate for candidate in candidates if candidate.exists()), None)
         if existing is None:
             base_payload = fallback
@@ -271,9 +272,10 @@ def load_json_object(path: Path, default: dict[str, Any] | None = None) -> dict[
         else:
             payload = json.loads(existing.read_text(encoding="utf-8"))
             base_payload = payload if isinstance(payload, dict) else fallback
-        journal_payload = _load_json_journal_latest_payload(Path(path))
-        if isinstance(journal_payload, dict):
-            return dict(journal_payload)
+        if _json_journal_should_overlay_base(source_path, existing):
+            journal_payload = _load_json_journal_latest_payload(source_path)
+            if isinstance(journal_payload, dict):
+                return dict(journal_payload)
         return dict(base_payload)
     except (OSError, json.JSONDecodeError):
         journal_payload = _load_json_journal_latest_payload(Path(path))
@@ -365,6 +367,25 @@ def _json_journal_path_for(path: Path) -> Path:
     if base_name.endswith(".json"):
         return Path(path).with_name(f"{base_name[:-5]}.jsonl")
     return Path(path).with_name(f"{base_name}.jsonl")
+
+
+def _path_mtime_ns(path: Path) -> int | None:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+def _json_journal_should_overlay_base(path: Path, existing: Path | None) -> bool:
+    if existing is None:
+        return True
+    journal_mtime = _path_mtime_ns(_json_journal_path_for(path))
+    if journal_mtime is None:
+        return False
+    existing_mtime = _path_mtime_ns(existing)
+    if existing_mtime is None:
+        return True
+    return journal_mtime > existing_mtime
 
 
 def _json_journal_image_payload(payload: Any) -> Any:
