@@ -101,3 +101,26 @@ def test_best_probe_prefers_canonical_non_redirecting_source_on_equal_jobs() -> 
     best = adjudication._best_probe(probes)
 
     assert best["sourceId"] == "teamtailor:listing_url:https://career.paradoxplaza.com/jobs"
+
+
+def test_zero_job_loser_is_auto_demoted_when_winner_has_live_jobs() -> None:
+    best = {
+        "sourceId": "greenhouse:slug:azragames",
+        "ok": True,
+        "jobsFound": 1,
+        "finalUrl": "https://boards-api.greenhouse.io/v1/boards/azragames/jobs?content=true",
+        "jobs": [{"key": "senior-unity-gameplay-capture-artist"}],
+    }
+    loser = {
+        "sourceId": "static:listing_url:https://azragames.com/careers/",
+        "ok": True,
+        "jobsFound": 0,
+        "finalUrl": "https://azragames.com/careers/",
+        "jobs": [],
+    }
+
+    status, confidence, reason, _overlap = adjudication._classify_loser(best, loser)
+
+    assert status == "auto_demote_applied"
+    assert confidence == "high"
+    assert reason == "winner has live jobs while loser returned zero jobs"

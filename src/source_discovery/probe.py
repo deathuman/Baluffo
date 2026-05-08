@@ -7,20 +7,93 @@ import json
 import re
 import sys
 from collections.abc import Callable
+from html import unescape
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from xml.etree import ElementTree as ET
+
+from src.jobs.parsers import parse_jobpostings_from_html
 
 from .io_runtime import endpoint_url
 from .web_search import (
     async_fetch_text_with_retry,
-    extract_jobish_links,
     fetch_text,
     fetch_text_with_retry,
 )
 
 # Optional Playwright fallback: (url, timeout_s) -> (html, error). Used only for static adapter.
 TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
+
+
+_STATIC_DETAIL_PATH_RE = re.compile(r"(?i)/(?:jobs?|positions?|openings?|vacancies?)/[^/?#]+")
+
+_GENERIC_APPLICATION_TOKENS = (
+    "can't find",
+    "cannot find",
+    "general application",
+    "open application",
+    "submit your application",
+    "spontaneous application",
+    "speculative application",
+    "talent community",
+    "unsolicited application",
+)
+
+
+def _anchor_links(html: str) -> list[tuple[str, str]]:
+    anchors: list[tuple[str, str]] = []
+    for match in re.finditer(r"(?is)<a\b(?P<attrs>[^>]*)>(?P<label>.*?)</a>", str(html or "")):
+        attrs = match.group("attrs") or ""
+        href_match = re.search(r'(?is)href=["\']([^"\']+)["\']', attrs)
+        if not href_match:
+            continue
+        label = re.sub(r"(?is)<[^>]+>", " ", match.group("label") or "")
+        label = " ".join(unescape(label).split()).strip().lower()
+        anchors.append((href_match.group(1), label))
+    return anchors
+
+
+def _is_generic_application_link(label: str, parsed_path: str) -> bool:
+    text = f"{label} {parsed_path}".lower()
+    return any(token in text for token in _GENERIC_APPLICATION_TOKENS)
+
+
+def _static_probe_count(text: str, base_url: str) -> int:
+    jobs = parse_jobpostings_from_html(
+        text,
+        base_url=base_url,
+        fallback_source_id_prefix="static-probe",
+    )
+    if jobs:
+        return len(jobs)
+
+    links = _anchor_links(text)
+    base = urlparse(base_url or "")
+    base_page = (base.scheme, base.netloc, base.path.rstrip("/") or "/")
+    seen: set[str] = set()
+    for raw, label in links:
+        value = str(raw or "").strip()
+        if (
+            not value
+            or value.startswith("#")
+            or value.startswith("mailto:")
+            or value.startswith("javascript:")
+        ):
+            continue
+        absolute = urljoin(base_url, value) if base_url else value
+        parsed = urlparse(absolute)
+        page = (parsed.scheme, parsed.netloc, parsed.path.rstrip("/") or "/")
+        if page == base_page:
+            continue
+        if _is_generic_application_link(label, parsed.path):
+            continue
+        if not _STATIC_DETAIL_PATH_RE.search(parsed.path):
+            continue
+        normalized = absolute.split("#", 1)[0]
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+    return len(seen)
 
 
 def _is_playwright_fallback_error(error: str) -> bool:
@@ -177,7 +250,7 @@ def _parse_provider_probe_count(adapter: str, text: str) -> int | None:
     return _json_or_html_count(text, json_key=json_key, html_pattern=html_pattern)
 
 
-def parse_probe_count(adapter: str, text: str) -> int:
+def parse_probe_count(adapter: str, text: str, *, base_url: str = "") -> int:
     provider_count = _parse_provider_probe_count(adapter, text)
     if provider_count is not None:
         return provider_count
@@ -190,7 +263,7 @@ def parse_probe_count(adapter: str, text: str) -> int:
     if adapter == "teamtailor":
         return len(set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/jobs/[^"\']+)["\']', text)))
     if adapter == "static":
-        return len(extract_jobish_links(text, ""))
+        return _static_probe_count(text, base_url)
     raise ValueError("unsupported adapter")
 
 
@@ -213,7 +286,7 @@ def _probe_fetch_urls(
         seen_urls.add(probe_url)
         try:
             text = fetch_text_with_retry(probe_url, timeout_s, adapter=adapter, fetcher=fetcher)
-            return True, max(0, int(parse_probe_count(adapter, text))), ""
+            return True, max(0, int(parse_probe_count(adapter, text, base_url=probe_url))), ""
         except Exception as exc:  # noqa: BLE001
             last_error = f"{probe_url}: {exc}"
     return False, 0, last_error
@@ -233,7 +306,7 @@ def _probe_with_playwright(
             continue
         if html and not pw_err:
             try:
-                count = parse_probe_count("static", html)
+                count = parse_probe_count("static", html, base_url=probe_url)
             except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
                 continue
             print(
@@ -296,7 +369,7 @@ async def _async_probe_fetch_urls(
             text = await async_fetch_text_with_retry(
                 probe_url, timeout_s, adapter=adapter, fetcher=fetcher
             )
-            return True, max(0, int(parse_probe_count(adapter, text))), ""
+            return True, max(0, int(parse_probe_count(adapter, text, base_url=probe_url))), ""
         except Exception as exc:  # noqa: BLE001
             last_error = f"{probe_url}: {exc}"
     return False, 0, last_error
@@ -341,7 +414,7 @@ async def _async_probe_with_playwright(
         )
         if html and not pw_err:
             try:
-                count = parse_probe_count("static", html)
+                count = parse_probe_count("static", html, base_url=probe_url)
             except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
                 continue
             print(

@@ -396,6 +396,13 @@ def _classify_loser(
         loser_newer = _clean(loser.get("newestJobDate")) > _clean(best.get("newestJobDate"))
         if not loser_newer:
             return "auto_demote_applied", "high", "sources return the same job set", overlap
+    if bool(best.get("ok")) and bool(loser.get("ok")) and best_jobs > 0 and loser_jobs == 0:
+        return (
+            "auto_demote_applied",
+            "high",
+            "winner has live jobs while loser returned zero jobs",
+            overlap,
+        )
     if bool(best.get("ok")) and bool(loser.get("ok")) and best_jobs > 0 and loser_jobs > 0:
         if overlap["ratio"] < 0.5:
             return "keep_both", "medium", "both sources are live and job sets differ", overlap
