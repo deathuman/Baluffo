@@ -25,6 +25,7 @@ Implemented:
 - Frontend/bridge counter instrumentation and benchmark summaries for startup, lifecycle, fetch, and render signals.
 - Static outlier benchmark group: `npm run perf:fetch:static-outliers`.
 - Benchmark artifact improvements: `sourcePolicySignals`, `sourceRegistrySignals`, `registryScopeSummary`, `nextOptimizationTargets`, `sourceDecisionMatrix`, `source-decision-matrix.md`, `source-decision-log-template.md`, `sourceDecisionTrend`, `source-decision-trend.md`, per-source `timeoutDiagnostics` with embedded static-error URL extraction, `sourcePolicyDecision` kept-output host breakdowns, and `slow_productive_static` classification.
+- Storage-pressure benchmark metrics: discovery and fetch sanity benchmark payloads now include `storageMetrics` with hot artifact bytes, JSONL journal bytes, gzip bytes, source-sync snapshot size/headroom, and hot-path budget warnings. Repeated perf CI summaries retain median/min/max storage metrics so SQLite/WAL migration work can compare storage pressure across runs.
 - Decision-first source conflict record for Super Lucky and Koei: `docs/plans/static-outlier-source-conflict-decisions.md`.
 - Generic static registry scope conflict audit in the source-policy soak report: `sections.staticRegistryScopeConflicts`, including dry-run-only `patchProposals` and explicit CLI apply-safe support for selected `shadowed_cross_host` rows.
 - Dry-run decision checkpoint for the current generic patch proposal result: `docs/plans/static-scope-conflict-dry-run-decisions.md`.
@@ -77,7 +78,7 @@ Highest-value next work:
 
 1. Use `sections.staticRegistryScopeConflicts` and `docs/plans/static-scope-conflict-dry-run-decisions.md` to review source-scope conflicts before any apply-safe registry edit.
 2. Review Maliyo timeout diagnostics before lowering any budget.
-3. Add a concise trend report that compares latest full lifecycle and static-outlier runs against previous artifacts.
+3. Add a concise trend report that compares latest full lifecycle, storage-pressure, and static-outlier runs against previous artifacts.
 4. Keep perf traces opt-in but document how to attach `_out/perf-traces/` artifacts to investigations.
 5. Consider a CI smoke benchmark only after signals are stable enough to avoid noisy failures.
 
@@ -95,6 +96,7 @@ Focused benchmark harness:
 
 ```powershell
 python -m pytest tests/test_fetch_incremental_sanity_benchmark.py -q --color=no
+python -m pytest tests/test_runtime_storage_metrics.py tests/test_perf_ci.py -q --color=no
 ```
 
 Focused static outliers:
@@ -128,6 +130,7 @@ python -m src.jobs.pipeline --output-dir _out/perf-full-uncapped-pipeline --time
 This effort is ready to close when:
 
 - Benchmark artifacts identify source-policy, source-scope, timeout, frontend render, and bridge latency targets without manual report spelunking.
+- Benchmark artifacts identify runtime storage pressure, registry journal growth, sync snapshot headroom, and hot artifact budget drift before those become lifecycle or sync blockers.
 - Kept-output source changes are clearly flagged with `requiresExplicitDecision=true` before implementation.
 - Opt-in traces and startup metrics can explain Admin, Jobs, and Saved boot regressions.
 - Static/full lifecycle benchmarks can produce comparable artifact summaries across runs.

@@ -5,7 +5,7 @@
 > - **Canonical for:** wiki routing, doc discovery, and the default AI read path
 > - **Not canonical for:** payload details, route contracts, or subsystem implementation behavior
 > - **Then inspect:** [`AI_ASSISTANT_GUIDE.md`](AI_ASSISTANT_GUIDE.md), [`architecture-ai-map.md`](architecture-ai-map.md), and one matching contract or workflow doc
-> - **Last updated:** 2026-05-03
+> - **Last updated:** 2026-05-08
 
 Use this page as the wiki home. Start here, load the minimum active docs you need, and use git history for old cleanup/refactor details unless the task explicitly needs historical provenance.
 
@@ -61,7 +61,8 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`source-policy-runbook.md`](source-policy-runbook.md) | Operator runbook | You are running discovery/fetch/soak/Admin migration-link validation or checking provider/static source-policy release readiness |
 | [`environments.md`](environments.md) | Release / Environments | You are choosing source-sync writer auth, staging/prod separation, or the repository-side write policy |
 | [`plans/end-to-end-benchmarking-plan.md`](plans/end-to-end-benchmarking-plan.md) | Plans / Follow-Ups | You are adding frontend/backend instrumentation, profiling pipeline operations, fixing UI stalling (especially Admin page), or setting up CI performance regression detection |
-| [`plans/task-lifecycle-ledger-plan.md`](plans/task-lifecycle-ledger-plan.md) | Plans / Follow-Ups | You are fixing Admin task lifecycle contradictions, pipeline child ownership, task heartbeat/orphan behavior, or long-running discovery/fetch lifecycle bugs |
+| [`plans/runtime-storage-and-sync-architecture-plan.md`](plans/runtime-storage-and-sync-architecture-plan.md) | Plans / Follow-Ups | You are reducing runtime artifact bloat, migrating hot state to SQLite/WAL, or replacing monolithic source-sync snapshots with sharded exports |
+| [`plans/task-lifecycle-ledger-plan.md`](plans/task-lifecycle-ledger-plan.md) | Plans / Follow-Ups | You are finalizing Admin task lifecycle authority, task progress projection, runtime evidence IO, pipeline child ownership, or the last packaged lifecycle smoke |
 | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Plans / Follow-Ups | You are improving saved-job phase/outcome modeling, activity semantics, sorting, or Saved page operations |
 
 | [`snapshots/jobs-dead-source-evidence-2026-04-29.md`](snapshots/jobs-dead-source-evidence-2026-04-29.md) | Snapshots / Evidence | You are auditing the first evidence-backed physical deletion batch for dead jobs sources |
@@ -96,7 +97,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`archive/dedup-provider-static-disagreement-reconciliation-closeout.md`](archive/dedup-provider-static-disagreement-reconciliation-closeout.md) | Archived closeout | Closed provider/static disagreement reconciliation tracker; active work moved to read-only lifecycle UX |
 | [`archive/read-only-lifecycle-ux-closeout.md`](archive/read-only-lifecycle-ux-closeout.md) | Archived closeout | Closed first read-only lifecycle UX tracker after implementing conservative labels and filters |
 | [`archive/source-sync-production-readiness-closeout.md`](archive/source-sync-production-readiness-closeout.md) | Archived closeout | Closed private BaluffoSync source-sync production-readiness tracker after documenting private-repo operating controls |
-| [`archive/task-progress-operational-console-closeout.md`](archive/task-progress-operational-console-closeout.md) | Archived closeout | Closed Admin task/progress console tracker after moving fetcher report logging onto the shared task-run presenter |
+| [`archive/task-progress-operational-console-closeout.md`](archive/task-progress-operational-console-closeout.md) | Archived pointer | Historical Admin task/progress console closeout; active lifecycle/progress closeout is consolidated in [`plans/task-lifecycle-ledger-plan.md`](plans/task-lifecycle-ledger-plan.md) |
 
 ## Quick Routing by Goal
 
@@ -113,7 +114,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | Validate provider/static source-policy workflow | [`source-policy-runbook.md`](source-policy-runbook.md) | [`scraping-pipeline.md`](scraping-pipeline.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Review read-only lifecycle UX | [`archive/read-only-lifecycle-ux-closeout.md`](archive/read-only-lifecycle-ux-closeout.md) | [`snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md`](snapshots/read-only-lifecycle-ux-implementation-2026-05-03.md), [`source-policy-runbook.md`](source-policy-runbook.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md) |
 | Review source-sync production readiness | [`archive/source-sync-production-readiness-closeout.md`](archive/source-sync-production-readiness-closeout.md) | [`environments.md`](environments.md), [`sync-contract.md`](sync-contract.md), [`testing.md`](testing.md) |
-| Review completed task/progress operations UX | [`archive/task-progress-operational-console-closeout.md`](archive/task-progress-operational-console-closeout.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`frontend/admin/domain/progress.js`](../frontend/admin/domain/progress.js), [`frontend/admin/render/ops-history.js`](../frontend/admin/render/ops-history.js) |
+| Finalize task/progress lifecycle closeout | [`plans/task-lifecycle-ledger-plan.md`](plans/task-lifecycle-ledger-plan.md) | [`admin-bridge-api.md`](admin-bridge-api.md), [`DATA_CONTRACT.md`](DATA_CONTRACT.md), [`testing.md`](testing.md) |
 
 ## Recommended AI read sequence
 
