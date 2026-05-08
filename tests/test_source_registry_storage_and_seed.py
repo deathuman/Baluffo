@@ -101,3 +101,33 @@ def test_default_big_time_seed_lets_lever_provider_replace_static_board_link_pag
     assert conflict["safeAutomation"]["targetIds"] == [
         "static:listing_url:https://www.bigtime.gg/careers"
     ]
+
+
+def test_default_azra_seed_uses_current_static_count_for_provider_replacement() -> None:
+    active_rows = json.loads(
+        Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
+    )
+    rows_by_id = {str(row.get("id") or ""): row for row in active_rows}
+    static = rows_by_id["static:listing_url:https://azragames.com/careers/#opening"]
+    provider = {
+        "id": "greenhouse:slug:azragames",
+        "name": "Azra Games (Greenhouse)",
+        "studio": "Azra Games",
+        "adapter": "greenhouse",
+        "registryState": "active",
+        "jobsFound": 1,
+    }
+
+    assert static["jobsFound"] == 1
+    assert static["sampleCount"] == 1
+
+    payload = derive_registry_conflict_queue(
+        {"active": [provider, static], "pending": [], "rejected": []}
+    )
+    conflict = payload["conflicts"][0]
+
+    assert conflict["winner"]["id"] == "greenhouse:slug:azragames"
+    assert conflict["safeAutomation"]["eligible"] is True
+    assert conflict["safeAutomation"]["targetIds"] == [
+        "static:listing_url:https://azragames.com/careers/#opening"
+    ]

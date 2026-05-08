@@ -15298,8 +15298,8 @@
       "evidence_signal",
       "live_jobs_detected"
     ],
-    "sampleCount": 5,
-    "jobsFound": 5,
+    "sampleCount": 1,
+    "jobsFound": 1,
     "confidence": "high",
     "lastProbedAt": "2026-04-10T12:55:25.969266+00:00",
     "deferred": false,
