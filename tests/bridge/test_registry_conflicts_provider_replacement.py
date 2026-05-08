@@ -140,6 +140,50 @@ def test_registry_conflicts_safe_automation_demotes_provider_static_when_jobs_eq
     assert automation["targetIds"] == ["static:listing_url:https://studio.example/careers"]
 
 
+def test_registry_conflicts_safe_automation_demotes_multiple_weaker_static_aliases() -> None:
+    provider_static_state = {
+        "active": [
+            {
+                "id": "recruitee:api_url:https://blooberteam.recruitee.com/api/offers/",
+                "name": "Bloober Team (Recruitee)",
+                "studio": "Bloober Team",
+                "adapter": "recruitee",
+                "registryState": "active",
+                "jobsFound": 6,
+            },
+            {
+                "id": "static:listing_url:https://careers.blooberteam.com/jobs",
+                "name": "Bloober Team (Manual Website)",
+                "studio": "Bloober Team",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 6,
+            },
+            {
+                "id": "static:listing_url:https://careers.blooberteam.com/careers",
+                "name": "Bloober Team (Manual Website)",
+                "studio": "Bloober Team",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 6,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    automation = derive_registry_conflict_queue(provider_static_state)["conflicts"][0][
+        "safeAutomation"
+    ]
+
+    assert automation["eligible"] is True
+    assert automation["action"] == "auto_demote_provider_static_weaker_source"
+    assert automation["targetIds"] == [
+        "static:listing_url:https://careers.blooberteam.com/jobs",
+        "static:listing_url:https://careers.blooberteam.com/careers",
+    ]
+
+
 def test_registry_conflicts_safe_automation_lets_equal_provider_beat_higher_scored_static() -> None:
     provider_static_state = {
         "active": [

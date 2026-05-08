@@ -179,6 +179,43 @@ def test_static_source_check_ignores_greenhouse_open_application_link() -> None:
     assert error == ""
 
 
+def test_static_source_check_ignores_recruitee_no_job_bucket() -> None:
+    html = """
+    <html><body>
+      <a href="https://careers.blooberteam.com/o/senior-ai-gameplay-programmer">
+        Senior AI Gameplay Programmer
+      </a>
+      <a href="https://careers.blooberteam.com/o/no-job-that-suits-you">
+        No Job that suits you?
+      </a>
+    </body></html>
+    """
+
+    ok, jobs_found, error, weak_signal, _meta = source_checker.check_static_source(
+        {
+            "name": "Bloober Team",
+            "studio": "Bloober Team",
+            "adapter": "static",
+            "pages": ["https://careers.blooberteam.com/jobs"],
+            "listing_url": "https://careers.blooberteam.com/jobs",
+        },
+        12,
+        fetch_page_with_alternates=lambda _url, _timeout_s: (html, "", False, False, ""),
+        fetch_page=lambda _url, _timeout_s: ("", "", False, False),
+        fetch_text=lambda _url, _timeout_s: "",
+        html_extractor=html_extractor,
+        parse_jobpostings_from_html=parse_jobpostings_from_html,
+        normalize_job_url=admin_bridge.normalize_job_url,
+        source_identity=source_identity,
+        suggest_alternate_career_urls=lambda _url: [],
+    )
+
+    assert ok is True
+    assert jobs_found == 1
+    assert weak_signal is True
+    assert error == ""
+
+
 def test_static_source_check_does_not_count_repeated_lever_board_links_as_jobs() -> None:
     html = """
     <html><body>

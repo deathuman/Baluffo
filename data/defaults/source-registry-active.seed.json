@@ -17221,8 +17221,8 @@
       "evidence_signal",
       "live_jobs_detected"
     ],
-    "sampleCount": 4,
-    "jobsFound": 4,
+    "sampleCount": 6,
+    "jobsFound": 6,
     "confidence": "medium",
     "lastProbedAt": "2026-04-10T12:55:25.893251+00:00",
     "deferred": false,
@@ -33855,7 +33855,7 @@
     "nlPriority": false,
     "discoveryMethod": "gamedevmap",
     "discoveryStage": "web_provider",
-    "careersUrl": "https://www.blooberteam.com",
+    "careersUrl": "https://careers.blooberteam.com/jobs",
     "evidenceScore": 52,
     "evidenceTypes": [
       "web_provider_url",
@@ -33888,8 +33888,8 @@
       "strong_evidence",
       "live_jobs_detected"
     ],
-    "sampleCount": 8,
-    "jobsFound": 8,
+    "sampleCount": 6,
+    "jobsFound": 6,
     "confidence": "high",
     "discoveredAt": "2026-04-26T20:14:18.841687+00:00",
     "lastProbedAt": "2026-04-26T20:14:18.841687+00:00",

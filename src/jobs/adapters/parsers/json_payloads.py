@@ -254,7 +254,12 @@ def _is_general_application_title(title: str) -> bool:
             r"(open|general|spontaneous|unsolicited)\s+applications?",
             normalized,
         )
-    ) or normalized in {"talent community", "join our talent community"}
+    ) or normalized in {
+        "join our talent community",
+        "no job that suits you",
+        "no job that suits you?",
+        "talent community",
+    }
 
 
 def parse_lever_jobs_payload(
@@ -561,6 +566,8 @@ def parse_recruitee_jobs_payload(
             or row.get("url")
             or row.get("apply_url")
         )
+        if _is_general_application_title(title):
+            continue
         location_obj = _as_dict(row.get("location"))
         location_text = " ".join(
             [

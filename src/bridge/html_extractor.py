@@ -42,6 +42,8 @@ def _is_general_application_url(parsed: object) -> bool:
             "openapplication",
             "general-application",
             "generalapplication",
+            "no-job-that-suits-you",
+            "nojobthatsuitsyou",
             "talent-community",
             "talentcommunity",
             "spontaneous-application",
@@ -60,7 +62,7 @@ def _is_general_application_anchor(anchor_body: str) -> bool:
     text = html_module.unescape(re.sub(r"\s+", " ", text).strip()).lower()
     return bool(
         re.search(
-            r"\b(submit your application|open applications?|general applications?|talent community)\b",
+            r"\b(submit your application|open applications?|general applications?|no job that suits you|talent community)\b",
             text,
         )
     )
@@ -94,8 +96,8 @@ def _is_job_like_path(path: str) -> bool:
         return bool(re.search(r"/vacancy/\d+/?$", path))
     if path.startswith("/vacancies/") or path.rstrip("/") == "/vacancies":
         return True
-    if path.startswith("/join/"):
-        return bool(re.search(r"/join/[^/]+/\d+/?$", path))
+    if path.startswith(("/join/", "/o/")):
+        return bool(re.search(r"(?:/join/[^/]+/\d+|/o/[^/]+)/?$", path))
     return False
 
 

@@ -1325,6 +1325,47 @@ def _analyze_provider_alias_automation(
     )
 
 
+def _provider_static_shape_blockers(
+    rows: list[dict[str, Any]],
+    provider_rows: list[dict[str, Any]],
+    static_rows: list[dict[str, Any]],
+) -> list[str]:
+    blocked: list[str] = []
+    if any(_row_state(row) != "active" for row in rows):
+        blocked.append("requires_active_rows_only")
+    if len(provider_rows) != 1:
+        blocked.append("requires_one_provider")
+    if not static_rows:
+        blocked.append("requires_static_rows")
+    if len(provider_rows) + len(static_rows) != len(rows):
+        blocked.append("requires_provider_static_rows_only")
+    return blocked
+
+
+def _provider_static_target_analysis(
+    static_rows: list[dict[str, Any]], winner_jobs: int | None
+) -> tuple[list[str], list[int], list[str]]:
+    target_ids: list[str] = []
+    static_job_counts: list[int] = []
+    blocked: list[str] = []
+    for static in static_rows:
+        loser_jobs = _jobs_found_count(static)
+        if loser_jobs is None:
+            blocked.append("static_missing_jobs_found")
+            continue
+        static_job_counts.append(loser_jobs)
+        if winner_jobs is not None and loser_jobs > winner_jobs:
+            blocked.append("static_jobs_higher_than_provider")
+            continue
+        target_id = _row_identity(static)
+        blocked.extend(_target_identity_blocker(target_id))
+        if target_id:
+            target_ids.append(target_id)
+    if static_rows and not target_ids:
+        blocked.append("requires_demotable_static_rows")
+    return target_ids, static_job_counts, blocked
+
+
 def _analyze_provider_static_automation(
     *,
     family_key: str,
@@ -1335,37 +1376,37 @@ def _analyze_provider_static_automation(
     provider_rows = [row for row in rows if _is_provider_row(row)]
     static_rows = [row for row in rows if _is_static_row(row)]
     provider = provider_rows[0] if len(provider_rows) == 1 else winner
-    static = static_rows[0] if len(static_rows) == 1 else (losers[0] if len(losers) == 1 else {})
-    blocked = _safe_pair_blockers(rows, [static])
+    blocked = _provider_static_shape_blockers(rows, provider_rows, static_rows)
     winner_jobs = _jobs_found_count(provider)
-    loser_jobs = _jobs_found_count(static)
 
     if not _is_provider_row(provider):
         blocked.append("winner_must_be_provider")
-    if not _is_static_row(static):
-        blocked.append("loser_must_be_static")
     if winner_jobs is None:
         blocked.append("winner_missing_jobs_found")
     elif winner_jobs <= 0:
         blocked.append("winner_has_no_jobs_found")
-    if loser_jobs is None:
-        blocked.append("loser_missing_jobs_found")
-    elif winner_jobs is not None and loser_jobs > winner_jobs:
-        blocked.append("static_jobs_higher_than_provider")
 
-    target_id = _row_identity(static)
-    blocked.extend(_target_identity_blocker(target_id))
+    target_ids, static_job_counts, target_blockers = _provider_static_target_analysis(
+        static_rows,
+        winner_jobs,
+    )
+    blocked.extend(target_blockers)
 
     if blocked:
         return _blocked_automation(
             "Not eligible for safe provider/static auto-demotion.",
             sorted(set(blocked)),
         )
-    return _eligible_automation(
-        target_id,
+    static_count_text = (
+        str(static_job_counts[0])
+        if len(static_job_counts) == 1
+        else ", ".join(str(count) for count in static_job_counts)
+    )
+    return _eligible_multi_automation(
+        target_ids,
         (
             f"{family_key} has an active provider source with {winner_jobs} jobs and "
-            f"an equal-or-lower-yield active static source with {loser_jobs} jobs."
+            f"equal-or-lower-yield active static source(s) with {static_count_text} jobs."
         ),
         action=SAFE_AUTO_DEMOTE_PROVIDER_STATIC_ACTION,
         label=SAFE_AUTO_DEMOTE_PROVIDER_STATIC_LABEL,
