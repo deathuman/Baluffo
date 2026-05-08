@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 from src.source_registry import source_identity
 from src.source_registry_policy import duplicate_family_conflict_cards
-from src.source_registry_state import transition_registry_to_pending
+from src.source_registry_state import transition_registry_to_active, transition_registry_to_pending
 
 SOURCE_HEALTH_FIELD_NAMES = (
     "healthScore",
@@ -90,6 +90,27 @@ PROVIDER_ADAPTERS = {
     "smartrecruiters",
     "teamtailor",
     "workable",
+    "workday",
+}
+
+PROVIDER_HOST_SUFFIX_ADAPTERS = {
+    ".bamboohr.com": "bamboohr",
+    ".jobs.ashbyhq.com": "ashby",
+    ".jobs.personio.de": "personio",
+    ".myworkdayjobs.com": "workday",
+    ".pinpointhq.com": "pinpoint",
+    ".recruitee.com": "recruitee",
+    ".teamtailor.com": "teamtailor",
+    ".workday.com": "workday",
+}
+
+PROVIDER_HOST_EXACT_ADAPTERS = {
+    "apply.workable.com": "workable",
+    "bamboohr.com": "bamboohr",
+    "boards.greenhouse.io": "greenhouse",
+    "jobs.ashbyhq.com": "ashby",
+    "jobs.greenhouse.io": "greenhouse",
+    "jobs.smartrecruiters.com": "smartrecruiters",
 }
 
 TRIAGE_BUCKETS = (
@@ -188,11 +209,17 @@ SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION = "auto_demote_static_same_host_l
 SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_LABEL = "Auto-demote static listing variant"
 SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_ACTION = "auto_demote_static_generated_listing_variants"
 SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_LABEL = "Auto-demote generated static listing variants"
+SAFE_AUTO_DEMOTE_PROVIDER_STATIC_ACTION = "auto_demote_provider_static_weaker_source"
+SAFE_AUTO_DEMOTE_PROVIDER_STATIC_LABEL = "Auto-demote weaker static source"
+SAFE_AUTO_PROMOTE_PENDING_PROVIDER_ACTION = "auto_promote_pending_provider_higher_jobs"
+SAFE_AUTO_PROMOTE_PENDING_PROVIDER_LABEL = "Auto-promote higher-yield provider"
 SAFE_AUTO_DEMOTE_ACTIONS = {
     SAFE_AUTO_DEMOTE_ACTION,
     SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION,
     SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION,
     SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_ACTION,
+    SAFE_AUTO_DEMOTE_PROVIDER_STATIC_ACTION,
+    SAFE_AUTO_PROMOTE_PENDING_PROVIDER_ACTION,
 }
 SAFE_AUTO_DEMOTE_ROUTE = "/registry/conflicts/auto-demote-safe"
 SAFE_AUTO_DEMOTE_REASON = "registry_conflict_safe_auto_demote"
@@ -270,6 +297,43 @@ def _is_provider_row(row: dict[str, Any]) -> bool:
     return _row_adapter(row) in PROVIDER_ADAPTERS
 
 
+def _provider_adapter_from_urls(row: dict[str, Any]) -> str:
+    for url in _row_urls(row):
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            continue
+        host = _clean_text(parsed.netloc).lower()
+        if host.startswith("www."):
+            host = host[4:]
+        if not host:
+            continue
+        exact = PROVIDER_HOST_EXACT_ADAPTERS.get(host)
+        if exact:
+            return exact
+        for suffix, adapter in PROVIDER_HOST_SUFFIX_ADAPTERS.items():
+            if host.endswith(suffix):
+                return adapter
+    return ""
+
+
+def _effective_provider_adapter(row: dict[str, Any]) -> str:
+    adapter = _row_adapter(row)
+    if adapter in PROVIDER_ADAPTERS:
+        return adapter
+    if _is_static_row(row):
+        return _provider_adapter_from_urls(row)
+    return ""
+
+
+def _is_provider_like_row(row: dict[str, Any]) -> bool:
+    return bool(_effective_provider_adapter(row))
+
+
+def _row_has_weak_job_signal(row: dict[str, Any]) -> bool:
+    return any(bool(row.get(key)) for key in ("weakSignal", "lastProbeWeakSignal"))
+
+
 def _int_value(value: Any) -> int:
     try:
         return int(value or 0)
@@ -297,6 +361,13 @@ def _positive_evidence_score(row: dict[str, Any]) -> int:
         max(0, _int_value(row.get(key)))
         for key in ("jobsFound", "rankScore", "score", "lastJobsKept", "lastKeptCount")
     )
+
+
+def _jobs_found_count(row: dict[str, Any]) -> int | None:
+    for key in ("jobsFound", "sampleCount"):
+        if key in row:
+            return max(0, _int_value(row.get(key)))
+    return None
 
 
 def _has_fresh_or_healthy_signal(row: dict[str, Any]) -> bool:
@@ -409,6 +480,10 @@ def _is_careerish_path(path: str) -> bool:
             "work",
         }
     )
+
+
+def _is_homepage_path(path: str) -> bool:
+    return path.strip().lower().rstrip("/") in {"", "/"}
 
 
 def _json_value(value: Any) -> str:
@@ -528,12 +603,39 @@ def _is_safe_pending_static_weaker_alias(
         return False
     if not any(_is_careerish_path(path) for _host, path in winner_host_paths):
         return False
-    if not any(_is_careerish_path(path) for _host, path in loser_host_paths):
+    loser_has_static_alias_path = any(
+        _is_careerish_path(path) or _is_homepage_path(path) for _host, path in loser_host_paths
+    )
+    if not loser_has_static_alias_path:
         return False
     return (
         _row_jobs_evidence(winner) >= _row_jobs_evidence(loser)
         and _positive_evidence_score(winner) >= _positive_evidence_score(loser) + 20
     )
+
+
+def _safe_pending_provider_lower_jobs_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    active_rows = [row for row in rows if _row_state(row) == "active"]
+    suppressed: list[dict[str, Any]] = []
+    for row in rows:
+        if _row_state(row) != "pending" or not _is_provider_like_row(row):
+            continue
+        provider_jobs = _jobs_found_count(row)
+        if provider_jobs is None:
+            provider_jobs = 0
+        for active_row in active_rows:
+            active_jobs = _jobs_found_count(active_row)
+            if active_jobs is None:
+                continue
+            if _is_static_row(active_row):
+                if active_jobs == provider_jobs:
+                    continue
+                if provider_jobs == 0 and active_jobs <= 1 and _row_has_weak_job_signal(active_row):
+                    continue
+            if active_jobs >= provider_jobs:
+                suppressed.append(row)
+                break
+    return suppressed
 
 
 def _build_pending_audit_section(cards: list[dict[str, Any]]) -> dict[str, Any]:
@@ -551,10 +653,12 @@ def _build_pending_conflict_audit(
     *,
     safe_auto_demoted_cards: list[dict[str, Any]],
     safe_static_alias_cards: list[dict[str, Any]],
+    safe_pending_provider_cards: list[dict[str, Any]],
 ) -> dict[str, Any]:
     return {
         "safeAutoDemotedPending": _build_pending_audit_section(safe_auto_demoted_cards),
         "safePendingStaticAlias": _build_pending_audit_section(safe_static_alias_cards),
+        "safePendingProviderLowerJobs": _build_pending_audit_section(safe_pending_provider_cards),
     }
 
 
@@ -648,6 +752,51 @@ def _apply_safe_demotion_targets(
     return active_remaining, applied, moved
 
 
+def _apply_pending_provider_replacement_targets(
+    state: dict[str, list[dict[str, Any]]],
+    *,
+    target_ids: set[str],
+    eligible_by_id: dict[str, dict[str, Any]],
+    now: str,
+    actor: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]]]:
+    promotions_by_id: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
+    for target_id in sorted(target_ids):
+        card = eligible_by_id.get(target_id) or {}
+        rows = [row for row in _as_list(card.get("rows")) if isinstance(row, dict)]
+        active, pending_provider, blocked = _pending_provider_replacement_rows(rows)
+        if blocked or _row_identity(pending_provider) != target_id:
+            continue
+        promotions_by_id[target_id] = (active, pending_provider)
+
+    active_to_demote = {_row_identity(pair[0]) for pair in promotions_by_id.values()}
+    pending_to_promote = set(promotions_by_id)
+    next_active = [row for row in state["active"] if source_identity(row) not in active_to_demote]
+    next_pending = [
+        row for row in state["pending"] if source_identity(row) not in pending_to_promote
+    ]
+    applied: list[dict[str, str]] = []
+
+    for target_id, (active_row, pending_row) in promotions_by_id.items():
+        promoted = transition_registry_to_active(
+            pending_row,
+            reason=SAFE_AUTO_DEMOTE_REASON,
+            actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
+            at=now or None,
+        )
+        demoted = transition_registry_to_pending(
+            active_row,
+            reason=SAFE_AUTO_DEMOTE_REASON,
+            actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
+            at=now or None,
+        )
+        next_active.append(promoted)
+        next_pending.append(demoted)
+        applied.append(_safe_demotion_applied_entry(target_id, eligible_by_id.get(target_id) or {}))
+
+    return next_active, next_pending, applied
+
+
 def apply_registry_conflict_safe_demotions(
     registry_state: Any,
     source_state_payload: Any = None,
@@ -671,6 +820,15 @@ def apply_registry_conflict_safe_demotions(
     eligible_by_id = _eligible_safe_demotion_cards(conflict_payload, action_filter)
     selected_ids = requested_ids or set(eligible_by_id)
     target_ids = selected_ids & set(eligible_by_id)
+    promotion_ids = {
+        row_id
+        for row_id in target_ids
+        if _clean_text(
+            _as_dict((eligible_by_id.get(row_id) or {}).get("safeAutomation")).get("action")
+        )
+        == SAFE_AUTO_PROMOTE_PENDING_PROVIDER_ACTION
+    }
+    demotion_ids = target_ids - promotion_ids
     skipped_rows = [
         {
             "id": row_id,
@@ -678,24 +836,38 @@ def apply_registry_conflict_safe_demotions(
         }
         for row_id in sorted(selected_ids - target_ids)
     ]
+    promoted_active, promoted_pending, promoted_applied = (
+        _apply_pending_provider_replacement_targets(
+            state,
+            target_ids=promotion_ids,
+            eligible_by_id=eligible_by_id,
+            now=now,
+            actor=actor,
+        )
+    )
+    state["active"] = promoted_active
+    state["pending"] = promoted_pending
     active_remaining, applied, moved = _apply_safe_demotion_targets(
         state,
-        target_ids=target_ids,
+        target_ids=demotion_ids,
         eligible_by_id=eligible_by_id,
         now=now,
         actor=actor,
     )
     moved_ids = {source_identity(row) for row in moved}
-    for row_id in sorted(target_ids - moved_ids):
+    for row_id in sorted(demotion_ids - moved_ids):
         skipped_rows.append({"id": row_id, "reason": "eligible_target_not_active"})
+    promoted_ids = {_clean_text(row.get("id")) for row in promoted_applied}
+    for row_id in sorted(promotion_ids - promoted_ids):
+        skipped_rows.append({"id": row_id, "reason": "eligible_target_not_pending"})
 
     state["active"] = active_remaining
     state["pending"] = _unique_registry_rows([*state["pending"], *moved])
     return {
         "ok": True,
-        "demoted": len(moved),
+        "demoted": len(moved) + len(promoted_applied),
         "skipped": len(skipped_rows),
-        "applied": applied,
+        "applied": [*promoted_applied, *applied],
         "skippedRows": skipped_rows,
         "state": state,
     }
@@ -923,6 +1095,25 @@ def _safe_pair_blockers(
     return [reason for blocked, reason in checks if blocked]
 
 
+def _pending_provider_replacement_rows(
+    rows: list[dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
+    active_rows = [row for row in rows if _row_state(row) == "active"]
+    pending_provider_rows = [
+        row for row in rows if _row_state(row) == "pending" and _is_provider_like_row(row)
+    ]
+    blocked: list[str] = []
+    if len(rows) != 2:
+        blocked.append("requires_exactly_two_rows")
+    if len(active_rows) != 1:
+        blocked.append("requires_one_active_row")
+    if len(pending_provider_rows) != 1:
+        blocked.append("requires_one_pending_provider")
+    active = active_rows[0] if len(active_rows) == 1 else {}
+    pending_provider = pending_provider_rows[0] if len(pending_provider_rows) == 1 else {}
+    return active, pending_provider, blocked
+
+
 def _provider_alias_blockers(rows: list[dict[str, Any]]) -> tuple[list[str], str]:
     blocked: list[str] = []
     adapters = {_row_adapter(row) for row in rows}
@@ -950,6 +1141,16 @@ def _evidence_blockers(
     if loser_score >= winner_score:
         blocked.append("loser_has_equal_or_stronger_evidence")
     return blocked
+
+
+def _allows_positive_provider_alias_loser(winner: dict[str, Any], loser: dict[str, Any]) -> bool:
+    if _clean_text(winner.get("name")).lower() != _clean_text(loser.get("name")).lower():
+        return False
+    winner_jobs = _row_jobs_evidence(winner)
+    loser_jobs = _row_jobs_evidence(loser)
+    if winner_jobs <= 0 or loser_jobs <= 0 or winner_jobs != loser_jobs:
+        return False
+    return _positive_evidence_score(winner) > _positive_evidence_score(loser)
 
 
 def _target_identity_blocker(target_id: str) -> list[str]:
@@ -1090,8 +1291,17 @@ def _analyze_provider_alias_automation(
     provider_blockers, adapter = _provider_alias_blockers(rows)
     blocked.extend(provider_blockers)
     loser = losers[0] if len(losers) == 1 else {}
-    blocked.extend(_evidence_blockers(winner, loser, loser_must_have_none=True))
-    if _has_fresh_or_healthy_signal(loser):
+    positive_alias_loser_allowed = not blocked and _allows_positive_provider_alias_loser(
+        winner, loser
+    )
+    blocked.extend(
+        _evidence_blockers(
+            winner,
+            loser,
+            loser_must_have_none=not positive_alias_loser_allowed,
+        )
+    )
+    if _has_fresh_or_healthy_signal(loser) and not positive_alias_loser_allowed:
         blocked.append("loser_has_fresh_or_healthy_signal")
     target_id = _row_identity(loser)
     blocked.extend(_target_identity_blocker(target_id))
@@ -1104,9 +1314,123 @@ def _analyze_provider_alias_automation(
     return _eligible_automation(
         target_id,
         (
-            f"{family_key} has two active {adapter} rows with the same endpoint shape; "
-            "the winner has positive evidence and the loser has none."
+            f"{family_key} has two active {adapter} rows with the same endpoint shape "
+            "and matching positive job evidence."
+            if positive_alias_loser_allowed
+            else (
+                f"{family_key} has two active {adapter} rows with the same endpoint shape; "
+                "the winner has positive evidence and the loser has none."
+            )
         ),
+    )
+
+
+def _analyze_provider_static_automation(
+    *,
+    family_key: str,
+    winner: dict[str, Any],
+    losers: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    blocked = _safe_pair_blockers(rows, losers)
+    loser = losers[0] if len(losers) == 1 else {}
+    winner_jobs = _jobs_found_count(winner)
+    loser_jobs = _jobs_found_count(loser)
+
+    if not _is_provider_row(winner):
+        blocked.append("winner_must_be_provider")
+    if not _is_static_row(loser):
+        blocked.append("loser_must_be_static")
+    if winner_jobs is None:
+        blocked.append("winner_missing_jobs_found")
+    elif winner_jobs <= 0:
+        blocked.append("winner_has_no_jobs_found")
+    if loser_jobs is None:
+        blocked.append("loser_missing_jobs_found")
+    elif winner_jobs is not None and loser_jobs > winner_jobs:
+        blocked.append("static_jobs_higher_than_provider")
+
+    target_id = _row_identity(loser)
+    blocked.extend(_target_identity_blocker(target_id))
+
+    if blocked:
+        return _blocked_automation(
+            "Not eligible for safe provider/static auto-demotion.",
+            sorted(set(blocked)),
+        )
+    return _eligible_automation(
+        target_id,
+        (
+            f"{family_key} has an active provider source with {winner_jobs} jobs and "
+            f"an equal-or-lower-yield active static source with {loser_jobs} jobs."
+        ),
+        action=SAFE_AUTO_DEMOTE_PROVIDER_STATIC_ACTION,
+        label=SAFE_AUTO_DEMOTE_PROVIDER_STATIC_LABEL,
+    )
+
+
+def _analyze_pending_provider_replacement_automation(
+    *,
+    family_key: str,
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    active, pending_provider, blocked = _pending_provider_replacement_rows(rows)
+    active_jobs = _jobs_found_count(active)
+    provider_jobs = _jobs_found_count(pending_provider)
+    provider_adapter = _effective_provider_adapter(pending_provider)
+    active_is_static = _is_static_row(active)
+    weak_static_false_positive = False
+
+    if active_jobs is None:
+        blocked.append("active_missing_jobs_found")
+    if provider_jobs is None:
+        blocked.append("pending_provider_missing_jobs_found")
+    elif provider_jobs <= 0 and not (active_is_static and provider_adapter):
+        blocked.append("pending_provider_has_no_jobs_found")
+    if active_jobs is not None and provider_jobs is not None:
+        provider_preferred_tie = (
+            active_is_static and bool(provider_adapter) and provider_jobs == active_jobs
+        )
+        weak_static_false_positive = (
+            active_is_static
+            and bool(provider_adapter)
+            and provider_jobs == 0
+            and active_jobs <= 1
+            and _row_has_weak_job_signal(active)
+        )
+        if provider_jobs < active_jobs and not weak_static_false_positive:
+            blocked.append("pending_provider_jobs_lower_than_active")
+        elif provider_jobs == active_jobs and not provider_preferred_tie:
+            blocked.append("pending_provider_jobs_not_higher_than_active")
+
+    target_id = _row_identity(pending_provider)
+    blocked.extend(_target_identity_blocker(target_id))
+
+    if blocked:
+        return _blocked_automation(
+            "Not eligible for safe pending-provider promotion.",
+            sorted(set(blocked)),
+        )
+    if provider_jobs is not None and active_jobs is not None and provider_jobs > active_jobs:
+        reason = (
+            f"{family_key} has a pending provider source with {provider_jobs} jobs, "
+            f"which is higher than the active source count of {active_jobs}."
+        )
+    else:
+        suffix = (
+            "because the active static count is only weak evidence."
+            if weak_static_false_positive
+            else "at the same job count."
+        )
+        reason = (
+            f"{family_key} has a pending provider-backed source that is preferred over "
+            f"the active static source {suffix}"
+        )
+    return _eligible_automation(
+        target_id,
+        reason,
+        action=SAFE_AUTO_PROMOTE_PENDING_PROVIDER_ACTION,
+        label=SAFE_AUTO_PROMOTE_PENDING_PROVIDER_LABEL,
     )
 
 
@@ -1191,6 +1515,12 @@ def _analyze_safe_automation(
     losers: list[dict[str, Any]],
     rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    pending_provider_result = _analyze_pending_provider_replacement_automation(
+        family_key=family_key,
+        rows=rows,
+    )
+    if pending_provider_result.get("eligible"):
+        return pending_provider_result
     provider_result = _analyze_provider_alias_automation(
         family_key=family_key,
         winner=winner,
@@ -1199,6 +1529,14 @@ def _analyze_safe_automation(
     )
     if provider_result.get("eligible"):
         return provider_result
+    provider_static_result = _analyze_provider_static_automation(
+        family_key=family_key,
+        winner=winner,
+        losers=losers,
+        rows=rows,
+    )
+    if provider_static_result.get("eligible"):
+        return provider_static_result
     static_result = _analyze_static_url_alias_automation(
         family_key=family_key,
         winner=winner,
@@ -1225,6 +1563,10 @@ def _analyze_safe_automation(
         if generated_variant_result.get("eligible"):
             return generated_variant_result
         return static_result
+    if any(_row_state(row) == "pending" and _is_provider_like_row(row) for row in rows):
+        return pending_provider_result
+    if _is_provider_row(winner) and any(_is_static_row(row) for row in losers):
+        return provider_static_result
     return provider_result
 
 
@@ -1242,6 +1584,8 @@ def _build_automation_summary(conflicts: list[dict[str, Any]]) -> dict[str, Any]
         SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_ACTION: (
             SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_LABEL
         ),
+        SAFE_AUTO_DEMOTE_PROVIDER_STATIC_ACTION: SAFE_AUTO_DEMOTE_PROVIDER_STATIC_LABEL,
+        SAFE_AUTO_PROMOTE_PENDING_PROVIDER_ACTION: SAFE_AUTO_PROMOTE_PENDING_PROVIDER_LABEL,
     }
     for card in eligible_cards:
         safe_automation = _as_dict(card.get("safeAutomation"))
@@ -1353,6 +1697,7 @@ def derive_registry_conflict_queue(
     conflicts: list[dict[str, Any]] = []
     safe_auto_demoted_pending_audit: list[dict[str, Any]] = []
     safe_pending_static_alias_audit: list[dict[str, Any]] = []
+    safe_pending_provider_lower_jobs_audit: list[dict[str, Any]] = []
     for card in family_cards:
         family_key = _clean_text(card.get("familyKey"))
         winner = _join_source_health_aliases(_as_dict(card.get("winner")), source_state_rows)
@@ -1373,6 +1718,34 @@ def derive_registry_conflict_queue(
                 }
             )
             losers = [row for row in losers if not _is_safe_auto_demoted_pending(row)]
+        candidate_rows = [winner, *losers]
+        suppressed_pending_provider_losers = _safe_pending_provider_lower_jobs_rows(candidate_rows)
+        if suppressed_pending_provider_losers:
+            safe_pending_provider_lower_jobs_audit.append(
+                {
+                    "familyKey": family_key,
+                    "rowCount": len(suppressed_pending_provider_losers),
+                    "rows": [
+                        _safe_auto_demoted_pending_audit_row(row)
+                        for row in suppressed_pending_provider_losers
+                    ],
+                }
+            )
+            suppressed_ids = {_row_identity(row) for row in suppressed_pending_provider_losers}
+            candidate_rows = [
+                row for row in candidate_rows if _row_identity(row) not in suppressed_ids
+            ]
+            active_remaining = [row for row in candidate_rows if _row_state(row) == "active"]
+            if active_remaining:
+                winner = active_remaining[0]
+                winner_id = _row_identity(winner)
+                losers = [row for row in candidate_rows if _row_identity(row) != winner_id]
+            elif candidate_rows:
+                winner = candidate_rows[0]
+                winner_id = _row_identity(winner)
+                losers = [row for row in candidate_rows if _row_identity(row) != winner_id]
+            else:
+                losers = []
         suppressed_static_alias_losers = [
             row for row in losers if _is_safe_pending_static_weaker_alias(winner, row, family_key)
         ]
@@ -1447,6 +1820,7 @@ def derive_registry_conflict_queue(
     automation["audit"] = _build_pending_conflict_audit(
         safe_auto_demoted_cards=safe_auto_demoted_pending_audit,
         safe_static_alias_cards=safe_pending_static_alias_audit,
+        safe_pending_provider_cards=safe_pending_provider_lower_jobs_audit,
     )
     return {
         "summary": {

@@ -342,6 +342,8 @@ function renderRowActions(cardIndex, rowIndex, row) {
 }
 
 function renderRowMeta(row) {
+  const lastJobsKept = row?.lastJobsKept ?? row?.lastKeptCount;
+  const jobsFound = row?.jobsFound ?? row?.sampleCount;
   const items = [
     ["State", stringValue(row?.registryState, stringValue(row?.candidateState, "unknown"))],
     ["Transition", stringValue(row?.transitionReason, "—")],
@@ -349,7 +351,8 @@ function renderRowMeta(row) {
     ["Health reason", stringValue(row?.healthReason, "—")],
     ["Last success", formatFieldValue("lastSuccessfulFetchAt", row?.lastSuccessfulFetchAt)],
     ["Last seen", formatFieldValue("lastSeenInFetchAt", row?.lastSeenInFetchAt)],
-    ["Last jobs kept", stringValue(row?.lastJobsKept ?? row?.lastKeptCount, "0")],
+    ["Jobs found", jobsFound === undefined || jobsFound === null ? "—" : stringValue(jobsFound, "0")],
+    ["Last jobs kept", lastJobsKept === undefined || lastJobsKept === null ? "—" : stringValue(lastJobsKept, "0")],
     ["Failure count", stringValue(row?.failureCount ?? row?.consecutiveFailures, "0")],
     ["Zero-job streak", stringValue(row?.zeroJobStreak ?? row?.consecutiveZeroKept, "0")]
   ];

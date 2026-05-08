@@ -60,6 +60,13 @@ def _resolve_static_source_pages(row: dict[str, Any]) -> list[str]:
     return [listing_url] if listing_url else []
 
 
+def _is_valid_empty_provider_source(row: dict[str, Any], *, studio: str) -> bool:
+    return any(
+        infer_web_candidate(page, studio, nl_priority=False, discovery_method="source_check")
+        for page in _resolve_static_source_pages(row)
+    )
+
+
 def _expand_static_alt_pages(
     *,
     page_url: str,
@@ -121,25 +128,25 @@ def check_static_source(
     pages_to_visit = list(pages)
     seen_pages: set[str] = set(pages_to_visit)
     max_pages_to_visit = 18
+    successful_page_seen = False
     idx = 0
     while idx < len(pages_to_visit):
         page_url = pages_to_visit[idx]
         idx += 1
         before_structured_count = len(structured_links)
         before_weak_count = len(weak_links)
-        html, fetch_error, attempted, used, redirected_url = fetch_page_with_alternates(
+        html, fetch_error, attempted, used, _redirected_url = fetch_page_with_alternates(
             page_url, timeout_s
         )
         browser_fallback_attempted = browser_fallback_attempted or attempted
         browser_fallback_used = browser_fallback_used or used
-        if redirected_url:
-            weak_links.add(redirected_url)
         if fetch_error:
             errors.append(fetch_error)
             continue
         if _looks_like_not_found_page(html):
             errors.append(f"{page_url}: HTTP Error 404: Not Found")
             continue
+        successful_page_seen = True
 
         # _collect_embedded_signals
         for embedded_link in html_extractor.extract_embedded_job_urls(html, page_url):
@@ -270,7 +277,7 @@ def check_static_source(
                 ),
             },
         )
-    if errors:
+    if errors and not successful_page_seen:
         return (
             False,
             0,
@@ -279,6 +286,18 @@ def check_static_source(
             {
                 "browserFallbackAttempted": browser_fallback_attempted,
                 "browserFallbackUsed": browser_fallback_used,
+            },
+        )
+    if successful_page_seen and _is_valid_empty_provider_source(row, studio=company):
+        return (
+            True,
+            0,
+            "",
+            False,
+            {
+                "browserFallbackAttempted": browser_fallback_attempted,
+                "browserFallbackUsed": browser_fallback_used,
+                "validEmptyProviderSource": True,
             },
         )
     return (

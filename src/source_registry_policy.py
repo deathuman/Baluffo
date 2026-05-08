@@ -156,6 +156,7 @@ def _duplicate_winner_rationale(
         or row.get("lastKeptCount")
         or 0
     )
+    jobs_found = str(row.get("jobsFound") or row.get("sampleCount") or 0)
     failure_count = str(
         state.get("failureCount")
         or state.get("consecutiveFailures")
@@ -182,6 +183,10 @@ def _duplicate_winner_rationale(
         {
             "label": "Last jobs kept",
             "value": source_jobs_kept,
+        },
+        {
+            "label": "Jobs found",
+            "value": jobs_found,
         },
         {
             "label": "Failure count",

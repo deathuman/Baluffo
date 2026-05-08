@@ -1,6 +1,7 @@
 import json
 
 from src import ashby_registry_refresh as refresh
+from src.source_registry_io import load_json_array
 
 
 def _app_data_html(*, organization: str, postings: list[dict]) -> str:
@@ -206,7 +207,7 @@ def test_refresh_active_ashby_registry_keeps_live_existing_rows_even_if_not_newl
         timeout_s=5,
     )
 
-    next_rows = json.loads(active_path.read_text(encoding="utf-8"))
+    next_rows = load_json_array(active_path, [])
     ashby_rows = [row for row in next_rows if row.get("adapter") == "ashby"]
     assert [row["name"] for row in ashby_rows] == ["Improbable (Ashby)"]
     assert report["configuredAfter"] == 1

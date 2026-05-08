@@ -57,6 +57,12 @@ from src.source_discovery import provider_inference
             "https://jobs.ashbyhq.com/examplestudio",
         ),
         (
+            "https://beamdog.bamboohr.com/careers",
+            "bamboohr",
+            "listing_url",
+            "https://beamdog.bamboohr.com/careers",
+        ),
+        (
             "https://example.jobs.personio.de/job/123",
             "personio",
             "feed_url",

@@ -13,41 +13,79 @@ from src.shared.regex import find_urls_in_text
 from src.source_registry import normalize_source_url
 
 
+def _is_ignored_job_href(href: str) -> bool:
+    clean = str(href or "").strip()
+    return (
+        not clean
+        or clean.startswith("#")
+        or clean.lower().startswith(("javascript:", "mailto:", "tel:"))
+    )
+
+
+def _is_ignored_job_url(url: str) -> bool:
+    return "/jobs/share_image/" in (urlparse(str(url or "")).path or "").lower()
+
+
+def _is_job_like_path(path: str) -> bool:
+    if "/job/" in path or "/jobs/" in path or "/career/posting/" in path:
+        return True
+    if path.startswith("/requisitions/view/"):
+        return bool(re.search(r"/requisitions/view/\d+/?$", path))
+    if "/careers/" in path:
+        tail = path.rstrip("/")
+        return not (
+            tail == "/careers" or tail.endswith("/careers-category") or "/careers-category/" in tail
+        )
+    if "/career/" in path:
+        return path.rstrip("/") != "/career"
+    if path.startswith("/open-positions/"):
+        return True
+    if "/job-offers/" in path or path.rstrip("/") == "/job-offers":
+        return True
+    if path.startswith("/vacancy/"):
+        return bool(re.search(r"/vacancy/\d+/?$", path))
+    if path.startswith("/vacancies/") or path.rstrip("/") == "/vacancies":
+        return True
+    if path.startswith("/join/"):
+        return bool(re.search(r"/join/[^/]+/\d+/?$", path))
+    return False
+
+
+def _embedded_job_url_candidates(absolute: str) -> list[str]:
+    low = absolute.lower()
+    if any(
+        token in low for token in ("jobs.lever.co/", "boards.greenhouse.io/", "jobs.ashbyhq.com/")
+    ):
+        return [absolute]
+    if ".jobs.personio.de/" in low:
+        out = [absolute]
+        search_url = normalize_job_url(absolute.rstrip("/") + "/search.json")
+        if search_url and not low.endswith("/search.json"):
+            out.append(search_url)
+        return out
+    if "jobs.smartrecruiters.com/" in low or "apply.workable.com/" in low:
+        return [absolute]
+    parsed = urlparse(absolute)
+    path = (parsed.path or "").lower()
+    return [absolute] if not _is_ignored_job_url(absolute) and _is_job_like_path(path) else []
+
+
 def extract_job_like_links(html: str, base_url: str) -> list[str]:
     links: list[str] = []
     seen = set()
     for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html):
+        raw_href = str(href or "").strip()
+        if _is_ignored_job_href(raw_href):
+            continue
         try:
-            absolute = urljoin(base_url, str(href or "").strip())
+            absolute = urljoin(base_url, raw_href)
         except Exception:  # noqa: BLE001
-            absolute = str(href or "").strip()
+            absolute = raw_href
         parsed = urlparse(absolute)
         path = (parsed.path or "").lower()
-        is_job_path = "/job/" in path or "/jobs/" in path or "/career/posting/" in path
-        if not is_job_path and path.startswith("/requisitions/view/"):
-            is_job_path = bool(re.search(r"/requisitions/view/\d+/?$", path))
-        if not is_job_path and "/careers/" in path:
-            tail = path.rstrip("/")
-            is_job_path = not (
-                tail == "/careers"
-                or tail.endswith("/careers-category")
-                or "/careers-category/" in tail
-            )
-        if not is_job_path and "/career/" in path:
-            is_job_path = path.rstrip("/") != "/career"
-        if not is_job_path and path.startswith("/open-positions/"):
-            is_job_path = True
-        if not is_job_path and ("/job-offers/" in path or path.rstrip("/") == "/job-offers"):
-            is_job_path = True
-        if not is_job_path and path.startswith("/vacancy/"):
-            is_job_path = bool(re.search(r"/vacancy/\d+/?$", path))
-        if not is_job_path and path.startswith("/vacancies/"):
-            is_job_path = True
-        if not is_job_path and path.rstrip("/") == "/vacancies":
-            is_job_path = True
-        if not is_job_path and path.startswith("/join/"):
-            is_job_path = bool(re.search(r"/join/[^/]+/\d+/?$", path))
-        if not is_job_path:
+        if _is_ignored_job_url(absolute):
+            continue
+        if not _is_job_like_path(path):
             continue
         normalized = normalize_job_url(absolute)
         if not normalized or normalized in seen:
@@ -64,36 +102,11 @@ def extract_embedded_job_urls(html: str, base_url: str) -> list[str]:
         absolute = normalize_job_url(raw)
         if not absolute or absolute in seen:
             continue
-        low = absolute.lower()
-        if any(
-            token in low
-            for token in ("jobs.lever.co/", "boards.greenhouse.io/", "jobs.ashbyhq.com/")
-        ):
-            seen.add(absolute)
-            links.append(absolute)
-            continue
-        if ".jobs.personio.de/" in low:
-            seen.add(absolute)
-            links.append(absolute)
-            if not low.endswith("/search.json"):
-                search_url = normalize_job_url(absolute.rstrip("/") + "/search.json")
-                if search_url and search_url not in seen:
-                    seen.add(search_url)
-                    links.append(search_url)
-            continue
-        if "jobs.smartrecruiters.com/" in low:
-            seen.add(absolute)
-            links.append(absolute)
-            continue
-        if "apply.workable.com/" in low:
-            seen.add(absolute)
-            links.append(absolute)
-            continue
-        parsed = urlparse(absolute)
-        path = (parsed.path or "").lower()
-        if "/career/posting/" in path or "/jobs/" in path or "/job/" in path:
-            seen.add(absolute)
-            links.append(absolute)
+        for candidate in _embedded_job_url_candidates(absolute):
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            links.append(candidate)
     for raw in re.findall(r'(?is)href=["\']([^"\']+)["\']', html):
         absolute = normalize_job_url(urljoin(base_url, str(raw or "").strip()))
         if not absolute or absolute in seen:
@@ -107,21 +120,9 @@ def extract_embedded_job_urls(html: str, base_url: str) -> list[str]:
         if not absolute or absolute in seen:
             continue
         path = (urlparse(absolute).path or "").lower()
-        is_job_path = "/job/" in path or "/jobs/" in path or "/career/posting/" in path
-        if not is_job_path and "/careers/" in path:
-            tail = path.rstrip("/")
-            is_job_path = tail != "/careers" and "/careers-category/" not in tail
-        if not is_job_path and "/career/" in path:
-            is_job_path = path.rstrip("/") != "/career"
-        if not is_job_path and any(
-            token in path for token in ("/vacancy/", "/open-positions/", "/join/")
-        ):
-            is_job_path = True
-        if not is_job_path and ("/vacancies/" in path or path.rstrip("/") == "/vacancies"):
-            is_job_path = True
-        if not is_job_path and ("/job-offers/" in path or path.rstrip("/") == "/job-offers"):
-            is_job_path = True
-        if not is_job_path:
+        if _is_ignored_job_url(absolute):
+            continue
+        if not _is_job_like_path(path):
             continue
         seen.add(absolute)
         links.append(absolute)

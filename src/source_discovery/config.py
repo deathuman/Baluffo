@@ -101,6 +101,7 @@ SUPPORTED_PROVIDERS: tuple[str, ...] = (
     "workable",
     "teamtailor",
     "ashby",
+    "bamboohr",
     "recruitee",
     "pinpoint",
     "personio",

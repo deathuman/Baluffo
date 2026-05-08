@@ -353,13 +353,32 @@ def _write_json_payload_atomic(
                 handle.write(serialized)
         else:
             tmp.write_text(serialized, encoding="utf-8")
-        return _replace_path_with_retry(tmp, target, policy=policy)
+        replaced = _replace_path_with_retry(tmp, target, policy=policy)
+        if replaced and target.suffix == ".gz" and path.suffix != ".gz":
+            _remove_stale_plain_json_storage_file(path)
+        return replaced
     finally:
         try:
             if tmp.exists():
                 tmp.unlink()
         except OSError:
             pass
+
+
+def _remove_stale_plain_json_storage_file(path: Path) -> None:
+    """Remove the legacy plain JSON copy after gzip-backed storage is written."""
+    if not _uses_gzip_storage(path):
+        return
+    plain_path = Path(path)
+    if plain_path.suffix == ".gz":
+        plain_path = plain_path.with_suffix("")
+    compressed_path = _gzip_path_for(plain_path)
+    if plain_path == compressed_path or not plain_path.exists():
+        return
+    try:
+        plain_path.unlink()
+    except OSError:
+        pass
 
 
 def _json_journal_path_for(path: Path) -> Path:
@@ -565,6 +584,8 @@ def _json_payload_matches_existing(path: Path, payload: Any) -> bool:
 def save_json_atomic(path: Path, payload: Any) -> None:
     path = Path(path)
     if _json_payload_matches_existing(path, payload):
+        if _uses_gzip_storage(path) and _gzip_path_for(path).exists():
+            _remove_stale_plain_json_storage_file(path)
         return
     journal_payload = _json_journal_image_payload(payload)
     if (

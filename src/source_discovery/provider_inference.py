@@ -8,6 +8,7 @@ from .scoring import careers_keyword_count, clean_token, studio_domain_match
 
 PROVIDER_DISPLAY_NAMES = {
     "ashby": "Ashby",
+    "bamboohr": "BambooHR",
     "greenhouse": "Greenhouse",
     "lever": "Lever",
     "personio": "Personio",
@@ -18,26 +19,22 @@ PROVIDER_DISPLAY_NAMES = {
     "workable": "Workable",
 }
 
+_HOST_FRAGMENT_ADAPTERS = (
+    ("greenhouse", ("boards.greenhouse.io", "jobs.greenhouse.io", "boards-api.greenhouse.io")),
+    ("ashby", ("jobs.ashbyhq.com",)),
+    ("bamboohr", ("bamboohr.com", ".bamboohr.com")),
+    ("recruitee", (".recruitee.com",)),
+    ("pinpoint", (".pinpointhq.com",)),
+    ("workable", ("apply.workable.com",)),
+    ("teamtailor", (".teamtailor.com",)),
+    ("personio", (".jobs.personio.de",)),
+)
+
 
 def infer_provider_adapter(host: str, path: str) -> str | None:
-    if (
-        "boards.greenhouse.io" in host
-        or "jobs.greenhouse.io" in host
-        or "boards-api.greenhouse.io" in host
-    ):
-        return "greenhouse"
-    if "jobs.ashbyhq.com" in host:
-        return "ashby"
-    if ".recruitee.com" in host:
-        return "recruitee"
-    if ".pinpointhq.com" in host:
-        return "pinpoint"
-    if "apply.workable.com" in host:
-        return "workable"
-    if ".teamtailor.com" in host:
-        return "teamtailor"
-    if ".jobs.personio.de" in host:
-        return "personio"
+    for adapter, fragments in _HOST_FRAGMENT_ADAPTERS:
+        if any(fragment in host for fragment in fragments):
+            return adapter
     if ("api.lever.co" in host and "/v0/postings/" in path) or (
         "lever.co" in host and host != "api.lever.co"
     ):
@@ -232,6 +229,22 @@ def _ashby_candidate(
     }
 
 
+def _bamboohr_candidate(
+    base: dict[str, Any],
+    parsed: ParseResult,
+    host: str,
+    path: str,
+    studio: str,
+) -> dict[str, Any]:
+    base_url = f"{parsed.scheme}://{host}" if parsed.scheme else f"https://{host}"
+    listing_path = path.rstrip("/") or "/careers"
+    return {
+        **base,
+        "listing_url": f"{base_url}{listing_path}",
+        "company": studio,
+    }
+
+
 def _personio_candidate(
     base: dict[str, Any],
     _parsed: ParseResult,
@@ -255,6 +268,7 @@ ProviderCandidateBuilder = Callable[
 
 _PROVIDER_CANDIDATE_BUILDERS: dict[str, ProviderCandidateBuilder] = {
     "ashby": _ashby_candidate,
+    "bamboohr": _bamboohr_candidate,
     "greenhouse": _greenhouse_candidate,
     "lever": _lever_candidate,
     "personio": _personio_candidate,

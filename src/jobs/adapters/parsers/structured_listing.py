@@ -35,6 +35,9 @@ def _is_structured_pagination_link(
 def _is_structured_job_link(
     *, lower_href: str, host: str, job_path_tokens: tuple[str, ...]
 ) -> bool:
+    path = (urlparse(lower_href).path or "").rstrip("/").lower()
+    if path in {"/careers", "/jobs"}:
+        return False
     return any(token in lower_href for token in job_path_tokens) or any(
         token in host for token in ("bamboohr.com", "myworkdayjobs.com", "workday.com")
     )

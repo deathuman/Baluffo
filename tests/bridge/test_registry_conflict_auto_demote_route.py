@@ -7,8 +7,10 @@ from src.bridge.routes.post_routes import handle_post
 from tests.helpers.bridge_api import FakeDesktopLocalDataStore, FakeHandler, make_stub_bridge_api
 
 SAFE_ID = "recruitee:api_url:https://jobs.crazygames.com/api/offers/"
-UNSAFE_ID = "recruitee:api_url:https://focusentertainment.recruitee.com/api/offers/"
+FOCUS_ALIAS_ID = "recruitee:api_url:https://focusentertainment.recruitee.com/api/offers/"
 STATIC_SAFE_ID = "static:listing_url:https://www.4a-games.com.mt/careers"
+PENDING_PROVIDER_ID = "greenhouse:slug:replace-static"
+ACTIVE_STATIC_ID = "static:listing_url:https://replace-static.example/careers"
 
 
 def _safe_auto_demote_state() -> dict[str, list[dict[str, Any]]]:
@@ -43,7 +45,7 @@ def _safe_auto_demote_state() -> dict[str, list[dict[str, Any]]]:
                 "score": 24,
             },
             {
-                "id": UNSAFE_ID,
+                "id": FOCUS_ALIAS_ID,
                 "name": "Focus Entertainment (Recruitee)",
                 "studio": "Focus Entertainment",
                 "adapter": "recruitee",
@@ -72,10 +74,37 @@ def _safe_auto_demote_state() -> dict[str, list[dict[str, Any]]]:
                 "rankScore": 30,
                 "score": 20,
             },
+            {
+                "id": ACTIVE_STATIC_ID,
+                "name": "Replace Static",
+                "studio": "Replace Static",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 2,
+                "rankScore": 20,
+                "score": 10,
+            },
         ],
         "pending": [],
         "rejected": [],
     }
+
+
+def _pending_provider_replacement_state() -> dict[str, list[dict[str, Any]]]:
+    state = _safe_auto_demote_state()
+    state["pending"] = [
+        {
+            "id": PENDING_PROVIDER_ID,
+            "name": "Replace Static (Greenhouse)",
+            "studio": "Replace Static",
+            "adapter": "greenhouse",
+            "registryState": "pending",
+            "jobsFound": 7,
+            "rankScore": 0,
+            "score": 0,
+        },
+    ]
+    return state
 
 
 def _seed_api(tmp_path: Path):
@@ -97,35 +126,36 @@ def test_safe_auto_demote_route_demotes_all_eligible_targets(tmp_path: Path) -> 
     assert result is True
     payload = handler.sent[-1]["payload"]
     assert payload["ok"] is True
-    assert payload["demoted"] == 1
+    assert payload["demoted"] == 2
     assert payload["skipped"] == 0
     state = api.load_state()
-    assert [row["id"] for row in state["pending"]] == [SAFE_ID]
+    assert [row["id"] for row in state["pending"]] == [SAFE_ID, FOCUS_ALIAS_ID]
     assert state["pending"][0]["stateChangedBy"] == "registry_conflict_safe_auto_demote"
-    assert UNSAFE_ID in {row["id"] for row in state["active"]}
+    assert FOCUS_ALIAS_ID not in {row["id"] for row in state["active"]}
     assert STATIC_SAFE_ID in {row["id"] for row in state["active"]}
 
 
-def test_safe_auto_demote_route_skips_requested_unsafe_ids(tmp_path: Path) -> None:
+def test_safe_auto_demote_route_demotes_requested_provider_aliases(tmp_path: Path) -> None:
     api, handler = _seed_api(tmp_path)
 
     result = handle_post(
         handler,
         api=api,
         path="/registry/conflicts/auto-demote-safe",
-        payload={"action": "auto_demote_same_adapter_provider_alias", "ids": [SAFE_ID, UNSAFE_ID]},
+        payload={
+            "action": "auto_demote_same_adapter_provider_alias",
+            "ids": [SAFE_ID, FOCUS_ALIAS_ID],
+        },
     )
 
     assert result is True
     payload = handler.sent[-1]["payload"]
-    assert payload["demoted"] == 1
-    assert payload["skipped"] == 1
-    assert payload["skippedRows"] == [
-        {"id": UNSAFE_ID, "reason": "not_currently_safe_auto_demote_eligible"}
-    ]
+    assert payload["demoted"] == 2
+    assert payload["skipped"] == 0
+    assert payload["skippedRows"] == []
     state = api.load_state()
-    assert {row["id"] for row in state["pending"]} == {SAFE_ID}
-    assert UNSAFE_ID in {row["id"] for row in state["active"]}
+    assert {row["id"] for row in state["pending"]} == {SAFE_ID, FOCUS_ALIAS_ID}
+    assert FOCUS_ALIAS_ID not in {row["id"] for row in state["active"]}
 
 
 def test_safe_auto_demote_route_demotes_static_normalized_url_aliases(tmp_path: Path) -> None:
@@ -152,3 +182,39 @@ def test_safe_auto_demote_route_demotes_static_normalized_url_aliases(tmp_path: 
     state = api.load_state()
     assert {row["id"] for row in state["pending"]} == {STATIC_SAFE_ID}
     assert SAFE_ID in {row["id"] for row in state["active"]}
+
+
+def test_safe_auto_demote_route_promotes_pending_provider_replacement(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.persist_state_and_auto_sync(_pending_provider_replacement_state())
+    handler = FakeHandler()
+
+    result = handle_post(
+        handler,
+        api=api,
+        path="/registry/conflicts/auto-demote-safe",
+        payload={"action": "auto_promote_pending_provider_higher_jobs", "ids": []},
+    )
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert payload["demoted"] == 1
+    assert payload["skipped"] == 0
+    assert payload["applied"] == [
+        {
+            "id": PENDING_PROVIDER_ID,
+            "familyKey": "replace static",
+            "action": "auto_promote_pending_provider_higher_jobs",
+        }
+    ]
+    state = api.load_state()
+    active_ids = {row["id"] for row in state["active"]}
+    pending_ids = {row["id"] for row in state["pending"]}
+    assert PENDING_PROVIDER_ID in active_ids
+    assert ACTIVE_STATIC_ID in pending_ids
+    promoted = next(row for row in state["active"] if row["id"] == PENDING_PROVIDER_ID)
+    demoted = next(row for row in state["pending"] if row["id"] == ACTIVE_STATIC_ID)
+    assert promoted["stateChangedBy"] == "registry_conflict_safe_auto_demote"
+    assert demoted["stateChangedBy"] == "registry_conflict_safe_auto_demote"
