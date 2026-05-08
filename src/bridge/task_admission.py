@@ -40,6 +40,40 @@ def get_active_task_metadata(
     }
 
 
+def get_active_lifecycle_task_metadata(
+    task_type: str,
+    *,
+    lifecycle_rows: list[dict[str, Any]],
+    pid_is_running: Callable[[int], bool],
+) -> dict[str, Any]:
+    normalized_type = str(task_type or "").strip().lower()
+    for row in reversed(lifecycle_rows if isinstance(lifecycle_rows, list) else []):
+        if not isinstance(row, dict):
+            continue
+        row_type = str(row.get("type") or row.get("taskType") or "").strip().lower()
+        if row_type != normalized_type:
+            continue
+        if str(row.get("finishedAt") or "").strip():
+            continue
+        lifecycle_status = str(row.get("lifecycleStatus") or row.get("status") or "").lower()
+        if lifecycle_status and lifecycle_status not in {"queued", "running", "started"}:
+            continue
+        pid = _safe_pid(row.get("ownerPid") or row.get("pid"))
+        owner_kind = str(row.get("ownerKind") or "").strip().lower()
+        if owner_kind in {"process", "child_process"} and (pid <= 0 or not pid_is_running(pid)):
+            continue
+        if pid > 0 and not pid_is_running(pid):
+            continue
+        return {
+            "taskType": normalized_type,
+            "runId": str(row.get("runId") or row.get("id") or "").strip(),
+            "startedAt": str(row.get("startedAt") or "").strip(),
+            "pid": pid,
+            "status": "running",
+        }
+    return {}
+
+
 def build_duplicate_start_payload(
     task: str, task_type: str, metadata: dict[str, Any]
 ) -> dict[str, Any]:
@@ -55,4 +89,8 @@ def build_duplicate_start_payload(
     }
 
 
-__all__ = ["build_duplicate_start_payload", "get_active_task_metadata"]
+__all__ = [
+    "build_duplicate_start_payload",
+    "get_active_lifecycle_task_metadata",
+    "get_active_task_metadata",
+]

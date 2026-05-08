@@ -81,7 +81,7 @@ class SummarizeStateFunc(Protocol):
 
 
 class RunHistoryFuncs(Protocol):
-    """Protocol for run history functions."""
+    """Compatibility protocol for legacy run history helpers."""
 
     def append(self, row: dict[str, Any]) -> dict[str, Any]: ...
     def upsert(
@@ -108,7 +108,6 @@ class SyncService:
         load_state: LoadStateFunc,
         persist_state: PersistStateFunc,
         summarize_state: SummarizeStateFunc,
-        run_history: RunHistoryFuncs,
         ops_state_lock: threading.RLock,
         get_security_defaults: Callable[[], dict[str, Any]],
         sync_state: SyncState | None = None,
@@ -124,7 +123,6 @@ class SyncService:
             load_state: Function to load registry state
             persist_state: Function to persist registry state
             summarize_state: Function to summarize registry state
-            run_history: Run history management functions
             ops_state_lock: Lock for operations state
             get_security_defaults: Function to get security defaults
             sync_state: Optional SyncState instance (created if not provided)
@@ -135,7 +133,6 @@ class SyncService:
         self._load_state = load_state
         self._persist_state = persist_state
         self._summarize_state = summarize_state
-        self._run_history = run_history
         self._ops_state_lock = ops_state_lock
         self._get_security_defaults = get_security_defaults
         self._get_registry_auto_heal_report = get_registry_auto_heal_report or (
@@ -704,10 +701,9 @@ class SyncService:
         automatic: bool = False,
     ) -> None:
         def prune_started_rows_for_type(entry_type: str, *, finished_at: str) -> None:
-            self._run_history.prune_started_rows_for_type(entry_type, finished_at=finished_at)
+            return None
 
         def upsert_run_history(entry: dict[str, Any]) -> None:
-            self._run_history.upsert(entry, dedupe_fields=("type", "finishedAt"))
             if self._task_lifecycle is None:
                 return
             run_id_text = str(entry.get("runId") or run_id or "").strip()
@@ -790,23 +786,6 @@ class SyncService:
                     "automatic": bool(automatic),
                 },
             )
-
-        self._run_history.append(
-            {
-                "id": run_id,
-                "runId": run_id,
-                "type": "sync",
-                "status": "started",
-                "startedAt": started_at,
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {
-                    "action": normalized_action,
-                    "reason": str(reason or ""),
-                    "automatic": bool(automatic),
-                },
-            }
-        )
 
         with self._ops_state_lock:
             self._sync_state.add_active_sync_run(run_id)

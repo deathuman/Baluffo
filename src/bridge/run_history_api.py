@@ -418,6 +418,7 @@ def _build_child_task_snapshot(
 
     owner_active = bool(
         run_id
+        and not finished_at
         and (
             state_active
             or artifact_active

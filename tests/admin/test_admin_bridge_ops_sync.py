@@ -102,7 +102,7 @@ def test_sync_push_serializes_expected_snapshot_counts(admin_bridge_entrypoint_r
     assert int(counts.get("rejected") or 0) == 1
 
 
-def test_start_sync_task_creates_started_history_row(admin_bridge_entrypoint_root, monkeypatch):
+def test_start_sync_task_creates_started_lifecycle_row(admin_bridge_entrypoint_root, monkeypatch):
     api = build_admin_bridge_api()
     api.update_saved_sync_settings({"enabled": True})
 
@@ -124,14 +124,16 @@ def test_start_sync_task_creates_started_history_row(admin_bridge_entrypoint_roo
     assert result.get("started")
     assert str(result.get("task") or "") == "source_sync"
     assert str(result.get("action") or "") == "pull"
-    rows = _load_run_history(admin_bridge_entrypoint_root)
+    projection = api.get_projected_run_history()
     started = [
         row
-        for row in rows
-        if str(row.get("type") or "") == "sync" and str(row.get("status") or "") == "started"
+        for row in projection.rows
+        if str(row.get("type") or "") == "sync"
+        and str(row.get("lifecycleStatus") or "") == "running"
     ]
     assert len(started) >= 1
     assert str((started[-1].get("summary") or {}).get("action") or "") == "pull"
+    assert _load_run_history(admin_bridge_entrypoint_root) == []
 
 
 def test_sync_history_discards_stale_sync_started_row_without_run_id(admin_bridge_entrypoint_root):

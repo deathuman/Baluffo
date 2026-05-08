@@ -4,7 +4,6 @@ from unittest import mock
 import pytest
 
 from src import admin_bridge
-from tests.admin._runtime_helpers import task_state_entry
 
 pytestmark = pytest.mark.usefixtures("admin_bridge_entrypoint_root")
 
@@ -276,7 +275,7 @@ def test_run_background_script_command_shape(
         assert kwargs["stdout"] is kwargs["stderr"]
 
 
-def test_run_background_script_persists_run_id_in_task_state(admin_bridge_entrypoint_root):
+def test_run_background_script_does_not_write_legacy_task_state(admin_bridge_entrypoint_root):
     _configure_background_script_runtime(admin_bridge_entrypoint_root, desktop_mode=False)
     fake_proc = type("FakeProc", (), {"pid": 24680})()
     with (
@@ -292,15 +291,14 @@ def test_run_background_script_persists_run_id_in_task_state(admin_bridge_entryp
                 "BALUFFO_FETCH_STARTED_AT": "2026-03-27T14:00:00+00:00",
             },
         )
-    task_state = admin_bridge.load_json_object(admin_bridge.TASK_STATE_PATH, {})
-    fetch_state = task_state.get("fetch") or {}
-    assert str(fetch_state.get("runId") or "") == "fetch_state_1"
-    assert str(fetch_state.get("taskType") or "") == "fetch"
-    assert str(fetch_state.get("startedAt") or "") == "2026-03-27T14:00:00+00:00"
+    assert admin_bridge.load_json_object(admin_bridge.TASK_STATE_PATH, {}) == {}
 
 
 def test_start_fetcher_task_writes_report_shell_with_run_id():
-    with mock.patch.object(admin_bridge, "run_background_script", return_value=24680):
+    with (
+        mock.patch.object(admin_bridge, "pid_is_running", return_value=True),
+        mock.patch.object(admin_bridge, "run_background_script", return_value=24680),
+    ):
         result = admin_bridge.start_fetcher_task({})
 
     assert result["started"] is True
@@ -312,13 +310,12 @@ def test_start_fetcher_task_writes_report_shell_with_run_id():
     assert str(report.get("startedAt") or "") == str(result.get("startedAt") or "")
     assert str(report.get("finishedAt") or "") == ""
 
-    rows = admin_bridge.load_run_history()
-    assert any(
-        str(row.get("type") or "") == "fetch"
-        and str(row.get("status") or "") == "started"
-        and str(row.get("runId") or "") == run_id
-        for row in rows
-    )
+    current_rows = admin_bridge.get_lifecycle_current_runs()
+    matching = [row for row in current_rows if str(row.get("runId") or "") == run_id]
+    assert len(matching) == 1
+    assert str(matching[0].get("taskType") or "") == "fetch"
+    assert str(matching[0].get("lifecycleStatus") or "") == "running"
+    assert admin_bridge.load_run_history() == []
 
 
 def test_start_fetcher_task_does_not_overwrite_fast_terminal_report():
@@ -361,9 +358,13 @@ def test_start_fetcher_task_spawn_failure_writes_terminal_error_report():
     assert str(report.get("runId") or "") == run_id
     assert str(report.get("finishedAt") or "")
     assert str((report.get("summary") or {}).get("error") or "") == "spawn denied"
-    rows = admin_bridge.load_run_history()
-    matching = [row for row in rows if str(row.get("runId") or "") == run_id]
-    assert [str(row.get("status") or "") for row in matching] == ["error"]
+    recent_rows = admin_bridge.get_lifecycle_recent_runs()
+    matching = [row for row in recent_rows if str(row.get("runId") or "") == run_id]
+    assert len(matching) == 1
+    assert str(matching[0].get("taskType") or "") == "fetch"
+    assert str(matching[0].get("lifecycleStatus") or "") == "failed"
+    assert str((matching[0].get("summary") or {}).get("error") or "") == "spawn denied"
+    assert admin_bridge.load_run_history() == []
 
 
 def test_start_fetcher_task_sets_uncapped_static_budget_env():
@@ -395,11 +396,12 @@ def test_start_fetcher_task_default_preset_omits_static_budget_env():
 
 def test_start_fetcher_task_returns_conflict_for_active_fetch():
     started_at = "2026-03-27T14:00:00+00:00"
-    admin_bridge.save_json_atomic(
-        admin_bridge.TASK_STATE_PATH,
-        {
-            "fetch": task_state_entry("fetch", run_id="fetch_live_1", started_at=started_at),
-        },
+    admin_bridge.start_lifecycle_run(
+        run_id="fetch_live_1",
+        task_type="fetch",
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=111,
     )
 
     with (

@@ -163,15 +163,16 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - `/ops/task-state` is unchanged. Its top-level `tasks` array remains the compact current-task summary contract used by Ops and Jobs.
 - Saved-page bridge consumers should keep route calls inside slice-local `frontend/saved/services.js`; page behavior now fans out through `frontend/saved/app/runtime/*.js` and `frontend/saved/app/admin-bridge-state.js`, not through new root facades.
 - Long-running admin tasks are now **runId-owned**. `runId` is the only lifecycle identity for fetch, discovery, sync, and pipeline rows. Timestamp-only matching is not part of the runtime lifecycle model anymore.
-- Current Runs and `/ops/history` are projected from `data/admin-task-lifecycle.json` when lifecycle rows exist. Legacy report/history projection remains a transition fallback for runtimes that have not written the lifecycle ledger yet.
+- Current Runs and `/ops/history` are projected from `data/admin-task-lifecycle.json`.
 - Authoritative owners by task type:
-  - `fetch`: `data/jobs-fetch-report.json`, `data/jobs-fetch-tasks.json`, and the matching `data/admin-task-state.json` entry
-  - `discovery`: `data/source-discovery-report.json` and the matching `data/admin-task-state.json` entry
+  - `fetch`: lifecycle row identity/liveness plus `data/jobs-fetch-report.json` and `data/jobs-fetch-tasks.json` as progress/evidence
+  - `discovery`: lifecycle row identity/liveness plus `data/source-discovery-report.json` as progress/evidence
   - `sync`: `SyncState` in the bridge runtime
   - `pipeline`: bridge pipeline runtime state
 - GET routes are read-only for lifecycle state. Loading `/discovery/report`, `/ops/history`, `/ops/task-state`, or `/ops/fetch-report` must not auto-finish or prune tasks.
 - `data/admin-task-lifecycle.json` is the source of truth for task liveness and terminal state.
-- `data/admin-task-state.json` and `data/admin-run-history.json` are derived transition surfaces. They record process state and history compatibility, but they are not authoritative for active-vs-terminal lifecycle decisions.
+- `data/admin-task-state.json` and `data/admin-run-history.json` are legacy compatibility/migration artifacts. Normal bridge startup, task launch, task completion, task-state projection, and history projection must not read or write them as lifecycle authority.
+- Bridge startup does not reconcile legacy history/state rows into `data/admin-task-lifecycle.json`. Legacy lifecycle import belongs in explicit migration or test tooling, not normal bridge startup.
 - To reset current lifecycle/debug artifacts before a clean debugging session, run:
   - `python scripts/reset_admin_task_lifecycle.py --data-dir data`
 

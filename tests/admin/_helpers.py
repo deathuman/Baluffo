@@ -13,8 +13,10 @@ from src.bridge import ACTIVE_SYNC_RUNS, ACTIVE_SYNC_THREADS, SYNC_STATE_LOCK
 class AdminBridgeTestPaths:
     root: Path
     ops_history: Path
+    task_lifecycle: Path
     ops_alert_state: Path
     jobs_fetch_report: Path
+    jobs_fetch_tasks: Path
     discovery_report: Path
     discovery_candidates: Path
     source_policy_recommendations: Path
@@ -27,6 +29,7 @@ class AdminBridgeTestPaths:
     tombstones: Path
     tasks_config: Path
     task_state: Path
+    sync_live_task: Path
     sync_config: Path
     sync_runtime: Path
     packaged_sync_config: Path
@@ -36,8 +39,10 @@ def admin_bridge_test_paths(root: Path) -> AdminBridgeTestPaths:
     return AdminBridgeTestPaths(
         root=root,
         ops_history=root / "admin-run-history.json",
+        task_lifecycle=root / "admin-task-lifecycle.json",
         ops_alert_state=root / "admin-alert-state.json",
         jobs_fetch_report=root / "jobs-fetch-report.json",
+        jobs_fetch_tasks=root / "jobs-fetch-tasks.json",
         discovery_report=root / "source-discovery-report.json",
         discovery_candidates=root / "source-discovery-candidates.json",
         source_policy_recommendations=root / "source-policy-recommendations.json",
@@ -50,6 +55,7 @@ def admin_bridge_test_paths(root: Path) -> AdminBridgeTestPaths:
         tombstones=root / "source-registry-tombstones.json",
         tasks_config=root / "tasks.json",
         task_state=root / "admin-task-state.json",
+        sync_live_task=root / "sync-live-task.json",
         sync_config=root / "source-sync-config.json",
         sync_runtime=root / "source-sync-runtime.json",
         packaged_sync_config=root / "github-app-sync-config.json",
@@ -58,8 +64,10 @@ def admin_bridge_test_paths(root: Path) -> AdminBridgeTestPaths:
 
 def patch_admin_bridge_paths(monkeypatch: Any, paths: AdminBridgeTestPaths) -> None:
     monkeypatch.setattr(admin_bridge, "OPS_HISTORY_PATH", paths.ops_history)
+    monkeypatch.setattr(admin_bridge, "TASK_LIFECYCLE_PATH", paths.task_lifecycle)
     monkeypatch.setattr(admin_bridge, "OPS_ALERT_STATE_PATH", paths.ops_alert_state)
     monkeypatch.setattr(admin_bridge, "JOBS_FETCH_REPORT_PATH", paths.jobs_fetch_report)
+    monkeypatch.setattr(admin_bridge, "JOBS_FETCH_TASKS_PATH", paths.jobs_fetch_tasks)
     monkeypatch.setattr(admin_bridge, "DISCOVERY_REPORT_PATH", paths.discovery_report)
     monkeypatch.setattr(admin_bridge, "DISCOVERY_CANDIDATES_PATH", paths.discovery_candidates)
     monkeypatch.setattr(
@@ -84,6 +92,7 @@ def patch_admin_bridge_paths(monkeypatch: Any, paths: AdminBridgeTestPaths) -> N
     monkeypatch.setattr(admin_bridge, "TOMBSTONES_PATH", paths.tombstones)
     monkeypatch.setattr(admin_bridge, "TASKS_CONFIG_PATH", paths.tasks_config)
     monkeypatch.setattr(admin_bridge, "TASK_STATE_PATH", paths.task_state)
+    monkeypatch.setattr(admin_bridge, "SYNC_LIVE_TASK_PATH", paths.sync_live_task)
     monkeypatch.setattr(admin_bridge, "SYNC_CONFIG_PATH", paths.sync_config)
     monkeypatch.setattr(admin_bridge, "SYNC_RUNTIME_PATH", paths.sync_runtime)
     monkeypatch.setattr(admin_bridge, "MAX_HISTORY_ROWS", 5)

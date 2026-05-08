@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -357,7 +356,6 @@ def get_sync_service() -> _SyncServiceLike:
             load_state=root_mod.load_state,
             persist_state=root_mod.persist_state,
             summarize_state=root_mod.summarize_state,
-            run_history=root_mod._TASK_HISTORY,
             ops_state_lock=root_mod.OPS_STATE_LOCK,
             get_security_defaults=root_mod.get_security_defaults,
             sync_state=root_mod.SyncState(data_dir=data_dir),
@@ -442,6 +440,7 @@ def get_discovery_service() -> _DiscoveryServiceLike:
                     heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
                     finish_lifecycle_run=root_mod.finish_lifecycle_run,
                     fail_lifecycle_run=root_mod.fail_lifecycle_run,
+                    get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
                 ),
             )
         return cast(_DiscoveryServiceLike, root_mod._DISCOVERY_SERVICE)
@@ -572,54 +571,20 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 normalized_run_id = str(run_id or "").strip()
                 if not normalized_type or not normalized_run_id:
                     return False
-
-                task_state = pipeline_load_json_object(root_mod.TASK_STATE_PATH, {})
-                task_state_entry = _as_json_object(task_state.get(normalized_type))
-                if str(
-                    task_state_entry.get("runId") or ""
-                ).strip() == normalized_run_id and root_mod.task_running_from_state(
-                    normalized_type
-                ):
-                    return True
-
-                if normalized_type != "fetch":
-                    return False
-
-                fetch_tasks = pipeline_load_json_object(root_mod.JOBS_FETCH_TASKS_PATH, {})
-                if not isinstance(fetch_tasks, dict):
-                    return False
-                if str(fetch_tasks.get("runId") or "").strip() != normalized_run_id:
-                    return False
-                if str(fetch_tasks.get("finishedAt") or "").strip():
-                    return False
-
-                runtime_payload = _as_json_object(fetch_tasks.get("runtime"))
-                lifecycle = _as_json_object(runtime_payload.get("lifecycle"))
-                heartbeat_at = str(
-                    lifecycle.get("heartbeatAt") or fetch_tasks.get("heartbeatAt") or ""
-                ).strip()
-                heartbeat_dt = root_mod.parse_iso(heartbeat_at) if heartbeat_at else None
-                recent_heartbeat = bool(
-                    heartbeat_dt and (datetime.now(UTC) - heartbeat_dt) <= timedelta(minutes=2)
-                )
-                recent_artifact = False
-                try:
-                    artifact_mtime = datetime.fromtimestamp(
-                        Path(root_mod.JOBS_FETCH_TASKS_PATH).stat().st_mtime,
-                        tz=UTC,
+                for row in root_mod.get_lifecycle_current_runs():
+                    if not isinstance(row, dict):
+                        continue
+                    row_type = str(row.get("type") or row.get("taskType") or "").strip().lower()
+                    row_run_id = str(row.get("runId") or row.get("id") or "").strip()
+                    if row_type != normalized_type or row_run_id != normalized_run_id:
+                        continue
+                    if str(row.get("finishedAt") or "").strip():
+                        return False
+                    lifecycle_status = (
+                        str(row.get("lifecycleStatus") or row.get("status") or "").strip().lower()
                     )
-                    recent_artifact = (datetime.now(UTC) - artifact_mtime) <= timedelta(minutes=2)
-                except OSError:
-                    recent_artifact = False
-                task_progress = _as_json_object(fetch_tasks.get("taskProgress"))
-                has_live_evidence = bool(
-                    fetch_tasks.get("active")
-                    or task_progress.get("active")
-                    or str(fetch_tasks.get("startedAt") or "").strip()
-                    or bool(fetch_tasks.get("workItems"))
-                    or bool(fetch_tasks.get("recentEvents"))
-                )
-                return bool(has_live_evidence and (recent_heartbeat or recent_artifact))
+                    return lifecycle_status in {"", "queued", "running", "started"}
+                return False
 
             def pipeline_refresh_child_task_heartbeat(
                 task_type: str, run_id: str, started_at: str
@@ -628,49 +593,33 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 normalized_run_id = str(run_id or "").strip()
                 if normalized_type not in {"discovery", "fetch"} or not normalized_run_id:
                     return False
-                with root_mod.OPS_STATE_LOCK:
-                    task_state = pipeline_load_json_object(root_mod.TASK_STATE_PATH, {})
-                    if not isinstance(task_state, dict):
-                        return False
-                    current = _as_json_object(task_state.get(normalized_type))
-                    if str(current.get("runId") or "").strip() != normalized_run_id:
-                        return False
-                    if not root_mod.task_running_from_state(normalized_type):
-                        return False
-                    progress: JsonObject = {}
-                    summary: JsonObject = {}
-                    if normalized_type == "discovery":
-                        progress, summary = _matching_live_report_progress(
-                            root_mod,
-                            report_path=root_mod.DISCOVERY_REPORT_PATH,
-                            run_id=normalized_run_id,
-                            started_at=started_at,
-                        )
-                    elif normalized_type == "fetch":
-                        progress, summary = _matching_live_report_progress(
-                            root_mod,
-                            report_path=root_mod.JOBS_FETCH_TASKS_PATH,
-                            run_id=normalized_run_id,
-                            started_at=started_at,
-                        )
-                    task_state[normalized_type] = {
-                        **current,
-                        "runId": normalized_run_id,
-                        "taskType": normalized_type,
-                        "status": "running",
-                        "startedAt": str(current.get("startedAt") or started_at or "").strip(),
-                        "heartbeatAt": root_mod.now_iso(),
-                    }
-                    root_mod.save_json_atomic(root_mod.TASK_STATE_PATH, task_state)
-                    root_mod.heartbeat_lifecycle_run(
-                        normalized_run_id,
-                        normalized_type,
-                        heartbeat_at=str(task_state[normalized_type].get("heartbeatAt") or ""),
-                        stage="pipeline_owned",
-                        progress=progress or None,
-                        summary=summary or None,
+                if not pipeline_child_run_is_live(normalized_type, normalized_run_id):
+                    return False
+                progress: JsonObject = {}
+                summary: JsonObject = {}
+                if normalized_type == "discovery":
+                    progress, summary = _matching_live_report_progress(
+                        root_mod,
+                        report_path=root_mod.DISCOVERY_REPORT_PATH,
+                        run_id=normalized_run_id,
+                        started_at=started_at,
                     )
-                    return True
+                elif normalized_type == "fetch":
+                    progress, summary = _matching_live_report_progress(
+                        root_mod,
+                        report_path=root_mod.JOBS_FETCH_TASKS_PATH,
+                        run_id=normalized_run_id,
+                        started_at=started_at,
+                    )
+                root_mod.heartbeat_lifecycle_run(
+                    normalized_run_id,
+                    normalized_type,
+                    heartbeat_at=root_mod.now_iso(),
+                    stage="pipeline_owned",
+                    progress=progress or None,
+                    summary=summary or None,
+                )
+                return True
 
             root_mod._PIPELINE_SERVICE = root_mod.PipelineService(
                 pipeline_state_lock=bridge_runtime_state.PIPELINE_STATE_LOCK,
@@ -701,6 +650,7 @@ def get_pipeline_service() -> _PipelineServiceLike:
                 finish_lifecycle_run=root_mod.finish_lifecycle_run,
                 fail_lifecycle_run=root_mod.fail_lifecycle_run,
                 attach_lifecycle_child=root_mod.attach_lifecycle_child,
+                clear_task_state=root_mod.clear_task_state,
             )
         return cast(_PipelineServiceLike, root_mod._PIPELINE_SERVICE)
 

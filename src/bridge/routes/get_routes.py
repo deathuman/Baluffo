@@ -946,11 +946,7 @@ def handle_get(
             limit = max(1, min(200, int(limit_raw)))
         except ValueError:
             limit = 30
-        history_fn = getattr(api, "get_lifecycle_run_history_rows", None)
-        if callable(history_fn):
-            rows = list(history_fn() or [])
-        else:
-            rows = api.sync_history_from_reports()
+        rows = list(api.get_lifecycle_run_history_rows() or [])
         handler.send_json({"runs": rows[-limit:], "count": len(rows)})
         return True
 

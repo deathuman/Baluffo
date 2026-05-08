@@ -13,7 +13,10 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any
 
-from src.bridge.task_admission import build_duplicate_start_payload, get_active_task_metadata
+from src.bridge.task_admission import (
+    build_duplicate_start_payload,
+    get_active_lifecycle_task_metadata,
+)
 from src.shared.json_shapes import as_json_object
 from src.source_registry import (
     _pending_row_is_auto_approvable as registry_pending_row_is_auto_approvable,
@@ -62,6 +65,7 @@ class DiscoveryDeps:
     heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] = lambda *_args, **_kwargs: None
     finish_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {}
     fail_lifecycle_run: Callable[..., dict[str, Any]] = lambda *_args, **_kwargs: {}
+    get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] = lambda: []
 
 
 class DiscoveryService:
@@ -88,37 +92,12 @@ class DiscoveryService:
         finished_at: str,
         summary: dict[str, Any],
     ) -> None:
-        started_dt = self._deps.parse_iso(started_at)
-        finished_dt = self._deps.parse_iso(finished_at)
-        duration_ms = (
-            int(max(0.0, (finished_dt - started_dt).total_seconds() * 1000))
-            if started_dt and finished_dt
-            else 0
-        )
-        failed_probe_count = int(summary.get("failedProbeCount") or 0)
-        probe_miss_count = int(summary.get("probeMissCount") or 0)
-        status = "warning" if (failed_probe_count > 0 or probe_miss_count > 0) else "ok"
-        self._deps.clear_task_state("discovery")
         self._deps.finish_lifecycle_run(
             run_id,
             "discovery",
             finished_at=finished_at,
             summary=dict(summary or {}),
             terminal_reason="completed",
-        )
-        self._deps.prune_started_rows_for_type("discovery", finished_at=finished_at)
-        self._deps.upsert_run_history(
-            {
-                "id": run_id,
-                "runId": run_id,
-                "type": "discovery",
-                "status": status,
-                "startedAt": started_at,
-                "finishedAt": finished_at,
-                "durationMs": duration_ms,
-                "summary": dict(summary or {}),
-            },
-            dedupe_fields=("type", "runId"),
         )
 
     @staticmethod
@@ -154,92 +133,39 @@ class DiscoveryService:
         }
 
     def _refresh_discovery_task_heartbeat(self, *, run_id: str, pid: int, started_at: str) -> None:
-        if self._paths.task_state is None:
-            return
         now = self._deps.now_iso()
-        lock_context = (
-            self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
-        )
-        with lock_context:
-            state = self._deps.load_json_object(self._paths.task_state, {})
-            if not isinstance(state, dict):
-                state = {}
-            current = as_json_object(state.get("discovery"))
-            current_run_id = str(current.get("runId") or "").strip()
-            if current_run_id and current_run_id != run_id:
-                return
-            report = self._deps.normalize_discovery_report_contract(
-                self._deps.load_json_object(self._paths.report, {})
-            )
-            report_run_id = str(report.get("runId") or "").strip()
-            report_started_at = str(report.get("startedAt") or "").strip()
-            report_started_dt = self._deps.parse_iso(report_started_at)
-            started_dt = self._deps.parse_iso(started_at)
-            report_matches_run = bool(
-                report_run_id == run_id
-                and (
-                    not report_started_at
-                    or not started_dt
-                    or not report_started_dt
-                    or report_started_dt >= started_dt
-                )
-            )
-            progress = as_json_object(report.get("taskProgress")) if report_matches_run else {}
-            summary = as_json_object(report.get("summary")) if report_matches_run else {}
-            stage = str(
-                summary.get("currentStageKey")
-                or summary.get("phaseKey")
-                or summary.get("phase")
-                or ""
-            ).strip()
-            state["discovery"] = {
-                **current,
-                "runId": run_id,
-                "taskType": "discovery",
-                "pid": int(pid),
-                "status": "running",
-                "startedAt": str(current.get("startedAt") or started_at),
-                "heartbeatAt": now,
-            }
-            self._deps.save_json_atomic(self._paths.task_state, state)
-            self._deps.heartbeat_lifecycle_run(
-                run_id,
-                "discovery",
-                heartbeat_at=now,
-                stage=stage or "running",
-                progress=progress or None,
-                summary=summary or None,
-            )
-
-    def _reconcile_terminal_discovery_report_from_state(self) -> None:
-        if self._paths.task_state is None:
-            return
-        state = self._deps.load_json_object(self._paths.task_state, {})
-        if not isinstance(state, dict):
-            return
-        current = as_json_object(state.get("discovery"))
-        run_id = str(current.get("runId") or "").strip()
-        if not run_id:
-            return
         report = self._deps.normalize_discovery_report_contract(
             self._deps.load_json_object(self._paths.report, {})
         )
-        if str(report.get("runId") or "").strip() != run_id:
-            return
-        finished_at = str(report.get("finishedAt") or "").strip()
-        if not finished_at:
-            return
-        started_at = str(current.get("startedAt") or report.get("startedAt") or "").strip()
+        report_run_id = str(report.get("runId") or "").strip()
+        report_started_at = str(report.get("startedAt") or "").strip()
+        report_started_dt = self._deps.parse_iso(report_started_at)
         started_dt = self._deps.parse_iso(started_at)
-        finished_dt = self._deps.parse_iso(finished_at)
-        if started_dt and finished_dt and finished_dt < started_dt:
-            return
-        self._finalize_discovery_run(
-            run_id=run_id,
-            started_at=started_at,
-            finished_at=finished_at,
-            summary=as_json_object(report.get("summary")),
+        report_matches_run = bool(
+            report_run_id == run_id
+            and (
+                not report_started_at
+                or not started_dt
+                or not report_started_dt
+                or report_started_dt >= started_dt
+            )
         )
+        progress = as_json_object(report.get("taskProgress")) if report_matches_run else {}
+        summary = as_json_object(report.get("summary")) if report_matches_run else {}
+        stage = str(
+            summary.get("currentStageKey") or summary.get("phaseKey") or summary.get("phase") or ""
+        ).strip()
+        self._deps.heartbeat_lifecycle_run(
+            run_id,
+            "discovery",
+            heartbeat_at=now,
+            stage=stage or "running",
+            progress=progress or None,
+            summary=summary or None,
+        )
+
+    def _reconcile_terminal_discovery_report_from_state(self) -> None:
+        return
 
     def update_saved_discovery_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         normalized = self._normalize_discovery_settings(payload)
@@ -262,9 +188,13 @@ class DiscoveryService:
             if finished_dt and finished_dt >= started_dt:
                 break
             if not self._deps.pid_is_running(pid):
-                # Worker exited without a terminal report (crash/kill); clear stale task state
-                # so ops/UI do not show discovery as running forever.
-                self._deps.clear_task_state("discovery")
+                self._deps.fail_lifecycle_run(
+                    run_id,
+                    "discovery",
+                    finished_at=self._deps.now_iso(),
+                    terminal_reason="owner_inactive_without_terminal_report",
+                    summary={"error": "owner_inactive_without_terminal_report"},
+                )
                 return
             self._refresh_discovery_task_heartbeat(
                 run_id=run_id,
@@ -345,10 +275,9 @@ class DiscoveryService:
         )
         with lock_context:
             self._reconcile_terminal_discovery_report_from_state()
-            active_metadata = get_active_task_metadata(
+            active_metadata = get_active_lifecycle_task_metadata(
                 "discovery",
-                load_json_object=self._deps.load_json_object,
-                task_state_path=self._paths.task_state,
+                lifecycle_rows=list(self._deps.get_lifecycle_current_runs() or []),
                 pid_is_running=self._deps.pid_is_running,
             )
             if active_metadata:
@@ -440,7 +369,6 @@ class DiscoveryService:
                     },
                 },
             )
-            self._deps.prune_started_rows_for_type("discovery", keep_started_at=started_at)
             try:
                 self._paths.log.parent.mkdir(parents=True, exist_ok=True)
                 self._paths.log.write_text(
@@ -448,18 +376,6 @@ class DiscoveryService:
                 )
             except OSError:
                 pass
-            self._deps.append_run_history(
-                {
-                    "id": run_id,
-                    "runId": run_id,
-                    "type": "discovery",
-                    "status": "started",
-                    "startedAt": started_at,
-                    "finishedAt": "",
-                    "durationMs": 0,
-                    "summary": {},
-                }
-            )
             spawn_args = ["--mode", "dynamic"]
             if preset == "uncapped":
                 spawn_args.extend(["--top", "0", "--preset", "uncapped"])

@@ -242,6 +242,23 @@ def maybe_trigger_auto_sync_push(reason: str) -> bool:
     )
 
 
+def reconcile_lifecycle_legacy_state() -> JsonObject:
+    root_mod = _require_root()
+    history_rows = root_mod.load_run_history()
+    task_state = root_mod.load_json_object(root_mod.TASK_STATE_PATH, {})
+    rows = root_mod.reconcile_lifecycle_from_legacy(
+        history_rows=history_rows,
+        task_state=task_state if isinstance(task_state, dict) else {},
+        pid_is_running=root_mod.pid_is_running,
+    )
+    return {
+        "ok": True,
+        "rowCount": len(rows),
+        "historyRows": len(history_rows),
+        "taskStateRows": len(task_state) if isinstance(task_state, dict) else 0,
+    }
+
+
 def run_sync_task_worker(
     run_id: str, action: str, started_at: str, *, reason: str = "", automatic: bool = False
 ) -> None:
@@ -259,12 +276,23 @@ def run_sync_task_worker(
         set_sync_status=root_mod._set_sync_status,
         remove_active_sync_run=root_mod.SyncState.remove_active_sync_run,
         remove_active_sync_thread=root_mod.SyncState.remove_active_sync_thread,
-        prune_started_rows_for_type=lambda entry_type, *, finished_at: (
-            root_mod.prune_started_rows_for_type(entry_type, finished_at=finished_at)
-        ),
-        upsert_run_history=lambda entry: root_mod.upsert_run_history(
-            entry,
-            dedupe_fields=("type", "runId"),
+        prune_started_rows_for_type=lambda _entry_type, *, finished_at: None,
+        upsert_run_history=lambda entry: (
+            root_mod.fail_lifecycle_run(
+                str(entry.get("runId") or run_id or ""),
+                "sync",
+                finished_at=str(entry.get("finishedAt") or ""),
+                terminal_reason="failed",
+                summary=dict(entry.get("summary") or {}),
+            )
+            if str(entry.get("status") or "").strip().lower() == "error"
+            else root_mod.finish_lifecycle_run(
+                str(entry.get("runId") or run_id or ""),
+                "sync",
+                finished_at=str(entry.get("finishedAt") or ""),
+                terminal_reason="completed",
+                summary=dict(entry.get("summary") or {}),
+            )
         ),
         bridge_log=root_mod.bridge_log,
         save_json_atomic=root_mod.save_json_atomic,
@@ -309,14 +337,19 @@ def wait_for_sync_completion(run_id: str, timeout_s: float = 900.0) -> JsonObjec
     root_mod = _require_root()
     deadline = datetime.now(UTC) + timedelta(seconds=max(10.0, float(timeout_s)))
     while datetime.now(UTC) < deadline:
-        history = root_mod.sync_history_from_reports()
+        projection = root_mod.get_projected_run_history()
+        history = list(projection.rows if hasattr(projection, "rows") else [])
         for row in reversed(history):
-            if str(row.get("id") or "") != str(run_id or ""):
+            if str(row.get("runId") or row.get("id") or "") != str(run_id or ""):
                 continue
             if str(row.get("type") or "").strip().lower() != "sync":
                 continue
-            status = str(row.get("status") or "").strip().lower()
-            if status in {"ok", "warning", "error"} and str(row.get("finishedAt") or "").strip():
+            lifecycle_status = str(row.get("lifecycleStatus") or "").strip().lower()
+            status = str(row.get("status") or lifecycle_status or "").strip().lower()
+            if (
+                lifecycle_status in {"succeeded", "failed", "canceled", "orphaned"}
+                or status in {"ok", "warning", "error", "succeeded", "failed", "canceled"}
+            ) and str(row.get("finishedAt") or "").strip():
                 return row
         root_mod.threading.Event().wait(1.0)
     raise TimeoutError("sync task did not finish within timeout")
@@ -337,6 +370,7 @@ def start_fetcher_task(payload: JsonObject | None = None) -> JsonObject:
         finish_lifecycle_run=root_mod.finish_lifecycle_run,
         fail_lifecycle_run=root_mod.fail_lifecycle_run,
         heartbeat_lifecycle_run=root_mod.heartbeat_lifecycle_run,
+        get_lifecycle_current_runs=root_mod.get_lifecycle_current_runs,
     )
 
 

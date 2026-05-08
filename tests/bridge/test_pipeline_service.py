@@ -5,7 +5,12 @@ from pathlib import Path
 from typing import Any
 
 from src.bridge.pipeline_service import PipelineRuntime, PipelineService
-from src.bridge.run_history_api import SyncHistoryDeps, project_run_history
+from src.bridge.run_history_api import (
+    ChildTaskSnapshot,
+    LifecycleProjection,
+    SyncHistoryDeps,
+    project_run_history,
+)
 
 
 def _parse_iso(value: Any) -> datetime | None:
@@ -133,11 +138,103 @@ def test_pipeline_waits_for_discovery_registry_finalization_before_fetch() -> No
     )
 
 
+def test_status_payload_recovers_inactive_pipeline_worker_after_terminal_fetch_report() -> None:
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "fetch",
+        "progress": {"currentStep": 2, "totalSteps": 3, "percent": 67, "label": "Running fetch..."},
+        "startedAt": "2026-05-06T18:00:00Z",
+        "finishedAt": "",
+        "error": "",
+        "baselineOutputCount": 0,
+        "finalOutputCount": 0,
+        "jobsPageLoadedCount": 0,
+    }
+    finished_fetch_report = {
+        "runId": "fetch_1",
+        "startedAt": "2026-05-06T18:05:00Z",
+        "finishedAt": "2026-05-06T18:35:00Z",
+        "taskProgress": {
+            "active": True,
+            "phaseKey": "executing_sources",
+            "phaseLabel": "Executing sources",
+            "mode": "determinate",
+            "ratio": 0.8,
+        },
+        "summary": {"outputCount": 42, "failedSources": 3},
+    }
+    finished_children: list[dict[str, Any]] = []
+    failed_runs: list[dict[str, Any]] = []
+    cleared: list[str] = []
+
+    service = _make_pipeline_service(
+        pipeline_status=status,
+        current_fetch_output_count=lambda: 42,
+        load_json_object=lambda _path, _default: dict(finished_fetch_report),
+        get_projected_run_history=lambda: LifecycleProjection(
+            rows=[],
+            child_tasks={
+                "fetch": ChildTaskSnapshot(
+                    task_type="fetch",
+                    run_id="fetch_1",
+                    started_at="2026-05-06T18:05:00Z",
+                    finished_at="",
+                    active=True,
+                    terminal_status="",
+                    summary={},
+                    outputs={},
+                    task_progress={},
+                    explicit_dead=False,
+                    diagnostics=(),
+                )
+            },
+            diagnostics=[],
+        ),
+        finish_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            finished_children.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        ),
+        fail_lifecycle_run=lambda run_id, task_type, **kwargs: (
+            failed_runs.append({"runId": run_id, "taskType": task_type, **kwargs}) or {}
+        ),
+        clear_task_state=lambda task_type: cleared.append(task_type),
+    )
+
+    payload = service.get_status_payload()
+
+    assert payload["active"] is False
+    assert payload["stage"] == "error"
+    assert payload["error"] == "pipeline_worker_inactive_after_fetch_completed"
+    assert payload["finalOutputCount"] == 42
+    assert finished_children == [
+        {
+            "runId": "fetch_1",
+            "taskType": "fetch",
+            "finished_at": "2026-05-06T18:35:00Z",
+            "terminal_reason": "completed",
+            "summary": {"outputCount": 42, "failedSources": 3},
+            "progress": {
+                "active": False,
+                "phaseKey": "executing_sources",
+                "phaseLabel": "Executing sources",
+                "mode": "determinate",
+                "ratio": 0.8,
+            },
+        }
+    ]
+    assert failed_runs[-1]["runId"] == "pipeline_1"
+    assert failed_runs[-1]["taskType"] == "pipeline"
+    assert failed_runs[-1]["terminal_reason"] == "failed"
+    assert failed_runs[-1]["summary"]["error"] == "pipeline_worker_inactive_after_fetch_completed"
+    assert cleared == []
+
+
 def _project_discovery_history(
     *,
     task_state: dict[str, Any],
     now: datetime,
     pipeline_status: dict[str, Any] | None = None,
+    discovery_report_overrides: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     started_at = "2026-05-06T18:00:00Z"
     discovery_report = {
@@ -147,6 +244,7 @@ def _project_discovery_history(
         "summary": {},
         "runtime": {"lifecycle": {"heartbeatAt": "2026-05-06T18:00:00Z"}},
     }
+    discovery_report.update(dict(discovery_report_overrides or {}))
     history = [
         {
             "id": "discovery_child_1",
@@ -217,6 +315,35 @@ def test_recent_child_task_heartbeat_keeps_quiet_discovery_projected_running() -
     row = next(row for row in rows if row["runId"] == "discovery_child_1")
     assert row["status"] == "started"
     assert row["finishedAt"] == ""
+    assert "error" not in row["summary"]
+
+
+def test_terminal_discovery_report_wins_over_stale_active_task_state() -> None:
+    rows = _project_discovery_history(
+        task_state={
+            "discovery": {
+                "runId": "discovery_child_1",
+                "taskType": "discovery",
+                "pid": 123,
+                "status": "running",
+                "startedAt": "2026-05-06T18:00:00Z",
+                "heartbeatAt": "2026-05-06T18:59:00Z",
+            }
+        },
+        now=datetime(2026, 5, 6, 19, 0, 0, tzinfo=UTC),
+        discovery_report_overrides={
+            "finishedAt": "2026-05-06T18:58:00Z",
+            "taskProgress": {
+                "active": True,
+                "phaseKey": "finalizing",
+                "updatedAt": "2026-05-06T18:59:00Z",
+            },
+        },
+    )
+
+    row = next(row for row in rows if row["runId"] == "discovery_child_1")
+    assert row["status"] == "ok"
+    assert row["finishedAt"] == "2026-05-06T18:58:00Z"
     assert "error" not in row["summary"]
 
 

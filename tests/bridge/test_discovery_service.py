@@ -139,21 +139,6 @@ def test_trigger_discovery_task_logs_launch_start_and_persists_shell(tmp_path: P
 
 
 def test_trigger_discovery_task_returns_conflict_for_active_discovery(tmp_path: Path) -> None:
-    task_state_path = tmp_path / "admin-task-state.json"
-    task_state_path.write_text(
-        json.dumps(
-            {
-                "discovery": {
-                    "runId": "discovery_live_1",
-                    "taskType": "discovery",
-                    "pid": 321,
-                    "startedAt": "2026-03-20T12:00:00Z",
-                    "status": "running",
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
     bridge_events: list[tuple[str, dict[str, object]]] = []
     spawn_calls: list[tuple[str, list[str] | None]] = []
     history_rows: list[dict[str, object]] = []
@@ -175,7 +160,7 @@ def test_trigger_discovery_task_returns_conflict_for_active_discovery(tmp_path: 
             log=tmp_path / "source-discovery.log",
             settings=tmp_path / "source-discovery-config.json",
             approval_state=tmp_path / "source-approval-state.json",
-            task_state=task_state_path,
+            task_state=tmp_path / "admin-task-state.json",
         ),
         deps=DiscoveryDeps(
             schema_version=1,
@@ -203,6 +188,17 @@ def test_trigger_discovery_task_returns_conflict_for_active_discovery(tmp_path: 
             load_sync_runtime_state=lambda: {},
             maybe_trigger_auto_sync_push=lambda reason: False,
             mark_discovery_sync_finished=lambda finished_at: None,
+            get_lifecycle_current_runs=lambda: [
+                {
+                    "runId": "discovery_live_1",
+                    "taskType": "discovery",
+                    "ownerKind": "process",
+                    "ownerPid": 321,
+                    "startedAt": "2026-03-20T12:00:00Z",
+                    "lifecycleStatus": "running",
+                    "finishedAt": "",
+                }
+            ],
         ),
     )
 
@@ -229,7 +225,7 @@ def test_trigger_discovery_task_returns_conflict_for_active_discovery(tmp_path: 
     assert any(message == "task_start_attached_existing" for message, _fields in bridge_events)
 
 
-def test_trigger_discovery_task_reconciles_terminal_report_before_duplicate_check(
+def test_trigger_discovery_task_ignores_legacy_terminal_state_before_duplicate_check(
     tmp_path: Path,
 ) -> None:
     report_path = tmp_path / "source-discovery-report.json"
@@ -327,10 +323,9 @@ def test_trigger_discovery_task_reconciles_terminal_report_before_duplicate_chec
     assert status_code == 200
     assert result["started"] is True
     assert str(result.get("runId") or "") != "discovery_done_1"
-    assert cleared_tasks == ["discovery"]
-    assert finished_lifecycle == [("discovery_done_1", "discovery", "2026-03-20T12:05:00Z")]
-    assert upserted_runs[0]["runId"] == "discovery_done_1"
-    assert upserted_runs[0]["finishedAt"] == "2026-03-20T12:05:00Z"
+    assert cleared_tasks == []
+    assert finished_lifecycle == []
+    assert upserted_runs == []
 
 
 def test_discovery_heartbeat_mirrors_live_report_progress_to_lifecycle(tmp_path: Path) -> None:
@@ -795,20 +790,9 @@ def test_watch_discovery_run_auto_approves_healthy_pending_before_sync(tmp_path:
     assert (saved_report.get("candidates") or [])[0]["promotionReason"] == "structured_batch_family"
     assert sync_calls == ["discovery_completed"]
     assert marked == ["2026-03-20T12:05:00Z"]
-    assert cleared_tasks == ["discovery"]
-    assert pruned_runs == [{"runType": "discovery", "finished_at": "2026-03-20T12:05:00Z"}]
-    assert upserted_runs == [
-        {
-            "id": "discovery_1",
-            "runId": "discovery_1",
-            "type": "discovery",
-            "status": "ok",
-            "startedAt": "2026-03-20T12:00:00Z",
-            "finishedAt": "2026-03-20T12:05:00Z",
-            "durationMs": 300000,
-            "summary": {"queuedCandidateCount": 3},
-        }
-    ]
+    assert cleared_tasks == []
+    assert pruned_runs == []
+    assert upserted_runs == []
     assert "discovery_auto_approval_completed" in bridge_events
 
 
@@ -880,20 +864,9 @@ def test_watch_discovery_run_finalizes_when_report_is_terminal_even_if_pid_linge
 
     service.watch_discovery_run_for_auto_sync("discovery_1", 123, "2026-03-20T12:00:00Z")
 
-    assert cleared_tasks == ["discovery"]
-    assert pruned_runs == [{"runType": "discovery", "finished_at": "2026-03-20T12:05:00Z"}]
-    assert upserted_runs == [
-        {
-            "id": "discovery_1",
-            "runId": "discovery_1",
-            "type": "discovery",
-            "status": "ok",
-            "startedAt": "2026-03-20T12:00:00Z",
-            "finishedAt": "2026-03-20T12:05:00Z",
-            "durationMs": 300000,
-            "summary": {"queuedCandidateCount": 0, "failedProbeCount": 0, "probeMissCount": 0},
-        }
-    ]
+    assert cleared_tasks == []
+    assert pruned_runs == []
+    assert upserted_runs == []
 
 
 def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> None:
@@ -998,18 +971,7 @@ def test_watch_discovery_run_respects_disabled_auto_approval(tmp_path: Path) -> 
         )
         == 0
     )
-    assert cleared_tasks == ["discovery"]
-    assert pruned_runs == [{"runType": "discovery", "finished_at": "2026-03-20T12:05:00Z"}]
-    assert upserted_runs == [
-        {
-            "id": "discovery_1",
-            "runId": "discovery_1",
-            "type": "discovery",
-            "status": "ok",
-            "startedAt": "2026-03-20T12:00:00Z",
-            "finishedAt": "2026-03-20T12:05:00Z",
-            "durationMs": 300000,
-            "summary": {"queuedCandidateCount": 0},
-        }
-    ]
+    assert cleared_tasks == []
+    assert pruned_runs == []
+    assert upserted_runs == []
     assert sync_calls == []

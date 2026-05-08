@@ -575,33 +575,20 @@ def test_sync_history_from_reports_cases(case: _SyncHistoryCase) -> None:
     case.assert_rows(rows)
 
 
-def test_start_fetcher_task_registers_history_before_report_can_duplicate():
-    original_save = admin_bridge.save_json_atomic
-
-    def intercepting_save(path, payload):
-        original_save(path, payload)
-        if path == admin_bridge.JOBS_FETCH_REPORT_PATH:
-            rows = admin_bridge.sync_history_from_reports()
-            matching = [
-                row
-                for row in rows
-                if str(row.get("type") or "") == "fetch"
-                and str(row.get("startedAt") or "") == str(payload.get("startedAt") or "")
-            ]
-            assert len(matching) == 1
-            assert str(matching[0].get("runId") or "") == str(payload.get("runId") or "")
-
+def test_start_fetcher_task_registers_lifecycle_without_legacy_history_write():
     with (
-        mock.patch.object(admin_bridge, "save_json_atomic", side_effect=intercepting_save),
+        mock.patch.object(admin_bridge, "pid_is_running", return_value=True),
         mock.patch.object(admin_bridge, "run_background_script", return_value=24680),
     ):
         result = admin_bridge.start_fetcher_task({})
 
-    rows = admin_bridge.load_run_history()
-    matching = [
-        row for row in rows if str(row.get("runId") or "") == str(result.get("runId") or "")
-    ]
+    run_id = str(result.get("runId") or "")
+    current_rows = admin_bridge.get_lifecycle_current_runs()
+    matching = [row for row in current_rows if str(row.get("runId") or "") == run_id]
     assert len(matching) == 1
+    assert str(matching[0].get("taskType") or "") == "fetch"
+    assert str(matching[0].get("lifecycleStatus") or "") == "running"
+    assert admin_bridge.load_run_history() == []
 
 
 def _setup_report_finished_while_owner_active() -> None:
@@ -655,6 +642,19 @@ def _setup_report_finished_while_owner_active() -> None:
             )
         ],
     )
+    admin_bridge.start_lifecycle_run(
+        run_id=run_id,
+        task_type="fetch",
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=111,
+        progress=active_progress(
+            "executing_sources",
+            "Executing sources",
+            {"resolvedSources": 5, "sourceCount": 10},
+        ),
+        summary={"outputCount": 10, "failedSources": 1, "sourceCount": 10},
+    )
 
 
 def test_projected_run_history_keeps_live_fetch_started_when_report_finishes_early() -> None:
@@ -664,9 +664,10 @@ def test_projected_run_history_keeps_live_fetch_started_when_report_finishes_ear
     matching = matching_history_rows(projection.rows, run_id="fetch_report_finished_1")
 
     assert len(matching) == 1
-    assert str(matching[0].get("status") or "") == "started"
+    assert str(matching[0].get("status") or "") == "running"
+    assert str(matching[0].get("lifecycleStatus") or "") == "running"
+    assert matching[0].get("active") is True
     assert str(matching[0].get("finishedAt") or "") == ""
-    assert any(
-        str(item.get("code") or "") == "report_finished_while_owner_active"
-        for item in (projection.diagnostics or [])
-    )
+    assert projection.child_tasks["fetch"].run_id == "fetch_report_finished_1"
+    assert projection.child_tasks["fetch"].active is True
+    assert projection.diagnostics == []

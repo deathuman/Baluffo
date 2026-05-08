@@ -83,6 +83,32 @@ def test_discovery_live_payload_uses_stage_work_items_and_events() -> None:
     run_id = "discovery_stage_live_1"
     started_at = "2026-03-08T10:00:00.000Z"
     heartbeat_at = "2026-03-08T10:00:05.000Z"
+    summary = {
+        "foundEndpointCount": 4,
+        "generatedCandidateCount": 12,
+        "survivedDedupeCandidateCount": 8,
+        "probedCandidateCount": 9,
+        "queuedCandidateCount": 3,
+        "stageIndex": 10,
+        "stageTotal": 11,
+        "completedStageCount": 9,
+    }
+    progress = active_progress(
+        "probing_candidates",
+        "Probing candidates",
+        {
+            "foundEndpoints": 4,
+            "generatedCandidates": 12,
+            "survivedDedupeCandidates": 8,
+            "probedCandidates": 9,
+            "queuedCandidates": 3,
+            "stageIndex": 10,
+            "stageTotal": 11,
+            "completedStages": 9,
+            "currentStageKey": "probe",
+            "currentStageLabel": "Candidate probes",
+        },
+    )
     admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
@@ -98,32 +124,8 @@ def test_discovery_live_payload_uses_stage_work_items_and_events() -> None:
             **discovery_report(
                 run_id=run_id,
                 started_at=started_at,
-                summary={
-                    "foundEndpointCount": 4,
-                    "generatedCandidateCount": 12,
-                    "survivedDedupeCandidateCount": 8,
-                    "probedCandidateCount": 9,
-                    "queuedCandidateCount": 3,
-                    "stageIndex": 10,
-                    "stageTotal": 11,
-                    "completedStageCount": 9,
-                },
-                task_progress=active_progress(
-                    "probing_candidates",
-                    "Probing candidates",
-                    {
-                        "foundEndpoints": 4,
-                        "generatedCandidates": 12,
-                        "survivedDedupeCandidates": 8,
-                        "probedCandidates": 9,
-                        "queuedCandidates": 3,
-                        "stageIndex": 10,
-                        "stageTotal": 11,
-                        "completedStages": 9,
-                        "currentStageKey": "probe",
-                        "currentStageLabel": "Candidate probes",
-                    },
-                ),
+                summary=summary,
+                task_progress=progress,
             ),
             "failures": [
                 {
@@ -148,6 +150,15 @@ def test_discovery_live_payload_uses_stage_work_items_and_events() -> None:
                 ],
             },
         },
+    )
+    admin_bridge.start_lifecycle_run(
+        run_id=run_id,
+        task_type="discovery",
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=111,
+        progress=progress,
+        summary=summary,
     )
 
     payload = task_live_payload("discovery")

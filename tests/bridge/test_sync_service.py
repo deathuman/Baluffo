@@ -74,6 +74,27 @@ class _RunHistory:
         return
 
 
+class _TaskLifecycle:
+    def __init__(self) -> None:
+        self.started: list[dict[str, Any]] = []
+        self.finished: list[dict[str, Any]] = []
+        self.failed: list[dict[str, Any]] = []
+
+    def start_run(self, **kwargs: Any) -> dict[str, Any]:
+        self.started.append(dict(kwargs))
+        return dict(kwargs)
+
+    def finish_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+        row = {"runId": run_id, "taskType": task_type, **dict(kwargs)}
+        self.finished.append(row)
+        return row
+
+    def fail_run(self, run_id: str, task_type: str, **kwargs: Any) -> dict[str, Any]:
+        row = {"runId": run_id, "taskType": task_type, **dict(kwargs)}
+        self.failed.append(row)
+        return row
+
+
 def test_sync_service_status_exposes_rate_limit_payload() -> None:
     with workspace_tmpdir("sync-service") as data_dir:
         source_sync = _FakeSourceSync()
@@ -89,7 +110,6 @@ def test_sync_service_status_exposes_rate_limit_payload() -> None:
                 "pendingCount": 0,
                 "rejectedCount": 0,
             },
-            run_history=_RunHistory(),
             ops_state_lock=threading.RLock(),
             get_security_defaults=lambda: {"github_app_enabled_default": True},
             get_registry_auto_heal_report=lambda: {
@@ -112,6 +132,7 @@ def test_sync_service_pull_delegates_and_persists() -> None:
             ACTIVE_SYNC_THREADS.clear()
         source_sync = _FakeSourceSync()
         history = _RunHistory()
+        lifecycle = _TaskLifecycle()
         ops_lock = threading.RLock()
 
         persisted: dict[str, Any] = {
@@ -155,9 +176,9 @@ def test_sync_service_pull_delegates_and_persists() -> None:
             load_state=load_state,
             persist_state=persist_state,
             summarize_state=summarize_state,
-            run_history=history,
             ops_state_lock=ops_lock,
             get_security_defaults=get_security_defaults,
+            task_lifecycle=lifecycle,
         )
 
         # Enablement is controlled by settings; write enabled=True and proceed.
@@ -187,6 +208,7 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
             ACTIVE_SYNC_THREADS.clear()
         source_sync = _FakeSourceSync()
         history = _RunHistory()
+        lifecycle = _TaskLifecycle()
         ops_lock = threading.RLock()
 
         def load_state() -> dict[str, list[dict[str, Any]]]:
@@ -215,7 +237,6 @@ def test_sync_service_push_returns_and_persists_timing() -> None:
             load_state=load_state,
             persist_state=persist_state,
             summarize_state=summarize_state,
-            run_history=history,
             ops_state_lock=ops_lock,
             get_security_defaults=lambda: {"github_app_enabled_default": True},
         )
@@ -246,6 +267,7 @@ def test_sync_service_start_task_runs_and_finishes() -> None:
             ACTIVE_SYNC_THREADS.clear()
         source_sync = _FakeSourceSync()
         history = _RunHistory()
+        lifecycle = _TaskLifecycle()
         ops_lock = threading.RLock()
 
         def load_state() -> dict[str, list[dict[str, Any]]]:
@@ -272,9 +294,9 @@ def test_sync_service_start_task_runs_and_finishes() -> None:
             load_state=load_state,
             persist_state=persist_state,
             summarize_state=summarize_state,
-            run_history=history,
             ops_state_lock=ops_lock,
             get_security_defaults=get_security_defaults,
+            task_lifecycle=lifecycle,
         )
         svc.update_saved_sync_settings({"enabled": True})
 
@@ -282,9 +304,9 @@ def test_sync_service_start_task_runs_and_finishes() -> None:
         assert bool(started.get("started")) is True
         svc.wait_for_sync_tasks(timeout_s=2.0)
         assert source_sync.pull_calls >= 1
-        completed_rows = [row for row in history.rows if row.get("status") == "ok"]
-        assert completed_rows
-        timing = completed_rows[-1]["summary"]["timing"]
+        assert history.rows == []
+        assert lifecycle.finished
+        timing = lifecycle.finished[-1]["summary"]["timing"]
         assert timing["action"] == "pull"
         assert "stageTotalsMs" in timing
         assert "stageTop" in timing

@@ -98,13 +98,6 @@ class OpsHealthDeps:
     startup_ready: bool = False
 
 
-def _task_row_key(row: dict[str, Any]) -> tuple[str, str]:
-    return (
-        str(row.get("type") or row.get("taskType") or "").strip().lower(),
-        str(row.get("runId") or row.get("id") or "").strip(),
-    )
-
-
 def _task_type(row: dict[str, Any]) -> str:
     return str(row.get("type") or row.get("taskType") or "").strip().lower()
 
@@ -141,6 +134,53 @@ def _latest_time_text(*values: Any) -> str:
             best_dt = parsed
             best_text = text
     return best_text
+
+
+def _row_order(row: dict[str, Any]) -> tuple[int, datetime, str]:
+    text = _latest_time_text(row.get("heartbeatAt"), row.get("finishedAt"), row.get("startedAt"))
+    parsed = _parse_route_time(text)
+    if parsed is None:
+        return (0, datetime.min.replace(tzinfo=UTC), text)
+    return (1, parsed, text)
+
+
+def _row_active(row: dict[str, Any]) -> bool:
+    lifecycle_status = str(row.get("lifecycleStatus") or "").strip().lower()
+    return bool(row.get("active")) or lifecycle_status in {"queued", "running"}
+
+
+def _snapshot_from_lifecycle_row(row: dict[str, Any]) -> _run_history_api.ChildTaskSnapshot:
+    lifecycle_status = str(row.get("lifecycleStatus") or "").strip().lower()
+    active = _row_active(row)
+    return _run_history_api.ChildTaskSnapshot(
+        task_type=_task_type(row),
+        run_id=_run_id(row),
+        started_at=str(row.get("startedAt") or "").strip(),
+        finished_at="" if active else str(row.get("finishedAt") or "").strip(),
+        active=active,
+        terminal_status=""
+        if active
+        else str(row.get("status") or lifecycle_status or "").strip().lower(),
+        summary=as_json_object(row.get("summary")),
+        outputs=as_json_object(row.get("outputs")),
+        task_progress=as_json_object(row.get("taskProgress") or row.get("progress")),
+        explicit_dead=(not active and lifecycle_status in {"failed", "canceled", "orphaned"}),
+        diagnostics=(),
+    )
+
+
+def _lifecycle_child_tasks(
+    rows: list[dict[str, Any]],
+) -> dict[str, _run_history_api.ChildTaskSnapshot]:
+    child_tasks: dict[str, _run_history_api.ChildTaskSnapshot] = {}
+    for task_type in ("fetch", "discovery"):
+        candidates = [row for row in rows if _task_type(row) == task_type and _run_id(row)]
+        if not candidates:
+            continue
+        active_candidates = [row for row in candidates if _row_active(row)]
+        selected = max(active_candidates or candidates, key=_row_order)
+        child_tasks[task_type] = _snapshot_from_lifecycle_row(selected)
+    return child_tasks
 
 
 def _child_progress_label(child_row: dict[str, Any]) -> str:
@@ -314,71 +354,21 @@ class OpsApi:
         )
 
     def get_projected_run_history(self) -> _run_history_api.LifecycleProjection:
-        lifecycle_current = self._deps.get_lifecycle_current_runs()
-        lifecycle_recent = self._deps.get_lifecycle_recent_runs()
-        legacy_projection = _ops_history_projection.get_projected_run_history(
-            deps=self._deps,
-            paths=self._paths,
-            summarize_fetch_report=self.summarize_fetch_report,
-            summarize_discovery_report=self.summarize_discovery_report,
+        rows = [
+            *[dict(row) for row in self._deps.get_lifecycle_current_runs()],
+            *[dict(row) for row in self._deps.get_lifecycle_recent_runs()],
+        ]
+        rows.sort(key=_row_order)
+        return _run_history_api.LifecycleProjection(
+            rows=rows,
+            child_tasks=_lifecycle_child_tasks(rows),
+            diagnostics=[],
         )
-        if lifecycle_current or lifecycle_recent:
-            legacy_rows = list(getattr(legacy_projection, "rows", []) or [])
-            legacy_keys = {
-                (
-                    str(row.get("type") or row.get("taskType") or "").strip().lower(),
-                    str(row.get("runId") or row.get("id") or "").strip(),
-                )
-                for row in legacy_rows
-            }
-            lifecycle_rows = [
-                dict(row)
-                for row in lifecycle_recent
-                if (
-                    str(row.get("type") or row.get("taskType") or "").strip().lower(),
-                    str(row.get("runId") or row.get("id") or "").strip(),
-                )
-                in legacy_keys
-            ]
-            seen = {
-                (
-                    str(row.get("type") or row.get("taskType") or "").strip().lower(),
-                    str(row.get("runId") or row.get("id") or "").strip(),
-                )
-                for row in lifecycle_rows
-            }
-            merged_rows = list(lifecycle_rows)
-            for row in legacy_rows:
-                key = (
-                    str(row.get("type") or row.get("taskType") or "").strip().lower(),
-                    str(row.get("runId") or row.get("id") or "").strip(),
-                )
-                if not key[0] or not key[1] or key in seen:
-                    continue
-                merged_rows.append(dict(row))
-            return _run_history_api.LifecycleProjection(
-                rows=merged_rows,
-                child_tasks=dict(getattr(legacy_projection, "child_tasks", {}) or {}),
-                diagnostics=list(getattr(legacy_projection, "diagnostics", []) or []),
-            )
-        return legacy_projection
 
     def get_lifecycle_run_history_rows(self) -> list[dict[str, Any]]:
         lifecycle_recent = [dict(row) for row in self._deps.get_lifecycle_recent_runs()]
-        seen = {_task_row_key(row) for row in lifecycle_recent}
-        rows = list(lifecycle_recent)
-        for row in self._deps.load_run_history():
-            if not isinstance(row, dict):
-                continue
-            key = _task_row_key(row)
-            if not key[0] or not key[1] or key in seen:
-                continue
-            if not str(row.get("finishedAt") or "").strip():
-                continue
-            rows.append(dict(row))
-            seen.add(key)
-        rows.sort(key=lambda row: str(row.get("startedAt") or row.get("finishedAt") or ""))
-        return rows
+        lifecycle_recent.sort(key=_row_order)
+        return lifecycle_recent
 
     def _task_live_context(self) -> _ops_task_live.OpsTaskLiveContext:
         return _ops_task_live.OpsTaskLiveContext(paths=self._paths, deps=self._deps)

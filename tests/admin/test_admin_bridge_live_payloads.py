@@ -47,6 +47,25 @@ def assert_live_task_event_envelope(
     assert "message" in event
 
 
+def start_lifecycle_for_task(
+    task_type: str,
+    *,
+    run_id: str,
+    started_at: str,
+    progress: dict[str, object] | None = None,
+    summary: dict[str, object] | None = None,
+) -> None:
+    admin_bridge.start_lifecycle_run(
+        run_id=run_id,
+        task_type=task_type,
+        started_at=started_at,
+        owner_kind="process",
+        owner_pid=111,
+        progress=progress or {},
+        summary=summary or {},
+    )
+
+
 def _setup_active_tasks_projection() -> Callable[[], None]:
     started_at = admin_bridge.now_iso()
     admin_bridge.save_json_atomic(
@@ -649,6 +668,12 @@ def test_get_current_task_state_payload_cases(case: _CurrentTaskStateCase) -> No
 def test_get_task_live_payload_fetch_preserves_shared_contract() -> None:
     run_id = "fetch_live_contract_1"
     started_at = "2026-03-08T10:00:00.000Z"
+    progress = active_progress(
+        "execute_sources",
+        "Executing sources",
+        {"sourceCount": 4, "completedTasks": 2},
+    )
+    summary = {"outputCount": 7, "failedSources": 1, "sourceCount": 4}
     admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
@@ -660,13 +685,16 @@ def test_get_task_live_payload_fetch_preserves_shared_contract() -> None:
         fetch_report(
             run_id=run_id,
             started_at=started_at,
-            summary={"outputCount": 7, "failedSources": 1, "sourceCount": 4},
-            task_progress=active_progress(
-                "execute_sources",
-                "Executing sources",
-                {"sourceCount": 4, "completedTasks": 2},
-            ),
+            summary=summary,
+            task_progress=progress,
         ),
+    )
+    start_lifecycle_for_task(
+        "fetch",
+        run_id=run_id,
+        started_at=started_at,
+        progress=progress,
+        summary=summary,
     )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_TASKS_PATH,
@@ -743,6 +771,27 @@ def test_get_task_live_payload_fetch_ignores_stale_task_artifact_and_uses_curren
     run_id = "fetch_live_current_1"
     started_at = "2026-03-08T10:00:00.000Z"
     heartbeat_at = "2026-03-08T10:03:00.000Z"
+    progress = active_progress(
+        "execute_sources",
+        "Executing sources",
+        {
+            "resolvedSources": 10,
+            "sourceCount": 551,
+            "runningTasks": 541,
+            "queuedTasks": 0,
+            "outputCount": 34081,
+            "failedSources": 0,
+            "excludedSources": 0,
+            "completedTasks": 10,
+        },
+    )
+    summary = {
+        "successfulSources": 10,
+        "failedSources": 0,
+        "excludedSources": 0,
+        "outputCount": 34081,
+        "sourceCount": 551,
+    }
     admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
@@ -752,28 +801,9 @@ def test_get_task_live_payload_fetch_ignores_stale_task_artifact_and_uses_curren
     current_report = fetch_report(
         run_id=run_id,
         started_at=started_at,
-        summary={
-            "successfulSources": 10,
-            "failedSources": 0,
-            "excludedSources": 0,
-            "outputCount": 34081,
-            "sourceCount": 551,
-        },
+        summary=summary,
         runtime={"selectedSourceCount": 551, "heartbeatAt": heartbeat_at},
-        task_progress=active_progress(
-            "execute_sources",
-            "Executing sources",
-            {
-                "resolvedSources": 10,
-                "sourceCount": 551,
-                "runningTasks": 541,
-                "queuedTasks": 0,
-                "outputCount": 34081,
-                "failedSources": 0,
-                "excludedSources": 0,
-                "completedTasks": 10,
-            },
-        ),
+        task_progress=progress,
     )
     current_report["sources"] = [
         {
@@ -786,6 +816,13 @@ def test_get_task_live_payload_fetch_ignores_stale_task_artifact_and_uses_curren
         }
     ]
     admin_bridge.save_json_atomic(admin_bridge.JOBS_FETCH_REPORT_PATH, current_report)
+    start_lifecycle_for_task(
+        "fetch",
+        run_id=run_id,
+        started_at=started_at,
+        progress=progress,
+        summary=summary,
+    )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_TASKS_PATH,
         {
@@ -830,6 +867,25 @@ def test_get_task_live_payload_fetch_supplements_current_run_detail_when_task_ar
     run_id = "fetch_live_partial_1"
     started_at = "2026-03-08T10:00:00.000Z"
     heartbeat_at = "2026-03-08T10:04:00.000Z"
+    progress = active_progress(
+        "execute_sources",
+        "Executing sources",
+        {
+            "resolvedSources": 10,
+            "sourceCount": 551,
+            "runningTasks": 541,
+            "queuedTasks": 0,
+            "outputCount": 34081,
+            "completedTasks": 10,
+        },
+    )
+    summary = {
+        "successfulSources": 10,
+        "failedSources": 0,
+        "excludedSources": 0,
+        "outputCount": 34081,
+        "sourceCount": 551,
+    }
     admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
@@ -839,26 +895,9 @@ def test_get_task_live_payload_fetch_supplements_current_run_detail_when_task_ar
     report = fetch_report(
         run_id=run_id,
         started_at=started_at,
-        summary={
-            "successfulSources": 10,
-            "failedSources": 0,
-            "excludedSources": 0,
-            "outputCount": 34081,
-            "sourceCount": 551,
-        },
+        summary=summary,
         runtime={"selectedSourceCount": 551, "heartbeatAt": heartbeat_at},
-        task_progress=active_progress(
-            "execute_sources",
-            "Executing sources",
-            {
-                "resolvedSources": 10,
-                "sourceCount": 551,
-                "runningTasks": 541,
-                "queuedTasks": 0,
-                "outputCount": 34081,
-                "completedTasks": 10,
-            },
-        ),
+        task_progress=progress,
     )
     report["sources"] = [
         {
@@ -871,6 +910,13 @@ def test_get_task_live_payload_fetch_supplements_current_run_detail_when_task_ar
         }
     ]
     admin_bridge.save_json_atomic(admin_bridge.JOBS_FETCH_REPORT_PATH, report)
+    start_lifecycle_for_task(
+        "fetch",
+        run_id=run_id,
+        started_at=started_at,
+        progress=progress,
+        summary=summary,
+    )
     admin_bridge.save_json_atomic(
         admin_bridge.JOBS_FETCH_TASKS_PATH,
         {
@@ -955,6 +1001,17 @@ def test_get_task_live_payload_discovery_preserves_shared_contract() -> None:
     run_id = "discovery_live_contract_1"
     started_at = "2026-03-08T10:00:00.000Z"
     heartbeat_at = "2026-03-08T10:00:05.000Z"
+    progress = active_progress(
+        "probing_candidates",
+        "Probing candidates",
+        {"foundEndpoints": 4, "probedCandidates": 9, "queuedCandidates": 3},
+    )
+    summary = {
+        "foundEndpointCount": 4,
+        "probedCandidateCount": 9,
+        "queuedCandidateCount": 3,
+        "failedProbeCount": 1,
+    }
     admin_bridge.save_json_atomic(
         admin_bridge.TASK_STATE_PATH,
         {
@@ -967,17 +1024,8 @@ def test_get_task_live_payload_discovery_preserves_shared_contract() -> None:
             **discovery_report(
                 run_id=run_id,
                 started_at=started_at,
-                summary={
-                    "foundEndpointCount": 4,
-                    "probedCandidateCount": 9,
-                    "queuedCandidateCount": 3,
-                    "failedProbeCount": 1,
-                },
-                task_progress=active_progress(
-                    "probing_candidates",
-                    "Probing candidates",
-                    {"foundEndpoints": 4, "probedCandidates": 9, "queuedCandidates": 3},
-                ),
+                summary=summary,
+                task_progress=progress,
             ),
             "runtime": {
                 "lifecycle": {"heartbeatAt": heartbeat_at},
@@ -1002,6 +1050,13 @@ def test_get_task_live_payload_discovery_preserves_shared_contract() -> None:
                 }
             ],
         },
+    )
+    start_lifecycle_for_task(
+        "discovery",
+        run_id=run_id,
+        started_at=started_at,
+        progress=progress,
+        summary=summary,
     )
 
     payload = task_live_payload("discovery")
@@ -1114,37 +1169,24 @@ def test_get_task_live_payload_sync_preserves_active_live_contract() -> None:
     assert recent_events[0].get("message") == "Pulling remote registry"
 
 
-def test_get_task_live_payload_sync_normalizes_history_backed_started_run() -> None:
+def test_get_task_live_payload_sync_normalizes_lifecycle_backed_started_run() -> None:
     run_id = "sync_history_contract_1"
     started_at = "2026-03-08T10:00:00.000Z"
+    summary = {
+        "action": "push",
+        "activeCount": 8,
+        "pendingCount": 2,
+        "rejectedCount": 1,
+    }
     admin_bridge.save_json_atomic(admin_bridge.SYNC_LIVE_TASK_PATH, {})
-    admin_bridge.save_json_atomic(
-        admin_bridge.OPS_HISTORY_PATH,
-        [
-            {
-                "id": run_id,
-                "runId": run_id,
-                "type": "sync",
-                "status": "started",
-                "startedAt": started_at,
-                "finishedAt": "",
-                "durationMs": 0,
-                "summary": {
-                    "action": "push",
-                    "activeCount": 8,
-                    "pendingCount": 2,
-                    "rejectedCount": 1,
-                },
-            }
-        ],
-    )
+    start_lifecycle_for_task("sync", run_id=run_id, started_at=started_at, summary=summary)
 
     with mock.patch.object(admin_bridge.SyncState, "get_active_sync_runs", return_value=set()):
         payload = task_live_payload("sync")
 
     assert str(payload.get("taskType") or "") == "sync"
     assert bool(payload.get("active")) is False
-    assert str(payload.get("status") or "") == "started"
+    assert str(payload.get("status") or "") == "running"
     assert str(payload.get("runId") or "") == run_id
     progress = payload.get("taskProgress") or {}
     counts = progress.get("counts") or {}

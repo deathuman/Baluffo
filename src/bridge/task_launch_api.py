@@ -12,7 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from src.bridge.task_admission import build_duplicate_start_payload, get_active_task_metadata
+from src.bridge.task_admission import (
+    build_duplicate_start_payload,
+    get_active_lifecycle_task_metadata,
+)
 from src.jobs.common import config as jobs_common_config
 
 
@@ -94,8 +97,6 @@ class TaskLaunchApi:
         task_type = (
             "discovery" if "discovery" in script else ("fetch" if "fetcher" in script else script)
         )
-        task_run_id = ""
-        task_started_at = self._deps.now_iso()
         child_env = os.environ.copy()
         child_env["BALUFFO_DATA_DIR"] = str(self._runtime.data_dir)
         child_env["PYTHONUNBUFFERED"] = "1"
@@ -103,17 +104,6 @@ class TaskLaunchApi:
             for key, value in extra_env.items():
                 if key:
                     child_env[str(key)] = str(value)
-            if task_type == "fetch":
-                task_run_id = str(extra_env.get("BALUFFO_FETCH_RUN_ID") or "").strip()
-                task_started_at = (
-                    str(extra_env.get("BALUFFO_FETCH_STARTED_AT") or "").strip() or task_started_at
-                )
-            elif task_type == "discovery":
-                task_run_id = str(extra_env.get("BALUFFO_DISCOVERY_RUN_ID") or "").strip()
-                task_started_at = (
-                    str(extra_env.get("BALUFFO_DISCOVERY_STARTED_AT") or "").strip()
-                    or task_started_at
-                )
         if task_type == "discovery":
             child_env["BALUFFO_DISCOVERY_LOG_PATH"] = str(self._paths.discovery_log)
             child_env["BALUFFO_DISCOVERY_REPORT_PATH"] = str(self._paths.discovery_report)
@@ -149,18 +139,6 @@ class TaskLaunchApi:
         finally:
             if log_handle is not None:
                 log_handle.close()
-        with self._deps.task_state_lock:
-            state = self._deps.load_json_object(self._paths.task_state, {})
-            state[str(task_type)] = {
-                "runId": task_run_id,
-                "taskType": str(task_type),
-                "pid": int(proc.pid),
-                "script": str(script_name),
-                "status": "running",
-                "startedAt": task_started_at,
-                "heartbeatAt": task_started_at,
-            }
-            self._deps.save_json_atomic(self._paths.task_state, state)
         self._deps.bridge_log(
             "info", "task_process_spawned", task=task_type, script=script_name, pid=int(proc.pid)
         )
@@ -315,11 +293,14 @@ class TaskLaunchApi:
             "BALUFFO_UNCAPPED_DEEP_STATIC": "1",
         }
 
-    def _active_fetch_start_response(self) -> dict[str, Any] | None:
-        active_metadata = get_active_task_metadata(
+    def _active_fetch_start_response(
+        self,
+        *,
+        get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]],
+    ) -> dict[str, Any] | None:
+        active_metadata = get_active_lifecycle_task_metadata(
             "fetch",
-            load_json_object=self._deps.load_json_object,
-            task_state_path=self._paths.task_state,
+            lifecycle_rows=list(get_lifecycle_current_runs() or []),
             pid_is_running=self._deps.pid_is_running,
         )
         if not active_metadata:
@@ -400,19 +381,6 @@ class TaskLaunchApi:
                     ],
                 }
             ),
-        )
-        prune_started_rows_for_type("fetch", finished_at=finished_at)
-        append_run_history(
-            {
-                "id": run_id,
-                "runId": run_id,
-                "type": "fetch",
-                "status": "error",
-                "startedAt": started_at,
-                "finishedAt": finished_at,
-                "durationMs": 0,
-                "summary": failure_summary,
-            }
         )
         self._deps.bridge_log(
             "error",
@@ -540,17 +508,6 @@ class TaskLaunchApi:
                 )
                 time.sleep(2.0)
                 continue
-            task_state = load_json_object(self._paths.task_state, {})
-            fetch_state = task_state.get("fetch") if isinstance(task_state, dict) else {}
-            if (
-                isinstance(fetch_state, dict)
-                and str(fetch_state.get("runId") or "").strip() == run_id
-                and bool(fetch_state.get("active", True))
-                and str(fetch_state.get("status") or "running").strip().lower()
-                in {"", "running", "started"}
-            ):
-                time.sleep(2.0)
-                continue
             break
         if self._close_fetch_lifecycle_from_report(
             run_id=run_id,
@@ -611,12 +568,15 @@ class TaskLaunchApi:
         heartbeat_lifecycle_run: Callable[..., dict[str, Any] | None] = (
             lambda *_args, **_kwargs: None
         ),
+        get_lifecycle_current_runs: Callable[[], list[dict[str, Any]]] = lambda: [],
     ) -> dict[str, Any]:
         lock_context = (
             self._deps.task_state_lock if self._deps.task_state_lock is not None else nullcontext()
         )
         with lock_context:
-            active_response = self._active_fetch_start_response()
+            active_response = self._active_fetch_start_response(
+                get_lifecycle_current_runs=get_lifecycle_current_runs,
+            )
             if active_response:
                 return active_response
 
@@ -629,19 +589,6 @@ class TaskLaunchApi:
             self._paths.fetcher_log.parent.mkdir(parents=True, exist_ok=True)
             self._paths.fetcher_log.write_text(
                 f"[{started_at}] Launching jobs fetcher task...\n", encoding="utf-8"
-            )
-            prune_started_rows_for_type("fetch", keep_started_at=started_at)
-            append_run_history(
-                {
-                    "id": run_id,
-                    "runId": run_id,
-                    "type": "fetch",
-                    "status": "started",
-                    "startedAt": started_at,
-                    "finishedAt": "",
-                    "durationMs": 0,
-                    "summary": {},
-                }
             )
             spawn_args = list(fetcher_args)
             if "--output-dir" not in spawn_args:

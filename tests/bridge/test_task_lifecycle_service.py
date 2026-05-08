@@ -151,11 +151,97 @@ def test_lifecycle_reconciles_runid_legacy_history_and_task_state(tmp_path: Path
                 "pid": 789,
             }
         },
+        pid_is_running=lambda pid: pid == 789,
     )
 
     assert {row["runId"] for row in rows} == {"fetch_done", "discovery_live"}
     assert service.get_recent_runs()[0]["runId"] == "fetch_done"
     assert service.get_current_runs()[0]["runId"] == "discovery_live"
+
+
+def test_lifecycle_reconcile_orphans_unfinished_history_without_live_owner(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+
+    service.reconcile_from_legacy(
+        history_rows=[
+            {
+                "runId": "fetch_ownerless",
+                "type": "fetch",
+                "status": "started",
+                "startedAt": "2026-05-06T18:00:00+00:00",
+                "finishedAt": "",
+            }
+        ],
+        task_state={},
+        pid_is_running=lambda _pid: False,
+    )
+
+    recent = service.get_recent_runs()
+    assert len(recent) == 1
+    assert recent[0]["runId"] == "fetch_ownerless"
+    assert recent[0]["status"] == "error"
+    assert recent[0]["lifecycleStatus"] == "orphaned"
+    assert recent[0]["terminalReason"] == "owner_inactive_without_terminal_report"
+    assert recent[0]["finishedAt"]
+    assert service.get_current_runs() == []
+
+
+def test_lifecycle_reconcile_repairs_existing_ownerless_running_row(
+    tmp_path: Path,
+) -> None:
+    service = _service(tmp_path)
+    service.start_run(
+        run_id="fetch_ownerless",
+        task_type="fetch",
+        started_at="2026-05-06T18:00:00+00:00",
+    )
+
+    service.reconcile_from_legacy(
+        history_rows=[
+            {
+                "runId": "fetch_ownerless",
+                "type": "fetch",
+                "status": "started",
+                "startedAt": "2026-05-06T18:00:00+00:00",
+                "finishedAt": "",
+            }
+        ],
+        task_state={},
+        pid_is_running=lambda _pid: False,
+    )
+
+    recent = service.get_recent_runs()
+    assert len(recent) == 1
+    assert recent[0]["runId"] == "fetch_ownerless"
+    assert recent[0]["lifecycleStatus"] == "orphaned"
+    assert recent[0]["terminalReason"] == "owner_inactive_without_terminal_report"
+    assert service.get_current_runs() == []
+
+
+def test_lifecycle_reconcile_orphans_dead_task_state_owner(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+
+    service.reconcile_from_legacy(
+        history_rows=[],
+        task_state={
+            "fetch": {
+                "runId": "fetch_dead_pid",
+                "startedAt": "2026-05-06T18:02:00+00:00",
+                "heartbeatAt": "2026-05-06T18:03:00+00:00",
+                "pid": 123,
+            }
+        },
+        pid_is_running=lambda _pid: False,
+    )
+
+    recent = service.get_recent_runs()
+    assert len(recent) == 1
+    assert recent[0]["runId"] == "fetch_dead_pid"
+    assert recent[0]["lifecycleStatus"] == "orphaned"
+    assert recent[0]["terminalReason"] == "owner_inactive_without_terminal_report"
+    assert service.get_current_runs() == []
 
 
 def test_lifecycle_fail_reason_distinguishes_quiet_timeout_and_safety_cap(

@@ -592,7 +592,7 @@ Do not change signatures or remove without a dedicated plan:
 ### Data contracts
 
 - **source-discovery-report.json** and **source-discovery-candidates.json** must remain shape-compatible.
-- **source-discovery-report.json** now includes top-level `runId` for lifecycle ownership. The same `runId` must also appear in the matching `data/admin-task-state.json` discovery entry while the task is active.
+- **source-discovery-report.json** now includes top-level `runId` for lifecycle evidence. The matching lifecycle row in `data/admin-task-lifecycle.json` owns discovery identity and liveness while the task is active.
 - **GameDevMap audit metadata** may appear as top-level `gamedevmapAuditSummary` and `summary.gamedevmapAudit`. These are additive report diagnostics for the resumable GameDevMap audit/cache path, including cache hit, timing, active split, recovered/browser counts, artifact size, and failure buckets. `gamedevmap.activeAuditEnabled` is no longer a supported source-discovery input; enabled GameDevMap discovery uses active-audit artifact rows. These fields are not candidate registry fields and must not be copied into active, pending, or rejected source rows.
 - **Directory audit metadata** may appear as top-level `directoryAuditSummaries` and `summary.directoryAudits` when enabled Gameprog, Gamesmap, sheet-directory, or web-search audits run or reuse a fresh artifact in the current process. Gameprog, sheet-directory, and the combined seed-careers/web-search audit run by default when their stages are enabled; Gamesmap still also requires `gamesmap.enabled=true`. `activeAuditEnabled` is no longer a supported source-discovery input; enabled Gameprog, Gamesmap, sheet-directory, and web-search stages use audit-artifact rows. HTTP recovery lanes also run by default for Gameprog, Gamesmap, sheet-directory, and web-search unless the owning `activeAuditRecoveryEnabled=false` setting is set. `activeAuditRecoveryUrlLimit` defaults to `6` for these adapters, invalid or non-positive values fall back to `6`, and resolved values are included in audit signatures so budget changes rebuild artifacts. These additive diagnostics include cache hit, completion, audit duration, candidate/failure counts, timing totals, artifact size, top failure buckets, adapter-owned boundary counts, HTTP recovery counts (`recoveryFetchAttempts`, `recoveryPagesFetched`, `recoveredProviderCandidates`, `recoveredStaticCandidates`, `recoveryFailures`) when an adapter recovery lane runs, web-search-only link/query sample diagnostics, and web-search browser-recovery counts. They are not candidate registry fields and must not be copied into active, pending, or rejected source rows.
 - **Report summary** must retain: counts, stage maps (`generatedCountByStage`, `survivedDedupeCountByStage`, `probedCountByStage`, `queuedCountByStage`), `lossAccounting`, `adapterCounts`, `methodCounts`.
@@ -635,7 +635,11 @@ Lifecycle invariants:
 - `queued` and `running` rows must have empty `finishedAt`.
 - `succeeded`, `failed`, `canceled`, and `orphaned` rows must have non-empty `finishedAt`.
 - Reports may enrich `progress` and `summary`, but `admin-task-lifecycle.json` owns active-vs-terminal state.
-- `admin-task-state.json` and `admin-run-history.json` remain transition compatibility artifacts and must not be treated as lifecycle authority.
+- `admin-task-state.json` and `admin-run-history.json` are legacy compatibility/migration artifacts and must not be treated as lifecycle authority.
+- Production bridge startup must not import lifecycle rows from legacy history/state files. Legacy lifecycle reconciliation is reserved for explicit migration or test tooling.
+- Terminal report evidence with `finishedAt` wins over stale active progress, task-state heartbeat, or copied live metadata during lifecycle projection.
+- Live task projection must not use `admin-task-state.json` as liveness authority or progress evidence. Lifecycle rows decide active/terminal state; report/task evidence files supply display progress.
+- Fetch, discovery, sync, and pipeline lifecycle state is written to `admin-task-lifecycle.json`; `admin-run-history.json` is not updated by normal task launch/completion flows.
 
 Fetcher and discovery reports may include a shared `taskProgress` object for the admin loading bars. This is the preferred progress contract for the frontend.
 
@@ -663,14 +667,12 @@ Fetcher and discovery reports may include a shared `taskProgress` object for the
 ### Lifecycle identity contract
 
 - `runId` is the only lifecycle identity for long-running admin tasks.
-- Fetch lifecycle surfaces:
+- Fetch evidence surfaces:
   - `data/jobs-fetch-report.json`
   - `data/jobs-fetch-tasks.json`
-  - `data/admin-task-state.json` entry `fetch`
-- Discovery lifecycle surfaces:
+- Discovery evidence surfaces:
   - `data/source-discovery-report.json`
-  - `data/admin-task-state.json` entry `discovery`
-- `data/admin-run-history.json` is a derived history surface keyed by `runId`. It is not authoritative for whether a run is still active.
+- `data/admin-run-history.json` is a legacy history surface keyed by `runId`. It is not read or written by normal lifecycle projection.
 - `data/jobs-fetch-tasks.json` now carries top-level `runId`, `startedAt`, `finishedAt`, and `heartbeatAt`.
 - Fetch report runtime may include `runtime.lifecycle.owner` and `runtime.lifecycle.heartbeatAt`.
 - Any new task-lifecycle artifact must preserve `runId` end to end instead of relying on timestamps.

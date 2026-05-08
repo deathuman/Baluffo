@@ -493,7 +493,7 @@ class TestAdminPanelTaskDisplay:
                 self.sent.append({"status": status, "payload": payload})
 
         class FakeApi:
-            def sync_history_from_reports(self):
+            def get_lifecycle_run_history_rows(self):
                 return history
 
         handler = FakeHandler()
@@ -539,7 +539,7 @@ class TestPipelineMetricsTimestamps:
         }
 
         runtime = PipelineRuntime()
-        history_records: list[dict[str, Any]] = []
+        lifecycle_starts: list[dict[str, Any]] = []
 
         service = PipelineService(
             pipeline_state_lock=FakeLock(),
@@ -548,7 +548,7 @@ class TestPipelineMetricsTimestamps:
             bridge_log=lambda *a, **kw: None,
             now_iso=lambda: "2026-03-22T12:00:00Z",
             parse_iso=make_parse_iso(),
-            append_run_history=lambda x: history_records.append(x),
+            append_run_history=lambda x: x,
             upsert_run_history=lambda x, **kw: x,
             task_running_from_state=lambda x: False,
             sync_task_running=lambda: False,
@@ -567,18 +567,19 @@ class TestPipelineMetricsTimestamps:
                 "runId": "sync-123",
             },
             get_app_version=lambda: "1.0.0",
+            start_lifecycle_run=lambda **kwargs: lifecycle_starts.append(dict(kwargs)) or {},
         )
 
         service.start_task({})
 
-        # Verify initial history record
-        assert len(history_records) >= 1
-        initial_record = history_records[0]
+        # Verify initial lifecycle row
+        assert len(lifecycle_starts) >= 1
+        initial_record = lifecycle_starts[0]
 
-        assert "id" in initial_record
-        assert initial_record["type"] == "pipeline"
-        assert initial_record["status"] == "started"
-        assert "startedAt" in initial_record
+        assert initial_record["run_id"].startswith("pipeline_")
+        assert initial_record["task_type"] == "pipeline"
+        assert initial_record["stage"] == "starting"
+        assert initial_record["owner_kind"] == "pipeline"
         assert "summary" in initial_record
 
         # Verify summary contains baseline info
@@ -1057,6 +1058,73 @@ def test_wait_for_report_completion_survives_timeout_while_child_liveness_callba
     assert clock["now"] == datetime.fromisoformat("2026-03-22T12:00:11+00:00")
 
 
+def test_wait_for_report_completion_does_not_trust_active_snapshot_when_child_dead(
+    monkeypatch, tmp_path: Path
+) -> None:
+    status: dict[str, Any] = {
+        "active": True,
+        "runId": "pipeline_1",
+        "stage": "fetch",
+        "progress": {"currentStep": 2, "totalSteps": 3, "percent": 67, "label": "Running fetch..."},
+        "startedAt": "2026-03-22T12:00:00Z",
+        "finishedAt": "",
+        "error": "",
+        "updatesFound": False,
+        "refreshRecommended": False,
+        "baselineOutputCount": 0,
+        "finalOutputCount": 0,
+        "jobsPageLoadedCount": 0,
+    }
+    clock, waits = _install_fake_wait_clock(monkeypatch, start_at="2026-03-22T12:00:00Z")
+
+    def load_fetch_report(_path: Path, _default: Any) -> dict[str, Any]:
+        return {"runId": "fetch_1", "startedAt": "2026-03-22T12:00:01Z", "finishedAt": ""}
+
+    failures: list[dict[str, Any]] = []
+    service = PipelineService(
+        pipeline_state_lock=FakeLock(),
+        pipeline_status=status,
+        runtime=PipelineRuntime(),
+        bridge_log=lambda *a, **kw: None,
+        now_iso=lambda: clock["now"].isoformat().replace("+00:00", "Z"),
+        parse_iso=make_parse_iso(),
+        append_run_history=lambda x: x,
+        upsert_run_history=lambda x, **kw: x,
+        task_running_from_state=lambda x: False,
+        sync_task_running=lambda: False,
+        current_fetch_output_count=lambda: 0,
+        load_json_object=load_fetch_report,
+        wait_for_sync_completion=lambda x, y: {"status": "ok", "summary": {}},
+        discovery_report_path=tmp_path / "discovery-report.json",
+        fetch_report_path=tmp_path / "fetch-report.json",
+        trigger_discovery_task=lambda **kw: (200, {"started": True}),
+        start_fetcher_task=lambda x: {"started": True, "runId": "fetch_1"},
+        start_sync_task=lambda action, reason, automatic: {"started": True, "runId": "sync-123"},
+        get_app_version=lambda: "1.0.0",
+        child_run_is_live=lambda task_type, run_id: False,
+        get_projected_run_history=lambda: _projection_snapshot(
+            task_type="fetch", run_id="fetch_1", active=True
+        ),
+        fail_lifecycle_run=lambda *args, **kwargs: (
+            failures.append({"args": args, **kwargs}) or {"args": args, **kwargs}
+        ),
+    )
+
+    with pytest.raises(TimeoutError, match="no live evidence"):
+        service.wait_for_report_completion(
+            report_path=tmp_path / "fetch-report.json",
+            started_at="2026-03-22T12:00:01Z",
+            timeout_s=10.0,
+            report_name="fetch report",
+            load_json_object=service._load_json_object,
+            task_type="fetch",
+            task_run_id="fetch_1",
+        )
+
+    assert len(waits) == 10
+    assert failures[-1]["terminal_reason"] == "quiet_timeout_no_live_evidence"
+
+
 def test_run_worker_completes_after_long_active_fetch_wait(monkeypatch, tmp_path: Path) -> None:
     status: dict[str, Any] = {
         "active": True,
@@ -1160,7 +1228,7 @@ def test_run_worker_completes_after_long_active_fetch_wait(monkeypatch, tmp_path
     assert status["stage"] == "completed"
     assert status["error"] == ""
     assert len(waits) == 1201
-    assert upserts[-1]["status"] == "ok"
+    assert upserts == []
 
 
 def test_run_worker_attaches_to_existing_child_tasks_on_conflict(tmp_path: Path) -> None:
@@ -1365,7 +1433,7 @@ def test_run_worker_keeps_waiting_for_attached_fetch_child_while_live_evidence_r
     assert status["stage"] == "completed"
     assert status["error"] == ""
     assert len(waits) == 1201
-    assert upserts[-1]["status"] == "ok"
+    assert upserts == []
     assert (
         "jobs_pipeline_attached_existing_child_task",
         {
@@ -1468,7 +1536,7 @@ def test_run_worker_errors_when_fetch_owner_goes_inactive_without_terminal_repor
     assert status["stage"] == "error"
     assert "had no live evidence before completion" in status["error"]
     assert len(waits) == 1200
-    assert upserts[-1]["status"] == "error"
+    assert upserts == []
 
 
 def test_pipeline_start_allows_live_fetch_to_attach_later(tmp_path: Path) -> None:

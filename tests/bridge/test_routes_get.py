@@ -322,12 +322,22 @@ def test_ops_history_default_limit(tmp_path: Path) -> None:
     """Test /ops/history with default limit."""
     store = FakeDesktopLocalDataStore()
     api = make_stub_bridge_api(tmp_path, store)
+    calls: list[str] = []
+    api.get_lifecycle_run_history_rows = lambda: (
+        calls.append("lifecycle")
+        or [{"runId": "run_1", "type": "fetch", "finishedAt": "2026-05-07T00:00:00Z"}]
+    )
+    api.sync_history_from_reports = lambda: (_ for _ in ()).throw(
+        AssertionError("legacy history fallback must not be used")
+    )
 
     handler = FakeHandler()
     result = handle_get(handler, api=api, path="/ops/history", query={})
 
     assert result is True
     assert handler.sent[-1]["status"] == 200
+    assert calls == ["lifecycle"]
+    assert handler.sent[-1]["payload"]["runs"][0]["runId"] == "run_1"
 
 
 def test_ops_history_custom_limit(tmp_path: Path) -> None:

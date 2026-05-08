@@ -1,6 +1,6 @@
 # Task Lifecycle Ledger Plan
 
-> - **Status:** Lifecycle core implemented; targeted hardening ongoing
+> - **Status:** Lifecycle core implemented; closeout required before legacy lifecycle authority is removed
 > - **Use this when:** fixing Admin Current Runs / Recent Runs contradictions, pipeline child-task ownership, task heartbeat/orphan behavior, or long-running discovery/fetch lifecycle bugs
 > - **Canonical for:** the planned single-source-of-truth task lifecycle refactor
 > - **Not canonical for:** current route payload contracts, report schemas, fetch/discovery output contracts, or release procedures
@@ -68,14 +68,23 @@ Implemented:
 - Wired fetch, discovery, sync, and pipeline launch/terminal paths into the lifecycle ledger.
 - Added explicit pipeline child attachment through `parentRunId`.
 - Replaced fixed pipeline child wait deadlines with quiet-evidence timeout logic and a distinct absolute safety cap terminal reason.
-- Switched `/ops/task-state` and `/ops/history` to lifecycle-first rows while preserving legacy terminal fallback for the transition release.
+- Switched `/ops/task-state` and `/ops/history` to lifecycle-first rows while reducing legacy read authority.
 - Added bridge-startup cleanup that orphans stale lifecycle rows whose owner cannot survive a desktop bridge restart.
 - Simplified Admin Current Runs so the frontend trusts backend lifecycle rows and does not retain missing active rows for one extra sample.
+- Added bridge-startup reconciliation during the transition, then removed it from normal bridge startup so legacy lifecycle import is explicit migration/test tooling only.
+- Kept legacy report/history/task-state helpers only for explicit migration, tests, and maintenance tooling; production lifecycle routes no longer use them as authority.
+- Made terminal report evidence win over stale active task-state/progress metadata during child lifecycle projection.
+- Removed task-state liveness authority from live payload projection; lifecycle snapshots now decide active/terminal state before task-state compatibility evidence is considered.
+- Removed fetch task launch writes/prunes against `admin-run-history.json`; fetch launch now records lifecycle rows plus fetch report evidence.
+- Removed discovery, sync, and pipeline lifecycle writes/prunes against `admin-run-history.json`; their lifecycle state now lands in `admin-task-lifecycle.json` with task-specific report/live evidence.
+- Removed production duplicate-start checks, task-live projection, discovery heartbeat, fetch launch, and pipeline child heartbeat/liveness dependencies on `admin-task-state.json`; lifecycle rows now own those decisions.
 
-Remaining hardening:
+Remaining closeout:
 
-- Run long real discovery/fetch smoke beyond the old nominal timeout window.
-- Remove legacy fallback after one transition release.
+- Run a long real discovery/fetch smoke beyond the old nominal timeout window before the next packaged release.
+- Keep explicit migration/maintenance helpers isolated from production routes; remove those helpers only when the repo no longer needs old-run recovery tooling.
+- Continue hardening progress projection tests as new task evidence fields are added; lifecycle rows must remain identity/liveness authority, while current report/task evidence supplies display progress.
+- Validate packaged `/ops/fetch-report?view=live` against a real portable run before the next packaged release.
 
 ## Implementation plan
 
@@ -165,6 +174,12 @@ This refactor is complete when:
 - `/ops/task-state` and `/ops/history` no longer rely on report mtime/staleness guessing for active-vs-failed decisions.
 - Admin UI displays no contradictory rows such as `Running` with `Finished`, or parent pipeline running with child discovery failed.
 - Lifecycle invariants are covered by backend tests and frontend display tests.
+
+Current closure note:
+
+- `data/admin-task-lifecycle.json` is the lifecycle ledger authority. Legacy state/history helpers are reserved for explicit migration, tests, and maintenance tooling rather than production lifecycle projection.
+- Fetch/discovery reports, fetch task files, logs, and live event/output files remain valid operational evidence artifacts; they are not lifecycle authority.
+- Lifecycle rows must not be treated as display-progress authority. Stale copied `progress`, `summary`, or `taskProgress` values should be ignored or stripped by projection code once the closeout work lands.
 
 ## Suggested implementation order
 

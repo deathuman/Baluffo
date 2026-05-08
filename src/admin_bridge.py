@@ -536,6 +536,7 @@ sync_task_running = admin_task_runtime_mod.sync_task_running
 wait_for_sync_tasks = admin_task_runtime_mod.wait_for_sync_tasks
 _mark_discovery_sync_finished = admin_task_runtime_mod.mark_discovery_sync_finished
 _maybe_trigger_auto_sync_push = admin_task_runtime_mod.maybe_trigger_auto_sync_push
+reconcile_lifecycle_legacy_state = admin_task_runtime_mod.reconcile_lifecycle_legacy_state
 
 
 def cleanup_stale_startup_tasks() -> dict[str, Any]:
