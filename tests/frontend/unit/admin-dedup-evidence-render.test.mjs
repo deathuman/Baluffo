@@ -345,12 +345,12 @@ test("admin render: fetcher metrics render read-only dedup evidence", () => {
   assert.match(metricsEl.innerHTML, /role listing\/search 1/i);
   assert.match(metricsEl.innerHTML, /single-token title 1/i);
   assert.match(metricsEl.innerHTML, /two-token title 2/i);
-  assert.match(metricsEl.innerHTML, /Dedup review queue/i);
+  assert.match(metricsEl.innerHTML, /Dedup action queue/i);
   assert.match(metricsEl.innerHTML, /listing URL 2/i);
   assert.match(metricsEl.innerHTML, /category title 1/i);
   assert.match(metricsEl.innerHTML, /open application 1/i);
   assert.match(metricsEl.innerHTML, /monitor 4/i);
-  assert.match(metricsEl.innerHTML, /Dedup review causes/i);
+  assert.match(metricsEl.innerHTML, /Dedup diagnostic causes/i);
   assert.match(metricsEl.innerHTML, /category 1/i);
   assert.match(metricsEl.innerHTML, /spreadsheet role 3/i);
   assert.match(metricsEl.innerHTML, /sheets role audit 2/i);

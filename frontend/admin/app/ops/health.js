@@ -78,22 +78,27 @@ function toDedupBadgeState(dedupEvidence = {}) {
   const titleCompanyRows = Array.isArray(dedupEvidence?.providerStaticTitleCompanyCollisionExamples) ? dedupEvidence.providerStaticTitleCompanyCollisionExamples : [];
   const reviewQueueRows = Array.isArray(dedupEvidence?.reviewQueue) ? dedupEvidence.reviewQueue : [];
   const reviewCount = providerStaticRows.length + titleCompanyRows.length + reviewQueueRows.length;
-  const pressureCount = Math.max(
-    Number(gate?.currentRunHighRiskReviewQueueCount || 0),
-    Number(gate?.carriedHighRiskReviewQueueCount || 0)
-  );
+  const nonPrimaryMergeCounts = getObjectValue(gate?.currentRunNonPrimaryMergeCounts);
+  const blockingCount = Math.max(0, Number(gate?.currentRunBlockingReviewQueueCount || 0))
+    + Math.max(0, Number(gate?.carriedBlockingReviewQueueCount || 0))
+    + Math.max(0, Number(gate?.providerStaticDisagreementBlockedCount || 0))
+    + Math.max(0, Number(nonPrimaryMergeCounts?.blocking || 0));
+  const monitorCount = Math.max(0, Number(gate?.currentRunMonitorReviewQueueCount || 0))
+    + Math.max(0, Number(gate?.carriedMonitorReviewQueueCount || 0));
   const gateCount = Number(gate?.blockers?.length || 0) + Number(gate?.warnings?.length || 0);
-  const count = Math.max(reviewCount, pressureCount + gateCount);
+  const count = Math.max(reviewCount, blockingCount, gateCount);
   return {
     count,
     tone: String(gate?.status || "").toLowerCase() === "blocked" || Number(gate?.blockers?.length || 0) > 0
       ? "critical"
-      : count > 0
+      : count > 0 || monitorCount > 0
         ? "warning"
         : "neutral",
     title: count > 0
-      ? formatBadgeTitle(count, "dedup review item", "dedup review items")
-      : "No dedup review items"
+      ? formatBadgeTitle(count, "dedup blocker", "dedup blockers")
+      : monitorCount > 0
+        ? formatBadgeTitle(monitorCount, "dedup diagnostic", "dedup diagnostics")
+        : "No dedup blockers"
   };
 }
 

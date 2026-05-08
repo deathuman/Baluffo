@@ -44,6 +44,65 @@ _GOOGLE_SHEETS_GENERIC_ROLE_TITLE_TERMS = {
     "system design",
     "system-design",
 }
+_SHEET_ROLE_BUCKET_CATEGORY_TITLE_TERMS = {
+    "account-management",
+    "art",
+    "backend",
+    "business-development",
+    "community-management",
+    "cyber-security",
+    "data-science",
+    "design",
+    "frontend",
+    "game-design",
+    "game-production",
+    "gameplay",
+    "human-resources",
+    "localization",
+    "marketing",
+    "mobile-development",
+    "product-management",
+    "program-management",
+    "programming",
+    "project-management",
+    "qa",
+    "sales",
+    "software-development-engineering",
+    "software-development-&-engineering",
+    "system-design",
+    "technical-art",
+    "vfx",
+    "web-development",
+}
+_SHEET_ROLE_BUCKET_WEAK_TOKENS = {
+    "art",
+    "business",
+    "community",
+    "cyber",
+    "data",
+    "design",
+    "development",
+    "engineering",
+    "game",
+    "gameplay",
+    "localization",
+    "management",
+    "marketing",
+    "mobile",
+    "program",
+    "programming",
+    "project",
+    "qa",
+    "sales",
+    "security",
+    "software",
+    "system",
+    "systems",
+    "technical",
+    "vfx",
+    "web",
+}
+_SHEET_ROLE_BUCKET_GUARD_REASON = "sheet_role_bucket_different_primary_url"
 _COMPANY_SUFFIX_TOKENS = {
     "company",
     "corp",
@@ -161,6 +220,32 @@ def _has_google_sheets_generic_role_title(job: CanonicalJob | dict[str, Any]) ->
     tokens = normalized.split()
     return 1 <= len(tokens) <= 2 and any(
         token in {"design", "localization", "management", "programming"} for token in tokens
+    )
+
+
+def _has_sheet_role_bucket_title(job: CanonicalJob | dict[str, Any]) -> bool:
+    payload = job.to_dict() if isinstance(job, CanonicalJob) else dict(job)
+    raw_title = clean_text(payload.get("title"))
+    title = norm_text(raw_title)
+    normalized = norm_text(raw_title.replace("-", " ").replace("_", " ").replace("&", " "))
+    hyphenated = normalized.replace(" ", "-")
+    compact_hyphenated = hyphenated.replace("-and-", "-").replace("-&-", "-")
+    if _has_google_sheets_generic_role_title(payload):
+        return True
+    if (
+        title in _SHEET_ROLE_BUCKET_CATEGORY_TITLE_TERMS
+        or hyphenated in _SHEET_ROLE_BUCKET_CATEGORY_TITLE_TERMS
+        or compact_hyphenated in _SHEET_ROLE_BUCKET_CATEGORY_TITLE_TERMS
+    ):
+        return True
+    tokens = normalized.split()
+    if 1 <= len(tokens) <= 2 and any(token in _SHEET_ROLE_BUCKET_WEAK_TOKENS for token in tokens):
+        return True
+    slug_like = "-" in raw_title or "_" in raw_title
+    return (
+        slug_like
+        and 1 <= len(tokens) <= 4
+        and any(token in _SHEET_ROLE_BUCKET_WEAK_TOKENS for token in tokens)
     )
 
 
@@ -545,7 +630,7 @@ def _blocks_google_sheets_generic_role_url_merge(
 ) -> bool:
     if not _is_google_sheets_row(current) or not _is_google_sheets_row(target):
         return False
-    if not _has_google_sheets_generic_role_title(current):
+    if not _has_sheet_role_bucket_title(current) and not _has_sheet_role_bucket_title(target):
         return False
     target_primary = fingerprint_url(target.jobLink)
     return bool(current_primary and target_primary and current_primary != target_primary)
@@ -569,6 +654,7 @@ def _record_google_sheets_generic_role_guard_sample(
         {
             "classification": "fixed_by_generic_role_guard",
             "blockedMergeReason": clean_text(blocked_merge_reason),
+            "guardReason": _SHEET_ROLE_BUCKET_GUARD_REASON,
             "existingDedupKey": clean_text(target.dedupKey),
             "targetSource": clean_text(target_payload.get("source")),
             "targetTitle": clean_text(target_payload.get("title")),
@@ -822,6 +908,16 @@ def deduplicate_jobs(
         "collisionSamples": merge_samples,
         "currentRunMergedDedupKeys": sorted(current_run_merged_dedup_keys),
         "currentRunKnownMirrorPairDedupKeys": sorted(current_run_known_mirror_pair_dedup_keys),
+        "sheetRoleBucketGuardBlockedCount": int(
+            google_sheets_generic_role_guard_counts.get("total") or 0
+        ),
+        "sheetRoleBucketGuardBlockedReasonCounts": {
+            "secondaryKey": int(google_sheets_generic_role_guard_counts.get("secondary_key") or 0),
+            "sparseIdentity": int(
+                google_sheets_generic_role_guard_counts.get("sparse_identity") or 0
+            ),
+        },
+        "sheetRoleBucketGuardBlockedSamples": google_sheets_generic_role_guard_samples,
         "googleSheetsGenericRoleGuardBlockedCount": int(
             google_sheets_generic_role_guard_counts.get("total") or 0
         ),

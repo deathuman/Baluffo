@@ -437,9 +437,15 @@ function formatDedupAuditGate(gate) {
     `current-run collisions ${Number(auditGate?.currentRunSourceBundleCollisionCount || 0).toLocaleString()}`,
     `carried collisions ${Number(auditGate?.carriedSourceBundleCollisionCount || auditGate?.sourceBundleCollisionCount || 0).toLocaleString()}`,
     `historical-like ${Number(auditGate?.carriedCollisionLikelyHistoricalCount || 0).toLocaleString()}`,
-    `high-risk queue ${Number(auditGate?.highRiskReviewQueueCount || 0).toLocaleString()}`,
+    `raw high-risk diagnostics ${Number(auditGate?.highRiskReviewQueueCount || 0).toLocaleString()}`,
     `current high-risk ${Number(auditGate?.currentRunHighRiskReviewQueueCount || 0).toLocaleString()}`,
     `carried high-risk ${Number(auditGate?.carriedHighRiskReviewQueueCount || 0).toLocaleString()}`,
+    `blocking review ${Number(auditGate?.blockingReviewQueueCount || 0).toLocaleString()}`,
+    `current blocking ${Number(auditGate?.currentRunBlockingReviewQueueCount || 0).toLocaleString()}`,
+    `carried blocking ${Number(auditGate?.carriedBlockingReviewQueueCount || 0).toLocaleString()}`,
+    `monitor diagnostics ${Number(auditGate?.monitorReviewQueueCount || 0).toLocaleString()}`,
+    `current monitor ${Number(auditGate?.currentRunMonitorReviewQueueCount || 0).toLocaleString()}`,
+    `carried monitor ${Number(auditGate?.carriedMonitorReviewQueueCount || 0).toLocaleString()}`,
     `provider/static ${Number(auditGate?.providerStaticDisagreementCount || 0).toLocaleString()}`,
     `provider/static current ${Number(auditGate?.providerStaticDisagreementCurrentRunCount || 0).toLocaleString()}`,
     `provider/static carried ${Number(auditGate?.providerStaticDisagreementCarriedCount || 0).toLocaleString()}`,
@@ -517,9 +523,15 @@ function formatDedupAuditGateCard(gate) {
     `current-run collisions ${Number(auditGate?.currentRunSourceBundleCollisionCount || 0).toLocaleString()}`,
     `carried collisions ${Number(auditGate?.carriedSourceBundleCollisionCount || auditGate?.sourceBundleCollisionCount || 0).toLocaleString()}`,
     `historical-like ${Number(auditGate?.carriedCollisionLikelyHistoricalCount || 0).toLocaleString()}`,
-    `high-risk queue ${Number(auditGate?.highRiskReviewQueueCount || 0).toLocaleString()}`,
+    `raw high-risk diagnostics ${Number(auditGate?.highRiskReviewQueueCount || 0).toLocaleString()}`,
     `current high-risk ${Number(auditGate?.currentRunHighRiskReviewQueueCount || 0).toLocaleString()}`,
     `carried high-risk ${Number(auditGate?.carriedHighRiskReviewQueueCount || 0).toLocaleString()}`,
+    `blocking review ${Number(auditGate?.blockingReviewQueueCount || 0).toLocaleString()}`,
+    `current blocking ${Number(auditGate?.currentRunBlockingReviewQueueCount || 0).toLocaleString()}`,
+    `carried blocking ${Number(auditGate?.carriedBlockingReviewQueueCount || 0).toLocaleString()}`,
+    `monitor diagnostics ${Number(auditGate?.monitorReviewQueueCount || 0).toLocaleString()}`,
+    `current monitor ${Number(auditGate?.currentRunMonitorReviewQueueCount || 0).toLocaleString()}`,
+    `carried monitor ${Number(auditGate?.carriedMonitorReviewQueueCount || 0).toLocaleString()}`,
     `provider/static ${Number(auditGate?.providerStaticDisagreementCount || 0).toLocaleString()}`,
     `provider/static current ${Number(auditGate?.providerStaticDisagreementCurrentRunCount || 0).toLocaleString()}`,
     `provider/static carried ${Number(auditGate?.providerStaticDisagreementCarriedCount || 0).toLocaleString()}`,
@@ -1287,8 +1299,8 @@ function buildDedupListsContent(metrics, options = {}) {
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets role-bucket audit summary</strong>: ${formatDedupGoogleSheetsRoleBucketAuditSummary(googleSheetsRoleBucketAudit)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets bucket intent</strong>: ${escapeHtml(formatDedupGoogleSheetsBucketIntentCounts(googleSheetsBucketIntentCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets weak grouping audit</strong>: ${escapeHtml(formatDedupGoogleSheetsWeakGroupingAuditCounts(googleSheetsWeakGroupingAuditCounts))}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review causes</strong>: ${escapeHtml(formatDedupReviewQueueCauseCounts(reviewQueueCauseCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup action queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup diagnostic causes</strong>: ${escapeHtml(formatDedupReviewQueueCauseCounts(reviewQueueCauseCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top source-bundle outliers</strong>: ${topOutlierSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review examples</strong>: ${reviewQueueSummary}</div>
@@ -1711,8 +1723,8 @@ export function renderAdminOpsFetcherMetrics(metricsEl, metrics, failureSummary 
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets role-bucket audit summary</strong>: ${formatDedupGoogleSheetsRoleBucketAuditSummary(googleSheetsRoleBucketAudit)}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets bucket intent</strong>: ${escapeHtml(formatDedupGoogleSheetsBucketIntentCounts(googleSheetsBucketIntentCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup Google Sheets weak grouping audit</strong>: ${escapeHtml(formatDedupGoogleSheetsWeakGroupingAuditCounts(googleSheetsWeakGroupingAuditCounts))}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>
-    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review causes</strong>: ${escapeHtml(formatDedupReviewQueueCauseCounts(reviewQueueCauseCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup action queue</strong>: ${escapeHtml(formatDedupReviewQueueCounts(reviewQueueCounts))}</div>
+    <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup diagnostic causes</strong>: ${escapeHtml(formatDedupReviewQueueCauseCounts(reviewQueueCauseCounts))}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top merged jobs</strong>: ${topMergedSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Top source-bundle outliers</strong>: ${topOutlierSummary}</div>
     <div class="admin-ops-schedule-item admin-ops-full-row"><strong>Dedup review examples</strong>: ${reviewQueueSummary}</div>

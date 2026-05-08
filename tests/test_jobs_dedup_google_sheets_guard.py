@@ -41,6 +41,12 @@ def test_deduplicate_jobs_keeps_google_sheets_generic_role_bucket_detail_urls_se
 
     assert int(stats["outputCount"]) == 2
     assert int(stats["mergedCount"]) == 0
+    assert int(stats["sheetRoleBucketGuardBlockedCount"]) == 2
+    assert stats["sheetRoleBucketGuardBlockedReasonCounts"]["secondaryKey"] == 1
+    assert stats["sheetRoleBucketGuardBlockedReasonCounts"]["sparseIdentity"] == 1
+    assert stats["sheetRoleBucketGuardBlockedSamples"][0]["guardReason"] == (
+        "sheet_role_bucket_different_primary_url"
+    )
     assert int(stats["googleSheetsGenericRoleGuardBlockedCount"]) == 2
     assert stats["googleSheetsGenericRoleGuardBlockedReasonCounts"]["secondaryKey"] == 1
     assert stats["googleSheetsGenericRoleGuardBlockedReasonCounts"]["sparseIdentity"] == 1
@@ -54,6 +60,10 @@ def test_deduplicate_jobs_keeps_google_sheets_generic_role_bucket_detail_urls_se
     assert audit["blockedByDifferentPrimaryUrlCount"] == 2
     assert audit["classificationCounts"]["fixed_by_generic_role_guard"] == 2
     assert audit["examples"][0]["classification"] == "fixed_by_generic_role_guard"
+    assert evidence["sheetRoleBucketGuardBlockedCount"] == 2
+    assert evidence["sheetRoleBucketGuardBlockedSamples"][0]["guardReason"] == (
+        "sheet_role_bucket_different_primary_url"
+    )
 
 
 def test_deduplicate_jobs_still_merges_google_sheets_generic_role_bucket_same_url() -> None:
@@ -86,6 +96,31 @@ def test_deduplicate_jobs_still_merges_google_sheets_generic_role_bucket_same_ur
     assert audit["unresolvedRoleBucketCount"] == 0
     assert audit["examples"][0]["classification"] == "allowed_same_primary_url"
     assert evidence["dedupAuditGate"]["lifecycleUxReady"] is True
+
+
+def test_deduplicate_jobs_keeps_google_sheets_taxonomy_bucket_detail_urls_separate() -> None:
+    for title in ("Mobile-development", "System-design", "Software-development-&-engineering"):
+        first = _google_sheets_job(
+            title=title,
+            company="Bucket Studio",
+            link=f"https://example.com/jobs/{title}/one",
+            source_job_id=f"{title}-1",
+        )
+        second = _google_sheets_job(
+            title=title,
+            company="Bucket Studio",
+            link=f"https://example.com/jobs/{title}/two",
+            source_job_id=f"{title}-2",
+        )
+        assert first is not None
+        assert second is not None
+
+        rows, stats = jf.deduplicate_jobs([first, second])
+
+        assert int(stats["outputCount"]) == 2
+        assert int(stats["mergedCount"]) == 0
+        assert int(stats["sheetRoleBucketGuardBlockedCount"]) == 2
+        assert sorted(row.jobLink for row in rows) == sorted([first.jobLink, second.jobLink])
 
 
 def test_google_sheets_guard_audit_counts_uncapped_blocked_attempts() -> None:

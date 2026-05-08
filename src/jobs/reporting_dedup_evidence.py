@@ -1550,6 +1550,36 @@ def _high_risk_origin_counts(
     return (1, 0) if origin == "current_run" else (0, 1)
 
 
+def _review_pressure_origin_counts(
+    *,
+    summary: Mapping[str, Any],
+    origin: str,
+    current_run_known_mirror_pair_dedup_keys: set[str],
+    review_action: str,
+) -> tuple[int, int, int, int, int, int]:
+    current_high_risk, carried_high_risk = _high_risk_origin_counts(
+        summary, origin, current_run_known_mirror_pair_dedup_keys
+    )
+    current_blocking = 0
+    carried_blocking = 0
+    current_monitor = 0
+    carried_monitor = 0
+    if review_action == "monitor":
+        current_monitor = current_high_risk
+        carried_monitor = carried_high_risk
+    else:
+        current_blocking = current_high_risk
+        carried_blocking = carried_high_risk
+    return (
+        current_high_risk,
+        carried_high_risk,
+        current_blocking,
+        carried_blocking,
+        current_monitor,
+        carried_monitor,
+    )
+
+
 def _is_google_sheets_role_bucket_summary(summary: Mapping[str, Any]) -> bool:
     if clean_text(summary.get("nonProviderIdentityProvenance")) != "google_sheets_row_identity":
         return False
@@ -1618,10 +1648,12 @@ def _google_sheets_guard_audit_example(row: Mapping[str, Any]) -> dict[str, Any]
         "targetJobLink": normalize_url(row.get("targetJobLink")),
         "targetSourceJobId": clean_text(row.get("targetSourceJobId")),
         "blockedMergeReason": clean_text(row.get("blockedMergeReason")) or "unknown",
+        "guardReason": clean_text(row.get("guardReason")) or "unknown",
         "bundleEvidenceOrigin": "current_run",
         "evidence": [
             "different_concrete_primary_urls",
             f"blocked_merge_reason:{clean_text(row.get('blockedMergeReason')) or 'unknown'}",
+            f"guard_reason:{clean_text(row.get('guardReason')) or 'unknown'}",
         ],
     }
 
@@ -1895,10 +1927,12 @@ def _audit_gate_blockers_and_warnings(
     provider_static_location_pollution_count: int,
     provider_static_auto_safe_warning_count: int,
     provider_static_reviewed_safe_warning_count: int,
-    current_run_high_risk_review_queue_count: int,
-    carried_high_risk_review_queue_count: int,
+    current_run_blocking_review_queue_count: int,
+    carried_blocking_review_queue_count: int,
+    current_run_monitor_review_queue_count: int,
+    carried_monitor_review_queue_count: int,
     carried_collision_likely_historical_count: int,
-    high_risk_review_queue_count: int,
+    blocking_review_queue_count: int,
 ) -> tuple[list[str], list[str]]:
     blockers: list[str] = []
     warnings: list[str] = []
@@ -1919,12 +1953,14 @@ def _audit_gate_blockers_and_warnings(
     )
     blockers.extend(provider_static_blockers)
     warnings.extend(provider_static_warnings)
-    if current_run_high_risk_review_queue_count > 0:
+    if current_run_blocking_review_queue_count > 0:
         blockers.append("high_risk_review_queue_causes_need_review")
-    elif high_risk_review_queue_count and not carried_high_risk_review_queue_count:
+    elif blocking_review_queue_count and not carried_blocking_review_queue_count:
         blockers.append("high_risk_review_queue_causes_need_review")
-    if carried_high_risk_review_queue_count > 0:
+    if carried_blocking_review_queue_count > 0:
         warnings.append("carried_high_risk_review_queue_causes_present")
+    if current_run_monitor_review_queue_count > 0 or carried_monitor_review_queue_count > 0:
+        warnings.append("monitor_review_queue_diagnostics_present")
     if carried_collision_likely_historical_count > 0:
         warnings.append("carried_source_bundle_collisions_present")
     return blockers, warnings
@@ -2043,6 +2079,18 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
     carried_high_risk_review_queue_count = max(
         0, int(dedup_evidence.get("carriedHighRiskReviewQueueCount") or 0)
     )
+    current_run_blocking_review_queue_count = max(
+        0, int(dedup_evidence.get("currentRunBlockingReviewQueueCount") or 0)
+    )
+    carried_blocking_review_queue_count = max(
+        0, int(dedup_evidence.get("carriedBlockingReviewQueueCount") or 0)
+    )
+    current_run_monitor_review_queue_count = max(
+        0, int(dedup_evidence.get("currentRunMonitorReviewQueueCount") or 0)
+    )
+    carried_monitor_review_queue_count = max(
+        0, int(dedup_evidence.get("carriedMonitorReviewQueueCount") or 0)
+    )
     merge_reason_counts = _mapping_value(dedup_evidence, "mergeReasonCounts")
     review_queue_cause_counts = _mapping_value(dedup_evidence, "reviewQueueCauseCounts")
     provider_static_disagreement_counts = _mapping_value(
@@ -2091,6 +2139,17 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         )
     else:
         high_risk_review_queue_count = _audit_gate_high_risk_count(review_queue_cause_counts)
+    if (
+        "currentRunBlockingReviewQueueCount" in dedup_evidence
+        or "carriedBlockingReviewQueueCount" in dedup_evidence
+    ):
+        blocking_review_queue_count = (
+            current_run_blocking_review_queue_count + carried_blocking_review_queue_count
+        )
+    else:
+        current_run_blocking_review_queue_count = current_run_high_risk_review_queue_count
+        carried_blocking_review_queue_count = carried_high_risk_review_queue_count
+        blocking_review_queue_count = high_risk_review_queue_count
     current_run_non_primary_merges = max(
         0,
         merged_count - int(merge_reason_counts.get("primaryUrl") or 0),
@@ -2118,10 +2177,12 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         provider_static_location_pollution_count=provider_static_location_pollution_count,
         provider_static_auto_safe_warning_count=provider_static_auto_safe_warning_count,
         provider_static_reviewed_safe_warning_count=provider_static_reviewed_safe_warning_count,
-        current_run_high_risk_review_queue_count=current_run_high_risk_review_queue_count,
-        carried_high_risk_review_queue_count=carried_high_risk_review_queue_count,
+        current_run_blocking_review_queue_count=current_run_blocking_review_queue_count,
+        carried_blocking_review_queue_count=carried_blocking_review_queue_count,
+        current_run_monitor_review_queue_count=current_run_monitor_review_queue_count,
+        carried_monitor_review_queue_count=carried_monitor_review_queue_count,
         carried_collision_likely_historical_count=carried_collision_likely_historical_count,
-        high_risk_review_queue_count=high_risk_review_queue_count,
+        blocking_review_queue_count=blocking_review_queue_count,
     )
 
     status = "blocked" if blockers else "warning" if warnings else "pass"
@@ -2138,6 +2199,14 @@ def build_dedup_audit_gate(dedup_evidence: Mapping[str, Any]) -> dict[str, Any]:
         "highRiskReviewQueueCount": high_risk_review_queue_count,
         "currentRunHighRiskReviewQueueCount": current_run_high_risk_review_queue_count,
         "carriedHighRiskReviewQueueCount": carried_high_risk_review_queue_count,
+        "blockingReviewQueueCount": blocking_review_queue_count,
+        "currentRunBlockingReviewQueueCount": current_run_blocking_review_queue_count,
+        "carriedBlockingReviewQueueCount": carried_blocking_review_queue_count,
+        "monitorReviewQueueCount": (
+            current_run_monitor_review_queue_count + carried_monitor_review_queue_count
+        ),
+        "currentRunMonitorReviewQueueCount": current_run_monitor_review_queue_count,
+        "carriedMonitorReviewQueueCount": carried_monitor_review_queue_count,
         "providerStaticDisagreementCount": provider_static_disagreement_count,
         "providerStaticDisagreementCurrentRunCount": provider_static_current_run_count,
         "providerStaticDisagreementCarriedCount": provider_static_carried_count,
@@ -2208,6 +2277,10 @@ def build_dedup_evidence(
     carried_source_bundle_collision_count = 0
     current_run_high_risk_review_queue_count = 0
     carried_high_risk_review_queue_count = 0
+    current_run_blocking_review_queue_count = 0
+    carried_blocking_review_queue_count = 0
+    current_run_monitor_review_queue_count = 0
+    carried_monitor_review_queue_count = 0
     current_run_provider_static_disagreement_count = 0
     carried_provider_static_disagreement_count = 0
     current_run_merged_dedup_keys = {
@@ -2255,11 +2328,25 @@ def build_dedup_evidence(
             review_action = _recommended_review_action(summary)
             review_queue_counts.update([review_action])
             review_queue_cause_counts.update([summary["suspectedCause"]])
-            current_high_risk, carried_high_risk = _high_risk_origin_counts(
-                summary, origin, current_run_known_mirror_pair_dedup_keys
+            (
+                current_high_risk,
+                carried_high_risk,
+                current_blocking,
+                carried_blocking,
+                current_monitor,
+                carried_monitor,
+            ) = _review_pressure_origin_counts(
+                summary=summary,
+                origin=origin,
+                current_run_known_mirror_pair_dedup_keys=current_run_known_mirror_pair_dedup_keys,
+                review_action=review_action,
             )
             current_run_high_risk_review_queue_count += current_high_risk
             carried_high_risk_review_queue_count += carried_high_risk
+            current_run_blocking_review_queue_count += current_blocking
+            carried_blocking_review_queue_count += carried_blocking
+            current_run_monitor_review_queue_count += current_monitor
+            carried_monitor_review_queue_count += carried_monitor
             if review_action != "monitor":
                 review_queue_rows.append({**summary, "recommendedReviewAction": review_action})
             if int(summary.get("distinctLocationCount") or 0) > 1:
@@ -2444,11 +2531,22 @@ def build_dedup_evidence(
     provider_static_disagreement_count = (
         current_run_provider_static_disagreement_count + carried_provider_static_disagreement_count
     )
+    sheet_guard_reason_counts = (
+        dedup_stats.get("sheetRoleBucketGuardBlockedReasonCounts")
+        or dedup_stats.get("googleSheetsGenericRoleGuardBlockedReasonCounts")
+        or {}
+    )
     google_sheets_guard_samples = json_object_rows(
-        dedup_stats.get("googleSheetsGenericRoleGuardBlockedSamples")
+        dedup_stats.get("sheetRoleBucketGuardBlockedSamples")
+        or dedup_stats.get("googleSheetsGenericRoleGuardBlockedSamples")
     )
     google_sheets_guard_blocked_count = max(
-        0, int(dedup_stats.get("googleSheetsGenericRoleGuardBlockedCount") or 0)
+        0,
+        int(
+            dedup_stats.get("sheetRoleBucketGuardBlockedCount")
+            or dedup_stats.get("googleSheetsGenericRoleGuardBlockedCount")
+            or 0
+        ),
     )
     google_sheets_role_bucket_audit = _google_sheets_role_bucket_audit_summary(
         role_bucket_rows=google_sheets_role_bucket_rows,
@@ -2464,26 +2562,16 @@ def build_dedup_evidence(
         "mergeReasonCounts": _merge_reason_counts(dedup_stats),
         "currentRunMergeExamples": _current_run_merge_examples(dedup_stats),
         "currentRunMergeExamplesByReason": _current_run_merge_examples_by_reason(dedup_stats),
+        "sheetRoleBucketGuardBlockedCount": google_sheets_guard_blocked_count,
+        "sheetRoleBucketGuardBlockedReasonCounts": {
+            "secondaryKey": max(0, int(sheet_guard_reason_counts.get("secondaryKey") or 0)),
+            "sparseIdentity": max(0, int(sheet_guard_reason_counts.get("sparseIdentity") or 0)),
+        },
+        "sheetRoleBucketGuardBlockedSamples": google_sheets_guard_samples,
         "googleSheetsGenericRoleGuardBlockedCount": google_sheets_guard_blocked_count,
         "googleSheetsGenericRoleGuardBlockedReasonCounts": {
-            "secondaryKey": max(
-                0,
-                int(
-                    (dedup_stats.get("googleSheetsGenericRoleGuardBlockedReasonCounts") or {}).get(
-                        "secondaryKey"
-                    )
-                    or 0
-                ),
-            ),
-            "sparseIdentity": max(
-                0,
-                int(
-                    (dedup_stats.get("googleSheetsGenericRoleGuardBlockedReasonCounts") or {}).get(
-                        "sparseIdentity"
-                    )
-                    or 0
-                ),
-            ),
+            "secondaryKey": max(0, int(sheet_guard_reason_counts.get("secondaryKey") or 0)),
+            "sparseIdentity": max(0, int(sheet_guard_reason_counts.get("sparseIdentity") or 0)),
         },
         "googleSheetsGenericRoleGuardBlockedSamples": google_sheets_guard_samples,
         "sourceBundleCollisionCount": source_bundle_collision_count,
@@ -2491,6 +2579,10 @@ def build_dedup_evidence(
         "carriedSourceBundleCollisionCount": carried_source_bundle_collision_count,
         "currentRunHighRiskReviewQueueCount": current_run_high_risk_review_queue_count,
         "carriedHighRiskReviewQueueCount": carried_high_risk_review_queue_count,
+        "currentRunBlockingReviewQueueCount": current_run_blocking_review_queue_count,
+        "carriedBlockingReviewQueueCount": carried_blocking_review_queue_count,
+        "currentRunMonitorReviewQueueCount": current_run_monitor_review_queue_count,
+        "carriedMonitorReviewQueueCount": carried_monitor_review_queue_count,
         "providerStaticDisagreementCounts": {
             "total": provider_static_disagreement_count,
             "currentRun": current_run_provider_static_disagreement_count,

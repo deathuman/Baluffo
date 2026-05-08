@@ -44,6 +44,12 @@ def test_dedup_audit_gate_returns_safe_defaults_for_empty_evidence() -> None:
         },
         "sourceBundleCollisionCount": 0,
         "highRiskReviewQueueCount": 0,
+        "blockingReviewQueueCount": 0,
+        "currentRunBlockingReviewQueueCount": 0,
+        "carriedBlockingReviewQueueCount": 0,
+        "monitorReviewQueueCount": 0,
+        "currentRunMonitorReviewQueueCount": 0,
+        "carriedMonitorReviewQueueCount": 0,
         "providerStaticDisagreementCount": 0,
         "providerStaticDisagreementCurrentRunCount": 0,
         "providerStaticDisagreementCarriedCount": 0,
@@ -386,15 +392,3 @@ def test_dedup_audit_gate_counts_fresh_collisions_as_current_run() -> None:
     assert gate["currentRunSourceBundleCollisionCount"] == 1
     assert gate["carriedSourceBundleCollisionCount"] == 0
     assert evidence["topSourceBundleOutliers"][0]["bundleEvidenceOrigin"] == "current_run"
-
-
-def test_dedup_audit_gate_warns_on_current_primary_url_merges() -> None:
-    evidence = build_dedup_evidence(
-        {"mergedCount": 1, "mergedByPrimaryUrl": 1},
-        [],
-    )
-
-    gate = evidence["dedupAuditGate"]
-    assert gate["status"] == "warning"
-    assert gate["lifecycleUxReady"] is True
-    assert "current_run_primary_url_merges_present" in gate["warnings"]

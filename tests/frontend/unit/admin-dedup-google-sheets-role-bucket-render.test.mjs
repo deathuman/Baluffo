@@ -49,6 +49,11 @@ test("admin render: Google Sheets role-bucket audit summary stays read-only", ()
           googleSheetsRoleBucketUnresolvedCount: 4,
           googleSheetsRoleBucketGuardBlockedCount: 1,
           googleSheetsRoleBucketHistoricalCount: 2,
+          highRiskReviewQueueCount: 7318,
+          blockingReviewQueueCount: 2,
+          currentRunBlockingReviewQueueCount: 2,
+          monitorReviewQueueCount: 7316,
+          currentRunMonitorReviewQueueCount: 7316,
           blockers: ["high_risk_review_queue_causes_need_review"],
           warnings: [],
           examples: []
@@ -62,6 +67,9 @@ test("admin render: Google Sheets role-bucket audit summary stays read-only", ()
   assert.match(metricsEl.innerHTML, /Sheets role unresolved 4/i);
   assert.match(metricsEl.innerHTML, /Sheets guard-blocked 1/i);
   assert.match(metricsEl.innerHTML, /Sheets historical 2/i);
+  assert.match(metricsEl.innerHTML, /raw high-risk diagnostics 7[,.]318/i);
+  assert.match(metricsEl.innerHTML, /blocking review 2/i);
+  assert.match(metricsEl.innerHTML, /monitor diagnostics 7[,.]316/i);
   assert.match(metricsEl.innerHTML, /guard-blocked different URL 1/i);
   assert.match(metricsEl.innerHTML, /allowed same URL 1/i);
   assert.match(metricsEl.innerHTML, /parser\/category 3/i);

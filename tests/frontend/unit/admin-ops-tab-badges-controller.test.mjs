@@ -94,8 +94,12 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
                 status: "blocked",
                 blockers: ["provider_static_disagreement_needs_review"],
                 warnings: ["current_run_primary_url_merges_present"],
-                currentRunHighRiskReviewQueueCount: 0,
-                carriedHighRiskReviewQueueCount: 0
+                currentRunHighRiskReviewQueueCount: 7318,
+                carriedHighRiskReviewQueueCount: 357,
+                currentRunBlockingReviewQueueCount: 0,
+                carriedBlockingReviewQueueCount: 0,
+                currentRunMonitorReviewQueueCount: 7318,
+                carriedMonitorReviewQueueCount: 357
               },
               providerStaticDisagreementExamples: [
                 { title: "Studio", company: "Example", reviewStatus: "new" }
@@ -197,4 +201,5 @@ test("admin ops controller updates tab badges from loaded review payloads", asyn
   assert.equal(registryConflictsBadge.attributes["data-badge-tone"], "warning");
   assert.equal(dedupBadge.textContent, "3");
   assert.equal(dedupBadge.attributes["data-badge-tone"], "critical");
+  assert.equal(dedupBadge.title, "3 dedup blockers");
 });
