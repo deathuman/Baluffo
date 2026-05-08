@@ -1332,14 +1332,17 @@ def _analyze_provider_static_automation(
     losers: list[dict[str, Any]],
     rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    blocked = _safe_pair_blockers(rows, losers)
-    loser = losers[0] if len(losers) == 1 else {}
-    winner_jobs = _jobs_found_count(winner)
-    loser_jobs = _jobs_found_count(loser)
+    provider_rows = [row for row in rows if _is_provider_row(row)]
+    static_rows = [row for row in rows if _is_static_row(row)]
+    provider = provider_rows[0] if len(provider_rows) == 1 else winner
+    static = static_rows[0] if len(static_rows) == 1 else (losers[0] if len(losers) == 1 else {})
+    blocked = _safe_pair_blockers(rows, [static])
+    winner_jobs = _jobs_found_count(provider)
+    loser_jobs = _jobs_found_count(static)
 
-    if not _is_provider_row(winner):
+    if not _is_provider_row(provider):
         blocked.append("winner_must_be_provider")
-    if not _is_static_row(loser):
+    if not _is_static_row(static):
         blocked.append("loser_must_be_static")
     if winner_jobs is None:
         blocked.append("winner_missing_jobs_found")
@@ -1350,7 +1353,7 @@ def _analyze_provider_static_automation(
     elif winner_jobs is not None and loser_jobs > winner_jobs:
         blocked.append("static_jobs_higher_than_provider")
 
-    target_id = _row_identity(loser)
+    target_id = _row_identity(static)
     blocked.extend(_target_identity_blocker(target_id))
 
     if blocked:

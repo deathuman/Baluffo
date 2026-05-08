@@ -140,6 +140,41 @@ def test_registry_conflicts_safe_automation_demotes_provider_static_when_jobs_eq
     assert automation["targetIds"] == ["static:listing_url:https://studio.example/careers"]
 
 
+def test_registry_conflicts_safe_automation_lets_equal_provider_beat_higher_scored_static() -> None:
+    provider_static_state = {
+        "active": [
+            {
+                "id": "static:listing_url:https://studio.example/careers",
+                "name": "Studio Static",
+                "studio": "Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 1,
+                "score": 28,
+            },
+            {
+                "id": "greenhouse:slug:studio",
+                "name": "Studio Provider",
+                "studio": "Studio",
+                "adapter": "greenhouse",
+                "registryState": "active",
+                "jobsFound": 1,
+                "score": 26,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    conflict = derive_registry_conflict_queue(provider_static_state)["conflicts"][0]
+    automation = conflict["safeAutomation"]
+
+    assert conflict["winner"]["id"] == "greenhouse:slug:studio"
+    assert automation["eligible"] is True
+    assert automation["action"] == "auto_demote_provider_static_weaker_source"
+    assert automation["targetIds"] == ["static:listing_url:https://studio.example/careers"]
+
+
 def test_registry_conflicts_safe_automation_keeps_higher_static_in_review() -> None:
     provider_static_state = {
         "active": [

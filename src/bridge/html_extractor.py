@@ -23,7 +23,55 @@ def _is_ignored_job_href(href: str) -> bool:
 
 
 def _is_ignored_job_url(url: str) -> bool:
-    return "/jobs/share_image/" in (urlparse(str(url or "")).path or "").lower()
+    parsed = urlparse(str(url or ""))
+    path = (parsed.path or "").lower()
+    if "/jobs/share_image/" in path:
+        return True
+    if _is_general_application_url(parsed):
+        return True
+    return False
+
+
+def _is_general_application_url(parsed: object) -> bool:
+    netloc = (getattr(parsed, "netloc", "") or "").lower()
+    path = (getattr(parsed, "path", "") or "").lower()
+    if any(
+        token in path
+        for token in (
+            "open-application",
+            "openapplication",
+            "general-application",
+            "generalapplication",
+            "talent-community",
+            "talentcommunity",
+            "spontaneous-application",
+            "unsolicited-application",
+        )
+    ):
+        return True
+    if "greenhouse.io" not in netloc:
+        return False
+    parts = [part for part in path.strip("/").split("/") if part]
+    return bool(len(parts) >= 3 and parts[1] == "jobs" and parts[0].endswith("oa"))
+
+
+def _is_general_application_anchor(anchor_body: str) -> bool:
+    text = re.sub(r"(?is)<[^>]+>", " ", str(anchor_body or ""))
+    text = html_module.unescape(re.sub(r"\s+", " ", text).strip()).lower()
+    return bool(
+        re.search(
+            r"\b(submit your application|open applications?|general applications?|talent community)\b",
+            text,
+        )
+    )
+
+
+def _is_lever_posting_url(url: str) -> bool:
+    parsed = urlparse(str(url or ""))
+    if parsed.netloc.lower() != "jobs.lever.co":
+        return False
+    parts = [part for part in (parsed.path or "").strip("/").split("/") if part]
+    return len(parts) >= 2
 
 
 def _is_job_like_path(path: str) -> bool:
@@ -53,9 +101,11 @@ def _is_job_like_path(path: str) -> bool:
 
 def _embedded_job_url_candidates(absolute: str) -> list[str]:
     low = absolute.lower()
-    if any(
-        token in low for token in ("jobs.lever.co/", "boards.greenhouse.io/", "jobs.ashbyhq.com/")
-    ):
+    if _is_ignored_job_url(absolute):
+        return []
+    if "jobs.lever.co/" in low:
+        return [absolute] if _is_lever_posting_url(absolute) else []
+    if any(token in low for token in ("boards.greenhouse.io/", "jobs.ashbyhq.com/")):
         return [absolute]
     if ".jobs.personio.de/" in low:
         out = [absolute]
@@ -73,9 +123,12 @@ def _embedded_job_url_candidates(absolute: str) -> list[str]:
 def extract_job_like_links(html: str, base_url: str) -> list[str]:
     links: list[str] = []
     seen = set()
-    for href in re.findall(r'(?is)<a[^>]+href=["\']([^"\']+)["\']', html):
+    for anchor in re.finditer(r'(?is)<a\b[^>]*href=(["\'])(.*?)\1[^>]*>(.*?)</a>', html):
+        href = anchor.group(2)
         raw_href = str(href or "").strip()
         if _is_ignored_job_href(raw_href):
+            continue
+        if _is_general_application_anchor(anchor.group(3)):
             continue
         try:
             absolute = urljoin(base_url, raw_href)

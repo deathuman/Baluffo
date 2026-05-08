@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from src import source_registry as sr
+from src.bridge.registry_conflicts import derive_registry_conflict_queue
 from tests.helpers.temp_paths import workspace_tmpdir
 
 
@@ -54,3 +55,49 @@ def test_default_guerrilla_seed_uses_live_greenhouse_slug() -> None:
     assert "greenhouse:slug:guerrilla-games" in active_ids
     assert "greenhouse:slug:guerrillagames" not in active_ids
     assert stale_pending["duplicateOfSourceId"] == "greenhouse:slug:guerrilla-games"
+
+
+def test_default_bandai_seed_has_provider_count_for_static_replacement() -> None:
+    active_rows = json.loads(
+        Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
+    )
+    rows_by_id = {str(row.get("id") or ""): row for row in active_rows}
+    provider = rows_by_id["greenhouse:slug:bandainamco"]
+    static = rows_by_id["static:listing_url:https://www.bandainamcoent.com/careers#join"]
+
+    assert provider["jobsFound"] == 7
+    assert static["jobsFound"] == 7
+
+    payload = derive_registry_conflict_queue(
+        {"active": [provider, static], "pending": [], "rejected": []}
+    )
+    conflict = payload["conflicts"][0]
+
+    assert conflict["winner"]["id"] == "greenhouse:slug:bandainamco"
+    assert conflict["safeAutomation"]["eligible"] is True
+    assert conflict["safeAutomation"]["targetIds"] == [
+        "static:listing_url:https://www.bandainamcoent.com/careers#join"
+    ]
+
+
+def test_default_big_time_seed_lets_lever_provider_replace_static_board_link_page() -> None:
+    active_rows = json.loads(
+        Path("data/defaults/source-registry-active.seed.json").read_text(encoding="utf-8")
+    )
+    rows_by_id = {str(row.get("id") or ""): row for row in active_rows}
+    provider = rows_by_id["lever:account:bigtime"]
+    static = rows_by_id["static:listing_url:https://www.bigtime.gg/careers"]
+
+    assert provider["jobsFound"] == 2
+    assert static["jobsFound"] == 0
+
+    payload = derive_registry_conflict_queue(
+        {"active": [provider, static], "pending": [], "rejected": []}
+    )
+    conflict = payload["conflicts"][0]
+
+    assert conflict["winner"]["id"] == "lever:account:bigtime"
+    assert conflict["safeAutomation"]["eligible"] is True
+    assert conflict["safeAutomation"]["targetIds"] == [
+        "static:listing_url:https://www.bigtime.gg/careers"
+    ]

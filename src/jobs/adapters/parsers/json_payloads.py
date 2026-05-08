@@ -215,6 +215,8 @@ def parse_greenhouse_jobs_payload(
             continue
         title = clean_text(row.get("title"))
         job_link = clean_text(row.get("absolute_url") or row.get("url"))
+        if _is_general_application_title(title):
+            continue
         if not title or not job_link:
             continue
         company = clean_text(row.get("company_name")) or company_fallback
@@ -243,6 +245,16 @@ def parse_greenhouse_jobs_payload(
             }
         )
     return jobs
+
+
+def _is_general_application_title(title: str) -> bool:
+    normalized = re.sub(r"\s+", " ", clean_text(title)).strip().lower()
+    return bool(
+        re.fullmatch(
+            r"(open|general|spontaneous|unsolicited)\s+applications?",
+            normalized,
+        )
+    ) or normalized in {"talent community", "join our talent community"}
 
 
 def parse_lever_jobs_payload(
