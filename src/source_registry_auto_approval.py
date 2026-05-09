@@ -21,6 +21,12 @@ AUTO_APPROVAL_CAP_DEFER_REASONS = frozenset({"adapter_cap", "domain_cap", "top_n
 AUTO_APPROVAL_EXISTING_MATCH_REASONS = frozenset(
     {"existing_registry_match", "existing_family_match"}
 )
+AUTO_APPROVAL_BLOCKED_PENDING_REASONS = frozenset(
+    {
+        "registry_conflict_safe_auto_demote",
+        "registry_conflict_adjudication_auto_demote",
+    }
+)
 
 
 def _normalize_discovery_health_status(value: Any) -> str:
@@ -87,6 +93,15 @@ def _rank_reason_tokens(row: dict[str, Any]) -> set[str]:
     }
 
 
+def _row_has_blocked_auto_approval_reason(row: dict[str, Any]) -> bool:
+    reason_tokens = {
+        str(row.get("pendingReason") or "").strip().lower(),
+        str(row.get("stateChangedBy") or "").strip().lower(),
+        str(row.get("approvedBy") or "").strip().lower(),
+    }
+    return bool(reason_tokens & AUTO_APPROVAL_BLOCKED_PENDING_REASONS)
+
+
 def _pending_row_is_auto_approvable(
     row: dict[str, Any], *, report_row: dict[str, Any] | None = None
 ) -> bool:
@@ -96,6 +111,8 @@ def _pending_row_is_auto_approvable(
     Report-side queue throttles such as domain_cap do not override a clean pending row.
     """
     report = as_json_object(report_row)
+    if _row_has_blocked_auto_approval_reason(row):
+        return False
     if bool(row.get("deferred")):
         return False
     if bool(row.get("weakSignal")) or bool(report.get("weakSignal")):
@@ -214,6 +231,7 @@ def apply_discovery_auto_approval(
     moved: list[dict[str, Any]] = []
     remaining: list[dict[str, Any]] = []
     moved_ids: set[str] = set()
+    blocked_auto_approval_ids: set[str] = set()
     active_ids = {
         source_identity(row) for row in normalized_state["active"] if source_identity(row)
     }
@@ -224,6 +242,8 @@ def apply_discovery_auto_approval(
             report_row = report_candidates_by_id.get(row_id)
             merged_row = dict(report_row or row)
             promotion_reason = _promotion_reason_for_candidate(merged_row)
+            if row_id and _row_has_blocked_auto_approval_reason(row):
+                blocked_auto_approval_ids.add(row_id)
             if _pending_row_is_auto_approvable(row, report_row=report_row):
                 moved_ids.add(row_id)
                 moved.append(
@@ -284,7 +304,10 @@ def apply_discovery_auto_approval(
             updated_row = dict(row)
             if promotion_reason:
                 updated_row["promotionReason"] = promotion_reason
-            if row_id in moved_ids or _pending_row_is_auto_approvable(updated_row):
+            if row_id in moved_ids or (
+                row_id not in blocked_auto_approval_ids
+                and _pending_row_is_auto_approvable(updated_row)
+            ):
                 updated_row = _stamp_live_transition(
                     updated_row,
                     approved_by="discovery_auto_approve",

@@ -54,7 +54,10 @@ export function bindAdminRuntimeEvents({
     [refs.adminCopyFailuresBtnEl, () => fetcherController.copyLatestFailureSummary()],
     [refs.adminRunDiscoveryBtnEl, () => discoveryController.runDiscoveryTask()],
     [refs.adminRunDiscoveryUncappedBtnEl, () => discoveryController.runDiscoveryTask({ preset: "uncapped" })],
-    [refs.adminLoadDiscoveryBtnEl, () => registryController.loadDiscoveryData()],
+    [refs.adminLoadDiscoveryBtnEl, async () => {
+      await registryController.loadDiscoveryData();
+      await discoveryController.loadDiscoveryLogChunk?.({ reset: true, guarded: false });
+    }],
     [refs.adminApproveSourcesBtnEl, () => registryController.approveSelectedSources()],
     [refs.adminRejectSourcesBtnEl, () => registryController.rejectSelectedSources()],
     [refs.adminDeleteSourcesBtnEl, () => registryController.deleteSelectedSources()],

@@ -179,7 +179,7 @@ Known sensitive field names such as tokens, passwords, secrets, API keys, and au
 - Bridge-started fetch runs enable social by default unless the request payload explicitly sets `socialEnabled: false`.
 - Discovery `default` now maps to the former uncapped-lite behavior. Discovery `uncapped` is the stronger exploration preset and is distinct from `force_full`.
 - `/discovery/log` is designed for live tailing via byte offsets, and the Admin UI now re-attaches to active discovery runs after page refresh.
-- Source Discovery keeps a bridge-persisted admin preference, enabled by default, that auto-approves healthy pending sources with jobs after discovery completes and before any follow-on auto-sync push decision.
+- Source Discovery keeps a bridge-persisted admin preference, enabled by default, that auto-approves healthy pending sources with jobs after discovery completes and before any follow-on auto-sync push decision. Pending rows demoted by registry conflict automation (`registry_conflict_safe_auto_demote` or `registry_conflict_adjudication_auto_demote`) are excluded so discovery cannot re-promote conflict losers during the next pipeline run.
 - `weakSignal` remains an advisory hint for ranking and re-probe heuristics, and weak pending/deferred rows stay in review instead of being auto-approved.
 - Report-side queue throttles like `domain_cap` do not veto a clean pending registry row.
 - Source registry deletes are tombstone-backed and local-only; the restore path is explicit, and manual add will not silently clear a tombstone.
