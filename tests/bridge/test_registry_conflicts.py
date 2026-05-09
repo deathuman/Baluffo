@@ -565,6 +565,73 @@ def test_registry_conflicts_safe_automation_marks_static_normalized_url_alias_el
     assert automation["targetIds"] == ["static:listing_url:https://www.studio.example/careers"]
 
 
+def test_registry_conflicts_static_url_alias_collapses_index_tracking_and_page_one() -> None:
+    static_state = {
+        "active": [
+            {
+                "id": "static:listing_url:https://studio.example/careers",
+                "name": "Studio Static A",
+                "studio": "Static Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 2,
+                "rankScore": 40,
+            },
+            {
+                "id": (
+                    "static:listing_url:https://www.studio.example/careers/index.html"
+                    "?page=1&utm_source=x#jobs"
+                ),
+                "name": "Studio Static B",
+                "studio": "Static Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 1,
+                "rankScore": 10,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    automation = derive_registry_conflict_queue(static_state)["conflicts"][0]["safeAutomation"]
+
+    assert automation["eligible"] is True
+    assert automation["action"] == "auto_demote_static_normalized_url_alias"
+
+
+def test_registry_conflicts_static_url_alias_keeps_semantic_query_in_review() -> None:
+    static_state = {
+        "active": [
+            {
+                "id": "static:listing_url:https://studio.example/careers?department=art",
+                "name": "Studio Static Art",
+                "studio": "Static Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 2,
+                "rankScore": 40,
+            },
+            {
+                "id": "static:listing_url:https://studio.example/careers?department=engineering",
+                "name": "Studio Static Engineering",
+                "studio": "Static Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 1,
+                "rankScore": 10,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    automation = derive_registry_conflict_queue(static_state)["conflicts"][0]["safeAutomation"]
+
+    assert automation["eligible"] is False
+    assert "requires_same_normalized_static_url" in automation["blockedReasons"]
+
+
 def test_registry_conflicts_safe_automation_skips_static_normalized_url_alias_ties() -> None:
     static_state = {
         "active": [

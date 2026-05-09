@@ -97,7 +97,7 @@ def rendered_static_probe_result(
     rendered_url: str,
     rendered_html: str,
 ) -> ProbeResult | None:
-    from .probe import parse_probe_count
+    from .probe import static_probe_evidence
 
     if str(candidate.get("adapter") or "").strip().lower() != "static":
         return None
@@ -105,11 +105,20 @@ def rendered_static_probe_result(
     if candidate_url.rstrip("/") != str(rendered_url or "").strip().rstrip("/"):
         return None
     try:
-        jobs_found = parse_probe_count("static", rendered_html)
+        evidence = static_probe_evidence(rendered_html, rendered_url)
     except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
         return None
+    jobs_found = int(evidence.count)
     if jobs_found <= 0:
         return None
+    candidate["lastProbeCountReason"] = evidence.reason
+    candidate["lastProbeCountConfidence"] = evidence.confidence
+    candidate["lastReliableJobsFound"] = jobs_found if evidence.confidence == "high" else 0
+    if evidence.sample_urls:
+        candidate["lastProbeSampleUrls"] = list(evidence.sample_urls)
+    if evidence.confidence != "high":
+        candidate["lastProbeWeakSignal"] = True
+        candidate["weakSignal"] = True
     return candidate, True, int(jobs_found), "", 0
 
 

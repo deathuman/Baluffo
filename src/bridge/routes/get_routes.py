@@ -1037,12 +1037,14 @@ def handle_get(
     if path == "/registry/conflicts":
         state = api.load_state()
         source_state_path = Path(api.JOBS_FETCH_REPORT_PATH).with_name("jobs-source-state.json")
+        adjudication = api.load_registry_conflict_adjudication()
         payload = load_registry_conflicts_payload(
             load_state=lambda: state,
             load_json_object=api.load_json_object,
             source_state_path=source_state_path,
+            adjudication_payload=adjudication,
         )
-        payload = overlay_adjudication(payload, api.load_registry_conflict_adjudication())
+        payload = overlay_adjudication(payload, adjudication)
         payload["registrySummary"] = api.summarize_state(state)
         payload["registryAutoHeal"] = api.get_registry_auto_heal_report()
         payload["ok"] = True

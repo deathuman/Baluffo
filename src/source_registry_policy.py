@@ -89,7 +89,20 @@ def _metadata_score(row: dict[str, Any]) -> int:
     return score
 
 
+def _row_has_weak_job_signal(row: dict[str, Any]) -> bool:
+    confidence = str(row.get("lastProbeCountConfidence") or "").strip().lower()
+    return any(bool(row.get(key)) for key in ("weakSignal", "lastProbeWeakSignal")) or (
+        confidence and confidence != "high"
+    )
+
+
 def _row_jobs_evidence(row: dict[str, Any], state: dict[str, Any]) -> int:
+    if "liveJobsFound" in row:
+        return max(0, _coerce_int(row.get("liveJobsFound"), 0))
+    if str(row.get("adapter") or "").strip().lower() == "static" and _row_has_weak_job_signal(row):
+        if "lastReliableJobsFound" in row:
+            return max(0, _coerce_int(row.get("lastReliableJobsFound"), 0))
+        return 0
     return max(
         _coerce_int(state.get("lastKeptCount"), 0),
         _coerce_int(state.get("lastJobsKept"), 0),

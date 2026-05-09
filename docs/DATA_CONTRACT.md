@@ -478,6 +478,21 @@ Registry rows are normalized around these canonical fields:
 
 Legacy lifecycle fields such as `candidateState`, `approvedAt`, `approvedBy`, `liveAt`, `quarantinedAt`, and `quarantineReason` remain populated for compatibility, but they should be treated as compatibility mirrors rather than the canonical source of truth.
 
+### Registry conflict live evidence
+
+`/registry/conflicts` may include additive live source-check evidence on conflict cards and
+rows. When the latest adjudication covers every row in a conflict family and each probe
+completed, bridge read-time conflict ranking may use `liveJobsFound` for the effective
+winner and safe-automation decision. The stored registry value is preserved as
+`registryJobsFound`; `jobsFound` on that read-time row becomes the effective count used
+by the conflict card. Cards include `effectiveWinnerSource="live_adjudication"` when
+completed live evidence changes the winner, otherwise `effectiveWinnerSource="registry"`.
+
+These fields are read-time diagnostics and must not mutate registry bucket files,
+source-state files, sync snapshots, tombstones, saved jobs, or source URLs by themselves.
+If adjudication is missing, partial, running, or failed, conflict ranking falls back to
+registry counts.
+
 ### Sync snapshot v2
 
 Remote sync snapshots now use schema version `2` and are built from canonical per-source rows.

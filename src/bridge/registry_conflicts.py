@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from src.source_registry import source_identity
+from src.source_registry import source_identity, static_listing_url_aliases
 from src.source_registry_policy import duplicate_family_conflict_cards
 from src.source_registry_state import transition_registry_to_active, transition_registry_to_pending
 
@@ -331,7 +331,10 @@ def _is_provider_like_row(row: dict[str, Any]) -> bool:
 
 
 def _row_has_weak_job_signal(row: dict[str, Any]) -> bool:
-    return any(bool(row.get(key)) for key in ("weakSignal", "lastProbeWeakSignal"))
+    confidence = _clean_text(row.get("lastProbeCountConfidence")).lower()
+    return any(bool(row.get(key)) for key in ("weakSignal", "lastProbeWeakSignal")) or (
+        confidence and confidence != "high"
+    )
 
 
 def _int_value(value: Any) -> int:
@@ -342,6 +345,14 @@ def _int_value(value: Any) -> int:
 
 
 def _row_jobs_evidence(row: dict[str, Any]) -> int:
+    live_jobs = _count_from_key(row, "liveJobsFound")
+    if live_jobs is not None:
+        return live_jobs
+    if _is_static_row(row) and _row_has_weak_job_signal(row):
+        reliable_jobs = _count_from_key(row, "lastReliableJobsFound")
+        if reliable_jobs is not None:
+            return reliable_jobs
+        return 0
     for key in (
         "jobsFound",
         "jobs_found",
@@ -356,14 +367,26 @@ def _row_jobs_evidence(row: dict[str, Any]) -> int:
     return 0
 
 
+def _count_from_key(row: dict[str, Any], key: str) -> int | None:
+    if key not in row:
+        return None
+    return max(0, _int_value(row.get(key)))
+
+
 def _positive_evidence_score(row: dict[str, Any]) -> int:
-    return sum(
+    return _row_jobs_evidence(row) + sum(
         max(0, _int_value(row.get(key)))
-        for key in ("jobsFound", "rankScore", "score", "lastJobsKept", "lastKeptCount")
+        for key in ("rankScore", "score", "lastJobsKept", "lastKeptCount")
     )
 
 
 def _jobs_found_count(row: dict[str, Any]) -> int | None:
+    live_jobs = _count_from_key(row, "liveJobsFound")
+    if live_jobs is not None:
+        return live_jobs
+    if _is_static_row(row) and _row_has_weak_job_signal(row):
+        reliable_jobs = _count_from_key(row, "lastReliableJobsFound")
+        return reliable_jobs if reliable_jobs is not None else 0
     for key in ("jobsFound", "sampleCount"):
         if key in row:
             return max(0, _int_value(row.get(key)))
@@ -406,16 +429,7 @@ def _provider_endpoint_shape(row: dict[str, Any]) -> str:
 
 
 def _normalized_static_url_aliases(row: dict[str, Any]) -> set[str]:
-    aliases: set[str] = set()
-    for url in _row_urls(row):
-        parsed = urlparse(url)
-        host = parsed.netloc.lower().removeprefix("www.")
-        if not host:
-            continue
-        path = parsed.path.strip().lower().rstrip("/") or "/"
-        query = parsed.query.strip().lower()
-        aliases.add(f"https://{host}{path}{'?' + query if query else ''}")
-    return aliases
+    return static_listing_url_aliases(row)
 
 
 def _static_url_host_paths(row: dict[str, Any]) -> set[tuple[str, str]]:
@@ -513,6 +527,83 @@ def _source_state_rows_by_name(source_state_payload: Any) -> dict[str, dict[str,
             if key:
                 by_key[key] = row
     return by_key
+
+
+def _adjudication_families_by_key(adjudication_payload: Any) -> dict[str, dict[str, Any]]:
+    payload = _as_dict(adjudication_payload)
+    return {
+        _clean_text(row.get("familyKey")): row
+        for row in _as_list(payload.get("families"))
+        if isinstance(row, dict) and _clean_text(row.get("familyKey"))
+    }
+
+
+def _adjudication_probe_by_source_id(family: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        _clean_text(row.get("sourceId")): row
+        for row in _as_list(family.get("probes"))
+        if isinstance(row, dict) and _clean_text(row.get("sourceId"))
+    }
+
+
+def _adjudication_complete_for_rows(rows: list[dict[str, Any]], family: dict[str, Any]) -> bool:
+    if _clean_text(family.get("status")).lower() in {"", "running", "failed"}:
+        return False
+    probes = _adjudication_probe_by_source_id(family)
+    row_ids = {_row_identity(row) for row in rows if _row_identity(row)}
+    if not row_ids or set(probes) != row_ids:
+        return False
+    return all(
+        _int_value(probe.get("httpStatus")) > 0 and not _clean_text(probe.get("error"))
+        for probe in probes.values()
+    )
+
+
+def _row_with_live_adjudication(row: dict[str, Any], probe: dict[str, Any]) -> dict[str, Any]:
+    next_row = dict(row)
+    if "jobsFound" in next_row or "sampleCount" in next_row:
+        next_row["registryJobsFound"] = _jobs_found_count(next_row)
+    live_jobs = max(0, _int_value(probe.get("jobsFound")))
+    next_row["liveJobsFound"] = live_jobs
+    next_row["jobsFound"] = live_jobs
+    next_row["sampleCount"] = live_jobs
+    next_row["liveProbeOk"] = bool(probe.get("ok"))
+    next_row["liveProbeHttpStatus"] = _int_value(probe.get("httpStatus"))
+    next_row["liveProbeFinalUrl"] = _clean_text(probe.get("finalUrl"))
+    return next_row
+
+
+def _with_live_adjudication_card(
+    card: dict[str, Any],
+    *,
+    family: dict[str, Any],
+    source_state_payload: Any,
+) -> dict[str, Any]:
+    rows = [_as_dict(row) for row in _as_list(card.get("rows")) if isinstance(row, dict)]
+    if not _adjudication_complete_for_rows(rows, family):
+        return {**card, "effectiveWinnerSource": "registry"}
+    probes = _adjudication_probe_by_source_id(family)
+    original_winner_id = _row_identity(_as_dict(card.get("winner")))
+    live_rows = [
+        _row_with_live_adjudication(row, probes[_row_identity(row)])
+        for row in rows
+        if _row_identity(row) in probes
+    ]
+    recalculated = duplicate_family_conflict_cards(
+        live_rows,
+        target_families=[_clean_text(card.get("familyKey"))],
+        source_state=source_state_payload,
+    )
+    if not recalculated:
+        return {**card, "effectiveWinnerSource": "registry"}
+    next_card = dict(recalculated[0])
+    next_winner_id = _row_identity(_as_dict(next_card.get("winner")))
+    next_card["adjudication"] = family
+    next_card["liveAdjudicationComplete"] = True
+    next_card["effectiveWinnerSource"] = (
+        "live_adjudication" if next_winner_id != original_winner_id else "registry"
+    )
+    return next_card
 
 
 def _source_state_lookup_keys(row: dict[str, Any]) -> list[str]:
@@ -1778,7 +1869,7 @@ def _compare_registry_rows(winner: dict[str, Any], loser: dict[str, Any]) -> lis
 
 
 def derive_registry_conflict_queue(
-    registry_state: Any, source_state_payload: Any = None
+    registry_state: Any, source_state_payload: Any = None, adjudication_payload: Any = None
 ) -> dict[str, Any]:
     registry = _as_dict(registry_state)
     registry_rows = [
@@ -1788,6 +1879,7 @@ def derive_registry_conflict_queue(
         if isinstance(row, dict)
     ]
     source_state_rows = _source_state_rows_by_name(source_state_payload)
+    adjudication_by_family = _adjudication_families_by_key(adjudication_payload)
     family_cards = duplicate_family_conflict_cards(
         registry_rows,
         source_state=source_state_payload,
@@ -1797,6 +1889,14 @@ def derive_registry_conflict_queue(
     safe_pending_static_alias_audit: list[dict[str, Any]] = []
     safe_pending_provider_lower_jobs_audit: list[dict[str, Any]] = []
     for card in family_cards:
+        family_key = _clean_text(card.get("familyKey"))
+        family_adjudication = adjudication_by_family.get(family_key)
+        if family_adjudication:
+            card = _with_live_adjudication_card(
+                card,
+                family=family_adjudication,
+                source_state_payload=source_state_payload,
+            )
         family_key = _clean_text(card.get("familyKey"))
         winner = _join_source_health_aliases(_as_dict(card.get("winner")), source_state_rows)
         losers = [
@@ -1890,6 +1990,10 @@ def derive_registry_conflict_queue(
                 "suggestedConfidence": review["suggestedConfidence"],
                 "evidenceFlags": review["evidenceFlags"],
                 "safeAutomation": safe_automation,
+                "effectiveWinnerSource": _clean_text(card.get("effectiveWinnerSource"))
+                or "registry",
+                "liveAdjudicationComplete": bool(card.get("liveAdjudicationComplete")),
+                "adjudication": _as_dict(card.get("adjudication")),
                 "winner": winner,
                 "winnerScore": _as_dict(card.get("winnerScore")),
                 "winnerRationale": _as_list(card.get("winnerRationale")),
@@ -1940,10 +2044,15 @@ def load_registry_conflicts_payload(
     load_state: Callable[[], Any],
     load_json_object: Callable[..., Any],
     source_state_path: Path,
+    adjudication_payload: Any = None,
 ) -> dict[str, Any]:
     registry_state = load_state()
     source_state_payload = load_json_object(source_state_path, {})
-    payload = derive_registry_conflict_queue(registry_state, source_state_payload)
+    payload = derive_registry_conflict_queue(
+        registry_state,
+        source_state_payload,
+        adjudication_payload,
+    )
     warnings: list[str] = []
     if not Path(source_state_path).exists():
         warnings.append("missing_jobs_source_state_artifact")

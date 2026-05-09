@@ -254,6 +254,103 @@ def test_registry_conflicts_safe_automation_keeps_higher_static_in_review() -> N
     assert automation["eligible"] is False
 
 
+def test_registry_conflicts_demotes_higher_weak_static_count_against_provider() -> None:
+    provider_static_state = {
+        "active": [
+            {
+                "id": "greenhouse:slug:studio",
+                "name": "Studio Provider",
+                "studio": "Studio",
+                "adapter": "greenhouse",
+                "registryState": "active",
+                "jobsFound": 1,
+            },
+            {
+                "id": "static:listing_url:https://studio.example/careers",
+                "name": "Studio Static",
+                "studio": "Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 5,
+                "lastReliableJobsFound": 1,
+                "lastProbeWeakSignal": True,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    conflict = derive_registry_conflict_queue(provider_static_state)["conflicts"][0]
+    automation = conflict["safeAutomation"]
+
+    assert conflict["winner"]["id"] == "greenhouse:slug:studio"
+    assert automation["eligible"] is True
+    assert automation["targetIds"] == ["static:listing_url:https://studio.example/careers"]
+
+
+def test_registry_conflicts_uses_complete_live_adjudication_counts_for_winner() -> None:
+    state = {
+        "active": [
+            {
+                "id": "static:listing_url:https://azragames.com/careers/",
+                "name": "Azra Games (GameDevMap)",
+                "studio": "Azra Games",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 5,
+                "rankScore": 52,
+            },
+            {
+                "id": "greenhouse:slug:azragames",
+                "name": "Azra Games (Greenhouse)",
+                "studio": "Azra Games",
+                "adapter": "greenhouse",
+                "registryState": "active",
+                "jobsFound": 1,
+                "rankScore": 48,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+    adjudication = {
+        "families": [
+            {
+                "familyKey": "azra games",
+                "status": "needs_review",
+                "probes": [
+                    {
+                        "sourceId": "static:listing_url:https://azragames.com/careers/",
+                        "httpStatus": 200,
+                        "ok": True,
+                        "jobsFound": 0,
+                        "finalUrl": "https://azragames.com/careers/",
+                    },
+                    {
+                        "sourceId": "greenhouse:slug:azragames",
+                        "httpStatus": 200,
+                        "ok": True,
+                        "jobsFound": 1,
+                        "finalUrl": "https://boards-api.greenhouse.io/v1/boards/azragames/jobs",
+                    },
+                ],
+            }
+        ]
+    }
+
+    conflict = derive_registry_conflict_queue(state, adjudication_payload=adjudication)[
+        "conflicts"
+    ][0]
+
+    assert conflict["winner"]["id"] == "greenhouse:slug:azragames"
+    assert conflict["effectiveWinnerSource"] == "live_adjudication"
+    assert conflict["liveAdjudicationComplete"] is True
+    loser = conflict["losers"][0]
+    assert loser["registryJobsFound"] == 5
+    assert loser["liveJobsFound"] == 0
+    assert loser["jobsFound"] == 0
+
+
 def test_registry_conflicts_safe_automation_promotes_pending_provider_with_more_jobs() -> None:
     state = {
         "active": [

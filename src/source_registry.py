@@ -59,6 +59,8 @@ source_endpoint_url = _identity.source_endpoint_url
 source_family_key = _identity.source_family_key
 source_identity = _identity.source_identity
 source_url_fingerprint = _identity.source_url_fingerprint
+static_listing_url_alias = _identity.static_listing_url_alias
+static_listing_url_aliases = _identity.static_listing_url_aliases
 unique_sources = _identity.unique_sources
 
 _adapter_priority = _policy._adapter_priority

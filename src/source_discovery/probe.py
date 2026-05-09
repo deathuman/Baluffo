@@ -7,6 +7,7 @@ import json
 import re
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from html import unescape
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -26,6 +27,14 @@ TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 
 
 _STATIC_DETAIL_PATH_RE = re.compile(r"(?i)/(?:jobs?|positions?|openings?|vacancies?)/[^/?#]+")
+_NO_OPENINGS_RE = re.compile(
+    r"(?i)\b(?:no|not currently|currently no)\s+(?:open\s+)?(?:jobs?|roles?|positions?|vacancies?|openings?)\b"
+)
+_HIDDEN_BLOCK_RE = re.compile(
+    r"(?is)<(?P<tag>[a-z0-9]+)\b[^>]*"
+    r"(?:hidden\b|aria-hidden\s*=\s*['\"]?true|display\s*:\s*none|visibility\s*:\s*hidden)"
+    r"[^>]*>.*?</(?P=tag)>"
+)
 
 _GENERIC_APPLICATION_TOKENS = (
     "can't find",
@@ -38,6 +47,25 @@ _GENERIC_APPLICATION_TOKENS = (
     "talent community",
     "unsolicited application",
 )
+
+
+@dataclass(frozen=True)
+class StaticProbeEvidence:
+    count: int
+    confidence: str
+    reason: str
+    sample_urls: tuple[str, ...] = ()
+
+
+def _html_text(html: str) -> str:
+    text = re.sub(r"(?is)<(script|style|template)\b.*?</\1>", " ", str(html or ""))
+    text = re.sub(r"(?is)<[^>]+>", " ", text)
+    return " ".join(unescape(text).split()).strip().lower()
+
+
+def _visible_link_html(html: str) -> str:
+    text = re.sub(r"(?is)<(script|style|template)\b.*?</\1>", " ", str(html or ""))
+    return _HIDDEN_BLOCK_RE.sub(" ", text)
 
 
 def _anchor_links(html: str) -> list[tuple[str, str]]:
@@ -58,16 +86,8 @@ def _is_generic_application_link(label: str, parsed_path: str) -> bool:
     return any(token in text for token in _GENERIC_APPLICATION_TOKENS)
 
 
-def _static_probe_count(text: str, base_url: str) -> int:
-    jobs = parse_jobpostings_from_html(
-        text,
-        base_url=base_url,
-        fallback_source_id_prefix="static-probe",
-    )
-    if jobs:
-        return len(jobs)
-
-    links = _anchor_links(text)
+def _static_detail_links(text: str, base_url: str) -> tuple[str, ...]:
+    links = _anchor_links(_visible_link_html(text))
     base = urlparse(base_url or "")
     base_page = (base.scheme, base.netloc, base.path.rstrip("/") or "/")
     seen: set[str] = set()
@@ -93,7 +113,56 @@ def _static_probe_count(text: str, base_url: str) -> int:
         if normalized in seen:
             continue
         seen.add(normalized)
-    return len(seen)
+    return tuple(sorted(seen))
+
+
+def static_probe_evidence(text: str, base_url: str) -> StaticProbeEvidence:
+    detail_links = _static_detail_links(text, base_url)
+    if detail_links:
+        return StaticProbeEvidence(
+            count=len(detail_links),
+            confidence="high",
+            reason="detail_links",
+            sample_urls=detail_links[:5],
+        )
+
+    page_text = _html_text(text)
+    no_openings = bool(_NO_OPENINGS_RE.search(page_text))
+    jobs = parse_jobpostings_from_html(
+        text,
+        base_url=base_url,
+        fallback_source_id_prefix="static-probe",
+    )
+    if jobs:
+        sample_urls = tuple(
+            str(job.get("jobLink") or "").strip()
+            for job in jobs[:5]
+            if str(job.get("jobLink") or "").strip()
+        )
+        return StaticProbeEvidence(
+            count=0,
+            confidence="weak",
+            reason="no_openings_overrides_jsonld" if no_openings else "jsonld_only",
+            sample_urls=sample_urls,
+        )
+    if no_openings:
+        return StaticProbeEvidence(count=0, confidence="high", reason="no_openings")
+    return StaticProbeEvidence(count=0, confidence="high", reason="no_jobs")
+
+
+def _static_probe_count(text: str, base_url: str) -> int:
+    return static_probe_evidence(text, base_url).count
+
+
+def _apply_static_probe_evidence(candidate: dict[str, Any], evidence: StaticProbeEvidence) -> None:
+    candidate["lastProbeCountReason"] = evidence.reason
+    candidate["lastProbeCountConfidence"] = evidence.confidence
+    candidate["lastReliableJobsFound"] = int(evidence.count if evidence.confidence == "high" else 0)
+    if evidence.sample_urls:
+        candidate["lastProbeSampleUrls"] = list(evidence.sample_urls)
+    if evidence.confidence != "high":
+        candidate["lastProbeWeakSignal"] = True
+        candidate["weakSignal"] = True
 
 
 def _is_playwright_fallback_error(error: str) -> bool:
@@ -277,6 +346,7 @@ def _probe_fetch_urls(
     adapter: str,
     timeout_s: int,
     fetcher: Callable[[str, int], str],
+    candidate: dict[str, Any] | None = None,
 ) -> tuple[bool, int, str]:
     seen_urls = set()
     last_error = "probe failed"
@@ -286,6 +356,11 @@ def _probe_fetch_urls(
         seen_urls.add(probe_url)
         try:
             text = fetch_text_with_retry(probe_url, timeout_s, adapter=adapter, fetcher=fetcher)
+            if adapter == "static":
+                evidence = static_probe_evidence(text, probe_url)
+                if candidate is not None:
+                    _apply_static_probe_evidence(candidate, evidence)
+                return True, max(0, int(evidence.count)), ""
             return True, max(0, int(parse_probe_count(adapter, text, base_url=probe_url))), ""
         except Exception as exc:  # noqa: BLE001
             last_error = f"{probe_url}: {exc}"
@@ -293,7 +368,11 @@ def _probe_fetch_urls(
 
 
 def _probe_with_playwright(
-    probe_urls: list[str], *, timeout_s: int, try_playwright: TryPlaywrightFn | None
+    probe_urls: list[str],
+    *,
+    timeout_s: int,
+    try_playwright: TryPlaywrightFn | None,
+    candidate: dict[str, Any] | None = None,
 ) -> tuple[bool, int, str] | None:
     if try_playwright is None:
         return None
@@ -306,9 +385,12 @@ def _probe_with_playwright(
             continue
         if html and not pw_err:
             try:
-                count = parse_probe_count("static", html, base_url=probe_url)
+                evidence = static_probe_evidence(html, probe_url)
             except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
                 continue
+            if candidate is not None:
+                _apply_static_probe_evidence(candidate, evidence)
+            count = evidence.count
             print(
                 f"[discovery] probe_playwright_fallback url={probe_url!r} success=True count={count}",
                 file=sys.stderr,
@@ -338,6 +420,7 @@ def probe_candidate(
         adapter=adapter,
         timeout_s=timeout_s,
         fetcher=fetcher,
+        candidate=candidate,
     )
     if ok:
         return ok, count, last_error
@@ -346,6 +429,7 @@ def probe_candidate(
             probe_urls,
             timeout_s=timeout_s,
             try_playwright=try_playwright,
+            candidate=candidate,
         )
         if playwright_result is not None:
             return playwright_result
@@ -358,6 +442,7 @@ async def _async_probe_fetch_urls(
     adapter: str,
     timeout_s: int,
     fetcher: Callable[[str, int], str],
+    candidate: dict[str, Any] | None = None,
 ) -> tuple[bool, int, str]:
     seen_urls = set()
     last_error = "probe failed"
@@ -369,6 +454,11 @@ async def _async_probe_fetch_urls(
             text = await async_fetch_text_with_retry(
                 probe_url, timeout_s, adapter=adapter, fetcher=fetcher
             )
+            if adapter == "static":
+                evidence = static_probe_evidence(text, probe_url)
+                if candidate is not None:
+                    _apply_static_probe_evidence(candidate, evidence)
+                return True, max(0, int(evidence.count)), ""
             return True, max(0, int(parse_probe_count(adapter, text, base_url=probe_url))), ""
         except Exception as exc:  # noqa: BLE001
             last_error = f"{probe_url}: {exc}"
@@ -400,6 +490,7 @@ async def _async_probe_with_playwright(
     timeout_s: int,
     try_playwright: TryPlaywrightFn | None,
     playwright_semaphore: asyncio.Semaphore | None,
+    candidate: dict[str, Any] | None = None,
 ) -> tuple[bool, int, str] | None:
     if try_playwright is None:
         return None
@@ -414,9 +505,12 @@ async def _async_probe_with_playwright(
         )
         if html and not pw_err:
             try:
-                count = parse_probe_count("static", html, base_url=probe_url)
+                evidence = static_probe_evidence(html, probe_url)
             except (TypeError, ValueError, json.JSONDecodeError, ET.ParseError):
                 continue
+            if candidate is not None:
+                _apply_static_probe_evidence(candidate, evidence)
+            count = evidence.count
             print(
                 f"[discovery] probe_playwright_fallback url={probe_url!r} success=True count={count}",
                 file=sys.stderr,
@@ -447,6 +541,7 @@ async def async_probe_candidate(
         adapter=adapter,
         timeout_s=timeout_s,
         fetcher=fetcher,
+        candidate=candidate,
     )
     if ok:
         return ok, count, last_error
@@ -456,6 +551,7 @@ async def async_probe_candidate(
             timeout_s=timeout_s,
             try_playwright=try_playwright,
             playwright_semaphore=playwright_semaphore,
+            candidate=candidate,
         )
         if playwright_result is not None:
             return playwright_result

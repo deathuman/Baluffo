@@ -344,6 +344,8 @@ function renderRowActions(cardIndex, rowIndex, row) {
 function renderRowMeta(row) {
   const lastJobsKept = row?.lastJobsKept ?? row?.lastKeptCount;
   const jobsFound = row?.jobsFound ?? row?.sampleCount;
+  const registryJobsFound = row?.registryJobsFound;
+  const liveJobsFound = row?.liveJobsFound;
   const items = [
     ["State", stringValue(row?.registryState, stringValue(row?.candidateState, "unknown"))],
     ["Transition", stringValue(row?.transitionReason, "—")],
@@ -351,12 +353,15 @@ function renderRowMeta(row) {
     ["Health reason", stringValue(row?.healthReason, "—")],
     ["Last success", formatFieldValue("lastSuccessfulFetchAt", row?.lastSuccessfulFetchAt)],
     ["Last seen", formatFieldValue("lastSeenInFetchAt", row?.lastSeenInFetchAt)],
-    ["Jobs found", jobsFound === undefined || jobsFound === null ? "—" : stringValue(jobsFound, "0")],
+    [row?.liveJobsFound === undefined ? "Jobs found" : "Effective jobs found", jobsFound === undefined || jobsFound === null ? "—" : stringValue(jobsFound, "0")],
+    ["Registry jobs found", registryJobsFound === undefined || registryJobsFound === null ? null : stringValue(registryJobsFound, "0")],
+    ["Live jobs found", liveJobsFound === undefined || liveJobsFound === null ? null : stringValue(liveJobsFound, "0")],
     ["Last jobs kept", lastJobsKept === undefined || lastJobsKept === null ? "—" : stringValue(lastJobsKept, "0")],
     ["Failure count", stringValue(row?.failureCount ?? row?.consecutiveFailures, "0")],
     ["Zero-job streak", stringValue(row?.zeroJobStreak ?? row?.consecutiveZeroKept, "0")]
   ];
   return items
+    .filter(([, value]) => value !== null)
     .map(([label, value]) => `<span><strong>${escapeHtml(label)}</strong> ${escapeHtml(String(value))}</span>`)
     .join("");
 }
@@ -497,6 +502,13 @@ function renderConflictCard(card, cardIndex, options = {}) {
   const reviewReason = stringValue(card?.reviewReason, "No review reason available.");
   const suggestedDisposition = stringValue(card?.suggestedDisposition, "Manual review");
   const suggestedConfidence = stringValue(card?.suggestedConfidence, "low");
+  const effectiveWinnerSource = stringValue(card?.effectiveWinnerSource, "registry");
+  const winnerSourceNote = effectiveWinnerSource === "live_adjudication"
+    ? `<div class="admin-registry-conflict-triage-card">
+        <span class="admin-registry-conflict-triage-badge">Live counts applied</span>
+        <span>Winner selected from completed source-check counts; registry counts remain visible on each row.</span>
+      </div>`
+    : "";
   return `
     <section class="admin-registry-conflict-card" data-registry-conflict-card="${cardIndex}">
       <div class="admin-registry-conflict-card-head">
@@ -519,6 +531,7 @@ function renderConflictCard(card, cardIndex, options = {}) {
         <span class="admin-registry-conflict-triage-badge">${escapeHtml(reviewLabel)} · ${escapeHtml(suggestedConfidence)}</span>
         <span>${escapeHtml(suggestedDisposition)} · ${escapeHtml(reviewReason)}</span>
       </div>
+      ${winnerSourceNote}
       ${renderAdjudicationCard(card)}
       ${renderSafeAutomationCard(card, cardIndex, Boolean(options?.disableSafeAutomation))}
       <div class="admin-registry-conflict-rationale">

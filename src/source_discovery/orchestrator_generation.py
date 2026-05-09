@@ -7,7 +7,12 @@ from urllib.parse import urlparse
 
 from src import source_registry as source_registry_module
 from src.bridge.registry_tombstones import filter_tombstoned_rows, load_tombstones
-from src.source_registry import load_json_array, source_identity
+from src.source_registry import (
+    load_json_array,
+    source_family_key,
+    source_identity,
+    static_listing_url_aliases,
+)
 
 from . import config as discovery_config_module
 from .config import DISCOVERY_STAGES, LOW_EVIDENCE_PROBE_LIMIT
@@ -261,7 +266,7 @@ def _web_search_scan_rows(
 
 def _prepare_runtime_registry(
     *, orchestrator: Any, deps: DiscoveryRunDeps, state: DiscoveryRunState
-) -> tuple[dict[str, bool], set[str], set[str]]:
+) -> tuple[dict[str, bool], set[str], set[str], set[str]]:
     from .directory_audit import clear_directory_audit_summaries
 
     clear_directory_audit_summaries()
@@ -308,6 +313,12 @@ def _prepare_runtime_registry(
         )
         if fp
     }
+    seen_static_aliases = {
+        alias_key
+        for row in existing_rows
+        if isinstance(row, dict)
+        for alias_key in _static_alias_keys(row)
+    }
 
     if deps.url_patch_manifest_enabled:
         state.url_patches = orchestrator.load_url_patches(deps.url_patch_manifest_path)
@@ -318,7 +329,7 @@ def _prepare_runtime_registry(
             reprobed=0,
         )
 
-    return stage_enabled, seen_ids, seen_domains
+    return stage_enabled, seen_ids, seen_domains, seen_static_aliases
 
 
 def _run_curated_seed_stage(
@@ -687,19 +698,29 @@ def _candidate_duplicate_reason(
     return None
 
 
+def _static_alias_keys(row: dict[str, Any]) -> set[str]:
+    family_key = source_family_key(row)
+    if not family_key:
+        return set()
+    return {f"{family_key}\t{alias}" for alias in static_listing_url_aliases(row)}
+
+
 def _dedupe_discovered_candidates(
     *,
     state: DiscoveryRunState,
     discovered: list[dict[str, Any]],
     seen_ids: set[str],
     seen_domains: set[str],
+    seen_static_aliases: set[str],
 ) -> None:
     local_seen_ids = set(seen_ids)
     local_seen_domains = set(seen_domains)
+    local_seen_static_aliases = set(seen_static_aliases)
     for row in discovered:
         stage = str(row.get("discoveryStage") or "provider_pattern")
         row_id = source_identity(row)
         row_domain = adapter_domain_fingerprint(row) or ""
+        row_static_aliases = _static_alias_keys(row)
         duplicate_reason = _candidate_duplicate_reason(
             row_id=row_id,
             row_domain=row_domain,
@@ -708,12 +729,18 @@ def _dedupe_discovered_candidates(
             local_seen_ids=local_seen_ids,
             local_seen_domains=local_seen_domains,
         )
+        if not duplicate_reason and row_static_aliases:
+            if row_static_aliases & seen_static_aliases:
+                duplicate_reason = "existing_static_url_alias"
+            elif row_static_aliases & local_seen_static_aliases:
+                duplicate_reason = "run_static_url_alias"
         if duplicate_reason:
             _record_duplicate_drop(state=state, row=row, reason=duplicate_reason)
             continue
         local_seen_ids.add(row_id)
         if row_domain:
             local_seen_domains.add(row_domain)
+        local_seen_static_aliases.update(row_static_aliases)
         state.survived_dedupe_count_by_stage[stage] = (
             state.survived_dedupe_count_by_stage.get(stage, 0) + 1
         )
@@ -748,6 +775,7 @@ def _prepare_dedupe_and_source_state(
     state: DiscoveryRunState,
     seen_ids: set[str],
     seen_domains: set[str],
+    seen_static_aliases: set[str],
 ) -> None:
     from .directory_audit import latest_directory_audit_summaries
 
@@ -781,6 +809,7 @@ def _prepare_dedupe_and_source_state(
         discovered=discovered,
         seen_ids=seen_ids,
         seen_domains=seen_domains,
+        seen_static_aliases=seen_static_aliases,
     )
     _record_stage_timing(state.stage_timings_ms, "dedupeFilter", stage_started)
     state.filtered.sort(key=estimate_probe_priority, reverse=True)
@@ -946,7 +975,7 @@ def _prepare_probe_queue(
 
 def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) -> None:
     orchestrator = _require_root()
-    stage_enabled, seen_ids, seen_domains = _prepare_runtime_registry(
+    stage_enabled, seen_ids, seen_domains, seen_static_aliases = _prepare_runtime_registry(
         orchestrator=orchestrator, deps=deps, state=state
     )
     _run_curated_seed_stage(
@@ -973,5 +1002,6 @@ def prepare_probe_inputs(*, deps: DiscoveryRunDeps, state: DiscoveryRunState) ->
         state=state,
         seen_ids=seen_ids,
         seen_domains=seen_domains,
+        seen_static_aliases=seen_static_aliases,
     )
     _prepare_probe_queue(orchestrator=orchestrator, deps=deps, state=state)

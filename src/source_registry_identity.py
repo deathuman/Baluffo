@@ -7,7 +7,7 @@ import json
 import re
 from collections.abc import Iterable
 from typing import Any
-from urllib.parse import urlparse, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunsplit
 
 
 def source_identity(row: dict[str, Any]) -> str:
@@ -55,6 +55,93 @@ def normalize_source_url(raw_url: str) -> str:
         return ""
     path = (parsed.path or "").rstrip("/")
     return urlunsplit((scheme, host, path, "", ""))
+
+
+_STATIC_ALIAS_TRACKING_PARAMS = {
+    "fbclid",
+    "gclid",
+    "igshid",
+    "mc_cid",
+    "mc_eid",
+    "msclkid",
+}
+
+
+def static_listing_url_alias(raw_url: str) -> str:
+    text = str(raw_url or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = urlparse(text)
+    except ValueError:
+        return ""
+    scheme = (parsed.scheme or "https").lower()
+    if scheme not in {"http", "https"}:
+        return ""
+    netloc = _static_alias_netloc(parsed, scheme)
+    if not netloc:
+        return ""
+    return urlunsplit(
+        ("https", netloc, _static_alias_path(parsed.path), _static_alias_query(parsed.query), "")
+    )
+
+
+def _static_alias_netloc(parsed: Any, scheme: str) -> str:
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return ""
+    host = host.removeprefix("www.")
+    try:
+        port = parsed.port
+    except ValueError:
+        return ""
+    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+        return f"{host}:{port}"
+    return host
+
+
+def _static_alias_path(raw_path: str) -> str:
+    path = "/" + ((raw_path or "/").strip() or "/").lstrip("/")
+    path = path.lower()
+    for suffix in ("/index.html", "/index.htm"):
+        if path.endswith(suffix):
+            path = path[: -len(suffix)] or "/"
+            break
+    return path.rstrip("/") or "/"
+
+
+def _static_alias_query(raw_query: str) -> str:
+    query_items: list[tuple[str, str]] = []
+    for key, value in parse_qsl(raw_query, keep_blank_values=True):
+        normalized_key = key.strip().lower()
+        if _drop_static_alias_query_param(normalized_key, value):
+            continue
+        query_items.append((normalized_key, str(value).strip()))
+    return urlencode(sorted(query_items), doseq=True)
+
+
+def _drop_static_alias_query_param(key: str, value: Any) -> bool:
+    if not key:
+        return True
+    if key.startswith("utm_") or key in _STATIC_ALIAS_TRACKING_PARAMS:
+        return True
+    return key == "page" and str(value).strip() in {"", "1"}
+
+
+def static_listing_url_aliases(row: dict[str, Any]) -> set[str]:
+    if str(row.get("adapter") or "").strip().lower() != "static":
+        return set()
+    aliases: set[str] = set()
+    for key in ("id", "sourceId", "listing_url", "careersUrl", "url"):
+        value = str(row.get(key) or "").strip()
+        if not value:
+            continue
+        if key in {"id", "sourceId"} and "http" in value:
+            value = value[value.find("http") :]
+        alias = static_listing_url_alias(value)
+        if alias:
+            aliases.add(alias)
+    return aliases
 
 
 def source_endpoint_url(row: dict[str, Any]) -> str:

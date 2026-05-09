@@ -64,6 +64,7 @@ Important for maintenance, release, and support workflows, but usually not the f
 | [`plans/runtime-storage-and-sync-architecture-plan.md`](plans/runtime-storage-and-sync-architecture-plan.md) | Plans / Follow-Ups | You are reducing runtime artifact bloat, migrating hot state to SQLite/WAL, or replacing monolithic source-sync snapshots with sharded exports |
 | [`plans/task-lifecycle-ledger-plan.md`](plans/task-lifecycle-ledger-plan.md) | Plans / Follow-Ups | You are finalizing Admin task lifecycle authority, task progress projection, runtime evidence IO, pipeline child ownership, or the last packaged lifecycle smoke |
 | [`plans/saved-job-tracker-improvements-plan.md`](plans/saved-job-tracker-improvements-plan.md) | Plans / Follow-Ups | You are improving saved-job phase/outcome modeling, activity semantics, sorting, or Saved page operations |
+| [`plans/dedup-pressure-reduction-plan.md`](plans/dedup-pressure-reduction-plan.md) | Plans / Follow-Ups | You are reducing registry/dedup conflict volume after the sheet role-bucket guard and actionable Dedup badge split |
 
 | [`snapshots/jobs-dead-source-evidence-2026-04-29.md`](snapshots/jobs-dead-source-evidence-2026-04-29.md) | Snapshots / Evidence | You are auditing the first evidence-backed physical deletion batch for dead jobs sources |
 | [`snapshots/jobs-source-family-evidence-2026-04-30.md`](snapshots/jobs-source-family-evidence-2026-04-30.md) | Snapshots / Evidence | You are choosing the next deletion-first jobs fetcher source-family slice |
