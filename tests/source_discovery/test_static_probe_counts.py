@@ -92,3 +92,76 @@ def test_static_probe_counts_same_listing_detail_pages() -> None:
     assert error == ""
     assert candidate["lastProbeCountReason"] == "detail_links"
     assert candidate["lastReliableJobsFound"] == 3
+
+
+def test_static_probe_counts_same_listing_query_detail_links() -> None:
+    candidate = {
+        "adapter": "static",
+        "listing_url": "https://www.krafton.com/careers/jobs/",
+    }
+    html = """
+    <main>
+      <p>102 Results Found</p>
+      <a href="/careers/jobs/?job_posting=1001">Gameplay Programmer</a>
+      <a href="/careers/jobs/?job_posting=1002">Technical Artist</a>
+      <a href="/careers/jobs/?var_page=2">Next</a>
+      <a href="/careers/jobs/?search_keyword=engineer">Search</a>
+    </main>
+    """
+
+    ok, count, error = probe.probe_candidate(candidate, timeout_s=5, fetcher=lambda *_: html)
+
+    assert ok
+    assert count == 102
+    assert error == ""
+    assert candidate["lastProbeCountReason"] == "result_count_label"
+    assert candidate["lastReliableJobsFound"] == 102
+
+
+def test_static_probe_does_not_count_listing_link_as_job_detail() -> None:
+    candidate = {"adapter": "static", "listing_url": "https://www.krafton.com/careers/"}
+    html = """
+    <main>
+      <a href="/careers/jobs/">Jobs</a>
+      <a href="/careers/people/">People</a>
+    </main>
+    """
+
+    ok, count, error = probe.probe_candidate(candidate, timeout_s=5, fetcher=lambda *_: html)
+
+    assert ok
+    assert count == 0
+    assert error == ""
+    assert candidate["lastProbeCountReason"] == "no_jobs"
+
+
+def test_static_probe_does_not_count_mojang_style_landing_navigation() -> None:
+    candidate = {
+        "adapter": "static",
+        "listing_url": "https://www.minecraft.net/mojang-careers",
+    }
+    html = """
+    <main>
+      <h1>Mojang Studios Careers</h1>
+      <a href="/en-us/store/minecraft-deluxe-collection-pc">Buy Minecraft</a>
+      <a href="/en-us/community">Community</a>
+      <a href="/en-us/mojang-careers">Mojang Studios Careers</a>
+      <a href="https://www.youtube.com/minecraft">Follow Minecraft</a>
+      <a href="https://discord.gg/minecraft">Official Minecraft Discord</a>
+      <a href="https://help.minecraft.net/hc/en-us">Minecraft Help Center</a>
+    </main>
+    <footer>
+      <a href="/en-us">English</a>
+      <a href="/de-de">Deutsch</a>
+      <a href="/fr-fr">Francais</a>
+      <a href="/ja-jp">Japanese</a>
+      <a href="https://go.microsoft.com/fwlink/?LinkId=521839">Privacy and Cookies</a>
+    </footer>
+    """
+
+    ok, count, error = probe.probe_candidate(candidate, timeout_s=5, fetcher=lambda *_: html)
+
+    assert ok
+    assert count == 0
+    assert error == ""
+    assert candidate["lastProbeCountReason"] == "no_jobs"

@@ -288,6 +288,90 @@ def test_registry_conflicts_demotes_higher_weak_static_count_against_provider() 
     assert automation["targetIds"] == ["static:listing_url:https://studio.example/careers"]
 
 
+def test_registry_conflicts_demotes_static_when_fresh_source_state_contradicts_stale_count() -> (
+    None
+):
+    state = {
+        "active": [
+            {
+                "id": "greenhouse:slug:mojangab",
+                "name": "Mojang Studios (Greenhouse)",
+                "studio": "Mojang Studios",
+                "adapter": "greenhouse",
+                "registryState": "active",
+                "lastStatus": "ok",
+                "lastJobsFound": 1,
+                "lastJobsKept": 1,
+                "jobsFound": 1,
+            },
+            {
+                "id": "static:listing_url:https://www.minecraft.net/mojang-careers",
+                "name": "Mojang Studios (Xbox Game Studios) (GameDevMap)",
+                "studio": "Mojang Studios (Xbox Game Studios)",
+                "adapter": "static",
+                "registryState": "active",
+                "lastStatus": "ok",
+                "health": "warning",
+                "healthReason": "latest fetch kept no jobs",
+                "lastJobsFound": 0,
+                "lastJobsKept": 0,
+                "jobsFound": 25,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    conflict = derive_registry_conflict_queue(state)["conflicts"][0]
+    automation = conflict["safeAutomation"]
+
+    assert conflict["winner"]["id"] == "greenhouse:slug:mojangab"
+    assert conflict["winnerScore"]["lastKeptCount"] == 1
+    assert (
+        conflict["losers"][0]["id"] == "static:listing_url:https://www.minecraft.net/mojang-careers"
+    )
+    assert automation["eligible"] is True
+    assert automation["action"] == "auto_demote_provider_static_weaker_source"
+    assert automation["targetIds"] == [
+        "static:listing_url:https://www.minecraft.net/mojang-careers"
+    ]
+
+
+def test_registry_conflicts_does_not_treat_failed_latest_static_fetch_as_zero() -> None:
+    state = {
+        "active": [
+            {
+                "id": "greenhouse:slug:studio",
+                "name": "Studio Provider",
+                "studio": "Studio",
+                "adapter": "greenhouse",
+                "registryState": "active",
+                "lastStatus": "ok",
+                "lastJobsFound": 1,
+            },
+            {
+                "id": "static:listing_url:https://studio.example/careers",
+                "name": "Studio Static",
+                "studio": "Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "lastStatus": "error",
+                "health": "broken",
+                "lastJobsFound": 0,
+                "jobsFound": 25,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+
+    conflict = derive_registry_conflict_queue(state)["conflicts"][0]
+    automation = conflict["safeAutomation"]
+
+    assert conflict["winner"]["id"] == "static:listing_url:https://studio.example/careers"
+    assert automation["eligible"] is False
+
+
 def test_registry_conflicts_uses_complete_live_adjudication_counts_for_winner() -> None:
     state = {
         "active": [

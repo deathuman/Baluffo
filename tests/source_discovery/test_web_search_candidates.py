@@ -19,7 +19,12 @@ from ._helpers import web_audit_rows
             "company_id",
             "Ubisoft",
         ),
-        ("https://apply.workable.com/supergiant-games/", "workable", "account", "supergiantgames"),
+        (
+            "https://apply.workable.com/supergiant-games/",
+            "workable",
+            "account",
+            "supergiant-games",
+        ),
         ("https://example.recruitee.com/o/designer", "recruitee", "subdomain", "example"),
         (
             "https://example.pinpointhq.com/postings/123",
@@ -397,6 +402,24 @@ def test_web_search_readiness_preserves_page_jobs_failures_and_provenance(monkey
     assert providers[0]["adapter"] == "workable"
     assert providers[0]["discoveryMethod"] == "web_search"
     assert providers[0]["discoveryStage"] == "web_provider"
+
+
+def test_web_search_provider_candidates_preserve_workable_hyphenated_account() -> None:
+    providers = web_candidates.infer_provider_candidates_from_html(
+        "https://www.jagex.com/careers",
+        '<a href="https://jagex-limited.workable.com/j/8AFE9A3D16">View position</a>',
+        studio="Jagex",
+        nl_priority=False,
+        discovery_method="web_search",
+    )
+
+    assert len(providers) == 1
+    assert providers[0]["adapter"] == "workable"
+    assert providers[0]["account"] == "jagex-limited"
+    assert (
+        providers[0]["api_url"]
+        == "https://apply.workable.com/api/v1/widget/accounts/jagex-limited?details=true"
+    )
 
 
 def test_web_audit_web_search_uses_direct_provider_links_without_page_fetch(

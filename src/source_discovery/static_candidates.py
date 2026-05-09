@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from .scoring import careers_keyword_count, studio_domain_match, unique_string_list
-from .web_search import extract_jobish_links, is_blocked_generic_static_url
+from .web_search import is_blocked_generic_static_url
 
 
 def build_known_careers_url_candidate(
@@ -59,7 +59,10 @@ def build_static_candidate_from_page(
         return None
     if not careers_keyword_count(page_url) and careers_keyword_count(html) == 0:
         return None
-    detail_links = extract_jobish_links(html, page_url)
+    from .probe import static_probe_evidence
+
+    probe_evidence = static_probe_evidence(html, page_url)
+    detail_links = list(probe_evidence.sample_urls)
     jsonld_hits = re.findall(r'"@type"\s*:\s*"JobPosting"', str(html or ""), flags=re.I)
     if not detail_links and not jsonld_hits:
         return None
@@ -91,6 +94,6 @@ def build_static_candidate_from_page(
         "evidenceTypes": evidence_types,
         "evidenceScore": evidence_score,
         "weakSignal": len(detail_sample) < 2 and not jsonld_hits,
-        "detailPageCount": len(detail_links),
+        "detailPageCount": max(len(detail_links), int(probe_evidence.count or 0)),
         "detailPagesSample": detail_sample,
     }

@@ -96,9 +96,29 @@ def _row_has_weak_job_signal(row: dict[str, Any]) -> bool:
     )
 
 
+def _latest_fetch_failed(row: dict[str, Any], state: dict[str, Any]) -> bool:
+    status = str(row.get("lastStatus") or state.get("lastStatus") or "").strip().lower()
+    health = str(row.get("health") or state.get("health") or "").strip().lower()
+    return status in {"error", "failed", "failure"} or health == "broken"
+
+
+def _fresh_jobs_found_count(row: dict[str, Any], state: dict[str, Any]) -> int | None:
+    if _latest_fetch_failed(row, state):
+        return None
+    for key in ("lastJobsFound", "lastJobsKept", "lastKeptCount"):
+        if key in state:
+            return max(0, _coerce_int(state.get(key), 0))
+        if key in row:
+            return max(0, _coerce_int(row.get(key), 0))
+    return None
+
+
 def _row_jobs_evidence(row: dict[str, Any], state: dict[str, Any]) -> int:
     if "liveJobsFound" in row:
         return max(0, _coerce_int(row.get("liveJobsFound"), 0))
+    fresh_jobs = _fresh_jobs_found_count(row, state)
+    if fresh_jobs is not None:
+        return fresh_jobs
     if str(row.get("adapter") or "").strip().lower() == "static" and _row_has_weak_job_signal(row):
         if "lastReliableJobsFound" in row:
             return max(0, _coerce_int(row.get("lastReliableJobsFound"), 0))

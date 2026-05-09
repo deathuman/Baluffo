@@ -11,7 +11,11 @@ from urllib.parse import urlparse
 from src.shared.json_io import read_json_object as read_pipeline_json_object
 from src.source_registry import source_identity, static_listing_url_aliases
 from src.source_registry_policy import duplicate_family_conflict_cards
-from src.source_registry_state import transition_registry_to_active, transition_registry_to_pending
+from src.source_registry_state import (
+    transition_registry_to_active,
+    transition_registry_to_pending,
+    transition_registry_to_rejected,
+)
 
 SOURCE_HEALTH_FIELD_NAMES = (
     "healthScore",
@@ -21,6 +25,8 @@ SOURCE_HEALTH_FIELD_NAMES = (
     "lastSuccessAt",
     "lastSuccessfulFetchAt",
     "lastSeenInFetchAt",
+    "lastFetchedCount",
+    "lastJobsFound",
     "lastKeptCount",
     "lastJobsKept",
     "consecutiveFailures",
@@ -57,6 +63,8 @@ CONFLICT_DIFF_FIELDS = (
     "lastSuccessAt",
     "lastSuccessfulFetchAt",
     "lastSeenInFetchAt",
+    "lastFetchedCount",
+    "lastJobsFound",
     "lastKeptCount",
     "lastJobsKept",
     "consecutiveFailures",
@@ -102,6 +110,7 @@ PROVIDER_HOST_SUFFIX_ADAPTERS = {
     ".pinpointhq.com": "pinpoint",
     ".recruitee.com": "recruitee",
     ".teamtailor.com": "teamtailor",
+    ".workable.com": "workable",
     ".workday.com": "workday",
 }
 
@@ -212,6 +221,12 @@ SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_ACTION = "auto_demote_static_generate
 SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_LABEL = "Auto-demote generated static listing variants"
 SAFE_AUTO_DEMOTE_PROVIDER_STATIC_ACTION = "auto_demote_provider_static_weaker_source"
 SAFE_AUTO_DEMOTE_PROVIDER_STATIC_LABEL = "Auto-demote weaker static source"
+SAFE_AUTO_DEMOTE_PROVIDER_REDIRECT_ALIAS_ACTION = "auto_demote_provider_redirect_static_aliases"
+SAFE_AUTO_DEMOTE_PROVIDER_REDIRECT_ALIAS_LABEL = "Auto-demote redirect/static aliases"
+SAFE_AUTO_PROMOTE_PENDING_STATIC_FRAGMENT_ACTION = "auto_promote_pending_static_jobs_fragment"
+SAFE_AUTO_PROMOTE_PENDING_STATIC_FRAGMENT_LABEL = "Auto-promote static jobs-section alias"
+SAFE_AUTO_REJECT_PENDING_STATIC_BARE_ALIAS_ACTION = "auto_reject_pending_static_bare_alias"
+SAFE_AUTO_REJECT_PENDING_STATIC_BARE_ALIAS_LABEL = "Auto-reject pending bare static alias"
 SAFE_AUTO_PROMOTE_PENDING_PROVIDER_ACTION = "auto_promote_pending_provider_higher_jobs"
 SAFE_AUTO_PROMOTE_PENDING_PROVIDER_LABEL = "Auto-promote higher-yield provider"
 SAFE_AUTO_DEMOTE_ACTIONS = {
@@ -220,6 +235,9 @@ SAFE_AUTO_DEMOTE_ACTIONS = {
     SAFE_AUTO_DEMOTE_STATIC_LISTING_VARIANT_ACTION,
     SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_ACTION,
     SAFE_AUTO_DEMOTE_PROVIDER_STATIC_ACTION,
+    SAFE_AUTO_DEMOTE_PROVIDER_REDIRECT_ALIAS_ACTION,
+    SAFE_AUTO_PROMOTE_PENDING_STATIC_FRAGMENT_ACTION,
+    SAFE_AUTO_REJECT_PENDING_STATIC_BARE_ALIAS_ACTION,
     SAFE_AUTO_PROMOTE_PENDING_PROVIDER_ACTION,
 }
 SAFE_AUTO_DEMOTE_ROUTE = "/registry/conflicts/auto-demote-safe"
@@ -349,6 +367,9 @@ def _row_jobs_evidence(row: dict[str, Any]) -> int:
     live_jobs = _count_from_key(row, "liveJobsFound")
     if live_jobs is not None:
         return live_jobs
+    fresh_jobs = _fresh_jobs_found_count(row)
+    if fresh_jobs is not None:
+        return fresh_jobs
     if _is_static_row(row) and _row_has_weak_job_signal(row):
         reliable_jobs = _count_from_key(row, "lastReliableJobsFound")
         if reliable_jobs is not None:
@@ -374,6 +395,22 @@ def _count_from_key(row: dict[str, Any], key: str) -> int | None:
     return max(0, _int_value(row.get(key)))
 
 
+def _latest_fetch_failed(row: dict[str, Any]) -> bool:
+    status = _clean_text(row.get("lastStatus")).lower()
+    health = _clean_text(row.get("health")).lower()
+    return status in {"error", "failed", "failure"} or health == "broken"
+
+
+def _fresh_jobs_found_count(row: dict[str, Any]) -> int | None:
+    if _latest_fetch_failed(row):
+        return None
+    for key in ("lastJobsFound", "lastJobsKept", "lastKeptCount"):
+        value = _count_from_key(row, key)
+        if value is not None:
+            return value
+    return None
+
+
 def _positive_evidence_score(row: dict[str, Any]) -> int:
     return _row_jobs_evidence(row) + sum(
         max(0, _int_value(row.get(key)))
@@ -385,6 +422,9 @@ def _jobs_found_count(row: dict[str, Any]) -> int | None:
     live_jobs = _count_from_key(row, "liveJobsFound")
     if live_jobs is not None:
         return live_jobs
+    fresh_jobs = _fresh_jobs_found_count(row)
+    if fresh_jobs is not None:
+        return fresh_jobs
     if _is_static_row(row) and _row_has_weak_job_signal(row):
         reliable_jobs = _count_from_key(row, "lastReliableJobsFound")
         return reliable_jobs if reliable_jobs is not None else 0
@@ -418,6 +458,76 @@ def _row_urls(row: dict[str, Any]) -> list[str]:
         for match in re.findall(r"https?://[^\s]+", _clean_text(value)):
             urls.append(match.rstrip("),.;'\""))
     return urls
+
+
+def _normalized_url_for_comparison(url: str) -> str:
+    try:
+        parsed = urlparse(_clean_text(url))
+    except ValueError:
+        return ""
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    path = parsed.path.rstrip("/") or "/"
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}{path}"
+
+
+def _row_primary_url(row: dict[str, Any]) -> str:
+    return next(iter(_row_urls(row)), "")
+
+
+def _row_live_final_url(row: dict[str, Any]) -> str:
+    return _clean_text(row.get("liveProbeFinalUrl") or row.get("finalUrl"))
+
+
+def _static_row_current_jobs(row: dict[str, Any]) -> int:
+    for key in ("liveJobsFound", "lastJobsKept", "lastKeptCount", "lastReliableJobsFound"):
+        value = _count_from_key(row, key)
+        if value is not None:
+            return value
+    return _row_jobs_evidence(row)
+
+
+def _static_url_has_job_fragment(row: dict[str, Any]) -> bool:
+    exact_job_fragments = {
+        "jobs",
+        "job",
+        "positions",
+        "position",
+        "openings",
+        "opening",
+        "vacancies",
+        "join",
+        "join-us",
+        "job-openings",
+        "open-positions",
+        "current-openings",
+    }
+    job_fragment_tokens = {
+        "job",
+        "jobs",
+        "position",
+        "positions",
+        "opening",
+        "openings",
+        "vacancy",
+        "vacancies",
+        "role",
+        "roles",
+        "opportunity",
+        "opportunities",
+        "join",
+    }
+    for url in _row_urls(row):
+        try:
+            fragment = urlparse(url).fragment.strip().lower().strip("/")
+        except ValueError:
+            continue
+        if fragment in exact_job_fragments:
+            return True
+        fragment_tokens = {token for token in re.split(r"[^a-z0-9]+", fragment) if token}
+        if fragment_tokens & job_fragment_tokens:
+            return True
+    return False
 
 
 def _provider_endpoint_shape(row: dict[str, Any]) -> str:
@@ -514,19 +624,56 @@ def _json_value(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _source_state_url_identity_keys(row: dict[str, Any]) -> list[str]:
+    adapter = _clean_text(row.get("adapter")).lower()
+    provider_url = _clean_text(
+        row.get("providerUrl") or row.get("provider_url") or row.get("apiUrl") or row.get("api_url")
+    )
+    listing_url = _clean_text(
+        row.get("listingUrl") or row.get("listing_url") or row.get("sourceUrl") or row.get("url")
+    )
+    keys: list[str] = []
+    for url in (provider_url, listing_url):
+        if not url:
+            continue
+        keys.append(url)
+        if adapter == "recruitee" and "recruitee.com" in url.lower():
+            keys.append(f"recruitee:api_url:{url}")
+        elif adapter == "teamtailor":
+            keys.append(f"teamtailor:listing_url:{url}")
+        elif adapter == "static":
+            static_key = f"static:listing_url:{url}"
+            keys.append(static_key)
+            keys.append(f"static_source::{static_key}")
+    return keys
+
+
+def _source_state_index_keys(raw_key: Any, row: dict[str, Any]) -> list[str]:
+    return [
+        str(raw_key).strip(),
+        _clean_text(row.get("sourceId")),
+        _clean_text(row.get("sourceIdentity")),
+        *_source_state_url_identity_keys(row),
+    ]
+
+
+def _ambiguous_registry_row_names(rows: list[dict[str, Any]]) -> set[str]:
+    counts = Counter(
+        _clean_text(row.get("name")).lower() for row in rows if _clean_text(row.get("name"))
+    )
+    return {name for name, count in counts.items() if count > 1}
+
+
 def _source_state_rows_by_name(source_state_payload: Any) -> dict[str, dict[str, Any]]:
     rows = _as_dict(_as_dict(source_state_payload).get("sources"))
     by_key: dict[str, dict[str, Any]] = {}
     for raw_key, row in rows.items():
         if not isinstance(row, dict):
             continue
-        for key in (
-            str(raw_key).strip().lower(),
-            _clean_text(row.get("sourceId")).lower(),
-            _clean_text(row.get("sourceIdentity")).lower(),
-        ):
-            if key:
-                by_key[key] = row
+        for key in _source_state_index_keys(raw_key, row):
+            lookup = key.strip().lower()
+            if lookup:
+                by_key[lookup] = row
     return by_key
 
 
@@ -652,6 +799,8 @@ def _merge_fetch_report_source_details(
             row = _fetch_report_source_state_row(detail, parent, report)
             candidate_keys = [
                 _clean_text(row.get("sourceId")),
+                _clean_text(row.get("sourceIdentity")),
+                *_source_state_url_identity_keys(row),
                 _clean_text(row.get("name")),
             ]
             for key in candidate_keys:
@@ -808,7 +957,9 @@ def _with_live_adjudication_card(
     return next_card
 
 
-def _source_state_lookup_keys(row: dict[str, Any]) -> list[str]:
+def _source_state_lookup_keys(
+    row: dict[str, Any], ambiguous_names: set[str] | None = None
+) -> list[str]:
     keys: list[str] = []
     for key in (
         _clean_text(row.get("sourceId")),
@@ -821,7 +972,10 @@ def _source_state_lookup_keys(row: dict[str, Any]) -> list[str]:
     aliases = row.get("sourceStateAliases")
     if isinstance(aliases, list):
         keys.extend(_clean_text(alias) for alias in aliases)
-    keys.append(_clean_text(row.get("name")))
+    keys.extend(_source_state_url_identity_keys(row))
+    row_name = _clean_text(row.get("name"))
+    if row_name and row_name.lower() not in (ambiguous_names or set()):
+        keys.append(row_name)
     out: list[str] = []
     seen: set[str] = set()
     for key in keys:
@@ -833,9 +987,11 @@ def _source_state_lookup_keys(row: dict[str, Any]) -> list[str]:
 
 
 def _source_state_row_for_registry_row(
-    row: dict[str, Any], source_state_rows: dict[str, dict[str, Any]]
+    row: dict[str, Any],
+    source_state_rows: dict[str, dict[str, Any]],
+    ambiguous_names: set[str] | None = None,
 ) -> tuple[dict[str, Any], str]:
-    for lookup in _source_state_lookup_keys(row):
+    for lookup in _source_state_lookup_keys(row, ambiguous_names):
         if lookup in source_state_rows:
             return source_state_rows[lookup], lookup
     return {}, ""
@@ -1094,6 +1250,88 @@ def _apply_pending_provider_replacement_targets(
     return next_active, next_pending, applied
 
 
+def _apply_pending_static_fragment_alias_targets(
+    state: dict[str, list[dict[str, Any]]],
+    *,
+    target_ids: set[str],
+    eligible_by_id: dict[str, dict[str, Any]],
+    now: str,
+    actor: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]]]:
+    promotions_by_id: dict[str, tuple[list[dict[str, Any]], dict[str, Any]]] = {}
+    for target_id in sorted(target_ids):
+        card = eligible_by_id.get(target_id) or {}
+        rows = [row for row in _as_list(card.get("rows")) if isinstance(row, dict)]
+        active_bares, pending_fragment, blocked = _pending_static_fragment_alias_pair_for_target(
+            rows,
+            target_id,
+        )
+        if blocked or _row_identity(pending_fragment) != target_id:
+            continue
+        promotions_by_id[target_id] = (active_bares, pending_fragment)
+
+    active_to_demote = {
+        _row_identity(active_row)
+        for active_rows, _pending_row in promotions_by_id.values()
+        for active_row in active_rows
+    }
+    pending_to_promote = set(promotions_by_id)
+    next_active = [row for row in state["active"] if source_identity(row) not in active_to_demote]
+    next_pending = [
+        row for row in state["pending"] if source_identity(row) not in pending_to_promote
+    ]
+    applied: list[dict[str, str]] = []
+
+    for target_id, (active_rows, pending_row) in promotions_by_id.items():
+        promoted = transition_registry_to_active(
+            pending_row,
+            reason=SAFE_AUTO_DEMOTE_REASON,
+            actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
+            at=now or None,
+        )
+        next_active.append(promoted)
+        for active_row in active_rows:
+            next_pending.append(
+                transition_registry_to_pending(
+                    active_row,
+                    reason=SAFE_AUTO_DEMOTE_REASON,
+                    actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
+                    at=now or None,
+                )
+            )
+        applied.append(_safe_demotion_applied_entry(target_id, eligible_by_id.get(target_id) or {}))
+
+    return next_active, next_pending, applied
+
+
+def _apply_pending_rejection_targets(
+    state: dict[str, list[dict[str, Any]]],
+    *,
+    target_ids: set[str],
+    eligible_by_id: dict[str, dict[str, Any]],
+    now: str,
+    actor: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, str]]]:
+    next_pending: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    applied: list[dict[str, str]] = []
+    for row in state["pending"]:
+        row_id = source_identity(row)
+        if row_id not in target_ids:
+            next_pending.append(row)
+            continue
+        rejected.append(
+            transition_registry_to_rejected(
+                row,
+                reason=SAFE_AUTO_DEMOTE_REASON,
+                actor=str(actor or SAFE_AUTO_DEMOTE_REASON),
+                at=now or None,
+            )
+        )
+        applied.append(_safe_demotion_applied_entry(row_id, eligible_by_id.get(row_id) or {}))
+    return next_pending, rejected, applied
+
+
 def apply_registry_conflict_safe_demotions(
     registry_state: Any,
     source_state_payload: Any = None,
@@ -1117,7 +1355,7 @@ def apply_registry_conflict_safe_demotions(
     eligible_by_id = _eligible_safe_demotion_cards(conflict_payload, action_filter)
     selected_ids = requested_ids or set(eligible_by_id)
     target_ids = selected_ids & set(eligible_by_id)
-    promotion_ids = {
+    provider_promotion_ids = {
         row_id
         for row_id in target_ids
         if _clean_text(
@@ -1125,7 +1363,24 @@ def apply_registry_conflict_safe_demotions(
         )
         == SAFE_AUTO_PROMOTE_PENDING_PROVIDER_ACTION
     }
-    demotion_ids = target_ids - promotion_ids
+    static_fragment_promotion_ids = {
+        row_id
+        for row_id in target_ids
+        if _clean_text(
+            _as_dict((eligible_by_id.get(row_id) or {}).get("safeAutomation")).get("action")
+        )
+        == SAFE_AUTO_PROMOTE_PENDING_STATIC_FRAGMENT_ACTION
+    }
+    pending_rejection_ids = {
+        row_id
+        for row_id in target_ids
+        if _clean_text(
+            _as_dict((eligible_by_id.get(row_id) or {}).get("safeAutomation")).get("action")
+        )
+        == SAFE_AUTO_REJECT_PENDING_STATIC_BARE_ALIAS_ACTION
+    }
+    promotion_ids = provider_promotion_ids | static_fragment_promotion_ids
+    demotion_ids = target_ids - promotion_ids - pending_rejection_ids
     skipped_rows = [
         {
             "id": row_id,
@@ -1136,7 +1391,7 @@ def apply_registry_conflict_safe_demotions(
     promoted_active, promoted_pending, promoted_applied = (
         _apply_pending_provider_replacement_targets(
             state,
-            target_ids=promotion_ids,
+            target_ids=provider_promotion_ids,
             eligible_by_id=eligible_by_id,
             now=now,
             actor=actor,
@@ -1144,6 +1399,26 @@ def apply_registry_conflict_safe_demotions(
     )
     state["active"] = promoted_active
     state["pending"] = promoted_pending
+    fragment_active, fragment_pending, fragment_applied = (
+        _apply_pending_static_fragment_alias_targets(
+            state,
+            target_ids=static_fragment_promotion_ids,
+            eligible_by_id=eligible_by_id,
+            now=now,
+            actor=actor,
+        )
+    )
+    state["active"] = fragment_active
+    state["pending"] = fragment_pending
+    rejected_pending, rejected_rows, rejection_applied = _apply_pending_rejection_targets(
+        state,
+        target_ids=pending_rejection_ids,
+        eligible_by_id=eligible_by_id,
+        now=now,
+        actor=actor,
+    )
+    state["pending"] = rejected_pending
+    state["rejected"] = _unique_registry_rows([*state["rejected"], *rejected_rows])
     active_remaining, applied, moved = _apply_safe_demotion_targets(
         state,
         target_ids=demotion_ids,
@@ -1154,17 +1429,22 @@ def apply_registry_conflict_safe_demotions(
     moved_ids = {source_identity(row) for row in moved}
     for row_id in sorted(demotion_ids - moved_ids):
         skipped_rows.append({"id": row_id, "reason": "eligible_target_not_active"})
-    promoted_ids = {_clean_text(row.get("id")) for row in promoted_applied}
+    promoted_ids = {_clean_text(row.get("id")) for row in [*promoted_applied, *fragment_applied]}
     for row_id in sorted(promotion_ids - promoted_ids):
+        skipped_rows.append({"id": row_id, "reason": "eligible_target_not_pending"})
+    rejected_ids = {_clean_text(row.get("id")) for row in rejection_applied}
+    for row_id in sorted(pending_rejection_ids - rejected_ids):
         skipped_rows.append({"id": row_id, "reason": "eligible_target_not_pending"})
 
     state["active"] = active_remaining
     state["pending"] = _unique_registry_rows([*state["pending"], *moved])
     return {
         "ok": True,
-        "demoted": len(moved) + len(promoted_applied),
+        "demoted": (
+            len(moved) + len(promoted_applied) + len(fragment_applied) + len(rejection_applied)
+        ),
         "skipped": len(skipped_rows),
-        "applied": [*promoted_applied, *applied],
+        "applied": [*promoted_applied, *fragment_applied, *rejection_applied, *applied],
         "skippedRows": skipped_rows,
         "state": state,
     }
@@ -1741,6 +2021,389 @@ def _analyze_provider_static_automation(
     )
 
 
+def _canonical_redirect_provider_row(provider_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return max(
+        provider_rows,
+        key=lambda row: (
+            _normalized_url_for_comparison(_row_primary_url(row))
+            == _normalized_url_for_comparison(_row_live_final_url(row)),
+            _int_value(row.get("lastJobsKept") or row.get("lastKeptCount")),
+            _row_jobs_evidence(row),
+            _positive_evidence_score(row),
+        ),
+    )
+
+
+def _provider_redirect_static_rows(
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    active_rows = [row for row in rows if _row_state(row) == "active"]
+    provider_rows = [row for row in active_rows if _is_provider_row(row)]
+    static_rows = [row for row in active_rows if _is_static_row(row)]
+    return active_rows, provider_rows, static_rows
+
+
+def _provider_redirect_static_shape_blockers(
+    active_rows: list[dict[str, Any]],
+    provider_rows: list[dict[str, Any]],
+    static_rows: list[dict[str, Any]],
+) -> tuple[list[str], set[str]]:
+    blocked: list[str] = []
+    if len(provider_rows) < 2:
+        blocked.append("requires_multiple_active_providers")
+    if len(provider_rows) + len(static_rows) != len(active_rows):
+        blocked.append("requires_provider_static_active_rows_only")
+    adapters = {_row_adapter(row) for row in provider_rows}
+    if len(adapters) != 1:
+        blocked.append("requires_same_provider_adapter")
+    final_urls = {_normalized_url_for_comparison(_row_live_final_url(row)) for row in provider_rows}
+    final_urls.discard("")
+    if len(final_urls) != 1:
+        blocked.append("requires_same_live_final_url")
+    return blocked, adapters
+
+
+def _provider_redirect_alias_targets(
+    provider_rows: list[dict[str, Any]],
+    provider: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    blocked: list[str] = []
+    target_ids: list[str] = []
+    canonical_final = _normalized_url_for_comparison(_row_live_final_url(provider))
+    for row in provider_rows:
+        if _row_identity(row) == _row_identity(provider):
+            continue
+        if _normalized_url_for_comparison(_row_live_final_url(row)) != canonical_final:
+            blocked.append("provider_alias_final_url_mismatch")
+            continue
+        target_id = _row_identity(row)
+        blocked.extend(_target_identity_blocker(target_id))
+        if target_id:
+            target_ids.append(target_id)
+    return target_ids, blocked
+
+
+def _analyze_provider_redirect_static_automation(
+    *,
+    family_key: str,
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    active_rows, provider_rows, static_rows = _provider_redirect_static_rows(rows)
+    blocked, adapters = _provider_redirect_static_shape_blockers(
+        active_rows,
+        provider_rows,
+        static_rows,
+    )
+
+    if blocked:
+        return _blocked_automation(
+            "Not eligible for safe provider redirect/static auto-demotion.",
+            sorted(set(blocked)),
+        )
+
+    provider = _canonical_redirect_provider_row(provider_rows)
+    provider_jobs = _jobs_found_count(provider)
+    if provider_jobs is None or provider_jobs <= 0:
+        blocked.append("provider_has_no_jobs_found")
+
+    provider_targets, provider_blockers = _provider_redirect_alias_targets(
+        provider_rows,
+        provider,
+    )
+    blocked.extend(provider_blockers)
+    static_targets, static_job_counts, target_blockers = _provider_static_target_analysis(
+        static_rows,
+        provider_jobs,
+    )
+    blocked.extend(target_blockers)
+    target_ids = [*provider_targets, *static_targets]
+    if not target_ids:
+        blocked.append("requires_demotable_alias_rows")
+
+    if blocked:
+        return _blocked_automation(
+            "Not eligible for safe provider redirect/static auto-demotion.",
+            sorted(set(blocked)),
+        )
+
+    adapter = next(iter(adapters), "provider")
+    static_count_text = (
+        ""
+        if not static_job_counts
+        else ", static jobs " + ", ".join(str(count) for count in static_job_counts)
+    )
+    return _eligible_multi_automation(
+        target_ids,
+        (
+            f"{family_key} has active {adapter} provider aliases resolving to the same final "
+            f"URL; keeping the canonical provider with {provider_jobs} jobs"
+            f"{static_count_text}."
+        ),
+        action=SAFE_AUTO_DEMOTE_PROVIDER_REDIRECT_ALIAS_ACTION,
+        label=SAFE_AUTO_DEMOTE_PROVIDER_REDIRECT_ALIAS_LABEL,
+    )
+
+
+def _static_rows_by_url_alias(
+    rows: list[dict[str, Any]],
+    *,
+    states: set[str] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if states is not None and _row_state(row) not in states:
+            continue
+        if not _is_static_row(row):
+            continue
+        for alias in _normalized_static_url_aliases(row):
+            grouped.setdefault(alias, []).append(row)
+    return grouped
+
+
+def _row_has_fresh_count_evidence(row: dict[str, Any]) -> bool:
+    if any(
+        _count_from_key(row, key) is not None
+        for key in ("liveJobsFound", "lastJobsKept", "lastKeptCount", "lastReliableJobsFound")
+    ):
+        return True
+    return _has_fresh_or_healthy_signal(row)
+
+
+def _provider_corroborates_jobs_count(rows: list[dict[str, Any]], jobs_count: int) -> bool:
+    if jobs_count <= 0:
+        return False
+    for row in rows:
+        if _row_state(row) != "active" or not _is_provider_row(row):
+            continue
+        if _row_jobs_evidence(row) == jobs_count and _row_has_fresh_count_evidence(row):
+            return True
+    return False
+
+
+def _fragment_static_alias_targets(rows: list[dict[str, Any]]) -> tuple[list[str], int]:
+    target_ids: list[str] = []
+    best_fragment_jobs = 0
+    for grouped_rows in _static_rows_by_url_alias(rows, states={"active"}).values():
+        fragment_rows = [row for row in grouped_rows if _static_url_has_job_fragment(row)]
+        bare_rows = [row for row in grouped_rows if not _static_url_has_job_fragment(row)]
+        if not fragment_rows or not bare_rows:
+            continue
+        fragment_jobs = max(_static_row_current_jobs(row) for row in fragment_rows)
+        best_fragment_jobs = max(best_fragment_jobs, fragment_jobs)
+        provider_corroborates_fragment = _provider_corroborates_jobs_count(rows, fragment_jobs)
+        for row in bare_rows:
+            row_jobs = _static_row_current_jobs(row)
+            stale_higher_bare_count = (
+                provider_corroborates_fragment
+                and row_jobs > fragment_jobs
+                and not _row_has_fresh_count_evidence(row)
+            )
+            if row_jobs <= fragment_jobs or stale_higher_bare_count:
+                target_id = _row_identity(row)
+                if target_id:
+                    target_ids.append(target_id)
+    return list(dict.fromkeys(target_ids)), best_fragment_jobs
+
+
+def _pending_static_fragment_alias_replacements(
+    rows: list[dict[str, Any]],
+) -> tuple[list[str], int, list[str]]:
+    target_ids: list[str] = []
+    best_fragment_jobs = 0
+    blocked: list[str] = []
+    for grouped_rows in _static_rows_by_url_alias(
+        rows,
+        states={"active", "pending"},
+    ).values():
+        pending_fragment_rows = [
+            row
+            for row in grouped_rows
+            if _row_state(row) == "pending" and _static_url_has_job_fragment(row)
+        ]
+        active_bare_rows = [
+            row
+            for row in grouped_rows
+            if _row_state(row) == "active" and not _static_url_has_job_fragment(row)
+        ]
+        if not pending_fragment_rows or not active_bare_rows:
+            continue
+        fragment_row = max(pending_fragment_rows, key=_static_row_current_jobs)
+        fragment_jobs = _static_row_current_jobs(fragment_row)
+        best_fragment_jobs = max(best_fragment_jobs, fragment_jobs)
+        if fragment_jobs <= 0:
+            blocked.append("pending_jobs_fragment_has_no_jobs_found")
+            continue
+        fresh_stronger_bare_rows = [
+            row
+            for row in active_bare_rows
+            if _static_row_current_jobs(row) > fragment_jobs and _row_has_fresh_count_evidence(row)
+        ]
+        if fresh_stronger_bare_rows:
+            blocked.append("active_bare_alias_has_stronger_fresh_jobs")
+            continue
+        target_id = _row_identity(fragment_row)
+        target_blockers = _target_identity_blocker(target_id)
+        if target_blockers:
+            blocked.extend(target_blockers)
+            continue
+        target_ids.append(target_id)
+    return list(dict.fromkeys(target_ids)), best_fragment_jobs, blocked
+
+
+def _pending_static_fragment_alias_pair_for_target(
+    rows: list[dict[str, Any]],
+    target_id: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any], list[str]]:
+    blocked: list[str] = []
+    for grouped_rows in _static_rows_by_url_alias(
+        rows,
+        states={"active", "pending"},
+    ).values():
+        pending_fragment_rows = [
+            row
+            for row in grouped_rows
+            if _row_state(row) == "pending"
+            and _static_url_has_job_fragment(row)
+            and _row_identity(row) == target_id
+        ]
+        active_bare_rows = [
+            row
+            for row in grouped_rows
+            if _row_state(row) == "active" and not _static_url_has_job_fragment(row)
+        ]
+        if not pending_fragment_rows or not active_bare_rows:
+            continue
+        fragment_row = pending_fragment_rows[0]
+        fragment_jobs = _static_row_current_jobs(fragment_row)
+        if fragment_jobs <= 0:
+            blocked.append("pending_jobs_fragment_has_no_jobs_found")
+        for row in active_bare_rows:
+            if _static_row_current_jobs(row) > fragment_jobs and _row_has_fresh_count_evidence(row):
+                blocked.append("active_bare_alias_has_stronger_fresh_jobs")
+        return active_bare_rows, fragment_row, blocked
+    return [], {}, ["requires_pending_jobs_fragment_and_active_bare_alias"]
+
+
+def _analyze_pending_static_fragment_alias_automation(
+    *,
+    family_key: str,
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    target_ids, fragment_jobs, blocked = _pending_static_fragment_alias_replacements(rows)
+    if not target_ids:
+        blocked.append("requires_pending_jobs_fragment_and_active_bare_alias")
+    if blocked:
+        return _blocked_automation(
+            "Not eligible for safe pending static jobs-fragment promotion.",
+            sorted(set(blocked)),
+        )
+    return _eligible_multi_automation(
+        target_ids,
+        (
+            f"{family_key} has a pending jobs-section anchor for the same static page; "
+            f"promoting the anchored source with {fragment_jobs} current jobs."
+        ),
+        action=SAFE_AUTO_PROMOTE_PENDING_STATIC_FRAGMENT_ACTION,
+        label=SAFE_AUTO_PROMOTE_PENDING_STATIC_FRAGMENT_LABEL,
+    )
+
+
+def _pending_static_bare_alias_rejection_targets(
+    rows: list[dict[str, Any]],
+) -> tuple[list[str], int, list[str]]:
+    target_ids: list[str] = []
+    best_fragment_jobs = 0
+    blocked: list[str] = []
+    for grouped_rows in _static_rows_by_url_alias(
+        rows,
+        states={"active", "pending"},
+    ).values():
+        active_fragment_rows = [
+            row
+            for row in grouped_rows
+            if _row_state(row) == "active" and _static_url_has_job_fragment(row)
+        ]
+        pending_bare_rows = [
+            row
+            for row in grouped_rows
+            if _row_state(row) == "pending" and not _static_url_has_job_fragment(row)
+        ]
+        if not active_fragment_rows or not pending_bare_rows:
+            continue
+        fragment_jobs = max(_static_row_current_jobs(row) for row in active_fragment_rows)
+        best_fragment_jobs = max(best_fragment_jobs, fragment_jobs)
+        if fragment_jobs <= 0:
+            blocked.append("active_jobs_fragment_has_no_jobs_found")
+            continue
+        stronger_pending_bare_rows = [
+            row
+            for row in pending_bare_rows
+            if _static_row_current_jobs(row) > fragment_jobs and _row_has_fresh_count_evidence(row)
+        ]
+        if stronger_pending_bare_rows:
+            blocked.append("pending_bare_alias_has_stronger_fresh_jobs")
+            continue
+        for row in pending_bare_rows:
+            target_id = _row_identity(row)
+            target_blockers = _target_identity_blocker(target_id)
+            if target_blockers:
+                blocked.extend(target_blockers)
+                continue
+            target_ids.append(target_id)
+    return list(dict.fromkeys(target_ids)), best_fragment_jobs, blocked
+
+
+def _analyze_pending_static_bare_alias_rejection_automation(
+    *,
+    family_key: str,
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    target_ids, fragment_jobs, blocked = _pending_static_bare_alias_rejection_targets(rows)
+    if not target_ids:
+        blocked.append("requires_active_jobs_fragment_and_pending_bare_alias")
+    if blocked:
+        return _blocked_automation(
+            "Not eligible for safe pending bare static alias rejection.",
+            sorted(set(blocked)),
+        )
+    return _eligible_multi_automation(
+        target_ids,
+        (
+            f"{family_key} already has an active jobs-section anchor with "
+            f"{fragment_jobs} current jobs; rejecting pending bare same-page aliases."
+        ),
+        action=SAFE_AUTO_REJECT_PENDING_STATIC_BARE_ALIAS_ACTION,
+        label=SAFE_AUTO_REJECT_PENDING_STATIC_BARE_ALIAS_LABEL,
+    )
+
+
+def _analyze_static_fragment_alias_automation(
+    *,
+    family_key: str,
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    target_ids, fragment_jobs = _fragment_static_alias_targets(rows)
+    blocked: list[str] = []
+    for target_id in target_ids:
+        blocked.extend(_target_identity_blocker(target_id))
+    if not target_ids:
+        blocked.append("requires_bare_static_alias_to_jobs_fragment")
+    if blocked:
+        return _blocked_automation(
+            "Not eligible for safe static jobs-fragment alias auto-demotion.",
+            sorted(set(blocked)),
+        )
+    return _eligible_multi_automation(
+        target_ids,
+        (
+            f"{family_key} has static rows for the same page; keeping the jobs-section "
+            f"fragment source with {fragment_jobs} current jobs."
+        ),
+        action=SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_ACTION,
+        label=SAFE_AUTO_DEMOTE_STATIC_URL_ALIAS_LABEL,
+    )
+
+
 def _analyze_pending_provider_replacement_automation(
     *,
     family_key: str,
@@ -1899,6 +2562,13 @@ def _analyze_static_listing_variant_automation(
     )
 
 
+def _first_eligible_automation(*results: dict[str, Any]) -> dict[str, Any]:
+    for result in results:
+        if result.get("eligible"):
+            return result
+    return {}
+
+
 def _analyze_safe_automation(
     *,
     family_key: str,
@@ -1910,24 +2580,46 @@ def _analyze_safe_automation(
         family_key=family_key,
         rows=rows,
     )
-    if pending_provider_result.get("eligible"):
-        return pending_provider_result
+    pending_static_fragment_result = _analyze_pending_static_fragment_alias_automation(
+        family_key=family_key,
+        rows=rows,
+    )
+    provider_redirect_result = _analyze_provider_redirect_static_automation(
+        family_key=family_key,
+        rows=rows,
+    )
+    static_fragment_alias_result = _analyze_static_fragment_alias_automation(
+        family_key=family_key,
+        rows=rows,
+    )
+    pending_static_bare_rejection_result = _analyze_pending_static_bare_alias_rejection_automation(
+        family_key=family_key,
+        rows=rows,
+    )
+    early_result = _first_eligible_automation(
+        pending_provider_result,
+        pending_static_fragment_result,
+        provider_redirect_result,
+        static_fragment_alias_result,
+        pending_static_bare_rejection_result,
+    )
+    if early_result:
+        return early_result
     provider_result = _analyze_provider_alias_automation(
         family_key=family_key,
         winner=winner,
         losers=losers,
         rows=rows,
     )
-    if provider_result.get("eligible"):
-        return provider_result
     provider_static_result = _analyze_provider_static_automation(
         family_key=family_key,
         winner=winner,
         losers=losers,
         rows=rows,
     )
-    if provider_static_result.get("eligible"):
-        return provider_static_result
+    eligible_provider_result = _first_eligible_automation(provider_result, provider_static_result)
+    if eligible_provider_result:
+        return eligible_provider_result
     static_result = _analyze_static_url_alias_automation(
         family_key=family_key,
         winner=winner,
@@ -1976,6 +2668,15 @@ def _build_automation_summary(conflicts: list[dict[str, Any]]) -> dict[str, Any]
             SAFE_AUTO_DEMOTE_STATIC_GENERATED_VARIANTS_LABEL
         ),
         SAFE_AUTO_DEMOTE_PROVIDER_STATIC_ACTION: SAFE_AUTO_DEMOTE_PROVIDER_STATIC_LABEL,
+        SAFE_AUTO_DEMOTE_PROVIDER_REDIRECT_ALIAS_ACTION: (
+            SAFE_AUTO_DEMOTE_PROVIDER_REDIRECT_ALIAS_LABEL
+        ),
+        SAFE_AUTO_PROMOTE_PENDING_STATIC_FRAGMENT_ACTION: (
+            SAFE_AUTO_PROMOTE_PENDING_STATIC_FRAGMENT_LABEL
+        ),
+        SAFE_AUTO_REJECT_PENDING_STATIC_BARE_ALIAS_ACTION: (
+            SAFE_AUTO_REJECT_PENDING_STATIC_BARE_ALIAS_LABEL
+        ),
         SAFE_AUTO_PROMOTE_PENDING_PROVIDER_ACTION: SAFE_AUTO_PROMOTE_PENDING_PROVIDER_LABEL,
     }
     for card in eligible_cards:
@@ -2015,10 +2716,14 @@ def _build_automation_summary(conflicts: list[dict[str, Any]]) -> dict[str, Any]
 
 
 def _join_source_health_aliases(
-    row: dict[str, Any], source_state_rows: dict[str, dict[str, Any]]
+    row: dict[str, Any],
+    source_state_rows: dict[str, dict[str, Any]],
+    ambiguous_names: set[str] | None = None,
 ) -> dict[str, Any]:
     merged = dict(row)
-    source_state_row, source_state_name = _source_state_row_for_registry_row(row, source_state_rows)
+    source_state_row, source_state_name = _source_state_row_for_registry_row(
+        row, source_state_rows, ambiguous_names
+    )
     if source_state_name:
         merged["sourceStateName"] = source_state_name
     for key in SOURCE_HEALTH_FIELD_NAMES:
@@ -2081,6 +2786,7 @@ def derive_registry_conflict_queue(
         if isinstance(row, dict)
     ]
     source_state_rows = _source_state_rows_by_name(source_state_payload)
+    ambiguous_names = _ambiguous_registry_row_names(registry_rows)
     adjudication_by_family = _adjudication_families_by_key(adjudication_payload)
     family_cards = duplicate_family_conflict_cards(
         registry_rows,
@@ -2100,9 +2806,11 @@ def derive_registry_conflict_queue(
                 source_state_payload=source_state_payload,
             )
         family_key = _clean_text(card.get("familyKey"))
-        winner = _join_source_health_aliases(_as_dict(card.get("winner")), source_state_rows)
+        winner = _join_source_health_aliases(
+            _as_dict(card.get("winner")), source_state_rows, ambiguous_names
+        )
         losers = [
-            _join_source_health_aliases(_as_dict(row), source_state_rows)
+            _join_source_health_aliases(_as_dict(row), source_state_rows, ambiguous_names)
             for row in _as_list(card.get("losers"))
             if isinstance(row, dict)
         ]

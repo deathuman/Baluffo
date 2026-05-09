@@ -59,3 +59,39 @@ test("registry conflicts renderer separates live and registry job counts", () =>
   assert.match(reviewEl.innerHTML, /Registry jobs found<\/strong> 5/);
   assert.match(reviewEl.innerHTML, /Live jobs found<\/strong> 0/);
 });
+
+test("registry conflicts renderer shows source-state jobs found fallback", () => {
+  const reviewEl = createReviewElement();
+  const payload = {
+    summary: { conflictCount: 1 },
+    conflicts: [
+      {
+        familyKey: "Jagex",
+        triageBucket: "active_active_likely_duplicate",
+        triageLabel: "Active-active",
+        triageRisk: "high",
+        triageReason: "2 active rows share this source family.",
+        reviewPriority: 1,
+        reviewQueue: "p1_active_provider_static",
+        reviewLabel: "Active provider + static",
+        reviewReason: "Active provider rows coexist with active static rows.",
+        winner: { id: "static:listing_url:https://www.jagex.com/careers", name: "Jagex" },
+        rows: [
+          {
+            id: "lever:account:jagex",
+            name: "Jagex (Lever)",
+            registryState: "active",
+            adapter: "lever",
+            lastJobsFound: 0,
+            lastJobsKept: 0
+          }
+        ]
+      }
+    ]
+  };
+
+  renderAdminRegistryConflicts(reviewEl, payload);
+
+  assert.match(reviewEl.innerHTML, /Jobs found<\/strong> 0/);
+  assert.match(reviewEl.innerHTML, /Last jobs kept<\/strong> 0/);
+});

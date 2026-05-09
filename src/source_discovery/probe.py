@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from html import unescape
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
 from src.jobs.parsers import parse_jobpostings_from_html
@@ -29,6 +29,30 @@ TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 _STATIC_DETAIL_PATH_RE = re.compile(r"(?i)/(?:jobs?|positions?|openings?|vacancies?)/[^/?#]+")
 _STATIC_LISTING_PATH_RE = re.compile(
     r"(?i)/(?:careers?|jobs?|positions?|openings?|vacancies?|work-with-us|join-us)(?:/|$)"
+)
+_STATIC_RESULT_COUNT_RE = re.compile(
+    r"(?i)\b(\d{1,5})\s+(?:results?\s+found|jobs?(?:\s+found)?|openings?|positions?|vacancies?)\b"
+    r"|(\d{1,5})\s*개의\s*채용공고"
+)
+_STATIC_DETAIL_QUERY_KEYS = frozenset(
+    {
+        "gh_jid",
+        "job",
+        "jobid",
+        "job_id",
+        "jobno",
+        "job_no",
+        "jobposting",
+        "job_posting",
+        "openingid",
+        "opening_id",
+        "positionid",
+        "position_id",
+        "postingid",
+        "posting_id",
+        "requisitionid",
+        "requisition_id",
+    }
 )
 _NO_OPENINGS_RE = re.compile(
     r"(?i)\b(?:no|not currently|currently no)\s+(?:open\s+)?(?:jobs?|roles?|positions?|vacancies?|openings?)\b"
@@ -110,6 +134,47 @@ def _is_same_listing_detail_link(base_url: str, absolute_url: str, label: str) -
     return len(str(label or "").split()) >= 2
 
 
+def _normalized_listing_path(url: str) -> str:
+    parsed = urlparse(url or "")
+    path = (parsed.path or "/").rstrip("/") or "/"
+    for suffix in ("/index.html", "/index.htm"):
+        if path.lower().endswith(suffix):
+            return path[: -len(suffix)].rstrip("/") or "/"
+    return path
+
+
+def _is_same_listing_query_detail_link(base_url: str, absolute_url: str, label: str) -> bool:
+    base = urlparse(base_url or "")
+    parsed = urlparse(absolute_url or "")
+    if (parsed.scheme, parsed.netloc) != (base.scheme, base.netloc):
+        return False
+    if _normalized_listing_path(base_url) != _normalized_listing_path(absolute_url):
+        return False
+    if not _STATIC_LISTING_PATH_RE.search(_normalized_listing_path(base_url)):
+        return False
+    if len(str(label or "").split()) < 2:
+        return False
+    query_keys = {key.strip().lower().replace("-", "_") for key, _value in parse_qsl(parsed.query)}
+    if not query_keys:
+        return False
+    return bool(query_keys & _STATIC_DETAIL_QUERY_KEYS)
+
+
+def _static_result_count(text: str, base_url: str) -> int:
+    if not _STATIC_LISTING_PATH_RE.search(_normalized_listing_path(base_url)):
+        return 0
+    page_text = _html_text(text)
+    for match in _STATIC_RESULT_COUNT_RE.finditer(page_text):
+        raw = next((group for group in match.groups() if group), "")
+        try:
+            value = int(raw)
+        except ValueError:
+            continue
+        if value > 0:
+            return value
+    return 0
+
+
 def _static_detail_links(text: str, base_url: str) -> tuple[str, ...]:
     links = _anchor_links(_visible_link_html(text))
     base = urlparse(base_url or "")
@@ -127,12 +192,15 @@ def _static_detail_links(text: str, base_url: str) -> tuple[str, ...]:
         absolute = urljoin(base_url, value) if base_url else value
         parsed = urlparse(absolute)
         page = (parsed.scheme, parsed.netloc, parsed.path.rstrip("/") or "/")
-        if page == base_page:
+        same_listing_query_detail = _is_same_listing_query_detail_link(base_url, absolute, label)
+        if page == base_page and not same_listing_query_detail:
             continue
         if _is_generic_application_link(label, parsed.path):
             continue
-        if not _STATIC_DETAIL_PATH_RE.search(parsed.path) and not _is_same_listing_detail_link(
-            base_url, absolute, label
+        if (
+            not _STATIC_DETAIL_PATH_RE.search(parsed.path)
+            and not _is_same_listing_detail_link(base_url, absolute, label)
+            and not same_listing_query_detail
         ):
             continue
         normalized = absolute.split("#", 1)[0]
@@ -144,12 +212,20 @@ def _static_detail_links(text: str, base_url: str) -> tuple[str, ...]:
 
 def static_probe_evidence(text: str, base_url: str) -> StaticProbeEvidence:
     detail_links = _static_detail_links(text, base_url)
+    result_count = _static_result_count(text, base_url)
     if detail_links:
+        count = max(len(detail_links), result_count)
         return StaticProbeEvidence(
-            count=len(detail_links),
+            count=count,
             confidence="high",
-            reason="detail_links",
+            reason="result_count_label" if result_count > len(detail_links) else "detail_links",
             sample_urls=detail_links[:5],
+        )
+    if result_count:
+        return StaticProbeEvidence(
+            count=result_count,
+            confidence="high",
+            reason="result_count_label",
         )
 
     page_text = _html_text(text)
@@ -360,7 +436,10 @@ def parse_probe_count(adapter: str, text: str, *, base_url: str = "") -> int:
     if adapter == "ashby":
         return len(set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/job/[^"\']+)["\']', text)))
     if adapter == "teamtailor":
-        return len(set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/jobs/[^"\']+)["\']', text)))
+        link_count = len(
+            set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/jobs/[^"\']+)["\']', text))
+        )
+        return max(link_count, _static_result_count(text, base_url))
     if adapter == "static":
         return _static_probe_count(text, base_url)
     raise ValueError("unsupported adapter")

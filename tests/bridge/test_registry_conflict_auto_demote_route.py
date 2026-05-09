@@ -11,6 +11,12 @@ FOCUS_ALIAS_ID = "recruitee:api_url:https://focusentertainment.recruitee.com/api
 STATIC_SAFE_ID = "static:listing_url:https://www.4a-games.com.mt/careers"
 PENDING_PROVIDER_ID = "greenhouse:slug:replace-static"
 ACTIVE_STATIC_ID = "static:listing_url:https://replace-static.example/careers"
+PENDING_STATIC_FRAGMENT_ID = (
+    "static:listing_url:https://www.theorycraftgames.example/careers#open-roles"
+)
+ACTIVE_STATIC_BARE_ID = "static:listing_url:https://www.theorycraftgames.example/careers"
+ACTIVE_STATIC_FRAGMENT_ID = "static:listing_url:https://www.overwolf.example/careers/#position"
+PENDING_STATIC_BARE_ID = "static:listing_url:https://www.overwolf.example/careers"
 
 
 def _safe_auto_demote_state() -> dict[str, list[dict[str, Any]]]:
@@ -102,6 +108,58 @@ def _pending_provider_replacement_state() -> dict[str, list[dict[str, Any]]]:
             "jobsFound": 7,
             "rankScore": 0,
             "score": 0,
+        },
+    ]
+    return state
+
+
+def _pending_static_fragment_state() -> dict[str, list[dict[str, Any]]]:
+    state = _safe_auto_demote_state()
+    state["active"].append(
+        {
+            "id": ACTIVE_STATIC_BARE_ID,
+            "name": "Theorycraft Games (Sheet)",
+            "studio": "Theorycraft Games",
+            "adapter": "static",
+            "registryState": "active",
+            "lastJobsKept": 1,
+            "health": "healthy",
+        }
+    )
+    state["pending"] = [
+        {
+            "id": PENDING_STATIC_FRAGMENT_ID,
+            "name": "Theorycraft Games (Sheet)",
+            "studio": "Theorycraft Games",
+            "adapter": "static",
+            "registryState": "pending",
+            "lastJobsKept": 1,
+            "health": "healthy",
+        },
+    ]
+    return state
+
+
+def _pending_static_bare_alias_state() -> dict[str, list[dict[str, Any]]]:
+    state = _safe_auto_demote_state()
+    state["active"].append(
+        {
+            "id": ACTIVE_STATIC_FRAGMENT_ID,
+            "name": "Overwolf (Sheet)",
+            "studio": "Overwolf",
+            "adapter": "static",
+            "registryState": "active",
+            "lastJobsKept": 4,
+            "health": "healthy",
+        }
+    )
+    state["pending"] = [
+        {
+            "id": PENDING_STATIC_BARE_ID,
+            "name": "Overwolf (Manual Website)",
+            "studio": "Overwolf",
+            "adapter": "static",
+            "registryState": "pending",
         },
     ]
     return state
@@ -218,3 +276,69 @@ def test_safe_auto_demote_route_promotes_pending_provider_replacement(
     demoted = next(row for row in state["pending"] if row["id"] == ACTIVE_STATIC_ID)
     assert promoted["stateChangedBy"] == "registry_conflict_safe_auto_demote"
     assert demoted["stateChangedBy"] == "registry_conflict_safe_auto_demote"
+
+
+def test_safe_auto_demote_route_promotes_pending_static_jobs_fragment(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.persist_state_and_auto_sync(_pending_static_fragment_state())
+    handler = FakeHandler()
+
+    result = handle_post(
+        handler,
+        api=api,
+        path="/registry/conflicts/auto-demote-safe",
+        payload={"action": "auto_promote_pending_static_jobs_fragment", "ids": []},
+    )
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert payload["demoted"] == 1
+    assert payload["skipped"] == 0
+    assert payload["applied"] == [
+        {
+            "id": PENDING_STATIC_FRAGMENT_ID,
+            "familyKey": "theorycraft games",
+            "action": "auto_promote_pending_static_jobs_fragment",
+        }
+    ]
+    state = api.load_state()
+    active_ids = {row["id"] for row in state["active"]}
+    pending_ids = {row["id"] for row in state["pending"]}
+    assert PENDING_STATIC_FRAGMENT_ID in active_ids
+    assert ACTIVE_STATIC_BARE_ID in pending_ids
+
+
+def test_safe_auto_demote_route_rejects_pending_static_bare_alias(
+    tmp_path: Path,
+) -> None:
+    api = make_stub_bridge_api(tmp_path, FakeDesktopLocalDataStore())
+    api.persist_state_and_auto_sync(_pending_static_bare_alias_state())
+    handler = FakeHandler()
+
+    result = handle_post(
+        handler,
+        api=api,
+        path="/registry/conflicts/auto-demote-safe",
+        payload={"action": "auto_reject_pending_static_bare_alias", "ids": []},
+    )
+
+    assert result is True
+    payload = handler.sent[-1]["payload"]
+    assert payload["demoted"] == 1
+    assert payload["skipped"] == 0
+    assert payload["applied"] == [
+        {
+            "id": PENDING_STATIC_BARE_ID,
+            "familyKey": "overwolf",
+            "action": "auto_reject_pending_static_bare_alias",
+        }
+    ]
+    state = api.load_state()
+    active_ids = {row["id"] for row in state["active"]}
+    pending_ids = {row["id"] for row in state["pending"]}
+    rejected_ids = {row["id"] for row in state["rejected"]}
+    assert ACTIVE_STATIC_FRAGMENT_ID in active_ids
+    assert PENDING_STATIC_BARE_ID not in pending_ids
+    assert PENDING_STATIC_BARE_ID in rejected_ids

@@ -30,7 +30,13 @@ from src.source_discovery import provider_inference
             "https://apply.workable.com/example-studio/",
             "workable",
             "api_url",
-            "https://apply.workable.com/api/v1/widget/accounts/examplestudio?details=true",
+            "https://apply.workable.com/api/v1/widget/accounts/example-studio?details=true",
+        ),
+        (
+            "https://jagex-limited.workable.com/j/8AFE9A3D16",
+            "workable",
+            "api_url",
+            "https://apply.workable.com/api/v1/widget/accounts/jagex-limited?details=true",
         ),
         (
             "https://example.recruitee.com/o/designer",
@@ -91,6 +97,22 @@ def test_shared_provider_inference_preserves_provider_row_shapes(
     assert row["evidenceTypes"] == ["web_provider_url"]
     assert row["evidenceSource"] == "url"
     assert row[provider_key] == provider_value
+
+
+def test_shared_provider_inference_preserves_workable_hyphenated_account() -> None:
+    row = provider_inference.infer_web_candidate(
+        "https://apply.workable.com/jagex-limited/",
+        "Jagex",
+        nl_priority=False,
+    )
+
+    assert row is not None
+    assert row["adapter"] == "workable"
+    assert row["account"] == "jagex-limited"
+    assert (
+        row["api_url"]
+        == "https://apply.workable.com/api/v1/widget/accounts/jagex-limited?details=true"
+    )
 
 
 def test_shared_provider_inference_rejects_unknown_and_empty_provider_tokens() -> None:

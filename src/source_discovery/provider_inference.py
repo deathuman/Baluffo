@@ -25,7 +25,7 @@ _HOST_FRAGMENT_ADAPTERS = (
     ("bamboohr", ("bamboohr.com", ".bamboohr.com")),
     ("recruitee", (".recruitee.com",)),
     ("pinpoint", (".pinpointhq.com",)),
-    ("workable", ("apply.workable.com",)),
+    ("workable", ("apply.workable.com", ".workable.com")),
     ("teamtailor", (".teamtailor.com",)),
     ("personio", (".jobs.personio.de",)),
 )
@@ -149,11 +149,14 @@ def _smartrecruiters_candidate(
 def _workable_candidate(
     base: dict[str, Any],
     _parsed: ParseResult,
-    _host: str,
+    host: str,
     path: str,
     _studio: str,
 ) -> dict[str, Any] | None:
-    account = clean_token((_path_tokens(path) or [""])[-1])
+    if host.endswith(".workable.com") and host != "apply.workable.com":
+        account = host.split(".workable.com", 1)[0].strip().lower()
+    else:
+        account = ((_path_tokens(path) or [""])[-1]).strip().lower()
     if not account:
         return None
     return {

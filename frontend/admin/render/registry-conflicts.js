@@ -399,7 +399,7 @@ function renderRowActions(cardIndex, rowIndex, row) {
 
 function renderRowMeta(row) {
   const lastJobsKept = row?.lastJobsKept ?? row?.lastKeptCount;
-  const jobsFound = row?.jobsFound ?? row?.sampleCount;
+  const jobsFound = row?.jobsFound ?? row?.sampleCount ?? row?.lastJobsFound ?? lastJobsKept;
   const registryJobsFound = row?.registryJobsFound;
   const liveJobsFound = row?.liveJobsFound;
   const items = [
