@@ -199,27 +199,59 @@ test("registry conflicts renderer shows review queue counts and suggestions", ()
   assert.match(reviewEl.innerHTML, /Review provider\/static replacement/);
 });
 
+const runningConflictPayload = adjudication => ({ ...triagePayload(), adjudication: { status: "running", ...adjudication } });
+
 test("registry conflicts renderer locks check controls while adjudication is running", () => {
   const reviewEl = createReviewElement();
-  const payload = {
-    ...triagePayload(),
-    adjudication: {
-      status: "running",
-      startedAt: "2026-05-08T12:00:00+00:00",
-      applyAutopilot: true,
-      summary: { recommendedDemotion: 36 },
-      demoted: 0
-    }
-  };
-
+  const payload = runningConflictPayload({
+    heartbeatAt: "2026-05-08T12:00:10+00:00",
+    applyAutopilot: true,
+    taskProgress: {
+      active: true, phaseKey: "probing_sources", phaseLabel: "Checking conflicting sources",
+      mode: "determinate", ratio: 0.5,
+      counts: { checkedSources: 10, totalSources: 20, checkedFamilies: 3, totalFamilies: 5 },
+      targetLabel: "Studio API", targetUrl: "https://studio.example/jobs",
+      updatedAt: "2026-05-08T12:00:10+00:00"
+    },
+    progress: { currentFamilyKey: "studio", currentSourceName: "Studio API" }
+  });
   renderAdminRegistryConflicts(reviewEl, payload);
 
-  assert.match(reviewEl.innerHTML, /Check running/);
+  assert.match(reviewEl.innerHTML, /Checking conflicting sources[\s\S]*10\/20 sources[\s\S]*3\/5 families[\s\S]*Current: Studio API in studio/);
   assert.match(reviewEl.innerHTML, /Applying recommendations/);
-  assert.match(reviewEl.innerHTML, /Buttons are locked until the bridge reports completion/);
-  assert.match(reviewEl.innerHTML, /data-registry-conflict-apply-autopilot="false"[\s\S]*disabled/);
-  assert.match(reviewEl.innerHTML, /data-registry-conflict-apply-autopilot="true"[\s\S]*disabled/);
+  assert.match(reviewEl.innerHTML, /data-registry-conflict-apply-autopilot="false"[\s\S]*disabled[\s\S]*data-registry-conflict-apply-autopilot="true"[\s\S]*disabled/);
   assert.match(reviewEl.innerHTML, /admin-registry-conflict-safe-automation-btn[\s\S]*disabled/);
+});
+
+test("registry conflicts renderer shows queue-building and stale progress states", () => {
+  const reviewEl = createReviewElement();
+  renderAdminRegistryConflicts(reviewEl, runningConflictPayload({
+    heartbeatAt: "2026-05-08T12:00:10+00:00",
+    taskProgress: {
+      active: true, phaseKey: "building_queue", phaseLabel: "Building conflict queue",
+      mode: "indeterminate", ratio: 0, counts: {},
+      updatedAt: "2026-05-08T12:00:10+00:00"
+    }
+  }));
+
+  assert.match(reviewEl.innerHTML, /Building conflict queue[\s\S]*waiting for source totals/);
+  const originalNow = Date.now;
+  Date.now = () => Date.parse("2026-05-08T12:05:00+00:00");
+  try {
+    renderAdminRegistryConflicts(reviewEl, runningConflictPayload({
+      heartbeatAt: "2026-05-08T12:00:00+00:00",
+      taskProgress: {
+        active: true, phaseKey: "probing_sources", phaseLabel: "Checking conflicting sources",
+        mode: "determinate", ratio: 0.25,
+        counts: { checkedSources: 1, totalSources: 4, checkedFamilies: 1, totalFamilies: 2 },
+        updatedAt: "2026-05-08T12:00:00+00:00"
+      }
+    }));
+
+    assert.match(reviewEl.innerHTML, /No progress update since/);
+  } finally {
+    Date.now = originalNow;
+  }
 });
 
 test("registry conflicts renderer filters cards by triage bucket", () => {

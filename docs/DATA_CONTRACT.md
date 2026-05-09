@@ -493,6 +493,17 @@ source-state files, sync snapshots, tombstones, saved jobs, or source URLs by th
 If adjudication is missing, partial, running, or failed, conflict ranking falls back to
 registry counts.
 
+`data/registry-conflict-adjudication.json` also acts as the local progress artifact
+while `/registry/conflicts/check-sources` is running. Running payloads keep
+`families: []` and expose only additive diagnostic fields: `heartbeatAt`,
+`taskProgress`, and `progress`. `taskProgress` carries UI-level phase data
+(`active`, `phaseKey`, `phaseLabel`, `mode`, `ratio`, `counts`, `targetLabel`,
+`targetUrl`, and `updatedAt`). `progress` carries registry-specific counters,
+the current family/source being checked, `lastProgressAt`, and a capped
+`recentEvents` list. Terminal success or failure writes `active: false` and may
+include full `families`; running progress must not drive winner overrides,
+safe automation, demotion, sync, or registry row mutation.
+
 ### Sync snapshot v2
 
 Remote sync snapshots now use schema version `2` and are built from canonical per-source rows.

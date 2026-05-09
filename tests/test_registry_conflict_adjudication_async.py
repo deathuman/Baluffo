@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import threading
 from pathlib import Path
 from typing import Any
@@ -12,12 +13,22 @@ class FakeAdjudicationApi:
         self.JOBS_FETCH_REPORT_PATH = tmp_path / "jobs-fetch-report.json"
         self.REGISTRY_CONFLICT_ADJUDICATION_PATH = tmp_path / "registry-conflict-adjudication.json"
         self.payload: dict[str, Any] = {}
+        self.saved_payloads: list[dict[str, Any]] = []
+        self.state: dict[str, Any] = {"sources": []}
 
     def save_json_atomic(self, _path: Path, payload: dict[str, Any]) -> None:
-        self.payload = dict(payload)
+        self.payload = copy.deepcopy(payload)
+        self.saved_payloads.append(copy.deepcopy(payload))
 
     def load_json_object(self, _path: Path, default: dict[str, Any]) -> dict[str, Any]:
-        return dict(self.payload or default)
+        return copy.deepcopy(self.payload or default)
+
+    def load_state(self) -> dict[str, Any]:
+        return copy.deepcopy(self.state)
+
+    def persist_state_and_auto_sync(self, state: dict[str, Any], *, reason: str) -> dict[str, Any]:
+        self.state = copy.deepcopy(state)
+        return copy.deepcopy(state)
 
 
 def test_start_registry_conflict_adjudication_returns_running_without_waiting(
@@ -76,6 +87,125 @@ def test_start_registry_conflict_adjudication_returns_running_without_waiting(
     assert calls[0]["runId"] == result["runId"]
     assert api.payload["status"] == "succeeded"
     assert api.payload["demoted"] == 1
+
+
+def test_running_adjudication_payload_exposes_compact_progress() -> None:
+    payload = adjudication._running_adjudication_payload(
+        {"applyAutopilot": True},
+        run_id="run-1",
+        started_at="2026-05-08T12:00:00+00:00",
+    )
+
+    assert payload["status"] == "running"
+    assert payload["families"] == []
+    assert payload["heartbeatAt"]
+    assert payload["taskProgress"]["active"] is True
+    assert payload["taskProgress"]["phaseKey"] == "building_queue"
+    assert payload["progress"]["recentEvents"] == []
+
+
+def test_run_registry_conflict_adjudication_writes_incremental_progress(
+    tmp_path: Path, monkeypatch
+) -> None:
+    api = FakeAdjudicationApi(tmp_path)
+    conflict_payload = {
+        "conflicts": [
+            {
+                "familyKey": "studio",
+                "rows": [
+                    {
+                        "id": "greenhouse:slug:studio",
+                        "name": "Studio API",
+                        "adapter": "greenhouse",
+                        "registryState": "active",
+                    },
+                    {
+                        "id": "static:listing_url:https://studio.example/jobs",
+                        "name": "Studio Static",
+                        "adapter": "static",
+                        "registryState": "active",
+                        "listing_url": "https://studio.example/jobs",
+                    },
+                ],
+            }
+        ]
+    }
+    monkeypatch.setattr(
+        adjudication,
+        "derive_registry_conflict_queue",
+        lambda _state, _source_state: conflict_payload,
+    )
+
+    def fake_probe(row: dict[str, Any], _timeout_s: int) -> dict[str, Any]:
+        source_id = row["id"]
+        return {
+            "sourceId": source_id,
+            "sourceName": row["name"],
+            "adapter": row["adapter"],
+            "endpointUrl": row.get("listing_url", source_id),
+            "finalUrl": row.get("listing_url", source_id),
+            "ok": True,
+            "jobsFound": 1 if row["adapter"] == "greenhouse" else 0,
+            "jobs": [{"key": "job-1"}] if row["adapter"] == "greenhouse" else [],
+        }
+
+    monkeypatch.setattr(adjudication, "_probe_row", fake_probe)
+
+    result = adjudication.run_registry_conflict_adjudication(
+        api,
+        {
+            "runId": "run-1",
+            "startedAt": "2026-05-08T12:00:00+00:00",
+            "progressThrottleSeconds": 0,
+        },
+    )
+
+    running_payloads = [payload for payload in api.saved_payloads if payload["status"] == "running"]
+    assert [payload["taskProgress"]["phaseKey"] for payload in running_payloads[:3]] == [
+        "loading_registry",
+        "building_queue",
+        "building_queue",
+    ]
+    assert any(
+        payload["taskProgress"]["phaseKey"] == "probing_sources"
+        and payload["progress"]["currentSourceName"] == "Studio API"
+        for payload in running_payloads
+    )
+    assert all(payload["families"] == [] for payload in running_payloads)
+    assert result["status"] == "succeeded"
+    assert result["families"]
+    assert result["taskProgress"]["active"] is False
+    assert result["taskProgress"]["counts"]["checkedSources"] == 2
+    assert result["progress"]["recentEvents"][-1]["event"] == "family_finished"
+
+
+def test_failed_adjudication_payload_preserves_latest_progress() -> None:
+    current = {
+        "progress": {
+            "totalFamilyCount": 4,
+            "checkedFamilyCount": 2,
+            "totalSourceCount": 8,
+            "checkedSourceCount": 5,
+            "currentSourceName": "Studio API",
+            "currentEndpointUrl": "https://studio.example/jobs",
+            "recentEvents": [{"event": "source_finished"}],
+        }
+    }
+
+    payload = adjudication._failed_adjudication_payload(
+        {},
+        run_id="run-1",
+        started_at="2026-05-08T12:00:00+00:00",
+        error="boom",
+        current=current,
+    )
+
+    assert payload["status"] == "failed"
+    assert payload["checkedSourceCount"] == 5
+    assert payload["checkedFamilyCount"] == 2
+    assert payload["taskProgress"]["active"] is False
+    assert payload["taskProgress"]["targetLabel"] == "Studio API"
+    assert payload["progress"]["recentEvents"] == [{"event": "source_finished"}]
 
 
 def test_best_probe_prefers_canonical_non_redirecting_source_on_equal_jobs() -> None:

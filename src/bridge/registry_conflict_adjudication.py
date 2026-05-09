@@ -3,15 +3,16 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
 
 from src.bridge.registry_conflicts import derive_registry_conflict_queue
 from src.bridge.source_check_http import try_fetch_with_playwright
+from src.bridge.source_probe_evidence import probe_source_evidence
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
 from src.jobs.adapters.parsers.json_payloads import (
     parse_greenhouse_jobs_payload,
@@ -32,6 +33,8 @@ ADJUDICATION_PATH_NAME = "registry-conflict-adjudication.json"
 _ADJUDICATION_LOCK = threading.RLock()
 _ADJUDICATION_JOB_LOCK = threading.Lock()
 _ADJUDICATION_JOB_THREAD: threading.Thread | None = None
+_RECENT_PROGRESS_EVENT_LIMIT = 20
+_DEFAULT_PROGRESS_THROTTLE_SECONDS = 1.0
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -60,14 +63,126 @@ def load_registry_conflict_adjudication(api: Any) -> dict[str, Any]:
     return _as_dict(api.load_json_object(_artifact_path(api), {}))
 
 
+def _summary_payload() -> dict[str, int]:
+    return {
+        "autoDemoteApplied": 0,
+        "recommendedDemotion": 0,
+        "keepBoth": 0,
+        "needsReview": 0,
+        "probeFailed": 0,
+    }
+
+
+def _task_progress_payload(
+    *,
+    active: bool,
+    phase_key: str,
+    phase_label: str,
+    ratio: float,
+    counts: dict[str, int],
+    updated_at: str,
+    target_label: str = "",
+    target_url: str = "",
+) -> dict[str, Any]:
+    mode = "determinate" if counts.get("totalSources", 0) > 0 else "indeterminate"
+    return {
+        "active": active,
+        "phaseKey": phase_key,
+        "phaseLabel": phase_label,
+        "mode": mode,
+        "ratio": max(0.0, min(1.0, ratio)),
+        "counts": counts,
+        "targetLabel": target_label,
+        "targetUrl": target_url,
+        "updatedAt": updated_at,
+    }
+
+
+def _base_progress_payload(now: str) -> dict[str, Any]:
+    return {
+        "totalFamilyCount": 0,
+        "checkedFamilyCount": 0,
+        "totalSourceCount": 0,
+        "checkedSourceCount": 0,
+        "currentFamilyKey": "",
+        "currentFamilyIndex": 0,
+        "currentSourceId": "",
+        "currentSourceName": "",
+        "currentAdapter": "",
+        "currentEndpointUrl": "",
+        "lastProgressAt": now,
+        "recentEvents": [],
+    }
+
+
+def _progress_counts(progress: dict[str, Any]) -> dict[str, int]:
+    return {
+        "checkedFamilies": int(progress.get("checkedFamilyCount") or 0),
+        "totalFamilies": int(progress.get("totalFamilyCount") or 0),
+        "checkedSources": int(progress.get("checkedSourceCount") or 0),
+        "totalSources": int(progress.get("totalSourceCount") or 0),
+    }
+
+
+def _progress_ratio(progress: dict[str, Any]) -> float:
+    total = int(progress.get("totalSourceCount") or 0)
+    if total <= 0:
+        return 0.0
+    checked = int(progress.get("checkedSourceCount") or 0)
+    return checked / total
+
+
+def _progress_throttle_seconds(payload: dict[str, Any]) -> float:
+    try:
+        return max(
+            0.0,
+            float(payload.get("progressThrottleSeconds") or _DEFAULT_PROGRESS_THROTTLE_SECONDS),
+        )
+    except (TypeError, ValueError):
+        return _DEFAULT_PROGRESS_THROTTLE_SECONDS
+
+
+def _progress_event(
+    event: str,
+    *,
+    timestamp: str,
+    family_key: str = "",
+    source_id: str = "",
+    source_name: str = "",
+    adapter: str = "",
+    jobs_found: int | None = None,
+    ok: bool | None = None,
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "event": event,
+        "timestamp": timestamp,
+    }
+    if family_key:
+        row["familyKey"] = family_key
+    if source_id:
+        row["sourceId"] = source_id
+    if source_name:
+        row["sourceName"] = source_name
+    if adapter:
+        row["adapter"] = adapter
+    if jobs_found is not None:
+        row["jobsFound"] = jobs_found
+    if ok is not None:
+        row["ok"] = ok
+    return row
+
+
 def _running_adjudication_payload(
     payload: dict[str, Any], *, run_id: str, started_at: str
 ) -> dict[str, Any]:
+    now = _now_iso()
+    progress = _base_progress_payload(now)
     return {
         "ok": True,
         "status": "running",
         "runId": run_id,
         "startedAt": started_at,
+        "heartbeatAt": now,
         "applyAutopilot": bool(payload.get("applyAutopilot")),
         "trigger": _clean(payload.get("trigger")),
         "checkedFamilyCount": 0,
@@ -75,23 +190,50 @@ def _running_adjudication_payload(
         "demoted": 0,
         "appliedIds": [],
         "families": [],
-        "summary": {
-            "autoDemoteApplied": 0,
-            "recommendedDemotion": 0,
-            "keepBoth": 0,
-            "needsReview": 0,
-            "probeFailed": 0,
-        },
+        "taskProgress": _task_progress_payload(
+            active=True,
+            phase_key="building_queue",
+            phase_label="Building conflict queue",
+            ratio=0.0,
+            counts=_progress_counts(progress),
+            updated_at=now,
+        ),
+        "progress": progress,
+        "summary": _summary_payload(),
     }
 
 
 def _failed_adjudication_payload(
-    payload: dict[str, Any], *, run_id: str, started_at: str, error: str
+    payload: dict[str, Any],
+    *,
+    run_id: str,
+    started_at: str,
+    error: str,
+    current: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    now = _now_iso()
+    current_payload = _as_dict(current)
+    progress = _as_dict(current_payload.get("progress")) or _base_progress_payload(now)
+    progress["lastProgressAt"] = now
+    counts = _progress_counts(progress)
     return {
         **_running_adjudication_payload(payload, run_id=run_id, started_at=started_at),
         "status": "failed",
-        "finishedAt": _now_iso(),
+        "finishedAt": now,
+        "heartbeatAt": now,
+        "checkedFamilyCount": int(progress.get("checkedFamilyCount") or 0),
+        "checkedSourceCount": int(progress.get("checkedSourceCount") or 0),
+        "taskProgress": _task_progress_payload(
+            active=False,
+            phase_key="failed",
+            phase_label="Conflict source check failed",
+            ratio=_progress_ratio(progress),
+            counts=counts,
+            updated_at=now,
+            target_label=_clean(progress.get("currentSourceName")),
+            target_url=_clean(progress.get("currentEndpointUrl")),
+        ),
+        "progress": progress,
         "error": error,
     }
 
@@ -180,20 +322,6 @@ def _endpoint_url(row: dict[str, Any]) -> str:
             else ""
         )
     return ""
-
-
-def _fetch_url(url: str, timeout_s: int) -> tuple[int, str, str, str]:
-    if not url:
-        return 0, "", "", "missing endpoint URL"
-    try:
-        request = Request(url, headers={"User-Agent": "Baluffo Admin Conflict Check"})
-        with urlopen(request, timeout=timeout_s) as response:
-            status = int(getattr(response, "status", 0) or response.getcode() or 0)
-            final_url = _clean(response.geturl()) or url
-            body = response.read().decode("utf-8", errors="replace")
-            return status, final_url, body, ""
-    except (HTTPError, TimeoutError, URLError, OSError) as exc:
-        return 0, "", "", str(exc)
 
 
 def _json_payload(text: str) -> Any:
@@ -291,38 +419,40 @@ def _newest_job_date(jobs: list[dict[str, Any]]) -> str:
 
 def _probe_row(row: dict[str, Any], timeout_s: int) -> dict[str, Any]:
     source_id = _row_id(row)
-    endpoint = _endpoint_url(row)
-    status, final_url, text, error = _fetch_url(endpoint, timeout_s)
+    evidence = probe_source_evidence(
+        row,
+        timeout_s,
+        try_playwright=try_fetch_with_playwright,
+    )
+    endpoint = evidence.endpoint_url or _endpoint_url(row)
+    final_url = evidence.final_url or endpoint
+    text = evidence.response_text
     jobs: list[dict[str, Any]] = []
     valid_payload = False
     parse_error = ""
     if text:
         try:
-            valid_payload, jobs = _parse_jobs(row, text, final_url or endpoint)
+            valid_payload, jobs = _parse_jobs(row, text, final_url)
         except (TypeError, ValueError, KeyError) as exc:
             parse_error = str(exc)
-    if _row_adapter(row) == "static" and status and status < 400 and not jobs:
-        browser_html, browser_error = try_fetch_with_playwright(final_url or endpoint, timeout_s)
-        if browser_html:
-            try:
-                valid_payload, jobs = _parse_jobs(row, browser_html, final_url or endpoint)
-                parse_error = ""
-            except (TypeError, ValueError, KeyError) as exc:
-                parse_error = str(exc)
-        elif browser_error and not parse_error:
-            parse_error = browser_error
-    ok = bool(status and status < 400 and not error and (valid_payload or jobs))
+    jobs_found = len(jobs) if valid_payload or jobs else int(evidence.jobs_found or 0)
+    ok = bool(evidence.ok and not parse_error and (valid_payload or jobs or jobs_found == 0))
     return {
         "sourceId": source_id,
         "name": _clean(row.get("name")),
-        "adapter": _row_adapter(row),
+        "adapter": evidence.adapter or _row_adapter(row),
         "endpointUrl": endpoint,
-        "finalUrl": final_url or endpoint,
-        "httpStatus": int(status or 0),
+        "finalUrl": final_url,
+        "httpStatus": int(evidence.http_status or 0),
         "ok": ok,
-        "error": error or parse_error,
+        "error": evidence.error or parse_error,
         "validPayload": bool(valid_payload),
-        "jobsFound": len(jobs),
+        "jobsFound": jobs_found,
+        "countConfidence": evidence.count_confidence,
+        "countReason": evidence.count_reason,
+        "sampleUrls": list(evidence.sample_urls),
+        "browserFallbackRecommended": bool(evidence.browser_fallback_recommended),
+        "browserFallbackUsed": bool(evidence.browser_fallback_used),
         "newestJobDate": _newest_job_date(jobs),
         "sampleJobs": [_job_sample(job) for job in jobs[:5]],
         "_jobIds": sorted(
@@ -529,13 +659,162 @@ def _family_status(decisions: list[dict[str, Any]]) -> str:
     return next((status for status in ordered_statuses if status in statuses), "needs_review")
 
 
+def _summary_from_families(families: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "autoDemoteApplied": sum(1 for row in families if row["status"] == "auto_demote_applied"),
+        "recommendedDemotion": sum(
+            1 for row in families if row["status"] == "recommended_demotion"
+        ),
+        "keepBoth": sum(1 for row in families if row["status"] == "keep_both"),
+        "needsReview": sum(1 for row in families if row["status"] == "needs_review"),
+        "probeFailed": sum(1 for row in families if row["status"] == "probe_failed"),
+    }
+
+
+class _AdjudicationProgress:
+    def __init__(
+        self,
+        api: Any,
+        payload: dict[str, Any],
+        *,
+        run_id: str,
+        started_at: str,
+        throttle_s: float,
+    ) -> None:
+        self._api = api
+        self._payload = dict(payload)
+        self._run_id = run_id
+        self._started_at = started_at
+        self._throttle_s = max(0.0, throttle_s)
+        self._last_write_monotonic = 0.0
+        self._phase_key = "building_queue"
+        self._phase_label = "Building conflict queue"
+        self._progress = _base_progress_payload(_now_iso())
+        self._recent_events: list[dict[str, Any]] = []
+        self._completed_source_ids: set[str] = set()
+
+    def _append_event(self, event: dict[str, Any]) -> None:
+        self._recent_events.append(event)
+        self._recent_events = self._recent_events[-_RECENT_PROGRESS_EVENT_LIMIT:]
+        self._progress["recentEvents"] = list(self._recent_events)
+
+    def write(self, *, force: bool = False) -> None:
+        monotonic_now = time.monotonic()
+        if (
+            not force
+            and self._last_write_monotonic
+            and monotonic_now - self._last_write_monotonic < self._throttle_s
+        ):
+            return
+        self._last_write_monotonic = monotonic_now
+        now = _now_iso()
+        self._progress["lastProgressAt"] = now
+        counts = _progress_counts(self._progress)
+        payload = {
+            **_running_adjudication_payload(
+                self._payload, run_id=self._run_id, started_at=self._started_at
+            ),
+            "heartbeatAt": now,
+            "checkedFamilyCount": counts["checkedFamilies"],
+            "checkedSourceCount": counts["checkedSources"],
+            "taskProgress": _task_progress_payload(
+                active=True,
+                phase_key=self._phase_key,
+                phase_label=self._phase_label,
+                ratio=_progress_ratio(self._progress),
+                counts=counts,
+                updated_at=now,
+                target_label=_clean(self._progress.get("currentSourceName")),
+                target_url=_clean(self._progress.get("currentEndpointUrl")),
+            ),
+            "progress": dict(self._progress),
+        }
+        self._api.save_json_atomic(_artifact_path(self._api), payload)
+
+    def phase(self, phase_key: str, phase_label: str) -> None:
+        self._phase_key = phase_key
+        self._phase_label = phase_label
+        self.write(force=True)
+
+    def set_totals(self, *, total_family_count: int, total_source_count: int) -> None:
+        self._progress["totalFamilyCount"] = max(0, int(total_family_count))
+        self._progress["totalSourceCount"] = max(0, int(total_source_count))
+        self.write(force=True)
+
+    def source_started(self, row: dict[str, Any], *, family_key: str, family_index: int) -> None:
+        now = _now_iso()
+        self._progress.update(
+            {
+                "currentFamilyKey": family_key,
+                "currentFamilyIndex": family_index,
+                "currentSourceId": _row_id(row),
+                "currentSourceName": _clean(row.get("name")),
+                "currentAdapter": _row_adapter(row),
+                "currentEndpointUrl": _endpoint_url(row),
+            }
+        )
+        self._append_event(
+            _progress_event(
+                "source_started",
+                timestamp=now,
+                family_key=family_key,
+                source_id=_row_id(row),
+                source_name=_clean(row.get("name")),
+                adapter=_row_adapter(row),
+            )
+        )
+        self.write(force=True)
+
+    def source_finished(self, row: dict[str, Any], probe: dict[str, Any]) -> None:
+        now = _now_iso()
+        source_id = _row_id(row)
+        if source_id:
+            self._completed_source_ids.add(source_id)
+        self._progress["checkedSourceCount"] = len(self._completed_source_ids)
+        self._append_event(
+            _progress_event(
+                "source_finished",
+                timestamp=now,
+                family_key=_clean(self._progress.get("currentFamilyKey")),
+                source_id=source_id,
+                source_name=_clean(row.get("name")),
+                adapter=_row_adapter(row),
+                jobs_found=int(probe.get("jobsFound") or 0),
+                ok=bool(probe.get("ok")),
+            )
+        )
+        self.write(force=True)
+
+    def family_finished(self, family_key: str, family_index: int) -> None:
+        self._progress["checkedFamilyCount"] = max(
+            int(self._progress.get("checkedFamilyCount") or 0),
+            family_index,
+        )
+        self._append_event(
+            _progress_event(
+                "family_finished",
+                timestamp=_now_iso(),
+                family_key=family_key,
+            )
+        )
+        self.write(force=True)
+
+
 def _build_family_adjudication(
     card: dict[str, Any],
     *,
     timeout_s: int,
     apply_autopilot: bool,
+    progress_callback: Callable[[str, dict[str, Any], dict[str, Any] | None], None] | None = None,
 ) -> tuple[dict[str, Any] | None, set[str]]:
-    probes = [_probe_row(row, timeout_s) for row in _as_list(card.get("rows"))]
+    probes = []
+    for row in [_as_dict(item) for item in _as_list(card.get("rows"))]:
+        if progress_callback:
+            progress_callback("source_started", row, None)
+        probe = _probe_row(row, timeout_s)
+        probes.append(probe)
+        if progress_callback:
+            progress_callback("source_finished", row, probe)
     if not probes:
         return None, set()
     best = _best_probe(probes)
@@ -575,56 +854,114 @@ def run_registry_conflict_adjudication(
     data = _as_dict(payload)
     apply_autopilot = bool(data.get("applyAutopilot"))
     timeout_s = max(3, min(20, int(data.get("timeoutSeconds") or 8)))
+    throttle_s = _progress_throttle_seconds(data)
     run_id = _clean(data.get("runId")) or f"conflict_check_{uuid.uuid4().hex[:10]}"
     started_at = _clean(data.get("startedAt")) or _now_iso()
+    progress = _AdjudicationProgress(
+        api,
+        data,
+        run_id=run_id,
+        started_at=started_at,
+        throttle_s=throttle_s,
+    )
     with _ADJUDICATION_LOCK:
+        progress.phase("loading_registry", "Loading registry state")
         state = api.load_state()
+        progress.phase("building_queue", "Building conflict queue")
         source_state_path = api.JOBS_FETCH_REPORT_PATH.with_name("jobs-source-state.json")
         source_state_payload = api.load_json_object(source_state_path, {})
         conflict_payload = derive_registry_conflict_queue(state, source_state_payload)
         selected = _selected_conflicts(conflict_payload, data)
+        selected_source_ids = {
+            _row_id(_as_dict(row))
+            for card in selected
+            for row in _as_list(card.get("rows"))
+            if _row_id(_as_dict(row))
+        }
+        progress.set_totals(
+            total_family_count=len(selected),
+            total_source_count=len(selected_source_ids),
+        )
+        progress.phase("probing_sources", "Checking conflicting sources")
         families: list[dict[str, Any]] = []
         target_ids: set[str] = set()
-        for card in selected:
+
+        for family_index, card in enumerate(selected, start=1):
+            family_key = _clean(card.get("familyKey"))
+
+            def _record_progress(
+                event: str,
+                row: dict[str, Any],
+                probe: dict[str, Any] | None = None,
+                *,
+                current_family_key: str = family_key,
+                current_family_index: int = family_index,
+            ) -> None:
+                if event == "source_started":
+                    progress.source_started(
+                        row,
+                        family_key=current_family_key,
+                        family_index=current_family_index,
+                    )
+                elif event == "source_finished" and probe is not None:
+                    progress.source_finished(row, probe)
+
             family, family_target_ids = _build_family_adjudication(
                 card,
                 timeout_s=timeout_s,
                 apply_autopilot=apply_autopilot,
+                progress_callback=_record_progress,
             )
+            progress.family_finished(family_key, family_index)
             if not family:
                 continue
             families.append(family)
             target_ids.update(family_target_ids)
         applied_ids: list[str] = []
         if apply_autopilot and target_ids:
+            progress.phase("applying_autopilot", "Applying high-confidence recommendations")
             state, applied_ids = _demote_ids(state, target_ids, _now_iso())
             if applied_ids:
                 state = api.persist_state_and_auto_sync(state, reason=ADJUDICATION_REASON)
+        finished_at = _now_iso()
+        summary = _summary_from_families(families)
+        checked_source_count = len(
+            {source_id for row in families for source_id in row["checkedSourceIds"]}
+        )
+        terminal_counts = {
+            "checkedFamilies": len(families),
+            "totalFamilies": len(selected),
+            "checkedSources": checked_source_count,
+            "totalSources": len(selected_source_ids),
+        }
         result = {
             "ok": True,
             "status": "succeeded",
             "runId": run_id,
             "startedAt": started_at,
-            "finishedAt": _now_iso(),
+            "finishedAt": finished_at,
+            "heartbeatAt": finished_at,
             "applyAutopilot": apply_autopilot,
             "checkedFamilyCount": len(families),
-            "checkedSourceCount": len(
-                {source_id for row in families for source_id in row["checkedSourceIds"]}
-            ),
+            "checkedSourceCount": checked_source_count,
             "demoted": len(applied_ids),
             "appliedIds": applied_ids,
             "families": families,
-            "summary": {
-                "autoDemoteApplied": sum(
-                    1 for row in families if row["status"] == "auto_demote_applied"
-                ),
-                "recommendedDemotion": sum(
-                    1 for row in families if row["status"] == "recommended_demotion"
-                ),
-                "keepBoth": sum(1 for row in families if row["status"] == "keep_both"),
-                "needsReview": sum(1 for row in families if row["status"] == "needs_review"),
-                "probeFailed": sum(1 for row in families if row["status"] == "probe_failed"),
+            "taskProgress": _task_progress_payload(
+                active=False,
+                phase_key="succeeded",
+                phase_label="Conflict source check finished",
+                ratio=1.0,
+                counts=terminal_counts,
+                updated_at=finished_at,
+            ),
+            "progress": {
+                **progress._progress,
+                "checkedFamilyCount": len(families),
+                "checkedSourceCount": checked_source_count,
+                "lastProgressAt": finished_at,
             },
+            "summary": summary,
         }
         api.save_json_atomic(_artifact_path(api), result)
         return result
@@ -664,6 +1001,7 @@ def start_registry_conflict_adjudication(
                     },
                 )
             except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
+                current = load_registry_conflict_adjudication(api)
                 api.save_json_atomic(
                     _artifact_path(api),
                     _failed_adjudication_payload(
@@ -671,6 +1009,7 @@ def start_registry_conflict_adjudication(
                         run_id=run_id,
                         started_at=started_at,
                         error=str(exc),
+                        current=current,
                     ),
                 )
 

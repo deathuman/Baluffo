@@ -191,7 +191,7 @@ def _apply_static_probe_evidence(candidate: dict[str, Any], evidence: StaticProb
         candidate["weakSignal"] = True
 
 
-def _is_playwright_fallback_error(error: str) -> bool:
+def is_playwright_fallback_error(error: str) -> bool:
     """True if the probe failure is worth retrying with a browser (403, timeout, challenge)."""
     if not error:
         return False
@@ -208,6 +208,10 @@ def _is_playwright_fallback_error(error: str) -> bool:
         "captcha",
     )
     return any(tok in lower for tok in challenge_tokens)
+
+
+def _is_playwright_fallback_error(error: str) -> bool:
+    return is_playwright_fallback_error(error)
 
 
 def _is_valid_identity_token(token: str) -> bool:

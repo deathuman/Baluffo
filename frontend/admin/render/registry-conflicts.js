@@ -103,6 +103,11 @@ function stringValue(value, fallback = "") {
   return text || fallback;
 }
 
+function numberValue(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
 function formatFieldValue(key, value) {
   if (value === null || value === undefined || value === "") {
     return "—";
@@ -119,6 +124,57 @@ function formatFieldValue(key, value) {
     return formatDateTime(text);
   }
   return text;
+}
+
+function progressTimestamp(adjudication) {
+  const taskProgress = objectValue(adjudication?.taskProgress);
+  return stringValue(adjudication?.heartbeatAt)
+    || stringValue(taskProgress?.updatedAt)
+    || stringValue(objectValue(adjudication?.progress)?.lastProgressAt);
+}
+
+function isStaleProgressTimestamp(timestamp) {
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) return false;
+  return Date.now() - parsed > 120000;
+}
+
+function renderRunningAdjudicationStatus(adjudication) {
+  const taskProgress = objectValue(adjudication?.taskProgress);
+  const progress = objectValue(adjudication?.progress);
+  const counts = objectValue(taskProgress?.counts);
+  const phaseLabel = stringValue(taskProgress?.phaseLabel, "Checking conflicts");
+  const checkedSources = numberValue(counts?.checkedSources ?? progress?.checkedSourceCount);
+  const totalSources = numberValue(counts?.totalSources ?? progress?.totalSourceCount);
+  const checkedFamilies = numberValue(counts?.checkedFamilies ?? progress?.checkedFamilyCount);
+  const totalFamilies = numberValue(counts?.totalFamilies ?? progress?.totalFamilyCount);
+  const ratio = Math.max(0, Math.min(1, numberValue(taskProgress?.ratio)));
+  const parts = [escapeHtml(phaseLabel)];
+  if (totalSources > 0) {
+    const percent = Math.round(ratio * 100);
+    parts.push(`${checkedSources.toLocaleString()}/${totalSources.toLocaleString()} sources`);
+    if (totalFamilies > 0) {
+      parts.push(`${checkedFamilies.toLocaleString()}/${totalFamilies.toLocaleString()} families`);
+    }
+    parts.unshift(`${percent}%`);
+  } else {
+    parts.push("waiting for source totals");
+  }
+  const targetLabel = stringValue(taskProgress?.targetLabel)
+    || stringValue(progress?.currentSourceName)
+    || stringValue(progress?.currentSourceId);
+  const targetUrl = stringValue(taskProgress?.targetUrl) || stringValue(progress?.currentEndpointUrl);
+  const currentFamily = stringValue(progress?.currentFamilyKey);
+  let currentCopy = "";
+  if (targetLabel || targetUrl || currentFamily) {
+    const target = targetLabel || targetUrl;
+    currentCopy = ` Current: ${escapeHtml(target)}${currentFamily ? ` in ${escapeHtml(currentFamily)}` : ""}.`;
+  }
+  const timestamp = progressTimestamp(adjudication);
+  const staleCopy = isStaleProgressTimestamp(timestamp)
+    ? ` <strong>No progress update since ${escapeHtml(formatFieldValue("updatedAt", timestamp))}.</strong>`
+    : "";
+  return `${parts.join(" · ")}.${currentCopy}${staleCopy}`;
 }
 
 function getConflictCards(payload) {
@@ -597,7 +653,6 @@ function renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)
   const running = checkingConflicts || stringValue(adjudication?.status) === "running";
   const applyAutopilot = Boolean(adjudication?.applyAutopilot);
   const checkedAt = stringValue(adjudication?.finishedAt, "");
-  const startedAt = stringValue(adjudication?.startedAt, "");
   const demoted = Number(adjudication?.demoted || 0);
   const recommended = Number(objectValue(adjudication?.summary)?.recommendedDemotion || 0);
   const disabled = running || !visibleConflicts.length;
@@ -606,7 +661,7 @@ function renderAdjudicationToolbar(payload, visibleConflicts, checkingConflicts)
     ? "Applying recommendations..."
     : "Apply high-confidence recommendations";
   const statusCopy = running
-    ? `Check running${startedAt ? ` since ${escapeHtml(formatFieldValue("startedAt", startedAt))}` : ""}. Buttons are locked until the bridge reports completion.`
+    ? renderRunningAdjudicationStatus(adjudication)
     : `${checkedAt ? `Last checked ${escapeHtml(formatFieldValue("finishedAt", checkedAt))}; ` : "No conflict source check has run yet. "}${demoted.toLocaleString()} demoted, ${recommended.toLocaleString()} recommended.`;
   return `
     <div class="admin-registry-conflict-triage">

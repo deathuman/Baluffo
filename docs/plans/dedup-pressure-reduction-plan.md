@@ -49,6 +49,11 @@ Success means the next full pipeline shows fewer active conflicts, fewer provide
    - Show `registryJobsFound` and `liveJobsFound` separately so stale registry counts remain visible without silently driving decisions.
    - Fall back to registry counts if source-check evidence is missing, partial, running, or failed.
 
+8. **Make conflict source checks visibly progressive**
+   - While `Check conflicting sources` is running, persist compact `heartbeatAt`, `taskProgress`, and `progress` diagnostics to the existing adjudication artifact.
+   - Keep running payloads diagnostic-only with `families: []` so partial probes cannot influence winners or automation.
+   - Render source/family counters, current target, and stale-heartbeat warnings in Admin/Ops without introducing a separate task route.
+
 ## Test Plan
 
 - Add focused backend tests for static source URL canonicalization: fragment stripping, `/index.html` collapse, trailing slash normalization, and non-equivalent host preservation.

@@ -1,5 +1,6 @@
 from src.bridge import registry_conflict_adjudication
 from src.bridge.registry_conflict_adjudication import _parse_jobs, _probe_row
+from src.bridge.source_probe_evidence import ProbeFetchResponse, probe_source_evidence
 
 
 def test_conflict_adjudication_provider_probe_reconstructs_compact_source_id(
@@ -21,11 +22,15 @@ def test_conflict_adjudication_provider_probe_reconstructs_compact_source_id(
 
     captured_urls: list[str] = []
 
-    def fake_fetch(url: str, _timeout_s: int) -> tuple[int, str, str, str]:
+    def fake_fetch(url: str, _timeout_s: int, **_kwargs) -> ProbeFetchResponse:
         captured_urls.append(url)
-        return 200, url, payload, ""
+        return ProbeFetchResponse(200, url, payload)
 
-    monkeypatch.setattr(registry_conflict_adjudication, "_fetch_url", fake_fetch)
+    monkeypatch.setattr(
+        registry_conflict_adjudication,
+        "probe_source_evidence",
+        lambda row, timeout_s, **_kwargs: probe_source_evidence(row, timeout_s, fetcher=fake_fetch),
+    )
 
     probe = _probe_row(
         {
@@ -75,8 +80,15 @@ def test_conflict_adjudication_static_probe_uses_browser_fallback_for_rendered_j
 
     monkeypatch.setattr(
         registry_conflict_adjudication,
-        "_fetch_url",
-        lambda *_args: (200, "https://studio.example/work-with-us", raw_html, ""),
+        "probe_source_evidence",
+        lambda row, timeout_s, **kwargs: probe_source_evidence(
+            row,
+            timeout_s,
+            fetcher=lambda *_args, **_kwargs: ProbeFetchResponse(
+                200, "https://studio.example/work-with-us", raw_html
+            ),
+            try_playwright=kwargs.get("try_playwright"),
+        ),
     )
     monkeypatch.setattr(
         registry_conflict_adjudication,
