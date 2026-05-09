@@ -71,3 +71,24 @@ def test_static_probe_ignores_hidden_template_job_links() -> None:
     assert ok
     assert count == 1
     assert error == ""
+
+
+def test_static_probe_counts_same_listing_detail_pages() -> None:
+    candidate = {
+        "adapter": "static",
+        "listing_url": "https://studio.example/work-with-us/index.html",
+    }
+    html = """
+    <a href="/work-with-us/4023614009/">Systems Engineer</a>
+    <a href="/work-with-us/4023591009/">Lead Environment Artist</a>
+    <a href="/work-with-us/94b98a86-d14e-49e5-b117-5b40bce17c9d/">HR Business Partner</a>
+    <a href="/work-with-us/#benefits">Work settings</a>
+    """
+
+    ok, count, error = probe.probe_candidate(candidate, timeout_s=5, fetcher=lambda *_: html)
+
+    assert ok
+    assert count == 3
+    assert error == ""
+    assert candidate["lastProbeCountReason"] == "detail_links"
+    assert candidate["lastReliableJobsFound"] == 3

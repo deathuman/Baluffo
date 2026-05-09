@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from src.bridge.registry_conflicts import derive_registry_conflict_queue
+from src.bridge.source_check_http import try_fetch_with_playwright
 from src.jobs.adapters.html_parsers import parse_jobpostings_from_html
 from src.jobs.adapters.parsers.json_payloads import (
     parse_greenhouse_jobs_payload,
@@ -21,7 +22,9 @@ from src.jobs.adapters.parsers.json_payloads import (
     parse_workable_jobs_payload,
 )
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
+from src.source_discovery.probe import static_probe_evidence
 from src.source_registry import source_identity
+from src.source_registry_identity import provider_fields_from_row_identity
 from src.source_registry_state import transition_registry_to_pending
 
 ADJUDICATION_REASON = "registry_conflict_adjudication_auto_demote"
@@ -138,6 +141,11 @@ def _adapter_token(row: dict[str, Any], *keys: str) -> str:
         value = _clean(row.get(key))
         if value:
             return value
+    identity_fields = provider_fields_from_row_identity(row)
+    for key in keys:
+        value = _clean(identity_fields.get(key))
+        if value:
+            return value
     for url in _urls_from_row(row):
         host = urlparse(url).netloc.lower()
         if host:
@@ -199,6 +207,25 @@ def _parse_jobs(
     row: dict[str, Any], text: str, final_url: str
 ) -> tuple[bool, list[dict[str, Any]]]:
     adapter = _row_adapter(row)
+    if adapter == "static":
+        evidence = static_probe_evidence(text, final_url or _endpoint_url(row))
+        jobs = [
+            {
+                "sourceJobId": f"static:{_row_id(row)}:{idx}",
+                "company": _clean(row.get("company") or row.get("studio") or row.get("name")),
+                "jobLink": url,
+            }
+            for idx, url in enumerate(evidence.sample_urls, start=1)
+        ]
+        while len(jobs) < evidence.count:
+            idx = len(jobs) + 1
+            jobs.append(
+                {
+                    "sourceJobId": f"static:{_row_id(row)}:{idx}",
+                    "company": _clean(row.get("company") or row.get("studio") or row.get("name")),
+                }
+            )
+        return bool(text), jobs
     payload = _json_payload(text)
     fallback_company = _clean(row.get("company") or row.get("studio") or row.get("name"))
     token = _adapter_token(row, "slug", "account", "company_id")
@@ -274,6 +301,16 @@ def _probe_row(row: dict[str, Any], timeout_s: int) -> dict[str, Any]:
             valid_payload, jobs = _parse_jobs(row, text, final_url or endpoint)
         except (TypeError, ValueError, KeyError) as exc:
             parse_error = str(exc)
+    if _row_adapter(row) == "static" and status and status < 400 and not jobs:
+        browser_html, browser_error = try_fetch_with_playwright(final_url or endpoint, timeout_s)
+        if browser_html:
+            try:
+                valid_payload, jobs = _parse_jobs(row, browser_html, final_url or endpoint)
+                parse_error = ""
+            except (TypeError, ValueError, KeyError) as exc:
+                parse_error = str(exc)
+        elif browser_error and not parse_error:
+            parse_error = browser_error
     ok = bool(status and status < 400 and not error and (valid_payload or jobs))
     return {
         "sourceId": source_id,

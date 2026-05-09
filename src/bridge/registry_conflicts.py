@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from src.shared.json_io import read_json_object as read_pipeline_json_object
 from src.source_registry import source_identity, static_listing_url_aliases
 from src.source_registry_policy import duplicate_family_conflict_cards
 from src.source_registry_state import transition_registry_to_active, transition_registry_to_pending
@@ -529,13 +530,153 @@ def _source_state_rows_by_name(source_state_payload: Any) -> dict[str, dict[str,
     return by_key
 
 
+def _fetch_report_source_state_row(
+    detail: dict[str, Any], parent: dict[str, Any], report: dict[str, Any]
+) -> dict[str, Any]:
+    status = _clean_text(detail.get("status") or parent.get("status")).lower()
+    kept = _int_value(detail.get("keptCount") or detail.get("lastKeptCount"))
+    fetched = _int_value(detail.get("fetchedCount") or detail.get("lastFetchedCount"))
+    failure_count = _int_value(detail.get("failureCount") or parent.get("failureCount"))
+    observed_at = _clean_text(
+        detail.get("finishedAt")
+        or detail.get("listingCheckedAt")
+        or detail.get("lastCheckedAt")
+        or detail.get("lastRunAt")
+        or parent.get("lastRunAt")
+        or parent.get("lastCheckedAt")
+        or parent.get("lastSuccessfulFetchAt")
+        or parent.get("lastSuccessAt")
+        or report.get("finishedAt")
+    )
+    seen_at = _clean_text(
+        detail.get("lastSeenInFetchAt")
+        or detail.get("listingCheckedAt")
+        or detail.get("lastCheckedAt")
+        or detail.get("lastRunAt")
+        or parent.get("lastRunAt")
+        or parent.get("lastCheckedAt")
+        or parent.get("lastSeenInFetchAt")
+        or observed_at
+    )
+    if status == "ok" and kept > 0:
+        health = "healthy"
+        health_reason = "last fetch kept jobs"
+        success_at = observed_at
+    elif status == "ok":
+        health = "warning"
+        health_reason = "latest fetch kept no jobs"
+        success_at = observed_at
+    else:
+        health = "broken"
+        health_reason = "latest fetch failed"
+        success_at = ""
+    row = {
+        "health": _clean_text(detail.get("health") or parent.get("health")) or health,
+        "healthReason": _clean_text(detail.get("healthReason") or parent.get("healthReason"))
+        or health_reason,
+        "lastStatus": status or _clean_text(parent.get("lastStatus")),
+        "lastRunAt": _clean_text(detail.get("lastRunAt") or parent.get("lastRunAt") or seen_at),
+        "lastCheckedAt": _clean_text(
+            detail.get("lastCheckedAt")
+            or detail.get("listingCheckedAt")
+            or parent.get("lastCheckedAt")
+            or seen_at
+        ),
+        "lastSuccessAt": _clean_text(detail.get("lastSuccessAt") or success_at),
+        "lastSuccessfulFetchAt": _clean_text(detail.get("lastSuccessfulFetchAt") or success_at),
+        "lastSeenInFetchAt": seen_at,
+        "lastKeptCount": kept,
+        "lastJobsKept": kept,
+        "lastJobsFound": fetched,
+        "failureCount": failure_count,
+        "consecutiveFailures": failure_count,
+        "zeroJobStreak": 0 if kept > 0 else _int_value(parent.get("zeroJobStreak")),
+        "consecutiveZeroKept": 0 if kept > 0 else _int_value(parent.get("consecutiveZeroKept")),
+    }
+    for key in ("sourceId", "name", "adapter", "studio", "providerUrl", "listingUrl"):
+        value = _clean_text(detail.get(key) or parent.get(key))
+        if value:
+            row[key] = value
+    return row
+
+
+def _timestamp_is_newer(candidate: Any, current: Any) -> bool:
+    candidate_text = _clean_text(candidate)
+    current_text = _clean_text(current)
+    return bool(candidate_text and (not current_text or candidate_text > current_text))
+
+
+def _merge_source_state_row_from_fetch_report(
+    existing: dict[str, Any], row: dict[str, Any]
+) -> dict[str, Any]:
+    if not (
+        _timestamp_is_newer(row.get("lastRunAt"), existing.get("lastRunAt"))
+        or _timestamp_is_newer(
+            row.get("lastSuccessfulFetchAt"), existing.get("lastSuccessfulFetchAt")
+        )
+        or _timestamp_is_newer(row.get("lastSeenInFetchAt"), existing.get("lastSeenInFetchAt"))
+    ):
+        return existing
+    merged = dict(existing)
+    for key in (
+        *SOURCE_HEALTH_FIELD_NAMES,
+        "lastJobsFound",
+        "sourceId",
+        "name",
+        "adapter",
+        "studio",
+        "providerUrl",
+        "listingUrl",
+    ):
+        value = row.get(key)
+        if value not in {"", None}:
+            merged[key] = value
+    return merged
+
+
+def _merge_fetch_report_source_details(
+    source_state_payload: Any, fetch_report_payload: Any
+) -> dict[str, Any]:
+    merged = dict(_as_dict(source_state_payload))
+    sources = dict(_as_dict(merged.get("sources")))
+    report = _as_dict(fetch_report_payload)
+    for parent_value in _as_list(report.get("sources")):
+        parent = _as_dict(parent_value)
+        if not parent:
+            continue
+        details = _as_list(parent.get("details")) or [parent]
+        for detail_value in details:
+            detail = _as_dict(detail_value)
+            if not detail:
+                continue
+            row = _fetch_report_source_state_row(detail, parent, report)
+            candidate_keys = [
+                _clean_text(row.get("sourceId")),
+                _clean_text(row.get("name")),
+            ]
+            for key in candidate_keys:
+                if not key:
+                    continue
+                if key in sources:
+                    sources[key] = _merge_source_state_row_from_fetch_report(sources[key], row)
+                else:
+                    sources[key] = row
+    merged["sources"] = sources
+    return merged
+
+
 def _adjudication_families_by_key(adjudication_payload: Any) -> dict[str, dict[str, Any]]:
     payload = _as_dict(adjudication_payload)
-    return {
-        _clean_text(row.get("familyKey")): row
-        for row in _as_list(payload.get("families"))
-        if isinstance(row, dict) and _clean_text(row.get("familyKey"))
-    }
+    by_key: dict[str, dict[str, Any]] = {}
+    observed_at = _clean_text(payload.get("finishedAt") or payload.get("startedAt"))
+    for row in _as_list(payload.get("families")):
+        if not isinstance(row, dict) or not _clean_text(row.get("familyKey")):
+            continue
+        family = dict(row)
+        if observed_at:
+            family["_observedAt"] = observed_at
+        by_key[_clean_text(row.get("familyKey"))] = family
+    return by_key
 
 
 def _adjudication_probe_by_source_id(family: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -546,20 +687,61 @@ def _adjudication_probe_by_source_id(family: dict[str, Any]) -> dict[str, dict[s
     }
 
 
+def _adjudication_probe_matches_for_rows(
+    rows: list[dict[str, Any]], probes: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    matches: dict[str, dict[str, Any]] = {}
+    unmatched_probe_ids = set(probes)
+    row_aliases = {
+        _row_identity(row): static_listing_url_aliases(row) for row in rows if _row_identity(row)
+    }
+    probe_aliases = {
+        probe_id: static_listing_url_aliases(probe)
+        for probe_id, probe in probes.items()
+        if probe_id
+    }
+    for row in rows:
+        row_id = _row_identity(row)
+        if not row_id:
+            continue
+        if row_id in probes:
+            matches[row_id] = probes[row_id]
+            unmatched_probe_ids.discard(row_id)
+            continue
+        aliases = row_aliases.get(row_id) or set()
+        if not aliases:
+            continue
+        alias_matches = [
+            probe_id
+            for probe_id in unmatched_probe_ids
+            if aliases & (probe_aliases.get(probe_id) or set())
+        ]
+        if len(alias_matches) == 1:
+            probe_id = alias_matches[0]
+            matches[row_id] = probes[probe_id]
+            unmatched_probe_ids.discard(probe_id)
+    if unmatched_probe_ids:
+        return {}
+    return matches
+
+
 def _adjudication_complete_for_rows(rows: list[dict[str, Any]], family: dict[str, Any]) -> bool:
     if _clean_text(family.get("status")).lower() in {"", "running", "failed"}:
         return False
     probes = _adjudication_probe_by_source_id(family)
     row_ids = {_row_identity(row) for row in rows if _row_identity(row)}
-    if not row_ids or set(probes) != row_ids:
+    probe_matches = _adjudication_probe_matches_for_rows(rows, probes)
+    if not row_ids or set(probe_matches) != row_ids:
         return False
     return all(
         _int_value(probe.get("httpStatus")) > 0 and not _clean_text(probe.get("error"))
-        for probe in probes.values()
+        for probe in probe_matches.values()
     )
 
 
-def _row_with_live_adjudication(row: dict[str, Any], probe: dict[str, Any]) -> dict[str, Any]:
+def _row_with_live_adjudication(
+    row: dict[str, Any], probe: dict[str, Any], *, observed_at: str = ""
+) -> dict[str, Any]:
     next_row = dict(row)
     if "jobsFound" in next_row or "sampleCount" in next_row:
         next_row["registryJobsFound"] = _jobs_found_count(next_row)
@@ -570,6 +752,24 @@ def _row_with_live_adjudication(row: dict[str, Any], probe: dict[str, Any]) -> d
     next_row["liveProbeOk"] = bool(probe.get("ok"))
     next_row["liveProbeHttpStatus"] = _int_value(probe.get("httpStatus"))
     next_row["liveProbeFinalUrl"] = _clean_text(probe.get("finalUrl"))
+    if observed_at:
+        next_row.setdefault("lastCheckedAt", observed_at)
+        next_row.setdefault("lastSeenInFetchAt", observed_at)
+        if probe.get("ok"):
+            next_row.setdefault("lastSuccessAt", observed_at)
+            next_row.setdefault("lastSuccessfulFetchAt", observed_at)
+    if probe.get("ok") and live_jobs > 0:
+        next_row.setdefault("lastStatus", "ok")
+        next_row.setdefault("health", "healthy")
+        next_row.setdefault("healthReason", "live adjudication found jobs")
+    elif probe.get("ok"):
+        next_row.setdefault("lastStatus", "ok")
+        next_row.setdefault("health", "warning")
+        next_row.setdefault("healthReason", "live adjudication found no jobs")
+    else:
+        next_row.setdefault("lastStatus", "error")
+        next_row.setdefault("health", "broken")
+        next_row.setdefault("healthReason", "live adjudication probe failed")
     return next_row
 
 
@@ -583,11 +783,13 @@ def _with_live_adjudication_card(
     if not _adjudication_complete_for_rows(rows, family):
         return {**card, "effectiveWinnerSource": "registry"}
     probes = _adjudication_probe_by_source_id(family)
+    probe_matches = _adjudication_probe_matches_for_rows(rows, probes)
     original_winner_id = _row_identity(_as_dict(card.get("winner")))
+    observed_at = _clean_text(family.get("_observedAt"))
     live_rows = [
-        _row_with_live_adjudication(row, probes[_row_identity(row)])
+        _row_with_live_adjudication(row, probe_matches[_row_identity(row)], observed_at=observed_at)
         for row in rows
-        if _row_identity(row) in probes
+        if _row_identity(row) in probe_matches
     ]
     recalculated = duplicate_family_conflict_cards(
         live_rows,
@@ -2047,7 +2249,14 @@ def load_registry_conflicts_payload(
     adjudication_payload: Any = None,
 ) -> dict[str, Any]:
     registry_state = load_state()
-    source_state_payload = load_json_object(source_state_path, {})
+    source_state_payload = read_pipeline_json_object(Path(source_state_path), {})
+    fetch_report_payload = load_json_object(
+        Path(source_state_path).with_name("jobs-fetch-report.json"), {}
+    )
+    source_state_payload = _merge_fetch_report_source_details(
+        source_state_payload,
+        fetch_report_payload,
+    )
     payload = derive_registry_conflict_queue(
         registry_state,
         source_state_payload,

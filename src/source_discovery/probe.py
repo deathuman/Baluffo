@@ -27,6 +27,9 @@ TryPlaywrightFn = Callable[[str, int], tuple[str, str]]
 
 
 _STATIC_DETAIL_PATH_RE = re.compile(r"(?i)/(?:jobs?|positions?|openings?|vacancies?)/[^/?#]+")
+_STATIC_LISTING_PATH_RE = re.compile(
+    r"(?i)/(?:careers?|jobs?|positions?|openings?|vacancies?|work-with-us|join-us)(?:/|$)"
+)
 _NO_OPENINGS_RE = re.compile(
     r"(?i)\b(?:no|not currently|currently no)\s+(?:open\s+)?(?:jobs?|roles?|positions?|vacancies?|openings?)\b"
 )
@@ -86,6 +89,27 @@ def _is_generic_application_link(label: str, parsed_path: str) -> bool:
     return any(token in text for token in _GENERIC_APPLICATION_TOKENS)
 
 
+def _is_same_listing_detail_link(base_url: str, absolute_url: str, label: str) -> bool:
+    base = urlparse(base_url or "")
+    parsed = urlparse(absolute_url or "")
+    if (parsed.scheme, parsed.netloc) != (base.scheme, base.netloc):
+        return False
+    base_path = (base.path or "/").rstrip("/")
+    for suffix in ("/index.html", "/index.htm"):
+        if base_path.lower().endswith(suffix):
+            base_path = base_path[: -len(suffix)].rstrip("/") or "/"
+            break
+    parsed_path = (parsed.path or "/").rstrip("/")
+    if not base_path or base_path == "/" or not _STATIC_LISTING_PATH_RE.search(base_path):
+        return False
+    if not parsed_path.startswith(f"{base_path}/"):
+        return False
+    detail_segment = parsed_path[len(base_path) + 1 :].strip("/").split("/", 1)[0]
+    if len(detail_segment) < 4:
+        return False
+    return len(str(label or "").split()) >= 2
+
+
 def _static_detail_links(text: str, base_url: str) -> tuple[str, ...]:
     links = _anchor_links(_visible_link_html(text))
     base = urlparse(base_url or "")
@@ -107,7 +131,9 @@ def _static_detail_links(text: str, base_url: str) -> tuple[str, ...]:
             continue
         if _is_generic_application_link(label, parsed.path):
             continue
-        if not _STATIC_DETAIL_PATH_RE.search(parsed.path):
+        if not _STATIC_DETAIL_PATH_RE.search(parsed.path) and not _is_same_listing_detail_link(
+            base_url, absolute, label
+        ):
             continue
         normalized = absolute.split("#", 1)[0]
         if normalized in seen:

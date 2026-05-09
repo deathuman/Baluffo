@@ -205,3 +205,89 @@ def test_registry_conflicts_payload_joins_source_health_aliases(admin_bridge_ent
     assert card["losers"][0]["actions"][0]["route"] == "/registry/approve"
     assert card["losers"][0]["actions"][1]["route"] == "/registry/reject"
     assert card["diffs"]
+
+
+def test_registry_conflicts_payload_enriches_provider_rows_from_fetch_report_details(
+    admin_bridge_entrypoint_root,
+):
+    source_state_path = Path(admin_bridge.JOBS_FETCH_REPORT_PATH).with_name(
+        "jobs-source-state.json"
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.ACTIVE_PATH,
+        [
+            {
+                "id": "smartrecruiters:company_id:epochgames",
+                "name": "Epoch Games (SmartRecruiters)",
+                "studio": "Epoch Games",
+                "adapter": "smartrecruiters",
+                "registryState": "active",
+                "jobsFound": 10,
+            },
+            {
+                "id": "static:listing_url:https://careers.smartrecruiters.com/epochgames",
+                "name": "Epoch Games (Sheet)",
+                "studio": "Epoch Games",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 13,
+            },
+        ],
+    )
+    admin_bridge.save_json_atomic(admin_bridge.PENDING_PATH, [])
+    admin_bridge.save_json_atomic(admin_bridge.REJECTED_PATH, [])
+    admin_bridge.save_json_atomic(
+        source_state_path,
+        {
+            "schemaVersion": 1,
+            "sources": {
+                "Epoch Games (SmartRecruiters)": {
+                    "health": "unknown",
+                    "lastRunAt": "2026-05-08T10:00:00Z",
+                    "lastSuccessfulFetchAt": "2026-04-10T10:00:00Z",
+                    "lastJobsKept": 0,
+                }
+            },
+        },
+    )
+    admin_bridge.save_json_atomic(
+        admin_bridge.JOBS_FETCH_REPORT_PATH,
+        {
+            "sources": [
+                {
+                    "adapter": "smartrecruiters",
+                    "status": "ok",
+                    "lastRunAt": "2026-05-09T10:00:00Z",
+                    "details": [
+                        {
+                            "adapter": "smartrecruiters",
+                            "status": "ok",
+                            "name": "Epoch Games (SmartRecruiters)",
+                            "studio": "Epoch Games",
+                            "providerUrl": (
+                                "https://api.smartrecruiters.com/v1/companies/EpochGames/postings"
+                            ),
+                            "fetchedCount": 10,
+                            "keptCount": 10,
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    payload = load_registry_conflicts_payload(
+        load_state=admin_bridge.load_state,
+        load_json_object=admin_bridge.load_json_object,
+        source_state_path=source_state_path,
+    )
+
+    provider = next(
+        row
+        for row in payload["conflicts"][0]["rows"]
+        if row["id"] == "smartrecruiters:company_id:epochgames"
+    )
+    assert provider["health"] == "healthy"
+    assert provider["healthReason"] == "last fetch kept jobs"
+    assert provider["lastSuccessfulFetchAt"] == "2026-05-09T10:00:00Z"
+    assert provider["lastJobsKept"] == 10

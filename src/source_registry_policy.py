@@ -272,8 +272,8 @@ def _duplicate_winner_score(
     return (
         0 if quarantined else 1,
         _row_jobs_evidence(row, state),
-        1 if row_status in {"ok", "success", "healthy"} else 0,
         _adapter_priority(row),
+        1 if row_status in {"ok", "success", "healthy"} else 0,
         _coerce_int(row.get("rankScore") or row.get("score"), 0),
         _metadata_score(row),
         source_identity(row),
@@ -305,8 +305,8 @@ def _duplicate_winner_score_payload(
     return {
         "quarantinePenalty": int(score[0]),
         "lastKeptCount": int(score[1]),
-        "statusScore": int(score[2]),
-        "adapterPriority": int(score[3]),
+        "adapterPriority": int(score[2]),
+        "statusScore": int(score[3]),
         "rankScore": int(score[4]),
         "metadataScore": int(score[5]),
         "identity": str(score[6]),
@@ -379,7 +379,7 @@ def _duplicate_winner_rationale(
         },
         {
             "label": "Adapter priority",
-            "value": f"{adapter} ({score[3]})",
+            "value": f"{adapter} ({score[2]})",
         },
         {
             "label": "Rank score",

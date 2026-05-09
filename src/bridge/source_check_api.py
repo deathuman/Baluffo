@@ -11,6 +11,7 @@ from src.bridge.registry_tombstones import is_tombstoned, load_tombstones
 from src.source_discovery.provider_migration_advisory import (
     stage_provider_candidates_from_advisories,
 )
+from src.source_registry_identity import provider_fields_from_row_identity
 from src.source_registry_state import transition_registry_to_pending
 
 
@@ -280,6 +281,8 @@ def _trigger_static_source_check(
 
 def _reconstruct_probe_candidate(row: dict[str, Any]) -> dict[str, Any]:
     reconstructed = dict(row)
+    for key, value in provider_fields_from_row_identity(reconstructed).items():
+        reconstructed.setdefault(key, value)
     adapter = str(reconstructed.get("adapter") or "").strip().lower()
     if adapter == "greenhouse" and not reconstructed.get("api_url") and reconstructed.get("slug"):
         reconstructed["api_url"] = (

@@ -314,6 +314,7 @@ def test_registry_conflicts_uses_complete_live_adjudication_counts_for_winner() 
         "rejected": [],
     }
     adjudication = {
+        "finishedAt": "2026-05-09T10:00:00Z",
         "families": [
             {
                 "familyKey": "azra games",
@@ -335,7 +336,7 @@ def test_registry_conflicts_uses_complete_live_adjudication_counts_for_winner() 
                     },
                 ],
             }
-        ]
+        ],
     }
 
     conflict = derive_registry_conflict_queue(state, adjudication_payload=adjudication)[
@@ -345,10 +346,15 @@ def test_registry_conflicts_uses_complete_live_adjudication_counts_for_winner() 
     assert conflict["winner"]["id"] == "greenhouse:slug:azragames"
     assert conflict["effectiveWinnerSource"] == "live_adjudication"
     assert conflict["liveAdjudicationComplete"] is True
+    assert conflict["winner"]["health"] == "healthy"
+    assert conflict["winner"]["healthReason"] == "live adjudication found jobs"
+    assert conflict["winner"]["lastSuccessfulFetchAt"] == "2026-05-09T10:00:00Z"
     loser = conflict["losers"][0]
     assert loser["registryJobsFound"] == 5
     assert loser["liveJobsFound"] == 0
     assert loser["jobsFound"] == 0
+    assert loser["health"] == "warning"
+    assert loser["healthReason"] == "live adjudication found no jobs"
 
 
 def test_registry_conflicts_safe_automation_promotes_pending_provider_with_more_jobs() -> None:

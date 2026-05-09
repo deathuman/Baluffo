@@ -2,8 +2,25 @@ from __future__ import annotations
 
 import src.admin_bridge as admin_bridge
 from src.bridge import html_extractor, source_checker
+from src.bridge.source_check_api import _reconstruct_probe_candidate
 from src.jobs.parsers import parse_jobpostings_from_html
 from src.source_registry import source_identity
+
+
+def test_provider_source_check_reconstructs_endpoint_from_compact_source_id() -> None:
+    row = {
+        "id": "smartrecruiters:company_id:cdprojektred",
+        "adapter": "smartrecruiters",
+        "name": "CD PROJEKT RED (SmartRecruiters)",
+    }
+
+    reconstructed = _reconstruct_probe_candidate(row)
+
+    assert reconstructed["company_id"] == "cdprojektred"
+    assert (
+        reconstructed["api_url"]
+        == "https://api.smartrecruiters.com/v1/companies/cdprojektred/postings"
+    )
 
 
 def test_static_source_check_does_not_count_empty_redirect_alternate_as_job() -> None:

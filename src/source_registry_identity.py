@@ -41,6 +41,36 @@ def ensure_source_id(row: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+_PROVIDER_ID_FIELDS_BY_ADAPTER = {
+    "greenhouse": {"slug"},
+    "lever": {"account"},
+    "smartrecruiters": {"company_id"},
+    "workable": {"account"},
+}
+
+
+def provider_fields_from_source_id(source_id: Any) -> dict[str, str]:
+    text = str(source_id or "").strip()
+    if not text:
+        return {}
+    parts = text.split(":", 2)
+    if len(parts) != 3:
+        return {}
+    adapter, field, value = (part.strip() for part in parts)
+    adapter = adapter.lower()
+    field = field.lower()
+    if field not in _PROVIDER_ID_FIELDS_BY_ADAPTER.get(adapter, set()):
+        return {}
+    value = value.strip()
+    if not value:
+        return {}
+    return {"adapter": adapter, field: value}
+
+
+def provider_fields_from_row_identity(row: dict[str, Any]) -> dict[str, str]:
+    return provider_fields_from_source_id(row.get("id") or row.get("sourceId"))
+
+
 def normalize_source_url(raw_url: str) -> str:
     text = str(raw_url or "").strip()
     if not text:
@@ -132,7 +162,7 @@ def static_listing_url_aliases(row: dict[str, Any]) -> set[str]:
     if str(row.get("adapter") or "").strip().lower() != "static":
         return set()
     aliases: set[str] = set()
-    for key in ("id", "sourceId", "listing_url", "careersUrl", "url"):
+    for key in ("id", "sourceId", "listing_url", "careersUrl", "url", "endpointUrl", "finalUrl"):
         value = str(row.get(key) or "").strip()
         if not value:
             continue

@@ -33,3 +33,14 @@ def test_static_listing_url_aliases_only_apply_to_static_rows() -> None:
         )
         == set()
     )
+
+
+def test_static_listing_url_aliases_include_probe_endpoint_urls() -> None:
+    assert sr.static_listing_url_aliases(
+        {
+            "adapter": "static",
+            "sourceId": "static:listing_url:https://studio.example/work-with-us/index.html",
+            "endpointUrl": "https://studio.example/work-with-us/index.html",
+            "finalUrl": "https://www.studio.example/work-with-us/#jobs",
+        }
+    ) == {"https://studio.example/work-with-us"}
