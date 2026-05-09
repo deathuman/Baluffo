@@ -242,6 +242,13 @@ SAFE_AUTO_DEMOTE_ACTIONS = {
 }
 SAFE_AUTO_DEMOTE_ROUTE = "/registry/conflicts/auto-demote-safe"
 SAFE_AUTO_DEMOTE_REASON = "registry_conflict_safe_auto_demote"
+ADJUDICATION_AUTO_DEMOTE_REASON = "registry_conflict_adjudication_auto_demote"
+RESOLVED_PENDING_DEMOTION_REASONS = frozenset(
+    {
+        SAFE_AUTO_DEMOTE_REASON,
+        ADJUDICATION_AUTO_DEMOTE_REASON,
+    }
+)
 
 _FIELD_LABELS = {
     "name": "Name",
@@ -1019,11 +1026,14 @@ def _source_identity_counts(rows: list[dict[str, Any]]) -> Counter[str]:
 def _is_safe_auto_demoted_pending(row: dict[str, Any]) -> bool:
     if _row_state(row) != "pending":
         return False
-    return SAFE_AUTO_DEMOTE_REASON in {
-        _clean_text(row.get("pendingReason")),
-        _clean_text(row.get("stateChangedBy")),
-        _clean_text(row.get("transitionReason")),
-    }
+    return bool(
+        RESOLVED_PENDING_DEMOTION_REASONS
+        & {
+            _clean_text(row.get("pendingReason")),
+            _clean_text(row.get("stateChangedBy")),
+            _clean_text(row.get("transitionReason")),
+        }
+    )
 
 
 def _safe_auto_demoted_pending_audit_row(row: dict[str, Any]) -> dict[str, Any]:

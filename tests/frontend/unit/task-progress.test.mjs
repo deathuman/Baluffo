@@ -79,3 +79,28 @@ test("formatTaskProgressCounts renders pipeline step and output counts", () => {
     "step 3/7 | output 256 (baseline 128)"
   );
 });
+
+test("formatTaskProgressCounts renders GameDevMap active audit subtask counts", () => {
+  assert.equal(
+    formatTaskProgressCounts("discovery", {
+      stageIndex: 7,
+      stageTotal: 11,
+      subtaskKey: "gamedevmap_active_audit",
+      subtaskLabel: "GameDevMap active audit",
+      activeAuditPhase: "recovery_wave1_fetch",
+      activeAuditCompletedUrls: 2000,
+      activeAuditTotalUrls: 7524,
+      activeAuditBatch: 2,
+      activeAuditPhaseCompleted: 1275,
+      activeAuditPhaseTotal: 1277,
+      generatedCandidates: 0,
+      foundEndpoints: 0,
+      survivedDedupeCandidates: 0,
+      probedCandidates: 0,
+      queuedCandidates: 0,
+      deferredCandidates: 0,
+      failedProbes: 0
+    }),
+    "stage 7/11 | GameDevMap active audit | batch 2 | 2.000/7.524 URLs | recovery wave1 fetch 1.275/1.277 | generated 0 | endpoints 0 | survived 0 | probed 0 | queued 0 | deferred 0 | failed 0"
+  );
+});

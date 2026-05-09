@@ -247,6 +247,42 @@ def build_discovery_recent_events(
         stage_tail = (
             f" ({stage_index}/{stage_total} stages)" if stage_index > 0 and stage_total > 0 else ""
         )
+        subtask_key = str(counts.get("subtaskKey") or "").strip()
+        if subtask_key == "gamedevmap_active_audit":
+            subtask_label = str(counts.get("subtaskLabel") or "GameDevMap active audit").strip()
+            audit_phase = str(counts.get("activeAuditPhase") or "").strip().replace("_", " ")
+            audit_completed = _ops_live_payload.coerce_non_negative_int(
+                counts.get("activeAuditCompletedUrls")
+            )
+            audit_total = _ops_live_payload.coerce_non_negative_int(
+                counts.get("activeAuditTotalUrls")
+            )
+            audit_batch = _ops_live_payload.coerce_non_negative_int(counts.get("activeAuditBatch"))
+            phase_completed = _ops_live_payload.coerce_non_negative_int(
+                counts.get("activeAuditPhaseCompleted")
+            )
+            phase_total = _ops_live_payload.coerce_non_negative_int(
+                counts.get("activeAuditPhaseTotal")
+            )
+            audit_tail = f"{audit_completed}/{audit_total} URLs" if audit_total > 0 else "preparing"
+            batch_tail = f", batch {audit_batch}" if audit_batch > 0 else ""
+            phase_tail = (
+                f", {audit_phase} {phase_completed}/{phase_total}"
+                if audit_phase and phase_total > 0
+                else (f", {audit_phase}" if audit_phase else "")
+            )
+            events = append_live_task_event(
+                events,
+                {
+                    "timestamp": heartbeat_at,
+                    "level": "muted",
+                    "taskType": "discovery",
+                    "runId": run_id,
+                    "phaseKey": str(task_progress.get("phaseKey") or ""),
+                    "message": f"{subtask_label}{batch_tail}: {audit_tail}{phase_tail}.",
+                },
+            )
+            return events
         events = append_live_task_event(
             events,
             {

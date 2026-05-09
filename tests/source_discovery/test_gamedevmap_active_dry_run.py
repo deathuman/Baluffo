@@ -5,6 +5,7 @@ from pathlib import Path
 
 from src.source_discovery import active_audit_runtime, recovery_url_planner
 from src.source_discovery import gamedevmap_active_dry_run as dry_run
+from src.source_discovery.config import DEFAULT_DISCOVERY_CONFIG
 from src.source_discovery.directory_page_recovery import (
     build_recovery_fetch_job,
     dedupe_recovery_fetch_jobs,
@@ -601,6 +602,61 @@ def test_gamedevmap_default_discovery_refreshes_missing_audit_artifact() -> None
 
     assert len(provider_rows) == 1
     assert len(static_rows) == 1
+
+
+def test_gamedevmap_default_active_audit_batch_size_is_1000() -> None:
+    assert DEFAULT_DISCOVERY_CONFIG["gamedevmap"]["activeAuditBatchSize"] == 1000
+
+
+def test_gamedevmap_source_audit_cache_hit_tolerates_legacy_batch_size_signature() -> None:
+    with workspace_tmpdir("gamedevmap-batch-size-signature-cache") as root:
+        output_path = root / "gamedevmap-active-source-dry-run.json"
+        config = _config(activeAuditBatchSize=1000)
+        _write_audit_artifact(output_path, config=config)
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        payload["runtime"]["configSignature"]["activeAuditBatchSize"] = 250
+        output_path.write_text(json.dumps(payload), encoding="utf-8")
+        calls: list[str] = []
+
+        artifact, cache_hit = sd.run_gamedevmap_source_audit(
+            timeout_s=5,
+            config=config,
+            fetcher=_fetcher(_payloads(), calls),
+            output_path=output_path,
+            max_batches=1,
+        )
+
+    assert cache_hit is True
+    assert calls == []
+    assert artifact["runtime"]["configSignature"]["activeAuditBatchSize"] == 250
+
+
+def test_gamedevmap_active_audit_reports_subtask_progress() -> None:
+    with workspace_tmpdir("gamedevmap-subtask-progress") as root:
+        progress_events: list[dict[str, object]] = []
+
+        sd.run_gamedevmap_active_source_dry_run(
+            timeout_s=5,
+            config=_config(),
+            fetcher=_fetcher(_payloads()),
+            output_path=root / "dry-run.json",
+            batch_size=1000,
+            max_batches=1,
+            reset=True,
+            progress_callback=progress_events.append,
+        )
+
+    assert progress_events
+    assert any(
+        ((event.get("counts") or {}).get("activeAuditPhase") == "batch_start")
+        for event in progress_events
+        if isinstance(event.get("counts"), dict)
+    )
+    latest_counts = progress_events[-1]["counts"]
+    assert isinstance(latest_counts, dict)
+    assert latest_counts["subtaskKey"] == "gamedevmap_active_audit"
+    assert latest_counts["activeAuditBatchSize"] == 1000
+    assert latest_counts["activeAuditTotalUrls"] == 4
 
 
 def test_gamedevmap_source_audit_resets_stale_signature_artifact() -> None:

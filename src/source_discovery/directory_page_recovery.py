@@ -471,6 +471,7 @@ def fetch_recovery_jobs(
     progress_label: str,
     recovery_cache: dict[str, dict[str, Any]],
     fetch_pages: Any = fetch_directory_pages,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[list[dict[str, Any]], int, int]:
     deduped_jobs = dedupe_recovery_fetch_jobs(jobs)
     cached_results: list[dict[str, Any]] = []
@@ -489,6 +490,7 @@ def fetch_recovery_jobs(
         total_concurrency=total_concurrency,
         per_host_concurrency=per_host_concurrency,
         progress_label=progress_label,
+        progress_callback=progress_callback,
     )
     for result in fetched_results:
         url = str(result.get("url") or "").strip()
@@ -503,6 +505,43 @@ def fetch_recovery_jobs(
     return [*cached_results, *fetched_results], len(deduped_jobs), len(fetch_jobs)
 
 
+@dataclass
+class _RecoveryApplicationProgress:
+    label: str
+    total_results: int
+    report_every: int
+    callback: Callable[[dict[str, Any]], None] | None = None
+    processed_payloads: int = 0
+    last_reported_at: float = field(default_factory=time.perf_counter)
+
+    def emit(self, completed_results: int, *, force: bool = False) -> None:
+        if not self.label or self._skip_report(completed_results, force=force):
+            return
+        self.last_reported_at = time.perf_counter()
+        from .reporting import emit_log
+
+        emit_log(
+            f"{self.label}: analyzed {completed_results}/{self.total_results} pages, "
+            f"{self.processed_payloads} recovery payloads."
+        )
+        if self.callback is not None:
+            self.callback(
+                {
+                    "completed": completed_results,
+                    "total": self.total_results,
+                    "payloads": self.processed_payloads,
+                    "label": self.label,
+                }
+            )
+
+    def _skip_report(self, completed_results: int, *, force: bool) -> bool:
+        if force:
+            return False
+        if self.report_every and completed_results % self.report_every != 0:
+            return True
+        return time.perf_counter() - self.last_reported_at < 1
+
+
 def apply_recovery_fetch_results(
     recovery_fetch_results: list[dict[str, Any]],
     *,
@@ -510,8 +549,19 @@ def apply_recovery_fetch_results(
     finalize: bool = True,
     apply_payload: RecoveryPayloadApplier,
     finalize_group: RecoveryGroupFinalizer,
+    progress_label: str = "",
+    progress_every: int = 25,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> DirectoryRecoveryApplicationResult:
     output = DirectoryRecoveryApplicationResult(grouped=grouped or {})
+    total_results = len(recovery_fetch_results)
+    progress = _RecoveryApplicationProgress(
+        label=str(progress_label or "").strip(),
+        total_results=total_results,
+        report_every=max(0, int(progress_every or 0)),
+        callback=progress_callback,
+    )
+
     for result in recovery_fetch_results:
         requests = recovery_requests_from_result(result)
         if not bool(result.get("ok")):
@@ -528,11 +578,14 @@ def apply_recovery_fetch_results(
                 output.provider_candidates,
                 output.static_candidates,
             )
+            progress.processed_payloads += 1
             if recovered_homepage:
                 output.recovered_homepages.add(recovered_homepage)
+        progress.emit(output.pages_fetched + len(output.failures))
     if finalize:
         for group in output.grouped.values():
             output.rejected_rows.extend(finalize_group(group))
+    progress.emit(total_results, force=True)
     return output
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -88,6 +89,8 @@ class DiscoveryRunState:
     failed_probe_records: list[dict[str, Any]] = field(default_factory=list)
     gamedevmap_audit_summary: dict[str, Any] = field(default_factory=dict)
     directory_audit_summaries: dict[str, dict[str, Any]] = field(default_factory=dict)
+    subtask_progress_last_written_mono: float = 0.0
+    subtask_progress_last_phase: str = ""
 
     def total_duration_ms(self, deps: DiscoveryRunDeps) -> int:
         import time
@@ -146,5 +149,37 @@ class DiscoveryRunState:
                 "pending": str(source_registry_module.PENDING_PATH),
                 "urlPatches": str(source_registry_module.URL_PATCH_MANIFEST_PATH),
             },
+            save_json_atomic_fn=root.save_json_atomic,
+        )
+
+    def write_subtask_progress_report(
+        self,
+        *,
+        phase: str,
+        phase_label: str,
+        progress: dict[str, Any],
+        deps: DiscoveryRunDeps,
+        root: Any,
+        force: bool = False,
+    ) -> None:
+        phase_token = str(
+            progress.get("phaseKey") or progress.get("activeAuditPhase") or ""
+        ).strip()
+        now_mono = time.perf_counter()
+        if (
+            not force
+            and phase_token == self.subtask_progress_last_phase
+            and now_mono - self.subtask_progress_last_written_mono < 1.0
+        ):
+            return
+        self.subtask_progress_last_phase = phase_token
+        self.subtask_progress_last_written_mono = now_mono
+        root.update_discovery_subtask_progress_report(
+            report_write_path=root._discovery_report_write_path(),
+            run_id=deps.run_id,
+            phase=phase,
+            phase_label=phase_label,
+            subtask_progress=progress,
+            load_json_object_fn=source_registry_module.load_json_object,
             save_json_atomic_fn=root.save_json_atomic,
         )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 from src.contracts import SCHEMA_VERSION
@@ -420,3 +421,72 @@ def write_discovery_progress_report(
             "outputs": outputs,
         },
     )
+
+
+def update_discovery_subtask_progress_report(
+    *,
+    report_write_path: Path,
+    run_id: str,
+    phase: str,
+    phase_label: str,
+    subtask_progress: dict[str, Any],
+    load_json_object_fn,
+    save_json_atomic_fn,
+    now_iso_fn=now_iso,
+) -> None:
+    existing = load_json_object_fn(report_write_path, {})
+    report = dict(existing) if isinstance(existing, dict) else {}
+    existing_run_id = str(report.get("runId") or "").strip()
+    expected_run_id = str(run_id or "").strip()
+    if expected_run_id and existing_run_id and existing_run_id != expected_run_id:
+        return
+
+    heartbeat_at = now_iso_fn()
+    summary = as_json_object(report.get("summary"))
+    runtime = as_json_object(report.get("runtime"))
+    lifecycle = as_json_object(runtime.get("lifecycle"))
+    task_progress = as_json_object(report.get("taskProgress"))
+    counts = as_json_object(task_progress.get("counts"))
+    subtask_counts = as_json_object(subtask_progress.get("counts"))
+
+    total_urls = int(subtask_counts.get("activeAuditTotalUrls") or 0)
+    completed_urls = int(subtask_counts.get("activeAuditCompletedUrls") or 0)
+    mode = "determinate" if total_urls > 0 else "indeterminate"
+    ratio = max(0.0, min(1.0, completed_urls / max(1, total_urls))) if total_urls > 0 else 0.0
+    phase_key = str(subtask_progress.get("phaseKey") or phase or "").strip() or "scanning_sources"
+    phase_text = str(subtask_progress.get("phaseLabel") or phase_label or "").strip()
+    if not phase_text:
+        phase_text = str(task_progress.get("phaseLabel") or "Scanning GameDevMap directory").strip()
+    target_label = str(subtask_progress.get("targetLabel") or "").strip()
+
+    runtime["lifecycle"] = {
+        **lifecycle,
+        "owner": str(lifecycle.get("owner") or "discovery_report"),
+        "heartbeatAt": heartbeat_at,
+    }
+    report["runtime"] = runtime
+    report["summary"] = {
+        **summary,
+        "phase": str(phase or summary.get("phase") or "").strip(),
+        "phaseLabel": str(phase_label or summary.get("phaseLabel") or "").strip(),
+    }
+    report["taskProgress"] = {
+        **task_progress,
+        "active": True,
+        "phaseKey": phase_key,
+        "phaseLabel": phase_text,
+        "mode": mode,
+        "ratio": ratio,
+        "targetLabel": target_label or str(task_progress.get("targetLabel") or "").strip(),
+        "targetUrl": str(
+            subtask_progress.get("targetUrl") or task_progress.get("targetUrl") or ""
+        ).strip(),
+        "updatedAt": heartbeat_at,
+        "counts": {
+            **counts,
+            **subtask_counts,
+        },
+    }
+    if expected_run_id and not existing_run_id:
+        report["runId"] = expected_run_id
+    save_json_atomic_fn(report_write_path, report)

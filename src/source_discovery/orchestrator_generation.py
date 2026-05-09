@@ -527,13 +527,26 @@ def _run_gameprog_stage(
     )
 
 
-def _scan_gamedevmap(*, orchestrator: Any, deps: DiscoveryRunDeps) -> ProviderStaticScanRows:
+def _scan_gamedevmap(
+    *, orchestrator: Any, deps: DiscoveryRunDeps, state: DiscoveryRunState
+) -> ProviderStaticScanRows:
+    def _progress(progress: dict[str, Any]) -> None:
+        state.write_subtask_progress_report(
+            phase="scanning_sources",
+            phase_label="Scanning GameDevMap directory",
+            progress=progress,
+            deps=deps,
+            root=orchestrator,
+            force=bool(progress.get("force")),
+        )
+
     return cast(
         ProviderStaticScanRows,
         orchestrator.discover_gamedevmap_candidates(
             deps.timeout_s,
             config=deps.effective_config,
             fetcher=deps.fetcher,
+            progress_callback=_progress,
         ),
     )
 
@@ -565,7 +578,7 @@ def _run_gamedevmap_stage(
         start_log="Scanning GameDevMap directory for discoverable studios.",
         complete_log_prefix="GameDevMap scan complete",
         disabled_log="GameDevMap stage disabled, skipping.",
-        scan=lambda: _scan_gamedevmap(orchestrator=orchestrator, deps=deps),
+        scan=lambda: _scan_gamedevmap(orchestrator=orchestrator, deps=deps, state=state),
         provider_stream="web_provider",
         static_stream="generic_static",
         route_failures=lambda _provider, _static, failures: state.web_failures.extend(failures),

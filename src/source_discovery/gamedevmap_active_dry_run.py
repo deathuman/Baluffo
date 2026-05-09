@@ -3,6 +3,8 @@ from __future__ import annotations
 """Resumable GameDevMap active-source dry-run reporting."""
 
 import asyncio
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -949,6 +951,8 @@ def _append_analyzed_candidates(
     provider_candidates: list[dict[str, Any]],
     static_candidates: list[dict[str, Any]],
 ) -> bool:
+    if len(html) > 1_000_000:
+        html = f"{html[:500_000]}\n{html[-500_000:]}"
     outcome = _gamedevmap_page_outcome(
         page_url=page_url,
         html=html,
@@ -1177,6 +1181,8 @@ def _apply_recovery_results(
     index_url: str,
     grouped: dict[str, dict[str, Any]] | None = None,
     finalize: bool = True,
+    progress_label: str = "",
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -1222,6 +1228,8 @@ def _apply_recovery_results(
         finalize=finalize,
         apply_payload=apply_payload,
         finalize_group=finalize_group,
+        progress_label=progress_label,
+        progress_callback=progress_callback,
     )
 
     return (
@@ -1388,6 +1396,7 @@ def _fetch_gamedevmap_active_homepages(
     fetcher,
     total_concurrency: int,
     per_host_concurrency: int,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     return fetch_directory_pages(
         timeout_s,
@@ -1405,6 +1414,20 @@ def _fetch_gamedevmap_active_homepages(
         total_concurrency=total_concurrency,
         per_host_concurrency=per_host_concurrency,
         progress_label="GameDevMap active dry run homepage fetch",
+        progress_callback=(
+            (
+                lambda progress: progress_callback(
+                    {
+                        "phase": "homepage_fetch",
+                        "phaseLabel": "Fetching studio homepages",
+                        "phaseCompleted": progress.get("completed"),
+                        "phaseTotal": progress.get("total"),
+                    }
+                )
+            )
+            if progress_callback is not None
+            else None
+        ),
     )
 
 
@@ -1446,7 +1469,9 @@ def _fetch_gamedevmap_active_recovery(
     total_concurrency: int,
     per_host_concurrency: int,
     recovery_cache: dict[str, dict[str, Any]],
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> active_audit_runtime.ActiveAuditRecoveryFetchResult:
+    phase = "recovery_wave2_fetch" if "wave 2" in progress_label.lower() else "recovery_wave1_fetch"
     results, unique_jobs, network_jobs = directory_recovery_helpers.fetch_recovery_jobs(
         timeout_s,
         jobs,
@@ -1456,6 +1481,20 @@ def _fetch_gamedevmap_active_recovery(
         progress_label=progress_label,
         recovery_cache=recovery_cache,
         fetch_pages=fetch_directory_pages,
+        progress_callback=(
+            (
+                lambda progress: progress_callback(
+                    {
+                        "phase": phase,
+                        "phaseLabel": progress_label,
+                        "phaseCompleted": progress.get("completed"),
+                        "phaseTotal": progress.get("total"),
+                    }
+                )
+            )
+            if progress_callback is not None
+            else None
+        ),
     )
     return active_audit_runtime.ActiveAuditRecoveryFetchResult(
         results=results,
@@ -1468,9 +1507,16 @@ def _apply_gamedevmap_active_recovery(
     recovery_fetch_results: list[dict[str, Any]],
     grouped: dict[str, Any] | None,
     finalize: bool,
+    progress_label: str,
     *,
     index_url: str,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> active_audit_runtime.ActiveAuditRecoveryApplicationResult:
+    phase = (
+        "recovery_wave2_analysis"
+        if "wave 2" in progress_label.lower()
+        else "recovery_wave1_analysis"
+    )
     (
         recovery_provider_rows,
         recovery_static_rows,
@@ -1484,6 +1530,22 @@ def _apply_gamedevmap_active_recovery(
         index_url=index_url,
         grouped=grouped,
         finalize=finalize,
+        progress_label=progress_label,
+        progress_callback=(
+            (
+                lambda progress: progress_callback(
+                    {
+                        "phase": phase,
+                        "phaseLabel": progress_label,
+                        "phaseCompleted": progress.get("completed"),
+                        "phaseTotal": progress.get("total"),
+                        "recoveryPayloads": progress.get("payloads"),
+                    }
+                )
+            )
+            if progress_callback is not None
+            else None
+        ),
     )
     return active_audit_runtime.ActiveAuditRecoveryApplicationResult(
         provider_candidates=recovery_provider_rows,
@@ -1531,6 +1593,7 @@ def _build_gamedevmap_active_batch_strategy(
     recovery_fetch_concurrency: int,
     recovery_per_host_concurrency: int,
     recovery_cache: dict[str, dict[str, Any]],
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> active_audit_runtime.ActiveAuditBatchStrategy:
     return active_audit_runtime.build_active_audit_batch_strategy(
         prepare_rows=lambda rows: _prepare_gamedevmap_active_batch_rows(
@@ -1543,6 +1606,7 @@ def _build_gamedevmap_active_batch_strategy(
             fetcher=fetcher,
             total_concurrency=homepage_fetch_concurrency,
             per_host_concurrency=per_host_concurrency,
+            progress_callback=progress_callback,
         ),
         analyze_homepages=lambda results: _analyze_gamedevmap_active_homepages(
             results,
@@ -1556,12 +1620,15 @@ def _build_gamedevmap_active_batch_strategy(
             total_concurrency=recovery_fetch_concurrency,
             per_host_concurrency=recovery_per_host_concurrency,
             recovery_cache=recovery_cache,
+            progress_callback=progress_callback,
         ),
-        apply_recovery=lambda results, grouped, finalize: _apply_gamedevmap_active_recovery(
+        apply_recovery=lambda results, grouped, finalize, label: _apply_gamedevmap_active_recovery(
             results,
             grouped,
             finalize,
+            label,
             index_url=index_url,
+            progress_callback=progress_callback,
         ),
         recovery_homepage_key=lambda job: str(
             _as_dict(job.get("payload")).get("homepageUrl") or ""
@@ -1607,6 +1674,7 @@ def _build_gamedevmap_active_batch_strategy(
             artifact,
             batch_timing,
         ),
+        progress_callback=progress_callback,
     )
 
 
@@ -1619,6 +1687,7 @@ def _build_gamedevmap_active_loop_strategy(
     completed_urls: set[str],
     compare_artifact_path: Path | str | None,
     batch_strategy: active_audit_runtime.ActiveAuditBatchStrategy,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> active_audit_runtime.ActiveAuditLoopStrategy:
     return active_audit_runtime.build_active_audit_loop_strategy(
         artifact=artifact,
@@ -1647,7 +1716,65 @@ def _build_gamedevmap_active_loop_strategy(
                 completed_urls=identities,
             ),
         ),
+        progress_callback=progress_callback,
     )
+
+
+def _build_gamedevmap_subtask_progress_callback(
+    *,
+    artifact: dict[str, Any],
+    representative_rows: list[dict[str, Any]],
+    completed_urls: set[str],
+    batch_size: int,
+    progress_callback: Callable[[dict[str, Any]], None] | None,
+) -> Callable[[dict[str, Any]], None] | None:
+    if progress_callback is None:
+        return None
+
+    total_urls = len(representative_rows)
+
+    def _callback(event: dict[str, Any]) -> None:
+        progress = _as_dict(artifact.get("progress"))
+        summary = _as_dict(artifact.get("summary"))
+        phase = str(event.get("phase") or "audit").strip()
+        phase_label = str(event.get("phaseLabel") or "GameDevMap active audit").strip()
+        completed = _safe_int(event.get("completed"), len(completed_urls))
+        if completed <= 0:
+            completed = _safe_int(progress.get("completedUrlsCount"), len(completed_urls))
+        total = _safe_int(event.get("total"), total_urls) or total_urls
+        phase_completed = _safe_int(event.get("phaseCompleted"), 0)
+        phase_total = _safe_int(event.get("phaseTotal"), 0)
+        counts = {
+            "subtaskKey": "gamedevmap_active_audit",
+            "subtaskLabel": "GameDevMap active audit",
+            "activeAuditPhase": phase,
+            "activeAuditCompletedUrls": completed,
+            "activeAuditTotalUrls": total,
+            "activeAuditBatch": _safe_int(event.get("batch"), 0),
+            "activeAuditBatchSize": int(batch_size),
+            "activeAuditBatchRows": _safe_int(event.get("batchRows"), 0),
+            "activeAuditCursor": _safe_int(event.get("cursor"), 0),
+            "activeAuditPhaseCompleted": phase_completed,
+            "activeAuditPhaseTotal": phase_total,
+            "activeAuditHomepageFetched": _safe_int(summary.get("homepagesFetched"), 0),
+            "activeAuditRecoveryFetched": _safe_int(summary.get("recoveryNetworkFetchAttempts"), 0),
+            "activeAuditRecoveryAnalyzed": _safe_int(summary.get("recoveryPagesFetched"), 0),
+            "activeAuditCandidates": len(_as_list(artifact.get("allCandidates"))),
+            "activeAuditFailures": len(_as_list(artifact.get("failures"))),
+        }
+        if "recoveryPayloads" in event:
+            counts["activeAuditRecoveryPayloads"] = _safe_int(event.get("recoveryPayloads"), 0)
+        progress_callback(
+            {
+                "phaseKey": "scanning_sources",
+                "phaseLabel": "Scanning GameDevMap directory",
+                "targetLabel": phase_label,
+                "counts": counts,
+                "force": bool(event.get("force")),
+            }
+        )
+
+    return _callback
 
 
 def run_gamedevmap_active_source_dry_run(
@@ -1663,6 +1790,7 @@ def run_gamedevmap_active_source_dry_run(
     max_batches: int = 0,
     rerun_reasons: str | list[str] | tuple[str, ...] | None = None,
     compare_artifact_path: Path | str | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     started = str(started_at or now_iso())
     cfg = dict(
@@ -1671,7 +1799,7 @@ def run_gamedevmap_active_source_dry_run(
     cfg["enabled"] = True
     csv_url = str(cfg.get("csvUrl") or GAMEDEVMAP_CSV_URL).strip() or GAMEDEVMAP_CSV_URL
     index_url = str(cfg.get("indexUrl") or GAMEDEVMAP_INDEX_URL).strip() or GAMEDEVMAP_INDEX_URL
-    batch_size = max(1, int(batch_size or 250))
+    batch_size = max(1, int(batch_size or 1000))
     max_batches = max(0, int(max_batches or 0))
     parsed_rerun_reasons = set() if reset else _parse_rerun_reasons(rerun_reasons)
     fetch_concurrency, per_host_concurrency = resolve_directory_fetch_limits(cfg)
@@ -1746,6 +1874,23 @@ def run_gamedevmap_active_source_dry_run(
         artifact["progress"] = progress
 
     recovery_cache: dict[str, dict[str, Any]] = {}
+    subtask_progress_callback = _build_gamedevmap_subtask_progress_callback(
+        artifact=artifact,
+        representative_rows=representative_rows,
+        completed_urls=completed_urls,
+        batch_size=batch_size,
+        progress_callback=progress_callback,
+    )
+    if subtask_progress_callback is not None:
+        subtask_progress_callback(
+            {
+                "phase": "audit_setup",
+                "phaseLabel": "Preparing GameDevMap active audit",
+                "completed": len(completed_urls),
+                "total": len(representative_rows),
+                "force": True,
+            }
+        )
     batch_strategy = _build_gamedevmap_active_batch_strategy(
         artifact=artifact,
         index_url=index_url,
@@ -1757,6 +1902,7 @@ def run_gamedevmap_active_source_dry_run(
         recovery_fetch_concurrency=recovery_fetch_concurrency,
         recovery_per_host_concurrency=recovery_per_host_concurrency,
         recovery_cache=recovery_cache,
+        progress_callback=subtask_progress_callback,
     )
     loop_strategy = _build_gamedevmap_active_loop_strategy(
         artifact=artifact,
@@ -1766,6 +1912,7 @@ def run_gamedevmap_active_source_dry_run(
         completed_urls=completed_urls,
         compare_artifact_path=compare_artifact_path,
         batch_strategy=batch_strategy,
+        progress_callback=subtask_progress_callback,
     )
 
     active_audit_runtime.run_active_audit_loop(
@@ -1778,6 +1925,16 @@ def run_gamedevmap_active_source_dry_run(
     )
 
     emit_log(f"GameDevMap active-source dry run written to {output_path}.")
+    if subtask_progress_callback is not None:
+        subtask_progress_callback(
+            {
+                "phase": "audit_complete",
+                "phaseLabel": "Completed GameDevMap active audit",
+                "completed": len(completed_urls),
+                "total": len(representative_rows),
+                "force": True,
+            }
+        )
     return artifact
 
 
@@ -1787,6 +1944,44 @@ def _active_audit_ttl_minutes(cfg: dict[str, Any]) -> int:
         return max(0, int(raw))
     except (TypeError, ValueError):
         return 360
+
+
+def _gamedevmap_artifact_signature_matches(
+    artifact: dict[str, Any],
+    *,
+    expected_signature: dict[str, Any],
+) -> bool:
+    if int(artifact.get("schemaVersion") or 0) != int(DRY_RUN_SCHEMA_VERSION):
+        return False
+    existing = _as_dict(_as_dict(artifact.get("runtime")).get("configSignature"))
+    if existing == expected_signature:
+        return True
+    existing_without_chunking = dict(existing)
+    expected_without_chunking = dict(expected_signature)
+    existing_without_chunking.pop("activeAuditBatchSize", None)
+    expected_without_chunking.pop("activeAuditBatchSize", None)
+    return existing_without_chunking == expected_without_chunking
+
+
+def _gamedevmap_artifact_is_fresh(
+    artifact: dict[str, Any],
+    *,
+    expected_signature: dict[str, Any],
+    ttl_minutes: int,
+) -> bool:
+    if not bool(_as_dict(artifact.get("progress")).get("complete")):
+        return False
+    if not _gamedevmap_artifact_signature_matches(
+        artifact,
+        expected_signature=expected_signature,
+    ):
+        return False
+    if ttl_minutes <= 0:
+        return False
+    updated_at = audit_ledger.parse_artifact_time(
+        artifact.get("updatedAt") or artifact.get("finishedAt")
+    )
+    return bool(updated_at and datetime.now(UTC) - updated_at <= timedelta(minutes=ttl_minutes))
 
 
 def run_gamedevmap_source_audit(
@@ -1800,6 +1995,7 @@ def run_gamedevmap_source_audit(
     reset: bool = False,
     max_batches: int | None = None,
     rerun_reasons: str | list[str] | tuple[str, ...] | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[dict[str, Any], bool]:
     cfg = dict(
         _gamedevmap_config_value(config, "gamedevmap", DEFAULT_DISCOVERY_CONFIG["gamedevmap"])
@@ -1810,19 +2006,46 @@ def run_gamedevmap_source_audit(
     batch_size = max(1, int(cfg.get("activeAuditBatchSize") or 1000))
     configured_max_batches = max(0, int(cfg.get("activeAuditMaxBatchesPerDiscoveryRun") or 0))
     effective_max_batches = configured_max_batches if max_batches is None else max(0, max_batches)
+    expected_signature = _gamedevmap_cache_signature(cfg)
+
+    def _emit_cache_hit_progress(artifact: dict[str, Any]) -> str:
+        if progress_callback is not None:
+            summary = _as_dict(artifact.get("summary"))
+            completed = _safe_int(summary.get("completedUrls"), 0)
+            if completed <= 0:
+                completed = len(_as_list(artifact.get("completedUrls")))
+            progress_callback(
+                {
+                    "phaseKey": "scanning_sources",
+                    "phaseLabel": "Scanning GameDevMap directory",
+                    "targetLabel": "GameDevMap active audit cache hit",
+                    "counts": {
+                        "subtaskKey": "gamedevmap_active_audit",
+                        "subtaskLabel": "GameDevMap active audit",
+                        "activeAuditPhase": "cache_hit",
+                        "activeAuditCompletedUrls": completed,
+                        "activeAuditTotalUrls": completed,
+                        "activeAuditBatch": 0,
+                        "activeAuditBatchSize": batch_size,
+                        "activeAuditCandidates": len(_as_list(artifact.get("allCandidates"))),
+                        "activeAuditFailures": len(_as_list(artifact.get("failures"))),
+                    },
+                    "force": True,
+                }
+            )
+        return f"GameDevMap active-source audit cache hit: {output_path}."
+
     return active_audit_runtime.run_active_audit_cache(
         reset=reset,
         has_rerun_reasons=bool(parsed_rerun_reasons),
         load_artifact=lambda: source_registry_module.load_json_object(output_path, {}),
-        signature_matches=lambda artifact: audit_ledger.artifact_signature_matches(
+        signature_matches=lambda artifact: _gamedevmap_artifact_signature_matches(
             artifact,
-            schema_version=DRY_RUN_SCHEMA_VERSION,
-            expected_signature=_gamedevmap_cache_signature(cfg),
+            expected_signature=expected_signature,
         ),
-        is_fresh=lambda artifact: audit_ledger.artifact_is_fresh(
+        is_fresh=lambda artifact: _gamedevmap_artifact_is_fresh(
             artifact,
-            schema_version=DRY_RUN_SCHEMA_VERSION,
-            expected_signature=_gamedevmap_cache_signature(cfg),
+            expected_signature=expected_signature,
             ttl_minutes=_active_audit_ttl_minutes(cfg),
         ),
         refresh=lambda effective_reset: run_gamedevmap_active_source_dry_run(
@@ -1836,8 +2059,9 @@ def run_gamedevmap_source_audit(
             reset=effective_reset,
             max_batches=effective_max_batches,
             rerun_reasons=rerun_reasons,
+            progress_callback=progress_callback,
         ),
-        cache_hit_log=lambda _artifact: f"GameDevMap active-source audit cache hit: {output_path}.",
+        cache_hit_log=_emit_cache_hit_progress,
         emit_log_fn=emit_log,
     )
 
@@ -1873,6 +2097,7 @@ def discover_gamedevmap_audit_candidates(
     *,
     config: dict[str, Any] | None = None,
     fetcher=fetch_text,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     cfg = dict(
         _gamedevmap_config_value(config, "gamedevmap", DEFAULT_DISCOVERY_CONFIG["gamedevmap"])
@@ -1884,6 +2109,7 @@ def discover_gamedevmap_audit_candidates(
         timeout_s=timeout_s,
         config=config,
         fetcher=fetcher,
+        progress_callback=progress_callback,
     )
     provider_candidates, static_candidates = gamedevmap_validated_candidates_from_artifact(
         artifact,

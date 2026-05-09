@@ -68,6 +68,9 @@ from .reporting import (
     stage_curated_seed_candidates as _stage_curated_seed_candidates,
 )
 from .reporting import (
+    update_discovery_subtask_progress_report as _update_discovery_subtask_progress_report,
+)
+from .reporting import (
     write_discovery_progress_report as _write_discovery_progress_report,
 )
 from .scoring import resolve_discovery_thresholds
@@ -112,6 +115,7 @@ async_probe_candidate = _async_probe_candidate
 build_pattern_candidates = _build_pattern_candidates
 merge_candidate_streams = _merge_candidate_streams
 stage_curated_seed_candidates = _stage_curated_seed_candidates
+update_discovery_subtask_progress_report = _update_discovery_subtask_progress_report
 write_discovery_progress_report = _write_discovery_progress_report
 discover_game_studio_sheet_candidates = _discover_game_studio_sheet_candidates
 run_sheet_directory_audit = _run_sheet_directory_audit

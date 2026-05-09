@@ -151,6 +151,45 @@ def test_registry_conflicts_suppresses_safe_auto_demoted_pending_aliases() -> No
     )
 
 
+def test_registry_conflicts_suppresses_adjudication_auto_demoted_pending_aliases() -> None:
+    state = {
+        "active": [
+            {
+                "id": "static:listing_url:https://studio.example/careers",
+                "name": "Studio Static A",
+                "studio": "Static Studio",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 1,
+                "rankScore": 40,
+                "score": 20,
+            }
+        ],
+        "pending": [
+            {
+                "id": "static:listing_url:https://www.studio.example/careers",
+                "name": "Studio Static B",
+                "studio": "Static Studio",
+                "adapter": "static",
+                "registryState": "pending",
+                "pendingReason": "registry_conflict_adjudication_auto_demote",
+                "stateChangedBy": "registry_conflict_adjudication_auto_demote",
+            }
+        ],
+        "rejected": [],
+    }
+
+    payload = derive_registry_conflict_queue(state)
+
+    assert payload["summary"]["conflictCount"] == 0
+    audit = payload["automation"]["audit"]["safeAutoDemotedPending"]
+    assert audit["summary"] == {"familyCount": 1, "rowCount": 1}
+    assert audit["families"][0]["familyKey"] == "static studio"
+    assert audit["families"][0]["rows"][0]["pendingReason"] == (
+        "registry_conflict_adjudication_auto_demote"
+    )
+
+
 def test_registry_conflicts_keeps_unresolved_rows_when_suppressing_safe_pending_aliases() -> None:
     state = {
         "active": [

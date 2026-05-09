@@ -7,6 +7,7 @@ from collections import Counter
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
+from inspect import Parameter, signature
 from pathlib import Path
 from typing import Any
 
@@ -112,7 +113,7 @@ class ActiveAuditBatchStrategy:
     analyze_homepages: Callable[[list[dict[str, Any]]], ActiveHomepageBatchResult]
     fetch_recovery: Callable[[list[dict[str, Any]], str], ActiveAuditRecoveryFetchResult]
     apply_recovery: Callable[
-        [list[dict[str, Any]], dict[str, Any] | None, bool],
+        ...,
         ActiveAuditRecoveryApplicationResult,
     ]
     recovery_homepage_key: Callable[[dict[str, Any]], str]
@@ -141,6 +142,7 @@ class ActiveAuditBatchStrategy:
     apply_probe_results: Callable[[Any], None]
     row_identity: Callable[[dict[str, Any]], str]
     append_timing: Callable[[dict[str, Any]], None]
+    progress_callback: Callable[[dict[str, Any]], None] | None = None
 
 
 @dataclass
@@ -157,6 +159,7 @@ class ActiveAuditLoopStrategy:
     run_batch: Callable[[list[dict[str, Any]], int, int], None]
     before_write: Callable[[], None]
     write_artifact: Callable[[bool], None]
+    progress_callback: Callable[[dict[str, Any]], None] | None = None
 
 
 def build_active_audit_batch_strategy(
@@ -166,7 +169,7 @@ def build_active_audit_batch_strategy(
     analyze_homepages: Callable[[list[dict[str, Any]]], ActiveHomepageBatchResult],
     fetch_recovery: Callable[[list[dict[str, Any]], str], ActiveAuditRecoveryFetchResult],
     apply_recovery: Callable[
-        [list[dict[str, Any]], dict[str, Any] | None, bool],
+        ...,
         ActiveAuditRecoveryApplicationResult,
     ],
     recovery_homepage_key: Callable[[dict[str, Any]], str],
@@ -195,6 +198,7 @@ def build_active_audit_batch_strategy(
     apply_probe_results: Callable[[Any], None],
     row_identity: Callable[[dict[str, Any]], str],
     append_timing: Callable[[dict[str, Any]], None],
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> ActiveAuditBatchStrategy:
     return ActiveAuditBatchStrategy(
         prepare_rows=prepare_rows,
@@ -210,7 +214,41 @@ def build_active_audit_batch_strategy(
         apply_probe_results=apply_probe_results,
         row_identity=row_identity,
         append_timing=append_timing,
+        progress_callback=progress_callback,
     )
+
+
+def _emit_progress(
+    callback: Callable[[dict[str, Any]], None] | None,
+    event: dict[str, Any],
+    *,
+    force: bool = False,
+) -> None:
+    if callback is None:
+        return
+    callback({**event, "force": bool(force)})
+
+
+def _apply_recovery_with_progress(
+    strategy: ActiveAuditBatchStrategy,
+    results: list[dict[str, Any]],
+    grouped: dict[str, Any] | None,
+    finalize: bool,
+    progress_label: str,
+) -> ActiveAuditRecoveryApplicationResult:
+    use_progress_label = False
+    with suppress(TypeError, ValueError):
+        params = list(signature(strategy.apply_recovery).parameters.values())
+        accepts_varargs = any(param.kind == Parameter.VAR_POSITIONAL for param in params)
+        positional_params = [
+            param
+            for param in params
+            if param.kind in {Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD}
+        ]
+        use_progress_label = accepts_varargs or len(positional_params) >= 4
+    if use_progress_label:
+        return strategy.apply_recovery(results, grouped, finalize, progress_label)
+    return strategy.apply_recovery(results, grouped, finalize)
 
 
 def build_active_audit_loop_strategy(
@@ -222,6 +260,7 @@ def build_active_audit_loop_strategy(
     emit_batch_log: Callable[[int, int, int], None],
     before_write: Callable[[], None],
     write_artifact: Callable[[bool], None],
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> ActiveAuditLoopStrategy:
     def _run_batch(
         batch_rows: list[dict[str, Any]],
@@ -244,6 +283,7 @@ def build_active_audit_loop_strategy(
         run_batch=_run_batch,
         before_write=before_write,
         write_artifact=write_artifact,
+        progress_callback=progress_callback,
     )
 
 
@@ -580,6 +620,8 @@ def apply_active_audit_recovery_fetch_results(
     finalize: bool = True,
     apply_payload: directory_recovery_helpers.RecoveryPayloadApplier,
     finalize_group: directory_recovery_helpers.RecoveryGroupFinalizer,
+    progress_label: str = "",
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> ActiveAuditRecoveryApplicationResult:
     output = directory_recovery_helpers.apply_recovery_fetch_results(
         recovery_fetch_results,
@@ -587,6 +629,8 @@ def apply_active_audit_recovery_fetch_results(
         finalize=finalize,
         apply_payload=apply_payload,
         finalize_group=finalize_group,
+        progress_label=progress_label,
+        progress_callback=progress_callback,
     )
     return ActiveAuditRecoveryApplicationResult(
         provider_candidates=list(output.provider_candidates),
@@ -880,28 +924,115 @@ def run_active_audit_batch(
         "rows": len(batch_rows),
         "cursor": int(cursor),
     }
+    progress_base = {
+        "batch": int(batch_number),
+        "batchRows": len(batch_rows),
+        "cursor": int(cursor),
+    }
 
+    _emit_progress(
+        strategy.progress_callback,
+        {**progress_base, "phase": "batch_start", "phaseLabel": "Starting active audit batch"},
+        force=True,
+    )
     direct_started = time.perf_counter()
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "direct_inference",
+            "phaseLabel": "Checking direct provider URLs",
+        },
+        force=True,
+    )
     prepared = strategy.prepare_rows(batch_rows)
     batch_timing["directInferenceMs"] = _duration_ms(direct_started)
 
     homepage_fetch_started = time.perf_counter()
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "homepage_fetch",
+            "phaseLabel": "Fetching studio homepages",
+            "phaseTotal": len(prepared.homepage_rows),
+        },
+        force=True,
+    )
     homepage_fetch_results = strategy.fetch_homepages(prepared.homepage_rows)
     batch_timing["homepageFetchMs"] = _duration_ms(homepage_fetch_started)
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "homepage_fetch",
+            "phaseLabel": "Fetched studio homepages",
+            "phaseCompleted": len(homepage_fetch_results),
+            "phaseTotal": len(prepared.homepage_rows),
+        },
+        force=True,
+    )
 
     homepage_analysis_started = time.perf_counter()
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "homepage_analysis",
+            "phaseLabel": "Analyzing studio homepages",
+            "phaseTotal": len(homepage_fetch_results),
+        },
+        force=True,
+    )
     homepage_result = strategy.analyze_homepages(homepage_fetch_results)
     batch_timing["homepageAnalysisMs"] = _duration_ms(homepage_analysis_started)
 
     recovery_wave1_fetch_started = time.perf_counter()
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "recovery_wave1_fetch",
+            "phaseLabel": "Fetching recovery pages wave 1",
+            "phaseTotal": len(homepage_result.primary_recovery_jobs),
+        },
+        force=True,
+    )
     wave1_fetch = strategy.fetch_recovery(
         homepage_result.primary_recovery_jobs,
         "GameDevMap active dry run careers recovery fetch wave 1",
     )
     batch_timing["recoveryWave1FetchMs"] = _duration_ms(recovery_wave1_fetch_started)
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "recovery_wave1_fetch",
+            "phaseLabel": "Fetched recovery pages wave 1",
+            "phaseCompleted": len(wave1_fetch.results),
+            "phaseTotal": len(homepage_result.primary_recovery_jobs),
+        },
+        force=True,
+    )
 
     recovery_wave1_analysis_started = time.perf_counter()
-    wave1_apply = strategy.apply_recovery(wave1_fetch.results, None, False)
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "recovery_wave1_analysis",
+            "phaseLabel": "Analyzing recovery pages wave 1",
+            "phaseTotal": len(wave1_fetch.results),
+        },
+        force=True,
+    )
+    wave1_apply = _apply_recovery_with_progress(
+        strategy,
+        wave1_fetch.results,
+        None,
+        False,
+        "active recovery analysis wave 1",
+    )
     batch_timing["recoveryWave1AnalysisMs"] = _duration_ms(recovery_wave1_analysis_started)
 
     secondary_jobs_to_fetch = [
@@ -911,14 +1042,51 @@ def run_active_audit_batch(
     ]
 
     recovery_wave2_fetch_started = time.perf_counter()
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "recovery_wave2_fetch",
+            "phaseLabel": "Fetching recovery pages wave 2",
+            "phaseTotal": len(secondary_jobs_to_fetch),
+        },
+        force=True,
+    )
     wave2_fetch = strategy.fetch_recovery(
         secondary_jobs_to_fetch,
         "GameDevMap active dry run careers recovery fetch wave 2",
     )
     batch_timing["recoveryWave2FetchMs"] = _duration_ms(recovery_wave2_fetch_started)
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "recovery_wave2_fetch",
+            "phaseLabel": "Fetched recovery pages wave 2",
+            "phaseCompleted": len(wave2_fetch.results),
+            "phaseTotal": len(secondary_jobs_to_fetch),
+        },
+        force=True,
+    )
 
     recovery_wave2_analysis_started = time.perf_counter()
-    wave2_apply = strategy.apply_recovery(wave2_fetch.results, wave1_apply.grouped_state, True)
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "recovery_wave2_analysis",
+            "phaseLabel": "Analyzing recovery pages wave 2",
+            "phaseTotal": len(wave2_fetch.results),
+        },
+        force=True,
+    )
+    wave2_apply = _apply_recovery_with_progress(
+        strategy,
+        wave2_fetch.results,
+        wave1_apply.grouped_state,
+        True,
+        "active recovery analysis wave 2",
+    )
     batch_timing["recoveryWave2AnalysisMs"] = _duration_ms(recovery_wave2_analysis_started)
 
     recovery_provider_rows = [
@@ -944,6 +1112,11 @@ def run_active_audit_batch(
     batch_timing["recoveryRecoveredHomepages"] = len(recovered_homepages)
 
     merge_started = time.perf_counter()
+    _emit_progress(
+        strategy.progress_callback,
+        {**progress_base, "phase": "merge_candidates", "phaseLabel": "Merging audit candidates"},
+        force=True,
+    )
     merged = strategy.merge_candidates(
         prepared.direct_provider_candidates,
         homepage_result.provider_candidates,
@@ -983,6 +1156,16 @@ def run_active_audit_batch(
     batch_timing["mergeMs"] = _duration_ms(merge_started)
 
     probe_started = time.perf_counter()
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "probe_candidates",
+            "phaseLabel": "Probing audit candidates",
+            "phaseTotal": len(merged.candidates),
+        },
+        force=True,
+    )
     probe_results = strategy.probe_candidates(merged.candidates)
     strategy.apply_probe_results(probe_results)
     batch_timing["probeMs"] = _duration_ms(probe_started)
@@ -996,6 +1179,17 @@ def run_active_audit_batch(
     batch_timing["totalMs"] = _duration_ms(batch_started)
     batch_timing["artifactWriteMs"] = 0
     strategy.append_timing(batch_timing)
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            **progress_base,
+            "phase": "batch_complete",
+            "phaseLabel": "Completed active audit batch",
+            "candidates": len(merged.candidates),
+            "failures": len(homepage_failures) + len(recovery_failures),
+        },
+        force=True,
+    )
 
     return ActiveAuditBatchResult(
         timing=batch_timing,
@@ -1017,6 +1211,17 @@ def run_active_audit_loop(
     batches_run = 0
     effective_batch_size = max(1, int(batch_size or 1))
     effective_max_batches = max(0, int(max_batches or 0))
+    _emit_progress(
+        strategy.progress_callback,
+        {
+            "phase": "audit_setup",
+            "phaseLabel": "Preparing active audit queue",
+            "completed": len(completed_identities),
+            "total": len(source_rows),
+            "batchSize": effective_batch_size,
+        },
+        force=True,
+    )
 
     while True:
         batch_rows, cursor = _next_unprocessed_batch(
@@ -1032,6 +1237,17 @@ def run_active_audit_loop(
         if not batch_rows:
             strategy.before_write()
             strategy.write_artifact(True)
+            _emit_progress(
+                strategy.progress_callback,
+                {
+                    "phase": "audit_complete",
+                    "phaseLabel": "Completed active audit",
+                    "completed": len(completed_identities),
+                    "total": len(source_rows),
+                    "batchSize": effective_batch_size,
+                },
+                force=True,
+            )
             return ActiveAuditLoopResult(
                 batches_run=batches_run,
                 completed_identities=set(completed_identities),
@@ -1041,6 +1257,17 @@ def run_active_audit_loop(
         if effective_max_batches and batches_run >= effective_max_batches:
             strategy.before_write()
             strategy.write_artifact(False)
+            _emit_progress(
+                strategy.progress_callback,
+                {
+                    "phase": "audit_paused",
+                    "phaseLabel": "Paused active audit",
+                    "completed": len(completed_identities),
+                    "total": len(source_rows),
+                    "batchSize": effective_batch_size,
+                },
+                force=True,
+            )
             return ActiveAuditLoopResult(
                 batches_run=batches_run,
                 completed_identities=set(completed_identities),
@@ -1049,12 +1276,40 @@ def run_active_audit_loop(
 
         batch_number = batches_run + 1
         strategy.emit_batch_log(batch_number, len(batch_rows), cursor)
+        _emit_progress(
+            strategy.progress_callback,
+            {
+                "phase": "batch_queued",
+                "phaseLabel": "Queued active audit batch",
+                "batch": batch_number,
+                "batchRows": len(batch_rows),
+                "cursor": int(cursor),
+                "completed": len(completed_identities),
+                "total": len(source_rows),
+                "batchSize": effective_batch_size,
+            },
+            force=True,
+        )
         strategy.run_batch(batch_rows, cursor, batch_number)
         batches_run += 1
 
         strategy.before_write()
         complete = len(completed_identities) >= len(source_rows)
         strategy.write_artifact(complete)
+        _emit_progress(
+            strategy.progress_callback,
+            {
+                "phase": "batch_written",
+                "phaseLabel": "Wrote active audit batch",
+                "batch": batch_number,
+                "batchRows": len(batch_rows),
+                "cursor": int(cursor),
+                "completed": len(completed_identities),
+                "total": len(source_rows),
+                "batchSize": effective_batch_size,
+            },
+            force=True,
+        )
         if effective_max_batches and batches_run >= effective_max_batches:
             return ActiveAuditLoopResult(
                 batches_run=batches_run,

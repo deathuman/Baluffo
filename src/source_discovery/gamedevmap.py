@@ -11,6 +11,7 @@ Responsibilities:
 
 import csv
 import io
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlencode
 
@@ -48,7 +49,6 @@ def _gamedevmap_cache_signature(cfg: dict[str, Any]) -> dict[str, Any]:
         "csvUrl": str(cfg.get("csvUrl") or "").strip(),
         "indexUrl": str(cfg.get("indexUrl") or "").strip(),
         "promoteValidatedStatic": bool(cfg.get("promoteValidatedStatic", True)),
-        "activeAuditBatchSize": max(1, int(cfg.get("activeAuditBatchSize") or 1000)),
         "activeAuditHomepageFetchConcurrency": max(
             0, int(cfg.get("activeAuditHomepageFetchConcurrency") or 0)
         ),
@@ -272,6 +272,7 @@ def discover_gamedevmap_candidates(
     *,
     config: dict[str, Any] | None = None,
     fetcher=fetch_text,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     cfg = dict(
         _gamedevmap_config_value(config, "gamedevmap", DEFAULT_DISCOVERY_CONFIG["gamedevmap"])
@@ -286,4 +287,5 @@ def discover_gamedevmap_candidates(
         timeout_s,
         config=config,
         fetcher=fetcher,
+        progress_callback=progress_callback,
     )
