@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree as ET
 
@@ -46,6 +47,8 @@ class SourceProbeEvidence:
     browser_fallback_recommended: bool = False
     browser_fallback_used: bool = False
     response_text: str = ""
+    payload_adapter: str = ""
+    payload_fields: dict[str, Any] | None = None
 
 
 def _clean(value: Any) -> str:
@@ -161,6 +164,7 @@ def _fetch_with_retry(
     *,
     adapter: str,
     fetcher: Callable[..., ProbeFetchResponse],
+    headers: dict[str, str] | None = None,
 ) -> ProbeFetchResponse:
     if adapter in {"workable", "personio", "ashby", "recruitee", "pinpoint"}:
         time.sleep(0.18)
@@ -168,7 +172,7 @@ def _fetch_with_retry(
     last_exc: Exception | None = None
     for attempt in range(attempts):
         try:
-            return fetcher(url, timeout_s, headers=discovery_request_headers())
+            return fetcher(url, timeout_s, headers=headers or discovery_request_headers())
         except (HTTPError, TimeoutError, URLError, OSError, RuntimeError, ValueError) as exc:
             last_exc = exc if isinstance(exc, Exception) else Exception(str(exc))
             if attempt >= FETCH_MAX_RETRIES or not _is_retryable_error(last_exc):
@@ -202,6 +206,168 @@ def _count_payload(
         )
     count = max(0, int(parse_probe_count(adapter, text, base_url=final_url)))
     return count, "high", "provider_payload", ()
+
+
+def _lever_account_from_url(url: str) -> str:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return ""
+    host = (parsed.netloc or "").lower()
+    path = parsed.path or ""
+    if host == "api.lever.co" and "/v0/postings/" in path:
+        return _clean(path.split("/v0/postings/", 1)[1].split("/", 1)[0]).lower()
+    if host == "jobs.lever.co":
+        return _clean(path.strip("/").split("/", 1)[0]).lower()
+    return ""
+
+
+def _static_embedded_provider_candidates(text: str) -> list[dict[str, str]]:
+    candidates: list[dict[str, str]] = []
+    seen_accounts: set[str] = set()
+    for raw_account in re.findall(
+        r"\baccountName\s*:\s*['\"]([a-z0-9_.-]{2,80})['\"]",
+        text or "",
+        flags=re.IGNORECASE,
+    ):
+        account = _clean(raw_account).lower()
+        if not account or account in seen_accounts:
+            continue
+        seen_accounts.add(account)
+        candidates.append(
+            {
+                "adapter": "lever",
+                "account": account,
+                "api_url": f"https://api.lever.co/v0/postings/{account}?mode=json",
+            }
+        )
+    for raw_url in re.findall(
+        r"https?://(?:api\.lever\.co/v0/postings|jobs\.lever\.co)/[^\s'\"<>]+",
+        text or "",
+        flags=re.IGNORECASE,
+    ):
+        account = _lever_account_from_url(raw_url.rstrip("),.;"))
+        if not account or account in seen_accounts:
+            continue
+        seen_accounts.add(account)
+        candidates.append(
+            {
+                "adapter": "lever",
+                "account": account,
+                "api_url": f"https://api.lever.co/v0/postings/{account}?mode=json",
+            }
+        )
+    ubisoft_algolia = _ubisoft_algolia_candidate(text)
+    if ubisoft_algolia:
+        candidates.append(ubisoft_algolia)
+    return candidates
+
+
+def _ubisoft_algolia_candidate(text: str) -> dict[str, str]:
+    app_id_match = re.search(
+        r'"(?:algoliaAppId|AlgoliaAppId)"\s*:\s*"([A-Z0-9]{6,})"',
+        text or "",
+    )
+    api_key_match = re.search(
+        r'"(?:algoliaApiKey|AlgoliaApiKey)"\s*:\s*"([a-z0-9]{20,})"',
+        text or "",
+    )
+    if not app_id_match or not api_key_match or "jobsSearch" not in (text or ""):
+        return {}
+    app_id = app_id_match.group(1)
+    api_key = api_key_match.group(1)
+    index = "jobs_en-us_default"
+    query = urlencode({"query": "", "hitsPerPage": 5})
+    return {
+        "adapter": "ubisoft_algolia",
+        "api_url": f"https://{app_id}-dsn.algolia.net/1/indexes/{index}?{query}",
+        "algolia_app_id": app_id,
+        "algolia_api_key": api_key,
+    }
+
+
+def _embedded_provider_headers(provider_candidate: dict[str, str]) -> dict[str, str]:
+    headers = discovery_request_headers()
+    if provider_candidate.get("adapter") == "ubisoft_algolia":
+        headers["X-Algolia-Application-Id"] = provider_candidate.get("algolia_app_id", "")
+        headers["X-Algolia-API-Key"] = provider_candidate.get("algolia_api_key", "")
+    return headers
+
+
+def _ubisoft_algolia_payload_count(text: str) -> tuple[int, str, str, tuple[str, ...]]:
+    payload = json.loads(text)
+    if not isinstance(payload, dict):
+        return 0, "none", "provider_embed:ubisoft_algolia", ()
+    total = payload.get("nbHits")
+    hits = payload.get("hits") if isinstance(payload.get("hits"), list) else []
+    sample_urls = tuple(
+        _clean(hit.get("link") or hit.get("referralUrl"))
+        for hit in hits
+        if isinstance(hit, dict) and _clean(hit.get("link") or hit.get("referralUrl"))
+    )
+    return (
+        max(0, int(total)) if isinstance(total, int) else len(hits),
+        "high",
+        "provider_embed:ubisoft_algolia",
+        sample_urls,
+    )
+
+
+def _probe_static_embedded_provider(
+    *,
+    text: str,
+    endpoint: str,
+    timeout_s: int,
+    fetcher: Callable[..., ProbeFetchResponse],
+) -> SourceProbeEvidence | None:
+    for provider_candidate in _static_embedded_provider_candidates(text):
+        provider_adapter = provider_candidate["adapter"]
+        provider_url = provider_candidate["api_url"]
+        try:
+            response = _fetch_with_retry(
+                provider_url,
+                timeout_s,
+                adapter=provider_adapter,
+                fetcher=fetcher,
+                headers=_embedded_provider_headers(provider_candidate),
+            )
+            if provider_adapter == "ubisoft_algolia":
+                count, confidence, _reason, sample_urls = _ubisoft_algolia_payload_count(
+                    response.text
+                )
+            else:
+                count, confidence, _reason, sample_urls = _count_payload(
+                    provider_adapter,
+                    response.text,
+                    response.final_url or provider_url,
+                )
+        except (
+            HTTPError,
+            TimeoutError,
+            URLError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+            ET.ParseError,
+        ):
+            continue
+        return SourceProbeEvidence(
+            ok=True,
+            adapter="static",
+            endpoint_url=endpoint,
+            final_url=response.final_url or provider_url,
+            http_status=response.status,
+            error="",
+            jobs_found=count,
+            count_confidence=confidence,
+            count_reason=f"provider_embed:{provider_adapter}",
+            sample_urls=sample_urls,
+            response_text=response.text,
+            payload_adapter=provider_adapter,
+            payload_fields=provider_candidate,
+        )
+    return None
 
 
 def _fallback_recommended(error: str) -> bool:
@@ -282,6 +448,37 @@ def _playwright_static_probe(
     )
 
 
+def _static_no_jobs_fallback(
+    *,
+    text: str,
+    probe_url: str,
+    endpoint: str,
+    timeout_s: int,
+    fetcher: Callable[..., ProbeFetchResponse],
+    try_playwright: TryPlaywright | None,
+) -> SourceProbeEvidence | None:
+    embedded = _probe_static_embedded_provider(
+        text=text,
+        endpoint=endpoint,
+        timeout_s=timeout_s,
+        fetcher=fetcher,
+    )
+    if embedded:
+        return embedded
+    if try_playwright is None:
+        return None
+    rendered = _playwright_static_probe(
+        probe_urls=[probe_url],
+        adapter="static",
+        endpoint=endpoint,
+        timeout_s=timeout_s,
+        try_playwright=try_playwright,
+        last_error="no jobs found in static HTML",
+        force=True,
+    )
+    return rendered if rendered and rendered.ok else None
+
+
 def probe_source_evidence(
     row: dict[str, Any],
     timeout_s: int,
@@ -331,18 +528,17 @@ def probe_source_evidence(
                 response.text,
                 response.final_url or probe_url,
             )
-            if adapter == "static" and count == 0 and reason == "no_jobs" and try_playwright:
-                rendered = _playwright_static_probe(
-                    probe_urls=[probe_url],
-                    adapter=adapter,
+            if adapter == "static" and count == 0 and reason == "no_jobs":
+                fallback = _static_no_jobs_fallback(
+                    text=response.text,
+                    probe_url=probe_url,
                     endpoint=endpoint,
                     timeout_s=timeout_s,
+                    fetcher=fetcher,
                     try_playwright=try_playwright,
-                    last_error="no jobs found in static HTML",
-                    force=True,
                 )
-                if rendered and rendered.ok:
-                    return rendered
+                if fallback:
+                    return fallback
             return SourceProbeEvidence(
                 ok=True,
                 adapter=adapter,

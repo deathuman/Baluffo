@@ -46,6 +46,7 @@ _PROVIDER_ID_FIELDS_BY_ADAPTER = {
     "lever": {"account"},
     "smartrecruiters": {"company_id"},
     "workable": {"account"},
+    "jazzhr": {"board_url"},
 }
 
 

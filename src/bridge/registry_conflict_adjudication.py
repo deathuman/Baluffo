@@ -22,6 +22,7 @@ from src.jobs.adapters.parsers.json_payloads import (
     parse_smartrecruiters_jobs_payload,
     parse_workable_jobs_payload,
 )
+from src.jobs.adapters.parsers.provider_html import parse_jazzhr_jobs_html
 from src.jobs.text_utils import clean_text, norm_text, normalize_url
 from src.source_discovery.probe import static_probe_evidence
 from src.source_registry import source_identity
@@ -35,6 +36,14 @@ _ADJUDICATION_JOB_LOCK = threading.Lock()
 _ADJUDICATION_JOB_THREAD: threading.Thread | None = None
 _RECENT_PROGRESS_EVENT_LIMIT = 20
 _DEFAULT_PROGRESS_THROTTLE_SECONDS = 1.0
+_PROVIDER_PAYLOAD_PARSERS = {
+    "greenhouse": parse_greenhouse_jobs_payload,
+    "lever": parse_lever_jobs_payload,
+    "smartrecruiters": parse_smartrecruiters_jobs_payload,
+    "workable": parse_workable_jobs_payload,
+    "recruitee": parse_recruitee_jobs_payload,
+    "pinpoint": parse_pinpoint_jobs_payload,
+}
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -321,6 +330,9 @@ def _endpoint_url(row: dict[str, Any]) -> str:
             if company_id
             else ""
         )
+    if adapter == "jazzhr":
+        board_url = _adapter_token(row, "board_url")
+        return board_url if board_url else ""
     return ""
 
 
@@ -357,18 +369,29 @@ def _parse_jobs(
     payload = _json_payload(text)
     fallback_company = _clean(row.get("company") or row.get("studio") or row.get("name"))
     token = _adapter_token(row, "slug", "account", "company_id")
-    if adapter == "greenhouse":
-        jobs = parse_greenhouse_jobs_payload(payload, token, fallback_company)
-    elif adapter == "lever":
-        jobs = parse_lever_jobs_payload(payload, token, fallback_company)
-    elif adapter == "smartrecruiters":
-        jobs = parse_smartrecruiters_jobs_payload(payload, token, fallback_company)
-    elif adapter == "workable":
-        jobs = parse_workable_jobs_payload(payload, token, fallback_company)
-    elif adapter == "recruitee":
-        jobs = parse_recruitee_jobs_payload(payload, token, fallback_company)
-    elif adapter == "pinpoint":
-        jobs = parse_pinpoint_jobs_payload(payload, token, fallback_company)
+    parser = _PROVIDER_PAYLOAD_PARSERS.get(adapter)
+    if parser:
+        jobs = parser(payload, token, fallback_company)
+    elif adapter == "jazzhr":
+        jobs = parse_jazzhr_jobs_html(text, final_url or _endpoint_url(row), fallback_company)
+    elif adapter == "ubisoft_algolia":
+        hits = _as_list(_as_dict(payload).get("hits"))
+        jobs = [
+            {
+                "sourceJobId": (
+                    "ubisoft_algolia:"
+                    f"{clean_text(hit.get('objectID') or hit.get('refNumber') or hit.get('slug'))}"
+                ),
+                "title": clean_text(hit.get("title")),
+                "company": fallback_company or "Ubisoft",
+                "city": clean_text(hit.get("city")),
+                "country": clean_text(hit.get("countryCode")).upper(),
+                "jobLink": normalize_url(hit.get("link") or hit.get("referralUrl")),
+                "postedAt": clean_text(hit.get("createdAt")),
+            }
+            for hit in hits
+            if isinstance(hit, dict) and clean_text(hit.get("title"))
+        ]
     else:
         jobs = parse_jobpostings_from_html(
             text,
@@ -432,10 +455,20 @@ def _probe_row(row: dict[str, Any], timeout_s: int) -> dict[str, Any]:
     parse_error = ""
     if text:
         try:
-            valid_payload, jobs = _parse_jobs(row, text, final_url)
+            parse_row = row
+            if evidence.payload_adapter:
+                parse_row = {
+                    **row,
+                    **(evidence.payload_fields or {}),
+                    "adapter": evidence.payload_adapter,
+                }
+            valid_payload, jobs = _parse_jobs(parse_row, text, final_url)
         except (TypeError, ValueError, KeyError) as exc:
             parse_error = str(exc)
-    jobs_found = len(jobs) if valid_payload or jobs else int(evidence.jobs_found or 0)
+    provider_jobs_found = int(evidence.jobs_found or 0)
+    jobs_found = len(jobs) if valid_payload or jobs else provider_jobs_found
+    if evidence.adapter != "static" or evidence.payload_adapter:
+        jobs_found = max(jobs_found, provider_jobs_found)
     ok = bool(evidence.ok and not parse_error and (valid_payload or jobs or jobs_found == 0))
     return {
         "sourceId": source_id,

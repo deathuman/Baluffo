@@ -132,7 +132,7 @@ def test_parse_probe_count_covers_provider_payload_shapes() -> None:
             '<a href="https://jobs.smartrecruiters.com/Demo/job/743999-game">A</a>',
             1,
         ),
-        ("smartrecruiters", json.dumps({"content": [{}, {}]}), 2),
+        ("smartrecruiters", json.dumps({"totalFound": 136, "content": [{}, {}]}), 136),
         ("workable", '<a href="https://apply.workable.com/demo/j/ABCDEF">A</a>', 1),
         ("workable", json.dumps({"jobs": [{}, {}, {}]}), 3),
         ("recruitee", '<a href="https://demo.recruitee.com/o/designer">A</a>', 1),

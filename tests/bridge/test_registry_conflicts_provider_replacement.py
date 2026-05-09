@@ -441,6 +441,80 @@ def test_registry_conflicts_uses_complete_live_adjudication_counts_for_winner() 
     assert loser["healthReason"] == "live adjudication found no jobs"
 
 
+def test_registry_conflicts_uses_live_jazzhr_count_over_stale_static_count() -> None:
+    state = {
+        "active": [
+            {
+                "id": (
+                    "static:listing_url:https://nextlevelgames.com/"
+                    "jobs-at-next-level-games-subsidiary-of-nintendo-co-ltd/"
+                ),
+                "name": "Next Level Games (Sheet)",
+                "studio": "Next Level Games",
+                "adapter": "static",
+                "registryState": "active",
+                "jobsFound": 10,
+                "rankScore": 48,
+            },
+            {
+                "id": "jazzhr:board_url:https://nextlevelgames.applytojob.com/apply",
+                "name": "Next Level Games (JazzHR)",
+                "studio": "Next Level Games",
+                "adapter": "jazzhr",
+                "registryState": "active",
+                "lastJobsKept": 5,
+            },
+        ],
+        "pending": [],
+        "rejected": [],
+    }
+    adjudication = {
+        "finishedAt": "2026-05-09T10:00:00Z",
+        "families": [
+            {
+                "familyKey": "next level games",
+                "status": "recommended_demotion",
+                "probes": [
+                    {
+                        "sourceId": (
+                            "static:listing_url:https://nextlevelgames.com/"
+                            "jobs-at-next-level-games-subsidiary-of-nintendo-co-ltd/"
+                        ),
+                        "httpStatus": 200,
+                        "ok": True,
+                        "jobsFound": 0,
+                        "finalUrl": (
+                            "https://nextlevelgames.com/"
+                            "jobs-at-next-level-games-subsidiary-of-nintendo-co-ltd/"
+                        ),
+                    },
+                    {
+                        "sourceId": "jazzhr:board_url:https://nextlevelgames.applytojob.com/apply",
+                        "httpStatus": 200,
+                        "ok": True,
+                        "jobsFound": 5,
+                        "finalUrl": "https://nextlevelgames.applytojob.com/apply",
+                    },
+                ],
+            }
+        ],
+    }
+
+    conflict = derive_registry_conflict_queue(state, adjudication_payload=adjudication)[
+        "conflicts"
+    ][0]
+
+    assert (
+        conflict["winner"]["id"] == "jazzhr:board_url:https://nextlevelgames.applytojob.com/apply"
+    )
+    assert conflict["effectiveWinnerSource"] == "live_adjudication"
+    assert conflict["winner"]["jobsFound"] == 5
+    static_row = conflict["losers"][0]
+    assert static_row["registryJobsFound"] == 10
+    assert static_row["liveJobsFound"] == 0
+    assert static_row["jobsFound"] == 0
+
+
 def test_registry_conflicts_safe_automation_promotes_pending_provider_with_more_jobs() -> None:
     state = {
         "active": [

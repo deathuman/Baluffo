@@ -46,6 +46,94 @@ def test_conflict_adjudication_provider_probe_reconstructs_compact_source_id(
     assert probe["jobsFound"] == 1
 
 
+def test_conflict_adjudication_smartrecruiters_count_uses_provider_total(
+    monkeypatch,
+) -> None:
+    payload = """
+    {
+      "totalFound": 2,
+      "content": [
+        {
+          "id": "744000000000001",
+          "name": "Senior Technical Artist",
+          "location": {"city": "Warsaw", "country": "PL"}
+        },
+        {
+          "id": "744000000000002",
+          "name": "Accountant",
+          "location": {"city": "Warsaw", "country": "PL"}
+        }
+      ]
+    }
+    """
+
+    def fake_fetch(url: str, _timeout_s: int, **_kwargs) -> ProbeFetchResponse:
+        return ProbeFetchResponse(200, url, payload)
+
+    monkeypatch.setattr(
+        registry_conflict_adjudication,
+        "probe_source_evidence",
+        lambda row, timeout_s, **_kwargs: probe_source_evidence(row, timeout_s, fetcher=fake_fetch),
+    )
+
+    probe = _probe_row(
+        {
+            "id": "smartrecruiters:company_id:peoplecanfly",
+            "adapter": "smartrecruiters",
+            "name": "People can Fly Studio (SmartRecruiters)",
+        },
+        5,
+    )
+
+    assert probe["ok"] is True
+    assert probe["jobsFound"] == 2
+    assert len(probe["sampleJobs"]) == 1
+    assert probe["sampleJobs"][0]["title"] == "Senior Technical Artist"
+
+
+def test_conflict_adjudication_jazzhr_probe_reconstructs_compact_board_url(
+    monkeypatch,
+) -> None:
+    payload = """
+    <html>
+      <body>
+        <a href="https://nextlevelgames.applytojob.com/apply/ABC123/IT-Manager">
+          IT Manager
+        </a>
+        <a href="https://nextlevelgames.applytojob.com/apply/DEF456/UI-Artist">
+          UI Artist
+        </a>
+      </body>
+    </html>
+    """
+
+    captured_urls: list[str] = []
+
+    def fake_fetch(url: str, _timeout_s: int, **_kwargs) -> ProbeFetchResponse:
+        captured_urls.append(url)
+        return ProbeFetchResponse(200, url, payload)
+
+    monkeypatch.setattr(
+        registry_conflict_adjudication,
+        "probe_source_evidence",
+        lambda row, timeout_s, **_kwargs: probe_source_evidence(row, timeout_s, fetcher=fake_fetch),
+    )
+
+    probe = _probe_row(
+        {
+            "id": "jazzhr:board_url:https://nextlevelgames.applytojob.com/apply",
+            "adapter": "jazzhr",
+            "name": "Next Level Games (JazzHR)",
+        },
+        5,
+    )
+
+    assert captured_urls == ["https://nextlevelgames.applytojob.com/apply"]
+    assert probe["ok"] is True
+    assert probe["jobsFound"] == 2
+    assert probe["finalUrl"] == "https://nextlevelgames.applytojob.com/apply"
+
+
 def test_conflict_adjudication_static_probe_counts_same_listing_detail_pages() -> None:
     html = """
     <a href="/work-with-us/4023614009/">Systems Engineer</a>
@@ -108,3 +196,116 @@ def test_conflict_adjudication_static_probe_uses_browser_fallback_for_rendered_j
 
     assert probe["ok"] is True
     assert probe["jobsFound"] == 2
+
+
+def test_conflict_adjudication_static_probe_counts_embedded_lever_board(
+    monkeypatch,
+) -> None:
+    page_html = """
+    <h1>Open Positions</h1>
+    <ul class="list"></ul>
+    <div id="lever-no-results" style="display: none;">No results</div>
+    <script>window.leverJobsOptions = {accountName: 'skyboxlabs'};</script>
+    """
+    lever_payload = """
+    [
+      {
+        "id": "abc123",
+        "text": "Senior Gameplay Programmer",
+        "hostedUrl": "https://jobs.lever.co/skyboxlabs/abc123",
+        "categories": {"team": "Engineering", "location": "Remote"}
+      }
+    ]
+    """
+
+    def fake_fetch(url: str, _timeout_s: int, **_kwargs) -> ProbeFetchResponse:
+        if "api.lever.co" in url:
+            return ProbeFetchResponse(200, url, lever_payload)
+        return ProbeFetchResponse(200, url, page_html)
+
+    monkeypatch.setattr(
+        registry_conflict_adjudication,
+        "probe_source_evidence",
+        lambda row, timeout_s, **_kwargs: probe_source_evidence(
+            row,
+            timeout_s,
+            fetcher=fake_fetch,
+        ),
+    )
+
+    probe = _probe_row(
+        {
+            "id": "static:listing_url:https://skyboxlabs.com/jobs/",
+            "adapter": "static",
+            "listing_url": "https://skyboxlabs.com/jobs/",
+            "name": "SkyBox Labs (GameDevMap)",
+        },
+        5,
+    )
+
+    assert probe["ok"] is True
+    assert probe["adapter"] == "static"
+    assert probe["jobsFound"] == 1
+    assert probe["countReason"] == "provider_embed:lever"
+    assert probe["sampleJobs"][0]["title"] == "Senior Gameplay Programmer"
+    assert probe["_jobIds"] == ["lever:skyboxlabs:abc123"]
+
+
+def test_conflict_adjudication_static_probe_counts_ubisoft_algolia_search(
+    monkeypatch,
+) -> None:
+    page_html = """
+    <section id="jobsSearch"></section>
+    <script>
+      window.__config = {
+        "AlgoliaAppId": "AVCVYSEJS1",
+        "AlgoliaApiKey": "d2ec5782c4eb549092cfa4ed5062599a"
+      };
+    </script>
+    """
+    algolia_payload = """
+    {
+      "nbHits": 136,
+      "hits": [
+        {
+          "objectID": "job-1",
+          "title": "Gameplay Programmer",
+          "city": "Montreal",
+          "countryCode": "ca",
+          "link": "https://www.ubisoft.com/en-us/company/careers/search/744-job"
+        }
+      ]
+    }
+    """
+
+    def fake_fetch(url: str, _timeout_s: int, **_kwargs) -> ProbeFetchResponse:
+        if "algolia.net" in url:
+            return ProbeFetchResponse(200, url, algolia_payload)
+        return ProbeFetchResponse(200, url, page_html)
+
+    monkeypatch.setattr(
+        registry_conflict_adjudication,
+        "probe_source_evidence",
+        lambda row, timeout_s, **_kwargs: probe_source_evidence(
+            row,
+            timeout_s,
+            fetcher=fake_fetch,
+        ),
+    )
+
+    probe = _probe_row(
+        {
+            "id": "static:listing_url:https://www.ubisoft.com/en-us/company/careers/search",
+            "adapter": "static",
+            "listing_url": "https://www.ubisoft.com/en-us/company/careers/search",
+            "name": "Ubisoft (Sheet)",
+        },
+        5,
+    )
+
+    assert probe["ok"] is True
+    assert probe["adapter"] == "static"
+    assert probe["jobsFound"] == 136
+    assert probe["countReason"] == "provider_embed:ubisoft_algolia"
+    assert probe["sampleJobs"][0]["title"] == "Gameplay Programmer"
+    assert probe["_jobIds"] == ["ubisoft_algolia:job-1"]

@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import parse_qsl, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
+from src.jobs.adapters.parsers.provider_html import parse_jazzhr_jobs_html
 from src.jobs.parsers import parse_jobpostings_from_html
 
 from .io_runtime import endpoint_url
@@ -74,6 +75,11 @@ _GENERIC_APPLICATION_TOKENS = (
     "talent community",
     "unsolicited application",
 )
+
+_BOARD_URL_HOST_SUFFIX_BY_ADAPTER = {
+    "ashby": "ashbyhq.com",
+    "jazzhr": ".applytojob.com",
+}
 
 
 @dataclass(frozen=True)
@@ -327,9 +333,11 @@ def validate_candidate_for_probe(candidate: dict[str, Any]) -> tuple[bool, str]:
         path = (parsed.path or "").lower()
         valid = ".teamtailor.com" in host or path.startswith("/jobs")
         return (valid, "" if valid else "invalid teamtailor host")
-    if adapter == "ashby":
+    if adapter in _BOARD_URL_HOST_SUFFIX_BY_ADAPTER:
+        suffix = _BOARD_URL_HOST_SUFFIX_BY_ADAPTER[adapter]
         host = (urlparse(str(candidate.get("board_url") or "").strip()).netloc or "").lower()
-        return ("ashbyhq.com" in host, "" if "ashbyhq.com" in host else "invalid ashby host")
+        valid = host.endswith(suffix) if suffix.startswith(".") else suffix in host
+        return (valid, "" if valid else f"invalid {adapter} host")
     if adapter == "recruitee":
         host = (urlparse(str(candidate.get("api_url") or "").strip()).netloc or "").lower()
         return (
@@ -408,6 +416,12 @@ def _json_or_html_count(text: str, *, json_key: str | None, html_pattern: str) -
 
 
 def _parse_provider_probe_count(adapter: str, text: str) -> int | None:
+    if adapter == "smartrecruiters" and text.strip().startswith("{"):
+        payload = json.loads(text)
+        if isinstance(payload, dict):
+            total = payload.get("totalFound")
+            if isinstance(total, int):
+                return max(0, total)
     provider_specs = {
         "lever": (None, r'(?is)href=["\'][^"\']+/jobs/[^"\']+["\']'),
         "greenhouse": ("jobs", r'(?is)href=["\'][^"\']+/jobs/\d+[^"\']*["\']'),
@@ -440,6 +454,8 @@ def parse_probe_count(adapter: str, text: str, *, base_url: str = "") -> int:
             set(re.findall(r'(?is)<a[^>]+href=["\']([^"\']+/jobs/[^"\']+)["\']', text))
         )
         return max(link_count, _static_result_count(text, base_url))
+    if adapter == "jazzhr":
+        return len(parse_jazzhr_jobs_html(text, base_url))
     if adapter == "static":
         return _static_probe_count(text, base_url)
     raise ValueError("unsupported adapter")
